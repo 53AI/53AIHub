@@ -97,7 +97,7 @@ We welcome your contributions—whether code, ideas, or issues. Feel free to sha
 * [GitHub Discussion](https://github.com/53ai/53aihub/discussions): Share your apps and ideas with the community.
 * [GitHub Issues](https://github.com/53ai/53aihub/issues): Report bugs or problems.
 
-![f41367be377ddc3d64ee5953608cfe94_compress.jpg](https://kmapitest.53ai.com/api/preview/bc933568a324158e83564b3e071dc680.jpg)
+
 
 ## Compliance Certifications
 
