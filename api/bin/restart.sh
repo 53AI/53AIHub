@@ -12,7 +12,7 @@ else
     echo "未找到正在运行的 53aihub 进程"
 fi
 
-# 3. 后台运行 53aihub 并且输出日志到当前目录
+# 3. 后台运行 53aihub 并且输出日志到当前目录位置
 echo "启动 53aihub..."
 nohup ./53aihub > ./53aihub.log 2>&1 &
 
