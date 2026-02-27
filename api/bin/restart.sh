@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 1. 找到 53aihub 运行的 pid
+# 1. 找到 53aihub 运行的 pid 
 PID=$(ps aux | grep '[5]3aihub' | awk '{print $2}')
 
 # 2. 优雅 kill 掉
