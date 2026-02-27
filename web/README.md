@@ -56,4 +56,5 @@ make build-windows-cgo
 ```
 在`api/bin`目录下已经生成了可执行exe，双击运行即可
 
-TODO: 后续重构未 Monorepo，基于 pnpm workspace + Turborepo 构建，通用组件、工具函数抽离， 方便维护
+
+TODO: 后续重构为 Monorepo，基于 pnpm workspace + Turborepo 构建，通用组件、工具函数抽离， 方便维护
