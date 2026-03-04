@@ -168,3 +168,18 @@ docker compose up -d
 
 在 GitHub 上给 53AI Hub Star，我们更新产品你将第一时间收到新版本更新的通知。
 
+## 商务合作
+
+联系人：杨先生
+
+📮：hub@53ai.com
+
+📱：18688881185 (非客服电话)
+
+![.jpg](http://kmdev.53ai.com/api/preview/e884dbfe4ab8161ee268011111b900c3.jpg)
+
+> 使用问题咨询，可以在官网首页底部加入用户交流群，也可邮件 hub@53ai.com
+>
+> 如果您需要更多开发和运营指导，可以联系购买商业版本及交付服务
+
+
