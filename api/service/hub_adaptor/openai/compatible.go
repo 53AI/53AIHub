@@ -7,7 +7,6 @@ import (
 	"github.com/songquanpeng/one-api/relay/adaptor/doubao"
 	"github.com/songquanpeng/one-api/relay/adaptor/groq"
 	"github.com/songquanpeng/one-api/relay/adaptor/lingyiwanwu"
-	"github.com/songquanpeng/one-api/relay/adaptor/minimax"
 	"github.com/songquanpeng/one-api/relay/adaptor/mistral"
 	"github.com/songquanpeng/one-api/relay/adaptor/moonshot"
 	"github.com/songquanpeng/one-api/relay/adaptor/novita"
@@ -17,6 +16,22 @@ import (
 	"github.com/songquanpeng/one-api/relay/adaptor/xai"
 	"github.com/songquanpeng/one-api/relay/channeltype"
 )
+
+// MiniMaxModelList contains the current MiniMax model IDs.
+// The upstream one-api dependency (v0.6.10) only includes legacy abab* models
+// which use the deprecated /v1/text/chatcompletion_v2 endpoint.
+// MiniMax now provides an OpenAI-compatible API at api.minimax.io/v1 with
+// the M2.7 series models. We override the model list here to reflect the
+// latest available models while keeping backward compatibility with abab.
+var MiniMaxModelList = []string{
+	"MiniMax-M2.7",
+	"MiniMax-M2.7-highspeed",
+	"abab6.5-chat",
+	"abab6.5s-chat",
+	"abab6-chat",
+	"abab5.5-chat",
+	"abab5.5s-chat",
+}
 
 var CompatibleChannels = []int{
 	channeltype.Azure,
@@ -47,7 +62,7 @@ func GetCompatibleChannelMeta(channelType int) (string, []string) {
 	case channeltype.Baichuan:
 		return "baichuan", baichuan.ModelList
 	case channeltype.Minimax:
-		return "minimax", minimax.ModelList
+		return "minimax", MiniMaxModelList
 	case channeltype.Mistral:
 		return "mistralai", mistral.ModelList
 	case channeltype.Groq:

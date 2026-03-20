@@ -17,7 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/relay/adaptor/doubao"
-	"github.com/songquanpeng/one-api/relay/adaptor/minimax"
 	"github.com/songquanpeng/one-api/relay/adaptor/novita"
 	"github.com/songquanpeng/one-api/relay/channeltype"
 	"github.com/songquanpeng/one-api/relay/meta"
@@ -57,7 +56,12 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 		requestURL = fmt.Sprintf("/openai/deployments/%s/%s", model_, task)
 		return GetFullRequestURL(meta.BaseURL, requestURL, meta.ChannelType), nil
 	case channeltype.Minimax:
-		return minimax.GetRequestURL(meta)
+		// Use standard OpenAI-compatible endpoint.
+		// MiniMax's new API at api.minimax.io/v1 supports the standard
+		// /v1/chat/completions format for both M2.x and legacy abab models.
+		// The upstream one-api adaptor used the deprecated /v1/text/chatcompletion_v2
+		// endpoint which is no longer recommended.
+		return GetFullRequestURL(meta.BaseURL, meta.RequestURLPath, meta.ChannelType), nil
 	case channeltype.Doubao:
 		return doubao.GetRequestURL(meta)
 	case channeltype.Novita:
