@@ -163,7 +163,7 @@ func migrateDB() error {
 	if err := DB.AutoMigrate(
 		&DingtalkSuite{},
 		&DingtalkCorp{},
-		); err != nil {
+	); err != nil {
 		return err
 	}
 	return nil

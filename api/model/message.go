@@ -21,7 +21,7 @@ type Message struct {
 	ElapsedTime       int64  `json:"elapsed_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream" gorm:"default:false"`
 	QuotaContent      string `json:"quota_content" gorm:"default:''"`
-	AgentCustomConfig string `json:"agent_custom_config" gorm:"default:''"`
+	AgentCustomConfig string `json:"agent_custom_config" gorm:"type:text;default:''"`
 	BaseModel
 }
 
@@ -163,9 +163,9 @@ func DeleteMessagesByAgentID(eid int64, agentID int64) error {
 
 // GetMessagesByConversationID retrieves conversation messages by conversation ID
 func GetMessagesByConversationID(eid int64, conversationID int64, keyword string, limit int, offset int) (count int64, messages []*Message, err error) {
-	query := DB.Model(&Message{}).Where("eid =? AND conversation_id =?", eid, conversationID)
+	query := DB.Model(&Message{}).Where("eid = ? AND conversation_id = ?", eid, conversationID)
 	if keyword != "" {
-		query = query.Where("message LIKE? OR answer LIKE?", "%"+keyword+"%", "%"+keyword+"%")
+		query = query.Where("message LIKE ? OR answer LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
 	countQuery := query
@@ -181,7 +181,7 @@ func GetMessagesByConversationID(eid int64, conversationID int64, keyword string
 		query = query.Offset(offset)
 	}
 
-	err = query.Find(&messages).Order("created_time DESC").Error
+	err = query.Order("created_time DESC").Find(&messages).Error
 	if err != nil {
 		return 0, nil, err
 	}
@@ -190,9 +190,9 @@ func GetMessagesByConversationID(eid int64, conversationID int64, keyword string
 
 // GetMessagesByConversationIDWithDirection retrieves conversation messages by conversation ID with direction control
 func GetMessagesByConversationIDWithDirection(eid int64, conversationID int64, keyword string, limit, offset int, direction string) (count int64, messages []*Message, err error) {
-	query := DB.Model(&Message{}).Where("eid =? AND conversation_id =?", eid, conversationID)
+	query := DB.Model(&Message{}).Where("eid = ? AND conversation_id = ?", eid, conversationID)
 	if keyword != "" {
-		query = query.Where("message LIKE? OR answer LIKE?", "%"+keyword+"%", "%"+keyword+"%")
+		query = query.Where("message LIKE ? OR answer LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
 	countQuery := query
