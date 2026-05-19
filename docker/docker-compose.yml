@@ -42,7 +42,7 @@ services:
       MYSQL_USER: agent
       MYSQL_PASSWORD: agentpassword
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
