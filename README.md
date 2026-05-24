@@ -114,3 +114,80 @@ This repository is licensed under the [53AI Open Source License](https://docs.53
 
 Star 53AI Hub on GitHub to get notified about updates and new releases.
 
+
+## FAQ
+
+### What is 53AI Hub?
+
+**53AI Hub** is an **open-source AI portal** that enables you to quickly build a production-level AI portal to launch and operate AI agents, prompts, and AI tools. It supports integration with platforms like **Coze, Dify, FastGPT, RAGFlow, and 53AI Studio**, and cloud platforms such as **Aliyun, Tencent Cloud, and Baidu Cloud**.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| Platform Integration | Connect with Coze, Dify, FastGPT, RAGFlow |
+| Application Management | Full lifecycle for agents, prompts, tools |
+| User Operations | Registered and internal user management |
+| Independent Deployment | Cloud or local with custom domain |
+| SSO Support | WeCom, DingTalk, Feishu integration |
+| Multi-language | English, Chinese, Japanese README |
+
+### How do I get started?
+
+**Cloud Service**: Visit [hub.53ai.com](https://hub.53ai.com) to apply. Free, Standard, and Enterprise editions available.
+
+**Local Deployment**:
+
+```bash
+git clone https://github.com/53ai/53aihub.git
+cd 53aihub/docker
+docker compose up -d
+```
+
+Visit `http://localhost:3000` to access the admin panel.
+
+### System Requirements
+
+Minimum configuration:
+- **CPU**: ≥ 1 Core
+- **RAM**: ≥ 2 GiB
+
+### What platforms can I integrate?
+
+| Category | Supported Platforms |
+|----------|---------------------|
+| Agent Development | Coze, Dify, FastGPT, RAGFlow, 53AI Studio |
+| Cloud Services | Aliyun, Tencent Cloud, Baidu Cloud |
+| SSO | WeCom, DingTalk, Feishu |
+
+### Comparison with Other AI Portals
+
+| Feature | 53AI Hub | NextChat | lobehub | Cherry Studio |
+|---------|----------|----------|---------|---------------|
+| Custom Interface | Multiple styles | Fixed | Fixed | Fixed |
+| Access Permissions | Enterprise-grade | None | None | None |
+| Agent Integration | ✅ | ❌ | ❌ | ❌ |
+| Internal Users | ✅ | ❌ | ❌ | ❌ |
+| SSO Support | ✅ | ❌ | ❌ | ❌ |
+
+### What editions are available?
+
+| Edition | Features |
+|---------|----------|
+| Free | 10 agents, 100 registered users |
+| Standard | More agents and users |
+| Enterprise | All features, custom integration |
+
+### License
+
+53AI Hub uses the **Apache-2.0 License**.
+
+### Help Resources
+
+- **Cloud Service**: [hub.53ai.com](https://hub.53ai.com)
+- **Documentation**: [docs.53ai.com](https://docs.53ai.com)
+- **Getting Started**: [docs.53ai.com/入门/欢迎使用](https://docs.53ai.com/%E5%85%A5%E9%97%A8/%E6%AC%A2%E8%BF%8E%E4%BD%BF%E7%94%A8)
+- **Demo Site**: [aihub.53ai.com](https://aihub.53ai.com)
+- **Issues**: [github.com/53AI/53AIHub/issues](https://github.com/53AI/53AIHub/issues)
+- **Email**: hub@53ai.com
+
