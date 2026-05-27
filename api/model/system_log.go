@@ -14,8 +14,8 @@ type SystemLog struct {
 	Eid        int64  `json:"eid" gorm:"not null;comment:站点ID"`
 	UserID     int64  `json:"user_id" gorm:"not null;comment:操作成员ID"`
 	Nickname   string `json:"nickname" gorm:"size:255;not null;comment:成员名称"`
-	Module     uint8  `json:"module" gorm:"unsigned;not null;comment:模块。1系统；2智能体；3提示词；4AI工具；5订单数据；6注册用户；7内部用户；8订阅设置；9管理员；10模板风格；11Banner图；12导航管理；13站点信息；14平台接入；15支付配置；16站点域名；17三方统计"`
-	Action     uint8  `json:"action" gorm:"unsigned;not null;comment:动作。1新建；2编辑；3删除；4启用/停用；5登录/退出"`
+	Module     uint8  `json:"module" gorm:"not null;comment:模块。1系统；2智能体；3提示词；4AI工具；5订单数据；6注册用户；7内部用户；8订阅设置；9管理员；10模板风格；11Banner图；12导航管理；13站点信息；14平台接入；15支付配置；16站点域名；17三方统计"`
+	Action     uint8  `json:"action" gorm:"not null;comment:动作。1新建；2编辑；3删除；4启用/停用；5登录/退出"`
 	Content    string `json:"content" gorm:"type:text;not null;comment:日志内容"`
 	IP         string `json:"ip" gorm:"size:20;not null;comment:ip"`
 	ActionTime int64  `json:"action_time" gorm:"comment:创建时间（毫秒值）"`
@@ -40,6 +40,9 @@ const (
 	SystemLogModulePayment      uint8 = 15 // 支付配置
 	SystemLogModuleDomain       uint8 = 16 // 站点域名
 	SystemLogModuleStatistics   uint8 = 17 // 三方统计
+	SystemLogModuleSpace        uint8 = 18 // 空间管理
+	SystemLogModuleLibrary      uint8 = 19 // 知识库管理
+	SystemLogModuleFile         uint8 = 20
 )
 
 // GetModuleByGroupType 根据分组类型获取对应的系统日志模块
@@ -68,6 +71,7 @@ const (
 	SystemLogActionDelete   uint8 = 3 // 删除
 	SystemLogActionToggle   uint8 = 4 // 启用/停用
 	SystemLogActionLoginOut uint8 = 5 // 登录/退出
+	SystemLogActionRestore  uint8 = 6 // 恢复
 )
 
 // TableName 指定表名
@@ -151,6 +155,8 @@ func generateChangeContent(entityType string, action uint8, oldEntity, newEntity
 		content = fmt.Sprintf("新增%s", entityType)
 	case SystemLogActionDelete:
 		content = fmt.Sprintf("删除%s", entityType)
+	case SystemLogActionRestore:
+		content = fmt.Sprintf("恢复%s", entityType)
 	case SystemLogActionUpdate:
 		// 比较新旧实体差异
 		changes := compareEntities(oldEntity, newEntity, fieldMap, entityType)
@@ -253,6 +259,9 @@ var moduleTextMap = map[uint8]string{
 	SystemLogModulePayment:      "支付配置",
 	SystemLogModuleDomain:       "站点域名",
 	SystemLogModuleStatistics:   "三方统计",
+	SystemLogModuleSpace:        "空间管理",
+	SystemLogModuleLibrary:      "知识库管理",
+	SystemLogModuleFile:         "文档",
 }
 
 // GetAllModules 获取所有模块定义
@@ -283,6 +292,7 @@ var actionTextMap = map[uint8]string{
 	SystemLogActionDelete:   "删除",
 	SystemLogActionToggle:   "启用/停用",
 	SystemLogActionLoginOut: "登录/退出",
+	SystemLogActionRestore:  "恢复",
 }
 
 // GetAllActions 获取所有操作定义

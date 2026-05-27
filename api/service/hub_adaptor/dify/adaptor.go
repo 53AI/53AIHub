@@ -135,7 +135,7 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest, meta *meta.Meta, cus
 			difyRequest.Query = targetStr
 		}
 	}
-	logger.SysLogf("difyRequest:", difyRequest)
+	logger.SysLogf("difyRequest: %+v", difyRequest)
 	return &difyRequest
 }
 

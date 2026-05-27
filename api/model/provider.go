@@ -15,7 +15,7 @@ type Provider struct {
 	RefreshToken string  `json:"refresh_token" gorm:"type:text"`
 	ExpiresIn    int64   `json:"expires_in" gorm:"not null"`
 	AuthedTime   int64   `json:"authed_time" gorm:"not null"`
-	BaseURL      *string `json:"base_url" gorm:"column:base_url;default:''"`
+	BaseURL      *string `json:"base_url" gorm:"size:512;column:base_url;default:''"`
 	BaseModel
 }
 

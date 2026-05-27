@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"encoding/json"
+
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
@@ -159,4 +162,41 @@ func ListAllModels(c *gin.Context) {
 	c.JSON(200, model.Success.ToResponse(OpenAIModelsResponse{
 		Models: models,
 	}))
+}
+
+// GetModelCatalog Get model catalog
+// @Summary Get model catalog by platform and category
+// @Description Get a categorized list of models organized by platform and model type
+// @Tags Channel
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse
+// @Router /api/channels/km/models [get]
+func GetKmModels(c *gin.Context) {
+	// 解析JSON常量
+	var catalogData map[string]interface{}
+	if err := json.Unmarshal([]byte(common.KmModelsJSON), &catalogData); err != nil {
+		c.JSON(500, model.SystemError.ToResponse(err))
+		return
+	}
+
+	// 自动计算每个分类的model_count
+	if platforms, ok := catalogData["platforms"].([]interface{}); ok {
+		for _, platform := range platforms {
+			if platformMap, ok := platform.(map[string]interface{}); ok {
+				if categories, ok := platformMap["categories"].([]interface{}); ok {
+					for _, category := range categories {
+						if categoryMap, ok := category.(map[string]interface{}); ok {
+							if models, ok := categoryMap["models"].([]interface{}); ok {
+								categoryMap["model_count"] = len(models)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	c.JSON(200, model.Success.ToResponse(catalogData))
 }

@@ -27,12 +27,13 @@ func GetGroupWithAgents(groupId int64, enable bool) (*Group, error) {
 	}
 
 	// Then get associated agents through resource permissions
+	// Only get enterprise agents (owner_id = 0)
 	var agents []*Agent
 	err := DB.Model(&Agent{}).
 		Distinct("agents.*").
 		Joins("JOIN resource_permissions ON resource_permissions.resource_id = agents.agent_id").
-		Where("resource_permissions.group_id = ? AND resource_permissions.resource_type = ? and enable = ?",
-			groupId, ResourceTypeAgent, enable).
+		Where("resource_permissions.group_id = ? AND resource_permissions.resource_type = ? AND agents.enable = ? AND agents.owner_id = ?",
+			groupId, ResourceTypeAgent, enable, AgentOwnerEnterprise).
 		Order("sort DESC").
 		Order("agent_id DESC").
 		Find(&agents).Error
@@ -92,12 +93,15 @@ func GetGroupsWithAgents(eid int64, groupType int64, offset, limit int) ([]Group
 }
 
 const (
-	USER_GROUP_TYPE          = 1
-	AI_LINKS_TYPE            = 2
-	AGENT_TYPE               = 3
-	INTERNAL_USER_GROUP_TYPE = 4
-	SYSTEM_PROMPT_TYPE       = 5
-	PERSONAL_PROMPT_TYPE     = 6
+	USER_GROUP_TYPE            = 1
+	AI_LINKS_TYPE              = 2
+	AGENT_TYPE                 = 3
+	INTERNAL_USER_GROUP_TYPE   = 4
+	SYSTEM_PROMPT_TYPE         = 5
+	PERSONAL_PROMPT_TYPE       = 6
+	GROUP_TYPE_SKILL           = 7
+	KM_FILE_CHAT_QUICK_COMMAND = 101 // KM AI搜索组
+	KM_FILE_CHAT_SLIDE_COMMAND = 102 // KM 文件聊天组
 )
 
 func CreateGroup(group *Group) error {
@@ -238,7 +242,7 @@ func GetDefaultGroupData() []GroupInfo {
 			{Name: "智谱清言", Logo: "https://hubapi.53ai.com/api/preview/b0072ad41d46626043cf1b2e3b2ce374.png", URL: "https://chatglm.cn/", Description: "Chatglm,千亿参数对话模型,支持多轮对话", Sort: 0},
 			{Name: "豆包", Logo: "https://hubapi.53ai.com/api/preview/d98b75d99fba38975312841a3c85aa72.png", URL: "https://www.doubao.com/", Description: "抖音旗下AI工具，你的智能助手", Sort: 0},
 			{Name: "ChatGPT", Logo: "https://hubapi.53ai.com/api/preview/bcade7d1cebca9273da445ffc8671711.png", URL: "https://chat.openai.com", Description: "Chatgpt.com", Sort: 0},
-			{Name: "通义千问", Logo: "https://hubapi.53ai.com/api/preview/ea1ad076efc73a30c8eaf1e86fc193cc.png", URL: "https://tongyi.aliyun.com", Description: "阿里巴巴旗下的一款智能体机器人，它利用自然语言处理技术，为用户提供智能化的语音交互服务", Sort: 0},
+			{Name: "千问", Logo: "https://hubapi.53ai.com/api/preview/ea1ad076efc73a30c8eaf1e86fc193cc.png", URL: "https://tongyi.aliyun.com", Description: "阿里巴巴旗下的一款智能体机器人，它利用自然语言处理技术，为用户提供智能化的语音交互服务", Sort: 0},
 			{Name: "零一万知", Logo: "https://hubapi.53ai.com/api/preview/f03bced2dfe845dec2d897cffcb3ce1b.png", URL: "https://www.wanzhi.com/", Description: "集AI对话聊天、文档阅读和PPT创作于一体的一站式AI工作平台", Sort: 0},
 			{Name: "讯飞星火", Logo: "https://hubapi.53ai.com/api/preview/4417ab5f7607452ccd8a3174616d7f56.png", URL: "https://xinghuo.xfyun.cn", Description: "懂你的AI助手", Sort: 0},
 			{Name: "文心一言", Logo: "https://hubapi.53ai.com/api/preview/eee853619f4fcbd7f15622198101630c.png", URL: "https://yiyan.baidu.com/", Description: "文心一言是百度研发的知识增强大语言模型，能够与人对话互动，回答问题，协助创作", Sort: 0},

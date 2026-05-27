@@ -11,8 +11,12 @@ import (
 )
 
 type SettingRequest struct {
-	Key   string `json:"key" example:"setting_key"`
+	// 设置键名，支持的类型: third_party_statistic_header, third_party_statistic_css, default_prompt_links, document_application, document_setting, document_js_sdk_setting, km_agents_setting, message_feedback_config
+	Key string `json:"key" example:"setting_key"`
+	// 设置值
 	Value string `json:"value" example:"setting_value"`
+	// 知识库ID，0表示全站/企业级配置
+	LibraryID int64 `json:"library_id" example:"0"`
 }
 
 type UpdateDefaultLinksRequest struct {
@@ -41,9 +45,10 @@ func CreateSetting(c *gin.Context) {
 	}
 
 	setting := model.Setting{
-		Eid:   config.GetEID(c),
-		Key:   req.Key,
-		Value: req.Value,
+		Eid:       config.GetEID(c),
+		Key:       req.Key,
+		Value:     req.Value,
+		LibraryID: req.LibraryID,
 	}
 
 	if err := model.CreateSetting(&setting); err != nil {
@@ -59,6 +64,7 @@ func CreateSetting(c *gin.Context) {
 // @Tags Setting
 // @Accept json
 // @Produce json
+// @Security BearerAuth
 // @Param id path int true "Setting ID"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/settings/{id} [get]
@@ -172,12 +178,38 @@ func GetSettingsByGroup(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(settings))
 }
 
+// @Summary Get Settings by Key
+// @Description Get all settings matching the specified key
+// @Tags Setting
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param key query string true "Setting key to search for"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/settings/by-key [get]
+func GetSettingsByKey(c *gin.Context) {
+	key := c.Query("key")
+	if key == "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("Key parameter is required"))
+		return
+	}
+
+	settings, err := model.GetSettingsByKey(config.GetEID(c), key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(settings))
+}
+
 // @Summary Get setting by key
 // @Description Retrieve a specific setting by its key
 // @Tags Setting
 // @Produce json
 // @Security BearerAuth
 // @Param key path string true "Setting key"
+// @Param library_id query int false "Library ID"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/settings/key/{key} [get]
 func GetSettingByKey(c *gin.Context) {
@@ -185,6 +217,27 @@ func GetSettingByKey(c *gin.Context) {
 	user, err := model.GetLoginUser(c)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.UnauthorizedError.ToResponse(err))
+		return
+	}
+
+	library_id := c.Query("library_id")
+	if library_id != "" {
+		libraryID, err := strconv.ParseInt(library_id, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+			return
+		}
+		setting, err := model.GetSettingByEidAndLibraryAndKey(user.Eid, libraryID, key)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+
+		if setting == nil {
+			c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+			return
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(setting))
 		return
 	}
 	setting, err := model.GetSettingByEidAndKey(user.Eid, key)

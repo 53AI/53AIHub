@@ -2,11 +2,12 @@ package model
 
 // ResourceType defines constants for resource types
 const (
-	ResourceTypeAgent      = "agent"      // Agent resource type
-	ResourceTypeUser       = "user"       // User resource type
-	ResourceTypeDepartment = "department" // Department resource type
-	ResourceTypePrompt     = "prompt"     // Prompt resource type
-	ResourceTypeAILink     = "ai_link"
+	ResourceTypeAgent        = "agent"      // Agent resource type
+	ResourceTypeUser         = "user"       // User resource type
+	ResourceTypeDepartment   = "department" // Department resource type
+	ResourceTypePrompt       = "prompt"     // Prompt resource type
+	ResourceTypeAILink       = "ai_link"
+	ResourceTypeSkillLibrary = "skill_library" // Skill library resource type
 )
 
 // Permission defines constants for permission types
@@ -94,6 +95,39 @@ func GetResourcesByGroupAndType(groupID int64, resourceType string) ([]int64, er
 	}
 
 	return resourceIDs, nil
+}
+
+func GetDistinctResourceIDsByGroupsAndType(groupIDs []int64, resourceType string) ([]int64, error) {
+	if len(groupIDs) == 0 {
+		return []int64{}, nil
+	}
+
+	var resourceIDs []int64
+	err := DB.Model(&ResourcePermission{}).
+		Distinct("resource_id").
+		Where("group_id IN (?) AND resource_type = ?", groupIDs, resourceType).
+		Pluck("resource_id", &resourceIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	if resourceIDs == nil {
+		resourceIDs = []int64{}
+	}
+	return resourceIDs, nil
+}
+
+func GetResourcePermissionGroupIDs(resourceID int64, resourceType string) ([]int64, error) {
+	var groupIDs []int64
+	err := DB.Model(&ResourcePermission{}).
+		Where("resource_id = ? AND resource_type = ?", resourceID, resourceType).
+		Pluck("group_id", &groupIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	if groupIDs == nil {
+		groupIDs = []int64{}
+	}
+	return groupIDs, nil
 }
 
 // DeleteResourcePermissionsByResource

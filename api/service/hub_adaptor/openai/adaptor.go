@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/relay/adaptor/doubao"
+	"github.com/songquanpeng/one-api/relay/adaptor/minimax"
 	"github.com/songquanpeng/one-api/relay/adaptor/novita"
 	"github.com/songquanpeng/one-api/relay/channeltype"
 	"github.com/songquanpeng/one-api/relay/meta"
@@ -25,12 +26,15 @@ import (
 )
 
 type Adaptor struct {
-	ChannelType  int
-	CustomConfig *custom.CustomConfig
+	ChannelType   int
+	CustomConfig  *custom.CustomConfig
+	ChannelConfig string // 添加渠道配置字段，存储原始JSON字符串
 }
 
 func (a *Adaptor) Init(meta *meta.Meta) {
 	a.ChannelType = meta.ChannelType
+	// 从meta中获取渠道配置（如果有的话）
+	// 实际配置会在RelayTextHelper中直接注入
 }
 
 func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
@@ -50,23 +54,17 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 		requestURL = fmt.Sprintf("%s?api-version=%s", requestURL, meta.Config.APIVersion)
 		task := strings.TrimPrefix(requestURL, "/v1/")
 		model_ := meta.ActualModelName
-		model_ = strings.Replace(model_, ".", "", -1)
 		//https://github.com/songquanpeng/one-api/issues/1191
 		// {your endpoint}/openai/deployments/{your azure_model}/chat/completions?api-version={api_version}
 		requestURL = fmt.Sprintf("/openai/deployments/%s/%s", model_, task)
 		return GetFullRequestURL(meta.BaseURL, requestURL, meta.ChannelType), nil
 	case channeltype.Minimax:
-		// Use standard OpenAI-compatible endpoint.
-		// MiniMax's new API at api.minimax.io/v1 supports the standard
-		// /v1/chat/completions format for both M2.x and legacy abab models.
-		// The upstream one-api adaptor used the deprecated /v1/text/chatcompletion_v2
-		// endpoint which is no longer recommended.
-		return GetFullRequestURL(meta.BaseURL, meta.RequestURLPath, meta.ChannelType), nil
+		return minimax.GetRequestURL(meta)
 	case channeltype.Doubao:
 		return doubao.GetRequestURL(meta)
 	case channeltype.Novita:
 		return novita.GetRequestURL(meta)
-	case Hub_model.ChannelApiVolcengine:
+	case Hub_model.ChannelApiVolcengine, Hub_model.ChannelApiVolcengineModel:
 		return volcengine.GetRequestURL(meta)
 	case Hub_model.ChannelApiTypeMaxKB:
 		meta.RequestURLPath = strings.TrimPrefix(meta.RequestURLPath, "/v1")
@@ -102,8 +100,92 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 		request.StreamOptions.IncludeUsage = true
 	}
 
+	// 如果有渠道配置，可以根据配置进行请求调整
+	if a.ChannelConfig != "" {
+		var config map[string]interface{}
+		if err := json.Unmarshal([]byte(a.ChannelConfig), &config); err != nil {
+			logger.SysError("error parsing channel config: " + err.Error())
+		} else {
+			// 根据配置调整请求参数
+			if contextLength, ok := config["context_length"].(float64); ok {
+				// 验证输入是否超过上下文长度限制
+				promptTokens := 0
+				switch relayMode {
+				case relaymode.ChatCompletions:
+					// 使用更精确的token计算器 - 调用通用的token计算函数
+					promptTokens = CountTokenMessages(request.Messages, request.Model)
+				case relaymode.Completions:
+					if str, ok := request.Prompt.(string); ok {
+						promptTokens = CountTokenInput(str, request.Model)
+					} else if arr, ok := request.Prompt.([]interface{}); ok {
+						for _, item := range arr {
+							if str, ok := item.(string); ok {
+								promptTokens += CountTokenInput(str, request.Model)
+							}
+						}
+					}
+				}
+
+				// 如果输入超过了上下文长度限制，返回错误
+				if promptTokens > int(contextLength) {
+					errMsg := fmt.Sprintf("Input length (%d) exceeds context length limit (%.0f)",
+						promptTokens, contextLength)
+					logger.SysError(errMsg)
+					return nil, errors.New(errMsg)
+				}
+			}
+
+			if functionCalling, ok := config["function_calling"]; ok {
+				if enabled, ok := functionCalling.(bool); ok && !enabled {
+					// 如果函数调用被禁用，清除请求中的函数定义
+					request.Functions = nil
+					request.ToolChoice = nil
+				}
+			}
+
+			if vision, ok := config["vision"]; ok {
+				if enabled, ok := vision.(bool); ok && !enabled {
+					// 如果视觉识别被禁用，过滤掉图像输入
+					request.Messages = removeImageContent(request.Messages)
+				}
+			}
+
+			if maxTokens, ok := config["max_tokens"].(float64); ok {
+				// 如果配置了最大token数，设置到请求中
+				// 仅在请求中未设置max_tokens时才使用配置值
+				if request.MaxTokens == 0 {
+					request.MaxTokens = int(maxTokens)
+				}
+			}
+		}
+	}
+
 	a.HandlerUploadFileMessages(request)
+	ApplyTokenLimitForModel(request)
 	return request, nil
+}
+
+// removeImageContent 移除消息中的图像内容
+func removeImageContent(messages []model.Message) []model.Message {
+	for i, message := range messages {
+		if _, ok := message.Content.(string); ok {
+			continue // 纯文本内容无需处理
+		}
+
+		if contentItems, ok := message.Content.([]interface{}); ok {
+			var filteredContent []interface{}
+			for _, item := range contentItems {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					if itemType, exists := itemMap["type"]; exists && itemType == "image_url" {
+						continue // 跳过图像类型内容
+					}
+				}
+				filteredContent = append(filteredContent, item)
+			}
+			messages[i].Content = filteredContent
+		}
+	}
+	return messages
 }
 
 func (a *Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
@@ -170,6 +252,7 @@ func (a *Adaptor) HandlerUploadFileMessages(request *model.GeneralOpenAIRequest)
 
 		queryStr := message.Content.(string)
 		if err := json.Unmarshal([]byte(queryStr), &contentObjs); err != nil {
+			// Unmarshal failed, treat as normal text content
 			newMessages = append(newMessages, message)
 			continue
 		}

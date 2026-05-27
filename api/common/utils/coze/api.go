@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/model"
 )
 
@@ -231,6 +233,9 @@ func (c *CozeApi) GetWorkspaces(provider *model.Provider, pageNum int, pageSize 
 
 // GetPublishedBots retrieves list of published bots
 func (c *CozeApi) GetPublishedBots(provider *model.Provider, spaceID string, pageIndex int, pageSize int) (*PublishedBotsResponse, error) {
+	if decoded, err := hashids.TryParseID(spaceID); err == nil {
+		spaceID = strconv.FormatInt(decoded, 10)
+	}
 	if err := c.RefreshTokenIfNeeded(provider); err != nil {
 		return nil, err
 	}

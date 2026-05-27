@@ -44,7 +44,7 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 			continue
 		}
 
-		response, _ := StreamResponseToOpenAI(&appBuilderResponse)
+		response, finishReason := StreamResponseToOpenAI(&appBuilderResponse)
 		if response == nil {
 			continue
 		}
@@ -52,11 +52,26 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 		response.Model = modelName
 		response.Created = createdTime
 
+		// 检查是否是完成事件
+		isCompletion := appBuilderResponse.IsCompletion != nil && *appBuilderResponse.IsCompletion
+
+		// 如果是完成事件，设置finish_reason
+		if isCompletion || (finishReason != nil && *finishReason != "") {
+			for i := range response.Choices {
+				response.Choices[i].FinishReason = finishReason
+			}
+		}
+
 		err = render.ObjectData(c, response)
 		if err != nil {
 			logger.SysError(err.Error())
 		}
 		channelConversationId = appBuilderResponse.ConversationID
+
+		// 如果是完成事件，跳出循环
+		if isCompletion {
+			break
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -106,8 +121,7 @@ func Handler(c *gin.Context, resp *http.Response, promptTokens int, modelName st
 	return nil, &responseText, channelConversationId
 }
 
-func StreamResponseToOpenAI(appBuilderResponse *Response) (*openai.ChatCompletionsStreamResponse, *Response) {
-	var response *Response
+func StreamResponseToOpenAI(appBuilderResponse *Response) (*openai.ChatCompletionsStreamResponse, *string) {
 	var stopReason string
 	var choice openai.ChatCompletionsStreamResponseChoice
 
@@ -115,15 +129,39 @@ func StreamResponseToOpenAI(appBuilderResponse *Response) (*openai.ChatCompletio
 		choice.Delta.Content = appBuilderResponse.Answer
 	}
 	choice.Delta.Role = "assistant"
-	finishReason := stopReasonAppBuilderOpenAI(&stopReason)
-	if finishReason != "null" {
-		choice.FinishReason = &finishReason
+
+	// 检查是否是完成状态
+	isCompletion := appBuilderResponse.IsCompletion != nil && *appBuilderResponse.IsCompletion
+	var finishReason *string
+
+	if isCompletion {
+		stopReason = "stop" // 默认为自然停止
+		finishReason = &stopReason
+
+		// 检查内容是否因长度限制而停止
+		for _, content := range appBuilderResponse.Content {
+			if content.EventStatus == "FINISHED" && content.EventType == "ResponseCompletedEvent" {
+				// 检查是否有长度相关的事件
+				if strings.Contains(content.EventMessage, "length") ||
+					strings.Contains(content.EventMessage, "max_tokens") ||
+					strings.Contains(content.EventMessage, "context_length") {
+					stopReason = "length"
+					finishReason = &stopReason
+					break
+				}
+			}
+		}
 	}
+
+	if finishReason != nil && *finishReason != "" {
+		choice.FinishReason = finishReason
+	}
+
 	var openaiResponse openai.ChatCompletionsStreamResponse
 	openaiResponse.Object = "chat.completion.chunk"
 	openaiResponse.Choices = []openai.ChatCompletionsStreamResponseChoice{choice}
 	openaiResponse.Id = appBuilderResponse.ConversationID
-	return &openaiResponse, response
+	return &openaiResponse, finishReason
 }
 
 func stopReasonAppBuilderOpenAI(reason *string) string {

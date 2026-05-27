@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/hashids"
 )
 
 type ChannelFileMapping struct {
@@ -50,19 +51,22 @@ func (obj *ObjectStringContent) GetUploadFile() *UploadFile {
 		return nil
 	}
 
-	content := obj.Content
-	if strings.HasPrefix(content, "file_id:") {
-		content = strings.TrimPrefix(content, "file_id:")
-	}
+	content := strings.TrimPrefix(obj.Content, "file_id:")
 
 	fileId, err := strconv.ParseInt(content, 10, 64)
 	if err != nil {
-		return nil
+		// fallback: hashid decode for string ids
+		decodedID, decodeErr := hashids.TryParseID(content)
+		if decodeErr != nil {
+			logger.SysLogf("get upload file failed: invalid file_id format, raw=%s, err=%v", content, decodeErr)
+			return nil
+		}
+		fileId = decodedID
 	}
 
 	file, err := GetUploadFileByID(fileId)
 	if err != nil {
-		logger.SysLogf("get upload file failed", fileId, err)
+		logger.SysLogf("get upload file failed: file not found, raw=%s, file_id=%d, err=%v", content, fileId, err)
 		return nil
 	}
 

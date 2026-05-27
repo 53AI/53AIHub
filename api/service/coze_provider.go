@@ -298,7 +298,7 @@ func (ser *CozeService) CacheBotIconWithUploadFile(botID string, iconURL string,
 	}
 
 	// 生成previewKey
-	previewKey, err := db_model.GetPreviewKey(urlHash, ext)
+	previewKey, err := db_model.GetPreviewKey(urlHash, ext, eid)
 	if err != nil {
 		return "", fmt.Errorf("生成预览键失败: %w", err)
 	}
@@ -334,7 +334,7 @@ func (ser *CozeService) CacheBotIconWithUploadFile(botID string, iconURL string,
 // findUploadFileByHash 根据哈希查找UploadFile记录
 func (ser *CozeService) findUploadFileByHash(hash string) *db_model.UploadFile {
 	var uploadFile db_model.UploadFile
-	if err := db_model.DB.Where("hash = ?", hash).First(&uploadFile).Error; err != nil {
+	if err := db_model.DB.Where("hash = ? AND (source_type = ? OR source_type = '' OR source_type IS NULL)", hash, db_model.UploadFileSourceUserUpload).First(&uploadFile).Error; err != nil {
 		if err.Error() == "record not found" {
 			return nil
 		}

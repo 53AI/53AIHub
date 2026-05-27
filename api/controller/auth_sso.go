@@ -53,7 +53,7 @@ func ApiSSOSSOLogin(c *gin.Context) {
 
 	// 开关关闭：403
 	if !cfg.Enable {
-		c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("拒绝登录"))
+		c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("SSO登录功能未开启"))
 		return
 	}
 
@@ -97,14 +97,14 @@ func ApiSSOSSOLogin(c *gin.Context) {
 	if isEmail {
 		u, err := model.GetUserByEmail(eid, req.Username)
 		if err != nil {
-			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("user not found"))
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("user not found, email not exist"))
 			return
 		}
 		user = u
 	} else {
 		u, err := model.GetUserByMobile(eid, req.Username)
 		if err != nil {
-			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("user not found"))
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("user not found，mobile not exist"))
 			return
 		}
 		user = u

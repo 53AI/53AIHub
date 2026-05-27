@@ -27,8 +27,8 @@ type MemberBinding struct {
 	ID        int64  `json:"id" gorm:"column:id;primaryKey;autoIncrement;comment:'Serial ID'"`
 	MID       int64  `json:"mid" gorm:"column:mid;not null;default:0;comment:'enterprise_member.id'"`
 	EID       int64  `json:"eid" gorm:"column:eid;not null;default:0;comment:'Enterprise ID'"`
-	Name      string `json:"name" gorm:"column:name;not null;default:'';comment:'Name obtained under different authorization scenarios'"`
-	BindValue string `json:"bind_value" gorm:"column:bindvalue;not null;default:'';comment:'WeChat Enterprise, DingTalk unionid'"`
+	Name      string `json:"name" gorm:"column:name;size:255;not null;default:'';comment:'Name obtained under different authorization scenarios'"`
+	BindValue string `json:"bind_value" gorm:"column:bindvalue;size:255;not null;default:'';comment:'WeChat Enterprise, DingTalk unionid'"`
 	Status    int    `json:"status" gorm:"column:status;not null;default:0;comment:'Status'"`
 	From      int    `json:"from" gorm:"column:from;not null;default:0;comment:'Binding source: 0-Default;1-WeChat Enterprise;'"`
 	BaseModel
@@ -108,7 +108,7 @@ func GetMemberBindingByMID(mid int64) ([]*MemberBinding, error) {
 
 func GetMemberBindingByMidAndFrom(mid int64, from int) (*MemberBinding, error) {
 	var binding MemberBinding
-	result := DB.Where("mid =? AND `from` =?", mid, from).First(&binding)
+	result := DB.Where(map[string]interface{}{"mid": mid, "from": from}).First(&binding)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -151,7 +151,7 @@ func GetMemberBindingByDepartmentFromBackend(mid int64, tx *gorm.DB) (*MemberBin
 // GetMemberBindingByBindValue retrieves a member binding by bind value and source
 func GetMemberBindingByBindValue(eid int64, bindValue string, from int) (*MemberBinding, error) {
 	var binding MemberBinding
-	result := DB.Where("eid = ? AND bindvalue = ? AND `from` = ?", eid, bindValue, from).First(&binding)
+	result := DB.Where(map[string]interface{}{"eid": eid, "bindvalue": bindValue, "from": from}).First(&binding)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -169,7 +169,7 @@ func GetMemberBindings(eid int64, from int, status int, offset, limit int) ([]*M
 	query := DB.Model(&MemberBinding{}).Where("eid = ?", eid)
 
 	if from > 0 {
-		query = query.Where("`from` = ?", from)
+		query = query.Where("from = ?", from)
 	}
 
 	if status >= 0 {
@@ -271,7 +271,7 @@ func CountMemberBindings(eid int64, from int) (int64, error) {
 	query := DB.Model(&MemberBinding{}).Where("eid = ?", eid)
 
 	if from > 0 {
-		query = query.Where("`from` = ?", from)
+		query = query.Where("from = ?", from)
 	}
 
 	result := query.Count(&count)
@@ -281,7 +281,7 @@ func CountMemberBindings(eid int64, from int) (int64, error) {
 // GetMemberBindingsBySource retrieves all bindings from a specific source
 func GetMemberBindingsBySource(eid int64, from int) ([]*MemberBinding, error) {
 	var bindings []*MemberBinding
-	result := DB.Where("eid = ? AND `from` = ?", eid, from).Find(&bindings)
+	result := DB.Where("eid = ? AND from = ?", eid, from).Find(&bindings)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, nil

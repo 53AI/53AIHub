@@ -1,12 +1,12 @@
 package service
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
+	"gorm.io/gorm/clause"
 )
 
 type SyncOrganizationParams struct {
@@ -53,33 +53,17 @@ type OrganizationDepartmentRelationRes struct {
 }
 
 func WeComRunSyncOrganization(e *model.Enterprise, params SyncOrganizationParams) error {
-	if config.IS_SAAS {
-		wc, err := model.GetWecomCorp(params.SuiteID, e.WecomCorpID)
-		if err != nil {
-			return err
-		}
-		if wc == nil {
-			return errors.New("wecom corp not found")
-		}
-		return nil
-	} else {
+	if !config.IS_SAAS {
 		return nil
 	}
+	return runWeComSyncOrganization(e, params)
 }
 
 func DingtalkRunSyncOrganization(e *model.Enterprise, params SyncOrganizationParams) error {
-	if config.IS_SAAS {
-		dc, err := model.GetDingtalkCorp(params.SuiteID, e.DingtalkCorpID)
-		if err != nil {
-			return err
-		}
-		if dc == nil {
-			return errors.New("dingtalk corp not found")
-		}
-		return nil
-	} else {
+	if !config.IS_SAAS {
 		return nil
 	}
+	return runDingtalkSyncOrganization(e, params)
 }
 
 func InitFromBackendMemberBinding(eid int64) error {
@@ -101,7 +85,7 @@ func InitFromBackendMemberBinding(eid int64) error {
 	}
 
 	var bindings []*model.MemberBinding
-	err = model.DB.Model(&model.MemberBinding{}).Where("eid = ? AND `from` = ? AND mid IN?", eid, model.DepartmentFromBackend, UserIDs).Find(&bindings).Error
+	err = model.DB.Model(&model.MemberBinding{}).Where(map[string]interface{}{"eid": eid, "from": model.DepartmentFromBackend}).Where("mid IN?", UserIDs).Find(&bindings).Error
 	if err != nil {
 		return err
 	}
@@ -145,7 +129,8 @@ func InitFromBackendMemberBinding(eid int64) error {
 func GetOrganizationalUserList(params OrganizationUserListParams) (*OrganizationUserListResponse, error) {
 	params.Keyword = strings.TrimSpace(params.Keyword)
 	query := model.DB.Model(&model.MemberBinding{}).
-		Where("member_bindings.eid = ? AND member_bindings.`from` = ?", params.EID, params.From)
+		Where(clause.Eq{Column: clause.Column{Table: "member_bindings", Name: "eid"}, Value: params.EID}).
+		Where(clause.Eq{Column: clause.Column{Table: "member_bindings", Name: "from"}, Value: params.From})
 
 	query.Select(`
     member_bindings.*,
@@ -160,19 +145,30 @@ func GetOrganizationalUserList(params OrganizationUserListParams) (*Organization
 `)
 	query.Joins("LEFT JOIN users ON users.user_id = member_bindings.mid AND users.eid = member_bindings.eid")
 	if params.Keyword != "" {
-		query.Where("users.nickname LIKE? OR users.mobile LIKE? OR users.email LIKE? OR member_bindings.bindvalue LIKE?",
-			"%"+params.Keyword+"%", "%"+params.Keyword+"%", "%"+params.Keyword+"%", "%"+params.Keyword+"%")
+		keyword := "%" + params.Keyword + "%"
+		query.Where(model.DB.Where("users.nickname LIKE ?", keyword).
+			Or("users.mobile LIKE ?", keyword).
+			Or("users.email LIKE ?", keyword).
+			Or("member_bindings.bindvalue LIKE ?", keyword))
 	}
 
 	if params.DID != 0 {
-		query.Joins("LEFT JOIN member_department_relations ON member_department_relations.bid = member_bindings.id AND member_department_relations.`from` = member_bindings.`from` AND member_department_relations.eid = member_bindings.eid")
-		query.Where("member_department_relations.did =?", params.DID)
+		// 使用标准 JOIN 语法，让 GORM 自动处理字段名引用
+		query.Joins("LEFT JOIN member_department_relations ON member_department_relations.bid = member_bindings.id AND member_department_relations.eid = member_bindings.eid")
+		query.Where(clause.Eq{
+			Column: clause.Column{Table: "member_department_relations", Name: "from"},
+			Value:  clause.Column{Table: "member_bindings", Name: "from"},
+		})
+		query.Where(clause.Eq{
+			Column: clause.Column{Table: "member_department_relations", Name: "did"},
+			Value:  params.DID,
+		})
 	}
 	if params.UserStatus != -1 {
-		query.Where("users.status =?", params.UserStatus)
+		query.Where("users.status = ?", params.UserStatus)
 	}
 	if params.Status != -1 {
-		query.Where("member_bindings.status =?", params.Status)
+		query.Where("member_bindings.status = ?", params.Status)
 	}
 
 	count := int64(0)
@@ -221,9 +217,16 @@ func (o *OrganizationUserListResponse) LoadDepartmentRelations() error {
 	var relations []*OrganizationDepartmentRelationRes
 	err := model.DB.Model(&model.MemberDepartmentRelation{}).
 		Select("member_department_relations.*, departments.bindvalue, departments.pdid, departments.name, departments.sort, departments.path").
-		Joins("Left Join departments ON departments.did = member_department_relations.did AND departments.eid = member_department_relations.eid AND departments.`from` = member_department_relations.`from`").
+		Joins("Left Join departments ON departments.did = member_department_relations.did AND departments.eid = member_department_relations.eid").
 		Where("member_department_relations.eid=? AND member_department_relations.bid IN?", eid, bindIDs).
-		Where("member_department_relations.`from` =?", from).
+		Where(clause.Eq{
+			Column: clause.Column{Table: "departments", Name: "from"},
+			Value:  clause.Column{Table: "member_department_relations", Name: "from"},
+		}).
+		Where(clause.Eq{
+			Column: clause.Column{Table: "member_department_relations", Name: "from"},
+			Value:  from,
+		}).
 		Find(&relations).Error
 
 	if err != nil {

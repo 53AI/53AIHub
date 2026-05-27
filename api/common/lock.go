@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/model"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -17,6 +18,7 @@ func InitLocker() {
 	} else {
 		LOCKER = NewLocalLock()
 	}
+	model.SetBrowseHistoryLocker(LOCKER)
 }
 
 type Locker interface {

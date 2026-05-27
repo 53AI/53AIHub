@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>53AIHub API Documentation</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { 
+      height: 100%;
+      background: #22272e;
+    }
+    rapi-doc {
+      --font-size-regular: 14px;
+      --font-size-small: 13px;
+    }
+  </style>
+</head>
+<body>
+  <rapi-doc 
+    spec-url="/docs/swagger.json"
+    theme="dark"
+    bg-color="#22272e"
+    text-color="#adbac7"
+    header-color="#2d333b"
+    primary-color="#e24329"
+    nav-bg-color="#1c2128"
+    nav-text-color="#adbac7"
+    nav-hover-bg-color="#2d333b"
+    nav-accent-color="#f05033"
+    nav-item-spacing="compact"
+    render-style="read"
+    schema-style="table"
+    schema-expand-level="1"
+    show-header="false"
+    show-info="true"
+    allow-authentication="true"
+    allow-spec-url-load="false"
+    allow-spec-file-load="false"
+    allow-server-selection="true"
+    allow-search="true"
+    allow-advanced-search="true"
+    sort-tags="true"
+    sort-endpoints-by="path"
+    layout="column"
+    default-api-server=""
+    response-area-height="400px"
+    font-size="default"
+    regular-font="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif"
+    mono-font="'JetBrains Mono', 'Fira Code', Consolas, monospace"
+    style="height:100vh; overflow:auto;"
+  ></rapi-doc>
+  <script src="/api/libs/rapidoc-min.js"></script>
+</body>
+</html>

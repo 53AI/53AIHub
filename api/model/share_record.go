@@ -23,7 +23,7 @@ type ShareRecord struct {
 	// message_ids 形如 "12,34,57"：对 message_ids 去重+升序后拼接，用于可读性与解析
 	MessageIDs     string `json:"message_ids" gorm:"column:message_ids;type:varchar(2048);not null"`
 	// normalized_hash: 对规范化后的 message_ids 进行哈希（sha256 hex），用于唯一去重
-	NormalizedHash string `json:"normalized_hash" gorm:"column:normalized_hash;type:char(64);not null;index:uniq_eid_convid_hash,unique"`
+	NormalizedHash string `json:"normalized_hash" gorm:"column:normalized_hash;size:64;not null;index:uniq_eid_convid_hash,unique"`
 	BaseModel
 }
 

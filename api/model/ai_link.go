@@ -104,7 +104,7 @@ func GetAILinksGroupedBySort(eid int64) ([]AILink, error) {
 		Select("groups.sort AS group_sort, ai_links.id, ai_links.eid, ai_links.group_id, ai_links.name, ai_links.logo, ai_links.url, ai_links.description, ai_links.sort, ai_links.created_by, ai_links.created_time, ai_links.updated_time, ai_links.shared_account").
 		Joins("JOIN ai_links ON groups.group_id = ai_links.group_id AND groups.eid = ai_links.eid").
 		Where("ai_links.eid = ?", eid).
-		Order("group_sort DESC, ai_links.sort DESC").
+		Order("group_sort DESC, sort DESC").
 		Scan(&results).Error
 
 	if err != nil {

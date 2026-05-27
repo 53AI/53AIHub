@@ -10,9 +10,9 @@ import (
 
 // Department source constants
 const (
-	DepartmentFromBackend   = 0 // Created from Backend
-	DepartmentFromWecom     = 1 // Imported from WecomChat
-	DepartmentFromDingtalk  = 2 // Imported from DingTalk
+	DepartmentFromBackend  = 0 // Created from Backend
+	DepartmentFromWecom    = 1 // Imported from WecomChat
+	DepartmentFromDingtalk = 2 // Imported from DingTalk
 )
 
 // Department status constants
@@ -33,11 +33,11 @@ type Department struct {
 	DID       int64  `json:"did" gorm:"column:did;primaryKey;autoIncrement;comment:'Department ID'"`
 	PDID      int64  `json:"pdid" gorm:"column:pdid;not null;default:0;comment:'Parent Department ID'"`
 	EID       int64  `json:"eid" gorm:"column:eid;not null;default:0;comment:'Enterprise ID'"`
-	Name      string `json:"name" gorm:"column:name;not null;default:'';comment:'Department Name'"`
-	Path      string `json:"path" gorm:"column:path;not null;default:'';comment:'Department Path'"`
+	Name      string `json:"name" gorm:"column:name;size:255;not null;default:'';comment:'Department Name'"`
+	Path      string `json:"path" gorm:"column:path;size:512;not null;default:'';comment:'Department Path'"`
 	Sort      int    `json:"sort" gorm:"column:sort;not null;default:0;comment:'Sort Order'"`
 	From      int    `json:"from" gorm:"column:from;not null;default:0;comment:'Source: 0-Backend, 1-Enterprise WeChat'"`
-	BindValue string `json:"bind_value" gorm:"column:bindvalue;not null;default:'';comment:'Source Platform Binding Value'"`
+	BindValue string `json:"bind_value" gorm:"column:bindvalue;size:255;not null;default:'';comment:'Source Platform Binding Value'"`
 	BaseModel
 }
 
@@ -146,10 +146,10 @@ func GetDepartmentByID(eid int64, did int64) (*Department, error) {
 	return &dept, nil
 }
 
-// GetDepartmentsByEID retrieves all departments for a specific enterprise
+// GetDepartmentsByEID retrieves departments by EID and source
 func GetDepartmentsByEID(eid int64, from int) ([]*Department, error) {
 	var departments []*Department
-	result := DB.Where("eid = ? and `from` = ?", eid, from).Order("sort DESC").Find(&departments)
+	result := DB.Where(map[string]interface{}{"eid": eid, "from": from}).Order("sort DESC").Find(&departments)
 	if result.Error != nil {
 		return nil, result.Error
 	}

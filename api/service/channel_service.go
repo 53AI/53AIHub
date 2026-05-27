@@ -67,7 +67,7 @@ func GetChannelWithTokenRefresh(ctx context.Context, eid int64, channelType int,
 				logger.Errorf(ctx, "refresh token failed: %s", err.Error())
 				continue
 			}
-			logger.SysLogf("channel token update success, channel_id=", channel.ChannelID)
+			logger.SysLogf("channel token update success, channel_id=%d", channel.ChannelID)
 		}
 
 		return channel, nil

@@ -65,6 +65,16 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 	} else {
 		err, responseText, channelConversationId = Handler(c, resp)
 	}
+
+	// 设置响应内容到上下文，以便GetResponseContent函数可以获取
+	if responseText != nil {
+		c.Set("tencent_response_content", *responseText)
+	}
+
+	if a.CustomConfig != nil {
+		a.CustomConfig.ConversationId = channelConversationId
+	}
+
 	if responseText != nil {
 		usage = &model.Usage{
 			PromptTokens:     meta.PromptTokens,
@@ -73,9 +83,6 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 		}
 	} else {
 		usage = &model.Usage{}
-	}
-	if a.CustomConfig != nil {
-		a.CustomConfig.ConversationId = channelConversationId
 	}
 	return
 }

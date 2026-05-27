@@ -311,7 +311,7 @@ func DepartmentBindMember(c *gin.Context) {
 		return
 	}
 
-	err = model.DB.Where("eid =? AND id =? AND `from` =? AND mid = 0", eid, bid, from).First(&memberBinding).Error
+	err = model.DB.Where(map[string]interface{}{"eid": eid, "id": bid, "from": from, "mid": 0}).First(&memberBinding).Error
 	if err != nil || memberBinding == nil {
 		c.JSON(http.StatusBadRequest, model.NotFound.ToResponse(err))
 		return

@@ -4,10 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
@@ -74,17 +76,21 @@ func CozeCallBack(c *gin.Context) {
 	}
 
 	// Determine scheme based on TLS or forwarded headers
-	scheme := "https"
-
-	// 这里是因为coze 就是需要二次验证，但是 nginx 反向代理把 https 的请求换成了 http，所以异常，现在强制所有的都是 https
-	// if c.Request.TLS != nil ||
-	// 	strings.ToLower(c.Request.Header.Get("X-Forwarded-Proto")) == "https" ||
-	// 	strings.ToLower(c.Request.Header.Get("X-Forwarded-Protocol")) == "https" ||
-	// 	strings.ToLower(c.Request.Header.Get("X-Forwarded-Ssl")) == "on" ||
-	// 	strings.ToLower(c.Request.Header.Get("X-Url-Scheme")) == "https" ||
-	// 	c.Request.Header.Get("X-Forwarded-Port") == "443" {
-	// 	scheme = "https"
-	// }
+	// 这里还是恢复回这个判断，因为这样才兼容http和https，不过注意nginx返向代理一定要配置原始协议转发过来（如下）
+	// proxy_set_header X-Real-IP $remote_addr;
+	// proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+	// proxy_set_header X-Forwarded-Proto $scheme;  # 关键配置：传递原始协议
+	// proxy_set_header X-Forwarded-Protocol $scheme;
+	// proxy_set_header X-Url-Scheme $scheme;
+	scheme := "http"
+	if c.Request.TLS != nil ||
+		strings.ToLower(c.Request.Header.Get("X-Forwarded-Proto")) == "https" ||
+		strings.ToLower(c.Request.Header.Get("X-Forwarded-Protocol")) == "https" ||
+		strings.ToLower(c.Request.Header.Get("X-Forwarded-Ssl")) == "on" ||
+		strings.ToLower(c.Request.Header.Get("X-Url-Scheme")) == "https" ||
+		c.Request.Header.Get("X-Forwarded-Port") == "443" {
+		scheme = "https"
+	}
 
 	// Build callback URL with proper host (including port if non-standard)
 	callbackUrl := scheme + "://" + c.Request.Host + c.Request.URL.Path
@@ -147,10 +153,21 @@ func CozeCallBack(c *gin.Context) {
 			return
 		}
 	}
+	var domain string
 
-	// Redirect to frontend page
+	if config.IS_SAAS {
+		domain = os.Getenv("DOMAIN")
+		if domain == "" {
+			domain = "kmmix.53ai.com"
+		}
+	} else {
+		// Redirect to frontend page
+		domain = c.Request.Host
+
+	}
 	redirectURL := fmt.Sprintf(scheme+"://%s/console/?is_authorized=%t&provider_id=%d&provider_type=%d",
-		c.Request.Host, provider.IsAuthorized, provider.ProviderID, provider.ProviderType)
+		domain, provider.IsAuthorized, provider.ProviderID, provider.ProviderType)
+
 	c.Redirect(http.StatusFound, redirectURL)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))

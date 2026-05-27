@@ -174,7 +174,7 @@ func SmsLogin(c *gin.Context) {
 		return
 	}
 
-	redisKey := fmt.Sprintf("Api::CheckVerificationCode:%s", req.Mobile)
+	redisKey := fmt.Sprintf("Api:CheckVerificationCode:%s", req.Mobile)
 	code, err := common.RedisGet(redisKey)
 	if err != nil || code != req.VerifyCode {
 		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToNewErrorResponse(model.InvalidVerificationCode))
@@ -243,7 +243,7 @@ func PasswordRegister(c *gin.Context) {
 			return
 		}
 
-		redisKey := fmt.Sprintf("Api::CheckVerificationCode:%s", username)
+		redisKey := fmt.Sprintf("Api:CheckVerificationCode:%s", username)
 		code, err := common.RedisGet(redisKey)
 		if err != nil || code != userRequest.VerifyCode {
 			c.JSON(http.StatusBadRequest, model.InvalidVerificationCodeError.ToNewErrorResponse(model.InvalidVerificationCode))
@@ -292,15 +292,26 @@ func PasswordRegister(c *gin.Context) {
 	}
 
 	var theUser model.User
+	isFirstUser := false
 	if err = model.DB.Where("eid = ?", eid).First(&theUser).Error; err != nil && err.Error() == "record not found" {
 		// 一个站点没有用户，视为初始化，是创建者
 		user.Role = model.RoleCreatorUser
+		user.Type = model.UserTypeInternal
+		isFirstUser = true
 	}
 
 	err = user.Create()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ParamError.ToErrorResponse(err))
 		return
+	}
+
+	// 首个用户作为创建者时，触发统一的后置初始化流程（本地/saas 共用）
+	if isFirstUser {
+		if err = service.EnsureEnterprisePostInit(eid, &user); err != nil {
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(LoginResponse{
@@ -480,6 +491,7 @@ func DeleteEnterpriseUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
+	service.InvalidateInternalUserListCache(eid)
 
 	var module uint8
 	module = model.SystemLogModuleRegistered
@@ -567,6 +579,8 @@ func UpdateEnterpriseUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.ParamError.ToErrorResponse(err))
 		return
 	}
+
+	service.InvalidateInternalUserListCache(user.Eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
@@ -969,7 +983,7 @@ type InternalUserInfo struct {
 	Username string  `json:"username" binding:"required" example:"john@example.com"`
 	Nickname string  `json:"nickname" binding:"required" example:"John Doe"`
 	Did      int64   `json:"did" binding:"required" example:"1"`
-	Dids     []int64 `json:"dids" example:"[1,2,3]"`
+	Dids     []int64 `json:"dids" example:"1,2,3"`
 	Password string  `json:"password" binding:"required" example:"password123"`
 }
 
@@ -1120,7 +1134,7 @@ func RegisterUserToInternal(c *gin.Context) {
 // InternalUserRequest 定义获取内部用户列表的请求参数
 type InternalUserRequest struct {
 	Keyword string `json:"keyword" form:"keyword" example:"张三"`  // 关键词，用于搜索部门名称或用户昵称/手机号
-	Status  int    `json:"status" form:"status" example:"-1""`   // 用户状态，-1表示全部，0未加入，1已加入，2被禁用
+	Status  int    `json:"status" form:"status" example:"-1"`    // 用户状态，-1表示全部，0未加入，1已加入，2被禁用
 	Offset  int    `json:"offset" form:"offset" example:"0"`     // 分页偏移量
 	Limit   int    `json:"limit" form:"limit" example:"10"`      // 每页数量
 	DID     int64  `json:"did" form:"did" example:"0"`           // 部门ID，0表示不按部门筛选
@@ -1129,10 +1143,7 @@ type InternalUserRequest struct {
 }
 
 // InternalUserResponse 定义内部用户列表的响应结构
-type InternalUserResponse struct {
-	Count int64         `json:"count"` // 总数量
-	Users []*model.User `json:"users"` // 用户列表
-}
+type InternalUserResponse = service.InternalUserListResponse
 
 // GetInternalUsers 获取内部用户列表
 // @Summary 获取内部用户列表
@@ -1174,13 +1185,13 @@ func GetInternalUsers(c *gin.Context) {
 	if req.Offset < 0 {
 		req.Offset = 0
 	}
-	if req.Status < 0 {
+	if c.Query("status") == "" || req.Status < 0 {
 		req.Status = -1 // 默认查询全部状态
 	}
 
 	// 调用服务层获取内部用户列表
 	userService := service.UserService{}
-	count, users, err := userService.GetInternalUsersWithPagination(
+	result, err := userService.GetInternalUsersWithPagination(
 		eid,
 		req.Keyword,
 		req.Status,
@@ -1197,10 +1208,7 @@ func GetInternalUsers(c *gin.Context) {
 	}
 
 	// 返回处理结果
-	c.JSON(http.StatusOK, model.Success.ToResponse(InternalUserResponse{
-		Count: count,
-		Users: users,
-	}))
+	c.JSON(http.StatusOK, model.Success.ToResponse(result))
 }
 
 // UpdateUserStatus updates the user status
@@ -1270,6 +1278,7 @@ func UpdateUserStatus(c *gin.Context) {
 		IP:       utils.GetClientIP(c),
 	}
 	model.CreateSystemLog(&log)
+	service.InvalidateInternalUserListCache(eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
@@ -1484,17 +1493,18 @@ func UpdateInternalUser(c *gin.Context) {
 		utils.GetClientIP(c),
 		fieldMap,
 	)
+	service.InvalidateInternalUserListCache(eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
 
 // ResetPasswordRequest 重置密码请求结构体
 type ResetPasswordRequest struct {
-	Mobile          string `json:"mobile"`                                // 手机号（与邮箱二选一）
-	Email           string `json:"email"`                                 // 邮箱（与手机号二选一）
-	VerifyCode      string `json:"verify_code" binding:"required"`        // 验证码
-	NewPassword     string `json:"new_password" binding:"required,min=6"` // 新密码（至少6位）
-	ConfirmPassword string `json:"confirm_password" binding:"required"`   // 确认新密码
+	Mobile          string `json:"mobile"`                                           // 手机号（与邮箱二选一）
+	Email           string `json:"email"`                                            // 邮箱（与手机号二选一）
+	VerifyCode      string `json:"verify_code" binding:"required"`                   // 验证码
+	NewPassword     string `json:"new_password" binding:"required,min=8,max=20"`     // 新密码（8-20位）
+	ConfirmPassword string `json:"confirm_password" binding:"required,min=8,max=20"` // 确认新密码
 }
 
 // Logout 用户登出
@@ -1558,14 +1568,18 @@ func Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse("登出成功"))
 }
 
-// ResetPassword 重置用户密码
-// @Summary 重置用户密码
-// @Description 通过手机号或邮箱验证码重置密码
+// ResetPassword 重置密码
+// @Summary 重置密码
+// @Description 用户通过手机或邮箱验证码重置密码
 // @Tags User
 // @Accept json
 // @Produce json
 // @Param request body ResetPasswordRequest true "重置密码请求"
-// @Success 200 {object} model.CommonResponse "密码重置成功"
+// @Success 200 {object} model.CommonResponse
+// @Failure 400 {object} model.CommonResponse "请求参数错误"
+// @Failure 401 {object} model.CommonResponse "验证码错误"
+// @Failure 404 {object} model.CommonResponse "用户不存在"
+// @Failure 500 {object} model.CommonResponse "服务器错误"
 // @Router /api/reset_password [post]
 func ResetPassword(c *gin.Context) {
 	var req ResetPasswordRequest
@@ -1574,74 +1588,56 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
-	user, err := model.GetLoginUser(c)
-	if err == nil {
-		if req.Mobile != "" {
-			req.Mobile = user.Mobile
-		}
-		if req.Email != "" {
-			req.Email = user.Email
-		}
-	}
-
-	// 验证至少提供手机号或邮箱
-	if req.Mobile == "" && req.Email == "" {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(model.InvalidMobileOrEmail))
-		return
-	}
-
-	// 验证新密码一致性
 	if req.NewPassword != req.ConfirmPassword {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(model.PasswordNotMatch))
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("新密码和确认密码不一致"))
 		return
 	}
 
-	// 验证格式
-	validMobile := req.Mobile != "" && helper.IsValidPhone(req.Mobile)
-	validEmail := req.Email != "" && helper.IsValidEmail(req.Email)
-	if !validMobile && !validEmail {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(model.InvalidMobileOrEmail))
+	// 判定账号类型：手机号或邮箱（二选一）
+	isMobile := req.Mobile != "" && helper.IsValidPhone(req.Mobile)
+	isEmail := req.Email != "" && helper.IsValidEmail(req.Email)
+	if !isMobile && !isEmail {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(model.InvalidMobileOrEmail))
 		return
 	}
 
-	// 验证验证码
-	var code string
-	if validMobile {
-		// 目前 saas 版要求是这样
-		redisKey := fmt.Sprintf("Api::CheckVerificationCode:%s", req.Mobile)
+	// 校验验证码
+	var (
+		code string
+		err  error
+	)
+	if isMobile {
+		redisKey := fmt.Sprintf("Api:CheckVerificationCode:%s", req.Mobile)
 		code, err = common.RedisGet(redisKey)
 	} else {
-		// 邮箱验证码从数据库查询
 		var vc model.VerificationCode
 		err = model.DB.Where("target = ? AND type = ? AND code = ?", req.Email, model.VerificationCodeTypeEmail, req.VerifyCode).First(&vc).Error
 		if err == nil {
 			code = vc.Code
 		}
 	}
-
 	if err != nil || code != req.VerifyCode {
-		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToNewErrorResponse(model.InvalidVerificationCode))
+		c.JSON(http.StatusBadRequest, model.InvalidVerificationCodeError.ToResponse(model.InvalidVerificationCode))
 		return
 	}
 
-	if user == nil {
-		eid := config.GetEID(c)
-		// 查询用户
-		query := model.DB
-		if validMobile {
-			query = query.Where("eid = ? AND mobile = ?", eid, req.Mobile)
+	// 查询站点用户
+	eid := config.GetEID(c)
+	var user *model.User
+	query := model.DB.Where("eid = ?", eid)
+	if isMobile {
+		query = query.Where("mobile = ?", req.Mobile)
+	} else {
+		query = query.Where("email = ?", req.Email)
+	}
+	err = query.First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse("用户不存在"))
 		} else {
-			query = query.Where("eid = ? AND email = ?", eid, req.Email)
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		}
-		err = query.First(&user).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("User does not exist"))
-			} else {
-				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
-			}
-			return
-		}
+		return
 	}
 
 	// 加密新密码，并更新用户
@@ -1661,7 +1657,7 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, model.Success.ToResponse("Password reset successful"))
+	c.JSON(http.StatusOK, model.Success.ToResponse("密码重置成功"))
 }
 
 // UpdateUserMobileRequest 更新用户手机号请求结构体
@@ -1707,7 +1703,7 @@ func UpdateUserMobile(c *gin.Context) {
 	}
 
 	if user.Mobile != "" {
-		oldMobileRedisKey := fmt.Sprintf("Api::CheckVerificationCode:%s", user.Mobile)
+		oldMobileRedisKey := fmt.Sprintf("Api:CheckVerificationCode:%s", user.Mobile)
 		oldCode, err := common.RedisGet(oldMobileRedisKey)
 		if err != nil || oldCode != req.OldCode {
 			c.JSON(http.StatusUnauthorized, model.AuthFailed.ToNewErrorResponse(model.InvalidVerificationCode))
@@ -1722,7 +1718,7 @@ func UpdateUserMobile(c *gin.Context) {
 	}
 
 	// 验证新手机号验证码（Redis）
-	newMobileRedisKey := fmt.Sprintf("Api::CheckVerificationCode:%s", req.NewMobile)
+	newMobileRedisKey := fmt.Sprintf("Api:CheckVerificationCode:%s", req.NewMobile)
 	newCode, err := common.RedisGet(newMobileRedisKey)
 	if err != nil || newCode != req.NewCode {
 		c.JSON(http.StatusUnauthorized, model.AuthFailed.ToNewErrorResponse(model.InvalidVerificationCode))
@@ -1746,6 +1742,8 @@ func UpdateUserMobile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
+
+	service.InvalidateInternalUserListCache(user.Eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
@@ -1890,15 +1888,14 @@ func SetUserToDefaultSubscription(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
 
-
- // IsInit checks whether the system has been initialized (whether a user exists for eid=1)
- // @Summary Check initialization status
- // @Description Returns true if the system is initialized (exists a user with eid=1), otherwise false
- // @Tags System
- // @Accept json
- // @Produce json
- // @Success 200 {object} model.CommonResponse{data=bool} "Success"
- // @Router /api/is_init [get]
+// IsInit checks whether the system has been initialized (whether a user exists for eid=1)
+// @Summary Check initialization status
+// @Description Returns true if the system is initialized (exists a user with eid=1), otherwise false
+// @Tags System
+// @Accept json
+// @Produce json
+// @Success 200 {object} model.CommonResponse{data=bool} "Success"
+// @Router /api/is_init [get]
 func IsInit(c *gin.Context) {
 	var user model.User
 	if err := model.DB.Where("eid = ?", 1).First(&user).Error; err != nil {

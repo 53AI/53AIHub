@@ -249,18 +249,24 @@ func DeleteUser(eid int64, user_id int64) error {
 
 	if user.Type == UserTypeInternal {
 		var binds []*MemberBinding
-		tx.Where("eid = ? AND mid = ?", eid, user_id).Find(&binds)
+		if err := tx.Where("eid = ? AND mid = ?", eid, user_id).Find(&binds).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
 		if len(binds) > 0 {
 			for _, bind := range binds {
 				if bind.From == DepartmentFromBackend {
-					err := tx.Where("eid = ? AND bid = ? AND `from` = ? ", eid, bind.ID, DepartmentFromBackend).Delete(&MemberDepartmentRelation{}).Error
+					err := tx.Where(map[string]interface{}{"eid": eid, "bid": bind.ID, "from": DepartmentFromBackend}).Delete(&MemberDepartmentRelation{}).Error
 					if err != nil {
 						tx.Rollback()
 						return err
 					}
-					tx.Where("eid = ? AND id = ?", eid, bind.ID).Delete(&MemberBinding{})
+					if err := tx.Where("eid = ? AND id = ?", eid, bind.ID).Delete(&MemberBinding{}).Error; err != nil {
+						tx.Rollback()
+						return err
+					}
 				} else if bind.From == DepartmentFromWecom {
-					err := tx.Model(&MemberBinding{}).Where("eid = ? AND id = ?", eid, bind.ID).Updates(
+					err := tx.Model(&MemberBinding{}).Where(map[string]interface{}{"eid": eid, "id": bind.ID}).Updates(
 						map[string]interface{}{
 							"mid":    0,
 							"status": MemberBindingStatusInactive,
@@ -272,6 +278,17 @@ func DeleteUser(eid int64, user_id int64) error {
 				}
 			}
 		}
+	}
+
+	if err := tx.Where("resource_type = ? AND resource_id = ?", ResourceTypeUser, user_id).
+		Delete(&ResourcePermission{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := DeletePermissionsBySubject(tx, eid, SUBJECT_TYPE_USER, user_id); err != nil {
+		tx.Rollback()
+		return err
 	}
 
 	if err := tx.Where("eid = ? AND user_id = ?", eid, user_id).Delete(&User{}).Error; err != nil {
@@ -439,13 +456,29 @@ func IsUserExistsByAccount(eid int64, account string) (bool, error) {
 }
 
 // LoadDepartments 加载用户关联的部门信息
+// LoadDepartments 加载用户关联的部门信息
 func (u *User) LoadDepartments(from int) error {
 	var departments []Department
+
+	// 1. 获取当前数据库兼容的列名引用字符串
+	// MySQL 返回: `from`
+	// PGSQL 返回: "from"
+	qFrom := DB.Statement.Quote("from")
+
+	// 2. 使用 fmt.Sprintf 动态构建 JOIN 语句，替换掉硬编码的符号
+	// 注意：这里的 %s 会被替换为 qFrom
+	joinBindings := fmt.Sprintf(
+		"JOIN member_bindings ON member_department_relations.bid = member_bindings.id AND member_bindings.eid = departments.eid AND member_bindings.%s = member_department_relations.%s",
+		qFrom, qFrom,
+	)
+
 	err := DB.Table("departments").
 		Joins("JOIN member_department_relations ON departments.did = member_department_relations.did AND member_department_relations.eid = departments.eid").
-		Joins("JOIN member_bindings ON member_department_relations.bid = member_bindings.id AND member_bindings.eid = departments.eid AND member_bindings.`from` = member_department_relations.`from`").
-		Where("member_bindings.mid = ? AND departments.eid = ? AND member_department_relations.`from` = ?",
-			u.UserID, u.Eid, from).Find(&departments).Error
+		Joins(joinBindings). // 使用动态构建的 join 语句
+		Where("member_bindings.mid = ? AND departments.eid = ?", u.UserID, u.Eid).
+		// 3. 联表字段 from 不能走 map，否则 GORM 会把带点号的键误组装成 departments.member_department_relations.from
+		Where(fmt.Sprintf("member_department_relations.%s = ?", qFrom), from).
+		Find(&departments).Error
 
 	if err == nil && len(departments) > 0 {
 		u.Departments = departments
@@ -458,7 +491,7 @@ func (u *User) LoadMemberBindings(from int) error {
 	if u.UserID == 0 {
 		return nil
 	}
-	err := DB.Where("mid = ? AND eid = ? AND `from`=?", u.UserID, u.Eid, from).
+	err := DB.Where(map[string]interface{}{"mid": u.UserID, "eid": u.Eid, "from": from}).
 		Find(&memberBindings).Error
 	if err == nil && len(memberBindings) > 0 {
 		u.MemberBindings = memberBindings
@@ -482,9 +515,14 @@ func (u *User) GetUserGroupIds() ([]int64, error) {
 		if err != nil {
 			return nil, err
 		}
+		var bids []int64
+		err = DB.Model(&MemberBinding{}).Where("eid = ? AND bindvalue = ?", u.Eid, fmt.Sprintf("%d", u.UserID)).Pluck("id", &bids).Error
+		if err != nil {
+			return nil, err
+		}
 
 		var dids []int64
-		err = DB.Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid = ?", u.Eid, u.UserID).Pluck("did", &dids).Error
+		err = DB.Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid in ?", u.Eid, bids).Pluck("did", &dids).Error
 		if err != nil {
 			return nil, err
 		}
@@ -577,4 +615,49 @@ func (user *User) InvalidateAccessToken() error {
 
 func IsAdmin(role int64) bool {
 	return role >= RoleAdminUser
+}
+
+// GetUsersByIDs 根据用户ID数组批量获取用户信息
+func GetUsersByIDs(userIDs []int64) ([]*User, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	var users []*User
+	err := DB.Where("user_id IN ?", userIDs).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+func GetUserMapByIDs(userIDs []int64) (map[int64]*User, error) {
+	userMap := make(map[int64]*User)
+	users, err := GetUsersByIDs(userIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		userMap[user.UserID] = user
+	}
+	return userMap, nil
+}
+
+// GetUsersByIDsAndEid 根据用户ID数组和EID批量获取用户信息
+func GetUsersByIDsAndEid(eid int64, userIDs []int64) ([]*User, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	var users []*User
+	err := DB.Where("eid = ? AND user_id IN ?", eid, userIDs).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }

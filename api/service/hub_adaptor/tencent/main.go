@@ -19,7 +19,7 @@ import (
 func Handler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusCode, *string, string) {
 	var tencentResp TencentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tencentResp); err != nil {
-		return openai.ErrorWrapper(fmt.Errorf("failed to decode response: %w"), "bad_response_format", http.StatusInternalServerError), nil, ""
+		return openai.ErrorWrapper(fmt.Errorf("failed to decode response: %w", err), "bad_response_format", http.StatusInternalServerError), nil, ""
 	}
 
 	// 检查错误
@@ -114,7 +114,7 @@ func StreamHandler(c *gin.Context, meta *meta.Meta, resp *http.Response) (*model
 	}
 
 	if err := scanner.Err(); err != nil {
-		return openai.ErrorWrapper(fmt.Errorf("failed to read stream: %w"), "stream_error", http.StatusInternalServerError), nil, ""
+		return openai.ErrorWrapper(fmt.Errorf("failed to read stream: %w", err), "stream_error", http.StatusInternalServerError), nil, ""
 	}
 
 	return nil, &responseText, sessionID

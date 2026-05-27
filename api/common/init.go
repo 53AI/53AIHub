@@ -24,7 +24,9 @@ func printHelp() {
 }
 
 func Init() {
-	flag.Parse()
+	if !flag.Parsed() {
+		flag.Parse()
+	}
 
 	if *PrintHelp {
 		printHelp()
