@@ -3,6 +3,7 @@ package rag
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -37,9 +38,14 @@ type SearchRequest struct {
 	ChunkTypes               []string                `json:"chunk_types"`
 	SearchConfig             *model.SearchConfigData `json:"search_config,omitempty"`
 	EntityKeywords           []string                `json:"entity_keywords,omitempty"`
+	DocumentType             string                  `json:"document_type,omitempty"`
 	KnowledgeChunkIDs        []int64                 `json:"knowledge_chunk_ids,omitempty"`
 	SkipEntityScopeNarrowing bool                    `json:"skip_entity_scope_narrowing,omitempty"`
 	trace                    *searchTimingRecorder
+	// 预计算的向量（用于多库并发搜索时避免重复调用 embedding）
+	precomputedQueryVector []float32
+	// 预计算的配置（用于多库并发搜索时避免重复获取配置）
+	precomputedChunkConfig *ChunkConfig
 }
 
 // SearchResponse 搜索响应
@@ -73,8 +79,12 @@ var (
 	searchEntityVectorMatchFn = func(s *SearchService, eid int64, keywords []string) ([]model.Entity, error) {
 		return s.vectorMatchEntities(eid, keywords)
 	}
-	singleVectorSearchFn = func(s *SearchService, eid int64, req *SearchRequest, configService *ChunkConfigService) ([]SearchResultItem, error) {
+	defaultSingleVectorSearchFn = func(s *SearchService, eid int64, req *SearchRequest, configService *ChunkConfigService) ([]SearchResultItem, error) {
 		return s.singleVectorSearch(eid, req, configService)
+	}
+	singleVectorSearchFn        = defaultSingleVectorSearchFn
+	searchBatchFallbackSearchFn = func(s *SearchService, eid int64, req *SearchRequest, userID *int64) (*SearchResponse, error) {
+		return s.Search(eid, req, userID)
 	}
 )
 
@@ -108,18 +118,25 @@ type SearchResultItem struct {
 	FilePath         string  `json:"file_path,omitempty"`
 	LibraryName      string  `json:"library_name,omitempty"`
 	LibraryIcon      string  `json:"library_icon,omitempty"`
+	FileCreatedAt    int64   `json:"file_created_at,omitempty"`
+	SpaceID          int64   `json:"space_id,omitempty"`
+	SpaceName        string  `json:"space_name,omitempty"`
 }
 
 // FileInfo 文件信息辅助结构体
 type FileInfo struct {
-	FileName  string
-	FilePath  string
-	IsDeleted bool
+	FileName      string
+	FilePath      string
+	FileCreatedAt int64
+	IsDeleted     bool
 }
 
 // LibraryInfo 知识库信息辅助结构体
 type LibraryInfo struct {
 	LibraryName string
+	LibraryIcon string
+	SpaceID     int64
+	SpaceName   string
 }
 
 // NewSearchService 创建检索服务
@@ -428,7 +445,7 @@ func (s *SearchService) SearchBatch(ctx context.Context, eid int64, reqs []*Sear
 			Collection:     collection,
 			Query:          req.Query,
 			Vector:         queryVectors32[i],
-			TopK:           req.TopK * 2,
+			TopK:           req.TopK,
 			Filters:        filter,
 			SearchParams:   map[string]interface{}{},
 			ScoreThreshold: 0,
@@ -583,19 +600,58 @@ func previewQueriesForDebug(reqs []*SearchRequest, limit int) []string {
 }
 
 func (s *SearchService) searchBatchFallback(ctx context.Context, eid int64, reqs []*SearchRequest, userID *int64) ([]BatchSearchResult, error) {
-	results := make([]BatchSearchResult, 0, len(reqs))
-	for _, req := range reqs {
-		if err := ctx.Err(); err != nil {
-			results = append(results, BatchSearchResult{Query: req.Query, Error: err})
-			continue
-		}
-		searchResp, err := s.Search(eid, req, userID)
-		if err != nil {
-			results = append(results, BatchSearchResult{Query: req.Query, Error: err})
-			continue
-		}
-		results = append(results, BatchSearchResult{Query: req.Query, Results: searchResp.Results, StageTimings: searchResp.StageTimings})
+	results := make([]BatchSearchResult, len(reqs))
+	if len(reqs) == 0 {
+		return results, nil
 	}
+
+	maxWorkers := config.RAG_SEARCH_ENGINE_MAX_WORKERS
+	if maxWorkers <= 0 {
+		maxWorkers = 1
+	}
+	if maxWorkers > len(reqs) {
+		maxWorkers = len(reqs)
+	}
+
+	logger.SysDebugf("【批量向量检索】单条搜索回退并发执行: eid=%d, query_count=%d, max_workers=%d",
+		eid, len(reqs), maxWorkers)
+
+	semaphore := make(chan struct{}, maxWorkers)
+	var wg sync.WaitGroup
+
+	for i, req := range reqs {
+		if req == nil {
+			results[i] = BatchSearchResult{Error: fmt.Errorf("搜索请求不能为空")}
+			continue
+		}
+
+		wg.Add(1)
+		go func(index int, searchReq *SearchRequest) {
+			defer wg.Done()
+
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				results[index] = BatchSearchResult{Query: searchReq.Query, Error: ctx.Err()}
+				return
+			}
+
+			if err := ctx.Err(); err != nil {
+				results[index] = BatchSearchResult{Query: searchReq.Query, Error: err}
+				return
+			}
+
+			searchResp, err := searchBatchFallbackSearchFn(s, eid, searchReq, userID)
+			if err != nil {
+				results[index] = BatchSearchResult{Query: searchReq.Query, Error: err}
+				return
+			}
+			results[index] = BatchSearchResult{Query: searchReq.Query, Results: searchResp.Results, StageTimings: searchResp.StageTimings}
+		}(i, req)
+	}
+
+	wg.Wait()
 	return results, nil
 }
 
@@ -711,22 +767,149 @@ func (s *SearchService) ApplyEntityScopeNarrowing(eid int64, req *SearchRequest)
 	return s.applyEntityScopeNarrowing(eid, req)
 }
 
+// EntityScopeNarrowResult 实体范围收敛结果，供 SSE 分阶段输出使用
+type EntityScopeNarrowResult struct {
+	NarrowedLibraryIDs  []int64                    // 收敛后的知识库 ID 列表
+	NarrowedLibraries   []EntityScopeNarrowLibrary // 收敛后的知识库摘要
+	NarrowedFileIDs     []int64                    // 收敛后的文件 ID 列表
+	SeedEntities        []string                   // 种子实体名称列表
+	ChunkCandidateCount int                        // 分片候选数量
+	ScopeNarrowingMs    int64                      // 收敛耗时（毫秒）
+	Skipped             bool                       // 是否跳过了收敛（如指定了 library_id/file_id）
+}
+
+// EntityScopeNarrowLibrary 是收敛结果中的知识库摘要。ID 仅供服务内继续编码使用。
+type EntityScopeNarrowLibrary struct {
+	ID   int64  `json:"-"`
+	Name string `json:"name"`
+}
+
+// PreprocessEntityScope 预处理实体范围收敛，不执行向量搜索
+// 用于 SSE 分阶段输出：先发送收敛结果，再执行向量搜索
+// 如果请求设置了 SkipEntityScopeNarrowing=true 则跳过收敛；
+// 否则会优先尝试实体收敛，并在实体关键词缺失或实体未命中时使用查询信号兜底收敛。
+func (s *SearchService) PreprocessEntityScope(eid int64, req *SearchRequest) (*EntityScopeNarrowResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("搜索请求不能为空")
+	}
+
+	result := &EntityScopeNarrowResult{
+		NarrowedLibraryIDs: append([]int64(nil), req.LibraryIDs...),
+		NarrowedLibraries:  entityScopeNarrowLibrariesFromIDs(req.LibraryIDs),
+		NarrowedFileIDs:    append([]int64(nil), req.FileIDs...),
+		Skipped:            false,
+	}
+
+	// 检查是否应该跳过收敛
+	if req.SkipEntityScopeNarrowing {
+		result.Skipped = true
+		s.refreshEntityScopeNarrowLibraries(eid, result)
+		logger.SysDebugf("【实体范围】跳过收敛（SkipEntityScopeNarrowing=true）: eid=%d, library_count=%d, file_count=%d",
+			eid, len(req.LibraryIDs), len(req.FileIDs))
+		return result, nil
+	}
+
+	scopeNarrowStart := time.Now()
+
+	narrowedReq := cloneSearchRequest(req)
+	if narrowedReq == nil {
+		narrowedReq = &SearchRequest{}
+	}
+
+	entityMeta, narrowErr := s.applyEntityScopeNarrowingWithMeta(eid, narrowedReq)
+	if narrowErr != nil {
+		logger.SysDebugf("【实体范围】实体收窄失败，回退原始请求: eid=%d, err=%v", eid, narrowErr)
+	} else if entityMeta != nil {
+		result.NarrowedLibraryIDs = append([]int64(nil), narrowedReq.LibraryIDs...)
+		result.NarrowedFileIDs = append([]int64(nil), narrowedReq.FileIDs...)
+		result.SeedEntities = entityMeta.SeedEntities
+		result.ChunkCandidateCount = entityMeta.ChunkCandidateCount
+	}
+
+	s.refreshEntityScopeNarrowLibraries(eid, result)
+	result.ScopeNarrowingMs = time.Since(scopeNarrowStart).Milliseconds()
+
+	logger.SysLogf("【实体范围】预处理完成: eid=%d, 种子实体数=%d, 分片候选数=%d, 原始库数=%d, 收敛库数=%d, 耗时=%dms",
+		eid, len(result.SeedEntities), result.ChunkCandidateCount,
+		len(req.LibraryIDs), len(result.NarrowedLibraryIDs), result.ScopeNarrowingMs)
+
+	return result, nil
+}
+
+func entityScopeNarrowLibrariesFromIDs(libraryIDs []int64) []EntityScopeNarrowLibrary {
+	if len(libraryIDs) == 0 {
+		return []EntityScopeNarrowLibrary{}
+	}
+
+	libraries := make([]EntityScopeNarrowLibrary, 0, len(libraryIDs))
+	for _, libraryID := range libraryIDs {
+		libraries = append(libraries, EntityScopeNarrowLibrary{ID: libraryID})
+	}
+	return libraries
+}
+
+func (s *SearchService) refreshEntityScopeNarrowLibraries(eid int64, result *EntityScopeNarrowResult) {
+	if result == nil {
+		return
+	}
+
+	result.NarrowedLibraries = entityScopeNarrowLibrariesFromIDs(result.NarrowedLibraryIDs)
+	libraries, err := s.buildEntityScopeNarrowLibraries(eid, result.NarrowedLibraryIDs)
+	if err != nil {
+		logger.SysDebugf("【实体范围】知识库名称加载失败: eid=%d, library_count=%d, err=%v",
+			eid, len(result.NarrowedLibraryIDs), err)
+		return
+	}
+	result.NarrowedLibraries = libraries
+}
+
+func (s *SearchService) buildEntityScopeNarrowLibraries(eid int64, libraryIDs []int64) ([]EntityScopeNarrowLibrary, error) {
+	if len(libraryIDs) == 0 {
+		return []EntityScopeNarrowLibrary{}, nil
+	}
+
+	libraryMap, err := s.batchGetLibrariesByIDs(eid, libraryIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	libraries := make([]EntityScopeNarrowLibrary, 0, len(libraryIDs))
+	for _, libraryID := range libraryIDs {
+		item := EntityScopeNarrowLibrary{ID: libraryID}
+		if library, ok := libraryMap[libraryID]; ok && library != nil {
+			item.Name = library.Name
+		}
+		libraries = append(libraries, item)
+	}
+	return libraries, nil
+}
+
 func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *SearchRequest) (*entityScopeNarrowMeta, error) {
 	if req == nil {
 		return nil, nil
 	}
-	if len(req.EntityKeywords) == 0 {
-		return nil, nil
-	}
 
 	fuzzyKeywords := normalizeEntityKeywords(req.EntityKeywords)
-	if len(fuzzyKeywords) == 0 {
-		return nil, nil
-	}
 
 	meta := &entityScopeNarrowMeta{}
 	originalLibraryIDs := append([]int64(nil), req.LibraryIDs...)
 	originalFileIDs := append([]int64(nil), req.FileIDs...)
+	signals := buildScopeSignals(req.Query, fuzzyKeywords, req.DocumentType)
+
+	if len(fuzzyKeywords) == 0 {
+		logger.SysDebugf("【实体向量匹配】无有效实体关键词，直接启用查询信号兜底: eid=%d, query=%q", eid, truncateForDebug(req.Query, 256))
+		fallbackLibraryIDs, narrowed, positiveScoreCount, fallbackErr := s.rankLibrariesByScopeSignals(eid, originalLibraryIDs, signals)
+		if fallbackErr != nil {
+			logger.SysDebugf("【实体向量匹配】查询信号兜底收敛失败: eid=%d, err=%v", eid, fallbackErr)
+			return meta, nil
+		}
+		if narrowed {
+			req.LibraryIDs = fallbackLibraryIDs
+			logger.SysDebugf("【实体向量匹配】查询信号兜底收敛: eid=%d, 原始知识库数=%d, 最终知识库数=%d, 正向评分数=%d",
+				eid, len(originalLibraryIDs), len(req.LibraryIDs), positiveScoreCount)
+		}
+		return meta, nil
+	}
 
 	logger.SysDebugf("【实体向量匹配】开始: eid=%d, keywords=%v", eid, fuzzyKeywords)
 	likeEntities := searchEntityLikeMatchFn(s, eid, fuzzyKeywords)
@@ -744,6 +927,16 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 
 	if len(entities) == 0 {
 		logger.SysDebugf("【实体向量匹配】未匹配到任何有效实体: eid=%d, keywords=%v", eid, fuzzyKeywords)
+		fallbackLibraryIDs, narrowed, positiveScoreCount, fallbackErr := s.rankLibrariesByScopeSignals(eid, originalLibraryIDs, signals)
+		if fallbackErr != nil {
+			logger.SysDebugf("【实体向量匹配】查询信号兜底收敛失败: eid=%d, err=%v", eid, fallbackErr)
+			return meta, nil
+		}
+		if narrowed {
+			req.LibraryIDs = fallbackLibraryIDs
+			logger.SysDebugf("【实体向量匹配】查询信号兜底收敛: eid=%d, 原始知识库数=%d, 最终知识库数=%d, 正向评分数=%d",
+				eid, len(originalLibraryIDs), len(req.LibraryIDs), positiveScoreCount)
+		}
 		return meta, nil
 	}
 
@@ -798,7 +991,23 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 	if len(rows) == 0 {
 		logger.SysDebugf("【实体向量匹配】实体未带来范围变化: eid=%d, 种子实体数=%d, 实体数=%d, 最终文件数=%d, 最终知识库数=%d",
 			eid, len(meta.SeedEntities), len(entityIDs), len(req.FileIDs), len(req.LibraryIDs))
+		fallbackLibraryIDs, narrowed, positiveScoreCount, fallbackErr := s.rankLibrariesByScopeSignals(eid, originalLibraryIDs, signals)
+		if fallbackErr != nil {
+			logger.SysDebugf("【实体向量匹配】查询信号兜底收敛失败: eid=%d, err=%v", eid, fallbackErr)
+			return meta, nil
+		}
+		if narrowed {
+			req.LibraryIDs = fallbackLibraryIDs
+			logger.SysDebugf("【实体向量匹配】查询信号兜底收敛: eid=%d, 原始知识库数=%d, 最终知识库数=%d, 正向评分数=%d",
+				eid, len(originalLibraryIDs), len(req.LibraryIDs), positiveScoreCount)
+		}
 		return meta, nil
+	}
+
+	rankedLibraryIDs, rankErr := s.rankScopeLibraryIDsByScore(eid, libraryCount, signals)
+	if rankErr != nil {
+		logger.SysDebugf("【实体向量匹配】候选知识库软评分失败，回退到计数排序: eid=%d, err=%v", eid, rankErr)
+		rankedLibraryIDs = topInt64IDsByCount(libraryCount, maxGraphScopeLibraries)
 	}
 
 	if len(req.FileIDs) == 0 && len(fileIDSet) > 0 {
@@ -812,23 +1021,23 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 		req.FileIDs = fileIDs
 
 		// 文件级收敛时同步收敛知识库范围，避免后续仍按原始全库并发检索。
-		libraryIDs := topInt64IDsByCount(libraryCount, maxGraphScopeLibraries)
+		libraryIDs := append([]int64(nil), rankedLibraryIDs...)
 		if len(originalLibraryIDs) > 0 {
-			libraryIDs = intersectInt64IDs(originalLibraryIDs, libraryIDs)
+			libraryIDs = intersectInt64IDsPreserveOrder(libraryIDs, originalLibraryIDs)
 			if len(libraryIDs) == 0 {
 				libraryIDs = append([]int64(nil), originalLibraryIDs...)
 			}
 		} else if len(req.LibraryIDs) > 0 && len(libraryIDs) > 0 {
-			libraryIDs = intersectInt64IDs(req.LibraryIDs, libraryIDs)
+			libraryIDs = intersectInt64IDsPreserveOrder(libraryIDs, req.LibraryIDs)
 		}
 		if len(originalLibraryIDs) > 0 || len(libraryIDs) > 0 {
 			req.LibraryIDs = libraryIDs
 		}
 		logger.SysDebugf("【实体向量匹配】文件级收敛: eid=%d, 文件数=%d, 知识库数=%d, 上限=%d", eid, len(fileIDs), len(req.LibraryIDs), maxGraphScopeLibraries)
 	} else if len(libraryIDSet) > 0 {
-		libraryIDs := topInt64IDsByCount(libraryCount, maxGraphScopeLibraries)
+		libraryIDs := append([]int64(nil), rankedLibraryIDs...)
 		if len(originalLibraryIDs) > 0 {
-			libraryIDs = intersectInt64IDs(originalLibraryIDs, libraryIDs)
+			libraryIDs = intersectInt64IDsPreserveOrder(libraryIDs, originalLibraryIDs)
 			if len(libraryIDs) == 0 {
 				libraryIDs = append([]int64(nil), originalLibraryIDs...)
 			}
@@ -841,6 +1050,181 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 	logger.SysDebugf("【实体向量匹配】范围收敛完成: eid=%d, 种子实体数=%d, 实体数=%d, 分片候选数=%d, 最终文件数=%d, 最终知识库数=%d",
 		eid, len(meta.SeedEntities), len(entityIDs), meta.ChunkCandidateCount, len(req.FileIDs), len(req.LibraryIDs))
 	return meta, nil
+}
+
+type scopeLibraryScore struct {
+	libraryID     int64
+	relationCount int
+	softScore     int
+}
+
+func (s *SearchService) rankScopeLibraryIDsByScore(eid int64, libraryCount map[int64]int, signals scopeSignals) ([]int64, error) {
+	if len(libraryCount) == 0 {
+		return nil, nil
+	}
+
+	candidateIDs := make([]int64, 0, len(libraryCount))
+	for libraryID := range libraryCount {
+		candidateIDs = append(candidateIDs, libraryID)
+	}
+
+	libraryMap, err := s.batchGetLibrariesByIDs(eid, candidateIDs)
+	if err != nil {
+		return topInt64IDsByCount(libraryCount, maxGraphScopeLibraries), err
+	}
+
+	fileMap, fileErr := s.batchGetFilesByLibraryIDs(eid, candidateIDs)
+	if fileErr != nil {
+		logger.SysDebugf("【实体向量匹配】批量查询文件元信息失败，继续使用库级评分: eid=%d, err=%v", eid, fileErr)
+		fileMap = make(map[int64][]model.File)
+	}
+
+	scores := make([]scopeLibraryScore, 0, len(candidateIDs))
+	for _, libraryID := range candidateIDs {
+		scores = append(scores, scopeLibraryScore{
+			libraryID:     libraryID,
+			relationCount: libraryCount[libraryID],
+			softScore:     scoreScopeLibraryCandidate(libraryMap[libraryID], fileMap[libraryID], signals),
+		})
+	}
+
+	sort.Slice(scores, func(i, j int) bool {
+		if scores[i].relationCount == scores[j].relationCount {
+			if scores[i].softScore == scores[j].softScore {
+				return scores[i].libraryID < scores[j].libraryID
+			}
+			return scores[i].softScore > scores[j].softScore
+		}
+		return scores[i].relationCount > scores[j].relationCount
+	})
+
+	if maxGraphScopeLibraries > 0 && len(scores) > maxGraphScopeLibraries {
+		scores = scores[:maxGraphScopeLibraries]
+	}
+
+	ranked := make([]int64, 0, len(scores))
+	for _, item := range scores {
+		ranked = append(ranked, item.libraryID)
+	}
+	return ranked, nil
+}
+
+type scopeLibraryRankItem struct {
+	libraryID int64
+	score     int
+	position  int
+}
+
+func (s *SearchService) rankLibrariesByScopeSignals(eid int64, libraryIDs []int64, signals scopeSignals) ([]int64, bool, int, error) {
+	uniqueLibraryIDs := uniqueInt64IDsInOrder(libraryIDs)
+	if len(uniqueLibraryIDs) == 0 {
+		return nil, false, 0, nil
+	}
+
+	libraryMap, err := s.batchGetLibrariesByIDs(eid, uniqueLibraryIDs)
+	if err != nil {
+		return nil, false, 0, err
+	}
+
+	fileMap, fileErr := s.batchGetFilesByLibraryIDs(eid, uniqueLibraryIDs)
+	if fileErr != nil {
+		logger.SysDebugf("【实体向量匹配】批量查询文件元信息失败，继续使用库级查询信号: eid=%d, err=%v", eid, fileErr)
+		fileMap = make(map[int64][]model.File)
+	}
+
+	scored := make([]scopeLibraryRankItem, 0, len(uniqueLibraryIDs))
+	positiveScoreCount := 0
+	for idx, libraryID := range uniqueLibraryIDs {
+		score := scoreScopeLibraryCandidate(libraryMap[libraryID], fileMap[libraryID], signals)
+		if score > 0 {
+			positiveScoreCount++
+		}
+		scored = append(scored, scopeLibraryRankItem{
+			libraryID: libraryID,
+			score:     score,
+			position:  idx,
+		})
+	}
+
+	if len(uniqueLibraryIDs) <= maxGraphScopeLibraries {
+		return uniqueLibraryIDs, false, positiveScoreCount, nil
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		if scored[i].score == scored[j].score {
+			return scored[i].position < scored[j].position
+		}
+		return scored[i].score > scored[j].score
+	})
+
+	if positiveScoreCount > 0 {
+		filtered := make([]scopeLibraryRankItem, 0, positiveScoreCount)
+		for _, item := range scored {
+			if item.score > 0 {
+				filtered = append(filtered, item)
+			}
+		}
+		if len(filtered) > maxGraphScopeLibraries {
+			filtered = filtered[:maxGraphScopeLibraries]
+		}
+		ranked := make([]int64, 0, len(filtered))
+		for _, item := range filtered {
+			ranked = append(ranked, item.libraryID)
+		}
+		return ranked, true, positiveScoreCount, nil
+	}
+
+	if len(scored) > maxGraphScopeLibraries {
+		scored = scored[:maxGraphScopeLibraries]
+	}
+	ranked := make([]int64, 0, len(scored))
+	for _, item := range scored {
+		ranked = append(ranked, item.libraryID)
+	}
+	return ranked, true, positiveScoreCount, nil
+}
+
+func scoreScopeLibraryCandidate(library *model.Library, files []model.File, signals scopeSignals) int {
+	score := 0
+	if library != nil {
+		score += scoreScopeText(library.Name, signals) * 6
+		score += scoreScopeText(library.Description, signals) * 4
+	}
+
+	bestFileScore := 0
+	for _, file := range files {
+		if file.Type != model.FILE_TYPE_FILE || file.IsDeleted {
+			continue
+		}
+
+		fileScore := scoreScopeText(file.Path, signals) * 2
+		fileScore += scoreScopeText(file.Summary, signals) * 5
+		fileScore += scoreScopeText(file.InsightSummary, signals) * 5
+		if fileScore > bestFileScore {
+			bestFileScore = fileScore
+		}
+	}
+
+	return score + bestFileScore
+}
+
+func (s *SearchService) batchGetFilesByLibraryIDs(eid int64, libraryIDs []int64) (map[int64][]model.File, error) {
+	result := make(map[int64][]model.File)
+	uniqueLibraryIDs := uniqueInt64IDsInOrder(libraryIDs)
+	if len(uniqueLibraryIDs) == 0 {
+		return result, nil
+	}
+
+	var files []model.File
+	if err := s.db.Where("eid = ? AND library_id IN ? AND is_deleted = ? AND type = ?", eid, uniqueLibraryIDs, false, model.FILE_TYPE_FILE).Find(&files).Error; err != nil {
+		return nil, err
+	}
+
+	for i := range files {
+		file := files[i]
+		result[file.LibraryID] = append(result[file.LibraryID], file)
+	}
+	return result, nil
 }
 
 func mergeEntityMatches(sources ...[]model.Entity) []model.Entity {
@@ -1063,6 +1447,29 @@ func intersectInt64IDs(left, right []int64) []int64 {
 	return result
 }
 
+func intersectInt64IDsPreserveOrder(left, right []int64) []int64 {
+	if len(left) == 0 || len(right) == 0 {
+		return nil
+	}
+	rightSet := make(map[int64]struct{}, len(right))
+	for _, id := range right {
+		rightSet[id] = struct{}{}
+	}
+	seen := make(map[int64]struct{})
+	result := make([]int64, 0, len(left))
+	for _, id := range left {
+		if _, ok := rightSet[id]; !ok {
+			continue
+		}
+		if _, duplicated := seen[id]; duplicated {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
+}
+
 func shouldUseMultiLibraryVectorSearch(req *SearchRequest) bool {
 	if req == nil {
 		return false
@@ -1072,6 +1479,10 @@ func shouldUseMultiLibraryVectorSearch(req *SearchRequest) bool {
 		return false
 	}
 	return len(req.LibraryIDs) > 1
+}
+
+func isDefaultSingleVectorSearchFn() bool {
+	return reflect.ValueOf(singleVectorSearchFn).Pointer() == reflect.ValueOf(defaultSingleVectorSearchFn).Pointer()
 }
 
 func (s *SearchService) vectorMatchEntities(eid int64, keywords []string) ([]model.Entity, error) {
@@ -1340,28 +1751,46 @@ func (s *SearchService) singleVectorSearch(eid int64, req *SearchRequest, config
 			req.trace.add("vector_search_ms", time.Since(vectorStageStart))
 		}
 	}()
-	// 获取embedding配置
-	config, err := s.getSearchConfig(eid, req, configService)
-	if err != nil {
-		return nil, fmt.Errorf("获取配置失败: %v", err)
-	}
 
-	if config.EmbeddingChannelID == nil {
-		return nil, fmt.Errorf("未配置向量化渠道")
-	}
+	var config *ChunkConfig
+	var queryVector []float32
+	var err error
 
-	// 生成查询向量
-	queryVector64, err := s.embedding.GetQueryEmbedding(eid, req.Query, *config.EmbeddingChannelID, config)
-	if err != nil {
-		return nil, fmt.Errorf("生成查询向量失败: %v", err)
-	}
-	logger.SysDebugf("【向量检索】查询向量生成成功: eid=%d, query=%q, embedding_channel_id=%d, vector_dim=%d",
-		eid, truncateForDebug(req.Query, 256), *config.EmbeddingChannelID, len(queryVector64))
+	// 检查是否有预计算的配置和向量（多库并发搜索时传入）
+	if req.precomputedChunkConfig != nil && req.precomputedQueryVector != nil {
+		config = req.precomputedChunkConfig
+		queryVector = req.precomputedQueryVector
+		logger.SysDebugf("【向量检索】使用预计算向量: eid=%d, library_id=%v, vector_dim=%d",
+			eid, req.LibraryIDs, len(queryVector))
+	} else {
+		// 获取embedding配置
+		configStart := time.Now()
+		config, err = s.getSearchConfig(eid, req, configService)
+		if err != nil {
+			return nil, fmt.Errorf("获取配置失败: %v", err)
+		}
+		logger.SysDebugf("【向量检索】获取配置耗时: eid=%d, library_id=%v, elapsed_ms=%d",
+			eid, req.LibraryIDs, time.Since(configStart).Milliseconds())
 
-	// 转换向量格式 (float64 -> float32)
-	queryVector := make([]float32, len(queryVector64))
-	for i, v := range queryVector64 {
-		queryVector[i] = float32(v)
+		if config.EmbeddingChannelID == nil {
+			return nil, fmt.Errorf("未配置向量化渠道")
+		}
+
+		// 生成查询向量
+		embeddingStart := time.Now()
+		var queryVector64 []float64
+		queryVector64, err = s.embedding.GetQueryEmbedding(eid, req.Query, *config.EmbeddingChannelID, config)
+		if err != nil {
+			return nil, fmt.Errorf("生成查询向量失败: %v", err)
+		}
+		logger.SysDebugf("【向量检索】获取Embedding耗时: eid=%d, channel_id=%d, elapsed_ms=%d, vector_dim=%d",
+			eid, *config.EmbeddingChannelID, time.Since(embeddingStart).Milliseconds(), len(queryVector64))
+
+		// 转换向量格式 (float64 -> float32)
+		queryVector = make([]float32, len(queryVector64))
+		for i, v := range queryVector64 {
+			queryVector[i] = float32(v)
+		}
 	}
 
 	// 构建过滤条件
@@ -1449,7 +1878,7 @@ func (s *SearchService) singleVectorSearch(eid int64, req *SearchRequest, config
 				Collection: coll,
 				Query:      req.Query,
 				Vector:     queryVector,
-				TopK:       req.TopK * 2,
+				TopK:       req.TopK,
 				Filters:    filter,
 			}
 
@@ -1732,9 +2161,25 @@ func (s *SearchService) applyFilters(query *gorm.DB, req *SearchRequest) *gorm.D
 	return query
 }
 
+type vectorResultBatch struct {
+	Collection string
+	Results    []vectorstore.SearchResult
+}
+
 // enrichVectorResults 丰富向量搜索结果
 func (s *SearchService) enrichVectorResults(eid int64, collection string, vectorResults []vectorstore.SearchResult, query string, configService *ChunkConfigService) ([]SearchResultItem, error) {
-	if len(vectorResults) == 0 {
+	return s.enrichVectorResultBatches(eid, []vectorResultBatch{{
+		Collection: collection,
+		Results:    vectorResults,
+	}}, query, configService)
+}
+
+func (s *SearchService) enrichVectorResultBatches(eid int64, batches []vectorResultBatch, query string, configService *ChunkConfigService) ([]SearchResultItem, error) {
+	totalVectorResults := 0
+	for _, batch := range batches {
+		totalVectorResults += len(batch.Results)
+	}
+	if totalVectorResults == 0 {
 		return []SearchResultItem{}, nil
 	}
 	if configService == nil {
@@ -1742,9 +2187,16 @@ func (s *SearchService) enrichVectorResults(eid int64, collection string, vector
 	}
 
 	// 批量查询所有RetrievalChunk
-	var vectorIDs []interface{}
-	for _, vectorResult := range vectorResults {
-		vectorIDs = append(vectorIDs, vectorResult.ID)
+	vectorIDs := make([]interface{}, 0, totalVectorResults)
+	vectorIDSet := make(map[interface{}]bool, totalVectorResults)
+	for _, batch := range batches {
+		for _, vectorResult := range batch.Results {
+			if vectorIDSet[vectorResult.ID] {
+				continue
+			}
+			vectorIDSet[vectorResult.ID] = true
+			vectorIDs = append(vectorIDs, vectorResult.ID)
+		}
 	}
 
 	retrievalChunks, err := model.BatchGetRetrievalChunksByVectorIDs(eid, vectorIDs)
@@ -1757,26 +2209,31 @@ func (s *SearchService) enrichVectorResults(eid int64, collection string, vector
 	chunkMap := make(map[interface{}]*model.RetrievalChunk)
 	foundIDs := make(map[interface{}]bool)
 
-	for _, chunk := range retrievalChunks {
-		chunkMap[chunk.VectorID] = &chunk
+	for i := range retrievalChunks {
+		chunk := &retrievalChunks[i]
+		chunkMap[chunk.VectorID] = chunk
 		foundIDs[chunk.VectorID] = true
 	}
 
-	orphanVectorIDs := collectOrphanVectorIDs(vectorResults, foundIDs)
-	if len(orphanVectorIDs) > 0 {
-		cleanupManager := getOrphanVectorCleanupManager()
-		logger.SysLogf("【孤儿向量清理】发现异常向量批次: eid=%d, collection=%s, count=%d",
-			eid, collection, len(orphanVectorIDs))
-		cleanupManager.enqueueBatch(eid, collection, orphanVectorIDs)
+	for _, batch := range batches {
+		orphanVectorIDs := collectOrphanVectorIDs(batch.Results, foundIDs)
+		if len(orphanVectorIDs) > 0 {
+			cleanupManager := getOrphanVectorCleanupManager()
+			logger.SysLogf("【孤儿向量清理】发现异常向量批次: eid=%d, collection=%s, count=%d",
+				eid, batch.Collection, len(orphanVectorIDs))
+			cleanupManager.enqueueBatch(eid, batch.Collection, orphanVectorIDs)
+		}
 	}
 
 	// 过滤向量搜索结果，只保留在数据库中找到的分片
-	var filteredVectorResults []vectorstore.SearchResult
-	for _, vectorResult := range vectorResults {
-		if foundIDs[vectorResult.ID] {
-			filteredVectorResults = append(filteredVectorResults, vectorResult)
-		} else {
-			logger.SysLogf("❌ 过滤掉未找到的分片: VectorID=%v, collection=%s", vectorResult.ID, collection)
+	filteredVectorResults := make([]vectorstore.SearchResult, 0, totalVectorResults)
+	for _, batch := range batches {
+		for _, vectorResult := range batch.Results {
+			if foundIDs[vectorResult.ID] {
+				filteredVectorResults = append(filteredVectorResults, vectorResult)
+			} else {
+				logger.SysLogf("❌ 过滤掉未找到的分片: VectorID=%v, collection=%s", vectorResult.ID, batch.Collection)
+			}
 		}
 	}
 
@@ -1900,6 +2357,14 @@ func (s *SearchService) enrichVectorResults(eid int64, collection string, vector
 				}
 			}
 
+			// 动态获取子标题（如果配置启用）
+			if chunkConfig.KnowledgeIncludeSubtitle {
+				subtitle := extractMarkdownSubtitle(docContent)
+				if subtitle != "" {
+					prefixParts = append(prefixParts, subtitle)
+				}
+			}
+
 			// 构建前缀并添加到内容前
 			if len(prefixParts) > 0 {
 				prefix := strings.Join(prefixParts, "\n\n") + "\n\n"
@@ -1959,34 +2424,17 @@ func (s *SearchService) enrichVectorResults(eid int64, collection string, vector
 					return rc.ChunkType
 				}(),
 			}
-			if res.ChunkType == "" || res.FileName == "" || res.FilePath == "" {
-				docChunkType := ""
-				if docChunk != nil {
-					docChunkType = docChunk.ChunkType
-				}
-				logger.SysDebugf("%s", buildChunkResolutionDebugMessage(
-					"向量检索",
-					"",
-					"vector",
-					docID,
-					rc.ID,
-					res.FileID,
-					res.LibraryID,
-					docChunkType,
-					rc.ChunkType,
-					res.ChunkType,
-					res.FilePath,
-					score,
-				))
-			}
-
 			// 填充文件/知识库信息（延后赋值以便统一处理）
 			if fileInfo, ok := fileInfoMap[res.FileID]; ok {
 				res.FileName = fileInfo.FileName
 				res.FilePath = fileInfo.FilePath
+				res.FileCreatedAt = fileInfo.FileCreatedAt
 			}
 			if libInfo, ok := libraryInfoMap[res.LibraryID]; ok {
 				res.LibraryName = libInfo.LibraryName
+				res.LibraryIcon = libInfo.LibraryIcon
+				res.SpaceID = libInfo.SpaceID
+				res.SpaceName = libInfo.SpaceName
 			}
 
 			bestByDoc[docID] = res
@@ -2134,33 +2582,17 @@ func (s *SearchService) convertToSearchResults(chunks []model.RetrievalChunk, qu
 					return rc.ChunkType
 				}(),
 			}
-			if res.ChunkType == "" || res.FileName == "" || res.FilePath == "" {
-				docChunkType := ""
-				if docChunk != nil {
-					docChunkType = docChunk.ChunkType
-				}
-				logger.SysDebugf("%s", buildChunkResolutionDebugMessage(
-					"全文检索",
-					query,
-					searchType,
-					docID,
-					rc.ID,
-					res.FileID,
-					res.LibraryID,
-					docChunkType,
-					rc.ChunkType,
-					res.ChunkType,
-					res.FilePath,
-					score,
-				))
-			}
 
 			if fileInfo, ok := fileInfoMap[res.FileID]; ok {
 				res.FileName = fileInfo.FileName
 				res.FilePath = fileInfo.FilePath
+				res.FileCreatedAt = fileInfo.FileCreatedAt
 			}
 			if libInfo, ok := libraryInfoMap[res.LibraryID]; ok {
 				res.LibraryName = libInfo.LibraryName
+				res.LibraryIcon = libInfo.LibraryIcon
+				res.SpaceID = libInfo.SpaceID
+				res.SpaceName = libInfo.SpaceName
 			}
 
 			bestByDoc[docID] = res
@@ -2273,9 +2705,10 @@ func (s *SearchService) batchGetFileInfo(eid int64, fileIDs []int64) (map[int64]
 			}
 		}
 		result[file.ID] = &FileInfo{
-			FileName:  fileName,
-			FilePath:  file.Path,
-			IsDeleted: file.IsDeleted,
+			FileName:      fileName,
+			FilePath:      file.Path,
+			FileCreatedAt: file.CreatedTime,
+			IsDeleted:     file.IsDeleted,
 		}
 	}
 
@@ -2307,11 +2740,30 @@ func (s *SearchService) batchGetLibraryInfo(eid int64, libraryIDs []int64) (map[
 		return nil, fmt.Errorf("批量查询知识库失败: %v", err)
 	}
 
+	spaceIDs := make([]int64, 0, len(libraries))
+	for _, library := range libraries {
+		spaceIDs = append(spaceIDs, library.SpaceID)
+	}
+	spaceIDs = uniqueInt64IDsInOrder(spaceIDs)
+
+	spaceNameMap := make(map[int64]string)
+	if len(spaceIDs) > 0 {
+		var spaces []model.Space
+		if err := s.db.Where("eid = ? AND id IN ?", eid, spaceIDs).Find(&spaces).Error; err == nil {
+			for i := range spaces {
+				spaceNameMap[spaces[i].ID] = spaces[i].Name
+			}
+		}
+	}
+
 	// 构建结果
 	result := make(map[int64]*LibraryInfo)
 	for _, library := range libraries {
 		result[library.ID] = &LibraryInfo{
 			LibraryName: library.Name,
+			LibraryIcon: library.Icon,
+			SpaceID:     library.SpaceID,
+			SpaceName:   spaceNameMap[library.SpaceID],
 		}
 	}
 
@@ -2320,6 +2772,8 @@ func (s *SearchService) batchGetLibraryInfo(eid int64, libraryIDs []int64) (map[
 		if _, exists := result[libraryID]; !exists {
 			result[libraryID] = &LibraryInfo{
 				LibraryName: "",
+				LibraryIcon: "",
+				SpaceName:   "",
 			}
 		}
 	}
@@ -2385,10 +2839,211 @@ func (s *SearchService) saveQueryRecord(eid int64, userID *int64, req *SearchReq
 
 // multiLibraryVectorSearch 多知识库向量搜索
 func (s *SearchService) multiLibraryVectorSearch(eid int64, req *SearchRequest, configService *ChunkConfigService) ([]SearchResultItem, error) {
+	multiSearchStart := time.Now()
 	logger.SysLogf("🔍 开始多知识库向量搜索 (eid=%d, libraries=%v)", eid, req.LibraryIDs)
 	logger.SysDebugf("【向量检索】多库并发参数: eid=%d, query=%q, top_k=%d, libraries=%v, files=%v, chunk_types=%v",
 		eid, truncateForDebug(req.Query, 256), req.TopK,
 		previewInt64IDsForDebug(req.LibraryIDs, 50), previewInt64IDsForDebug(req.FileIDs, 50), req.ChunkTypes)
+
+	// 检查 singleVectorSearchFn 是否被 mock（测试场景）
+	// 如果被 mock，则走原来的流程（不预获取 embedding）
+	if !isDefaultSingleVectorSearchFn() {
+		// 测试场景：singleVectorSearchFn 被 mock，走原来的流程
+		return s.multiLibraryVectorSearchLegacy(eid, req, configService)
+	}
+
+	if configService == nil {
+		configService = NewChunkConfigService(s.db)
+	}
+
+	// 预先获取企业全局配置和 embedding（只调用一次，避免多次调用 embedding API）
+	configStart := time.Now()
+	config, configErr := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	if configErr != nil {
+		logger.SysLogf("❌ 获取企业全局配置失败: eid=%d, err=%v", eid, configErr)
+		return nil, fmt.Errorf("获取企业全局配置失败: %v", configErr)
+	}
+	logger.SysDebugf("【向量检索】获取配置耗时: eid=%d, elapsed_ms=%d", eid, time.Since(configStart).Milliseconds())
+
+	if config.EmbeddingChannelID == nil {
+		return nil, fmt.Errorf("未配置向量化渠道")
+	}
+
+	// 预先获取 embedding（多库并发搜索时，所有库共用同一个 embedding）
+	embeddingStart := time.Now()
+	queryVector64, embeddingErr := s.embedding.GetQueryEmbedding(eid, req.Query, *config.EmbeddingChannelID, config)
+	if embeddingErr != nil {
+		return nil, fmt.Errorf("生成查询向量失败: %v", embeddingErr)
+	}
+	logger.SysDebugf("【向量检索】获取Embedding耗时: eid=%d, channel_id=%d, elapsed_ms=%d, vector_dim=%d",
+		eid, *config.EmbeddingChannelID, time.Since(embeddingStart).Milliseconds(), len(queryVector64))
+
+	// 转换向量格式 (float64 -> float32)
+	queryVector := make([]float32, len(queryVector64))
+	for i, v := range queryVector64 {
+		queryVector[i] = float32(v)
+	}
+
+	libraryMap, err := s.batchGetLibrariesByIDs(eid, req.LibraryIDs)
+	if err != nil {
+		logger.SysLogf("批量获取库信息失败: %v", err)
+	}
+
+	// 并发搜索各个知识库，先保留原始向量结果，随后统一富化，避免每个库重复查一轮 DB。
+	type libraryResult struct {
+		libraryID     int64
+		collection    string
+		vectorResults []vectorstore.SearchResult
+		err           error
+		elapsedMs     int64
+	}
+
+	resultChan := make(chan libraryResult, len(req.LibraryIDs))
+	maxConcurrentSearches := multiLibrarySearchConcurrencyLimit()
+	sem := make(chan struct{}, maxConcurrentSearches)
+	var recordVectorOnce sync.Once
+
+	// 为每个知识库启动独立的搜索
+	for _, libraryID := range req.LibraryIDs {
+		sem <- struct{}{}
+		go func(libID int64) {
+			libStart := time.Now()
+			defer func() {
+				<-sem
+			}()
+
+			library, ok := libraryMap[libID]
+			if !ok || library == nil {
+				resultChan <- libraryResult{
+					libraryID: libID,
+					err:       fmt.Errorf("知识库不存在或无权限"),
+					elapsedMs: time.Since(libStart).Milliseconds(),
+				}
+				return
+			}
+
+			singleReq := &SearchRequest{
+				Query:                  req.Query,
+				SearchType:             req.SearchType,
+				TopK:                   req.TopK,
+				LibraryIDs:             []int64{libID},
+				FileIDs:                req.FileIDs,
+				ChunkTypes:             req.ChunkTypes,
+				SearchConfig:           normalizeSearchConfigForExecution(req.SearchConfig),
+				precomputedQueryVector: queryVector,
+				precomputedChunkConfig: config,
+				trace:                  req.trace,
+			}
+
+			collection := model.GetVectorCollectionName(library.UUID)
+			searchReq := vectorstore.SearchRequest{
+				Collection: collection,
+				Query:      req.Query,
+				Vector:     queryVector,
+				TopK:       req.TopK,
+				Filters:    s.buildVectorFilter(eid, singleReq),
+			}
+			if req.SearchConfig != nil && req.SearchConfig.ScoreThresholdEnabled && req.SearchConfig.ScoreThreshold > 0 {
+				searchReq.ScoreThreshold = float32(req.SearchConfig.ScoreThreshold)
+			}
+
+			searchResp, err := s.vectorDB.Search(context.Background(), searchReq)
+			if err != nil {
+				resultChan <- libraryResult{
+					libraryID:  libID,
+					collection: collection,
+					err:        err,
+					elapsedMs:  time.Since(libStart).Milliseconds(),
+				}
+				return
+			}
+			recordVectorOnce.Do(func() {
+				if req.trace != nil {
+					req.trace.add("vector_search_ms", time.Since(multiSearchStart))
+				}
+			})
+
+			vectorResults := make([]vectorstore.SearchResult, 0)
+			if searchResp != nil {
+				vectorResults = make([]vectorstore.SearchResult, len(searchResp.Results))
+				for i, result := range searchResp.Results {
+					vectorResults[i] = vectorstore.SearchResult{
+						ID:       result.ID,
+						Score:    result.Score,
+						Metadata: result.Metadata,
+					}
+				}
+			}
+			resultChan <- libraryResult{
+				libraryID:     libID,
+				collection:    collection,
+				vectorResults: vectorResults,
+				elapsedMs:     time.Since(libStart).Milliseconds(),
+			}
+		}(libraryID)
+	}
+
+	// 收集所有结果
+	var rawBatches []vectorResultBatch
+	var errors []error
+
+	for i := 0; i < len(req.LibraryIDs); i++ {
+		result := <-resultChan
+		if result.err != nil {
+			logger.SysDebugf("❌ 知识库%d搜索失败: %v, 耗时=%dms", result.libraryID, result.err, result.elapsedMs)
+			errors = append(errors, fmt.Errorf("知识库%d: %v", result.libraryID, result.err))
+		} else {
+			logger.SysDebugf("✅ 知识库%d搜索成功，返回%d个原始向量结果, 耗时=%dms", result.libraryID, len(result.vectorResults), result.elapsedMs)
+			rawBatches = append(rawBatches, vectorResultBatch{
+				Collection: result.collection,
+				Results:    result.vectorResults,
+			})
+		}
+	}
+
+	// 如果所有知识库都搜索失败，返回详细错误信息
+	if len(errors) == len(req.LibraryIDs) {
+		var errorDetails []string
+		for _, err := range errors {
+			errorDetails = append(errorDetails, err.Error())
+		}
+		return nil, fmt.Errorf("所有知识库搜索都失败，详细错误: %s", strings.Join(errorDetails, "; "))
+	}
+
+	enrichStart := time.Now()
+	allResults, err := s.enrichVectorResultBatches(eid, rawBatches, req.Query, configService)
+	if req.trace != nil {
+		req.trace.add("enrich_ms", time.Since(enrichStart))
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// 合并和排序结果
+	results := s.mergeMultiLibraryResults(allResults, req.TopK)
+
+	// 应用score_threshold过滤（额外保障）
+	if req.SearchConfig != nil && req.SearchConfig.ScoreThresholdEnabled && req.SearchConfig.ScoreThreshold > 0 {
+		var thresholdFilteredResults []SearchResultItem
+		for _, result := range results {
+			if result.Score >= req.SearchConfig.ScoreThreshold {
+				thresholdFilteredResults = append(thresholdFilteredResults, result)
+			}
+		}
+		results = thresholdFilteredResults
+	}
+
+	logger.SysDebugf("【向量检索】多库并发完成: eid=%d, libraries=%d, final_count=%d, total_ms=%d",
+		eid, len(req.LibraryIDs), len(results), time.Since(multiSearchStart).Milliseconds())
+	logger.SysDebugf("【向量检索】多库并发完成: eid=%d, query=%q, final_count=%d, sample=%v",
+		eid, truncateForDebug(req.Query, 256), len(results), previewSearchResultsForDebug(results, 5))
+
+	return results, nil
+}
+
+// multiLibraryVectorSearchLegacy 原来的多库搜索流程（用于测试 mock 场景）
+func (s *SearchService) multiLibraryVectorSearchLegacy(eid int64, req *SearchRequest, configService *ChunkConfigService) ([]SearchResultItem, error) {
+	logger.SysDebugf("🔍 开始多知识库向量搜索-Legacy (eid=%d, libraries=%v)", eid, req.LibraryIDs)
 
 	// 并发搜索各个知识库
 	type libraryResult struct {
@@ -2418,6 +3073,7 @@ func (s *SearchService) multiLibraryVectorSearch(eid int64, req *SearchRequest, 
 				FileIDs:      req.FileIDs,
 				ChunkTypes:   req.ChunkTypes,
 				SearchConfig: normalizeSearchConfigForExecution(req.SearchConfig),
+				trace:        req.trace,
 			}
 
 			results, err := singleVectorSearchFn(s, eid, singleReq, configService)
@@ -2466,8 +3122,6 @@ func (s *SearchService) multiLibraryVectorSearch(eid int64, req *SearchRequest, 
 		}
 		results = thresholdFilteredResults
 	}
-	logger.SysDebugf("【向量检索】多库并发完成: eid=%d, query=%q, final_count=%d, sample=%v",
-		eid, truncateForDebug(req.Query, 256), len(results), previewSearchResultsForDebug(results, 5))
 
 	return results, nil
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/53AI/53AIHub/common/storage"
 	db_model "github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service/hub_adaptor/coze/constant/event"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common"
@@ -195,6 +196,7 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 	common.SetEventStreamHeaders(c)
 	conversationId := ""
 	var modelName string
+	errored := false
 
 	eventStr := ""
 	for scanner.Scan() {
@@ -205,6 +207,43 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 		// logger.SysLogf("coze stream : %s", data)
 		if strings.HasPrefix(data, "event:") {
 			eventStr = strings.TrimPrefix(data, "event:")
+		}
+
+		// 处理 Coze 聊天失败事件（如 credits 不足、bot 不存在等）
+		if eventStr == event.ChatFailed {
+			if len(data) >= 5 && strings.HasPrefix(data, "data:") {
+				payload := strings.TrimPrefix(data, "data:")
+				payload = strings.TrimSuffix(payload, "\r")
+
+				var failedResp ChatFailedResponse
+				if err := json.Unmarshal([]byte(payload), &failedResp); err != nil {
+					logger.SysError("error unmarshalling chat.failed response: " + err.Error())
+					continue
+				}
+				logger.SysError(fmt.Sprintf("Coze chat failed: code=%d, msg=%s",
+					failedResp.LastError.Code, failedResp.LastError.Msg))
+
+				// 通过 SSE 向客户端发送错误信息
+				errChunk := map[string]interface{}{
+					"error": model.Error{
+						Message: failedResp.LastError.Msg,
+						Code:    failedResp.LastError.Code,
+					},
+				}
+				jsonBytes, _ := json.Marshal(errChunk)
+				c.Writer.Write([]byte("data: "))
+				c.Writer.Write(jsonBytes)
+				c.Writer.Write([]byte("\n\n"))
+				c.Writer.Write([]byte("data: [DONE]\n\n"))
+				if flusher, ok := c.Writer.(http.Flusher); ok {
+					flusher.Flush()
+				}
+
+				responseText = failedResp.LastError.Msg
+				conversationId = failedResp.ConversationId
+			}
+			errored = true
+			break
 		}
 
 		if eventStr != "conversation.message.delta" {
@@ -254,7 +293,9 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 		logger.SysError("error reading stream: " + err.Error())
 	}
 
-	render.Done(c)
+	if !errored {
+		render.Done(c)
+	}
 
 	err := resp.Body.Close()
 	if err != nil {

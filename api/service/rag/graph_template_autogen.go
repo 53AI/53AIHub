@@ -65,14 +65,15 @@ func newGraphTemplateAutogenExecutor(db *gorm.DB, eid int64) (graphTemplateAutog
 		return nil, fmt.Errorf("获取模型配置失败: %v", err)
 	}
 
-	if config.LogicChannel == nil || config.LogicModelName == nil {
-		return nil, fmt.Errorf("未配置逻辑推理模型")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, fmt.Errorf("未配置推理模型: %v", selectErr)
 	}
 
 	return &graphTemplateAutogenLLMExecutor{
 		contentService: NewContentGeneratorService(db),
-		channel:        config.LogicChannel,
-		modelName:      *config.LogicModelName,
+		channel:        selectedChannel,
+		modelName:      selectedModelName,
 	}, nil
 }
 

@@ -1,5 +1,7 @@
 package ctxkey
 
+import "context"
+
 const (
 	Config            = "config"
 	Id                = "id"
@@ -22,4 +24,15 @@ const (
 	AvailableModels   = "available_models"
 	KeyRequestBody    = "key_request_body"
 	SystemPrompt      = "system_prompt"
+	VisitorID         = "visitor_id"
 )
+
+func GetVisitorID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if value, ok := ctx.Value(VisitorID).(string); ok {
+		return value
+	}
+	return ""
+}

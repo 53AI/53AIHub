@@ -151,6 +151,9 @@ func main() {
 			})
 			rag.SetDefaultEmbeddingQueue(q)
 
+			// 启动分块AI增益异步worker
+			service.StartChunkEnrichmentWorker(rdb, model.DB)
+
 			// 可选：预热某个 EID 的 worker；若不需要可依赖懒启动
 			// _ = q.StartOrUpdateWorkers(context.Background(), 1)
 			logger.SysLogf("embedding queue initialized with optimized parameters")

@@ -721,7 +721,9 @@ func saveWorkflowMessage(c *gin.Context, workflowRequest *WorkflowRunRequest, ag
 		IsStream:          false, // 工作流不支持流式
 		QuotaContent:      quotaContent,
 		AgentCustomConfig: agent.CustomConfig, // 历史记录
+		RequestSource:     normalizeRequestSource(workflowRequest.Source),
 	}
+	applyVisitorIdentityToMessage(c, message)
 
 	// 保存消息到数据库
 	if err := model.CreateMessage(message); err != nil {

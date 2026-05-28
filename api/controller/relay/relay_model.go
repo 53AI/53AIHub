@@ -17,6 +17,10 @@ import (
 const MAX_DESC_WORD = 50 // 描述字段最大字数
 // MAX_SOLO_FILE_CONTENT_SIZE 单文件模式最大内容长度（字符数）
 const MAX_SOLO_FILE_CONTENT_SIZE = 50000
+const maxIntentSkillCandidates = 5
+const maxIntentSkillDescriptionRunes = 120
+const maxIntentSkillCandidateQueryRunes = 1200
+const maxIntentSkillCandidateConversationItems = 4
 
 // Process step code constants 废弃
 const (
@@ -35,7 +39,9 @@ const (
 	// 问题改写步骤
 	// 意图分类步骤
 	STEP_INTENT_CLASSIFICATION = "intent_classification"
-	STEP_SCOPE_NARROWING       = "scope_narrowing"
+	// 复杂问题拆解步骤
+	STEP_QUERY_EXPANSION = "query_expansion"
+	STEP_SCOPE_NARROWING = "scope_narrowing"
 	// 知识搜索步骤
 	STEP_KNOWLEDGE_SEARCH = "knowledge_search"
 	// 回答生成步骤
@@ -49,23 +55,25 @@ const (
 )
 
 type ChatRequest struct {
-	Messages           []relay_model.Message   `json:"messages"`
-	Stream             bool                    `json:"stream"`
-	Model              string                  `json:"model" example:"agent-6"`
-	Temperature        float64                 `json:"temperature,omitempty"`
-	PresencePenalty    float64                 `json:"presence_penalty,omitempty"`
-	FrequencyPenalty   float64                 `json:"frequency_penalty,omitempty"`
-	TopP               float64                 `json:"top_p,omitempty"`
-	ConversationID     int64                   `json:"conversation_id"`
-	KnowledgeBaseIDs   []string                `json:"knowledge_base_ids,omitempty"`  // 知识库ID列表
-	FileIDs            []string                `json:"file_ids,omitempty"`            // 文件ID列表
-	MessageFileID      int64                   `json:"message_file_id,omitempty"`     // 消息文件ID（优先保存到message.file_id）
-	SoloFileMode       bool                    `json:"solo_file_mode,omitempty"`      // 单文件模式：true=使用完整文件内容，false=使用RAG分块搜索
-	SearchConfig       *model.SearchConfigData `json:"search_config,omitempty"`       // 搜索配置（可选）
-	EnableProcessSteps bool                    `json:"enable_process_steps"`          // 启用步骤化流式输出，返回步骤代码：kbs(知识库搜索), dcs(文档搜索), ang(回答生成)
-	EnableGraphSearch  *bool                   `json:"enable_graph_search,omitempty"` // 启用图谱聚合检索，默认开启，显式传 false 才关闭
-	WebSearchConfig    *model.WebSearchConfig  `json:"web_search_config,omitempty"`   // AI在线搜索配置（可选）
-	Tools              []relay_model.Tool      `json:"tools,omitempty"`
+	Messages             []relay_model.Message   `json:"messages"`
+	Stream               bool                    `json:"stream"`
+	Model                string                  `json:"model" example:"agent-6"`
+	Temperature          float64                 `json:"temperature,omitempty"`
+	PresencePenalty      float64                 `json:"presence_penalty,omitempty"`
+	FrequencyPenalty     float64                 `json:"frequency_penalty,omitempty"`
+	TopP                 float64                 `json:"top_p,omitempty"`
+	ConversationID       int64                   `json:"conversation_id"`
+	KnowledgeBaseIDs     []string                `json:"knowledge_base_ids,omitempty"`      // 知识库ID列表
+	FileIDs              []string                `json:"file_ids,omitempty"`                // 文件ID列表
+	MessageFileID        int64                   `json:"message_file_id,omitempty"`         // 消息文件ID（优先保存到message.file_id）
+	SoloFileMode         bool                    `json:"solo_file_mode,omitempty"`          // 单文件模式：true=使用完整文件内容，false=使用RAG分块搜索
+	SearchConfig         *model.SearchConfigData `json:"search_config,omitempty"`           // 搜索配置（可选）
+	EnableProcessSteps   bool                    `json:"enable_process_steps"`              // 启用步骤化流式输出，返回步骤代码：kbs(知识库搜索), dcs(文档搜索), ang(回答生成)
+	EnableGraphSearch    *bool                   `json:"enable_graph_search,omitempty"`     // 启用图谱聚合检索，默认开启，显式传 false 才关闭
+	EnableSkillAutoMatch *bool                   `json:"enable_skill_auto_match,omitempty"` // 启用技能自动匹配；工作AI默认开启，其它入口默认关闭
+	WebSearchConfig      *model.WebSearchConfig  `json:"web_search_config,omitempty"`       // AI在线搜索配置（可选）
+	Tools                []relay_model.Tool      `json:"tools,omitempty"`
+	Source               string                  `json:"source,omitempty"` // 请求来源：console/api/h5等，前端传递
 }
 
 type MessageStatsInfo struct {
@@ -89,6 +97,7 @@ type MessageStatsInfo struct {
 	UploadedFiles      []*model.UploadFile  `json:"-"`                  // 用户上传的文件列表（从message content解析）
 	SkillSnapshot      *skill.SkillSnapshot `json:"-"`                  // run 级技能快照（含 gating 过滤结果）
 	SkillRunScope      *skill.RunScope      `json:"-"`                  // run 级运行域（cwd/env/secrets）
+	RequestSource      string               `json:"request_source"`     // 请求来源：console/api/h5等
 }
 
 // UniqueDocumentInfo 去重文档信息
@@ -100,12 +109,21 @@ type UniqueDocumentInfo struct {
 	FirstChunk string `json:"first_chunk"` // 第一个匹配分片的内容作为文档详情
 }
 
+func normalizeRequestSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return model.MessageRequestSourceConsole
+	}
+	return source
+}
+
 // WorkflowRunRequest 工作流运行请求结构体
 type WorkflowRunRequest struct {
-	Parameters     map[string]interface{} `json:"parameters"`      // 工作流参数
-	Stream         bool                   `json:"stream"`          // 是否流式响应（工作流不支持，会被忽略）
-	Model          string                 `json:"model"`           // Agent模型
-	ConversationID int64                  `json:"conversation_id"` // 会话ID
+	Parameters     map[string]interface{} `json:"parameters"`       // 工作流参数
+	Stream         bool                   `json:"stream"`           // 是否流式响应（工作流不支持，会被忽略）
+	Model          string                 `json:"model"`            // Agent模型
+	ConversationID int64                  `json:"conversation_id"`  // 会话ID
+	Source         string                 `json:"source,omitempty"` // 请求来源：console/api/h5等，前端传递
 }
 
 // 预设问答映射表（TODO）
@@ -158,7 +176,7 @@ type AgentControlEvent struct {
 	Decision   *AgentDecision `json:"decision,omitempty"`
 	RawContent string         `json:"raw_content,omitempty"`
 	Query      string         `json:"query,omitempty"`
-	SkillName   string        `json:"skill_name,omitempty"`
+	SkillName  string         `json:"skill_name,omitempty"`
 	IsLegacy   bool           `json:"is_legacy,omitempty"`
 }
 
@@ -505,6 +523,7 @@ func buildIntentClassificationStepData(result *rag.IntentClassificationResult) m
 		"confidence":       float64(0),
 		"reasoning":        "",
 		"keywords":         []string{},
+		"document_type":    "",
 		"normalized_query": "",
 		"expanded_queries": []string{},
 	}
@@ -519,6 +538,9 @@ func buildIntentClassificationStepData(result *rag.IntentClassificationResult) m
 		if result.Keywords != nil {
 			intentData["keywords"] = result.Keywords
 		}
+		if strings.TrimSpace(result.DocumentType) != "" {
+			intentData["document_type"] = strings.TrimSpace(result.DocumentType)
+		}
 		if strings.TrimSpace(result.NormalizedQuery) != "" {
 			intentData["normalized_query"] = strings.TrimSpace(result.NormalizedQuery)
 		}
@@ -530,4 +552,204 @@ func buildIntentClassificationStepData(result *rag.IntentClassificationResult) m
 	return map[string]interface{}{
 		"intent": intentData,
 	}
+}
+
+func buildQueryExpansionStepData(result *rag.QueryExpansionResult) map[string]interface{} {
+	expansionData := map[string]interface{}{
+		"normalized_query": "",
+		"keywords":         []string{},
+		"document_type":    "",
+		"expanded_queries": []string{},
+	}
+
+	if result != nil {
+		if strings.TrimSpace(result.NormalizedQuery) != "" {
+			expansionData["normalized_query"] = strings.TrimSpace(result.NormalizedQuery)
+		}
+		if result.Keywords != nil {
+			expansionData["keywords"] = result.Keywords
+		}
+		if strings.TrimSpace(result.DocumentType) != "" {
+			expansionData["document_type"] = strings.TrimSpace(result.DocumentType)
+		}
+		if result.ExpandedQueries != nil {
+			expansionData["expanded_queries"] = result.ExpandedQueries
+		}
+	}
+
+	return map[string]interface{}{
+		"query_expansion": expansionData,
+	}
+}
+
+func mergeComplexQueryExpansionResult(result *rag.IntentClassificationResult, expansion *rag.QueryExpansionResult) {
+	if result == nil || expansion == nil {
+		return
+	}
+
+	if normalizedQuery := strings.TrimSpace(expansion.NormalizedQuery); normalizedQuery != "" {
+		result.NormalizedQuery = normalizedQuery
+	}
+	if len(expansion.Keywords) > 0 {
+		result.Keywords = append([]string(nil), expansion.Keywords...)
+	}
+	if documentType := strings.TrimSpace(expansion.DocumentType); documentType != "" {
+		result.DocumentType = documentType
+	}
+	if len(expansion.ExpandedQueries) > 0 {
+		result.ExpandedQueries = append([]string(nil), expansion.ExpandedQueries...)
+	}
+}
+
+func shouldInjectIntentSkillCandidates(agent *model.Agent, chatRequest *ChatRequest) bool {
+	if agent == nil {
+		return false
+	}
+	if chatRequest != nil && chatRequest.EnableSkillAutoMatch != nil {
+		return *chatRequest.EnableSkillAutoMatch
+	}
+	return agent.AgentUsage == model.AgentUsageWorkAI
+}
+
+func buildIntentSkillCandidates(agent *model.Agent, chatRequest *ChatRequest, query string, runScope skill.RunScope, allowedPathSet map[string]struct{}) []*skill.Skill {
+	if agent == nil || !shouldInjectIntentSkillCandidates(agent, chatRequest) {
+		return nil
+	}
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+
+	matches := skill.GetManager().MatchSkillsWithScope(agent.Eid, query, runScope)
+	return selectIntentSkillCandidatesFromMatches(matches, allowedPathSet, maxIntentSkillCandidates)
+}
+
+func buildIntentSkillCandidateQuery(query string, conversation []rag.ConversationItem) string {
+	query = strings.TrimSpace(query)
+	var builder strings.Builder
+	if query != "" {
+		builder.WriteString(query)
+	}
+
+	start := 0
+	if len(conversation) > maxIntentSkillCandidateConversationItems {
+		start = len(conversation) - maxIntentSkillCandidateConversationItems
+	}
+	for _, item := range conversation[start:] {
+		itemQuery := strings.TrimSpace(item.Query)
+		itemAnswer := strings.TrimSpace(item.Answer)
+		if itemQuery == "" && itemAnswer == "" {
+			continue
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		if itemQuery != "" {
+			builder.WriteString(itemQuery)
+		}
+		if itemAnswer != "" {
+			if itemQuery != "" {
+				builder.WriteString("\n")
+			}
+			builder.WriteString(itemAnswer)
+		}
+	}
+
+	return truncateRunes(builder.String(), maxIntentSkillCandidateQueryRunes)
+}
+
+func selectIntentSkillCandidatesFromMatches(matches []*skill.SkillMatchResult, allowedPathSet map[string]struct{}, limit int) []*skill.Skill {
+	if len(matches) == 0 || limit <= 0 {
+		return nil
+	}
+
+	filtered := filterSkillMatchByPathSet(matches, allowedPathSet)
+	candidates := make([]*skill.Skill, 0, minInt(limit, len(filtered)))
+	seen := make(map[string]struct{}, len(filtered))
+
+	for _, match := range filtered {
+		if match == nil || match.Skill == nil {
+			continue
+		}
+		name := strings.TrimSpace(match.Skill.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		candidates = append(candidates, cloneIntentSkillCandidate(match.Skill))
+		if len(candidates) >= limit {
+			break
+		}
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+	return candidates
+}
+
+func buildBroadIntentSkillCandidates(skills []*skill.Skill, allowedPathSet map[string]struct{}) []*skill.Skill {
+	filtered := filterSkillsByPathSet(skills, allowedPathSet)
+	if len(filtered) == 0 {
+		return nil
+	}
+
+	candidates := make([]*skill.Skill, 0, len(filtered))
+	seen := make(map[string]struct{}, len(filtered))
+	for _, item := range filtered {
+		if item == nil {
+			continue
+		}
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		candidates = append(candidates, cloneIntentSkillCandidate(item))
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	return candidates
+}
+
+func cloneIntentSkillCandidate(item *skill.Skill) *skill.Skill {
+	if item == nil {
+		return nil
+	}
+	return &skill.Skill{
+		Name:        strings.TrimSpace(item.Name),
+		Description: truncateRunes(strings.TrimSpace(item.Description), maxIntentSkillDescriptionRunes),
+		Path:        strings.TrimSpace(item.Path),
+		AutoMatch:   item.AutoMatch,
+	}
+}
+
+func shouldRetryIntentSkillSelection(result *rag.IntentClassificationResult, snapshot *skill.SkillSnapshot, allowedPathSet map[string]struct{}) bool {
+	if result == nil || result.Intent != "USE_SKILL" {
+		return false
+	}
+	skillName := strings.TrimSpace(result.SkillName)
+	if skillName == "" {
+		return true
+	}
+	if target := findSkillInSnapshot(snapshot, skillName); target != nil && isSkillAllowedByPathSet(target, allowedPathSet) {
+		return false
+	}
+	if blockedReasons := findBlockedReasons(snapshot, skillName); len(blockedReasons) > 0 {
+		return false
+	}
+	return true
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -130,7 +130,7 @@ func (c *RagPipelineController) GetPipeline(ctx *gin.Context) {
 type CreatePipelineRequest struct {
 	Name        string          `json:"name" binding:"required" example:"合同处理流程"`
 	Icon        string          `json:"icon" example:"base64 or url"`
-	ProfileJSON json.RawMessage `json:"profile_json" binding:"required" swaggertype:"string" example:"{\"steps\":[]}"` // 使用 RawMessage 接收任意 JSON
+	ProfileJSON json.RawMessage `json:"profile_json" binding:"required" swaggertype:"object"` // 使用 RawMessage 接收任意 JSON
 }
 
 // CreatePipeline godoc
@@ -181,7 +181,7 @@ type UpdatePipelineRequest struct {
 	Name        *string          `json:"name" example:"新名称"`
 	Icon        *string          `json:"icon" example:"新图标"`
 	Status      *int             `json:"status" example:"1"`
-	ProfileJSON *json.RawMessage `json:"profile_json" swaggertype:"string" example:"{\"steps\":[]}"`
+	ProfileJSON *json.RawMessage `json:"profile_json" swaggertype:"object"`
 }
 
 // UpdatePipeline godoc

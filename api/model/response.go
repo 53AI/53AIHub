@@ -28,11 +28,15 @@ type CommonResponse struct {
 	Data    interface{} `json:"data" description:"Response data payload"`
 }
 
+type OpenAIError struct {
+	Message string      `json:"message"`
+	Type    string      `json:"type"`
+	Param   interface{} `json:"param,omitempty"`
+	Code    interface{} `json:"code,omitempty"`
+}
+
 type OpenAIErrorResponse struct {
-	Error struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error"`
+	Error OpenAIError `json:"error"`
 }
 
 // ResponseCode defines the status codes used in API responses
@@ -144,10 +148,7 @@ func (c ResponseCode) ToOpenAIErrorRespone(data interface{}) OpenAIErrorResponse
 	}
 
 	return OpenAIErrorResponse{
-		Error: struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-		}{
+		Error: OpenAIError{
 			Message: msg,
 			Type:    "53aihub_error",
 		},

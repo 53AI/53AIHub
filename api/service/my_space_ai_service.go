@@ -178,7 +178,7 @@ func (s *MySpaceAIService) listEntriesByPath(_ context.Context, libraryID int64,
 				return entries[i].Sort < entries[j].Sort
 			}
 			if entries[i].CreatedTime != entries[j].CreatedTime {
-				return entries[i].CreatedTime < entries[j].CreatedTime
+				return entries[i].CreatedTime > entries[j].CreatedTime
 			}
 			return entries[i].Path < entries[j].Path
 		})
@@ -186,6 +186,9 @@ func (s *MySpaceAIService) listEntriesByPath(_ context.Context, libraryID int64,
 		sort.Slice(entries, func(i, j int) bool {
 			if entries[i].Sort != entries[j].Sort {
 				return entries[i].Sort < entries[j].Sort
+			}
+			if entries[i].CreatedTime != entries[j].CreatedTime {
+				return entries[i].CreatedTime > entries[j].CreatedTime
 			}
 			return entries[i].Path < entries[j].Path
 		})

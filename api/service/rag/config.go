@@ -19,11 +19,13 @@ const (
 	DefaultKnowledgeOverlapSize     = 0
 	DefaultKnowledgeIncludeTitle    = false // 默认不添加知识标题
 	DefaultKnowledgeIncludeFileName = true  // 默认添加文件名
+	DefaultKnowledgeIncludeSubtitle = false // 默认不添加子标题
 	DefaultIndexSplitRule           = "h3,\n,\n\n,。"
 	DefaultIndexMaxLength           = 384
 	DefaultIndexOverlapSize         = 0
-	DefaultIndexIncludeTitle        = true // 默认添加知识标题
-	DefaultIndexIncludeFileName     = true // 默认添加文件名
+	DefaultIndexIncludeTitle        = true  // 默认添加知识标题
+	DefaultIndexIncludeFileName     = true  // 默认添加文件名
+	DefaultIndexIncludeSubtitle     = false // 默认不添加子标题
 	DefaultSummaryGeneration        = "manual"
 	DefaultQuestionGeneration       = "ai"
 	DefaultSearchConfigJSON         = `{"vector":true,"fulltext":false,"hybrid":false,"rerank_model":"rerank-english-v2.0","top_k":4,"score_threshold":0.0}`
@@ -56,17 +58,20 @@ type ChunkConfig struct {
 	KnowledgeOverlapSize     int                           `json:"knowledge_overlap_size"`
 	KnowledgeIncludeTitle    bool                          `json:"knowledge_include_title"`    // 是否将知识标题添加到知识点中
 	KnowledgeIncludeFileName bool                          `json:"knowledge_include_filename"` // 是否将文件名称添加到知识点中
+	KnowledgeIncludeSubtitle bool                          `json:"knowledge_include_subtitle"` // 是否将子标题添加到知识点中
 	IndexChunk               model.IndexChunkingConfig     `json:"index_chunking"`
 	IndexMaxLength           int                           `json:"index_max_length"`
 	IndexOverlapSize         int                           `json:"index_overlap_size"`
 	IndexIncludeTitle        bool                          `json:"index_include_title"`    // 是否将知识标题添加到索引块中
 	IndexIncludeFileName     bool                          `json:"index_include_filename"` // 是否将文件名称添加到索引块中
+	IndexIncludeSubtitle     bool                          `json:"index_include_subtitle"` // 是否将子标题添加到索引块中
 	SummaryGeneration        string                        `json:"summary_generation"`
 	QuestionGeneration       string                        `json:"question_generation"`
 	LogicChannelID           *int64                        `json:"logic_channel_id"`
 	LogicModelName           *string                       `json:"logic_model_name"`
 	EmbeddingChannelID       *int64                        `json:"embedding_channel_id"`
 	EmbeddingModelName       *string                       `json:"embedding_model_name"`
+	FastReasoning            model.ModelChannelConfig      `json:"fast_reasoning"`
 	SearchConfig             *model.SearchConfigData       `json:"search_config"`
 
 	// 时间字段
@@ -103,6 +108,31 @@ func (c *ChunkConfig) SetIndexSplitRule(rule string) {
 // 当SummaryGeneration或QuestionGeneration任一为"ai"时启用AI生成
 func (c *ChunkConfig) EnableAIGeneration() bool {
 	return c.SummaryGeneration == "ai" || c.QuestionGeneration == "ai"
+}
+
+// SelectPipelineLLM 统一的流水线模型选择方法
+// 优先级：LogicChannel > LogicChannelID > FastReasoning
+// 流水线场景（图谱抽取、实体抽取、摘要生成等）均使用推理模型，LogicReasoning 优先
+func (c *ChunkConfig) SelectPipelineLLM() (*model.Channel, string, error) {
+	if c.LogicChannel != nil && c.LogicModelName != nil {
+		return c.LogicChannel, *c.LogicModelName, nil
+	}
+
+	if c.LogicChannelID != nil && c.LogicModelName != nil {
+		ch, err := model.GetChannelByID(*c.LogicChannelID)
+		if err == nil && ch != nil {
+			return ch, *c.LogicModelName, nil
+		}
+	}
+
+	if c.FastReasoning.ChannelID != nil && c.FastReasoning.ModelName != nil {
+		ch, err := model.GetChannelByID(*c.FastReasoning.ChannelID)
+		if err == nil && ch != nil {
+			return ch, *c.FastReasoning.ModelName, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("no available llm channel for pipeline")
 }
 
 // NewChunkConfigService 创建分块配置服务
@@ -351,6 +381,7 @@ func (s *ChunkConfigService) CreateDefaultConfig(eid int64, libraryID *int64, ch
 			OverlapSize:     DefaultKnowledgeOverlapSize,
 			IncludeTitle:    DefaultKnowledgeIncludeTitle,
 			IncludeFileName: DefaultKnowledgeIncludeFileName,
+			AppendSubtitle:  DefaultKnowledgeIncludeSubtitle,
 		},
 		IndexChunk: model.IndexChunkingConfig{
 			SplitRule:       DefaultIndexSplitRule,
@@ -358,6 +389,7 @@ func (s *ChunkConfigService) CreateDefaultConfig(eid int64, libraryID *int64, ch
 			OverlapSize:     DefaultIndexOverlapSize,
 			IncludeTitle:    DefaultIndexIncludeTitle,
 			IncludeFileName: DefaultIndexIncludeFileName,
+			AppendSubtitle:  DefaultIndexIncludeSubtitle,
 		},
 		ContentSummary: model.ContentGenerationConfig{
 			GenerationMethod: DefaultSummaryGeneration,
@@ -477,10 +509,13 @@ func (s *ChunkConfigService) ensureLibraryConfig(eid int64, libraryID int64) (*C
 		KnowledgeOverlapSize:     templateCfg.KnowledgeOverlapSize,
 		KnowledgeIncludeTitle:    templateCfg.KnowledgeIncludeTitle,
 		KnowledgeIncludeFileName: templateCfg.KnowledgeIncludeFileName,
+		KnowledgeIncludeSubtitle: templateCfg.KnowledgeIncludeSubtitle,
 		IndexChunk:               templateCfg.IndexChunk,
 		IndexMaxLength:           templateCfg.IndexMaxLength,
 		IndexOverlapSize:         templateCfg.IndexOverlapSize,
 		IndexIncludeTitle:        templateCfg.IndexIncludeTitle,
+		IndexIncludeFileName:     templateCfg.IndexIncludeFileName,
+		IndexIncludeSubtitle:     templateCfg.IndexIncludeSubtitle,
 		SummaryGeneration:        templateCfg.SummaryGeneration,
 		QuestionGeneration:       templateCfg.QuestionGeneration,
 		LogicChannelID:           templateCfg.LogicChannelID,
@@ -786,6 +821,7 @@ func (s *ChunkConfigService) newFallbackSystemConfig(eid int64, chunkType, name 
 			OverlapSize:     DefaultKnowledgeOverlapSize,
 			IncludeTitle:    DefaultKnowledgeIncludeTitle,
 			IncludeFileName: DefaultKnowledgeIncludeFileName,
+			AppendSubtitle:  DefaultKnowledgeIncludeSubtitle,
 			ChunkMode:       ChunkModelLengthFirst,
 			IsSystemDefault: true,
 		},
@@ -793,12 +829,14 @@ func (s *ChunkConfigService) newFallbackSystemConfig(eid int64, chunkType, name 
 		KnowledgeOverlapSize:     DefaultKnowledgeOverlapSize,
 		KnowledgeIncludeTitle:    DefaultKnowledgeIncludeTitle,
 		KnowledgeIncludeFileName: DefaultKnowledgeIncludeFileName,
+		KnowledgeIncludeSubtitle: DefaultKnowledgeIncludeSubtitle,
 		IndexChunk: model.IndexChunkingConfig{
 			SplitRule:       DefaultIndexSplitRule,
 			MaxLength:       DefaultIndexMaxLength,
 			OverlapSize:     DefaultIndexOverlapSize,
 			IncludeTitle:    DefaultIndexIncludeTitle,
 			IncludeFileName: DefaultIndexIncludeFileName,
+			AppendSubtitle:  DefaultIndexIncludeSubtitle,
 			ChunkMode:       ChunkModelLengthFirst,
 			IsSystemDefault: true,
 		},
@@ -806,6 +844,7 @@ func (s *ChunkConfigService) newFallbackSystemConfig(eid int64, chunkType, name 
 		IndexOverlapSize:     DefaultIndexOverlapSize,
 		IndexIncludeTitle:    DefaultIndexIncludeTitle,
 		IndexIncludeFileName: DefaultIndexIncludeFileName,
+		IndexIncludeSubtitle: DefaultIndexIncludeSubtitle,
 		SummaryGeneration:    DefaultSummaryGeneration,
 		QuestionGeneration:   DefaultQuestionGeneration,
 		EmbeddingChannelID:   embeddingChannelID,
@@ -868,6 +907,14 @@ func cloneChunkConfig(cfg *ChunkConfig) *ChunkConfig {
 		id := *cfg.EmbeddingChannelID
 		cloned.EmbeddingChannelID = &id
 	}
+	if cfg.FastReasoning.ChannelID != nil {
+		id := *cfg.FastReasoning.ChannelID
+		cloned.FastReasoning.ChannelID = &id
+	}
+	if cfg.FastReasoning.ModelName != nil {
+		name := *cfg.FastReasoning.ModelName
+		cloned.FastReasoning.ModelName = &name
+	}
 	return &cloned
 }
 
@@ -908,17 +955,20 @@ func (s *ChunkConfigService) convertToChunkConfig(setting *model.ChunkSetting) (
 	config.KnowledgeOverlapSize = chunkingConfig.KnowledgeChunk.OverlapSize
 	config.KnowledgeIncludeTitle = chunkingConfig.KnowledgeChunk.IncludeTitle
 	config.KnowledgeIncludeFileName = chunkingConfig.KnowledgeChunk.IncludeFileName
+	config.KnowledgeIncludeSubtitle = chunkingConfig.KnowledgeChunk.AppendSubtitle
 	config.IndexChunk = chunkingConfig.IndexChunk
 	config.IndexMaxLength = chunkingConfig.IndexChunk.MaxLength
 	config.IndexOverlapSize = chunkingConfig.IndexChunk.OverlapSize
 	config.IndexIncludeTitle = chunkingConfig.IndexChunk.IncludeTitle
 	config.IndexIncludeFileName = chunkingConfig.IndexChunk.IncludeFileName
+	config.IndexIncludeSubtitle = chunkingConfig.IndexChunk.AppendSubtitle
 	config.SummaryGeneration = chunkingConfig.ContentSummary.GenerationMethod
 	config.QuestionGeneration = chunkingConfig.CommonQuestions.GenerationMethod
 	config.LogicChannelID = modelConfig.LogicReasoning.ChannelID
 	config.LogicModelName = modelConfig.LogicReasoning.ModelName
 	config.EmbeddingChannelID = modelConfig.VectorEmbedding.ChannelID
 	config.EmbeddingModelName = modelConfig.VectorEmbedding.ModelName
+	config.FastReasoning = modelConfig.FastReasoning
 	config.SearchConfig = &modelConfig.SearchConfig
 
 	// 加载关联的渠道信息
@@ -974,8 +1024,8 @@ func (s *ChunkConfigService) convertToChunkSetting(config *ChunkConfig) *model.C
 				ModelName: config.EmbeddingModelName,
 			},
 			FastReasoning: model.ModelChannelConfig{
-				ChannelID: nil,
-				ModelName: nil,
+				ChannelID: config.FastReasoning.ChannelID,
+				ModelName: config.FastReasoning.ModelName,
 			},
 		}
 	} else {
@@ -991,6 +1041,12 @@ func (s *ChunkConfigService) convertToChunkSetting(config *ChunkConfig) *model.C
 		}
 		if config.EmbeddingModelName != nil {
 			modelConfig.VectorEmbedding.ModelName = config.EmbeddingModelName
+		}
+		if config.FastReasoning.ChannelID != nil {
+			modelConfig.FastReasoning.ChannelID = config.FastReasoning.ChannelID
+		}
+		if config.FastReasoning.ModelName != nil {
+			modelConfig.FastReasoning.ModelName = config.FastReasoning.ModelName
 		}
 	}
 
@@ -1273,6 +1329,7 @@ func (s *ChunkConfigService) UpdateModelConfigInChunkConfig(config *ChunkConfig,
 	if modelConfig.VectorEmbedding.ModelName != nil {
 		config.EmbeddingModelName = modelConfig.VectorEmbedding.ModelName
 	}
+	config.FastReasoning = modelConfig.FastReasoning
 
 	// 更新搜索配置
 	config.SearchConfig = &modelConfig.SearchConfig
@@ -1312,6 +1369,7 @@ func (s *ChunkConfigService) UpdateChunkingConfigInChunkConfig(config *ChunkConf
 	config.KnowledgeOverlapSize = chunkingConfig.KnowledgeChunk.OverlapSize
 	config.KnowledgeIncludeTitle = chunkingConfig.KnowledgeChunk.IncludeTitle
 	config.KnowledgeIncludeFileName = chunkingConfig.KnowledgeChunk.IncludeFileName
+	config.KnowledgeIncludeSubtitle = chunkingConfig.KnowledgeChunk.AppendSubtitle
 
 	// 更新索引块配置
 	config.IndexChunk = chunkingConfig.IndexChunk
@@ -1319,6 +1377,7 @@ func (s *ChunkConfigService) UpdateChunkingConfigInChunkConfig(config *ChunkConf
 	config.IndexOverlapSize = chunkingConfig.IndexChunk.OverlapSize
 	config.IndexIncludeTitle = chunkingConfig.IndexChunk.IncludeTitle
 	config.IndexIncludeFileName = chunkingConfig.IndexChunk.IncludeFileName
+	config.IndexIncludeSubtitle = chunkingConfig.IndexChunk.AppendSubtitle
 
 	// 更新内容生成配置
 	config.SummaryGeneration = chunkingConfig.ContentSummary.GenerationMethod

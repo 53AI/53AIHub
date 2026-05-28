@@ -147,53 +147,99 @@ func SumStatsByDateRange(eid int64, startDate, endDate time.Time) (*MessageStats
 
 // SumStatsByAgentAndDateRange 统计指定日期范围内指定 agent 的字段总和
 func SumStatsByAgentAndDateRange(eid int64, agentID *int64, startDate, endDate time.Time) (*MessageStatsSummary, error) {
+	return SumStatsByAgentDateRangeAndSource(eid, agentID, startDate, endDate, nil)
+}
+
+// SumStatsByAgentDateRangeAndSource 统计指定日期范围内指定 agent 和来源的字段总和
+// 当 sources 不为空时，从 Message 表实时统计；否则从 MessageStats 表聚合统计
+func SumStatsByAgentDateRangeAndSource(eid int64, agentID *int64, startDate, endDate time.Time, sources []string) (*MessageStatsSummary, error) {
 	start := time.Date(startDate.Year(), startDate.Month(), startDate.Day(), 0, 0, 0, 0, startDate.Location()).Unix()
 	end := time.Date(endDate.Year(), endDate.Month(), endDate.Day(), 23, 59, 59, 999999999, endDate.Location()).Unix()
+	startMs := start * 1000
+	endMs := end * 1000
 
 	var stats MessageStatsSummary
-	query := DB.Model(&MessageStats{}).
-		Select("SUM(total_questions) as total_questions, SUM(no_search_results) as no_search_results, "+
-			"SUM(quick_answers) as quick_answers, SUM(deep_thinking) as deep_thinking, "+
-			"SUM(web_search_count) as web_search_count, SUM(total_tokens) as total_tokens, "+
-			"SUM(total_duration_ms) as total_duration_ms").
-		Where("eid = ? AND stat_date >= ? AND stat_date <= ?", eid, start, end)
-
-	// 如果指定了 agent_id，添加筛选条件
-	if agentID != nil {
-		query = query.Where("agent_id = ?", *agentID)
-	}
-
-	err := query.Find(&stats).Error
-
-	if err != nil {
-		return nil, err
-	}
-
 	stats.Eid = eid
 	if agentID != nil {
 		stats.AgentID = *agentID
 	}
 
-	if stats.TotalQuestions > 0 {
-		stats.AvgDurationMs = stats.TotalDurationMs / stats.TotalQuestions
-	}
+	if len(sources) > 0 {
+		query := DB.Model(&Message{}).
+			Where("eid = ? AND created_time >= ? AND created_time <= ?", eid, startMs, endMs)
 
-	// 查询对话数量（从 Message 表统计去重后的 conversation_id）
-	// 注意：Message 表使用毫秒级时间戳
-	startMs := start * 1000
-	endMs := end * 1000
+		if agentID != nil {
+			query = query.Where("agent_id = ?", *agentID)
+		}
 
-	convQuery := DB.Model(&Message{}).
-		Select("COUNT(DISTINCT conversation_id)").
-		Where("eid = ? AND created_time >= ? AND created_time <= ?", eid, startMs, endMs)
+		query = query.Where("request_source IN ?", sources)
 
-	if agentID != nil {
-		convQuery = convQuery.Where("agent_id = ?", *agentID)
-	}
+		type aggResult struct {
+			TotalQuestions int64
+			QuickAnswers   int64
+			DeepThinking   int64
+			TotalTokens    int64
+			TotalDuration  int64
+			Conversations  int64
+		}
 
-	err = convQuery.Scan(&stats.Conversations).Error
-	if err != nil {
-		return nil, err
+		var result aggResult
+		err := query.Select("COUNT(*) as total_questions, "+
+			"SUM(CASE WHEN thinking_mode = ? THEN 1 ELSE 0 END) as quick_answers, "+
+			"SUM(CASE WHEN thinking_mode = ? THEN 1 ELSE 0 END) as deep_thinking, "+
+			"SUM(total_tokens) as total_tokens, "+
+			"SUM(elapsed_time) as total_duration, "+
+			"COUNT(DISTINCT conversation_id) as conversations",
+			ThinkingModeQuick, ThinkingModeDeep).
+			Scan(&result).Error
+
+		if err != nil {
+			return nil, err
+		}
+
+		stats.TotalQuestions = result.TotalQuestions
+		stats.QuickAnswers = result.QuickAnswers
+		stats.DeepThinking = result.DeepThinking
+		stats.TotalTokens = result.TotalTokens
+		stats.TotalDurationMs = result.TotalDuration
+		stats.Conversations = result.Conversations
+
+		if stats.TotalQuestions > 0 {
+			stats.AvgDurationMs = stats.TotalDurationMs / stats.TotalQuestions
+		}
+	} else {
+		query := DB.Model(&MessageStats{}).
+			Select("SUM(total_questions) as total_questions, SUM(no_search_results) as no_search_results, "+
+				"SUM(quick_answers) as quick_answers, SUM(deep_thinking) as deep_thinking, "+
+				"SUM(web_search_count) as web_search_count, SUM(total_tokens) as total_tokens, "+
+				"SUM(total_duration_ms) as total_duration_ms").
+			Where("eid = ? AND stat_date >= ? AND stat_date <= ?", eid, start, end)
+
+		if agentID != nil {
+			query = query.Where("agent_id = ?", *agentID)
+		}
+
+		err := query.Find(&stats).Error
+		if err != nil {
+			return nil, err
+		}
+
+		if stats.TotalQuestions > 0 {
+			stats.AvgDurationMs = stats.TotalDurationMs / stats.TotalQuestions
+		}
+
+		convQuery := DB.Model(&Message{}).
+			Select("COUNT(DISTINCT conversation_id)").
+			Where("eid = ? AND created_time >= ? AND created_time <= ?", eid, startMs, endMs)
+
+		if agentID != nil {
+			convQuery = convQuery.Where("agent_id = ?", *agentID)
+		}
+
+		err = convQuery.Scan(&stats.Conversations).Error
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &stats, nil

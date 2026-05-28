@@ -536,8 +536,10 @@ func saveSoloFileRejectMessage(c *gin.Context, chatRequest *ChatRequest, agent *
 		ThinkingMode:      messageStatus.ThinkingMode,
 		KnowledgeScope:    messageStatus.KnowledgeScope,
 		KnowledgeType:     messageStatus.KnowledgeType,
+		RequestSource:     messageStatus.RequestSource,
 	}
 
+	applyVisitorIdentityToMessage(c, message)
 	if err := model.CreateMessage(message); err != nil {
 		return 0, err
 	}
@@ -593,8 +595,7 @@ func collectSoloFileRAGStats(eid int64, fileID int64, fileName string, sources [
 	// 从回答内容中提取实际的引用
 	if answer != "" {
 		quotedSourceIDs := extractQuotedSourceIDs(answer)
-		quotedChunkIDs := getQuotedChunkIDs(quotedSourceIDs, sources)
-		quotedFileIDs := getQuotedFileIDs(quotedSourceIDs, sources)
+		quotedChunkIDs, quotedFileIDs := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 		stats["document_quotations"] = quotedChunkIDs
 		stats["file_quotations"] = quotedFileIDs
 	} else {

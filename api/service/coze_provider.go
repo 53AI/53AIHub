@@ -103,12 +103,21 @@ func (ser *CozeService) HandlerAccessTokenByRefreshToken() error {
 	}
 	cozeApiToken, err := api.RefreshOAuthToken(config.ClientID, config.ClientSecret, ser.Provider.RefreshToken)
 	if err != nil {
+		// If refresh token expired, mark provider as unauthorized
+		if strings.Contains(err.Error(), "invalid_grant") || strings.Contains(err.Error(), "invalid_refresh_token") {
+			ser.Provider.IsAuthorized = false
+			if updateErr := model.UpdateProvider(&ser.Provider); updateErr != nil {
+				return fmt.Errorf("refresh token expired, failed to update provider: %w", updateErr)
+			}
+			return fmt.Errorf("refresh token expired, reauthorization required: %w", err)
+		}
 		return err
 	}
 	ser.Provider.AccessToken = cozeApiToken.AccessToken
 	ser.Provider.RefreshToken = cozeApiToken.RefreshToken
 	ser.Provider.ExpiresIn = cozeApiToken.ExpiresIn
 	ser.Provider.IsAuthorized = true
+	ser.Provider.AuthedTime = time.Now().UTC().UnixMilli()
 	err = model.UpdateProvider(&ser.Provider)
 	if err != nil {
 		return err
@@ -131,7 +140,7 @@ func (ser *CozeService) CheckAndRefreshToken() (ok bool, err error) {
 		return false, nil
 	}
 
-	if ser.Provider.ExpiresIn <= time.Now().Unix() {
+	if time.Now().Unix()+300 >= ser.Provider.AuthedTime/1000+ser.Provider.ExpiresIn {
 		logger.SysLogf("Coze RefreshToken: eid = %d", ser.Provider.Eid)
 		err := ser.HandlerAccessTokenByRefreshToken()
 		if err != nil {

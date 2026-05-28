@@ -101,6 +101,7 @@ type KnowledgeChunkingConfig struct {
 	OverlapSize     int    `json:"overlap_size"`
 	IncludeTitle    bool   `json:"include_title"`     // 是否将知识标题添加到知识点中
 	IncludeFileName bool   `json:"include_filename"`  // 是否将文件名称添加到知识点中
+	AppendSubtitle  bool   `json:"append_subtitle"`   // 是否将子标题添加到知识点中
 	IsSystemDefault bool   `json:"is_system_default"` // 是否为选择为系统默认配置
 	ChunkMode       string `json:"chunk_mode"`        // 分块模式，identifier_first 或 length_first
 }
@@ -115,6 +116,7 @@ type IndexChunkingConfig struct {
 	OverlapSize     int    `json:"overlap_size"`
 	IncludeTitle    bool   `json:"include_title"`     // 是否将知识标题添加到索引块中
 	IncludeFileName bool   `json:"include_filename"`  // 是否将文件名称添加到索引块中
+	AppendSubtitle  bool   `json:"append_subtitle"`   // 是否将子标题添加到索引块中
 	IsSystemDefault bool   `json:"is_system_default"` // 是否为选择为系统默认配置
 	ChunkMode       string `json:"chunk_mode"`        // 分块模式，identifier_first 或 length_first
 }

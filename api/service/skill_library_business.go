@@ -1,17 +1,23 @@
 package service
 
 import (
+	"archive/zip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/skill"
+	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
 
@@ -810,4 +816,495 @@ func getSkillLibraryByIDAndEIDWithDB(db *gorm.DB, eid, id int64) (*model.SkillLi
 		return nil, err
 	}
 	return &skillInfo, nil
+}
+
+// SkillFileItem represents a file or directory in skill package
+type SkillFileItem struct {
+	Name         string          `json:"name"`
+	Path         string          `json:"path"`
+	Type         string          `json:"type"` // "file" or "directory"
+	Size         int64           `json:"size,omitempty"`
+	ModifiedTime int64           `json:"modified_time,omitempty"`
+	Children     []SkillFileItem `json:"children,omitempty"`
+}
+
+// SkillFileUpdateItem represents a file update request
+type SkillFileUpdateItem struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+// SkillFileUpdateResult represents the result of file update operation
+type SkillFileUpdateResult struct {
+	UpdatedCount int    `json:"updated_count"`
+	DeletedCount int    `json:"deleted_count"`
+	Repackaged   bool   `json:"repackaged"`
+	NewZipKey    string `json:"new_zip_key"`
+}
+
+// GetSkillFileTree returns the file tree of a skill package
+func (s *SkillLibraryService) GetSkillFileTree(ctx context.Context, eid, skillID int64) ([]SkillFileItem, error) {
+	skill, err := model.GetSkillLibraryByID(skillID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 权限校验：租户技能只有所属租户可访问，平台技能所有租户可访问
+	if skill.Eid != 0 && skill.Eid != eid {
+		return nil, ErrSkillNotVisible
+	}
+
+	installPath := skill.InstallPath
+	if installPath == "" {
+		return nil, errors.New("skill install path is empty")
+	}
+
+	return buildSkillFileTree(installPath)
+}
+
+// GetSkillFileContent returns the content of a specific file in the skill package
+func (s *SkillLibraryService) GetSkillFileContent(ctx context.Context, eid, skillID int64, filePath string) (string, error) {
+	skill, err := model.GetSkillLibraryByID(skillID)
+	if err != nil {
+		return "", err
+	}
+
+	// 权限校验：租户技能只有所属租户可访问，平台技能所有租户可访问
+	if skill.Eid != 0 && skill.Eid != eid {
+		return "", ErrSkillNotVisible
+	}
+
+	installPath := skill.InstallPath
+	if installPath == "" {
+		return "", errors.New("skill install path is empty")
+	}
+
+	// 安全检查：防止路径穿越
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") {
+		return "", ErrSkillScanZipPathTraversal
+	}
+
+	// 禁止绝对路径
+	if filepath.IsAbs(cleanPath) {
+		return "", ErrSkillScanZipPathTraversal
+	}
+
+	fullPath := filepath.Join(installPath, cleanPath)
+	// 再次校验，确保最终路径在 installPath 下
+	fullPath = filepath.Clean(fullPath)
+	if !strings.HasPrefix(fullPath, installPath+string(filepath.Separator)) && fullPath != installPath {
+		return "", ErrSkillScanZipPathTraversal
+	}
+
+	// 检查文件是否存在且是文件（不是目录）
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", errors.New("path is a directory, not a file")
+	}
+
+	// 限制文件大小（最大 10MB）
+	const maxFileSize = 10 * 1024 * 1024
+	if info.Size() > maxFileSize {
+		return "", errors.New("file size exceeds maximum limit (10MB)")
+	}
+
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
+
+// buildSkillFileTree walks the directory and builds file tree
+func buildSkillFileTree(rootPath string) ([]SkillFileItem, error) {
+	var flatFiles []SkillFileItem
+
+	err := filepath.Walk(rootPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(rootPath, path)
+		if err != nil {
+			return err
+		}
+		if relPath == "." {
+			return nil
+		}
+
+		item := SkillFileItem{
+			Name:         info.Name(),
+			Path:         filepath.ToSlash(relPath),
+			Type:         "file",
+			Size:         info.Size(),
+			ModifiedTime: info.ModTime().Unix(),
+		}
+
+		if info.IsDir() {
+			item.Type = "directory"
+		}
+
+		flatFiles = append(flatFiles, item)
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return buildTreeFromFlatList(flatFiles), nil
+}
+
+// buildTreeFromFlatList converts flat file list to tree structure
+func buildTreeFromFlatList(files []SkillFileItem) []SkillFileItem {
+	if len(files) == 0 {
+		return []SkillFileItem{}
+	}
+
+	// 构建路径到文件项的映射
+	pathMap := make(map[string]SkillFileItem)
+	for _, f := range files {
+		pathMap[f.Path] = f
+	}
+
+	// 找出所有根级别项目（路径中不包含 "/"）
+	var root []SkillFileItem
+	for _, f := range files {
+		if !strings.Contains(f.Path, "/") {
+			// 根级别项目
+			if f.Type == "directory" {
+				// 目录需要构建子节点
+				children := buildChildren(f.Path, pathMap)
+				f.Children = children
+			}
+			root = append(root, f)
+		}
+	}
+
+	return root
+}
+
+// buildChildren 递归构建指定路径下的子节点
+func buildChildren(parentPath string, pathMap map[string]SkillFileItem) []SkillFileItem {
+	var children []SkillFileItem
+	prefix := parentPath + "/"
+
+	for path, item := range pathMap {
+		// 检查是否是直接子项（路径以 parentPath/ 开头，且不再嵌套更多层级）
+		if strings.HasPrefix(path, prefix) {
+			remaining := strings.TrimPrefix(path, prefix)
+			// 直接子项：剩余路径不包含 "/"
+			if !strings.Contains(remaining, "/") {
+				if item.Type == "directory" {
+					// 递归构建子目录
+					subChildren := buildChildren(path, pathMap)
+					item.Children = subChildren
+				}
+				children = append(children, item)
+			}
+		}
+	}
+
+	return children
+}
+
+// UpdateSkillFiles updates multiple files in a skill package and repackages
+func (s *SkillLibraryService) UpdateSkillFiles(ctx context.Context, eid, skillID int64, files []SkillFileUpdateItem, deletedFiles []string) (*SkillFileUpdateResult, error) {
+	skill, err := model.GetSkillLibraryByID(skillID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 权限校验：租户技能只有所属租户可编辑
+	if skill.Eid != 0 && skill.Eid != eid {
+		return nil, ErrSkillNotVisible
+	}
+
+	// 平台技能不允许编辑
+	if skill.Eid == 0 {
+		return nil, ErrSkillPlatformReadonly
+	}
+
+	installPath := skill.InstallPath
+	if installPath == "" {
+		return nil, errors.New("skill install path is empty")
+	}
+
+	// 1. 删除文件
+	deletedCount := 0
+	for _, filePath := range deletedFiles {
+		if err := deleteSkillFile(installPath, filePath); err != nil {
+			logger.Warnf(ctx, "删除文件失败: path=%s, err=%v", filePath, err)
+			continue
+		}
+		deletedCount++
+	}
+
+	// 2. 并行更新文件（使用 errgroup）
+	updatedCount := 0
+	var updatedCountMu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(10) // 限制并发数，避免过多并发写入
+
+	for _, file := range files {
+		file := file // 捕获变量
+		g.Go(func() error {
+			if gctx.Err() != nil {
+				return gctx.Err() // 如果其他任务失败，提前退出
+			}
+			if err := updateSkillFile(installPath, file.Path, file.Content); err != nil {
+				logger.Warnf(ctx, "更新文件失败: path=%s, err=%v", file.Path, err)
+				return nil // 单个文件失败不阻止其他文件，继续处理
+			}
+			updatedCountMu.Lock()
+			updatedCount++
+			updatedCountMu.Unlock()
+			return nil
+		})
+	}
+
+	_ = g.Wait() // 单个文件失败不阻止其他文件，错误已在回调中记录
+
+	// 至少有一个操作成功
+	if updatedCount == 0 && deletedCount == 0 {
+		return nil, errors.New("no files updated or deleted")
+	}
+
+	// 3. 重新打包
+	newZipKey, zipSHA256, err := s.repackAndUploadSkill(ctx, skill)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. 更新数据库
+	updates := map[string]interface{}{
+		"origin_zip_key":    newZipKey,
+		"origin_zip_sha256": zipSHA256,
+		"updated_time":      time.Now().UTC().UnixMilli(),
+	}
+	if err := model.UpdateSkillLibraryByIDAndEID(eid, skillID, updates); err != nil {
+		return nil, err
+	}
+
+	return &SkillFileUpdateResult{
+		UpdatedCount: updatedCount,
+		DeletedCount: deletedCount,
+		Repackaged:   true,
+		NewZipKey:    newZipKey,
+	}, nil
+}
+
+// deleteSkillFile removes a file or directory from the skill directory
+func deleteSkillFile(installPath, filePath string) error {
+	// 安全检查：防止路径穿越
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") {
+		return ErrSkillScanZipPathTraversal
+	}
+
+	// 禁止绝对路径
+	if filepath.IsAbs(cleanPath) {
+		return ErrSkillScanZipPathTraversal
+	}
+
+	fullPath := filepath.Join(installPath, cleanPath)
+	// 再次校验，确保最终路径在 installPath 下
+	fullPath = filepath.Clean(fullPath)
+	if !strings.HasPrefix(fullPath, installPath+string(filepath.Separator)) && fullPath != installPath {
+		return ErrSkillScanZipPathTraversal
+	}
+
+	// 检查文件/目录是否存在
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return nil // 文件不存在，视为成功
+	}
+
+	// 删除文件或目录
+	return os.RemoveAll(fullPath)
+}
+
+// updateSkillFile writes content to a file in the skill directory
+func updateSkillFile(installPath, filePath, content string) error {
+	// 安全检查：防止路径穿越
+	cleanPath := filepath.Clean(filePath)
+	if strings.Contains(cleanPath, "..") {
+		return ErrSkillScanZipPathTraversal
+	}
+
+	// 禁止绝对路径
+	if filepath.IsAbs(cleanPath) {
+		return ErrSkillScanZipPathTraversal
+	}
+
+	fullPath := filepath.Join(installPath, cleanPath)
+	// 再次校验，确保最终路径在 installPath 下
+	fullPath = filepath.Clean(fullPath)
+	if !strings.HasPrefix(fullPath, installPath+string(filepath.Separator)) && fullPath != installPath {
+		return ErrSkillScanZipPathTraversal
+	}
+
+	// 确保目录存在
+	if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(fullPath, []byte(content), 0644)
+}
+
+// repackAndUploadSkill creates a new zip from the skill directory and uploads it
+// Returns the new zip key and SHA256 hash, deletes the old zip after successful upload
+// Uses streaming to avoid loading entire zip into memory
+func (s *SkillLibraryService) repackAndUploadSkill(ctx context.Context, skill *model.SkillLibrary) (string, string, error) {
+	pr, pw := io.Pipe()
+
+	// 启动 goroutine 进行压缩
+	zipErr := make(chan error, 1)
+	go func() {
+		err := zipSkillDirectoryToWriter(skill.InstallPath, pw)
+		if err != nil {
+			// 使用 CloseWithError 通知读端错误，阻止后续读取损坏数据
+			pw.CloseWithError(err)
+			zipErr <- err
+			return
+		}
+		pw.Close()
+		zipErr <- nil
+	}()
+
+	// 使用 TeeReader 同时计算 SHA256
+	hash := sha256.New()
+	tee := io.TeeReader(pr, hash)
+
+	newZipKey := fmt.Sprintf("skills/tenants/%d/%s-%d.zip", skill.Eid, skill.SkillName, time.Now().Unix())
+
+	// 流式上传
+	if err := s.storage.SaveFromReader(tee, newZipKey); err != nil {
+		// 关闭读端，goroutine 的写操作会收到 ErrClosedPipe
+		pr.Close()
+		// 等待 goroutine 结束，避免继续操作已关闭的 pipe
+		<-zipErr // drain channel，忽略 goroutine 的错误（主流程已失败）
+		return "", "", err
+	}
+
+	// 等待压缩完成并检查错误
+	if err := <-zipErr; err != nil {
+		return "", "", fmt.Errorf("zip creation failed: %w", err)
+	}
+
+	zipSHA256 := hex.EncodeToString(hash.Sum(nil))
+
+	// 删除旧压缩包（上传成功后）
+	oldZipKey := skill.OriginZipKey
+	if oldZipKey != "" && oldZipKey != newZipKey {
+		if err := s.storage.Delete(oldZipKey); err != nil {
+			logger.Warnf(ctx, "删除旧压缩包失败: key=%s, err=%v", oldZipKey, err)
+		}
+	}
+
+	return newZipKey, zipSHA256, nil
+}
+
+// zipSkillDirectory creates a zip file from a directory
+func zipSkillDirectory(sourceDir, zipPath string) error {
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return err
+	}
+	defer zipFile.Close()
+
+	zw := zip.NewWriter(zipFile)
+	defer zw.Close()
+
+	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		if relPath == "." {
+			return nil
+		}
+
+		// 创建 zip 条目
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(relPath)
+
+		if info.IsDir() {
+			header.Name += "/"
+			_, err = zw.CreateHeader(header)
+			return err
+		}
+
+		// 写入文件内容
+		header.Method = zip.Deflate
+		writer, err := zw.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		_, copyErr := io.Copy(writer, file)
+		return copyErr
+	})
+}
+
+// zipSkillDirectoryToWriter creates a zip archive from sourceDir and writes to w
+func zipSkillDirectoryToWriter(sourceDir string, w io.Writer) error {
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		if relPath == "." {
+			return nil
+		}
+
+		header, err := zip.FileInfoHeader(info)
+		if err != nil {
+			return err
+		}
+		header.Name = filepath.ToSlash(relPath)
+
+		if info.IsDir() {
+			header.Name += "/"
+			_, err = zw.CreateHeader(header)
+			return err
+		}
+
+		header.Method = zip.Deflate
+		writer, err := zw.CreateHeader(header)
+		if err != nil {
+			return err
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		_, copyErr := io.Copy(writer, file)
+		return copyErr
+	})
 }

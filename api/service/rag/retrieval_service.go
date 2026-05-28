@@ -150,20 +150,14 @@ func (s *RetrievalChunkService) splitContentForRetrieval(content string, config 
 	config.IndexMaxLength = config.IndexChunk.MaxLength
 	maxLength := config.IndexMaxLength
 	splitRules := config.IndexChunk.GetSplitRules()
+	subtitle := ""
+	if config.IndexIncludeSubtitle {
+		subtitle = extractMarkdownSubtitle(content)
+	}
 
 	// 如果需要包含标题或文件名，先计算前缀的token数
-	var prefix string
+	prefix := buildChunkContextPrefix(fileName, documentTitle, subtitle, config.IndexIncludeFileName, config.IndexIncludeTitle, config.IndexIncludeSubtitle)
 	var prefixTokens int
-	if documentTitle != "" && config.IndexIncludeTitle {
-		prefix = documentTitle + "\n\n"
-	}
-	if fileName != "" && config.IndexIncludeFileName {
-		if prefix != "" {
-			prefix = fileName + "\n\n" + prefix
-		} else {
-			prefix = fileName + "\n\n"
-		}
-	}
 
 	if prefix != "" {
 		prefixTokens, _ = s.tokenizer.CountTokens(prefix)
@@ -181,11 +175,16 @@ func (s *RetrievalChunkService) splitContentForRetrieval(content string, config 
 	// 如果需要包含前缀，为分块添加前缀
 	if prefix != "" {
 		for i, chunk := range chunks {
-			// 检查第一个分块是否已经包含相同的标题，避免重复
-			if i == 0 && s.chunkContainsTitle(chunk, documentTitle) {
-				continue // 第一个分块已经包含标题，跳过添加
+			if i == 0 {
+				effectiveTitle := documentTitle
+				if effectiveTitle != "" && s.chunkContainsTitle(chunk, effectiveTitle) {
+					effectiveTitle = ""
+				}
+				prefix = buildChunkContextPrefix(fileName, effectiveTitle, subtitle, config.IndexIncludeFileName, config.IndexIncludeTitle, config.IndexIncludeSubtitle)
 			}
-			chunks[i] = prefix + chunk
+			if prefix != "" {
+				chunks[i] = prefix + chunk
+			}
 		}
 	}
 

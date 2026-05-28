@@ -2,14 +2,143 @@ package relay
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/53AI/53AIHub/model"
+	relay_model "github.com/songquanpeng/one-api/relay/model"
+)
+
+const (
+	agentStreamPhaseContextKey        = "agent_stream_phase"
+	agentInitialStreamPhaseContextKey = "agent_initial_stream_phase"
+	agentStreamPhasePlanning          = "planning"
+	agentStreamPhaseAnswering         = "answering"
 )
 
 type relayToolLoopState struct {
 	lastResultSignature string
 	sameResultCount     int
 	readOnlyStreak      int
+}
+
+type agentToolExecutionSignal struct {
+	FunctionName string
+	ArgsString   string
+	Status       string
+	ExitCode     int
+	LLMOutput    string
+}
+
+type agentToolTurnOutcome struct {
+	hasTool               bool
+	hasFailure            bool
+	hasLikelyFinalSuccess bool
+}
+
+func (o *agentToolTurnOutcome) Observe(signal agentToolExecutionSignal) {
+	if o == nil {
+		return
+	}
+	o.hasTool = true
+	if isFailedToolExecutionSignal(signal) {
+		o.hasFailure = true
+		return
+	}
+	if isLikelyFinalToolSuccess(signal.FunctionName, signal.ArgsString) {
+		o.hasLikelyFinalSuccess = true
+	}
+}
+
+func (o agentToolTurnOutcome) NextStreamPhase() string {
+	if o.hasTool && !o.hasFailure && o.hasLikelyFinalSuccess {
+		return agentStreamPhaseAnswering
+	}
+	return agentStreamPhasePlanning
+}
+
+func shouldUseRAGAnsweringInitialPhase(messageStatus *MessageStatsInfo, ragCompleted bool, hadRequestTools bool, toolsList []relay_model.Tool) bool {
+	if !ragCompleted || hadRequestTools {
+		return false
+	}
+	if messageStatus != nil && messageStatus.RouterResult != nil && messageStatus.RouterResult.Skill != nil {
+		return false
+	}
+	return isOnlyInjectedGlobalWebFetchTool(toolsList)
+}
+
+func isOnlyInjectedGlobalWebFetchTool(toolsList []relay_model.Tool) bool {
+	if len(toolsList) != 1 {
+		return false
+	}
+	return strings.TrimSpace(toolsList[0].Function.Name) == "web_fetch"
+}
+
+func isFailedToolExecutionSignal(signal agentToolExecutionSignal) bool {
+	status := strings.TrimSpace(signal.Status)
+	if status != "" && status != model.ToolCallStatusSuccess {
+		return true
+	}
+	if signal.ExitCode != 0 {
+		return true
+	}
+	output := strings.TrimSpace(signal.LLMOutput)
+	if output == "" {
+		return false
+	}
+	return strings.Contains(output, `"__tool_result__":"TOOL_EXECUTION_FAILED"`) ||
+		strings.Contains(output, `"__tool_error__"`) ||
+		strings.Contains(output, "TOOL_ARGUMENT_PARSE_ERROR") ||
+		strings.Contains(output, "TOOL_ARGUMENT_TOO_LARGE") ||
+		strings.Contains(output, "TOOL_EXECUTION_FAILED")
+}
+
+func isLikelyFinalToolSuccess(functionName string, argsString string) bool {
+	switch strings.TrimSpace(functionName) {
+	case "read_file", "list_files", "web_fetch", "prepare_input_file":
+		return false
+	case "run_shell":
+		return isLikelyFinalRunShellCommand(extractRunShellCommand(argsString))
+	default:
+		return !isSandboxRuntimeToolName(functionName)
+	}
+}
+
+func extractRunShellCommand(argsString string) string {
+	argsString = strings.TrimSpace(argsString)
+	if argsString == "" {
+		return ""
+	}
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argsString), &args); err == nil {
+		if command, ok := args["command"].(string); ok {
+			return strings.TrimSpace(command)
+		}
+	}
+	return argsString
+}
+
+func isLikelyFinalRunShellCommand(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return false
+	}
+	if !strings.Contains(command, "tencent_meeting_api.py") {
+		return false
+	}
+	action := extractTencentMeetingAction(command)
+	return action != "" && action != "convert_timestamp"
+}
+
+func extractTencentMeetingAction(command string) string {
+	fields := strings.Fields(command)
+	for i, field := range fields {
+		if strings.HasSuffix(field, "tencent_meeting_api.py") && i+1 < len(fields) {
+			return strings.TrimSpace(fields[i+1])
+		}
+	}
+	return ""
 }
 
 func newRelayToolLoopState() *relayToolLoopState {

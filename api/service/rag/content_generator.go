@@ -44,9 +44,18 @@ type IntentClassificationResult struct {
 	Confidence      float64  `json:"confidence"`       // 置信度 0-1
 	Reasoning       string   `json:"reasoning"`        // 分类原因
 	Keywords        []string `json:"keywords"`         // 仅在 category 不是 CHITCHAT 时提取 2-3 个核心实体词
+	DocumentType    string   `json:"document_type"`    // 明确的文种/文档类型，如财务报告、合同、制度
 	Answer          string   `json:"answer"`           // 分类结果答案（仅 CHITCHAT）
 	NormalizedQuery string   `json:"normalized_query"` // 规范化后的问题，用于检索/路由
 	ExpandedQueries []string `json:"expanded_queries"` // 扩展查询问题（用于提升RAG效果，仅 COMPLEX_AGENT）
+}
+
+// QueryExpansionResult 复杂问题查询拆解结果
+type QueryExpansionResult struct {
+	NormalizedQuery string   `json:"normalized_query"` // 规范化后的问题，用于检索/路由
+	Keywords        []string `json:"keywords"`         // 复杂问题拆解后的核心检索词
+	DocumentType    string   `json:"document_type"`    // 明确的文种/文档类型
+	ExpandedQueries []string `json:"expanded_queries"` // 扩展查询问题（用于提升RAG效果）
 }
 
 // IntentClassificationRequest 意图分类请求
@@ -127,8 +136,9 @@ type GenerateKnowledgeMapRequest struct {
 
 // GenerateSummary 生成内容概要
 func (s *ContentGeneratorService) GenerateSummary(ctx context.Context, eid int64, config *ChunkConfig, req *GenerateSummaryRequest) ([]string, error) {
-	if config.LogicChannel == nil {
-		return nil, fmt.Errorf("没有配置逻辑推理渠道，无法生成概要")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, fmt.Errorf("没有配置推理渠道，无法生成概要: %v", selectErr)
 	}
 
 	// 构建概要生成的提示词
@@ -144,7 +154,7 @@ func (s *ContentGeneratorService) GenerateSummary(ctx context.Context, eid int64
 
 	// 使用带超时的上下文（虽然Chat方法目前不接受context，但保留以便后续改进）
 	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     *config.LogicModelName,
+		Model:     selectedModelName,
 		MaxTokens: 1024, // 16K 上下文的一半，预留充足空间
 	}
 	testMessage := relaymodel.Message{
@@ -154,7 +164,7 @@ func (s *ContentGeneratorService) GenerateSummary(ctx context.Context, eid int64
 	chatReq.Messages = append(chatReq.Messages, testMessage)
 
 	_ = timeoutCtx
-	content, err, openaiErr := s.testChannel(ctx, config.LogicChannel, chatReq)
+	content, err, openaiErr := s.testChannel(ctx, selectedChannel, chatReq)
 	if err != nil || openaiErr != nil {
 		logger.Errorf(ctx, "AI生成概要失败: %v", err)
 		return nil, fmt.Errorf("AI生成概要失败: %v", err)
@@ -169,15 +179,16 @@ func (s *ContentGeneratorService) GenerateSummary(ctx context.Context, eid int64
 
 // GenerateQuestions 生成常见问题
 func (s *ContentGeneratorService) GenerateQuestions(ctx context.Context, eid int64, config *ChunkConfig, req *GenerateQuestionsRequest) ([]string, error) {
-	if config.LogicChannel == nil {
-		return nil, fmt.Errorf("没有配置逻辑推理渠道，无法生成问题")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, fmt.Errorf("没有配置推理渠道，无法生成问题: %v", selectErr)
 	}
 
 	// 构建问题生成的提示词
 	prompt := s.buildQuestionsPrompt(req.Content, req.MaxQuestions)
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     *config.LogicModelName,
+		Model:     selectedModelName,
 		MaxTokens: 1024, // 16K 上下文的一半，预留充足空间
 	}
 	testMessage := relaymodel.Message{
@@ -200,7 +211,7 @@ func (s *ContentGeneratorService) GenerateQuestions(ctx context.Context, eid int
 
 	// 使用带超时的上下文（虽然Chat方法目前不接受context，但保留以便后续改进）
 	_ = timeoutCtx
-	content, err, openaiErr := s.testChannel(ctx, config.LogicChannel, chatReq)
+	content, err, openaiErr := s.testChannel(ctx, selectedChannel, chatReq)
 	if err != nil || openaiErr != nil {
 		logger.Errorf(ctx, "AI生成问题失败: %v", err)
 		if openaiErr != nil {
@@ -250,6 +261,55 @@ func (s *ContentGeneratorService) buildQuestionsPrompt(content string, maxQuesti
 问题：`, maxQuestions, content)
 }
 
+// GenerateFastIntentRoute 生成轻量意图路由结果，不做复杂问题拆解。
+func (s *ContentGeneratorService) GenerateFastIntentRoute(
+	ctx context.Context,
+	eid int64,
+	config *ChunkConfig,
+	request *IntentClassificationRequest,
+	availableSkills []*skill.Skill,
+	agent *model.Agent,
+) (*IntentClassificationResult, error) {
+	selectedChannel, selectedModelName, err := resolveIntentGenerationChannel(ctx, agent, config, "GenerateFastIntentRoute")
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey := buildFastIntentRouteCacheKey(eid, agent, config, request, availableSkills, selectedChannel, selectedModelName)
+	result, err := s.getOrBuildCachedIntentClassification(ctx, cacheKey, func() (*IntentClassificationResult, error) {
+		return s.generateFastIntentRouteWithoutCache(ctx, selectedChannel, selectedModelName, request, availableSkills)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// GenerateComplexQueryExpansion 仅为复杂 RAG 问题生成拆分查询。
+func (s *ContentGeneratorService) GenerateComplexQueryExpansion(
+	ctx context.Context,
+	eid int64,
+	config *ChunkConfig,
+	request *IntentClassificationRequest,
+	agent *model.Agent,
+) (*QueryExpansionResult, error) {
+	selectedChannel, selectedModelName, err := resolveIntentGenerationChannel(ctx, agent, config, "GenerateComplexQueryExpansion")
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey := buildQueryExpansionCacheKey(eid, agent, config, request, selectedChannel, selectedModelName)
+	result, err := s.getOrBuildCachedQueryExpansion(ctx, cacheKey, func() (*QueryExpansionResult, error) {
+		return s.generateComplexQueryExpansionWithoutCache(ctx, selectedChannel, selectedModelName, request)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
 // GenerateIntentClassification 生成意图分类
 func (s *ContentGeneratorService) GenerateIntentClassification(
 	ctx context.Context,
@@ -259,35 +319,164 @@ func (s *ContentGeneratorService) GenerateIntentClassification(
 	availableSkills []*skill.Skill,
 	agent *model.Agent,
 ) (*IntentClassificationResult, error) {
-	configService := NewChunkConfigService(s.chatService.db)
-	modelConfig, err := configService.GetModelConfigFromChunkConfig(config)
+	selectedChannel, selectedModelName, err := resolveIntentGenerationChannel(ctx, agent, config, "GenerateIntentClassification")
 	if err != nil {
-		return nil, fmt.Errorf("获取模型配置失败: %v", err)
+		return nil, err
+	}
+
+	cacheKey := buildIntentClassificationCacheKey(eid, agent, config, request, availableSkills, selectedChannel, selectedModelName)
+	result, err := s.getOrBuildCachedIntentClassification(ctx, cacheKey, func() (*IntentClassificationResult, error) {
+		return s.generateIntentClassificationWithoutCache(ctx, selectedChannel, selectedModelName, request, availableSkills)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func resolveIntentGenerationChannel(ctx context.Context, agent *model.Agent, config *ChunkConfig, caller string) (*model.Channel, string, error) {
+	if config == nil {
+		return nil, "", fmt.Errorf("分块配置不能为空")
 	}
 
 	var selectedChannel *model.Channel
 	var selectedModelName string
 
-	selectedFastReasoning, source := resolveIntentClassificationFastReasoning(ctx, agent, modelConfig)
-	if selectedFastReasoning != nil {
-		channel, err := model.GetChannelByID(*selectedFastReasoning.ChannelID)
-		if err == nil && channel != nil {
-			selectedChannel = channel
-			selectedModelName = *selectedFastReasoning.ModelName
-		} else {
-			logger.Warnf(ctx, "[GenerateIntentClassification] %s渠道不可用: channel_id=%d, err=%v", source, *selectedFastReasoning.ChannelID, err)
+	if config.LogicChannel != nil && config.LogicModelName != nil {
+		selectedModelName = strings.TrimSpace(*config.LogicModelName)
+		if selectedModelName != "" {
+			selectedChannel = config.LogicChannel
 		}
 	}
 
-	if selectedChannel == nil && config.LogicChannel != nil && config.LogicModelName != nil {
-		selectedChannel = config.LogicChannel
-		selectedModelName = *config.LogicModelName
+	if selectedChannel == nil || selectedModelName == "" {
+		selectedFastReasoning, source := resolveIntentClassificationFastReasoning(ctx, agent, config.FastReasoning)
+		if selectedFastReasoning != nil {
+			channel, err := model.GetChannelByID(*selectedFastReasoning.ChannelID)
+			if err == nil && channel != nil {
+				selectedChannel = channel
+				selectedModelName = strings.TrimSpace(*selectedFastReasoning.ModelName)
+			} else {
+				logger.Warnf(ctx, "[%s] %s渠道不可用: channel_id=%d, err=%v", caller, source, *selectedFastReasoning.ChannelID, err)
+			}
+		}
 	}
 
-	if selectedChannel == nil {
-		return nil, fmt.Errorf("没有可用的模型渠道进行意图分类")
+	if selectedChannel == nil || selectedModelName == "" {
+		return nil, "", fmt.Errorf("没有可用的模型渠道进行意图分类")
 	}
 
+	return selectedChannel, selectedModelName, nil
+}
+
+func (s *ContentGeneratorService) generateFastIntentRouteWithoutCache(
+	ctx context.Context,
+	selectedChannel *model.Channel,
+	selectedModelName string,
+	request *IntentClassificationRequest,
+	availableSkills []*skill.Skill,
+) (*IntentClassificationResult, error) {
+	systemPrompt := s.buildFastIntentRouteSystemPrompt(availableSkills)
+	userPrompt := s.buildIntentClassificationUserPrompt(request)
+
+	messages := []relaymodel.Message{
+		{
+			Role:    "system",
+			Content: systemPrompt,
+		},
+		{
+			Role:    "user",
+			Content: userPrompt,
+		},
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	chatReq := &relaymodel.GeneralOpenAIRequest{
+		Model:    selectedModelName,
+		Messages: messages,
+	}
+	applyInternalRequestControl(chatReq, &internalRequestControl{ReasoningMode: "disabled"})
+
+	content, err, openaiErr := s.testChannel(timeoutCtx, selectedChannel, chatReq)
+	if err != nil || openaiErr != nil {
+		logger.Errorf(ctx, "快速意图路由调用LLM失败: %v", err)
+		return nil, fmt.Errorf("快速意图路由调用LLM失败: %v", err)
+	}
+
+	result, err := s.parseFastIntentRouteResponse(content)
+	if err != nil {
+		logger.Errorf(ctx, "解析快速意图路由响应失败: %v", err)
+		return nil, fmt.Errorf("解析快速意图路由响应失败: %v", err)
+	}
+
+	if result != nil {
+		result.NormalizedQuery = strings.TrimSpace(result.NormalizedQuery)
+		if result.NormalizedQuery == "" && request != nil && strings.TrimSpace(request.Query) != "" && result.Intent != "CHITCHAT" {
+			result.NormalizedQuery = strings.TrimSpace(request.Query)
+		}
+	}
+
+	return result, nil
+}
+
+func (s *ContentGeneratorService) generateComplexQueryExpansionWithoutCache(
+	ctx context.Context,
+	selectedChannel *model.Channel,
+	selectedModelName string,
+	request *IntentClassificationRequest,
+) (*QueryExpansionResult, error) {
+	systemPrompt := s.buildComplexQueryExpansionSystemPrompt()
+	userPrompt := s.buildQueryExpansionUserPrompt(request)
+
+	messages := []relaymodel.Message{
+		{
+			Role:    "system",
+			Content: systemPrompt,
+		},
+		{
+			Role:    "user",
+			Content: userPrompt,
+		},
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
+
+	chatReq := &relaymodel.GeneralOpenAIRequest{
+		Model:    selectedModelName,
+		Messages: messages,
+	}
+	applyInternalRequestControl(chatReq, &internalRequestControl{ReasoningMode: "disabled"})
+
+	content, err, openaiErr := s.testChannel(timeoutCtx, selectedChannel, chatReq)
+	if err != nil || openaiErr != nil {
+		logger.Errorf(ctx, "复杂问题拆解调用LLM失败: %v", err)
+		return nil, fmt.Errorf("复杂问题拆解调用LLM失败: %v", err)
+	}
+
+	result, err := s.parseComplexQueryExpansionResponse(content)
+	if err != nil {
+		logger.Errorf(ctx, "解析复杂问题拆解响应失败: %v", err)
+		return nil, fmt.Errorf("解析复杂问题拆解响应失败: %v", err)
+	}
+
+	if result != nil && result.NormalizedQuery == "" && request != nil && strings.TrimSpace(request.Query) != "" {
+		result.NormalizedQuery = strings.TrimSpace(request.Query)
+	}
+
+	return result, nil
+}
+
+func (s *ContentGeneratorService) generateIntentClassificationWithoutCache(
+	ctx context.Context,
+	selectedChannel *model.Channel,
+	selectedModelName string,
+	request *IntentClassificationRequest,
+	availableSkills []*skill.Skill,
+) (*IntentClassificationResult, error) {
 	// 构建提示词
 	systemPrompt := s.buildIntentClassificationSystemPrompt(availableSkills)
 	userPrompt := s.buildIntentClassificationUserPrompt(request)
@@ -315,14 +504,11 @@ func (s *ContentGeneratorService) GenerateIntentClassification(
 	}
 	applyInternalRequestControl(chatReq, &internalRequestControl{ReasoningMode: "disabled"})
 
-	_ = timeoutCtx
-	content, err, openaiErr := s.testChannel(ctx, selectedChannel, chatReq)
+	content, err, openaiErr := s.testChannel(timeoutCtx, selectedChannel, chatReq)
 	if err != nil || openaiErr != nil {
 		logger.Errorf(ctx, "意图分类调用LLM失败: %v", err)
 		return nil, fmt.Errorf("意图分类调用LLM失败: %v", err)
 	}
-
-	// 调试日志：记录响应
 
 	// 解析响应
 	result, err := s.parseIntentClassificationResponse(content)
@@ -341,7 +527,7 @@ func (s *ContentGeneratorService) GenerateIntentClassification(
 	return result, nil
 }
 
-func resolveIntentClassificationFastReasoning(ctx context.Context, agent *model.Agent, modelConfig *model.ModelConfigData) (*model.ModelChannelConfig, string) {
+func resolveIntentClassificationFastReasoning(ctx context.Context, agent *model.Agent, chunkFastReasoning model.ModelChannelConfig) (*model.ModelChannelConfig, string) {
 	if agent != nil {
 		agentFastReasoning, err := agent.GetFastReasoningConfig()
 		if err != nil {
@@ -351,10 +537,8 @@ func resolveIntentClassificationFastReasoning(ctx context.Context, agent *model.
 		}
 	}
 
-	if modelConfig != nil &&
-		modelConfig.FastReasoning.ChannelID != nil &&
-		modelConfig.FastReasoning.ModelName != nil {
-		return &modelConfig.FastReasoning, "chunk_fast_reasoning"
+	if chunkFastReasoning.ChannelID != nil && chunkFastReasoning.ModelName != nil {
+		return &chunkFastReasoning, "chunk_fast_reasoning"
 	}
 
 	return nil, ""
@@ -362,8 +546,9 @@ func resolveIntentClassificationFastReasoning(ctx context.Context, agent *model.
 
 // GenerateQuestionsAndSummary 生成问题和简介
 func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Context, eid int64, config *ChunkConfig, req *GenerateQuestionsAndSummaryRequest) (*GenerateQuestionsAndSummaryResponse, error) {
-	if config.LogicChannel == nil {
-		return nil, fmt.Errorf("没有配置逻辑推理渠道，无法生成问题和简介")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, fmt.Errorf("没有配置推理渠道，无法生成问题和简介: %v", selectErr)
 	}
 
 	// 处理长文档截断
@@ -379,7 +564,7 @@ func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Contex
 	defer cancel()
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     *config.LogicModelName,
+		Model:     selectedModelName,
 		MaxTokens: 8192, // 16K 上下文的一半，预留充足空间
 	}
 	systemMessage := relaymodel.Message{
@@ -395,7 +580,7 @@ func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Contex
 	chatReq.Messages = append(chatReq.Messages, userMessage)
 
 	_ = timeoutCtx
-	content, err, openaiErr := s.testChannel(ctx, config.LogicChannel, chatReq)
+	content, err, openaiErr := s.testChannel(ctx, selectedChannel, chatReq)
 	if err != nil || openaiErr != nil {
 		logger.Errorf(ctx, "AI生成问题和简介失败: %v", err)
 		if openaiErr != nil {
@@ -416,8 +601,9 @@ func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Contex
 }
 
 func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx context.Context, eid int64, config *ChunkConfig, req *GenerateQuestionsAndSummaryRequest) (*GenerateQuestionsSummaryAndEntitiesResponse, error) {
-	if config.LogicChannel == nil {
-		return nil, fmt.Errorf("没有配置逻辑推理渠道，无法生成问题和简介")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, fmt.Errorf("没有配置推理渠道，无法生成问题和简介: %v", selectErr)
 	}
 
 	content := s.TruncateContent(req.Content)
@@ -427,7 +613,7 @@ func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx contex
 	defer cancel()
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     *config.LogicModelName,
+		Model:     selectedModelName,
 		MaxTokens: 8192, // 16K 上下文的一半，预留充足空间
 	}
 	systemMessage := relaymodel.Message{
@@ -441,7 +627,7 @@ func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx contex
 	chatReq.Messages = append(chatReq.Messages, systemMessage, userMessage)
 
 	_ = timeoutCtx
-	resp, err, openaiErr := s.testChannel(ctx, config.LogicChannel, chatReq)
+	resp, err, openaiErr := s.testChannel(ctx, selectedChannel, chatReq)
 	if err != nil || openaiErr != nil {
 		logger.Errorf(ctx, "AI生成问题、简介与实体失败: %v", err)
 		if openaiErr != nil {
@@ -461,8 +647,9 @@ func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx contex
 }
 
 func (s *ContentGeneratorService) GenerateSummaryQuestionsKnowledgeMap(ctx context.Context, eid int64, config *ChunkConfig, req *GenerateSummaryQuestionsKnowledgeMapRequest) (*GenerateSummaryQuestionsKnowledgeMapResponse, *relaymodel.Usage, error) {
-	if config.LogicChannel == nil {
-		return nil, nil, fmt.Errorf("没有配置逻辑推理渠道，无法生成内容")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, nil, fmt.Errorf("没有配置推理渠道，无法生成内容: %v", selectErr)
 	}
 
 	content := s.TruncateContent(req.Content)
@@ -472,7 +659,7 @@ func (s *ContentGeneratorService) GenerateSummaryQuestionsKnowledgeMap(ctx conte
 	defer cancel()
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     *config.LogicModelName,
+		Model:     selectedModelName,
 		MaxTokens: 8192,
 	}
 	systemMessage := relaymodel.Message{
@@ -486,7 +673,7 @@ func (s *ContentGeneratorService) GenerateSummaryQuestionsKnowledgeMap(ctx conte
 	chatReq.Messages = append(chatReq.Messages, systemMessage, userMessage)
 
 	_ = timeoutCtx
-	resp, usage, err, openaiErr := s.testChannelInternal(ctx, config.LogicChannel, chatReq)
+	resp, usage, err, openaiErr := s.testChannelInternal(ctx, selectedChannel, chatReq)
 	if err != nil || openaiErr != nil {
 		logger.Errorf(ctx, "AI生成内容失败: %v", err)
 		if openaiErr != nil {
@@ -1155,6 +1342,110 @@ func (s *ContentGeneratorService) parseTestResponse(resp string) (*openai.TextRe
 	return &response, stringContent, nil
 }
 
+// buildFastIntentRouteSystemPrompt 构建轻量意图路由系统提示词
+func (s *ContentGeneratorService) buildFastIntentRouteSystemPrompt(availableSkills []*skill.Skill) string {
+	skillDesc := "无"
+	if len(availableSkills) > 0 {
+		var sb strings.Builder
+		for _, sk := range availableSkills {
+			if sk == nil {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("- %s: %s\n", strings.TrimSpace(sk.Name), strings.TrimSpace(sk.Description)))
+		}
+		if strings.TrimSpace(sb.String()) != "" {
+			skillDesc = sb.String()
+		}
+	}
+
+	return fmt.Sprintf(`你是知识库系统的快速意图路由器，只输出JSON。
+
+目标:
+用最少判断完成路由、核心检索词和文种识别。不要生成最终回复正文，不要拆解多个检索问题。
+
+意图类型:
+- CHITCHAT: 闲聊、问候、感谢、告别、情绪表达，或无需知识库即可回复的非业务问题。
+- SIMPLE_RAG: 单一事实、单一对象、单一制度、单一记录、单一产品信息查询，通常一次检索即可回答。
+- COMPLEX_AGENT: 需要比较、总结、归因、评估、规划、多步推理或跨文档整合的问题。
+- USE_SKILL: 用户明确要求执行某个技能操作。
+
+分类优先级:
+USE_SKILL > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
+
+判定规则:
+1. 涉及企业信息、制度、人员、记录、产品事实、业务数据的问题，不判为 CHITCHAT。
+2. 只有明确要求执行技能操作时才判为 USE_SKILL。
+3. 需要比较、总结、归因、评估、规划、方案生成、跨文档整合时判为 COMPLEX_AGENT。
+4. 其他需要知识库检索但目标单一的问题判为 SIMPLE_RAG。
+5. 不确定时优先判为 SIMPLE_RAG。
+
+字段规则:
+1. keywords:
+- 提取核心检索词，保留原词，不做同义改写
+- 优先提取实体名、制度名、字段名、业务动作、专有名词
+- 通常 1-6 个，无则 []
+
+2. document_type:
+- 当问题明确指向某类文档时，提取最贴近的文种名称
+- 例如财务报告、年度报告、合同、制度、公告、招股说明书
+- 无法明确判断时返回 ""
+
+3. normalized_query:
+- 只做上下文消解，不扩展用户意图
+- 补全代词、省略对象、必要时间范围
+- 相对时间按 Current Time 转成明确时间
+- 去掉寒暄和语气词
+- 原问题已清晰时，保持原文
+
+4. skill_name:
+- 仅 intent=USE_SKILL 时填写
+- 必须从 Available Skills 中选择
+- 没有明确匹配则返回 ""，不要编造
+
+Available Skills:
+%s
+
+输出要求:
+1. 只输出JSON。
+2. 不输出解释。
+3. 只返回下面列出的字段。
+4. intent!=USE_SKILL 时 skill_name=""。
+5. CHITCHAT 的 normalized_query 可以为空。
+6. confidence 为 0 到 1 的数字。
+
+{
+  "intent": "CHITCHAT" | "SIMPLE_RAG" | "COMPLEX_AGENT" | "USE_SKILL",
+  "skill_name": "",
+  "confidence": 0.0,
+  "reasoning": "分类理由简要说明",
+  "keywords": [],
+  "document_type": "",
+  "normalized_query": ""
+}`, skillDesc)
+}
+
+func (s *ContentGeneratorService) buildComplexQueryExpansionSystemPrompt() string {
+	return `你是复杂知识库问题的查询拆解器，只输出JSON。
+
+任务:
+仅针对已经判定为 COMPLEX_AGENT 的问题，生成更适合知识库检索的规范问题和拆分查询。
+
+规则:
+1. normalized_query 只做上下文消解和必要时间明确，不引入新对象、新事实或新结论。
+2. expanded_queries 基于 normalized_query 生成 1-3 个检索问题。
+3. expanded_queries 从不同检索角度切入，但保持原意不变。
+4. keywords 提取核心检索词，保留原词，不做同义改写。
+5. document_type 只在问题明确指向某类文档时填写，否则返回 ""。
+6. 不生成最终回复正文，不解释拆解理由。
+
+{
+  "normalized_query": "",
+  "keywords": [],
+  "document_type": "",
+  "expanded_queries": []
+}`
+}
+
 // buildIntentClassificationSystemPrompt 构建意图分类系统提示词
 func (s *ContentGeneratorService) buildIntentClassificationSystemPrompt(availableSkills []*skill.Skill) string {
 	skillDesc := ""
@@ -1170,78 +1461,69 @@ func (s *ContentGeneratorService) buildIntentClassificationSystemPrompt(availabl
 		skillDesc = sb.String()
 	}
 
-	return fmt.Sprintf(`你是一个意图分类器，只负责输出JSON。
-Categories:
-1. CHITCHAT: 闲聊、问候、感谢、情绪表达，或无需知识库/工具即可直接回答的简单常识问题。
-2. SIMPLE_RAG: 可通过一次或少量知识检索直接回答的问题，通常是单一事实、单一制度、单一记录、单一对象查询。
-3. COMPLEX_AGENT: 需要多步推理、跨文档整合、比较、总结、归因、评估、规划或方案生成的问题。
-%s
+	return fmt.Sprintf(`你是知识库系统的轻量意图路由器，只输出JSON。
+
+任务:
+根据最近对话、当前问题和当前时间，判断用户请求应进入哪个处理链路。
+
+意图类型:
+- CHITCHAT: 闲聊、问候、感谢、告别、情绪表达，或无需知识库即可回复的非业务问题。
+- SIMPLE_RAG: 单一事实、单一对象、单一制度、单一记录、单一产品信息查询，通常一次检索即可回答。
+- COMPLEX_AGENT: 需要比较、总结、归因、评估、规划、多步推理或跨文档整合的问题。
+- USE_SKILL: 用户明确要求执行某个技能操作。
+
 
 分类优先级:
 USE_SKILL > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
 
 判定规则:
-1. 优先看用户想完成什么任务，不只看表面措辞。
-2. 涉及企业信息、制度、人员、记录、产品事实、业务数据的问题，不要判为 CHITCHAT。
-3. 只有明确要求执行某类技能操作时才判为 USE_SKILL，不要因出现相关名词误触发。
-4. 需要跨来源整合、分析、比较、规划时判为 COMPLEX_AGENT，否则能直接检索回答的判为 SIMPLE_RAG。
-5. 你是 53AI 智能助手。
+1. 涉及企业信息、制度、人员、记录、产品事实、业务数据的问题，不判为 CHITCHAT。
+2. 只有明确要求执行技能操作时才判为 USE_SKILL。
+3. 需要比较、总结、归因、评估、规划、方案生成、跨文档整合时判为 COMPLEX_AGENT。
+4. 其他需要知识库检索但目标单一的问题判为 SIMPLE_RAG。
+5. 不确定时优先判为 SIMPLE_RAG。
 
 字段规则:
 1. keywords:
-   - 提取核心检索词，保留原词，不做同义改写
-   - 优先提取实体名、制度名、字段名、业务动作、专有名词
-   - 通常 1-6 个，无则 []
+- 提取核心检索词，保留原词，不做同义改写
+- 优先提取实体名、制度名、字段名、业务动作、专有名词
+- 通常 1-6 个，无则 []
 
-2. normalized_query:
-   - 结合最近对话上下文和当前时间，改写为脱离上下文也可独立理解的问题
-   - 保持原意，不补充用户未表达或上下文无法确定的事实
-   - 消解代词、补全必要省略、去掉寒暄和语气词
-   - 将相对时间转换为明确时间范围或时间点
-   - 若原问题已清晰且无需上下文消解，可直接返回原问题
+2. document_type:
+- 当问题明确指向某类文档时，提取最贴近的文种名称
+- 例如财务报告、年度报告、合同、制度、公告、招股说明书
+- 无法明确判断时返回 ""
 
+3. normalized_query:
+- 只做上下文消解，不扩展用户意图。
+- 补全代词、省略对象、必要时间范围。
+- 相对时间按 Current Time 转成明确时间。
+- 去掉寒暄和语气词。
+- 原问题已清晰时，保持原文。
 
-3. expanded_queries:
-   - 仅 COMPLEX_AGENT 生成 1-3 个
-   - 基于 normalized_query 扩展，而不是直接基于原始问题扩展
-   - 结合已消解的上下文对象和明确时间范围
-   - 从不同检索角度切入，保持原意不变
-   - 简短、适合检索
-   - 不得引入新事实、新对象、新时间范围或新结论
+4. expanded_queries:
+- 仅 intent=COMPLEX_AGENT 生成 1-3 个
+- 基于 normalized_query 扩展，而不是直接基于原始问题扩展
+- 结合已消解的上下文对象和明确时间范围
+- 从不同检索角度切入，保持原意不变
+- 简短、适合检索
+- 不得引入新事实、新对象、新时间范围或新结论
 
-输出约束:
-1. SIMPLE_RAG: 输出 keywords、normalized_query，expanded_queries=[]
-2. COMPLEX_AGENT: 输出 normalized_query，并生成 1-3 个 expanded_queries
-3. USE_SKILL: 仅填写一个 skill_name，answer=""
-4. CHITCHAT: 可直接回答，skill_name=""
-5. intent!=USE_SKILL 时 skill_name=""
-6. intent!=CHITCHAT 时 answer=""
-7. intent!=COMPLEX_AGENT 时 expanded_queries=[]
-8. 不要输出 JSON 之外的任何内容
-9. 不要编造不存在的 skill_name、keywords、expanded_queries
+5. skill_name 规则:
+- 仅 intent=USE_SKILL 时填写。
+- 必须从 Available Skills 中选择。
+- 没有明确匹配则返回 ""，不要编造。
 
-示例:
-- "你好" -> CHITCHAT
-- "红海云的总部在哪里？" -> SIMPLE_RAG
-- "对比红海云和北森近三年的营收趋势" -> COMPLEX_AGENT
-- "把下面这段乱笔记整理成正式文档" -> USE_SKILL
+Available Skills:
+%s
 
-normalized_query 示例（仅示范上下文消解与时间落地，不代表意图分类规则）:
-- 输入：
-	Recent Conversation:
-	1. User: 红海云的最近1年销售相关信息列出来
-	2. User: 今年销售情况对比去年
-	User Question: 上个月销售表现，和上面总结的大客户关联影响
-	Current Time: 2026-04-18 15:23:01
-- 输出：
-	normalized_query:
-	分析2026年3月销售表现，并结合前文总结的大客户情况说明关联影响
-
-COMPLEX_AGENT expanded_queries 示例:
-- 原问题: "对比红海云和北森近三年的营收趋势"
-  扩展查询: ["红海云近三年营收数据", "北森近三年营收数据", "红海云北森营收变化对比"]
-- 原问题: "上个月销售表现，和上面总结的大客户关联影响"
-  扩展查询: ["2026年3月 销售表现", "2026年3月 大客户 销售影响", "大客户贡献 销售变化 2026年3月"]
+输出要求:
+1. 只输出JSON。
+2. 不输出解释。
+3. 所有字段必须返回。
+4. intent!=USE_SKILL 时 skill_name=""。
+5. CHITCHAT 的 normalized_query 可以为空。
+6. confidence 为 0 到 1 的数字。
 
 Output Format:
 只输出 JSON，所有字段必须返回，无内容时返回 "" 或 []。
@@ -1249,9 +1531,10 @@ Output Format:
 {
   "intent": "CHITCHAT" | "SIMPLE_RAG" | "COMPLEX_AGENT" | "USE_SKILL",
   "skill_name": "",
-  "confidence": 0.78,
-  "reasoning": "",
+  "confidence": 0.0,
+  "reasoning": "分类理由简要说明",
   "keywords": [],
+  "document_type": "",
   "normalized_query": "",
   "answer": "",
   "expanded_queries": []
@@ -1261,6 +1544,9 @@ Output Format:
 // buildIntentClassificationUserPrompt 构建意图分类用户提示词
 func (s *ContentGeneratorService) buildIntentClassificationUserPrompt(request *IntentClassificationRequest) string {
 	var builder strings.Builder
+	if request == nil {
+		request = &IntentClassificationRequest{}
+	}
 
 	builder.WriteString(fmt.Sprintf("User Question: %s\n\n", request.Query))
 
@@ -1283,6 +1569,32 @@ func (s *ContentGeneratorService) buildIntentClassificationUserPrompt(request *I
 	return builder.String()
 }
 
+func (s *ContentGeneratorService) buildQueryExpansionUserPrompt(request *IntentClassificationRequest) string {
+	var builder strings.Builder
+
+	if request != nil {
+		builder.WriteString(fmt.Sprintf("User Question: %s\n\n", request.Query))
+
+		if len(request.Conversation) > 0 {
+			builder.WriteString("Recent Conversation:\n")
+			for i, conv := range request.Conversation {
+				builder.WriteString(fmt.Sprintf("%d. User: %s\n", i+1, conv.Query))
+				if conv.Answer != "" {
+					builder.WriteString(fmt.Sprintf("   Assistant: %s\n", conv.Answer))
+				}
+			}
+			builder.WriteString("\n")
+		}
+	}
+
+	builder.WriteString(fmt.Sprintf("Current Time: %s\n\n", time.Now().Format("2006-01-02 15:04:05")))
+
+	builder.WriteString(`Instructions:
+补全 normalized_query，并生成 expanded_queries。输出对应的JSON格式结果。`)
+
+	return builder.String()
+}
+
 // parseIntentClassificationResponse 解析意图分类响应
 func (s *ContentGeneratorService) parseIntentClassificationResponse(content string) (*IntentClassificationResult, error) {
 	var result IntentClassificationResult
@@ -1290,7 +1602,58 @@ func (s *ContentGeneratorService) parseIntentClassificationResponse(content stri
 		return nil, fmt.Errorf("JSON解析失败: %v", err)
 	}
 
-	// 验证意图类别
+	if err := normalizeIntentClassificationResult(&result, true); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+func (s *ContentGeneratorService) parseFastIntentRouteResponse(content string) (*IntentClassificationResult, error) {
+	var result IntentClassificationResult
+	if err := common.ParseLLMJSONInto(context.Background(), content, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %v", err)
+	}
+
+	if err := normalizeIntentClassificationResult(&result, false); err != nil {
+		return nil, err
+	}
+	result.Answer = ""
+	result.ExpandedQueries = nil
+
+	return &result, nil
+}
+
+func (s *ContentGeneratorService) parseComplexQueryExpansionResponse(content string) (*QueryExpansionResult, error) {
+	var result QueryExpansionResult
+	if err := common.ParseLLMJSONInto(context.Background(), content, &result); err != nil {
+		return nil, fmt.Errorf("JSON解析失败: %v", err)
+	}
+
+	result.NormalizedQuery = strings.TrimSpace(result.NormalizedQuery)
+	result.DocumentType = strings.TrimSpace(result.DocumentType)
+	result.Keywords = cleanStringList(result.Keywords)
+	result.ExpandedQueries = cleanStringList(result.ExpandedQueries)
+	if len(result.ExpandedQueries) == 0 {
+		logger.Warnf(context.Background(), "复杂问题拆解缺少扩展查询")
+	}
+
+	return &result, nil
+}
+
+func normalizeIntentClassificationResult(result *IntentClassificationResult, allowExpandedQueries bool) error {
+	if result == nil {
+		return fmt.Errorf("意图分类结果为空")
+	}
+
+	result.Intent = strings.ToUpper(strings.TrimSpace(result.Intent))
+	result.SkillName = strings.TrimSpace(result.SkillName)
+	result.Reasoning = strings.TrimSpace(result.Reasoning)
+	result.DocumentType = strings.TrimSpace(result.DocumentType)
+	result.Answer = strings.TrimSpace(result.Answer)
+	result.NormalizedQuery = strings.TrimSpace(result.NormalizedQuery)
+	result.Keywords = cleanStringList(result.Keywords)
+
 	validIntents := map[string]bool{
 		"CHITCHAT":      true,
 		"SIMPLE_RAG":    true,
@@ -1299,26 +1662,18 @@ func (s *ContentGeneratorService) parseIntentClassificationResponse(content stri
 	}
 
 	if !validIntents[result.Intent] {
-		return nil, fmt.Errorf("无效的意图类别: %s", result.Intent)
+		return fmt.Errorf("无效的意图类别: %s", result.Intent)
 	}
 
-	if result.Intent == "COMPLEX_AGENT" {
+	if allowExpandedQueries && result.Intent == "COMPLEX_AGENT" {
 		if len(result.ExpandedQueries) == 0 {
 			logger.Warnf(context.Background(), "意图为 %s 但缺少扩展查询", result.Intent)
 		}
-
-		var cleanedQueries []string
-		for _, query := range result.ExpandedQueries {
-			if trimmed := strings.TrimSpace(query); trimmed != "" {
-				cleanedQueries = append(cleanedQueries, trimmed)
-			}
-		}
-		result.ExpandedQueries = cleanedQueries
+		result.ExpandedQueries = cleanStringList(result.ExpandedQueries)
 	} else {
 		result.ExpandedQueries = nil
 	}
 
-	// 归一化 confidence，避免模型输出异常值或无效数字。
 	if math.IsNaN(result.Confidence) || math.IsInf(result.Confidence, 0) {
 		logger.Warnf(context.Background(), "意图分类置信度异常（NaN/Inf），重置为0.5")
 		result.Confidence = 0.5
@@ -1332,5 +1687,30 @@ func (s *ContentGeneratorService) parseIntentClassificationResponse(content stri
 		result.Confidence = 1
 	}
 
-	return &result, nil
+	return nil
+}
+
+func cleanStringList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+
+	cleaned := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		cleaned = append(cleaned, trimmed)
+	}
+
+	if len(cleaned) == 0 {
+		return nil
+	}
+	return cleaned
 }

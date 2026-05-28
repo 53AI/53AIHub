@@ -24,6 +24,11 @@ type documentChunkEnrichmentCacheValue struct {
 	CommonQuestions []string `json:"common_questions"`
 }
 
+// EnrichDocumentChunksAsync 供异步 worker 调用的导出版本
+func EnrichDocumentChunksAsync(ctx context.Context, db *gorm.DB, file *model.File, chunkConfig *rag.ChunkConfig, chunks []model.DocumentChunk) error {
+	return enrichDocumentChunks(ctx, db, file, chunkConfig, chunks)
+}
+
 func enrichDocumentChunks(ctx context.Context, db *gorm.DB, file *model.File, chunkConfig *rag.ChunkConfig, chunks []model.DocumentChunk) error {
 	if file == nil {
 		return fmt.Errorf("文件信息不能为空")

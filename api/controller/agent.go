@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/53AI/53AIHub/common"
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
@@ -48,7 +49,7 @@ type AgentRequest struct {
 	Enable               bool    `json:"enable" example:"true"`
 	SubscriptionGroupIds []int64 `json:"subscription_group_ids"` // 订阅分组IDs
 	Settings             string  `json:"settings" example:"{}"`
-	AgentType            int     `json:"agent_type" example:"0"`  // Agent type (0=App, 1=Workflow), default is 0
+	AgentType            int     `json:"agent_type" example:"0"`  // Agent type (0=App, 1=Workflow, 2=Assistant), default is 0
 	AgentUsage           int     `json:"agent_usage" example:"0"` // Agent usage (0=hub, 1=KM_AI_search, 2=KM_file_chat), default is 0
 }
 
@@ -75,8 +76,10 @@ type PersonalAgentsResponse struct {
 	Agents []*model.Agent `json:"agents"`
 }
 
-// @Summary Create a new agent
-// @Description Create agent with configurable parameters. agent_type: 0=App (default), 1=Workflow. channel_type: 1014=OpenClawWS (WebSocket长连接，自动生成openclaw_app_secret存入custom_config)
+// @Summary 创建企业智能体
+// @Description 创建可配置参数的企业智能体。agent_type: 0=App(默认), 1=Workflow, 2=Assistant。
+// @Description 注意：channel_type=1014(OpenClawWS)时，必须先通过 POST /api/channels 创建 type=1014 的渠道，否则智能体运行时会因找不到执行渠道而失败。
+// @Description channel_type=1014 时会自动补齐 openclaw_app_secret 并写入 custom_config。
 // @Tags Agent
 // @Accept json
 // @Produce json
@@ -103,18 +106,12 @@ func CreateAgent(c *gin.Context) {
 	}
 
 	if agentReq.ChannelType == model.ChannelApiTypeOpenClawWS {
-		var customCfg map[string]interface{}
-		if agentReq.CustomConfig != "" {
-			_ = json.Unmarshal([]byte(agentReq.CustomConfig), &customCfg)
+		mergedCustomConfig, err := model.MergeOpenClawCustomConfig("", agentReq.CustomConfig, true)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+			return
 		}
-		if customCfg == nil {
-			customCfg = make(map[string]interface{})
-		}
-		if _, ok := customCfg["openclaw_app_secret"]; !ok {
-			customCfg["openclaw_app_secret"] = model.GenerateOpenClawAppSecret()
-		}
-		bytes, _ := json.Marshal(customCfg)
-		agentReq.CustomConfig = string(bytes)
+		agentReq.CustomConfig = mergedCustomConfig
 	}
 
 	params := map[string]interface{}{
@@ -193,7 +190,6 @@ func CreateAgent(c *gin.Context) {
 		return
 	}
 
-	// Parse CustomConfig to get agent_type
 	var customConfig map[string]interface{}
 	if err := json.Unmarshal([]byte(agentReq.CustomConfig), &customConfig); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
@@ -271,8 +267,8 @@ func GetAgent(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(agent))
 }
 
-// @Summary Update agent
-// @Description Update existing agent details. agent_type: 0=App (default), 1=Workflow. channel_type: 1014=OpenClawWS (WebSocket长连接，自动生成openclaw_app_secret存入custom_config)
+// @Summary 更新企业智能体
+// @Description 更新现有企业智能体详情。agent_type: 0=App(默认), 1=Workflow, 2=Assistant。channel_type=1014 时更新 custom_config 会保留已有的 openclaw_app_secret。
 // @Tags Agent
 // @Accept json
 // @Produce json
@@ -325,18 +321,12 @@ func UpdateAgent(c *gin.Context) {
 		}
 
 		if agentReq.ChannelType == model.ChannelApiTypeOpenClawWS {
-			var customCfg map[string]interface{}
-			if agentReq.CustomConfig != "" {
-				_ = json.Unmarshal([]byte(agentReq.CustomConfig), &customCfg)
+			mergedCustomConfig, err := model.MergeOpenClawCustomConfig(agent.CustomConfig, agentReq.CustomConfig, false)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+				return
 			}
-			if customCfg == nil {
-				customCfg = make(map[string]interface{})
-			}
-			if _, ok := customCfg["openclaw_app_secret"]; !ok {
-				customCfg["openclaw_app_secret"] = model.GenerateOpenClawAppSecret()
-			}
-			bytes, _ := json.Marshal(customCfg)
-			agentReq.CustomConfig = string(bytes)
+			agentReq.CustomConfig = mergedCustomConfig
 		}
 
 		tx := model.DB.Begin()
@@ -432,21 +422,12 @@ func UpdateAgent(c *gin.Context) {
 		}
 		if req.CustomConfig != "" {
 			if agent.ChannelType == model.ChannelApiTypeOpenClawWS {
-				var existingConfig map[string]interface{}
-				if agent.CustomConfig != "" {
-					json.Unmarshal([]byte(agent.CustomConfig), &existingConfig)
-				} else {
-					existingConfig = make(map[string]interface{})
+				mergedCustomConfig, err := model.MergeOpenClawCustomConfig(agent.CustomConfig, req.CustomConfig, false)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+					return
 				}
-				var newConfig map[string]interface{}
-				json.Unmarshal([]byte(req.CustomConfig), &newConfig)
-				if secret, ok := existingConfig["openclaw_app_secret"]; ok {
-					if _, hasNew := newConfig["openclaw_app_secret"]; !hasNew {
-						newConfig["openclaw_app_secret"] = secret
-					}
-				}
-				newConfigBytes, _ := json.Marshal(newConfig)
-				agent.CustomConfig = string(newConfigBytes)
+				agent.CustomConfig = mergedCustomConfig
 			} else {
 				agent.CustomConfig = req.CustomConfig
 			}
@@ -460,6 +441,57 @@ func UpdateAgent(c *gin.Context) {
 
 	agent.FillBotID()
 	c.JSON(http.StatusOK, model.Success.ToResponse(agent))
+}
+
+// @Summary 重置企业智能体密钥
+// @Description 重置企业智能体的 OpenClawWS 密钥。仅管理员可调用，仅支持 1014(OpenClawWS) 类型的企业智能体。
+// @Description 重置后旧密钥立即失效，响应返回新密钥。
+// @Tags Agent
+// @Produce json
+// @Security BearerAuth
+// @Param agent_id path int true "智能体ID"
+// @Success 200 {object} model.CommonResponse{data=map[string]string} "成功返回新密钥 {\"secret\": \"sk-53ai-xxx\"}"
+// @Failure 400 {object} model.CommonResponse "参数错误或不支持的channel_type"
+// @Failure 401 {object} model.CommonResponse "未授权"
+// @Failure 404 {object} model.CommonResponse "智能体不存在或无权访问"
+// @Failure 500 {object} model.CommonResponse "服务器错误"
+// @Router /api/agents/{agent_id}/reset-secret [post]
+func ResetEnterpriseAgentSecret(c *gin.Context) {
+	agentID, err := strconv.ParseInt(c.Param("agent_id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	if !common.IsAdmin(c) {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+		return
+	}
+
+	eid := config.GetEID(c)
+	agent, err := model.GetEnterpriseAgentByID(eid, agentID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+		return
+	}
+
+	if agent.ChannelType != model.ChannelApiTypeOpenClawWS {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("unsupported channel_type for secret reset")))
+		return
+	}
+
+	newSecret := model.GenerateOpenClawAppSecret()
+	if err := agent.SetOpenClawAppSecret(newSecret); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	if err := agent.Update(); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"secret": newSecret}))
 }
 
 // @Summary Delete agent
@@ -517,6 +549,12 @@ func DeleteAgent(c *gin.Context) {
 		return
 	}
 
+	// 清理其他 Agent 的 relate_agents 中对已删 Agent 的引用
+	agent.FillBotID()
+	if err := model.RemoveRelateAgentFromSettings(tx, eid, agent_id, agent.BotID); err != nil {
+		logger.SysErrorf("删除Agent时清理relate_agents失败: agent_id=%d, err=%v", agent_id, err)
+	}
+
 	// Delete associated permissions (only for enterprise agents)
 	if isEnterpriseAgent {
 		if err := tx.Where("resource_id = ? AND resource_type = ?", agent_id, model.ResourceTypeAgent).Delete(&model.ResourcePermission{}).Error; err != nil {
@@ -549,8 +587,8 @@ func DeleteAgent(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 }
 
-// @Summary Get agents list
-// @Description Retrieve paginated list of agents with filtering options
+// @Summary 获取智能体列表
+// @Description 获取带筛选条件的智能体分页列表。channel_types 支持 1014(OpenClawWS)，企业列表只返回 owner_id=0 的企业智能体。
 // @Tags Agent
 // @Produce json
 // @Security BearerAuth
@@ -558,9 +596,9 @@ func DeleteAgent(c *gin.Context) {
 // @Param group_id query int false "Group ID to filter agents by group"
 // @Param offset query int false "Pagination offset" default(0)
 // @Param limit query int false "Pagination limit" default(10)
-// @Param channel_types query string false "Channel types (0=OpenAI,1=Azure,2=claude), split by comma" example:"0,1,2"
-// @Param agent_types query string false "Agent types (0=App,1=Workflow), split by comma" example:"0,1,2"
-// @Param agent_usages query string false "Agent usages (0=hub,1=KM_AI_search,2=KM_file_chat), split by comma" example:"0,1,2" default:"0"
+// @Param channel_types query string false "通道类型，支持逗号分隔，包含 1014(OpenClawWS)" example:"0,1,2,1014"
+// @Param agent_types query string false "智能体类型，支持逗号分隔" example:"0,1,2"
+// @Param agent_usages query string false "智能体用途，支持逗号分隔" example:"0,1,2" default:"0"
 // @Success 200 {object} model.CommonResponse{data=AgentsResponse} "Success"
 // @Router /api/agents [get]
 // @Router /api/my/agents [get]
@@ -589,6 +627,38 @@ func GetAgents(c *gin.Context) {
 			agent.FillBotID()
 		}
 		c.JSON(http.StatusOK, model.Success.ToResponse(PersonalAgentsResponse{
+			Count:  total,
+			Agents: agents,
+		}))
+		return
+	}
+
+	// 访客用户(Type=UserTypeVisitor)没有分组权限，无法通过 GetResourcesByGroupAndType 查询
+	// 设计决策：访客绕过分组权限检查，直接返回所有可用的企业 Agent
+	// 原因：
+	// 1. 访客是通过 H5 Fixed Token 登录的匿名用户，主要用于 Agent 对话
+	// 2. 访客不需要精细的分组权限控制，企业 Agent 对访客开放是合理的业务需求
+	// 3. 避免为访客创建额外的分组数据，保持最小改动原则
+	user, userErr := model.GetLoginUser(c)
+	if userErr == nil && user.Type == model.UserTypeVisitor {
+		channelTypes := splitChannelTypesString(agentListRequest.ChannelTypes)
+		agentTypes := splitAgentTypesString(agentListRequest.AgentTypes)
+		agentUsages := splitAgentUsagesString(agentListRequest.AgentUsages)
+		total, agents, err := model.GetAgentListWithIDs(
+			eid, agentListRequest.Keyword, agentListRequest.GroupId,
+			nil, channelTypes, agentTypes, agentUsages, agentListRequest.Offset, agentListRequest.Limit)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
+		for _, agent := range agents {
+			if err := agent.LoadUserGroupIds(); err != nil {
+				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+				return
+			}
+			agent.FillBotID()
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(AgentsResponse{
 			Count:  total,
 			Agents: agents,
 		}))
@@ -649,7 +719,7 @@ func GetAgents(c *gin.Context) {
 // @Param offset     query int    false "Pagination offset" default(0)
 // @Param limit      query int    false "Pagination limit"  default(10)
 // @Param channel_types query string false "Channel types (0=OpenAI,1=Azure,2=claude), split by comma" example:"0,1,2"
-// @Param agent_types query string false "Agent types (0=App,1=Workflow), split by comma" example:"0,1,2"
+// @Param agent_types query string false "Agent types (0=App,1=Workflow,2=Assistant), split by comma" example:"0,1,2"
 // @Param agent_usages query string false "Agent usages (0=hub,1=KM_AI_search,2=KM_file_chat), split by comma" example:"0,1,2" default:"0"
 // @Success 200 {object} model.CommonResponse{data=AgentsResponse} "Success response with agent list"
 // @Router /api/agents/group [get]
@@ -697,7 +767,7 @@ func GetAgentsByGroup(c *gin.Context) {
 // @Produce json
 // @Param offset query int false "Pagination offset" default(0)
 // @Param limit query int false "Pagination limit" default(10)
-// @Param agent_types query string false "Agent types (0=App,1=Workflow), split by comma" example:"0,1,2"
+// @Param agent_types query string false "Agent types (0=App,1=Workflow,2=Assistant), split by comma" example:"0,1,2"
 // @Param agent_usages query string false "Agent usages (0=hub,1=KM_AI_search,2=KM_file_chat), split by comma" example:"0,1,2" default:"0"
 // @Success 200 {object} model.CommonResponse{data=AgentsResponse} "Success response with available agent list"
 // @Router /api/agents/available [get]
@@ -770,9 +840,31 @@ func GetCurrentAgents(c *gin.Context) {
 		}
 		theGroup = &group
 	} else {
-		user := model.ValidateAccessToken(authHeader)
-		if user == nil {
+		user, err := model.GetLoginUser(c)
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(nil))
+			return
+		}
+
+		// 访客用户(Type=UserTypeVisitor)没有分组(GroupId=0)，无法通过分组权限查询 Agent
+		// 设计决策：访客绕过分组权限检查，直接返回所有可用的企业 Agent
+		// 原因：
+		// 1. 访客是通过 H5 Fixed Token 登录的匿名用户，主要用于 Agent 对话
+		// 2. 访客不需要精细的分组权限控制，企业 Agent 对访客开放是合理的业务需求
+		// 3. 避免为访客创建额外的分组数据，保持最小改动原则
+		if user.Type == model.UserTypeVisitor {
+			_, agents, err := model.GetAvailableAgentList(eid, nil, nil, 0, 1000)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+				return
+			}
+			for _, agent := range agents {
+				agent.FillBotID()
+			}
+			c.JSON(http.StatusOK, model.Success.ToResponse(AgentsResponse{
+				Count:  int64(len(agents)),
+				Agents: agents,
+			}))
 			return
 		}
 

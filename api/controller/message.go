@@ -16,6 +16,7 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/53AI/53AIHub/common/utils/sandboxdl"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/middleware"
@@ -52,17 +53,18 @@ type EnhancedMessage struct {
 
 type MessageListRequest struct {
 	Keyword        string `json:"keyword" form:"keyword" example:"gpt"`
-	FileKeyword    string `json:"file_keyword" form:"file_keyword" example:"report"` // 文件名搜索关键词
-	FileID         int64  `json:"file_id" form:"file_id"`                            // 文件 ID 筛选
+	FileKeyword    string `json:"file_keyword" form:"file_keyword" example:"report"`
+	FileID         int64  `json:"file_id" form:"file_id"`
 	Offset         int    `json:"offset" form:"offset" example:"0"`
 	Limit          int    `json:"limit" form:"limit" example:"10"`
-	Direction      string `json:"direction" form:"direction" example:"desc"`          // 获取方向: desc=从新到旧, asc=从旧到新
-	ThinkingMode   *int   `json:"thinking_mode" form:"thinking_mode" example:"1"`     // 思考方式: 1=快速回答, 2=深度思考
-	ResponseStatus *int   `json:"response_status" form:"response_status" example:"1"` // 回答状态: 1=正常回答, 2=拒答/超纲回复
-	KnowledgeType  *int   `json:"knowledge_type" form:"knowledge_type" example:"1"`   // 知识类型: 1=知识库搜索, 2=Web搜索, 3=指定知识库
-	StartDate      *int64 `json:"start_date" form:"start_date" example:"1640995200"`  // 开始日期时间戳
-	EndDate        *int64 `json:"end_date" form:"end_date" example:"1641081600"`      // 结束日期时间戳
-	AgentID        *int64 `json:"agent_id" form:"agent_id" example:"1"`               // Agent ID 筛选
+	Direction      string `json:"direction" form:"direction" example:"desc"`
+	ThinkingMode   *int   `json:"thinking_mode" form:"thinking_mode" example:"1"`
+	ResponseStatus *int   `json:"response_status" form:"response_status" example:"1"`
+	KnowledgeType  *int   `json:"knowledge_type" form:"knowledge_type" example:"1"`
+	StartDate      *int64 `json:"start_date" form:"start_date" example:"1640995200"`
+	EndDate        *int64 `json:"end_date" form:"end_date" example:"1641081600"`
+	AgentID        *int64 `json:"agent_id" example:"1"`
+	Source         string `json:"source" form:"source" example:"h5,api"`
 }
 
 type MessageListAllRequest struct {
@@ -546,6 +548,7 @@ type MessageStatsRequest struct {
 	StartDate int64  `json:"start_date" form:"start_date" binding:"required"` // 开始日期时间戳
 	EndDate   int64  `json:"end_date" form:"end_date" binding:"required"`     // 结束日期时间戳
 	AgentID   *int64 `json:"agent_id" form:"agent_id"`                        // Agent ID 筛选
+	Source    string `json:"source" form:"source"`                            // 来源筛选，多选用逗号分隔
 }
 
 // GetMessageStatsSum godoc
@@ -557,6 +560,7 @@ type MessageStatsRequest struct {
 // @Security BearerAuth
 // @Param start_date query int64 true "开始日期时间戳"
 // @Param end_date query int64 true "结束日期时间戳"
+// @Param source query string false "来源筛选，多选用逗号分隔（如：h5,api,console）"
 // @Success 200 {object} model.CommonResponse{data=model.MessageStatsSummary} "Success"
 // @Router /api/message_stats/sum [get]
 func GetMessageStatsSum(c *gin.Context) {
@@ -568,11 +572,20 @@ func GetMessageStatsSum(c *gin.Context) {
 
 	eid := config.GetEID(c)
 
-	// 将时间戳转换为time.Time
 	startDate := time.Unix(req.StartDate, 0)
 	endDate := time.Unix(req.EndDate, 0)
 
-	stats, err := model.SumStatsByAgentAndDateRange(eid, req.AgentID, startDate, endDate)
+	var sources []string
+	if req.Source != "" {
+		for _, s := range strings.Split(req.Source, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				sources = append(sources, s)
+			}
+		}
+	}
+
+	stats, err := model.SumStatsByAgentDateRangeAndSource(eid, req.AgentID, startDate, endDate, sources)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
@@ -583,7 +596,7 @@ func GetMessageStatsSum(c *gin.Context) {
 
 // GetMessagesList 获取消息列表
 // @Summary 获取消息列表
-// @Description 获取消息列表，支持关键词、思考方式、回答状态、知识类型、日期范围筛选，支持排序
+// @Description 获取消息列表，支持关键词、思考方式、回答状态、知识类型、日期范围、来源筛选，支持排序
 // @Tags Message
 // @Accept json
 // @Produce json
@@ -599,6 +612,7 @@ func GetMessageStatsSum(c *gin.Context) {
 // @Param start_date query int64 false "开始日期时间戳（秒或毫秒）"
 // @Param end_date query int64 false "结束日期时间戳（秒或毫秒）"
 // @Param agent_id query int64 false "Agent ID 筛选"
+// @Param source query string false "来源筛选，多选用逗号分隔（如：h5,api,console）"
 // @Success 200 {object} model.CommonResponse{data=MessagesResponse} "Success"
 // @Router /api/messages/list [get]
 func GetMessagesList(c *gin.Context) {
@@ -611,6 +625,14 @@ func GetMessagesList(c *gin.Context) {
 	// 设置默认方向为从新到旧
 	if messageListRequest.Direction == "" {
 		messageListRequest.Direction = "desc"
+	}
+
+	// 手动解码 agent_id HashID（防止 RequestDecoder 未能正确解码的情况）
+	// 同时处理 ShouldBindQuery 解析失败的情况（agent_id 为 HashID 字符串时会导致绑定失败）
+	if agentIDStr := c.Query("agent_id"); agentIDStr != "" {
+		if id, err := hashids.TryParseID(agentIDStr); err == nil {
+			messageListRequest.AgentID = &id
+		}
 	}
 
 	eid := config.GetEID(c)
@@ -658,6 +680,17 @@ func GetMessagesList(c *gin.Context) {
 		}
 	}
 
+	// 解析 source 参数（多选，逗号分隔）
+	var sources []string
+	if messageListRequest.Source != "" {
+		for _, s := range strings.Split(messageListRequest.Source, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				sources = append(sources, s)
+			}
+		}
+	}
+
 	count, messages, err := model.GetMessagesList(
 		eid,
 		messageListRequest.Keyword,
@@ -671,6 +704,7 @@ func GetMessagesList(c *gin.Context) {
 		messageListRequest.Offset,
 		messageListRequest.AgentID,
 		fileIDs,
+		sources,
 	)
 
 	if err != nil {
@@ -819,7 +853,7 @@ func DownloadAIUploadFile(c *gin.Context) {
 		return
 	}
 
-	// 签名下载（支持无登录态访问）
+	// 签名下载（支持无登录态访问或用户 token）
 	downloadToken := strings.TrimSpace(c.Query("token"))
 	if downloadToken != "" {
 		requestedFileName := strings.TrimSpace(c.Param("filename"))
@@ -831,6 +865,24 @@ func DownloadAIUploadFile(c *gin.Context) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(errors.New("文件名不匹配")))
 			return
 		}
+
+		// 尝试解析为用户 access token
+		userID, userEid, jwtErr := jwt.UserParseJWT(downloadToken)
+		if jwtErr == nil && userID > 0 && userEid > 0 {
+			user := model.ValidateAccessToken(downloadToken)
+			if user != nil && user.UserID == userID && user.Eid == file.Eid {
+				serveUploadFile(c, file)
+				return
+			}
+			// 用户存在但企业不匹配，直接拒绝
+			if user != nil && user.Eid != file.Eid {
+				c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(errors.New("无权访问该文件")))
+				return
+			}
+			// user == nil: token 已失效，继续尝试 sandbox token
+		}
+
+		// 尝试解析为临时下载 token
 		if err := sandboxdl.ValidateDownloadToken(downloadToken, file.ID, expectedFileName); err != nil {
 			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(err))
 			return

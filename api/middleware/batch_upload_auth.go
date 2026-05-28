@@ -10,7 +10,7 @@ import (
 )
 
 // BatchUploadAuth 仅用于批量上传相关接口。
-// 它同时接受普通登录 JWT 和 MCP 换发的短期委派 token。
+// 它同时接受普通登录 JWT、channel token（如 SSO 登录发放的 token）和 MCP 换发的短期委派 token。
 func BatchUploadAuth(role int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := tokenFromAuthorization(c.GetHeader("Authorization"))
@@ -22,6 +22,23 @@ func BatchUploadAuth(role int64) gin.HandlerFunc {
 
 		if user, tokenEid, err := HandleTokenAuth(token, role); err == nil {
 			setUserSession(c, user, tokenEid)
+			c.Next()
+			return
+		}
+
+		// 也支持 channel token（如 SSO 登录发放的 token）
+		if channelUser, _, _, channelErr := model.ValidateUserChannelToken(token); channelErr == nil {
+			if channelUser == nil || channelUser.Status == model.UserStatusDisabled {
+				c.JSON(http.StatusUnauthorized, model.ForbiddenError.ToResponse(nil))
+				c.Abort()
+				return
+			}
+			if role > 0 && channelUser.Role < role {
+				c.JSON(http.StatusUnauthorized, model.ForbiddenError.ToResponse(nil))
+				c.Abort()
+				return
+			}
+			setUserSession(c, channelUser, channelUser.Eid)
 			c.Next()
 			return
 		}

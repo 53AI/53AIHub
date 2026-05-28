@@ -74,6 +74,12 @@ func StreamHandler(c *gin.Context, resp *http.Response, relayMode int) (*model.E
 			doneRendered = true
 			continue
 		}
+		if streamErr := parseStreamErrorPayload(data[dataPrefixLength:], resp.StatusCode); streamErr != nil {
+			logger.Errorf(ctx, "【技能运行】流式响应错误帧: turn=%d, skill=%s, model=%s, status=%d, message=%s, code=%v",
+				turnCount, skillName, modelName, streamErr.StatusCode, streamErr.Message, streamErr.Code)
+			_ = resp.Body.Close()
+			return streamErr, responseText, usage
+		}
 		switch relayMode {
 		case relaymode.ChatCompletions:
 			var streamResponse ChatCompletionsStreamResponse
@@ -125,6 +131,29 @@ func StreamHandler(c *gin.Context, resp *http.Response, relayMode int) (*model.E
 	}
 
 	return nil, responseText, usage
+}
+
+func parseStreamErrorPayload(payload string, statusCode int) *model.ErrorWithStatusCode {
+	payload = strings.TrimSpace(payload)
+	if payload == "" || payload == done {
+		return nil
+	}
+	var upstreamErr struct {
+		Error *model.Error `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(payload), &upstreamErr); err != nil {
+		return nil
+	}
+	if upstreamErr.Error == nil || upstreamErr.Error.Message == "" {
+		return nil
+	}
+	if statusCode <= 0 {
+		statusCode = http.StatusInternalServerError
+	}
+	return &model.ErrorWithStatusCode{
+		Error:      *upstreamErr.Error,
+		StatusCode: statusCode,
+	}
 }
 
 func truncateForLog(s string, max int) string {

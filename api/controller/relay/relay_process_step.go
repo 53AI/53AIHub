@@ -159,16 +159,21 @@ func sendProcessStepRaw(c *gin.Context, requestId string, hashedStep ProcessStep
 	if err != nil {
 		return err
 	}
+	var reqCtx context.Context
+	if c.Request != nil {
+		reqCtx = c.Request.Context()
+	} else {
+		reqCtx = context.Background()
+	}
 	if hashedStep.StepCode == STEP_REF_ANALYSIS {
-		logger.Debugf(c.Request.Context(), "【引用分析】准备写入前的 payload: request_id=%s, payload=%s",
+		logger.Debugf(reqCtx, "【引用分析】准备写入前的 payload: request_id=%s, payload=%s",
 			requestId, string(b))
 	}
 
 	chunk := append([]byte("data: "), b...)
 	chunk = append(chunk, []byte("\n\n")...)
 
-	// 🐛 DEBUG: 打印实际发送的完整包体
-	logger.Debugf(c.Request.Context(), "【SSE发送】step=%s, request_id=%s, 完整包体=\n%s",
+	logger.Debugf(reqCtx, "【SSE发送】step=%s, request_id=%s, 完整包体=\n%s",
 		hashedStep.StepCode, requestId, string(chunk))
 
 	if _, err := c.Writer.Write(chunk); err != nil {

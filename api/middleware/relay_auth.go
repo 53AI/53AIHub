@@ -15,7 +15,6 @@ import (
 	"github.com/53AI/53AIHub/common/session"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/common/utils/helper"
-	"github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
 )
@@ -30,30 +29,18 @@ func RelayTokenAuth() func(c *gin.Context) {
 			return
 		}
 
-		user_id, eid, err := jwt.UserParseJWT(token)
+		user, eid, err := HandleAnyTokenAuth(token, model.RoleGuestUser)
 		if err != nil {
 			if strings.Contains(err.Error(), "token is expired") {
 				c.JSON(http.StatusUnauthorized, model.TokenExpiredError.ToOpenAIErrorRespone(nil))
 			} else {
-				c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToOpenAIErrorRespone(nil))
+				c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToOpenAIErrorRespone(err))
 			}
 			c.Abort()
 			return
 		}
 
-		user := model.ValidateAccessToken(token)
-		if user == nil {
-			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToOpenAIErrorRespone(errors.New("Invalid or expired access token")))
-			c.Abort()
-			return
-		}
-		if user.UserID != user_id {
-			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToOpenAIErrorRespone(errors.New("Token user mismatch")))
-			c.Abort()
-			return
-		}
-
-		c.Set(session.SESSION_USER_ID, user_id)
+		c.Set(session.SESSION_USER_ID, user.UserID)
 		c.Set(session.SESSION_USER_ROLE, user.Role)
 		c.Set(session.SESSION_USER_GROUP_ID, user.GroupId)
 		c.Set(session.ENV_EID, eid)
@@ -97,7 +84,7 @@ func RelayTokenAuth() func(c *gin.Context) {
 						}
 					}
 					// TODO: check conversation_id is exist and belong to user_id
-					conversation, err := model.GetConversationByIdAndUserId(eid, conversationId, user_id)
+					conversation, err := model.GetConversationByIdAndUserId(eid, conversationId, user.UserID)
 					if err != nil {
 						c.JSON(http.StatusNotFound, model.NotFound.ToOpenAIErrorRespone(errors.New("Conversation not found")))
 						c.Abort()
@@ -150,6 +137,13 @@ func RelayTokenAuth() func(c *gin.Context) {
 					if !common.IsAdmin(c) {
 						if shouldBypassAgentGroupAuth(agent, user.UserID) {
 							logger.SysLogf("Bypass agent group auth: agent_id=%d", agent.AgentID)
+						} else if user.Type == model.UserTypeVisitor {
+							// 访客用户(Type=UserTypeVisitor)没有分组权限，跳过分组检查
+							// 设计决策同 controller/agent.go：
+							// 1. 访客是通过 H5 Fixed Token 登录的匿名用户，主要用于 Agent 对话
+							// 2. 访客不需要精细的分组权限控制，企业 Agent 对访客开放是合理的业务需求
+							// 3. 避免为访客创建额外的分组数据，保持最小改动原则
+							logger.SysLogf("Visitor user access agent: agent_id=%d, user_id=%d", agent.AgentID, user.UserID)
 						} else if user.Type == model.UserTypeRegistered {
 							agentUserGroupIds, err := agent.GetUserGroupIds()
 							if err != nil {
@@ -190,6 +184,13 @@ func RelayTokenAuth() func(c *gin.Context) {
 					if !common.IsAdmin(c) {
 						if shouldBypassAgentGroupAuth(agent, user.UserID) {
 							logger.SysLogf("Bypass agent group auth: agent_id=%d", agent.AgentID)
+						} else if user.Type == model.UserTypeVisitor {
+							// 访客用户(Type=UserTypeVisitor)没有分组权限，跳过分组检查
+							// 设计决策同 controller/agent.go：
+							// 1. 访客是通过 H5 Fixed Token 登录的匿名用户，主要用于 Agent 对话
+							// 2. 访客不需要精细的分组权限控制，企业 Agent 对访客开放是合理的业务需求
+							// 3. 避免为访客创建额外的分组数据，保持最小改动原则
+							logger.SysLogf("Visitor user access agent: agent_id=%d, user_id=%d", agent.AgentID, user.UserID)
 						} else {
 							agentUserGroupIds, err := agent.GetUserGroupIds()
 							if err != nil {

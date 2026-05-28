@@ -23,6 +23,7 @@ var StorageInstance Storage = NewStorage()
 type Storage interface {
 	Save(file []byte, fileName string) error
 	SaveFile(srcPath string, fileName string) error
+	SaveFromReader(r io.Reader, fileName string) error
 	Exists(fileName string) bool
 	Delete(fileName string) error
 	Load(fileName string) ([]byte, error)
@@ -148,6 +149,32 @@ func (l *LocalStorage) SaveFile(srcPath string, fileName string) error {
 	return nil
 }
 
+func (l *LocalStorage) SaveFromReader(r io.Reader, fileName string) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	fullPath := l.resolvePath(fileName)
+	if err := os.MkdirAll(path.Dir(fullPath), 0755); err != nil {
+		return fmt.Errorf("create dir error: %w", err)
+	}
+
+	dstFile, err := os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("create file error: %w", err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, r); err != nil {
+		_ = os.Remove(fullPath)
+		return fmt.Errorf("copy file error: %w", err)
+	}
+	if err := dstFile.Sync(); err != nil {
+		_ = os.Remove(fullPath)
+		return fmt.Errorf("sync file error: %w", err)
+	}
+	return nil
+}
+
 func (l *LocalStorage) Exists(fileName string) bool {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
@@ -235,6 +262,14 @@ func (a *AliyunOSSStorage) SaveFile(srcPath string, fileName string) error {
 	defer srcFile.Close()
 
 	if err := a.bucket.PutObject(objectName, srcFile); err != nil {
+		return fmt.Errorf("oss upload error: %w", err)
+	}
+	return nil
+}
+
+func (a *AliyunOSSStorage) SaveFromReader(r io.Reader, fileName string) error {
+	objectName := filepath.ToSlash(fileName)
+	if err := a.bucket.PutObject(objectName, r); err != nil {
 		return fmt.Errorf("oss upload error: %w", err)
 	}
 	return nil

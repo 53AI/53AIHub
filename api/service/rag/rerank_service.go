@@ -98,6 +98,13 @@ func (s *RerankService) PerformRerank(
 	logger.Debugf(ctx, "【重排】去重完成: before=%d, after=%d, sample=%v",
 		len(initialResults), len(deduplicatedResults), previewSearchResultsForDebug(deduplicatedResults, 5))
 
+	// 如果去重后的候选数已经不超过最终返回数量，就没有必要再做重排了
+	if config.TopK > 0 && len(deduplicatedResults) <= config.TopK {
+		logger.Debugf(ctx, "【重排】候选数已不超过 top_k，跳过重排: deduplicated=%d, top_k=%d",
+			len(deduplicatedResults), config.TopK)
+		return s.applyTopKLimit(deduplicatedResults, config), nil
+	}
+
 	// 2. 根据RerankModel选择重排方式 (参考流程图 3.1)
 	var rerankedResults []SearchResultItem
 	var err error
@@ -277,16 +284,14 @@ func (s *RerankService) weightedScoreRerank(
 
 // deduplicateDocuments 文档去重处理 (参考流程图 3.4)
 func (s *RerankService) deduplicateDocuments(documents []SearchResultItem) []SearchResultItem {
-	uniqueDocs := make(map[int64]SearchResultItem) // 使用ChunkID作为唯一标识
+	uniqueDocs := make(map[int64]struct{}) // 使用ChunkID作为唯一标识
+	result := make([]SearchResultItem, 0, len(documents))
 	for _, doc := range documents {
-		// 简单的去重，保留第一个遇到的
-		if _, exists := uniqueDocs[doc.ChunkID]; !exists {
-			uniqueDocs[doc.ChunkID] = doc
+		// 简单的去重，保留第一个遇到的，并维持输入顺序
+		if _, exists := uniqueDocs[doc.ChunkID]; exists {
+			continue
 		}
-	}
-
-	var result []SearchResultItem
-	for _, doc := range uniqueDocs {
+		uniqueDocs[doc.ChunkID] = struct{}{}
 		result = append(result, doc)
 	}
 	return result

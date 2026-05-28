@@ -74,7 +74,11 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 		// 准备统计数据
 		var fileSize int64 = 0
 		var pageCount int = 0
+		var fileExt string
 		var needsConversion = false
+		parseType := ""
+		engineFound := false
+		var smartMatchResult *SmartMatchResult
 
 		// 5. 判断处理逻辑
 		if !hasUploadFile {
@@ -82,12 +86,12 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 			logger.Info(ctx, "DocumentParsingStepHandler: No upload file, skipping conversion (assuming markdown saved directly)")
 		} else {
 			fileSize = uploadFile.Size
-			ext := strings.ToLower(filepath.Ext(uploadFile.FileName))
+			fileExt = strings.ToLower(filepath.Ext(uploadFile.FileName))
 
-			if ext == ".txt" || ext == ".md" || ext == ".markdown" {
+			if fileExt == ".txt" || fileExt == ".md" || fileExt == ".markdown" {
 				// 情况 2: txt 和 markdown，无需转换
 				// 但仍需读取内容并保存到 file_bodies
-				logger.Info(ctx, fmt.Sprintf("DocumentParsingStepHandler: File extension %s, using simple strategy", ext))
+				logger.Info(ctx, fmt.Sprintf("DocumentParsingStepHandler: File extension %s, using simple strategy", fileExt))
 				needsConversion = true
 			} else {
 				// 情况 3: 其他文件
@@ -108,23 +112,28 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 			var err error
 
 			// 获取 parse_type
-			parseType := ""
-			engineFound := false
-
 			// V2 优先从 stepConfig 获取 (支持单步重试时修改配置)
 			if stepConfig != nil {
 				var cfg struct {
-					Engine *string `json:"engine"` // 使用指针以区分是否传递了该字段
+					Engine                *string `json:"engine"`
+					EnableSmartMatch      bool    `json:"enable_smart_match"`
+					MatchPreferencePrompt string  `json:"match_preference_prompt"`
 				}
 				if err := json.Unmarshal(stepConfig, &cfg); err == nil && cfg.Engine != nil {
-					parseType = *cfg.Engine
+					parseType = normalizeDocumentParsingEngine(*cfg.Engine)
 					engineFound = true
-					// 如果显式传入空字符串，则强制使用默认解析器 (markitdown)，避免回退到 document_setting 规则
-					if parseType == "" {
-						parseType = "markitdown"
-						logger.Infof(ctx, "DocumentParsingStepHandler: Engine explicitly set to empty, defaulting to 'markitdown'")
+					logger.Infof(ctx, "DocumentParsingStepHandler: Using engine from stepConfig: '%s'", parseType)
+				}
+
+				if cfg.EnableSmartMatch && hasUploadFile {
+					result, err := selectDocumentParsingSmartMatch(ctx, db, eid, uploadFile.FileName, fileExt, cfg.MatchPreferencePrompt)
+					if err != nil {
+						logger.Warn(ctx, fmt.Sprintf("DocumentParsingStepHandler: smart match failed, fallback to existing parse type: %v", err))
 					} else {
-						logger.Infof(ctx, "DocumentParsingStepHandler: Using engine from stepConfig: '%s'", parseType)
+						smartMatchResult = result
+						parseType = result.SelectedKey
+						engineFound = true
+						logger.Infof(ctx, "DocumentParsingStepHandler: smart match selected parse type '%s' (fallback=%v)", parseType, result.FallbackUsed)
 					}
 				}
 			}
@@ -132,9 +141,17 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 			// 如果 stepConfig 没有明确提供，尝试从 params 中获取 (兼容旧逻辑或全局参数)
 			if !engineFound {
 				if v, ok := params["parse_type"]; ok {
-					parseType = v.(string)
-					logger.Infof(ctx, "DocumentParsingStepHandler: Using engine from params: '%s'", parseType)
+					if rawParseType, ok := v.(string); ok {
+						parseType = normalizeDocumentParsingEngine(rawParseType)
+						logger.Infof(ctx, "DocumentParsingStepHandler: Using engine from params: '%s'", parseType)
+					}
 				}
+			}
+
+			// 兼容旧版本：document_parsing 里空字符串和缺失值都按 markitdown 处理
+			if parseType == "" {
+				parseType = model.PLATFORM_KEY_MARKITDOWN
+				logger.Infof(ctx, "DocumentParsingStepHandler: parse type missing, defaulting to '%s'", parseType)
 			}
 
 			// 读取文件内容 (如果是 docconv 策略，不需要读取内容，直接传 nil)
@@ -268,6 +285,12 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 			"document_size": fileSize,
 			"page_count":    pageCount,
 		}
+		if parseType != "" {
+			stats["parse_type"] = parseType
+		}
+		if smartMatchResult != nil {
+			stats["smart_match"] = smartMatchResult
+		}
 
 		if jobStep.ID > 0 {
 			if err := jobStep.CompleteSuccessfully(stats); err != nil {
@@ -279,4 +302,12 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 		logger.Info(ctx, fmt.Sprintf("DocumentParsingStepHandler: completed successfully, size: %d", fileSize))
 		return nil
 	}
+}
+
+func normalizeDocumentParsingEngine(engine string) string {
+	engine = strings.TrimSpace(engine)
+	if engine == "" {
+		return model.PLATFORM_KEY_MARKITDOWN
+	}
+	return engine
 }

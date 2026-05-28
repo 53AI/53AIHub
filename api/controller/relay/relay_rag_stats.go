@@ -108,12 +108,7 @@ func generateRAGStats(
 	// 2. 构建分片数据列表
 	chunks := make([]ChunkData, 0, len(sources))
 
-	// 预先批量获取扩展信息（空间、知识库等）
-	extendedInfos := getExtendedChunkInfoFromSources(ctx, eid, sources)
-
 	for _, source := range sources {
-		extInfo := extendedInfos[source.ChunkID]
-
 		contentPreview := truncateContent(source.Content, MAX_DESC_WORD)
 
 		chunk := ChunkData{
@@ -125,8 +120,8 @@ func generateRAGStats(
 			LibraryID:   hashInt64(source.KnowledgeBaseID),
 			LibraryName: source.KnowledgeBaseName,
 			LibraryIcon: source.KnowledgeBaseLogo,
-			SpaceID:     extInfo.SpaceID,
-			SpaceName:   extInfo.SpaceName,
+			SpaceID:     source.SpaceID,
+			SpaceName:   source.SpaceName,
 			Score:       source.Score,
 			FilePath:    source.FilePath,
 			SourceKey:   source.SourceKey,
@@ -141,8 +136,7 @@ func generateRAGStats(
 	}
 
 	// 3. 生成实际引用的分片ID和文件ID列表
-	documentQuotations := getQuotedChunkIDs(quotedSourceIDs, sources)
-	fileQuotations := getQuotedFileIDs(quotedSourceIDs, sources)
+	documentQuotations, fileQuotations := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 
 	logger.Debugf(ctx, "实际引用统计: 分片数=%d, 文件数=%d",
 		len(documentQuotations), len(fileQuotations))
@@ -191,104 +185,6 @@ func determineRAGType(knowledgeType int, sources []rag.SourceReference) string {
 		return "web_search"
 	}
 	return "rag_search"
-}
-
-// getExtendedChunkInfoFromSources 从 SourceReference 批量获取扩展信息
-func getExtendedChunkInfoFromSources(
-	ctx context.Context,
-	eid int64,
-	sources []rag.SourceReference,
-) map[int64]struct {
-	SpaceID   string
-	SpaceName string
-} {
-	result := make(map[int64]struct {
-		SpaceID   string
-		SpaceName string
-	})
-
-	// 提取所有唯一的知识库ID
-	uniqueLibraryIDs := make(map[int64]bool)
-	for _, source := range sources {
-		if source.KnowledgeBaseID > 0 {
-			uniqueLibraryIDs[source.KnowledgeBaseID] = true
-		}
-	}
-
-	if len(uniqueLibraryIDs) == 0 {
-		// 没有知识库信息，返回空
-		for _, source := range sources {
-			result[source.ChunkID] = struct {
-				SpaceID   string
-				SpaceName string
-			}{"", ""}
-		}
-		return result
-	}
-
-	// 批量查询知识库信息
-	libraryIDs := make([]int64, 0, len(uniqueLibraryIDs))
-	for libID := range uniqueLibraryIDs {
-		libraryIDs = append(libraryIDs, libID)
-	}
-
-	var libraries []model.Library
-	if err := model.DB.Where("eid = ? AND id IN ?", eid, libraryIDs).Find(&libraries).Error; err != nil {
-		logger.Warnf(ctx, "批量查询知识库信息失败: %v", err)
-		// 返回空信息
-		for _, source := range sources {
-			result[source.ChunkID] = struct {
-				SpaceID   string
-				SpaceName string
-			}{"", ""}
-		}
-		return result
-	}
-
-	// 构建知识库ID到空间ID的映射
-	libraryToSpace := make(map[int64]int64)
-	uniqueSpaceIDs := make(map[int64]bool)
-	for _, lib := range libraries {
-		libraryToSpace[lib.ID] = lib.SpaceID
-		uniqueSpaceIDs[lib.SpaceID] = true
-	}
-
-	// 批量查询空间信息
-	spaceIDs := make([]int64, 0, len(uniqueSpaceIDs))
-	for spaceID := range uniqueSpaceIDs {
-		spaceIDs = append(spaceIDs, spaceID)
-	}
-
-	var spaces []model.Space
-	spaceMap := make(map[int64]*model.Space)
-	if len(spaceIDs) > 0 {
-		if err := model.DB.Where("eid = ? AND id IN ?", eid, spaceIDs).Find(&spaces).Error; err != nil {
-			logger.Warnf(ctx, "批量查询空间信息失败: %v", err)
-		} else {
-			for i := range spaces {
-				spaceMap[spaces[i].ID] = &spaces[i]
-			}
-		}
-	}
-
-	// 为每个 source 填充空间信息
-	for _, source := range sources {
-		spaceID := libraryToSpace[source.KnowledgeBaseID]
-		spaceName := ""
-		if space, exists := spaceMap[spaceID]; exists {
-			spaceName = space.Name
-		}
-
-		result[source.ChunkID] = struct {
-			SpaceID   string
-			SpaceName string
-		}{
-			SpaceID:   hashInt64(spaceID),
-			SpaceName: spaceName,
-		}
-	}
-
-	return result
 }
 
 // sendReferenceAnalysisStep 发送引用分析步骤（使用 StepSender）

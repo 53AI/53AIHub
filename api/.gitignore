@@ -46,9 +46,9 @@ vendor/*
 
 .opencode/*
 .sisyphus/*
-.mcp.json
 migrate_tool
 data/skills/global/
 .claude/
 .kilo/
 .opencode/
+.km.pid

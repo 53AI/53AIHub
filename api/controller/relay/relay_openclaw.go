@@ -83,6 +83,7 @@ func handleOpenClawAgent(
 			Model:       agent.Model,
 			FileID:      chatRequest.MessageFileID,
 		}
+		applyVisitorIdentityToConversation(c, conversation)
 		if err := model.CreateConversation(conversation); err != nil {
 			return fmt.Errorf("create conversation: %w", err)
 		}
@@ -147,8 +148,10 @@ func handleOpenClawSync(
 		IsStream:          false,
 		QuotaContent:      "",
 		AgentCustomConfig: agent.CustomConfig,
+		RequestSource:     messageStatus.RequestSource,
 		FileID:            0,
 	}
+	applyVisitorIdentityToMessage(c, msg)
 	if err := model.CreateMessage(msg); err != nil {
 		logger.Errorf(ctx, "create openclaw message failed: %v", err)
 	}
@@ -231,6 +234,7 @@ func handleOpenClawStream(
 		AgentCustomConfig: agent.CustomConfig,
 		FileID:            0,
 	}
+	applyVisitorIdentityToMessage(c, msg)
 	if err := model.CreateMessage(msg); err != nil {
 		logger.Errorf(execCtx, "create openclaw stream message failed: %v", err)
 	}

@@ -7,11 +7,65 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 )
+
+var (
+	embeddingSingleflight singleflightGroup
+	_                     singleflightGroup = (*syncSingleflight)(nil)
+)
+
+type singleflightGroup interface {
+	Do(key string, fn func() (interface{}, error)) (interface{}, error)
+}
+
+type syncSingleflight struct {
+	mu sync.Mutex
+	m  map[string]*singleflightCall
+}
+
+type singleflightCall struct {
+	wg  sync.WaitGroup
+	val interface{}
+	err error
+}
+
+func newSyncSingleflight() *syncSingleflight {
+	return &syncSingleflight{m: make(map[string]*singleflightCall)}
+}
+
+func (s *syncSingleflight) Do(key string, fn func() (interface{}, error)) (interface{}, error) {
+	s.mu.Lock()
+	if s.m == nil {
+		s.m = make(map[string]*singleflightCall)
+	}
+	if c, ok := s.m[key]; ok {
+		s.mu.Unlock()
+		c.wg.Wait()
+		return c.val, c.err
+	}
+	c := &singleflightCall{}
+	c.wg.Add(1)
+	s.m[key] = c
+	s.mu.Unlock()
+
+	c.val, c.err = fn()
+	c.wg.Done()
+
+	s.mu.Lock()
+	delete(s.m, key)
+	s.mu.Unlock()
+
+	return c.val, c.err
+}
+
+func init() {
+	embeddingSingleflight = newSyncSingleflight()
+}
 
 const queryEmbeddingCacheTTL = 24 * time.Hour
 

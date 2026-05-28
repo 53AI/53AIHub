@@ -18,25 +18,19 @@ import (
 )
 
 const (
-	rerankRecallMultiplier = 5
+	rerankRecallMultiplier = 2
 	rerankRecallMax        = 200
 )
 
-func calculateRecallTopK(finalTopK int, queryCount int, rerankEnabled bool) int {
+func calculateRecallTopK(finalTopK int, _ int, rerankEnabled bool) int {
 	if finalTopK <= 0 {
 		finalTopK = 20
 	}
 	if !rerankEnabled {
 		return finalTopK
 	}
-	if queryCount <= 0 {
-		queryCount = 1
-	}
 
 	recallTopK := finalTopK * rerankRecallMultiplier
-	if queryCount > 1 {
-		recallTopK = recallTopK * queryCount
-	}
 	if recallTopK < finalTopK {
 		recallTopK = finalTopK
 	}
@@ -166,7 +160,7 @@ func buildScopeNarrowingStartData(searchTarget *SearchTarget, queriesCount int) 
 
 // LibraryInfo 用于返回知识库简要信息
 type LibraryInfo struct {
-	ID   string `json:"id"`   // HashID 格式
+	ID   string `json:"id"` // HashID 格式
 	Name string `json:"name"`
 }
 
@@ -177,34 +171,30 @@ type FileInfo struct {
 }
 
 func buildScopeNarrowingEndData(
-	searchItems []*search_tools.SearchItem,
+	narrowedLibraries []rag.EntityScopeNarrowLibrary,
 	beforeLibraryCount int,
 	beforeFileCount int,
 	actualSearchType string,
 	actualKeywords []string,
 	queriesCount int,
 ) map[string]interface{} {
-	// 从搜索结果中提取去重的知识库列表
-	libraryMap := make(map[int64]string)
-	for _, item := range searchItems {
-		if item != nil {
-			libraryMap[item.LibraryID] = item.LibraryName
-		}
+	if actualKeywords == nil {
+		actualKeywords = []string{}
 	}
 
 	var libraries []LibraryInfo
-	for libID, libName := range libraryMap {
-		hashID, _ := hashids.Encode(libID)
+	for _, library := range narrowedLibraries {
+		hashID, _ := hashids.Encode(library.ID)
 		libraries = append(libraries, LibraryInfo{
 			ID:   hashID,
-			Name: libName,
+			Name: library.Name,
 		})
 	}
 
 	data := map[string]interface{}{
 		"before_library_count":  beforeLibraryCount,
 		"before_file_count":     beforeFileCount,
-		"after_library_count":   len(libraries),
+		"after_library_count":   len(narrowedLibraries),
 		"actual_search_type":    actualSearchType,
 		"actual_keywords":       actualKeywords,
 		"actual_keywords_count": len(actualKeywords),
@@ -794,9 +784,7 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 		messageStatus.KnowledgeType = model.KnowledgeTypeSpecificKB
 	}
 
-	messageStatus.StepSender.SendStartStep(STEP_SCOPE_NARROWING, "正在搜索文档...", buildScopeNarrowingStartData(searchTarget, len(queries)))
-
-	// 3. 构建搜索配置
+	// 2. 构建搜索配置
 	searchType := "vector" // 默认
 	topK := 20
 	if chatRequest.SearchConfig != nil {
@@ -806,27 +794,68 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 		searchType = getSearchType(chatRequest.SearchConfig)
 	}
 
-	// 4. 创建 RagSearcher
-	ragConfig := &search_tools.RagConfig{
-		Type:         searchType,
-		LibraryIDs:   searchTarget.LibraryIDs,
-		FileIDs:      searchTarget.FileIDs,
-		SearchConfig: chatRequest.SearchConfig,
-	}
+	// 3. 准备实体关键词
+	actualKeywords := []string{}
+	actualSearchType := searchType
 	if messageStatus.RouterResult != nil && messageStatus.RouterResult.IntentClassificationResult != nil {
-		ragConfig.EntityKeywords = messageStatus.RouterResult.IntentClassificationResult.Keywords
+		if len(messageStatus.RouterResult.IntentClassificationResult.Keywords) > 0 {
+			actualKeywords = append([]string(nil), messageStatus.RouterResult.IntentClassificationResult.Keywords...)
+		}
 	}
 
-	actualKeywords := append([]string(nil), ragConfig.EntityKeywords...)
-	actualSearchType := searchType
+	userID := config.GetUserId(c)
+
+	// ========== 阶段 1: 实体范围收敛 ==========
+	// 如果请求已指定 file_id，则跳过收敛（文件级检索不需要收敛）
+	messageStatus.StepSender.SendStartStep(STEP_SCOPE_NARROWING, "正在搜索文档...", buildScopeNarrowingStartData(searchTarget, len(queries)))
+
+	searchService := rag.NewSearchService(model.DB)
+	preprocessReq := &rag.SearchRequest{
+		Query:                    queries[0],
+		LibraryIDs:               searchTarget.LibraryIDs,
+		FileIDs:                  searchTarget.FileIDs,
+		EntityKeywords:           actualKeywords,
+		DocumentType:             "",
+		SkipEntityScopeNarrowing: len(searchTarget.FileIDs) > 0,
+	}
+	if messageStatus.RouterResult != nil && messageStatus.RouterResult.IntentClassificationResult != nil {
+		preprocessReq.DocumentType = strings.TrimSpace(messageStatus.RouterResult.IntentClassificationResult.DocumentType)
+	}
+
+	narrowResult, preprocessErr := searchService.PreprocessEntityScope(agent.Eid, preprocessReq)
+	if preprocessErr != nil {
+		logger.Warnf(ctx, "【RAG检索】实体范围预处理失败: %v", preprocessErr)
+	}
+
+	// 发送缩小范围完成步骤（在向量搜索前）
+	messageStatus.StepSender.SendEndStep(STEP_SCOPE_NARROWING, "文档缩小范围完成", buildScopeNarrowingEndData(
+		narrowResult.NarrowedLibraries,
+		len(searchTarget.LibraryIDs),
+		len(searchTarget.FileIDs),
+		actualSearchType,
+		actualKeywords,
+		len(queries),
+	))
+
+	// ========== 阶段 2: 向量搜索 ==========
+	// 使用收敛后的范围构建 RagSearcher
+	effectiveLibraryIDs := narrowResult.NarrowedLibraryIDs
+	effectiveFileIDs := narrowResult.NarrowedFileIDs
+
+	ragConfig := &search_tools.RagConfig{
+		Type:         searchType,
+		LibraryIDs:   effectiveLibraryIDs,
+		FileIDs:      effectiveFileIDs,
+		SearchConfig: chatRequest.SearchConfig,
+	}
+
 	messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, "正在查找知识...", map[string]interface{}{
 		"queries": queries,
 	})
 
-	userID := config.GetUserId(c)
 	ragSearcher := search_tools.NewRagSearcher(model.DB, agent.Eid, &userID, ragConfig)
 
-	// 5. 创建搜索引擎并执行搜索
+	// 创建搜索引擎并执行搜索
 	shouldDoRerank := shouldRerank(agent, chatRequest)
 	recallTopK := calculateRecallTopK(topK, len(queries), shouldDoRerank)
 	logger.Debugf(ctx, "【RAG检索】召回参数: top_k=%d, query_count=%d, rerank=%v, recall_top_k=%d",
@@ -842,17 +871,7 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 		logger.Warnf(ctx, "搜索过程中出现错误: %v", searchResult.Errors)
 	}
 
-	// 发送缩小范围完成步骤（基于实际搜索结果）
-	messageStatus.StepSender.SendEndStep(STEP_SCOPE_NARROWING, "文档缩小范围完成", buildScopeNarrowingEndData(
-		searchResult.Items,
-		len(searchTarget.LibraryIDs),
-		len(searchTarget.FileIDs),
-		actualSearchType,
-		actualKeywords,
-		len(queries),
-	))
-
-	// 6. 可选：执行重排序
+	// 可选：执行重排序
 	finalItems := searchResult.Items
 	if len(searchResult.Items) > 0 && shouldDoRerank {
 		finalItems, err = performRerank(ctx, agent, queries[0], searchResult.Items)
@@ -863,15 +882,15 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 		}
 	}
 
-	// 7. 转换为 SourceReference 格式
+	// 转换为 SourceReference 格式
 	sources := convertToSourceReferences(ctx, agent.Eid, searchTarget, finalItems)
 
 	var graphSource *rag.SourceReference
 	if shouldRunGraphSearch(ctx, chatRequest, messageStatus.AgentModel) && len(actualKeywords) > 0 {
 		graphAggregateService := rag.NewGraphAggregateService(model.DB)
 		builtGraphSource, graphAggregateResult, graphErr := graphAggregateService.BuildAggregateSourceByKeywords(agent.Eid, actualKeywords, &rag.GraphAggregateScope{
-			LibraryIDs: searchTarget.LibraryIDs,
-			FileIDs:    searchTarget.FileIDs,
+			LibraryIDs: effectiveLibraryIDs,
+			FileIDs:    effectiveFileIDs,
 			UserID:     &userID,
 		})
 		if graphErr != nil {
@@ -1043,31 +1062,37 @@ func toRagSearchResultItem(item *search_tools.SearchItem) rag.SearchResultItem {
 		return rag.SearchResultItem{}
 	}
 	return rag.SearchResultItem{
-		ChunkID:     item.ChunkID,
-		FileID:      item.FileID,
-		LibraryID:   item.LibraryID,
-		FilePath:    item.FilePath,
-		FileName:    item.FileName,
-		LibraryName: item.LibraryName,
-		LibraryIcon: item.LibraryIcon,
-		ChunkType:   item.ChunkType,
-		Content:     item.Content,
-		Score:       item.Score,
+		ChunkID:       item.ChunkID,
+		FileID:        item.FileID,
+		LibraryID:     item.LibraryID,
+		FilePath:      item.FilePath,
+		FileName:      item.FileName,
+		LibraryName:   item.LibraryName,
+		LibraryIcon:   item.LibraryIcon,
+		FileCreatedAt: item.FileCreatedAt,
+		SpaceID:       item.SpaceID,
+		SpaceName:     item.SpaceName,
+		ChunkType:     item.ChunkType,
+		Content:       item.Content,
+		Score:         item.Score,
 	}
 }
 
 func toSearchItem(item rag.SearchResultItem) *search_tools.SearchItem {
 	return &search_tools.SearchItem{
-		ChunkID:     item.ChunkID,
-		FileID:      item.FileID,
-		LibraryID:   item.LibraryID,
-		FilePath:    item.FilePath,
-		FileName:    item.FileName,
-		LibraryName: item.LibraryName,
-		LibraryIcon: item.LibraryIcon,
-		ChunkType:   item.ChunkType,
-		Content:     item.Content,
-		Score:       item.Score,
+		ChunkID:       item.ChunkID,
+		FileID:        item.FileID,
+		LibraryID:     item.LibraryID,
+		FilePath:      item.FilePath,
+		FileName:      item.FileName,
+		LibraryName:   item.LibraryName,
+		LibraryIcon:   item.LibraryIcon,
+		FileCreatedAt: item.FileCreatedAt,
+		SpaceID:       item.SpaceID,
+		SpaceName:     item.SpaceName,
+		ChunkType:     item.ChunkType,
+		Content:       item.Content,
+		Score:         item.Score,
 	}
 }
 
@@ -1110,9 +1135,19 @@ func getExtendedChunkInfoFromItems(eid int64, items []*search_tools.SearchItem) 
 	ragItems := make([]rag.SearchResultItem, len(items))
 	for i, item := range items {
 		ragItems[i] = rag.SearchResultItem{
-			ChunkID:   item.ChunkID,
-			FileID:    item.FileID,
-			LibraryID: item.LibraryID,
+			ChunkID:       item.ChunkID,
+			FileID:        item.FileID,
+			LibraryID:     item.LibraryID,
+			FilePath:      item.FilePath,
+			FileName:      item.FileName,
+			LibraryName:   item.LibraryName,
+			LibraryIcon:   item.LibraryIcon,
+			FileCreatedAt: item.FileCreatedAt,
+			SpaceID:       item.SpaceID,
+			SpaceName:     item.SpaceName,
+			ChunkType:     item.ChunkType,
+			Content:       item.Content,
+			Score:         item.Score,
 		}
 	}
 

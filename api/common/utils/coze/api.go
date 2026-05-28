@@ -152,7 +152,7 @@ type PublishedBotsResponse struct {
 
 // IsTokenExpired checks if token is expired (with 5 minutes buffer time)
 func IsTokenExpired(provider *model.Provider) bool {
-	return time.Now().Unix()+300 >= provider.CreatedTime+provider.ExpiresIn
+	return time.Now().Unix()+300 >= provider.AuthedTime/1000+provider.ExpiresIn
 }
 
 // RefreshTokenIfNeeded refreshes token if it's about to expire
@@ -182,7 +182,7 @@ func (c *CozeApi) RefreshTokenIfNeeded(provider *model.Provider) error {
 	provider.AccessToken = resp.AccessToken
 	provider.RefreshToken = resp.RefreshToken
 	provider.ExpiresIn = resp.ExpiresIn
-	provider.CreatedTime = time.Now().Unix()
+	provider.AuthedTime = time.Now().UTC().UnixMilli()
 
 	return model.UpdateProvider(provider)
 }

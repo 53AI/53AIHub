@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
@@ -723,4 +724,76 @@ func buildFavoriteItemsFromFavorites(eid int64, favs []model.Favorite, keyword s
 	}
 
 	return items, nil
+}
+
+type CheckFavoritesRequest struct {
+	ResourceType int      `json:"resource_type" binding:"required"`
+	IDs          []string `json:"ids" binding:"required,min=1,max=100"`
+}
+
+type CheckFavoritesResponse struct {
+	FavoritedIDs []string `json:"favorited_ids"`
+}
+
+// CheckFavorites godoc
+// @Summary 批量查询收藏状态
+// @Description 通过多个 hashID 批量查询资源是否被当前用户收藏，返回已收藏的 hashID 列表
+// @Tags 我的空间
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CheckFavoritesRequest true "查询信息"
+// @Success 200 {object} model.CommonResponse{data=CheckFavoritesResponse}
+// @Router /api/my-space/favorites/check [post]
+func CheckFavorites(c *gin.Context) {
+	userID := config.GetUserId(c)
+
+	var req CheckFavoritesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	if req.ResourceType != model.RESOURCE_TYPE_FILE && req.ResourceType != model.RESOURCE_TYPE_LIBRARY {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("resource_type 无效，必须为 1（知识库）或 2（文件）")))
+		return
+	}
+
+	resourceIDs := make([]int64, 0, len(req.IDs))
+	for _, idStr := range req.IDs {
+		decoded, err := hashids.TryParseID(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("ids 中包含无效的 hashID: "+idStr)))
+			return
+		}
+		resourceIDs = append(resourceIDs, decoded)
+	}
+
+	favoriteMap, err := model.GetFavoriteResourceIDMap(userID, req.ResourceType, resourceIDs)
+	if err != nil {
+		logger.Errorf(c, "【收藏】批量查询收藏状态失败: user_id=%d err=%v", userID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+
+	favoritedResourceIDs := make([]int64, 0)
+	for resourceID, isFavorited := range favoriteMap {
+		if isFavorited {
+			favoritedResourceIDs = append(favoritedResourceIDs, resourceID)
+		}
+	}
+
+	favoritedIDs := make([]string, 0, len(favoritedResourceIDs))
+	for _, rid := range favoritedResourceIDs {
+		encoded, err := hashids.Encode(rid)
+		if err != nil {
+			logger.Errorf(c, "【收藏】编码 hashID 失败: resource_id=%d err=%v", rid, err)
+			continue
+		}
+		favoritedIDs = append(favoritedIDs, encoded)
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(CheckFavoritesResponse{
+		FavoritedIDs: favoritedIDs,
+	}))
 }

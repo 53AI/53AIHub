@@ -46,11 +46,9 @@ type chunkEnrichmentBatchResponse struct {
 	Items []ChunkEnrichmentItem `json:"items"`
 }
 
-func resolveChunkEnrichmentFastReasoning(ctx context.Context, modelConfig *model.ModelConfigData) (*model.ModelChannelConfig, string) {
-	if modelConfig != nil &&
-		modelConfig.FastReasoning.ChannelID != nil &&
-		modelConfig.FastReasoning.ModelName != nil {
-		return &modelConfig.FastReasoning, "chunk_fast_reasoning"
+func resolveChunkEnrichmentFastReasoning(ctx context.Context, chunkFastReasoning model.ModelChannelConfig) (*model.ModelChannelConfig, string) {
+	if chunkFastReasoning.ChannelID != nil && chunkFastReasoning.ModelName != nil {
+		return &chunkFastReasoning, "chunk_fast_reasoning"
 	}
 
 	return nil, ""
@@ -169,41 +167,9 @@ func (s *ContentGeneratorService) GenerateChunkEnrichmentBatch(ctx context.Conte
 		return []ChunkEnrichmentItem{}, nil
 	}
 
-	configService := NewChunkConfigService(s.chatService.db)
-	modelConfig, err := configService.GetModelConfigFromChunkConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("获取模型配置失败: %v", err)
-	}
-
-	selectedFastReasoning, source := resolveChunkEnrichmentFastReasoning(ctx, modelConfig)
-	var selectedChannel *model.Channel
-	var selectedModelName string
-
-	if selectedFastReasoning != nil {
-		channel, err := model.GetChannelByID(*selectedFastReasoning.ChannelID)
-		if err == nil && channel != nil {
-			selectedChannel = channel
-			selectedModelName = *selectedFastReasoning.ModelName
-		} else {
-			logger.Warnf(ctx, "[GenerateChunkEnrichmentBatch] %s渠道不可用: channel_id=%d, err=%v", source, *selectedFastReasoning.ChannelID, err)
-		}
-	}
-
-	if selectedChannel == nil && config.LogicChannel != nil && config.LogicModelName != nil {
-		selectedChannel = config.LogicChannel
-		selectedModelName = *config.LogicModelName
-	}
-
-	if selectedChannel == nil && config.LogicChannelID != nil && config.LogicModelName != nil {
-		channel, err := model.GetChannelByID(*config.LogicChannelID)
-		if err == nil && channel != nil {
-			selectedChannel = channel
-			selectedModelName = *config.LogicModelName
-		}
-	}
-
-	if selectedChannel == nil {
-		return nil, fmt.Errorf("没有可用的推理渠道，无法生成块级简介和问法")
+	selectedChannel, selectedModelName, selectErr := config.SelectPipelineLLM()
+	if selectErr != nil {
+		return nil, fmt.Errorf("没有可用的推理渠道，无法生成块级简介和问法: %v", selectErr)
 	}
 
 	prompt := buildChunkEnrichmentPrompt(req)

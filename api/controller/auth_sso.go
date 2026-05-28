@@ -110,14 +110,22 @@ func ApiSSOSSOLogin(c *gin.Context) {
 		user = u
 	}
 
-	// 刷新令牌并返回
-	if err := user.RefreshAccessToken(); err != nil {
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+	// 查找或创建 UserChannel（channel_type = sso, openid = username）
+	channel, err := getOrCreateSSOUserChannel(eid, user.UserID, req.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	// 使用复用 token 逻辑（不刷新 user.access_token）
+	token, err := model.GetOrCreateUserChannelTokenWithRenewal(eid, user.UserID, channel.ID, 7*24*time.Hour)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(SaasLoginResponse{
-		AccessToken: user.AccessToken,
+		AccessToken: token.Token,
 		UserID:      user.UserID,
 	}))
 }
@@ -145,4 +153,19 @@ func isValid10DigitTimestamp(ts string) bool {
 		}
 	}
 	return true
+}
+
+func getOrCreateSSOUserChannel(eid, userID int64, username string) (*model.UserChannel, error) {
+	// 查找现有 channel
+	channel, err := model.GetUserChannelByOpenID(eid, username)
+	if err == nil && channel != nil {
+		return channel, nil
+	}
+
+	if err != model.ErrUserChannelNotFound {
+		return nil, err
+	}
+
+	// 没找到，创建新 channel
+	return model.CreateUserChannel(eid, userID, model.ChannelTypeSSO, username)
 }

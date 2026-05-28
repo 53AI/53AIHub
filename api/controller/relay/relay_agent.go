@@ -195,22 +195,36 @@ func normalizeAIGeneratedSessionFolderSegment(raw string) string {
 	return trimmed
 }
 
-// LLMDeltaCollector collects streaming LLM output and emits llm_delta process steps
-// Used for intermediate LLM turns in agent loop when outer request is streaming
+// LLMDeltaCollector collects streaming LLM output and emits llm_delta process steps.
+// Intermediate turns should be rendered into process.step, but the final answer
+// should stay in outer choices streaming. To avoid duplicating the same answer in
+// both channels, we delay llm_delta emission until the turn is confirmed to be a
+// non-final control turn (tool call / continue / rag / skill switch).
+//
+// Passthrough optimization: non-internal streams can switch to passthrough when
+// the first content chunk arrives without tool_calls. Internal agent-loop turns
+// keep plain content buffered because some models emit text before later tool_calls.
 type LLMDeltaCollector struct {
 	gin.ResponseWriter
-	content          strings.Builder
-	reasoningContent strings.Builder
-	visibleContent   strings.Builder
-	sseBuffer        strings.Builder
-	toolCalls        map[int]*relay_model.Tool
-	contentDeltas    []string
-	pendingDeltas    map[string]*strings.Builder
-	pendingLastFlush map[string]time.Time
-	contentSanitizer *streamControlSanitizer
-	requestId        string
-	ctx              context.Context
-	c                *gin.Context
+	content                  strings.Builder
+	reasoningContent         strings.Builder
+	visibleContent           strings.Builder
+	sseBuffer                strings.Builder
+	toolCalls                map[int]*relay_model.Tool
+	contentDeltas            []string
+	pendingDeltas            map[string]*strings.Builder
+	pendingLastFlush         map[string]time.Time
+	contentSanitizer         *streamControlSanitizer
+	requestId                string
+	ctx                      context.Context
+	c                        *gin.Context
+	hasToolCall              bool
+	decisionResolved         bool
+	decisionValue            string
+	shouldEmitLLMDelta       bool
+	deferVisibleContentDelta bool
+	passthroughMode          bool
+	seenFirstContent         bool
 }
 
 // NewLLMDeltaCollector creates a new collector that emits llm_delta events
@@ -232,10 +246,17 @@ func NewLLMDeltaCollector(c *gin.Context, ctx context.Context, requestId string)
 	}
 }
 
-// Write implements ResponseWriter interface - parses SSE and emits llm_delta
+// Write implements ResponseWriter interface.
+// In passthrough mode, directly forwards SSE data to the underlying ResponseWriter.
+// Otherwise, parses SSE and emits llm_delta for intermediate turns.
 func (w *LLMDeltaCollector) Write(b []byte) (int, error) {
+	if w.passthroughMode {
+		if isInternalAgentStreamTurn(w.c) {
+			return w.writeInternalPassthrough(b)
+		}
+		return w.ResponseWriter.Write(b)
+	}
 	w.sseBuffer.Write(b)
-	// Normalize CRLF to LF so we can parse both "\n\n" and "\r\n\r\n" framed SSE streams.
 	buffer := strings.ReplaceAll(w.sseBuffer.String(), "\r\n", "\n")
 
 	for {
@@ -246,6 +267,18 @@ func (w *LLMDeltaCollector) Write(b []byte) (int, error) {
 		event := buffer[:idx]
 		buffer = buffer[idx+2:]
 		w.processSSEEvent(event)
+		if w.passthroughMode {
+			buffer = strings.TrimLeft(buffer, "\n")
+			if buffer != "" {
+				if isInternalAgentStreamTurn(w.c) {
+					_, _ = w.writeInternalPassthrough([]byte(buffer + "\n\n"))
+				} else {
+					w.ResponseWriter.Write([]byte(buffer + "\n\n"))
+				}
+			}
+			w.sseBuffer.Reset()
+			return len(b), nil
+		}
 	}
 
 	w.sseBuffer.Reset()
@@ -253,6 +286,46 @@ func (w *LLMDeltaCollector) Write(b []byte) (int, error) {
 		w.sseBuffer.WriteString(buffer)
 	}
 	return len(b), nil
+}
+
+func (w *LLMDeltaCollector) writeInternalPassthrough(b []byte) (int, error) {
+	w.sseBuffer.Write(b)
+	buffer := strings.ReplaceAll(w.sseBuffer.String(), "\r\n", "\n")
+
+	for {
+		idx := strings.Index(buffer, "\n\n")
+		if idx == -1 {
+			break
+		}
+		event := buffer[:idx]
+		buffer = buffer[idx+2:]
+		if isSSEDataDoneEvent(event) {
+			continue
+		}
+		if _, err := w.ResponseWriter.Write([]byte(event + "\n\n")); err != nil {
+			return len(b), err
+		}
+	}
+
+	w.sseBuffer.Reset()
+	if buffer != "" {
+		w.sseBuffer.WriteString(buffer)
+	}
+	return len(b), nil
+}
+
+func isSSEDataDoneEvent(event string) bool {
+	lines := strings.Split(event, "\n")
+	var dataLines []string
+	for _, line := range lines {
+		line = strings.TrimSuffix(line, "\r")
+		if strings.HasPrefix(line, "data:") {
+			payload := strings.TrimPrefix(line, "data:")
+			payload = strings.TrimLeft(payload, " ")
+			dataLines = append(dataLines, payload)
+		}
+	}
+	return strings.Join(dataLines, "\n") == "[DONE]"
 }
 
 func (w *LLMDeltaCollector) processSSEEvent(event string) {
@@ -275,11 +348,10 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 		return
 	}
 
-	// ⭐ 检查是否为 process.step 类型，如果是则透传
+	// 透传 process.step 类型的消息
 	var genericPayload map[string]interface{}
 	if err := json.Unmarshal([]byte(dataContent), &genericPayload); err == nil {
 		if object, ok := genericPayload["object"].(string); ok && object == "process.step" {
-			// 透传 process.step 类型的消息到底层 writer
 			origWriter := w.c.Writer
 			w.c.Writer = w.ResponseWriter
 			_, writeErr := w.ResponseWriter.Write([]byte("data: " + dataContent + "\n\n"))
@@ -316,53 +388,112 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 		return
 	}
 	delta := streamResp.Choices[0].Delta
+
+	hasVisibleContent := delta.Content != nil && *delta.Content != ""
+	hasReasoningContent := delta.ReasoningContent != nil && *delta.ReasoningContent != ""
+
+	// 工具调用优先处理
+	if len(delta.ToolCalls) > 0 {
+		w.hasToolCall = true
+		w.enableLLMDeltaIfNeeded("tool_calls")
+		// 处理内容部分（可能有 tool_calls 和 content 同时出现）
+		if delta.Content != nil && *delta.Content != "" {
+			chunk := *delta.Content
+			w.content.WriteString(chunk)
+			w.resolveDecisionFromBufferedContent()
+			if visible := w.contentSanitizer.Add(chunk); visible != "" {
+				w.visibleContent.WriteString(visible)
+				w.contentDeltas = append(w.contentDeltas, visible)
+				if w.shouldEmitLLMDelta {
+					w.queueLLMDelta(visible, "content")
+				}
+			}
+		}
+		if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
+			w.reasoningContent.WriteString(*delta.ReasoningContent)
+			if w.shouldEmitLLMDelta {
+				w.queueLLMDelta(*delta.ReasoningContent, "reasoning")
+			}
+		}
+		for _, tc := range delta.ToolCalls {
+			idx := 0
+			if tc.Index != nil {
+				idx = *tc.Index
+			}
+			existing, ok := w.toolCalls[idx]
+			if !ok {
+				existing = &relay_model.Tool{Id: tc.Id, Type: tc.Type}
+				w.toolCalls[idx] = existing
+			}
+			if tc.Id != "" {
+				existing.Id = tc.Id
+			}
+			if tc.Type != "" {
+				existing.Type = tc.Type
+			}
+			if tc.Function.Name != "" {
+				existing.Function.Name = tc.Function.Name
+			}
+			if tc.Function.Arguments != "" {
+				currentArgs := ""
+				if existing.Function.Arguments != nil {
+					if s, ok := existing.Function.Arguments.(string); ok {
+						currentArgs = s
+					}
+				}
+				existing.Function.Arguments = currentArgs + tc.Function.Arguments
+			}
+		}
+		return
+	}
+
+	// 关键透传检测：第一个 content chunk 且没有 tool_calls -> 可能是最终回答
+	// 但如果内容包含 <decision> 标签，可能是控制轮次，需要缓冲解析决策
+	if !w.seenFirstContent && hasVisibleContent && !w.hasToolCall {
+		contentChunk := *delta.Content
+		// 检查是否包含决策标签前缀（可能需要等待完整标签）
+		if w.shouldDelayPassthroughForDecision(contentChunk) {
+			// 内容可能包含决策标签，不立即透传，继续缓冲
+			w.seenFirstContent = true
+			// 继续下面的常规内容处理
+		} else if w.shouldPassthroughOnFirstContent(contentChunk) {
+			w.seenFirstContent = true
+			w.switchToPassthrough(dataContent)
+			return
+		} else {
+			w.seenFirstContent = true
+			if !isInternalAgentStreamTurn(w.c) {
+				w.enableLLMDeltaIfNeeded("plain_stream")
+			} else {
+				w.deferVisibleContentDelta = true
+			}
+		}
+	} else if !w.seenFirstContent && hasReasoningContent && !w.hasToolCall {
+		w.enableLLMDeltaIfNeeded("internal_reasoning")
+	}
+
+	// 常规内容处理（已有 tool_call 或 llm_delta 已启用）
 	if delta.Content != nil && *delta.Content != "" {
 		chunk := *delta.Content
 		w.content.WriteString(chunk)
+		w.resolveDecisionFromBufferedContent()
 		if visible := w.contentSanitizer.Add(chunk); visible != "" {
 			w.visibleContent.WriteString(visible)
 			w.contentDeltas = append(w.contentDeltas, visible)
-			w.queueLLMDelta(visible, "content")
+			if w.shouldEmitLLMDelta && !w.deferVisibleContentDelta {
+				w.queueLLMDelta(visible, "content")
+			}
 		}
 	}
 	if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
 		w.reasoningContent.WriteString(*delta.ReasoningContent)
-		w.queueLLMDelta(*delta.ReasoningContent, "reasoning")
+		if w.shouldEmitLLMDelta {
+			w.queueLLMDelta(*delta.ReasoningContent, "reasoning")
+		}
 	}
-	if len(delta.ToolCalls) == 0 {
-		return
-	}
-	for _, tc := range delta.ToolCalls {
-		idx := 0
-		if tc.Index != nil {
-			idx = *tc.Index
-		}
-		existing, ok := w.toolCalls[idx]
-		if !ok {
-			existing = &relay_model.Tool{
-				Id:   tc.Id,
-				Type: tc.Type,
-			}
-			w.toolCalls[idx] = existing
-		}
-		if tc.Id != "" {
-			existing.Id = tc.Id
-		}
-		if tc.Type != "" {
-			existing.Type = tc.Type
-		}
-		if tc.Function.Name != "" {
-			existing.Function.Name = tc.Function.Name
-		}
-		if tc.Function.Arguments != "" {
-			currentArgs := ""
-			if existing.Function.Arguments != nil {
-				if s, ok := existing.Function.Arguments.(string); ok {
-					currentArgs = s
-				}
-			}
-			existing.Function.Arguments = currentArgs + tc.Function.Arguments
-		}
+
+	if w.decisionResolved && w.decisionValue != DecisionDone {
+		w.enableLLMDeltaIfNeeded("decision")
 	}
 }
 
@@ -443,6 +574,178 @@ func (w *LLMDeltaCollector) flushPendingDeltas(force bool) {
 	}
 }
 
+func (w *LLMDeltaCollector) resolveDecisionFromBufferedContent() {
+	if w.decisionResolved {
+		return
+	}
+	event := ParseAgentControlEvent(w.content.String())
+	if event == nil || event.Decision == nil {
+		return
+	}
+	w.decisionResolved = true
+	w.decisionValue = event.Decision.Decision
+}
+
+func (w *LLMDeltaCollector) enableLLMDeltaIfNeeded(trigger string) {
+	flushDeferredContent := trigger == "tool_calls" || trigger == "decision"
+	wasEnabled := w.shouldEmitLLMDelta
+	shouldFlushVisible := (!wasEnabled && !w.deferVisibleContentDelta) || (flushDeferredContent && w.deferVisibleContentDelta)
+	if flushDeferredContent {
+		w.deferVisibleContentDelta = false
+	}
+	if !wasEnabled {
+		w.shouldEmitLLMDelta = true
+		w.pendingLastFlush["content"] = time.Time{}
+		w.pendingLastFlush["reasoning"] = time.Time{}
+	}
+	if shouldFlushVisible && w.visibleContent.Len() > 0 {
+		w.queueLLMDelta(w.visibleContent.String(), "content")
+	}
+	if !wasEnabled && w.reasoningContent.Len() > 0 {
+		w.queueLLMDelta(w.reasoningContent.String(), "reasoning")
+	}
+	logger.Debugf(w.ctx,
+		"【技能运行】启用 llm_delta: trigger=%s, decision=%s, has_tool_call=%v, content_len=%d, reasoning_len=%d",
+		trigger, w.decisionValue, w.hasToolCall, w.visibleContent.Len(), w.reasoningContent.Len())
+}
+
+func (w *LLMDeltaCollector) switchToPassthrough(currentDataContent string) {
+	if w.passthroughMode {
+		return
+	}
+	w.passthroughMode = true
+	logger.Debugf(w.ctx, "【技能运行】切换到透传模式: has_tool_call=%v, content_len=%d", w.hasToolCall, w.visibleContent.Len())
+	SetUpStreamResponseHeaders(w.c)
+	w.sseBuffer.Reset()
+	if currentDataContent != "" {
+		if sanitizedDataContent, ok := sanitizeDecisionPassthroughDataContent(currentDataContent); ok {
+			w.ResponseWriter.Write([]byte("data: " + sanitizedDataContent + "\n\n"))
+		}
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	w.content.Reset()
+	w.reasoningContent.Reset()
+	w.visibleContent.Reset()
+	w.contentDeltas = nil
+}
+
+func sanitizeDecisionPassthroughDataContent(dataContent string) (string, bool) {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(dataContent), &payload); err != nil {
+		return dataContent, true
+	}
+
+	choices, ok := payload["choices"].([]interface{})
+	if !ok {
+		return dataContent, true
+	}
+
+	hasVisibleContent := false
+	for _, choiceAny := range choices {
+		choice, ok := choiceAny.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		contentAny, exists := delta["content"]
+		if !exists {
+			continue
+		}
+		content := toString(contentAny)
+		cleanContent := sanitizeFinalAssistantContent(content)
+		if cleanContent == "" {
+			delete(delta, "content")
+			continue
+		}
+		delta["content"] = cleanContent
+		hasVisibleContent = true
+	}
+
+	if !hasVisibleContent {
+		return "", false
+	}
+	rebuilt, err := json.Marshal(payload)
+	if err != nil {
+		return dataContent, true
+	}
+	return string(rebuilt), true
+}
+
+func (w *LLMDeltaCollector) IsPassthrough() bool {
+	return w.passthroughMode
+}
+
+func (w *LLMDeltaCollector) shouldDelayPassthroughForDecision(contentChunk string) bool {
+	if !strings.Contains(contentChunk, "<decision>") && !strings.Contains(contentChunk, "decision>") {
+		return false
+	}
+	startIdx := strings.Index(contentChunk, "<decision>")
+	if startIdx == -1 {
+		return true
+	}
+	endIdx := strings.Index(contentChunk, "</decision>")
+	if endIdx == -1 {
+		return true
+	}
+	decisionValue := strings.TrimSpace(contentChunk[startIdx+len("<decision>") : endIdx])
+	if decisionValue == DecisionDone {
+		return false
+	}
+	return true
+}
+
+func (w *LLMDeltaCollector) shouldPassthroughOnFirstContent(contentChunk string) bool {
+	if !isInternalAgentStreamTurn(w.c) {
+		return true
+	}
+	if isAgentAnsweringStreamPhase(w.c) {
+		return true
+	}
+	return hasCompleteDoneDecision(contentChunk)
+}
+
+func isAgentAnsweringStreamPhase(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if value, ok := c.Get(agentStreamPhaseContextKey); ok {
+		phase, _ := value.(string)
+		return phase == agentStreamPhaseAnswering
+	}
+	return false
+}
+
+func getAgentInitialStreamPhase(c *gin.Context) string {
+	if c == nil {
+		return agentStreamPhasePlanning
+	}
+	if value, ok := c.Get(agentInitialStreamPhaseContextKey); ok {
+		phase, _ := value.(string)
+		if phase == agentStreamPhaseAnswering {
+			return agentStreamPhaseAnswering
+		}
+	}
+	return agentStreamPhasePlanning
+}
+
+func hasCompleteDoneDecision(contentChunk string) bool {
+	startIdx := strings.Index(contentChunk, "<decision>")
+	if startIdx == -1 {
+		return false
+	}
+	endIdx := strings.Index(contentChunk, "</decision>")
+	if endIdx == -1 {
+		return false
+	}
+	decisionValue := strings.TrimSpace(contentChunk[startIdx+len("<decision>") : endIdx])
+	return decisionValue == DecisionDone
+}
+
 func (w *LLMDeltaCollector) drainResidualSSEBuffer() {
 	if w.sseBuffer.Len() == 0 {
 		return
@@ -466,12 +769,19 @@ func (w *LLMDeltaCollector) flushVisibleControlState() {
 	if visible := w.contentSanitizer.Flush(); visible != "" {
 		w.visibleContent.WriteString(visible)
 		w.contentDeltas = append(w.contentDeltas, visible)
-		w.queueLLMDelta(visible, "content")
+		if w.shouldEmitLLMDelta && !w.deferVisibleContentDelta {
+			w.queueLLMDelta(visible, "content")
+		}
 	}
 }
 
 // GetContent returns the buffered content and assembled tool calls for parsing.
+// GetContent returns the buffered content and assembled tool calls for parsing.
+// In passthrough mode, returns empty values as content was forwarded directly.
 func (w *LLMDeltaCollector) GetContent() (string, string, []relay_model.Tool) {
+	if w.passthroughMode {
+		return "", "", nil
+	}
 	w.drainResidualSSEBuffer()
 	w.flushVisibleControlState()
 	w.flushPendingDeltas(true)
@@ -490,7 +800,7 @@ func (w *LLMDeltaCollector) GetContent() (string, string, []relay_model.Tool) {
 }
 
 func (w *LLMDeltaCollector) GetContentDeltas() []string {
-	if len(w.contentDeltas) == 0 {
+	if w.passthroughMode || len(w.contentDeltas) == 0 {
 		return nil
 	}
 	out := make([]string, len(w.contentDeltas))
@@ -2121,13 +2431,15 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 		}(requestCtx, requestID)
 	}
 
+	nextStreamPhase := getAgentInitialStreamPhase(c)
 	for turnCount < maxTurns {
 		turnCount++
 		c.Set("agent_loop_turn", turnCount)
 		c.Set("agent_loop_skill_name", getCurrentSkillName())
 		c.Set("agent_loop_request_model", requestModel)
-		logger.Debugf(ctx, "【技能运行】开始轮次: turn=%d, skill=%s, model=%s, message_count=%d, tool_count=%d",
-			turnCount, getCurrentSkillName(), requestModel, len(chatRequest.Messages), len(chatRequest.Tools))
+		c.Set(agentStreamPhaseContextKey, nextStreamPhase)
+		logger.Debugf(ctx, "【技能运行】开始轮次: turn=%d, skill=%s, model=%s, stream_phase=%s, message_count=%d, tool_count=%d",
+			turnCount, getCurrentSkillName(), requestModel, nextStreamPhase, len(chatRequest.Messages), len(chatRequest.Tools))
 
 		// 1. Determine if we should stream this turn's LLM output.
 		// Keep streaming enabled for every turn (including the last allowed turn),
@@ -2413,7 +2725,9 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 					currentRunMessages = chatRequest.Messages[runStartMsgCount:]
 				}
 				finalAnswerContent = ensureNonEmptyFinalAssistantContent(finalAnswerContent, currentRunMessages, getCurrentSkillName())
-				logger.Infof(ctx, "Agent decision: DONE - returning final answer, sessionOutputFiles count: %d", len(sessionOutputFiles))
+				passthrough := deltaCollector != nil && deltaCollector.IsPassthrough()
+				logger.Infof(ctx, "Agent decision: DONE - returning final answer, streamIntermediate=%v, passthrough=%v, sessionOutputFiles count: %d",
+					streamIntermediate, passthrough, len(sessionOutputFiles))
 				syncFinalAIUploadFiles(sessionOutputFiles, sessionFolderPath)
 				if chatRequest.Stream {
 					if len(sseSteps) > 0 {
@@ -2427,11 +2741,39 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 						}
 					}
 					sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, true)
-					sendStreamResponse(c, messageStatus.RequestId, requestModel, finalAnswerContent, reasoningStr, getCurrentMessageID(), deltaCollector.GetContentDeltas())
+					// 透传模式下内容已实时发送，只需发送 finish 信号
+					if passthrough {
+						finishChunk := openai_model.ChatCompletionsStreamResponse{
+							Id:      messageStatus.RequestId,
+							Object:  "chat.completion.chunk",
+							Created: time.Now().Unix(),
+							Model:   requestModel,
+							Choices: []openai_model.ChatCompletionsStreamResponseChoice{
+								{Delta: relay_model.Message{Content: ""}, FinishReason: stringPtr("stop")},
+							},
+						}
+						finishBytes, _ := json.Marshal(finishChunk)
+						c.Writer.Write([]byte("data: "))
+						c.Writer.Write(finishBytes)
+						c.Writer.Write([]byte("\n\n"))
+						if flusher, ok := c.Writer.(http.Flusher); ok {
+							flusher.Flush()
+						}
+						if !config.IsSSECompactMode() {
+							c.Writer.Write([]byte("data: [DONE]\n\n"))
+							if flusher, ok := c.Writer.(http.Flusher); ok {
+								flusher.Flush()
+							}
+						}
+					} else {
+						var finalDeltas []string
+						if deltaCollector != nil {
+							finalDeltas = deltaCollector.GetContentDeltas()
+						}
+						sendStreamResponse(c, messageStatus.RequestId, requestModel, finalAnswerContent, reasoningStr, getCurrentMessageID(), finalDeltas)
+					}
 				} else {
-					// 非流式响应：记录 output_files 步骤（仅历史），避免向客户端注入 SSE。
 					sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, false)
-					// 非流式模式下同时保留正文清洗与 output_files 契约
 					replaySanitizedAssistantResponse(c, responseRecorder, openaiResp, finalAnswerContent, sessionOutputFiles, responseBody)
 				}
 				return
@@ -2773,6 +3115,7 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 			var repeatedToolFailureHint string
 			var turnHasReadOnlyTool bool
 			var turnHasMutatingTool bool
+			var turnOutcome agentToolTurnOutcome
 
 			for _, toolCall := range message.ToolCalls {
 				functionName := toolCall.Function.Name
@@ -2845,6 +3188,7 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 					logger.Warnf(ctx, "【工具执行】工具参数解析失败: turn=%d, skill=%s, tool=%s, err=%v", turnCount, getCurrentSkillName(), functionName, err)
 					output = "参数解析失败，请检查工具调用格式"
 					llmOutput = buildToolArgParseFailureLLMOutput(functionName, argsStrString, err)
+					resultExitCode = -1
 					toolStatus = model.ToolCallStatusFailed
 					toolErrorMsg = err.Error()
 				} else if isWriteLikeTool(functionName) && len(argsStrString) > maxWriteFileArgsChars && !shouldAutoRecoverLargeWriteLikeCall(functionName, len(argsStrString), args) {
@@ -2853,6 +3197,7 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 						turnCount, getCurrentSkillName(), functionName, len(argsStrString), maxWriteFileArgsChars)
 					output = fmt.Sprintf("参数过长，已拒绝执行（%d > %d）", len(argsStrString), maxWriteFileArgsChars)
 					llmOutput = buildToolArgTooLargeLLMOutput(functionName, len(argsStrString), maxWriteFileArgsChars, argsStrString)
+					resultExitCode = -1
 					toolStatus = model.ToolCallStatusFailed
 					toolErrorMsg = err.Error()
 				} else {
@@ -2928,6 +3273,8 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 						}
 						if isSandboxRuntimeToolName(functionName) && toolResult.ExitCode != 0 {
 							llmOutput = buildToolExecutionFailureLLMOutput(functionName, output, nil)
+							toolStatus = model.ToolCallStatusFailed
+							toolErrorMsg = fmt.Sprintf("exit_code=%d", toolResult.ExitCode)
 							recordRepeatedSandboxToolFailure(toolFailureCount, &repeatedToolFailureHint, functionName, argsStrString, output, nil)
 						}
 						// Use skill-aware key for deduplication, but let referenced file changes
@@ -2984,6 +3331,13 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 				if hint := toolLoopState.ObserveToolResult(functionName, llmOutput, resultExitCode); hint != "" && repeatedToolLoopHint == "" {
 					repeatedToolLoopHint = hint
 				}
+				turnOutcome.Observe(agentToolExecutionSignal{
+					FunctionName: functionName,
+					ArgsString:   argsStrString,
+					Status:       toolStatus,
+					ExitCode:     resultExitCode,
+					LLMOutput:    llmOutput,
+				})
 
 				// Send tool result step immediately
 				if chatRequest.Stream {
@@ -3066,6 +3420,12 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 				})
 				logger.Warnf(ctx, "Injected repeated tool loop hint: %s", repeatedToolLoopHint)
 			}
+			nextStreamPhase = turnOutcome.NextStreamPhase()
+			if repeatedToolFailureHint != "" || repeatedToolLoopHint != "" {
+				nextStreamPhase = agentStreamPhasePlanning
+			}
+			logger.Debugf(ctx, "【技能运行】下一轮流式阶段: turn=%d, skill=%s, next_stream_phase=%s",
+				turnCount, getCurrentSkillName(), nextStreamPhase)
 		} else {
 			// No tool calls -> Final Answer (default DONE behavior)
 			finalAnswerContent := sanitizeFinalAssistantContent(contentStr)
@@ -3074,12 +3434,11 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 				currentRunMessages = chatRequest.Messages[runStartMsgCount:]
 			}
 			finalAnswerContent = ensureNonEmptyFinalAssistantContent(finalAnswerContent, currentRunMessages, getCurrentSkillName())
-			logger.Infof(ctx, "Agent loop finished (no tool calls), returning final answer")
+			passthrough := deltaCollector != nil && deltaCollector.IsPassthrough()
+			logger.Infof(ctx, "Agent loop finished (no tool calls), returning final answer, streamIntermediate=%v, passthrough=%v", streamIntermediate, passthrough)
 			syncFinalAIUploadFiles(sessionOutputFiles, sessionFolderPath)
 
-			// If client wanted stream, we need to stream this text response
 			if chatRequest.Stream {
-				// Replay buffered steps first
 				if len(sseSteps) > 0 {
 					if responseRecorder != nil {
 						replayBufferedHeaders(c, responseRecorder)
@@ -3091,11 +3450,38 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 					}
 				}
 				sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, true)
-				sendStreamResponse(c, messageStatus.RequestId, requestModel, finalAnswerContent, reasoningStr, getCurrentMessageID(), deltaCollector.GetContentDeltas())
+				if passthrough {
+					finishChunk := openai_model.ChatCompletionsStreamResponse{
+						Id:      messageStatus.RequestId,
+						Object:  "chat.completion.chunk",
+						Created: time.Now().Unix(),
+						Model:   requestModel,
+						Choices: []openai_model.ChatCompletionsStreamResponseChoice{
+							{Delta: relay_model.Message{Content: ""}, FinishReason: stringPtr("stop")},
+						},
+					}
+					finishBytes, _ := json.Marshal(finishChunk)
+					c.Writer.Write([]byte("data: "))
+					c.Writer.Write(finishBytes)
+					c.Writer.Write([]byte("\n\n"))
+					if flusher, ok := c.Writer.(http.Flusher); ok {
+						flusher.Flush()
+					}
+					if !config.IsSSECompactMode() {
+						c.Writer.Write([]byte("data: [DONE]\n\n"))
+						if flusher, ok := c.Writer.(http.Flusher); ok {
+							flusher.Flush()
+						}
+					}
+				} else {
+					var finalDeltas []string
+					if deltaCollector != nil {
+						finalDeltas = deltaCollector.GetContentDeltas()
+					}
+					sendStreamResponse(c, messageStatus.RequestId, requestModel, finalAnswerContent, reasoningStr, getCurrentMessageID(), finalDeltas)
+				}
 			} else {
-				// 非流式响应：记录 output_files 步骤（仅历史），避免向客户端注入 SSE。
 				sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, false)
-				// 非流式模式下同时保留正文清洗与 output_files 契约
 				replaySanitizedAssistantResponse(c, responseRecorder, openaiResp, finalAnswerContent, sessionOutputFiles, responseBody)
 			}
 			if masterMsgID > 0 {
@@ -3179,10 +3565,7 @@ func executeLLMRequest(c *gin.Context, chatRequest *ChatRequest, ctx context.Con
 
 	if executionChannel == nil {
 		return &model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "No execution channel provided",
 				Type:    "53aihub_error",
 			},
@@ -3279,15 +3662,8 @@ func executeLLMRequest(c *gin.Context, chatRequest *ChatRequest, ctx context.Con
 		return nil
 	}
 
-	return &model.OpenAIErrorResponse{
-		Error: struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-		}{
-			Message: bizErr.Error.Message,
-			Type:    "53aihub_error",
-		},
-	}
+	errResp := openAIErrorResponseFromRelayError(bizErr)
+	return &errResp
 }
 
 func sendToolProcessingStep(c *gin.Context, requestId string, toolCalls any) {
@@ -3460,6 +3836,7 @@ func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoning
 	}
 	mirrorAgentRunFinalResponse(c, requestId, messageID, content, reasoningContent)
 }
+
 func stringPtr(s string) *string {
 	return &s
 }

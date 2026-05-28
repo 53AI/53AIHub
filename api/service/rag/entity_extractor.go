@@ -108,30 +108,7 @@ func (s *EntityExtractionService) selectLLM(cfg *ChunkConfig) (*model.Channel, s
 	if cfg == nil {
 		return nil, "", fmt.Errorf("chunk config is nil")
 	}
-	modelCfg, err := s.chunkCfgService.GetModelConfigFromChunkConfig(cfg)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if modelCfg.FastReasoning.ChannelID != nil && modelCfg.FastReasoning.ModelName != nil {
-		ch, err := model.GetChannelByID(*modelCfg.FastReasoning.ChannelID)
-		if err == nil && ch != nil {
-			return ch, *modelCfg.FastReasoning.ModelName, nil
-		}
-	}
-
-	if cfg.LogicChannel != nil && cfg.LogicModelName != nil {
-		return cfg.LogicChannel, *cfg.LogicModelName, nil
-	}
-
-	if cfg.LogicChannelID != nil && cfg.LogicModelName != nil {
-		ch, err := model.GetChannelByID(*cfg.LogicChannelID)
-		if err == nil && ch != nil {
-			return ch, *cfg.LogicModelName, nil
-		}
-	}
-
-	return nil, "", fmt.Errorf("no available llm channel for entity extraction")
+	return cfg.SelectPipelineLLM()
 }
 
 func (s *EntityExtractionService) buildEntityExtractionSystemPrompt() string {

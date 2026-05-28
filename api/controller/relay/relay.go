@@ -270,11 +270,12 @@ func sendSkillUnavailableReply(c *gin.Context, chatRequest *ChatRequest, agent *
 		AgentModel:       agent,
 		RelayMode:        relayMode,
 		RequestId:        requestId,
+		RequestSource:    normalizeRequestSource(chatRequest.Source),
 	}
 	handleOutOfRangeReply(c, chatRequest, agent, skillUnavailableMessage, requestId, relayMode, messageStatus)
 }
 
-func newSkillMessageStatsInfo(agent *model.Agent, relayMode int, requestId string, originalQuestion, rewrittenQuestion string, scope *skill.RunScope, uploadedFiles []*model.UploadFile) *MessageStatsInfo {
+func newSkillMessageStatsInfo(agent *model.Agent, relayMode int, requestId string, originalQuestion, rewrittenQuestion string, scope *skill.RunScope, uploadedFiles []*model.UploadFile, requestSource string) *MessageStatsInfo {
 	return &MessageStatsInfo{
 		ResponseStatus:    model.ResponseStatusNormal,
 		ThinkingMode:      model.ThinkingModeQuick,
@@ -287,6 +288,7 @@ func newSkillMessageStatsInfo(agent *model.Agent, relayMode int, requestId strin
 		RequestId:         requestId,
 		UploadedFiles:     uploadedFiles,
 		SkillRunScope:     scope,
+		RequestSource:     requestSource,
 	}
 }
 
@@ -745,9 +747,6 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	}
 
 	var runnableSkillPathSet map[string]struct{}
-	if shouldApplySkillLibraryFilter(agent) {
-		runnableSkillPathSet = loadRunnableSkillPathSet(c.Request.Context(), agent, currentUserID)
-	}
 
 	// 处理手动触发技能 (/skillname)
 	// 如果用户问题以 / 开头，尝试直接匹配技能
@@ -776,7 +775,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			SetUpStreamResponseHeaders(c)
 		}
 
-		messageStatus := newSkillMessageStatsInfo(agent, relayMode, requestId, originalQuestion, "", &scope, extractUploadedFilesFromMessages(chatRequest.Messages))
+		messageStatus := newSkillMessageStatsInfo(agent, relayMode, requestId, originalQuestion, "", &scope, extractUploadedFilesFromMessages(chatRequest.Messages), normalizeRequestSource(chatRequest.Source))
 		messageStatus.SkillSnapshot = skill.GetManager().CreateRunSnapshot(agent.Eid, requestId, scope)
 		stepSender := NewProcessSender(c, requestId, &chatRequest, messageStatus)
 		messageStatus.StepSender = stepSender
@@ -806,10 +805,20 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	}
 	runScope := buildSkillRunScope(ctx, agent, agent.Eid, ".", requestId)
 
-	messageStatus := newSkillMessageStatsInfo(agent, relayMode, requestId, originalQuestion, rewrittenQuestion, &runScope, extractUploadedFilesFromMessages(chatRequest.Messages))
+	messageStatus := newSkillMessageStatsInfo(agent, relayMode, requestId, originalQuestion, rewrittenQuestion, &runScope, extractUploadedFilesFromMessages(chatRequest.Messages), normalizeRequestSource(chatRequest.Source))
 	stepSender := NewProcessSender(c, requestId, &chatRequest, messageStatus)
 	messageStatus.StepSender = stepSender
-	skillSnapshot := ensureSkillSnapshot(ctx, messageStatus, agent.Eid, requestId, runScope)
+	runnableSkillPathSet, skillSnapshot := prepareIntentRoutingPrerequisites(
+		ctx,
+		shouldApplySkillLibraryFilter(agent),
+		func(callCtx context.Context) map[string]struct{} {
+			return loadRunnableSkillPathSet(callCtx, agent, currentUserID)
+		},
+		func(callCtx context.Context) *skill.SkillSnapshot {
+			return ensureSkillSnapshot(callCtx, nil, agent.Eid, requestId, runScope)
+		},
+	)
+	messageStatus.SkillSnapshot = skillSnapshot
 
 	// 流式请求在进入路由前提前创建 master message，确保 RAG/意图识别步骤可以立即输出首帧
 	if chatRequest.Stream {
@@ -852,16 +861,6 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			},
 		}
 	} else {
-		// 收集所有可运行技能，参与自动识别与兜底匹配
-		allSkills := filterSkillsByPathSet(skillSnapshot.Skills, runnableSkillPathSet)
-		autoMatchSkills := allSkills // 现在我们改为传入所有可运行技能.
-		// 之前的版本里，意图识别只传入 auto_match=true 的技能，但这个因为界面上没有设置的地方，所以先不区分了，后续如果需要再加回这个维度的过滤。
-		// var autoMatchSkills []*skill.Skill
-		// for _, s := range allSkills {
-		// 	if s.AutoMatch {
-		// 		autoMatchSkills = append(autoMatchSkills, s)
-		// 	}
-		// }
 		messageStatus.StepSender.SendStartStep(STEP_INTENT_CLASSIFICATION, "正在识别意图...", nil)
 
 		// 意图识别，传入可用技能
@@ -870,7 +869,10 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		if query == "" {
 			query = messageStatus.OriginalQuestion
 		}
+		allowIntentSkillCandidates := shouldInjectIntentSkillCandidates(agent, &chatRequest)
 		intentConversation := buildIntentConversationFromMessages(chatRequest.Messages, query, maxIntentConversationItems)
+		skillCandidateQuery := buildIntentSkillCandidateQuery(query, intentConversation)
+		autoMatchSkills := buildIntentSkillCandidates(agent, &chatRequest, skillCandidateQuery, runScope, runnableSkillPathSet)
 		intentReq := &rag.IntentClassificationRequest{
 			Query:        query,
 			Conversation: intentConversation,
@@ -892,8 +894,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			config, _ = chunkConfigService.GetSystemDefaultConfig(model.ChunkTypeDefault)
 		}
 
-		// 使用 GenerateIntentClassification 的新签名
-		classificationResult, err := contentGenerator.GenerateIntentClassification(ctx, agent.Eid, config, intentReq, autoMatchSkills, agent)
+		classificationResult, err := contentGenerator.GenerateFastIntentRoute(ctx, agent.Eid, config, intentReq, autoMatchSkills, agent)
 
 		if err != nil {
 			logger.Warnf(ctx, "意图识别失败: %v", err)
@@ -901,14 +902,62 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			classificationResult = &rag.IntentClassificationResult{Intent: "SIMPLE_RAG"}
 		}
 
-		if classificationResult != nil {
-			if normalizedQuery := strings.TrimSpace(classificationResult.NormalizedQuery); normalizedQuery != "" {
-				messageStatus.RewrittenQuestion = normalizedQuery
-				chatRequest.Messages = applyNormalizedQueryToMessages(chatRequest.Messages, normalizedQuery)
+		if classificationResult == nil {
+			classificationResult = &rag.IntentClassificationResult{Intent: "SIMPLE_RAG"}
+		}
+
+		if allowIntentSkillCandidates && shouldRetryIntentSkillSelection(classificationResult, skillSnapshot, runnableSkillPathSet) {
+			var runnableSkills []*skill.Skill
+			if skillSnapshot != nil {
+				runnableSkills = skillSnapshot.Skills
+			}
+			broadSkillCandidates := buildBroadIntentSkillCandidates(runnableSkills, runnableSkillPathSet)
+			if len(broadSkillCandidates) > 0 {
+				retryResult, retryErr := contentGenerator.GenerateFastIntentRoute(ctx, agent.Eid, config, intentReq, broadSkillCandidates, agent)
+				if retryErr != nil {
+					logger.Warnf(ctx, "技能意图二次匹配失败: %v", retryErr)
+				} else if retryResult != nil {
+					if retryResult.Intent == "USE_SKILL" && strings.TrimSpace(retryResult.SkillName) != "" {
+						logger.Infof(ctx, "技能意图二次匹配成功: skill=%s, candidate_count=%d", retryResult.SkillName, len(broadSkillCandidates))
+						classificationResult = retryResult
+					} else {
+						logger.Warnf(ctx, "技能意图二次匹配未选出技能: intent=%s, skill=%s, candidate_count=%d", retryResult.Intent, retryResult.SkillName, len(broadSkillCandidates))
+					}
+				}
+			} else {
+				logger.Warnf(ctx, "技能意图需要二次匹配，但没有可用技能候选")
 			}
 		}
 
 		messageStatus.StepSender.SendEndStep(STEP_INTENT_CLASSIFICATION, "意图识别完成", buildIntentClassificationStepData(classificationResult))
+
+		if classificationResult.Intent == "COMPLEX_AGENT" {
+			expansionQuery := strings.TrimSpace(classificationResult.NormalizedQuery)
+			if expansionQuery == "" {
+				expansionQuery = query
+			}
+			expansionReq := &rag.IntentClassificationRequest{
+				Query:        expansionQuery,
+				Conversation: intentConversation,
+			}
+
+			messageStatus.StepSender.SendStartStep(STEP_QUERY_EXPANSION, "正在拆解复杂问题...", nil)
+			expansionResult, expansionErr := contentGenerator.GenerateComplexQueryExpansion(ctx, agent.Eid, config, expansionReq, agent)
+			if expansionErr != nil {
+				logger.Warnf(ctx, "复杂问题拆解失败: %v", expansionErr)
+				messageStatus.StepSender.SendEndStep(STEP_QUERY_EXPANSION, "问题拆解失败，已按原问题检索", map[string]interface{}{
+					"error": true,
+				})
+			} else {
+				mergeComplexQueryExpansionResult(classificationResult, expansionResult)
+				messageStatus.StepSender.SendEndStep(STEP_QUERY_EXPANSION, "问题拆解完成", buildQueryExpansionStepData(expansionResult))
+			}
+		}
+
+		if normalizedQuery := strings.TrimSpace(classificationResult.NormalizedQuery); normalizedQuery != "" {
+			messageStatus.RewrittenQuestion = normalizedQuery
+			chatRequest.Messages = applyNormalizedQueryToMessages(chatRequest.Messages, normalizedQuery)
+		}
 
 		// 处理意图分支
 		switch classificationResult.Intent {
@@ -921,6 +970,13 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 					handleOutOfRangeReply(c, &chatRequest, agent, outOfRangeConfig.Reply, requestId, relayMode, messageStatus)
 					return
 				}
+			}
+			if classificationResult.Answer == "" {
+				messageStatus.RouterResult = &RouterResult{
+					IntentClassificationResult: classificationResult,
+				}
+				processChatRequestV2(c, &chatRequest, ctx, messageStatus)
+				return
 			}
 			handleOutOfRangeReply(c, &chatRequest, agent, classificationResult.Answer, requestId, relayMode, messageStatus)
 			return
@@ -986,7 +1042,8 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		}
 
 		// 兜底：当意图识别误判为 RAG 时，使用 AutoMatch 技能匹配避免技能被跳过
-		if classificationResult != nil &&
+		if allowIntentSkillCandidates &&
+			classificationResult != nil &&
 			(classificationResult.Intent == "SIMPLE_RAG" || classificationResult.Intent == "COMPLEX_AGENT") {
 			query := messageStatus.RewrittenQuestion
 			if query == "" {
@@ -1016,6 +1073,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 
 	var sources []rag.SourceReference
 	var err error
+	ragCompleted := false
 	if agent.AgentUsage != model.AgentUsageHub {
 		logger.Infof(ctx, "【网络搜索】智能体允许进入 RAG：agent_usage=%d，开始判定知识库与网络搜索分支", agent.AgentUsage)
 		sources, err = HandleRAG(c, &chatRequest, ctx, messageStatus)
@@ -1023,6 +1081,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			c.JSON(500, model.ParamError.ToOpenAIErrorRespone(err))
 			return
 		}
+		ragCompleted = true
 	} else {
 		logger.Infof(ctx, "【网络搜索】智能体类型为 Hub，已跳过 RAG 检索，因此不会进入网络搜索分支：agent_usage=%d", agent.AgentUsage)
 	}
@@ -1091,9 +1150,14 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		}
 	}
 
+	hadRequestToolsBeforeGlobalInjection := len(chatRequest.Tools) > 0
 	injectGlobalToolsToChatRequest(&chatRequest, ctx)
 
 	if len(chatRequest.Tools) > 0 {
+		if shouldUseRAGAnsweringInitialPhase(messageStatus, ragCompleted, hadRequestToolsBeforeGlobalInjection, chatRequest.Tools) {
+			c.Set(agentInitialStreamPhaseContextKey, agentStreamPhaseAnswering)
+			logger.Debugf(ctx, "【网络搜索】RAG 后仅注入全局工具，Agent Loop 初始流式阶段设为 answering")
+		}
 		// 解析执行渠道（修复：非技能工具路径也需要有效的执行渠道）
 		executionChannel, executionModel, err := resolveExecutionChannel(ctx, agent)
 		if err != nil {
@@ -1169,9 +1233,13 @@ func buildSystemControlPrompt() string {
 		"   - You are executing the current Active Skill.\n" +
 		"   - Complete the active skill instruction efficiently and prioritize producing a usable result.\n" +
 		"   - Prefer tool-based execution over discussion.\n" +
-		"   - Emit one internal routing signal per turn: CONTINUE, TOOL_CALL, RAG_QUERY, SKILL_SWITCH, or DONE.\n" +
-		"   - The runtime will interpret that signal internally; do not treat it as user-visible content.\n" +
-		"   - During active skill execution, prefer `TOOL_CALL` or `DONE`. Use `CONTINUE`, `RAG_QUERY`, or `SKILL_SWITCH` only when they are genuinely needed.\n" +
+		"   - Emit a routing marker only when another runtime action is required.\n" +
+		"   - Valid routing markers are `<decision>CONTINUE</decision>`, `<decision>RAG_QUERY</decision>`, and `<decision>SKILL_SWITCH</decision>`.\n" +
+		"   - Use native tool_calls when a tool is needed; do not emit a text marker for tool calls.\n" +
+		"   - The runtime will interpret routing markers internally; do not treat them as user-visible content.\n" +
+		"   - If the task is complete, do not emit a routing marker. Start the final user-visible answer directly.\n" +
+		"   - The runtime treats normal assistant text without an action marker as DONE.\n" +
+		"   - Never mention, explain, quote, or expose routing markers in the final answer.\n" +
 		"   - Do not ask the user follow-up questions. Do not repeat the same tool call without a reason.\n\n" +
 		"2. TOOLS & BOUNDARIES:\n" +
 		"   - Use tool results as the source of truth. Do not invent or guess missing data.\n" +
@@ -1391,10 +1459,15 @@ func splitGraphAggregateSources(sources []rag.SourceReference) ([]rag.SourceRefe
 func processChatRequestV2(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, messageStatus *MessageStatsInfo) {
 	retryTimes := config.CHANNEL_RETRY_TIMES
 	agent := messageStatus.AgentModel
-	requestModel := agent.Model
 	relayMode := messageStatus.RelayMode
 
-	chatRequest.Model = requestModel
+	// 优先使用请求中指定的模型（前端用户选择的深度思考/快速回答），
+	// 如果请求中没有指定，则回退到智能体默认模型
+	requestModel := chatRequest.Model
+	if requestModel == "" {
+		requestModel = agent.Model
+		chatRequest.Model = requestModel
+	}
 
 	// if 1o model, unset temperature, presence_penalty, frequency_penalty, top_p
 	if agent.ChannelType == channeltype.OpenAI && strings.Contains(strings.ToLower(chatRequest.Model), "o1") {
@@ -1444,15 +1517,7 @@ func processChatRequestV2(c *gin.Context, chatRequest *ChatRequest, ctx context.
 		channelName := c.GetString(ctxkey.ChannelName)
 		go processChannelRelayError(ctx, int(config.GetUserId(c)), int(channelId), channelName, *bizErr)
 		// return error message
-		errResp := model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
-				Message: bizErr.Message,
-				Type:    bizErr.Type,
-			},
-		}
+		errResp := openAIErrorResponseFromRelayError(bizErr)
 		if chatRequest.Stream {
 			writeStreamOpenAIError(c, 500, errResp)
 		} else {
@@ -1461,10 +1526,7 @@ func processChatRequestV2(c *gin.Context, chatRequest *ChatRequest, ctx context.
 		return
 	}
 	errResp := model.OpenAIErrorResponse{
-		Error: struct {
-			Message string `json:"message"`
-			Type    string `json:"type"`
-		}{
+		Error: model.OpenAIError{
 			Message: "All channels are unavailable",
 			Type:    "53aihub_error",
 		},
@@ -1603,6 +1665,7 @@ func CreateInitialMessage(c *gin.Context, agent *model.Agent, user_id int64, con
 		}(),
 		OriginalQuestion:  messageStatus.OriginalQuestion,
 		RewrittenQuestion: messageStatus.RewrittenQuestion,
+		RequestSource:     messageStatus.RequestSource,
 		FileID: func() int64 {
 			// 优先级：message_file_id > SaveFileID
 			if messageStatus.MessageFileID > 0 {
@@ -1611,6 +1674,7 @@ func CreateInitialMessage(c *gin.Context, agent *model.Agent, user_id int64, con
 			return messageStatus.SaveFileID
 		}(), // 设置文件ID（优先使用message_file_id）
 	}
+	applyVisitorIdentityToMessage(c, msg)
 	if err := model.CreateMessage(msg); err != nil {
 		return 0, err
 	}
@@ -1894,8 +1958,10 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		requestId = fmt.Sprintf("req-%d", time.Now().UnixNano())
 	}
 
-	// 发送回答生成开始步骤
-	messageStatus.StepSender.SendStartStep(STEP_ANSWER_GENERATION, "正在生成回答...", nil)
+	emitAnswerGenerationStep := shouldEmitAnswerGenerationStep(c)
+	if emitAnswerGenerationStep {
+		messageStatus.StepSender.SendStartStep(STEP_ANSWER_GENERATION, "正在生成回答...", nil)
+	}
 
 	// map model name
 
@@ -1997,10 +2063,11 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 	// 获取请求体
 	requestBody, err := getRequestBody(c, meta, textRequest, adaptor)
 	if err != nil {
-		// 使用 messageStatus.StepSender.SendEndStep
-		messageStatus.StepSender.SendEndStep(STEP_ANSWER_GENERATION, "生成失败", map[string]interface{}{
-			"error": err.Error(),
-		})
+		if emitAnswerGenerationStep {
+			messageStatus.StepSender.SendEndStep(STEP_ANSWER_GENERATION, "生成失败", map[string]interface{}{
+				"error": err.Error(),
+			})
+		}
 		return openai.ErrorWrapper(err, "convert_request_failed", http.StatusInternalServerError)
 	}
 	requestBodySize := getReaderSize(requestBody)
@@ -2111,8 +2178,9 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 	responseContent, reasoningContent := GetResponseContent(c, meta.IsStream, resp)
 	logger.SysDebug(responseContent)
 
-	// 发送回答生成结束步骤
-	messageStatus.StepSender.SendEndStep(STEP_ANSWER_GENERATION, "回答生成完成", nil)
+	if emitAnswerGenerationStep {
+		messageStatus.StepSender.SendEndStep(STEP_ANSWER_GENERATION, "回答生成完成", nil)
+	}
 
 	// ⭐ 统一处理引用分析步骤（使用 StepSender）
 	if originalChatRequest.EnableProcessSteps && textRequest.Stream {
@@ -2142,6 +2210,10 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 	}
 
 	return nil
+}
+
+func shouldEmitAnswerGenerationStep(c *gin.Context) bool {
+	return !isInternalAgentStreamTurn(c)
 }
 
 func isErrorHappened(meta *meta.Meta, resp *http.Response) bool {

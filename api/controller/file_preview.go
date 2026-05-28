@@ -64,12 +64,17 @@ func PreviewRawFileContent(c *gin.Context) {
 	// 处理 file.Path 的扩展名提取
 	// 转换文件: readme.pdf.md -> 提取 .pdf 作为原始扩展名
 	// 原始 md 文件: readme.md -> 保留 .md 扩展名
+	// 版本号格式: v0.3.1.md -> 保留 .md 扩展名（不把 .1 当作扩展名）
 	filePath := file.Path
 	ext := strings.ToLower(filepath.Ext(filePath))
+	validSourceExts := map[string]bool{
+		".pdf": true, ".docx": true, ".doc": true,
+		".html": true, ".htm": true, ".txt": true,
+	}
 	if ext == ".md" {
 		withoutMd := strings.TrimSuffix(filePath, ".md")
 		innerExt := strings.ToLower(filepath.Ext(withoutMd))
-		if innerExt != "" {
+		if validSourceExts[innerExt] {
 			filePath = withoutMd
 			ext = innerExt
 		}

@@ -66,6 +66,14 @@ type StreamResponseV3 struct {
 	SectionId      string      `json:"section_id"`
 }
 
+type ChatFailedResponse struct {
+	ID             string          `json:"id"`
+	ConversationId string          `json:"conversation_id"`
+	BotId          string          `json:"bot_id"`
+	LastError      ErrorInformation `json:"last_error"`
+	Status         string          `json:"status"`
+}
+
 // Workflow related structures
 type WorkflowRequest struct {
 	WorkflowID string                 `json:"workflow_id"`

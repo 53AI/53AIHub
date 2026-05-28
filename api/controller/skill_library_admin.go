@@ -373,10 +373,15 @@ func AdminUpdateSkillLibrary(c *gin.Context) {
 
 	eid := config.GetEID(c)
 	svc := service.NewSkillLibraryService()
-	allGroupIDs := make([]int64, 0, len(req.GroupIDs)+len(req.SubscriptionGroupIDs)+len(req.UserGroupIDs))
-	allGroupIDs = append(allGroupIDs, req.GroupIDs...)
-	allGroupIDs = append(allGroupIDs, req.SubscriptionGroupIDs...)
-	allGroupIDs = append(allGroupIDs, req.UserGroupIDs...)
+	// 只有当至少有一个分组字段不为空时，才更新权限分组
+	// 否则传 nil，表示不更新权限分组（避免误清空）
+	var allGroupIDs []int64
+	if len(req.GroupIDs) > 0 || len(req.SubscriptionGroupIDs) > 0 || len(req.UserGroupIDs) > 0 {
+		allGroupIDs = make([]int64, 0, len(req.GroupIDs)+len(req.SubscriptionGroupIDs)+len(req.UserGroupIDs))
+		allGroupIDs = append(allGroupIDs, req.GroupIDs...)
+		allGroupIDs = append(allGroupIDs, req.SubscriptionGroupIDs...)
+		allGroupIDs = append(allGroupIDs, req.UserGroupIDs...)
+	}
 	err = svc.UpdateSkillMeta(c.Request.Context(), eid, skillID, &service.UpdateSkillMetaRequest{
 		Sort:               req.Sort,
 		DisplayName:        req.DisplayName,
@@ -529,4 +534,167 @@ func AdminGenerateSkillLibraryContent(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(result))
+}
+
+// SkillFileTreeResponse represents the response for file tree
+type SkillFileTreeResponse struct {
+	Files []service.SkillFileItem `json:"files"`
+}
+
+// GetSkillFileTree godoc
+// @Summary 获取技能文件树
+// @Description 获取技能包内的完整文件目录结构
+// @Tags 技能库-后台
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "技能ID"
+// @Success 200 {object} model.CommonResponse{data=controller.SkillFileTreeResponse}
+// @Router /api/admin/skill-library/{id}/files [get]
+func GetSkillFileTree(c *gin.Context) {
+	skillID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || skillID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	eid := config.GetEID(c)
+	svc := service.NewSkillLibraryService()
+
+	files, err := svc.GetSkillFileTree(c.Request.Context(), eid, skillID)
+	if err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(&SkillFileTreeResponse{
+		Files: files,
+	}))
+}
+
+// SkillFileContentResponse represents the response for file content
+type SkillFileContentResponse struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+	Size    int64  `json:"size"`
+}
+
+// GetSkillFileContent godoc
+// @Summary 获取技能文件内容
+// @Description 获取技能包内指定文件的文本内容
+// @Tags 技能库-后台
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "技能ID"
+// @Param path path string true "文件相对路径"
+// @Success 200 {object} model.CommonResponse{data=controller.SkillFileContentResponse}
+// @Router /api/admin/skill-library/{id}/files/{path} [get]
+func GetSkillFileContent(c *gin.Context) {
+	skillID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || skillID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	// 获取文件路径（从路由参数中获取）
+	// Gin 的 /*path 通配符会返回带前导斜杠的路径，需要去掉
+	filePath := c.Param("path")
+	if filePath == "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(errors.New("file path is required")))
+		return
+	}
+	// 去掉前导斜杠
+	filePath = strings.TrimPrefix(filePath, "/")
+
+	eid := config.GetEID(c)
+	svc := service.NewSkillLibraryService()
+
+	content, err := svc.GetSkillFileContent(c.Request.Context(), eid, skillID, filePath)
+	if err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(&SkillFileContentResponse{
+		Path:    filePath,
+		Content: content,
+		Size:    int64(len(content)),
+	}))
+}
+
+// SkillFileUpdateRequest represents the request for updating files
+type SkillFileUpdateRequest struct {
+	Files        []SkillFileUpdateItem `json:"files"`
+	DeletedFiles []string              `json:"deleted_files"`
+}
+
+// SkillFileUpdateItem represents a file to update
+type SkillFileUpdateItem struct {
+	Path    string `json:"path" binding:"required"`
+	Content string `json:"content" binding:"required"`
+}
+
+// SkillFileUpdateResponse represents the response for file update
+type SkillFileUpdateResponse struct {
+	UpdatedCount int    `json:"updated_count"`
+	DeletedCount int    `json:"deleted_count"`
+	Repackaged   bool   `json:"repackaged"`
+	NewZipKey    string `json:"new_zip_key"`
+}
+
+// UpdateSkillFiles godoc
+// @Summary 批量更新技能文件
+// @Description 批量更新技能包内的文件内容，自动重新打包并上传
+// @Tags 技能库-后台
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "技能ID"
+// @Param request body controller.SkillFileUpdateRequest true "文件更新请求"
+// @Success 200 {object} model.CommonResponse{data=controller.SkillFileUpdateResponse}
+// @Router /api/admin/skill-library/{id}/files [put]
+func UpdateSkillFiles(c *gin.Context) {
+	skillID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || skillID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	var req SkillFileUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
+		return
+	}
+
+	// 至少需要一个操作
+	if len(req.Files) == 0 && len(req.DeletedFiles) == 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(errors.New("at least one file operation required")))
+		return
+	}
+
+	eid := config.GetEID(c)
+	svc := service.NewSkillLibraryService()
+
+	// 转换请求格式
+	updateItems := make([]service.SkillFileUpdateItem, 0, len(req.Files))
+	for _, f := range req.Files {
+		updateItems = append(updateItems, service.SkillFileUpdateItem{
+			Path:    f.Path,
+			Content: f.Content,
+		})
+	}
+
+	result, err := svc.UpdateSkillFiles(c.Request.Context(), eid, skillID, updateItems, req.DeletedFiles)
+	if err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(&SkillFileUpdateResponse{
+		UpdatedCount: result.UpdatedCount,
+		DeletedCount: result.DeletedCount,
+		Repackaged:   result.Repackaged,
+		NewZipKey:    result.NewZipKey,
+	}))
 }

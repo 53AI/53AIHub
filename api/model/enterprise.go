@@ -145,7 +145,7 @@ func (enterprise *Enterprise) PartialUpdateEnterprise(updateData map[string]inte
 	}
 
 	// 自动添加更新时间
-	filteredUpdate["updated_time"] = time.Now().Unix()
+	filteredUpdate["updated_time"] = time.Now().UTC().UnixMilli()
 
 	return DB.Model(enterprise).
 		Where("eid = ?", enterprise.Eid).

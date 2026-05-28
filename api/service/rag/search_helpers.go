@@ -1,9 +1,11 @@
 package rag
 
 import (
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/53AI/53AIHub/model"
 )
@@ -67,6 +69,94 @@ type entityScopeNarrowMeta struct {
 	ChunkCandidateCount int
 }
 
+var scopeYearPattern = regexp.MustCompile(`(?:19|20)\d{2}(?:年)?`)
+
+type scopeSignals struct {
+	Phrases           []string
+	SubjectTerms      []string
+	YearTerms         []string
+	DocumentTypeTerms []string
+}
+
+func buildScopeSignals(query string, keywords []string, documentType string) scopeSignals {
+	signals := scopeSignals{}
+
+	addPhrase := func(term string) {
+		term = strings.TrimSpace(term)
+		if term == "" {
+			return
+		}
+		signals.Phrases = appendUniqueStrings(signals.Phrases, []string{term})
+	}
+
+	addPhrase(query)
+	for _, kw := range keywords {
+		addPhrase(kw)
+	}
+
+	documentType = strings.TrimSpace(documentType)
+	for _, phrase := range signals.Phrases {
+		signals.YearTerms = appendUniqueStrings(signals.YearTerms, extractScopeYearTerms(phrase))
+		signals.SubjectTerms = appendUniqueStrings(signals.SubjectTerms, extractScopeSubjectTerms(phrase, documentType))
+	}
+
+	if documentType != "" {
+		signals.DocumentTypeTerms = appendUniqueStrings(signals.DocumentTypeTerms, []string{documentType})
+	}
+
+	signals.SubjectTerms = normalizeEntityKeywords(signals.SubjectTerms)
+	signals.YearTerms = normalizeEntityKeywords(signals.YearTerms)
+	signals.DocumentTypeTerms = normalizeEntityKeywords(signals.DocumentTypeTerms)
+	return signals
+}
+
+func extractScopeYearTerms(text string) []string {
+	matches := scopeYearPattern.FindAllString(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	return normalizeEntityKeywords(matches)
+}
+
+func extractScopeSubjectTerms(text string, documentType string) []string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+
+	stripped := scopeYearPattern.ReplaceAllString(trimmed, " ")
+	if documentType != "" {
+		stripped = strings.ReplaceAll(stripped, documentType, " ")
+	}
+
+	parts := strings.FieldsFunc(stripped, func(r rune) bool {
+		switch r {
+		case ' ', '\t', '\n', '\r', ',', '，', '。', '；', ';', '、', '/', '\\', '|', '-', '_', '+', ':', '：', '.', '(', ')', '[', ']', '{', '}', '<', '>', '"', '\'':
+			return true
+		}
+		return unicode.IsSpace(r) || unicode.IsPunct(r)
+	})
+	if len(parts) == 0 {
+		return nil
+	}
+
+	candidates := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if scopeYearPattern.MatchString(part) {
+			continue
+		}
+		if len([]rune(part)) < 2 {
+			continue
+		}
+		candidates = append(candidates, part)
+	}
+	return normalizeEntityKeywords(candidates)
+}
+
 func normalizeEntityKeywords(input []string) []string {
 	if len(input) == 0 {
 		return nil
@@ -114,6 +204,7 @@ func cloneSearchRequest(req *SearchRequest) *SearchRequest {
 	cp.FileIDs = append([]int64(nil), req.FileIDs...)
 	cp.ChunkTypes = append([]string(nil), req.ChunkTypes...)
 	cp.EntityKeywords = append([]string(nil), req.EntityKeywords...)
+	cp.DocumentType = req.DocumentType
 	cp.KnowledgeChunkIDs = append([]int64(nil), req.KnowledgeChunkIDs...)
 	return &cp
 }
@@ -150,4 +241,67 @@ func uniqueInt64IDsInOrder(ids []int64) []int64 {
 		return nil
 	}
 	return unique
+}
+
+func normalizeScopeText(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(text))
+	for _, r := range text {
+		if unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r) {
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	return builder.String()
+}
+
+func scoreScopeText(text string, signals scopeSignals) int {
+	normalizedText := normalizeScopeText(text)
+	if normalizedText == "" {
+		return 0
+	}
+
+	score := 0
+	for _, phrase := range signals.Phrases {
+		normalizedPhrase := normalizeScopeText(phrase)
+		if normalizedPhrase == "" {
+			continue
+		}
+		if strings.Contains(normalizedText, normalizedPhrase) {
+			score += 20
+		}
+	}
+	for _, term := range signals.SubjectTerms {
+		normalizedTerm := normalizeScopeText(term)
+		if normalizedTerm == "" {
+			continue
+		}
+		if strings.Contains(normalizedText, normalizedTerm) {
+			score += 12
+		}
+	}
+	for _, term := range signals.YearTerms {
+		normalizedTerm := normalizeScopeText(term)
+		if normalizedTerm == "" {
+			continue
+		}
+		if strings.Contains(normalizedText, normalizedTerm) {
+			score += 8
+		}
+	}
+	for _, term := range signals.DocumentTypeTerms {
+		normalizedTerm := normalizeScopeText(term)
+		if normalizedTerm == "" {
+			continue
+		}
+		if strings.Contains(normalizedText, normalizedTerm) {
+			score += 10
+		}
+	}
+	return score
 }

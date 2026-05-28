@@ -64,6 +64,7 @@ type ExtractedGraphEntity struct {
 	Aliases    []string `json:"aliases,omitempty"`
 	Evidence   string   `json:"evidence,omitempty"`   // 必须来自原文的证据片段
 	Confidence float64  `json:"confidence,omitempty"` // 0~1
+	ChunkIDs   []int64  `json:"chunk_ids,omitempty"`  // 该实体关联的分片ID（LLM 可能返回）
 }
 
 // ExtractedGraphRelation 抽取的图谱关系
@@ -934,42 +935,12 @@ func (s *GraphExtractionService) loadChunkConfig(ctx context.Context, eid int64,
 	return s.chunkCfgService.GetConfigWithFileID(eid, &libraryID, &fileID)
 }
 
-// selectLLM 选择LLM
+// selectLLM 选择LLM（优先级：LogicReasoning > FastReasoning）
 func (s *GraphExtractionService) selectLLM(cfg *ChunkConfig) (*model.Channel, string, error) {
 	if cfg == nil {
 		return nil, "", fmt.Errorf("chunk config is nil")
 	}
-	modelCfg, err := s.chunkCfgService.GetModelConfigFromChunkConfig(cfg)
-	if err != nil {
-		return nil, "", err
-	}
-
-	if modelCfg.LogicReasoning.ChannelID != nil && modelCfg.LogicReasoning.ModelName != nil {
-		ch, err := model.GetChannelByID(*modelCfg.LogicReasoning.ChannelID)
-		if err == nil && ch != nil {
-			return ch, *modelCfg.LogicReasoning.ModelName, nil
-		}
-	}
-
-	if cfg.LogicChannel != nil && cfg.LogicModelName != nil {
-		return cfg.LogicChannel, *cfg.LogicModelName, nil
-	}
-
-	if cfg.LogicChannelID != nil && cfg.LogicModelName != nil {
-		ch, err := model.GetChannelByID(*cfg.LogicChannelID)
-		if err == nil && ch != nil {
-			return ch, *cfg.LogicModelName, nil
-		}
-	}
-
-	if modelCfg.FastReasoning.ChannelID != nil && modelCfg.FastReasoning.ModelName != nil {
-		ch, err := model.GetChannelByID(*modelCfg.FastReasoning.ChannelID)
-		if err == nil && ch != nil {
-			return ch, *modelCfg.FastReasoning.ModelName, nil
-		}
-	}
-
-	return nil, "", fmt.Errorf("no available llm channel for graph extraction")
+	return cfg.SelectPipelineLLM()
 }
 
 func isFatalOpenAIError(err *relaymodel.Error) bool {

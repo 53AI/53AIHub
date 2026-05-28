@@ -27,6 +27,40 @@ type WPSIntegrationStatusResponse struct {
 	AppID        string `json:"app_id" example:"wps_app_id"`  // WPS应用ID
 }
 
+type PlatformSettingDefaultMetaResponse struct {
+	PlatformKey        string `json:"platform_key" example:"textin"`           // 平台键
+	DisplayName        string `json:"display_name" example:"TextIn"`           // 默认展示名称
+	DisplayDescription string `json:"display_description" example:"默认展示描述"` // 默认展示描述
+}
+
+type PlatformSettingListResponse struct {
+	ID                 int64  `json:"id"`
+	Eid                int64  `json:"eid"`
+	Setting            string `json:"setting"`
+	PlatformKey        string `json:"platform_key"`
+	ExternalID         string `json:"external_id"`
+	Status             string `json:"status"`
+	DisplayName        string `json:"display_name"`
+	DisplayDescription string `json:"display_description"`
+	CreatedTime        int64  `json:"created_time"`
+	UpdatedTime        int64  `json:"updated_time"`
+}
+
+func buildPlatformSettingListResponse(platformSetting model.PlatformSetting) PlatformSettingListResponse {
+	return PlatformSettingListResponse{
+		ID:                 platformSetting.ID,
+		Eid:                platformSetting.Eid,
+		Setting:            platformSetting.Setting,
+		PlatformKey:        platformSetting.PlatformKey,
+		ExternalID:         platformSetting.ExternalID,
+		Status:             platformSetting.Status,
+		DisplayName:        platformSetting.DisplayName,
+		DisplayDescription: platformSetting.DisplayDescription,
+		CreatedTime:        platformSetting.CreatedTime,
+		UpdatedTime:        platformSetting.UpdatedTime,
+	}
+}
+
 // @Summary 创建平台设置
 // @Description 创建新的平台设置条目
 // @Tags 能力平台设置
@@ -190,7 +224,34 @@ func GetPlatformSettings(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusOK, model.Success.ToResponse(platformSettings))
+	responses := make([]PlatformSettingListResponse, 0, len(platformSettings))
+	for _, platformSetting := range platformSettings {
+		responses = append(responses, buildPlatformSettingListResponse(platformSetting))
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(responses))
+}
+
+// @Summary 获取平台设置默认元数据
+// @Description 获取代码内默认的平台设置展示元数据，供前端渲染候选项和说明文案
+// @Tags 能力平台设置
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse
+// @Router /api/platform-settings/default-metas [get]
+func GetDefaultPlatformSettings(c *gin.Context) {
+	defaultMetas := model.ListDefaultPlatformSettingDisplayMetas()
+	responses := make([]PlatformSettingDefaultMetaResponse, 0, len(defaultMetas))
+	for _, meta := range defaultMetas {
+		responses = append(responses, PlatformSettingDefaultMetaResponse{
+			PlatformKey:        meta.PlatformKey,
+			DisplayName:        meta.DisplayName,
+			DisplayDescription: meta.DisplayDescription,
+		})
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(responses))
 }
 
 // @Summary 检查WPS接入状态

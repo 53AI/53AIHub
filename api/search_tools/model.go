@@ -16,16 +16,19 @@ type BatchSearcher interface {
 }
 
 type SearchItem struct {
-	ChunkID     int64   `json:"chunk_id"`
-	FileID      int64   `json:"file_id"`
-	LibraryID   int64   `json:"library_id"`
-	FilePath    string  `json:"file_path"`
-	FileName    string  `json:"file_name"`
-	LibraryName string  `json:"library_name"`
-	LibraryIcon string  `json:"library_icon"`
-	ChunkType   string  `json:"chunk_type"`
-	Content     string  `json:"content"`
-	Score       float64 `json:"score"`
+	ChunkID       int64   `json:"chunk_id"`
+	FileID        int64   `json:"file_id"`
+	LibraryID     int64   `json:"library_id"`
+	FilePath      string  `json:"file_path"`
+	FileName      string  `json:"file_name"`
+	LibraryName   string  `json:"library_name"`
+	LibraryIcon   string  `json:"library_icon"`
+	FileCreatedAt int64   `json:"file_created_at,omitempty"`
+	SpaceID       int64   `json:"space_id,omitempty"`
+	SpaceName     string  `json:"space_name,omitempty"`
+	ChunkType     string  `json:"chunk_type"`
+	Content       string  `json:"content"`
+	Score         float64 `json:"score"`
 }
 
 type SearchConfig struct {
@@ -46,6 +49,7 @@ type RagConfig struct {
 	ChunkTypes     []string                `json:"chunk_types"`   // 分片类型列表
 	SearchConfig   *model.SearchConfigData `json:"search_config"` // 搜索详细配置
 	EntityKeywords []string                `json:"entity_keywords,omitempty"`
+	DocumentType   string                  `json:"document_type,omitempty"`
 }
 
 type WebSearcher struct {

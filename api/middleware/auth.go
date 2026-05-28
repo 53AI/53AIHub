@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -20,7 +21,7 @@ func UserTokenAuth(role int64) func(c *gin.Context) {
 			c.Abort()
 			return
 		}
-		user, tokenEid, err := HandleTokenAuth(token, role)
+		user, tokenEid, err := HandleAnyTokenAuth(token, role)
 		if err != nil {
 			switch err.Error() {
 			case "token is expired":
@@ -40,6 +41,39 @@ func UserTokenAuth(role int64) func(c *gin.Context) {
 	}
 }
 
+func HandleAnyTokenAuth(token string, role int64) (user *model.User, tokenEid int64, err error) {
+	user, tokenEid, err = HandleTokenAuth(token, role)
+	if err == nil {
+		return user, tokenEid, nil
+	}
+
+	channelUser, _, _, channelErr := model.ValidateUserChannelToken(token)
+	if channelErr != nil {
+		switch {
+		case errors.Is(channelErr, model.ErrUserChannelTokenExpired):
+			return nil, 0, errors.New("token is expired")
+		case errors.Is(channelErr, model.ErrUserChannelTokenNotFound):
+			return nil, 0, fmt.Errorf("user channel token not found: %w", channelErr)
+		case errors.Is(channelErr, model.ErrUserChannelNotFound):
+			return nil, 0, fmt.Errorf("user channel not found: %w", channelErr)
+		default:
+			return nil, 0, fmt.Errorf("user channel token validation failed: %w", channelErr)
+		}
+	}
+
+	if channelUser == nil {
+		return nil, 0, errors.New("unauthorized access")
+	}
+	if channelUser.Status == model.UserStatusDisabled {
+		return nil, 0, errors.New("forbidden access")
+	}
+	if role > 0 && channelUser.Role < role {
+		return nil, 0, errors.New("forbidden access")
+	}
+
+	return channelUser, channelUser.Eid, nil
+}
+
 func setUserSession(c *gin.Context, user *model.User, tokenEid int64) {
 	if c == nil || user == nil {
 		return
@@ -48,7 +82,6 @@ func setUserSession(c *gin.Context, user *model.User, tokenEid int64) {
 	c.Set(session.SESSION_USER_NICKNAME, user.Nickname)
 	c.Set(session.SESSION_USER_ROLE, user.Role)
 	c.Set(session.SESSION_USER_GROUP_ID, user.GroupId)
-	// SaaS 模式下优先使用 token 中的 eid，而不是数据库中的 user.Eid。
 	c.Set(session.ENV_EID, tokenEid)
 	c.Set(session.SESSION_SAAS_USER, false)
 }

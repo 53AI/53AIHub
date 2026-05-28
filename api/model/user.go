@@ -52,6 +52,7 @@ const (
 
 	UserTypeRegistered = 1 // Registered user
 	UserTypeInternal   = 2 // Internal user
+	UserTypeVisitor    = 3 // Visitor user (Shadow Account)
 )
 
 func (user *User) Create() error {
@@ -144,6 +145,15 @@ func (user *User) Delete() error {
 func GetUserByID(userID int64) (*User, error) {
 	var user User
 	err := DB.First(&user, userID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func GetUserByIDAndEid(eid, userID int64) (*User, error) {
+	var user User
+	err := DB.Where("user_id = ? AND eid = ?", userID, eid).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -559,6 +569,11 @@ func GetLoginUser(c *gin.Context) (*User, error) {
 		if user != nil {
 			return user, nil
 		}
+
+		channelUser, _, _, err := ValidateUserChannelToken(authHeader)
+		if err == nil && channelUser != nil {
+			return channelUser, nil
+		}
 	}
 	return nil, errors.New("user not found")
 }
@@ -603,6 +618,54 @@ func GetUserCountByEIDAndType(eid int64, theType int) (int64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func CreateVisitorUser(eid int64, nickname string) (*User, error) {
+	if eid <= 0 {
+		return nil, errors.New("eid is required")
+	}
+
+	randomSuffix := helper.RandomString(8)
+	username := fmt.Sprintf("visitor_%s", randomSuffix)
+
+	if nickname == "" {
+		nickname = fmt.Sprintf("访客_%s", randomSuffix[:4])
+	}
+
+	user := &User{
+		Eid:       eid,
+		Username:  username,
+		Nickname:  nickname,
+		Role:      RoleGuestUser,
+		Status:    UserStatusJoined,
+		Type:      UserTypeVisitor,
+		Password:  "",
+		Salt:      helper.RandomString(6),
+	}
+
+	if err := DB.Create(user).Error; err != nil {
+		return nil, err
+	}
+
+	var jwtErr error
+	user.AccessToken, jwtErr = jwt.UserGenerateJWT(user.UserID, user.Eid)
+	if jwtErr != nil {
+		return nil, jwtErr
+	}
+
+	updateErr := DB.Model(user).Update("access_token", user.AccessToken).Error
+	return user, updateErr
+}
+
+func (u *User) IsVisitor() bool {
+	return u.Type == UserTypeVisitor
+}
+
+func InvalidateAccessToken(token string) error {
+	if token == "" {
+		return errors.New("token is empty")
+	}
+	return DB.Model(&User{}).Where("access_token = ?", token).Update("access_token", "").Error
 }
 
 // InvalidateAccessToken 使用户的访问令牌失效

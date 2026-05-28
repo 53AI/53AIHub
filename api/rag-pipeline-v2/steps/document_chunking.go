@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
@@ -75,51 +76,26 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 				v2Config = parsed
 			}
 		}
-		desiredType := ""
-		if v2Config != nil {
-			desiredType = strings.TrimSpace(v2Config.ChunkType)
-		}
-
 		chunkConfig, cfgErr := configSvc.GetConfigWithFileID(eid, &file.LibraryID, &fileID)
 		if cfgErr != nil {
 			logger.Warn(ctx, fmt.Sprintf("获取分块配置失败，将使用步骤配置: %v", cfgErr))
 		}
 
-		baseConfig := chunkConfig
-		if desiredType == model.ChunkTypeQA || desiredType == model.ChunkTypeDataTable {
-			typeConfig, err := configSvc.GetConfigByType(0, desiredType)
-			if err != nil {
-				logger.Warn(ctx, fmt.Sprintf("获取类型分块配置失败，将使用已有配置: %v", err))
-			} else {
-				if baseConfig != nil {
-					// 仅覆盖分块相关配置，保留 baseConfig 的向量化等配置
-					mergeChunkingConfig(baseConfig, typeConfig)
-					chunkConfig = baseConfig
-				} else {
-					chunkConfig = typeConfig
-				}
-			}
-		}
 		if chunkConfig == nil {
-			if baseConfig != nil {
-				chunkConfig = baseConfig
-			} else {
-				chunkConfig = convertToRagChunkConfig(v2Config)
-			}
+			chunkConfig = convertToRagChunkConfig(v2Config)
 		}
 
 		if v2Config != nil && hasChunkingOverrides(v2Config) {
 			overrideCfg := convertToRagChunkConfig(v2Config)
 			mergeChunkingConfig(chunkConfig, overrideCfg)
 		}
-		if desiredType != "" {
-			chunkConfig.Type = desiredType
-		}
 		chunkConfig.Eid = eid
 		chunkConfig.LibraryID = &file.LibraryID
-
-		logger.Info(ctx, fmt.Sprintf("DocumentChunking 配置: desired_type=%s, effective_type=%s, knowledge_max_length=%d, index_max_length=%d",
-			desiredType, chunkConfig.Type, chunkConfig.KnowledgeMaxLength, chunkConfig.IndexMaxLength))
+		desiredType := strings.TrimSpace(chunkConfig.Type)
+		if desiredType == "" {
+			desiredType = model.ChunkTypeDefault
+			chunkConfig.Type = desiredType
+		}
 
 		// 7. 获取文件内容
 		fileBody, err := model.GetLastFileBodyByFileID(eid, fileID)
@@ -132,6 +108,42 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			updateParsingStatus(model.FileParsingStatusFail)
 			return fmt.Errorf("读取文件内容失败: %v", err)
 		}
+
+		var smartMatchResult *SmartMatchResult
+		if v2Config != nil && v2Config.EnableSmartMatch {
+			fileName := ""
+			if err := file.LoadUploadFile(); err == nil && file.UploadFile != nil {
+				fileName = file.UploadFile.FileName
+			}
+			if result, err := selectDocumentChunkingSmartMatch(ctx, db, eid, fileName, content, v2Config); err != nil {
+				logger.Warn(ctx, fmt.Sprintf("DocumentChunking smart match failed, fallback to existing chunk config: %v", err))
+			} else {
+				smartMatchResult = result
+				if result.SelectedConfig != nil {
+					selectedCfg := convertToRagChunkConfig(result.SelectedConfig)
+					if selectedCfg != nil {
+						mergeChunkingConfig(chunkConfig, selectedCfg)
+						if selectedCfg.Type != "" {
+							desiredType = selectedCfg.Type
+							chunkConfig.Type = selectedCfg.Type
+						}
+					}
+				}
+				logger.Infof(ctx, "【智能匹配】语料拆分选择完成: selected_key=%s, fallback=%t, confidence=%.2f, reason=%s, selected_config=%s",
+					result.SelectedKey, result.FallbackUsed, result.Confidence, result.Reason, formatDocumentChunkingSmartMatchConfigForLog(result.SelectedConfig))
+			}
+		}
+		if desiredType == model.ChunkTypeQA || desiredType == model.ChunkTypeDataTable {
+			typeConfig, err := configSvc.GetConfigByType(0, desiredType)
+			if err != nil {
+				logger.Warn(ctx, fmt.Sprintf("获取类型分块配置失败，将继续使用当前配置: %v", err))
+			} else {
+				mergeChunkingConfig(chunkConfig, typeConfig)
+				chunkConfig.Type = desiredType
+			}
+		}
+		logger.Info(ctx, fmt.Sprintf("DocumentChunking 配置: desired_type=%s, effective_type=%s, knowledge_max_length=%d, index_max_length=%d",
+			desiredType, chunkConfig.Type, chunkConfig.KnowledgeMaxLength, chunkConfig.IndexMaxLength))
 
 		// 8. 执行分块 (DocumentChunking 逻辑)
 		var chunkResult *rag.ChunkResult
@@ -184,9 +196,17 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			return fmt.Errorf("文档分块事务失败: %v", err)
 		}
 
-		if err := enrichDocumentChunks(ctx, db, &file, chunkConfig, savedChunks); err != nil {
-			updateParsingStatus(model.FileParsingStatusFail)
-			return fmt.Errorf("分块AI增强失败: %v", err)
+		chunkIDs := make([]int64, 0, len(savedChunks))
+		for _, c := range savedChunks {
+			chunkIDs = append(chunkIDs, c.ID)
+		}
+		if _, err := rag.EnqueueChunkEnrichment(ctx, rag.ChunkEnrichmentTask{
+			Eid:         eid,
+			FileID:      fileID,
+			ChunkIDs:    chunkIDs,
+			ChunkConfig: chunkConfig,
+		}); err != nil {
+			logger.Warnf(ctx, "【分块增益】推入队列失败(非致命): eid=%d, file_id=%d, err=%v", eid, fileID, err)
 		}
 
 		// 9. 统计结果并更新状态
@@ -215,6 +235,39 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			avgChars = float64(totalChars) / float64(count)
 		}
 
+		var jobStep model.RagJobStep
+		if err := db.Where("job_id = ?", job.JobID).First(&jobStep).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				jobStep = model.RagJobStep{
+					JobID:     job.JobID,
+					Eid:       eid,
+					StepOrder: job.CurrentStepOrder,
+					Status:    model.RagJobStepStatusProcessing,
+					StartTime: time.Now().UnixMilli(),
+				}
+				if err := db.Create(&jobStep).Error; err != nil {
+					logger.Error(ctx, fmt.Sprintf("创建 RagJobStep 失败: %v", err))
+				}
+			} else {
+				logger.Error(ctx, fmt.Sprintf("查询 RagJobStep 失败: %v", err))
+			}
+		}
+
+		stepResults := map[string]interface{}{
+			"chunk_type":   chunkConfig.Type,
+			"chunk_count":  count,
+			"average_size": avgChars,
+		}
+		if smartMatchResult != nil {
+			stepResults["smart_match"] = smartMatchResult
+		}
+		if jobStep.ID > 0 {
+			if err := jobStep.CompleteSuccessfully(stepResults); err != nil {
+				logger.Error(ctx, fmt.Sprintf("更新 RagJobStep 结果失败: %v", err))
+			}
+			db.Save(&jobStep)
+		}
+
 		// 记录结果日志
 		logger.Info(ctx, fmt.Sprintf("DocumentChunking 完成: 分块数=%d, 平均字符数=%.2f", count, avgChars))
 		updateParsingStatus(model.FileParsingStatusNormal)
@@ -241,10 +294,12 @@ func cleanupExistingChunks(db *gorm.DB, eid, fileID int64) error {
 
 // V2 配置结构定义
 type V2DocumentChunkingConfig struct {
-	ChunkType        string                `json:"chunk_type"`
-	ParentChunk      V2ChunkingLayerConfig `json:"parent_chunk"`
-	ChildChunk       V2ChunkingLayerConfig `json:"child_chunk"`
-	IndexEnhancement V2IndexEnhancement    `json:"index_enhancement"`
+	ChunkType             string                `json:"chunk_type"`
+	EnableSmartMatch      bool                  `json:"enable_smart_match"`
+	MatchPreferencePrompt string                `json:"match_preference_prompt"`
+	ParentChunk           V2ChunkingLayerConfig `json:"parent_chunk"`
+	ChildChunk            V2ChunkingLayerConfig `json:"child_chunk"`
+	IndexEnhancement      V2IndexEnhancement    `json:"index_enhancement"`
 }
 
 type V2ChunkingLayerConfig struct {
@@ -311,6 +366,8 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	config.KnowledgeIncludeTitle = v2.ParentChunk.AppendTitle
 	config.KnowledgeChunk.IncludeFileName = v2.ParentChunk.AppendFilename
 	config.KnowledgeChunk.IncludeTitle = v2.ParentChunk.AppendTitle
+	config.KnowledgeIncludeSubtitle = v2.ParentChunk.AppendSubtitle
+	config.KnowledgeChunk.AppendSubtitle = v2.ParentChunk.AppendSubtitle
 
 	// 映射 ChildChunk -> IndexChunk
 	config.IndexChunk.SplitRule = v2.ChildChunk.IdentifierLevel
@@ -326,6 +383,8 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	config.IndexIncludeTitle = v2.ChildChunk.AppendTitle
 	config.IndexChunk.IncludeFileName = v2.ChildChunk.AppendFilename
 	config.IndexChunk.IncludeTitle = v2.ChildChunk.AppendTitle
+	config.IndexIncludeSubtitle = v2.ChildChunk.AppendSubtitle
+	config.IndexChunk.AppendSubtitle = v2.ChildChunk.AppendSubtitle
 
 	// 映射 GenerativeEnhancement
 	if v2.IndexEnhancement.GenerativeEnhancement.GenerateSummary {
@@ -395,6 +454,8 @@ func mergeChunkingConfig(dst *rag.ChunkConfig, src *rag.ChunkConfig) {
 	dst.KnowledgeIncludeTitle = src.KnowledgeIncludeTitle
 	dst.KnowledgeChunk.IncludeFileName = src.KnowledgeChunk.IncludeFileName
 	dst.KnowledgeChunk.IncludeTitle = src.KnowledgeChunk.IncludeTitle
+	dst.KnowledgeIncludeSubtitle = src.KnowledgeIncludeSubtitle
+	dst.KnowledgeChunk.AppendSubtitle = src.KnowledgeChunk.AppendSubtitle
 
 	if src.IndexChunk.SplitRule != "" {
 		dst.IndexChunk.SplitRule = src.IndexChunk.SplitRule
@@ -412,6 +473,8 @@ func mergeChunkingConfig(dst *rag.ChunkConfig, src *rag.ChunkConfig) {
 	dst.IndexIncludeTitle = src.IndexIncludeTitle
 	dst.IndexChunk.IncludeFileName = src.IndexChunk.IncludeFileName
 	dst.IndexChunk.IncludeTitle = src.IndexChunk.IncludeTitle
+	dst.IndexIncludeSubtitle = src.IndexIncludeSubtitle
+	dst.IndexChunk.AppendSubtitle = src.IndexChunk.AppendSubtitle
 
 	if src.SummaryGeneration != "" {
 		dst.SummaryGeneration = src.SummaryGeneration

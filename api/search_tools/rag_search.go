@@ -56,6 +56,7 @@ func (r *RagSearcher) Search(query string, count int) ([]*SearchItem, error) {
 		ChunkTypes:               config.ChunkTypes,
 		SearchConfig:             config.SearchConfig,
 		EntityKeywords:           config.EntityKeywords,
+		DocumentType:             config.DocumentType,
 		SkipEntityScopeNarrowing: len(config.FileIDs) > 0,
 	}
 
@@ -93,6 +94,7 @@ func (r *RagSearcher) SearchBatch(ctx context.Context, queries []string, count i
 			ChunkTypes:               config.ChunkTypes,
 			SearchConfig:             config.SearchConfig,
 			EntityKeywords:           config.EntityKeywords,
+			DocumentType:             config.DocumentType,
 			SkipEntityScopeNarrowing: len(config.FileIDs) > 0,
 		}
 		requests = append(requests, req)
@@ -124,6 +126,7 @@ func (r *RagSearcher) SearchBatch(ctx context.Context, queries []string, count i
 			ChunkTypes:               config.ChunkTypes,
 			SearchConfig:             config.SearchConfig,
 			EntityKeywords:           config.EntityKeywords,
+			DocumentType:             config.DocumentType,
 			SkipEntityScopeNarrowing: len(config.FileIDs) > 0,
 		})
 		r.setLastSearchTimings(result.Query, result.StageTimings)
@@ -168,6 +171,7 @@ func cloneSearchRequest(req *rag.SearchRequest) rag.SearchRequest {
 	cloned.FileIDs = append([]int64(nil), req.FileIDs...)
 	cloned.ChunkTypes = append([]string(nil), req.ChunkTypes...)
 	cloned.EntityKeywords = append([]string(nil), req.EntityKeywords...)
+	cloned.DocumentType = req.DocumentType
 	cloned.KnowledgeChunkIDs = append([]int64(nil), req.KnowledgeChunkIDs...)
 	return cloned
 }

@@ -7,8 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Agent struct {
@@ -39,8 +41,9 @@ type Agent struct {
 }
 
 const (
-	AgentTypeApp      = 0
-	AgentTypeWorkflow = 1
+	AgentTypeApp       = 0 // 默认类型：应用型（后台页面上）
+	AgentTypeWorkflow  = 1 // 对话型（后台页面上）
+	AgentTypeAssistant = 2 // 助手型（后台页面上）
 )
 
 // 智能体归属常量
@@ -666,4 +669,97 @@ func (a *Agent) GetOpenClawAppSecret() string {
 		return secret
 	}
 	return ""
+}
+
+func removeRelateAgentFromSettingsJSON(settingsJSON string, deletedAgentID int64, deletedBotID string) (bool, string, error) {
+	if settingsJSON == "" {
+		return false, settingsJSON, nil
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal([]byte(settingsJSON), &settings); err != nil {
+		return false, settingsJSON, nil
+	}
+
+	relateAgentsRaw, exists := settings["relate_agents"]
+	if !exists {
+		return false, settingsJSON, nil
+	}
+
+	relateAgents, ok := relateAgentsRaw.([]interface{})
+	if !ok || len(relateAgents) == 0 {
+		return false, settingsJSON, nil
+	}
+
+	filtered := make([]interface{}, 0, len(relateAgents))
+	for _, item := range relateAgents {
+		agent, ok := item.(map[string]interface{})
+		if !ok {
+			filtered = append(filtered, item)
+			continue
+		}
+		agentIDVal, exists := agent["agent_id"]
+		if !exists {
+			filtered = append(filtered, item)
+			continue
+		}
+		if matchRelateAgentID(agentIDVal, deletedAgentID, deletedBotID) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+
+	if len(filtered) == len(relateAgents) {
+		return false, settingsJSON, nil
+	}
+
+	settings["relate_agents"] = filtered
+	result, err := json.Marshal(settings)
+	if err != nil {
+		return false, settingsJSON, err
+	}
+	return true, string(result), nil
+}
+
+func matchRelateAgentID(agentIDVal interface{}, deletedAgentID int64, deletedBotID string) bool {
+	switch v := agentIDVal.(type) {
+	case string:
+		if v == deletedBotID {
+			return true
+		}
+		decoded, err := strconv.ParseInt(v, 10, 64)
+		if err == nil && decoded == deletedAgentID {
+			return true
+		}
+		decodedHash, err := hashids.Decode(v)
+		if err == nil && decodedHash == deletedAgentID {
+			return true
+		}
+	case float64:
+		if int64(v) == deletedAgentID {
+			return true
+		}
+	}
+	return false
+}
+
+func RemoveRelateAgentFromSettings(tx *gorm.DB, eid int64, deletedAgentID int64, deletedBotID string) error {
+	var agents []Agent
+	if err := tx.Select("agent_id, settings").Where("eid = ?", eid).Find(&agents).Error; err != nil {
+		return err
+	}
+
+	for i := range agents {
+		changed, newSettings, err := removeRelateAgentFromSettingsJSON(agents[i].Settings, deletedAgentID, deletedBotID)
+		if err != nil {
+			logger.SysErrorf("清理 relate_agents 失败: agent_id=%d, err=%v", agents[i].AgentID, err)
+			continue
+		}
+		if changed {
+			if err := tx.Model(&Agent{}).Where("agent_id = ?", agents[i].AgentID).Update("settings", newSettings).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

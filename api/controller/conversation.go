@@ -92,6 +92,7 @@ func CreateConversation(c *gin.Context) {
 		Eid:              eid,
 		UserID:           config.GetUserId(c),
 		AgentID:          req.AgentID,
+		Source:           model.MessageRequestSourceConsole,
 		Title:            normalizeConversationTitle(req.Title),
 		FileID:           req.FileID,
 		Status:           model.ConversationStatusActive,

@@ -956,7 +956,7 @@ func (s *EmbeddingService) updateEmbeddingStatusWithError(eid int64, chunkID int
 	fmt.Printf("分块 %d 向量化失败: %s\n", chunkID, errorMsg)
 }
 
-// GetQueryEmbedding 获取查询文本的向量
+// GetQueryEmbedding 获取查询文本的向量（使用 singleflight 防止并发重复请求）
 func (s *EmbeddingService) GetQueryEmbedding(eid int64, query string, channelID int64, config *ChunkConfig) ([]float64, error) {
 	// 验证输入
 	if config == nil {
@@ -975,26 +975,43 @@ func (s *EmbeddingService) GetQueryEmbedding(eid int64, query string, channelID 
 		}
 	}
 
-	// 获取渠道配置
-	channel, err := model.GetChannelByID(channelID)
-	if err != nil {
-		return nil, fmt.Errorf("获取渠道配置失败: %v", err)
-	}
+	// 使用 singleflight 防止并发时对相同查询重复调用 embedding API
+	sfKey := fmt.Sprintf("eid:%d:ch:%d:q:%s", eid, channelID, query)
+	result, err := embeddingSingleflight.Do(sfKey, func() (interface{}, error) {
+		// 再次检查缓存（可能在等待其他请求完成时已写入）
+		if cacheKey != "" {
+			if cachedVector, hit := s.getCachedQueryEmbedding(cacheKey); hit {
+				return cachedVector, nil
+			}
+		}
 
-	if channel.Eid != eid {
-		return nil, fmt.Errorf("渠道不属于当前企业")
-	}
+		// 获取渠道配置
+		channel, err := model.GetChannelByID(channelID)
+		if err != nil {
+			return nil, fmt.Errorf("获取渠道配置失败: %v", err)
+		}
 
-	// 调用embedding API, 这个不需要上下文，上下文判断是在创建 rag 的时候
-	vector, err := s.callEmbeddingAPI(query, channel, config, nil)
+		if channel.Eid != eid {
+			return nil, fmt.Errorf("渠道不属于当前企业")
+		}
+
+		// 调用embedding API
+		vector, err := s.callEmbeddingAPI(query, channel, config, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if cacheKey != "" {
+			s.setCachedQueryEmbedding(cacheKey, vector)
+		}
+		return vector, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
 
-	if cacheKey != "" {
-		s.setCachedQueryEmbedding(cacheKey, vector)
-	}
-	return vector, nil
+	return result.([]float64), nil
 }
 
 // GenerateEmbeddingWithStop 生成文本的向量表示 - 支持停止信号检查

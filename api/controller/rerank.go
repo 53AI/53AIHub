@@ -80,10 +80,7 @@ func Rerank(c *gin.Context) {
 	if err := c.ShouldBindJSON(&rerankRequest); err != nil {
 		logger.Errorf(ctx, "解析 rerank 请求失败: %v", err)
 		c.JSON(http.StatusBadRequest, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "请求参数格式错误: " + err.Error(),
 				Type:    "invalid_request_error",
 			},
@@ -95,10 +92,7 @@ func Rerank(c *gin.Context) {
 	if err := validateRerankRequest(&rerankRequest); err != nil {
 		logger.Errorf(ctx, "rerank 请求参数验证失败: %v", err)
 		c.JSON(http.StatusBadRequest, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: err.Error(),
 				Type:    "invalid_request_error",
 			},
@@ -125,10 +119,7 @@ func Rerank(c *gin.Context) {
 	if userId == 0 {
 		logger.SysErrorf("❌ Rerank请求失败 - 用户身份验证失败")
 		c.JSON(http.StatusUnauthorized, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "未授权访问",
 				Type:    "authentication_error",
 			},
@@ -141,10 +132,7 @@ func Rerank(c *gin.Context) {
 	if err != nil {
 		logger.SysErrorf("❌ Rerank请求失败 - 用户信息获取失败, UserID: %d, Error: %v", userId, err)
 		c.JSON(http.StatusUnauthorized, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "用户信息获取失败",
 				Type:    "authentication_error",
 			},
@@ -160,10 +148,7 @@ func Rerank(c *gin.Context) {
 	if channelType == -1 {
 		logger.SysErrorf("❌ Rerank请求失败 - 不支持的模型: %s", rerankRequest.Model)
 		c.JSON(http.StatusBadRequest, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: fmt.Sprintf("不支持的 rerank 模型: %s", rerankRequest.Model),
 				Type:    "invalid_request_error",
 			},
@@ -176,10 +161,7 @@ func Rerank(c *gin.Context) {
 	if err != nil {
 		logger.Errorf(ctx, "❌ 获取 rerank 渠道失败: %v", err)
 		c.JSON(http.StatusInternalServerError, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "暂无可用的 rerank 服务渠道",
 				Type:    "service_unavailable",
 			},
@@ -198,10 +180,7 @@ func Rerank(c *gin.Context) {
 	if err != nil {
 		logger.Errorf(ctx, "❌ 执行 rerank 请求失败: %v", err)
 		c.JSON(http.StatusInternalServerError, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: err.Error(),
 				Type:    "service_error",
 			},

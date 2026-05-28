@@ -120,10 +120,31 @@ func (rr *RelayRouter) Level3Router() *RouterResult {
 	// 为了避免循环依赖或者逻辑混乱，这里我们传入空的技能列表，因为Level3Router主要用于RAG/Chitchat分类
 	// 实际的Skill路由已经在 relay.go 中处理了。
 
-	result, err := contentGenerator.GenerateIntentClassification(ctx, eid, chunkConfig, request, nil, rr.MS.AgentModel)
+	scope := skill.BuildDefaultRunScope()
+	if rr.MS != nil && rr.MS.SkillRunScope != nil {
+		scope = *rr.MS.SkillRunScope
+	}
+	availableSkills := buildIntentSkillCandidates(rr.MS.AgentModel, rr.CR, buildIntentSkillCandidateQuery(query, request.Conversation), scope, nil)
+
+	result, err := contentGenerator.GenerateFastIntentRoute(ctx, eid, chunkConfig, request, availableSkills, rr.MS.AgentModel)
 	if err != nil {
 		logger.Warnf(ctx, "Intent classification failed: %v", err)
 		return nil // 分类失败，继续默认流程
+	}
+	if result != nil && result.Intent == "COMPLEX_AGENT" {
+		expansionQuery := strings.TrimSpace(result.NormalizedQuery)
+		if expansionQuery == "" {
+			expansionQuery = query
+		}
+		expansion, expansionErr := contentGenerator.GenerateComplexQueryExpansion(ctx, eid, chunkConfig, &rag.IntentClassificationRequest{
+			Query:        expansionQuery,
+			Conversation: request.Conversation,
+		}, rr.MS.AgentModel)
+		if expansionErr != nil {
+			logger.Warnf(ctx, "Query expansion failed: %v", expansionErr)
+		} else {
+			mergeComplexQueryExpansionResult(result, expansion)
+		}
 	}
 
 	if rr.MS != nil && result != nil {
@@ -137,6 +158,9 @@ func (rr *RelayRouter) Level3Router() *RouterResult {
 	// 根据意图进行路由
 	switch result.Intent {
 	case "CHITCHAT":
+		if result.Answer == "" {
+			return nil
+		}
 		// 生成闲聊回复
 		return &RouterResult{
 			Err:                        nil,

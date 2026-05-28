@@ -165,6 +165,15 @@ func migrateDB() error {
 	if err = DB.AutoMigrate(&Provider{}); err != nil {
 		return err
 	}
+	if err = DB.AutoMigrate(&AgentAccessKey{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&UserChannel{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&UserChannelToken{}); err != nil {
+		return err
+	}
 	if err = DB.AutoMigrate(
 		&PaySetting{},
 		&Order{},

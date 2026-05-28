@@ -103,6 +103,15 @@ func SetApiRouter(router *gin.Engine) {
 		commonRoute.GET("/file-version/:file_body_id/*filename", controller.GetFileBodyContent)
 	}
 
+	agentH5Route := apiRouter.Group("/agents/h5")
+	{
+		agentH5Route.POST("/login", controller.AgentH5Login)
+		agentH5Route.POST("/info", controller.GetAgentH5Info)
+		agentH5Route.DELETE("/token", middleware.UserTokenAuth(model.RoleCommonUser), controller.AgentH5Logout)
+		agentH5Route.POST("/fixed-token", middleware.UserTokenAuth(model.RoleAdminUser), controller.CreateAgentH5FixedToken)
+		agentH5Route.GET("/fixed-token", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetAgentH5FixedTokenList)
+	}
+
 	mySpaceRoute := apiRouter.Group("/my-space")
 	mySpaceRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
@@ -110,6 +119,7 @@ func SetApiRouter(router *gin.Engine) {
 		mySpaceRoute.GET("/ai-generated", controller.GetMySpaceAIGenerated)
 		mySpaceRoute.GET("/uploads", controller.GetMySpaceUploads)
 		mySpaceRoute.GET("/favorites", controller.GetMySpaceFavorites)
+		mySpaceRoute.POST("/favorites/check", controller.CheckFavorites)
 		mySpaceRoute.GET("/recently", controller.GetMySpaceRecently)
 		mySpaceRoute.GET("/recordings", controller.GetMySpaceRecordings)
 		mySpaceRoute.POST("/recordings/folders", controller.CreateMySpaceRecordingFolder)
@@ -221,6 +231,9 @@ func SetApiRouter(router *gin.Engine) {
 		adminSkillLibraryRoute.PATCH("/:id/status", controller.AdminUpdateSkillLibraryStatus)
 		adminSkillLibraryRoute.DELETE("/:id", controller.AdminDeleteSkillLibrary)
 		adminSkillLibraryRoute.POST("/:id/ai-generate", controller.AdminGenerateSkillLibraryContent)
+		adminSkillLibraryRoute.GET("/:id/files", controller.GetSkillFileTree)
+		adminSkillLibraryRoute.PUT("/:id/files", controller.UpdateSkillFiles)
+		adminSkillLibraryRoute.GET("/:id/files/*path", controller.GetSkillFileContent)
 	}
 
 	aiLinkRoute := apiRouter.Group("/ai_links")
@@ -255,6 +268,7 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		platformSettingRoute.POST("", middleware.UserTokenAuth(model.RoleAdminUser), controller.CreatePlatformSetting)
 		platformSettingRoute.GET("", middleware.UserTokenAuth(model.RoleCommonUser), controller.GetPlatformSettings)
+		platformSettingRoute.GET("/default-metas", middleware.UserTokenAuth(model.RoleCommonUser), controller.GetDefaultPlatformSettings)
 		platformSettingRoute.GET("/:id", middleware.UserTokenAuth(model.RoleCommonUser), controller.GetPlatformSetting)
 		platformSettingRoute.PUT("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.UpdatePlatformSetting)
 		platformSettingRoute.DELETE("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.DeletePlatformSetting)
@@ -290,6 +304,7 @@ func SetApiRouter(router *gin.Engine) {
 		agentGroup.GET("/group", controller.GetAgentsByGroup)
 		agentGroup.GET("/:agent_id", controller.GetAgent)
 		agentGroup.PUT("/:agent_id", controller.UpdateAgent)
+		agentGroup.POST("/:agent_id/reset-secret", controller.ResetEnterpriseAgentSecret)
 		agentGroup.DELETE("/:agent_id", controller.DeleteAgent)
 		agentGroup.GET("/:agent_id/messages", controller.GetMessagesByUserAndAgent)
 		agentGroup.PATCH("/:agent_id/status", controller.UpdateAgentStatus)

@@ -1191,14 +1191,18 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 					"run_mode": "auto",
 					"step_key": "document_parsing",
 					"config": map[string]interface{}{
-						"engine": "markitdown",
+						"engine":                  "markitdown",
+						"enable_smart_match":      false,
+						"match_preference_prompt": "",
 					},
 				},
 				{
 					"run_mode": "auto",
 					"step_key": "document_chunking",
 					"config": map[string]interface{}{
-						"chunk_type": "default",
+						"chunk_type":              "default",
+						"enable_smart_match":      true,
+						"match_preference_prompt": "",
 						"parent_chunk": map[string]interface{}{
 							"mode":             "custom",
 							"strategy":         "identifier",

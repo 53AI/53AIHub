@@ -1,6 +1,5 @@
 package relay
 
-// 用于拆分过大的文件
 import (
 	"context"
 	"encoding/json"
@@ -269,9 +268,11 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 			FileID:            messageStatus.SaveFileID,
 			OriginalQuestion:  messageStatus.OriginalQuestion,
 			RewrittenQuestion: messageStatus.RewrittenQuestion,
+			RequestSource:     messageStatus.RequestSource,
 			// CitationCount:     messageStatus.CitationCount,
 		}
 
+		applyVisitorIdentityToMessage(c, message)
 		if err := model.CreateMessage(message); err != nil {
 			logger.Errorf(ctx, "保存超纲回复消息失败: %s", err.Error())
 		} else {
@@ -433,8 +434,7 @@ func createRAGStatsData(eid int64, typeStr string, searchResponse *rag.SearchRes
 		// 从回答内容中提取实际的引用
 		if answer != "" {
 			quotedSourceIDs := extractQuotedSourceIDs(answer)
-			quotedChunkIDs := getQuotedChunkIDs(quotedSourceIDs, sources)
-			quotedFileIDs := getQuotedFileIDs(quotedSourceIDs, sources)
+			quotedChunkIDs, quotedFileIDs := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 			stats["document_quotations"] = quotedChunkIDs
 			stats["file_quotations"] = quotedFileIDs
 		} else {
@@ -779,6 +779,43 @@ type ChunkExtendedInfo struct {
 	SpaceName         string `json:"space_name"`
 }
 
+func uniqueInt64IDsInOrder(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	seen := make(map[int64]struct{}, len(ids))
+	unique := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return nil
+	}
+	return unique
+}
+
+func resultsHavePreloadedChunkMetadata(results []rag.SearchResultItem) bool {
+	if len(results) == 0 {
+		return false
+	}
+
+	for _, result := range results {
+		if result.FileCreatedAt == 0 || result.SpaceID == 0 || result.SpaceName == "" || result.LibraryName == "" {
+			return false
+		}
+	}
+
+	return true
+}
+
 // getExtendedChunkInfo 批量获取分片的扩展信息（知识库信息和文件创建时间）
 func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]ChunkExtendedInfo {
 	extendedInfos := make(map[int64]ChunkExtendedInfo)
@@ -787,10 +824,28 @@ func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]C
 		return extendedInfos
 	}
 
+	if resultsHavePreloadedChunkMetadata(results) {
+		for _, result := range results {
+			extendedInfos[result.ChunkID] = ChunkExtendedInfo{
+				KnowledgeBaseID:   result.LibraryID,
+				KnowledgeBaseName: result.LibraryName,
+				KnowledgeBaseLogo: result.LibraryIcon,
+				FileCreatedAt:     result.FileCreatedAt,
+				SpaceID:           result.SpaceID,
+				SpaceName:         result.SpaceName,
+			}
+		}
+		return extendedInfos
+	}
+
 	// 提取所有分片ID
 	chunkIDs := make([]int64, 0, len(results))
 	for _, result := range results {
 		chunkIDs = append(chunkIDs, result.ChunkID)
+	}
+	chunkIDs = uniqueInt64IDsInOrder(chunkIDs)
+	if len(chunkIDs) == 0 {
+		return extendedInfos
 	}
 
 	// 批量查询分片信息，获取知识库ID和文件ID
@@ -814,23 +869,17 @@ func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]C
 	// 提取所有唯一的文件ID
 	fileIDs := make([]int64, 0)
 	for _, chunk := range chunks {
-		found := false
-		for _, fileID := range fileIDs {
-			if fileID == chunk.FileID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			fileIDs = append(fileIDs, chunk.FileID)
-		}
+		fileIDs = append(fileIDs, chunk.FileID)
 	}
+	fileIDs = uniqueInt64IDsInOrder(fileIDs)
 
 	// 批量查询文件信息，获取创建时间
 	var files []model.File
-	err = model.DB.Where("eid = ? AND id IN ?", eid, fileIDs).Find(&files).Error
-	if err != nil {
-		logger.Warnf(context.Background(), "批量查询文件信息失败: %v", err)
+	if len(fileIDs) > 0 {
+		err = model.DB.Where("eid = ? AND id IN ?", eid, fileIDs).Find(&files).Error
+		if err != nil {
+			logger.Warnf(context.Background(), "批量查询文件信息失败: %v", err)
+		}
 	}
 
 	// 构建文件ID到文件信息的映射
@@ -842,23 +891,17 @@ func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]C
 	// 提取所有唯一的知识库ID
 	libraryIDs := make([]int64, 0)
 	for _, chunk := range chunks {
-		found := false
-		for _, libraryID := range libraryIDs {
-			if libraryID == chunk.LibraryID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			libraryIDs = append(libraryIDs, chunk.LibraryID)
-		}
+		libraryIDs = append(libraryIDs, chunk.LibraryID)
 	}
+	libraryIDs = uniqueInt64IDsInOrder(libraryIDs)
 
 	// 批量查询知识库信息，获取名称和logo
 	var libraries []model.Library
-	err = model.DB.Where("eid = ? AND id IN ?", eid, libraryIDs).Find(&libraries).Error
-	if err != nil {
-		logger.Warnf(context.Background(), "批量查询知识库信息失败: %v", err)
+	if len(libraryIDs) > 0 {
+		err = model.DB.Where("eid = ? AND id IN ?", eid, libraryIDs).Find(&libraries).Error
+		if err != nil {
+			logger.Warnf(context.Background(), "批量查询知识库信息失败: %v", err)
+		}
 	}
 
 	// 构建知识库ID到知识库信息的映射
@@ -870,23 +913,17 @@ func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]C
 	// 提取所有唯一的空间ID
 	spaceIDs := make([]int64, 0)
 	for _, library := range libraries {
-		found := false
-		for _, spaceID := range spaceIDs {
-			if spaceID == library.SpaceID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			spaceIDs = append(spaceIDs, library.SpaceID)
-		}
+		spaceIDs = append(spaceIDs, library.SpaceID)
 	}
+	spaceIDs = uniqueInt64IDsInOrder(spaceIDs)
 
 	// 批量查询空间信息，获取名称
 	var spaces []model.Space
-	err = model.DB.Where("eid = ? AND id IN ?", eid, spaceIDs).Find(&spaces).Error
-	if err != nil {
-		logger.Warnf(context.Background(), "批量查询空间信息失败: %v", err)
+	if len(spaceIDs) > 0 {
+		err = model.DB.Where("eid = ? AND id IN ?", eid, spaceIDs).Find(&spaces).Error
+		if err != nil {
+			logger.Warnf(context.Background(), "批量查询空间信息失败: %v", err)
+		}
 	}
 
 	// 构建空间ID到空间信息的映射
@@ -1180,26 +1217,13 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 
 		if isWebSearch {
 			// 对于网页搜索，直接使用原始ID
-			for _, sourceID := range quotedSourceIDs {
-				formattedID := strings.TrimPrefix(sourceID, "Source:")
-				for _, source := range sources {
-					if source.ReferenceID == formattedID {
-						quotedChunkIDs = append(quotedChunkIDs, fmt.Sprintf("%d", source.ChunkID))
-						quotedFileIDs = append(quotedFileIDs, fmt.Sprintf("%d", source.FileID))
-						break
-					}
-				}
-			}
+			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, true, false)
 		} else if isSoloFile {
 			// 对于单文件模式，使用hash值
-			quotedChunkIDs = getQuotedChunkIDs(quotedSourceIDs, sources)
-			// 提取对应的去重file_id
-			quotedFileIDs = getQuotedFileIDs(quotedSourceIDs, sources)
+			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 		} else {
 			// 对于知识库搜索，使用hash值
-			quotedChunkIDs = getQuotedChunkIDs(quotedSourceIDs, sources)
-			// 提取对应的去重file_id
-			quotedFileIDs = getQuotedFileIDs(quotedSourceIDs, sources)
+			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 		}
 	}
 
@@ -1321,87 +1345,98 @@ func extractQuotedSourceIDs(answer string) []string {
 
 // getQuotedChunkIDs 根据引用ID获取实际的 chunk_id 列表
 func getQuotedChunkIDs(quotedSourceIDs []string, sources []rag.SourceReference) []string {
-	var quotedChunkIDs []string
-
-	// 创建引用ID到 chunk_id 的映射
-	refIDToChunkID := make(map[string]string)
-	for _, source := range sources {
-		// sources中的ReferenceID可能是 "B_1" 这种格式（网页搜索）或 "1-1" 这种格式（单文件模式）
-		refIDToChunkID[source.ReferenceID] = hashInt64(source.ChunkID)
-	}
-
-	// 根据引用的ID获取 chunk_id
-	for _, sourceID := range quotedSourceIDs {
-		formattedID := strings.TrimPrefix(sourceID, "Source:")
-
-		// 尝试直接匹配
-		if chunkID, exists := refIDToChunkID[formattedID]; exists {
-			quotedChunkIDs = append(quotedChunkIDs, chunkID)
-			continue
-		}
-
-		// 尝试将下划线替换为短横线（处理B_1格式）
-		underscoreID := strings.ReplaceAll(formattedID, "_", "-")
-		if chunkID, exists := refIDToChunkID[underscoreID]; exists {
-			quotedChunkIDs = append(quotedChunkIDs, chunkID)
-			continue
-		}
-
-		// 尝试将短横线替换为下划线（处理1-1格式）
-		dashID := strings.ReplaceAll(formattedID, "-", "_")
-		if chunkID, exists := refIDToChunkID[dashID]; exists {
-			quotedChunkIDs = append(quotedChunkIDs, chunkID)
-			continue
-		}
-	}
-
+	quotedChunkIDs, _ := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, false)
 	return quotedChunkIDs
 }
 
 // getQuotedFileIDs 根据引用ID获取去重的 file_id 列表
 func getQuotedFileIDs(quotedSourceIDs []string, sources []rag.SourceReference) []string {
-	// 使用map进行去重
-	uniqueFileIDs := make(map[int64]bool)
-
-	// 创建引用ID到文件ID的映射
-	refIDToFileID := make(map[string]int64)
-	for _, source := range sources {
-		// sources中的ReferenceID可能是 "B_1" 这种格式（网页搜索）或 "1-1" 这种格式（单文件模式）
-		refIDToFileID[source.ReferenceID] = source.FileID
-	}
-
-	// 根据引用的ID获取对应的 file_id
-	for _, sourceID := range quotedSourceIDs {
-		formattedID := strings.TrimPrefix(sourceID, "Source:")
-
-		// 尝试直接匹配
-		if fileID, exists := refIDToFileID[formattedID]; exists {
-			uniqueFileIDs[fileID] = true
-			continue
-		}
-
-		// 尝试将下划线替换为短横线（处理B_1格式）
-		underscoreID := strings.ReplaceAll(formattedID, "_", "-")
-		if fileID, exists := refIDToFileID[underscoreID]; exists {
-			uniqueFileIDs[fileID] = true
-			continue
-		}
-
-		// 尝试将短横线替换为下划线（处理1-1格式）
-		dashID := strings.ReplaceAll(formattedID, "-", "_")
-		if fileID, exists := refIDToFileID[dashID]; exists {
-			uniqueFileIDs[fileID] = true
-			continue
-		}
-	}
-
-	// 转换为字符串数组并进行hash化
-	var quotedFileIDs []string
-	for fileID := range uniqueFileIDs {
-		quotedFileIDs = append(quotedFileIDs, hashInt64(fileID))
-	}
-
+	_, quotedFileIDs := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 	return quotedFileIDs
+}
+
+type quotedSourceLookup struct {
+	ChunkID int64
+	FileID  int64
+}
+
+func buildQuotedSourceLookup(sources []rag.SourceReference) map[string]quotedSourceLookup {
+	lookup := make(map[string]quotedSourceLookup, len(sources))
+	for _, source := range sources {
+		lookup[source.ReferenceID] = quotedSourceLookup{
+			ChunkID: source.ChunkID,
+			FileID:  source.FileID,
+		}
+	}
+	return lookup
+}
+
+func resolveQuotedSourceIDs(
+	quotedSourceIDs []string,
+	sources []rag.SourceReference,
+	rawOutput bool,
+	dedupeFileIDs bool,
+) ([]string, []string) {
+	if len(quotedSourceIDs) == 0 || len(sources) == 0 {
+		return []string{}, []string{}
+	}
+
+	lookup := buildQuotedSourceLookup(sources)
+	quotedChunkIDs := make([]string, 0, len(quotedSourceIDs))
+	quotedFileIDs := make([]string, 0, len(quotedSourceIDs))
+	uniqueFileIDs := make(map[int64]struct{}, len(quotedSourceIDs))
+
+	for _, sourceID := range quotedSourceIDs {
+		info, ok := lookupQuotedSourceInfo(lookup, sourceID)
+		if !ok {
+			continue
+		}
+
+		if rawOutput {
+			quotedChunkIDs = append(quotedChunkIDs, fmt.Sprintf("%d", info.ChunkID))
+			if dedupeFileIDs {
+				if _, exists := uniqueFileIDs[info.FileID]; exists {
+					continue
+				}
+				uniqueFileIDs[info.FileID] = struct{}{}
+			}
+			quotedFileIDs = append(quotedFileIDs, fmt.Sprintf("%d", info.FileID))
+			continue
+		}
+
+		quotedChunkIDs = append(quotedChunkIDs, hashInt64(info.ChunkID))
+		if dedupeFileIDs {
+			if _, exists := uniqueFileIDs[info.FileID]; exists {
+				continue
+			}
+			uniqueFileIDs[info.FileID] = struct{}{}
+		}
+		quotedFileIDs = append(quotedFileIDs, hashInt64(info.FileID))
+	}
+
+	return quotedChunkIDs, quotedFileIDs
+}
+
+func lookupQuotedSourceInfo(
+	lookup map[string]quotedSourceLookup,
+	sourceID string,
+) (quotedSourceLookup, bool) {
+	formattedID := strings.TrimPrefix(sourceID, "Source:")
+	if info, exists := lookup[formattedID]; exists {
+		return info, true
+	}
+
+	underscoreID := strings.ReplaceAll(formattedID, "_", "-")
+	if info, exists := lookup[underscoreID]; exists {
+		return info, true
+	}
+
+	dashID := strings.ReplaceAll(formattedID, "-", "_")
+	if info, exists := lookup[dashID]; exists {
+		return info, true
+	}
+
+	return quotedSourceLookup{}, false
 }
 
 // createDocumentSearchData 创建文档搜索数据（仅包含chunks，不包含quotations）

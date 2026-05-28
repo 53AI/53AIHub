@@ -357,13 +357,14 @@ func GetIsSaas(c *gin.Context) {
 }
 
 type HomePageResponse struct {
-	AgentCount    int64 `json:"agent_count"`
-	UserCount     int64 `json:"user_count"`
-	PromptCount   int64 `json:"prompt_count"`
-	AILinkCount   int64 `json:"ai_link_count"`
-	SpaceCount    int64 `json:"space_count"`
-	LibraryCount  int64 `json:"library_count"`
-	DocumentCount int64 `json:"document_count"`
+	AgentCount        int64 `json:"agent_count"`
+	UserCount         int64 `json:"user_count"`
+	InternalUserCount int64 `json:"internal_user_count"`
+	PromptCount       int64 `json:"prompt_count"`
+	AILinkCount       int64 `json:"ai_link_count"`
+	SpaceCount        int64 `json:"space_count"`
+	LibraryCount      int64 `json:"library_count"`
+	DocumentCount     int64 `json:"document_count"`
 }
 
 // @Summary Get homepage information
@@ -389,6 +390,12 @@ func GetHomePage(c *gin.Context) {
 
 	var userCount int64
 	if err := model.DB.Model(&model.User{}).Where("eid = ? AND type = ?", eid, model.UserTypeRegistered).Count(&userCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	var internalUserCount int64
+	if err := model.DB.Model(&model.User{}).Where("eid = ? AND type = ?", eid, model.UserTypeInternal).Count(&internalUserCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
@@ -425,13 +432,14 @@ func GetHomePage(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(HomePageResponse{
-		AgentCount:    agentCount,
-		UserCount:     userCount,
-		PromptCount:   promptCount,
-		AILinkCount:   aiLinkCount,
-		SpaceCount:    spaceCount,
-		LibraryCount:  libraryCount,
-		DocumentCount: documentCount,
+		AgentCount:        agentCount,
+		UserCount:         userCount,
+		InternalUserCount: internalUserCount,
+		PromptCount:       promptCount,
+		AILinkCount:       aiLinkCount,
+		SpaceCount:        spaceCount,
+		LibraryCount:      libraryCount,
+		DocumentCount:     documentCount,
 	}))
 }
 

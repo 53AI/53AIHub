@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -21,6 +20,7 @@ type PersonalAgentRequest struct {
 
 // @Summary 创建个人智能体
 // @Description 用户创建属于自己的智能体。channel_type必传，目前仅支持1014(OpenClawWS WebSocket长连接)类型。
+// @Description 注意：必须先通过 POST /api/channels 创建 type=1014 的渠道，否则智能体运行时会因找不到执行渠道而失败。
 // @Description 创建成功后会自动生成openclaw_app_secret存储在custom_config中，用于WebSocket连接认证。
 // @Tags PersonalAgent
 // @Accept json
@@ -62,18 +62,12 @@ func CreatePersonalAgent(c *gin.Context) {
 	switch req.ChannelType {
 	case model.ChannelApiTypeOpenClawWS:
 		agent.Model = "openclaw-ws"
-		var customCfg map[string]interface{}
-		if req.CustomConfig != "" {
-			_ = json.Unmarshal([]byte(req.CustomConfig), &customCfg)
+		mergedCustomConfig, err := model.MergeOpenClawCustomConfig("", req.CustomConfig, true)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+			return
 		}
-		if customCfg == nil {
-			customCfg = make(map[string]interface{})
-		}
-		if _, ok := customCfg["openclaw_app_secret"]; !ok {
-			customCfg["openclaw_app_secret"] = model.GenerateOpenClawAppSecret()
-		}
-		bytes, _ := json.Marshal(customCfg)
-		agent.CustomConfig = string(bytes)
+		agent.CustomConfig = mergedCustomConfig
 	default:
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("unsupported channel_type for personal agent")))
 		return
