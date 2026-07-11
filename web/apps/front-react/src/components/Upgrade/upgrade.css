@@ -1,0 +1,412 @@
+.upgrade-modal .ant-modal-container {
+  padding: 0;
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.upgrade-container {
+  display: flex;
+  height: 74vh;
+}
+
+@media (max-width: 768px) {
+  .upgrade-container {
+    flex-direction: column;
+    height: 90vh;
+  }
+}
+
+.upgrade-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 2rem 0.5rem 2rem 3rem;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  .upgrade-main {
+    padding: 2rem 1.25rem;
+  }
+}
+
+.upgrade-aside {
+  width: 30%;
+  max-width: 306px;
+  display: flex;
+  flex-direction: column;
+  padding: 2rem 3rem 2rem 1.5rem;
+  background: #fafafa;
+  border-left: 1px solid #f2f0f0;
+  position: relative;
+}
+
+@media (max-width: 768px) {
+  .upgrade-aside {
+    display: none;
+  }
+}
+
+.upgrade-close {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.25rem;
+  font-size: 1.25rem;
+  color: #666;
+  cursor: pointer;
+}
+
+.mobile-show {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-show {
+    display: block;
+  }
+  .mobile-hide {
+    display: none;
+  }
+}
+
+.upgrade-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #000;
+  flex: none;
+}
+
+.upgrade-versions {
+  position: relative;
+  overflow-y: hidden;
+  flex: 1;
+}
+
+/* Gradient overlay at bottom - fixed position */
+.upgrade-versions::after {
+  content: '';
+  width: 100%;
+  height: 2.8rem;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  background: linear-gradient(to top, rgb(255 255 255 / 80%), transparent);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.upgrade-scrollbar {
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: relative;
+  height: 100%;
+}
+
+.upgrade-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.upgrade-scrollbar-view {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 1rem;
+  transition: all 0.3s;
+  align-items: flex-start;
+}
+
+.upgrade-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  background: #53585f !important;
+  color: #fff !important;
+  border: none !important;
+}
+
+.upgrade-scroll-btn.left {
+  left: 0;
+}
+
+.upgrade-scroll-btn.right {
+  right: 0;
+}
+
+.upgrade-version-card {
+  flex: none;
+  min-width: 180px;
+  padding: 1rem 0.875rem 2.5rem;
+  border: 1px solid #eaedf7;
+  border-radius: 0.375rem;
+  background: #f5f6fc;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-sizing: border-box;
+  height: max-content;
+  min-height: 100%;
+}
+
+/* Multiple options layout */
+.upgrade-version-card:not(.single) {
+  width: 31%;
+  max-width: 240px;
+}
+
+/* Single option layout */
+.upgrade-version-card.single {
+  width: 100%;
+  max-width: none;
+}
+
+@media (max-width: 768px) {
+  .upgrade-version-card.single {
+    max-height: 430px;
+    overflow-y: auto;
+  }
+}
+
+.upgrade-version-card.active {
+  border-color: #2f74ff;
+  box-shadow: 0 0 20px rgba(6, 114, 255, 0.2);
+  background-image: url('/images/subscription/version-bg.png');
+  background-size: cover;
+  background-position: center;
+}
+
+.upgrade-version-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.upgrade-version-logo {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.upgrade-version-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #000;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upgrade-version-name.flex-1 {
+  flex: 1;
+}
+
+.upgrade-version-name.flex-none {
+  flex: none;
+}
+
+.upgrade-time-options {
+  display: flex;
+  gap: 1.25rem;
+  overflow-x: auto;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: none;
+  width: 100%;
+}
+
+.upgrade-time-option {
+  height: 8rem;
+  width: 36%;
+  max-width: 280px;
+  min-width: 150px;
+  padding: 1.25rem;
+  border: 1px solid #eaedf7;
+  border-radius: 0.375rem;
+  background: #f5f6fc;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-sizing: border-box;
+}
+
+.upgrade-time-option.active {
+  border-color: #2f74ff;
+  box-shadow: 0 0 20px rgba(6, 114, 255, 0.2);
+  background-image: url('https://img.js.design/assets/img/67e3c887985b9b806ee10e09.png#681a27dfb07db7652079a5900c960b9e');
+  background-size: cover;
+  background-position: center;
+}
+
+.time-label {
+  font-size: 0.875rem;
+  color: #000;
+}
+
+.time-price {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: baseline;
+}
+
+.upgrade-aside-title {
+  margin-top: 2.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #000;
+}
+
+.upgrade-aside-desc {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #333;
+}
+
+.upgrade-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  width: 100%;
+}
+
+.upgrade-user-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.upgrade-order-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.125rem;
+  color: #000;
+  width: 100%;
+  flex: 1;
+  min-height: 108px;
+}
+
+@media (max-width: 768px) {
+  .upgrade-order-info {
+    min-height: 48px;
+  }
+}
+
+.upgrade-payment {
+  margin-bottom: 1rem;
+}
+
+.upgrade-payment-title {
+  font-size: 1.125rem;
+  color: #000;
+}
+
+.upgrade-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.25rem;
+  color: #000;
+  margin-bottom: 1rem;
+  margin-top: 2rem;
+}
+
+/* Mobile footer styles */
+.upgrade-footer {
+  display: none;
+  flex-direction: column;
+  flex: none;
+  background: #fafafa;
+  border-left: 1px solid #f2f0f0;
+  padding: 0.5rem 3rem 0.5rem 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  min-height: max-content;
+}
+
+@media (max-width: 768px) {
+  .upgrade-footer {
+    display: flex;
+  }
+}
+
+.upgrade-footer .min-h-1 {
+  min-height: 0.25rem;
+}
+
+.upgrade-footer-detail {
+  padding-bottom: 0.25rem;
+}
+
+/* Agent list styles */
+.upgrade-agents-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1d1e1f;
+}
+
+.upgrade-agents-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.875rem;
+  margin-top: 1rem;
+}
+
+.upgrade-agent-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.upgrade-agent-logo {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  flex: none;
+}
+
+.upgrade-agent-name {
+  font-size: 0.875rem;
+  color: #4f5052;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* AI assistant button styles */
+.upgrade-assistant-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #1d1e1f;
+}
+
+.upgrade-assistant-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.upgrade-assistant-btn {
+  padding: 0.375rem 0.5rem;
+}
+
+.upgrade-assistant-btn img {
+  width: 1rem;
+  height: 1rem;
+  object-fit: cover;
+  margin-right: 0.25rem;
+}
+
+.upgrade-assistant-btn span {
+  font-size: 0.75rem;
+}
+
+/* Disabled state for AI assistant buttons */
+.upgrade-assistant-btn:disabled img {
+  opacity: 0.5;
+}

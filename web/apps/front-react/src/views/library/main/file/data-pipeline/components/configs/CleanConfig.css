@@ -1,0 +1,15 @@
+.clean-config .ant-slider-rail {
+  background-color: #e5e7eb;
+}
+
+.clean-config .ant-slider-track {
+  background-color: #2563eb;
+}
+
+.clean-config .ant-slider-handle {
+  border-color: #2563eb;
+}
+
+.clean-config .ant-checkbox-inner {
+  border-radius: 4px;
+}

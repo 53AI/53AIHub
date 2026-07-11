@@ -1,0 +1,20 @@
+/* Vditor overrides */
+.vditor {
+  min-height: 32px;
+  border: none;
+}
+
+.vditor--plain .vditor-sv {
+  padding: 0 16px;
+}
+
+/* Custom vditor container */
+.vditor-custom {
+  width: 100%;
+}
+
+/* Tooltip styles */
+.vditor-tooltipped:after {
+  top: 40px;
+  height: 26px;
+}

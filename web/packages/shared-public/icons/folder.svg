@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="36" height="36" viewBox="0 0 36 36" fill="none">
+<path     fill="url(#linear_fill_245_4917_0)"  d="M5.18231 5L13.0565 5C13.605 5 14.1334 5.20658 14.5364 5.57861L16.8282 7.69411C17.2312 8.06613 17.7596 8.27271 18.3081 8.27271L28.0914 8.27271C29.2964 8.27271 30.2732 9.24954 30.2732 10.4545L30.2732 29.5453C30.2732 30.7503 29.2964 31.7272 28.0914 31.7272L5.18231 31.7272C3.97732 31.7272 3.00049 30.7503 3.00049 29.5453L3.00049 7.18181C3.00049 5.97683 3.97732 5 5.18231 5Z">
+</path>
+<g filter="url(#filter_245_4918)">
+<foreignObject x="-1.6552734375" y="8.181640625" width="39.3115234375" height="28.545372009277344">
+<div xmlns="http://www.w3.org/1999/xhtml" style="backdrop-filter:blur(2.5px);clip-path:url(#bgblur_29.3115234375_18.545372009277344_5_clip_path);height:100%;width:100%">
+</div>
+</foreignObject>
+<path     fill="#BAD0FF" fill-opacity="0.6" d="M7.61219 13.1816L30.4743 13.1816C31.8057 13.1816 32.8267 14.3637 32.6329 15.6809L30.5474 29.8626C30.3899 30.9335 29.4712 31.727 28.3888 31.727L5.52663 31.727C4.19527 31.727 3.17432 30.545 3.36803 29.2278L5.45359 15.046C5.61107 13.9752 6.52982 13.1816 7.61219 13.1816Z">
+</path>
+<path fill-rule="evenodd"  fill="url(#linear_border_245_4918_0)"  d="M30.4743 13.1816L7.61219 13.1816C6.52982 13.1816 5.61107 13.9752 5.45359 15.046L3.36803 29.2278C3.17432 30.545 4.19527 31.727 5.52663 31.727L28.3888 31.727C29.4712 31.727 30.3899 30.9335 30.5474 29.8626L32.6329 15.6809C32.8267 14.3637 31.8057 13.1816 30.4743 13.1816ZM6.44751 14.015Q6.94923 13.5816 7.61219 13.5816L30.4743 13.5816C31.5616 13.5816 32.3954 14.547 32.2372 15.6227L30.1516 29.8044Q30.0552 30.4603 29.5535 30.8937Q29.0517 31.327 28.3888 31.327L5.52663 31.327C4.43935 31.327 3.60558 30.3617 3.76377 29.286L5.84933 15.1042Q5.94579 14.4483 6.44751 14.015Z">
+</path>
+</g>
+<defs>
+<clipPath id="bgblur_29.3115234375_18.545372009277344_5_clip_path" transform="translate(1.6552734375 -8.181640625)">
+<path d="M7.61219 13.1816L30.4743 13.1816C31.8057 13.1816 32.8267 14.3637 32.6329 15.6809L30.5474 29.8626C30.3899 30.9335 29.4712 31.727 28.3888 31.727L5.52663 31.727C4.19527 31.727 3.17432 30.545 3.36803 29.2278L5.45359 15.046C5.61107 13.9752 6.52982 13.1816 7.61219 13.1816Z">
+<parsererror xmlns="http://www.w3.org/1999/xhtml" style="display: block; white-space: pre; border: 2px solid #c77; padding: 0 1em 0 1em; margin: 1em; background-color: #fdd; color: black">
+<h3>
+This page contains the following errors:</h3>
+<div style="font-family:monospace;font-size:12px">
+error on line 1 at column 324: Extra content at the end of the document
+</div>
+<h3>
+Below is a rendering of the page up to the first error.</h3>
+</parsererror>
+</path>
+</clipPath>
+</defs>
+<g filter="url(#filter_245_4919)">
+<path d="M7.63721 27.3641C7.63721 27.8159 7.97022 28.1823 8.38101 28.1823L12.3479 28.1823C12.7587 28.1823 13.0918 27.8159 13.0918 27.3641C13.0918 26.9122 12.7587 26.5459 12.3479 26.5459L8.38101 26.5459C7.97022 26.5459 7.63721 26.9122 7.63721 27.3641Z" fill-rule="evenodd"  fill="#F0F4FF" >
+</path>
+</g>
+<defs>
+<linearGradient id="linear_fill_245_4917_0" x1="16.28515625" y1="5" x2="17.61767578125" y2="18.120895385742188" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#3399FF"  />
+<stop offset="1" stop-color="#2563EB"  />
+</linearGradient>
+<linearGradient id="linear_border_245_4918_0" x1="20.5322265625" y1="24.37006378173828" x2="30.65234375" y2="11.459884643554688" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#FFFFFF" stop-opacity="0" />
+<stop offset="1" stop-color="#FCFDFF"  />
+</linearGradient>
+<filter id="filter_245_4918" x="3.3447265625" y="13.181640625" width="29.3115234375" height="18.545372009277344" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="feFloodId_245_4918"/>
+<feBlend mode="normal" in="SourceGraphic" in2="feFloodId_245_4918" result="shape_245_4918"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha_245_4918"/>
+<feOffset dx="-0.3" dy="0.3"/>
+<feGaussianBlur stdDeviation="0.5"/>
+<feComposite in2="hardAlpha_245_4918" operator="arithmetic" k2="-1" k3="1"/>
+<feColorMatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.24 0"/>
+<feBlend mode="normal" in2="shape_245_4918" result="innerShadow_0_245_4918" />
+</filter>
+<filter id="filter_245_4919" x="7.63720703125" y="26.5458984375" width="5.45458984375" height="1.6363563537597656" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+<feFlood flood-opacity="0" result="feFloodId_245_4919"/>
+<feBlend mode="normal" in="SourceGraphic" in2="feFloodId_245_4919" result="shape_245_4919"/>
+<feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha_245_4919"/>
+<feOffset dx="0" dy="0.2"/>
+<feGaussianBlur stdDeviation="0.1"/>
+<feComposite in2="hardAlpha_245_4919" operator="arithmetic" k2="-1" k3="1"/>
+<feColorMatrix type="matrix" values="0 0 0 0 0.13725490196078433 0 0 0 0 0.2823529411764706 0 0 0 0 0.6 0 0 0 0.16 0"/>
+<feBlend mode="normal" in2="shape_245_4919" result="innerShadow_0_245_4919" />
+</filter>
+</defs>
+</svg>

@@ -1,0 +1,46 @@
+/* 侧栏容器过渡优化 */
+.sider-container {
+  will-change: width;
+  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 文字渐变动画 */
+.sider-fade-item {
+  will-change: opacity, transform;
+  transition: opacity 200ms ease-in-out, transform 200ms ease-in-out;
+}
+
+.sider-hidden-item {
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: opacity 200ms ease-in-out, transform 200ms ease-in-out;
+}
+
+/* Ant Design Menu 过渡优化 */
+.sider-menu {
+  will-change: width;
+  transition: width 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 菜单项标题过渡 */
+.sider-menu .ant-menu-item,
+.sider-menu .ant-menu-submenu-title {
+  transition: opacity 200ms ease-in-out;
+  transition-delay: 50ms;
+}
+
+/* .sider-menu .ant-menu-item {
+  padding: 0 10px !important;
+} */
+
+
+
+.sider-menu .ant-menu-item svg {
+  fill: #888994 !important;
+  color: #888994 !important;
+}
+
+.sider-menu .ant-menu-item-selected svg {
+  fill: #2563EB !important;
+  color: #2563EB !important;
+}

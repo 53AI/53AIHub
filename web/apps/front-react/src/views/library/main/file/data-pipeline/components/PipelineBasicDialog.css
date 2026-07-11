@@ -1,0 +1,7 @@
+.pipeline-basic-dialog .ant-input {
+  border-radius: 6px;
+}
+
+.pipeline-basic-dialog .ant-form-item-label > label {
+  font-weight: 500;
+}

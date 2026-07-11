@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>划词高亮插件示例</title>
+  <link rel="stylesheet" href="./index.css">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .content-area {
+      border: 1px solid #ddd;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+      background: #fafafa;
+    }
+    .restricted-area {
+      background: #fff;
+      padding: 15px;
+      border: 2px dashed #4CAF50;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    h1 {
+      color: #333;
+    }
+    h2 {
+      color: #666;
+      margin-top: 30px;
+    }
+    code {
+      background: #f4f4f4;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>划词高亮插件示例</h1>
+
+  <div class="content-area" id="content">
+    <h2>使用说明</h2>
+    <p>这是一个划词高亮插件的演示页面。你可以：</p>
+    <ul>
+      <li>将鼠标悬停在段落上，段落会自动高亮并显示菜单</li>
+      <li>手动选择文本进行高亮，选择完成后会显示菜单</li>
+    </ul>
+
+    <div class="restricted-area" id="restricted-area">
+      <h2>限制区域示例</h2>
+      <p>这个区域是限制划词区域。只有在这个区域内才能进行划词高亮操作。</p>
+      <p>你可以尝试在这个区域<span>我是子元素</span>内悬停鼠标或选择文本。</p>
+      <p>在区域外<span>我是子元素</span>选择文本不会触发高亮功能。</p>
+    </div>
+
+    <h2>普通内容区域</h2>
+    <p>这是普通的内容区域，没有限制选择器。你可以在整个区域内进行划词高亮。</p>
+    <p>插件会自动识别段落元素，包括 p、div、li、h1-h6 等标签。</p>
+    <p>当你选择文本时，选中的内容会被高亮显示，并在合适的位置弹出菜单。</p>
+
+    <h2>功能特性</h2>
+    <ul>
+      <li>✅ 自动识别段落，鼠标悬停高亮</li>
+      <li>✅ 手动划词高亮</li>
+      <li>✅ 可限制划词区域</li>
+      <li>✅ 智能菜单定位（根据边界自动选择上下位置）</li>
+      <li>✅ 自定义菜单项</li>
+      <li>✅ 事件回调支持</li>
+    </ul>
+  </div>
+
+  <script src="./index.js"></script>
+  <script>
+    // 示例1: 基本使用（整个内容区域）
+    const highlighter1 = new TextHighlighter({
+      container: '#content',
+      enableAutoHighlight: true,
+      enableManualHighlight: true,
+      menuItems: [
+        {
+          label: '复制',
+          handler: (info) => {
+            navigator.clipboard.writeText(info.text);
+            alert('已复制: ' + info.text);
+          }
+        },
+        {
+          label: '翻译',
+          handler: (info) => {
+            alert('翻译功能: ' + info.text);
+          }
+        },
+        {
+          label: '搜索',
+          handler: (info) => {
+            window.open('https://www.google.com/search?q=' + encodeURIComponent(info.text));
+          }
+        }
+      ],
+      onHighlight: (info) => {
+        console.log('高亮事件:', info);
+      },
+      onMenuClick: (data) => {
+        console.log('菜单点击:', data);
+      }
+    });
+
+    // 示例2: 限制区域使用（注释掉，避免与示例1冲突）
+    // 如果需要使用限制区域，建议只使用一个实例，或者使用不同的容器
+
+    // const highlighter2 = new TextHighlighter({
+    //   container: '#restricted-area',  // 直接使用限制区域作为容器
+    //   enableAutoHighlight: true,
+    //   enableManualHighlight: true,
+    //   menuItems: [
+    //     {
+    //       label: '保存',
+    //       background: '#4CAF50',
+    //       color: '#fff',
+    //       handler: (info) => {
+    //         alert('保存: ' + info.text);
+    //       }
+    //     },
+    //     {
+    //       label: '分享',
+    //       background: '#2196F3',
+    //       color: '#fff',
+    //       handler: (info) => {
+    //         alert('分享: ' + info.text);
+    //       }
+    //     }
+    //   ]
+    // });
+
+
+    // 动态更新菜单项示例
+    // setTimeout(() => {
+    //   highlighter1.updateMenuItems([
+    //     {
+    //       label: '新菜单项1',
+    //       handler: (info) => alert('新菜单1: ' + info.text)
+    //     },
+    //     {
+    //       label: '新菜单项2',
+    //       handler: (info) => alert('新菜单2: ' + info.text)
+    //     }
+    //   ]);
+    // }, 10000); // 10秒后更新菜单
+  </script>
+</body>
+</html>
+

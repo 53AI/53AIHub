@@ -1,0 +1,17 @@
+.entity-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entity-avatar {
+  flex-shrink: 0;
+}
+
+.entity-name-wrapper {
+  overflow: hidden;
+}
+
+.entity-name-wrapper.with-avatar {
+  margin-left: 4px;
+}

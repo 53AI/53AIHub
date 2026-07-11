@@ -1,0 +1,62 @@
+.file-viewer {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: white;
+}
+
+.file-viewer-loading {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #2563EB;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.file-viewer-unsupported {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+
+.unsupported-icon {
+  font-size: 48px;
+  color: #FA8C16;
+  margin-bottom: 16px;
+}
+
+.file-viewer-unsupported h3 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #1D1E1F;
+  margin: 0 0 8px 0;
+}
+
+.file-viewer-unsupported p {
+  color: #9B9B9B;
+  margin: 0 0 16px 0;
+}
+
+.unsupported-actions {
+  display: flex;
+  gap: 8px;
+}

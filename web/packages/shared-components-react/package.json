@@ -1,0 +1,30 @@
+{
+  "name": "@km/shared-components-react",
+  "version": "0.0.1",
+  "description": "Shared React components for KM",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "antd": "^5.22.0",
+    "@ant-design/icons": "^5.5.0",
+    "@km/shared-utils": "workspace:*",
+    "sortablejs": "^1.15.0",
+    "@uiw/react-codemirror": "^4.25.8",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "6.40.0",
+    "react-easy-crop": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@types/sortablejs": "^1.15.0"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  }
+}

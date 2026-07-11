@@ -1,0 +1,40 @@
+.member-selector {
+  display: inline-block;
+}
+
+.member-list {
+  max-height: 208px;
+  padding: 12px;
+  background: #F7F8FA;
+  border-radius: 6px;
+  overflow-y: auto;
+}
+
+.member-item {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.member-item:last-child {
+  margin-bottom: 0;
+}
+
+.member-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.member-name {
+  flex: 1;
+  font-size: 14px;
+  color: #1D1E1F;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}

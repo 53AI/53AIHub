@@ -1,0 +1,56 @@
+.scroll-container {
+  height: 100%;
+  overflow-y: auto;
+  position: relative;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-content {
+  min-height: 100%;
+  position: relative;
+}
+
+.load-indicator {
+  height: 0;
+  transition: opacity 0.3s ease;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.load-indicator.top-indicator {
+  position: sticky;
+  top: 20px;
+  z-index: 1;
+}
+
+.load-indicator.bottom-indicator {
+  position: sticky;
+  bottom: 20px;
+}
+
+.load-indicator.visible {
+  opacity: 1;
+}
+
+.loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.loader-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgba(0, 0, 0, 0.1);
+  border-top-color: #007aff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

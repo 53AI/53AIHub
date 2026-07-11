@@ -1,0 +1,18 @@
+/* Link styles */
+.vditor-reset a {
+  color: #2563eb;
+}
+
+/* Slide transition - matches Vue slide animation */
+.slide-transition {
+  transition: transform 0.3s ease;
+}
+
+.slide-enter {
+  transform: translateX(0);
+}
+
+.slide-leave {
+  transform: translateX(100%);
+  pointer-events: none;
+}

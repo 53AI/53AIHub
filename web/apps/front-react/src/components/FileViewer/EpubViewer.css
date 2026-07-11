@@ -1,0 +1,74 @@
+.epub-viewer {
+  height: 100%;
+  overflow: auto;
+  background: white;
+}
+
+.epub-viewer-loading,
+.epub-viewer-error {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+
+.epub-viewer-loading {
+  gap: 12px;
+  color: #4F5052;
+}
+
+.epub-viewer-error .error-icon {
+  font-size: 48px;
+  color: #FA5151;
+  margin-bottom: 16px;
+}
+
+.epub-viewer-error h3 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #1D1E1F;
+  margin: 0 0 8px 0;
+}
+
+.epub-viewer-error p {
+  color: #9B9B9B;
+  margin: 0 0 16px 0;
+}
+
+.epub-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+
+.epub-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.epub-placeholder h3 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1D1E1F;
+  margin: 0 0 8px 0;
+}
+
+.epub-placeholder p {
+  color: #666;
+  margin: 0 0 8px 0;
+}
+
+.epub-url {
+  font-size: 12px;
+  color: #999;
+  margin-bottom: 16px !important;
+  word-break: break-all;
+  max-width: 300px;
+}

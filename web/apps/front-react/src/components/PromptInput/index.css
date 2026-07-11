@@ -1,0 +1,76 @@
+.prompt-input-wrapper {
+  width: 100%;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color: #182b50;
+}
+
+.prompt-input-wrapper.hide-line .cm-gutters {
+  display: none !important;
+}
+
+.prompt-input-wrapper.show-line .cm-gutters {
+  border-right-color: transparent;
+  background-color: #f2f3f5 !important;
+}
+
+.prompt-codemirror {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.prompt-codemirror .cm-editor {
+  outline: none !important;
+}
+
+.prompt-codemirror .cm-focused {
+  outline: none !important;
+}
+
+.prompt-codemirror .cm-scroller {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color: #182b50;
+}
+
+.prompt-codemirror .cm-content {
+  padding: 16px 0;
+}
+
+.prompt-codemirror .cm-line {
+  padding: 0 16px;
+  line-height: 26px;
+}
+
+.prompt-codemirror .cm-gutterElement {
+  background-color: transparent !important;
+  height: 26px;
+  line-height: 26px;
+  margin-top: 0 !important;
+}
+
+.prompt-codemirror .cm-activeLine {
+  background: none !important;
+}
+
+.prompt-codemirror .cm-activeLineGutter {
+  background: none !important;
+}
+
+.prompt-codemirror .cm-placeholder {
+  color: #999;
+  font-style: normal;
+}
+
+/* Disabled/read-only state */
+.prompt-input-wrapper .cm-editor.cm-focused {
+  outline: none !important;
+}
+
+.prompt-input-wrapper .cm-editor .cm-content {
+  caret-color: auto;
+}
+
+.prompt-input-wrapper .cm-editor[contenteditable="false"] .cm-content {
+  cursor: default;
+}

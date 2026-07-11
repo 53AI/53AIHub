@@ -1,6 +1,0 @@
-export const BANNER_CONFIG = {
-  MAX_IMAGES: 5,
-  MIN_INTERVAL: 1,
-  MAX_INTERVAL: 1000,
-  DEFAULT_INTERVAL: 5,
-} as const

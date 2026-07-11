@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "node",
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@km/shared-business": ["../../packages/shared-business/src/index.ts"],
+      "@km/shared-business/chat": ["../../packages/shared-business/src/chat/index.ts"],
+      "@km/shared-business/auth": ["../../packages/shared-business/src/auth/index.ts"],
+      "@km/hub-ui-x-react": ["../../packages/hub-ui-x-react/packages/index.ts"],
+      "@km/shared-components-react": ["../../packages/shared-components-react/src/index.ts"],
+      "@km/shared-utils": ["../../packages/shared-utils/src/index.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "../../node_modules"]
+}

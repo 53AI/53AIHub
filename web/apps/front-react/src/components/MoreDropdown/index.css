@@ -1,0 +1,30 @@
+.more-dropdown-trigger {
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #1D1E1F;
+  transition: background-color 0.2s;
+}
+
+.more-dropdown-trigger:hover {
+  background-color: var(--background-color, #F5F6F7);
+}
+
+.more-dropdown-overlay .ant-dropdown-menu {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.menu-icon {
+  margin-right: 8px;
+}
+
+.menu-icon.danger {
+  color: #FA5151;
+}
+
+.danger {
+  color: #FA5151;
+}

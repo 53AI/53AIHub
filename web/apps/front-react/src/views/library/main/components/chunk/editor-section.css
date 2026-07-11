@@ -1,0 +1,54 @@
+.editor-section-content:empty:before {
+  content: attr(data-placeholder);
+  color: #a0a6b5;
+  pointer-events: none;
+}
+
+/* Content split styles */
+.split-mark {
+  color: #182B50;
+  position: relative;
+  left: -40px;
+  top: -8px;
+  width: 40px;
+  display: block;
+  padding: 0 !important;
+}
+
+.split-mark-box {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  position: relative;
+  cursor: pointer
+}
+
+.split-mark-line {
+  position: absolute;
+  left: 20px;
+  top: 8px;
+  right: 0;
+  border-top: 1px dashed #182B50;
+}
+
+.split-mark:hover {
+  color: #fff;
+  width: calc(100% + 58px);
+}
+
+.split-mark:hover .split-mark-box {
+  background-color: #2563EB;
+}
+
+.split-mark:hover .split-mark-line {
+  border-color: #849FE9;
+}
+
+.split-tooltip {
+  background: #333;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 9999;
+}

@@ -1,0 +1,7 @@
+{
+  "shared_components": {
+    "table_footer_text": "合計{total}件",
+    "search_placeholder": "入力してください",
+    "search_text": "検索"
+  }
+}

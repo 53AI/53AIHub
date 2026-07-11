@@ -1,0 +1,11 @@
+.slice-view .merge-mark {
+  transition: all 0.2s;
+}
+
+.slice-view :global(.markdown-body) {
+  background-color: transparent;
+}
+
+.slice-view .vditor-chunk .vditor-copy span {
+  display: none;
+}

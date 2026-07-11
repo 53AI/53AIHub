@@ -1,0 +1,7 @@
+{
+  "shared_components": {
+    "table_footer_text": "共有{total}條",
+    "search_placeholder": "請輸入",
+    "search_text": "搜尋"
+  }
+}

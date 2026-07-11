@@ -1,0 +1,14 @@
+/* MessageCenter styles */
+.message-popover {
+  top: 20px !important;
+  bottom: 20px !important;
+}
+
+.message-popover .ant-popover-container {
+  padding: 0 !important;
+  height: 100%;
+}
+
+.message-popover .ant-popover-content {
+  height: 100%;
+}

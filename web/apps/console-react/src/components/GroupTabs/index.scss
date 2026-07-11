@@ -1,0 +1,95 @@
+// GroupTabs 组件样式
+
+// Tabs 模式样式 - 使用 :where 降级 antd 默认样式优先级
+.group-tabs {
+  :where(.ant-tabs-header) {
+    margin-bottom: 0;
+    overflow: hidden;
+  }
+
+  :where(.ant-tabs-content) {
+    display: none;
+  }
+
+  :where(.ant-tabs-header),
+  :where(.ant-tabs-nav),
+  :where(.ant-tabs-tab) {
+    border: none !important;
+  }
+
+  :where(.ant-tabs-nav) {
+    gap: 12px;
+  }
+
+  :where(.ant-tabs-tab) {
+    border-radius: 4px !important;
+    background-color: #fff !important;
+    color: #1d1e1f !important;
+    padding: 6px 16px !important;
+    border: none !important;
+    margin: 0 !important;
+  }
+
+  :where(.ant-tabs-tab-active) {
+    background-color: #e0eaff !important;
+    color: #2563eb !important;
+
+    :where(.ant-tabs-tab-btn) {
+      color: #2563eb !important;
+    }
+  }
+
+  :where(.ant-tabs-tab-disabled) {
+    opacity: 0.7;
+  }
+
+  // 去掉 ink bar
+  :where(.ant-tabs-ink-bar) {
+    display: none;
+  }
+}
+
+// Dropdown 模式样式
+.group-tabs-dropdown {
+  :where(.ant-select-selector) {
+    padding-left: 0 !important;
+  }
+
+  // 隐藏所有选中的 tags
+  :where(.ant-select-selection-item) {
+    display: none !important;
+  }
+
+  // placeholder 颜色
+  :where(.ant-select-selection-placeholder) {
+    color: black !important;
+  }
+
+  // 自定义 prefix 区域
+  &-prefix {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #1d1e1f;
+    font-size: 14px;
+  }
+
+  // 自定义 footer 区域
+  &-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 8px 12px;
+    border-top: 1px solid #f0f0f0;
+
+    &-link {
+      cursor: pointer;
+      color: #5a6d9e;
+      font-size: 14px;
+
+      &:hover {
+        opacity: 0.8;
+      }
+    }
+  }
+}

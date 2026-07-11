@@ -1,0 +1,1 @@
+export { default as RelatedScene, type RelatedSceneProps } from "./RelatedScene";

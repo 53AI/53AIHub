@@ -1,0 +1,6 @@
+{
+  "name": "@km/shared-public",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared static assets (images, js, UEditor) for KM front and console apps"
+}

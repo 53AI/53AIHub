@@ -1,0 +1,39 @@
+{
+  "name": "@km/agent-plugin",
+  "version": "0.0.1",
+  "description": "Agent Plugin - standalone agent application",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:sdk": "vite build --config vite.sdk.config.ts",
+    "build:all": "vite build && vite build --config vite.sdk.config.ts",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^5.5.0",
+    "@fingerprintjs/fingerprintjs": "^5.2.0",
+    "@km/hub-ui-x-react": "workspace:*",
+    "@km/shared-business": "workspace:*",
+    "@km/shared-components-react": "workspace:*",
+    "@km/shared-utils": "workspace:*",
+    "antd": "^6.3.4",
+    "axios": "^1.3.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.15.1",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.13",
+    "postcss": "^8.4.21",
+    "tailwindcss": "^3.2.7",
+    "typescript": "~5.6.0",
+    "vite": "^5.4.10",
+    "vite-plugin-svg-icons": "^2.0.1"
+  }
+}

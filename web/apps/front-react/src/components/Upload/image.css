@@ -1,0 +1,48 @@
+.upload-image-container {
+  width: 50px;
+  height: 50px;
+  border-radius: 0.25rem;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+}
+
+.upload-image-container:hover .upload-image-mask {
+  display: flex;
+}
+
+.upload-image-preview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.upload-image-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #d9d9d9;
+  border-radius: 0.25rem;
+}
+
+.upload-image-mask {
+  display: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(0, 0, 0, 0.4);
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  font-size: 0.75rem;
+  color: white;
+}
+
+/* Error state styling */
+.ant-form-item-has-error .upload-image-placeholder {
+  border-color: #ff4d4f;
+}

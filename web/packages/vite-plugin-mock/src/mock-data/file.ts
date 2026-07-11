@@ -1,0 +1,227 @@
+import type { MockRoute } from '../router'
+
+const ok = (data: any) => ({ code: 0, message: 'ok', data })
+const now = Math.floor(Date.now() / 1000)
+
+const mockFiles = [
+  {
+    id: 1,
+    library_id: 1,
+    user_id: 1,
+    eid: 1,
+    type: 0,
+    path: '/documents/readme.md',
+    sort: 0,
+    upload_file_id: 1,
+    upload_source: 'local',
+    is_deleted: false,
+    is_active_deleted: false,
+    is_favorite: false,
+    status: 0,
+    parsing_status: 'normal',
+    conversion_status: 'normal',
+    run_status: 'normal',
+    ai_generate_chunk_status: 'normal',
+    ai_generate_sq_status: 'normal',
+    character_count: 5000,
+    knowledge_map: '',
+    questions: '',
+    summary: 'A comprehensive guide to using the platform.',
+    config_id: 0,
+    parse_type: 'default',
+    cleaning_rule_info: '',
+    disabled_at: 0,
+    disabled_by: 0,
+    disabled_reason: '',
+    deleted_at: 0,
+    deleted_by: 0,
+    last_body_time: now - 3600,
+    created_time: now - 86400 * 7,
+    updated_time: now - 3600,
+  },
+  {
+    id: 2,
+    library_id: 1,
+    user_id: 1,
+    eid: 1,
+    type: 0,
+    path: '/documents/api-guide.pdf',
+    sort: 1,
+    upload_file_id: 2,
+    upload_source: 'local',
+    is_deleted: false,
+    is_active_deleted: false,
+    is_favorite: true,
+    status: 0,
+    parsing_status: 'normal',
+    conversion_status: 'normal',
+    run_status: 'normal',
+    ai_generate_chunk_status: 'normal',
+    ai_generate_sq_status: 'normal',
+    character_count: 12000,
+    knowledge_map: '',
+    questions: '',
+    summary: 'Detailed API integration guide.',
+    config_id: 0,
+    parse_type: 'default',
+    cleaning_rule_info: '',
+    disabled_at: 0,
+    disabled_by: 0,
+    disabled_reason: '',
+    deleted_at: 0,
+    deleted_by: 0,
+    last_body_time: now - 7200,
+    created_time: now - 86400 * 3,
+    updated_time: now - 7200,
+  },
+  {
+    id: 3,
+    library_id: 2,
+    user_id: 1,
+    eid: 1,
+    type: 0,
+    path: '/docs/faq.txt',
+    sort: 0,
+    upload_file_id: 3,
+    upload_source: 'local',
+    is_deleted: false,
+    is_active_deleted: false,
+    is_favorite: false,
+    status: 0,
+    parsing_status: 'normal',
+    conversion_status: 'normal',
+    run_status: 'normal',
+    ai_generate_chunk_status: 'normal',
+    ai_generate_sq_status: 'normal',
+    character_count: 3000,
+    knowledge_map: '',
+    questions: '',
+    summary: 'Frequently asked questions.',
+    config_id: 0,
+    parse_type: 'default',
+    cleaning_rule_info: '',
+    disabled_at: 0,
+    disabled_by: 0,
+    disabled_reason: '',
+    deleted_at: 0,
+    deleted_by: 0,
+    last_body_time: now - 1800,
+    created_time: now - 86400,
+    updated_time: now - 1800,
+  },
+]
+
+export const fileRoutes: MockRoute[] = [
+  {
+    method: 'GET', path: '/api/files',
+    handler: () => ok(mockFiles),
+  },
+  {
+    method: 'GET', path: '/api/files/all',
+    handler: () => ok(mockFiles),
+  },
+  {
+    method: 'GET', path: '/api/files/recently',
+    handler: () => ok(mockFiles.slice(0, 2)),
+  },
+  {
+    method: 'GET', path: '/api/files/recently-updated',
+    handler: () => ok(mockFiles.slice(0, 2)),
+  },
+  {
+    method: 'GET', path: '/api/files/stats',
+    handler: () => ok({ total_files: mockFiles.length, total_characters: 20000 }),
+  },
+  {
+    method: 'GET', path: '/api/files/all/stats',
+    handler: () => ok({ total_files: mockFiles.length, total_characters: 20000 }),
+  },
+  {
+    method: 'GET', path: '/api/files/libraries/{library_id}/stats',
+    handler: () => ok({ total_files: 2, total_characters: 17000 }),
+  },
+  {
+    method: 'GET', path: '/api/files/{file_id}',
+    handler: (_req, params) => {
+      const fid = parseInt(params.file_id)
+      const file = mockFiles.find(f => f.id === fid) || mockFiles[0]
+      return ok(file)
+    },
+  },
+  {
+    method: 'DELETE', path: '/api/files/{file_id}',
+    handler: () => ok(null),
+  },
+  {
+    method: 'POST', path: '/api/files',
+    handler: (_req, _params, body) => ok({ id: Date.now(), ...body }),
+  },
+  {
+    method: 'POST', path: '/api/files/sort',
+    handler: () => ok(null),
+  },
+  {
+    method: 'POST', path: '/api/files/rename',
+    handler: () => ok(null),
+  },
+  {
+    method: 'GET', path: '/api/files/children',
+    handler: () => ok(mockFiles),
+  },
+  {
+    method: 'GET', path: '/api/files/search/by-name',
+    handler: () => ok(mockFiles),
+  },
+  {
+    method: 'GET', path: '/api/files/autocomplete',
+    handler: () => ok([]),
+  },
+  {
+    method: 'GET', path: '/api/files/recycle-bin',
+    handler: () => ok([]),
+  },
+  {
+    method: 'POST', path: '/api/files/upload/batch/init',
+    handler: () => ok({ batch_id: 'batch-' + Date.now() }),
+  },
+  {
+    method: 'POST', path: '/api/files/upload/batch/{batch_id}/file',
+    handler: () => ok({ file_id: Date.now() }),
+  },
+  {
+    method: 'GET', path: '/api/files/upload/batch/{batch_id}/progress',
+    handler: () => ok({ progress: 100, status: 'completed' }),
+  },
+  {
+    method: 'POST', path: '/api/files/{file_id}/restore',
+    handler: () => ok(null),
+  },
+  {
+    method: 'DELETE', path: '/api/files/{file_id}/hard-delete',
+    handler: () => ok(null),
+  },
+  {
+    method: 'GET', path: '/api/files/{file_id}/entities',
+    handler: () => ok([]),
+  },
+  {
+    method: 'POST', path: '/api/files/{file_id}/generate-knowledge-map',
+    handler: () => ok(null),
+  },
+  {
+    method: 'POST', path: '/api/files/{file_id}/generate-questions-and-summary',
+    handler: () => ok(null),
+  },
+  {
+    method: 'GET', path: '/api/files/{file_id}/generated-content',
+    handler: () => ok({ questions: '', summary: '', knowledge_map: '' }),
+  },
+  {
+    method: 'GET', path: '/api/files/{file_id}/index-status',
+    handler: () => ok({ status: 'completed' }),
+  },
+  {
+    method: 'POST', path: '/api/files/{file_id}/edit-lock',
+    handler: () => ok({ locked: false }),
+  },
+]

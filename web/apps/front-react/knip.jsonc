@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": [
+    "src/main.tsx",
+    "src/App.tsx",
+    "src/router/index.tsx"
+  ],
+  "project": ["src/**/*.ts", "src/**/*.tsx"],
+  "ignore": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.spec.ts",
+    "src/**/*.spec.tsx",
+    "src/vite-env.d.ts",
+    "src/global.d.ts"
+  ],
+  "ignoreDependencies": [
+    "@km/shared-*",
+    "@km/hub-ui-x-react"
+  ],
+  "ignoreExportsUsedInFile": true
+}

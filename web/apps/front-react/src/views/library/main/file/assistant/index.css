@@ -1,0 +1,39 @@
+/* Assistant view styles */
+.file-chat {
+  transition: width 0.3s ease;
+}
+
+.file-chat .header {
+  flex: none;
+  height: 68px;
+  padding: 4px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.file-chat .header-title {
+  flex: 1;
+  font-size: 16px;
+  color: #1D1E1F;
+}
+
+.file-chat .header-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.file-chat .close-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.file-chat .close-btn:hover {
+  background-color: #F5F5F7;
+}

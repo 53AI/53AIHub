@@ -1,0 +1,43 @@
+/* Chat assistant styles */
+.chat-assistant-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: white;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 文件助手容器 - 用于 Drawer 定位 */
+.file-chat {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+
+.chat-message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding-top: 20px;
+}
+
+.chat-input-area {
+  flex: none;
+  margin: 0 20px;
+}
+
+.chat-model-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.chat-footer {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #999999;
+}

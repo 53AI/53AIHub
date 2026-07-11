@@ -1,0 +1,15 @@
+.assistant-map-viewer {
+  height: calc(100vh - 250px);
+  overflow-y: auto;
+  background-color: #F7F8FA;
+  border-radius: 8px;
+}
+
+.assistant-map-viewer.diagram-viewer--fixed {
+  height: 100% !important;
+}
+
+.assistant-map-viewer pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}

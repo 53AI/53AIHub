@@ -1,0 +1,16 @@
+.file-upload-panel {
+  background: #fff;
+}
+
+.file-upload-panel .ant-tree {
+  background: transparent;
+}
+
+.file-upload-panel .ant-tree-node-content-wrapper {
+  padding: 0;
+}
+
+.file-upload-panel .ant-tree-treenode {
+  padding: 0;
+  width: 100%;
+}

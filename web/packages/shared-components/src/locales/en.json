@@ -1,0 +1,7 @@
+{
+  "shared_components": {
+    "table_footer_text": "Total: {total} items",
+    "search_placeholder": "Please enter",
+    "search_text": "Search"
+  }
+}

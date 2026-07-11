@@ -1,0 +1,6 @@
+node_modules
+dist
+.turbo
+*.local
+apps/agent-plugin/dist-sdk/*
+.claude/worktrees

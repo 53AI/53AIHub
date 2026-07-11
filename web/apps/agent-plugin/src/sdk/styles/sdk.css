@@ -1,0 +1,298 @@
+/**
+ * SDK Styles for Shadow DOM
+ * These styles are isolated from the host page
+ */
+
+:host {
+  all: initial;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 0px;
+  line-height: 23.17px;
+  text-align: left;
+  vertical-align: top;
+}
+
+/* Container */
+.agent-plugin-sdk-container {
+  position: fixed;
+  z-index: 2147483647; /* Max z-index */
+  font-family: inherit;
+}
+
+/* Floating Button - 参考 53ai 设计 */
+.agent-plugin-sdk-button {
+  position: fixed;
+  z-index: 999;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.agent-plugin-sdk-button:hover {
+  transform: scale(1.02);
+}
+
+.agent-plugin-sdk-button:active {
+  transform: scale(0.98);
+}
+
+.agent-plugin-sdk-button:focus {
+  outline: none;
+}
+
+/* Avatar 容器 */
+.agent-plugin-sdk-button-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 60px;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+  margin-bottom: -20px;
+}
+
+/* 标签容器 */
+.agent-plugin-sdk-button-label {
+  order: 2;
+}
+
+.agent-plugin-sdk-button-avatar img,
+.agent-plugin-sdk-button-avatar svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 关闭按钮图标 */
+.agent-plugin-sdk-button-close-icon {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #6B7280;
+  border-radius: 90px;
+  color: #ffffff;
+}
+
+.agent-plugin-sdk-button-close-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+/* 标签容器 */
+.agent-plugin-sdk-button-label {
+  width: 100px;
+  height: 32px;
+  line-height: 32px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: 32px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  position: relative;
+  z-index: 2;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Position variants */
+.agent-plugin-sdk-button.bottom-right {
+  right: 55px;
+  bottom: 24px;
+}
+
+.agent-plugin-sdk-button.bottom-left {
+  left: 55px;
+  bottom: 24px;
+}
+
+/* Panel - 贴近上下右 */
+.agent-plugin-sdk-panel {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  border-radius: 16px 0 0 16px;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  background-color: #ffffff;
+  overflow: hidden;
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 48px);
+  height: 100vh;
+}
+
+.agent-plugin-sdk-panel.right {
+  right: 0;
+  animation: slideInRight 0.3s ease forwards;
+}
+
+.agent-plugin-sdk-panel.left {
+  left: 24px;
+  animation: slideInLeft 0.3s ease forwards;
+}
+
+.agent-plugin-sdk-panel.hidden {
+  display: none;
+}
+
+/* Panel Header */
+.agent-plugin-sdk-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid #E5E7EB;
+  background-color: #ffffff;
+}
+
+.agent-plugin-sdk-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1F2937;
+  margin: 0;
+}
+
+.agent-plugin-sdk-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #6B7280;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.agent-plugin-sdk-close:hover {
+  background-color: #F3F4F6;
+  color: #1F2937;
+}
+
+/* Iframe Container */
+.agent-plugin-sdk-iframe-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+.agent-plugin-sdk-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background-color: #ffffff;
+}
+
+/* Animations */
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Loading indicator */
+.agent-plugin-sdk-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.9);
+}
+
+.agent-plugin-sdk-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #E5E7EB;
+  border-top-color: #2563EB;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Badge for unread messages */
+.agent-plugin-sdk-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background-color: #EF4444;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  z-index: 4;
+}
+
+.agent-plugin-sdk-badge.hidden {
+  display: none;
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .agent-plugin-sdk-panel {
+    bottom: 0;
+    right: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw;
+    height: calc(100vh - 80px) !important;
+    max-height: calc(100vh - 80px);
+    border-radius: 16px 16px 0 0;
+    animation: slideInBottom 0.3s ease forwards;
+  }
+}
+
+@keyframes slideInBottom {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

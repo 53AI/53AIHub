@@ -1,0 +1,35 @@
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.slider-icon {
+  flex: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: #666;
+  transition: color 0.2s;
+}
+
+.slider-icon:hover {
+  color: #3664EF;
+}
+
+.slider-content {
+  flex: 1;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+  transition: all 0.3s;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

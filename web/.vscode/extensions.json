@@ -1,0 +1,15 @@
+{
+  "recommendations": [
+    "biomejs.biome",
+    "Vue.volar",
+    "bradlc.vscode-tailwindcss",
+    "lokalise.i18n-ally",
+    "christian-kohler.npm-intellisense",
+    "christian-kohler.path-intellisense",
+    "janisdd.vscode-edit-csv"
+  ],
+  "unwantedRecommendations": [
+    "ms-vscode.vscode-typescript-next",
+    "octref.vetur"
+  ]
+}

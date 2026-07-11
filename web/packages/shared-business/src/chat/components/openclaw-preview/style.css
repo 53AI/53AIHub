@@ -1,0 +1,58 @@
+.openclaw-preview-workspace {
+  container-type: inline-size;
+}
+
+.openclaw-preview-header {
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+}
+
+.openclaw-preview-status-badge {
+  min-width: 0;
+}
+
+.openclaw-preview-status-text {
+  display: inline-block;
+}
+
+@container (max-width: 560px) {
+  .openclaw-preview-header {
+    grid-template-columns: auto minmax(112px, 1fr) auto;
+    gap: 8px;
+    padding-inline: 12px;
+  }
+
+  .openclaw-preview-history-selector {
+    max-width: 220px;
+  }
+
+  .openclaw-preview-status-badge {
+    width: 22px;
+    height: 22px;
+    justify-content: center;
+    border-radius: 9999px;
+    padding: 0;
+  }
+
+  .openclaw-preview-status-dot {
+    margin-right: 0;
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .openclaw-preview-status-text {
+    display: none;
+  }
+}
+
+@container (max-width: 430px) {
+  .openclaw-preview-header-title {
+    max-width: 78px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .openclaw-preview-history-selector {
+    max-width: 168px;
+  }
+}

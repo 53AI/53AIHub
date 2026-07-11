@@ -1,0 +1,166 @@
+.file-select-dialog {
+  .dialog-content {
+    height: 514px;
+    display: flex;
+    overflow: hidden;
+    border-top: 1px solid #e5e5e5;
+    border-bottom: 1px solid #e5e5e5;
+    margin: 0 -1.5rem;
+  }
+
+  .space-list,
+  .library-list {
+    flex: none;
+    width: 170px;
+    padding: 0.25rem 0;
+    border-right: 1px solid #e5e5e5;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .file-list-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.25rem 0;
+
+    .list-header {
+      padding: 0 1.5rem;
+    }
+  }
+
+  .list-header {
+    height: 2.25rem;
+    padding: 0 1.5rem;
+    display: flex;
+    align-items: center;
+    font-size: 0.875rem;
+    color: #999999;
+  }
+
+  .list-content {
+    flex: 1;
+    padding: 0 0.5rem;
+    overflow-y: auto;
+  }
+
+  .list-item {
+    height: 2.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-left: 0.5rem;
+    margin-bottom: 0.25rem;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    color: #1d1e1f;
+
+    &:hover {
+      background: #f2f3f5;
+    }
+
+    &.active {
+      background: #f2f3f5;
+    }
+
+    p {
+      flex: 1;
+      font-size: 0.875rem;
+    }
+  }
+
+  .file-item-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+
+  .dialog-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .selected-info {
+    flex: 1;
+  }
+
+  .selected-trigger {
+    height: 2rem;
+    padding: 0 0.5rem;
+    border-radius: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #999999;
+    cursor: pointer;
+
+    &:hover {
+      background: #f2f3f5;
+    }
+
+    span {
+      font-size: 0.875rem;
+    }
+  }
+
+  .dialog-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+}
+
+.selected-files-popover {
+  width: 360px;
+  padding: 0.5rem;
+
+  .popover-header {
+    height: 2rem;
+    padding: 0 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem;
+
+    span {
+      font-size: 0.875rem;
+    }
+  }
+
+  .selected-files-list {
+    max-height: 20rem;
+    overflow-y: auto;
+  }
+
+  .selected-file-item {
+    height: 2rem;
+    padding: 0 0.5rem;
+    border-radius: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #999999;
+    cursor: pointer;
+
+    &:hover {
+      background: #f2f3f5;
+
+      .remove-btn {
+        display: block;
+      }
+    }
+
+    span {
+      flex: 1;
+      font-size: 0.875rem;
+      color: #1d1e1f;
+    }
+
+    .remove-btn {
+      display: none;
+    }
+  }
+}

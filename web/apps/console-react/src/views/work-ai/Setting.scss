@@ -1,0 +1,12 @@
+// 气泡样式覆盖（深度选择器，无法用 Tailwind 替代）
+.x-bubble__container .x-bubble__message {
+  background-color: #EBF1FF !important;
+  border-radius: 10px;
+  padding: 4px 10px;
+}
+
+.markdown-body.x-bubble__markdown {
+  background-color: #F5F6FA !important;
+  border-radius: 10px;
+  padding: 4px 10px;
+}

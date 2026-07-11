@@ -1,0 +1,37 @@
+.chunk-config .ant-radio-wrapper {
+  font-size: 14px;
+}
+
+.chunk-config .ant-checkbox-wrapper {
+  font-size: 14px;
+}
+
+.chunk-config .ant-input-number {
+  border-radius: 6px;
+}
+
+.chunk-config .ant-select-selector {
+  border-radius: 6px !important;
+}
+
+/* ChunkConfig container - prevent overflow */
+.chunk-config-container {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.chunk-config-container .ant-select {
+  max-width: 100%;
+}
+
+/* Fix checkbox group overflow */
+.chunk-config-container .ant-checkbox-group {
+  flex-wrap: wrap;
+}
+
+/* Ensure proper text truncation */
+.chunk-config-container .text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

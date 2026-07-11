@@ -1,0 +1,32 @@
+# 依赖目录
+node_modules/
+dist/
+build/
+out/
+
+# 构建产物
+*.min.js
+*.min.css
+*.min.html
+
+# 类型声明文件
+auto-imports.d.ts
+components.d.ts
+
+# 其他
+.git/
+.husky/
+.github/
+.vscode/
+.cursor/
+
+# 公共资源目录（第三方库）
+public/
+
+# 测试覆盖率
+coverage/
+
+# 特定文件（md5 压缩代码）
+apps/front/src/utils/md5.ts
+apps/console/src/utils/md5.ts
+packages/shared-utils/src/md5.ts

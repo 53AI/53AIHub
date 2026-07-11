@@ -1,0 +1,24 @@
+.field-form-dialog {
+  .ant-modal-content {
+    padding: 16px !important;
+  }
+
+  .ant-modal-header {
+    padding: 16px 7px !important;
+  }
+
+  .ant-modal-body {
+    width: 568px;
+    max-height: 520px;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+  }
+
+  // 数字输入框左对齐
+  .ant-input-number-left {
+    .ant-input-number-input {
+      text-align: left !important;
+    }
+  }
+}

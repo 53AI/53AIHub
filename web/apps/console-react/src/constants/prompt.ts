@@ -1,0 +1,6 @@
+export const PROMPT_USAGES = {
+  HUB: 1,
+  KM_FILE_QUICK_COMMAND: 2,
+  KM_FILE_SLIDE_COMMAND: 3,
+}
+

@@ -1,0 +1,36 @@
+.index-view .search-input {
+  background: transparent;
+  box-shadow: 0 4px 12px rgb(90 188 230 / 12%);
+}
+
+.index-view .search-input::after {
+  content: '';
+  display: block;
+  width: calc(100% + 6px);
+  height: calc(100% + 6px);
+  background: linear-gradient(90deg, rgb(125 232 220 / 100%) 0%, rgb(102 150 255 / 100%) 100%);
+  position: absolute;
+  z-index: -1;
+  top: -3px;
+  left: -3px;
+  border-radius: 32px;
+}
+
+.index-view .search-input .ant-input {
+  border-radius: 32px;
+}
+
+.index-view .search-input .ant-input-affix-wrapper {
+  border-radius: 32px;
+  box-shadow: none;
+}
+
+.hover-text-theme:hover {
+  color: var(--primary-color, #2563EB);
+  cursor: pointer;
+}
+
+.text-theme {
+  color: var(--primary-color, #2563EB);
+}
+

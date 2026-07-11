@@ -1,0 +1,40 @@
+.search-input {
+  width: 210px;
+}
+
+.search-input .ant-input {
+  box-shadow: none;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.action-btn:hover:not(.action-btn-disabled) {
+  background-color: #f0f0f0;
+}
+
+.action-btn.action-btn-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.zoom-dropdown {
+  min-width: 60px;
+  padding: 4px 8px;
+  text-align: center;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.zoom-dropdown:hover {
+  background-color: #f0f0f0;
+}

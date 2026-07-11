@@ -1,0 +1,14 @@
+/* InfoSaveDialog Styles */
+
+.info-save-dialog .ant-form-item-label > label {
+  width: 100%;
+  height: auto;
+}
+
+.info-save-dialog .ant-form-item-optional {
+  white-space: nowrap;
+}
+
+.info-save-dialog .ant-form-item-label {
+  padding: 0;
+}

@@ -1,0 +1,48 @@
+.audio-wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--bar-gap);
+}
+
+.audio-wave__bar {
+  width: var(--bar-width);
+  height: var(--min-height);
+  background-color: var(--bar-color);
+  border-radius: 2px;
+  transition: height 0.15s ease-out;
+}
+
+/* Active state - animated bars */
+.audio-wave--active .audio-wave__bar {
+  animation: audio-wave-pulse 0.6s ease-in-out infinite;
+}
+
+.audio-wave--active .audio-wave__bar:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.audio-wave--active .audio-wave__bar:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.audio-wave--active .audio-wave__bar:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.audio-wave--active .audio-wave__bar:nth-child(4) {
+  animation-delay: 0.1s;
+}
+
+.audio-wave--active .audio-wave__bar:nth-child(5) {
+  animation-delay: 0s;
+}
+
+@keyframes audio-wave-pulse {
+  0%, 100% {
+    height: var(--min-height);
+  }
+  50% {
+    height: var(--max-height);
+  }
+}

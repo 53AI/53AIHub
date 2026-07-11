@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ToolCard > 快照测试 > 排序模式快照 1`] = `
+<div
+  aria-label="Test Tool"
+  class="h-[72px] bg-white overflow-hidden group relative border rounded p-4 flex items-center gap-2 cursor-pointer"
+  data-testid="tool-card-test-1"
+  role="button"
+>
+  <img
+    alt="Test Tool"
+    class="w-10 h-10 object-cover rounded-full overflow-hidden"
+    data-testid="tool-logo"
+    src="https://example.com/logo.png"
+  />
+  <div
+    class="flex-1 w-0"
+  >
+    <div
+      class="text-sm font-semibold line-clamp-1"
+      data-testid="tool-name"
+    >
+      Test Tool
+    </div>
+    <div
+      class="text-sm text-opacity-60 line-clamp-1"
+      data-testid="tool-desc"
+    >
+      Test Description
+    </div>
+  </div>
+  <div
+    class="cursor-move"
+    data-testid="drag-handle"
+  >
+    拖拽
+  </div>
+</div>
+`;
+
+exports[`ToolCard > 快照测试 > 非排序模式快照 1`] = `
+<div
+  aria-label="Test Tool"
+  class="h-[72px] bg-white overflow-hidden group relative border rounded p-4 flex items-center gap-2 cursor-pointer"
+  data-testid="tool-card-test-1"
+  role="button"
+>
+  <div
+    class="invisible group-hover:visible w-full h-full z-[2] absolute top-0 left-0 bg-black/40 flex items-center justify-center gap-1.5"
+  >
+    <button
+      data-testid="visit-btn"
+    >
+      访问
+    </button>
+    <button
+      data-testid="edit-btn"
+      type="primary"
+    >
+      编辑
+    </button>
+    <button
+      data-testid="delete-btn"
+    >
+      删除
+    </button>
+  </div>
+  <img
+    alt="Test Tool"
+    class="w-10 h-10 object-cover rounded-full overflow-hidden"
+    data-testid="tool-logo"
+    src="https://example.com/logo.png"
+  />
+  <div
+    class="flex-1 w-0"
+  >
+    <div
+      class="text-sm font-semibold line-clamp-1"
+      data-testid="tool-name"
+    >
+      Test Tool
+    </div>
+    <div
+      class="text-sm text-opacity-60 line-clamp-1"
+      data-testid="tool-desc"
+    >
+      Test Description
+    </div>
+  </div>
+</div>
+`;

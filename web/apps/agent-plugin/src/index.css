@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Drawer 关闭按钮移到右边 */
+.ant-drawer-header .ant-drawer-header-title {
+  flex-direction: row-reverse;
+}
+.ant-drawer-header .ant-drawer-title {
+  flex: 1;
+  overflow: hidden;
+}
+.ant-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Embed mode - 登录弹窗左右边距 */
+body.embed-mode .login-page {
+  padding: 0 16px;
+}
+
+body.embed-mode .login-container {
+  margin: auto;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}

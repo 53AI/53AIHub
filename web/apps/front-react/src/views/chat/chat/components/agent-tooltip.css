@@ -1,0 +1,33 @@
+/* Agent Tooltip Popover Styles */
+.agent-tooltip-popover {
+  padding: 0 !important;
+}
+
+.agent-tooltip-popover.agent-tooltip-popover--mobile {
+  max-width: 100% !important;
+  width: 100%;
+  margin: 0 !important;
+  transform: none !important;
+  left: 0 !important;
+  right: 0 !important;
+}
+
+.agent-tooltip-popover.agent-tooltip-popover--mobile .ant-tooltip-arrow {
+  display: none;
+}
+
+.agent-tooltip-popover.agent-tooltip-popover--mobile .ant-tooltip-inner {
+  width: 100%;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -2px 12px 0 rgb(0 0 0 / 10%);
+}
+
+.agent-tooltip-popover .ant-tooltip-inner {
+  background: white;
+  color: #1D1E1F;
+  box-shadow: 0 4px 12px 0 rgb(0 0 0 / 10%);
+}
+
+.agent-tooltip-popover .ant-tooltip-arrow-content {
+  background: white;
+}

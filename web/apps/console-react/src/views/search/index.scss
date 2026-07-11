@@ -1,0 +1,19 @@
+// 对应 Vue 的 scoped CSS
+// :deep(.el-tabs__nav-wrap) { overflow: inherit; }
+// :deep(.el-tabs__nav-wrap:after) { left: -24px; right: -24px; height: 1px; width: inherit; }
+// :deep(.el-tabs__nav-scroll) { overflow: inherit; }
+
+.ant-tabs-nav-wrap {
+  overflow: visible;
+}
+
+.ant-tabs-nav-wrap::after {
+  left: -24px;
+  right: -24px;
+  height: 1px;
+  width: auto;
+}
+
+.ant-tabs-nav-scroll {
+  overflow: visible;
+}

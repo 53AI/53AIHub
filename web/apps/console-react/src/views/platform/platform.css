@@ -1,0 +1,38 @@
+/* Model Group Collapse Styles */
+.model-group-collapse .ant-collapse-item {
+  border-bottom: 1px solid #f7f8fa;
+}
+
+.model-group-collapse .ant-collapse-item:last-child {
+  border-bottom: none;
+}
+
+.model-group-collapse .ant-collapse-header,
+.model-group-collapse .ant-collapse-content {
+  border-bottom: none;
+}
+
+.model-group-collapse .ant-collapse-content {
+  padding-bottom: 0;
+}
+
+/* Collapse Arrow Style - matching Vue ::v-deep(.el-collapse-item__arrow) */
+.model-group-collapse .ant-collapse-arrow {
+  margin-left: 6px;
+}
+
+/* Table Header Cell Styles */
+.platform-table .ant-table-thead > tr > th {
+  background-color: #F6F7F8 !important;
+  border: none !important;
+}
+
+/* 操作列表头左对齐 */
+.platform-table .ant-table-thead > tr > th:last-child {
+  text-align: left !important;
+}
+
+/* ProviderAuthorizeDialog Styles */
+.ant-modal-content {
+  padding: 24px;
+}

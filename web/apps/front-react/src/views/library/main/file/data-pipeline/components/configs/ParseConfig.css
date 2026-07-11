@@ -1,0 +1,31 @@
+.parse-config-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.parse-config-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.parse-config-form .ant-input,
+.parse-config-form .ant-select-selector,
+.parse-config-form .ant-input-number {
+  border-radius: 8px;
+}
+
+.parse-config-form .ant-select-selector {
+  background-color: white !important;
+  padding: 8px 12px;
+  box-shadow: 0 0 0 1px #e5e7eb inset !important;
+}
+
+.parse-config-form .ant-select-focused .ant-select-selector {
+  box-shadow: 0 0 0 1px #2563eb inset, 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+}
+
+.parse-config-form .ant-form-item-label > label {
+  font-size: 10px;
+  font-weight: bold;
+  color: #9ca3af;
+  text-transform: uppercase;
+}

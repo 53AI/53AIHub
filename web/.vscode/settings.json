@@ -1,0 +1,53 @@
+{
+  // 编辑器基础设置
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": false,
+  "editor.formatOnType": false,
+  "editor.codeActionsOnSave": {
+    "source.removeUnusedImports": "explicit",
+    "source.fixAll.biome": "explicit"
+  },
+  // 默认格式化器设置
+  "editor.defaultFormatter": "biomejs.biome",
+  // 针对不同文件类型的格式化器设置
+  "[vue]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[css]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  "[scss]": {
+    "editor.defaultFormatter": "biomejs.biome"
+  },
+  // Biome 设置
+  "biome.lintOnSave": true,
+  "biome.formatOnSave": true,
+  // 禁用其他可能干扰的格式化器
+  "html.format.enable": false,
+  "vue.format.enable": false,
+  "typescript.format.enable": false,
+  "javascript.format.enable": false,
+  "css.format.enable": false,
+  "scss.format.enable": false,
+  "i18n-ally.localesPaths": [
+    "apps/console/src/locales",
+    "apps/front/src/locales"
+  ],
+  "i18n-ally.displayLanguage": "zh-cn",
+  "i18n-ally.keystyle": "nested",
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
+}

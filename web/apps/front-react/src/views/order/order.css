@@ -1,0 +1,47 @@
+/* Order View Styles */
+
+.action-buttons {
+  visibility: hidden;
+}
+
+tr:hover .action-buttons {
+  visibility: visible;
+}
+
+/* Table header styling */
+.order-table .ant-table-thead > tr > th {
+  background-color: #F6F7F8 !important;
+  border: none !important;
+}
+
+.order-table .ant-table-thead > tr {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Row hover effect */
+.order-table .ant-table-tbody > tr:hover > td {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+/* Group class for cursor pointer */
+.group {
+  cursor: pointer;
+}
+
+/* Text colors */
+.text-primary {
+  color: #303133;
+}
+
+.text-regular {
+  color: #606266;
+}
+
+.text-secondary {
+  color: #606266;
+}
+
+.text-placeholder {
+  color: #a8abb2;
+}

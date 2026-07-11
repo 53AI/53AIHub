@@ -1,0 +1,62 @@
+.version-modal-content {
+  display: flex;
+}
+
+.version-modal-main {
+  flex: 1;
+}
+
+.version-modal-aside {
+  flex: none;
+  width: 270px;
+}
+
+.version-steps {
+  display: flex;
+}
+
+.version-title {
+  font-size: 1.5rem;
+  color: #000;
+}
+
+.version-options {
+  display: flex;
+  gap: 22px;
+}
+
+.version-option {
+  width: 280px;
+  height: 130px;
+  border: 1px solid #e8e8e8;
+  border-radius: 0.375rem;
+  padding: 1.25rem;
+  background: #f5f6fa;
+}
+
+.version-option-label {
+  font-size: 0.875rem;
+  color: #000;
+}
+
+.version-option-price {
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  color: #333;
+}
+
+.price-currency {
+  font-size: 1.25rem;
+  color: #000;
+}
+
+.price-amount {
+  font-size: 2rem;
+  color: #000;
+}
+
+.version-option-original {
+  font-size: 0.875rem;
+  color: #333;
+  margin-top: 0.5rem;
+}

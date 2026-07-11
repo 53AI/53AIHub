@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-cmn-Hans">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, viewport-fit=cover" />
+	<link rel="apple-touch-icon" href="/favicon.ico">
+	<title>53AI Hub</title>
+</head>
+
+<body>
+	<script id="ueditor-container" name="content" type="text/plain"></script>
+	<script type="text/javascript">
+		// 动态检测 UEditor 资源路径
+		// 生产环境: /console/UEditor/
+		// 开发环境: /UEditor/
+		function getUEditorBasePath() {
+			const prodPath = '/console/UEditor/';
+			const devPath = '/UEditor/';
+
+			// 尝试检测生产路径是否存在
+			if (location.origin.includes('53ai.com') ||
+				location.origin.includes('ddnsto.com') ||
+				location.pathname.startsWith('/console/')) {
+				return prodPath;
+			}
+			return devPath;
+		}
+
+		var basePath = getUEditorBasePath();
+		var configScript = document.createElement('script')
+		configScript.src = basePath + 'ueditor.config.js'
+		configScript.id = 'ueditor-config'
+		configScript.onload = () => {
+			var allScript = document.createElement('script')
+			allScript.src = basePath + 'ueditor.all.min.js'
+			allScript.id = 'ueditor-all'
+			allScript.onload = () => {
+				window.UEDITOR_HOME_URL = basePath
+				window.ueInstance = UE.getEditor('ueditor-container', {
+					autoHeightEnabled: false,
+					elementPathEnabled: false,
+					focus: true,
+					initialFrameWidth: '100%',
+					initialFrameHeight: '100%',
+					maximumWords: 1000000,
+					allowDivTransToP: false,
+					autoClearEmptyNode: false
+				});
+				window.ueInstance.ready(function () {
+					if (window.parent) {
+						window.parent.postMessage({ action: 'ueditor-ready' }, '*')
+					}
+				})
+				// Listen for content changes and notify parent
+				window.ueInstance.addListener('contentChange', function() {
+					if (window.parent) {
+						window.parent.postMessage({ action: 'ueditor-contentChange' }, '*')
+					}
+				})
+			}
+			document.body.appendChild(allScript)
+		}
+		configScript.onerror = () => {
+			// 如果生产路径加载失败，尝试开发路径
+			console.warn('Failed to load from production path, trying dev path');
+			var devConfigScript = document.createElement('script')
+			devConfigScript.src = '/UEditor/ueditor.config.js'
+			devConfigScript.id = 'ueditor-config-dev'
+			devConfigScript.onload = () => {
+				var devAllScript = document.createElement('script')
+				devAllScript.src = '/UEditor/ueditor.all.min.js'
+				devAllScript.id = 'ueditor-all-dev'
+				devAllScript.onload = () => {
+					window.UEDITOR_HOME_URL = '/UEditor/'
+					window.ueInstance = UE.getEditor('ueditor-container', {
+						autoHeightEnabled: false,
+						elementPathEnabled: false,
+						focus: true,
+						initialFrameWidth: '100%',
+						initialFrameHeight: '100%',
+						maximumWords: 1000000,
+						allowDivTransToP: false,
+						autoClearEmptyNode: false
+					});
+					window.ueInstance.ready(function () {
+						if (window.parent) {
+							window.parent.postMessage({ action: 'ueditor-ready' }, '*')
+						}
+					})
+					window.ueInstance.addListener('contentChange', function() {
+						if (window.parent) {
+							window.parent.postMessage({ action: 'ueditor-contentChange' }, '*')
+						}
+					})
+				}
+				document.body.appendChild(devAllScript)
+			}
+			document.body.appendChild(devConfigScript)
+		}
+		document.body.appendChild(configScript)
+
+		window.addEventListener('message', (e) => {
+			const data = e.data || {}
+			const action = data.action || ''
+			const value = data.value || ''
+			if (action === 'getHtml') {
+				window.parent.postMessage({ action: 'getHtml', value: window.ueInstance.getContent() }, '*')
+			}
+			if (action === 'getRawHtml') {
+				// 直接获取编辑器 body 的 innerHTML，不经过过滤规则
+				window.parent.postMessage({ action: 'getRawHtml', value: window.ueInstance.body.innerHTML }, '*')
+			}
+			if (action === 'setValue') {
+				window.ueInstance.setContent(value)
+			}
+		})
+	</script>
+	<style>
+		html, body {
+			width: 100%;
+			height: 100%;
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+			overflow: hidden;
+		}
+		#ueditor-container {
+			width: 100%;
+			height: 100%;
+		}
+		#ueditor-container .edui-editor {
+			width: 100%;
+			height: 100%;
+			box-sizing: border-box;
+			display: flex;
+			flex-direction: column;
+		}
+		#ueditor-container .edui-editor-iframeholder {
+			flex: 1;
+			height: 0 !important;
+			/* overflow: auto !important; */
+		}
+		#ueditor-container .edui-editor-iframeholder iframe {
+			height: 100% !important;
+		}
+	</style>
+</body>
+
+</html>

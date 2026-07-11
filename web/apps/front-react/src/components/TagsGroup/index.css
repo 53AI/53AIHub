@@ -1,0 +1,48 @@
+.tags-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tag-item {
+  border: 1px solid #E7E9ED;
+  border-radius: 2px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px 4px 12px;
+  font-size: 12px;
+  color: rgba(29, 30, 31, 0.8);
+  word-break: break-all;
+}
+
+.tag-text {
+  flex: 1;
+}
+
+.tag-close {
+  margin-left: 8px;
+  font-size: 14px;
+  color: #768097;
+  cursor: pointer;
+}
+
+.tag-close:hover {
+  color: #3664EF;
+}
+
+.tag-add-btn {
+  border: 1px dashed #E7E9ED;
+  border-radius: 2px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(24, 43, 80, 0.8);
+}
+
+.tag-add-btn:hover {
+  color: #4265F3;
+}

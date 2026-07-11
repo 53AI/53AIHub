@@ -1,0 +1,23 @@
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.summary-textarea textarea {
+  padding: 0;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.summary-textarea textarea:focus {
+  border: none !important;
+  box-shadow: none !important;
+}

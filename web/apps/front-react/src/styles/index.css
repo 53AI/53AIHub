@@ -1,0 +1,99 @@
+@import './variables.css';
+@import './custom.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+    'Noto Color Emoji';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin-bottom: 0;
+}
+p {
+  margin-bottom: 0;
+}
+a:-webkit-any-link {
+  text-decoration: none;
+}
+
+
+.ant-empty-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+.ant-slider .ant-slider-track {
+  background-color: var(--ant-blue);
+}
+/* antd TextArea showCount 移入输入框内部 */
+.ant-input-textarea-show-count {
+  position: relative;
+}
+.ant-input-textarea-show-count .ant-input-data-count {
+  position: absolute;
+  font-size: 12px;
+  line-height: 14px;
+  bottom: 5px;
+  right: 6px;
+  padding: 0 4px;
+  color: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  background: #fff;
+}
+
+/* Drawer 关闭按钮移到右边 */
+.ant-drawer-header .ant-drawer-header-title {
+  flex-direction: row-reverse;
+}
+.ant-drawer-header .ant-drawer-title {
+  flex: 1;
+  overflow: hidden;
+}
+.ant-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ant-tree-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ant-tree-switcher::before {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%);
+}
+
+.css-var-root.ant-modal-css-var {
+  --ant-modal-content-padding: 24px;
+  --ant-modal-title-font-size: 18px;
+  --ant-modal-title-line-height: 24px;
+}

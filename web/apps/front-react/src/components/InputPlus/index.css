@@ -1,0 +1,31 @@
+.input-plus {
+  display: flex;
+  align-items: center;
+}
+
+.input-plus-icon {
+  margin-left: 8px;
+  font-size: 14px;
+}
+
+.input-plus-icon.disabled {
+  color: #aaa;
+  cursor: not-allowed;
+}
+
+.input-plus-icon.clickable {
+  color: #1B2B51;
+  cursor: pointer;
+}
+
+.input-plus-icon.clickable:hover {
+  color: #3664EF;
+}
+
+.input-plus-icon.cancel:hover {
+  color: #F55250;
+}
+
+.reference-btn {
+  cursor: pointer;
+}

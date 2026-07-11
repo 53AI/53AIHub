@@ -1,0 +1,82 @@
+/* Banner styles */
+.banner-item {
+  height: 380px;
+}
+
+.banner-item .ant-carousel {
+  width: 100%;
+}
+
+/* Carousel container height */
+.ant-carousel .slick-list {
+  height: 380px;
+}
+
+/* Arrow styling - make visible on light backgrounds */
+.ant-carousel .slick-prev,
+.ant-carousel .slick-next {
+  color: rgba(0, 0, 0, 0.45);
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.ant-carousel .slick-prev::after,
+.ant-carousel .slick-next::after {
+  left: 50%;
+  top: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  inset-inline-start: none;
+}
+
+.ant-carousel .slick-prev:hover,
+.ant-carousel .slick-next:hover,
+.ant-carousel .slick-prev:focus,
+.ant-carousel .slick-next:focus {
+  color: rgba(0, 0, 0, 0.65);
+  background: rgba(255, 255, 255, 0.95);
+  opacity: 1;
+}
+
+/* Dots styling */
+.ant-carousel .slick-dots {
+  bottom: 12px;
+
+}
+
+.ant-carousel .slick-dots li button {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  opacity: 1;
+}
+
+.ant-carousel .slick-dots li.slick-active button {
+  background: #1890ff;
+  width: 24px;
+}
+
+@media (max-width: 1024px) {
+  .banner-item {
+    height: 385px;
+  }
+
+  .ant-carousel .slick-list {
+    height: 385px;
+  }
+}
+
+@media (max-width: 768px) {
+  .banner-item {
+    height: 300px;
+  }
+
+  .ant-carousel .slick-list {
+    height: 300px;
+  }
+}

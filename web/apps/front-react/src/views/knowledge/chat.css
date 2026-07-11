@@ -1,0 +1,56 @@
+.knowledge-chat {
+  /* Flex center utility */
+}
+
+.knowledge-chat .flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sender input styles */
+.knowledge-chat .sender-wrapper {
+  position: relative;
+}
+
+/* Model selector styles */
+.knowledge-chat .model-selector {
+  min-width: 120px;
+}
+
+/* Library selector styles */
+.knowledge-chat .library-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Suggested questions grid */
+.knowledge-chat .suggested-questions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.knowledge-chat .suggested-question-item {
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+
+.knowledge-chat .suggested-question-item:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.knowledge-chat .suggested-question-item span {
+  font-size: 14px;
+  color: #1d1e1f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

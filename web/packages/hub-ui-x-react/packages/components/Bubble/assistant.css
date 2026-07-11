@@ -1,0 +1,248 @@
+@keyframes chart-spin {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+.x-assistant-bubble {
+  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.x-assistant-bubble__content {
+  width: 100%;
+}
+
+.x-assistant-bubble__message {
+  font-size: 16px;
+  color: var(--hubx-color-primary);
+  border-radius: 12px;
+  transition: all 0.3s ease;
+}
+
+.x-assistant-bubble__message--welcome {
+  background-color: #F4F5F7;
+  padding: 5px 16px;
+  display: inline-block;
+  word-break: break-all;
+}
+
+.x-assistant-bubble__reasoning {
+  margin-bottom: 8px;
+  background-color: white;
+  border-radius: 8px;
+  padding: 6px 16px;
+  border: 1px solid #E6E8EB;
+  display: block;
+  min-width: 200px;
+  max-width: 100%;
+}
+
+.x-assistant-bubble__suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.x-assistant-bubble__suggestions-title {
+  font-size: 14px;
+  color: #939499;
+}
+
+.x-assistant-bubble__suggestion {
+  padding: 5px 16px;
+  background-color: #fff;
+  border-radius: 6px;
+  border: 1px solid #E6E8EB;
+  font-size: 14px;
+  color: #1D1E1F;
+  word-break: break-all;
+  display: inline-block;
+  width: fit-content;
+  cursor: pointer;
+}
+.x-assistant-bubble__suggestion:hover {
+  background-color: #F4F5F7;
+}
+
+.x-assistant-bubble__reasoning-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  color: #182b50;
+  cursor: pointer;
+}
+
+.x-assistant-bubble__reasoning-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.x-assistant-bubble__reasoning-title {
+  flex: 1;
+  font-size: 14px;
+}
+
+.x-assistant-bubble__reasoning-arrow {
+  font-size: 14px;
+  transition: transform 0.3s ease;
+  transform: rotate(-90deg);
+}
+
+.x-assistant-bubble__reasoning-arrow--expanded {
+  transform: rotate(0deg);
+}
+
+.x-assistant-bubble__reasoning-content-wrapper {
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.x-assistant-bubble__reasoning-content {
+  padding: 8px 0;
+  font-size: 14px;
+  color: #1D1E1F;
+  opacity: 0.6;
+  transition: all 0.3s ease;
+  overflow: hidden;
+  --hubx-font-size-base: 14px;
+}
+
+/* 添加过渡动画效果 */
+.slide-fade-enter-active,
+.slide-fade-leave-active {
+  transition: all 0.3s ease;
+  max-height: 500px;
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.x-assistant-bubble__markdown {
+  word-break: break-words;
+  animation: fade-in 0.5s ease-in-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.x-assistant-bubble__menu {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.x-assistant-bubble__menu--hidden {
+  visibility: hidden;
+}
+
+.x-assistant-bubble:hover .x-assistant-bubble__menu--hidden {
+  visibility: visible;
+}
+
+.x-assistant-bubble__loading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  position: relative;
+  height: 24px;
+  width: 60px;
+}
+
+.x-assistant-bubble__loading-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--hubx-color-primary-8);
+  position: absolute;
+  animation: moveDot 2.5s infinite;
+}
+
+.x-assistant-bubble__loading-dot--1 {
+  animation-delay: 0s;
+}
+
+.x-assistant-bubble__loading-dot--2 {
+  animation-delay: 0.2s;
+}
+
+.x-assistant-bubble__loading-dot--3 {
+  animation-delay: 0.4s;
+}
+
+@keyframes moveDot {
+  0% {
+    left: 0;
+    opacity: 0.9;
+    transform: scale(1);
+    background-color: var(--hubx-color-primary);
+  }
+  40% {
+    left: calc(100% - 8px);
+    opacity: 0.7;
+    transform: scale(0.9);
+    background-color: var(--hubx-color-primary);
+  }
+  50% {
+    left: calc(100% - 8px);
+    opacity: 0.5;
+    transform: scale(0.8);
+    background-color: var(--hubx-color-primary);
+  }
+  90% {
+    left: 0;
+    opacity: 0.3;
+    transform: scale(0.9);
+    background-color: var(--hubx-color-primary);
+  }
+  100% {
+    left: 0;
+    opacity: 0.9;
+    transform: scale(1);
+    background-color: var(--hubx-color-primary);
+  }
+}
+
+.markdown-body {
+  background-color: transparent;
+}
+
+@media (max-width: 768px) {
+  .x-assistant-bubble__content {
+    max-width: 100%;
+  }
+
+}
+
+.x-assistant-bubble__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.x-assistant-bubble__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

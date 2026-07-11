@@ -1,0 +1,2459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF文档查看</title>
+    <script src="../js/pdf.js/pdf.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background: #f3f4f6;
+        padding: 20px;
+      }
+
+      .viewer-container {
+        position: relative;
+      }
+
+      #pdf-viewer {
+        max-width: 1200px;
+        margin: 0 auto;
+        gap: 24px;
+      }
+
+      .page-slot {
+        position: relative;
+        width: 100%;
+        min-height: 480px;
+        overflow: hidden;
+      }
+
+      .slot-placeholder,
+      .slot-loader,
+      .slot-error {
+        font-size: 16px;
+        color: #444;
+        text-align: center;
+      }
+
+      .slot-placeholder {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 1px dashed #dee2e6;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+      }
+
+      .slot-placeholder:hover {
+        background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+        border-color: #adb5bd;
+      }
+
+      .slot-placeholder .page-number {
+        font-size: 18px;
+        font-weight: 600;
+        color: #495057;
+      }
+
+      .slot-placeholder .page-hint {
+        font-size: 12px;
+        color: #6c757d;
+      }
+
+      .slot-placeholder small {
+        display: block;
+        margin-top: 8px;
+        font-size: 12px;
+        color: #7b7b7b;
+      }
+
+      .slot-loader {
+        font-weight: 600;
+      }
+
+      .slot-error {
+        color: #c0392b;
+      }
+
+      .canvas-container {
+        position: relative;
+        --scale-factor: 1;
+        background: #fff;
+        margin: 0 auto;
+      }
+
+      .text-layer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        overflow: hidden;
+        opacity: 0.2;
+        line-height: 1;
+        z-index: 10; /* text-layer 需要在更上层以接收鼠标事件 */
+      }
+
+      .text-layer > span {
+        color: transparent;
+        position: absolute;
+        white-space: pre;
+        cursor: text;
+        transform-origin: 0% 0%;
+      }
+
+      /* 隐藏原生选中背景色，使用自定义高亮层 */
+      ::selection {
+        background: transparent;
+      }
+
+      .highlight-layer {
+        position: absolute;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none; /* 确保鼠标事件穿透 */
+      }
+
+      .auto-highlight-layer {
+        z-index: 5; /* Canvas 0 */
+      }
+
+      .manual-highlight-layer {
+        z-index: 6;
+      }
+
+      .highlight-rect {
+        position: absolute;
+        background-color: rgba(24, 144, 255, 0.2); /* 仿原图的淡蓝色背景 */
+        border-radius: 4px;
+        transition: all 0.1s ease;
+      }
+
+      .action-menu {
+        position: absolute;
+        z-index: 20;
+        background: white;
+        height: 36px;
+        border-radius: 8px;
+        box-shadow: 0px 4px 12px rgba(43, 44, 46, 0.16);
+        display: flex;
+        align-items: center;
+        padding: 0 5px;
+        gap: 2px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.15s ease;
+        border: 1px solid #eee;
+      }
+      .action-menu.visible {
+        pointer-events: auto;
+        opacity: 1;
+        animation: fadeIn 0.2s ease-out;
+      }
+
+      .action-menu button {
+        background: transparent;
+        border: none;
+        color: #1d1e1f;
+        height: 26px;
+        padding: 0 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: background 0.2s;
+        font-family: inherit;
+      }
+
+      /* 主菜单按钮（非下拉按钮）文字截断，最多显示4个字符 */
+      .action-menu button:not(.dropdown-toggle) {
+        overflow: hidden;
+      }
+
+      .action-menu button:not(.dropdown-toggle) .button-text {
+        display: inline-block;
+        vertical-align: middle;
+      }
+
+      .action-menu button:hover {
+        background: #f4f5f7;
+      }
+
+      .action-menu .icon {
+        width: 16px;
+        height: 16px;
+      }
+
+      .action-menu .dropdown-toggle {
+        position: relative;
+      }
+
+      .action-menu .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        background: white;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        min-width: 160px;
+        padding: 4px;
+        z-index: 21;
+        display: none;
+        border: 1px solid #eee;
+        max-height: 360px; /* 10个菜单项 * 32px + 8px padding = 328px，留一些余量 */
+        overflow-y: auto;
+        white-space: nowrap;
+      }
+
+      .action-menu .dropdown-menu.visible {
+        display: block;
+        animation: fadeIn 0.2s ease-out;
+      }
+
+      .action-menu .dropdown-menu button {
+        width: 100%;
+        justify-content: flex-start;
+        padding: 6px 12px;
+        height: auto;
+        min-height: 32px;
+        border-radius: 4px;
+        margin: 0;
+        white-space: nowrap;
+      }
+
+      .action-menu .dropdown-menu button:hover {
+        background: #f4f5f7;
+      }
+
+      /* 全局加载状态样式 */
+      .pdf-loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: #f3f4f6;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        transition: opacity 0.3s ease;
+      }
+
+      .pdf-loading-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .pdf-loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid #e5e7eb;
+        border-top-color: #3b82f6;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      .pdf-loading-text {
+        margin-top: 20px;
+        font-size: 16px;
+        color: #6b7280;
+        font-weight: 500;
+      }
+
+      .pdf-loading-progress {
+        margin-top: 12px;
+        font-size: 14px;
+        color: #9ca3af;
+      }
+
+      .pdf-loading-hint {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #9ca3af;
+        font-style: italic;
+      }
+
+      .pdf-loading-error {
+        max-width: 400px;
+        text-align: center;
+        padding: 24px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      }
+
+      .pdf-loading-error h3 {
+        color: #ef4444;
+        font-size: 18px;
+        margin-bottom: 12px;
+      }
+
+      .pdf-loading-error p {
+        color: #6b7280;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* 性能监控面板 */
+      .performance-monitor {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.85);
+        color: #fff;
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-family: "Courier New", monospace;
+        z-index: 9998;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        min-width: 200px;
+        backdrop-filter: blur(10px);
+      }
+
+      .performance-monitor .monitor-title {
+        font-weight: 600;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: #4ade80;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        padding-bottom: 6px;
+      }
+
+      .performance-monitor .monitor-item {
+        display: flex;
+        justify-content: space-between;
+        margin: 4px 0;
+        line-height: 1.5;
+      }
+
+      .performance-monitor .monitor-label {
+        color: #94a3b8;
+      }
+
+      .performance-monitor .monitor-value {
+        color: #fbbf24;
+        font-weight: 600;
+      }
+
+      .performance-monitor .monitor-value.good {
+        color: #4ade80;
+      }
+
+      .performance-monitor .monitor-value.warning {
+        color: #fb923c;
+      }
+
+      .performance-monitor .monitor-value.danger {
+        color: #f87171;
+      }
+
+      @media (max-width: 768px) {
+        .file-input {
+          margin-right: 0;
+          margin-bottom: 10px;
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 全局加载状态 -->
+    <div id="pdf-loading-overlay" class="pdf-loading-overlay">
+      <div class="pdf-loading-spinner"></div>
+      <div class="pdf-loading-text">正在加载 PDF 文档...</div>
+      <div class="pdf-loading-progress" id="pdf-loading-progress"></div>
+      <div class="pdf-loading-hint" id="pdf-loading-hint">
+        支持大文件流式加载
+      </div>
+    </div>
+
+    <div class="viewer-container">
+      <div id="pdf-viewer"></div>
+    </div>
+
+    <!-- 性能监控面板（仅在 debug 模式显示） -->
+    <div
+      id="performance-monitor"
+      class="performance-monitor"
+      style="display: none"
+    >
+      <div class="monitor-title">📊 虚拟列表监控</div>
+      <div class="monitor-item">
+        <span class="monitor-label">总页数:</span>
+        <span class="monitor-value" id="monitor-total">0</span>
+      </div>
+      <div class="monitor-item">
+        <span class="monitor-label">已渲染:</span>
+        <span class="monitor-value" id="monitor-rendered">0</span>
+      </div>
+      <div class="monitor-item">
+        <span class="monitor-label">当前页:</span>
+        <span class="monitor-value" id="monitor-current">1</span>
+      </div>
+      <div class="monitor-item">
+        <span class="monitor-label">内存使用:</span>
+        <span class="monitor-value" id="monitor-memory">--</span>
+      </div>
+    </div>
+
+    <script>
+      // 设置PDF.js worker路径
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "../js/pdf.js/pdf.worker.js";
+
+      // requestIdleCallback polyfill
+      window.requestIdleCallback =
+        window.requestIdleCallback ||
+        function (handler) {
+          const startTime = Date.now();
+          return setTimeout(function () {
+            handler({
+              didTimeout: false,
+              timeRemaining: function () {
+                return Math.max(0, 50.0 - (Date.now() - startTime));
+              },
+            });
+          }, 1);
+        };
+
+      const viewerContainer = document.querySelector(".viewer-container");
+      const pdfViewer = document.getElementById("pdf-viewer");
+      const loadingOverlay = document.getElementById("pdf-loading-overlay");
+      const loadingProgress = document.getElementById("pdf-loading-progress");
+      const loadingHint = document.getElementById("pdf-loading-hint");
+      const performanceMonitor = document.getElementById("performance-monitor");
+
+      // 检查是否启用调试模式
+      const isDebugMode = window.location.search.includes("debug=1");
+      if (isDebugMode && performanceMonitor) {
+        performanceMonitor.style.display = "block";
+      }
+
+      let pdfDoc = null;
+      let currentPage = 1;
+      const slotElements = [];
+      const renderedPages = new Map();
+      const renderLocks = new Set();
+      // 页面请求缓存，避免重复加载（参考 viewer.js 的 _pagesRequests）
+      const pageRequests = new Map();
+      const baseScale = 1.5;
+      let resizeTimeout = null;
+      let firstPageSize = null;
+      const selectionManagers = new Map();
+      let savedMenuData = []; // 保存外部菜单数据
+
+      // 虚拟列表配置
+      const virtualListConfig = {
+        renderMargin: 800, // 提前 800px 渲染
+        cleanupMargin: 1600, // 离开 1600px 后清理
+        maxRenderedPages: 10, // 最多同时渲染的页面数（-1 为不限制）
+      };
+
+      // 更新性能监控
+      const updatePerformanceMonitor = () => {
+        if (!isDebugMode || !performanceMonitor) return;
+
+        const totalPages = pdfDoc?.numPages || 0;
+        const renderedCount = renderedPages.size;
+
+        document.getElementById("monitor-total").textContent = totalPages;
+
+        const renderedEl = document.getElementById("monitor-rendered");
+        renderedEl.textContent = renderedCount;
+        renderedEl.className = "monitor-value";
+        if (renderedCount <= 5) {
+          renderedEl.classList.add("good");
+        } else if (renderedCount <= 10) {
+          renderedEl.classList.add("warning");
+        } else {
+          renderedEl.classList.add("danger");
+        }
+
+        document.getElementById("monitor-current").textContent = currentPage;
+
+        // 尝试获取内存使用情况
+        if (performance.memory) {
+          const usedMB = (
+            performance.memory.usedJSHeapSize /
+            1024 /
+            1024
+          ).toFixed(1);
+          document.getElementById("monitor-memory").textContent = `${usedMB}MB`;
+        }
+      };
+      const clearAutoHighlights = () => {
+        selectionManagers.forEach((manager) => manager.clear());
+      };
+
+      const hideActionMenu = () => {
+        // 清除手动划词菜单
+        const actionMenu = document.querySelector(".action-menu");
+        if (actionMenu) {
+          actionMenu.remove();
+        }
+        // 清除自动选择菜单
+        selectionManagers.forEach((manager) => {
+          if (manager.activeMenu) {
+            manager.activeMenu.remove();
+            manager.activeMenu = null;
+          }
+        });
+        isSelectionLocked = false; // 清除锁定状态
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage(
+            {
+              type: "selection-change",
+              text: "",
+            },
+            "*"
+          );
+        }
+      };
+
+      // 显示加载状态
+      const showLoadingOverlay = (text = "正在加载 PDF 文档...", hint = "") => {
+        if (loadingOverlay) {
+          loadingOverlay.querySelector(".pdf-loading-text").textContent = text;
+          loadingOverlay.classList.remove("hidden");
+          if (loadingProgress) {
+            loadingProgress.textContent = "";
+          }
+          if (loadingHint) {
+            loadingHint.textContent = hint || "支持大文件流式加载";
+            loadingHint.style.display = hint === null ? "none" : "block";
+          }
+        }
+      };
+
+      // 隐藏加载状态
+      const hideLoadingOverlay = () => {
+        if (loadingOverlay) {
+          loadingOverlay.classList.add("hidden");
+        }
+      };
+
+      // 更新加载进度
+      const updateLoadingProgress = (loaded, total) => {
+        if (loadingProgress && total > 0) {
+          const percent = Math.round((loaded / total) * 100);
+          loadingProgress.textContent = `${percent}%`;
+        }
+      };
+
+      // 显示加载错误
+      const showLoadingError = (message) => {
+        if (loadingOverlay) {
+          loadingOverlay.innerHTML = `
+            <div class="pdf-loading-error">
+              <h3>加载失败</h3>
+              <p>${message}</p>
+            </div>
+          `;
+          loadingOverlay.classList.remove("hidden");
+        }
+      };
+
+      /**
+       * 创建统一的操作菜单
+       * @param {Function} getText - 获取选中文本的函数
+       * @param {HTMLElement} container - 菜单容器元素
+       * @param {Object} rect - 定位信息 { left, top, width, height } 或 { left, right, top, bottom }，如果为null则使用固定定位
+       * @param {Object} options - 可选配置 { onMouseEnter, onMouseLeave, menuData }
+       * @param {Array} options.menuData - 外部菜单数据数组，每个项包含 { name, content, onClick }
+       * @returns {HTMLElement} 创建的菜单元素
+       */
+      const createActionMenu = (getText, container, rect, options = {}) => {
+        // 先清除所有现有菜单
+        hideActionMenu();
+
+        const menu = document.createElement("div");
+        menu.className = "action-menu";
+
+        // 使用传入的 menuData，如果没有则使用保存的 menuData
+        let menuData = (
+          options.menuData !== undefined ? options.menuData : savedMenuData
+        ).concat([]);
+        const copyBtn = {
+          logo: "./images/copy.png",
+          name: "复制",
+          onClick: () => {
+            const text = getText ? getText() : getSelectionText();
+            if (!text) return;
+
+            // 发送消息给父窗口（无论是外部菜单还是手动划词）
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(
+                {
+                  type: "menu-item-copy",
+                  text: text,
+                },
+                "*"
+              );
+            }
+          },
+        };
+        if (menuData.length > 4) {
+          menuData.splice(3, 0, copyBtn);
+        } else {
+          menuData.push(copyBtn);
+        }
+
+        // 创建菜单项按钮的辅助函数
+        // @param {Object} item - 菜单项数据
+        // @param {Boolean} isMainMenu - 是否为主菜单（主菜单需要文字截断）
+        const createMenuItemButton = (item, isMainMenu = false) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+
+          const displayText = item.name || item.content || "";
+          // 主菜单的文字需要包在span中以便CSS截断
+          if (isMainMenu) {
+            btn.innerHTML = `<img class="icon" src="${item.logo}"></img><span class="button-text">${displayText}</span>`;
+          } else {
+            btn.innerHTML = `<img class="icon" src="${item.logo}"></img>${displayText}`;
+          }
+
+          btn.onclick = () => {
+            // 可以在这里处理菜单项点击事件
+            if (item.onClick) {
+              item.onClick();
+            } else if (window.parent && window.parent !== window) {
+              window.parent.postMessage(
+                {
+                  type: "menu-item-click",
+                  data: item,
+                  text: getText ? getText() : getSelectionText(),
+                },
+                "*"
+              );
+            }
+            if (isSelectionLocked !== undefined) {
+              isSelectionLocked = false;
+            }
+            // 点击后关闭下拉菜单
+            const dropdownMenu = menu.querySelector(".dropdown-menu");
+            if (dropdownMenu) {
+              dropdownMenu.classList.remove("visible");
+            }
+            // 清除高亮、菜单、锁定状态
+            resetSelectionDrag();
+            clearAutoHighlights();
+            clearSelectionHighlights();
+            hideActionMenu();
+          };
+          return btn;
+        };
+
+        // 计算需要显示的菜单项数量（最多4个，不包括复制按钮）
+        const maxVisibleItems = 4;
+        const visibleItems = menuData.slice(0, maxVisibleItems);
+        const hiddenItems = menuData.slice(maxVisibleItems);
+
+        // 添加可见的菜单项
+        visibleItems.forEach((item) => {
+          const btn = createMenuItemButton(item, true);
+          menu.appendChild(btn);
+        });
+
+        // 如果有隐藏的菜单项，创建下拉按钮和下拉菜单
+        if (hiddenItems.length > 0) {
+          const dropdownToggle = document.createElement("button");
+          dropdownToggle.type = "button";
+          dropdownToggle.className = "dropdown-toggle";
+          dropdownToggle.innerHTML =
+            '<svg class="icon" viewBox="0 0 16 16" fill="currentColor" style="width: 16px; height: 16px; display: block;"><path d="M3 6l5 5 5-5z"/></svg>';
+          dropdownToggle.onclick = (e) => {
+            e.stopPropagation();
+            const dropdownMenu = dropdownToggle.querySelector(".dropdown-menu");
+            if (dropdownMenu) {
+              dropdownMenu.classList.toggle("visible");
+            }
+          };
+
+          const dropdownMenu = document.createElement("div");
+          dropdownMenu.className = "dropdown-menu";
+
+          // 添加隐藏的菜单项到下拉菜单
+          hiddenItems.forEach((item) => {
+            const btn = createMenuItemButton(item);
+            dropdownMenu.appendChild(btn);
+          });
+
+          dropdownToggle.appendChild(dropdownMenu);
+          menu.appendChild(dropdownToggle);
+
+          // 点击外部时关闭下拉菜单
+          let handleClickOutside = null;
+          dropdownToggle.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isVisible = dropdownMenu.classList.contains("visible");
+
+            // 如果之前有监听器，先移除
+            if (handleClickOutside) {
+              document.removeEventListener("click", handleClickOutside);
+            }
+
+            if (!isVisible) {
+              // 打开下拉菜单时，添加外部点击监听
+              handleClickOutside = (event) => {
+                if (!menu.contains(event.target)) {
+                  dropdownMenu.classList.remove("visible");
+                  document.removeEventListener("click", handleClickOutside);
+                  handleClickOutside = null;
+                }
+              };
+              setTimeout(() => {
+                document.addEventListener("click", handleClickOutside);
+              }, 0);
+            } else {
+              handleClickOutside = null;
+            }
+          });
+        }
+
+        // 绑定事件（仅当有rect时，即文本选择菜单）
+        if (rect) {
+          if (options.onMouseEnter) {
+            // 自动选择菜单：鼠标进入时锁定，离开时清除锁定
+            menu.addEventListener("mouseenter", () => {
+              isSelectionLocked = true;
+              options.onMouseEnter();
+            });
+          } else {
+            // 手动划词菜单：创建时即锁定
+            isSelectionLocked = true;
+          }
+
+          if (options.onMouseLeave) {
+            // 自动选择菜单：鼠标离开时清除锁定，允许继续自动选择
+            menu.addEventListener("mouseleave", () => {
+              isSelectionLocked = false;
+              options.onMouseLeave();
+            });
+          }
+
+          menu.addEventListener("click", (e) => {
+            if (e.target === menu || e.target.closest("button")) {
+              isSelectionLocked = false;
+            }
+          });
+        }
+
+        container.appendChild(menu);
+
+        // 定位菜单
+        requestAnimationFrame(() => {
+          if (rect) {
+            // 文本选择菜单：基于选中区域定位
+            const menuRect = menu.getBoundingClientRect();
+            const stageRect = container.getBoundingClientRect();
+            const viewerRect =
+              viewerContainer?.getBoundingClientRect?.() ?? stageRect;
+
+            // 计算定位信息
+            const rectLeft = rect.left || 0;
+            const rectTop = rect.top || 0;
+            const rectWidth = rect.width || rect.right - rect.left || 0;
+            const rectHeight = rect.height || rect.bottom - rect.top || 0;
+
+            const desiredLeft = rectLeft + rectWidth / 2 - menuRect.width / 2;
+            const absoluteLeft = stageRect.left + desiredLeft;
+            const leftMaxBound = Math.max(
+              viewerRect.left + 10,
+              viewerRect.right - menuRect.width - 10
+            );
+            const boundedAbsoluteLeft = Math.max(
+              viewerRect.left + 10,
+              Math.min(absoluteLeft, leftMaxBound)
+            );
+            menu.style.left = `${boundedAbsoluteLeft - stageRect.left}px`;
+
+            const belowTop = rectTop + rectHeight + 2;
+            const aboveTop = rectTop - menuRect.height - 6;
+            const belowAbsoluteTop = stageRect.top + belowTop;
+            const aboveAbsoluteTop = stageRect.top + aboveTop;
+            const viewportTop = viewerRect.top + 10;
+            const viewportBottom = viewerRect.bottom - menuRect.height - 10;
+
+            let finalAbsoluteTop = belowAbsoluteTop;
+            if (finalAbsoluteTop > document.documentElement.clientHeight) {
+              if (aboveAbsoluteTop >= viewportTop) {
+                finalAbsoluteTop = aboveAbsoluteTop;
+              } else {
+                finalAbsoluteTop = Math.max(
+                  viewportTop,
+                  Math.min(viewportBottom, finalAbsoluteTop)
+                );
+              }
+            }
+
+            const finalTop = Math.max(0, finalAbsoluteTop - stageRect.top);
+            menu.style.top = `${finalTop}px`;
+          } else {
+            // 外部菜单：固定定位在右上角
+            menu.style.position = "fixed";
+            menu.style.top = "20px";
+            menu.style.right = "20px";
+            menu.style.left = "auto";
+          }
+
+          // 调整下拉菜单的位置，确保不超出视口
+          const dropdownMenu = menu.querySelector(".dropdown-menu");
+          if (dropdownMenu) {
+            const adjustDropdownPosition = () => {
+              const menuRect = menu.getBoundingClientRect();
+              const stageRect = container.getBoundingClientRect();
+              const dropdownRect = dropdownMenu.getBoundingClientRect();
+              const viewportWidth =
+                window.innerWidth || document.documentElement.clientWidth;
+
+              // 如果下拉菜单超出右边界，调整位置
+              if (dropdownRect.right > viewportWidth - 10) {
+                const overflow = dropdownRect.right - viewportWidth + 10;
+                dropdownMenu.style.right = "0";
+                dropdownMenu.style.left = "auto";
+                dropdownMenu.style.transform = `translateX(-${overflow}px)`;
+              } else {
+                dropdownMenu.style.transform = "";
+              }
+              if (
+                stageRect.top + menuRect.top + dropdownRect.height >
+                document.documentElement.clientHeight
+              ) {
+                dropdownMenu.style.top = "auto";
+                dropdownMenu.style.bottom = menuRect.height - 2 + "px";
+              }
+            };
+
+            // 监听下拉菜单显示时调整位置
+            const observer = new MutationObserver(() => {
+              if (dropdownMenu.classList.contains("visible")) {
+                requestAnimationFrame(adjustDropdownPosition);
+              }
+            });
+            observer.observe(dropdownMenu, {
+              attributes: true,
+              attributeFilter: ["class"],
+            });
+          }
+
+          menu.classList.add("visible");
+        });
+
+        return menu;
+      };
+
+      const showActionMenu = (selectionBounds) => {
+        const container = document.querySelector(
+          `[data-page-number="${selectionPageNumber}"] .canvas-container`
+        );
+        if (!container) return;
+
+        // 计算边界
+        const startX = Math.min(...selectionBounds.map((item) => item.left));
+        const startY = Math.min(...selectionBounds.map((item) => item.top));
+        const endX = Math.max(...selectionBounds.map((item) => item.right));
+        const endY = Math.max(...selectionBounds.map((item) => item.bottom));
+
+        const rect = {
+          left: startX,
+          top: startY,
+          right: endX,
+          bottom: endY,
+        };
+
+        createActionMenu(getSelectionText, container, rect);
+      };
+
+      const getSelectionText = () => {
+        const selection = window.getSelection();
+        return selection?.toString();
+      };
+
+      class TextSelectionManager {
+        constructor(textLayer, highlightLayer, container, viewerContainer) {
+          this.textLayer = textLayer;
+          this.highlightLayer = highlightLayer;
+          this.container = container;
+          this.viewerContainer = viewerContainer || document.documentElement;
+          this.blocks = [];
+          this.spanToBlockMap = new Map();
+          this.analysisScheduled = false;
+          this.activeBlock = null;
+          this.activeMenu = null;
+          this.menuCloseTimer = null;
+
+          this.handleMouseOver = this.handleMouseOver.bind(this);
+          this.handleContainerMouseLeave = (e) => {
+            if (
+              e.relatedTarget &&
+              !this.activeMenu?.contains(e.relatedTarget)
+            ) {
+              this.scheduleClear();
+            }
+          };
+
+          this.init();
+        }
+
+        init() {
+          this.bindEvents();
+          this.scheduleStructureAnalysis();
+        }
+
+        scheduleStructureAnalysis() {
+          if (this.analysisScheduled) return;
+          this.analysisScheduled = true;
+          const runAnalysis = () => {
+            this.analysisScheduled = false;
+            this.analyzeStructure(true);
+          };
+
+          const readyPromise = document.fonts?.ready;
+          if (readyPromise) {
+            readyPromise.then(runAnalysis).catch(runAnalysis);
+            return;
+          }
+          requestAnimationFrame(runAnalysis);
+        }
+
+        resetStructureState() {
+          this.blocks = [];
+          this.spanToBlockMap.clear();
+        }
+
+        isListItemText(lineText) {
+          return /^[\u2022\u25E6\u2023\u2219\u25AA\u25AB\-\*]|^(\d{1,2}[\.\、\)])|^(\([0-9]{1,2}\))|^（\d{1,2}）|^[a-z]\./.test(
+            lineText
+          );
+        }
+
+        /**
+         * 判断两行之间是否是段落分隔
+         */
+        isParagraphBreak(prevLine, currentLine) {
+          if (
+            !prevLine ||
+            !currentLine ||
+            !prevLine.length ||
+            !currentLine.length
+          ) {
+            return true; // 第一行或空行，开始新段落
+          }
+
+          const prevLineFirstSpan = prevLine[0];
+          const prevLineLastSpan = prevLine[prevLine.length - 1];
+          const currentLineFirstSpan = currentLine[0];
+
+          if (!prevLineLastSpan || !currentLineFirstSpan) {
+            return true;
+          }
+
+          // 策略1：检查首行缩进
+          const leftDiff = prevLineFirstSpan.left - currentLineFirstSpan.left;
+          if (leftDiff > prevLineLastSpan.fontSize * 2.5 && leftDiff > 0) {
+            return true;
+          }
+          if (leftDiff < -prevLineLastSpan.fontSize * 1.5 && leftDiff < 0) {
+            return true;
+          }
+
+          // 策略2：检查垂直间距
+          const verticalGap =
+            currentLineFirstSpan.top - prevLineLastSpan.bottom;
+          const avgLineHeight =
+            (prevLineLastSpan.height + currentLineFirstSpan.height) / 2;
+
+          if (verticalGap < 0) {
+            return true;
+          }
+          // 如果垂直间距大于行高的1.5倍，认为是段落分隔
+          if (verticalGap > avgLineHeight / 2 && avgLineHeight > 0) {
+            return true;
+          }
+
+          // 策略3：检查是否是列表项
+          if (
+            this.isListItemText(prevLineFirstSpan.textContent) &&
+            this.isListItemText(currentLineFirstSpan.textContent)
+          ) {
+            return true;
+          }
+
+          return false;
+        }
+
+        /**
+         * 识别段落：将多行合并为段落
+         */
+        identifyParagraphs(lines) {
+          if (!lines.length) return [];
+
+          const paragraphs = [];
+          let currentParagraph = {
+            id: 0,
+            lines: [lines[0]],
+            blocks: [],
+          };
+
+          for (let i = 1; i < lines.length; i++) {
+            const prevLine = lines[i - 1];
+            const currentLine = lines[i];
+
+            // 判断是否段落分隔（第一行时prevLine为null，isParagraphBreak会返回true）
+            if (this.isParagraphBreak(prevLine, currentLine)) {
+              // 保存当前段落
+              if (currentParagraph.lines.length > 0) {
+                paragraphs.push(currentParagraph);
+              }
+              // 开始新段落
+              currentParagraph = {
+                id: paragraphs.length,
+                lines: [currentLine],
+                blocks: [],
+              };
+            } else {
+              // 继续当前段落
+              currentParagraph.lines.push(currentLine);
+            }
+          }
+
+          // 保存最后一个段落
+          if (currentParagraph.lines.length > 0) {
+            paragraphs.push(currentParagraph);
+          }
+
+          return paragraphs;
+        }
+
+        analyzeStructure(force = false) {
+          if (!force && this.blocks.length) return;
+          this.resetStructureState();
+          const spans = Array.from(this.textLayer.querySelectorAll("span"));
+          if (!spans.length) return;
+
+          // 简化：只收集必要信息，不需要复杂的排序
+          // 按照 DOM 顺序处理，行识别只基于 <br> 标签判断
+          const spanRects = spans.map((span) => {
+            const rect = span.getBoundingClientRect();
+            const hasBrAfter = span.nextSibling?.nodeName === "BR";
+            return {
+              element: span,
+              left: rect.left,
+              right: rect.right,
+              width: rect.width,
+              top: rect.top,
+              bottom: rect.bottom,
+              height: rect.height,
+              hasBrAfter,
+              fontSize: parseFloat(window.getComputedStyle(span).fontSize),
+              textContent: span.textContent,
+            };
+          });
+
+          const lines = [];
+          if (spanRects.length) {
+            let currentLine = [spanRects[0]];
+            for (let i = 1; i < spanRects.length; i++) {
+              const prev = spanRects[i - 1];
+              const curr = spanRects[i];
+
+              // 简单规则：如果前一个 span 后有 <br>，开始新行
+              // 两个 <br> 之间的内容就是一行，不需要其他复杂逻辑
+              if (prev.hasBrAfter) {
+                lines.push(currentLine);
+                currentLine = [curr];
+              } else {
+                // 没有 <br>，继续当前行
+                currentLine.push(curr);
+              }
+            }
+            lines.push(currentLine);
+          }
+
+          // 段落识别：将多行合并为段落
+          const paragraphs = this.identifyParagraphs(lines);
+
+          // 为每个段落创建blocks
+          paragraphs.forEach((paragraph) => {
+            paragraph.lines.forEach((lineSpans) => {
+              if (!lineSpans.length) return;
+              lineSpans.sort((a, b) => a.left - b.left);
+
+              const segment = lineSpans;
+              const segLeft = segment[0].left;
+              const lastSpan = segment[segment.length - 1];
+              const segRight = lastSpan.right;
+              const segTop = segment[0].top;
+              const segHeight = Math.max(...segment.map((s) => s.height));
+
+              const block = {
+                spans: segment,
+                top: segTop,
+                bottom: segTop + segHeight,
+                left: segLeft,
+                right: segRight,
+                avgHeight: segHeight,
+                paragraphId: paragraph.id,
+                paragraph: paragraph, // 引用所属段落
+                isParagraph: paragraph.lines.length > 1, // 是否是多行段落
+              };
+
+              this.blocks.push(block);
+              paragraph.blocks.push(block);
+            });
+          });
+
+          // 为每个段落计算整体边界
+          paragraphs.forEach((paragraph) => {
+            if (paragraph.blocks.length > 0) {
+              paragraph.top = Math.min(...paragraph.blocks.map((b) => b.top));
+              paragraph.bottom = Math.max(
+                ...paragraph.blocks.map((b) => b.bottom)
+              );
+              paragraph.left = Math.min(...paragraph.blocks.map((b) => b.left));
+              paragraph.right = Math.max(
+                ...paragraph.blocks.map((b) => b.right)
+              );
+            }
+          });
+
+          this.blocks.forEach((block) => {
+            block.spans.forEach((spanObj) => {
+              this.spanToBlockMap.set(spanObj.element, block);
+            });
+          });
+        }
+
+        bindEvents() {
+          this.textLayer.addEventListener("mouseover", this.handleMouseOver);
+          this.container.addEventListener(
+            "mouseleave",
+            this.handleContainerMouseLeave
+          );
+        }
+
+        handleMouseOver(e) {
+          // 如果自动选择未开启，阻止自动选择
+          if (!autoSelectEnabled) {
+            return;
+          }
+          // 如果处于锁定状态，阻止自动选择
+          if (isSelectionLocked) {
+            return;
+          }
+          // 如果正在进行手动划词，阻止自动选择
+          if (selectionDragBounds !== null) {
+            return;
+          }
+
+          if (this.blocks.length === 0) {
+            this.analyzeStructure();
+          }
+
+          const target = e.target;
+          if (target.tagName === "SPAN" && this.spanToBlockMap.has(target)) {
+            const block = this.spanToBlockMap.get(target);
+
+            // 如果该行属于多行段落，选中整个段落
+            let targetBlock = block;
+            if (block.paragraph && block.paragraph.lines.length > 1) {
+              // 使用段落的第一个block作为标识，但实际高亮整个段落
+              // 通过检查activeBlock的paragraphId来判断是否已经激活
+              const paragraphBlock = block.paragraph.blocks[0];
+              if (
+                this.activeBlock &&
+                this.activeBlock.paragraphId === block.paragraphId
+              ) {
+                this.cancelClear();
+                return;
+              }
+              // 创建一个包含整个段落的虚拟block
+              targetBlock = {
+                spans: block.paragraph.blocks.flatMap((b) => b.spans),
+                top: block.paragraph.top,
+                bottom: block.paragraph.bottom,
+                left: block.paragraph.left,
+                right: block.paragraph.right,
+                avgHeight:
+                  block.paragraph.blocks.reduce(
+                    (sum, b) => sum + b.avgHeight,
+                    0
+                  ) / block.paragraph.blocks.length,
+                paragraph: block.paragraph,
+                paragraphId: block.paragraphId,
+                isParagraph: true,
+                paragraphBlocks: block.paragraph.blocks, // 保存段落的所有blocks
+              };
+            } else {
+              // 单行，直接使用原block
+              if (this.activeBlock === block) {
+                this.cancelClear();
+                return;
+              }
+            }
+
+            this.activateBlock(targetBlock);
+          }
+        }
+
+        activateBlock(block) {
+          this.activeBlock = block;
+          this.cancelClear();
+          this.drawHighlights(block);
+          this.showMenu(block);
+        }
+
+        drawHighlights(block) {
+          if (!this.highlightLayer) return;
+          this.highlightLayer.innerHTML = "";
+          const spans = block.spans.map((s) => s.element);
+          const { lineRects, lineHeight } =
+            this.computeLineBoundingRects(spans);
+          const paddingX = 6;
+          const paddingY = 3;
+          lineRects.forEach((r) => {
+            const rect = this.buildHighlightRect(
+              r,
+              lineHeight,
+              paddingX,
+              paddingY
+            );
+            if (rect.width <= 0 || rect.height <= 0) return;
+            const div = document.createElement("div");
+            div.className = "highlight-rect";
+            div.style.left = `${rect.left}px`;
+            div.style.top = `${rect.top}px`;
+            div.style.width = `${rect.width}px`;
+            div.style.height = `${rect.height}px`;
+            this.highlightLayer.appendChild(div);
+          });
+        }
+
+        computeLineBoundingRects(spans) {
+          if (!spans.length) return { lineRects: [], lineHeight: 0 };
+
+          const containerRect = this.container.getBoundingClientRect();
+          const scaleX =
+            this.container.offsetWidth > 0
+              ? this.container.offsetWidth / containerRect.width
+              : 1;
+          const scaleY =
+            this.container.offsetHeight > 0
+              ? this.container.offsetHeight / containerRect.height
+              : 1;
+
+          const spanItems = spans.map((span) => {
+            const r = span.getBoundingClientRect();
+            const top = (r.top - containerRect.top) * scaleY;
+            const bottom = (r.bottom - containerRect.top) * scaleY;
+            return {
+              span,
+              top,
+              bottom,
+              left: (r.left - containerRect.left) * scaleX,
+              right: (r.right - containerRect.left) * scaleX,
+              height: (r.bottom - r.top) * scaleY,
+            };
+          });
+
+          spanItems.sort((a, b) => a.top - b.top || a.left - b.left);
+          const lines = [];
+          let currentLine = [spanItems[0]];
+
+          for (let i = 1; i < spanItems.length; i++) {
+            const prev = spanItems[i - 1];
+            const curr = spanItems[i];
+            const centerDiff = Math.abs(
+              (prev.top + prev.bottom) / 2 - (curr.top + curr.bottom) / 2
+            );
+            if (centerDiff < Math.max(prev.height, curr.height) * 0.5) {
+              currentLine.push(curr);
+            } else {
+              lines.push(currentLine);
+              currentLine = [curr];
+            }
+          }
+          lines.push(currentLine);
+
+          const lineRects = lines.map((line) => {
+            const left = Math.min(...line.map((item) => item.left));
+            const right = Math.max(...line.map((item) => item.right));
+            const top = Math.min(...line.map((item) => item.top));
+            const bottom = Math.max(...line.map((item) => item.bottom));
+            return {
+              left,
+              top,
+              width: Math.max(0, right - left),
+              height: Math.max(0, bottom - top),
+            };
+          });
+
+          const lineHeight = Math.max(
+            ...lineRects.map((rect) => rect.height),
+            0
+          );
+          return {
+            lineRects,
+            lineHeight: lineHeight || lineRects[0]?.height || 0,
+          };
+        }
+
+        buildHighlightRect(rect, lineHeight, paddingX, paddingY) {
+          const heightOffset = Math.max(0, (lineHeight - rect.height) / 2);
+
+          const left = Math.max(0, rect.left - paddingX);
+          const highlightWidth = Math.max(0, rect.width + paddingX * 2);
+
+          const top = Math.max(0, rect.top - heightOffset - paddingY);
+          const height = Math.max(rect.height + heightOffset + paddingY * 2, 0);
+
+          return { left, top, width: highlightWidth, height };
+        }
+
+        computeGroupRect(spans) {
+          const containerRect = this.container.getBoundingClientRect();
+          const scaleX =
+            this.container.offsetWidth > 0
+              ? this.container.offsetWidth / containerRect.width
+              : 1;
+          const scaleY =
+            this.container.offsetHeight > 0
+              ? this.container.offsetHeight / containerRect.height
+              : 1;
+
+          let minLeft = Infinity,
+            minTop = Infinity;
+          let maxRight = -Infinity,
+            maxBottom = -Infinity;
+
+          spans.forEach((s) => {
+            const r = s.getBoundingClientRect();
+            const left = (r.left - containerRect.left) * scaleX;
+            const top = (r.top - containerRect.top) * scaleY;
+            const right = (r.right - containerRect.left) * scaleX;
+            const bottom = (r.bottom - containerRect.top) * scaleY;
+
+            if (left < minLeft) minLeft = left;
+            if (top < minTop) minTop = top;
+            if (right > maxRight) maxRight = right;
+            if (bottom > maxBottom) maxBottom = bottom;
+          });
+
+          const paddingX = 4;
+          const paddingY = 2;
+          return {
+            left: minLeft - paddingX,
+            top: minTop - paddingY,
+            width: maxRight - minLeft + paddingX * 2,
+            height: maxBottom - minTop + paddingY * 2,
+          };
+        }
+
+        showMenu(block) {
+          if (this.activeMenu) {
+            this.activeMenu.remove();
+          }
+
+          const spans = block.spans.map((s) => s.element);
+          const rect = this.computeGroupRect(spans);
+
+          // 获取选中文本的函数
+          const getBlockText = () => {
+            return block.paragraph.lines
+              .map((line) => line.map((s) => s.textContent).join(""))
+              .join("\n");
+          };
+
+          this.activeMenu = createActionMenu(
+            getBlockText,
+            this.container,
+            rect,
+            {
+              onMouseEnter: () => this.cancelClear(),
+              onMouseLeave: () => this.scheduleClear(),
+            }
+          );
+        }
+
+        scheduleClear() {
+          if (this.menuCloseTimer) clearTimeout(this.menuCloseTimer);
+          this.menuCloseTimer = setTimeout(() => this.clear(), 300);
+        }
+
+        cancelClear() {
+          if (this.menuCloseTimer) {
+            clearTimeout(this.menuCloseTimer);
+            this.menuCloseTimer = null;
+          }
+        }
+
+        clear({ detachListeners = false } = {}) {
+          if (this.menuCloseTimer) {
+            clearTimeout(this.menuCloseTimer);
+            this.menuCloseTimer = null;
+          }
+          if (this.highlightLayer) this.highlightLayer.innerHTML = "";
+          if (this.activeMenu) {
+            this.activeMenu.remove();
+            this.activeMenu = null;
+          }
+          this.activeBlock = null;
+          if (detachListeners) {
+            this.detachEvents();
+            this.resetStructureState();
+          }
+        }
+
+        detachEvents() {
+          this.textLayer.removeEventListener("mouseover", this.handleMouseOver);
+          this.container.removeEventListener(
+            "mouseleave",
+            this.handleContainerMouseLeave
+          );
+        }
+      }
+
+      /**
+       * 按需加载的核心：IntersectionObserver 监听页面进入视口
+       * 当页面进入视口时，触发渲染，实现真正的按需加载
+       * 工作流程：
+       * 1. 用户滚动页面
+       * 2. IntersectionObserver 检测到页面进入视口（提前 800px）
+       * 3. 调用 ensurePageRendered() 渲染页面
+       * 4. ensurePageRendered() 调用 pdfDoc.getPage() 获取页面数据
+       * 5. 由于 disableAutoFetch: true，PDF.js 只加载该页面的数据（通过 Range 请求）
+       * 6. 渲染完成后，预加载相邻页面（可选优化）
+       */
+      const handleSlotIntersection = (entries) => {
+        entries.forEach((entry) => {
+          const pageNumber = Number(entry.target.dataset.pageNumber);
+          if (!pageNumber || !pdfDoc) return;
+
+          if (entry.isIntersecting) {
+            // 页面进入视口，按需加载并渲染
+            // 这里会触发 Range 请求，只加载该页面的数据
+            ensurePageRendered(pageNumber);
+            // 可选：预加载相邻页面，提升用户体验
+            preloadNeighbors(pageNumber);
+          }
+        });
+      };
+
+      /**
+       * 清理视口外的页面，释放内存
+       * 当页面离开视口足够远时，清理其内容，只保留占位符
+       * 这样可以控制内存使用，同时保持滚动位置的准确性
+       */
+      const handleSlotCleanup = (entries) => {
+        entries.forEach((entry) => {
+          const pageNumber = Number(entry.target.dataset.pageNumber);
+          if (!pageNumber || !pdfDoc) return;
+
+          if (!entry.isIntersecting) {
+            // 页面离开视口外很远，清理它以释放内存
+            cleanupPageContent(pageNumber);
+          }
+        });
+      };
+
+      /**
+       * 渲染 Observer：监听页面进入视口
+       * rootMargin: 提前 800px 开始加载，减少用户等待时间
+       * threshold: 0.01 表示只要页面有 1% 进入视口就触发
+       */
+      const observer = new IntersectionObserver(handleSlotIntersection, {
+        root: null,
+        rootMargin: `${virtualListConfig.renderMargin}px 0px ${virtualListConfig.renderMargin}px 0px`,
+        threshold: 0.01, // 降低阈值，更早触发
+      });
+
+      /**
+       * 清理 Observer：监听页面离开视口
+       * rootMargin: 离开视口 1600px 后清理，避免频繁清理
+       */
+      const cleanupObserver = new IntersectionObserver(handleSlotCleanup, {
+        root: null,
+        rootMargin: `${virtualListConfig.cleanupMargin}px 0px ${virtualListConfig.cleanupMargin}px 0px`,
+        threshold: 0,
+      });
+
+      let selectionUpdateScheduled = false;
+      let selectionDragBounds = null;
+      let selectionRects = [];
+      let selectionPageNumber = null;
+      let isSelectionLocked = false; // 标记是否处于等待确认状态
+      let manualSelectEnabled = true; // 手动划词开关，默认开启
+      let autoSelectEnabled = false; // 自动选择开关，默认关闭
+
+      const startSelectionDrag = (clientX, clientY) => {
+        clearAutoHighlights();
+        selectionDragBounds = {
+          left: clientX,
+          right: clientX,
+          top: clientY,
+          bottom: clientY,
+        };
+        selectionRects = [];
+        selectionPageNumber = null;
+      };
+
+      const extendSelectionDrag = (clientX, clientY) => {
+        if (!selectionDragBounds) return;
+        selectionDragBounds.left = Math.min(selectionDragBounds.left, clientX);
+        selectionDragBounds.right = Math.max(
+          selectionDragBounds.right,
+          clientX
+        );
+        selectionDragBounds.top = Math.min(selectionDragBounds.top, clientY);
+        selectionDragBounds.bottom = Math.max(
+          selectionDragBounds.bottom,
+          clientY
+        );
+      };
+
+      const resetSelectionDrag = () => {
+        selectionDragBounds = null;
+        // 清除文本选择，以便自动选择可以恢复
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          selection.removeAllRanges();
+        }
+        // 清除手动选择的高亮
+        clearSelectionHighlights();
+      };
+
+      const clearSelectionHighlights = () => {
+        renderedPages.forEach((data) => {
+          if (data.manualHighlightLayer) {
+            data.manualHighlightLayer.innerHTML = "";
+          }
+        });
+        hideActionMenu();
+      };
+
+      const isSelectionInsideViewer = (selection) => {
+        const { anchorNode, focusNode } = selection || {};
+        return (
+          (!!anchorNode && viewerContainer.contains(anchorNode)) ||
+          (!!focusNode && viewerContainer.contains(focusNode))
+        );
+      };
+
+      const updateSelectionHighlights = () => {
+        // 如果手动划词未开启，清除高亮并返回
+        if (!manualSelectEnabled) {
+          clearSelectionHighlights();
+          return;
+        }
+
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+          clearSelectionHighlights();
+          return;
+        }
+        if (!isSelectionInsideViewer(selection)) {
+          clearSelectionHighlights();
+          return;
+        }
+        const range = selection.getRangeAt(0);
+        const rects = Array.from(range.getClientRects());
+        if (!rects.length) {
+          clearSelectionHighlights();
+          return;
+        }
+        clearSelectionHighlights();
+
+        const rectsOverlap = (rectA, rectB) => {
+          return !(
+            rectA.right < rectB.left ||
+            rectA.left > rectB.right ||
+            rectA.bottom < rectB.top ||
+            rectA.top > rectB.bottom
+          );
+        };
+
+        const unionRect = (rectA, rectB) => ({
+          left: Math.min(rectA.left, rectB.left),
+          top: Math.min(rectA.top, rectB.top),
+          right: Math.max(rectA.right, rectB.right),
+          bottom: Math.max(rectA.bottom, rectB.bottom),
+        });
+
+        const mergeSelectionRects = (rectangles) => {
+          if (!rectangles.length) return [];
+          const merged = [];
+          rectangles.forEach((candidate) => {
+            let base = { ...candidate };
+            let mergedIntoExisting = true;
+            while (mergedIntoExisting) {
+              mergedIntoExisting = false;
+              for (let i = 0; i < merged.length; i++) {
+                if (rectsOverlap(base, merged[i])) {
+                  base = unionRect(base, merged[i]);
+                  merged.splice(i, 1);
+                  mergedIntoExisting = true;
+                  break;
+                }
+              }
+            }
+            merged.push(base);
+          });
+          return merged;
+        };
+
+        const pageRectsMap = new Map();
+
+        rects.forEach((rect) => {
+          if (
+            selectionDragBounds &&
+            (rect.right < selectionDragBounds.left ||
+              rect.left > selectionDragBounds.right ||
+              rect.bottom < selectionDragBounds.top ||
+              rect.top > selectionDragBounds.bottom)
+          ) {
+            return;
+          }
+          const slot = slotElements.find((slotEl) => {
+            const slotRect = slotEl.getBoundingClientRect();
+            return rect.top < slotRect.bottom && rect.bottom > slotRect.top;
+          });
+          if (!slot) return;
+          const pageNumber = Number(slot.dataset.pageNumber);
+          selectionPageNumber = pageNumber;
+          const pageData = renderedPages.get(pageNumber);
+          const highlightLayer = pageData?.manualHighlightLayer;
+          const slotStageRect = pageData?.slotStage?.getBoundingClientRect();
+          if (!highlightLayer || !slotStageRect) return;
+          const layerWidth = highlightLayer.clientWidth || slotStageRect.width;
+          const layerHeight =
+            highlightLayer.clientHeight || slotStageRect.height;
+          const entry = pageRectsMap.get(pageNumber) || {
+            rectangles: [],
+            highlightLayer,
+            slotStageRect,
+            layerWidth,
+            layerHeight,
+          };
+          const left = Math.max(0, rect.left - slotStageRect.left);
+          const top = Math.max(0, rect.top - slotStageRect.top);
+          const maxWidth = Math.max(0, layerWidth - left);
+          const maxHeight = Math.max(0, layerHeight - top);
+          const width = Math.min(rect.width, maxWidth);
+          const height = Math.min(rect.height, maxHeight);
+          if (width <= 0 || height <= 0) return;
+          const right = left + width;
+          const bottom = top + height;
+          entry.rectangles.push({ left, top, right, bottom });
+          pageRectsMap.set(pageNumber, entry);
+        });
+
+        pageRectsMap.forEach((pageEntry) => {
+          const mergedRects = mergeSelectionRects(pageEntry.rectangles);
+          const { highlightLayer } = pageEntry;
+          mergedRects.forEach((rect) => {
+            const highlightRect = document.createElement("div");
+            highlightRect.className = "highlight-rect";
+            highlightRect.style.left = `${rect.left}px`;
+            highlightRect.style.top = `${rect.top}px`;
+            highlightRect.style.width = `${rect.right - rect.left}px`;
+            highlightRect.style.height = `${rect.bottom - rect.top}px`;
+            highlightLayer.appendChild(highlightRect);
+          });
+          selectionRects = mergedRects;
+        });
+      };
+
+      const scheduleSelectionHighlightUpdate = () => {
+        if (selectionUpdateScheduled) return;
+        selectionUpdateScheduled = true;
+        window.requestAnimationFrame(() => {
+          selectionUpdateScheduled = false;
+          updateSelectionHighlights();
+        });
+      };
+
+      const handleMouseDown = (event) => {
+        // 如果点击的是菜单，不处理
+        if (event.target.closest(".action-menu")) {
+          return;
+        }
+
+        // 如果点击的是其他地方（不在viewer内），清除锁定和菜单
+        if (!viewerContainer.contains(event.target)) {
+          resetSelectionDrag();
+          hideActionMenu();
+          isSelectionLocked = false;
+          return;
+        }
+
+        // 点击viewer内时，清除之前的菜单、锁定和手动划词状态
+        hideActionMenu();
+        isSelectionLocked = false;
+        resetSelectionDrag(); // 重置手动划词状态，恢复自动选择
+
+        // 如果手动划词未开启，清除后直接返回
+        if (!manualSelectEnabled) {
+          return;
+        }
+
+        startSelectionDrag(event.clientX, event.clientY);
+      };
+
+      const handleMouseMove = (event) => {
+        // 如果手动划词未开启，不处理
+        if (!manualSelectEnabled) {
+          return;
+        }
+        // 如果处于锁定状态，不处理
+        if (isSelectionLocked) {
+          return;
+        }
+        extendSelectionDrag(event.clientX, event.clientY);
+      };
+
+      const handleMouseUp = (event) => {
+        // 如果手动划词未开启，不处理
+        if (!manualSelectEnabled) {
+          return;
+        }
+        // 如果处于锁定状态，不处理
+        if (isSelectionLocked) {
+          return;
+        }
+
+        extendSelectionDrag(event.clientX, event.clientY);
+        scheduleSelectionHighlightUpdate();
+        setTimeout(() => {
+          if (selectionRects.length) {
+            showActionMenu(selectionRects, selectionPageNumber);
+            if (window.parent && window.parent !== window) {
+              window.parent.postMessage(
+                {
+                  type: "selection-change",
+                  text: getSelectionText(),
+                },
+                "*"
+              );
+            }
+          } else {
+            // 如果没有选择到文本，重置手动划词状态，恢复自动选择
+            resetSelectionDrag();
+          }
+        }, 0);
+      };
+
+      const handleWindowResize = () => {
+        if (!pdfDoc) return;
+        if (resizeTimeout) clearTimeout(resizeTimeout);
+        resizeTimeout = window.setTimeout(() => {
+          rerenderAllPages();
+          adjustPlaceholderHeights();
+          resizeTimeout = null;
+        }, 260);
+      };
+
+      document.addEventListener("DOMContentLoaded", () => {
+        window.addEventListener("scroll", onViewerScroll, { passive: true });
+        window.addEventListener("resize", handleWindowResize);
+        document.addEventListener(
+          "selectionchange",
+          scheduleSelectionHighlightUpdate
+        );
+        document.addEventListener("mousedown", handleMouseDown);
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+        document.addEventListener("keyup", () => {
+          resetSelectionDrag();
+          scheduleSelectionHighlightUpdate();
+        });
+        if (!manualSelectEnabled) {
+          clearSelectionHighlights();
+          hideActionMenu();
+          resetSelectionDrag();
+        }
+        // 如果关闭自动选择，清除所有自动高亮
+        if (!autoSelectEnabled) {
+          clearAutoHighlights();
+        }
+
+        // 初始化加载状态
+        const url = new URLSearchParams(window.location.search).get("url");
+        if (!url) {
+          // 如果没有 URL 参数，隐藏加载状态
+          hideLoadingOverlay();
+        }
+
+        // 如果启用调试模式，定期更新性能监控
+        if (isDebugMode) {
+          setInterval(updatePerformanceMonitor, 1000);
+        }
+      });
+
+      const loadPdf = (source) => {
+        cleanupSlots();
+        showLoadingOverlay(
+          "正在连接服务器...",
+          "使用流式加载技术，无需等待完整下载"
+        );
+
+        // 配置 PDF.js 加载选项，启用流式加载和 Range 请求，实现真正的按需加载
+        // 参考 viewer.js 的实现，确保只在需要时才加载页面数据
+        // 注意：PDF.js 在初始化时需要读取 PDF 文件的尾部（trailer）和交叉引用表（xref）
+        // 这些信息通常在文件末尾，这是 PDF 文件格式的要求，无法避免
+        // 但是，通过 disableAutoFetch: true，我们可以确保只在调用 getPage() 时才加载页面数据
+        const loadingConfig = {
+          url: source,
+          // 启用流式加载，不等待整个文件下载完成（参考 viewer.js，disableStream 应该为 false 以启用流式传输）
+
+          // 启用范围请求，按需加载页面
+          // 禁用自动获取整个文档，实现真正的按需加载
+          // 设置为 true 后，PDF.js 不会预取所有页面，只有在调用 getPage() 时才加载该页面的数据
+          // 参考 viewer.js 第 9170 行：if (pdfDocument.loadingParams["disableAutoFetch"] || pagesCount > 7500)
+          disableAutoFetch: true, // 关键：必须为 true 才能实现按页加载，而不是全部下载
+          disableCreateObjectURL: false,
+          disableFontFace: false,
+          disableRange: false, // 启用 Range 请求（关键：必须为 false）
+          disableStream: true, // 启用流式传输（关键：必须为 true）
+          docBaseUrl: "",
+          isEvalSupported: true,
+          maxImageSize: -1,
+          verbosity: 1,
+          pdfBug: false,
+          cMapPacked: true,
+          cMapUrl: "../web/cmaps/",
+        };
+
+        const loadingTask = pdfjsLib.getDocument(loadingConfig);
+        let hasShownProgress = false;
+
+        // 监听加载进度
+        loadingTask.onProgress = (progressData) => {
+          if (progressData.total > 0) {
+            updateLoadingProgress(progressData.loaded, progressData.total);
+            // 当有一定进度时，更新提示文字
+            const percent = Math.round(
+              (progressData.loaded / progressData.total) * 100
+            );
+
+            if (!hasShownProgress && percent > 5) {
+              hasShownProgress = true;
+              const fileSizeMB = (progressData.total / (1024 * 1024)).toFixed(
+                1
+              );
+              showLoadingOverlay(
+                "正在加载文档...",
+                `文件大小: ${fileSizeMB}MB，正在按需加载页面`
+              );
+            }
+          } else {
+            // 对于流式加载，可能没有 total 信息
+            if (!hasShownProgress) {
+              hasShownProgress = true;
+              showLoadingOverlay(
+                "正在加载文档...",
+                "已启用流式加载，即将显示第一页"
+              );
+            }
+          }
+        };
+
+        loadingTask.promise
+          .then((pdf) => {
+            pdfDoc = pdf;
+            // 立即创建插槽，不等待任何数据加载
+            setupSlots(pdfDoc.numPages, pdfDoc);
+            // 立即滚动到第一页
+            scrollToPage(1, false);
+            // 等待 DOM 更新后，立即隐藏加载覆盖层
+            // 因为插槽已经创建（带占位符），用户可以看到页面结构，避免白屏
+            Promise.resolve().then(() => {
+              // 短暂延迟确保插槽已渲染到 DOM
+              setTimeout(() => {
+                hideLoadingOverlay();
+              }, 100);
+
+              // 同时开始渲染第一页（不阻塞 UI）
+              ensurePageRendered(1).catch((error) => {
+                console.error("第一页渲染失败:", error);
+              });
+            });
+          })
+          .catch((error) => {
+            console.error("加载PDF时出错:", error);
+            let errorMessage =
+              "无法加载 PDF 文件，请检查文件是否存在或格式是否正确。";
+            if (error.name === "InvalidPDFException") {
+              errorMessage = "PDF 文件格式无效或已损坏。";
+            } else if (error.name === "MissingPDFException") {
+              errorMessage = "找不到 PDF 文件，请检查文件路径。";
+            } else if (error.name === "UnexpectedResponseException") {
+              errorMessage = "服务器响应异常，请稍后重试。";
+            } else if (error.message?.includes("CORS")) {
+              errorMessage = "跨域访问被阻止，请检查服务器 CORS 配置。";
+            } else if (error.message?.includes("Range")) {
+              errorMessage = "服务器不支持范围请求，可能影响大文件加载性能。";
+            }
+            showLoadingError(errorMessage);
+            // 5秒后自动隐藏错误提示
+            setTimeout(() => {
+              hideLoadingOverlay();
+            }, 5000);
+          });
+      };
+
+      const setupSlots = async (count, pdfDoc) => {
+        // 使用默认尺寸先创建插槽，不等待 getPage(1) 完成
+        // 这样可以立即开始渲染，而不需要等待 PDF 元数据（交叉引用表等）加载完成
+        const defaultViewport = { width: 800, height: 1000 }; // 默认尺寸，后续会更新
+
+        // 分批创建插槽，优先创建前几页
+        const priorityPages = Math.min(3, count); // 优先创建前3页
+
+        // 先创建优先页面（使用默认尺寸）
+        for (let i = 1; i <= priorityPages; i++) {
+          const slot = document.createElement("div");
+          slot.className = "page-slot";
+          applySlotHeights(slot, defaultViewport.height);
+          slot.dataset.pageNumber = i.toString();
+
+          // 添加占位符，避免白屏
+          const placeholder = document.createElement("div");
+          placeholder.className = "slot-placeholder";
+          const pageNumber = document.createElement("div");
+          pageNumber.className = "page-number";
+          pageNumber.textContent = `第 ${i} 页`;
+          const pageHint = document.createElement("div");
+          pageHint.className = "page-hint";
+          pageHint.textContent = "正在加载...";
+          placeholder.appendChild(pageNumber);
+          placeholder.appendChild(pageHint);
+          slot.appendChild(placeholder);
+
+          pdfViewer.appendChild(slot);
+          slotElements.push(slot);
+          // 同时注册渲染和清理观察器
+          observer.observe(slot);
+          cleanupObserver.observe(slot);
+        }
+
+        // 异步创建剩余页面，不阻塞第一页的渲染
+        if (count > priorityPages) {
+          requestIdleCallback(() => {
+            for (let i = priorityPages + 1; i <= count; i++) {
+              const slot = document.createElement("div");
+              slot.className = "page-slot";
+              applySlotHeights(slot, defaultViewport.height);
+              slot.dataset.pageNumber = i.toString();
+
+              // 添加占位符
+              const placeholder = document.createElement("div");
+              placeholder.className = "slot-placeholder";
+              const pageNumber = document.createElement("div");
+              pageNumber.className = "page-number";
+              pageNumber.textContent = `第 ${i} 页`;
+              const pageHint = document.createElement("div");
+              pageHint.className = "page-hint";
+              pageHint.textContent = "等待加载";
+              placeholder.appendChild(pageNumber);
+              placeholder.appendChild(pageHint);
+              slot.appendChild(placeholder);
+
+              pdfViewer.appendChild(slot);
+              slotElements.push(slot);
+              // 同时注册渲染和清理观察器
+              observer.observe(slot);
+              cleanupObserver.observe(slot);
+            }
+          });
+        }
+
+        // 注意：不再在 setupSlots 中调用 getPage(1)，避免立即加载第一页数据
+        // 第一页的尺寸将在 ensurePageRendered(1) 时获取，实现真正的按需加载
+        // 这样可以避免在初始化时下载不必要的 PDF 数据
+      };
+
+      // 清理单个页面的内容（虚拟列表回收）
+      const cleanupPageContent = (pageNumber) => {
+        if (!renderedPages.has(pageNumber) || renderLocks.has(pageNumber)) {
+          return; // 页面未渲染或正在渲染中，不清理
+        }
+
+        const slot = slotElements[pageNumber - 1];
+        if (!slot) return;
+
+        // 清理 selection manager
+        if (selectionManagers.has(pageNumber)) {
+          selectionManagers.get(pageNumber).clear({ detachListeners: true });
+          selectionManagers.delete(pageNumber);
+        }
+
+        // 获取当前页面的视口高度以保持占位
+        const pageData = renderedPages.get(pageNumber);
+        const viewportHeight = pageData?.viewport?.height || slot.offsetHeight;
+
+        // 清理 DOM 内容，保留占位符
+        slot.innerHTML = "";
+        slot.className = "page-slot";
+        applySlotHeights(slot, viewportHeight);
+
+        // 添加美观的占位提示
+        const placeholder = document.createElement("div");
+        placeholder.className = "slot-placeholder";
+        placeholder.innerHTML = `
+          <div class="page-number">第 ${pageNumber} 页</div>
+          <div class="page-hint">滚动到此处自动加载</div>
+        `;
+        slot.appendChild(placeholder);
+
+        // 从已渲染列表中移除
+        renderedPages.delete(pageNumber);
+
+        // 更新性能监控
+        updatePerformanceMonitor();
+
+        // 开发模式下输出日志
+        if (isDebugMode) {
+          console.log(
+            `🧹 已清理第 ${pageNumber} 页 | 当前已渲染: ${renderedPages.size} 页`
+          );
+        }
+      };
+
+      const cleanupSlots = () => {
+        pdfDoc = null;
+        observer.disconnect();
+        cleanupObserver.disconnect();
+        slotElements.length = 0;
+        pdfViewer.innerHTML = "";
+        clearSelectionHighlights();
+        selectionManagers.forEach((manager) =>
+          manager.clear({ detachListeners: true })
+        );
+        selectionManagers.clear();
+        renderedPages.clear();
+        renderLocks.clear();
+        // 清理页面请求缓存
+        pageRequests.clear();
+        currentPage = 1;
+        if (resizeTimeout) {
+          clearTimeout(resizeTimeout);
+          resizeTimeout = null;
+        }
+        firstPageSize = null;
+      };
+
+      /**
+       * 确保页面数据已加载（参考 viewer.js 的 _ensurePdfPageLoaded 实现）
+       * 使用请求缓存避免重复加载同一页面
+       */
+      function ensurePdfPageLoaded(pageNumber) {
+        // 如果页面已经渲染，直接返回已加载的页面
+        if (renderedPages.has(pageNumber)) {
+          return Promise.resolve(renderedPages.get(pageNumber).page);
+        }
+
+        // 如果正在加载中，返回缓存的请求
+        if (pageRequests.has(pageNumber)) {
+          return pageRequests.get(pageNumber);
+        }
+
+        // 创建新的加载请求
+        const promise = pdfDoc
+          .getPage(pageNumber)
+          .then((pdfPage) => {
+            // 加载成功后，从缓存中移除
+            pageRequests.delete(pageNumber);
+            return pdfPage;
+          })
+          .catch((reason) => {
+            console.error(`无法加载第 ${pageNumber} 页:`, reason);
+            // 加载失败后，从缓存中移除
+            pageRequests.delete(pageNumber);
+            throw reason;
+          });
+
+        // 缓存请求，避免重复加载
+        pageRequests.set(pageNumber, promise);
+
+        return promise;
+      }
+
+      /**
+       * 按需加载并渲染指定页面（参考 viewer.js 的 forceRendering 实现）
+       * 由于设置了 disableAutoFetch: true，PDF.js 不会预取所有页面数据
+       * 只有在调用 getPage() 时，才会通过 Range 请求加载该页面的数据
+       * 这实现了真正的按需加载：只加载用户看到的页面
+       */
+      async function ensurePageRendered(pageNumber) {
+        if (
+          renderedPages.has(pageNumber) ||
+          renderLocks.has(pageNumber) ||
+          !pdfDoc
+        )
+          return Promise.resolve();
+        const slot = slotElements[pageNumber - 1];
+        if (!slot) return Promise.resolve();
+
+        // 虚拟列表：如果超过最大渲染数量，清理最远的页面
+        // 这样可以控制内存使用，只保留可见区域附近的页面
+        if (
+          virtualListConfig.maxRenderedPages > 0 &&
+          renderedPages.size >= virtualListConfig.maxRenderedPages
+        ) {
+          // 找出距离当前页面最远的已渲染页面
+          let farthestPage = null;
+          let maxDistance = 0;
+          renderedPages.forEach((data, pNum) => {
+            const distance = Math.abs(pNum - pageNumber);
+            if (distance > maxDistance && !renderLocks.has(pNum)) {
+              maxDistance = distance;
+              farthestPage = pNum;
+            }
+          });
+          // 清理最远的页面，释放内存
+          if (farthestPage !== null) {
+            cleanupPageContent(farthestPage);
+          }
+        }
+
+        renderLocks.add(pageNumber);
+        slot.classList.add("is-loading");
+        slot.innerHTML = "";
+        const loader = document.createElement("div");
+        loader.className = "slot-loader";
+        loader.textContent = "努力加载中...";
+        slot.appendChild(loader);
+
+        try {
+          console.time(`renderSlotContent ${pageNumber}`);
+          // 关键：使用 ensurePdfPageLoaded 确保页面数据已加载
+          // 这会通过 Range 请求加载该页面的数据，但不会预取其他页面
+          const page = await ensurePdfPageLoaded(pageNumber);
+
+          // 如果是第一页，更新 firstPageSize 和所有插槽的尺寸
+          if (pageNumber === 1 && !firstPageSize) {
+            firstPageSize = page.getViewport({ scale: 1 });
+            const viewport = getViewportForPage(page);
+
+            // 更新所有插槽的尺寸（使用第一页的实际尺寸）
+            slotElements.forEach((slot) => {
+              if (slot && !renderedPages.has(Number(slot.dataset.pageNumber))) {
+                applySlotHeights(slot, viewport.height);
+              }
+            });
+          }
+
+          const result = await renderSlotContent(pageNumber, slot, page);
+          console.timeEnd(`renderSlotContent ${pageNumber}`);
+          renderedPages.set(pageNumber, { page, ...result });
+
+          // 更新性能监控
+          updatePerformanceMonitor();
+
+          // 开发模式下输出日志
+          if (isDebugMode) {
+            console.log(
+              `✅ 已渲染第 ${pageNumber} 页 | 当前已渲染: ${renderedPages.size} 页`
+            );
+          }
+        } catch (error) {
+          console.error("渲染页面失败:", error);
+          slot.innerHTML =
+            '<div class="slot-error">页面加载失败，请刷新或更换PDF</div>';
+          throw error; // 重新抛出错误，让调用者可以处理
+        } finally {
+          slot.classList.remove("is-loading");
+          renderLocks.delete(pageNumber);
+        }
+      }
+
+      async function renderSlotContent(pageNumber, slot, page) {
+        const viewport = getViewportForPage(page);
+        slot.innerHTML = "";
+        applySlotHeights(slot, viewport.height);
+
+        const slotStage = document.createElement("div");
+        slotStage.className = "canvas-container";
+        slotStage.style.width = `${viewport.width}px`;
+        slotStage.style.height = `${viewport.height}px`;
+        slotStage.style.setProperty(
+          "--scale-factor",
+          viewport.scale?.toString() || "1"
+        );
+        slot.appendChild(slotStage);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        slotStage.appendChild(canvas);
+
+        const autoHighlightLayer = document.createElement("div");
+        autoHighlightLayer.className = "highlight-layer auto-highlight-layer";
+        autoHighlightLayer.style.width = `${viewport.width}px`;
+        autoHighlightLayer.style.height = `${viewport.height}px`;
+        slotStage.appendChild(autoHighlightLayer);
+
+        const manualHighlightLayer = document.createElement("div");
+        manualHighlightLayer.className =
+          "highlight-layer manual-highlight-layer";
+        manualHighlightLayer.style.width = `${viewport.width}px`;
+        manualHighlightLayer.style.height = `${viewport.height}px`;
+        slotStage.appendChild(manualHighlightLayer);
+
+        const textLayer = document.createElement("div");
+        textLayer.className = "text-layer";
+        textLayer.style.width = `${viewport.width}px`;
+        textLayer.style.height = `${viewport.height}px`;
+        slotStage.appendChild(textLayer);
+
+        // 使用 willReadFrequently 优化频繁的 getImageData 操作性能
+        await page.render({
+          canvasContext: canvas.getContext("2d", { willReadFrequently: true }),
+          viewport,
+        }).promise;
+
+        // 获取文本内容并渲染文本层
+        // 注意：renderTextLayer 需要 textContent 或 textContentStream 参数
+        const textContent = await page.getTextContent();
+        await pdfjsLib.renderTextLayer({
+          textContent: textContent, // 使用 textContent 而不是 textContentSource
+          container: textLayer,
+          viewport: viewport,
+          textDivs: [],
+        }).promise;
+
+        if (selectionManagers.has(pageNumber)) {
+          selectionManagers.get(pageNumber).clear({ detachListeners: true });
+          selectionManagers.delete(pageNumber);
+        }
+        const manager = new TextSelectionManager(
+          textLayer,
+          autoHighlightLayer,
+          slotStage,
+          viewerContainer
+        );
+        selectionManagers.set(pageNumber, manager);
+
+        return { slotStage, canvas, viewport, manualHighlightLayer };
+      }
+
+      async function rerenderPage(pageNumber, page) {
+        if (renderLocks.has(pageNumber)) return;
+        const slot = slotElements[pageNumber - 1];
+        if (!slot) return;
+        renderLocks.add(pageNumber);
+        slot.classList.add("is-loading");
+        slot.innerHTML = "";
+        const loader = document.createElement("div");
+        loader.className = "slot-loader";
+        loader.textContent = "正在重新布局...";
+        slot.appendChild(loader);
+
+        try {
+          const result = await renderSlotContent(pageNumber, slot, page);
+          renderedPages.set(pageNumber, { page, ...result });
+        } catch (error) {
+          console.error("重新渲染页面失败:", error);
+          slot.innerHTML =
+            '<div class="slot-error">重新渲染失败，请稍后重试</div>';
+        } finally {
+          slot.classList.remove("is-loading");
+          renderLocks.delete(pageNumber);
+        }
+      }
+
+      function rerenderAllPages() {
+        if (!pdfDoc) return;
+        // 虚拟列表模式：只重新渲染当前已渲染的页面
+        // 清理所有页面，让它们重新按需加载
+        const renderedPageNumbers = Array.from(renderedPages.keys());
+        renderedPageNumbers.forEach((pageNumber) => {
+          const data = renderedPages.get(pageNumber);
+          if (data) {
+            rerenderPage(pageNumber, data.page);
+          }
+        });
+      }
+
+      function applySlotHeights(slot, viewportHeight) {
+        slot.style.height = `${viewportHeight}px`;
+        slot.style.minHeight = `${viewportHeight + 20}px`;
+      }
+
+      function getAvailableWidth() {
+        const clientWidth = document.documentElement.clientWidth;
+        return Math.min(clientWidth - 40, 1200);
+      }
+
+      function getEstimatedViewportHeight() {
+        if (!firstPageSize) return 335;
+        const availableWidth = getAvailableWidth();
+        const scale = Math.min(baseScale, availableWidth / firstPageSize.width);
+        return firstPageSize.height * scale;
+      }
+
+      function adjustPlaceholderHeights() {
+        if (!slotElements.length) return;
+        const estimatedHeight = getEstimatedViewportHeight();
+        slotElements.forEach((slot) => {
+          const pageNumber = Number(slot.dataset.pageNumber);
+          if (renderedPages.has(pageNumber)) return;
+          applySlotHeights(slot, estimatedHeight);
+        });
+      }
+
+      const getViewportForPage = (page) => {
+        const unscaled = page.getViewport({ scale: 1.0 });
+        const availableWidth = getAvailableWidth();
+        const scale = Math.min(baseScale, availableWidth / unscaled.width);
+        return page.getViewport({ scale });
+      };
+
+      /**
+       * 预加载相邻页面（可选优化）
+       * 为了提高用户体验，当用户滚动到某个页面时，提前加载相邻的页面
+       * 这样可以减少滚动时的等待时间
+       * 注意：由于 disableAutoFetch: true，这些页面只有在调用 getPage() 时才会真正加载数据
+       */
+      const preloadNeighbors = (pageNumber) => {
+        // 预加载范围：当前页的前后各2页
+        // 可以根据需要调整预加载范围，范围越大用户体验越好，但会消耗更多带宽
+        const preloadRange = 2;
+        const pagesToPreload = [];
+
+        for (let i = -preloadRange; i <= preloadRange + 1; i++) {
+          const num = pageNumber + i;
+          if (
+            num >= 1 &&
+            num <= (pdfDoc?.numPages || 0) &&
+            num !== pageNumber
+          ) {
+            pagesToPreload.push(num);
+          }
+        }
+
+        // 使用 requestIdleCallback 在浏览器空闲时预加载，不阻塞主线程
+        requestIdleCallback(() => {
+          pagesToPreload.forEach((num) => {
+            // 只预加载未渲染的页面
+            if (!renderedPages.has(num) && !renderLocks.has(num)) {
+              ensurePageRendered(num).catch((error) => {
+                // 预加载失败不影响主流程，静默处理
+                if (isDebugMode) {
+                  console.warn(`预加载第 ${num} 页失败:`, error);
+                }
+              });
+            }
+          });
+        });
+      };
+
+      const onViewerScroll = () => {
+        updateCurrentPageFromScroll();
+      };
+
+      const updateCurrentPageFromScroll = () => {
+        if (!slotElements.length) return;
+        const viewportHeight =
+          window.innerHeight || document.documentElement.clientHeight;
+        const scrollTop = window.scrollY + viewportHeight / 6;
+        for (let i = 0; i < slotElements.length; i++) {
+          const slot = slotElements[i];
+          const slotTop = slot.getBoundingClientRect().top + window.scrollY;
+          if (scrollTop < slotTop + slot.offsetHeight) {
+            const newPage = i + 1;
+            if (newPage !== currentPage) {
+              currentPage = newPage;
+              updatePerformanceMonitor();
+            }
+            break;
+          }
+        }
+      };
+
+      const scrollToPage = (pageNumber, smooth = true) => {
+        const targetSlot = slotElements[pageNumber - 1];
+        if (!targetSlot) return;
+        const slotTop = targetSlot.getBoundingClientRect().top + window.scrollY;
+        window.scrollTo({
+          top: slotTop - 10,
+          behavior: smooth ? "smooth" : "auto",
+        });
+        currentPage = pageNumber;
+      };
+
+      const search = window.location.search;
+      const url = new URLSearchParams(search).get("url");
+      if (url) {
+        loadPdf(url);
+      } else {
+        // 如果没有 URL 参数，隐藏加载状态
+        hideLoadingOverlay();
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data.type === "menu") {
+          // 保存菜单数据到全局变量
+          savedMenuData = event.data.data || [];
+
+          // 如果菜单数据为空，清除菜单
+          if (!savedMenuData || savedMenuData.length === 0) {
+            hideActionMenu();
+            return;
+          }
+          // // 使用整合后的 createActionMenu 函数创建外部菜单
+          // const viewerContainer =
+          //   document.querySelector(".viewer-container") || document.body;
+          // createActionMenu(
+          //   getSelectionText,
+          //   viewerContainer,
+          //   null, // 无定位信息，使用固定定位
+          //   { menuData: savedMenuData }
+          // );
+        } else if (event.data.type === "manual-select-enabled") {
+          // 手动划词开关
+          manualSelectEnabled = event.data.data;
+        } else if (event.data.type === "auto-select-enabled") {
+          autoSelectEnabled = event.data.data;
+        }
+      });
+    </script>
+  </body>
+</html>

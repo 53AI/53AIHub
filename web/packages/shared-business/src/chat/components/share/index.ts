@@ -1,0 +1,1 @@
+export { default as ShareHeader, type ShareHeaderProps } from "./ShareHeader";

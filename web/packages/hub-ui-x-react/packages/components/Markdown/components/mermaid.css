@@ -1,0 +1,19 @@
+.mermaid-viewer__diagram {
+  width: 100%;
+  height: 100%;
+}
+
+.mermaid-viewer__diagram svg {
+  transition: transform 0.2s ease;
+  width: 100%;
+  height: 100%;
+  max-width: 100% !important;
+}
+
+.mermaid-viewer__diagram--clickable .mindmap-node {
+  cursor: pointer;
+}
+
+.mermaid-viewer__diagram--clickable .mindmap-node:hover .node-bkg {
+  opacity: 0.5;
+}

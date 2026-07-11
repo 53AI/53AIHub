@@ -1,0 +1,263 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========================================
+   设计令牌 (Design Tokens)
+   ======================================== */
+
+:root {
+  /* 品牌色 (Brand Colors) */
+  --color-primary: #2563eb;
+  --color-primary-light: #e0eaff;
+  --color-primary-hover: #1b3f94;
+
+  /* 文字颜色 (Text Colors) */
+  --color-text-primary: #1d1e1f;    /* 标题色 */
+  --color-text-secondary: #495266; /* 副标题 */
+  --color-text-tertiary: #818999;  /* 描述 */
+  --color-text-hint: #b3b9c6;      /* 注释色 */
+  --color-text-placeholder: #999999;
+  --color-text-disabled: #9a9a9a;
+  --color-text-light: #9fa4c5;
+  --color-text-link: #5a6d9e;
+  --color-text-dark: #182b50;
+  --color-text-error: #ef4444;
+
+  /* 背景颜色 (Background Colors) */
+  --color-bg-page: #f6f7f8;
+  --color-bg-container: #ffffff;
+  --color-bg-hover: #f2f3f5;
+  --color-bg-active: #f5f5f5;
+  --color-bg-input: #f8f9fa;
+  --color-bg-secondary: #f3f3f5;
+  --color-bg-tertiary: #f5f6fa;
+  --color-bg-muted: #f7f8fa;
+  --color-bg-green: #ebfaf5;      /* 绿-底色 */
+  --color-bg-blue: #f0f5ff;       /* 蓝底色 */
+
+  /* 边框颜色 (Border Colors) */
+  --color-border: #e9eef7;       /* 描边 */
+  --color-border-light: #f0f0f0;
+  --color-border-input: #e3e8ff;
+  --color-border-card: #ededed;
+
+  /* 状态颜色 (State Colors) */
+  --color-state-selected: #ebf1ff;
+  --color-state-hover: #e1e2e3;
+
+  /* 图标颜色 (Icon Colors) */
+  --color-icon-default: #888994;
+  --color-icon-active: #2563eb;
+  --color-icon-muted: #b8b8b8;
+
+  /* 标签/徽章颜色 (Tag/Badge Colors) */
+  --color-tag-mention-bg: #e1e8ff;
+  --color-tag-mention-text: #1b3f94;
+  --color-tag-skill-bg: transparent;
+  --color-tag-skill-text: #2563eb;
+  --color-tag-mention-secondary: #98a2b1;
+  --color-tag-orange: #eb9e10;  /* 橙-标签 */
+  --color-tag-red: #fa5151;     /* 红-标签 */
+  --color-tag-green: #10b981;   /* 绿-标签 */
+}
+
+/* ========================================
+   基础样式
+   ======================================== */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg-page);
+}
+
+
+/* ========================================
+   通用工具类 (Utility Classes)
+   以下类名基于设计令牌，用于统一样式管理
+   注意：Tailwind 已有的基础类不重复定义（如 flex、gap、rounded、shadow 等）
+   ======================================== */
+
+/* Flex 布局工具类 */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 文字颜色 - 用于文本、链接、提示等 */
+.text-primary { color: var(--color-text-primary); }      /* 主要文本，如标题、正文 */
+.text-secondary { color: var(--color-text-secondary); }  /* 次要文本，如描述、辅助信息 */
+.text-tertiary { color: var(--color-text-tertiary); }    /* 三级文本，如标签、时间戳 */
+.text-placeholder { color: var(--color-text-placeholder); } /* 占位符文本 */
+.text-disabled { color: var(--color-text-disabled); }    /* 筛选/禁用状态文本 */
+.text-hint { color: var(--color-text-hint); }            /* 提示、引导文字、注释 */
+.text-light { color: var(--color-text-light); }          /* 浅色文字 */
+.text-link { color: var(--color-text-link); }            /* 链接文字 */
+.text-dark { color: var(--color-text-dark); }            /* 深色文字 */
+.text-error { color: var(--color-text-error); }          /* 错误提示文字 */
+.text-theme { color: var(--color-primary); }             /* 品牌色文字 */
+.text-brand { color: var(--color-primary); }             /* 品牌色文字 */
+.text-icon-default { color: var(--color-icon-default); } /* 图标默认颜色 */
+.text-tag-red { color: var(--color-tag-red); }           /* 红色标签文字 */
+.text-tag-orange { color: var(--color-tag-orange); }     /* 橙色标签文字 */
+.text-tag-green { color: var(--color-tag-green); }       /* 绿色标签文字 */
+
+/* 背景颜色 - 用于容器、卡片、输入框等背景 */
+.bg-page { background-color: var(--color-bg-page); }        /* 页面背景 */
+.bg-container { background-color: var(--color-bg-container); } /* 容器/卡片背景 */
+.bg-hover { background-color: var(--color-bg-hover); }      /* 悬停状态背景 */
+.bg-active { background-color: var(--color-bg-active); }    /* 激活状态背景 */
+.bg-input { background-color: var(--color-bg-input); }      /* 输入框背景 */
+.bg-secondary { background-color: var(--color-bg-secondary); } /* 次要背景 */
+.bg-selected { background-color: var(--color-state-selected); } /* 选中状态背景 */
+.bg-brand { background-color: var(--color-primary); }       /* 品牌色背景 */
+.bg-brand-light { background-color: var(--color-primary-light); } /* 品牌色浅底背景 */
+
+/* 边框颜色 - 用于分割线、卡片边框、输入框边框 */
+.border-default { border-color: var(--color-border); }      /* 默认边框 */
+.border-brand { border-color: var(--color-primary); }        /* 品牌色边框 */
+.border-light { border-color: var(--color-border-light); }  /* 浅色边框 */
+.border-input { border-color: var(--color-border-input); }  /* 输入框边框 */
+.border-card { border-color: var(--color-border-card); }    /* 卡片边框 */
+
+/* 悬停效果 - 用于列表项、按钮等交互元素 */
+.hover-bg:hover { background-color: var(--color-bg-hover); }  /* 悬停时背景变化 */
+.hover-brand:hover { color: var(--color-primary); }          /* 悬停时文字变品牌色 */
+
+
+
+/* 针对WebKit内核浏览器（Chrome, Safari等） */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+  background: transparent; /* 设置滚动条背景透明 */
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent; /* 滑块透明 */
+}
+
+:hover::-webkit-scrollbar-thumb {
+  cursor: pointer;
+  border-radius: 4px;
+  background-color: rgb(0 0 0 / 25%);
+}
+
+
+/* Knowledge View Drawer styles */
+.knowledge-view-drawer {
+  box-shadow: none !important;
+  transition: none !important;
+}
+
+.knowledge-view-drawer .ant-drawer-header {
+  padding: 16px 24px !important;
+}
+
+.knowledge-view-drawer .ant-drawer-body {
+  padding: 0;
+}
+
+.knowledge-view-modal {
+  right: 418px !important;
+}
+
+
+/* hub-ui-x
+source-reference */
+
+
+
+svg {
+  display: inline-flex;
+  position: relative;
+}
+
+/* antd样式覆盖 */
+/* .ant-modal-container {
+  max-height: 90vh;
+} */
+
+/* InputNumber 文字左对齐 */
+.ant-input-number.ant-input-number--left .ant-input-number-input {
+  text-align: left !important;
+}
+
+.ant-empty-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ant-slider .ant-slider-track {
+  background-color: var(--ant-blue);
+}
+
+/* TextArea showCount 移入输入框内部 */
+.ant-input-textarea-show-count {
+  position: relative;
+}
+.ant-input-textarea-show-count .ant-input-data-count {
+  position: absolute;
+  font-size: 12px;
+  line-height: 14px;
+  bottom: 5px;
+  right: 6px;
+  padding: 0 4px;
+  color: rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  background: #fff;
+}
+
+/* Drawer 关闭按钮移到右边 */
+.ant-drawer-header .ant-drawer-header-title {
+  flex-direction: row-reverse;
+}
+.ant-drawer-header .ant-drawer-title {
+  flex: 1;
+  overflow: hidden;
+}
+
+.ant-btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ant-tree-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ant-tree-switcher::before {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%);
+}
+
+.ant-tree-node-content-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.ant-tree-title {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.css-var-root.ant-modal-css-var {
+  --ant-modal-content-padding: 24px;
+  --ant-modal-title-font-size: 18px;
+  --ant-modal-title-line-height: 24px;
+}

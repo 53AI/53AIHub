@@ -1,0 +1,2011 @@
+key,zh-cn,zh-tw,en,ja
+53ai,53AI,53AI,53AI,53AI
+53ai_agent_get_tip,"前往53AI并登录（{url}）
+ 第一步：选择要接入的智能体，点击""接入使用""
+第二步：在复制""API Endpoint"" 、 ""Bot-Id"" 和 ""SECRET_KEY""，填入下列表单。","前往53AI并登录（{url}）
+ 第一步：选择要接入的智能体，点击""接入使用""
+第二步：在复制""API Endpoint"" 、 ""Bot-Id"" 和 ""SECRET_KEY""，填入下列表单。","Go to 53AI and log in ({url})
+Step 1: Select the agent to connect, then click ""Access API""
+Step 2: Copy ""API Endpoint"", ""Bot-Id"", and ""SECRET_KEY"", then enter them in the form below.","53AIにログイン（{url}）
+ ステップ1：アクセスするインテリジェントエージェントを選択し、""APIアクセス""をクリック
+ ステップ2：""APIエンドポイント"" 、 ""Bot-Id"" と ""SECRET_KEY""をコピーし、以下のフォームに入力してください。"
+53ai_api_endpoint,API Endpoint,API Endpoint,API Endpoint,API Endpoint
+53ai_api_screet,Secret Key,Secret Key,Secret Key,Secret Key
+access_model,接入模型,接入模型,Access Model,接続モデル
+account,账号,賬號,Account,アカウント
+account_psd,账号密码,帳號密碼,Account And Password,アカウントとパスワード
+account_register,注册账号,註冊賬號,Register Account,アカウント登録
+action.add,添加,添加,Add,追加
+action.added,已添加,已添加,Added,追加済み
+action.cancel,取消,取消,Cancel,キャンセル
+action.confirm,确认,確認,Confirm,確認
+action.create,创建,創建,Create,作成
+action.delete,删除,刪除,Delete,削除
+action.edit,编辑,編輯,Edit,編集
+action.manage,管理,管理,Manage,管理
+action.more,更多,更多,More,もっと
+action.next,下一步,下一步,Next,次へ
+action.operation,操作,操作,Operation,操作
+action.save,保存,保存,Save,保存
+action.copy_success,已复制,已複製,Copied,コピーしました
+action.prev,上一步,上一步,Previous,前へ
+action.preview,预览,預覽,Preview,プレビュー
+action.reupload,重新上传,重新上傳,Re-upload,再アップロード
+action.reset_success,重置成功,重置成功,Reset successful,リセット成功
+action.save_failed,保存失败,保存失敗,Saving failed,保存失敗
+action.success,操作成功,操作成功,Operation successful,操作成功
+action.setting,设置,設置,Setting,設定
+action.view,查看,查看,View,表示
+action_add,添加,添加,Add,追加
+action_add_success,已添加,已添加,Added,追加しました
+action_amplify,扩大,擴大,Enlarge,拡大
+action_authorize,授权,授權,Authorize,認証
+action_authorize_success,已授权,已授權,Authorized,認証しました
+action_bind,关联,關聯,Associate,関連付ける
+action_bind_success,已关联,已關聯,Associated,関連付けました
+action_cancel,取消,取消,Cancel,キャンセル
+action_clear,清空,清空,Clear,クリア
+action_close,关闭,關閉,Close,閉じる
+action_confirm,确定,確定,Confirm,確認
+action_confirm_payment,确认收款,確認收款,Confirm Payment receipt,確認支払い
+action_confirm_payment_success,已确认收款,已確認收款,Payment receipt confirmed,確認しました
+action_confirm_success,已确认,已確認,Confirmed,確認しました
+action_copy,复制,複製,Copy,コピー
+action_copy_success,已复制,已複製,Copied,コピーしました
+action_create,创建,創建,Create,作成
+action_delete,删除,刪除,Delete,削除
+action_delete_confirm,确定删除该数据吗？,確定刪除該數據嗎？,Are you sure to delete this data?,このデータを削除してもよろしいですか？
+action_delete_success,已删除,已刪除,Deleted,削除しました
+action_delete_tip,删除提示,刪除提示,Delete Prompt,削除ヒント
+action_disable,禁用,禁用,Disable,無効化
+action_disable_success,已禁用,已禁用,Disabled,無効化しました
+action_edit,编辑,編輯,Edit,編集
+action_enable,启用,啟用,Enable,有効化
+action_enable_success,已启用,已啟用,Enabled,有効化しました
+action_exit,退出登录,退出登錄,Logout,ログアウト
+action_exit_confirm,确定退出登录吗？,確定退出登錄嗎？,Are you sure to logout?,ログアウトしますか？
+action_exit_success,已退出,已退出,Logged Out,ログアウトしました
+action_go,前往,前往,Go,前往
+action_login,登录,登錄,Login,ログイン
+action_login_success,已登录,已登錄,Logged in,ログインしました
+action_manage,管理,管理,Manage,管理
+action_modify,修改,修改,Modify,修正
+action_next_step,下一步,下一步,Next Step,次のステップ
+action_open,开启,開啟,Open,開く
+action_preview,预览,預覽,Preview,プレビュー
+action_register,注册,註冊,Register,登録
+action_register_and_login,注册并登录,註冊並登錄,Register and Login,登録してログイン
+action_register_success,已注册,已註冊,Registered,登録しました
+action_remove,移除,移除,Remove,削除
+action_remove_success,已移除,已移除,Removed,削除しました
+action_rename,重命名,重命名,Rename,名前を変更
+action_renew,续费,續費,Renew,更新
+action_renew_v2,续期,續期,Extend,更新
+action_replace,更换,更換,Replace,置換
+action_reset,重置,重置,Reset,リセット
+action_restart_generation,重新生成,重新生成,Restart Generation,再生成
+action_save,保存,保存,Save,保存
+action_save_failed,保存失败,保存失敗,Saving failed,保存失敗
+action_save_success,已保存,已保存,Saved,保存しました
+action_publish,发布,發布,Publish,公開
+action_search,搜索,搜索,Search,検索
+action_select,选择,選擇,Select,選択
+action_select_file,+ 选择文件,+ 選擇文件,+ Select File,+ ファイルを選択
+action_send,发送,發送,Send,送信
+action_send_success,已发送,已發送,Sent,送信しました
+action_setting,设置,設置,Settings,設定
+action_shrink,缩小,縮小,Zoom out,縮小
+action_sort,排序,排序,Sort,並べ替え
+action_sort_success,已更新排序,已更新排序,Sort Updated,並べ替えが更新されました
+action_stop_generation,停止生成,停止生成,Stop Generation,生成停止
+action_sync_failed,同步失败,同步失敗,Sync failed,同期失敗
+action_sync_start,开始同步,開始同步,Start sync,同期開始
+action_test,测试,測試,Test,テスト
+action_test_failed,不可用,不可用,Unavailable,不可用
+action_test_success,可用,可用,Available,可用
+action_unbind,取消关联,取消關聯,Cancel Association,関連付け解除する
+action_unbind_success,已取消关联,已取消關聯,Association canceled,関連付け解除しました
+action_update,更新,更新,Update,更新
+action_update_success,已更新,已更新,Updated,更新しました
+action_upgrade,升级,升級,Upgrade,アップグレード
+action_upgrade_renewal,升级续费,升級續費,Upgrade Renewal,アップグレード续期
+action_upload,上传,上傳,Upload,アップロード
+action_view_example,查看示例,查看示例,View Example,例を表示
+action_view_more,查看更多,查看更多,View More,もっと見る
+action_visit,访问,訪問,Visit,訪問します
+add_time,添加时间,添加時間,Add Time,添加時間
+admin_user.delete_confirm,确定删除该管理员吗？,確定刪除該管理員嗎？,Are you sure to delete this administrator?,このデータを削除してもよろしいですか？
+admin_user.search_placeholder,搜索已有用户,請輸入管理員賬號,Search existing users,管理員アカウントを入力してください
+admin_user.title,管理员,管理員,Administrator,管理員
+skills.search_placeholder,技能名称,技能名稱,Search skills,スキル検索
+skills.action_add,添加技能,添加技能,Add Skill,スキルを追加
+skills.delete_confirm,确定要删除技能「{skill}」吗？删除后将无法恢复。,確定要刪除技能「{skill}」嗎？刪除後將無法恢復。,Are you sure you want to delete the skill "{skill}"? This action cannot be undone.,スキル「{skill}」を削除してもよろしいですか？削除後は復元できません。
+skills.unsaved_confirm_message,有未保存的更改，确定要离开吗？,有未保存的更改，確定要離開嗎？,There are unsaved changes. Are you sure you want to leave?,保存されていない変更があります。離れてもよろしいですか？
+skills.env.title,环境变量,環境變數,Environment Variables,環境変数
+skills.env.placeholder_key,请输入变量名,請輸入變數名,Enter variable name,変数名を入力してください
+skills.env.placeholder_value,请输入变量值,請輸入變數值,Enter variable value,変数値を入力してください
+skills.env.empty_desc,配置环境变量，安全管理 API Key 等敏感信息,配置環境變數，安全管理 API Key 等敏感信息,Configure environment variables to securely manage sensitive information like API Keys,環境変数を設定し、APIキーなどの機密情報を安全に管理
+skills.env.key_exists,变量名已存在,變數名已存在,Variable name already exists,変数名は既に存在します
+skills.env.add_success,添加成功,添加成功,Added successfully,追加成功
+skills.env.add_failed,添加失败,添加失敗,Failed to add,追加失敗
+skills.env.complete_current,请先完成当前操作,請先完成當前操作,Please complete current operation first,現在の操作を完了してください
+skills.env.delete_confirm,确定删除环境变量 "{key}" 吗？,確定刪除環境變數 "{key}" 嗎？,Are you sure to delete environment variable "{key}"?,環境変数「{key}」を削除してもよろしいですか？
+skills.env.delete_success,删除成功,刪除成功,Deleted successfully,削除成功
+skills.env.delete_failed,删除失败,刪除失敗,Failed to delete,削除失敗
+skills.env.update_success,更新成功,更新成功,Updated successfully,更新成功
+skills.env.update_failed,更新失败,更新失敗,Failed to update,更新失敗
+skills.env.load_failed,加载环境变量失败,載入環境變數失敗,Failed to load environment variables,環境変数の読み込みに失敗しました
+skills.new_skill,新技能,新技能,New Skill,新しいスキル
+skills.quality.completeness,完整性,完整性,Completeness,完全性
+skills.quality.practicality,实用性,实用性,Practicality,実用性
+skills.quality.security,安全性,安全性,Security,安全性
+skills.quality.code_quality,代码质量,代碼質量,Code Quality,コード品質
+skills.quality.documentation,文档质量,文檔質量,Documentation Quality,ドキュメント品質
+skills.load_failed,加载技能数据失败,載入技能數據失敗,Failed to load skill data,スキルデータの読み込みに失敗しました
+skills.display_name,中文名称,中文名稱,Display Name,表示名
+skills.display_name_length_limit,显示名称已达到最大长度限制(50字符),顯示名稱已達到最大長度限制(50字符),Display name has reached max length limit (50 chars),表示名が最大長さ制限(50文字)に達しました
+skills.description_length_limit,描述已达到最大长度限制(500字符),描述已達到最大長度限制(500字符),Description has reached max length limit (500 chars),説明が最大長さ制限(500文字)に達しました
+skills.usage_guide_required,请完善使用说明,請完善使用說明,Please complete the usage guide,使用ガイドを完成してください
+skills.unsaved_changes_confirm,有未保存的更改，是否保存？,有未保存的更改，是否保存？,There are unsaved changes. Do you want to save?,保存されていない変更があります。保存しますか？
+skills.get_skill_failed,获取技能数据失败,獲取技能數據失敗,Failed to get skill data,スキルデータの取得に失敗しました
+skills.publish_failed,发布失败，请重试,發布失敗，請重試,Publishing failed. Please retry,公開に失敗しました。再試行してください
+skills.publish_success,发布成功,發布成功,Published successfully,公開成功
+skills.description_placeholder,请输入技能描述...,請輸入技能描述...,Enter skill description...,スキルの説明を入力...
+skills.skill_config,技能配置,技能配置,Skill Configuration,スキル設定
+skills.source_files,源文件,源文件,Source Files,ソースファイル
+skills.directory,目录,目錄,Directory,ディレクトリ
+skills.create.type_repo,仓库URL,倉庫URL,Repository URL,リポジトリURL
+skills.create.type_repo_desc,输入包含 Skill 的 GitHub 链接，自动拉取并加载技能代码与配置,輸入包含 Skill 的 GitHub 鏈接，自動拉取並加載技能代碼與配置,Enter GitHub link containing Skill, auto-pull and load skill code and config,GitHubリンクを入力し、スキルコードと設定を自動取得
+skills.create.type_upload,上传技能,上傳技能,Upload Skill,スキルをアップロード
+skills.create.type_upload_desc,选择包含Skill的zip压缩包，系统将解压并解析技能配置,選擇包含Skill的zip壓縮包，系統將解壓並解析技能配置,Select zip containing Skill, system will extract and parse skill config,Skillを含むzipを選択、システムが解凍して解析
+skills.create.type_chat,对话创建,對話創建,Create via Chat,チャットで作成
+skills.create.type_chat_desc,与 AI 助手进行交互式对话，描述你的技能需求与功能逻辑,與 AI 助手進行交互式對話，描述你的技能需求與功能邏輯,Interactive dialogue with AI assistant to describe skill requirements,AIアシスタントと対話し、スキル要件を記述
+skills.create.type_chat_tooltip,功能即将上线，敬请期待,功能即將上線，敬請期待,Feature coming soon,機能は近日公開
+skills.create.type,类型,類型,Type,タイプ
+skills.create.file_size_limit,文件大小不能超过10M,文件大小不能超過10M,File size cannot exceed 10MB,ファイルサイズは10MB以下
+skills.create.only_zip,仅支持.zip文件,僅支持.zip文件,Only .zip files supported,.zipファイルのみ対応
+skills.create.upload_success,文件上传成功,文件上傳成功,File uploaded successfully,ファイルのアップロード成功
+skills.create.upload_failed,文件上传失败，请重试,文件上傳失敗，請重試,File upload failed. Please retry,アップロード失敗。再試行してください
+skills.create.connecting_repo,正在连接远程仓库...,正在連接遠程倉庫...,Connecting to remote repository...,リモートリポジトリに接続中...
+skills.create.extracting_file,正在解压Skill文件...,正在解壓Skill文件...,Extracting Skill files...,Skillファイルを解凍中...
+skills.create.no_scan_job_id,无法获取扫描任务ID,無法獲取掃描任務ID,Failed to get scan job ID,スキャンジョブIDの取得に失敗
+skills.create.security_risk_high,此技能风险过高，不建议添加！,此技能風險過高，不建議添加！,This skill has high security risk, not recommended!,このスキルはリスクが高く、推奨されません！
+skills.create.scan_failed,扫描失败,掃描失敗,Scan failed,スキャン失敗
+skills.create.poll_status_failed,查询扫描状态失败,查詢掃描狀態失敗,Failed to query scan status,スキャンステータスの照会に失敗
+skills.create.import_failed,导入失败,導入失敗,Import failed,インポート失敗
+skills.create.select_file,请选择要上传的文件,請選擇要上傳的文件,Please select file to upload,アップロードするファイルを選択
+skills.create.model_not_configured,工作台未设置模型,工作台未設置模型,Workbench model not configured,ワークベンチモデルが設定されていません
+skills.create.missing_skill_md,导入失败：技能包缺少SKILL.MD文件,導入失敗：技能包缺少SKILL.MD文件,Import failed: Skill package missing SKILL.MD file,インポート失敗：SKILL.MDファイルがありません
+skills.create.skill_exists,导入失败：该技能已存在,導入失敗：該技能已存在,Import failed: Skill already exists,インポート失敗：スキルは既に存在します
+skills.create.force_import_failed,强制导入失败,強制導入失敗,Force import failed,強制インポート失敗
+skills.create.github_repo_url,GitHub 仓库 URL,GitHub 倉庫 URL,GitHub Repository URL,GitHubリポジトリURL
+skills.create.github_url_required,请输入GitHub仓库URL,請輸入GitHub倉庫URL,Please enter GitHub repository URL,GitHubリポジトリURLを入力
+skills.create.github_url_invalid,请输入有效的GitHub仓库URL,請輸入有效的GitHub倉庫URL,Please enter valid GitHub repository URL,有効なGitHubリポジトリURLを入力
+skills.create.github_url_placeholder,请输入GitHub仓库的URL，例如：https://github.com/user/skill-repo,請輸入GitHub倉庫的URL，例如：https://github.com/user/skill-repo,Enter GitHub repository URL, e.g.: https://github.com/user/skill-repo,GitHubリポジトリURLを入力（例：https://github.com/user/skill-repo）
+skills.create.drag_or_click,拖拽文件至此，或点击选择文件,拖拽文件至此，或點擊選擇文件,Drag file here or click to select,ファイルをドラッグまたはクリックして選択
+skills.create.zip_file_limit,仅支持拓展名为.zip的文件，大小不超过10M,僅支持拓展名為.zip的文件，大小不超過10M,Only .zip files supported, max 10MB,.zipファイルのみ、最大10MB
+skills.create.pulling_and_scanning,正在拉取并扫描,正在拉取並掃描,Pulling and scanning,プルしてスキャン中
+skills.create.extracting_and_scanning,正在解压并扫描,正在解壓並掃描,Extracting and scanning,解凍してスキャン中
+skills.create.security_risk_blocked,安全风险拦截,安全風險攔截,Security Risk Blocked,セキュリティリスク遮断
+skills.create.security_risk_detail,检测到该技能可能包含高危调用及危险操作，系统已拦截,檢測到該技能可能包含高危調用及危險操作，系統已攔截,Detected potential high-risk operations, system blocked,高危険操作が検出され、システムが遮断
+skills.create.dont_install,不安装,不安裝,Don't Install,インストールしない
+skills.create.install_anyway,仍要安装,仍要安裝,Install Anyway,それでもインストール
+skills.label.repo_url,仓库地址,倉庫地址,Repository URL,リポジトリURL
+skills.label.permission_config,权限配置,權限配置,Permission Configuration,権限設定
+skills.placeholder.display_name,请输入显示名称,請輸入顯示名稱,Enter display name,表示名を入力
+skills.warning.group_required,请至少选择一个分组,請至少選擇一個分組,Please select at least one group,少なくとも1つのグループを選択
+skills.sort_tip,数字越大，排名越靠前,數字越大，排名越靠前,Higher number, higher ranking,数値が大きいほど上位に表示
+skills.usage.skill_id_empty,技能ID不能为空,技能ID不能為空,Skill ID cannot be empty,スキルIDが空です
+skills.usage.ai_content_empty,AI生成内容为空,AI生成內容為空,AI generated content is empty,AI生成内容为空
+skills.usage.ai_generate_success,AI 生成成功,AI 生成成功,AI generated successfully,AI生成成功
+skills.usage.ai_generate_failed,AI 生成失败,AI 生成失敗,AI generation failed,AI生成失敗
+skills.usage.generating,生成中,生成中,Generating,生成中
+skills.usage.add_usage_guide_tip,你可以添加一些该技能的使用说明,你可以添加一些該技能的使用說明,You can add some usage guide for this skill,このスキルの使用ガイドを追加できます
+skills.usage.quality_scores,质量评分,質量評分,Quality Score,品質スコア
+skills.usage.quality_scores_desc,围绕功能完整、安全可靠、代码规范、文档完备，综合评估技能质量,圍繞功能完整、安全可靠、代碼規範、文檔完備，綜合評估技能質量,Comprehensive evaluation of skill quality based on functionality, security, code standards, and documentation,機能性、セキュリティ、コード規範、ドキュメント完備に基づいて総合的に評価
+skills.usage.capabilities,能做什么,能做什麼,What it can do,何ができるか
+skills.usage.capabilities_desc,清晰说明此技能的核心功能与适用场景，快速了解其价值,清晰說明此技能的核心功能與適用場景，快速了解其價值,Clearly explain core functions and applicable scenarios,核心機能と適用シナリオを明確に説明
+skills.usage.usage_example,使用示例,使用示例,Usage Example,使用例
+skills.usage.usage_example_desc,提供具体的使用场景与操作范例，直观掌握使用方法,提供具體的使用場景與操作範例，直觀掌握使用方法,Provide specific usage scenarios and examples,具体的な使用シナリオと例を提供
+skills.usage.best_practice,最佳实践,最佳實踐,Best Practice,ベストプラクティス
+skills.usage.best_practice_desc,分享高效使用此技能的技巧与推荐流程,分享高效使用此技能的技巧與推薦流程,Share tips and recommended workflows for efficient use,効率的な使用のヒントと推奨ワークフローを共有
+skills.usage.faq,常见问题,常見問題,FAQ,よくある質問
+skills.usage.faq_desc,汇总高频问题与对应解决方案，快速排查并解决问题,匯總高頻問題與對應解決方案，快速排查並解決問題,Summarize frequent questions and solutions,高頻度の問題と解決策をまとめる
+skills.usage.positive_case,正面案例,正面案例,Positive Case,ポジティブケース
+skills.usage.positive_case_placeholder,请输入正面案例,請輸入正面案例,Enter positive case,ポジティブケースを入力
+skills.usage.negative_case,反面案例,反面案例,Negative Case,ネガティブケース
+skills.usage.negative_case_placeholder,请输入反面案例,請輸入反面案例,Enter negative case,ネガティブケースを入力
+skills.usage.question,问题,問題,Question,質問
+skills.usage.question_placeholder,请输入问题,請輸入問題,Enter question,質問を入力
+skills.usage.answer,回答,回答,Answer,回答
+skills.usage.answer_placeholder,请输入回答,請輸入回答,Enter answer,回答を入力
+skills.usage.title,标题,標題,Title,タイトル
+skills.usage.title_placeholder,请填写内容标题,請填寫內容標題,Enter title,タイトルを入力
+skills.usage.content_placeholder,请填写输出的内容,請填寫輸出的內容,Enter content,内容を入力
+skills.editor.unsupported_file,当前文件不支持预览或编辑,當前文件不支持預覽或編輯,Current file does not support preview or editing,現在のファイルはプレビューまたは編集に対応していません
+agent.53ai.agent_type_chat,对话型（智能问答）,對話型應用,Conversational (Intelligent Q&A),会話型アプリケーション
+agent.53ai.agent_type_chat_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,"User interacts with a large model, which is autonomous and decision-making, suitable for simple business logic.",ユーザーが大模型と対話し、大模型が自主的に判断決定する。シンプルな業務ロジックに適しています。
+agent.53ai.agent_type_workflow,应用型（应用智改）,工作流編排對話型應用,Application Type (Application Intelligent Transformation),ワークフロー編排会話型アプリケーション
+agent.53ai.agent_type_workflow_desc,用户在表单录入需求，由大模型依据要求思考输出，适用于复杂业务逻辑的智能改造场景 。,工作流是一系列可執行指令的集合，用於實現業務邏輯或完成特定任務。,"Users enter requirements in a form, and the large model thinks and outputs according to the requirements, suitable for intelligent transformation scenarios of complex business logic.",ワークフローは一連の実行可能な命令の集合で、業務ロジックや特定のタスクを実現するために使用されます。
+agent.app_feedback,用户反馈,用戶反饋,User Feedback,ユーザーフィードバック
+agent.app_setting,应用设置,應用設置,Application Setting,アプリケーション設定
+agent.app_statistic,运营数据,運營數據,Operation Data,運営データ
+agent.base_info,基础信息,基礎信息,Base Info,基礎情報
+agent.coze.agent_link,"扣子智能体""编辑状态""的链接",,Coze agent edit link,
+agent.coze.agent_type_chat,对话型（智能体）,對話型應用,Conversational (Agent),会話型アプリケーション
+agent.coze.agent_type_chat_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,"User interacts with a large model, which is autonomous and decision-making, suitable for simple business logic.",ユーザーが大模型と対話し、大模型が自主的に判断決定する。シンプルな業務ロジックに適しています。
+agent.coze.agent_type_workflow,应用型（工作流）,工作流編排對話型應用,Application Type (Workflow),ワークフロー編排会話型アプリケーション
+agent.coze.agent_type_workflow_desc,工作流是一系列可执行指令的集合，用于实现业务逻辑或完成特定任务。,工作流是一系列可執行指令的集合，用於實現業務邏輯或完成特定任務。,"Workflow is a collection of executable instructions, used to implement business logic or complete specific tasks.",ワークフローは一連の実行可能な命令の集合で、業務ロジックや特定のタスクを実現するために使用されます。
+agent.coze.workflow_link,"扣子工作流""编辑状态""的链接","Coze工作流""編輯狀態""的鏈接","Coze workflow ""edit state"" link","Cozeワークフロー""編集状態""のリンク"
+agent.coze.workspace,工作空间,工作空間,Workspace,ワークスペース
+agent.dify.agent_type_chat,对话型 （聊天助手/Agent/Chatflow）,對話型應用,Conversational (Chat Assistant/Agent/Chatflow),会話型アプリケーション
+agent.dify.agent_type_chat_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,"User interacts with a large model, which is autonomous and decision-making, suitable for simple business logic.",ユーザーが大模型と対話し、大模型が自主的に判断決定する。シンプルな業務ロジックに適しています。
+agent.dify.agent_type_workflow,应用型（工作流/文本生成应用）,工作流編排對話型應用,Application Type (Workflow/Text Generation Application),ワークフロー編排会話型アプリケーション
+agent.dify.agent_type_workflow_desc,工作流是一系列可执行指令的集合，用于实现业务逻辑或完成特定任务。 ,工作流是一系列可執行指令的集合，用於實現業務邏輯或完成特定任務。,"Workflow is a collection of executable instructions, used to implement business logic or complete specific tasks.",ワークフローは一連の実行可能な命令の集合で、業務ロジックや特定のタスクを実現するために使用されます。
+agent.fastgpt.agent_type_chat,对话型（简易应用/工作流）,對話型（簡易應用/工作流）,Conversational (Simple Application/Workflow),対話型（簡易アプリケーション/ワークフロー）
+agent.fastgpt.agent_type_chat_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,"User interacts with a large model, which is autonomous and decision-making, suitable for simple business logic.",ユーザーが大模型と対話し、大模型が自主的に判断決定する。シンプルな業務ロジックに適しています。
+agent.fastgpt.agent_type_workflow,应用型（插件）,應用型（插件）,Application Type (Plugin),アプリケーション型（プラグイン）
+agent.fastgpt.agent_type_workflow_desc,可以自定义输入和输出的工作流，通常用于封装重复使用的工作流。,可以自定義輸入和輸出的工作流，通常用於封裝重複使用的工作流。,"A workflow that can customize input and output, usually used to encapsulate frequently used workflows.",入力と出力をカスタマイズ可能なワークフローで、通常は繰り返し使用されるワークフローをパッケージ化するために使用されます。
+agent.input_variable,输入,輸入,Input,入力
+agent.name,智能体,智能體,Agent,エージェント
+agent.name_v2,智能体名称,智能體名稱,Agent Name,インテリジェントエージェント名
+agent.output_variable,输出,輸出,Output,出力
+agent.relate_app.auto_execution,自动执行,自動執行,Auto Execution,自動実行
+agent.relate_app.desc,将智能体的“输出”赋值给关联场景智能体的“输入”，实现多场景任务的自动化流转。,將智能體的“輸出”賦值給關聯場景智能體的“輸入”，實現多場景任務的自動化流轉。,Assign the 'output' of the agent to the 'input' of the associated scenario agent to realize the automated flow of multi-scenario tasks.,エージェントの「出力」を関連シナリオエージェントの「入力」にマッピングし、多シナリオタスクの自動化を実現します。
+agent.relate_app.execution_rule,执行规则,執行規則,Execution Rule,実行ルール
+agent.relate_app.input_mapping,传参映射,傳參映射,Parameter Mapping,入力マッピング
+agent.relate_app.manual_execution,手动执行,手動執行,Manual Execution,手動実行
+agent.relate_app.title,关联场景,關聯場景,Associated Scenario,関連シナリオ
+agent.variable_desc,描述,描述,Description,説明
+agent.variable_label,显示名称,顯示名稱,Display Name,表示名
+agent.variable_max_length,最大输入字数,最大輸入字數,Max Length,最大長
+agent.variable_name,变量名,變量名,Variable Name,変数名
+agent.variable_options,选项,選項,Options,オプション
+agent.variable_required,是否必填,是否必填,Required,必須
+agent.variable_show_word_limit,是否展示字数,是否展示字數,Show Word count,単語数表示
+agent.variable_type,变量类型,變量類型,Variable Type,変数タイプ
+agent.error_details,点击查看详情,點擊查看詳情,Click to view details,詳細を表示
+agent.error_tip,智能体报错，请检查智能体相关配置！,智慧體報告錯誤，請檢查智慧體相關配置。,The agent reported an error. Please check the agent configuration.,エージェントがエラーを報告しました。エージェントの設定を確認してください。
+agent.no_desc,暂无描述,暫無描述,No description,説明がありません
+agent.app_config,应用配置,應用配置,App Config,アプリケーション設定
+agent.access_config,接入配置,接入配置,Access Configuration,アクセス設定
+agent.access_process,接入流程,接入流程,Access Process,アクセス手順
+agent.usage_guide_title,使用说明,使用說明,Usage Guide,使用ガイド
+agent.usage_help,使用帮助,使用幫助,Usage Help,使用ヘルプ
+agent.save_success,保存成功,保存成功,Saved successfully,保存されました
+agent.id_not_exist,智能体ID不存在,智能體ID不存在,Agent ID does not exist,エージェントIDが存在しません
+agent_app.workbench,小助理,小助理,小助理,小助理
+agent_app.knowledge,AI搜问,AI搜问,AI搜问,AI搜问
+agent_app.53ai_agent,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+agent_app.53ai_workflow,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+agent_app.openclaw,OpenClaw,Openclaw,OpenClaw,Openclaw
+agent_app.qclaw,QClaw,QClaw,QClaw,QClaw
+agent_app.codex,Codex,Codex,Codex,Codex
+agent_app.manus,Manus,Manus,Manus,Manus
+agent_app.app_builder,百度千帆Appbuilder,千帆Appbuilder,Qianfan Appbuilder,千帆Appbuilder
+agent_app.bailian,阿里百炼,阿里百煉,Alibaba Bailian,Alibaba Bailian
+agent_app.check_agent_config_tip,请检查智能体配置是否正确,請檢查智能體配置是否正確,Please check if the agent configuration is correct,智能体配置が正しいか確認してください
+agent_app.coze_agent,Coze智能体,Coze智能體,Coze Agent,Cozeインテリジェントエージェント
+agent_app.coze_agent_cn,扣子编程,扣子编程,Coze,Coze
+agent_app.coze_agent_osv,coze studio 开源版,coze studio 开源版,Coze Studio Open Source Version,Coze Studio Open Source Version
+agent_app.coze_workflow,Coze工作流,Coze工作流,Coze Workflow,Cozeアプリケーションインテリジェント
+agent_app.coze_workflow_cn,扣子编程,扣子编程,Coze,Coze
+agent_app.coze_workflow_osv,coze studio 开源版,coze studio 开源版,Coze Studio Open Source Version,Coze Studio Open Source Version
+agent_app.dify_agent,Dify,Dify,Dify,Dify
+agent_app.dify_workflow,Dify,Dify,Dify,Dify
+agent_app.failed_tip,智能体不可用，请检查智能体的接入是否正常，余额是否充足。,智慧體不可用，請檢查智慧體的接入是否正常，餘額是否充足。,The agent is unavailable. Please check if the agent connection is normal and if the balance is sufficient.,エージェントは利用不可です。エージェントの接続状況が正常か、残高が充足しているかを確認してください。
+agent_app.fastgpt_agent,FastGPT,FastGPT,FastGPT,FastGPT
+agent_app.fastgpt_workflow,FastGPT,FastGPT,FastGPT,FastGPT
+agent_app.maxkb_agent,MaxKB,MaxKB,MaxKB,MaxKB
+agent_app.n8n_workflow,n8n,n8n,n8n,n8n
+agent_app.prompt,Prompt,Prompt,Prompt,Prompt
+agent_app.prompt_v2,通过Prompt创建,通過Prompt創建,Create via Prompt,プロンプトで作成
+agent_app.tencent,腾讯云智能体开发平台,腾讯云智能体开发平台,Tencent Cloud,Tencent Cloud
+agent_app.volcengine,火山方舟,火山方舟,Volcengine,Volcengine
+agent_app.yuanqi,腾讯元器,腾讯元器,Tencent Yuanqi,Tencent Yuanqi
+agent_channel_type_not_found,渠道类型未找到，请先保存后再进行调试,渠道類型未找到，請先保存後再進行調試,Channel type not found. Please save first and then debug,チャネルタイプが見つからないため、まず保存してから、インテリジェントエージェントを作成してください
+agent.bot_id,Bot ID,Bot ID,Bot ID,Bot ID
+agent.bot_id_tooltip,智能体唯一标识符，由平台分配。在连接 WebSocket 或调用 API 时需携带此 ID 以识别身份,智能體唯一標識符，由平台分配。在連接 WebSocket 或調用 API 時需攜帶此 ID 以識別身份,Unique identifier for the agent, assigned by the platform. Required when connecting to WebSocket or calling API,エージェントの一意識別子。プラットフォームによって割り当てられます。WebSocket接続やAPI呼び出し時にこのIDを携帯して身元を識別する必要があります
+agent.secret,Secret,Secret,Secret,Secret
+agent.secret_tooltip,与 Bot ID 配对的密钥，用于签名验证和身份认证,與 Bot ID 配對的密鑰，用於簽名驗證和身份認證,Secret key paired with Bot ID for signature verification and authentication,Bot IDとペアになるシークレットキー。署名検証と認証に使用
+agent.ws_url,WebSocket URL,WS Url,WebSocket URL,WS Url
+agent.ws_url_tooltip,WebSocket 服务端地址，用于客户端与 OpenClaw 平台建立实时通信通道,WebSocket 服務端地址，用於客戶端與 OpenClaw 平台建立實時通信通道,WebSocket server address for establishing real-time communication channel between client and OpenClaw platform,WebSocketサーバーアドレス。クライアントとOpenClawプラットフォーム間のリアルタイム通信チャンネルを確立するために使用
+agent.step1_install_plugin,1.安装插件：复制以下指令到命令行执行,1.安裝插件：複製以下指令到命令行執行,1. Install plugin: Copy the following command and run it in the command line,1. プラグインをインストール：以下のコマンドをコマンドラインで実行
+agent.step2_config_secret,2.配置密钥：复制以下配置信息供插件连接使用,2.配置密鑰：複製以下配置信息供插件連接使用,2. Configure secret: Copy the following configuration for the plugin connection,2. シークレットを設定：以下の設定情報をプラグイン接続に使用します
+agent.step3_restart_service,2.重启本地OpenClaw服务,2.重啟本地OpenClaw服務,2. Restart local OpenClaw service,2. ローカルOpenClawサービスを再起動
+agent_delete_confirm,确定删除该智能体？,確定刪除該智能體嗎？,Are you sure to delete this agent?,このインテリジェントエージェントを削除してもよろしいですか？
+agent_file_parse,文档解析,文檔解析,Document Parsing,ドキュメント解析
+agent_image_parse,图片视觉,圖片視覺,Image Vision,画像認識
+agent_not_found,请先保存创建智能体,請先保存創建智能體,Please save the created agent first,まずは保存してから、インテリジェントエージェントを作成してください
+agent_type,智能体类型,智能體類型,AI Agent Type,インテリジェントエージェントタイプ
+agent_type_chat,对话型应用,對話型應用,Dialogue - type Application,会話型アプリケーション
+agent_type_chat_v2,对话型,對話型,Dialogue Type,チャットタイプ
+agent_type.assistant,助理型,助理型,Assistant Type,アシスタントタイプ
+agent_type_completion,workflow型应用,workflow型應用,Workflow Application,ワークフロー型アプリケーション
+agent_type_completion_v2,应用型,應用型,Application Type,アプリケーションタイプ
+agent_type_workflow,工作流编排对话型应用,工作流編排對話型應用,Workflow Orchestration Dialogue - type Application,ワークフロー編排会話型アプリケーション
+alipay,支付宝,支付寶,Alipay,Alipay
+alipay_pay,支付宝支付,支付寶支付,Alipay Payment,
+alipay_payment.app_guide.step_1,1、复制应用名称下方的数字即是APPID,1、複製應用名稱下方的數字即是APPID,"1、Copy the number below the application name, which is the APPID","1、Login to Alipay Open Platform<a class='text-[#5A6D9E]' href='https://open.alipay.com/module/webApp/' target='_blank'>https://open.alipay.com/module/webApp/</a>Create ""Web/Mobile Application"" to get APPID;
+2、Click to enter the application, configure according to the official guide of Alipay in ""Development Settings"" ""Signature Method"" to get application private key and Alipay public key;
+3、In ""Development Settings"" ""Authorization Callback Address"", fill in: <span class=""text-[#586D9A]"">{callback_url}</span><span class='copy-hook'></span>
+4、In [API Management], access the ability of ""Computer Website Payment"" according to the official guide of Alipay to configure or open;"
+alipay_payment.app_guide.title,如何获取APPID,如何獲取APPID,How to get APPID,How to get APPID
+all,全部,全部,All,全て
+all_group,全部分组,全部分組,All Groups,全てのグループ
+all_order,全部订单,全部訂單,All Orders,全ての注文
+all_order_payment,全部支付,全部支付,All Payments,全ての支払い方式
+all_type,全部类型,全部類型,All Types,すべてのタイプ
+ap_host_fastgpt,API 根地址,API 根地址,API Root Address,APIルートアドレス
+api_appid,应用ID,應用ID,App ID,App ID
+api_botid,智能体ID,Bot ID,Agent ID,Bot ID
+api_botid_en,Bot ID,Bot ID,Bot ID,Bot ID
+api_host,后端服务API,後端服務API,Backend Service API,後端サービスAPI
+api_key,API Key,API Key,API Key,API Key
+api_screet,API密钥,API密鑰,API Secret Key,APIシークレットキー
+app_builder,百度千帆AppBuilder,千帆AppBuilder,Qianfan AppBuilder,百度千帆AppBuilder
+app_config,应用配置,應用配置,App Config,アプリケーション設定
+app_delete_confirm,确定删除该应用？,確定刪除該應用嗎？,Are you sure to delete this app?,このアプリケーションを削除してもよろしいですか？
+app_type,应用类型,應用類型,Application Type,应用类型
+apply.contact_customer_service,遇到问题？联系客服解答,遇到問題？聯繫客服解答,meet problems? Contact Customer Service,問題がありますか？カスタマーサービスにお問い合わせください
+apply.contact_customer_service_v2,联系客服,聯絡客服,Contact Customer Service,カスタマーサポートへ連絡
+apply.create_site,创建站点,創建站點,Create Site,サイトを作成
+apply.create_success,创建成功,創建成功,Created successfully,作成成功
+apply.create_title,欢迎开通53AI {project},歡迎開通 53AI {project},Welcome to activate 53AI {project},53AI {project} の开通を歓迎します
+apply.domain,域名,域名,Domain Name,ドメイン名
+apply.domain_already_use,{domain} 已被使用，试试其他域名吧~,{domain} 已被使用，試試其他域名吧～,{domain} is already in use. Please try another domain~,{domain} はすでに使用されています。他のドメインを試してみてください～
+apply.domain_placeholder,请输入你的域名,請輸入你的域名,Please enter your domain name,あなたのドメイン名を入力してください
+apply.enterprise_name_placeholder,请输入企业/组织名称,請輸入企業 / 組織名稱,Please enter the enterprise/organization name,企業 / 組織名を入力してください
+apply.enterprise_not_empty,企业/组织名称不能为空,企業 / 組織名稱不能為空,The enterprise/organization name cannot be empty,企業 / 組織名は空にできません
+apply.expired,已过期,已過期,Expired,期限切れ
+apply.expired_time_forever,永久生效,永久生效,Permanently valid,永久有効
+apply.mobile_unregistered_tip,该手机号未注册，输入验证码及登录密码完成企业创建,該手機號未註冊，輸入驗證碼及登錄密碼完成企業建立,This mobile number is unregistered. Enter the verification code and login password to complete enterprise creation.,この電話番号は未登録です。認証コードとログインパスワードを入力し、企業作成を完了してください。
+apply.process,审核中,審核中,Processing,処理中
+apply.refresh_list,刷新列表,刷新列表,Refresh List,リストを更新
+apply.reject,已拒绝,已拒绝,Rejected,拒否
+apply.waiting_audit,等待审核,等待審核,Waiting for review,審査中
+apply_open,申请开通,申請開通,Apply for Activation,申請開通
+apply_success,申请成功,申請成功,Application Successful,申請成功
+apply_success_desc,我们会在24小时内完成审核，你也可以扫码添加专属客服了解进度,請等待管理員審核，審核通過後即可使用,We will complete the review within 24 hours. You can also scan the code to add a dedicated customer service to know the progress,管理者が審査を行い、承認された後に使用できるようになります
+auth_required,{provider_name}未授权，请先前往{provider_name}授权,{provider_name}未授權，請先前往{provider_name}授權,"{provider_name} is not authorized, please go to {provider_name} to authorize",{provider_name}未授權，請先前往{provider_name}授權
+authorized_at,授权于,授權於,Authorized at,認証日時
+avatar,头像,頭像,Avatar,アバター
+azure_open_ai,Azure OpenAI,Azure OpenAI,Azure OpenAI,Azure OpenAI
+bailian,阿里百炼,阿里百炼,Alibaba Bailian,Alibaba Bailian
+bailian_agent_get_tip,"前往阿里百炼并登录（{ url }）
+第一步：登录阿里百炼，去到应用 - 应用管理页。
+第二步：选择一个应用，复制应用卡片中的“应用ID”粘贴到下面表单。
+第三步：点应用卡片下的发布，获取API-KEY，复制粘贴到下面表单。","前往阿里百炼并登录（{ url }）
+第一步，登录阿里百炼，去到应用 - 应用管理页。
+第二步：选择一个应用，复制应用卡片中的“应用ID”粘贴到下面表单。
+第三步：点应用卡片下的发布，获取API-KEY，复制粘贴到下面表单。","Go to Alibaba Bailian and login ({ url })
+ Step 1: Login Alibaba Bailian and go to the Application - Application Management page.
+ Step 2:  Select an application, copy the 'Application ID' in the application card and paste it into the form below.
+ Step3: Click Publish under the application card to obtain the API - KEY, copy and paste it into the form below.","Alibaba Bailianにログイン（{ url }）
+ ステップ1：Alibaba Bailianにログインし、アプリケーションを選択（または作成）し、""公開""をクリックし、API-KEYを取得し、以下に入力してください。
+ ステップ2：Alibaba Bailianの現在のURLからassistant/の後の部分をコピーし、以下に入力してください。
+ 付帯ヘルプ：APP IDとWorkspace IDの取得方法（{ help_url }）"
+banner.interval,图片轮播间隔,圖片輪播間隔,Image Carousel Interval,画像輪播間隔
+banner.interval_tip,当Banner区存在多张图片时，设定图片滚动时间间隔,當Banner區存在多張圖片時，設定圖片滾動時間間隔,"When there are multiple images in the Banner area, set the image scrolling interval",バナー領域に複数の画像が存在する場合、画像スクロール時間間隔を設定します
+banner.upload_image,上传图片,上傳圖片,Upload Image,画像をアップロード
+banner.upload_image_tip,上传 1920×380 的像素图片效果最佳，图片大小小于 10 MB,上傳 1920×380 的像素圖片效果最佳，圖片大小小於 10 MB,"Upload 1920×380 pixel images for the best effect, image size less than 10 MB",1920×380 のピクセル画像が最適で、画像サイズは 10 MB 未満です
+base_setting,欢迎语,欢迎语,Welcome Message,欢迎语
+basic_info,基本信息,基礎信息,Basic Information,基本情報
+bind_account,已绑定的账户,已綁定的賬戶,Bound Account,バインドアカウント
+chat.empty_desc,在输入框中填写内容调试吧~,在輸入框中填寫內容調試吧~,Fill in the content in the input box to debug,入力ボックスに内容を入力してデバッグしてください
+chat_glm,智谱AI,智譜AI,ChatGLM,ChatGLM
+cleaning_policy.add_condition,添加,添加,Add,追加
+cleaning_policy.add_rule,添加管线,添加管线,Add Pipeline,ルールを追加
+cleaning_policy.custom_rules,自定义,自定義,Custom,カスタム
+cleaning_policy.and,且,且,And,かつ
+cleaning_policy.condition_required,请输入条件,請輸入條件,Enter condition,条件を入力してください
+cleaning_policy.delete_confirm,确定要删除清洗策略「{name}」吗？,確定要刪除清洗策略「{name}」嗎？,"Delete cleaning rule ""{name}""?",クリーニングルール「{name}」を削除しますか？
+cleaning_policy.description,文档将按以下顺序进行清洗，可以拖动以调整优先级,文檔將按以下順序進行清洗，可拖動以調整優先級,Documents will be cleaned in the following order; drag to adjust priority,ドキュメントは以下の順序でクリーニングされます。ドラッグで優先度を変更できます
+cleaning_policy.edit_fallback_rule,编辑兜底规则,編輯兜底規則,Edit Fallback Rule,フォールバックルールを編集
+cleaning_policy.fallback_execute,兜底执行,兜底執行,Fallback,フォールバック実行
+cleaning_policy.fallback_strategy,默认,默认,Default,Default
+cleaning_policy.field_extension,后缀名,後綴名,Extension,拡張子
+cleaning_policy.field_filename,文件名,文件名,Filename,ファイル名
+cleaning_policy.field_foldername,文件夹名,文件夾名,Folder name,フォルダ名
+cleaning_policy.field_space_name,知识库名,知識庫名,Space name,スペース名
+cleaning_policy.general_parse,通用解析,通用解析,General Parse,汎用解析
+cleaning_policy.max_conditions_tip,最多可设置5个条件,最多可設置5個條件,Up to 5 conditions,最大5つの条件
+cleaning_policy.operator_contains,包含,包含,Contains,を含む
+cleaning_policy.operator_ends_with,结尾是,結尾是,Ends with,で終わる
+cleaning_policy.operator_eq,等于,等於,Equals,等しい
+cleaning_policy.operator_in,属于,屬於,In,に含まれる
+cleaning_policy.operator_starts_with,开头是,開頭是,Starts with,で始まる
+cleaning_policy.or,或,或,Or,または
+cleaning_policy.other_all_files,"未命中"自定义管线"的文件，兜底执行默认的"通用管线"","未命中"自定義管線"的檔案，兜底執行預設的"通用管線"",All other files,その他すべてのファイル
+cleaning_policy.pipeline_required,请选择执行的数据管线,請選擇執行的數據管線,Select a data pipeline,データパイプラインを選択してください
+cleaning_policy.placeholder_extension,请输入后缀名，例如：pdf,請輸入後綴名，例如：pdf,e.g. pdf,例：pdf
+cleaning_policy.placeholder_filename,请输入文件名，例如：知识库,請輸入文件名，例如：知識庫,e.g. Knowledge,例：知識庫
+cleaning_policy.placeholder_foldername,请输入文件夹名，例如：知识库,請輸入文件夾名，例如：知識庫,e.g. Knowledge,例：知識庫
+cleaning_policy.placeholder_space_name,请输入知识库名，例如：知识库,請輸入知識庫名，例如：知識庫,e.g. Knowledge,例：知識庫
+cleaning_policy.rule_name,规则名称,規則名稱,Rule Name,ルール名
+cleaning_policy.rule_name_duplicate,规则名称已存在，请使用其他名称,規則名稱已存在，請使用其他名稱,"Rule name already exists, use another",ルール名が既に存在します。別の名前を使用してください
+cleaning_policy.rule_name_placeholder,请输入规则名称,請輸入規則名稱,Enter rule name,ルール名を入力
+cleaning_policy.rule_name_required,请输入规则名称,請輸入規則名稱,Enter rule name,ルール名を入力してください
+cleaning_policy.select_pipeline_placeholder,请选择执行的数据管线,請選擇執行的數據管線,Select data pipeline,データパイプラインを選択
+cleaning_policy.then_action,则执行（动作）,則執行（動作）,Then execute (action),実行する（アクション）
+cleaning_policy.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,未保存の変更があります。終了しますか？
+cleaning_policy.when,当,當,When,当
+cleaning_policy.when_condition,当满足（条件）,當滿足（條件）,When (conditions),条件を満たすとき
+cloud_computing_platform,云计算平台,雲計算平台,Cloud Computing Platform,クラウドコンピューティングプラットフォーム
+commom.add_manual,手动添加,手動添加,Add Manually,手動追加
+commom.add_market,从应用市场添加,從應用市場添加,Add from App Market,アプリケーションマーケットから追加
+common.created_time,创建时间,創建時間,Created Time,作成日時
+common.creator,创建人,創建人,Creator,作成者
+common.member,成员,成員,Member,メンバー
+common.name,名称,名稱,Name,名前
+common.image_cropper,图片裁剪,圖片裁剪,Image Cropper,画像裁剪
+common.short_name,简称,簡稱,Abbreviation,簡略名
+common.no_data,暂无数据,暫無數據,No Data,データがありません
+common.feature_coming_soon,功能即将上线，敬请期待,功能即將上線，敬請期待,"Feature coming soon, please wait",機能はすぐに登場します。お楽しみに！
+common.feature_not_available,{functionName}暂不可用，请联系管理员~~,{functionName}暫不可用，請聯繫管理員~~,"{functionName} is not available, please contact the administrator~~",{functionName}は利用できません。管理者にお問い合わせください~~
+common.feature_over_limit,{functionName}数量已达上限，请联系管理员~~,{functionName}數量已達上限，請聯繫管理員~~,"{functionName} has reached the upper limit, please contact the administrator~~",{functionName}の使用量は上限を超えています。管理者にお問い合わせください~~
+completion_completed,已完成深度思考,已完成深度思考,Deep Thinking Completed,深い思考が完了しました
+completion_thinking,深度思考中...,深度思考中...,Deep Thinking in progress...,深く考えています...
+connected,已接入,已接入,Connected,連携済み
+connected_platform,接入平台,已連接的平台,Connected Platform,連携プラットフォーム
+connecting,接入中,接入中,Connecting,連携中
+connecting_agent_total,已接入 {total} 个应用,已接入 {total} 個應用,Connected to {total} applications,連携済み {total} 個應用
+copyright_desc,Copyright © 2014-{year} 广州群应用网络科技有限公司. All Rights Reserved 版权所有 粤ICP备17114055号,版權所有 © 2014-{year} 廣州群應用網絡科技有限公司.Al Rights Reserve 版權所有 粵ICP備17114055號,"Copyright © 2014-{year} Guangzhou Qunying Network Technology Co., Ltd. All Rights Reserved. ICP Filing No. 17114055",Copyright © 2014-{year} 53AI. All rights reserved.
+coze,Coze,Coze,Coze,Coze
+coze_cn,扣子编程,扣子编程,Coze.cn,扣子编程
+coze_workflow_link,Coze工作流“编辑状态”的链接,"Coze工作流""編輯狀態""的鏈接","Coze workflow ""edit state"" link","Cozeワークフロー""編集状態""のリンク"
+create_new_enterprise,创建新企业/组织,建立新企業 / 組織,Create a New Enterprise/Organization,新しい企業 / 組織を作成する
+create_time,创建时间,創建時間,Create Time,作成日時
+created_time,创建时间,創建時間,Created Time,作成日時
+dark_moon,月之暗面,月之暗面,Dark Moon,月の暗さ
+data_pipeline.add_pipeline,添加管线,添加管線,Add Pipeline,パイプラインを追加
+data_pipeline.cannot_delete_unsaved,无法删除未保存的流水线,無法刪除未保存的流水線,Cannot delete an unsaved pipeline,未保存の流水線は削除できません
+data_pipeline.chunk_append_filename,叠加文件名,疊加文件名,Append Filename,ファイル名を追加
+data_pipeline.chunk_append_title_subtitle,叠加标题及子标题,疊加標題及子標題,Append Title and Subtitle,タイトル・サブタイトルを追加
+data_pipeline.chunk_auto_generate,自动生成,自動生成,Auto Generate,自動生成
+data_pipeline.chunk_common_divider,分割线（---）,分割線（---）,Divider (---),区切り線（---）
+data_pipeline.chunk_common_exclamation,感叹号（！）,感嘆號（！）,Exclamation (!),感嘆符（！）
+data_pipeline.chunk_common_newline1,1 个换行符（\n）,1 個換行符（\n）,1 newline (\n),改行1つ（\n）
+data_pipeline.chunk_common_newline2,2 个换行符（\n\n）,2 個換行符（\n\n）,2 newlines (\n\n),改行2つ（\n\n）
+data_pipeline.chunk_common_period,句号（。）,句號（。）,Period (.),句点（。）
+data_pipeline.chunk_common_question,问号（？）,問號（？）,Question mark (?),疑問符（？）
+data_pipeline.chunk_common_semicolon,分号（；）,分號（；）,Semicolon (;),セミコロン（；）
+data_pipeline.chunk_custom,自定义拆分,自定義拆分,Custom Split,カスタム分割
+data_pipeline.chunk_default,默认,默認,Default,デフォルト
+data_pipeline.chunk_default_index,默认索引,默認索引,Default Index,デフォルト索引
+data_pipeline.chunk_faq,常见问法,常見問法,FAQ,よくある質問
+data_pipeline.chunk_header_h1,一级标题（H1）,一級標題（H1）,Heading 1 (H1),見出し1（H1）
+data_pipeline.chunk_header_h2,二级标题（H2）,二級標題（H2）,Heading 2 (H2),見出し2（H2）
+data_pipeline.chunk_header_h3,三级标题（H3）,三級標題（H3）,Heading 3 (H3),見出し3（H3）
+data_pipeline.chunk_header_h4,四级标题（H4）,四級標題（H4）,Heading 4 (H4),見出し4（H4）
+data_pipeline.chunk_header_h5,五级标题（H5）,五級標題（H5）,Heading 5 (H5),見出し5（H5）
+data_pipeline.chunk_identifier,标识符,標識符,Identifier,識別子
+data_pipeline.chunk_identifier_first,标识符优先,標識符優先,Identifier First,識別子優先
+data_pipeline.chunk_index_enhance,索引增强,索引增強,Index Enhancement,索引強化
+data_pipeline.chunk_knowledge_point,知识点,知識點,Knowledge Point,知識ポイント
+data_pipeline.chunk_length,长度,長度,Length,長さ
+data_pipeline.chunk_length_first,长度优先,長度優先,Length First,長さ優先
+data_pipeline.chunk_none,整篇,整篇,Whole Document,全文
+data_pipeline.chunk_recall_metadata,召回语料,召回語料,Recall Metadata,検索メタデータ
+data_pipeline.chunk_retrieval_block,检索块,檢索塊,Retrieval Block,検索ブロック
+data_pipeline.chunk_specified_identifier,指定标识符,指定標識符,Specified Identifier,指定識別子
+data_pipeline.chunk_summary,内容概要,內容概要,Summary,概要
+data_pipeline.chunk_type_data_table,数据表格,數據表格,Data Table,データテーブル
+data_pipeline.chunk_type_data_table_desc,识别表格结构，分段计算其清洗数据,識別表格結構，分段計算其清洗數據,Recognize table structure and segment for cleaning,表構造を認識し分割・清洗
+data_pipeline.chunk_type_default,通用文档,通用文檔,General Document,汎用ドキュメント
+data_pipeline.chunk_type_default_desc,多格式文档，智能分段并清洗数据,多格式文檔，智能分段並清洗數據,"Multi-format documents, smart segmentation and cleaning",多形式ドキュメント、スマート分割・清洗
+data_pipeline.chunk_type_qa,百问百答,百問百答,Q&A,Q&A
+data_pipeline.chunk_type_qa_desc,聚焦问答类结构，拆分问题与答案,聚焦問答類結構，拆分問題與答案,"Q&A structure, split questions and answers",Q&A構造、質問と回答を分割
+data_pipeline.clean_action,动作,動作,Action,アクション
+data_pipeline.clean_preview_after,效果预览(处理后),效果預覽(處理後),Preview (After),プレビュー（処理後）
+data_pipeline.clean_preview_before,效果预览(处理前),效果預覽(處理前),Preview (Before),プレビュー（処理前）
+data_pipeline.clean_rule_invalid_tags,移除无效标签,移除無效標籤,Remove Invalid Tags,無効タグを削除
+data_pipeline.clean_rule_invalid_tags_desc,移除文档中的页眉、页脚、页码、脚注等无效标签。,移除文檔中的頁眉、頁腳、頁碼、腳註等無效標籤。,"Remove headers, footers, page numbers, footnotes, etc.",ヘッダー、フッター、ページ番号、脚注などを削除。
+data_pipeline.clean_rule_pronoun_replace,代词替换,代詞替換,Pronoun Replacement,代名詞置換
+data_pipeline.clean_rule_pronoun_replace_desc,将原文中的代词替换为指定的实际内容。,將原文中的代詞替換為指定的實際內容。,Replace pronouns with specified content.,代名詞を指定内容に置換。
+data_pipeline.clean_rule_special_char,特殊字符过滤,特殊字符過濾,Special Character Filter,特殊文字フィルター
+data_pipeline.clean_rule_special_char_desc,移除原文中特殊字符占比过高的段落。,移除原文中特殊字符佔比過高的段落。,Remove paragraphs with excessive special characters.,特殊文字比率が高い段落を削除。
+data_pipeline.clean_rule_spell_check,错别字纠正,錯別字糾正,Spell Check,誤字訂正
+data_pipeline.clean_rule_spell_check_desc,识别并纠正原文中的错别字。,識別並糾正原文中的錯別字。,Detect and correct typos in the text.,原文の誤字を検出して訂正。
+data_pipeline.clean_short_text_threshold,短文本长度阈值,短文本長度閾值,Short Text Length Threshold,短文長閾値
+data_pipeline.clean_special_char_threshold,特殊字符占比阈值,特殊字符佔比閾值,Special Character Ratio Threshold,特殊文字比率閾値
+data_pipeline.clean_threshold_tune,清洗阈值精调,清洗閾值精調,Cleaning Threshold Tuning,清洗閾値調整
+data_pipeline.col_enabled_nodes,启用节点,啟用節點,Enabled Nodes,有効ノード
+data_pipeline.col_name,名称,名稱,Name,名前
+data_pipeline.col_operation,操作,操作,Actions,操作
+data_pipeline.col_success_rate,成功率,成功率,Success Rate,成功率
+data_pipeline.col_volume,处理量,處理量,Volume,処理量
+data_pipeline.created_at_label,创建时间,創建時間,Created,作成日時
+data_pipeline.delete_confirm,确定要删除流水线「{name}」吗？,確定要刪除流水線「{name}」嗎？,"Delete pipeline ""{name}""?",流水線「{name}」を削除しますか？
+data_pipeline.deleted_success,已删除,已刪除,Deleted,削除しました
+data_pipeline.dialog_title_create,创建,創建,Create,作成
+data_pipeline.dialog_title_edit,编辑,編輯,Edit,編集
+data_pipeline.graph_add_entity_type,添加实体类型,添加實體類型,Add Entity Type,エンティティタイプを追加
+data_pipeline.graph_ai_generate,AI 一键生成,AI 一鍵生成,AI Generate,AI一括生成
+data_pipeline.graph_auto_discover,自动发现模式,自動發現模式,Auto Discover,自動発見
+data_pipeline.graph_auto_discover_desc,让 AI 自动识别文档中的知识图谱,讓 AI 自動識別文檔中的知識圖譜,Let AI discover knowledge graph in the document,AIがドキュメント内の知識グラフを自動認識
+data_pipeline.graph_entity_clause,条款,條款,Clause,条項
+data_pipeline.graph_entity_clause_attrs,类型、权重、条款内容,類型、權重、條款內容,"Type, Weight, Content",タイプ、重み、内容
+data_pipeline.graph_entity_config,核心实体配置,核心實體配置,Core Entity Config,コアエンティティ設定
+data_pipeline.graph_entity_contract,合同,合同,Contract,契約
+data_pipeline.graph_entity_contract_attrs,甲方、乙方、金额、状态、签署时间,甲方、乙方、金額、狀態、簽署時間,"Party A, Party B, Amount, Status, Signing Time",甲、乙、金額、状態、署名日時
+data_pipeline.graph_entity_org_attrs,名称、代码、规模,名稱、代碼、規模,"Name, Code, Scale",名称、コード、規模
+data_pipeline.graph_entity_organization,组织,組織,Organization,組織
+data_pipeline.graph_index_desc,知识图谱通过提取文档中的实体与关系，构建非线性的语义网络。这对于处理复杂逻辑查询（如：A 与 B 的关系是什么？）具有显著的召回优势。,知識圖譜通過提取文檔中的實體與關係，構建非線性的語義網絡。這對於處理複雜邏輯查詢（如：A 與 B 的關係是什麼？）具有顯著的召回優勢。,Knowledge graph extracts entities and relations to build a semantic network. It improves recall for complex queries (e.g. what is the relation between A and B?).,知識グラフはエンティティと関係を抽出してセマンティックネットワークを構築します。複雑な論理クエリ（例：AとBの関係は？）の再現率向上に有効です。
+data_pipeline.graph_index_title,知识图谱索引,知識圖譜索引,Knowledge Graph Index,知識グラフ索引
+data_pipeline.graph_ontology_template,本体模板,本體模板,Ontology Template,オントロジーテンプレート
+data_pipeline.graph_predefined,预定义模式,預定義模式,Predefined Mode,事前定義モード
+data_pipeline.graph_predefined_desc,仅提取指定的实体与关系（推荐）,僅提取指定的實體與關係（推薦）,Extract specified entities and relations only (recommended),指定したエンティティと関係のみ抽出（推奨）
+data_pipeline.graph_relation_tip,基于所选实体，自动推导可能存在的关系链路。,基於所選實體，自動推導可能存在的關係鏈路。,Derive possible relation links from selected entities.,選択したエンティティから可能な関係を導出。
+data_pipeline.graph_relation_type,关系类型,關係類型,Relation Type,関係タイプ
+data_pipeline.graph_template_finance,金融分析,金融分析,Finance,金融
+data_pipeline.graph_template_general,通用模板,通用模板,General,汎用
+data_pipeline.graph_template_plan,策划方案,策劃方案,Plan,企画案
+graph_template.fetch_failed,获取模板数据失败,獲取模板數據失敗,Failed to fetch template data,テンプレートデータの取得に失敗しました
+graph_template.prepare_failed,准备数据失败，请重试,準備數據失敗，請重試,Failed to prepare data, please retry,データの準備に失敗しました。再試行してください
+graph_template.delete_confirm,确认删除模板「{name}」吗？,確認刪除模板「{name}」嗎？,"Confirm to delete template ""{name}""?",テンプレート「{name}」を削除しますか？
+graph_template.unnamed,未命名模板,未命名模板,Unnamed Template,名前のないテンプレート
+graph_template.no_description,暂无描述信息,暫無描述信息,No description,説明なし
+graph_template.entity_type,实体类型,實體類型,Entity Type,エンティティタイプ
+graph_template.no_tags,暂无标签,暫無標籤,No tags,タグなし
+graph_template.delete_failed,删除图谱模板失败,刪除圖譜模板失敗,Failed to delete graph template,グラフテンプレートの削除に失敗しました
+graph_template.auto_generate,自动生成,自動生成,Auto Generate,自動生成
+graph_template.auto_generate_desc,AI根据业务场景或示例文档自动生成,AI根據業務場景或示例文檔自動生成,AI generates based on business scenario or sample documents,AIがビジネスシナリオやサンプルドキュメントに基づいて自動生成
+graph_template.template_import,模板导入,模板導入,Template Import,テンプレートインポート
+graph_template.template_import_desc,导入 JSON 格式的本体模板,導入 JSON 格式的本體模板,Import JSON ontology template,JSONオントロジーテンプレートをインポート
+graph_template.manual_create,人工创建,人工創建,Manual Create,手動作成
+graph_template.manual_create_desc,手动定义实体类型及实体之间关系,手動定義實體類型及實體之間關係,Manually define entity types and relations,エンティティタイプと関係を手動で定義
+graph_template.scene_desc_placeholder,请输入业务场景描述或示例文档内容（40-8000字）,請輸入業務場景描述或示例文檔內容（40-8000字）,Enter business scenario or sample document content (40-8000 characters),ビジネスシナリオやサンプルドキュメントの内容を入力（40-8000文字）
+graph_template.scene_desc_length_invalid,场景描述长度需在 40-8000 个字符之间,場景描述長度需在 40-8000 個字符之間,Scene description must be 40-8000 characters,シナリオの説明は40〜8000文字で入力
+graph_template.json_template_placeholder,请输入 Json 模板,請輸入 Json 模板,Enter JSON template,JSONテンプレートを入力
+graph_template.invalid_json,请输入有效的 JSON 格式数据,請輸入有效的 JSON 格式數據,Please enter valid JSON format data,有効なJSON形式のデータを入力してください
+graph_template.json_template_empty,JSON 内容不能为空,JSON 內容不能為空,JSON content cannot be empty,JSONコンテンツは空にできません
+graph_template.analyze_failed,分析内容失败，请检查输入或稍后重试,分析內容失敗，請檢查輸入或稍後重試,Failed to analyze content, please check input or retry later,コンテンツの分析に失敗しました。入力を確認するか、後で再試行してください
+graph_template.scene_desc_label,场景描述或示例文档,場景描述或示例文檔,Scenario Description or Sample Document,シナリオ説明またはサンプルドキュメント
+graph_template.json_template_label,Json模板,Json模板,JSON Template,JSONテンプレート
+graph_template.form,表单,表單,Form,フォーム
+graph_template.name_label,名称,名稱,Name,名前
+graph_template.name_placeholder,请输入名称,請輸入名稱,Enter name,名前を入力
+graph_template.name_length_error,名称长度在 2-50 个字符,名稱長度在 2-50 個字符,Name must be 2-50 characters,名前は2〜50文字で入力
+graph_template.desc_label,描述,描述,Description,説明
+graph_template.desc_placeholder,请输入描述,請輸入描述,Enter description,説明を入力
+graph_template.desc_length_error,描述长度不能超过 200 个字符,描述長度不能超過 200 個字符,Description cannot exceed 200 characters,説明は200文字以内で入力
+graph_template.core_entity,核心实体,核心實體,Core Entity,コアエンティティ
+graph_template.add,添加,添加,Add,追加
+graph_template.property_placeholder,请输入属性名称后回车,請輸入屬性名稱後回車,Enter property name and press Enter,プロパティ名を入力してEnterを押す
+graph_template.ai_generate,AI生成,AI生成,AI Generate,AI生成
+graph_template.no_relation_hint,暂无关系类型，点击「AI生成」可根据实体自动推荐。,暫無關係類型，點擊「AI生成」可根據實體自動推薦。,No relation types. Click "AI Generate" to auto-recommend based on entities.,関係タイプがありません。「AI生成」をクリックすると、エンティティに基づいて自動推薦します。
+graph_template.source_entity_placeholder,请选择来源实体,請選擇來源實體,Select source entity,ソースエンティティを選択
+graph_template.relation_type_placeholder,请输入关系类型，例如：包含,請輸入關係類型，例如：包含,Enter relation type, e.g. contains,関係タイプを入力（例：含む）
+graph_template.target_entity_placeholder,请选择目标实体,請選擇目標實體,Select target entity,ターゲットエンティティを選択
+graph_template.json_format_invalid,JSON 格式有误，已强制重置为上次有效数据,JSON 格式有誤，已強制重置為上次有效數據,Invalid JSON format, reset to last valid data,JSON形式が無効です。最後の有効なデータにリセットしました
+graph_template.add_entity_first,请先添加核心实体,請先添加核心實體,Please add core entity first,先にコアエンティティを追加してください
+graph_template.fill_entity_name,请先填写至少一个实体名称,請先填寫至少一個實體名稱,Please fill in at least one entity name,少なくとも1つのエンティティ名を入力してください
+graph_template.config_two_entities,请先配置至少两个实体,請先配置至少兩個實體,Please configure at least two entities,少なくとも2つのエンティティを設定してください
+graph_template.complete_entity_info,请先完善核心实体的名称或属性,請先完善核心實體的名稱或屬性,Please complete core entity name or properties,コアエンティティの名前またはプロパティを完成してください
+graph_template.ai_generate_success,AI 已生成关系类型,AI 已生成關係類型,AI has generated relation types,AIが関係タイプを生成しました
+graph_template.ai_generate_failed,AI 生成关系类型失败,AI 生成關係類型失敗,Failed to generate relation types by AI,AIによる関係タイプ生成に失敗しました
+graph_template.json_format_error,JSON 格式有误，请检查后再提交,JSON 格式有誤，請檢查後再提交,Invalid JSON format, please check before submitting,JSON形式が無効です。送信前に確認してください
+graph_template.config_one_entity,请至少配置一个完整的核心实体（名称和至少一个属性）,請至少配置一個完整的核心實體（名稱和至少一個屬性）,Please configure at least one complete core entity (name and at least one property),少なくとも1つの完全なコアエンティティ（名前と少なくとも1つのプロパティ）を設定してください
+graph_template.entity_name_duplicate,核心实体名称不能重复，请检查后重新提交,核心實體名稱不能重複，請檢查後重新提交,Core entity names cannot be duplicated, please check and resubmit,コアエンティティ名は重複できません。確認して再送信してください
+graph_template.config_one_relation,请至少配置一个关系类型,請至少配置一個關係類型,Please configure at least one relation type,少なくとも1つの関係タイプを設定してください
+graph_template.duplicate_entity_name,存在重复的实体名称：{name},存在重複的實體名稱：{name},Duplicate entity name: {name},重複するエンティティ名：{name}
+graph_template.incomplete_relation,存在不完整的关系类型，请检查来源、关系名称和目标是否均已填写,存在不完整的關係類型，請檢查來源、關係名稱和目標是否均已填寫,Incomplete relation type found, please check source, relation name and target,不完全な関係タイプがあります。ソース、関係名、ターゲットが入力されているか確認してください
+graph_template.duplicate_relation,存在重复的关系定义：{source} - {predicate} - {target},存在重複的關係定義：{source} - {predicate} - {target},Duplicate relation definition: {source} - {predicate} - {target},重複する関係定義：{source} - {predicate} - {target}
+graph_template.relation_entity_not_found,关系中的来源或目标实体不存在于核心实体列表中,關係中的來源或目標實體不存在於核心實體列表中,Source or target entity in relation not found in core entity list,関係のソースまたはターゲットエンティティがコアエンティティリストに存在しません
+graph_template.fetch_detail_failed,获取模板详情失败,獲取模板詳情失敗,Failed to fetch template detail,テンプレート詳細の取得に失敗しました
+graph_template.name_duplicate,该模板名称已存在，请更换名称后保存,該模板名稱已存在，請更換名稱後保存,Template name already exists, please use another name,テンプレート名は既に存在します。別の名前を使用してください
+data_pipeline.name_duplicate,管线名称已存在，请使用其他名称,管線名稱已存在，請使用其他名稱,"Pipeline name already exists, use another",パイプライン名は既に存在します。別の名前を使用してください
+data_pipeline.name_label,名称,名稱,Name,名前
+data_pipeline.name_max_length,名称长度不能超过20个字符,名稱長度不能超過20個字符,Name must be 20 characters or less,名前は20文字以内にしてください
+data_pipeline.name_placeholder,请输入管线名称,請輸入管線名稱,Enter pipeline name,パイプライン名を入力してください
+data_pipeline.node_config,节点配置,節點配置,Node Config,ノード設定
+data_pipeline.node_content_cleaning,内容清洗,內容清洗,Content Cleaning,コンテンツ清洗
+data_pipeline.node_desc_content_cleaning,规整文本，去冗余、修格式,規整文本，去冗餘、修格式,"Normalize text, remove redundancy, fix format",テキストを正規化し、冗長を除去、フォーマットを修正
+data_pipeline.node_desc_document_chunking,拆分文档内容为语料片段,拆分文檔內容為語料片段,Split document content into chunks,ドキュメントをチャンクに分割
+data_pipeline.node_desc_document_parsing,转文档为可处理的结构化文本,轉文檔為可處理的結構化文本,Convert documents to structured text for processing,ドキュメントを処理可能な構造化テキストに変換
+data_pipeline.node_desc_graph_generation,提取信息，用图谱呈现内容关联,提取信息，用圖譜呈現內容關聯,Extract information and present relations as a graph,情報を抽出しグラフで関連を表示
+data_pipeline.node_desc_summary_generation,生成文档摘要、文档标签与知识地图,生成文檔摘要、文檔標籤與知識地圖,"Generate document summary, tags and knowledge map",ドキュメント要約・タグ・知識マップを生成
+data_pipeline.node_desc_vector_indexing,拆分文本并建索引，便于检索,拆分文本並建索引，便於檢索,Split text and build index for retrieval,テキストを分割し検索用インデックスを構築
+data_pipeline.node_document_chunking,语料拆分,語料拆分,Chunking,チャンキング
+data_pipeline.node_document_parsing,文档解析,文檔解析,Document Parsing,ドキュメント解析
+data_pipeline.node_graph_generation,图谱生成,圖譜生成,Graph Generation,グラフ生成
+data_pipeline.node_summary_generation,生成摘要,生成摘要,Summary Generation,要約生成
+data_pipeline.node_vector_indexing,向量索引,向量索引,Vector Indexing,ベクトル索引
+data_pipeline.parse_config_suffix,配置,配置,Config,設定
+data_pipeline.parse_default_desc,由系统提供的解析服务,由系統提供的解析服務,Parsing service provided by the system,システム提供の解析サービス
+data_pipeline.parse_scan_enhance,扫描件增强,掃描件增強,Scan Enhancement,スキャン強化
+data_pipeline.parse_scan_enhance_desc,对纯图片型 PDF 启用轻量级 OCR,對純圖片型 PDF 啟用輕量級 OCR,Enable lightweight OCR for image-only PDFs,画像のみのPDFで軽量OCRを有効化
+data_pipeline.run_mode_auto,自动,自動,Auto,自動
+data_pipeline.run_mode_manual,手动,手動,Manual,手動
+data_pipeline.run_mode_skip,跳过,跳過,Skip,スキップ
+data_pipeline.smart_match,智能匹配,智能匹配,Smart Match,スマートマッチ
+data_pipeline.smart_match_on_desc,智能选择拆分规则,智能選擇拆分規則,Smart chunking rule selection,スマート分割ルール選択
+data_pipeline.smart_match_off_desc,手动选择拆分规则,手動選擇拆分規則,Manual chunking rule selection,手動で分割規則を選択
+data_pipeline.section_title,数据管线,數據管線,Data Pipeline,データパイプライン
+data_pipeline.summary_doc_summary,文档摘要,文檔摘要,Document Summary,ドキュメント要約
+data_pipeline.summary_doc_summary_desc,提取文档的核心主题、关键内容点与核心内容，快速理解文档核心思想,提取文檔的核心主題、關鍵內容點與核心內容，快速理解文檔核心思想,Extract core topics and key content for quick understanding,核心テーマと重要内容を抽出して理解を促進
+data_pipeline.summary_doc_tag,文档标签,文檔標籤,Document Tags,ドキュメントタグ
+data_pipeline.summary_doc_tag_desc,基于文档的核心内容与重点信息，生成文档标签,基於文檔的核心內容與重點信息，生成文檔標籤,Generate tags from core content and key information,核心内容と重点情報からタグを生成
+data_pipeline.summary_knowledge_map,知识地图,知識地圖,Knowledge Map,知識マップ
+data_pipeline.summary_knowledge_map_desc,梳理文档内的逻辑框架与信息关联，生成可视化的内容结构与知识关联图谱,梳理文檔內的邏輯框架與信息關聯，生成可視化的內容結構與知識關聯圖譜,Organize logic and relations into a visual knowledge graph,論理と関連を可視化した知識グラフを生成
+data_pipeline.vector_available,可用,可用,Available,利用可能
+data_pipeline.vector_embedding_tip,此流水线使用知识库全局配置的 Embedding 模型，以确保全量数据兼容。如果需要更改模型，请前往系统接入设置。注意：更改后将触发该空间内所有文档的重新索引。,此流水線使用知識庫全局配置的 Embedding 模型，以確保全量數據兼容。如需更改模型，請前往系統接入設置。注意：更改後將觸發該空間內所有文檔的重新索引。,"This pipeline uses the knowledge base global Embedding model for full compatibility. To change the model, go to System Access settings. Note: changes will trigger re-indexing of all documents in the space.",このパイプラインは知識ベースのグローバルEmbeddingモデルを使用します。モデル変更はシステムアクセス設定から行ってください。変更後は空間内全ドキュメントの再索引が発生します。
+data_pipeline.vector_global_embedding,系统嵌入模型（全局）,系統嵌入模型（全局）,System Embedding Model (Global),システム埋め込みモデル（グローバル）
+data_pipeline.vector_go_model_setting,去「后台 - 知识库 - 模型设置」管理全局配置,去「後台 - 知識庫 - 模型設置」管理全局配置,Go to Backend - Knowledge - Model Settings to manage global config,管理画面 - 知識庫 - モデル設定でグローバル設定を管理
+data_pipeline.vector_no_config,暂无配置，避免流程无法正常运行。请前往系统接入设置配置向量模型。,暫無配置，避免流程無法正常運行。請前往系統接入設置配置向量模型。,No config yet. Please configure the vector model in System Access settings to run the pipeline.,未設定です。パイプライン実行にはシステムアクセス設定でベクトルモデルを設定してください。
+data_pipeline.vector_refresh_config,刷新配置,刷新配置,Refresh Config,設定を更新
+data_pipeline.vector_unavailable,不可用,不可用,Unavailable,利用不可
+database_management,数据库管理,數據庫管理,Database Management,データベース管理
+database_management_desc,数据库管理员和开发人员可以使用这个工具来快速生成SQL语句，查询、更新和管理数据库，提高工作效率。,數據庫管理員和開發人員可以使用這個工具來快速生成SQL語句，查詢、更新和管理數據庫，提高工作效率。,"Database administrators and developers can use this tool to quickly generate SQL statements, query, update, and manage databases, improving work efficiency.",データベース管理者と開発者は、このツールを使用して、SQL文を迅速に生成し、データベースを照会、更新、管理し、作業効率を向上させることができます。
+debug_preview,调试预览,調試預覽,Debug Preview,デバッグプレビュー
+debugger_config_change_confirm,修改设置将重置调试区域，需要保存并重新开始调试,修改設置將重置調試區域，需要保存並重新開始調試,Modifying the settings will reset the debug area.You need to save and restart debugging,設定を変更するとデバッグ領域がリセットされます。保存して再開する必要があります
+deep_seek,深度求索,深度求索,Deep Seek,深度求索
+default_links.default_setting,默认设置,默認設置,Default Setting,デフォルト設定
+default_links.jump_path,跳转地址,跳轉地址,Jump Address,ジャンプパス
+default_links.website,网站,網站,Website,ウェブサイト
+description,描述,描述,Description,説明
+detail,详情,詳情,Detail,詳細
+dialogue_detail,对话详情,對話詳情,Dialogue Detail,対話詳細
+dialogue_frequency,对话频率,對話頻率,Dialogue Frequency,会話頻度
+dialogue_record,对话记录,對話記錄,Conversation Record,対話記録
+dialogue_total,对话总量,對話總量, Total Dialogue,会話総数
+dify,Dify,Dify,Dify,Dify
+dify_agent_get_tip,"前往Dify并登录（{url}）
+第一步：选择要接入的智能体，点""访问API""
+第二步：右上角复制""API服务器"" 和 ""API密钥""，填入下列表单。","前往Dify并登录（{url}）
+第一步：选择要接入的智能体，点""访问API""
+第二步：右上角复制""API服务器"" 和 ""API密钥""，填入下列表单。","Go to Dify and login ({url})
+Step 1: Select the agent to be accessed, click ""Access API""
+Step 2: Copy ""API Server"" and ""API Secret Key"" in the upper right corner, and fill in the form below.","Difyにログイン（{url}）
+ステップ1：アクセスするインテリジェントエージェントを選択し、""APIアクセス""をクリック
+ステップ2：右上の""APIサーバー""と""APIシークレットキー""をコピーし、以下のフォームに入力してください。"
+disabled,已禁用,已禁用,Disabled,無効
+display_order,显示顺序,顯示順序,Display Order,表示順
+document_setting.builtin_editor,53AI Editor,內置編輯器,Builtin Editor,内蔵エディター
+document_setting.builtin_viewer,53AI Viewer,內置查看器,Builtin Viewer,内蔵ビューアー
+document_setting.edit,编辑,编辑,Edit,編集
+document_setting.not_open,不开启,不開啟,Not Open,未開放
+document_setting.parse,解析,解析,Parse,解析
+document_setting.select_parse_method,选择解析方法,選擇解析方法,Select Parse Method,解析方法を選択してください
+document_setting.select_split_method,选择拆分方法,選擇拆分方法,Select Split Method,分割方法を選択してください
+document_setting.split,拆分,拆分,Split,分割
+document_setting.standard_parse,标准解析,標準解析,Standard Parse,標準解析
+document_setting.support_format,支持格式,支持格式,Support Format,サポート形式
+document_setting.type,类型,類型,Type,タイプ
+document_setting.view,查看,查看,View,表示
+document_variable,文档变量,文件變量,Document Variables,ドキュメント変数
+edit_agent,编辑智能体,編輯智能體,Edit Agent,エージェントを編集
+effective,已生效,已生效,Effective,有効
+email,电子邮箱,電子郵箱,Email,電子メール
+empty_to_not_change,留空为不变更,留空為不變更,Leave blank for no change,空のままにすると変更しません
+enabled,已启用,已啟用,Enabled,有効
+end_time,结束时间,結束時間,End Time,結束時間
+enterprise_edition,企业版,企業版,Enterprise Edition,エンタープライズ版
+expand_setting,拓展设置,擴展設置,Expanded Settings,拡張設定
+expired_time,到期时间,到期時間,Expiration Time,有効期限
+fast_gpt,FastGPT,FastGPT,FastGPT,FastGPT
+fastgpt_agent_get_tip,"前往 FastGPT（ {url} ）
+第一步：登录FastGPT，点击进入「工作台」,点击选择要接入的应用；
+第二步：进入应用，在「发布渠道」下选择""API 访问""；
+第三步：在API密钥管理下，点击新建，新建成功后复制""API KEY""填入表单；
+第四步：复制""API 根地址"",填入表单；","前往 FastGPT（ {url} ）
+第一步：登录FastGPT，点击进入「工作台」,点击选择要接入的应用；
+第二步：进入应用，在「发布渠道」下选择""API 访问""；
+第三步：在API密钥管理下，点击新建，新建成功后复制""API KEY""填入表单；
+第四步：复制""API 根地址"",填入表单；","Go to FastGPT ({ url })
+ Step 1: Login FastGPT, click ""Workbench"" then click to select the application to access
+ Step 2: Enter the application and select ""API Access"" under [Publishing Channels]
+ Step 3: Under API Key Management, click New. After successful creation, copy ""API KEY"" and fill it into the form;
+Step 4: Copy ""API Root Address"" and fill it into the form; ","FastGPT（ {url} ）にアクセス
+手順1：FastGPTにログインし、「ワークスペース」に入り、接続したいアプリケーションを選択。
+手順2：アプリケーションに入り、「配信チャネル」で「APIアクセス」を選択。
+手順3：APIキー管理で新規作成をクリックし、作成後「API KEY」をコピーしてフォームに入力。
+手順4：「APIルートアドレス」をコピーし、フォームに入力。"
+feature_coming_soon,功能即将上线，敬请期待,功能即將上線，敬請期待,"Feature coming soon, please wait",機能はすぐに登場します。お楽しみに！
+file.size_empty,文件内容不能为空,文件內容不能為空,File content cannot be empty,ファイルの内容を空にすることはできません
+file.size_limit,文件上传大小不能超过{size}MB({name}大小已超出),文件上傳大小不能超過{size}MB({name}大小已超出),File upload size cannot exceed {size}MB ({name} size exceeds),ファイルのサイズは {size} MB を超えることはできません ({name} のサイズが超過しています)
+file.type_limit,目前支持仅{accept}格式文件,目前支持僅{accept}格式文件,Currently only supports {accept} format files,現在、{accept} 形式のファイルのみサポートしています
+file.upload_limit,最多上传{limit}个文件,最多上傳{limit}個文件,Upload up to {limit} files,最大 {limit} 個のファイルをアップロードできます
+filter,筛选,篩選,Filter,フィルター
+form.auto_generate_map_config,自动生成知识地图,自動生成知識地圖,Auto Generate Knowledge Map,自動生成知識地圖
+form.auto_generate_map_config_desc,开启后，将自动生成文档的知识地图,開啟後，將自動生成文檔的知識地圖,"After enabling, the knowledge map of the document will be automatically generated",開啟後，將自動生成文檔的知識地圖
+form.generate_rule,生成规则,生成規則,Generate Rule,生成規則
+form.input_placeholder,请输入,請輸入,Please enter,入力してください
+form.image_validator,请上传正确格式的图片,請上傳正確的圖片,Please upload a valid image,正しい画像をアップロードしてください
+form.select_placeholder,请选择,請選擇,Please select,選択してください
+form.set_variable_placeholder,请设置｛#变量｝,請設置｛#變量｝,Please set ｛#variable｝,｛#変数｝を設定してください
+form.slide_empty_tip,请输入指令,請輸入指令,Please input instruction,指令を入力してください
+form_account_exit,该共享账号已存在,該共享帳號已存在,This shared account already exists,この共有アカウントは既に存在します
+form_account_validator,账号不能包含空格符号,帳號不能包含空格符號,Account cannot contain spaces,アカウントにスペースを含めることはできません
+form_delete_confirm,确定删除该共享账号吗？,確定刪除該共享帳號嗎？,Are you sure you want to delete this shared account?,この共有アカウントを削除してもよろしいですか？
+form_email_validator,请输入正确格式的邮箱地址,請輸入正確的電子郵箱地址,Please enter a valid email address,正しい電子メールアドレスを入力してください
+form_hide_logo,隐藏技术支持Logo,隱藏技術支援Logo,Hide Technical Support Logo,技術サポートロゴを非表示
+form_image_validator,请上传正确格式的图片,請上傳正確的圖片,Please upload a valid image,正しい画像をアップロードしてください
+form_input_placeholder,请输入,請輸入,Please enter,入力してください
+form_input_placeholder_max_length,最大限制输入{max}个字符,最大限制輸入{max}個字符,Maximum {max} characters allowed,最大入力{max}文字
+form_link_validator,请输入正确格式的链接地址,請輸入正確的鏈接地址,Please enter a valid link address,正しいリンクアドレスを入力してください
+form_mobile_or_email_validator,请输入正确格式的手机号码或邮箱地址,請輸入正確的手機號碼或電子郵箱地址,Please enter a valid mobile number or email address,正しい携帯電話番号または電子メールアドレスを入力してください
+form_mobile_validator,请输入正确格式的手机号码,請輸入正確的手機號碼,Please enter a valid mobile number,正しい携帯電話番号を入力してください
+form_password_validator,密码不能包含中文或空格符号,密碼不能包含中文或空格符號,Password cannot contain Chinese characters or spaces,パスワードには日本語やスペースを含めることはできません
+form_path_same_tip,"已存在相同路径地址, 请重新输入","已存在相同路径地址, 请重新输入","The same path address already exists, please re-enter",すでに同じパスアドレスが存在します。再入力してください
+form_path_validator,请输入正确格式的路径地址 (如:/index) ,请输入正确格式的路径地址 (如:/index) ,Please enter a valid path address (e.g. /index),正しいパスアドレスを入力してください(例:/index)
+form_port_validator,端口只能是数字,端口只能是數字,Port must be a number,ポートは数字のみで入力してください
+form_select_placeholder,请选择,請選擇,Please select,選択してください
+form_upload_placeholder,请上传,請上傳,Please upload,アップロードしてください
+form_url_validator,请输入正确格式的URL地址,請輸入正確的URL地址,Please enter a valid URL address,正しいURLアドレスを入力してください
+form_variable_validator,变量名只能包含字母、数字和下划线，且不能以数字开头,變量名只能包含字母、數字和下劃線，且不能以數字開頭,"Variable names can only contain letters, numbers, and underscores, and cannot start with a number",変数名には英字、数字、アンダースコアのみ使用できます。数字で始まることはできません
+function_update,功能更新,功能更新,Function Update,機能更新
+function_update_desc,产品功能更新动态,產品功能更新動態,Product Feature Update,製品機能更新動態
+generate_tip,角色指令自动生成,角色指令自動生成,Role Instruction Generation,役割指示の生成
+get_verification_code,获取验证码,獲取驗證碼,Get Verification Code,検証コードを取得
+go_home,回到首页,回到首頁,Go to Homepage,ホームページに戻る
+google_account,谷歌账号,谷歌賬號,Google Account,Googleアカウント
+group,分组,分組,Group,グループ
+group_delete_confirm,确定删除该分组？,確定刪除該分組嗎？,Are you sure to delete this group?,このグループを削除してもよろしいですか？
+group_management,分组管理,分組管理,Group Management,グループ管理
+group_min_one,至少保留一个分组,至少保留一個分組,At least one group,少なくとも1つのグループを保持してください
+group_not_empty,分组不能为空,分組不能為空,Group cannot be empty,グループを空にすることはできません
+how_get,如何获取,如何獲取,How to obtain,如何获取
+https_enabled,已启用HTTPS,已啟用HTTPS,HTTPS Enabled,HTTPS有効
+icon,图标,圖標,Icon,アイコン
+image,图片,圖片,Image,画像
+image_cropper,图片裁剪,圖片裁剪,Image Cropper,画像裁剪
+input,输入,輸入,Input,入力
+intelligent_agent_platform,智能体平台,智能體平台,AI Agent Platform,インテリジェントエージェントプラットフォーム
+internal_member_group,内部成员分组,內部成員分組,Internal Member Grouping,内部メンバーのグルーピング
+internal_user.account.add,添加账号,添加帳號,Add Account,アカウントを追加
+internal_user.account.department,部门,部門,Department,部門
+internal_user.account.department_placeholder,请选择部门,請選擇部門,Please select department,部門を選択してください
+internal_user.account.edit_member,编辑成员,編輯成員,Edit Member,メンバーを編集
+internal_user.account.group,用户组,用戶組,Group,グループ
+internal_user.account.mobile,手机,手機,Mobile,電話番号
+internal_user.account.mobile_disabled_tip,注意: 所输入的手机号须与成员本人登录的手机号一致才能使用,注意: 所輸入的手機號須與成員本人登錄的手機號一致才能使用,Note: The mobile phone number entered must be the same as the member's login mobile phone number,注意: 所輸入の電話番号は、メンバー本人のログイン電話番号と一致している必要があります
+internal_user.account.mobile_placeholder,请输入手机,請輸入手機號,Please enter a mobile phone number,電話番号を入力してください
+internal_user.account.name,姓名,姓名,Name,名前
+internal_user.account.name_disabled_tip,姓名来自第三方同步，不可修改,姓名来自第三方同步，不可修改,The name is synchronized from a third party and cannot be modified,名前は第三者の同期から来ているため、変更できません
+internal_user.account.name_placeholder,请输入姓名,請輸入姓名,Please enter name,名前を入力してください
+internal_user.account.nickname,昵称,暱稱,Nickname,ニックネーム
+internal_user.account.nickname_placeholder,请输入昵称,請輸入暱稱,Please enter a nickname,ニックネームを入力してください
+internal_user.account.password_placeholder,请设置初始密码,請設置初始密碼,Please set initial password,初期パスワードを入力してください
+internal_user.account.register_to_internal_confirm,手机号 {mobile} 当前为注册用户。若将其添加为内部用户，系统将自动从注册用户列表中移除该账号，且用户密码保持不变。,手機號 ({mobile}) 已是註冊用戶，是否確認升級為內部用戶？,"The phone number ({mobile}) is already a registered user, are you sure to upgrade to an internal user?",電話番号 ({mobile}) はすでに登録されています。内部ユーザーにアップグレードしますか？
+internal_user.account.same_member_exists_tip,成员手机已存在,成員手機已存在,The member's mobile phone number already exists,メンバーの電話番号がすでに存在します
+internal_user.account.same_mobile_exists_tip,与第{index}个成员手机号相同,與第{index}個成員手機號相同,Same as the mobile phone number of the {index}th member,第{index}個のメンバーの電話番号と同じです
+internal_user.account.search_placeholder,成员名/手机号/电子邮箱,成員名/手機號/電子郵箱,Member Name/Phone Number/Email,メンバー名/電話番号/電子メール
+internal_user.account.status,状态,狀態,Status,ステータス
+internal_user.account.title,账号,帳號,Account,アカウント
+internal_user.account.expired,到期,到期,Expired,期限切れ
+internal_user.action.disabled,禁用账号,,Disable Account,無効
+internal_user.action.disabled_account,禁用账号,禁用帳號,Disable Account,無効化
+internal_user.action.disabled_success,已禁用,已禁用,Disabled,無効
+internal_user.action.enable,激活账号,,Activate Account,有効
+internal_user.action.enable_account,激活账号,激活帳號,Activate Account,有効化
+internal_user.action.enable_success,已激活,已激活,Activated,有効
+internal_user.alias,通讯录,通訊錄,Contact,連絡先
+internal_user.department.add,添加部门,添加部門,Add Department,部門を追加
+internal_user.department.add_children,添加子部门,添加子部門,Add Sub Department,子部門を追加
+internal_user.department.create,创建部门,創建部門,Create Department,部門を作成
+internal_user.department.delete,删除,刪除,Delete,削除
+internal_user.department.delete_confirm,确定删除该部门吗？,確定刪除該部門嗎？,Are you sure to delete this department?,この部門を削除してもよろしいですか？
+internal_user.department.edit,编辑部门,編輯部門,Edit Department,部門を編集
+internal_user.department.member_total_count,（{total}人）,（{total}人）,（{total} members）,（{total}人）
+internal_user.department.move_down,下移,下移,Move Down,下に移動
+internal_user.department.move_up,上移,上移,Move Up,上に移動
+internal_user.department.name,部门名称,部門名稱,Department Name,部門名
+internal_user.department.name_placeholder,请输入部门名称,請輸入部門名稱,Please enter department name,部門名を入力してください
+internal_user.department.update_name,修改名称,修改名稱,Modify Name,名前を更新
+internal_user.group.create,新建分组,新建分組,Create Group,新しいグループを作成
+internal_user.group.create_tip,请先创建分组,請先創建分組,Please create a group first,グループを先に作成してください
+internal_user.group.member,成员,成員,Member,メンバー
+internal_user.group.remove_agent_confirm,确定移除该智能体吗？,確定移除該智能體嗎？,Are you sure you want to remove this agent?,このインテリジェントエージェントを削除してもよろしいですか？
+internal_user.group.remove_ai_toolkit_confirm,确定移除该AI工具吗？,確定移除該 AI 工具嗎？,Are you sure you want to remove this AI tool?,この AI ツールを削除することを確認しますか？
+internal_user.group.remove_prompt_confirm,确定移除该提示词吗？,確定移除該提示詞嗎？,Are you sure you want to remove this prompt?,このプロンプトを削除することを確認しますか？
+internal_user.group.remove_user_confirm,确定移除该成员吗？,確定移除該成員嗎？,Are you sure you want to remove this member?,このメンバーを削除してもよろしいですか？
+internal_user.group.search_placeholder,搜索分组,搜索分組,Search Group,グループを検索
+internal_user.group.search_placeholder_v2,搜索用户组名称,搜索用戶組名稱,Search User Group Name,グループ名を検索
+internal_user.group.title,分组,分組,Group,グループ
+internal_user.group.usable,可使用,可使用,Available,可使用
+internal_user.organization.all_search_placeholder,成员/部门,成員/部門,Member/Department,メンバー/部門
+internal_user.organization.department_search_placeholder,部门,部門,Department,部門
+internal_user.organization.title,组织,組織,Organization,組織
+internal_user.organization.user_search_placeholder,成员,成員,Member,メンバー
+internal_user.scope.selected_title,已选择项,已選擇項,Selected Items,選択済み項目
+internal_user.scope.search_placeholder,搜索公司/部门/成员/分组,搜索公司/部門/成員/分組,Search company/department/member/group,会社/部門/メンバー/グループを検索
+internal_user.scope.title,可见范围,可見範圍,Visible Range,可見範圍
+internal_user.status.all,全部成员,全部成員,All Members,全てのメンバー
+internal_user.status.disabled,被禁用,被禁用,Disabled,被禁用
+internal_user.status.enabled,已加入,已加入,Joined,加入中
+internal_user.status.undefined,未加入,未加入,Not Joined,未加入
+status.draft,草稿,草稿,Draft,下書き
+internal_user.title,内部用户,內部用戶,Internal User,内部ユーザー
+join_group,交流学习,交流學習,Join Group,交流学習
+join_group_desc,加入交流群，共同学习进步,加入交流群，共同學習進步,Join the group to learn and progress together,交流学習グループに参加して、一緒に学び、進歩しましょう
+jump_path,跳转地址,跳轉地址,Jump Address,ジャンプパス
+keyword,关键词,關鍵詞,Keyword,キーワード
+know_it,知道了,知道了,I know,わかった
+knowledge.desc,"集多种文档类型与数据于一体的一站式解决方案。采用""空间+知识库""分层架构，实现内容的有序分类与精细化权限控制。","多種類的ドキュメントとデータを統合するための包括的なソリューション。 ""空間 + 知識ベース"" 層化アーキテクチャを採用し、コンテンツを秩序的に分類し、細かい権限制御を実現します。","A comprehensive solution for integrating multiple document types and data. Adopts a ""space + knowledge base"" layered architecture, enabling ordered classification and fine-grained permission control of content.","多種類のドキュメントとデータを統合するための包括的なソリューション。 ""空間 + 知識ベース"" 層化アーキテクチャを採用し、コンテンツを秩序的に分類し、細かい権限制御を実現します。"
+knowledge.file,知识文档,知識ファイル,Knowledge File,知識ファイル
+knowledge.name,知识库,知識庫,Knowledge Base,知識
+knowledge.short_name,知识,知識,Knowledge,知識
+language,语言,語言,Language,言語
+language_option_label.en,英文-EN,英文-EN,English-EN,英文-EN
+language_option_label.jp,日文-JP,日文-JP,Japanese-JP,日文-JP
+language_option_label.zh-cn,中文-CN,中文-CN,Chinese-CN,中文-CN
+language_option_label.zh-tw,中文-TW,中文-TW,Chinese-TW,中文-TW
+last_edit,最近编辑,最近编辑,Last Edit,最近編集
+layout_option_desc.center,布局紧凑且内容居中,布局緊湊且內容居中,"Center layout, compact content",緊密なレイアウト、コンテンツを中心に配置します
+layout_option_desc.loose,布局宽松铺满屏幕，自适应用户的分辨率,布局寬鬆鋪滿屏幕，自適應用戶的分辨率,"Loose layout, full screen, adaptive to user resolution",緩いレイアウト、画面を埋め尽くし、ユーザーの解像度に適応します
+layout_option_label.center,居中,居中,Center,中心
+layout_option_label.loose,宽松,寬鬆,Loose,緩い
+limit,限制,限制,Restriction,制限
+limit_every_dialogue,限制每个用户总对话数,限制每個用戶總對話數,Limit total dialogues per user,各ユーザーの総会話数を制限する
+local_config_limited_desc,由于当前系统访问为内网地址({url})，无法添加/配置Coze 智能体、微信支付、支付宝支持，需要部署到外网能访问的地址访问再配置。,由於當前系統訪問為內網地址({url})，無法添加/配置Coze 智能體、微信支付、支付寶支持，需要部署到外網能訪問的地址訪問再配置。,"Due to the current system access being an intranet address ({url}), adding/configuring Coze agents, WeChat Pay, and Alipay is not possible. It needs to be deployed to an address accessible from the external network before configuration.",現在のシステムアクセスが内部ネットワークアドレス({url})であるため、Coze インテリジェントエージェント、WeChat支払い、Alipay支払いを追加/設定できません。外部からアクセスできるアドレスにデプロイして設定する必要があります。
+local_config_limited_tip,配置受限提示,配置受限提示,Configuration Limited Tip,設定受限提示
+login.I_remember,我记住了,我記住了,I got it,覚えています
+login.account_exists,该手机号已注册，请使用该账号登录,,This phone number is already registered. Use this account to log in.,
+login.account_format,账号必须以字母开头，只能包含字母、数字和下划线,賬號必須以字母開頭，只能包含字母、數字和下劃線,"Account must start with a letter, and can only contain letters, numbers, and underscores",アカウントは英字で始まり、英字、数字、および下線のみを含める必要があります
+login.account_length,账号长度必须在 4-20 个字符之间,賬號長度必須在 4-20 個字符之間,Account length must be between 4 and 20 characters,アカウント長さは4から20文字の間である必要があります
+login.account_no_exists,该手机号尚未注册，请先注册,,This phone number is not registered. Please register first.,
+login.account_placeholder,请输入您的手机号/邮箱,請輸入您的手機號/郵箱,Please enter your phone number/email,ユーザー名を入力してください
+login.agree,条款和条件,條款和條件,Terms and Conditions,条项和条件
+login.agree_and_policy,登录即视您同意{agree}和{policy},登錄即視您同意{agree}和{policy},Login means you agree to {agree} and {policy},ログイン即視您同意{agree}和{policy}
+login.agree_tip,登录即视您同意,登錄即視您同意,Login means you agree to,ログイン即視您同意
+login.ai_privacy_policy,AI隐私协议,AI隱私政策,AI Privacy Policy,AIプライバシーポリシー
+login.and,和,和,and,と
+login.and_character,、,、,",",・
+login.application_complete,完成申请,完成申請,Complete Application,申請完了
+login.apply_open_repetition,您已提交过申请，请勿重复提交,您已提交過申請，請勿重複提交,"You have already submitted an application, please do not submit it again",申請がすでに提出されています。繰り返し提出しないでください
+login.back_to_login,返回登录,返回登錄,Back to Login,ログインに戻る
+login.bind_mobile_login,绑定手机号,綁定手機號,Bind Mobile Number,携帯電話番号を紐付ける
+login.complete_registration_and_login,完成注册并登录,完成註冊並登錄,Complete Registration and Login,登録完了してログイン
+login.confirm_password,重复新密码,重複新密碼,Confirm New Password,新パスワードを確認
+login.confirm_password_placeholder,请再次输入新密码,請再次輸入新密碼,Please enter new password again,新パスワードを再入力してください
+login.contact_name,联系人,聯繫人,Contact person,連絡先
+login.contact_name_placeholder,请输入联系人,請輸入聯繫人,Please enter contact person,連絡先を入力してください
+login.direct_login,直接登录,直接登錄,Direct Login,直接ログイン
+login.email_exists,该邮箱已注册，请使用该账号登录。,該郵箱已註冊，請使用該賬號登錄。,This email has been registered. Please use this account to log in.,このメールアドレスはすでに登録されています。このアカウントでログインしてください。
+login.email_no_exists,该邮箱未注册，请先注册。,該郵箱未註冊，請先註冊。,This email is not registered. Please register first.,このメールアドレスは登録されていません。先に登録してください。
+login.email_placeholder,请输入您的邮箱,請輸入您的郵箱,Please enter your email,メールアドレスを入力してください
+login.email_validate,邮箱验证,郵箱驗證,Email verification,メールアドレスを検証
+login.enterprise_info,企业信息,企業信息,Enterprise Information,企業情報
+login.forget_password,忘记密码？,忘記密碼？,Forget Password?,パスワードを忘れた？
+login.google_login,谷歌登录,谷歌登錄,Google Login,Googleログイン
+login.google_login_v2,使用谷歌登录,使用谷歌登錄,Login with Google,Googleログイン
+login.has_account,已有账号，,已有賬號，,"Already have an account,",既にアカウントを持っています
+login.immediate_login,立即登录,立即登入,Immediate Login,直ちにログイン
+login.link_empty_tip,请输入链接,請輸入鏈接,Please enter a link,リンクを入力してください
+login.login_by_wechat,请使用微信扫码登录,請使用微信掃碼登入,Please use WeChat to scan the code for login,微信でQRコードをスキャンしてログインしてください
+login.mobile_exists,该手机号已注册，请使用该账号登录。,該手機號已註冊，請使用該賬號登錄。,This mobile number has been registered. Please use this account to log in.,この携帯電話番号はすでに登録されています。このアカウントでログインしてください。
+login.mobile_login,手机验证码登录,手機驗證碼登錄,Login with SMS verification code,携帯電話番号ログイン
+login.mobile_login_v2,使用手机验证码登录,使用手機驗證碼登錄,Login with SMS verification code,携帯電話番号ログイン
+login.mobile_no_exists,该手机号未注册，请先注册。,該手機號未註冊，請先註冊。,This mobile number is not registered. Please register first.,この携帯電話番号は登録されていません。先に登録してください。
+login.mobile_placeholder,请输入您的手机号,請輸入您的手機號,Please enter your phone number,携帯電話番号を入力してください
+login.mobile_validate,手机验证,手機驗證,Mobile verification,携帯電話番号を検証
+login.modify_password,修改密码,修改密碼,Modify Password,パスワードを変更
+login.new_password,新密码,新密碼,New Password,新パスワード
+login.new_password_placeholder,请输入新密码,請輸入新密碼,Please enter new password,新パスワードを入力してください
+login.new_user_tip,你的初始密码是“{password}”，请及时修改,"你的初始密碼是""{password}""，請及時修改","Your initial password is “{password}”, please modify it in time","初期パスワードは""{password}""です。すぐに変更してください"
+login.password_format,密码必须包含大小写字母和数字,密碼必須包含大小寫字母和數字,Password must contain uppercase and lowercase letters and numbers,パスワードは大文字と小文字の英字と数字を含める必要があります
+login.password_length,密码长度需在 8-20 个字符之间，可以是字母、数字、符号组合,密碼長度需在 8-20 個字元之間，可以是字母、數字、符號組合,"Password length must be between 8-20 characters and can include letters, numbers, and symbols",パスワードの長さは8～20文字で、英字、数字、記号の組み合わせが可能です
+login.password_length_v2,密码长度需在 8-20 个字符之间,密碼長度需在 8-20 個字元之間,Password length must be between 8-20 characters,パスワードの長さは8～20文字で
+login.password_login,密码登录,密碼登錄,Password Login,パスワードログイン
+login.password_login_v2,使用密码登录,使用密碼登錄,Password Login,パスワードログイン
+login.password_not_match,两次输入的密码不一致,兩次輸入的密碼不一致,The two passwords you entered do not match,2回入力したパスワードが一致しません
+login.password_placeholder,请输入密码,請輸入密碼,Please enter your password,パスワードを入力してください
+login.policy,隐私政策,隱私政策,Privacy Policy,プライバシーポリシー
+login.privacy_policy,隐私协议,隱私政策,Privacy Policy,プライバシーポリシー
+login.reset_password,重置密码,重置密碼,Reset Password,パスワードをリセット
+login.select_enterprise,选择进入企业,選擇進入企業,Select To Enter The Enterprise,企業に進むを選択
+login.select_register_way,选择注册账号的方式,選擇註冊帳號的方式,Select the way to register an account,アカウントを登録する方法を選択
+login.select_reset_password_way,选择重置密码的方式,選擇重設密碼的方式,Choose a password reset method,パスワードをリセットする方法を選択
+login.service_agreement,服务协议,服務協議,Service Agreement,サービス契約
+login.unregistered_account_desc,未注册的账号验证后自动登录,未註冊的賬號驗證後自動登錄,Unregistered accounts automatically log in after verification,未登録のアカウントは、登録後自動ログインします
+login.update_password,更新密码,更新密碼,Update Password,パスワードを更新
+login.verify_identity,验证身份,驗證身份,Verify Identity,身分証明
+login.website_name,站点名称,網站名稱,Website Name,サイト名
+login.website_name_placeholder,请输入站点名称,請輸入網站名稱,Please enter website name,サイト名を入力してください
+login.wechat_login,微信登录,微信登錄,WeChat Login,微信ログイン
+login.wechat_login_v2,使用微信登录,使用微信登錄,Login with WeChat,微信ログイン
+login_password,登录密码,登錄密碼,Login Password,ログインパスワード
+market_insight,市场洞察,市場洞察,Market Insight,市場洞察
+max_add_tip,最多添加{max}个,最多添加{max}個,Maximum {max} items,最大{max}個
+maxkb_agent_get_tip,"前往 MaxKB（ {url} ）
+第一步：下载MaxKB客户端；
+第二步：在「应用」下，点击要接入的应用；
+第三步：在""API 访问凭据""下复制Base URL，创建并复制API Key，填入下列表单；","前往 MaxKB（ {url} ）
+第一步：下载MaxKB客户端；
+第二步：在「应用」下，点击要接入的应用；
+第三步：在""API 访问凭据""下复制Base URL，创建并复制API Key，填入下列表单；","Go to MaxKB({ url })
+ Step 1: Download MaxKB client;
+ Step 2: Click the application to be accessed in ""Application"";
+ Step 3: Under ""API Access Credentials"", copy the Base URL, create and copy the API Key, and fill them into the following form.","MaxKB（ {url} ）にアクセス
+手順1：MaxKBクライアントをダウンロード。
+手順2：「アプリケーション」でアクセスしたいアプリケーションをクリック。
+手順3：「APIアクセス資格」でBase URLをコピーし、API Keyを作成してフォームに入力。"
+media_operation,媒体运营,媒體運營,Media Operation,媒体運用
+message_count,消息数,消息數,Number of Messages,メッセージ数
+message_input_placeholder,发消息或输入您的问题...,發消息或輸入您的問題...,Send a message or enter your question...,メッセージを入力するか、質問を入力してください...
+message_status.create_success,已创建,已創建,Created,作成済み
+message_status.refresh_success,已刷新,已刷新,Refreshed,更新済み
+message_status.save_success,已保存,已保存,Saved,保存済み
+mobile,手机号码,手機號碼,Mobile number,電話番号
+mobile_login,短信登录,簡訊登錄,SMS Login,SMS ログイン
+mobile_v2,手机号,手機號,Mobile,電話番号
+model.deep_thinking,深度思考,深度思考,Deep Thinking,デフォルトの長思考モデル
+model.deep_thinking_desc,先思考后回答，复杂问题破解,先思考後回答，複雜問題破解,Think before answering and answer complex problems,長く思考してから回答し、複雑な問題を解決します
+model.embedding,向量嵌入模型,向量嵌入模型,Vector Embedding Model,デフォルトのベクトル埋め込みモデル
+model.vector_change_confirm_title,切换模型,切換模型,Switch Model,モデル切り替え
+model.vector_change_confirm_warning,切换向量嵌入模型后，会重置之前已经向量化的知识库。请谨慎操作,切換向量嵌入模型後，會重置之前已經向量化的知識庫。請謹慎操作,After switching the vector embedding model, the previously vectorized knowledge base will be reset. Please operate with caution,ベクトル埋め込みモデルを切り替えると、以前にベクトル化されたナレッジベースがリセットされます。慎重に操作してください
+model.vector_change_confirm_hint,"请输入""确认修改""","請輸入""確認修改""","Please enter ""Confirm Change""",「確認変更」を入力してください
+model.vector_change_confirm_keyword,确认修改,確認修改,Confirm Change,確認変更
+model.vector_change_confirm_error,输入内容不匹配，请重新输入,輸入內容不匹配，請重新輸入,Input does not match, please re-enter,入力内容が一致しません。再入力してください
+model.fast_reasoning,快速回答,快速回答,Fast Reasoning,速思考モデル
+model.fast_reasoning_desc,快速输出答案，高效信息获取,迅速輸出答案，高效資訊獲取,"Provide a quick answer, efficient information acquisition",迅速に回答を提供し、効率的な情報取得を実現します
+model.intent_recognition,意图识别,意圖識別,Intent Recognition,意圖識別
+model.reasoning,默认推理模型,默认推理模型,Logic Reasoning Model,デフォルトの論理推論モデル
+model.rerank,重排序模型,重排序模型,Rerank Model,再ランキングモデル
+model.select_model,选择模型,選擇模型,Select Model,モデル選択
+model.temperature,温度,溫度,Temperature,温度調整
+model.temperature_desc,温度越高，模型回答越随机,溫度越高，模型回答越隨機,"The higher the temperature, the more random the model's answer",温度が高いほど、モデルの回答がランダムになります
+model.reasoning_v2,规划推理模型,規劃推理模型,Planning Reasoning Model,計画的な論理推論モデル
+model.skill,技能执行模型,技能執行模型,Skill Execution Model,スキル実行モデル
+model_name,模型名称,模型名稱,Model Name,モデル名
+model_name_placeholder,请输入模型名称,請輸入模型名稱,Please enter model name,モデル名を入力してください
+model_platform,大模型平台,大模型平台,Large Model Platform,モデルプラットフォーム
+module.SMTP,注册与登录,註冊與登錄,Registration and Login,登録とログイン
+module.SMTP_addresser_email,发件人邮箱,發件人郵箱,Sender Email,送信者メール
+module.SMTP_email_account,邮箱账号,郵箱帳號,Email Account,メールアカウント
+module.SMTP_email_log,邮箱注册/登录,郵箱註冊/登錄,Email Registration/Login,メール登録/ログイン
+module.SMTP_email_password,邮箱密码,郵箱密碼,Email Password,メールパスワード
+module.SMTP_mobile_log,手机注册/登录,手機註冊/登錄,Mobile Registration/Login,携帯電話登録/ログイン
+module.SMTP_openTLS,启用TLS,啟用TLS,Enable TLS,TLSを有効化
+module.SMTP_port,SMTP端口,SMTP端口,SMTP Port,SMTPポート
+module.SMTP_receiver_email,收件人邮箱,收件人郵箱,Recipient Email,受信者メール
+module.SMTP_send_email,发送测试邮件,傳送測試郵件,Send Test Email,テストメールを送信
+module.SMTP_server,SMTP服务器,SMTP伺服器,SMTP Server,SMTPサーバー
+module.action_delete_confirm,确认是否删除该栏目吗？,確認是否刪除該欄目嗎？,Are you sure you want to delete this column?,このセクションを削除してもよろしいですか？
+module.add_application,添加应用,添加應用,Add Application,アプリケーションを追加
+module.agent,智能体,智能體,Agents,インテリジェントエージェント
+module.agent_search_placeholder,搜索智能体,搜索智能體,Search AI Agent,インテリジェントエージェントを検索
+module.agent_sort_desc,数字越大，排名越靠前,數字越大，排名越靠前,"The larger the number, the higher the ranking",数字が大きいほど、順位が高くなります
+module.agent_type_53ai_agent,53AI Studio,53AI智能體,53AI studio,53AIインテリジェントエージェント
+module.agent_type_53ai_workflow,53AI应用智改,53AI應用智改,53AI Intelligent Applications,53AIアプリケーションインテリジェント
+module.agent_type_bailian,阿里百炼,阿里百炼,Alibaba Bailian,Alibaba Bailian
+module.agent_type_coze_agent,Coze智能体,Coze智能體,Coze Agent,Cozeインテリジェントエージェント
+module.agent_type_coze_agent_cn,扣子编程,扣子编程,Coze,Cozeインテリジェントエージェント
+module.agent_type_coze_workflow,Coze工作流,Coze工作流,Coze workflow,Cozeアプリケーションインテリジェント
+module.agent_type_coze_workflow_cn,扣子应用智改,扣子應用智改,Coze Intelligent Applications,Cozeアプリケーションインテリジェント
+module.agent_type_dify_agent,Dify,Dify智能體,Dify,Difyインテリジェントエージェント
+module.agent_type_dify_workflow,Dify工作流,Dify工作流,Dify workflow,Difyアプリケーションインテリジェント
+module.agent_type_prompt,通过Prompt创建,通過Prompt創建,Create via Prompt,プロンプトで作成
+module.agent_type_volcengine,火山引擎,火山引擎,Volcengine,Volcengine
+module.agent_type_yuanqi,腾讯元器,腾讯元器,Tencent Yuanqi,Tencent Yuanqi
+module.skills,技能库,技能庫,Skill Library,スキルライブラリ
+module.skill_search_placeholder,搜索技能,搜索技能,Search Skill,スキルを検索
+module.skill,技能,技能,Skill,スキル
+module.ai_product,AI产品,AI 產品,AI Product,AI 製品
+module.ai_toolbox,AI工具,AI工具,AI Tools,AIツールボックス
+module.ai_toolbox_search_placeholder,搜索工具,搜索工具,Search Tool,ツールを検索
+module.ai_toolbox_search_placeholder_v2,输入想搜索的AI工具,輸入想搜索的AI工具,Input the AI tool you want to search,AIツールを検索
+module.recording,安心录,安心錄,Recording,録音
+module.aibox,AI百宝箱,AI百寶箱,AI Toolbox,AIツールボックス
+module.all_platform,全部平台,全部平台,All Platforms,すべてのプラットフォーム
+module.answer_note,回答备注,回答備註,Answer Note,回答備註
+module.answer_note_desc,开启后，将在AI回答后附加一段固定文本,開啟後，在回答中添加備註信息,Enable this option to add a note to the answer,開啟後，在回答中添加備註信息
+module.answer_preference,回答偏好,回答偏好,Answer Preference,回答偏好
+module.answer_preference_desc,开启后，支持自定义回答输出的要求,開啟後，支持自定義回答輸出的要求,Enable this option to support customizing the output requirements of the answer,開啟後，支持自定义回答输出的要求
+module.answer_preference_placeholder,对回答风格和语气的偏好设置，示例:回答简洁，总字数尽量控制在300 字以内。通过举例进行具体示范，“指令+示例”可以帮助AI助手更好地遵循您的偏好设置。,請輸入回答輸出的要求,Please enter the output requirements of the answer,请输入回答输出的要求
+module.app_management,应用管理,應用管理,Application Management,アプリケーション管理
+module.banner_diagram,Banner,Banner,Banner,バナー
+module.bot,智能体,智能體,AI Agent,インテリジェントエージェント
+module.chunk_setting,拆分策略,拆分策略,Splitting Strategy,分割戦略
+module.cleaning_pipeline,清洗管线,清洗管線,Cleaning Pipeline,クリーニングパイプライン
+module.combinat,单点登录,單點登錄,Single Sign-On,シングルサインオン
+module.custom,自定义,自定義,Custom,カスタム
+module.data-pipeline,数据管线,數據管線,Data Pipeline,データパイプライン
+module.dialogue,工作对话,工作對話,Work Dialogues,業務対話
+module.dialogue_digital_employee,AI员工,AI員工,AI Employee,AIスタッフ
+module.dialogue_large_model,大模型,大模型,Large Models,大規模モデル
+module.dialogue_prompt,提示词,提示詞,Prompts,プロンプト
+module.document-setting,文档设置,文檔設定,Document Settings,文書設定
+module.document_app,文档应用,文檔應用,Document Application,文書アプリケーション
+module.document_assistant,文档助手,文檔助手,Document Assistant,文書助手
+module.search_desc,通过智能问答与文档交互，快速获取信息、处理文档，让知识检索与内容交互更高效。,通過智能問答與文件交互，快速獲取信息、處理文件，讓知識檢索與內容交互更高效。,"Through intelligent Q\&A and document interaction, quickly acquire information and process documents, making knowledge retrieval and content interaction more efficient.",スマートQAとドキュメントとのインタラクションを通じて、迅速に情報を取得し、ドキュメントを処理し、知識検索とコンテンツのインタラクションをより効率的に行います。
+module.document_assistant_desc,文档互动与提问，支持将高频使用场景配置为快捷指令，大幅提升文档处理与信息查询效率,文檔互動與提問，支持將高頻使用場景配置為快捷指令，大幅提升文檔處理與信息查詢效率,"Document interaction and question, support configuring high-frequency usage scenarios as shortcut commands, greatly improving document processing and information query efficiency",文書互動と質問、高頻使用シーンをショートカットコマンドに設定して、文書処理と情報検索効率を大幅に向上させます
+module.document_map,知识地图,知識地圖,Knowledge Map,知識地図
+module.document_map_desc,智能提炼文档核心内容，生成结构化层级知识地图，点击知识点触发深度解读，助力快速梳理知识脉络,智能提煉文檔核心內容，生成結構化層級知識地圖，點擊知識點觸發深度解讀，助力快速梳理知識脈絡,"Extracts core document content, generates a structured knowledge map, and helps users quickly understand the knowledge structure.",智能提炼文書核心內容，生成結構化層級知識地図，點擊知識点觸發深度解讀，助力快速梳理知識脈絡
+module.document_parse,解析能力,解析能力,Parsing Capabilities,解析能力
+module.document_view_and_edit,文档能力,文檔能力,Document Capabilities,文書能力
+module.domain,站点域名,站點域名,Site Domain,サイトドメイン
+module.domain_exclusive,专属域名,專屬域名,Exclusive Domain,専用ドメイン
+module.domain_exclusive_label,自定义你的专属域名,自定義你的專屬域名,Customize your exclusive domain,自分の専用ドメインをカスタマイズします
+module.domain_exclusive_validator_1,"请使用小写字母或数字，且不少于5个字符不超过20个字符","請使用小寫字母或數字，且不少於5個字符不超過20個字符","Please use lowercase letters or numbers, with at least 5 characters and no more than 20 characters","小文字の英字または数字を使用してください。5文字以上20文字以下で入力してください"
+module.domain_exclusive_validator_2,域名已被占用，请使用其他域名,域名已被佔用，請使用其他域名,"The domain name is already occupied, please use another domain name",ドメイン名はすでに使用されています。別のドメイン名を使用してください
+module.domain_independent,独立域名,獨立域名,Independent Domain,独立ドメイン
+module.domain_independent_cname,CNAME方式,CNAME方式,CNAME,CNAME
+module.domain_independent_cname_desc,请从以下列表中选择一个合适的 CNAME 地址，去您已备案的域名厂商设置域名 DNS 解析。,請從以下列表中選擇一個合適的 CNAME 地址，去您已備案的域名廠商設置域名 DNS 解析。,Please select an appropriate CNAME address from the following list and go to your registered domain name provider to set up domain DNS resolution.,次のリストから適切なCNAMEアドレスを選択し、ドメイン名プロバイダーでドメイン名DNS解決を設定してください。
+module.domain_independent_cname_desc_1,1. 域名在阿里云备案：53aihub.n1.53ai.com,1. 域名在阿里雲備案：53aihub.n1.53ai.com,1. Filing on Alibaba Cloud: 53aihub.n1.53ai.com,1. アリババクラウドで登録されたドメイン：53aihub.n1.53ai.com
+module.domain_independent_cname_desc_2,2. 域名在腾讯云备案：53aihub.n2.53ai.com,2. 域名在騰訊雲備案：53aihub.n2.53ai.com,2. Filing on Tencent Cloud: 53aihub.n2.53ai.com,2. テンセントクラウドで登録されたドメイン：53aihub.n2.53ai.com
+module.domain_independent_cname_desc_3,3. 香港服务器，略慢：53aihub.n3.53ai.com,3. 香港服務器，略慢：53aihub.n3.53ai.com,"3. Hong Kong server, slightly slower: 53aihub.n3.53ai.com",3. 香港サーバー、やや遅い：53aihub.n3.53ai.com
+module.domain_independent_delete_confirm,确定删除该独立域名吗？,確定刪除該獨立域名嗎？,Are you sure you want to delete this independent domain?,この独立ドメインを削除してもよろしいですか？
+module.domain_independent_desc,添加一个你想要使用的自定义域名。,添加一個你想要使用的自定義域名。,Add a customized domain you want to use.,使用したいカスタムドメインを追加します。
+module.domain_independent_https,启用 HTTPS,啟用 HTTPS,Enable HTTPS,HTTPSを有効にする
+module.domain_independent_https_always,始终使用 HTTPS,始終使用 HTTPS,Always use HTTPS,常にHTTPSを使用する
+module.domain_independent_label,自定义你的独立域名,自定義你的獨立域名,Customize your independent domain,自分の独立ドメインをカスタマイズします
+module.domain_independent_self,自有服务器中转,自有服務器中轉,Self-owned Server Relay,セルフホスティング
+module.domain_independent_self_desc_1,方式一：使用 nginx 等 web 服务器做简单配置即可实现。,方式一：使用 nginx 等 web 服務器做簡單配置即可實現。,Method 1: Use nginx or other web servers for simple configuration.,方法1：nginx などの Web サーバーを使用して簡単な設定を行うだけで実現できます。
+module.domain_independent_self_desc_2,方式二：使用阿里云、腾讯云、七牛云等云厂商的全站加速服务 (DCDN)。,方式二：使用阿里雲、騰訊雲、七牛雲等雲廠商的全站加速服務 (DCDN)。,"Method 2: Use full - site acceleration services (DCDN) from cloud vendors such as Alibaba Cloud, Tencent Cloud, and Qiniu Cloud.",方法2：アリババクラウド、テンセントクラウド、七牛クラウドなどのクラウドベンダーの全サイト加速サービス (DCDN) を使用します。
+module.domain_independent_self_desc_3,Docs Site ID：{site_id},Docs Site ID：{site_id},Docs Site ID: {site_id},Docs Site ID: {site_id}
+module.domain_independent_ssl,SSL证书,SSL證書,SSL Certificate,SSL証明書
+module.domain_independent_ssl_certificate,证书,證書,Certificate,証明書
+module.domain_independent_ssl_certificate_placeholder,请将证书文件内容复制后粘贴到这里,請將證書文件內容複製後粘貼到這裡,Please copy and paste the certificate here,証明書の内容をコピーして貼り付けてください
+module.domain_independent_ssl_option_1,由53AI 生成,由53AI 生成,Generated by 53AI,53AIによって生成された
+module.domain_independent_ssl_option_2,使用自有证书,使用自有證書,Customized by user,ユーザーが自分で設定した
+module.domain_independent_ssl_private_key,私钥,私鑰,Private Key,秘密鍵
+module.domain_independent_ssl_private_key_placeholder,请将证书私钥复制后粘贴到这里,請將證書私鑰複製後粘貼到這裡,Please copy and paste the private key here,秘密鍵の内容をコピーして貼り付けてください
+module.draft,智能方案,智能方案,intelligent Solutions,インテリジェントプラン
+module.enterprise_info,企业信息,企業信息,Enterprise Information,企業情報
+module.feature_not_available,{functionName}暂不可用，请联系管理员~~,{functionName}暫不可用，請聯繫管理員~~,"{functionName} is not available, please contact the administrator~~",{functionName}は現在利用できません。管理者にお問い合わせください~~
+module.feature_over_limit,{functionName}数量已达上限，请联系管理员~~,{functionName}數量已達上限，請聯繫管理員~~,"{functionName} has reached the upper limit, please contact the administrator~~",{functionName}の数が上限に達しました。管理者にお問い合わせください~~
+module.feedback,问答反馈,問答反饋,Question and Answer Feedback,問答フィードバック
+module.fulltext_search,全文检索,全文檢索,Fulltext Search,全文検索
+module.fulltext_search_desc,通过全文检索查询包含词汇的语料切片,通過全文檢索查詢包含詞彙的語料切片,Use fulltext search to query the corpus slice containing the vocabulary,全文検索を使用して、特定の用語を含む語料スライスを検索します
+module.generate_suggested_questions,提问引导,提問引導,Generate Suggested Questions,質問ガイド
+module.generate_suggested_questions_desc,开启后，自动生成三条引导提问,開啟後，自動生成三條引導提問,Enable this option to automatically generate three suggested questions,開啟後，自動生成三つの質問ガイド
+module.generate_summary,生成摘要,生成摘要,Generate Summary,要約生成
+module.generate_summary_desc,开启后，自动生成文档摘要,開啟後，自動生成文檔摘要,Enable this option to automatically generate document summaries,開啟後，自動生成文書要約
+module.homepage,首页,首頁,Homepage,ホームページ
+module.hybrid_search,混合检索,混合檢索,Hybrid Search,混合検索
+module.hybrid_search_desc,同时执行向量检索和全文检索，通过Rerank模型（必须启用）进行重新排序，匹配用户问题的最佳结果,同時執行向量檢索和全文檢索，通過Rerank模型（必須啟用）進行重新排序，匹配用戶問題的最佳結果,"Execute vector search and fulltext search simultaneously, rerank the results using the Rerank model (must be enabled) to match the best result for the user's question",ベクトル検索と全文検索を同時に実行し、Rerankモデル（必須有効）を使用して再順序付けし、ユーザーの問題に最も適した結果を選択します
+module.icp_license,备案信息,備案資訊,Filing Information,登録情報
+module.knowledge,知识管理,知識管理,Knowledge management,知識管理
+module.knowledge_library_search,知识库搜索,知識庫檢索,Knowledge Library Search,知識庫検索
+module.knowledge_space,知识库,知識庫,Knowledge Base,知識庫
+module.large_model,大模型接入,大模型接入,Large Model Access,大規模モデル連携
+module.library,知识库设置,知識庫設置,All Knowledge base,知識庫設置
+module.metadata,元数据,元數據,Metadata,メタデータ
+module.mobile_navigation,移动端导航,移動端導航,Mobile-side Navigation,モバイルナビゲーション
+module.model_setting,模型设置,模型設定,Model Settings,モデル設定
+module.nav_agent_class_placeholder,请选择分类,請選擇分類,Please select category,分類を選択してください
+module.nav_agent_placeholder,请选择智能体,請選擇智能體,Please select AI agent,エージェントを選択してください
+module.nav_name,栏目,欄目,column,セクション
+module.nav_name_placeholder,请选择栏目名称,請選擇欄目名稱,Please select column name,セクション名を選択してください
+module.nav_operation,操作,操作,Operations,操作
+module.nav_operation_seo,SEO,SEO,SEO,SEO
+module.nav_seo_setting,SEO设置,SEO設置,SEO Settings,SEO設定
+module.nav_seo_setting_description,Description,SEO Description,SEO Description,SEO説明
+module.nav_seo_setting_keywords,Keywords,SEO Keywords,SEO Keywords,SEOキーワード
+module.nav_seo_setting_keywords_tip,每个关键词请用英文逗号隔开,每個關鍵詞請用英文逗號隔開,Separate each keyword with commas,"キーワードは英語のカンマ（,）で区切ってください"
+module.nav_seo_setting_title,Title,SEO Title,SEO Title,SEOタイトル
+module.nav_custom_path_blacklist_tip,自定义页跳转地址不能使用保留路径（如 console）,自定義頁跳轉地址不能使用保留路徑（如 console）,Custom page path cannot use reserved paths (e.g. console),カスタムページのパスは予約パス（例: console）は使用できません
+module.nav_target,打开方式,打開方式,Open mode,開き方
+module.nav_target_blank,新窗口,新窗口,New Window,新しいウィンドウ
+module.nav_target_self,原窗口,原窗口,Current Window,同じウィンドウ
+module.nav_type,类型,類型,Type,タイプ
+module.nav_type_agent,智能体,智能體,AI Agents,インテリジェントエージェント
+module.nav_type_homepage,首页,首頁,Homepage,ホームページ
+module.nav_type_single,单页,單頁,Single Page,シングルページ
+module.nav_url,跳转链接,跳轉鏈接,Redirect Link,リダイレクトリンク
+module.nav_visible,导航栏显示,導航欄顯示,Display in Navigation Bar,ナビゲーションバーに表示
+module.navigation,导航菜单,導航菜單,Navigation Menu,ナビゲーションメニュー
+module.online_search,联网能力,聯網能力,Online Search,インターネット検索
+module.online_search_recall_count,最大结果,最大結果,Max Results,最大結果
+module.online_search_source,数据来源,數據來源,Data Source,データソース
+module.operation_management,运营管理,運營管理,Operations management,運用管理
+module.operation_order,订单数据,訂單數據,Order information,注文データ
+module.operation_order_delete_confirm,确定删除该订单吗？,確定刪除該訂單嗎？,Are you sure you want to delete this order?,この注文を削除してもよろしいですか？
+module.operation_order_search_placeholder,用户/订单ID,用戶/訂單ID,user/Order ID,注文ID/電話番号
+module.operation_order_user_tip,可直接输入用户昵称进行选择，若选择多位用户，则为每位用户单独创建一份订单,可直接輸入用戶暱稱進行選擇，若選擇多位用戶，則為每位用戶單獨創建一份訂單,"You can directly input the username to select, if you select multiple users, it will create a separate order for each user",ユーザーのニックネームを直接入力して選択することができます。複数のユーザーを選択すると、それぞれのユーザーに対して別々の注文が作成されます。
+module.operation_user,用户数据,用戶數據,User Data,ユーザーデータ
+module.operation_user_delete_confirm,确定删除该用户吗？,確定刪除該用戶嗎？,Are you sure you want to delete this user?,このユーザーを削除してもよろしいですか？
+module.operation_user_search_placeholder,成员名/手机号/电子邮箱,成員名/手機號/電子郵箱,Member Name/Phone Number/Email,メンバー名/電話番号/メール
+module.operation_visit,访问数据,訪問數據,access Data,訪問データ
+module.out_of_range_reply,拒答话术,拒答话术,Reject Answer,拒答話術
+module.overview,概况,概況,Overview,概要
+module.parse,文档清洗,內容清洗,Content Cleaning,コンテンツクリーニング
+module.payment,支付配置,支付配置,Payment Configuration,支払い設定
+module.pc_navigation,PC端导航,PC端導航,PC-side Navigation,PCナビゲーション
+module.platform,能力接入,能力接入,Platform access,能力連携
+module.platform_center,能力中心,能力中心,Platform Center,能力センター
+module.platform_auth_client_id,客户端ID,客戶端ID,Client ID,クライアントID
+module.platform_auth_client_id_placeholder,请输入客户端ID,請輸入客戶端ID,Please enter client ID,クライアントIDを入力してください
+module.platform_auth_client_secret,客户端密钥,客戶端密鑰,Client secret,クライアントシークレット
+module.platform_auth_client_secret_placeholder,请输入客户端密钥,請輸入客戶端密鑰,Please enter client secret,クライアントシークレットを入力してください
+module.platform_auth_coze_confirm,确认你在扣子已经保存,確認你在扣子已經保存,Confirm you have saved your secret in Coze,確認你在扣子已經保存
+module.platform_auth_secret,Secret,Secret,Secret,Secret
+module.platform_auth_secret_id,SecretId,SecretId,SecretId,SecretId
+module.platform_auth_secret_id_placeholder,请输入SecretId,請輸入SecretId,Please enter SecretId,SecretIdを入力してください
+module.platform_auth_secret_key,SecretKey,SecretKey,SecretKey,SecretKey
+module.platform_auth_secret_key_placeholder,请输入SecretKey,請輸入SecretKey,Please enter SecretKey,SecretKeyを入力してください
+module.platform_auth_url,URL,URL,URL,URL
+module.platform_delete_confirm,确定删除该智能体平台吗？,確定刪除該智能體平台嗎？,Are you sure you want to delete this agent platform?,このインテリジェントエージェントプラットフォームを削除してもよろしいですか？
+module.platform_model,通用大模型,通用大模型,General Large Model,一般大規模モデル
+module.platform_model_add,选择模型接入,選擇模型接入,General Large Model,一般大規模モデル
+module.platform_model_api_endpoint,自定义 API endpoint 地址,自定義 API endpoint 地址,Customize API endpoint address,カスタムAPIエンドポイント
+module.platform_model_api_endpoint_placeholder,输入您的自定义 API endpoint 地址，如：https://api.deepseek.com/v1 or https://api.deepseek.com,輸入您的自定義 API endpoint 地址，如：https://api.deepseek.com/v1 or https://api.deepseek.com,"Enter your customized API endpoint address, e.g. https://api.deepseek.com/v1 or https://api.deepseek.com",カスタムAPIエンドポイントを入力してください、例：https://api.deepseek.com/v1 or https://api.deepseek.com
+module.platform_model_base_url,API Base,API Base,API Base,API Base
+module.platform_model_base_url_azure,API 域名,API 域名,API Domain,API ドメイン
+module.platform_model_base_url_azure_placeholder,在此输入您的 API 域名，如：https://example.com/xxx,,"Enter your API domain, e.g. https://example.com/xxx",
+module.platform_model_base_url_maxkb,Base URL,Base URL,Base URL,Base URL
+module.platform_model_base_url_placeholder,输入您的API Base，如：https://api.openai.com,輸入您的API Base，如：https://api.openai.com,"Enter your API Base, e.g. https://api.openai.com",API Baseを入力してください、例：https://api.openai.com
+module.platform_model_base_url_placeholder_53ai,输入您的API Base，如：https://api.53ai.com,輸入您的API Base，如：https://api.53ai.com,"Enter your API Base, e.g. https://api.53ai.com",API Baseを入力してください、例：https://api.53ai.com
+module.platform_model_completion_mode,补全模式,補全模式,Completion Mode,補全模式
+module.platform_model_context_length,模型上下文长度,模型上下文長度,Model Context Length,モデル上下文長度
+module.platform_model_context_length_placeholder,输入您的模型上下文长度,輸入您的模型上下文長度,Enter your model context length,モデル上下文長度を入力してください
+module.platform_model_delete_confirm,确定删除该模型吗？,確定刪除該模型嗎？,Are you sure you want to delete this model?,このモデルを削除してもよろしいですか？
+module.platform_model_display_name,模型显示名称,模型顯示名稱,Model Display Name,モデル表示名
+module.platform_model_display_name_placeholder,输入您的模型显示名称,輸入您的模型顯示名稱,Enter your model display name,モデル表示名を入力してください
+module.platform_model_max_tokens,最大token上限,最大token上限,Max Tokens,最大token上限
+module.platform_model_max_tokens_placeholder,输入您的最大token上限,輸入您的最大token上限,Enter your max tokens,最大token上限を入力してください
+module.platform_model_models,启用模型,啟用模型,Enabled Models,有効なモデル
+module.platform_model_models_azure,基础模型,基础模型,Foundation Model,
+module.platform_model_models_azure_placeholder,选择您的基础模型,選擇您的基础模型,Select your foundation model,
+module.platform_model_models_edit,编辑模型,編輯模型,Edit Model,モデル編集
+module.platform_model_models_empty,暂无可用模型,暫無可用模型,No available models,利用可能なモデルがありません
+module.platform_model_models_id,模型ID,模型ID,Model ID,モデルID
+module.platform_model_models_name,模型名称,模型名稱,Model Name,モデル名
+module.platform_model_models_placeholder,请输入模型名称,請輸入模型名稱,Enter your model name,モデル名を入力してください
+module.platform_model_models_total,{total}个模型,{total}個模型,{total} models,{total}個のモデル
+module.platform_model_models_type,模型类型,模型類型,Model Type,モデルタイプ
+module.platform_model_name,部署名称,,Deployment Name,
+module.platform_model_name_placeholder,在此输入您的部署名称，与 Azure 部署名称匹配,,"Enter your deployment name, matching the Azure deployment name",
+module.platform_model_organization_id,组织 ID,組織 ID,Organization ID,組織ID
+module.platform_model_organization_id_placeholder,输入您的组织 ID,輸入您的組織 ID,Enter your organization ID,組織IDを入力してください
+module.platform_model_other,API endpoint中的模型名称,,API Version,
+module.platform_model_other_placeholder,"endpoint model name, e.g. chatgpt4.0",,Enter your API version,
+module.platform_model_stream_separator,流模式返回结果的分隔符,流模式返回結果的分隔符,Stream Separator,流模式返回結果的分隔符
+module.platform_model_stream_separator_placeholder,输入您的流模式返回结果的分隔符,輸入您的流模式返回結果的分隔符,Enter your stream separator,流模式返回結果的分隔符を入力してください
+module.platform_model_type,模型类型,模型類型,Model Type,モデルタイプ
+module.platform_model_vector_dimension,向量维度,向量維度,Vector Dimension,ベクトル次元
+module.platform_model_vector_dimension_placeholder,输入您的向量维度,輸入您的向量維度,Enter your vector dimension,ベクトル次元を入力してください
+module.platform_model_version,API 版本,API 版本,API Version,API バージョン
+module.platform_model_version_placeholder,输入您的API 版本,輸入您的API 版本,Enter your API version,API バージョンを入力してください
+module.platform_model_vision_support,Vision 支持,Vision支持,Vision Support,Vision サポート
+module.platform_model_webhook_url,Webhook URL,,Webhook URL,
+module.platform_search_online,联网搜索,聯網搜索,Search online,ネットワーク検索
+module.platform_search_online_delete_confirm,确定删除该拓展工具吗？,確定刪除該拓展工具嗎？,Are you sure you want to delete this search online tool?,このネットワーク検索ツールを削除してもよろしいですか？
+module.platform_search_online_desc,通过博查搜索网络内容，可总结摘要,通過博查搜索網絡內容，可總結摘要,"Search the website content via bochaai, and summarize the results.",ウェブコンテンツを検索し、結果を要約します。
+module.platform_tool_api_endpoint,API Endpoint,,API Endpoint,
+module.platform_tool_api_key,API Key,API Key,API Key,APIキー
+module.platform_tool_api_key_placeholder,输入您的API Key,輸入您的API Key,Enter your API Key,APIキーを入力してください
+module.platform_tool_token,令牌,,Token,
+module.platform_tool_token_placeholder,输入您的令牌,,Enter your token,
+module.platform_tools,拓展工具,拓展工具,Extended Tools,拡張ツール
+module.platform_v2,平台,平台,Platform,プラットフォーム
+module.prompt,提示词,提示詞,Prompts,
+module.prompt_search_placeholder,提示词名称,提示詞名稱,Prompt Name,プロンプト名
+module.question_rewrite,问题改写,問題改寫,Question Rewrite,問題改写
+module.question_rewrite_desc,开启后，在多轮对话中，会根据上下文内容对问题进行改写，提升对话连续性,開啟後，在多輪對話中，會根據上下文內容對問題進行改寫，提升對話連續性,"Enable this option to rewrite questions in multi-turn conversations based on context content, improving conversational continuity",開啟後，在多輪对话中，会根据上下文内容对问题进行改写，提升对话连续性
+module.quick_command,快捷指令,快捷指令,Quick Command,クイックコマンド
+module.recall_count,召回数量,召回數量,Recall Count,再現数
+module.recall_count_desc,用于筛选与用户问题相似度最高的文本片段。系统同时会根据选用模型上下文窗口大小动态调整分段数量。,用於篩選與用戶問題相似度最高的文本片段。系統同時會根據選用模型上下文窗口大小動態調整分段數量。,Used to filter the text fragment with the highest similarity to the user's question. The system will dynamically adjust the number of segments according to the context window size of the selected model.,ユーザーの問題に最も高い類似度を持つテキストスライスを選択するために使用されます。システムは、選択したモデルのコンテキストウィンドウサイズに応じて、セグメント数を動的に調整します。
+module.record,问答记录,問答記錄,Question and Answer Record,問答記錄
+module.reject_strategy,拒答策略,拒答策略,Reject Strategy,拒答戦略
+module.reject_strategy_continue,AI自动生成,AI自动生成,AI Auto Generate,AI 自動生成
+module.reject_strategy_fixed_reply,固定答复,固定答复,Fixed Reply,拒答話術
+module.reranking_desc,重排序模型将根据候选文档列表与用户问题语义匹配度进行重新排序，从而改进语义排序的结果,重排序模型將根據候選文檔列表與用戶問題語義匹配度進行重新排序，從而改進語義排序的結果,"Reranking model will rerank the candidate document list based on the semantic matching degree of the user's question, thereby improving the result of semantic sorting",再順序付けモデルは、候選文書リストとユーザーの問題の語義マッチング度に基づいて再順序付けを行い、語義順序の結果を改善します
+module.reranking_model,模型计算,模型計算,Reranking Model,モデル計算
+module.reranking_model_desc,重排序模型将根据候选文档列表与用户问题语义匹配度进行重新排序，从而改进语义排序的结果,重排序模型將根據候選文檔列表與用戶問題語義匹配度進行重新排序，從而改進語義排序的結果,"The reranking model will rerank the candidate document list based on the semantic matching degree of the user's question, thereby improving the result of semantic sorting",再順序付けモデルは、候選文書リストとユーザーの問題の語義マッチング度に基づいて再順序付けを行い、語義順序の結果を改善します
+module.search,AI搜问,AI問答,AI Question,AI問答
+module.search_section,AI搜索助手,AI問答助手,AI Question Assistant,AI問答助手
+module.site_config,站点配置,站點配置,Site Configuration,サイト設定
+module.site_decoration,站点装修,站點裝修,Site Decoration,サイト装飾
+module.slide_command,划词指令,划词指令,Slide Command,スライドコマンド
+module.space,空间管理,空間管理,Team Space,スペース管理
+module.statistics,三方统计,三方統計,Third-party Statistics,サードパーティ統計
+module.statistics_header_desc,您可以通过嵌入代码为您的站点添加客服插件、访问统计等功能,您可以通過嵌入代碼為您的站點添加客服插件、訪問統計等功能,"You can add customer service plugins, visitor statistics, and other features to your site through embedded code",埋め込みコードを使用して、サイトにカスタマーサービスプラグインやアクセス統計などの機能を追加できます
+module.statistics_header_title,嵌入代码,嵌入代碼,Embed Code,埋め込みコード
+module.statistics_textarea_label_1,Head头部代码,Head頭部代碼,Head Section Code,Headヘッダーコード
+module.statistics_textarea_label_1_example,"请输入JS代码……
+例如
+<script>console.log('hello world')</script>
+或
+<script src=""xxx""></script>","請輸入JS代碼……
+例如
+<script>console.log('hello world')</script>
+或
+<script src=""xxx""></script>","Please enter JS code……
+For example
+<script>console.log('hello world')</script>
+Or
+<script src=""xxx""></script>","JSコードを入力してください……
+例えば
+<script>console.log('hello world')</script>
+または
+<script src=""xxx""></script>"
+module.statistics_textarea_label_2,CSS代码,CSS代碼,CSS Code,CSSコード
+module.statistics_textarea_label_2_example,请输入CSS代码,請輸入CSS代碼,Please enter CSS code,CSSコードを入力してください
+module.subscription,订阅设置,訂閱服務,Subscription Settings,サブスクリプションサービス
+module.subscription_advanced_agent_bots,可使用的高级智能体,可使用的高級智能體,Available Advanced Agents,利用可能な高度なエージェント
+module.subscription_advanced_points,高级积分,高級積分,Advanced Points,高度なポイント
+module.subscription_agent_bots,可使用的智能体,可使用的智能體,Available AI Agents,利用可能なエージェント
+module.subscription_ai_assistant,跨平台的 AI 助手,跨平台的 AI 助手,Cross-platform AI Assistant,クロスプラットフォームAIアシスタント
+module.subscription_ai_assistant_tip,启用支持 macOs、Windows以及浏览器插件开放给用户下载使用。,啟用支持 macOs、Windows以及瀏覽器插件開放給用戶下載使用。,"Enable support for macOS, Windows, and browser plugins for users to download and use.",macOS、Windows、ブラウザプラグインをサポートし、ユーザーがダウンロードして使用できるようにします。
+module.subscription_charge,订阅费用,訂閱費用,Subscription Fee,サブスクリプション料金
+module.subscription_delete_confirm,确定删除该订阅吗？,確定刪除該訂閱嗎？,Are you sure you want to delete this subscription?,このサブスクリプションを削除してもよろしいですか？
+module.subscription_flagship,旗舰版,旗艦版,Flagship,フラッグシップ版
+module.subscription_free,免费版,免費版,Free,無料版
+module.subscription_header_title,订阅服务与定价,訂閱服務與定價,Subscription Services and Pricing,サブスクリプションサービスと価格設定
+module.subscription_points,积分,積分,Points,ポイント
+module.subscription_pro,专业版,專業版,Professional,プロフェッショナル版
+module.system,系统管理,系統管理,System Management,システム管理
+module.system_config,系统配置,系統配置,System Config,システム設定
+module.system_log,系统日志,系統日誌,System Logs,システムログ
+module.template_style,模板风格,模板風格,Template Style,テンプレートスタイル
+module.use_subdirectories,使用子目录,使用子目錄,Use Subdirectories,サブディレクトリを使用する
+module.use_subdirectories_tip,如果你想使用子目录(例如 53aihub/docs)，可以打开开关,如果你想使用子目錄(例如 53aihub/docs)，可以打開開關,"If you want to use subdirectories (e.g. 53aihub/docs), you can toggle the switch",サブディレクトリ（例：53aihub/docs）を使用する場合は、スイッチをオンにします
+module.user,员工账号,員工賬號,Employee Accounts,スタッフアカウント
+module.user_management,用户管理,用戶管理,User Management,ユーザー管理
+module.vector_search,向量检索,向量檢索,Vector Search,ベクトル検索
+module.vector_search_desc,通过向量检索查询内容最相似的语料切片,通過向量檢索查詢內容最相似的語料切片,Use vector search to query the content most similar to the corpus slice,ベクトル検索を使用して、内容が最も類似した語料スライスを検索します
+module.viewer,文档查看,文檔查看,Document View,文書查看
+module.web_search,联网搜索,聯網搜索,Web Search,ウェブ検索
+module.web_search_desc,开启后用户可选择【联网搜索】，用互联网资料进行问答,用戶可選擇【問全網】知識範圍，搜索互聯網資料進行問答,Users can select the [Ask All] knowledge scope to search the internet for materials and answer questions,ユーザーは【問全網】知識範囲を選択し、インターネット資料を検索して質問することができます
+module.graph_search_desc,开启后基于知识图谱实体关系进行知识检索和提取，提升回答的场景贴合度,開啟後基於知識圖譜實體關係進行知識檢索和提取，提升回答的場景貼合度,"Enable this option to perform knowledge retrieval and extraction based on the entity relationships in the knowledge graph, improving the relevance of the answers to the scenarios",このオプションを有効にすると、ナレッジグラフのエンティティ関係に基づいてナレッジ検索と抽出が行われ、シナリオへの回答の関連性が向上します
+module.default_enable,默认开启,默認開啟,Default Enable,デフォルトで有効
+module.default_enable_desc,知识搜问默认勾选从知识图谱提取知识,知識搜問默認勾選從知識圖譜提取知識,Knowledge search defaults to extracting knowledge from the knowledge graph,知識検索がデフォルトでナレッジグラフから知識を抽出します
+module.website_info,站点信息,站點信息,Site Information,サイト情報
+module.website_info_copyright,版权信息,版權信息,Copyright information,著作権情報
+module.website_info_copyright_placeholder,请输入版权信息,請輸入版權信息,Please enter copyright information,著作権情報を入力してください
+module.website_info_desc,站点描述,站點描述,Website Description,サイト説明
+module.website_info_desc_placeholder,请输入站点描述,請輸入站點描述,Please enter website description,サイト説明を入力してください
+module.website_info_ico,ico,ico,ico,ico
+module.website_info_ico_placeholder,请上传ico,請上傳ico,Please upload ico,icoファイルをアップロードしてください
+module.website_info_ico_tip,建议64×64px,建議 64×64px,Recommended 64×64px,推奨サイズは 64×64px
+module.website_info_keyword,关键词,關鍵詞,Keywords,キーワード
+module.website_info_keyword_placeholder,请输入关键词,請輸入關鍵詞,Please enter keywords,キーワードを入力してください
+module.website_info_keyword_placeholder_v2,可输入多个关键词，每个关键词输入后按回车即可,可輸入多個關鍵詞，每個關鍵詞輸入後按Enter即可,You can enter multiple keywords - press Enter after each one,複数のキーワードを入力できます（各キーワード入力後、Enterキーを押してください）
+module.website_info_language,默认语言,默認語言,Default Language,デフォルト言語
+module.website_info_layout,网站布局,網站佈局,Website Layout,ウェブサイトレイアウト
+module.website_info_logo,Logo,Logo,Logo,ロゴ
+module.website_info_logo_placeholder,请上传Logo,請上傳Logo,Please upload Logo,ロゴをアップロードしてください
+module.website_info_logo_tip,矩形Logo：建议600×200px，不超过2M的.jpg、.png,矩形 Logo：建議 600×200px，不超過 2MB 的 .jpg、.png,"Rectangular logo: recommended 600×200px, .jpg/.png up to 2MB",長方形のロゴ：推奨サイズは 600×200px、2MB 以下の .jpg/.png
+module.website_info_name,站点名称,站點名稱,Website Name,サイト名
+module.website_info_name_placeholder,请输入站点名称,請輸入站點名稱,Please enter website name,サイト名を入力してください
+module.website_info_template,站点风格,站點模板,Site style,サイトテンプレート
+module.website_info_type,站点类型,站點類型,Site categories,サイトタイプ
+module.website_type_enterprise,企业 AI 门户,企業 AI 門戶,Enterprise AI Portal,企業 AI ポータル
+module.website_type_enterprise_desc,站点仅为内部用户访问使用,站點僅為內部用戶訪問使用,Site is only accessible to internal users,サイトは内部ユーザーのみがアクセスできます
+module.website_type_independent,AI 独立站,AI 獨立站,AI Independent Site,AI 独立站
+module.website_type_independent_desc,站点仅为注册用户访问使用,站點僅為註冊用戶訪問使用,Site is only accessible to registered users,サイトは登録ユーザーのみがアクセスできます
+module.website_type_industry,行业 AI 门户,行業 AI 門戶,Industry AI Portal,業界 AI ポータル
+module.website_type_industry_desc,站点为内部员工+注册用户 访问使用,站點為內部員工+註冊用戶 訪問使用,Site is accessible to internal employees and registered users,サイトは内部従業員+登録ユーザーがアクセスできます
+module.weighted_score,权重计算,權重計算,Weighted Score,重み付け計算
+module.weighted_score_desc,通过调整分配的权重，重新排序策略确定是优先进行语义匹配还是关键字匹配。,通過調整分配的權重，重新排序策略確定是優先進行語義匹配還是關鍵字匹配。,"By adjusting the assigned weights, the reranking strategy determines whether to prioritize semantic matching or keyword matching.",重みを調整することで、再順序付け戦略が語義マッチング優先かキーワードマッチング優先かを決定します。
+module.writer,内容创作,內容創作,Content Creation,コンテンツ作成
+module.work_ai,工作台,工作台,Workbench,ワークベンチ
+module.knowledge_graph,知识图谱,知識圖谱,KKnowledge Graph,知識グラフ
+month,月,月,Month,月
+monthly,月,月,Month,月間
+more,更多,更多,More,もっと
+n8n,n8n,,n8n,
+name,名称,名稱,Name,名前
+navigation.delete_confirm,确定删除该导航吗？,確定刪除該導航嗎？,Are you sure to delete this navigation?,このデータを削除してもよろしいですか？
+navigation.search_placeholder,搜索栏目,請輸入想搜索的導航,Search Navigation,ナビゲーションを検索
+navigation.target.blank,新窗口,新窗口,New Window,新しいウィンドウ
+navigation.target.self,原窗口,當前窗口,Current Window,現在のウィンドウ
+navigation.title,导航管理,導航管理,Navigation Management,ナビゲーション管理
+navigation.type.custom,自定义页,自定義頁,Custom Page,カスタムページ
+navigation.type.external,外部链接,外部鏈接,External Link,外部リンク
+navigation.type.system,系统内置,系統內置,System Built-in,システム内蔵
+navigation.web_setting,页面编辑,页面编辑,Page Editor,ページ編集
+navigation_is_open,是否导航显示,是否導航顯示,Whether to Display in Navigation,ナビゲーション表示
+no_data,暂无数据,暫無數據,No Data,データなし
+no_permission_tip,尚未获得使用该功能的权限，请联系管理员开启,尚未獲得使用該功能的權限，請聯繫管理員開啟,You haven't obtained permission to use this function. Please contact the administrator to enable it,この機能を使用する権限がありません。管理者に問い合わせてください。
+not_bound,未绑定,未綁定,Not Bound,未バインド
+not_connected,未接入,未接入,Not Connected,未連携
+not_found_tip,未找到对应页面 或者 尚未获得使用该功能的权限，请联系管理员开启,未找到對應頁面 或者 尚未獲得使用該功能的權限，請聯繫管理員開啟,Corresponding page not found or you haven't obtained permission to use this function. Please contact the administrator to enable it,ページが見つからないか、この機能を使用する権限がありません。管理者に問い合わせてください。
+not_found_url,无法找到URL，请检查智能体是否设置正确,無法找到 URL，請檢查智能體是否設定正確,"URL not found, please check if the agent is set correctly",URL が見つかりません。エージェントの設定を確認してください
+not_setting,未设置,未設置,Not Configured,未設定
+notification_center,通知中心,通知中心,Notification Center,通知センター
+official_website,首页,首頁,Home,ホーム
+open_id,OpenID,OpenID,OpenID,OpenID
+open_method,打开方式,打開方式,Open Method,オープンメソッド
+openai,OpenAI,OpenAI,OpenAI,OpenAI
+opening_statement,开场白,開場白,Opening Statement,開場白
+operation,操作,操作,Operation,運用
+opportunity_capture,商机捕获,商機捕獲,Opportunity Capture,商機捕獲
+optimize,优化,優化,Optimize,最適化
+optimize_tip,角色指令自动优化,角色指令自動優化,Role Instruction Optimization,役割指示の最適化
+or,或,或,Or,または
+order.confirm_tip,确定则订单会设置为已支付，且会增加用户对应权益。,确定则订单会设置为已支付，且会增加用户对应权益。,Confirming will set the order to paid and increase the user's corresponding benefits.,確認すると、注文は確定されます。
+order.status.all,全部订单,全部訂單,All Orders,全部注文
+order.status.cancelled,已取消,已取消,Cancelled,キャンセル
+order.status.expired,已超时,已超時,Expired,超时
+order.status.not_confirm,待确认,待確認,Pending Confirmation,待確認
+order.status.paid,已支付,已支付,Paid,支払い済み
+order.status.pending,待支付,待支付,Pending Payment,待支払い
+order_amount,订单金额,訂單金額,Amount,注文金額
+order_create_time,下单时间,下單時間,Order Time,注文日時
+order_id,订单ID,訂單ID,Order ID,注文ID
+order_no,订单号,訂單號,Order Number,注文番号
+order_payment_type,类型,類型,Type,注文タイプ
+order_payment_type_alipay,支付宝支付,支付寶支付,Alipay,Alipay
+order_payment_type_manual,手动转账,手動轉賬,Manual Transfer,手動送金
+order_payment_type_wechat,微信支付,微信支付,WeChat,WeChat
+order_status,状态,狀態,Status,注文ステータス
+order_status_expired,已过期,已過期,Expired,期限切れ
+order_status_paid,已支付,已支付,Paid,支払い済み
+order_status_pending,待支付,待支付,Pending,未支払い
+order_status_refunded,已退款,已退款,Refunded,返金済み
+order_status_timeout,已超时,已超時,Timeout,超時
+order_subscription,订阅服务,訂閱服務,Subscription,サブスクリプション
+order_subscription_duration,订阅时长,訂閱時長,Subscription Duration,サブスクリプション期間
+order_subscription_version,订阅版本,訂閱版本,Subscription Version,サブスクリプションバージョン
+other_login_method,其他登录方式,其他登錄方式,Other login methods,その他のログイン方法
+output,输出,輸出,Output,出力
+output_variable,输出变量,輸出變量,Output Variables,出力変数
+over_message,超出将默认回复,超出將默認回覆,Default reply if exceeded,超えた場合のデフォルトの回答
+over_response,超纲回复,超綱回覆,Over Response,超えた場合のデフォルトの回答
+page_edit,页面编辑,頁面編輯,Page Edit,ページ編集
+password,密码,密碼,Password,パスワード
+payment.alipay_api_secret,支付宝公钥,支付寶公鑰,Alipay Public Key,Alipay公開鍵
+payment.alipay_api_secret_placeholder,请输入支付宝公钥,請輸入支付寶公鑰,Please enter Alipay Public Key,Alipay公開鍵を入力してください
+payment.alipay_app_id,支付宝AppID,支付寶AppID,Alipay AppID,Alipay AppID
+payment.alipay_app_id_placeholder,请输入支付宝AppID,請輸入支付寶AppID,Please enter Alipay AppID,Alipay AppIDを入力してください
+payment.alipay_guide_html,"1、登录支付宝开放平台<a class='text-[#5A6D9E]' href='https://open.alipay.com/module/webApp/' target='_blank'>https://open.alipay.com/module/webApp/</a>创建""网页/移动应用""，获得APPID；
+2、点击进入应用，在「开发设置」""接口加签方式""中按照支付宝官方的引导进行配置，获取应用私钥、支付宝公钥；
+3、在「开发设置」""授权回调地址""中填入: <span style=""color: #FA5151;"">{callback_url}</span><span class='copy-hook'></span>
+4、在【API管理】接入""电脑网站支付""的能力，按照支付宝官方的引导进行配置或开通；","1、登錄支付寶開放平台<a class='text-[#5A6D9E]' href='https://open.alipay.com/module/webApp/' target='_blank'>https://open.alipay.com/module/webApp/</a>創建""網頁/移動應用""，獲得APPID；
+2、點擊進入應用，在「開發設置」""接口加簽方式""中按照支付寶官方的引導進行配置，獲取應用私鑰、支付寶公鑰；
+3、在「開發設置」""授權回調地址""中填入: <span  style=""color: #FA5151;"">{callback_url}</span><span class='copy-hook'></span>
+4、在【API管理】接入""電腦網站支付""的能力，按照支付寶官方的引導進行配置或開通；","1、Login to Alipay Open Platform<a class='text-[#5A6D9E]' href='https://open.alipay.com/module/webApp/' target='_blank'>https://open.alipay.com/module/webApp/</a>Create ""Web/Mobile Application"" to get APPID;
+2、Click to enter the application, configure according to the official guide of Alipay in ""Development Settings"" ""Interface Signing Method"" to get application private key and Alipay public key;
+3、In ""Development Settings"" ""Authorization Callback Address"", fill in: <span  style=""color: #FA5151;"">{callback_url}</span><span class='copy-hook'></span>
+4、In [API Management], access the capability of ""PC Website Payment"" and configure or activate it according to Alipay's official guidance;","1、Alipay開放プラットフォームにログイン<a class='text-[#5A6D9E]' href='https://open.alipay.com/module/webApp/' target='_blank'>https://open.alipay.com/module/webApp/</a>「Web/モバイルアプリケーション」を作成してAPPIDを取得；
+2、アプリケーションに入り、Alipay公式のガイドに従って「開発設定」「インターフェース署名方式」を設定し、アプリケーション秘密鍵とAlipay公開鍵を取得；
+3、「開発設定」「認証コールバックアドレス」に以下を入力：<span style=""color: #FA5151;"">{callback_url}</span><span class='copy-hook'></span>
+4、[API管理]で「コンピューターサイト支払い」の機能を導入し、Alipay公式のガイドに従って設定または開通してください。"
+payment.alipay_mch_id,应用私钥,應用私鑰,Application Private Key,アプリケーション秘密鍵
+payment.alipay_mch_id_placeholder,请输入应用私钥,請輸入應用私鑰,Please enter Application Private Key,アプリケーション秘密鍵を入力してください
+payment.manual.desc,备注,備註,Remarks,備考
+payment.manual.desc_placeholder,请输入备注，如：请使用微信/支付宝 扫码支付以上金额,請輸入備註，如：請使用微信/支付寶 掃碼支付以上金額,"Please enter remarks,e.g.:Please use WeChat/Alipay to scan and pay the above amount",例：上記金額を支払うには、微信/アリババ のQRコードを使用してください
+payment.manual.qrcode,收款码,收款碼,Receipt QR code,収款コード
+payment.manual.qrcode_placeholder,请上传收款码,請上傳收款碼,Please upload the Receipt QR code,収款コードをアップロードしてください
+payment.manual_pay_qrcode,付款码,付款碼,Payment QR Code,支払いコード
+payment.manual_pay_qrcode_placeholder,请上传付款码,請上傳付款碼,Please upload payment QR code,支払いコードをアップロードしてください
+payment.manual_tip,手动转账可支持更多的支付方式，但金额需要用户自己填写，支付后需管理员后台手动确认。,如果不便提供包括支付寶和微信等支付通道，您也可以留下二維碼或，用戶支付後手動確認單。,"Manual transfer supports more payment methods, but the amount needs to be filled in by the user themselves, and manual confirmation by the administrator in the background is required after payment.",支付宝やWeChatなどの支払いチャネルを提供できない場合は、QRコードを残すことができます。ユーザーが支払った後、手動で注文を確認します。
+payment.type.alipay,支付宝支付,支付寶,Alipay,Alipay
+payment.type.all,全部支付,全部支付,All Payment Methods,全部支払い方式
+payment.type.manual,手动转账,手動轉賬,Manual Transfer,手動送金
+payment.type.paypal,PayPal,PayPal,PayPal,PayPal
+payment.type.wechat,微信支付,微信支付,WeChat,WeChat
+payment.wechat_api_secret,APIv3密钥,APIv3密鑰,APIv3 Key,APIv3シークレットキー
+payment.wechat_api_secret_placeholder,请输入APIv3密钥,請輸入APIv3密鑰,Please enter APIv3 Key,APIv3シークレットキーを入力してください
+payment.wechat_api_secret_tip,登录微信支付商户平台 → 账户中心 → API安全 → 设置「API密钥」,登錄微信支付商戶平台 → 賬戶中心 → API安全 → 設置「API密鑰」,Login to WeChat Pay Merchant Platform → Account Center → API Security → Set 'API Key',WeChat決済加盟店プラットフォームにログイン → アカウントセンター → APIセキュリティ → 「APIキー」を設定
+payment.wechat_app_id,AppID,AppID,AppID,アプリID
+payment.wechat_app_id_placeholder,请输入AppID,請輸入AppID,Please enter AppID,アプリIDを入力してください
+payment.wechat_app_id_tip,登录微信支付商户平台 → 点击「账户中心」→ 在「商户信息」中获取「微信支付商户号」,登錄微信支付商戶平台 → 點擊「賬戶中心」→ 在「商戶信息」中獲取「微信支付商戶號」,Login to WeChat Pay Merchant Platform → Click 'Account Center' → Get 'WeChat Pay Merchant ID' in 'Merchant Information',WeChat決済加盟店プラットフォームにログイン → 「アカウントセンター」をクリック → 「加盟店情報」から「WeChat決済加盟店番号」を取得
+payment.wechat_cert,证书文件,證書文件,Certificate File,証明書ファイル
+payment.wechat_cert_placeholder,请上传证书文件,請上傳證書文件,Please upload Certificate File,証明書ファイルをアップロードしてください
+payment.wechat_mch_id,微信支付商户号,微信支付商戶號,WeChat Pay Merchant ID,WeChat決済加盟店番号
+payment.wechat_mch_id_placeholder,请输入微信支付商户号,請輸入微信支付商戶號,Please enter WeChat Pay Merchant number,WeChat決済加盟店番号を入力してください
+payment.wechat_mch_id_tip,登录微信公众平台 → 设置 → 公众号设置 → 基本配置 → 查看「开发者ID（AppID）」,登錄微信公眾平台 → 設置 → 公眾號設置 → 基本配置 → 查看「開發者ID（AppID）」,Login to WeChat Public Platform → Settings → Public Account Settings → Basic Configuration → View 'Developer ID (AppID)',WeChatパブリックプラットフォームにログイン → 設定 → パブリックアカウント設定 → 基本設定 → 「開発者ID（アプリID）」を確認
+payment.wechat_private_key,证书密钥,證書密鑰,Certificate Key,証明書キー
+payment.wechat_private_key_placeholder,请上传证书密钥,請上傳證書密鑰,Please upload Certificate Key,証明書キーをアップロードしてください
+payment.wechat_serial_no,证书序列号,證書序列號,Certificate Serial Number,証明書シリアル番号
+payment.wechat_serial_no_placeholder,请输入证书序列号,請輸入證書序列號,Please enter Certificate Serial Number,証明書シリアル番号を入力してください
+permanent_effect,永久生效,永久生效,Permanent effect,永久効果
+permission_setting,使用范围,權限設置,Scope of Use,権限設定
+pictorial_image,示图,示圖,Diagram,示図
+platform.document_parse,文档解析,文檔解析,Document Parse,ドキュメント解析
+platform.document_parse_desc,按文档类型设置解析方法和输出内容,按文檔類型設置解析方法和輸出內容,Set parse method and output content by document type,ドキュメントタイプに応じて解析方法と出力内容を設定します
+platform.failed_tip,测试失败：请检查授权key是否可用。{error},測試失敗：請檢查授權金鑰是否可用，{error},Test failed: Please check if the authorization key is available. {error},テスト失敗：認証キーが使用可能かどうかを確認してください。{error}
+platform.file_editor_not_connected,还未接入文档编辑，来添加文档编辑吧~~,還未接入文檔編輯，來添加文檔編輯吧~~,"Not connected to file editor, add file editor now~~",未接続のファイル編集、ファイル編集を追加してください~~
+platform.model_test_failed,测试失败：您已超出当前配额，请检查您的账单详情,測試失敗，「{platform}」當前不可用,"Test failed, ""{platform}"" is currently unavailable",テスト失敗、「{platform}」現在正常に使用できません
+platform.model_test_success,测试成功，「{platform}」当前可正常使用,測試成功，「{platform}」當前可正常使用,"Test successful, ""{platform}"" is currently available",テスト成功、「{platform}」現在正常に使用できます
+platform.model_tip,{total}个{ type },{total}個{ type },{total} { type },{total}個{ type }
+platform.select_access,选择接入,選擇接入,Select Access,選択アクセス
+platform.standard_parse,标准解析,標準解析,Standard Parse,標準解析
+platform.web_search_not_connected,还未接入联网搜索，来添加联网搜索吧~,還未接入聯網搜索，來添加聯網搜索吧~,"Not connected to online search, add online search now~",未接続のオンライン検索、オンライン検索を追加してください~
+platform_auth.53ai.tip,"前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
+第二步：在""企业信息""下点击生成Secret Key
+第三步：生成后，复制Secret Key填入下列表单。","前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
+第二步：在""企业信息""下点击生成Secret Key
+第三步：生成后，复制Sercet Key填入下列表单。","Go to 53AI ({url})
+Step 1: Log in, then click ""Settings"" in the left navigation bar
+Step 2: Click ""Generate Secret Key"" under ""Enterprise Information""
+Step 3: After generation, copy the Secret Key and enter it in the form below.","前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
+第二步：在""企业信息""下点击生成Secret Key
+第三步：生成后，复制Sercet Key填入下列表单。"
+platform_auth.app_builder.tip,"前往 百度智能云千帆（{url}）
+第一步：登录后，点击左侧导航栏的""API Key""
+第二步：点击创建API Key（""服务"" 选择 ""千帆AppBuilder""，按需配置应用资源）
+第三步：完成创建，复制API Key填入下列表单。","前往 百度智能云千帆（{url}）
+第一步：登录后，点击左侧导航栏的""API Key""
+第二步：点击创建API Key（""服务"" 选择 ""千帆AppBuilder""，按需配置应用资源）
+第三步：完成创建，复制API Key填入下列表单。","Go to Baidu Cloud - App Builder（{url}）
+Step 1: Login and click ""API Key"" on the left navigation bar
+Step 2: Click ""Create API Key""（select ""AppBuilder"" for ""Service"", and configure application resources as needed）
+Step 3: Complete creation, copy the API Key and fill it in the form below.","Baidu Intelligence Cloud Qianfanへ移動（{url}）
+手順1：ログイン後、左側ナビゲーションバーの""API Key""をクリック
+手順2：API Keyを作成（""サービス""で""Qianfan AppBuilder""を選択し、必要に応じてアプリケーションリソースを設定）
+手順3：作成完了後、API Keyをコピーして下記フォームに入力してください。"
+platform_auth.coze_cn.tip,"前往 扣子API-授权-创建新应用（{url}）
+第一步：创建一个OAuth应用（""客户端类型""为""Web后端应用""）
+第二步：在""重定向URL""中填入：{redirect_url}
+第三步：将{client_id}和{client_secret}填入下列表单，权限全部勾选上并保存。","前往 扣子API-授权-创建新应用（{url}）
+第一步：创建一个OAuth应用（""客户端类型""为""Web后端应用""）
+第二步：在""重定向URL""中填入：{redirect_url}
+第三步：将{client_id}和{client_secret}填入下列表单，权限全部勾选上并保存。","Go to Coze API - Authorization - Create New Application（{url}）
+Step 1: Create an OAuth application（""Client Type"" is ""Web Backend Application""）
+Step 2: Fill in the ""Redirect URL"" in: {redirect_url}
+Step 3: Fill in {client_id} and {client_secret} in the form below,check all permissions and save.","Coze API-認証-新規アプリケーション作成へ移動（{url}）
+手順1：OAuthアプリケーションを作成（""クライアントタイプ""は""Webバックエンドアプリケーション""を選択）
+手順2：""リダイレクトURL""に以下を入力：{redirect_url}
+手順3：{client_id}と{client_secret}を下記フォームに入力し、すべての権限にチェックを入れて保存してください。"
+platform_auth.coze_cn.tip_1,务必先在扣子端点击保存后再点确定,务必先在扣子端点击保存后再点确定,Ensure you click 'Save' on the Coze side before clicking 'Confirm',Coze側で保存をクリックしてから、確認をクリックしてください
+platform_auth.coze_osv.tip,"前往 设置-API授权-个人访问令牌
+第一步：点击添加新令牌
+第二步：填写令牌名称，设置过期时间，权限全部勾选，选择所有工作空间并确定
+第三步：复制令牌填入下列表单",,"Go to Settings - API Authorization - Personal Access Tokens
+Step 1: Click Add new token
+Step 2: Enter a token name, set an expiration time, select all permissions, select all workspaces, and confirm
+Step 3: Copy the token and enter it in the form below",
+platform_auth.n8n.tip,前往n8n官网并登录（{url}）,,Go to the n8n website and log in ({url}),
+platform_auth.n8n.tip_1,第一步：在「Personal」下，点击创建一个工作流，再点击添加节点「On webhook call」；,,"Step 1: Under ""Personal"", create a workflow, then add an ""On webhook call"" node;",
+platform_auth.n8n.tip_2,第二步：在Webhook节点的编辑弹窗内，复制Webhook URLs 填入表单，Authentication选择「{headerAuth}」，然后点击「Create new credential」;,,"Step 2: In the Webhook node editor, copy the Webhook URLs into the form, set Authentication to ""{headerAuth}"", then click ""Create new credential"";",
+platform_auth.n8n.tip_3,"第三步：“Name”固定填入： {authorization}
+“Value”对应的是渠道的 key 字段，可以是随机字符串，字符数请控制在64位内；",,"Step 3: Set ""Name"" to: {authorization}
+""Value"" should match the channel key field. It can be a random string, up to 64 characters.",
+platform_auth.n8n.tip_4,第四步：“Respond”选择：{select},,"Step 4: Set ""Respond"" to: {select}",
+platform_auth.tencent.tip,"前往 腾讯云控制台（ {url} ）
+第一步：登录后，点击左侧导航栏的 ""API 密钥管理""
+第二步：点击新建密钥，复制 SecretId 和 SecretKey 填入下列表单。",,"Go to Tencent Cloud Console ({url})
+Step 1: Log in, then click ""API Key Management"" in the left navigation bar
+Step 2: Click ""Create Key"", then copy the SecretId and SecretKey into the form below.",
+platform_model.text_generation,文本生成,文本生成,Text Generation,テキスト生成
+platform_model.vision,视觉理解,視覺理解,Vision,ビジョン理解
+product_mastery,吃透产品,吃透產品,Product Mastery,吃透産品
+prompt.config,提示词,提示詞,Prompt Word,プロンプト設定
+prompt.content,提示词,提示詞,Content,プロンプト
+prompt.delete_confirm,确定删除该提示词吗？,確定刪除該提示詞嗎？,Are you sure to delete this prompt?,このデータを削除してもよろしいですか？
+prompt.guide,使用指引,使用指引,Usage Guide,使用ガイド
+prompt.search_placeholder,输入想搜索的提示词,請輸入想搜索的提示詞,Search Prompt,プロンプトを検索
+prompt.title,提示词,提示詞,Prompt,プロンプト
+prompt.ai_links,跳转使用,跳轉使用,AI Links,AIリンク
+prompt.frontend_sort,前台排序,前台排序,Frontend Sort,フロントエンドソート
+prompt.usage_scene_desc,添加使用场景帮助用户更好地理解如何使用此提示词,添加使用場景幫助用戶更好地理解如何使用此提示詞,Add usage scenarios to help users better understand how to use this prompt,使用シーンを追加すると、ユーザーはこのプロンプトの使い方をよりよく理解できます
+prompt.usage_case_desc,添加使用案例帮助用户更好地理解提示词的输入输出,添加使用案例幫助用戶更好地理解提示詞的輸入輸出,Add usage cases to help users better understand the prompt input and output,使用例を追加すると、ユーザーはプロンプトの入出力をよりよく理解できます
+prompt.no_desc,暂无描述,暫無描述,No description,説明がありません
+prompt.input_placeholder,进行提问，评测提示词的效果,進行提問，評測提示詞的效果,Ask questions to evaluate the prompt effect,質問をしてプロンプトの効果を評価する
+prompt.content_required,请填写提示词内容,請填寫提示詞內容,Please fill in the prompt content,プロンプト内容を入力してください
+prompt.default_name,提示词,提示詞,Prompt,プロンプト
+prompt.role_instruction_placeholder,"#角色设定
+（例如：资深职场顾问，风格专业严谨）
+
+#技能要求
+1. （例如：分析职场问题并给出解决方案）
+
+#输出示例
+用户输入：（例如：新入职团队，怎么快速融入并建立好人际关系？）
+输出：（例如：建议你可以从这几点入手：1. 主动和同事做简短自我介绍，重点说明自己的岗位和能提供的支持；2. 先快速熟悉团队的工作节奏和沟通习惯，不急于发表观点。）
+
+#限制
+（例如：不提供违法违规建议，不涉及人身攻击）","#角色設定
+（例如：資深職場顧問，風格專業嚴謹）
+
+#技能要求
+1. （例如：分析職場問題並給出解決方案）
+
+#輸出示例
+用戶輸入：（例如：新入職團隊，怎麼快速融入並建立好人際關係？）
+輸出：（例如：建議你可以從這幾點入手：1. 主動和同事做簡短自我介紹，重點說明自己的崗位和能提供的支持；2. 先快速熟悉團隊的工作節奏和溝通習慣，不急於發表觀點。）
+
+#限制
+（例如：不提供違法違規建議，不涉及人身攻擊）","#Role Setting
+(e.g., Senior workplace consultant, professional and rigorous style)
+
+#Skills Required
+1. (e.g., Analyze workplace issues and provide solutions)
+
+#Output Example
+User input: (e.g., New to the team, how to quickly integrate and build good relationships?)
+Output: (e.g., You can start from these points: 1. Give a brief self-introduction to colleagues, highlighting your role and support you can provide; 2. Quickly familiarize yourself with the team's work pace and communication habits, don't rush to express opinions.)
+
+#Constraints
+(e.g., No illegal suggestions, no personal attacks)","#ロール設定
+（例：経験豊富な職場コンサルタント、専門的で厳格なスタイル）
+
+#スキル要件
+1. （例：職場の問題を分析し、解決策を提案）
+
+#出力例
+ユーザー入力：（例：新しくチームに加入、どうやって素早く馴染み、良好な人間関係を築く？）
+出力：（例：以下の点から始めると良いでしょう：1. 同僚に簡単な自己紹介を行い、自分の役割と提供できるサポートを説明；2. チームの作業ペースとコミュニケーション習慣を素早く把握し、焦って意見を述べない）
+
+#制約
+（例：違法な提案はしない、人身攻撃は避ける）"
+prompt_config,提示词配置,提示詞配置,Prompt Config,プロンプト設定
+prompt_placeholder,请输入提示词,請輸入提示詞,Please enter prompt word,プロンプトを入力してください
+provider_platform.53ai,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+provider_platform.app_builder,百度千帆AppBuilder,百度千帆AppBuilder,BaiduQianfan Appbuilder,BaiduQianfan Appbuilder
+provider_platform.azure,Azure OpenAI,Azure OpenAI,Azure OpenAI,Azure OpenAI
+provider_platform.azure_open_ai,Azure OpenAI,Azure OpenAI,Azure OpenAI,Azure OpenAI
+provider_platform.bailian,阿里百炼,阿里百煉,Alibaba Bailian,Alibaba Bailian
+provider_platform.coze,Coze,Coze,Coze,Coze
+provider_platform.coze_cn,扣子编程,扣子编程,Coze,Coze
+provider_platform.coze_osv,coze-studio开源版,,,
+provider_platform.custom_openai,自定义模型（兼容OpenAI）,自定义模型（兼容OpenAI）,Custom OpenAI,Custom OpenAI
+provider_platform.dark_moon,月之暗面,月之暗面,Dark Moon,Dark Moon
+provider_platform.deepseek,深度求索,DeepSeek,DeepSeek,DeepSeek
+provider_platform.dify,Dify,Dify,Dify,Dify
+provider_platform.fastgpt,FastGPT,FastGPT,FastGPT,FastGPT
+provider_platform.gemini,Gemini,Gemini,Gemini,Gemini
+provider_platform.maxkb,MaxKB,MaxKB,MaxKB,MaxKB
+provider_platform.n8n,n8n,n8n,n8n,n8n
+provider_platform.openai,OpenAI,OpenAI,OpenAI,OpenAI
+provider_platform.prompt,Prompt,Prompt,Prompt,Prompt
+provider_platform.qianfan,百度千帆ModelBuilder,千帆,Qianfan,Qianfan
+provider_platform.siliconflow,硅基流动,硅基流动,SiliconFlow,SiliconFlow
+provider_platform.tencent,腾讯云智能体开发平台,腾讯云智能体开发平台,Tencent Cloud Intelligent Agent Development Platform,Tencent Cloud Intelligent Agent Development Platform
+provider_platform.tongyi,通义千问,通义千问,Tongyi,Tongyi
+provider_platform.volcengine,火山方舟,火山方舟,Volcengine,Volcengine
+provider_platform.yuanqi,腾讯元器,腾讯元器,Tencent Yuanqi,Tencent Yuanqi
+provider_platform.zhipu,智谱AI,智谱AI,Zhipu,Zhipu
+change_avatar,更换头像,更換頭像,Change Avatar,アバターを変更
+register,注册,註冊,Register,登録
+register_time,注册时间,註冊時間,Register Time,登録日時
+register_user.title,注册用户,註冊用戶,Registered User,登録ユーザー
+remark,备注,備註,Remark,備考
+response_code.agent_error,智能体错误,智能體錯誤,Agent Error,インテリジェントエージェントエラー
+response_code.auth_error,认证错误,身份認證錯誤,Authentication Error,認証エラー
+response_code.database_error,数据库错误,數據庫錯誤,Database Error,データベースエラー
+response_code.file_error,文件错误,文件錯誤,File Error,ファイルエラー
+response_code.forbidden_error,禁止错误,禁止錯誤,Forbidden Error,禁止エラー
+response_code.network_error,网络错误，请重新尝试,網絡錯誤，請重新嘗試,"Network Error, Please Try Again",ネットワークエラー，再試行してください
+response_code.not_found_error,未找到错误,未找到錯誤,Not Found Error,未找到エラー
+response_code.param_error,参数错误,參數錯誤,Parameter Error,パラメータエラー
+response_code.success,成功,成功,Success,成功
+response_code.system_error,系统错误,系統錯誤,System Error,システムエラー
+response_code.token_expired_error,身份过期错误,令牌過期錯誤,Token Expired Error,トークン期限切れエラー
+response_code.unauthorized_error,身份认证错误,未授權錯誤,identity authentication Error,認証エラー
+response_code.verification_code_error,验证码不正确,驗證碼錯誤,Verification Code Error,驗證碼錯誤
+response_data.apply_already_submitted,您已提交过申请，请勿重复提交,您已提交過申請，請勿重複提交,"You have already submitted an application, please do not submit it again",申請がすでに提出されています。繰り返し提出しないでください
+response_data.domain_already_bound,该域名已被绑定,該域名已被綁定,The domain name has already been bound,ドメイン名はすでに使用されています。別のドメイン名を使用してください
+response_message.operate_too_fast,操作过快，请稍后再试,操作過快，請稍後再試,"Operate Too Fast, Please Try Again Later",操作が速すぎます。後でもう一度試してください
+response_message.unknown_error,未知错误,未知錯誤,Unknown Error,未知エラー
+response_message.user_not_found,用户不存在,用戶不存在,User Not Found,ユーザーが見つかりません
+response_message.wechat_user_not_found,微信账号未绑定，请先绑定手机号,微信賬號未綁定，請先綁定手機號,WeChat account not bound，please bind your mobile number first,WeChatアカウントがバインドされていません。先に携帯番号をバインドしてください
+response_message.username_or_password_is_incorrect,用户名或密码错误,用戶名或密碼錯誤,Username or Password is Incorrect,ユーザー名またはパスワードが間違っています
+response_message.param_error,参数错误,參數錯誤,Parameter Error,パラメータエラー
+restart,重新开始,重新開始,Restart,再起動
+return,返回,返回,Back,戻る
+reupload,重新上传,重新上傳,Re-upload,再アップロード
+role.admin,管理员,管理員,Administrator,管理員
+role.creator,创建者,創建者,Creator,创建者
+role.normal,普通用户,普通用戶,Ordinary User,一般用户
+role.title,角色,角色,Role,角色
+role_instruction,角色指令,角色指令,Role Instruction,役割指示
+role_instruction_desc,用于对 AI 的回复做出一系列指令和约束,用於對 AI 的回覆做出一系列指令和約束,Used to make a series of instructions and constraints for the AI's replies,AI の回答に対して一連の指示と制約を作成するために使用されます
+save_and_restart,保存并重新开始,保存並重新開始,Save and Restart,保存して再開
+scene,场景,場景,Scene,シナリオ
+search-feedback.config,反馈配置,反饋配置,Feedback Configuration,反饋配置
+search-feedback.delete_confirm,确定删除该配置？,,Are you sure you want to delete this configuration?,確定刪除該配置？
+search-feedback.description,问题描述,描述,Description,描述
+search-feedback.detail,反馈明细,反饋詳情,Feedback Detail,反饋詳情
+search-feedback.feedback,反馈,反饋,Feedback,反饋
+search-feedback.feedback_type,反馈类型,反饋類型,Feedback Type,反饋類型
+search-feedback.next,下一条,下一條,Next,下一條
+search-feedback.other,其它,,Other,其它
+search-feedback.prev,上一条,上一條,Previous,上一條
+search-feedback.question_type,问题类型,問題類型,Question Type,問題類型
+search-feedback.satisfied,满意,滿意,Satisfied,滿意
+search-feedback.satisfied_count,截止到统计日期，对AI搜索的点赞次数,截止到統計日期，對AI搜索的點贊次數,Number of AI Search likes up to the selected statistics date,截止到統計日期，對AI搜索的點贊次數
+search-feedback.search-detail,问答详情,,Question and Answer Detail,問答詳情
+search-feedback.statisfied_type,满意类型,滿意類型,Statisfied Type,滿意類型
+search-feedback.statistics,反馈统计,反饋統計,Feedback Statistics,反饋統計
+search-feedback.time,反馈时间,反饋時間,Time,反饋時間
+search-feedback.unsatisfied,不满意,不滿意,Unsatisfied,不滿意
+search-feedback.unsatisfied_count,截止到统计日期，对AI搜索的点踩次数,截止到統計日期，對AI搜索的點踩次數,Number of AI Search dislikes up to the selected statistics date,截止到統計日期，對AI搜索的點踩次數
+search-feedback.unstatisfied_type,不满意类型,,Unstatisfied Type,不滿意類型
+search-feedback.user,反馈人,反饋人,User,反饋人
+search-record.all,全部,全部,All,全部
+search-record.all_knowledge_base,全部知识库,全部知識庫,All Knowledge Base,全部知識庫
+search-record.answer,回答,回答,Answer,回答
+search-record.answer_status,回答状态,回答狀態,Answer Status,回答状態
+search-record.status,状态,狀態,Status,状態
+search-record.data_summary,数据概况,數據概括,Data Summary,データ概要
+search-record.deep_think,深度思考,深度思考,Deep Think,深度思考
+search-record.deep_think_tip,"截止到统计日期，AI搜索时思考方式为""深度思考""的次数","截止到統計日期，AI搜索時思考方式為""深度思考""的次數","Number of AI Search sessions using ""Deep Thinking"" up to the selected statistics date","截止到統計日期，AI搜索時思考方式為""深度思考""的次數"
+search-record.detail,问答明细,問答詳情,Question and Answer Detail,問答詳情
+search-record.detail_list,数据列表,數據列表,Data List,データリスト
+search-record.document,文档,文檔,Document,文檔
+search-record.generate_count,生成梳理,生成梳理,Generate Summary,生成梳理
+search-record.generate_count_tip,截止到统计日期，AI搜索的生成梳理次数（1次对话计为1次使用）,截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）,Number of AI Search summary generations up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）
+search-record.generate_model,生成模型,生成模型,Generate Model,生成模型
+search-record.knowledge_scope,知识范围,知識範圍,Knowledge Scope,知識範圍
+search-record.model,调用模型,調用模型,Model,調用模型
+search-record.no_content,未搜索到内容,未搜索到內容,No content found,未搜索到內容
+search-record.no_content_tip,截止到统计日期，AI搜索拒答的次数,截止到統計日期，AI搜索拒答的次數,Number of AI Search refusals up to the selected statistics date,截止到統計日期，AI搜索拒答的次數
+search-record.normal,正常,正常,Normal,正常
+search-record.online_search,联网搜索,聯網搜索,Online Search,聯網搜索
+search-record.operation,操作,操作,Operation,操作
+search-record.query_count,查询次数,查詢次數,Query Count,查詢次數
+search-record.query_count_tip,截止到统计日期，AI搜索的查询次数（1次对话计为1次使用）,截止到統計日期，AI搜索的查詢次數（1次對話計為1次使用）,Number of AI Search queries up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的查詢次數（1次對話計為1次使用）
+search-record.question,提问,提問,Question,提問
+search-record.quick_answer,快速回答,快速回答,Quick Answer,快速回答
+search-record.quick_answer_tip,"截止到统计日期，AI搜索时思考方式为""快速回答""的次数","截止到統計日期，AI搜索時思考方式為""快速回答""的次數","Number of AI Search sessions using ""Quick Answer"" up to the selected statistics date","截止到統計日期，AI搜索時思考方式為""快速回答""的次數"
+search-record.quoted_count,引用数量,引用數量,Quoted Count,引用數量
+search-record.refused,拒答,拒答,Refused,拒答
+search-record.rewrite,问题改写,問題改寫,Question Rewrite,問題改寫
+search-record.search_count_tip,截止到统计日期，AI搜索的使用次数（1次对话计为1次使用）,截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）,Number of AI Search uses up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）
+search-record.search_document,搜索文档名称,搜索文档名称,Search Document Name,搜索文档名称
+search-record.search_question,搜索提问内容,搜索提問內容,Search Question Content,搜索提問內容
+search-record.specified_knowledge_base,指定知识库,指定知識庫,Specified Knowledge Base,指定知識庫
+search-record.statistics,问答统计,問答統計,Question and Answer Statistics,問答統計
+search-record.statistics_time,数据统计时间：,數據統計時間：,Data Statistics Time: ,數據統計時間：
+search-record.thinking_way,思考方式,思考方式,Thinking Way,思考方式
+search-record.time,提问时间,提問時間,Time,提問時間
+search-record.total_count,问答总数,搜索總數,Search Count,搜索總數
+search-record.total_count_unit,次,次,times,次
+search-record.user,提问人,提問人,User,提問人
+search-record.message_count,消息数量,消息數量,Message Count,メッセージ数
+search-record.conversation_total_count,会话总数,會話總數,Conversation Total Count,会話総数
+search-record.token_consumption,Token消耗,Token消耗,Token Consumption,Token消費
+search-record.avg_response_time,平均响应时间,平均響應時間,Average Response Time,平均応答時間
+search-record.overall_time,整体耗时,整體耗時,Overall Time,全体消費時間
+search-record.message_count_tip,截止到统计日期，用户提问与工作台回复消息总数,截止到統計日期，用戶提問與工作台回復消息總數,Up to the statistics date, the total number of user questions and work AI reply messages,統計日付まで、ユーザーの質問とワークAIの返信メッセージの総数
+search-record.conversation_total_count_tip,截止到统计日期，用户提问的独立会话次数,截止到統計日期，用戶提問的獨立會話次數,Up to the statistics date, the total number of unique user questions,統計日付まで、ユーザーの質問の独立会話数
+search-record.token_consumption_tip,截止到统计日期，所消耗的 Token 总数,截止到統計日期，所消耗的 Token 總數,Up to the statistics date, the total number of tokens consumed,統計日付まで、消費されたトークンの総数
+search-record.avg_response_time_tip,截止到统计日期，从接收请求到返回结果的平均耗时,截止到統計日期，从接收請求到返回結果的平均耗時,Up to the statistics date, the average time from receiving the request to returning the result,統計日付まで、受信要求から結果を返すまでの平均応答時間
+search-record.source,接入方式,接入方式,Source,アクセス方法
+search-record.source_h5,Web/H5网页,Web/H5網頁,Web/H5,Web/H5
+search-record.source_api,API接入,API接入,API Access,API接続
+search-record.source_web,前台使用,前台使用,Frontend,フロントエンド
+search-record.source_console,后台使用,后台使用,Backend,フロントエンド
+second,秒,秒,Second,秒
+select_agent,选择智能体,選擇智能體,Select Agent,エージェントを選択
+selected_tip,已选择 {total} 个,已選擇 {total} 個,Selected {total} items,選択済み {total} 個
+send,发送,發送,Send,送信
+service.consult_name,首席客服顾问,首席客服顧問,Chief Customer Service Consultant,首席顧客サービスコンサルタント
+service.desc_1,您好，扫码联系您的专属顾问，,您好，掃碼聯繫您的專屬顧問，,"Hello, scan the QR code to contact your exclusive consultant",お好きなタイミングでお問い合わせください
+service.desc_2,开通使用,開通使用,Activate and Use,開通使用
+service.desc_3,您好，微信扫码联系您的专属顾问，,您好，微信掃碼聯繫您的專屬顧問，,"Hello, scan the WeChat QR code to contact your exclusive consultant,","こんにちは、WeChat の QR コードをスキャンして専属コンサルタントに連絡してください,"
+service.title,立即开通,立即開通,Activate Now,即時開通
+service_expired_time,服务到期,服務到期,Service Expiration,サービス期限
+setting,已设置,已設置,Configured,設定済み
+shared_account,共享账号,共享帳號,Shared Account,共有アカウント
+silicon_flow,硅基流动,硅基流動,Silicon Flow,シリコンフロー
+software_style,软件风格,軟件風格,Software Style,ソフトウェアスタイル
+sort,排序,排序,Sort,ソート
+space.all_members,全体成员,全體成員,All Members,全員
+space.capacity,容量,容量,Capacity,容量
+space.delete_confirm,确定删除空间吗,,Are you sure to delete the space?,
+space.delete_confirm_warning,请注意！本操作将清空该空间里的所有内容。,,Please note! This operation will clear all content in the space.,
+space.delete_confirm_input_hint,请输入需要删除的空间名称：{name},,Please enter the space name to be deleted: {name},
+space.delete_confirm_tip_placeholder,请输入要删除的空间名称,,Please enter the space name to be deleted,
+space.delete_tip,当前空间中有{total}个知识库，请先清空知识库后再删除空间,當前空間中有{total}個知識庫，請先清空知識庫後再刪除空間,"There are {total} knowledge bases in the current space, please clear the knowledge bases before deleting the space",現在の空間に{total}個の知識があります。知識を先に削除してから空間を削除してください
+space.description,简介,簡介,Description,説明
+space.description_placeholder,请输入简介,請輸入簡介,Please enter description,説明を入力してください
+space.document,文档,文件,Document,ドキュメント
+space.icon,图标,圖標,Icon,アイコン
+space.invisible,不可见,不可見,Invisible,不可見
+space.member_and_permission,成员与权限,成員與權限,Member and Permission,メンバーと権限
+space.name,知识空间,空間,Team Space Name,空間
+space.name_placeholder,请输入空间名称,請輸入空間名稱,Please enter space name,空間名を入力してください
+space.non_space_member_can_view,非空间成员也可看查看，并主动申请加入空间内知识库,非空間成員也可看查看，並主動申請加入空間內知識庫,"Non-space members can also view, and actively apply to join the knowledge base in the space",非空間メンバー也可以查看，並主動申請加入空間內知識庫
+space.only_space_member_can_view,仅空间成员可查看，只有获得链接的成员才能申请加入空间内知识库,僅空間成員可查看，只有獲得鏈接的成員才能申請加入空間內知識庫,"Only space members can view, only members who obtain the link can apply to join the knowledge base in the space",僅空間メンバー可查看，只有獲得鏈接的成員才能申請加入空間內知識庫
+space.search_placeholder,输入空间名称,輸入空間名稱,Enter Space Name,空間名を入力してください
+space.system,系统,系統,System,システム
+space.system_space_delete_tip,系统空间，无法删除,系統空間，無法刪除,"System space, cannot be deleted",システム空間、削除できません
+space.title,空间管理,空間管理,Team Space,空間
+space.used,已使用,已使用,Used,使用済み
+space.visibility_setting,可见性设置,可見性設置,Visibility Setting,可見性設定
+space.visible,可见,可見,Visible,可見
+sso.API_documentation,API文档,API 文件,API Documentation,APIドキュメントです
+sso.access_desc,需要{title}管理员扫码安装,需要{title}管理員掃碼安裝,Need {title} administrator scan the code and install,需要{title}管理員掃碼安裝
+sso.access_desc_v2,已有{title}可直接扫码授权，尚未注册{title}请先注册,已有{title}可直接掃碼授權，尚未註冊{title}請先註冊,Existing {title} can scan code to authorize directly; unregistered {title} please register first,已有{title}可直接掃碼授權，尚未註冊{title}請先註冊
+sso.access_method,接入方式：,接入方式：,Access Method: ,アクセス方法です:
+sso.access_setting,接入设置,接入設定,Access Settings,アクセス設定です
+sso.access_title,接入{title},接入{title},Access {title},接入{title}
+sso.ad_ldap.abbr_title,AD/LDAP,AD/LDAP,AD/LDAP,AD/LDAP
+sso.ad_ldap.access_desc,绑定 AD/LDAP 后，可导入 AD/LDAP 成员目录，实现 AD/LDAP 账号单点登录 53Hub,綁定 AD/LDAP 後，可導入 AD/LDAP 成員目錄，實現 AD/LDAP 帳號單點登錄 53Hub,"After binding AD/LDAP, you can import the AD/LDAP member directory and realize single sign-on for AD/LDAP accounts in 53Hub",綁定 AD/LDAP 後，可導入 AD/LDAP 成員目錄，實現 AD/LDAP 帳號單点登錄 53Hub
+sso.ad_ldap.access_title,接入AD/LDAP,接入AD/LDAP,Access AD/LDAP,接入AD/LDAP
+sso.ad_ldap.title,AD/LDAP,AD/LDAP,AD/LDAP,AD/LDAP
+sso.api_access.access_desc,通过API鉴权实现单点登录，用户点击链接就能直接完成登录，无需手动输入账号密码,通过API鉴权实现单点登录，用户点击链接就能直接完成登录，无需手动输入账号密码,Single sign-on is achieved through API authentication. Users can log in directly by clicking the link without manually entering their account and password,API認証によるワンポイントログインは、リンクをクリックするだけでログインが完了し、パスワードを手入力する必要がありません
+sso.api_access.access_title,API接入,API接入,API Access,API連携
+sso.api_access.title,API接入,API接入,API Access,API連携
+sso.auth_access,授权接入,授權接入,Authorize Access,授權接入
+sso.auth_completed_tip,请确认您已完成应用绑定，确认后将刷新页面,確認您已完成應用綁定，確認後將刷新頁面,Please confirm you have completed app binding; Page will refresh after confirmation,確認您已完成應用綁定，確認後將刷新頁面
+sso.authorized_enterprise,授权企业,授權企業,Authorized Enterprise,授權企業
+sso.bind_member,关联成员,關聯成員,Associate Member,メンバーを関連付ける
+sso.bind_member_tip,确定将该成员关联到当前用户吗？,確定將該成員關聯到當前用戶嗎？,Confirm associating this member with the current user?,このメンバーを現在のユーザーに関連付けますか？
+sso.dingtalk.abbr_title,钉钉,釘釘,DingTalk,釘釘
+sso.dingtalk.access_desc,创建企业内部应用实现接入,創建企業內部應用實現接入,Create a enterprise internal application to achieve access,創建企業內部應用實現接入
+sso.dingtalk.access_title,接入钉钉,接入釘釘,Access DingTalk,接入釘釘
+sso.dingtalk.sync_desc,完成钉钉授权的绑定后，可绑定钉钉账号源，导入钉钉成员目录,完成釘釘授權的綁定後，可綁定釘釘賬號源，導入釘釘成員目錄,"After completing the DingTalk authorization binding, you can bind the DingTalk account source to import the DingTalk member directory",完成釘釘授權の綁定後，可綁定釘釘賬號源，導入釘釘成員目錄
+sso.dingtalk.sync_tip,已同步钉钉组织架构,已同步釘釘組織架構,The DingTalk organizational structure has been synchronized.,DingTalk の組織構造が同期されました。
+sso.dingtalk.title,钉钉,釘釘,DingTalk,釘釘
+sso.enable_encryption,启用加密：,啟用加密：,Enable Encryption: ,暗号化を可能にします：
+sso.feishu.abbr_title,飞书,飛書,Feishu,飛書
+sso.feishu.access_desc,企业管理员扫码安装接入,企業管理員掃碼安裝接入,Enterprise administrator scans the code to install and access,企業管理員掃碼安裝接入
+sso.feishu.access_title,接入飞书,接入飛書,Access Feishu,接入飛書
+sso.feishu.sync_desc,完成飞书授权的绑定后，可绑定飞书账号源，导入飞书成员目录,完成飛書授權的綁定後，可綁定飛書賬號源，導入飛書成員目錄,"After completing the Feishu authorization binding, you can bind the Feishu account source to import the Feishu member directory",完成飛書授權の綁定後，可綁定飛書賬號源，導入飛書成員目錄
+sso.feishu.title,飞书,飛書,Feishu,飛書
+sso.goto_access,前往{title}授权,前往{title}授權,Go to {title} authorization,前往{title}授權
+sso.goto_register,去注册{title},去註冊{title},Go to register {title},去註冊{title}
+sso.method_tip1,1、通过一个跳转完成用户身份鉴权实现单点登录,1、透過一個跳轉完成使用者身份鑑權實現單點登入,1. Single sign-on is achieved by completing user identity authentication through a single jump,1、1つのジャンプでユーザ識別認証を完了してシングルサインオンを実現します
+sso.method_tip2,2、链接格式为：,2、連結格式為：,2. The link format is: ,2、リンク形式は次の通りです：
+sso.method_tip3,3、参数说明：,3、參數說明：,3. Parameter description: ,3、パラメータ説明です：
+sso.organization_sync,组织同步,組織同步,Organization Sync,組織同步
+sso.save_success,保存成功,儲存成功,Saved Successfully,保存成功です
+sso.sign_tip,是由 timestamp={timestamp}&username={username} 拼接上Sercet的md5值,是由 timestamp={timestamp}&username={username} 拼接上Sercet的md5值,It is an md5 value of Sercet concatenated from timestamp={timestamp}&username={username},timestamp={timestamp}&username={username}をつなぎ合わせたSercetのmd5値です
+sso.sync_cancel,取消同步将会恢复到最初始组织状态,取消同步將會恢復到最初始組織狀態,Canceling sync will restore to initial org state,取消同步將會恢復到最初始組織狀態
+sso.sync_cancel_tip,取消同步,取消同步,Cancel synchronization,取消同步
+sso.sync_confirm,同步后{title}组织将会覆盖当前组织，不可恢复,同步後{title}組織將會覆蓋當前組織，不可恢復,"After sync, {title} organization will overwrite current organization and cannot be recovered",同步後{title}組織將會覆蓋當前組織，不可恢復
+sso.sync_corp,同步企业,同步企業,Sync Enterprise,同期企業
+sso.timestamp_tip,当前时间戳（这个链接10分钟失效）,當前時間戳（這個鏈接 10 分鐘失效）,Current timestamp (This link will expire in 10 minutes),現在のタイムスタンプ(このリンクは10分で無効になります)
+sso.title,单点登录,單點登錄,Single Sign-On,シングルサインオン
+sso.unauthorized,解除授权,解除授權,Revoke Authorization,解除授權
+sso.unbind_member,取消关联,取消關聯,Cancel Association,メンバーを関連付け解除する
+sso.unbind_member_tip,确定取消关联该成员吗？,確定取消關聯該成員嗎？,Confirm canceling association with this member?,このメンバーを関連付け解除しますか？
+sso.username_tip,可以是手机或邮箱,可以是手機或郵箱,a mobile phone or an email address,携帯電話でもメールでもかまいません
+sso.wecom.abbr_title,企微,企微,WeCom,企微
+sso.wecom.access_desc,企业微信管理员扫码安装接入,企業微信管理員掃碼安裝接入,WeCom administrator scans the code to install and access,企業微信管理員掃碼安裝接入
+sso.wecom.access_title,接入企微,接入企微,Access WeCom,接入企微
+sso.wecom.sync_desc,完成企业微信凭据授权的绑定后，可绑定企业微信账号源，导入企业微信成员目录,完成企業微信憑據授權的綁定後，可綁定企業微信賬號源，導入企業微信成員目錄,"After completing the WeCom credential authorization binding, you can bind the WeCom account source to import the WeCom member directory",完成企業微信憑據授權の綁定後，可綁定企業微信賬號源，導入企業微信成員目錄
+sso.wecom.sync_tip,已同步企业微信组织架构,已同步企業微信組織架構,Enterprise WeCom organization structure has been synchronized,企業微信組織構造が同期されています
+sso.wecom.title,企业微信,企業微信,WeCom,企業微信
+start_running,开始运行,開始運行,Start Running,実行開始
+start_time,开始时间,開始時間,Start Time,開始時間
+subscription.end_at,服务期限,服務期至,Subscription End At,サブスクリプション期限
+subscription.title,订阅服务,訂閱,Subscription,サブスクリプション
+subscription.transfer_desc,删除以下订阅服务，并将订阅用户迁移至新的订阅服务,刪除以下訂閱服務，並將訂閱用戶遷移至新的訂閱服務,Delete the following subscription service and migrate the subscription users to the new subscription service,以下のサブスクリプションを削除し、ユーザーを新しいサブスクリプションに移行します
+subscription.transfer_title,订阅删除,訂閱刪除,Delete Subscription,サブスクリプション削除
+subscription.transfer_to,迁移至,遷移至,Migrate To,移行先
+subscription.user_high,高端用户,高端用戶,Premium User,プレミアムユーザー
+subscription.user_normal,普通用户,普通用戶,Normal User,一般ユーザー
+suggested_questions,提问引导,提問引導,Suggested Questions,提問引導
+summary,摘要,摘要,Summary,要約
+support_image,支持图片,支持圖片,Image Supported,画像をサポート
+sync_output_variable,同步输出变量,同步輸出變數,Synchronized Output Variable,同期出力変数（どうきしゅつりょくへんすう）
+system_log.log_action,动作,動作,Action,動作
+system_log.log_ip,IP,IP,IP,IP
+system_log.log_label,日志,日誌,Log,ログ
+system_log.log_module,模块,模塊,Module,モジュール
+system_log.log_operator,操作人,操作人,Operator,操作人
+system_log.log_time,时间,時間,Time,時間
+table_footer_text,共有 {total} 条,共有 {total} 條,Total {total} items,全てのグループ {total} 件
+template_option_label.doubao,豆包风格,豆包風格,Doubao Style,豆包風格
+template_option_label.independent,独立站,獨立站,Independent Site,独立サイト
+template_option_label.kimi,Kimi风格,Kimi風格,Kimi Style,Kimi風格
+template_option_label.mita,秘塔风格,秘塔風格,Mita Style,秘塔風格
+template_option_label.portal,AI门户,AI門戶,AI Portal,AIポータル
+template_style.nav_bg_color,导航背景,導航背景,Navigation Background,ナビゲーション背景
+template_style.nav_text_color,导航文本,導航文本,Navigation Text,ナビゲーションテキスト
+template_style.page_footer_bg_color,页脚背景,頁腳背景,Footer Background,ページフッター背景
+template_style.page_footer_text_color,页脚文本,頁腳文本,Footer Text,ページフッターテキスト
+template_style.software,软件风格,軟件風格,Software Style,ソフトウェアスタイル
+template_style.text_color,文本颜色,文本顏色,Text Color,テキストカラー
+template_style.theme_color,主题色,主題色,Primary Color,テーマカラー
+template_style.theme_color_v2,主题颜色,主題顏色,Theme Color,テーマカラー
+template_style.website,网站风格,網站風格,Website Style,ウェブサイトスタイル
+template_style.website_style,站点风格,網站風格,Site Style,ウェブサイトスタイル
+tip,提示,提示,Tip,ヒント
+title,标题,標題,Title,タイトル
+tongyi,通义千问,通義千問,TongyiQianWen,通義千問
+tool_config,工具配置,工具配置,Tool Config,ツール設定
+type,类型,類型,Type,タイプ
+unit_messages,条信息,條信息,Messages,メッセージ
+unit_messages_v2,条,條,piece,件
+update_time,更新时间,更新時間,Update Time,更新日時
+updated_at,更新于,更新於,Updated at,更新日時
+upload_pem_file_tip,请上传pem文件,請上傳pem文件,Please upload pem file,pemファイルをアップロードしてください
+usage_case,使用案例,使用案例,Usage Case,使用例
+usage_case_desc,为你的应用添加使用案例，让用户更加容易上手,為你的應用添加使用案例，讓用戶更加容易上手,Add usage cases to your application to make it easier for users to get started,アプリケーションに使用例を追加して、ユーザーがより容易に開始できるようにします
+usage_guide,使用指引,使用指引,Usage Guide,使用ガイド
+usage_guide_desc,使用说明,使用指引,Usage Guide,使用ガイド
+usage_range,使用范围,使用範圍,Usage Range,使用範囲
+usage_record,使用记录,使用記錄,Usage Record,使用記録
+usage_scene,使用场景,使用場景,Usage Scene,使用シナリオ
+usage_scene_desc,为你的应用添加更多使用场景,為你的應用添加更多使用場景,Add more usage scenes to your application,アプリケーションに使用シナリオを追加して、ユーザーがより容易に開始できるようにします
+user,用户,用戶,User,ユーザー
+user/mobile,用户/手机号,用戶/手機號,User/Mobile,ユーザー/携帯電話番号
+user_info,用户信息,用戶信息,User Info,ユーザー情報
+user_register,用户注册,用戶註冊,User Register,ユーザー登録
+username,用户名,用戶名,Username,ユーザー名
+variable_type.array_audio,数组音频,陣列音頻,Array Audio,配列オーディオ
+variable_type.array_file,数组文件,陣列檔案,Array File,配列ファイル
+variable_type.array_image,数组图片,陣列圖片,Array Image,配列画像
+variable_type.array_text,数组文本,陣列文本,Array Text,配列テキスト
+variable_type.array_video,数组视频,陣列視頻,Array Video,配列ビデオ
+variable_type.audio,音频,音频,Audio,オーディオ
+variable_type.date,日期,日期,Date,日付
+variable_type.file,文件,文件,File,ファイル
+variable_type.image,图片,图片,Image,画像
+variable_type.inputNumber,数字,数字,Number,数字
+variable_type.markdown,Markdown,Markdown,Markdown,マークダウン
+variable_type.select,选项,选项,Select,セレクト
+variable_type.tag,标签,标签,Tag,タグ
+variable_type.text,单行文本,单行文本,Text,テキスト
+variable_type.textarea,多行文本,多行文本,Textarea,テキストエリア
+variable_type.video,视频,视频,Video,ビデオ
+verification_code,验证码,驗證碼,Verification Code,検証コード
+verification_code_placeholder,请输入验证码,請輸入驗證碼,Please enter verification code,検証コードを入力してください
+version.agent_limit,智能体添加数量达上限，请升级后尝试添加,智能體添加數量達上限，請升級後嘗試添加,The number of agents added has reached the upper limit. Please Upgrade to Add,アジェント追加制限、アップグレードして追加してください
+version.internal_user_limit,内部用户添加数量达上限，请升级后尝试添加,內部用戶添加數量達上限，請升級後嘗試添加,The number of internal users added has reached the upper limit. Please Upgrade to Add,内部ユーザー追加制限、アップグレードして追加してください
+version.knowledge_limit,知识空间添加数量达上限，请升级后尝试添加,知識庫添加數量達上限，請升級後嘗試添加,The number of knowledge bases added has reached the upper limit. Please Upgrade to Add,知識ベース追加制限、アップグレードして追加してください
+version.not_support,当前版本不支持,當前版本不支持,Current Version Not Supported,現在のバージョンはサポートされていません
+version.scan_consult,扫码咨询,掃碼咨詢,Scan Code for Consultation,スキャン相談
+version.title,版本,版本,Version,バージョン
+version.upgrade,升级版本,升級版本,Upgrade Version,アップグレードバージョン
+version.upgrade_hide_logo,升级至企业版，开启隐藏技术支持Logo,升級至企業版，開啟隱藏技術支援 Logo,Upgrade to the enterprise version to enable hiding the technical support logo,エンタープライズ版にアップグレードし、技術サポートのロゴを非表示にする機能を有効にします
+version.upgrade_renew,升级版本/续期,升級版本/續期,Upgrade version/Renew,バージョンアップ / 更新
+version.upgrade_tip,升级提示,升級提示,Upgrade Tip,アップグレードヒント
+visible_range,可见范围,可見範圍,Visible Range,表示範囲
+volcengine,火山方舟,火山引擎,Volcengine,Volcengine
+volcengine_agent_get_tip,"前往火山引擎（{ url }）
+第一步：登录火山方舟，点击进入我的应用（{ my_url }）
+第二步：点击已有的应用（或创建应用），点复制左上角的bot-xxxxxx（后面有个复制按钮），粘贴到下面表单
+第三步：点击右上角“API调用指南”，点击选择API Key并复制，然后复制出一个key粘贴到下面表单","前往火山引擎（{ url }）
+第一步：登录火山方舟，点击进入我的应用（{ my_url }）
+第二步：点击已有的应用（或创建应用），点复制左上角的bot-xxxxxx（后面有个复制按钮），粘贴到下面表单
+第三步：点击右上角“API调用指南”，点击选择API Key并复制，然后复制出一个key粘贴到下面表单","Go to Volcengine ({ url })
+ Step 1: Login Volcengine, click to enter My Applications ({my_url})
+ Step 2: Click an existing application (or create an application), click to copy bot - xxxxxx in the upper left corner (there is a copy button behind it), and paste it into the form below
+ Step 3: Click 'API Call Guide' in the upper right corner, click to select API Key and copy, then copy a key and paste it into the form below.","Volcano Engine（{ url }）にアクセス
+手順1：Volcano Arkにログインし、マイアプリケーション（{ my_url }）をクリック
+手順2：既存のアプリケーション（または新規作成）をクリックし、左上のbot-xxxxxx（コピーボタンあり）をコピーして下のフォームに貼り付け
+手順3：右上の「APIコールガイド」をクリックし、API Keyを選択してコピーし、キーを下のフォームに貼り付け"
+website_domain,网站域名,網站域名,Website Domain,サイトドメイン
+website_home,网站首页,網站首頁,Website Home,サイトホーム
+website_name,网站名称,網站名稱,Web Name,サイト名
+website_style,网站风格,網站風格,Website Style,ウェブサイトスタイル
+website_version.enterprise,企业版,企業版,Enterprise Version,エンタープライズ版
+website_version.flagship,旗舰版,旗舰版,Flagship Version,フラグシップ版
+website_version.free,创业版,創業版,Startup Version,スタートアップ版
+website_version.standard,专业版,專業版,Professional Version,プロフェッショナル版
+wechat,微信,微信,WeChat,WeChat
+wechat_payment.api_guide.step_1,1、登录微信支付商户平台，进入【账户中心 - 账户设置 - API安全】，点击【APIv3密钥】,1、登錄微信支付商戶平台，進入【賬戶中心 - 賬戶設置 - API安全】，點擊【APIv3密鑰】,"1、Login to WeChat Pay Merchant Platform, enter【Account Center - Account Settings - API Security】, click【APIv3 Key】",1、登錄微信支付商戶平台，進入【賬戶中心 - 賬戶設置 - API安全】，點擊【APIv3密鑰】
+wechat_payment.api_guide.step_2,2、在弹出窗口中点击“已沟通”，输入一个32位的随机密钥（包含数字及大小写字母），点击获取短信验证码，输入验证码后点击“确认”，即可设置成功。,2、在彈出窗口中點擊“已溝通”，輸入一個32位的隨機密鑰（包含數字及大小寫字母），點擊獲取短信驗證碼，輸入驗證碼後點擊“確認”，即可設置成功。,"2、In the pop-up window, click “I have communicated”, input a 32-bit random key (containing numbers and uppercase and lowercase letters), click Get SMS Verification Code, input the verification code and click “Confirm”, then set successfully.","2、在彈出窗口中點擊""已溝通""，輸入一個32位的隨機密鑰（包含數字及大小寫字母），點擊獲取短信驗證碼，輸入驗證碼後點擊""確認""，即可設置成功。"
+wechat_payment.api_guide.title,如何获取APIV3密钥,如何獲取APIV3密鑰,How to get APIv3 Key,APIV3密鑰の取得方法
+wechat_payment.app_guide.step_1,1、在微信支付商户平台的【产品中心 - AppID账号管理】中点击“关联APPID”，将之前获取的微信公众号或小程序的APPID填入并确认关联。登录微信开放平台，在消息中心中同意关联。,1、在微信支付商戶平台的【產品中心 - AppID賬號管理】中點擊“關聯APPID”，將之前獲取的公眾號或小程序的APPID填入並確認關聯。登錄微信開放平台，在消息中心中同意關聯。,"1、In the WeChat Pay Merchant Platform, go to [Product Center - AppID Account Management] and click ""Associate APPID"". Fill in the APPID of the previously obtained WeChat Official Account or Mini Program and confirm the association. Log in to the WeChat Open Platform and agree to the association in the Message Center.","1、在微信支付商戶平台的【產品中心 - AppID賬號管理】中點擊""關聯APPID""，將之前獲取的公眾號或小程序的APPID填入並確認關聯。登錄微信開放平台，在消息中心中同意關聯。"
+wechat_payment.app_guide.step_2,"2、将已关联的APPID，复制填入表单。
+
+补充：如果还未关联任何公众号，则需要先关联公众号，操作方法：点击关联AppID","2、將已關聯的APPID，複製填入表單。
+
+補充：如果還未關聯任何公眾號，則需要先關聯公眾號，操作方法：點擊關聯AppID","2、Copy the associated APPID and fill it into the form.
+
+ note: If no Official Account has been associated yet, you need to associate an Official Account first. Operation method: Click to associate AppID","2、將已關聯的APPID，複製填入表單。
+
+補充：如果還未關聯任何公眾號，則需要先關聯公眾號，操作方法：點擊關聯AppID"
+wechat_payment.app_guide.step_3,然后登录微信公众平台（{url}），进入公众号后台，在【设置与开发 - 基本配置】中获取开发者ID（AppID）。如果是小程序，可在微信公众平台的小程序管理后台获取小程序APPID。,然後登錄微信公眾平台（{url}），進入公眾號後台，在【設置與開發 - 基本配置】中獲取開發者ID（AppID）。如果是小程序，可在微信公眾平台的小程序管理後台獲取小程序APPID。,"Then log in to the WeChat Official Platform ({url}), enter the Official Account backend, and obtain the Developer ID (AppID) in [Settings and Development - Basic Configuration]. If it's a Mini Program, you can obtain the Mini Program APPID in the Mini Program management backend of the WeChat Official Platform.",然後登錄微信公眾平台（{url}），進入公眾號後台，在【設置與開發 - 基本配置】中獲取開發者ID（AppID）。如果是小程序，可在微信公眾平台的小程序管理後台獲取小程序APPID。
+wechat_payment.app_guide.title,如何获取APPID,如何獲取APPID,How to get APPID,APPIDの取得方法
+wechat_payment.cert_guide.step_1,1、登录微信支付商户平台，进入【账户中心 - API安全】，申请新证书。按照指引【下载证书工具】，将获得的请求串复制至文本框，点击下一步。,1、登錄微信支付商戶平台，進入【賬戶中心 - 賬戶設置 - API安全】，點擊【APIv3密鑰】,"1、Log in to the WeChat Pay Merchant Platform, go to [Account Center - API Security], and apply for a new certificate. Follow the guide [Download Certificate Tool], copy the obtained request string to the text box, and click Next.",1、登錄微信支付商戶平台，進入【賬戶中心 - 賬戶設置 - API安全】，點擊【APIv3密鑰】
+wechat_payment.cert_guide.step_2,2、申请后，下载apiclient_cert.pem（证书文件）和apiclient_key.pem（私钥文件）。,2、在彈出窗口中點擊“已溝通”，輸入一個32位的隨機密鑰（包含數字及大小寫字母），點擊獲取短信驗證碼，輸入驗證碼後點擊“確認”，即可設置成功。,"2、After applying, download apiclient_cert.pem (certificate file) and apiclient_key.pem (private key file).","2、在彈出窗口中點擊""已溝通""，輸入一個32位的隨機密鑰（包含數字及大小寫字母），點擊獲取短信驗證碼，輸入驗證碼後點擊""確認""，即可設置成功。"
+wechat_payment.cert_guide.title,如何获取支付证书文件与密钥,如何获取支付证书文件与密钥,How to Obtain Payment Certificate Files and Keys,証書の取得方法
+wechat_payment.mch_guide.step_1,1、登录微信支付官网（{url}）,1、登錄微信支付官網（{url}）,1、Login to WeChat Pay Merchant Platform（{url}）,1、WeChat Pay Merchant Platform（{url}）にログインします
+wechat_payment.mch_guide.step_2,2、微信支付商户号可在微信支付商户平台的【账户中心 - 商户信息】中查看。,2、微信支付商戶號可在微信支付商戶平台的【賬戶中心 - 商戶信息】中查看。,2、WeChat Pay Merchant ID can be viewed in the【Account Center - Merchant Information】of WeChat Pay Merchant Platform.,2、WeChat Pay Merchant ID can be viewed in the【Account Center - Merchant Information】of WeChat Pay Merchant Platform.
+wechat_payment.mch_guide.step_3,补充：如果还不是微信支付商家，可在登录首页点击成为商家，注册申请微信支付商户号，按照提示填写企业相关信息，如营业执照、对公账户等，提交审核。审核通过后，即可获得微信支付商户号。,補充：如果還不是微信支付商家，可在登錄首頁點擊成為商家，註冊申請微信支付商戶號，按照提示填寫企業相關信息，如營業執照、對公賬戶等，提交審核。審核通過後，即可獲得微信支付商戶號。,"Note:If you are not a WeChat Pay merchant yet, you can click 'Become a Merchant' on the login homepage, register and apply for a WeChat Pay merchant number, fill in relevant enterprise information as prompted, such as business license, corporate account, etc., and submit for review. After passing the review, you can obtain a WeChat Pay merchant number .","Note: If you are not a WeChat Pay merchant, you can click to become a merchant on the login page, register and apply for a WeChat Pay Merchant ID, fill in the enterprise related information such as营业执照、对公账户等, submit for review. After approval, you can get the WeChat Pay Merchant ID."
+wechat_payment.mch_guide.title,如何获取微信支付商户号,如何獲取微信支付商戶號,How to get WeChat Pay Merchant number,WeChat Pay Merchant IDの取得方法
+wechat_payment.serial_guide.step_1,1、在微信支付商户平台的【账户中心 - API安全 】中查看证书的序列号。,1、在微信支付商户平台的【账户中心 - API安全 】中查看证书的序列号。,1、View the certificate serial number in [Account Center - API Security] of the WeChat Pay Merchant Platform.,1、登錄微信支付商戶平台，進入【賬戶中心 - 賬戶設置 - API安全】，點擊【APIv3密鑰】
+wechat_payment.serial_guide.title,如何获取证书序列号,如何获取证书序列号,How to get Certificate Serial Number,証書序列号の取得方法
+workspace,工作空间,工作空間,Workspace,ワークスペース
+year,年,年,Year,年
+yuanqi,腾讯元器,腾讯元器,Tencent Yuanqi,Tencent Yuanqi
+yuanqi_agent_get_tip,"前往腾讯元器（{ url }）
+第一步：登录腾讯元器，去到我的创建。
+第二步：选择一个智能体卡片的右下角更多按钮，点击调用API（新建智能体要等审核通过才有）。
+第三步：点击复制智能体ID，粘贴到下面表单。
+第四步：点击复制Token，粘贴到下面表单。","前往腾讯元器（{ url }）
+第一步：登录腾讯元器，去到我的创建。
+第二步：选择一个智能体卡片的右下角更多按钮，点击调用API（新建智能体要等审核通过才有）。
+第三步，点击复制智能体ID，粘贴到下面表单。
+第四步：点击复制Token,粘贴到下面表单。","Go to Tencent Yuanqi({ url })
+ Step 1: Login Tencent Yuanqi, go to my creation.
+ Step 2: Click the More Button in the lower right corner of the agent card, click Call API (new agent needs to wait for approval to have).
+ Step 3: Click copy  agent ID, paste it below.
+ Step 4: Click copy Token, and paste it below.","テンセントYuanqi（{ url }）にアクセス
+手順1：テンセントYuanqiにログインし、マイクリエイションに移動。
+手順2：AIエージェントカードの右下にある詳細ボタンをクリックし、API呼び出しをクリック（新規エージェントは審査後に利用可能）。
+手順3：エージェントIDをコピーし、下のフォームに貼り付け。
+手順4：トークンをコピーし、下のフォームに貼り付け。"
+podcast.document_qa,文档问答,文檔問答,Document Q&A,ドキュメントQ&A
+podcast.document_qa_desc,多领域知识问答助手，可快速响应各类问题，提供精准、多维度的知识解答，高效获取信息。,多領域知識問答助手，可快速響應各類問題，提供精準、多維度的知識解答，高效獲取信息。,Multi-domain knowledge Q&A assistant that quickly responds to various questions, providing accurate and multi-dimensional knowledge answers for efficient information acquisition.,多分野の知識Q&Aアシスタントは、様々な質問に素早く対応し、正確で多角的な知識回答を提供し、効率的に情報を取得します。
+podcast.knowledge_extraction,知识萃取,知識萃取,Knowledge Extraction,知識抽出
+podcast.knowledge_extraction_desc,专注于合同文本的智能审阅工具，能识别合同条款风险、审查合规性、优化表述，提供专业且高效的支持。,專注於合同文本的智能審閱工具，能識別合同條款風險、審查合規性、優化表述，提供專業且高效的支持。,Intelligent review tool focused on contract texts, identifying contract clause risks, reviewing compliance, and optimizing expressions to provide professional and efficient support.,契約書のインテリジェントレビューツールは、契約条項のリスクを特定し、コンプライアンスを確認し、表現を最適化し、専門的で効率的なサポートを提供します。
+podcast.ai_podcast,AI播客,AI播客,AI Podcast,AIポッドキャスト
+podcast.ai_podcast_desc,基于多领域知识的智能播客生成助手，可快速创作主题丰富、内容专业的播客内容，满足文档收听的需求。,基於多領域知識的智能播客生成助手，可快速創作主題豐富、內容專業的播客內容，滿足文檔收聽的需求。,Intelligent podcast generation assistant based on multi-domain knowledge, quickly creating rich-themed and professional podcast content to meet document listening needs.,多分野の知識に基づくインテリジェントポッドキャスト生成アシスタントは、テーマ豊かで専門的なポッドキャストコンテンツを素早く作成し、ドキュメント聴取のニーズを満たします。
+work_ai.description,配置具备自主规划、工具使用和反思能力的数字员工,配置具備自主規劃、工具使用和反思能力的數字員工,Configure digital employees with autonomous planning, tool use, and reflection capabilities,自主的な計画、ツールの使用、および反省能力を備えたデジタル従業員を構成する
+work_ai.cognitive_brain,认知大脑,認知大腦,Cognitive Brain,認知脳
+work_ai.cognitive_brain_desc,定义 Agent 如何思考、规划和执行任务。采用"Planning + React"双循环架构,定義 Agent 如何思考、規劃和執行任務。採用"Planning + React"雙循環架構,Define how the Agent thinks, plans, and executes tasks. Adopting a "Planning + React" dual-loop architecture,エージェントがどのように考え、計画し、タスクを実行するかを定義します。「Planning + React」デュアルループアーキテクチャを採用
+work_ai.user_input,用户输入,用戶輸入,User Input,ユーザー入力
+work_ai.planning_reasoning,规划推理,規劃推理,Planning & Reasoning,計画と推論
+work_ai.planning,规划,規劃,Planning,計画
+work_ai.reasoning,推理,推理,Reasoning,推論
+work_ai.reflection,反思,反思,Reflection,振り返り
+work_ai.planning_reasoning_model,规划推理模型,規劃推理模型,Planning & Reasoning Model,計画推論モデル
+work_ai.planning_reasoning_model_desc,负责任务拆解、路径规划和复杂逻辑推理,負責任務拆解、路徑規劃和複雜邏輯推理,Responsible for task decomposition, path planning, and complex logical reasoning,タスク分解、パス計画、複雑な論理推論を担当
+work_ai.skill_execution_model,技能执行模型,技能執行模型,Skill Execution Model,スキル実行モデル
+work_ai.skill_execution_model_desc,负责生成代码、调用 API和处理具体任务,負責生成代碼、調用 API和處理具體任務,Responsible for code generation, API calls, and handling specific tasks,コード生成、API呼び出し、具体的なタスク処理を担当
+work_ai.meta_instruction,元指令,元指令,Meta Instruction,メタ指示
+work_ai.meta_instruction_desc,用于对工作台的回复做出一系列指令和约束,用於對工作台的回覆做出一系列指令和約束,Used to make a series of instructions and constraints for the workbench responses,ワークベンチの応答に対して一連の指示と制約を行うために使用
+work_ai.meta_instruction_placeholder,请输入元指令,請輸入元指令,Please enter meta instruction,メタ指示を入力してください
+work_ai.active_welcome,主动欢迎语,主動歡迎語,Active Welcome,アクティブウェルカム
+work_ai.opening_statement,开场白,開場白,Opening Statement,オープニングステートメント
+work_ai.skill_config,技能配置,技能配置,Skill Configuration,スキル設定
+work_ai.skill_config_desc,配置"技能管理" 菜单中的预设的技能,配置"技能管理" 菜單中的預設的技能,Configure preset skills in the "Skill Management" menu,"スキル管理"メニューのプリセットスキルを設定
+work_ai.effect_preview,效果预览,效果預覽,Effect Preview,効果プレビュー
+work_ai.specify_knowledge_or_skill,指定知识或技能问答,指定知識或技能問答,Specify knowledge or skill Q&A,知識またはスキルQ&Aを指定
+work_ai.specify_skill,指定技能问答,指定技能問答,Specify skill Q&A,スキルQ&Aを指定
+work_ai.task_placeholder,分配一项任务或基于企业知识提任何问题,分配一項任務或基於企業知識提任何問題,Assign a task or ask any question based on enterprise knowledge,タスクを割り当てるか、企業の知識に基づいて質問をする
+work_ai.publish_update,发布更新,發布更新,Publish Update,更新を公開
+work_ai.workbench,工作台,工作台,Workbench,ワークベンチ
+work_ai.skill_test_code,测试代码生成,測試代碼生成,Test Code Generation,テストコード生成
+work_ai.skill_audio_to_text,录音转文字,錄音轉文字,Audio to Text,音声をテキストに
+work_ai.skill_weather,天气查询,天氣查詢,Weather Query,天気予報
+work_ai.default_opening_statement,下午好，希望我为你做些什么？,下午好，希望我為你做些什麼？,Good afternoon, how can I help you?,こんにちは、何かお手伝いしましょうか？
+work_ai.deep_thinking,深度思考,深度思考,Deep Thinking,深い思考
+work_ai.quick_answer,快速回答,快速回答,Quick Answer,クイック回答
+work_ai.please_save_first,请先保存,請先保存,Please save first,先に保存してください
+work_ai.model_config_changed_please_save,模型配置已修改，请先保存后再发送消息,模型配置已修改，请先保存后再发送消息,Model configuration has been modified, please save before sending messages,モデル設定が変更されました。メッセージを送信する前に保存してください
+work_ai.data_statistics,数据统计,數據統計,Data Statistics,データ統計
+work_ai.data_details,数据明细,數據明細,Data Details,データ詳細
+work_ai.question_content,提问内容,提問內容,Question Content,質問内容
+all_knowledge_base,全部知识库,全部知識庫,All Knowledge Bases,全知識ベース
+download_failed,下载失败,下載失敗,Download Failed,ダウンロード失敗
+file_label,文件,文件,File,ファイル
+
+agent.tab_config,配置,配置,Configuration,設定
+agent.tab_data,数据,數據,Data,データ
+agent.tab_integrate,接入,接入,Integration,連携
+agent.tab_feedback,反馈,反饋,Feedback,フィードバック
+agent.last_saved,最近保存,最近保存,Last saved,最終保存
+agent.builtin,内置,內置,Built-in,内蔵
+agent.builtin_no_delete,内置智能体不可删除,內置智能體不可刪除,Built-in agent cannot be deleted,内蔵エージェントは削除できません
+integrate.direct_use,直接使用,直接使用,Direct Use,直接使用
+integrate.web_h5_embed,Web/H5嵌入,Web/H5嵌入,Web/H5 Embed,Web/H5埋め込み
+integrate.web_h5_embed_desc,在网站的任何位置添加聊天问答的智能体,在網站的任何位置添加聊天問答的智能體,Add a chat agent anywhere on your website,ウェブサイトの任意の場所にチャットエージェントを追加
+integrate.link_qr,链接与二维码,鏈接與二維碼,Link & QR Code,リンクとQRコード
+integrate.link_qr_desc,通过链接或二维码，将智能体与他人分享,通過鏈接或二維碼，將智能體與他人分享,Share the agent via link or QR code,リンクやQRコードでエージェントを共有
+integrate.standard_embed,标准嵌入,標準嵌入,Standard Embed,標準埋め込み
+integrate.sso_embed,身份鉴权嵌入,身份鑑權嵌入,SSO Embed,SSO埋め込み
+integrate.developing,接入功能开发中...,接入功能開發中...,Integration feature under development...,接続機能は開発中...
+integrate.style_example,样式示例,樣式示例,Style Example,スタイル例
+integrate.use_link,使用链接,使用鏈接,Use Link,リンクを使用
+integrate.enable_session_timeout,启用会话时效,啟用會話時效,Enable Session Timeout,セッションタイムアウトを有効化
+integrate.timeout,时效,時效,Timeout,タイムアウト
+integrate.minute,分钟,分鐘,Minute,分
+integrate.timeout_tooltip,时效最小为10分钟，最大为10080分钟（7天）,時效最小為10分鐘，最大為10080分鐘（7天）,Timeout minimum is 10 minutes, maximum is 10080 minutes (7 days),タイムアウトは最小10分、最大10080分（7日間）
+integrate.qrcode,二维码,二維碼,QR Code,QRコード
+integrate.please_save_agent,请先保存智能体,請先保存智能體,Please save the agent first,先にエージェントを保存してください
+integrate.download,下载,下載,Download,ダウンロード
+integrate.go_setting,去设置,去設置,Go to Settings,設定へ
+integrate.param_desc,参数说明,參數說明,Parameter Description,パラメータ説明
+integrate.username_desc,username：传入企业系统内的用户唯一标识，用于用户身份绑定，实现对话历史同步与权限控制,username：傳入企業系統內的用戶唯一標識，用於用戶身份綑定，實現對話歷史同步與權限控制,username: Pass the user's unique identifier for identity binding, history sync, and permission control,username: ユーザーの一意識別子を渡し、身元バインド、履歴同期、権限管理を実現
+integrate.timestamp_desc,timestamp：当前时间戳（这个链接10分钟失效）,timestamp：當前時間戳（這個鏈接10分鐘失效）,timestamp: Current timestamp (link expires in 10 minutes),timestamp: 現在のタイムスタンプ（このリンクは10分で期限切れ）
+integrate.sign_desc,sign：是由 timestamp={timestamp}&username={username} 拼接上Secret的md5值,sign：是由 timestamp={timestamp}&username={username} 拼接上Secret的md5值,sign: MD5 value of Secret concatenated with timestamp={timestamp}&username={username},sign: timestamp={timestamp}&username={username} とSecretを連結したMD5値
+integrate.embed_step1,1、网站的任何位置添加聊天问答,1、網站的任何位置添加聊天問答,1. Add chat Q&A anywhere on your website,1. ウェブサイトの任意の場所にチャットQ&Aを追加
+integrate.embed_step2,2、网站的右下角添加聊天气泡,2、網站的右下角添加聊天气泡,2. Add a chat bubble at the bottom right of your website,2. ウェブサイトの右下にチャットバブルを追加
+integrate.copy_embed_html,复制接入代码嵌入到对应网站页面<html>中,複製接入代碼嵌入到對應網站頁面<html>中,Copy and embed the code into the <html> of your website page,<html>タグ内に埋め込みコードをコピー
+integrate.copy_embed_body,复制接入代码嵌入到对应网站页面<body>中,複製接入代碼嵌入到對應網站頁面<body>中,Copy and embed the code into the <body> of your website page,<body>タグ内に埋め込みコードをコピー
+integrate.api_access,API接入,API接入,API Access,APIアクセス
+integrate.api_access_desc,调用API接口，实现诸多自定义聊天场景,調用API接口，實現許多自定義聊天場景,Call API interface to achieve various custom chat scenarios,APIインターフェースを呼び出して様々なカスタムチャットシナリオを実現
+recording.parse_mode,解析方式,解析方式,Parse Mode,解析モード
+recording.parse_app,应用解析,應用解析,App Parse,アプリ解析
+recording.parse_model,解析模型,解析模型,Parse Model,解析モデル
+recording.parse_app_label,解析应用,解析應用,Parse App,解析アプリ
+recording.parse_preference,解析偏好,解析偏好,Parse Preference,解析設定
+recording.parse_preference_placeholder,请输入解析偏好,請輸入解析偏好,Please enter parse preference,解析設定を入力してください
+recording.max_duration,最大时长,最大時長,Max Duration,最大時間
+recording.not_available,暂不可用,暫不可用,Not Available,使用不可
+recording.disk_storage,磁盘存储,磁盤存儲,Disk Storage,ディスク容量
+recording.data_detail,数据明细,數據明細,Data Details,データ詳細
+recording.name,名称,名稱,Name,名前
+recording.size,大小,大小,Size,サイズ
+recording.creator,创建人,創建人,Creator,作成者
+recording.created_time,创建时间,創建時間,Created Time,作成時間
+recording.search_name,录音文件名称,錄音文件名稱,Recording file name,録音ファイル名
+recording.view,查看,查看,View,表示
+recording.delete,删除,刪除,Delete,削除
+recording.desc,一键开启录音，最高支持 8 小时稳定录制，完整留存会议、讲座、访谈等场景的声音信息。,一键啟動錄音，最高支持 8 小時穩定錄音，完整留存會議、講座、訪談等場景的聲音信息。,One-click recording, up to 8 hours of stable recording, fully retaining audio information from meeting, lecture, interview, etc. scenarios.,ワンクリックレコーディング、最大8時間間の安定したレコーディング、ミーティング、講演、インタビューなどのシーンの音声情報を完全に保存します。
+recording.duration_hour,{}小时,{}小時,{} Hour(s),{}時間
+recording.tingwu,通义听悟,通義聽悟,Tongyi Tingwu,通義聽悟
+recording.total_count,录音总数,錄音總數,Total Recordings,録音総数
+recording.count_unit,个,個,count,件
+recording.total_duration,录音总时长,錄音總時長,Total Duration,総録音時間
+recording.hour_unit,小时,小時,Hour(s),時間
+recording.duration,时长,時長,Duration,時間
+
+module.platform_model_model_exists,该模型已存在,該模型已存在,Model already exists,モデルが既に存在します

@@ -1,0 +1,129 @@
+.space-selector-content {
+  padding: 0.5rem;
+  background: white;
+  max-height: 20rem;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+}
+
+.space-selector-search {
+  padding-bottom: 0.5rem;
+}
+
+.space-selector-list {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.space-selector-section-title {
+  height: 2.25rem;
+  padding-left: 0.75rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #999999;
+}
+
+.space-selector-item {
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  color: #374151;
+}
+
+.space-selector-item:hover {
+  background-color: #f9fafb;
+}
+
+.space-selector-item.selected {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+.space-selector-item.selected .space-selector-item-text {
+  color: #2563eb;
+}
+
+.space-selector-item-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.space-selector-item-text {
+  font-size: 0.875rem;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.space-selector-submenu {
+  padding: 0.5rem;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.space-selector-submenu-item {
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  color: #374151;
+}
+
+.space-selector-submenu-item:hover {
+  background-color: #f9fafb;
+}
+
+.space-selector-submenu-item.selected {
+  background-color: #eff6ff;
+  color: #2563eb;
+}
+
+.space-selector-submenu-list {
+  max-height: 10rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.check-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  color: #2563eb;
+}
+
+.right-icon {
+  width: 1rem;
+  height: 1rem;
+  color: #9ca3af;
+}
+
+.space-selector-empty {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.space-selector-empty img {
+  margin: 0 auto 1rem;
+}
+
+.space-selector-knowledge {
+  margin-top: 0.5rem;
+}

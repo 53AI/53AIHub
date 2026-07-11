@@ -1,0 +1,118 @@
+.prompt-input-wrapper {
+  position: relative;
+  width: 100%;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color: #182b50;
+}
+
+.prompt-input-wrapper.hide-line .cm-gutters {
+  display: none !important;
+}
+
+.prompt-input-wrapper.show-line .cm-gutters {
+  border-right-color: transparent;
+  background-color: #f2f3f5 !important;
+}
+
+.prompt-codemirror {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.prompt-codemirror .cm-editor {
+  outline: none !important;
+  height: 100%;
+}
+
+.prompt-codemirror .cm-focused {
+  outline: none !important;
+}
+
+.prompt-codemirror .cm-scroller {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 14px;
+  color: #182b50;
+}
+
+.prompt-codemirror .cm-content {
+  padding: 0 0;
+}
+
+.prompt-codemirror .cm-line {
+  padding: 0 16px;
+  line-height: 26px;
+}
+
+.prompt-codemirror .cm-gutterElement {
+  background-color: transparent !important;
+  height: 26px;
+  line-height: 26px;
+  margin-top: 0 !important;
+}
+
+.prompt-codemirror .cm-activeLine {
+  background: none !important;
+}
+
+.prompt-codemirror .cm-activeLineGutter {
+  background: none !important;
+}
+
+.prompt-codemirror .cm-placeholder {
+  color: #999;
+  font-style: normal;
+}
+
+/* Disabled/read-only state */
+.prompt-input-wrapper .cm-editor.cm-focused {
+  outline: none !important;
+}
+
+.prompt-input-wrapper .cm-editor .cm-content {
+  caret-color: auto;
+}
+
+.prompt-input-wrapper .cm-editor[contenteditable="false"] .cm-content {
+  cursor: default;
+}
+
+/* Variable tooltip styles */
+.variable-tooltip {
+  width: 150px;
+  max-height: 250px;
+  overflow-y: auto;
+  border: none !important;
+  background-color: white !important;
+  padding: 4px 4px;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+}
+
+.tooltip-title {
+  height: 24px;
+  line-height: 24px;
+  font-size: 12px;
+  color: #182b50;
+  opacity: 0.6;
+  cursor: default;
+  padding: 0px 8px;
+  margin-top: 4px;
+}
+
+.tooltip-item {
+  padding: 0px 8px;
+  height: 24px;
+  line-height: 24px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #2563eb;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.tooltip-item:hover,
+.tooltip-item.selected {
+  background-color: #f5f5f5;
+}

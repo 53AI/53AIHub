@@ -1,0 +1,223 @@
+.x-diagram-viewer {
+  height: 360px;
+  width: 100%;
+  border: 1px solid none;
+  display: flex;
+  flex-direction: column;
+  background-color: #f9fafb;
+  border-radius: 0.75rem;
+}
+
+.x-diagram-viewer__header {
+  flex: none;
+  height: 56px;
+  background-color: #ebecef;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.x-diagram-viewer--fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 1000;
+  border-radius: 0;
+  border: none;
+}
+
+.x-diagram-viewer--fixed .x-diagram-viewer__header {
+  background-color: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.x-diagram-viewer__tabs-container {
+  flex: 1;
+}
+
+.x-diagram-viewer__tabs {
+  display: inline-flex;
+  height: 40px;
+  padding: 0 4px;
+  align-items: center;
+  background-color: #e1e2e6;
+  border-radius: 10px;
+}
+
+.x-diagram-viewer__tab {
+  min-width: 72px;
+  height: 32px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 16px;
+  color: #4f5052;
+}
+
+.x-diagram-viewer__tab--active {
+  background-color: white;
+  color: #1d1e1f;
+}
+
+.x-diagram-viewer__center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.x-diagram-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.x-diagram-viewer__icon {
+  cursor: pointer;
+  color: #656566;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.x-diagram-viewer__icon span {
+  font-size: 14px;
+  margin-left: 4px;
+}
+
+.x-diagram-viewer__line {
+  width: 1px;
+  height: 20px;
+  background-color: #d0d5db;
+}
+
+.x-diagram-viewer__dropdown {
+  position: relative;
+}
+
+.x-diagram-viewer__dropdown-trigger {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.x-diagram-viewer__dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  min-width: 120px;
+}
+
+.x-diagram-viewer__dropdown-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #606266;
+  white-space: nowrap;
+}
+
+.x-diagram-viewer__dropdown-item:hover {
+  background-color: #f5f7fa;
+  color: #409eff;
+}
+
+.x-diagram-viewer__content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid transparent;
+}
+
+.x-diagram-viewer__content--selected {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  position: relative;
+}
+
+.x-diagram-viewer__content-tooltip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.x-diagram-viewer__image-content {
+  width: 100%;
+  height: 100%;
+}
+
+.x-diagram-viewer__code {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.x-diagram-viewer .x-diagram-viewer__code-pre {
+  white-space: pre-wrap;
+  height: 100%;
+  padding: 1rem;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.3s ease-in;
+}
+
+.slide-fade-enter-from {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+.slide-fade-leave-to {
+  transform: translateX(-20px);
+  opacity: 0;
+}
+
+.x-diagram-viewer__zoom-level {
+  min-width: 40px;
+  text-align: center;
+  font-size: 14px;
+  color: #333;
+  user-select: none;
+}
+
+.x-diagram-viewer__icon--float {
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 768px) {
+  .x-diagram-viewer__header {
+    padding: 0 8px;
+  }
+
+  .x-diagram-viewer__tab {
+    min-width: 56px;
+  }
+
+  .x-diagram-viewer__actions {
+    gap: 8px;
+  }
+}

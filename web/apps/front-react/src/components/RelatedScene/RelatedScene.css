@@ -1,0 +1,97 @@
+.related-scene {
+  margin-top: 16px;
+}
+
+.related-divider {
+  margin: 16px 0;
+}
+
+.divider-text {
+  font-size: 14px;
+  color: #6B7280;
+}
+
+.related-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.related-header svg {
+  color: #6B7280;
+}
+
+.related-title {
+  font-size: 14px;
+  color: #6B7280;
+  padding-left: 8px;
+}
+
+.related-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.related-grid.with-padding {
+  padding: 16px;
+}
+
+@media (min-width: 640px) {
+  .related-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .related-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.related-item {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #ECEDEE;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.related-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.related-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.related-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.related-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1D1E1F;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.related-desc {
+  font-size: 12px;
+  color: #6B7280;
+  margin: 4px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

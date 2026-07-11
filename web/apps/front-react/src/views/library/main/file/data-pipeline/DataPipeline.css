@@ -1,0 +1,19 @@
+.data-pipeline .ant-table-thead > tr > th {
+  background-color: #fafafa;
+  font-weight: 500;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.data-pipeline .ant-table-tbody > tr > td {
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.data-pipeline .ant-table-tbody > tr:hover > td {
+  background-color: rgba(250, 250, 250, 0.3);
+}
+
+.data-pipeline .ant-table-tbody > tr.group:hover .ant-table-cell button {
+  opacity: 1;
+}

@@ -1,9 +1,0 @@
-node_modules
-dist
-out
-.DS_Store
-*.log*
-
-
-auto-imports.d.ts
-components.d.ts

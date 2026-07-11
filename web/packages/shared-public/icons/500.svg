@@ -1,0 +1,19 @@
+<svg viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- �o�p -->
+  <circle cx="200" cy="150" r="120" fill="#F0F9FF" opacity="0.6"/>
+  <!--
+�h/�Pn� -->
+  <rect x="120" y="80" width="160" height="140" rx="12" fill="#EBEBEB" stroke="currentColor" stroke-width="2"/>
+  <line x1="120" y1="120" x2="280" y2="120" stroke="currentColor" stroke-width="2"/>
+  <line x1="120" y1="160" x2="280" y2="160" stroke="currentColor" stroke-width="2"/>
+  <line x1="120" y1="200" x2="280" y2="200" stroke="currentColor" stroke-width="2"/>
+  <!-- �o -->
+  <circle cx="150" cy="100" r="6" fill="#03D5B7"/>
+  <circle cx="180" cy="100" r="6" fill="#FFC412"/>
+  <circle cx="210" cy="100" r="6" fill="#ef4444"/>
+  <!-- 500 �W: -->
+  <text x="200" y="255" text-anchor="middle" font-family="system-ui, sans-serif" font-size="48" font-weight="700" fill="currentColor">error</text>
+  <!-- �� -->
+  <path d="M200 135 L206 165 L194 165 Z" fill="#ef4444"/>
+  <circle cx="200" cy="178" r="4" fill="#ef4444"/>
+</svg>

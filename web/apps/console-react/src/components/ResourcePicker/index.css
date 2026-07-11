@@ -1,0 +1,5 @@
+.resource-picker-row:hover td,
+.resource-picker-row.ant-table-row-selected td,
+.resource-picker-row.ant-table-row-selected:hover td {
+  background: transparent !important;
+}

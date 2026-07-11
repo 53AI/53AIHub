@@ -1,0 +1,227 @@
+/* Library Documents Tree Styles - 还原 Vue 版本样式 */
+
+.library-documents-tree {
+  --el-fill-color-blank: transparent;
+  background: transparent;
+}
+
+.library-documents-tree .ant-tree {
+  background: transparent;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+/* 节点高度和间距 */
+.library-documents-tree .ant-tree-treenode {
+  height: 34px;
+  margin-top: 2px;
+  padding: 0;
+  align-items: center;
+}
+
+.library-documents-tree .ant-tree-node-content-wrapper {
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-height: 34px;
+  line-height: 34px;
+  overflow: hidden;
+}
+
+.library-documents-tree .ant-tree-node-content-wrapper:hover {
+  background-color: transparent;
+}
+
+/* 节点容器允许溢出 */
+.library-documents-tree .ant-tree-treenode {
+  overflow: hidden;
+}
+
+
+/* 节点图标 */
+.library-documents-tree .ant-tree-iconEle {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+/* 选中状态 - 还原 Vue 版本的选中样式 */
+.library-documents-tree .ant-tree-treenode-selected .ant-tree-node-content-wrapper {
+  background-color: #F1F4FA !important;
+}
+
+.library-documents-tree .ant-tree-treenode-selected .ant-tree-title {
+  color: #2563EB;
+}
+
+.library-documents-tree .ant-tree-treenode-selected .catalog-tree-node p {
+  color: #2563EB;
+}
+
+/* 拖拽样式 */
+/* 正在被拖拽的节点 - 半透明 */
+.library-documents-tree .ant-tree-treenode.dragging {
+  opacity: 0.5;
+}
+
+/* 放置目标 - 文件夹高亮 */
+.library-documents-tree .ant-tree-treenode.drop-target {
+  background-color: transparent;
+}
+
+/* 拖拽放入文件夹内部 - 文件夹高亮背景 */
+.library-documents-tree .ant-tree-treenode.drag-over,
+.library-documents-tree .ant-tree-treenode.drag-over .ant-tree-node-content-wrapper {
+  background-color: #E6F0FF !important;
+  border-radius: 4px;
+}
+
+/* 手动拖拽悬停样式 - 确保文件夹在拖拽经过时显示高亮 */
+.catalog-tree-node.drag-over-folder {
+  background-color: #E6F0FF !important;
+  border-radius: 4px;
+}
+
+.library-documents-tree .ant-tree-treenode.drag-over .ant-tree-node-content-wrapper {
+  background-color: transparent !important;
+}
+
+/* 拖拽放置指示线 - 间隙上方 */
+.library-documents-tree .ant-tree-treenode.drag-over-gap-top {
+  box-shadow: inset 0 2px 0 #2563EB;
+}
+
+/* 拖拽放置指示线 - 间隙下方 */
+.library-documents-tree .ant-tree-treenode.drag-over-gap-bottom {
+  box-shadow: inset 0 -2px 0 #2563EB;
+}
+
+/* Tree node custom styles - 树节点内容 */
+.catalog-tree-node {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  gap: 4px;
+  padding-right: 4px;
+  flex: 1;
+  height: 34px;
+  position: relative;
+}
+
+.catalog-tree-node > div:first-child {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.catalog-tree-node p {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: #1D1E1F;
+  margin: 0;
+  line-height: 34px;
+}
+
+/* 内联编辑输入框 */
+.catalog-tree-node .inline-edit-input {
+  flex: 1;
+  height: 24px;
+  font-size: 14px;
+  border: 1px solid rgba(50, 150, 250, 1);
+  border-radius: 4px;
+  outline: none;
+  padding: 0 4px;
+  background: white;
+}
+
+/* 节点操作按钮区域 */
+.catalog-tree-node .node-actions {
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: linear-gradient(to left, white 80%, transparent);
+  padding-left: 8px;
+  z-index: 1;
+}
+
+.catalog-tree-node .action-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #4F5052;
+  flex-shrink: 0;
+}
+
+.catalog-tree-node .action-btn:hover {
+  background-color: #F2F2F2;
+}
+
+/* Empty state styles */
+.catalog-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.catalog-empty-icon {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.catalog-empty-text {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #939499;
+  margin-top: 8px;
+  font-size: 14px;
+}
+
+/* 确保树节点 title 区域正确渲染 */
+.library-documents-tree .ant-tree-title {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* 隐藏 Tree 自身的滚动条 */
+.library-documents-tree .ant-tree-list {
+  overflow: hidden;
+}
+
+.library-documents-tree .ant-tree-list-holder {
+  overflow: hidden;
+}
+
+.library-documents-tree .ant-tree-list-holder-inner {
+  overflow: hidden;
+}
+
+/* Tree 容器只允许 y 轴滚动 */
+.library-documents-tree {
+  overflow-x: hidden;
+  overflow-y: auto;
+}

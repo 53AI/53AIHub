@@ -1,0 +1,15 @@
+/* Mobile responsive styles for AccountDialog */
+@media screen and (max-width: 640px) {
+  .account-share-modal .ant-modal-wrap {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .account-share-modal .ant-modal {
+    margin-bottom: 0 !important;
+  }
+
+  .account-share-modal .ant-modal-footer {
+    display: none;
+  }
+}

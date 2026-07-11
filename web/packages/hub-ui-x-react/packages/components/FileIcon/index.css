@@ -1,0 +1,70 @@
+.x-file-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background-color: var(--hubx-color-bg-tertiary);
+  color: var(--hubx-color-text-secondary);
+}
+
+.x-file-icon__extension {
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+/* 图片文件 */
+.x-file-icon--image {
+  background-color: #E1F5FE;
+  color: #0288D1;
+}
+
+/* 文档文件 */
+.x-file-icon--document {
+  background-color: #E8F5E9;
+  color: #388E3C;
+}
+
+/* 表格文件 */
+.x-file-icon--spreadsheet {
+  background-color: #E8F5E9;
+  color: #388E3C;
+}
+
+/* 演示文件 */
+.x-file-icon--presentation {
+  background-color: #FFF3E0;
+  color: #F57C00;
+}
+
+/* 音频文件 */
+.x-file-icon--audio {
+  background-color: #F3E5F5;
+  color: #7B1FA2;
+}
+
+/* 视频文件 */
+.x-file-icon--video {
+  background-color: #FFEBEE;
+  color: #D32F2F;
+}
+
+/* 压缩文件 */
+.x-file-icon--archive {
+  background-color: #FFF8E1;
+  color: #FFA000;
+}
+
+/* 代码文件 */
+.x-file-icon--code {
+  background-color: #E3F2FD;
+  color: #1976D2;
+}
+
+/* 默认文件 */
+.x-file-icon--default {
+  background-color: #FAFAFA;
+  color: #616161;
+}

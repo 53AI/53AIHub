@@ -1,0 +1,446 @@
+/**
+ * ProcessFlow 组件样式
+ * 合并 Skill 和 Task 流程的共用样式
+ */
+
+/* ===== 共用基础样式 ===== */
+.x-skill-process-flow,
+.x-task-process-flow {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #fff;
+  margin-bottom: 16px;
+  font-family: system-ui, -apple-system, sans-serif;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.x-skill-process-header,
+.x-task-process-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.x-skill-process-title,
+.x-task-process-title {
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: #1D1E1F;
+}
+
+.x-skill-process-icon,
+.x-task-process-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  color: #6b7280;
+}
+
+.x-skill-process-content,
+.x-task-process-content {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 步骤样式 ===== */
+.x-skill-step,
+.x-task-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.x-skill-step-connector,
+.x-task-step-connector {
+  position: absolute;
+  left: 20px;
+  top: 26px;
+  bottom: -24px;
+  width: 1px;
+  background-color: #e5e7eb;
+  z-index: 0;
+}
+
+.x-skill-step:last-child .x-skill-step-connector,
+.x-task-step:last-child .x-task-step-connector {
+  display: none;
+}
+
+.x-skill-step-header,
+.x-task-step-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.x-skill-step-header:hover,
+.x-task-step-header:hover {
+  background-color: #f9fafb;
+}
+
+.x-skill-step-icon,
+.x-task-step-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: #1D1E1F;
+  background-color: #fff;
+}
+
+.x-skill-step-icon--running,
+.x-task-step-icon--running {
+  animation: spin 1s linear infinite;
+}
+
+.x-skill-step-icon--completed,
+.x-task-step-icon--completed {
+  color: #10b981;
+}
+
+.x-skill-step-title,
+.x-task-step-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #111827;
+}
+
+.x-skill-step-action {
+  display: flex;
+  align-items: center;
+  color: #6b7280;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.x-skill-step-action:hover {
+  color: #374151;
+}
+
+.x-skill-step-body,
+.x-task-step-body {
+  padding: 8px 40px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.x-skill-step-body.x-skill-step-body-plain {
+  padding: 0px;
+}
+
+/* ===== 嵌套步骤样式 ===== */
+.x-skill-nested-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0 28px;
+}
+
+.x-skill-nested-connector {
+  position: absolute;
+  left: 20px;
+  top: 26px;
+  bottom: -24px;
+  width: 1px;
+  background-color: #e5e7eb;
+  z-index: 0;
+}
+
+.x-skill-nested-step:last-child .x-skill-nested-connector {
+  display: none;
+}
+
+.x-skill-nested-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.x-skill-nested-header:hover {
+  background-color: #f9fafb;
+}
+
+.x-skill-nested-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.x-skill-nested-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: #1D1E1F;
+  background-color: #fff;
+}
+
+.x-skill-nested-body {
+  padding: 8px 40px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ===== 代码块样式 ===== */
+.x-skill-code-block,
+.x-task-code-block {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #f9fafb;
+  overflow: hidden;
+  margin-top: 8px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.x-skill-code-header,
+.x-task-code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background-color: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.x-skill-code-copy,
+.x-task-code-copy {
+  color: #6b7280;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.x-skill-code-copy:hover,
+.x-task-code-copy:hover {
+  color: #374151;
+}
+
+.x-skill-code-content,
+.x-task-code-content {
+  padding: 16px;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 13px;
+  color: #374151;
+  overflow-x: auto;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+}
+
+/* ===== Task 特有样式 ===== */
+.x-task-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 16px;
+  background-color: #F3F4F6;
+  color: #373A3D;
+  font-size: 14px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.x-task-tag-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #373A3D;
+}
+
+.x-task-tag:hover {
+  background-color: #f9fafb;
+}
+
+.x-task-tag--normal {
+  cursor: default;
+}
+.x-task-tag--normal:hover {
+  background-color: #F3F4F6;
+}
+.x-task-relation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.x-task-relation-item {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  background-color: #fff;
+  border: 1px solid #F2F3F5;
+  border-radius: 16px;
+  color: #6B7280;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  white-space: nowrap;
+}
+.x-task-relation-item--normal {
+  max-width: none;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.x-task-relation-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.x-task-relation-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-task-step-loading {
+  display: flex;
+  align-items: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.x-task-loading-icon {
+  margin-right: 8px;
+  animation: spin 1s linear infinite;
+}
+
+/* ===== 动画 ===== */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ===== 错误信息样式 ===== */
+.x-task-error-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-task-error-item {
+  padding: 8px 12px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ===== 技能执行内的思考内容样式 ===== */
+.x-skill-llm-section {
+  margin: 0 28px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.x-skill-llm-section:last-child {
+  border-bottom: none;
+}
+
+.x-skill-llm-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.x-skill-llm-header:hover {
+  background-color: #f9fafb;
+}
+
+.x-skill-llm-content {
+  padding: 8px 40px 16px;
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* ===== 问题拆解样式 query_expansion ===== */
+.x-task-query-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.x-task-query-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.x-task-query-content {
+  font-size: 14px;
+  color: #4b5563;
+  padding: 8px 12px;
+  background-color: #f9fafb;
+  border-radius: 6px;
+  line-height: 1.5;
+}

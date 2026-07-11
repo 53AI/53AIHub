@@ -1,0 +1,17 @@
+.permission-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.permission-empty-img {
+  width: 10rem;
+  height: 10rem;
+}
+
+.permission-empty-desc {
+  font-size: 1rem;
+  color: #939499;
+}

@@ -1,0 +1,24 @@
+/* Profile View Styles */
+
+.account-item {
+  position: relative;
+}
+
+.account-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 48px;
+  width: 100%;
+  border-bottom: 1px solid #edeeef;
+}
+
+.account-item:last-child::after {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .h-full {
+    min-height: 100vh;
+  }
+}

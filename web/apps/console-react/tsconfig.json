@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@km/shared-components-react": ["../../packages/shared-components-react/src/index.ts"],
+      "@km/shared-components-react/*": ["../../packages/shared-components-react/src/*"],
+      "@km/shared-utils": ["../../packages/shared-utils/src/index.ts"]
+    },
+    "types": ["vite/client"]
+  },
+  "exclude": ["node_modules", "dist"]
+}
+

@@ -1,0 +1,118 @@
+/* Ant Design Tree 样式覆盖 - 平铺列表样式 */
+.my-files-dialog-tree .ant-tree-treenode {
+  padding: 0 0 0 24px !important;
+  width: 100%;
+  display: flex !important;
+  align-items: center;
+  height: 40px;
+  position: relative;
+}
+
+/* 缩进区域 - 放在最前面 */
+.my-files-dialog-tree .ant-tree-indent {
+  order: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 缩进单元格 */
+.my-files-dialog-tree .ant-tree-indent-unit {
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 隐藏默认的缩进线 */
+.my-files-dialog-tree .ant-tree-indent-unit::before {
+  display: none;
+}
+
+/* 复选框 - 紧跟在缩进后面 */
+.my-files-dialog-tree .ant-tree-checkbox {
+  order: 1;
+  display: flex;
+  align-items: center;
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* 展开/折叠箭头 */
+.my-files-dialog-tree .ant-tree-switcher {
+  order: 2;
+  color: #999999;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+  margin: 10px 4px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 节点内容区域 */
+.my-files-dialog-tree .ant-tree-node-content-wrapper {
+  order: 3;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 0 !important;
+  background: transparent !important;
+  height: 100%;
+}
+
+/* 选中状态 */
+.my-files-dialog-tree .ant-tree-treenode-selected {
+  background-color: #F2F3F5;
+}
+
+/* 文件/文件夹图标 */
+.my-files-dialog-tree .ant-tree-node-content-wrapper img {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+/* 文件名 */
+.my-files-dialog-tree .ant-tree-node-content-wrapper span {
+  font-size: 14px;
+  color: #1D1E1F;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 叶子节点不需要箭头占位 */
+.my-files-dialog-tree .ant-tree-switcher-noop {
+  width: 20px;
+  margin-right: 4px;
+}
+
+/* 复选框样式调整 */
+.my-files-dialog-tree .ant-tree-checkbox-inner {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+}
+
+.my-files-dialog-tree .ant-tree-checkbox-checked .ant-tree-checkbox-inner {
+  background-color: #1890ff;
+  border-color: #1890ff;
+}
+
+/* 复选框垂直居中 */
+.my-files-dialog-tree .ant-tree-checkbox {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/* 确保复选框内部也居中 */
+.my-files-dialog-tree .ant-tree-checkbox .ant-tree-checkbox-inner::after {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(45deg) scale(1);
+}

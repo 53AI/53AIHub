@@ -1,0 +1,126 @@
+/* Layout styles */
+.nav-bg {
+  background-color: var(--nav-bg-color, #ffffff);
+}
+
+.nav-text {
+  color: var(--nav-text-color, #333333);
+}
+
+.header-nav {
+  background-color: transparent !important;
+  border-bottom: none !important;
+}
+
+.header-nav .ant-menu-item,
+.header-nav .ant-menu-item-selected {
+  background-color: transparent !important;
+  border-bottom: none !important;
+}
+.header-nav .ant-menu-item::after {
+  display: none;
+}
+
+.header-nav .ant-menu-item {
+  color: var(--nav-text-color, #333333);
+}
+
+.header-nav .ant-menu-item-selected {
+  color: var(--primary-color, #2563eb);
+}
+
+/* Sidebar transition */
+.sidebar-enter {
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+.sidebar-enter-active {
+  opacity: 1;
+  transform: translateX(0);
+  transition: all 300ms ease;
+}
+
+.sidebar-exit {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.sidebar-exit-active {
+  opacity: 0;
+  transform: translateX(-100%);
+  transition: all 300ms ease;
+}
+
+/* Flex center utility */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Icon image drop shadow trick */
+.icon-img {
+  transform: translateY(-64px);
+  filter: drop-shadow(#979799 0 64px);
+}
+
+.icon-img.active {
+  filter: drop-shadow(#2563EB 0 64px);
+}
+
+/* Knowledge list transitions */
+.kb-list-container {
+  contain: content;
+}
+
+.kb-item {
+  will-change: transform, opacity;
+}
+
+/* Smooth transition */
+.transition-all {
+  transition-property: all;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 300ms;
+}
+
+/* Knowledge list transition animation */
+.kb-list-enter-active,
+.kb-list-leave-active {
+  transition: all 0.3s ease;
+}
+.kb-list-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+.kb-list-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+/* List item staggered animation */
+.kb-list-move {
+  transition: transform 0.5s ease;
+}
+
+/* Fade animation */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.5s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Header before prefix slot */
+.header-before-prefix {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ant-badge .ant-badge-dot {
+  top: 3px !important;
+}

@@ -1,2 +1,0 @@
-# 运行 commitlint 检查提交消息格式
-npx commitlint --edit $1

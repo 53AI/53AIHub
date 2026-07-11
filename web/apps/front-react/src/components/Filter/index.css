@@ -1,0 +1,19 @@
+.filter-select-trigger {
+  border: none !important;
+  outline: none;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  gap: 6px;
+  border-radius: 16px;
+  background: #F6F7F8;
+  font-size: 12px;
+  color: #1D1E1F;
+  cursor: pointer;
+}
+
+.filter-select-trigger:hover {
+  background: #EBEEF0;
+}

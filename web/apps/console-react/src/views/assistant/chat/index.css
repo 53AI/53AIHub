@@ -1,0 +1,15 @@
+/* 对应 Vue scoped style */
+.ant-tabs-nav-wrap {
+  overflow: inherit;
+}
+
+.ant-tabs-nav-wrap::after {
+  left: -24px;
+  right: -24px;
+  height: 1px;
+  width: inherit;
+}
+
+.ant-tabs-nav-list {
+  overflow: inherit;
+}

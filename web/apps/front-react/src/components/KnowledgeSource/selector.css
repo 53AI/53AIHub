@@ -1,0 +1,113 @@
+.knowledge-source-selector {
+  display: inline-flex;
+}
+
+.knowledge-source-trigger {
+  height: 32px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 9999px;
+  border: 1px solid #E3EEFF;
+  background: #F3F8FF;
+  cursor: pointer;
+  color: #2563EB;
+  transition: all 0.2s;
+}
+
+.knowledge-source-trigger:hover {
+  background: #E8F0FF;
+}
+
+.knowledge-source-trigger.disabled {
+  color: #999999;
+  border-color: transparent;
+  background: #F5F5F5;
+  cursor: not-allowed;
+}
+
+.knowledge-source-trigger-text {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.knowledge-source-dropdown {
+  width: 260px;
+}
+
+.knowledge-source-dropdown .ant-dropdown-menu {
+  padding: 8px 0;
+}
+
+.knowledge-source-dropdown .ant-dropdown-menu-item {
+  padding: 8px 16px;
+}
+
+/* 菜单项容器 */
+.knowledge-source-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  color: #2563EB;
+}
+
+/* 菜单项图标 */
+.knowledge-source-menu-item .anticon {
+  font-size: 16px;
+  color: #2563EB;
+  flex-shrink: 0;
+}
+
+/* 菜单项图标 - 选中状态 */
+.knowledge-source-menu-item .anticon.selected {
+  color: #2563EB;
+}
+
+/* 菜单项文字 */
+.knowledge-source-menu-text {
+  flex: 1;
+  font-size: 14px;
+  color: #1D1E1F;
+}
+
+/* 菜单项文字 - 选中状态 */
+.knowledge-source-menu-text.selected {
+  color: #2563EB;
+}
+
+/* 右箭头（仅用于从知识库中选择） */
+.knowledge-source-menu-arrow {
+  font-size: 14px;
+  color: #999999;
+  flex-shrink: 0;
+}
+
+/* 勾选图标（选中时显示） */
+.knowledge-source-menu-check {
+  font-size: 12px;
+  color: #2563EB;
+  flex-shrink: 0;
+}
+
+/* 文件数量徽章 */
+.knowledge-source-file-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #2563EB;
+  background: #F3F8FF;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+
+/* 分割线 */
+.knowledge-source-dropdown .ant-dropdown-menu-item-divider {
+  margin: 4px 0;
+}

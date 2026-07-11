@@ -1,0 +1,9 @@
+.virtual-logo {
+  display: inline-flex;
+  flex: none;
+  user-select: none;
+  align-items: center;
+  justify-content: center;
+  text-transform: uppercase;
+  line-height: 1;
+}

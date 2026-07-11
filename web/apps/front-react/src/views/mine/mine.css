@@ -1,0 +1,86 @@
+/* Mine View Styles */
+
+/* Recording Status Bar */
+.recording-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: #FFF7E6;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  margin-top: 16px;
+}
+
+.recording-status-bar__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recording-status-bar__time {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1D1E1F;
+}
+
+.recording-status-bar__status {
+  font-size: 14px;
+  color: #FA8C16;
+}
+
+.recording-status-bar__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.header-before-prefix {
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(180deg, #2563EB 0%, #3B82F6 100%);
+  border-radius: 2px;
+}
+
+@media (max-width: 768px) {
+  .grid-cols-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .grid-cols-3,
+  .grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Resource Item Styles */
+.resource-item-row {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  cursor: pointer;
+}
+
+.resource-item-row:hover {
+  background-color: #F5F6F7;
+}
+
+.resource-item-row:hover .more-actions {
+  opacity: 1;
+}
+
+.more-actions {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.ant-breadcrumb-separator {
+  margin: auto;
+}
+
+.vditor {
+  height: 800px !important;
+  border: none !important;
+}

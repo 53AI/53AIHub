@@ -1,0 +1,95 @@
+.login-modal .ant-modal-content {
+  border-radius: 16px;
+  padding: 32px;
+  background: linear-gradient(180deg, #eaf3ff 0%, #fff 20%);
+  background-size: cover;
+}
+
+.login-modal .ant-modal-header {
+  padding: 0;
+  border-bottom: none;
+}
+
+.login-modal .ant-modal-close {
+  top: 18px;
+  right: 16px;
+}
+
+.login-modal .ant-modal-close-x {
+  color: #939499;
+  font-size: 18px;
+}
+
+.login-modal .ant-form-item-label > label {
+  color: #1d1e1f;
+  font-weight: 500;
+}
+
+.login-modal .ant-input-affix-wrapper,
+.login-modal .ant-input {
+  border-radius: 8px;
+}
+
+.login-modal .ant-btn-round {
+  border-radius: 20px;
+}
+
+.login-modal .ant-btn-primary {
+  height: 40px;
+}
+
+.login-modal .ant-input-group-addon {
+  background: #f5f5f5;
+  border-radius: 0 8px 8px 0;
+}
+
+.login-modal .ant-input-group-addon .ant-btn {
+  border: none;
+  background: transparent;
+}
+
+/* Login page (non-modal) */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #eaf3ff 0%, #fff 30%);
+}
+
+.login-container {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.login-container .ant-form-item-label > label {
+  color: #1d1e1f;
+  font-weight: 500;
+}
+
+.login-container .ant-input-affix-wrapper,
+.login-container .ant-input {
+  border-radius: 8px;
+}
+
+.login-container .ant-btn-round {
+  border-radius: 20px;
+}
+
+.login-container .ant-btn-primary {
+  height: 40px;
+}
+
+.login-container .ant-input-group-addon {
+  background: #f5f5f5;
+  border-radius: 0 8px 8px 0;
+}
+
+.login-container .ant-input-group-addon .ant-btn {
+  border: none;
+  background: transparent;
+}

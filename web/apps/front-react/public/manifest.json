@@ -1,0 +1,31 @@
+{
+  "name": "53AI",
+  "short_name": "53AI",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "scope": "/",
+  "background_color": "#fff",
+  "homepage": "https://chat.53ai.com/",
+  "icons": [
+    {
+      "src": "/images/logo.png",
+      "type": "image/png",
+      "sizes": "48x48"
+    },
+    {
+      "src": "/images/logo.png",
+      "type": "image/png",
+      "sizes": "96x96"
+    },
+    {
+      "src": "/images/logo.png",
+      "type": "image/png",
+      "sizes": "144x144"
+    },
+    {
+      "src": "/images/logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    }
+  ]
+}

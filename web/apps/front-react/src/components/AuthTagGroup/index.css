@@ -1,0 +1,13 @@
+.auth-tag-group {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.auth-tag-group li {
+  list-style: none;
+}
+
+.auth-tag-group img {
+  object-fit: cover;
+}

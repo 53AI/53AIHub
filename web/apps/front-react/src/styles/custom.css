@@ -1,0 +1,213 @@
+.bg-primary {
+  background-color: var(--el-color-primary, #2563eb);
+}
+
+.bg-primary-light-3 {
+  background-color: var(--el-color-primary-light-3);
+}
+
+.bg-primary-light-5 {
+  background-color: var(--el-color-primary-light-5);
+}
+
+.bg-primary-light-7 {
+  background-color: var(--el-color-primary-light-7);
+}
+
+.bg-primary-light-8 {
+  background-color: var(--el-color-primary-light-8);
+}
+
+.bg-primary-light-9,
+.hover-bg-primary-light-9:hover {
+  background-color: var(--el-color-primary-light-9);
+}
+
+.border-primary {
+  border-color: var(--el-color-primary, #2563eb);
+}
+
+.text-theme,
+.hover-text-theme:hover {
+  color: var(--el-color-primary, #2563eb);
+}
+
+.text-theme-important,
+.hover-text-theme-important:hover {
+  color: var(--el-color-primary, #2563eb) !important;
+}
+
+.text-primary {
+  color: var(--el-text-color-primary, #121519);
+}
+
+.text-primary-important {
+  color: var(--el-text-color-primary, #121519) !important;
+}
+
+.text-regular {
+  color: var(--el-text-color-regular, #182b50);
+}
+
+.text-regular-important {
+  color: var(--el-text-color-regular, #182b50) !important;
+}
+
+.text-secondary {
+  color: var(--el-text-color-secondary, #999);
+}
+
+.text-secondary-important {
+  color: var(--el-text-color-secondary, #999) !important;
+}
+
+.text-placeholder {
+  color: var(--el-text-color-placeholder, #999);
+}
+
+.text-placeholder-important {
+  color: var(--el-text-color-placeholder, #999) !important;
+}
+
+.nav-bg {
+  background-color: var(--el-color-nav-bg, #fff);
+}
+
+.nav-text {
+  color: var(--el-color-nav-text, #1d1e1f);
+}
+
+.page-footer-bg {
+  background-color: var(--el-color-page-footer-bg, #18191f);
+}
+
+.page-footer-text {
+  color: var(--el-color-page-footer-text, #f2f2f2);
+}
+
+/* ==================== 行内编辑组件样式 ==================== */
+
+/* 行内编辑 - 默认状态 */
+.inline-editable {
+  cursor: pointer;
+  border: 1px solid transparent;
+  min-width: 220px;
+  max-width: 60%;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  box-sizing: border-box;
+  padding: 0 2px;
+  height: 28px;
+  line-height: 26px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 行内编辑 - 悬停状态 */
+.inline-editable:hover {
+  background-color: #F2F2F2;
+}
+
+/* 行内编辑 - 编辑中状态 */
+.inline-editable.inline-editing {
+  background-color: #fff;
+  border: 1px solid rgba(50, 150, 250, 1);
+  cursor: text;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  min-width: 220px;
+  max-width: 60%;
+  height: 28px;
+  line-height: 26px;
+  display: inline-block;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* 隐藏 webkit 浏览器滚动条 */
+.inline-editable.inline-editing::-webkit-scrollbar {
+  display: none;
+}
+
+/* 行内编辑 - 聚焦状态 */
+.inline-editable.inline-editing:focus {
+  /* box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2); */
+}
+
+/* ==================== FAQ 折叠面板样式 ==================== */
+.faq-collapse {
+  border: 1px solid #e6e8eb;
+  border-radius: 8px;
+}
+
+.faq-collapse .ant-collapse-header {
+  height: auto;
+  min-height: 52px;
+  padding: 14px 16px;
+  background: #f8faff;
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.faq-collapse .ant-collapse-header.ant-collapse-header-active {
+  border-radius: 8px 8px 0 0;
+  margin-bottom: 0;
+}
+
+.faq-collapse .ant-collapse-content {
+  background: transparent;
+  border: 1px solid #e6e8eb;
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  margin-top: -8px;
+  margin-bottom: 8px;
+}
+
+.faq-collapse .ant-collapse-content-box {
+  padding: 16px;
+}
+
+/* ==================== 列表过渡动画 ==================== */
+
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(30px);
+}
+
+/* OpenClaw 历史会话下拉只保留内部列表容器，去掉 Ant Design Popover 默认外壳 */
+.openclaw-history-popover-root {
+  width: min(520px, 45vw);
+  max-width: calc(100vw - 32px);
+}
+
+.openclaw-history-popover-root .ant-popover-inner {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.openclaw-history-popover-root .ant-popover-container {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.openclaw-history-popover-root .ant-popover-content {
+  width: 100%;
+  background: transparent;
+}

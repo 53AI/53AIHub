@@ -1,6 +1,0 @@
-node_modules
-dist
-out
-.gitignore
-
-src\renderer\public

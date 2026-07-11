@@ -1,0 +1,25 @@
+data: {"created":1772521042,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"intent_classification","name":"","status":"start","message":"正在识别意图...","timestamp":1772521042}}
+
+data: {"created":1772521047,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"intent_classification","name":"","status":"completed","message":"意图识别完成","data":{"intent":{"intent":"USE_SKILL","skill_name":"weather-skill","confidence":0.95,"reasoning":"用户询问广州今天的天气情况，需要使用天气查询工具来获取实时信息。","keywords":["广州","今天","天气"],"answer":"","expanded_queries":null}},"timestamp":1772521047}}
+
+data: {"created":1772521047,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"skill_routing","name":"","status":"start","message":"已激活技能: weather-skill","timestamp":1772521047}}
+
+data: {"created":1772521047,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"skill_routing","name":"","status":"completed","message":"技能加载完成","timestamp":1772521047}}
+
+data: {"created":1772521063,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"tool_execution","name":"","status":"start","message":"正在使用工具...","data":{"tool_calls":[{"id":"call_1609784335129335053","type":"function","function":{"name":"code-interpreter","arguments":"{\"code\":\"import sys\\nimport os\\nsys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))\\n\\nfrom scripts.cli import main\\n\\n# 查询广州的详细天气信息，包括扩展数据、预报和生活指数\\nsys.argv = ['cli.py', 'query-weather', '--city', '广州', '--extended', '--forecast', '--indices']\\nmain()\",\"language\":\"bash\"}"}}]},"timestamp":1772521063}}
+
+data: {"created":1772521063,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"tool_result","name":"工具执行结果","status":"completed","message":"工具 code-interpreter 执行完成","data":{"function_name":"code-interpreter","result":"STDERR:\nscript.sh: line 1: import: command not found\nscript.sh: line 2: import: command not found\nscript.sh: line 3: syntax error near unexpected token `os.path.dirname'\nscript.sh: line 3: `sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))'\n\nProcess exited with code 2","tool_call_id":"call_1609784335129335053"},"timestamp":1772521063}}
+
+data: {"created":1772521063,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"tool_execution","name":"","status":"completed","message":"工具调用完成","timestamp":1772521063}}
+
+data: {"created":1772521063,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"answer_generation","name":"","status":"start","message":"正在生成回答...","timestamp":1772521063}}
+
+data: {"created":1772521069,"id":"req-1772521042233232469","object":"process.step","process_step":{"step_code":"answer_generation","name":"","status":"completed","message":"回答生成完成","timestamp":1772521069}}
+
+data: {"choices":[],"created":1772521069,"id":"req-1772521042233232469","message_id":0,"model":"deepseek-chat","object":"chat.completion.chunk"}
+
+data: {"id":"req-1772521042233232469","object":"chat.completion.chunk","created":1772521069,"model":"deepseek-chat","choices":[{"index":0,"delta":{"content":"我需要直接调用命令行工具来获取天气信息。\n\n```bash\npython scripts/cli.py query-weather --city 广州 --extended --forecast --indices\n```\n\n<｜DSML｜function_calls>\n<｜DSML｜invoke name=\"code-interpreter\">\n<｜DSML｜parameter name=\"code\" string=\"true\">python scripts/cli.py query-weather --city 广州 --extended --forecast --indices</｜DSML｜parameter>\n<｜DSML｜parameter name=\"language\" string=\"true\">bash</｜DSML｜parameter>\n</｜DSML｜invoke>\n</｜DSML｜function_calls>"}}]}
+
+data: {"id":"req-1772521042233232469","object":"chat.completion.chunk","created":1772521069,"model":"deepseek-chat","choices":[{"index":0,"delta":{"content":""},"finish_reason":"stop"}]}
+
+data: [DONE]

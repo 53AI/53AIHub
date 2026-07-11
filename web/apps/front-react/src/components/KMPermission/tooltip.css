@@ -1,0 +1,29 @@
+.permission-tooltip-content {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.permission-tooltip-message {
+  font-size: 0.875rem;
+  color: #1D1E1F;
+  white-space: nowrap;
+}
+
+.permission-tooltip-wrapper {
+  position: relative;
+}
+
+.permission-tooltip-overlay-block {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  cursor: not-allowed;
+  z-index: 2;
+}
+
+.permission-tooltip-overlay .ant-tooltip-inner {
+  padding: 0.625rem;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}

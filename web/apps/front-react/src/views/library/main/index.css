@@ -1,0 +1,115 @@
+/* Library Main View Styles */
+/* Note: Most styles are inline Tailwind classes as per Vue version */
+
+/* Sidebar specific styles that need CSS */
+.library-sider-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 4px;
+  height: 100%;
+  background: transparent;
+  cursor: col-resize;
+  transition: background-color 0.2s;
+}
+
+.library-sider-resizer:hover {
+  background-color: #93C5FD;
+}
+
+/* Profile panel header height */
+.library-profile-panel-header {
+  height: 68px;
+}
+
+/* 边框流动动画 */
+@keyframes marquee-flow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* 外发光呼吸动画 */
+@keyframes breathing-glow {
+  0%, 100% {
+    opacity: 0.7;
+    filter: blur(8px) brightness(1.3);
+  }
+  50% {
+    opacity: 1;
+    filter: blur(16px) brightness(1.8);
+  }
+}
+
+/* 内发光脉冲动画 */
+@keyframes inner-pulse {
+  0%, 100% { box-shadow: inset 0 0 20px rgba(66, 133, 244, 0.3); }
+  50% { box-shadow: inset 0 0 40px rgba(161, 66, 244, 0.5); }
+}
+
+/* 蛇形光斑沿边框移动 */
+@keyframes snake-travel {
+  0% { offset-distance: 0%; }
+  100% { offset-distance: 100%; }
+}
+
+/* 光斑内部脉冲 */
+@keyframes internal-pulse {
+  0%, 100% {
+    opacity: 0;
+    filter: blur(30px) brightness(1);
+  }
+  50% {
+    opacity: 0.45;
+    filter: blur(50px) brightness(1.5);
+  }
+}
+
+/* 外层容器：边框发光 */
+.border-glow-wrapper {
+  position: relative;
+  padding: 4px;
+  margin: -4px; /* 抵消内层的padding，保持整体尺寸不变 */
+  border-radius: 12px;
+  background: transparent;
+}
+
+/* 边框发光 - ::before */
+.border-glow-active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #4285F4, #A142F4, #FF5252, #FFBB00, #4285F4);
+  background-size: 200% 100%;
+  z-index: 0;
+  border-radius: 12px;
+  animation: marquee-flow 3s linear infinite;
+}
+
+/* 外发光 - ::after */
+.border-glow-active::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  background: linear-gradient(90deg, #4285F4, #A142F4, #FF5252, #FFBB00, #4285F4);
+  background-size: 200% 100%;
+  z-index: -1;
+  border-radius: 18px;
+  filter: blur(12px);
+  animation: marquee-flow 3s linear infinite, breathing-glow 2.5s ease-in-out infinite;
+}
+
+/* 蛇形光斑 */
+.snake-cloud {
+  position: absolute;
+  pointer-events: none;
+  z-index: 50;
+  background: linear-gradient(90deg, transparent, #4285F4, #A142F4, #FF5252, #FFBB00, transparent);
+  background-size: 200% 100%;
+  border-radius: 50%;
+  offset-path: border-box;
+  offset-anchor: 50% 50%;
+  animation:
+    snake-travel 8s linear infinite,
+    marquee-flow 4s linear infinite,
+    internal-pulse 2.5s ease-in-out infinite;
+}

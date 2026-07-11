@@ -1,0 +1,12 @@
+.permission-setting {
+  background: #fff;
+}
+
+.permission-group-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.permission-group-item:last-child {
+  border-bottom: none;
+}

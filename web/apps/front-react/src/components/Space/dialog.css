@@ -1,0 +1,26 @@
+.file-table .ant-table-cell {
+  padding: 0 12px !important;
+  border: none !important;
+}
+
+.file-table .ant-table-row {
+  cursor: pointer;
+}
+
+.file-table .ant-table-row:hover td {
+  background-color: #F2F3F5;
+}
+
+.file-table .ant-table-row-expand-icon {
+  margin-right: 8px;
+}
+
+.file-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563EB;
+}
+
+.ant-popover-container {
+  padding: 6px 8px 14px !important;
+}

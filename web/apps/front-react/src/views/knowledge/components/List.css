@@ -1,0 +1,33 @@
+.library-card {
+  position: relative;
+}
+
+.library-card-add {
+  position: relative;
+}
+
+/* Diagonal cut effect for top-left corner */
+.diagonal-cut {
+  clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 100%, 0 100%);
+}
+
+.diagonal-cut::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  background: #EFF5FF;
+  transform: skewX(-15deg);
+  transform-origin: top right;
+}
+
+.library-card:hover .diagonal-cut::after {
+  background: #E5EDFF;
+}
+
+.knowledge-menu-right {
+  display: flex;
+  justify-content: flex-end;
+}

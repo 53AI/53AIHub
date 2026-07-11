@@ -1,0 +1,32 @@
+{
+  "name": "@km/shared-utils",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared utility functions for KM monorepo",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./universal": {
+      "types": "./dist/universal.d.ts",
+      "default": "./dist/universal.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "typescript": ">=4.9.0",
+    "vite": ">=4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "vite": "^4.4.0",
+    "typescript": "~4.9.5"
+  }
+}

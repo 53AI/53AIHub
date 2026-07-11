@@ -1,0 +1,141 @@
+.chartjs-viewer {
+  height: 360px;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  background-color: #f9fafb;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.chartjs-viewer__header {
+  flex: none;
+  height: 2.5rem;
+  background-color: #ebecef;
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+}
+
+.chartjs-viewer__tabs-container {
+  flex: 1;
+}
+
+.chartjs-viewer__tabs {
+  display: inline-flex;
+  height: 1.75rem;
+  padding: 0 0.125rem;
+  align-items: center;
+  background-color: #e1e2e6;
+  border-radius: 0.5rem;
+}
+
+.chartjs-viewer__tab {
+  width: 4rem;
+  height: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #4f5052;
+}
+
+.chartjs-viewer__tab--active {
+  background-color: white;
+  color: #1d1e1f;
+}
+
+.chartjs-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.chartjs-viewer__icon {
+  cursor: pointer;
+}
+
+.chartjs-viewer__dropdown {
+  position: relative;
+}
+
+.chartjs-viewer__dropdown-trigger {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.chartjs-viewer__dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  min-width: 120px;
+}
+
+.chartjs-viewer__dropdown-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #606266;
+  white-space: nowrap;
+}
+
+.chartjs-viewer__dropdown-item:hover {
+  background-color: #f5f7fa;
+  color: #409eff;
+}
+
+.chartjs-viewer__content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+}
+
+.chartjs-viewer__code {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.chartjs-viewer .chartjs-viewer__code-pre {
+  white-space: pre-wrap;
+  height: 100%;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.3s ease-in;
+}
+
+.slide-fade-enter-from {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+.slide-fade-leave-to {
+  transform: translateX(-20px);
+  opacity: 0;
+}
+
+.chartjs-viewer__diagram {
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+}
+
+.chartjs-viewer__diagram svg {
+  transition: transform 0.2s ease;
+}

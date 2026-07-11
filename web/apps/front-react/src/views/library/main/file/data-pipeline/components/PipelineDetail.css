@@ -1,0 +1,53 @@
+.pipeline-detail-drawer .ant-drawer-body {
+  padding: 0;
+}
+
+.pipeline-detail-drawer .ant-drawer-footer {
+  padding: 0;
+  border-top: 1px solid #f0f0f0;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #e5e7eb;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* Fix overflow for config panels */
+.pipeline-detail-drawer .ant-drawer-body > div {
+  overflow: hidden;
+}
+
+/* Config container base overflow fix */
+.parse-config-container,
+.clean-config-container,
+.summary-config-container,
+.vector-config-container,
+.graph-config-container {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Ensure select dropdowns don't overflow */
+.parse-config-container .ant-select,
+.clean-config-container .ant-select,
+.chunk-config-container .ant-select {
+  max-width: 100%;
+}
+
+/* Table overflow fix */
+.clean-config-container table {
+  table-layout: fixed;
+}
+
+.clean-config-container td {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}

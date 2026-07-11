@@ -1,0 +1,28 @@
+.group-list-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.group-list-header {
+  position: -webkit-sticky;
+  position: sticky;
+  z-index: 100;
+  background: white;
+}
+
+.group-list-tabs {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.group-list-tabs .flex {
+  flex-wrap: nowrap;
+}
+
+.knowledge-menu-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

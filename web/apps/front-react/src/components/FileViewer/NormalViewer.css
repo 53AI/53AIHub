@@ -1,0 +1,167 @@
+.normal-viewer-loading,
+.normal-viewer-error,
+.normal-viewer-unsupported {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  text-align: center;
+}
+
+.normal-viewer-loading {
+  gap: 12px;
+  color: #4F5052;
+}
+
+.normal-viewer-error .error-icon,
+.normal-viewer-unsupported .unsupported-icon {
+  font-size: 48px;
+  color: #FA5151;
+  margin-bottom: 16px;
+}
+
+.normal-viewer-error h3,
+.normal-viewer-unsupported h3 {
+  font-size: 18px;
+  font-weight: 500;
+  color: #1D1E1F;
+  margin: 0 0 8px 0;
+}
+
+.normal-viewer-error p,
+.normal-viewer-unsupported p {
+  color: #9B9B9B;
+  margin: 0 0 16px 0;
+}
+
+.normal-viewer-content {
+  height: 100%;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* HTML content styles */
+.html-content {
+  line-height: 1.6;
+  max-width: 100%;
+  min-height: 100%;
+}
+
+.html-content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.html-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+.html-content table th,
+.html-content table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+.html-content table th {
+  background-color: #f5f5f5;
+  font-weight: 600;
+}
+
+/* JSON content styles */
+.json-content {
+  font-size: 13px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: #F8F9FA;
+  padding: 16px;
+  border-radius: 8px;
+  overflow: auto;
+  line-height: 1.6;
+}
+
+.json-key {
+  color: #2563EB;
+  font-weight: 600;
+}
+
+.json-string {
+  color: #059669;
+}
+
+.json-boolean {
+  color: #DC2626;
+}
+
+.json-null {
+  color: #9B9B9B;
+}
+
+.json-number {
+  color: #7C3AED;
+}
+
+.json-default {
+  color: #9B9B9B;
+}
+
+/* XML content styles */
+.xml-content {
+  font-size: 13px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: #F8F9FA;
+  padding: 16px;
+  border-radius: 8px;
+  overflow: auto;
+  line-height: 1.6;
+}
+
+.xml-bracket {
+  color: #DC2626;
+}
+
+.xml-tag {
+  color: #2563EB;
+  font-weight: 600;
+}
+
+.xml-attr {
+  color: #7C3AED;
+}
+
+.xml-value {
+  color: #059669;
+}
+
+.xml-cdata {
+  color: #059669;
+}
+
+.xml-comment {
+  color: #9B9B9B;
+  font-style: italic;
+}
+
+/* CSV content styles */
+.csv-content {
+  background: white;
+}
+
+/* Text content styles */
+.text-content {
+  line-height: 1.6;
+}
+
+.text-paragraph {
+  font-size: 13px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 16px;
+}
+
+.text-paragraph:last-child {
+  margin-bottom: 0;
+}

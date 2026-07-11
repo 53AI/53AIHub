@@ -1,0 +1,1201 @@
+key,zh-cn,zh-tw,en,ja
+action.add,添加,添加,Add,追加
+action.pin,置顶,置頂,Pin,ピン留め
+action.unpin,取消置顶,取消置頂,Unpin,ピン留め解除
+action.pin_success,置顶成功,置頂成功,Pinned,ピン留めしました
+action.unpin_success,取消置顶成功,取消置頂成功,Unpinned,ピン留めを解除しました
+action.add_as_file,添加到,添加到,Add to,～に追加する
+action.add_success,已添加,已新增,Added,追加されました
+action.added,已添加,已新增,Added,追加済み
+action.allow,允许,允許,Allow,許可する
+action.amplify,扩大,放大,Zoom in,拡大
+action.and,和,和,and,と
+action.and_character,、,、,", ",・
+action.apply,应用,應用,Apply,適用
+action.back,返回,返回,Back,戻る
+action.cancel,取消,取消,Cancel,キャンセル
+action.clear,清空,清空,Clear,クリア
+action.click_upload,点击上传,點擊上傳,Click Upload,クリックアップロード
+action.close,关闭,關閉,Close,閉じる
+action.collapse,收起,收起,Collapse,折りたたむ
+action.confirm,确认,確認,Confirm,確認
+action.confirm_success,已确认,已確認,Confirmed,確認されました
+action.copy,复制,複製,Copy,コピー
+action.copy_failed,复制失败,複製失敗,Copy failed,コピー失敗
+action.copy_link,复制链接,複製連結,Copy Link,リンクをコピー
+action.copy_markdown,复制为Markdown,複製為Markdown,Copy As Markdown,Markdownとしてコピー
+action.copy_success,已复制,已複製,Copied,コピーされました
+action.copy_text,复制为文本,複製為文本,Copy As Text,テキストとしてコピー
+action.create,新建,創建,Create,作成
+action.create_success,已新建,已創建,Created,作成されました
+action.del,删除,刪除,Delete,削除
+action.delete,删除,刪除,Delete,削除
+action.delete_confirm,确定删除该数据吗？删除后无法恢复,確定刪除該資料嗎？,Are you sure you want to delete this data?,このデータを削除してもよろしいですか？
+action.delete_success,已删除,已刪除,Deleted,削除されました
+action.delete_failed,删除失败,刪除失敗,Delete failed,削除失敗
+action.delete_tip,删除提示,刪除提示,Delete confirmation,削除確認
+action.disable,禁用,停用,Disable,無効
+action.disable_success,已禁用,已停用,Disabled,無効になりました
+action.download,下载,下載,Download,ダウンロード
+action.operation_failed,操作失败,操作失敗,Operation failed,操作失敗
+action.edit,编辑,編輯,Edit,編集
+action.enable,启用,啟用,Enable,有効
+action.enable_success,已启用,已啟用,Enabled,有効になりました
+action.exit,退出登录,退出登入,Log out,ログアウト
+action.exit_confirm,确定退出登录吗？,確定退出登入嗎？,Are you sure you want to log out?,ログアウトしてもよろしいですか？
+action.exit_edit,退出编辑,退出編輯,Exit Edit,編集を終了
+action.exit_success,已退出,已退出,Logged out,ログアウトしました
+action.expand,展开,展開,Expand,展開
+action.export,导出,導出,Export,エクスポート
+action.favorite,收藏,收藏,Favorite,お気に入り
+action.find,发现,發現,Find,発見
+action.fixed,固定,固定,Pin,固定
+action.forget_password,忘记密码？,忘記密碼？,Forgot password?,パスワードを忘れましたか？
+action.generate_failed,生成失败,生成失敗,Generation failed,生成に失敗しました
+action.import,导入,導入,Import,インポート
+action.login,登录,登入,Login,ログイン
+action.login_directly,直接登录,直接登入,Login directly,直接ログイン
+action.logout,退出登录,退出登入,Logout,ログアウト
+action.manage,管理,管理,Manage,管理
+action.merge_slice,合并切片,合併切片,Merge Slices,スライスを結合
+action.more,更多,更多,More,もっと見る
+action.move_to,移动到,移動到,Move to,移動
+move_to.root_dir,根目录,根目錄,Root,ルート
+move_to.folder_load_failed,文件夹加载失败,文件夾載入失敗,Failed to load folders,フォルダーの読み込みに失敗しました
+move_to.retry,重试,重試,Retry,再試行
+move_to.empty,暂无子项,暫無子項,No items,子項目なし
+move_to.no_match,无匹配目录,無匹配目錄,No matching folders,一致するフォルダーはありません
+move_to.cannot_move_to_file,不支持移动到当前类型下,不支持移動到當前類型下,Cannot move to this type,このタイプには移動できません
+action.next_step,下一步,下一步,Next step,次のステップ
+action.not_update,暂不更新,暫不更新,Not now,更新しない
+action.ok,确定,確定,OK,OK
+action.ok_v2,好的,好的,OK,OK
+action.open,打开,打開,Open,開く
+action.pay,去支付,去支付,Pay,支払いに進む
+action.preview,预览,預覽,Preview,プレビュー
+action.refresh,刷新,刷新,Refresh,更新
+action.register,注册,註冊,Register,登録
+action.remove,移除,移除,Remove,削除
+action.remove_failed,移除失败，请重试,移除失敗，請重試,"Remove failed, please try again",削除に失敗しました、もう一度お試しください
+action.remove_success,已移除,已移除,Removed,削除されました
+action.rename,重命名,重命名,Rename,名前変更
+action.renew,续费,續費,Renew,更新
+action.replace,更换,更換,Replace,置換
+action.reset,重置,重置,Reset,リセット
+action.restart_generation,重新生成,重新生成,Regenerate,再生成
+action.reupload,重新上传,重新上傳,Re-upload,再アップロード
+action.save,保存,保存,Save,保存
+action.save_and_exit,保存并退出,保存並退出,Save and Exit,保存して終了
+action.save_failed,保存失败,儲存失敗,Save failed,保存に失敗しました
+action.save_success,已保存,已儲存,Saved,保存されました
+action.search,搜索,搜索,Search,検索
+action.select,选择,選擇,Select,選択
+action.select_all,全选,全選,Select All,全選択
+action.send,发送,發送,Send,送信
+action.send_success,已发送,已發送,Sent,送信されました
+action.set,移动到,移動到,Move to,移動先を設定
+action.set_template,设为模板,設為模板,Set as Template,テンプレートとして設定
+action.setting,设置,設置,Settings,設定
+action.share,分享,分享,Share,共有
+action.shrink,缩小,縮小,Zoom out,縮小
+action.sort,排序,排序,Sort,並び替え
+action.sort_success,已更新排序,已更新排序,Sort updated,並び替えが更新されました
+action.source_edit,源文件编辑,,Edit source file,
+action.split_slice,拆分切片,拆分切片,Split Slices,スライスを分割
+action.stop,停止,停止,Stop,停止
+action.stop_generation,停止生成,停止生成,Stop generation,生成を停止
+action.submit,提交,提交,Submit,送信
+action.tab_open,新标签页打开,新標籤頁打開,Open in New Tab,新しいタブで開く
+action.unfavorite,取消收藏,取消收藏,Unfavorite,お気に入り解除
+action.unfixed,取消固定,取消固定,Unpin,固定解除
+action.unselect_all,取消全选,取消全選,Unselect All,取消全選択
+action.update,更新,更新,Update,更新
+action.update_password,更新密码,更新密碼,Update password,パスワードを更新
+action.update_success,已更新,已更新,Updated,更新されました
+action.upgrade,升级,升級,Upgrade,アップグレード
+action.upload,上传,上傳,Upload,アップロード
+action.use,使用,使用,Use,使用
+action.go_use,去使用,去使用,Use now,使用する
+action.add_to_workbench,添加到工作台,添加到工作台,Add to Workbench,ワークベンチに追加
+action.user_register,用户注册,用戶註冊,User registration,ユーザー登録
+action.view,查看,查看,View,表示
+action.view_more,查看更多,查看更多,View More,もっと見る
+action.visit,访问,訪問,Visit,訪問
+pictorial.image,示图,示圖,Diagram,示図
+scene,场景,場景,Scene,シナリオ
+agent.applied_type,应用型,應用型,Applied,応用型
+agent.dialogue_type,对话型,對話型,Conversational,対話型
+agent.assistant_type,助理型,助理型,Assistant,アシスタント型
+agent.error_details,点击查看详情,點擊查看詳情,Click to view details,詳細を表示
+agent.error_tip,智能体报错，请检查智能体相关配置！,智慧體報告錯誤，請檢查智慧體相關配置。,The agent reported an error. Please check the agent configuration.,エージェントがエラーを報告しました。エージェントの設定を確認してください。
+agent.explore,探索,探索,Explore,探索
+agent.failed_tip,智能体不可用，请检查智能体的接入是否正常，余额是否充足。,智慧體不可用，請檢查智慧體的接入是否正常，餘額是否充足。,The agent is unavailable. Please check if the agent connection is normal and if the balance is sufficient.,エージェントは利用不可です。エージェントの接続状況が正常か、残高が充足しているかを確認してください。
+agent.no_data,管理员还未发布智能体,管理員還未發布智能體,No data,管理者がまだエージェントを公開していません
+agent.type,类型,類型,Type,タイプ
+agent.platform,平台,平台,Platform,プラットフォーム
+agent.basic_info,基本信息,基本信息,Basic Information,基本情報
+agent.change_avatar,更换头像,更換頭像,Change Avatar,アバターを変更
+agent.bot_name_placeholder,请输入你应用的名称,請輸入你應用的名稱,Please enter the name of your application,アプリケーションの名前を入力してください
+agent.bot_desc_placeholder,请描述你的应用，该描述将在应用发布后固定展示,請描述你的應用，該描述將在應用發布後固定展示,"Please describe your application, this description will be displayed after the application is published",アプリケーションを説明してください。この説明はアプリケーションが公開された後、固定で表示されます。
+agent.no_desc,暂无描述,暫無描述,No description,説明がありません
+agent.sort_by_created_time,创建时间排序,創建時間排序,Sort by created time,作成日時で並べ替え
+agent.sort_by_updated_time,更新时间排序,更新時間排序,Sort by updated time,更新日時で並べ替え
+agent.preview_debug,预览与调试,預覽與調試,Preview & Debug,プレビューとデバッグ
+agent.my_agent,我的智能体,我的智能體,My Agent,マイエージェント
+agent.app_config,应用配置,應用配置,App Config,アプリケーション設定
+agent.access_config,接入配置,接入配置,Access Configuration,アクセス設定
+agent.access_process,接入流程,接入流程,Access Process,アクセス手順
+agent.usage_guide_title,使用说明,使用說明,Usage Guide,使用ガイド
+agent.recently_saved,最近保存,最近保存,Recently saved,最近保存
+agent.publish,发布,發布,Publish,公開
+agent.history_conversation,历史对话,歷史對話,Conversation History,会話履歴
+agent.edit_name,编辑名称,編輯名稱,Edit name,名前を編集
+agent.delete_conversation,删除对话,刪除對話,Delete conversation,会話を削除
+agent.confirm_delete_agent,确定要删除该智能体吗？,確定要刪除該智能體嗎？,Are you sure you want to delete this agent?,このエージェントを削除してもよろしいですか？
+agent.delete_success,删除成功,刪除成功,Deleted successfully,削除されました
+agent.save_success,保存成功,保存成功,Saved successfully,保存されました
+agent.id_not_exist,智能体ID不存在,智能體ID不存在,Agent ID does not exist,エージェントIDが存在しません
+agent.not_found,智能体不存在或无权访问,智能體不存在或無權訪問,Agent not found or no permission,エージェントが見つからないかアクセス権限がありません
+agent.not_owner,非智能体所有者,非智能體所有者,Not the agent owner,エージェントの所有者ではありません
+agent.fetch_failed,获取智能体详情失败,獲取智能體詳情失敗,Failed to get agent details,エージェント詳細の取得に失敗しました
+agent.please_input_name,请输入名称,請輸入名稱,Please enter name,名前を入力してください
+agent.please_upload_avatar,请上传头像,請上傳頭像,Please upload avatar,アバターをアップロードしてください
+agent.add_success,添加成功,添加成功,Added successfully,追加されました
+agent.add_failed,添加失败,添加失敗,Add failed,追加に失敗しました
+agent.create_channel_failed,创建渠道失败,創建渠道失敗,Failed to create channel,チャンネルの作成に失敗しました
+agent.personal_agent_channel,个人智能体渠道,個人智能體渠道,Personal agent channel,個人エージェントチャンネル
+agent.usage_channel,使用渠道,使用渠道,Usage Channel,使用チャンネル
+agent.usage_scene,使用场景,使用場景,Usage Scene,使用シーン
+agent.usage_case,使用案例,使用案例,Usage Case,使用例
+agent.edit_channel,编辑渠道,編輯渠道,Edit channel,チャンネルを編集
+agent.add_channel,添加渠道,添加渠道,Add channel,チャンネルを追加
+agent.qrcode,二维码,二維碼,QR Code,QRコード
+agent.channel_name,渠道,渠道,Channel,チャンネル
+agent.please_fill_channel_name,请填写渠道名称,請填寫渠道名稱,Please enter channel name,チャンネル名を入力してください
+agent.please_fill_usage_guide,请填写使用说明,請填寫使用說明,Please enter usage guide,使用ガイドを入力してください
+agent.bot_type_openclaw,Bot型（OpenClaw）,Bot型（OpenClaw）,Bot Type (OpenClaw),Bot型（OpenClaw）
+agent.app_type_workflow,应用型（工作流）,應用型（工作流）,App Type (Workflow),アプリ型（ワークフロー）
+agent.chat_type_agent,对话型（智能体）,對話型（智能體）,Chat Type (Agent),対話型（エージェント）
+agent.bot_type_desc,安装专属Skill的OpenClaw，可在多场景下自动响应用户请求，完成特定任务,安裝專屬Skill的OpenClaw，可在多場景下自動響應用戶請求，完成特定任務,An OpenClaw agent with dedicated skills can automatically respond to user requests across scenarios and complete specific tasks.,専用SkillをインストールしたOpenClawは、複数のシーンでユーザーリクエストに自動応答し、特定のタスクを完了できます
+agent.app_type_desc,工作流是一系列可执行指令的集合，用于实现业务逻辑或完成特定任务。,工作流是一系列可執行指令的集合，用於實現業務邏輯或完成特定任務。,Workflow is a collection of executable instructions for implementing business logic or completing specific tasks.,ワークフローは、ビジネスロジックを実装したり、特定のタスクを完了したりするための一連の実行可能命令です。
+agent.chat_type_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,Users have conversations with large models, which think and make decisions autonomously, suitable for relatively simple business logic.,ユーザーは大規模モデルと対話し、モデルが自律的に思考・決定を行います。比較的単純なビジネスロジックに適しています。
+agent.tip,提示,提示,Tip,ヒント
+agent.bot_id,Bot ID,Bot ID,Bot ID,Bot ID
+agent.secret,Secret,Secret,Secret,Secret
+agent.ws_url,WebSocket URL,WS Url,WebSocket URL,WS Url
+agent_app.openclaw,OpenClaw,Openclaw,OpenClaw,Openclaw
+agent.step1_install_plugin,1. 安装插件：复制以下指令到命令行执行,1. 安裝插件：複製以下指令到命令行執行,1. Install plugin: Copy the following command and run it in the command line,1. プラグインをインストール：以下のコマンドをコマンドラインで実行
+agent.step2_config_secret,2.配置密钥：复制以下配置信息供插件连接使用,2.配置密鑰：複製以下配置信息供插件連接使用,2. Configure secret: Copy the following configuration for the plugin connection,2. シークレットを設定：以下の設定情報をプラグイン接続に使用します
+agent.step3_restart_service,2. 重启本地OpenClaw服务,2. 重啟本地OpenClaw服務,2. Restart local OpenClaw service,2. ローカルOpenClawサービスを再起動
+agent.bot_id_tooltip,智能体唯一标识符，由平台分配。在连接 WebSocket 或调用 API 时需携带此 ID 以识别身份,智能體唯一標識符，由平台分配。在連接 WebSocket 或調用 API 時需攜帶此 ID 以識別身份,Unique identifier for the agent, assigned by the platform. Required when connecting to WebSocket or calling API,エージェントの一意識別子。プラットフォームによって割り当てられます。WebSocket接続やAPI呼び出し時にこのIDを携帯して身元を識別する必要があります
+agent.secret_tooltip,与 Bot ID 配对的密钥，用于签名验证和身份认证,與 Bot ID 配對的密鑰，用於簽名驗證和身份認證,Secret key paired with Bot ID for signature verification and authentication,Bot IDとペアになるシークレットキー。署名検証と認証に使用
+agent.ws_url_tooltip,WebSocket 服务端地址，用于客户端与 OpenClaw 平台建立实时通信通道,WebSocket 服務端地址，用於客戶端與 OpenClaw 平台建立實時通信通道,WebSocket server address for establishing real-time communication channel between client and OpenClaw platform,WebSocketサーバーアドレス。クライアントとOpenClawプラットフォーム間のリアルタイム通信チャンネルを確立するために使用
+agent_app.qclaw,QClaw,QClaw,QClaw,QClaw
+agent_app.codex,Codex,Codex,Codex,Codex
+agent_app.manus,Manus,Manus,Manus,Manus
+agent_app.53ai_agent,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+agent_app.53ai_workflow,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+agent_app.app_builder,百度千帆Appbuilder,千帆Appbuilder,Qianfan Appbuilder,千帆Appbuilder
+agent_app.bailian,阿里百炼,阿里百煉,Alibaba Bailian,Alibaba Bailian
+agent_app.coze_agent,Coze智能体,Coze智能體,Coze Agent,Cozeインテリジェントエージェント
+agent_app.coze_agent_cn,扣子编程,扣子编程,Coze,Coze
+agent_app.coze_agent_osv,coze studio 开源版,coze studio 开源版,Coze Studio Open Source Version,Coze Studio Open Source Version
+agent_app.coze_workflow,Coze工作流,Coze工作流,Coze Workflow,Cozeアプリケーションインテリジェント
+agent_app.coze_workflow_cn,扣子编程,扣子编程,Coze,Coze
+agent_app.coze_workflow_osv,coze studio 开源版,coze studio 开源版,Coze Studio Open Source Version,Coze Studio Open Source Version
+agent_app.dify_agent,Dify,Dify,Dify,Dify
+agent_app.dify_workflow,Dify,Dify,Dify,Dify
+agent_app.fastgpt_agent,FastGPT,FastGPT,FastGPT,FastGPT
+agent_app.fastgpt_workflow,FastGPT,FastGPT,FastGPT,FastGPT
+agent_app.maxkb_agent,MaxKB,MaxKB,MaxKB,MaxKB
+agent_app.n8n_workflow,n8n,n8n,n8n,n8n
+agent_app.prompt,Prompt,Prompt,Prompt,Prompt
+agent_app.tencent,腾讯云智能体开发平台,腾讯云智能体开发平台,Tencent Cloud,Tencent Cloud
+agent_app.volcengine,火山方舟,火山方舟,Volcengine,Volcengine
+agent_app.yuanqi,腾讯元器,腾讯元器,Tencent Yuanqi,Tencent Yuanqi
+agent.coze.agent_link,"扣子智能体""编辑状态""的链接",,Coze agent edit link,
+agent.coze.workflow_link,"扣子工作流""编辑状态""的链接","Coze工作流""編輯狀態""的鏈接","Coze workflow ""edit state"" link","Cozeワークフロー""編集状態""のリンク"
+agent.ai_generated_tip,内容由AI生成，无法确保真实准确，仅供参考,內容由AI生成，無法確保真實準確，僅供參考,Content generated by AI, accuracy not guaranteed, for reference only,コンテンツはAIによって生成されており、正確性を保証することはできません。参考用です。
+api_host,后端服务API,後端服務API,Backend Service API,後端サービスAPI
+ap_host_fastgpt,API 根地址,API 根地址,API Root Address,APIルートアドレス
+module.platform_model_base_url_maxkb,Base URL,Base URL,Base URL,Base URL
+authority.agent_not_permission,无权限使用此功能，请联系管理员,無權限使用此功能，請聯繫管理員,"You do not have permission to use this function, please contact the administrator directly",このエージェントを使用する権限がありません、管理者に直接連絡してください
+authority.group_not_permission,您所在的分组无权限,您所在的分組無權限,You do not have permission to access this group,あなたが所属するグループにはアクセス権限がありません
+authority.internal_not_permission,您不是内部用户，请联系管理员,您不是內部用戶，請聯繫管理員,"You are not an internal user, please contact the administrator directly",あなたは内部ユーザーではありません、管理者に直接連絡してください
+authority.knowledge_not_permission,知识库问答仅内部用户可使用，请联系管理员,知識庫問答僅內部用戶可使用，請聯繫管理員,"Knowledge Base Q&A is only available to internal users, please contact the administrator directly",知識ベースQ&Aは内部ユーザーのみ使用できます、管理者に直接連絡してください
+authority.login_not_permission,请先登录,請先登入,Please login first,まずログインしてください
+authority.payment_not_setting,站点未配置收费方式，请直接联系管理员,站點未配置收費方式，請直接聯繫管理員,"The site has not configured payment methods, please contact the administrator directly",サイトが支払い方法を設定していません、管理者に直接連絡してください
+authority.use_range,使用范围,使用范围,Use Range,使用范围
+browser.alwaysOnTop,窗口置顶,視窗置頂,Always On Top,ウィンドウを常に前面に表示
+browser.centerWindow,居中大窗,居中大窗,Center Large Window,中央大窓
+browser.knowledge_clean,知识清洗,知識清洗,Knowledge Cleaning,ナレッジクリーニング
+browser.leftWindow,左侧小窗,左側小窗,Left Small Window,左側小窓
+browser.load_error,加载失败,載入失敗,Loading Failed,読み込みに失敗しました
+browser.login,立即登录,立即登入,Login Now,今すぐログイン
+browser.newTab,新标签页,新標籤頁,New Tab,新しいタブ
+browser.not_logged_in,未登录,未登入,Not Logged In,ログインしていません
+browser.reload,重新加载,重新載入,Reload,再読み込み
+browser.rightWindow,右侧小窗,右側小窗,Right Small Window,右側小窓
+browser.search_placeholder,在百度AI中搜索，或者输入一个网址,在百度AI中搜索，或者輸入一個網址,"Search in Baidu AI, or enter a URL",Baidu AIで検索、またはURLを入力
+browser.window_position,窗口位置,視窗位置,Window Position,ウィンドウ位置
+chat.collapse_side_bar,收起侧边栏,收起側邊欄,Collapse Sidebar,サイドバーを折りたたむ
+chat.completion_completed,已完成深度思考,已完成深度思考,Deep thinking completed,深層思考が完了しました
+chat.completion_empty_desc,采用AI大模型智能生成内容，输入需求即可一键成文，快去试试吧,採用AI大模型智能生成內容，輸入需求即可一鍵成文，快去試試吧,"Using AI large model to intelligently generate content, just input your requirements for one-click content creation",AI大規模モデルによるインテリジェントコンテンツ生成。要件を入力するだけでワンクリックで文章が作成できます
+chat.completion_generating,内容生成中，请稍候...,內容生成中，請稍候...,"Content generating, please wait...",コンテンツ生成中、お待ちください...
+chat.completion_next_action,关联场景：下一步操作,關聯場景：下一步操作,Related Scenarios: Next Action,関連シナリオ：次のアクション
+chat.completion_rendering,内容渲染中...,內容渲染中...,Content rendering...,コンテンツレンダリング中...
+chat.completion_scene,关联场景：,關聯場景：,Related Scenes:,関連シーン：
+chat.completion_share_link,对话链接已复制，快去分享吧~,對話鏈接已複製，快去分享吧~,"Conversation link copied, share now~",対話リンクがコピーされました、すぐに共有してください~
+chat.completion_thinking,深度思考中...,深度思考中...,Deep thinking...,深度思考中...
+chat.conversation_confirm_delete,删除后，聊天记录将不可恢复。,刪除後，聊天記錄將不可恢復。,"After deletion, chat history cannot be recovered.",削除すると、チャット履歴は復元できません。
+chat.delete_conversation,删除对话,刪除對話,Delete conversation,会話を削除
+chat.dislike,取消点赞,取消點讚,Unlike,いいねを取り消す
+chat.dislike_feedback,你觉得什么让你不满意？,你覺得什麼讓你不滿意？,What do you find unsatisfactory?,どの点が不満でしたか？
+chat.edit_conversation,编辑对话名称,編輯對話名稱,Edit Conversation Name,会話名を編集
+chat.expand_side_bar,展开侧边栏,展開側邊欄,Expand Sidebar,サイドバーを展開
+chat.form_required_add,请添加{label},請添加{label},Please add {label},{label}を追加してください
+chat.history,历史会话,對話記錄,Conversation History,会話履歴
+chat.history_conversation,历史会话,歷史會話,Conversation History,会話履歴
+chat.input,输入,輸入,Input,入力
+chat.input_placeholder,发送消息,發送訊息,Send a message,メッセージを送信
+chat.like,点赞,點讚,Like,いいね
+chat.like_feedback,你觉得什么让你满意？,你覺得什麼讓你滿意？,What do you find satisfactory? ,どの点が満足でしたか？
+chat.new_conversation,新对话,新對話,New Conversation,新しい会話
+chat.new_chat,新会话,新會話,New Chat,新しいチャット
+chat.no_available_agent,暂无可用的智能体,暫無可用的智能體,No available agents,利用可能なエージェントがありません
+chat.no_available_agent_desc,很遗憾，你要访问的智能体已不存在，去看看其他有趣的智能体吧～,很遺憾，你要訪問的智能體已不存在，去看看其他有趣的智能體吧～,The agent you are trying to access no longer exists. Discover other agents.,アクセスしようとしたエージェントは存在しません。他のエージェントをご利用ください。
+chat.no_model_config,暂无模型，请前往后台配置,暫無模型，請前往後台配置,"No model available, please configure in admin",モデルがありません。管理画面で設定してください
+chat.not_found_url,无法找到URL，请检查智能体是否设置正确,無法找到 URL，請檢查智能體是否設定正確,"URL not found, please check if the agent is set correctly",URL が見つかりません。エージェントの設定を確認してください
+chat.online_search,联网搜索,聯網搜索,Online Search,オンライン検索
+chat.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
+chat.select_from_library,从知识库中选择,從知識庫中選擇,Select from Library,ナレッジベースから選択
+chat.output,输出,輸出,Output,出力
+chat.regenerate,重新生成,重新生成,Regenerate,再生成
+chat.satisfied,满意,滿意,Satisfied,満足
+chat.search_placholder,搜索智能体,搜索智能體,Search agents,エージェントとチャットを検索
+chat.select_model,请选择模型,請選擇模型,Select model,モデルを選択
+chat.start_generate,开始生成,開始生成,Start Generating,生成開始
+chat.submit_success,感谢你帮助我们变得更好。,感謝你幫助我們變得更好。,Thank you for helping us become better.,私たちがより良くなるようお助けいただき、ありがとうございます。
+chat.unsatisfied,不满意,不滿意,Unsatisfied,不満
+chat.deep_thinking,深度思考,深度思考,Deep Thinking,深層思考
+chat.fast_response,快速回答,快速回答,Quick Response,迅速な回答
+chat.usage_case,使用案例,使用案例,Use Cases,使用例
+chat.usage_guide,使用指引,使用指引,Usage Guide,使用ガイド
+chat.usage_scene,使用场景,使用場景,Usage Scenarios,使用シーン
+chat.usage_channel,使用渠道,使用渠道,Usage Channel,使用チャンネル
+chat.web_search,联网搜索,聯網搜索,Web Search,ウェブ検索
+chat.workflow_error,工作流错误,工作流錯誤,Workflow error,ワークフローエラー
+chunk.default_index,默认索引,預設索引,Default Index,デフォルトインデックス
+chunk.delete_confirm,确定删除该语料片段吗？删除后无法恢复,確定刪除該語料片段嗎？刪除後無法恢復,Are you sure you want to delete this chunk? It cannot be recovered after deletion,このチャンクを削除してもよろしいですか？削除後は復元できません
+chunk.hit_count,索引块命中数,索引塊命中數,Retrieval Block Hit Count,索引ブロックヒット数
+chunk.knowledge,知识块,知識塊,Knowledge,知識塊
+chunk.question,常见问法,常見問法,Question,よくある質問
+chunk.reindex,重新索引,重新索引,Reindex,再インデックス
+chunk.reindex_confirm,更新了 {count} 个语料片段，是否同步更新检索块？,更新了 {count} 個語料片段，是否同步更新檢索塊？,"Update {count} chunks, do you want to update the retrieval chunk?",更新した{count}個のチャンクを再インデックスしますか？
+chunk.reindex_split,重新拆分并索引,重新拆分並索引,Reindex and Split,再インデックスと分割
+chunk.reindex_type,更新方式,更新方式,Update Type,更新方式
+chunk.reindex_type_all,重新拆分并更新索引,重新拆分並更新索引,Reindex and Update Index,再インデックスとインデックス更新
+chunk.reindex_type_part,仅更新检索,仅更新檢索,Update Retrieval,インデックス更新
+chunk.related_knowledge,关联知识,關聯知識,Related Knowledge,関連知識
+chunk.retrieval,检索块,檢索塊,Retrieval,検索ブロック
+chunk.slice_count,知识切片数,知識切片數,Knowledge Slice Count,知識スライス数
+chunk.no_task_info,暂无任务信息,暫無任務信息,No task info,タスク情報なし
+chunk.summary,内容概要,內容概要,Summary,内容概要
+chunk.enable_confirm,确定启用吗？,確定啟用嗎？,Are you sure you want to enable this chunks?,このチャンクを有効にしますか？
+chunk.disable_confirm,确定停用吗？,確定停用嗎？,Are you sure you want to disable this chunks?,このチャンクを無効にしますか？
+clean.content,内容抽取,內容抽取,Content Extraction,コンテンツ抽出
+clean.knowledge,知识整理,知識整理,Knowledge Organization,ナレッジ整理
+clean.rule,清洗规则,清洗規則,Cleaning Rule,クリーニングルール
+clean.summarize,知识萃取,知識萃取,Knowledge Extraction,ナレッジ抽出
+common.active,动态,動態,Activity,動的
+common.ai_generated,内容由AI生成，仅供参考,內容由AI生成，僅供參考,"AI-generated content, for reference only.",内容由AI生成，仅供参考
+common.all,全部,全部,All,すべて
+common.allow_to,"已复制提示词内容，访问""{name}""站点","已複製提示詞內容，訪問""{name}""站點","Copied prompt content. Visit ""{name}"" site","プロンプトをコピーしました。""{name}""サイトにアクセスしますか"
+common.attach,附件,附件,Attachment,添付ファイル
+common.back,返回,返回,Back,戻る
+common.back_home,返回站点首页,返回站點首頁,Return to site homepage,返回站点首页
+common.catalog,目录,目錄,Catalog,目次
+common.code,代码,代碼,Code,コード
+common.collapse_more,收起更多,收起更多,Collapse More,もっと見る
+common.common_document,通用文档,通用文檔,General Document,一般的なドキュメント
+common.confirm_delete,确定删除该项？,確定刪除該項？,Are you sure you want to delete this item?,このアイテムを削除しますか？
+common.content,内容,內容,Content,内容
+common.copied,已复制,已複製,Copied,コピーしました
+common.create_time,创建时间,創建時間,Creation Time,作成日時
+common.desc,描述,描述,Description,説明
+common.edit_conflict,检测到其他标签页正在编辑此文件，请先保存或关闭其他编辑页面,檢測到其他標籤頁正在編輯此文件，請先保存或關閉其他編輯頁面,"Other tabs are editing this file, please save or close other editing pages",他のタブがこのファイルを編集しています。他の編集ページを保存または閉じてください
+common.expand,展开,展開,Expand,展開
+common.copy_failed,复制失败,複製失敗,Copy failed,コピー失敗
+common.load_file_failed,加载文件失败,載入文件失敗,Load file failed,ファイル読み込み失敗
+common.please_select_file,请选择文件,請選擇文件,Please select file,ファイルを選択してください
+common.expand_more,展开更多,展開更多,Expand More,もっと見る
+common.feature_coming_soon,功能即将上线，敬请期待,功能即將上線，敬請期待,"Feature coming soon, please wait",機能はすぐに登場します。お楽しみに！
+common.feature_not_available,{functionName}暂不可用，请联系管理员~~,{functionName}暫不可用，請聯繫管理員~~,"{functionName} is not available, please contact the administrator~~",{functionName}は利用できません。管理者にお問い合わせください~~
+common.feature_over_limit,{functionName}数量已达上限，请联系管理员~~,{functionName}數量已達上限，請聯繫管理員~~,"{functionName} has reached the upper limit, please contact the administrator~~",{functionName}の使用量は上限を超えています。管理者にお問い合わせください~~
+common.file_name,文件名, 文件名,File name, ファイル名
+common.files_name,文件夹名, 資料夾名,Folder name, フォルダ名
+common.go_admin,后台管理,去後台,Go to Admin,管理画面に移動
+common.help,使用帮助,幫助,Help,ヘルプ
+common.help_feedback,帮助与反馈,幫助與反饋,Help & Feedback,ヘルプとフィードバック
+common.history,历史版本,歷史版本,Historical Version,履歴バージョン
+common.image_cropper,图片裁剪,圖片裁剪,Image Cropper,画像トリミング
+common.language,语言,語言,Language,言語
+common.later,稍后再说,稍後再說,Later,後で
+common.link,链接,連結,Link,リンク
+common.load_more,加载更多,載入更多,Load More,もっと読み込む
+common.load_new,加载新消息,載入新訊息,Load New Messages,新しいメッセージを読み込む
+common.loading,加载中,載入中,Loading,読み込み中
+common.merge_chunk,合并,合併,Merge,合併
+common.new_friend,新手指引,新手指引,Beginner Guide,初心者ガイド
+common.new_tab_page,新标签页,新標籤頁,New Tab Page,新しいタブページ
+common.no_data,暂无数据,暫無數據,No Data,データがありません
+common.no_description,--,--,--,--
+common.or,或,或,Or,または
+common.outline,目录,目錄,Outline,目次
+common.person,共{count}位成员,共{count}位成員,{count} members in total,合計{count}人のメンバー
+common.preview,预览,預覽,Preview,プレビュー
+common.recently_edit,最近编辑,最近編輯,Recently Edited,最近の編集
+common.recently_file,最近文档,,Recent documents,
+common.recently_updated,最近更新,最近更新,Recently Updated,最近の更新
+common.recently_visit,最近访问,最近訪問,Recently Visited,最近のアクセス
+common.related_agent,相关智能体,相關智能體,Related Agents,関連エージェント
+common.related_prompt,相关提示词,相關提示詞,Related Prompts,関連プロンプト
+common.render,渲染,渲染,Render,レンダリング
+common.rendering,实时渲染, 即時渲染,Real-time rendering, リアルタイムレンダリング
+common.screenshot,截图,截圖,Screenshot,スクリーンショット
+common.source,源码模式,源碼模式,Source code,ソースコード
+common.split,分屏,分屏,Split Screen,分割画面
+common.split_chunk,拆分,拆分,Split,分割
+common.string,字符,字符,Character,文字
+common.tip,提示,提示,Tip,ヒント
+common.title,标题,標題,Title,タイトル
+common.try_again,请重试,請重試,Please try again,もう一度お試しください
+common.unknown,未知,未知,Unknown,不明
+common.unsaved_changes,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,"You have unsaved changes, are you sure you want to leave?",未保存の変更があります。離れますか？
+common.update_time,更新时间,更新時間,Update Time,更新日時
+common.updated_at,更新于,更新於,Updated at,更新日時
+common.updated_time,更新时间,更新時間,Updated time,更新日時
+common.usual,常用,常用,Frequently Used,よく使う
+common.view_more,查看更多,查看更多,View More,もっと見る
+el.breadcrumb.label,面包屑,面包屑,Breadcrumb,Breadcrumb
+el.carousel.indicator,幻灯片切换至索引 {index},投影片切換至索引 {index},Carousel switch to index {index},Carousel switch to index {index}
+el.carousel.leftArrow,上一张幻灯片,上一張投影片,Carousel arrow left,Carousel arrow left
+el.carousel.rightArrow,下一张幻灯片,下一張投影片,Carousel arrow right,Carousel arrow right
+el.cascader.loading,加载中,載入中,Loading,ロード中
+el.cascader.noData,暂无数据,無資料,No data,データなし
+el.cascader.noMatch,无匹配数据,無相符資料,No matching data,データなし
+el.cascader.placeholder,请选择,請選擇,Select,選択してください
+el.colorpicker.alphaLabel,选择透明度的值,選擇透明度的值,pick alpha value,
+el.colorpicker.clear,清空,清空,Clear,クリア
+el.colorpicker.confirm,确定,確認,OK,OK
+el.colorpicker.defaultLabel,颜色选择器,色彩選擇器,color picker,
+el.colorpicker.description,当前颜色 {color}，按 Enter 键选择新颜色,目前色彩為 {color}。按一下 Enter 以選擇新色彩。,current color is {color}. press enter to select a new color.,
+el.datepicker.cancel,取消,取消,Cancel,キャンセル
+el.datepicker.clear,清空,清空,Clear,クリア
+el.datepicker.confirm,确定,確認,OK,OK
+el.datepicker.dateTablePrompt,使用方向键与 Enter 键可选择日期,使用方向鍵與 Enter 鍵以選擇日期,Use the arrow keys and enter to select the day of the month,
+el.datepicker.endDate,结束日期,結束日期,End Date,終了日
+el.datepicker.endTime,结束时间,結束時間,End Time,終了時間
+el.datepicker.month1,1 月,1 月,January,1月
+el.datepicker.month10,10 月,10 月,October,10月
+el.datepicker.month11,11 月,11 月,November,11月
+el.datepicker.month12,12 月,12 月,December,12月
+el.datepicker.month2,2 月,2 月,February,2月
+el.datepicker.month3,3 月,3 月,March,3月
+el.datepicker.month4,4 月,4 月,April,4月
+el.datepicker.month5,5 月,5 月,May,5月
+el.datepicker.month6,6 月,6 月,June,6月
+el.datepicker.month7,7 月,7 月,July,7月
+el.datepicker.month8,8 月,8 月,August,8月
+el.datepicker.month9,9 月,9 月,September,9月
+el.datepicker.monthTablePrompt,使用方向键与 Enter 键可选择月份,使用方向鍵與 Enter 鍵以選擇月份,Use the arrow keys and enter to select the month,
+el.datepicker.months.apr,四月,四月,Apr,4月
+el.datepicker.months.aug,八月,八月,Aug,8月
+el.datepicker.months.dec,十二月,十二月,Dec,12月
+el.datepicker.months.feb,二月,二月,Feb,2月
+el.datepicker.months.jan,一月,一月,Jan,1月
+el.datepicker.months.jul,七月,七月,Jul,7月
+el.datepicker.months.jun,六月,六月,Jun,6月
+el.datepicker.months.mar,三月,三月,Mar,3月
+el.datepicker.months.may,五月,五月,May,5月
+el.datepicker.months.nov,十一月,十一月,Nov,11月
+el.datepicker.months.oct,十月,十月,Oct,10月
+el.datepicker.months.sep,九月,九月,Sep,9月
+el.datepicker.nextMonth,下个月,下個月,Next Month,翌月
+el.datepicker.nextYear,后一年,後一年,Next Year,翌年
+el.datepicker.now,此刻,現在,Now,現在
+el.datepicker.prevMonth,上个月,上個月,Previous Month,前月
+el.datepicker.prevYear,前一年,前一年,Previous Year,前年
+el.datepicker.selectDate,选择日期,選擇日期,Select date,日付を選択
+el.datepicker.selectTime,选择时间,選擇時間,Select time,時間を選択
+el.datepicker.selectedDate,已选日期,已選日期,Selected date,
+el.datepicker.startDate,开始日期,開始日期,Start Date,開始日
+el.datepicker.startTime,开始时间,開始時間,Start Time,開始時間
+el.datepicker.today,今天,今天,Today,今日
+el.datepicker.week,周,,Week,
+el.datepicker.weeks.fri,五,五,Fri,金
+el.datepicker.weeks.mon,一,一,Mon,月
+el.datepicker.weeks.sat,六,六,Sat,土
+el.datepicker.weeks.sun,日,日,Sun,日
+el.datepicker.weeks.thu,四,四,Thu,木
+el.datepicker.weeks.tue,二,二,Tue,火
+el.datepicker.weeks.wed,三,三,Wed,水
+el.datepicker.weeksFull.fri,星期五,星期五,Friday,
+el.datepicker.weeksFull.mon,星期一,星期一,Monday,
+el.datepicker.weeksFull.sat,星期六,星期六,Saturday,
+el.datepicker.weeksFull.sun,星期日,星期日,Sunday,
+el.datepicker.weeksFull.thu,星期四,星期四,Thursday,
+el.datepicker.weeksFull.tue,星期二,星期二,Tuesday,
+el.datepicker.weeksFull.wed,星期三,星期三,Wednesday,
+el.datepicker.year,年,年,year,年
+el.datepicker.yearTablePrompt,使用方向键与 Enter 键可选择年份,使用方向鍵與 Enter 鍵以選擇年份,Use the arrow keys and enter to select the year,
+el.dialog.close,关闭此对话框,關閉此對話框,Close this dialog,
+el.drawer.close,关闭此对话框,關閉此對話框,Close this dialog,
+el.dropdown.toggleDropdown,切换下拉选项,切換下拉選單,Toggle Dropdown,
+el.image.error,加载失败,載入失敗,FAILED,失敗
+el.inputNumber.decrease,减少数值,減少數值,decrease number,
+el.inputNumber.increase,增加数值,增加數值,increase number,
+el.mention.loading,加载中,載入中,Loading,ロード中
+el.messagebox.cancel,取消,取消,Cancel,キャンセル
+el.messagebox.close,关闭此对话框,關閉此對話框,Close this dialog,
+el.messagebox.confirm,确定,確定,OK,OK
+el.messagebox.error,输入的数据不合法!,輸入的資料不符合規定!,Illegal input,正しくない入力
+el.messagebox.title,提示,提示,Message,メッセージ
+el.messagebox.uploadingTip,当前文件正在上传中，离开页面可能导致本次上传失败,當前檔案正在上傳中，離開頁面可能導致本次上傳失敗,Files are currently being uploaded. Leaving this page may cause the upload to fail.,ファイルのアップロード中です。ページを離れると、今回はアップロードに失敗する可能性があります。
+el.messagebox.confirmLeave,确认离开,確認離開,Confirm leave,確認離開
+el.pageHeader.title,返回,返回,Back,戻る
+el.pagination.currentPage,第 {pager} 页,第 {pager} 頁,page {pager},page {pager}
+el.pagination.deprecationWarning,你使用了一些已被废弃的用法，请参考 el-pagination 的官方文档,偵測到已過時的使用方式，請參閱 el-pagination 說明文件以了解更多資訊,"Deprecated usages detected, please refer to the el-pagination documentation for more details",
+el.pagination.goto,前往,前往,Go to,
+el.pagination.next,下一页,下一頁,Go to next page,Go to next page
+el.pagination.nextPages,向后 {pager} 页,向後 {pager} 頁,Next {pager} pages,Next {pager} pages
+el.pagination.page,页,頁,Page,Page
+el.pagination.pageClassifier,页,頁,page,ページ目へ
+el.pagination.pagesize,条/页,項/頁,/page,件/ページ
+el.pagination.prev,上一页,上一頁,Go to previous page,Go to previous page
+el.pagination.prevPages,向前 {pager} 页,向前 {pager} 頁,Previous {pager} pages,Previous {pager} pages
+el.pagination.total,共 {total} 条,共 {total} 項,Total {total},総計 {total} 件
+el.popconfirm.cancelButtonText,取消,取消,No,いいえ
+el.popconfirm.confirmButtonText,确定,確認,Yes,はい
+el.select.loading,加载中,載入中,Loading,ロード中
+el.select.noData,无数据,無資料,No data,データなし
+el.select.noMatch,无匹配数据,無相符資料,No matching data,データなし
+el.select.placeholder,请选择,請選擇,Select,選択してください
+el.slider.defaultLabel,滑块介于 {min} 至 {max},滑桿介於 {min} 至 {max},slider between {min} and {max},
+el.slider.defaultRangeEndLabel,选择结束值,選擇結束值,pick end value,
+el.slider.defaultRangeStartLabel,选择起始值,選擇起始值,pick start value,
+el.table.clearFilter,全部,全部,All,すべて
+el.table.confirmFilter,筛选,篩選,Confirm,確認
+el.table.emptyText,暂无数据,暫無資料,No Data,データなし
+el.table.resetFilter,重置,重置,Reset,初期化
+el.table.sumText,合计,合計,Sum,合計
+el.tour.finish,结束导览,結束導覽,Finish,ツアー終了
+el.tour.next,下一步,下一步,Next,次へ
+el.tour.previous,上一步,上一步,Previous,前へ
+el.transfer.filterPlaceholder,请输入搜索内容,請輸入搜尋內容,Enter keyword,キーワードを入力
+el.transfer.hasCheckedFormat,已选 {checked}/{total} 项,已選 {checked}/{total} 項,{checked}/{total} checked,{checked}/{total} を選択した
+el.transfer.noCheckedFormat,共 {total} 项,共 {total} 項,{total} items,総計 {total} 件
+el.transfer.noData,无数据,無資料,No data,データなし
+el.transfer.noMatch,无匹配数据,無相符資料,No matching data,データなし
+el.transfer.titles,"列表 1,列表 2","列表 1,列表 2","List 1,List 2","リスト 1,リスト 2"
+el.tree.emptyText,暂无数据,暫無資料,No Data,データなし
+el.upload.continue,继续上传,繼續上傳,Continue,続行する
+el.upload.delete,删除,刪除,Delete,削除する
+el.upload.deleteTip,按 Delete 键可删除,按 Delete 鍵以刪除,press delete to remove,Delキーを押して削除する
+el.upload.preview,查看图片,查看圖片,Preview,プレビュー
+file.file,文件,文件,File,ファイル
+file.file_empty,文件内容不能为空,文件內容不能為空,File content cannot be empty,ファイル内容を入力してください
+file.file_exceed,文件上传大小不能超过{size}MB({name}大小已超出),文件上傳大小不能超過{size}MB({name}大小已超出),File upload size cannot exceed {size}MB ({name} size exceeds),ファイルサイズは{size}MB以下でなければなりません ({name}サイズが超過しました)
+file.size_limit,图片大小不能超过{size}MB,圖片大小不能超過{size}MB,Image size cannot exceed {size}MB,画像サイズは{size}MB以下でなければなりません
+file.file_exceed_limit,最多上传{limit}个文件,最多上傳{limit}個文件,Upload up to {limit} files,最大{limit}個のファイルをアップロードできます
+file.file_format,支持格式：{format},支持格式：{format},Supported formats: {format},サポートされる形式：{format}
+file.file_size,单个文件大小不超过{size}MB,單個文件大小不超過{size}MB,File size must be less than {size}MB,ファイルサイズは{size}MB以下でなければなりません
+file.support_format,目前仅支持{format}格式文件,,Only {format} files are supported.,
+filter.date_range.all_time,所有时间,所有時間,All Time,すべての時間
+filter.date_range.last_12_months,过去12月,過去12月,Last 12 Months,過去12月
+filter.date_range.last_3_months,过去3月,過去3月,Last 3 Months,過去3月
+filter.date_range.last_4_weeks,过去4周,過去4周,Last 4 Weeks,過去4週
+filter.date_range.last_7_days,过去7天,過去7天,Last 7 Days,過去7日
+filter.date_range.this_month,本月至今,本月至今,This Month,今月
+filter.date_range.this_quarter,本季度至今,本季度至今,This Quarter,今四半期
+filter.date_range.this_year,本年至今,本年至今,This Year,今年
+filter.date_range.today,今天,今天,Today,今日
+filter.end_time,结束时间,結束時間,End Time,結束時間
+filter.start_time,开始时间,開始時間,Start Time,開始時間
+form.account,账号,賬號,Account,アカウント
+form.account_alias,手机,手機,Mobile,電話番号
+form.account_format,请输入正确的手机或邮箱,請輸入正確的手機或郵箱,Please enter a valid mobile or email,正しい電話番号またはメールアドレスを入力してください
+form.avatar,头像,頭像,Avatar,アバター
+form.change,修改,修改,Change,変更
+form.creator,创建人,創建人,Creator,作成者
+form.desc,描述,描述,Description,説明
+form.email,邮箱,郵箱,Email,メールアドレス
+form.email_format,请输入正确的邮箱,請輸入正確的郵箱,Please enter a valid email,正しいメールアドレスを入力してください
+form.email_validator,请输入正确的邮箱,請輸入正確的郵箱,Please enter the correct email,正しいメールアドレスを入力してください
+form.email_verify,邮箱验证,郵箱驗證,Email Verification,メール認証
+form.existing_email,该邮箱已注册，请使用该账号登录。,該郵箱已註冊，請使用該帳號登入。,This email has been registered. Please log in with this account.,このメールアドレスはすでに登録されています。ご登録済みのアカウントでログインしてください。
+form.existing_mobile,该手机号已注册，请使用该账号登录。,該手機號已註冊，請使用該帳號登入。,This mobile number has been registered. Please log in with this account.,この電話番号は既に登録されています。このアカウントでログインしてください。
+form.get_verify_code,获取验证码,獲取驗證碼,Get Verification Code,認証コードを取得
+form.icon,图标,圖標,Icon,アイコン
+form.icon_placeholder,为保证显示效果，请上传宽高比 1:1 的图片,為保證顯示效果，請上傳寬高比 1:1 的圖片,"For best display, please upload an image with a 1:1 aspect ratio",表示効果を確保するため、縦横比1:1の画像をアップロードしてください
+form.image_validator,请上传图片,請上傳圖片,Please upload the image,画像をアップロードしてください
+form.input_placeholder,请输入,請輸入,Please enter,入力してください
+form.input_validator,请输入内容,請輸入內容,Please enter content,内容を入力してください
+form.library_desc_placeholder,请输入知识库的简介,請輸入知識庫的簡介，如：產品設計與研發,"Please enter the knowledge base description, such as: product design and development",ナレッジベースの説明を入力してください。例：製品設計と開発
+form.library_view_member,知识库成员可访问,知識庫成員可訪問,Knowledge Base Members Access,ナレッジベースメンバーがアクセス可能
+form.library_view_public,公开访问,公開訪問,Public Access,公開アクセス
+form.library_view_scope,知识库公开范围,知識庫公開範圍,Knowledge Base Access Scope,ナレッジベース公開範囲
+form.library_view_team,团队空间成员可访问,團隊空間成員可訪問,Team Space Members Access,チームスペースメンバーがアクセス可能
+form.link_placeholder,请输入链接,請輸入連結,Please enter the link,リンクを入力してください
+form.link_validator,请输入正确的链接,請輸入正確的連結,Please enter the correct link,正しいリンクを入力してください
+form.mobile,手机号,手機號,Mobile,電話番号
+form.mobile_format,请输入正确手机号,請輸入正確手機號,Please enter a valid mobile number,正しい電話番号を入力してください
+form.mobile_format_error,手机号格式错误,手機號格式錯誤,Mobile number format error,電話番号形式エラー
+form.mobile_or_email_validator,请输入正确的手机号或邮箱,請輸入正確的手機號或郵箱,Please enter the correct mobile number or email,正しい電話番号またはメールアドレスを入力してください
+form.mobile_validator,请输入正确的手机号,請輸入正確的手機號,Please enter the correct mobile number,正しい電話番号を入力してください
+form.mobile_verify,手机验证,手機驗證,Mobile Verification,電話認証
+form.name,名称,名稱,Name,名前
+form.new_email,新邮箱,新郵箱,New Email,新しいメールアドレス
+form.new_mobile,新手机号,新手機號,New Mobile,新しい電話番号
+form.new_password,新密码,新密碼,New Password,新しいパスワード
+form.new_password_confirm,重复新密码,確認新密碼,Confirm New Password,パスワードの確認
+form.new_password_confirm_placeholder,请再次输入新密码,請再次輸入新密碼,Please re-enter new password,新しいパスワードを再入力してください
+form.new_password_placeholder,请输入新密码,請輸入新密碼,Please enter new password,新しいパスワードを入力してください
+form.department,部门,部門,Department,部門
+form.nickname,昵称,暱稱,Nickname,ニックネーム
+form.old_mobile,旧手机号,,Previous mobile number,
+form.optional,选填项,選填項,Optional,任意項目
+form.password,密码,密碼,Password,パスワード
+form.password_format,密码必须包含大小写字母和数字,密碼必須包含大小寫字母和數字,"Password must contain uppercase, lowercase letters and numbers",パスワードは大文字、小文字、数字を含む必要があります
+form.password_length,密码长度必须在 8-20 个字符之间,密碼長度必須在 8-20 個字符之間,Password must be between 8-20 characters,パスワードは8〜20文字である必要があります
+form.password_no_chinese,密码不能包含中文,密碼不能包含中文,Password cannot contain Chinese characters,パスワードには中国語の文字を含めることができません
+form.password_not_match,两次输入的密码不一致,兩次輸入的密碼不一致,The two passwords do not match,入力されたパスワードが一致しません
+form.password_placeholder,请输入密码,請輸入密碼,Please enter password,パスワードを入力してください
+form.password_validator,请输入密码,請輸入密碼,Please enter the password,パスワードを入力してください
+form.path_validator,请输入正确的路径,請輸入正確的路徑,Please enter the correct path,正しいパスを入力してください
+form.remark,备注, 備註 ,Remark, 備考
+form.required,必填项,必填項,Required,必須項目
+form.reset_password,重置密码,重置密碼,Reset Password,パスワードをリセット
+form.reset_password_method,选择重置密码的方式,選擇重置密碼的方式,Select a password reset method,パスワードをリセットする方法を選択
+form.select_placeholder,请选择,請選擇,Please select,選択してください
+form.select_verify,请选择验证方式,請選擇驗證方式,Please select verification method,認証方法を選択してください
+form.text_validator,请输入文本,請輸入文本,Please enter the text,テキストを入力してください
+form.textarea_validator,请输入文本,請輸入文本,Please enter the text,テキストを入力してください
+form.url_validator,请输入正确的URL,請輸入正確的URL,Please enter the correct URL,正しいURLを入力してください
+form.username_length,账号长度必须在 5-20 个字符之间,,Account name must be 5-20 characters.,アカウント名の長さは 5~20 文字でなければなりません
+form.verify_code,验证码,驗證碼,Verification Code,認証コード
+form.verify_code_format,请输入正确的验证码,請輸入正確的驗證碼,Please enter a valid verification code,正しい認証コードを入力してください
+form.verify_code_placeholder,请输入验证码,,Enter verification code,
+form.verify_old_mobile,验证你的旧手机号码,驗證你的舊手機號碼,Verify your old phone number,古い携帯電話番号を確認してください
+guide.confirm_password,确认密码,確認密碼,Confirm Password,パスワードの確認
+guide.confirm_password_placeholder,请再次确认密码,請再次確認密碼,Please confirm your password again,再度パスワードを確認してください
+guide.description,仅需 1 分钟，三步完成系统初始化，请根据指引填写基础信息并完成模型配置,當前為初始化環節，需錄入站點等基礎資訊，用於系統基礎配置搭建,"This is the initialization process. Please enter basic information (e.g., site details) to set up the system configuration.",現在は初期化段階です。サイト情報などの基本情報を入力し、システム基本設定の構築に使用してください
+guide.init,确定,初始化,Initialize,初期化
+guide.jump_tip,初始化完成... {count} 秒后跳转进入系统,將在 {count} 秒後自動跳轉到首頁,Will automatically jump to the homepage in {count} seconds,{count}秒後にホームページに自動的に移動します
+guide.next,下一步,下一步,Next Step,次のステップ
+guide.prev,上一步,上一步,Previous Step,前のステップ
+guide.title,53AI Hub 安装面版,歡迎使用53AI Hub,Welcome to 53AI Hub,53AI Hubをご利用いただきありがとうございます
+guide.website_info,基础信息,站點資訊,Site Information,サイト情報
+guide.website_info_name,企业,站點名稱,Site Name,サイト名
+guide.website_info_name_placeholder,请输入企业的名称,請輸入站點的名稱,Please enter the site name,サイト名を入力してください
+guide.platform,接入平台,接入平台,Platform,プラットフォーム
+guide.platform_placeholder,请选择接入平台,請選擇接入平台,Please select a platform,プラットフォームを選択してください
+guide.platform_access,配置模型,平台接入,Platform Access,プラットフォーム接続
+guide.base_url_placeholder,请输入BaseURL,請輸入BaseURL,Please enter BaseURL,BaseURLを入力してください
+guide.api_key_placeholder,请输入API Key,請輸入API Key,Please enter API Key,API Keyを入力してください
+guide.website_success,完成安装,完成安裝,Installation Completed,インストール完了
+guide.initializing,初始化中，请稍等...,初始化中，請稍等...,Initializing, please wait...,初期化中、お待ちください...
+guide.enter_system,进入系统,進入系統,Enter System,システムに入る
+history.all_record,全部记录,全部記錄,All Records,すべての記錄
+history.delete_version_confirm,确定删除该版本吗？,確定刪除該版本嗎？,Are you sure you want to delete this version?,このバージョンを削除してもよろしいですか？
+history.delete_version_title,删除版本,刪除版本,Delete Version,バージョンを削除
+history.edit_version_title,编辑版本,編輯版本,Edit Version,バージョンを編集
+history.empty_record,暂无记录,暫無記錄,No record,空の記録
+history.empty_version,暂无版本,暫無版本,No version,空のバージョン
+history.only_show_published,仅显示已发布的历史记录,僅顯示已發布的歷史記錄,Only show published historical records,公開された歴史記錄のみ表示
+history.published,已发布,已發布,Published,公開
+history.restore_confirm,"恢复后，将覆盖原本内容,以及重新生成索引，确定要恢复吗？","恢復後，將覆蓋原本內容,以及重新生成索引，確定要恢復嗎？","After restoration, the original content will be overwritten, and the index will be regenerated. Are you sure you want to restore?",復元後、元の内容が上書きされ、インデックスが再生成されます。復元してもよろしいですか？
+history.restore_record,恢复此记录,恢復此記錄,Restore this Record,この記錄を復元
+history.restore_success,恢复成功，正在跳转至编辑页,恢復成功，正在跳轉至編輯頁,"Restore successfully, redirecting to edit page",復元成功、編集ページにリダイレクトします
+history.restore_version,恢复此版本,恢復此版本,Restore this Version,このバージョンを復元
+history.save_version,保存为版本,保存為版本,Save as Version,バージョンとして保存
+history.save_version_label,名称,名稱,Name,名前
+history.save_version_title,保存为版本,保存為版本,Save as Version,バージョンとして保存
+history.saved_version_tip,已存为版本：{version},已存為版本：{version},Saved as version: {version},バージョンとして保存：{version}
+history.title,历史版本,歷史版本,Historical Version,歴史バージョン
+history.version,版本,版本,Version,バージョン
+index.agent_recommend,精选智能体,精選智能體,Featured Agents,おすすめエージェント
+index.agent_recommend_desc,打造您的第二生产力引擎,打造您的第二生產力引擎,Build your second productivity engine,第二の生産力エンジンを構築する
+index.ai_search_setup_tip,请先前往后台进行AI搜索设置,請先前往後台進行AI搜索設置,Please configure AI search in the admin panel first,管理画面でAI検索を設定してください
+index.work_ai_setup_tip,请先前往后台进行工作台设置,請先前往後台進行工作台設置,Please configure work AI in the admin panel first,管理画面でワークAIを設定してください
+index.banner_desc,精选工作场景 AI 资源，让 AI 成为你的生产力助手,精選工作場景 AI 資源，讓 AI 成為你的生產力助手,"Select AI resources for your workflow, make AI your productivity tool",ワークフローに応じた AI リソースを選択し、AI を生産性ツールに変えます
+index.banner_title,“{name} 专家”  效率倍增的秘密武器,“{name} 專家”  效率倍增的秘密武器,“{name} Expert” The secret weapon for efficiency,“{name} 専門家”  効率を倍増する秘密の武器
+index.chat_placeholder,请输入你想询问的问题，shift+enter换行,請輸入你想詢問的問題，shift+enter換行,"Enter your question, shift+enter for new line",質問を入力してください。shift+enterで改行
+index.chat_placeholder_library,"基于""{name}""提问，shift+enter换行",基於「{name}」提問，shift+enter換行,"Ask based on ""{name}"", shift+enter for new line",「{name}」に基づいて質問。shift+enterで改行
+index.hot_search,热门搜索,熱門搜索,Hot Search,人気の検索
+index.hot_search_browser,浏览器自动化,瀏覽器自動化,Browser automation,ブラウザ自動化
+index.hot_search_email,邮件发送,郵件發送,Email sending,メール送信
+index.hot_search_file_op,文件操作,文件操作,File operations,ファイル操作
+index.hot_search_image,图片处理,圖片處理,Image processing,画像処理
+index.hot_search_web_crawl,网页抓取,網頁抓取,Web scraping,ウェブスクレイピング
+index.prompt_recommend,精选提示词,精選提示詞,Featured Prompts,おすすめプロンプト
+index.prompt_recommend_desc,掌握用大模型解决问题的方法,用好提示詞才能始終領先一步,Use prompts well to always stay ahead,プロンプトを使いこなすことで、常に先進的な状態を維持できます
+index.search_placeholder,输入您想查找的AI资源,輸入您想查找的AI資源,Enter the AI resource you want to find,検索したいAIリソースを入力してください
+index.toolbox_recommend,精选AI工具,精選AI工具,Featured AI Tools,おすすめAIツール
+index.toolbox_recommend_desc,用好 AI 工具才能始终领先一步,用好 AI 工具才能始終領先一步,"Select AI resources for your workflow, make AI your productivity tool",ワークフローに応じた AI リソースを選択し、AI を生産性ツールに変えます
+index.use_history,{count}人聊过,{count}人聊過,{count} people have chatted,{count}人が利用
+index.welcome_use,欢迎使用,歡迎使用,Welcome,ようこそ
+index.knowledge_search,知识搜问,知識搜問,Knowledge Search,ナレッジ検索
+index.search_in_space,在当前知识空间中搜索或提问...,在當前知識空間中搜索或提問...,Search or ask in current knowledge space...,現在のナレッジスペースで検索または質問...
+index.select_knowledge_range,选择知识范围,選擇知識範圍,Select Knowledge Scope,知識の範囲を選択
+work_ai.welcome_use,希望我为你做什么？,希望我為你做什麼？,I hope I can help you with that,私はあなたのために役立てることを望みます
+work_ai.chat_placeholder,分配一项任务或基于企业知识提任何问题,分配一項任務或基於企業知識提任何問題,Assign a task or ask any question based on enterprise knowledge,企業知識に基づいてタスクを割り当てるか、任意の質問をすること
+work_ai.skill_placeholder_knowledge,指定知识或技能问答,指定知識或技能問答,Specify knowledge or skill Q&A,知識またはスキルQ&Aを指定
+work_ai.knowledge_placeholder,指定知识问答,指定知識問答,Specify knowledge Q&A,知識Q&Aを指定
+work_ai.skill_placeholder,指定技能问答,指定技能問答,Specify skill Q&A,スキルQ&Aを指定
+work_ai.suggested_questions,你可以问：,你可以問：,You can ask:,あなたは聞くことができます：
+work_ai.more,更多,更多,More,もっと見る
+work_ai.view_document,查看文档,查看文檔,View Document,ドキュメントを表示
+work_ai.new_chat,新会话,新會話,New Chat,新しいチャット
+internal_user.organization.user_search_placeholder,搜索成员,,Search members,
+internal_user.scope.selected_title,已选成员,,Selected members,
+language_option_label.en,英文-EN,英文-EN,English-EN,英文-EN
+language_option_label.jp,日文-JP,日文-JP,日本語-JP,日本語-JP
+language_option_label.zh-cn,中文-CN,中文-CN,中文-CN,中文-CN
+language_option_label.zh-tw,中文-TW,中文-TW,中文-TW,中文-TW
+library.add_to,添加到,新增至,Add to,追加先
+library.all_libraries,全部知识库,全部知識庫,All Knowledge Bases,すべてのナレッジベース
+library.all_knowledge,全部知识,全部知識,All Knowledge,すべての知識
+library.all_spaces,全员空间,全員空間,All Member Space,全員スペース
+library.can_add_to,可添加到有编辑权限的知识库目录下,可新增至有編輯權限的知識庫目錄下,Can be added to the knowledge base directories with edit permissions,編集権限のある知識ベースディレクトリに追加できます
+library.chat,知识库问答,知識庫問答,Knowledge Base Q&A,ナレッジベースQ&A
+library.corpus_view,语料视图,語料視圖,Corpus View,コーパスビュー
+library.create,创建知识库,創建知識庫,Create Knowledge Base,ナレッジベースを作成
+library.create_folder,新建文件夹,新建文件夾,New Folder,新しいフォルダを作成
+library.create_md,新建知识,新建知識,New Knowledge,新しい知識を作成
+library.default,默认知识库,預設知識庫,Default Knowledge Base,デフォルトナレッジベース
+library.docs_dingtalk_import,从飞书文档导入,從飛書文檔導入,Import from Feishu Docs,Feishuドキュメントからインポート
+library.docs_feishu_import,从钉钉文档导入,從釘釘文檔導入,Import from DingTalk Docs,DingTalkドキュメントからインポート
+library.docs_qq_import,从腾讯文档导入,從騰訊文檔導入,Import from Tencent Docs,テンセントドキュメントからインポート
+library.document,文档,文檔,Document,ドキュメント
+library.document_app,文档应用,文檔應用,Document App,ドキュメントアプリ
+library.document_chat,文档助手,文檔問答,Document Q&A,ドキュメントQ&A
+library.empty_desc,创建企业知识库，沉淀团队知识，提升协作效率,創建企業知識庫，沉澱團隊知識，提升協作效率,"Create enterprise knowledge base, accumulate team knowledge, improve collaboration efficiency",企業ナレッジベースを作成し、チームの知識を蓄積して協力効率を向上させる
+library.file_count,{count}个文件,{count}個文件,{count} files,{count}ファイル
+library.github_import,从Github导入,從Github導入,Import from Github,Githubからインポート
+library.home,首页,首頁,Home,ホーム
+library.knowledge_chat,知识问答,知識問答,Knowledge Q&A,知識Q&A
+library.knowledge_map,知识地图,知識地圖,Knowledge Map,知識地図
+library.knowledge_map_desc,智能提炼文档核心内容，生成结构化层级知识地图，点击知识点触发深度解读，助力快速梳理知识脉络,智能提煉文檔核心內容，生成結構化層級知識地圖，點擊知識點觸發深度解讀，助力快速梳理知識脈絡,Intelligent extraction of document core content, generating structured hierarchical knowledge maps, clicking knowledge points triggers in-depth interpretation, helping to quickly sort out knowledge context,文書の核心内容を智能的に抽出し、構造化された階層的な知識マップを生成し、知識ポイントをクリックして深い解釈をトリガーし、知識の脈絡を迅速に整理する
+library.knowledge_point,知识点,知識點,Knowledge Point,知識ポイント
+library.explain_knowledge_point,讲解知识点,講解知識點,Explain Knowledge Point,知識ポイントを解説
+library.generating_knowledge_map,正在生成知识地图...,正在生成知識地圖...,Generating knowledge map...,知識マップを生成中...
+library.elapsed_time,已用时,已用時,Elapsed time,経過時間
+library.use_cases,适用场景,適用場景,Use Cases,使用シーン
+library.use_case_1,技术文档说明：快速搭建知识框架，缩短认知周期,技術文檔說明：快速搭建知識框架，縮短認知周期,Technical documentation: Quickly build knowledge framework, shorten cognition cycle,技術文書説明：知識フレームワークを迅速に構築し、認知サイクルを短縮
+library.use_case_2,员工培训/课件：可按层级检索所需知识点，点击获取详细解读,員工培訓/課件：可按層級檢索所需知識點，點擊獲取詳細解讀,Employee training/courseware: Search knowledge points by level, click for detailed interpretation,従業員トレーニング/教材：階層で知識ポイントを検索し、クリックで詳細な解釈を取得
+library.use_case_3,项目方案解读：非专业人员可通过可视化层级快速理解核心信息,項目方案解讀：非專業人員可通過可視化層級快速理解核心信息,Project interpretation: Non-professionals can quickly understand core information through visual hierarchy,プロジェクト解釈：非専門家が視覚的な階層で核心情報を迅速に理解
+library.ai_disclaimer,内容均由AI生成，仅供参考,內容均由AI生成，僅供參考,Content generated by AI, for reference only,コンテンツはAIによって生成され、参考用です
+library.regenerate_knowledge_map,请重新生成知识地图,請重新生成知識地圖,Please regenerate the knowledge map,知識マップを再生成してください
+library.knowledge_view,知识视图,知識視圖,Knowledge View,知識ビュー
+library.library_home,知识库首页,知識庫首頁,Knowledge Base Home,ナレッジベースホーム
+library.local_upload,本地上传,本地上傳,Local Upload,ローカルからアップロード
+library.manage,管理知识库,管理知識庫,Manage Knowledge Base,ナレッジベースを管理
+library.name,知识库,知識庫,Knowledge Base,ナレッジベース
+library.no_folder,暂无目录,暫無目錄,No Directories,ディレクトリがありません
+library.no_library,暂无知识库,暫無知識庫,No Knowledge Bases,知識ベースがありません
+library.no_space,暂无空间,暫無空間,No Spaces,スペースがありません
+library.number,{document_num}个文档 / {folder_num}个文件夹,{document_num}個文檔 / {folder_num}個文件夾,{document_num} documents / {folder_num} folders,{document_num}個のドキュメント / {folder_num}個のフォルダ
+library.recent_library,最近知识库,最近知識庫,Recent Knowledge Base,最近のナレッジベース
+library.root_folder,知识库根目录,知識庫根目錄,Root Directory of Knowledge Base,知識ベースルートディレクトリ
+library.search,搜索知识库,搜索知識庫,Search Knowledge Base,ナレッジベースを検索
+library.search_input_text,快速搜索文档标题,快速搜尋文件標題,Quick search document titles,ドキュメントタイトルを検索
+library.search_input_text_v2,最近访问的知识库,訪問最近的知識庫,Access recent knowledge bases,最近のナレッジベースにアクセス
+library.space_name,空间名称,空間名稱,Space Name,スペース名
+library.team_space,团队空间,團隊空間,Team Space,チームスペース
+library.tmpl_create,模板创建,模板創建,Template Creation,テンプレートから作成
+library.upload_file,上传文件,上傳文件,Upload File,ファイルをアップロード
+library.upload_folder,上传文件夹,上傳文件夾,Upload Folder,フォルダをアップロード
+library.current_library,当前知识库,當前知識庫,Current Library,現在のナレッジベース
+library.this_library_content,本知识库内容,本知識庫內容,This library content,このナレッジベースの内容
+library.apply_permission_unlock,申请权限，即可解锁,申請權限，即可解鎖,Apply for permission to unlock,権限を申請してロック解除
+library.docs_count,{count}文档,{count}文檔,{count} docs,{count}ドキュメント
+library.open_auto_select,开启自动选择,開啟自動選擇,Enable Auto Select,自動選択を有効化
+library.close_auto_select,关闭自动选择,關閉自動選擇,Disable Auto Select,自動選択を無効化
+login.agree,登录即视您同意,登入即視您同意,"By logging in, you agree to",ログインすると、以下に同意したことになります
+login.bind_mobile,绑定手机号,綁定手機號,Bind mobile number,携帯電話番号をバインド
+login.immediate_login,立即登录,立即登入,Log in now,すぐにログイン
+login.local_ai_privacy_policy,AI隐私协议,AI隱私政策,AI Privacy Policy,AIプライバシーポリシー
+login.local_privacy_policy,隐私协议,隱私政策,Privacy Policy,プライバシーポリシー
+login.local_terms_of_service,服务协议,服務條款,Terms and Conditions,利用規約
+login.login_by_mobile,使用手机登录,使用手機登入,Log in with mobile,携帯電話でログイン
+login.login_by_password,使用密码登录,使用密碼登入,Log in with password,パスワードでログイン
+login.login_by_wechat,请使用微信扫码登录,請使用微信登入,Scan with WeChat to log in,WeChatでログイン
+login.login_by_wecom,请使用企业微信扫码登录,請使用企業微信登入,Scan with WeCom to log in,WeComでログイン
+login.message_login,短信登录,簡訊登入,SMS login,SMSログイン
+login.message_login_title,短信登录,簡訊登入,SMS login,SMSログイン
+login.other_login_way,其他登录方式,其他登入方式,Other sign-in methods,他のログイン方式
+login.password_login,账号密码,密碼登入,Password login,パスワードでログイン
+login.password_login_title,密码登录,密碼登入,Password login,パスワードでログイン
+login.privacy_policy,隐私政策,隱私政策,Privacy Policy,プライバシーポリシー
+login.quit,退出,退出,Quit,終了
+login.terms_of_service,条款和条件,條款和條件,Terms and Conditions,利用規約
+login.unbind_wechat_confirm_desc,解绑后将无法使用微信登录，是否继续？,,"After unbinding, you will not be able to log in with WeChat. Continue?",
+login.unbind_wechat_confirm_title,解绑微信账号,,Unbind WeChat account,
+login.unregistered_account_confirm,未注册手机号验证后自动登录，,未註冊手機號驗證後自動登錄,"After verifying this unregistered mobile number, you will be logged in automatically.",未登録の携帯電話番号を認証した後、自動的にログインします
+login.unregistered_account_desc,未注册的账号，请先注册后再登录,未註冊的賬號，請先註冊後再自動登入,This account is not registered. Please register before logging in.,未登録のアカウントは、登録後に自動的にログインします
+login.wechat_login,微信登录,微信登入,WeChat login,WeChatログイン
+login.wechat_login_title,微信登录,微信登入,WeChat login,WeChatログイン
+login.wecom_login,企业微信,企業微信,WeCom login,WeComログイン
+login.wecom_login_error,"站点绑定的企业微信并非当前登录的企业微信!
+请用正确的企微登录。","站點綁定的企業微信並非當前登錄的企業微信!
+請用正確的企微登入。","The WeCom account bound to this site is not the one currently logged in.
+Please log in with the correct WeCom account.","サイトにバインドされた企業微信は、現在のログインしている企業微信ではありません!
+正しい企業微信を使用してログインしてください。"
+login.wecom_login_title,企业微信登录,企業微信登入,WeCom login,WeComログイン
+mine.from,来自,來自,From,取得元
+mine.knowledge,知识,知識,Knowledge,ナレッジ
+mine.my_favorites,我收藏的,我收藏的,My Favorites,お気に入り
+mine.recent_visit,最近访问,最近訪問,Recent visits,最近のアクセス
+mine.updated,更新,更新,Updated,更新
+module.agent,智能体,智能體,Agent,エージェント
+module.app,应用,應用,App,アプリ
+module.center,项目中心,項目中心,Project Center,プロジェクトセンター
+module.chat,对话,对话,Chat,チャット
+module.crop_space,企业空间,企業空間,Enterprise Space,企業スペース
+module.find,发现,發現,Discover,発見
+module.index,首页,首頁,Home,ホーム
+module.knowledge,知识库,知識庫,Knowledge Base,ナレッジベース
+module.library,知识库,知識庫,Knowledge Base,ナレッジベース
+module.mine,我的,我的,Mine,マイページ
+mine.document,我的文档,我的文檔,My Documents,マイドキュメント
+mine.agent,我的智能体,我的智能體,My Agents,マイエージェント
+mine.skill,我的技能,我的技能,My Skills,マイスキル
+mine.search_document,搜索文档,搜索文檔,Search documents,ドキュメントを検索
+mine.search_agent,搜索智能体,搜索智能體,Search agents,エージェントを検索
+mine.search_skill,搜索技能,搜索技能,Search skills,スキルを検索
+module.time,时间,時間,Time,時間
+module.prompt,提示词,提示詞,Prompt,プロンプト
+module.space,知识空间,知識空間,Knowledge Space,知識スペース
+module.tool,AI工具,AI工具,AI Toolbox,AIツール
+module.toolbox,AI工具,AI工具,AI Toolbox,AIツール
+module.skill,技能库,技能库,Skills,スキル
+name,名称,名稱,Name,名前
+order.action,操作,操作,Action,操作
+order.amount,订单金额,訂單金額,Order Amount,注文金額
+order.cancel,取消订单,取消訂單,Cancel,キャンセル
+order.cancel_confirm,确认取消该订单？,確認取消該訂單？,Are you sure you want to cancel this order?,注文をキャンセルしますか？
+order.create_time,下单时间,下單時間,Order Time,注文時間
+order.id,订单ID,訂單ID,Order ID,注文ID
+order.pay_type,支付方式,支付方式,Payment Method,支払方法
+order.payment,支付,支付,Payment,支払い
+order.payment_confirm,确认支付该订单？,確認支付該訂單？,Are you sure you want to pay for this order?,注文を支払いますか？
+order.search_placeholder,请输入订单ID,請輸入訂單ID,Please enter order ID,注文IDを入力してください
+order.status,状态,狀態,Status,状態
+order.status_list.all,全部,全部,All,すべて
+order.status_list.cancel,已取消,已取消,Canceled,キャンセル
+order.status_list.expired,已超时,已超時,Expired,期限切れ
+order.status_list.not_confirm,待确定,待確定,Not Confirm,未確定
+order.status_list.paid,已支付,已支付,Paid,支払い済み
+order.status_list.pending,待支付,待支付,Pending,待支払い
+order.subscription,订阅服务,訂閱服務,Subscription Service,サブスクリプションサービス
+message.center,消息中心,消息中心,Message Center,メッセージセンター
+profile.bind,绑定,綁定,Bind,連携
+profile.bind_accounts,账户信息,賬戶信息,Account Information,アカウント情報
+profile.bind_email,电子邮箱,電子郵箱,Email,メールアドレス
+profile.bind_google,谷歌账号,谷歌賬號,Google,Googleアカウント
+profile.bind_mobile,手机号,手機號,Mobile Number,電話番号
+profile.bind_success,已绑定,,Bound,
+profile.bind_wechat,微信OpenId,微信OpenId,WeChat,WeChatOpenId
+profile.bind_wechat_title,微信扫码完成绑定,,Scan with WeChat to finish binding,
+profile.change,更换,更換,Change,さしかえる
+profile.change_password,修改密码,修改密碼,Change Password,パスワード変更
+profile.change_success,已更换,,Changed,
+profile.current_device,当前设备,當前設備,Current Device,現在のデバイス
+profile.expire_time_desc,{group_name} 将于 {day} 天后（{expire_time}）到期，请及时续费以继续使用会员权益,{group_name}將於{day}天後({expire_time})到期，馬上續費延續會員權益,{group_name} expires in {day} days ({expire_time}). Renew to keep your membership benefits.,{group_name}は{day}日後({expire_time})に期限切れになります、会員権利を継続するには更新してください
+profile.expired_time_desc,{group_name} 已于 {expire_time} 到期，请续费以继续使用会员权益,{group_name}已於{expire_time}到期，馬上續費延續會員權益,{group_name} expired on {expire_time}. Renew to keep your membership benefits.,{group_name}は{expire_time}に期限切れになりました、会員権利を継続するには更新してください
+profile.info,个人信息,個人信息,Personal Information,個人情報
+profile.setting,个人设置,個人設置,Personal Setting,個人設定
+profile.user_info,用户信息,用戶信息,User Info,ユーザー情報
+profile.user_memory,用户记忆,用戶記憶,User Memory,ユーザーメモリ
+profile.user_memory_desc,记忆让 53AI 记住你的偏好和习惯，对话越多，它就越懂你。记忆内容仅你本人可见。,記憶讓 53AI 記住你的偏好和習慣，對話越多，它就越懂你。記憶內容僅你本人可見。,Memory makes 53AI remember your preferences and habits. The more you chat, the better it understands you. Memory content is only visible to you.,記憶が53AIにあなたの好みと習慣を記憶させます。チャットをすればなるほど、それはあなたをよりよく理解します。記憶内容はあなただけが見ることができます。
+profile.smart_memory,智能记忆信息,智能記憶信息,Smart Memory Information,スマートメモリ情報
+profile.smart_memory_placeholder,请输入更多关于自己的信息，如：我是一名位于纽约市的分析师，主要从事 React 和 SQL。,請輸入更多關於自己的信息，如：我是一名位於紐約市的分析師，主要從事 React 和 SQL。,Please enter more information about yourself, such as: I am an analyst located in New York City, mainly working with React and SQL。,自分についてもっと情報を入力してください、例えば：私はニューヨークシティに住むアナリストで、主にReactとSQLを扱っています。
+profile.custom_memory,自定义记忆信息,自定義記憶信息,Custom Memory Information,カスタムメモリ情報
+profile.custom_memory_placeholder,请输入自定义指令，如：简洁直接。除非我另行说明，默认使用 Python。编写文档时，以专业语气书写并引用来源。,請輸入自定義指令，如：簡潔直接。除非我另行說明，否則默認使用 Python。編寫文檔時，以專業語氣書寫並引用來源。,Please enter custom instructions, such as: concise and direct. Unless otherwise specified, Python is used by default. When writing documents, use a professional tone and cite sources.,自定義指令を入力してください。例えば：簡潔直接。特に指定がない場合は、Pythonを使用します。ドキュメントを書く際には、専門的な口調で書くことと、ソースを引用することです。
+profile.save_success,设置已保存,設置已保存,Settings saved,設定が保存されました
+profile.import_memory_title,导入记忆,導入記憶,Import Memory,メモリのインポート
+profile.import_memory_desc,一键同步你在豆包、ChatGPT、Gemini等常用的AI工具的使用习惯,一鍵同步你在豆包、ChatGPT、Gemini等常用的AI工具的使用習慣,One-click synchronization of your usage habits of commonly used AI tools such as Doupa, ChatGPT, Gemini, etc.,豆包、ChatGPT、Geminiなどの常用AIツールの使用習慣を一键で同期します
+profile.import_memory_modal_title,记忆导入,記憶導入,Import Memory,メモリインポート
+profile.import_step1_title,复制以下提示词到你的豆包、ChatGPT、Gemini等常用的AI工具中,複製以下提示詞到你的豆包、ChatGPT、Gemini等常用的AI工具中,Copy the following prompt to your AI tools such as Doupa, ChatGPT, Gemini, etc.,以下のプロンプトを豆包、ChatGPT、GeminiなどのAIツールにコピーしてください
+profile.import_step2_title,将结果粘贴到下方，将自动导入到你的个人记忆,将結果粘貼到下方，將自動導入到你的個人記憶,Paste the result below, and it will be automatically imported to your personal memory,結果を以下に貼り付け、自動的に個人記憶にインポートされます
+profile.login_password,登录密码,登入密碼,Login Password,ログインパスワード
+profile.logined_devices,已登录的设备,已登入的設備,Logged-in Devices,ログイン済みデバイス
+profile.order_info,订单记录,訂單記錄,Order Information,注文情報
+profile.permanent_valid,永久有效,永久有效,Permanent,無期限
+profile.profile,个人资料,個人資料,Profile,プロフィール
+profile.renew,续费,續費,Renew,更新
+profile.subscription_info,订阅信息,訂閱信息,Subscription Information,サブスクリプション情報
+profile.unbind,解绑,解綁,Unbind,連携解除
+profile.unbind_account,未绑定,未綁定,Not Bound,未連携
+profile.unbind_success,已解绑,,Unbound,
+profile.unbind_wechat_confirm_cancel,暂不解绑,暫不解綁,Cancel,暫時解綁しない
+profile.unbind_wechat_confirm_desc,解绑后将无法使用该微信账号登录此账号，请谨慎操作！,解綁後，將無法使用微信登入，是否繼續？,"After unbinding, you will not be able to log in with WeChat. Continue?",解綁後、WeChatでログインできなくなります。続行しますか？
+profile.unbind_wechat_confirm_ok,确认解绑,確認解綁,Confirm,確認解綁
+profile.unbind_wechat_confirm_title,解绑微信账号绑定,解綁微信賬號綁定,Unbind WeChat Account Binding,WeChatアカウントのバインドを解除
+profile.used_devices,曾用设备,曾用設備,Previously Used Devices,過去に使用したデバイス
+prompt.auth_tip,你所在的分组无权限,您所在的分组无权限,You do not have permission to access this prompt,あなたの所属グループにアクセス権がありません
+prompt.content,提示词,提示詞Prompt Content,プロンプト
+prompt.default_sort,默认排序,默認排序,Default Sort,デフォルト順
+prompt.explore,探索,探索,Explore,探索
+prompt.let_use_prompt,去使用这个提示词,去使用这个提示词,Use this prompt,去使用这个提示词
+prompt.not_found,提示词不存在,提示詞不存在,Prompt not found,プロンプトが見つかりません
+prompt.likes_sort,按最多点赞排序,按最多點讚排序,Likes Sort,いいね順
+prompt.views_sort,按最多浏览排序,按最多瀏覽排序,Views Sort,閲覧順
+queue.ai_generate_queue_title,生成队列,生成佇列,AI Generation Queue,AI生成キュー
+queue.cancelled,已取消,已取消,Cancelled,キャンセル済み
+queue.chunk_failed,拆分失败,拆分失敗,Chunking Failed,分割失敗
+queue.chunk_successful,拆分成功,拆分成功,Chunking Successful,分割成功
+queue.chunking,拆分中,拆分中,Chunking,分割中
+queue.confirm_cancel,确定取消吗,確定取消嗎,Are you sure you want to cancel?,キャンセルしてもよろしいですか？
+queue.convert_failed,解析失败,解析失敗,Conversion Failed,解析失敗
+queue.convert_queue_title,解析队列,解析佇列,Conversion Queue,解析キュー
+queue.convert_successful,解析成功,解析成功,Conversion Successful,解析成功
+queue.converting,解析中,解析中,Converting,解析中
+queue.generate_failed,生成失败,生成失敗,Generation Failed,生成失敗
+queue.generate_successful,生成成功,生成成功,Generation Successful,生成成功
+queue.generating,生成中,生成中,Generating,生成中
+queue.index_failed,索引失败,索引失敗,Indexing Failed,インデックス作成失敗
+queue.index_queue_title,索引队列,索引佇列,Indexing Queue,インデックスキュー
+queue.index_successful,索引成功,索引成功,Indexing Successful,インデックス作成成功
+queue.indexing,索引中,索引中,Indexing,インデックス作成中
+queue.pending,排队中,排队中,Pending,待機中
+queue.retry,重试,重試,Retry,再試行
+queue.view,查看,查看,View,表示
+recall.input_placeholder,请输入文本，建议使用简短的陈述句.,請輸入文本，建議使用簡短的陳述句,Please enter text (short declarative sentences recommended),テキストを入力してください（短い平叙文が推奨されます）
+recall.match,匹配度Top{count},匹配度前{count}名,Top {count} matches,マッチ度トップ{count}
+recall.query,提问,提問,Query,質問
+recall.quiz,提问,提問,Query,質問
+recall.quiz_tip,根据提问的匹配内容的相似度排行进行模型的标注与调优,根據提問的匹配內容的相似度排行進行模型的標註與調優,Model annotation and tuning based on similarity ranking of matched content,質問にマッチした内容の類似度ランキングに基づいてモデルの注釈付けとチューニングを行います
+recall.recall,召回测试,召回測試,Recall test,リコールテスト
+recall.recent_search,最近查询,最近查詢,Recent searches,最近の検索
+recall.score,得分：{score},得分：{score},Score: {score},スコア：{score}
+recall.scoure,数据源: {file},數據源: {file},Data source: {file},データソース: {file}
+recall.show_result,命中测试结果将展示在这里,命中測試結果將展示在這裡,Hit test results will be displayed here,ヒットテスト結果はここに表示されます
+recall.test,测试,測試,Test,テスト
+recall.need_model,需要先配置模型,需要先配置模型,Need to configure model first,先にモデルを設定してください
+recall.time,时间,時間,Time,時間
+register.agree,注册即视您同意,註冊即視您同意,"By registering, you agree to",登録することで、あなたは同意したとみなされます
+register.privacy_policy,隐私政策,隱私政策,Privacy Policy,プライバシーポリシー
+register.terms_of_service,条款和条件,條款和條件,Terms of Service,利用規約
+register.unregister,,,Unregister,未登録
+register.unregistered,未注册,未註冊,Unregistered,
+response_code.agent_error,智能体错误,智能體錯誤,Agent error,エージェントエラー
+response_code.auth_error,认证错误,認證錯誤,Authentication error,認証エラー
+response_code.database_error,数据库错误,數據庫錯誤,Database error,データベースエラー
+response_code.file_error,文件错误,文件錯誤,File error,ファイルエラー
+response_code.forbidden_error,用户已禁用，请联系管理员 ,用戶已禁用，請聯繫管理員,"User is disabled, please contact the administrator",ユーザーが無効になっています、管理者に連絡してください
+response_code.network_error,网络错误，请重新尝试,網絡錯誤，請重新嘗試,"Network error, please try again",ネットワークエラー、再試行してください
+response_code.not_found_error,未找到错误,未找到錯誤,Not found error,見つかりませんエラー
+response_code.param_error,参数错误,參數錯誤,Parameter error,パラメータエラー
+response_code.success,成功,成功,Success,成功
+response_code.system_error,系统错误,系統錯誤,System error,システムエラー
+response_code.token_expired_error,身份过期错误,身份過期錯誤,Token expired error,認証期限切れエラー
+response_code.unauthorized_error,身份认证错误,身份認證錯誤,Authentication error,認証エラー
+response_code.verification_code_error,验证码错误,驗證碼錯誤,Verification code error,認証コードエラー
+response_data.apply_already_submitted,您已提交过申请，请勿重复提交,您已提交過申請，請勿重複提交,"You have already submitted an application, please do not submit again",既に申請を提出しています。重複して提出しないでください
+response_data.domain_already_bound,该域名已被绑定,該域名已被綁定,This domain is already bound,このドメインは既にバインドされています
+response_message.auth_failed,无权限查看,無權限查看,No permission to view,無権限表示
+response_message.code_expired_or_invalid,验证码已过期或无效，请重新获取,驗證碼已過期或無效，請重新獲取,The verification code has expired or is invalid, please obtain it again,確認コードが期限切れか無効です。再取得してください
+response_message.email_already_bind,邮箱已被其他用户绑定,郵箱已被其他用戶綁定,The email address is already bound to another user,メールアドレスは他のユーザーに登録済みです
+response_message.mobile_already_bind,手机号已被其他用户绑定,手機號已被其他用戶綁定,The phone number has already been bound to another user,携帯電話番号はすでに他のユーザーに登録されています
+response_message.model_changed,管理员已修改模型，请新建对话,管理員已修改模型，請新建對話,"The administrator has changed the model, please create a new conversation",管理者がモデルを変更しました、新しい会話を作成してください
+response_message.operate_too_fast,操作过快，请稍后再试,操作過快，請稍後再試,"Operating too fast, please try again later",操作が速すぎます。しばらくしてからお試しください
+response_message.unknown_error,未知错误,未知錯誤,Unknown error,不明なエラー
+response_message.user_not_found,用户不存在,用戶不存在,User does not exist,ユーザーが存在しません
+response_message.wechat_user_not_found,微信账号未绑定，请先绑定手机号,微信賬號未綁定，請先綁定手機號,WeChat account is not bound. Please bind your mobile number first.,WeChatアカウントがバインドされていません。先に携帯番号をバインドしてください
+response_message.username_already_exists,用户名已存在,用戶名已存在,Username already exists,ユーザー名が既に存在します
+response_message.username_or_password_is_incorrect,用户名或密码错误,用戶名或密碼錯誤,Username or password is incorrect,ユーザー名またはパスワードが間違っています
+response_message.wechat_already_bind,微信号已被其他用户绑定,微信號已被其他用戶綁定,WeChat account has been bound to another user,WeChatアカウントはすでに他のユーザーに登録されています
+response_message.name_already_exists,名称已存在,名稱已存在,Name already exists,名前はすでに存在します
+response_status.400,请求参数错误,請求參數錯誤,Request parameter error,リクエストパラメータエラー
+response_status.401,未授权，请登录,未授權，請登入,"Unauthorized, please login",認証されていません、ログインしてください
+response_status.403,拒绝访问,拒絕訪問,Access denied,アクセス拒否
+response_status.404,请求资源不存在,請求資源不存在,Requested resource does not exist,リソースが見つかりません
+response_status.500,服务器错误,伺服器錯誤,Server error,サーバーエラー
+response_status.502,网关错误,網關錯誤,Gateway error,ゲートウェイエラー
+response_status.503,服务不可用,服務不可用,Service unavailable,サービス利用不可
+response_status.504,网关超时,網關超時,Gateway timeout,ゲートウェイタイムアウト
+shortcut.add,添加到快捷方式,添加到快捷方式,Add to shortcut,ショートカットに追加
+shortcut.desc,快速访问各类常用工具,快速訪問各種常用工具,Quick access to common tools,一般的なツールへの迅速なアクセス
+shortcut.remove,移出快捷方式,移出快捷方式,Remove from shortcut,ショートカットから削除
+shortcut.title,快捷方式,快捷方式,Shortcut,ショートカット
+space.create,创建空间,創建空間,Create Space,スペースを作成
+space.expand,扩容,擴容,Expand Capacity,容量拡張
+space.join,加入空间,加入空間,Join Space,スペースに参加
+space.manage,管理空间,管理空間,Manage Space,スペースを管理
+space.member,成员管理,成員管理,Member Management,メンバー管理
+space.settings,空间设置,空間設置,Space Settings,スペース設定
+space.team,团队空间,團隊空間,Team Space,チームスペース
+space.space_usage,已用 {used} / {total},已用 {used} / {total},Used {used} / {total},使用中 {used} / {total}
+status.approve_cancel,已取消,已取消,Unliked,いいねを取り消しました
+status.approve_success,已点赞,已點讚,Liked,いいねしました
+status.copy_error,复制失败, 複製失敗,Copy failed, コピー失敗
+status.copy_link,已复制分享链接,已複製分享連結,Shared link copied,共有リンクをコピーしました
+status.copy_success,复制成功, 複製成功 ,Copy successful, コピー成功
+status.delete_success,已删除,已刪除,Deleted Successfully,削除しました
+status.error,错误,錯誤,Error,エラー
+status.existing_account,已有帐号,已有帳號,Account already exists,既存のアカウント
+status.export_success,已导出,已導出,Exported Successfully,エクスポートしました
+status.export_failed,导出失败,導出失敗,Export failed,エクスポート失敗
+status.fail,失败,失敗,Failure,失敗
+status.failed,失败,失敗,Failed,失敗
+status.file_del,是否删除该文件？, 是否刪除該文件？,Do you want to delete this file?, このファイルを削除しますか？
+status.file_exist,文件已存在, 文件已存在,The file already exists, ファイルはすでに存在します
+status.files_del,是否删除该文件夹？, 是否刪除該資料夾？,Do you want to delete this folder?, このフォルダを削除しますか？
+status.files_exist,文件夹已存在, 資料夾已存在,The folder already exists, フォルダはすでに存在します
+status.folder_depth_max,文件夹层级不能超过{count}层,資料夾層級不能超過{count}層,Folder depth cannot exceed {count} levels,フォルダの階層は{count}層を超えることはできません
+status.info,信息,信息,Information,情報
+status.invalid_name_only_dot,文件名不能只是一个点,檔名不能只是一個點,File name cannot be just a dot,ファイル名は単なるドットにすることはできません
+status.load_fail,加载失败，请稍后重试,載入失敗，請稍後重試,"Loading failed, please try again later",読み込みに失敗しました。後でもう一度お試しください
+status.login_success,已登录,已登入,Logged In,ログインしました
+status.logout_success,已退出登录,已退出登入,Logged Out,ログアウトしました
+status.no_file,暂无文件,暫無文件,No files available,ファイルがありません
+status.not_found_account,"未找到账号,请先注册后再登录","未找到賬號,請先註冊後再登入","Account not found, please register first and then login",アカウントが見つかりません。登録後にログインします
+status.not_support_chunks_edit,当前文件正在解析或转换中，请稍后再试,當前文件正在解析或轉換中，請稍後再試,"The current file is being parsed or converted, please try again later",当該ファイルは解析中または変換中です。後でもう一度お試しください
+status.not_support_source_edit,当前文件类型暂不支持源文件编辑,當前文件類型暫不支持源文件編輯,The current file type does not support source file editing,当該ファイルタイプは源ファイル編集できません
+status.register_success,注册成功,註冊成功,Registration successful,登録成功
+status.retried,已重试,已重試,Retried,再試行済み
+status.save_fail,保存失败,保存失败,Save failed,保存に失敗しました
+status.import_success,导入成功,導入成功,Import Success,インポート成功
+status.save_success,已保存,已保存,Saved Successfully,保存しました
+status.sent,已发送,已發送,Sent,送信済み
+status.submitted,已提交,已提交,Submitted,送信済み
+status.success,成功,成功,Success,成功
+status.update_success,更改成功,更改成功,Update successful,更新成功
+status.updated,已更新,已更新,Updated,更新済み
+status.use,已使用：36.00 MB,已使用：36.00 MB,Used: 36.00 MB,使用済み：36.00 MB
+status.warning,警告,警告,Warning,警告
+subscription.agent_bots_title,可使用智能体,可使用智能體,Available Agents,使用可能なエージェント
+subscription.ai_assistant_title,跨平台的 AI 助手,跨平台的 AI 助手,Cross-platform AI Assistant,クロスプラットフォームの AI アシスタント
+subscription.alipay,支付宝,支付寶,Alipay,Alipay
+subscription.aside_desc,为以下用户购买,為以下用戶購買,Purchase for the following users,以下のユーザーに購入
+subscription.aside_title,新订单购买详情,新訂單購買詳情,New Order Purchase Details,新しい注文購入詳細
+subscription.credit_month_amount,每月{amount}积分,每月{amount}積分,Monthly {amount} credits,毎月{amount}積分
+subscription.expire_time,到期时间,到期時間,Expire Time,有効期限
+subscription.expire_time_desc,{group_name}将于{day}天后({expire_time})到期，马上续费延续会员权益,,{group_name} expires in {day} days ({expire_time}). Renew now to keep your membership benefits.,
+subscription.expired_time_desc,{group_name}已于{expire_time}到期，马上续费延续会员权益,,{group_name} expired on {expire_time}. Renew now to keep your membership benefits.,
+subscription.free,免费版,免費版,Free,無料版
+subscription.manual_pay,手动转账,手動轉賬,Manual Transfer,手動支払い
+subscription.manual_pay_success_desc,请等待或联系管理员确认支付信息,請等待或聯繫管理員確認支付信息,Please wait or contact the administrator to confirm the payment information,支払い情報を確認するか、管理者に連絡してください
+subscription.manual_pay_success_title,订单已生成,訂單已生成,Order Generated,注文が生成されました
+subscription.month,月,月,Month,月
+subscription.order_title,订单支付,訂單支付,Order Payment,注文支払い
+subscription.pay_amount,支付金额,支付金額,Payment Amount,支払金額
+subscription.pay_by_wechat,使用 微信扫码 支付,使用 微信掃碼 支付,Use WeChat QR Code to Pay,WeChat支払い
+subscription.pay_confirm,确认支付完成，请点击,確認支付完成，請點擊,"Confirm payment completion, please click",支払いが完了したことを確認してください、クリックしてください
+subscription.pay_policy,支付即视为你同意相关 {policy},支付即視為你同意相關 {policy},Payment is deemed to agree to the relevant {policy},支払いは関連する {policy} に同意したことを意味します
+subscription.pay_success,支付成功,支付成功,Payment Successful,支払い成功
+subscription.payed,已支付,已支付,Paid,支払い済み
+subscription.payment,支付方式,支付方式,Payment Method,支払方法
+subscription.paypal,PayPal,PayPal,PayPal,PayPal
+subscription.renew,续费,,Renew,
+subscription.time_title,选择购买时长,選擇購買時長,Select Purchase Duration,購入期間を選択
+subscription.time_unit_month,1个月,1個月,One Month,1ヶ月
+subscription.time_unit_year,1年,1年,One Year,1年
+subscription.total,总计,總計,Total,総計
+subscription.upgrade,升级,升級,Upgrade,アップグレード
+subscription.version_title,选择版本,選擇版本,Select Version,バージョンを選択
+subscription.wechat_pay,微信,微信,WeChat Payment,WeChat支払い
+subscription.year,年,年,Year,年
+table.footer_text,共有 {total} 条,共有 {total} 條,Total {total} items,合計 {total} 項目
+time.days_ago,{count}天前,{count}天前,{count} days ago,{count}日前
+time.hours_ago,{count}小时前,{count}小時前,{count} hours ago,{count}時間前
+time.just_now,刚刚,剛剛,Just now,たった今
+time.minutes_ago,{count}分钟前,{count}分鐘前,{count} minutes ago,{count}分前
+time.over_7_days,7天前,7天前,Over 7 days ago,7日より前
+time.today,今天,今天,Today,今日
+time.week_ago,一周前,一週前,A week ago,1週間前
+time.week_last,一周内,一週內,Within a week,1週間以内
+time.within_7_days,近7天,近7天,Last 7 days,過去7日間
+time.yesterday,昨天,昨天,Yesterday,昨日
+time.seconds,秒,秒,seconds,秒
+toolbox.account_access,共享账号, 共享帳號 ,Shared account, 共有アカウント
+toolbox.account_text,以下是共享的账号与密码，仅限本人使用, 以下是共享的帳號與密碼，僅限本人使用,"The following are the shared account and password, for personal use only", 以下は共有のアカウントとパスワードです。本人専用です
+toolbox.account_text2,您可以复制下列共享的账号密码，访问目标站点,您可以複製下列共享的帳號密碼，訪問目標站點,You can copy the shared account password to access the target site, 以下は共有のアカウントとパスワードです。本人専用です
+toolbox.click_access,点击访问, 點擊訪問 ,Click to access, クリックでアクセス
+toolbox.direct_access,直接访问, 直接訪問 ,Direct access, 直接アクセス
+toolbox.explore,探索,探索,Explore,探索
+toolbox.input_placeholder,多个AI解答你输入的问题，Shift+Enter换行，Enter发送,百寶箱可以讓你快速找到你需要的答案，Shift+Enter换行，Enter发送,Send a message,AIの世界を拡大しよう
+toolbox.max_agent_count,最多只能选择{count}个模型,最多只能选择{count}个模型,You can only select {count} agents,最大で{count}つのモデルを選択できます
+toolbox.name,AI聚合问答,AI聚合问答,AI Aggregation,ツールボックス
+toolbox.search_placeholder,搜索网站,搜索網站,Search website,ウェブサイトを検索
+toolbox.title,准备好了吗？开始体验AI聚合问答啦！,準備好了嗎？開始體驗百寶箱吧！,"Use AI large model to intelligently generate content, just input your requirements for one-click content creation",AIの世界を拡大しよう
+updater.checkUpdate,检查更新,檢查更新,Check for Updates,更新を確認
+updater.completed,更新完成，是否立即重启？,更新完成，是否立即重啟？,"Update completed, restart now?",更新が完了しました。今すぐ再起動しますか？
+updater.completedTitle,更新提示,更新提示,Update Notification,更新通知
+updater.currentVersion,当前版本 v{version},當前版本 v{version},Current version v{version},現在のバージョン v{version}
+updater.downloading,正在下载更新,正在下載更新,Downloading update,更新をダウンロード中
+updater.newVersion,发现新版本，是否立即更新？,發現新版本，是否立即更新？,"New version found, update now?",新しいバージョンが見つかりました。今すぐ更新しますか？
+updater.newVersionTitle,更新提示,更新提示,Update Notification,更新通知
+updater.noUpdate,当前已是最新版本,當前已是最新版本,Current version is up to date,現在最新バージョンです
+upgrade_dialog.cancel,关闭注册,關閉註冊,Close Registration,登録を閉じる
+upgrade_dialog.register_user,站点注册用户,站點註冊用戶,Site registered users,サイト登録ユーザー
+upgrade_dialog.title,站点注册用户已达上限，请联系管理员~~,站點註冊用戶已達上限，請聯繫管理員~~,"The number of registered users of the site has reached the upper limit, please contact the administrator~~",サイトの登録ユーザー数が上限に達しました、管理者に連絡してください~~
+form.input_placeholder_max_length,最大限制输入{max}个字符,最大限制輸入{max}個字符,Maximum {max} characters allowed,最大入力{max}文字
+form.upload_placeholder,请上传,請上傳,Please upload,アップロードしてください
+skill.binding_id_not_found,技能绑定ID不存在,技能绑定ID不存在,Skill binding ID not found,スキルのバインドIDが存在しません
+skill.enable_first,请先启用技能再使用,請先啟用技能再使用,Please enable the skill first,先にスキルを有効にしてください
+skill.disabled_by_admin,当前技能已禁用，请联系管理员,當前技能已禁用，請聯繫管理員,The skill has been disabled by admin, please contact administrator,現在のスキルは管理者によって無効にされています
+skill.workbench_use,工作台使用,工作台使用,Use in workbench,ワークベンチで使用
+skill.confirm_delete,确认删除 {name} 技能吗？,確認刪除 {name} 技能嗎？,Are you sure you want to delete skill {name}?,{name} スキルを削除してもよろしいですか？
+skill.id_empty,技能ID不能为空,技能ID不能為空,Skill ID cannot be empty,スキルIDを空にすることはできません
+skill.fetch_detail_failed,获取技能详情失败,獲取技能詳情失敗,Failed to get skill details,スキルの詳細の取得に失敗しました
+skill.soft_mode_only,当前为网站模式，工作台功能仅支持软件模式，请联系管理员切换,當前為網站模式，工作台功能僅支持軟件模式，請聯繫管理員切換,Workbench is only available in software mode, please contact admin to switch,現在はWebモードです。ワークベンチはソフトウェアモードでのみ利用可能です。管理者に連絡して切り替えてください
+skill.download_success,下载成功,下載成功,Download successful,ダウンロード成功
+skill.install,安装,安裝,Install,インストール
+skill.download_failed,下载失败，请重试,下載失敗，請重試,Download failed, please try again,ダウンロードに失敗しました、もう一度お試しください
+workbench.title,工作台,工作台,Workbench,ワークベンチ
+workbench.add_from_portal,从AI门户添加,從AI門戶添加,Add from AI Portal,AIポータルから追加
+workbench.add_from_portal_desc,从AI门户中添加一个智能体，适合企业预设场景,從AI門戶中添加一個智能體，適合企業預設場景,Add an agent from AI Portal, suitable for enterprise preset scenarios,エンタープライズプリセットシナリオに適したAIポータルからエージェントを追加
+workbench.add_from_my_agent,从我的智能体添加,從我的智能體添加,Add from My Agents,マイエージェントから追加
+workbench.add_from_my_agent_desc,从我的智能体中添加一个智能体，对话仅本人可见,從我的智能體中添加一個智能體，對話僅本人可見,Add an agent from My Agents, conversations visible only to you,マイエージェントから追加、会話は自分のみ閲覧可能
+skill.detail_title,技能详情,技能詳情,Skill Details,スキル詳細
+skill.add_skill,添加技能,添加技能,Add Skill,スキルを追加
+skill.add_to_agent,将此技能添加至,將此技能添加至,Add this skill to,このスキルを追加先
+skill.select_agent,请选择小助理,請選擇小助理,Select an agent,エージェントを選択してください
+skill.quality_score,质量评分,質量評分,Quality Score,品質スコア
+skill.capabilities,能做什么,能做什麼,Capabilities,機能
+skill.usage_example,使用示例,使用示例,Usage Examples,使用例
+skill.best_practice,最佳实践,最佳實踐,Best Practices,ベストプラクティス
+skill.positive_case,正面案例,正面案例,Positive Examples,良い例
+skill.negative_case,反面案例,反面案例,Negative Examples,悪い例
+skill.faq,常见问题,常見問題,FAQ,よくある質問
+mine.title,我的,我的,Mine,マイページ
+mine.ai_generated,AI生成的,AI生成的,AI Generated,AI生成
+mine.uploaded,我上传的,我上傳的,My Uploads,アップロード済み
+mine.recording,我的录音,我的錄音,My Recordings,マイ録音
+mine.new_file,新建文件,新建文件,New File,新規ファイル
+mine.search_recording,搜索录音,搜索錄音,Search recordings,録音を検索
+mine.import,导入,導入,Import,インポート
+mine.record_btn,录音,錄音,Record,録音
+mine.space_init,个人空间正在初始化，请稍候...,個人空間正在初始化，請稍候...,Personal space is initializing, please wait...,個人スペースを初期化中、お待ちください...
+mine.untitled_folder,无标题文件夹,無標題文件夾,Untitled Folder,無題のフォルダ
+mine.untitled_knowledge,无标题知识,無標題知識,Untitled Knowledge,無題のナレッジ
+mine.upload_complete,上传完成,上傳完成,Upload complete,アップロード完了
+mine.created,已创建,已創建,Created,作成済み
+mine.create_failed,创建失败,創建失敗,Creation failed,作成失敗
+mine.delete_folder_confirm,确定删除此文件夹？,確定刪除此文件夾？,Are you sure you want to delete this folder?,このフォルダを削除してもよろしいですか？
+mine.delete_failed,删除失败,刪除失敗,Deletion failed,削除失敗
+mine.favorited,已收藏,已收藏,Added to favorites,お気に入りに追加
+mine.unfavorited,已取消收藏,已取消收藏,Removed from favorites,お気に入りから削除
+mine.rename_success,已重命名,已重命名,Renamed,名前変更済み
+mine.rename_failed,重命名失败,重命名失敗,Rename failed,名前変更失敗
+mine.folder_name_placeholder,请输入文件夹名称（不能包含 / 或 \\）,請輸入文件夾名稱（不能包含 / 或 \\）,Please enter folder name (cannot contain / or \\),フォルダ名を入力してください（/ または \\ は使用できません）
+mine.all_recording,全部录音,全部錄音,All Recordings,すべての録音
+mine.unfavorite_success,已取消,已取消,Removed,削除済み
+mine.moved,已移动,已移動,Moved,移動済み
+mine.move_failed,移动失败,移動失敗,Move failed,移動失敗
+mine.no_recording_task,当前没有活跃录音任务，无法创建录音文件夹,當前沒有活躍錄音任務，無法創建錄音文件夾,No active recording task, cannot create recording folder,アクティブな録音タスクがないため、録音フォルダを作成できません
+mine.no_recording_found,未找到相关内容,未找到相關內容,No matching results found,関連する内容が見つかりません
+mine.no_recording_empty,暂无录音记录，你可以导入音频或直接录制新内容,暫無錄音記錄，你可以導入音頻或直接錄製新內容,No recordings yet. You can import audio or record new content,録音がありません。音声をインポートするか、新しいコンテンツを録音できます
+mine.upload_time,上传时间,上傳時間,Upload Time,アップロード時間
+mine.ai_empty,暂无AI生成的文档,暫無AI生成的文檔,No AI-generated documents yet,AI生成のドキュメントがありません
+mine.upload_empty,暂无文档，你可以上传或新建文档,暫無文檔，你可以上傳或新建文檔,No documents yet. You can upload or create new documents,ドキュメントがありません。アップロードまたは新規作成できます
+mine.edit_btn,编辑,編輯,Edit,編集
+mine.add_lock_failed,添加文件锁失败,添加文件鎖失敗,Failed to add file lock,ファイルロックの追加に失敗しました
+common.system,系统,系統,System,システム
+openclaw.status.connected,{gatewayName} 已连接,,{gatewayName} connected,
+openclaw.status.disconnected,{gatewayName} 未连接,,{gatewayName} disconnected,
+openclaw.status.checking,{gatewayName} 检测中,,Checking {gatewayName},
+openclaw.status.unavailable,{gatewayName} 当前不可用,,{gatewayName} is currently unavailable,
+openclaw.status.status_checking,{gatewayName} 状态检测中,,Checking {gatewayName} status,
+openclaw.input.checking,正在检测 {gatewayName} 连接...,,Checking {gatewayName} connection...,
+openclaw.input.disconnected,{gatewayName} 插件未连接，正在重连...,,{gatewayName} plugin is not connected. Reconnecting...,
+openclaw.history.preview_debug,预览与调试,,Preview & Debug,
+openclaw.history.no_title,无标题会话,,Untitled conversation,
+openclaw.history.loading,正在加载...,,Loading...,
+openclaw.history.load_more_on_scroll,向下滚动加载更多,,Scroll down to load more,
+openclaw.history.empty,暂无历史会话,,No conversation history yet,
+openclaw.history.server_cache_empty_suffix,暂无服务器缓存会话。,,No cached server conversations yet.,
+openclaw.history.current,当前会话,,Current conversation,
+openclaw.history.new,新对话,,New conversation,
+openclaw.history.connect_plugin_first,连接插件后可加载此会话,,Connect the plugin to load this conversation,
+openclaw.output_file.fallback,文件 {id},,File {id},
+openclaw.knowledge.answer_fallback,OpenClaw 回答,,OpenClaw answer,
+openclaw.preview.close_file,关闭文件预览,,Close file preview,
+openclaw.panel.settings,Gateway 设置,,Gateway settings,
+openclaw.panel.close_settings,关闭 Gateway 设置,,Close Gateway settings,
+openclaw.panel.yes,是,,Yes,
+openclaw.panel.no,否,,No,
+openclaw.panel.info_load_failed,OpenClaw 信息加载失败,,Failed to load OpenClaw information,
+openclaw.panel.connected,已连接,,Connected,
+openclaw.panel.checking,检测中,,Checking,
+openclaw.panel.disconnected,未连接,,Disconnected,
+openclaw.panel.executed,已执行,,Executed,
+openclaw.panel.disabled,未开启,,Disabled,
+openclaw.panel.pending,待执行,,Pending,
+openclaw.panel.auto,自动,,Auto,
+openclaw.panel.codex_decides,由 Codex 决定,,Determined by Codex,
+openclaw.panel.workbuddy_decides,由 WorkBuddy 决定,,Determined by WorkBuddy,
+openclaw.panel.overview,概览,,Overview,
+openclaw.panel.snapshot,快照,,Snapshot,
+openclaw.panel.status,状态,,Status,
+openclaw.panel.normal,正常,,Normal,
+openclaw.panel.abnormal,异常,,Abnormal,
+openclaw.panel.activated,已激活,,Active,
+openclaw.panel.inactive,未激活,,Inactive,
+openclaw.panel.session,会话,,Session,
+openclaw.panel.endpoint,端点,,Endpoint,
+openclaw.panel.uptime,运行时间,,Uptime,
+openclaw.panel.workspace_root,Workspace 根目录,,Workspace root,
+openclaw.panel.last_heartbeat,最后通知点,,Last heartbeat,
+openclaw.panel.tick_interval,刻度间隔,,Tick interval,
+openclaw.panel.worker_count,{count} 个,,{count},
+openclaw.panel.workbuddy_api,WorkBuddy API：{value},,WorkBuddy API: {value},
+openclaw.panel.codex_app_server,Codex App Server：{value},,Codex App Server: {value},
+openclaw.panel.channel_connection_desc,使用频道连接 WhatsApp、Telegram、Discord、Signal 或 iMessage。,,"Use channels to connect WhatsApp, Telegram, Discord, Signal, or iMessage.",
+openclaw.panel.version,版本,,Version,
+openclaw.panel.current_version,当前版本,,Current version,
+openclaw.panel.model,模型,,Model,
+openclaw.panel.model_name,模型名称,,Model name,
+openclaw.panel.max_context,最大上下文,,Max context,
+openclaw.panel.permission_mode,权限模式,,Permission mode,
+openclaw.panel.cron_tasks,定时任务,,Scheduled tasks,
+openclaw.panel.task_overview,任务总览,,Task overview,
+openclaw.panel.total_tasks,任务总数,,Total tasks,
+openclaw.panel.enabled,已开启,,Enabled,
+openclaw.panel.enabled_section,已启用,,Enabled,
+openclaw.panel.task_fallback,任务 {index},,Task {index},
+openclaw.panel.frequency,频率：{value},,Frequency: {value},
+openclaw.panel.last_run,上次：{value},,Last run: {value},
+openclaw.panel.every_day,每天,,Every day,
+openclaw.panel.no_record,暂无记录,,No record yet,
+openclaw.panel.no_cron_tasks,暂无定时任务,,No scheduled tasks yet,
+openclaw.panel.skills,技能,,Skills,
+openclaw.panel.skill_icon,{title} 图标,,{title} icon,
+openclaw.panel.no_skills,暂无技能信息,,No skill information yet,
+setting.title,设置,設置,Settings,設定
+setting.basic_info,基本信息,基本資訊,Basic Info,基本情報
+setting.model_setting,模型设置,模型設置,Model Settings,モデル設定
+setting.current_model,当前模型,當前模型,Current Model,現在のモデル
+setting.planning_reasoning,规划推理,規劃推理,Planning & Reasoning,計画と推論
+setting.skill_execution,技能执行,技能執行,Skill Execution,スキル実行
+setting.quick_response,快速回答,快速回答,Quick Response,迅速な応答
+setting.deep_thinking,深度思考,深度思考,Deep Thinking,深い思考
+setting.memory,记忆,記憶,Memory,記憶
+setting.memory_desc,记忆让AI记住你的偏好和习惯,記憶讓AI記住你的偏好和習慣,Memory helps AI remember your preferences,記憶はAIにあなたの好みと習慣を覚えさせます
+setting.skill,技能,技能,Skills,スキル
+setting.skill_desc,管理智能体可使用的技能,管理智能體可使用的技能,Manage skills available to the agent,エージェントが使用できるスキルを管理
+setting.generate_setting,生成设置,生成設置,Generation Settings,生成設定
+setting.generate_setting_desc,配置AI搜问的生成参数,配置AI搜問的生成参數,Configure AI search generation parameters,AI検索の生成パラメータを設定
+setting.default_range,默认范围,預設範圍,Default Range,デフォルト範囲
+setting.all_knowledge_base,全部知识库,全部知識庫,All Knowledge Bases,すべてのナレッジベース
+setting.enabled,已启用,已啟用,Enabled,有効
+setting.disabled,未启用,未啟用,Disabled,無効
+setting.use_scope,使用范围,使用範圍,Use Scope,使用範囲
+setting.current_config,当前配置,當前配置,Current Config,現在の構成
+setting.info,设置信息,設置資訊,Setting Info,設定情報
+setting.platform_access,平台接入,平台接入,Platform Access,プラットフォームアクセス
+setting.platform_auth_info,当前 Agent 的平台授权信息,當前 Agent 的平台授權信息,Current Agent platform authorization info,現在のエージェントのプラットフォーム認証情報
+status.account_disabled_desc,账号已被禁用，请联系管理员开启~,帳號已被停用，請聯繫管理員開啟~,Your account has been disabled, please contact administrator to enable,アカウントは無効になっています。管理者に連絡して有効化してください

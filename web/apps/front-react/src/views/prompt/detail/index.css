@@ -1,0 +1,66 @@
+.prompt-detail-view {
+  background: #fff;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Slide transition */
+.slide-enter {
+  transform: translateX(100%);
+}
+
+.slide-enter-active {
+  transform: translateX(0);
+  transition: transform 300ms ease-out;
+}
+
+.slide-exit {
+  transform: translateX(0);
+}
+
+.slide-exit-active {
+  transform: translateX(100%);
+  transition: transform 300ms ease-in;
+}
+
+/* CM Editor scoped styles - matching Vue ::v-deep styles */
+.cm-gutters {
+  border-right-color: transparent;
+  background-color: #f2f3f5 !important;
+}
+
+.cm-gutters,
+.cm-content {
+  padding: 16px 0;
+}
+
+.cm-gutterElement {
+  background-color: transparent !important;
+  height: 26px;
+  margin-top: 0 !important;
+}
+
+.cm-line {
+  padding: 0 16px;
+}
+
+.cm-line,
+.cm-gutterElement {
+  line-height: 26px;
+}
+
+.markdown-body {
+  background-color: transparent;
+}

@@ -1,0 +1,152 @@
+/* 划词高亮插件样式 */
+
+/* 自动高亮样式 */
+.text-auto-highlight {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+}
+
+.text-auto-highlight:hover {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+}
+
+/* 手动高亮样式 */
+.text-highlight {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+  padding: 2px 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.text-highlight:hover {
+  background-color: rgba(37, 99, 235, 0.2) !important;
+}
+
+/* 菜单样式 */
+.highlight-menu {
+  display: flex;
+  flex-direction: row;
+  padding: 0 4px;
+  gap: 2px;
+  background: white;
+  height: 34px;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  position: relative;
+  z-index: 20;
+}
+
+.highlight-menu-item {
+  background: transparent;
+  height: 26px;
+  padding: 0 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #1d1e1f;
+  transition: background 0.2s;
+  font-family: inherit;
+}
+
+/* 主菜单按钮（非下拉按钮）文字截断，最多显示4个字符 */
+.highlight-menu-item:not(.dropdown-toggle) {
+  overflow: hidden;
+}
+
+.highlight-menu-item:not(.dropdown-toggle) .button-text {
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 5em; /* 5个字符宽度，使用em单位更精确 */
+  vertical-align: middle;
+}
+
+.highlight-menu-item .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.highlight-menu-item:hover {
+  background: #f4f5f7;
+}
+
+.highlight-menu-item:active {
+  background: #d0d0d0;
+}
+
+/* 下拉按钮 */
+.highlight-menu-item.dropdown-toggle {
+  position: relative;
+}
+
+/* 下拉菜单 */
+.highlight-menu .dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: white;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  padding: 4px;
+  z-index: 21;
+  display: none;
+  border: 1px solid #eee;
+  max-height: 360px; /* 10个菜单项 * 32px + 8px padding = 328px，留一些余量 */
+  overflow-y: auto;
+  white-space: nowrap;
+}
+
+.highlight-menu .dropdown-menu.visible {
+  display: block;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.highlight-menu .dropdown-menu .highlight-menu-item {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 6px 12px;
+  height: auto;
+  min-height: 32px;
+  border-radius: 4px;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.highlight-menu .dropdown-menu .highlight-menu-item:hover {
+  background: #f4f5f7;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .highlight-menu {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .highlight-menu-item {
+    width: 100%;
+    text-align: center;
+  }
+}
+

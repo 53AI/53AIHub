@@ -1,0 +1,127 @@
+.echarts-viewer {
+  height: 360px;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  background-color: #f9fafb;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.echarts-viewer--fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+}
+
+.echarts-viewer__header {
+  flex: none;
+  height: 2.5rem;
+  background-color: #ebecef;
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+}
+
+.echarts-viewer__tabs-container {
+  flex: 1;
+}
+
+.echarts-viewer__tabs {
+  display: inline-flex;
+  height: 1.75rem;
+  padding: 0 0.125rem;
+  align-items: center;
+  background-color: #e1e2e6;
+  border-radius: 0.5rem;
+}
+
+.echarts-viewer__tab {
+  width: 4rem;
+  height: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #4f5052;
+}
+
+.echarts-viewer__tab--active {
+  background-color: white;
+  color: #1d1e1f;
+}
+
+.echarts-viewer__actions {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.echarts-viewer__icon {
+  cursor: pointer;
+}
+
+.echarts-viewer__dropdown {
+  position: relative;
+}
+
+.echarts-viewer__dropdown-trigger {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.echarts-viewer__dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+  background-color: white;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  min-width: 120px;
+}
+
+.echarts-viewer__dropdown-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #606266;
+  white-space: nowrap;
+}
+
+.echarts-viewer__dropdown-item:hover {
+  background-color: #f5f7fa;
+  color: #409eff;
+}
+
+.echarts-viewer__content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.echarts-viewer__diagram {
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+}
+
+.echarts-viewer__code {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.echarts-viewer .echarts-viewer__code-pre {
+  white-space: pre-wrap;
+  height: 100%;
+  padding: 1rem;
+  overflow-y: auto;
+}

@@ -1,0 +1,16 @@
+/* Footer styles */
+.footer-bg {
+  background-color: var(--page-footer-bg-color, #18191f);
+}
+
+.footer-text {
+  color: var(--page-footer-text-color, #f2f2f2);
+}
+
+.page-footer-bg {
+  background-color: var(--page-footer-bg-color, #18191f);
+}
+
+.page-footer-text {
+  color: var(--page-footer-text-color, #f2f2f2);
+}

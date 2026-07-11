@@ -1,0 +1,30 @@
+.skill-file-tree {
+  .ant-tree-treenode {
+    padding-left: 18px !important;
+    height: 32px !important;
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 0 !important;
+  }
+  .ant-tree-treenode-selected {
+    background-color: #F0F0F2 !important;
+  }
+  .ant-tree-treenode-selected .ant-tree-node-content-wrapper {
+    background-color: transparent !important;
+  }
+  .ant-tree-treenode:hover {
+    background-color: #F5F5F7 !important;
+  }
+  .ant-tree-treenode:hover .ant-tree-node-content-wrapper {
+    background-color: transparent !important;
+  }
+  .ant-tree-switcher {
+    width: 16px !important;
+    height: 16px !important;
+    margin: 8px 0 !important;
+  }
+  :where(.css-dev-only-do-not-override-1t2537o).ant-tree .ant-tree-switcher:before {
+    display: none !important;
+  }
+}
+
