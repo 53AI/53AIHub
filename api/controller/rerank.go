@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
@@ -18,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
 	billing_ratio "github.com/songquanpeng/one-api/relay/billing/ratio"
+	"github.com/songquanpeng/one-api/relay/channeltype"
 	"github.com/songquanpeng/one-api/relay/meta"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
 )
@@ -78,10 +80,7 @@ func Rerank(c *gin.Context) {
 	if err := c.ShouldBindJSON(&rerankRequest); err != nil {
 		logger.Errorf(ctx, "解析 rerank 请求失败: %v", err)
 		c.JSON(http.StatusBadRequest, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "请求参数格式错误: " + err.Error(),
 				Type:    "invalid_request_error",
 			},
@@ -93,10 +92,7 @@ func Rerank(c *gin.Context) {
 	if err := validateRerankRequest(&rerankRequest); err != nil {
 		logger.Errorf(ctx, "rerank 请求参数验证失败: %v", err)
 		c.JSON(http.StatusBadRequest, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: err.Error(),
 				Type:    "invalid_request_error",
 			},
@@ -123,10 +119,7 @@ func Rerank(c *gin.Context) {
 	if userId == 0 {
 		logger.SysErrorf("❌ Rerank请求失败 - 用户身份验证失败")
 		c.JSON(http.StatusUnauthorized, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "未授权访问",
 				Type:    "authentication_error",
 			},
@@ -139,10 +132,7 @@ func Rerank(c *gin.Context) {
 	if err != nil {
 		logger.SysErrorf("❌ Rerank请求失败 - 用户信息获取失败, UserID: %d, Error: %v", userId, err)
 		c.JSON(http.StatusUnauthorized, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "用户信息获取失败",
 				Type:    "authentication_error",
 			},
@@ -158,10 +148,7 @@ func Rerank(c *gin.Context) {
 	if channelType == -1 {
 		logger.SysErrorf("❌ Rerank请求失败 - 不支持的模型: %s", rerankRequest.Model)
 		c.JSON(http.StatusBadRequest, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: fmt.Sprintf("不支持的 rerank 模型: %s", rerankRequest.Model),
 				Type:    "invalid_request_error",
 			},
@@ -174,10 +161,7 @@ func Rerank(c *gin.Context) {
 	if err != nil {
 		logger.Errorf(ctx, "❌ 获取 rerank 渠道失败: %v", err)
 		c.JSON(http.StatusInternalServerError, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: "暂无可用的 rerank 服务渠道",
 				Type:    "service_unavailable",
 			},
@@ -196,10 +180,7 @@ func Rerank(c *gin.Context) {
 	if err != nil {
 		logger.Errorf(ctx, "❌ 执行 rerank 请求失败: %v", err)
 		c.JSON(http.StatusInternalServerError, model.OpenAIErrorResponse{
-			Error: struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-			}{
+			Error: model.OpenAIError{
 				Message: err.Error(),
 				Type:    "service_error",
 			},
@@ -253,7 +234,14 @@ func validateRerankRequest(req *RerankRequest) error {
 
 // getChannelTypeByModel 根据模型名称确定渠道类型
 func getChannelTypeByModel(modelName string) int {
-	// 百炼模型
+	// 使用模型目录加载器获取渠道类型
+	loader := common.GetModelCatalogLoader()
+	channelType := loader.GetChannelTypeByRerankModel(modelName)
+	if channelType != -1 {
+		return channelType
+	}
+
+	// 如果没有找到，检查是否为百炼模型的特殊前缀
 	if strings.HasPrefix(modelName, "gte-rerank") {
 		return model.ChannelApiBailian
 	}
@@ -286,8 +274,12 @@ func executeRerankRequest(c *gin.Context, req *RerankRequest, channel *model.Cha
 
 	// 根据渠道类型处理请求
 	switch channel.Type {
-	case model.ChannelApiBailian:
+	case model.ChannelApiBailian, channeltype.Ali:
 		return executeAliRerankRequest(c, req, meta)
+	case channeltype.SiliconFlow: // 硅基流动渠道类型
+		return executeSiliconFlowRerankRequest(c, req, meta)
+	case model.ChannelApiTypeAppBuilderModel: // 百度千帆渠道类型
+		return executeBaiduQianfanRerankRequest(c, req, meta)
 	default:
 		return nil, nil, fmt.Errorf("不支持的渠道类型: %d", channel.Type)
 	}
@@ -297,6 +289,10 @@ func executeRerankRequest(c *gin.Context, req *RerankRequest, channel *model.Cha
 func executeAliRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
 	// 创建新的 service 实例
 	rerankService := &service.BailianRerankService{}
+	// 如果模型名称是 qwen-开头的，需要把qwen-替换成空
+	if strings.HasPrefix(req.Model, "qwen-") {
+		req.Model = strings.Replace(req.Model, "qwen-", "", 1)
+	}
 
 	// 将 controller 中的 RerankRequest 转换为 service 中的 RerankRequest
 	serviceReq := &service.RerankRequest{
@@ -309,6 +305,106 @@ func executeAliRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta
 
 	// 调用 service 的方法
 	serviceResp, usage, err := rerankService.CallBailianRerankAPI(c.Request.Context(), serviceReq, meta)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 将 service 中的 RerankResponse 转换为 controller 中的 RerankResponse
+	controllerResp := &RerankResponse{
+		Object: serviceResp.Object,
+		Model:  serviceResp.Model,
+		Usage: RerankUsage{
+			TotalTokens: serviceResp.Usage.TotalTokens,
+		},
+	}
+
+	// 转换 Data 字段
+	controllerResp.Data = make([]RerankResult, len(serviceResp.Data))
+	for i, serviceResult := range serviceResp.Data {
+		controllerResult := RerankResult{
+			Object:         serviceResult.Object,
+			Index:          serviceResult.Index,
+			RelevanceScore: serviceResult.RelevanceScore,
+		}
+
+		if serviceResult.Document != nil {
+			controllerResult.Document = &RerankDocument{
+				Text: serviceResult.Document.Text,
+			}
+		}
+
+		controllerResp.Data[i] = controllerResult
+	}
+
+	return controllerResp, usage, nil
+}
+
+// executeSiliconFlowRerankRequest 执行硅基流动 rerank 请求
+func executeSiliconFlowRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
+	// 创建新的 service 实例
+	rerankService := &service.SiliconFlowRerankService{}
+
+	// 将 controller 中的 RerankRequest 转换为 service 中的 RerankRequest
+	serviceReq := &service.RerankRequest{
+		Model:           req.Model,
+		Query:           req.Query,
+		Documents:       req.Documents,
+		TopN:            req.TopN,
+		ReturnDocuments: req.ReturnDocuments,
+	}
+
+	// 调用 service 的方法
+	serviceResp, usage, err := rerankService.CallSiliconFlowRerankAPI(c.Request.Context(), serviceReq, meta)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// 将 service 中的 RerankResponse 转换为 controller 中的 RerankResponse
+	controllerResp := &RerankResponse{
+		Object: serviceResp.Object,
+		Model:  serviceResp.Model,
+		Usage: RerankUsage{
+			TotalTokens: serviceResp.Usage.TotalTokens,
+		},
+	}
+
+	// 转换 Data 字段
+	controllerResp.Data = make([]RerankResult, len(serviceResp.Data))
+	for i, serviceResult := range serviceResp.Data {
+		controllerResult := RerankResult{
+			Object:         serviceResult.Object,
+			Index:          serviceResult.Index,
+			RelevanceScore: serviceResult.RelevanceScore,
+		}
+
+		if serviceResult.Document != nil {
+			controllerResult.Document = &RerankDocument{
+				Text: serviceResult.Document.Text,
+			}
+		}
+
+		controllerResp.Data[i] = controllerResult
+	}
+
+	return controllerResp, usage, nil
+}
+
+// executeBaiduQianfanRerankRequest 执行百度千帆 rerank 请求
+func executeBaiduQianfanRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
+	// 创建新的 service 实例
+	rerankService := &service.BaiduQianfanRerankService{}
+
+	// 将 controller 中的 RerankRequest 转换为 service 中的 RerankRequest
+	serviceReq := &service.RerankRequest{
+		Model:           req.Model,
+		Query:           req.Query,
+		Documents:       req.Documents,
+		TopN:            req.TopN,
+		ReturnDocuments: req.ReturnDocuments,
+	}
+
+	// 调用 service 的方法
+	serviceResp, usage, err := rerankService.CallBaiduQianfanRerankAPI(c.Request.Context(), serviceReq, meta)
 	if err != nil {
 		return nil, nil, err
 	}

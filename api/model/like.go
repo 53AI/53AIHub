@@ -12,14 +12,14 @@ type Like struct {
 	UserID   int64  `json:"user_id" gorm:"column:user_id;not null;index;comment:用户ID"`
 	Type     string `json:"type" gorm:"type:varchar(50);not null;index;comment:点赞对象类型(prompt/comment等)"`
 	ObjectID int64  `json:"object_id" gorm:"column:object_id;not null;index;comment:对象ID"`
-	Status   int    `json:"status" gorm:"type:tinyint(1);not null;default:1;comment:状态(1:有效 0:取消)"`
+	Status   int8   `json:"status" gorm:"not null;default:1;comment:状态(1:有效 0:取消)"`
 	BaseModel
 }
 
 // 状态常量
 const (
-	LikeStatusActive = 1 // 有效点赞
-	LikeStatusCancel = 0 // 取消点赞
+	LikeStatusActive int8 = 1 // 有效点赞
+	LikeStatusCancel int8 = 0 // 取消点赞
 )
 
 // 对象类型常量
@@ -66,7 +66,7 @@ func (l *Like) Create() error {
 }
 
 // UpdateStatus 更新点赞状态
-func (l *Like) UpdateStatus(newStatus int) error {
+func (l *Like) UpdateStatus(newStatus int8) error {
 	if newStatus != LikeStatusActive && newStatus != LikeStatusCancel {
 		return errors.New("无效的状态值")
 	}

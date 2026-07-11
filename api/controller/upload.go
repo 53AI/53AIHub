@@ -6,12 +6,16 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // Upload
@@ -21,6 +25,8 @@ import (
 // @Accept       mpfd
 // @Produce      json
 // @Param        file  formData  file  true  "file"
+// @Param        upload_target formData string false "上传目标，attachment=附件上传，my_uploads=同步到我的上传"
+// @Security BearerAuth
 // @Success      200  {object}  model.CommonResponse{data=model.UploadFile}  "success"
 // @Router       /api/upload [post]
 func Upload(c *gin.Context) {
@@ -35,17 +41,13 @@ func Upload(c *gin.Context) {
 		return
 	}
 
-	var eid, user_id int64
-	user, err := model.GetLoginUser(c)
-	if err == nil {
-		eid = user.Eid
-		user_id = user.UserID
-	} else {
-		// 兼容用户首次没有登录，又要上传的处理
-		eid = 1
-		user_id = 1
+	uploadTarget := strings.ToLower(strings.TrimSpace(c.PostForm("upload_target")))
+	if uploadTarget == "" {
+		uploadTarget = "attachment"
 	}
 
+	eid := config.GetEID(c)
+	user_id := config.GetUserId(c)
 	if eid == 0 || user_id == 0 {
 		c.JSON(http.StatusBadRequest, model.AuthFailed.ToResponse(nil))
 		return
@@ -76,7 +78,7 @@ func Upload(c *gin.Context) {
 	}
 
 	extension := path.Ext(fileHeader.Filename)
-	PreviewKey, err := model.GetPreviewKey(hashStr, extension)
+	PreviewKey, err := model.GetPreviewKey(hashStr, extension, eid)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
 		return
@@ -85,6 +87,14 @@ func Upload(c *gin.Context) {
 	key := model.GetFileKey(PreviewKey, eid, user_id)
 	err = storage.StorageInstance.Save(fileContent, key)
 	if err != nil {
+		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
+		return
+	}
+
+	uploadFileExists := false
+	if _, err := model.GetUploadFileByEidUserHashAndSourceType(eid, user_id, hashStr, model.UploadFileSourceUserUpload); err == nil {
+		uploadFileExists = true
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
 		return
 	}
@@ -106,6 +116,24 @@ func Upload(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
 		return
 	}
+
+	if uploadTarget == "my_uploads" {
+		syncSvc := service.NewPersonalUploadSyncService(eid)
+		_, err = syncSvc.SyncUploadedFile(c.Request.Context(), user_id, uploadFile)
+		if err != nil {
+			if !uploadFileExists {
+				_ = storage.StorageInstance.Delete(key)
+				_ = model.DB.Delete(&model.UploadFile{}, uploadFile.ID).Error
+			}
+			if errors.Is(err, service.ErrPersonalWorkspaceInitializing) {
+				c.JSON(http.StatusTooManyRequests, model.OperateTooFast.ToResponse(err))
+				return
+			}
+			c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(uploadFile))
 }
 
@@ -138,12 +166,6 @@ func PreviewFile(c *gin.Context) {
 		return
 	}
 
-	fileContent, err := storage.StorageInstance.Load(uploadFile.Key)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
-		return
-	}
-
 	filename := uploadFile.FileName
 	encodedFilename := url.QueryEscape(filename)
 
@@ -151,5 +173,22 @@ func PreviewFile(c *gin.Context) {
 	c.Header("Content-Type", uploadFile.MimeType)
 	c.Header("Content-Length", fmt.Sprintf("%d", uploadFile.Size))
 
+	if _, ok := storage.StorageInstance.(*storage.LocalStorage); ok {
+		file, err := os.Open(uploadFile.Key)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
+			return
+		}
+		defer file.Close()
+		c.Status(http.StatusOK)
+		_, _ = io.Copy(c.Writer, file)
+		return
+	}
+
+	fileContent, err := storage.StorageInstance.Load(uploadFile.Key)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))
+		return
+	}
 	c.Data(http.StatusOK, uploadFile.MimeType, fileContent)
 }

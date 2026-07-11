@@ -1,0 +1,1 @@
+ALTER TABLE recording_jobs ADD COLUMN IF NOT EXISTS output_upload_file_id BIGINT NOT NULL DEFAULT 0;

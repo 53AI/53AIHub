@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
@@ -93,10 +94,21 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 	} else {
 		err, responseText, conversationId = Handler(c, resp, meta.PromptTokens, meta.ActualModelName)
 	}
-	if responseText != nil {
+
+	if err != nil {
+		logger.SysErrorf("【Coze】DoResponse 返回错误: code=%d, msg=%s, conversationId=%s",
+			err.Error.Code, err.Error.Message, conversationId)
+	}
+
+	if responseText != nil && *responseText != "" {
 		usage = openai.ResponseText2Usage(*responseText, meta.ActualModelName, meta.PromptTokens)
 	} else {
 		usage = &model.Usage{}
+		if err == nil {
+			// responseText 为空（nil 或空字符串）且没有错误，说明 Coze 返回了空响应
+			logger.SysError("【Coze】响应为空，conversation可能处于异常状态，将清理conversation_id")
+			conversationId = "" // 清理 conversation_id，下次请求创建新对话
+		}
 	}
 	usage.PromptTokens = meta.PromptTokens
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens

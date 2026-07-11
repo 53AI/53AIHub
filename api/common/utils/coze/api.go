@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"strconv"
 	"time"
 
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/model"
 )
 
@@ -148,49 +149,24 @@ type PublishedBotsResponse struct {
 	Total     int   `json:"total"`
 }
 
-// IsTokenExpired checks if token is expired (with 5 minutes buffer time)
-func IsTokenExpired(provider *model.Provider) bool {
-	return time.Now().Unix()+300 >= provider.CreatedTime+provider.ExpiresIn
+// GetTokenExpiryUnix returns the absolute expiry timestamp (seconds) for a provider's token.
+// Coze CN API returns expires_in as an absolute Unix timestamp (e.g. 1780132193),
+// while standard OAuth2 returns it as a duration in seconds (e.g. 7200).
+// This function detects which format is used and returns the correct expiry time.
+func GetTokenExpiryUnix(provider *model.Provider) int64 {
+	if provider.ExpiresIn > 1e9 {
+		return provider.ExpiresIn
+	}
+	return provider.AuthedTime/1000 + provider.ExpiresIn
 }
 
-// RefreshTokenIfNeeded refreshes token if it's about to expire
-func (c *CozeApi) RefreshTokenIfNeeded(provider *model.Provider) error {
-	if !IsTokenExpired(provider) {
-		return nil
-	}
-
-	var config model.CozeConfig
-	if err := json.Unmarshal([]byte(provider.Configs), &config); err != nil {
-		return fmt.Errorf("failed to parse provider config: %w", err)
-	}
-
-	resp, err := c.RefreshOAuthToken(config.ClientID, config.ClientSecret, provider.RefreshToken)
-	if err != nil {
-		// If refresh token expired, mark provider as unauthorized
-		if strings.Contains(err.Error(), "invalid_grant") || strings.Contains(err.Error(), "invalid_refresh_token") {
-			provider.IsAuthorized = false
-			if updateErr := model.UpdateProvider(provider); updateErr != nil {
-				return fmt.Errorf("failed to update provider authorization status: %w", updateErr)
-			}
-			return fmt.Errorf("refresh token expired, reauthorization required: %w", err)
-		}
-		return fmt.Errorf("failed to refresh token: %w", err)
-	}
-
-	provider.AccessToken = resp.AccessToken
-	provider.RefreshToken = resp.RefreshToken
-	provider.ExpiresIn = resp.ExpiresIn
-	provider.CreatedTime = time.Now().Unix()
-
-	return model.UpdateProvider(provider)
+// IsTokenExpired checks if token is expired (with 5 minutes buffer time)
+func IsTokenExpired(provider *model.Provider) bool {
+	return time.Now().Unix()+300 >= GetTokenExpiryUnix(provider)
 }
 
 // GetWorkspaces retrieves list of workspaces
 func (c *CozeApi) GetWorkspaces(provider *model.Provider, pageNum int, pageSize int) (*WorkspacesResponse, error) {
-	if err := c.RefreshTokenIfNeeded(provider); err != nil {
-		return nil, err
-	}
-
 	url := c.BaseUrl + "/v1/workspaces"
 	query := fmt.Sprintf("?page_num=%d&page_size=%d", pageNum, pageSize)
 	url = url + query
@@ -231,8 +207,8 @@ func (c *CozeApi) GetWorkspaces(provider *model.Provider, pageNum int, pageSize 
 
 // GetPublishedBots retrieves list of published bots
 func (c *CozeApi) GetPublishedBots(provider *model.Provider, spaceID string, pageIndex int, pageSize int) (*PublishedBotsResponse, error) {
-	if err := c.RefreshTokenIfNeeded(provider); err != nil {
-		return nil, err
+	if decoded, err := hashids.TryParseID(spaceID); err == nil {
+		spaceID = strconv.FormatInt(decoded, 10)
 	}
 
 	url := c.BaseUrl + "/v1/space/published_bots_list"

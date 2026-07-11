@@ -127,34 +127,34 @@ func GetShare(c *gin.Context) {
 
 	rec, err := model.GetShareRecordByShareID(shareID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("分享不存在"))
+		c.JSON(http.StatusOK, model.NotFound.ToNewErrorResponse("分享不存在"))
 		return
 	}
 
 	// 加载会话
 	conv, err := model.AdminGetConversationByID(rec.Eid, rec.ConversationID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("分享不存在"))
+		c.JSON(http.StatusOK, model.NotFound.ToNewErrorResponse("分享不存在"))
 		return
 	}
 	// 加载用户与智能体
 	if err := conv.LoadUser(); err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("分享不存在"))
+		c.JSON(http.StatusOK, model.NotFound.ToNewErrorResponse("分享不存在"))
 		return
 	}
 	if err := conv.LoadAgent(); err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("分享不存在"))
+		c.JSON(http.StatusOK, model.NotFound.ToNewErrorResponse("分享不存在"))
 		return
 	}
 
 	if !conv.Agent.Enable {
-		c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("分享不存在"))
+		c.JSON(http.StatusOK, model.NotFound.ToNewErrorResponse("分享不存在"))
 	}
 
 	// 解析 normalized_key 为 ids
 	ids, err := model.ParseMessageIDsToIDs(rec.MessageIDs)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(err))
 		return
 	}
 
@@ -176,7 +176,25 @@ func GetShare(c *gin.Context) {
 	resp.Agent.Logo = conv.Agent.Logo
 	resp.Agent.Model = conv.Agent.Model
 	resp.Agent.Description = conv.Agent.Description
-	resp.Messages = convertToEnhancedMessages(msgs)
+
+	// 批量获取文件名，避免 N+1 查询
+	fileMap := make(map[int64]string)
+	var targetFileIDs []int64
+	for _, msg := range msgs {
+		if msg.FileID > 0 {
+			targetFileIDs = append(targetFileIDs, msg.FileID)
+		}
+	}
+	if len(targetFileIDs) > 0 {
+		var files []model.File
+		if err := model.DB.Select("id, path").Where("id IN ?", targetFileIDs).Find(&files).Error; err == nil {
+			for _, f := range files {
+				fileMap[f.ID] = model.ExtractSimpleFileName(f.Path)
+			}
+		}
+	}
+
+	resp.Messages = convertToEnhancedMessages(msgs, fileMap)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(resp))
 }

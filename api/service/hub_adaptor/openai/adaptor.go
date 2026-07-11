@@ -17,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/relay/adaptor/doubao"
+	"github.com/songquanpeng/one-api/relay/adaptor/minimax"
 	"github.com/songquanpeng/one-api/relay/adaptor/novita"
 	"github.com/songquanpeng/one-api/relay/channeltype"
 	"github.com/songquanpeng/one-api/relay/meta"
@@ -25,12 +26,15 @@ import (
 )
 
 type Adaptor struct {
-	ChannelType  int
-	CustomConfig *custom.CustomConfig
+	ChannelType   int
+	CustomConfig  *custom.CustomConfig
+	ChannelConfig string // 添加渠道配置字段，存储原始JSON字符串
 }
 
 func (a *Adaptor) Init(meta *meta.Meta) {
 	a.ChannelType = meta.ChannelType
+	// 从meta中获取渠道配置（如果有的话）
+	// 实际配置会在RelayTextHelper中直接注入
 }
 
 func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
@@ -50,23 +54,17 @@ func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
 		requestURL = fmt.Sprintf("%s?api-version=%s", requestURL, meta.Config.APIVersion)
 		task := strings.TrimPrefix(requestURL, "/v1/")
 		model_ := meta.ActualModelName
-		model_ = strings.Replace(model_, ".", "", -1)
 		//https://github.com/songquanpeng/one-api/issues/1191
 		// {your endpoint}/openai/deployments/{your azure_model}/chat/completions?api-version={api_version}
 		requestURL = fmt.Sprintf("/openai/deployments/%s/%s", model_, task)
 		return GetFullRequestURL(meta.BaseURL, requestURL, meta.ChannelType), nil
 	case channeltype.Minimax:
-		// Use standard OpenAI-compatible endpoint.
-		// MiniMax's new API at api.minimax.io/v1 supports the standard
-		// /v1/chat/completions format for both M2.x and legacy abab models.
-		// The upstream one-api adaptor used the deprecated /v1/text/chatcompletion_v2
-		// endpoint which is no longer recommended.
-		return GetFullRequestURL(meta.BaseURL, meta.RequestURLPath, meta.ChannelType), nil
+		return minimax.GetRequestURL(meta)
 	case channeltype.Doubao:
 		return doubao.GetRequestURL(meta)
 	case channeltype.Novita:
 		return novita.GetRequestURL(meta)
-	case Hub_model.ChannelApiVolcengine:
+	case Hub_model.ChannelApiVolcengine, Hub_model.ChannelApiVolcengineModel:
 		return volcengine.GetRequestURL(meta)
 	case Hub_model.ChannelApiTypeMaxKB:
 		meta.RequestURLPath = strings.TrimPrefix(meta.RequestURLPath, "/v1")
@@ -102,8 +100,74 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 		request.StreamOptions.IncludeUsage = true
 	}
 
+	// 提取函数调用和视觉识别等配置（兼容新旧格式）
+	if a.ChannelConfig != "" {
+		// 先尝试解析为新格式（数组），按 model 查找配置
+		type perModelCfg struct {
+			ModelID      string `json:"model_id"`
+			DeepThinking *bool  `json:"deep_thinking,omitempty"`
+			Vision       *bool  `json:"vision,omitempty"`
+			FunctionCall *bool  `json:"function_calling,omitempty"`
+		}
+		var models []perModelCfg
+		if err := json.Unmarshal([]byte(a.ChannelConfig), &models); err == nil && len(models) > 0 {
+			for _, mc := range models {
+				if mc.ModelID == request.Model {
+					if mc.Vision != nil && !*mc.Vision {
+						request.Messages = removeImageContent(request.Messages)
+					}
+					if mc.FunctionCall != nil && !*mc.FunctionCall {
+						request.Functions = nil
+						request.ToolChoice = nil
+					}
+					break
+				}
+			}
+		} else {
+			// 回退：解析为旧格式（对象）
+			var config map[string]interface{}
+			if err := json.Unmarshal([]byte(a.ChannelConfig), &config); err == nil {
+				if functionCalling, ok := config["function_calling"]; ok {
+					if enabled, ok := functionCalling.(bool); ok && !enabled {
+						request.Functions = nil
+						request.ToolChoice = nil
+					}
+				}
+				if vision, ok := config["vision"]; ok {
+					if enabled, ok := vision.(bool); ok && !enabled {
+						request.Messages = removeImageContent(request.Messages)
+					}
+				}
+			}
+		}
+	}
+
 	a.HandlerUploadFileMessages(request)
+	ApplyTokenLimitForModel(request)
 	return request, nil
+}
+
+// removeImageContent 移除消息中的图像内容
+func removeImageContent(messages []model.Message) []model.Message {
+	for i, message := range messages {
+		if _, ok := message.Content.(string); ok {
+			continue // 纯文本内容无需处理
+		}
+
+		if contentItems, ok := message.Content.([]interface{}); ok {
+			var filteredContent []interface{}
+			for _, item := range contentItems {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					if itemType, exists := itemMap["type"]; exists && itemType == "image_url" {
+						continue // 跳过图像类型内容
+					}
+				}
+				filteredContent = append(filteredContent, item)
+			}
+			messages[i].Content = filteredContent
+		}
+	}
+	return messages
 }
 
 func (a *Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) {
@@ -170,6 +234,7 @@ func (a *Adaptor) HandlerUploadFileMessages(request *model.GeneralOpenAIRequest)
 
 		queryStr := message.Content.(string)
 		if err := json.Unmarshal([]byte(queryStr), &contentObjs); err != nil {
+			// Unmarshal failed, treat as normal text content
 			newMessages = append(newMessages, message)
 			continue
 		}

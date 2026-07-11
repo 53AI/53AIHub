@@ -2,11 +2,12 @@ package model
 
 // ResourceType defines constants for resource types
 const (
-	ResourceTypeAgent      = "agent"      // Agent resource type
-	ResourceTypeUser       = "user"       // User resource type
-	ResourceTypeDepartment = "department" // Department resource type
-	ResourceTypePrompt     = "prompt"     // Prompt resource type
-	ResourceTypeAILink     = "ai_link"
+	ResourceTypeAgent        = "agent"      // Agent resource type
+	ResourceTypeUser         = "user"       // User resource type
+	ResourceTypeDepartment   = "department" // Department resource type
+	ResourceTypePrompt       = "prompt"     // Prompt resource type
+	ResourceTypeAILink       = "ai_link"
+	ResourceTypeSkillLibrary = "skill_library" // Skill library resource type
 )
 
 // Permission defines constants for permission types
@@ -19,8 +20,8 @@ const (
 type ResourcePermission struct {
 	ID           int64       `json:"id" gorm:"primaryKey;autoIncrement"`
 	GroupID      int64       `json:"group_id" gorm:"not null;index:idx_group_resource"`
-	ResourceID   int64       `json:"resource_id" gorm:"not null;index:idx_group_resource"`
-	ResourceType string      `json:"resource_type" gorm:"not null;index:idx_group_resource;type:varchar(100)"` // agent, user, department
+	ResourceID   int64       `json:"resource_id" gorm:"not null;index:idx_group_resource;index:idx_type_resource,priority:2"`
+	ResourceType string      `json:"resource_type" gorm:"not null;index:idx_group_resource;index:idx_type_resource,priority:1;type:varchar(100)"` // agent, user, department
 	Permission   string      `json:"permission" gorm:"not null;type:varchar(50)"`
 	User         *User       `json:"user,omitempty" gorm:"-"`
 	Department   *Department `json:"department,omitempty" gorm:"-"`
@@ -94,6 +95,39 @@ func GetResourcesByGroupAndType(groupID int64, resourceType string) ([]int64, er
 	}
 
 	return resourceIDs, nil
+}
+
+func GetDistinctResourceIDsByGroupsAndType(groupIDs []int64, resourceType string) ([]int64, error) {
+	if len(groupIDs) == 0 {
+		return []int64{}, nil
+	}
+
+	var resourceIDs []int64
+	err := DB.Model(&ResourcePermission{}).
+		Distinct("resource_id").
+		Where("group_id IN (?) AND resource_type = ?", groupIDs, resourceType).
+		Pluck("resource_id", &resourceIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	if resourceIDs == nil {
+		resourceIDs = []int64{}
+	}
+	return resourceIDs, nil
+}
+
+func GetResourcePermissionGroupIDs(resourceID int64, resourceType string) ([]int64, error) {
+	var groupIDs []int64
+	err := DB.Model(&ResourcePermission{}).
+		Where("resource_id = ? AND resource_type = ?", resourceID, resourceType).
+		Pluck("group_id", &groupIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	if groupIDs == nil {
+		groupIDs = []int64{}
+	}
+	return groupIDs, nil
 }
 
 // DeleteResourcePermissionsByResource

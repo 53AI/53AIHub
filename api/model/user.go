@@ -19,7 +19,7 @@ type User struct {
 	Avatar         string          `json:"avatar" gorm:"not null" example:"http://avatar.cc/a.jpg"`
 	Mobile         string          `json:"mobile" gorm:"size:20" example:"13800138000"`
 	Email          string          `json:"email" gorm:"size:100" example:"john@example.com"`
-	Eid            int64           `json:"eid" gorm:"not null;index" example:"123"`
+	Eid            int64           `json:"eid" gorm:"not null;index:idx_users_eid_type,priority:1" example:"123"`
 	Role           int64           `json:"role" gorm:"type:int;default:1;not null" example:"1"`
 	GroupId        int64           `json:"group_id" gorm:"type:int;default:0;not null" example:"0"`
 	Status         int             `json:"status" gorm:"type:int;default:1;not null;comment:'User status: 0-Not joined, 1-Joined, 2-Disabled'" example:"1"`
@@ -29,7 +29,7 @@ type User struct {
 	LastLoginTime  int64           `json:"last_login_time" gorm:"not null" example:"1672502400"`
 	AccessToken    string          `json:"access_token" gorm:"type:varchar(512);column:access_token"`
 	RelatedId      int64           `json:"related_id" gorm:"type:int;default:0;not null;index:idx_users_related_id" example:"0"`
-	Type           int             `json:"type" gorm:"type:int;default:1;not null;comment:'User type: 1-Registered user, 2-Internal user'" example:"1"`
+	Type           int             `json:"type" gorm:"type:int;default:1;not null;index:idx_users_eid_type,priority:2;comment:'User type: 1-Registered user, 2-Internal user'" example:"1"`
 	AddAdminTime   int64           `json:"add_admin_time" gorm:"type:bigint;default:0;not null;comment:'Time when user was added as admin'" example:"1672502400"`
 	OpenID         string          `json:"openid" gorm:"type:varchar(512);column:openid"`
 	UnionID        string          `json:"unionid" gorm:"type:varchar(512);column:unionid"`
@@ -52,6 +52,7 @@ const (
 
 	UserTypeRegistered = 1 // Registered user
 	UserTypeInternal   = 2 // Internal user
+	UserTypeVisitor    = 3 // Visitor user (Shadow Account)
 )
 
 func (user *User) Create() error {
@@ -144,6 +145,15 @@ func (user *User) Delete() error {
 func GetUserByID(userID int64) (*User, error) {
 	var user User
 	err := DB.First(&user, userID).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
+func GetUserByIDAndEid(eid, userID int64) (*User, error) {
+	var user User
+	err := DB.Where("user_id = ? AND eid = ?", userID, eid).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -249,18 +259,24 @@ func DeleteUser(eid int64, user_id int64) error {
 
 	if user.Type == UserTypeInternal {
 		var binds []*MemberBinding
-		tx.Where("eid = ? AND mid = ?", eid, user_id).Find(&binds)
+		if err := tx.Where("eid = ? AND mid = ?", eid, user_id).Find(&binds).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
 		if len(binds) > 0 {
 			for _, bind := range binds {
 				if bind.From == DepartmentFromBackend {
-					err := tx.Where("eid = ? AND bid = ? AND `from` = ? ", eid, bind.ID, DepartmentFromBackend).Delete(&MemberDepartmentRelation{}).Error
+					err := tx.Where(map[string]interface{}{"eid": eid, "bid": bind.ID, "from": DepartmentFromBackend}).Delete(&MemberDepartmentRelation{}).Error
 					if err != nil {
 						tx.Rollback()
 						return err
 					}
-					tx.Where("eid = ? AND id = ?", eid, bind.ID).Delete(&MemberBinding{})
+					if err := tx.Where("eid = ? AND id = ?", eid, bind.ID).Delete(&MemberBinding{}).Error; err != nil {
+						tx.Rollback()
+						return err
+					}
 				} else if bind.From == DepartmentFromWecom {
-					err := tx.Model(&MemberBinding{}).Where("eid = ? AND id = ?", eid, bind.ID).Updates(
+					err := tx.Model(&MemberBinding{}).Where(map[string]interface{}{"eid": eid, "id": bind.ID}).Updates(
 						map[string]interface{}{
 							"mid":    0,
 							"status": MemberBindingStatusInactive,
@@ -272,6 +288,17 @@ func DeleteUser(eid int64, user_id int64) error {
 				}
 			}
 		}
+	}
+
+	if err := tx.Where("resource_type = ? AND resource_id = ?", ResourceTypeUser, user_id).
+		Delete(&ResourcePermission{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := DeletePermissionsBySubject(tx, eid, SUBJECT_TYPE_USER, user_id); err != nil {
+		tx.Rollback()
+		return err
 	}
 
 	if err := tx.Where("eid = ? AND user_id = ?", eid, user_id).Delete(&User{}).Error; err != nil {
@@ -439,13 +466,29 @@ func IsUserExistsByAccount(eid int64, account string) (bool, error) {
 }
 
 // LoadDepartments 加载用户关联的部门信息
+// LoadDepartments 加载用户关联的部门信息
 func (u *User) LoadDepartments(from int) error {
 	var departments []Department
+
+	// 1. 获取当前数据库兼容的列名引用字符串
+	// MySQL 返回: `from`
+	// PGSQL 返回: "from"
+	qFrom := DB.Statement.Quote("from")
+
+	// 2. 使用 fmt.Sprintf 动态构建 JOIN 语句，替换掉硬编码的符号
+	// 注意：这里的 %s 会被替换为 qFrom
+	joinBindings := fmt.Sprintf(
+		"JOIN member_bindings ON member_department_relations.bid = member_bindings.id AND member_bindings.eid = departments.eid AND member_bindings.%s = member_department_relations.%s",
+		qFrom, qFrom,
+	)
+
 	err := DB.Table("departments").
 		Joins("JOIN member_department_relations ON departments.did = member_department_relations.did AND member_department_relations.eid = departments.eid").
-		Joins("JOIN member_bindings ON member_department_relations.bid = member_bindings.id AND member_bindings.eid = departments.eid AND member_bindings.`from` = member_department_relations.`from`").
-		Where("member_bindings.mid = ? AND departments.eid = ? AND member_department_relations.`from` = ?",
-			u.UserID, u.Eid, from).Find(&departments).Error
+		Joins(joinBindings). // 使用动态构建的 join 语句
+		Where("member_bindings.mid = ? AND departments.eid = ?", u.UserID, u.Eid).
+		// 3. 联表字段 from 不能走 map，否则 GORM 会把带点号的键误组装成 departments.member_department_relations.from
+		Where(fmt.Sprintf("member_department_relations.%s = ?", qFrom), from).
+		Find(&departments).Error
 
 	if err == nil && len(departments) > 0 {
 		u.Departments = departments
@@ -458,7 +501,7 @@ func (u *User) LoadMemberBindings(from int) error {
 	if u.UserID == 0 {
 		return nil
 	}
-	err := DB.Where("mid = ? AND eid = ? AND `from`=?", u.UserID, u.Eid, from).
+	err := DB.Where(map[string]interface{}{"mid": u.UserID, "eid": u.Eid, "from": from}).
 		Find(&memberBindings).Error
 	if err == nil && len(memberBindings) > 0 {
 		u.MemberBindings = memberBindings
@@ -482,9 +525,14 @@ func (u *User) GetUserGroupIds() ([]int64, error) {
 		if err != nil {
 			return nil, err
 		}
+		var bids []int64
+		err = DB.Model(&MemberBinding{}).Where("eid = ? AND bindvalue = ?", u.Eid, fmt.Sprintf("%d", u.UserID)).Pluck("id", &bids).Error
+		if err != nil {
+			return nil, err
+		}
 
 		var dids []int64
-		err = DB.Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid = ?", u.Eid, u.UserID).Pluck("did", &dids).Error
+		err = DB.Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid in ?", u.Eid, bids).Pluck("did", &dids).Error
 		if err != nil {
 			return nil, err
 		}
@@ -512,6 +560,162 @@ func (u *User) LoadGroupIds() error {
 	return nil
 }
 
+func BatchLoadUserInfo(users []*User, from int) {
+	if len(users) == 0 {
+		return
+	}
+	_ = batchLoadDepartments(users, from)
+	_ = batchLoadMemberBindings(users, from)
+	_ = batchLoadGroupIds(users)
+}
+
+func batchLoadDepartments(users []*User, from int) error {
+	userIDs := make([]int64, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+	}
+	eid := users[0].Eid
+
+	qFrom := DB.Statement.Quote("from")
+	joinBindings := fmt.Sprintf(
+		"JOIN member_bindings ON member_department_relations.bid = member_bindings.id AND member_bindings.eid = departments.eid AND member_bindings.%s = member_department_relations.%s",
+		qFrom, qFrom,
+	)
+
+	type deptWithMid struct {
+		Department
+		MID int64 `gorm:"column:mid"`
+	}
+
+	var results []deptWithMid
+	err := DB.Table("departments").
+		Select("departments.*, member_bindings.mid").
+		Joins("JOIN member_department_relations ON departments.did = member_department_relations.did AND member_department_relations.eid = departments.eid").
+		Joins(joinBindings).
+		Where("member_bindings.mid IN ? AND departments.eid = ?", userIDs, eid).
+		Where(fmt.Sprintf("member_department_relations.%s = ?", qFrom), from).
+		Find(&results).Error
+	if err != nil {
+		return err
+	}
+
+	deptMap := make(map[int64][]Department)
+	for _, r := range results {
+		deptMap[r.MID] = append(deptMap[r.MID], r.Department)
+	}
+
+	for _, u := range users {
+		if depts, ok := deptMap[u.UserID]; ok {
+			u.Departments = depts
+		}
+	}
+	return nil
+}
+
+func batchLoadMemberBindings(users []*User, from int) error {
+	userIDs := make([]int64, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+	}
+	eid := users[0].Eid
+
+	var bindings []MemberBinding
+	qFrom := DB.Statement.Quote("from")
+	err := DB.Where(fmt.Sprintf("mid IN ? AND eid = ? AND %s = ?", qFrom), userIDs, eid, from).
+		Find(&bindings).Error
+	if err != nil {
+		return err
+	}
+
+	bindingMap := make(map[int64][]MemberBinding)
+	for _, b := range bindings {
+		bindingMap[b.MID] = append(bindingMap[b.MID], b)
+	}
+
+	for _, u := range users {
+		if bindings, ok := bindingMap[u.UserID]; ok {
+			u.MemberBindings = bindings
+		}
+	}
+	return nil
+}
+
+func batchLoadGroupIds(users []*User) error {
+	userIDs := make([]int64, len(users))
+	userIDStrs := make([]string, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+		userIDStrs[i] = fmt.Sprintf("%d", u.UserID)
+	}
+	eid := users[0].Eid
+
+	type permResult struct {
+		ResourceID int64 `gorm:"column:resource_id"`
+		GroupID    int64 `gorm:"column:group_id"`
+	}
+	var userGroupPerms []permResult
+	DB.Model(&ResourcePermission{}).
+		Where("resource_type = ? AND resource_id IN ?", ResourceTypeUser, userIDs).
+		Find(&userGroupPerms)
+
+	userGroupMap := make(map[int64][]int64)
+	for _, p := range userGroupPerms {
+		userGroupMap[p.ResourceID] = append(userGroupMap[p.ResourceID], p.GroupID)
+	}
+
+	var allBindings []MemberBinding
+	DB.Model(&MemberBinding{}).
+		Where("eid = ? AND bindvalue IN ?", eid, userIDStrs).
+		Find(&allBindings)
+
+	bidToMID := make(map[int64]int64)
+	allBids := make([]int64, 0, len(allBindings))
+	for _, b := range allBindings {
+		allBids = append(allBids, b.ID)
+		bidToMID[b.ID] = b.MID
+	}
+
+	bidToDids := make(map[int64][]int64)
+	allDids := make([]int64, 0)
+	if len(allBids) > 0 {
+		var relations []MemberDepartmentRelation
+		DB.Model(&MemberDepartmentRelation{}).
+			Where("eid = ? AND bid IN ?", eid, allBids).
+			Find(&relations)
+		for _, r := range relations {
+			allDids = append(allDids, r.DID)
+			bidToDids[r.BID] = append(bidToDids[r.BID], r.DID)
+		}
+	}
+
+	deptGroupMap := make(map[int64][]int64)
+	if len(allDids) > 0 {
+		var deptPerms []permResult
+		DB.Model(&ResourcePermission{}).
+			Where("resource_type = ? AND resource_id IN ?", ResourceTypeDepartment, allDids).
+			Find(&deptPerms)
+		for _, p := range deptPerms {
+			deptGroupMap[p.ResourceID] = append(deptGroupMap[p.ResourceID], p.GroupID)
+		}
+	}
+
+	for _, u := range users {
+		groupIDs := userGroupMap[u.UserID]
+		for _, b := range allBindings {
+			if b.MID == u.UserID {
+				for _, did := range bidToDids[b.ID] {
+					groupIDs = append(groupIDs, deptGroupMap[did]...)
+				}
+			}
+		}
+		if u.Type == UserTypeInternal && u.GroupId > 0 {
+			groupIDs = append(groupIDs, u.GroupId)
+		}
+		u.GroupIds = groupIDs
+	}
+	return nil
+}
+
 func GetLoginUser(c *gin.Context) (*User, error) {
 	authHeader := c.GetHeader("Authorization")
 	authHeader = strings.Replace(authHeader, "Bearer ", "", 1)
@@ -520,6 +724,11 @@ func GetLoginUser(c *gin.Context) (*User, error) {
 		user := ValidateAccessToken(authHeader)
 		if user != nil {
 			return user, nil
+		}
+
+		channelUser, _, _, err := ValidateUserChannelToken(authHeader)
+		if err == nil && channelUser != nil {
+			return channelUser, nil
 		}
 	}
 	return nil, errors.New("user not found")
@@ -567,6 +776,54 @@ func GetUserCountByEIDAndType(eid int64, theType int) (int64, error) {
 	return count, nil
 }
 
+func CreateVisitorUser(eid int64, nickname string) (*User, error) {
+	if eid <= 0 {
+		return nil, errors.New("eid is required")
+	}
+
+	randomSuffix := helper.RandomString(8)
+	username := fmt.Sprintf("visitor_%s", randomSuffix)
+
+	if nickname == "" {
+		nickname = fmt.Sprintf("访客_%s", randomSuffix[:4])
+	}
+
+	user := &User{
+		Eid:      eid,
+		Username: username,
+		Nickname: nickname,
+		Role:     RoleGuestUser,
+		Status:   UserStatusJoined,
+		Type:     UserTypeVisitor,
+		Password: "",
+		Salt:     helper.RandomString(6),
+	}
+
+	if err := DB.Create(user).Error; err != nil {
+		return nil, err
+	}
+
+	var jwtErr error
+	user.AccessToken, jwtErr = jwt.UserGenerateJWT(user.UserID, user.Eid)
+	if jwtErr != nil {
+		return nil, jwtErr
+	}
+
+	updateErr := DB.Model(user).Update("access_token", user.AccessToken).Error
+	return user, updateErr
+}
+
+func (u *User) IsVisitor() bool {
+	return u.Type == UserTypeVisitor
+}
+
+func InvalidateAccessToken(token string) error {
+	if token == "" {
+		return errors.New("token is empty")
+	}
+	return DB.Model(&User{}).Where("access_token = ?", token).Update("access_token", "").Error
+}
+
 // InvalidateAccessToken 使用户的访问令牌失效
 func (user *User) InvalidateAccessToken() error {
 	// 清空用户的访问令牌
@@ -577,4 +834,49 @@ func (user *User) InvalidateAccessToken() error {
 
 func IsAdmin(role int64) bool {
 	return role >= RoleAdminUser
+}
+
+// GetUsersByIDs 根据用户ID数组批量获取用户信息
+func GetUsersByIDs(userIDs []int64) ([]*User, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	var users []*User
+	err := DB.Where("user_id IN ?", userIDs).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
+}
+
+func GetUserMapByIDs(userIDs []int64) (map[int64]*User, error) {
+	userMap := make(map[int64]*User)
+	users, err := GetUsersByIDs(userIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		if user == nil {
+			continue
+		}
+		userMap[user.UserID] = user
+	}
+	return userMap, nil
+}
+
+// GetUsersByIDsAndEid 根据用户ID数组和EID批量获取用户信息
+func GetUsersByIDsAndEid(eid int64, userIDs []int64) ([]*User, error) {
+	if len(userIDs) == 0 {
+		return nil, nil
+	}
+
+	var users []*User
+	err := DB.Where("eid = ? AND user_id IN ?", eid, userIDs).Find(&users).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/gin-gonic/gin"
 )
@@ -187,11 +187,7 @@ func ParseRerankRequest(c *gin.Context) (*RerankRequest, error) {
 
 // IsRerankModel 检查是否为 rerank 模型
 func (a *Adaptor) IsRerankModel(modelName string) bool {
-	rerankModels := []string{"gte-rerank-v2", "gte-rerank"}
-	for _, model := range rerankModels {
-		if strings.HasPrefix(modelName, model) {
-			return true
-		}
-	}
-	return false
+	// 使用模型目录加载器判断是否为 rerank 模型
+	loader := common.GetModelCatalogLoader()
+	return loader.IsRerankModel(modelName)
 }

@@ -20,6 +20,13 @@ const (
 )
 
 const (
+	// 因为是 model 类型和之前的 ChannelApiVolcengine 1004 区分开，1004 是 APP 类型
+	ChannelApiVolcengineModel = 900
+	// model 和 agent的类型不一样
+	ChannelApiTypeAppBuilderModel = 901
+)
+
+const (
 	ChannelApiDify       = 1001
 	ChannelApi53AI       = 1002
 	ChannelApiBailian    = 1003
@@ -33,23 +40,19 @@ const (
 	ChannelApiTypeCozeStudio = 1010
 	// 腾讯云
 	ChannelApiTypeTencent = 1011
+	// 自定义 OpenAI 兼容模型
+	ChannelApiTypeCustomOpenAI = 1012
+	// OpenClaw
+	ChannelApiTypeOpenClaw = 1013
+	// OpenClaw WebSocket 长连接
+	ChannelApiTypeOpenClawWS = 1014
+	// QClaw WebSocket 长连接
+	ChannelApiTypeQClawWS = 1015
+	// Codex WebSocket 长连接
+	ChannelApiTypeCodexWS = 1016
+	// Manus WebSocket 长连接
+	ChannelApiTypeManusWS = 1017
 )
-
-// Model types for channels
-const (
-	ModelTypeLLM       = 1
-	ModelTypeEmbedding = 2
-	ModelTypeRerank    = 3
-)
-
-// IsValidModelType returns true if t is one of the defined model types.
-func IsValidModelType(t int) bool {
-	switch t {
-	case ModelTypeLLM, ModelTypeEmbedding, ModelTypeRerank:
-		return true
-	}
-	return false
-}
 
 // ChannelDescription 渠道描述结构体
 type ChannelDescription struct {
@@ -74,6 +77,11 @@ var channelDescMap = map[string]string{
 	"bailian":          "阿里百炼",
 	"volcengine":       "火山方舟",
 	"tencent":          "腾讯云",
+	"openclaw_ws":      "OpenClaw长连接",
+	"openclaw":         "OpenClaw",
+	"qclaw":            "QClaw",
+	"codex":            "Codex",
+	"manus":            "Manus",
 }
 
 // GetChannelDescription 通过key获取渠道描述
@@ -97,16 +105,16 @@ type Channel struct {
 	ChannelID          int64   `json:"channel_id" gorm:"primaryKey;autoIncrement"`
 	Eid                int64   `json:"eid" gorm:"not null;index" example:"1"`
 	Type               int     `json:"type" gorm:"default:0"`
-	ModelType          int     `json:"model_type" gorm:"not null;default:1"`
 	Key                string  `json:"key" gorm:"type:text"`
 	Weight             *uint   `json:"weight" gorm:"default:0"`
 	Name               string  `json:"name" gorm:"not null" example:"channel_name"`
 	Models             string  `json:"models"`
 	Config             string  `json:"config"`
+	CustomConfig       string  `json:"custom_config"`
 	Other              *string `json:"other"`
-	ModelMapping       *string `json:"model_mapping" gorm:"type:varchar(1024);default:''"`
+	ModelMapping       *string `json:"model_mapping" gorm:"size:2048;default:''"`
 	Priority           *int64  `json:"priority" gorm:"bigint;default:0"`
-	BaseURL            *string `json:"base_url" gorm:"column:base_url;default:''"`
+	BaseURL            *string `json:"base_url" gorm:"column:base_url;size:512;default:''"`
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	Status             int     `json:"status" gorm:"default:1"`
 	Balance            float64 `json:"balance"`
@@ -144,7 +152,7 @@ func GetChannelsByEid(eid int64) ([]Channel, error) {
 // GetChannelsByEidAndProviderId gets a list of channels by enterprise ID and provider ID
 // If providerId is 0, get channels added by the platform itself (providerId=0)
 // If providerId is not 0, get channels from other platforms
-func GetChannelsByEidAndParams(eid int64, providerId int64, channelTypes []int, modelTypes []int) ([]Channel, error) {
+func GetChannelsByEidAndParams(eid int64, providerId int64, channelTypes []int) ([]Channel, error) {
 	var channels []Channel
 	var err error
 
@@ -158,10 +166,6 @@ func GetChannelsByEidAndParams(eid int64, providerId int64, channelTypes []int, 
 
 	if len(channelTypes) > 0 {
 		db = db.Where("type IN (?)", channelTypes)
-	}
-
-	if len(modelTypes) > 0 {
-		db = db.Where("model_type IN (?)", modelTypes)
 	}
 
 	err = db.Find(&channels).Error
@@ -257,15 +261,35 @@ func GetRandomChannel(eid int64, channelType int, modelName string) (*Channel, e
 	return &channels[0], nil
 }
 
+// CountAvailableChannels counts enabled channels matching the given eid, type, and model.
+func CountAvailableChannels(eid int64, channelType int, modelName string) (int64, error) {
+	var count int64
+	err := DB.Model(&Channel{}).
+		Where("eid = ? AND type = ? AND status = ? AND models LIKE ?",
+			eid, channelType, ChannelStatusEnabled, "%"+modelName+"%").
+		Count(&count).Error
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func GetApiType(channelType int) int {
 	apiType := channeltype.ToAPIType(channelType)
 	if channelType > 1000 {
 		apiType = channelType
 	}
+	if IsOpenClawWSCompatibleChannelType(channelType) {
+		return channelType
+	}
 	// Refactoring and modification
 	switch channelType {
 	case channeltype.FastGPT:
 		return ChannelApiTypeFastGpt
+	case ChannelApiTypeCustomOpenAI:
+		return ChannelApiTypeCustomOpenAI
+	case ChannelApiTypeOpenClaw:
+		return ChannelApiTypeOpenClaw
 	}
 
 	return apiType
@@ -346,4 +370,36 @@ func (channel *Channel) GetAddModelString(model string) string {
 		models = append(models, m)
 	}
 	return strings.Join(models, ",")
+}
+
+// UpdateChannelConfigOnly 更新渠道配置，但保留原有配置数据
+func UpdateChannelConfigOnly(channelID int64, newConfig map[string]interface{}) error {
+	// 获取当前渠道配置
+	channel, err := GetChannelByID(channelID)
+	if err != nil {
+		return err
+	}
+
+	// 解析当前配置
+	var currentConfig map[string]interface{}
+	if channel.Config != "" {
+		if err := json.Unmarshal([]byte(channel.Config), &currentConfig); err != nil {
+			return err
+		}
+	} else {
+		currentConfig = make(map[string]interface{})
+	}
+
+	// 合并配置
+	for k, v := range newConfig {
+		currentConfig[k] = v
+	}
+
+	// 序列化并更新
+	updatedConfig, err := json.Marshal(currentConfig)
+	if err != nil {
+		return err
+	}
+
+	return DB.Model(&Channel{}).Where("channel_id = ?", channelID).Update("config", string(updatedConfig)).Error
 }

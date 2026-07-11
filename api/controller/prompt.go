@@ -17,10 +17,11 @@ import (
 
 // PromptListRequest 定义获取提示词列表的请求参数
 type PromptListRequest struct {
-	Keyword string `form:"keyword" json:"keyword"`   // 关键词搜索
-	GroupId string `form:"group_id" json:"group_id"` // 分组ID，多个ID用逗号分隔，为空时查询全部
-	Offset  int    `form:"offset" json:"offset"`     // 分页偏移量
-	Limit   int    `form:"limit" json:"limit"`       // 分页大小
+	Keyword   string `form:"keyword" json:"keyword"`       // 关键词搜索
+	GroupId   string `form:"group_id" json:"group_id"`     // 分组ID，多个ID用逗号分隔，为空时查询全部
+	GroupType int64  `form:"group_type" json:"group_type"` // 分组类型筛选
+	Offset    int    `form:"offset" json:"offset"`         // 分页偏移量
+	Limit     int    `form:"limit" json:"limit"`           // 分页大小
 }
 
 // PromptsResponse 定义提示词列表的响应结构
@@ -31,25 +32,50 @@ type PromptsResponse struct {
 
 // PromptRequest 定义创建或更新提示词的请求参数
 type PromptRequest struct {
-	Name                 string     `json:"name" binding:"required"`                                                                                                                                                                                                                                                                                                                                                                                 // 提示词名称
-	Content              string     `json:"content"`                                                                                                                                                                                                                                                                                                                                                                                                 // 提示词内容
-	Description          string     `json:"description"`                                                                                                                                                                                                                                                                                                                                                                                             // 提示词描述
-	GroupIds             []int64    `json:"group_ids" binding:"required"`                                                                                                                                                                                                                                                                                                                                                                            // 所属分组IDs
-	SubscriptionGroupIds []int64    `json:"subscription_group_ids"`                                                                                                                                                                                                                                                                                                                                                                                  // 订阅分组IDs
-	UserGroupIds         []int64    `json:"user_group_ids"`                                                                                                                                                                                                                                                                                                                                                                                          // 用户分组IDs
-	Sort                 int        `json:"sort"`                                                                                                                                                                                                                                                                                                                                                                                                    // 排序
+	Name                 string     `json:"name" binding:"required" example:"智能写作助手"`                                                                                                                                                                                                                                                                                                                                                                // 提示词名称
+	Logo                 string     `json:"logo" example:"https://example.com/logo.png"`                                                                                                                                                                                                                                                                                                                                                             // 图标URL
+	Content              string     `json:"content" binding:"required" example:"请帮我总结以下文档的主要内容..."`                                                                                                                                                                                                                                                                                                                                                  // 提示词内容
+	Description          string     `json:"description" example:"用于快速总结文档内容"`                                                                                                                                                                                                                                                                                                                                                                        // 提示词描述
+	GroupIds             []int64    `json:"group_ids" binding:"required" example:"[1, 2]"`                                                                                                                                                                                                                                                                                                                                                           // 所属分组IDs
+	SubscriptionGroupIds []int64    `json:"subscription_group_ids" example:"[3, 4]"`                                                                                                                                                                                                                                                                                                                                                                 // 订阅分组IDs
+	UserGroupIds         []int64    `json:"user_group_ids" example:"[5, 6]"`                                                                                                                                                                                                                                                                                                                                                                         // 用户分组IDs
+	Sort                 int        `json:"sort" example:"0"`                                                                                                                                                                                                                                                                                                                                                                                        // 排序
 	CustomConfig         string     `json:"custom_config"`                                                                                                                                                                                                                                                                                                                                                                                           // 自定义配置
-	Status               int        `form:"status" json:"status"`                                                                                                                                                                                                                                                                                                                                                                                    // 状态，0未启用，1正常，2删除
+	Status               *int       `json:"status" example:"1"`                                                                                                                                                                                                                                                                                                                                                                        // 状态，0未启用，1正常，2删除
 	AILinks              []LinkItem `json:"ai_links" example:"[{\"ai_link\":{\"name\":\"link1\",\"logo\":\"https://example.com/logo1.png\",\"url\":\"https://example.com/link1\",\"description\":\"Description for link1\",\"sort\":0},\"delete\":false},{\"ai_link\":{\"name\":\"link2\",\"logo\":\"https://example.com/logo2.png\",\"url\":\"https://example.com/link2\",\"description\":\"Description for link2\",\"sort\":1},\"delete\":true}]"` // 网站配置列表，支持增删改
+}
+
+func buildPromptAILinks(defaultLinks []model.AILinkInfo, linkItems []LinkItem) []model.AILinkInfo {
+	if len(linkItems) == 0 {
+		if defaultLinks == nil {
+			return []model.AILinkInfo{}
+		}
+		return defaultLinks
+	}
+
+	updatedLinks := make([]model.AILinkInfo, 0, len(linkItems))
+	for _, linkItem := range linkItems {
+		if linkItem.Delete {
+			continue
+		}
+		updatedLinks = append(updatedLinks, linkItem.AILink)
+	}
+
+	if updatedLinks == nil {
+		return []model.AILinkInfo{}
+	}
+
+	return updatedLinks
 }
 
 // GetPrompts 获取提示词列表
 // @Summary 获取提示词列表
-// @Description 获取提示词列表，支持分页、关键词搜索、按分组筛选
+// @Description 获取提示词列表，支持分页、关键词搜索、按分组筛选、按分组类型筛选
 // @Tags Prompt
 // @Produce json
 // @Param keyword query string false "关键词搜索"
 // @Param group_id query string false "分组ID，多个ID用逗号分隔，为空时查询全部"
+// @Param group_type query int false "分组类型筛选（5=系统提示，6=个人提示等）"
 // @Param offset query int false "分页偏移量"
 // @Param limit query int false "分页大小" default(10)
 // @Success 200 {object} model.CommonResponse{data=PromptsResponse} "成功"
@@ -78,6 +104,30 @@ func GetPrompts(c *gin.Context) {
 	status := -1
 	if !strings.Contains(c.Request.URL.Path, "/admin") {
 		status = model.PromptStatusNormal
+	}
+
+	// 处理 groupType 参数
+	// 注意：如果同时提供 groupType 和 GroupId，groupType 优先级更高
+	if promptListRequest.GroupType > 0 {
+		firstGroup, err := model.GetFirstGroupByEid(eid, promptListRequest.GroupType)
+		if err == nil {
+			// 成功找到分组，使用其ID
+			promptListRequest.GroupId = strconv.FormatInt(firstGroup.GroupId, 10)
+		} else {
+			// 如果没有找到对应类型的分组（gorm.ErrRecordNotFound），
+			// 设置 GroupId 为不存在的值以返回空结果
+			promptListRequest.GroupId = ""
+		}
+	} else if promptListRequest.GroupId == "" {
+		// 如果没有提供 GroupId，则获取所有系统提示词分组的 ID
+		systemGroups, err := model.GetGroupsByEid(eid, model.SYSTEM_PROMPT_TYPE)
+		if err == nil && len(systemGroups) > 0 {
+			var groupIds []string
+			for _, group := range systemGroups {
+				groupIds = append(groupIds, strconv.FormatInt(group.GroupId, 10))
+			}
+			promptListRequest.GroupId = strings.Join(groupIds, ",")
+		}
 	}
 
 	// 获取提示词列表
@@ -131,12 +181,27 @@ func GetPrompts(c *gin.Context) {
 
 // CreatePrompt 创建提示词
 // @Summary 创建提示词
-// @Description 创建新的提示词
+// @Description 创建新的提示词，支持指定用途类型
 // @Tags Prompt
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body PromptRequest true "提示词信息"
+//
+//	@Param request body PromptRequest true "提示词信息"{
+//		"name": "智能写作助手",
+//		"logo": "https://example.com/logo.png",
+//		"content": "请帮我总结以下文档的主要内容...",
+//		"description": "用于快速总结文档内容",
+//		"group_ids": [1, 2],
+//		"subscription_group_ids": [3, 4],
+//		"user_group_ids": [5, 6],
+//		"sort": 0,
+//		"status": 1,
+//		"ai_links": [
+//			{"ai_link":{"name":"link1","logo":"https://example.com/logo1.png","url":"https://example.com/link1","description":"Description for link1","sort":0},"delete":false}
+//		]
+//	}
+//
 // @Success 200 {object} model.CommonResponse{data=model.Prompt} "成功"
 // @Router /api/prompts/system [post]
 // @Router /api/prompts/personal [post]
@@ -169,31 +234,33 @@ func CreatePrompt(c *gin.Context) {
 		return
 	}
 
-	// 如果 defaultLinks 或 promptReq.AILinks 为空，设置为空数组
-	if defaultLinks == nil {
-		defaultLinks = []model.AILinkInfo{}
-	}
+	links := buildPromptAILinks(defaultLinks, promptReq.AILinks)
 
 	// 序列化 AILinks 为 JSON 字符串
-	linksJSON, err := json.Marshal(defaultLinks)
+	linksJSON, err := json.Marshal(links)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.ParamError.ToResponse(err))
 		return
 	}
 
 	// 创建提示词对象
+	status := model.PromptStatusNormal
+	if promptReq.Status != nil {
+		status = *promptReq.Status
+	}
 	prompt := &model.Prompt{
 		Name:         promptReq.Name,
+		Logo:         promptReq.Logo,
 		Content:      promptReq.Content,
 		Description:  promptReq.Description,
 		Type:         promptType,
-		Status:       promptReq.Status,
+		Status:       status,
 		UserID:       userID,
 		Eid:          eid,
 		Sort:         promptReq.Sort,
 		CustomConfig: promptReq.CustomConfig,
 		AILinks:      string(linksJSON),
-		AILinksData:  defaultLinks, // 使用默认链接
+		AILinksData:  links,
 	}
 
 	// 开始事务
@@ -314,13 +381,25 @@ func GetPrompt(c *gin.Context) {
 
 // UpdatePrompt 更新提示词
 // @Summary 更新提示词
-// @Description 更新提示词信息，包括提示词的名称、内容、描述、排序、自定义配置、状态，以及分组关联和网站配置的增删改。
+// @Description 更新提示词信息，包括提示词的名称、内容、描述、用途类型、排序、自定义配置、状态，以及分组关联和网站配置的增删改。
 // @Tags Prompt
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param pid path int true "提示词ID"
-// @Param request body PromptRequest true "提示词信息，包括分组关联和网站配置的增删改"
+//
+//	@Param request body PromptRequest true "提示词信息，包括分组关联和网站配置的增删改"{
+//		"name": "智能写作助手",
+//		"logo": "https://example.com/logo.png",
+//		"content": "请帮我总结以下文档的主要内容...",
+//		"description": "用于快速总结文档内容",
+//		"group_ids": [1, 2],
+//		"subscription_group_ids": [3, 4],
+//		"user_group_ids": [5, 6],
+//		"sort": 0,
+//		"status": 1
+//	}
+//
 // @Success 200 {object} model.CommonResponse{data=model.Prompt} "成功返回更新后的提示词信息"
 // @Failure 400 {object} model.CommonResponse "请求参数错误"
 // @Failure 403 {object} model.CommonResponse "权限不足"
@@ -367,23 +446,19 @@ func UpdatePrompt(c *gin.Context) {
 
 	// 更新提示词字段
 	prompt.Name = promptReq.Name
+	prompt.Logo = promptReq.Logo
 	prompt.Content = promptReq.Content
 	prompt.Description = promptReq.Description
 	prompt.Sort = promptReq.Sort
 	prompt.CustomConfig = promptReq.CustomConfig
-	prompt.Status = promptReq.Status
-
-	// 处理 AILinks 的增删改
-	var updatedLinks []model.AILinkInfo
-	for _, linkItem := range promptReq.AILinks {
-		if linkItem.Delete {
-			continue
-		}
-		updatedLinks = append(updatedLinks, linkItem.AILink)
+	if promptReq.Status != nil {
+		prompt.Status = *promptReq.Status
 	}
 
+	links := buildPromptAILinks(nil, promptReq.AILinks)
+
 	// 序列化更新后的 AILinks 为 JSON 字符串
-	linksJSON, err := json.Marshal(updatedLinks)
+	linksJSON, err := json.Marshal(links)
 	if err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.ParamError.ToResponse(err))

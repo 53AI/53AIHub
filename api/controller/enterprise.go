@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/53AI/53AIHub/common/utils"
 	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
+	saas_model "github.com/53AI/53AIHub/saas/model"
 	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
 )
@@ -14,7 +17,14 @@ import (
 // Compare behavior snippet from 53AIHub/model/enterprise.go:
 // resulf api
 type EnterpriseResponse struct {
+	Enterprise model.Enterprise           `json:"enterprise"`
+	ApplyInfo  saas_model.EnterpriseApply `json:"apply_info,omitempty"` // 添加这两个结构返回是因为为了兼容saas版前端，是On-Prem分支独有
+	Domains    []saas_model.SaasDomain    `json:"domains,omitempty"`
+}
+
+type CurrentEnterpriseResponse struct {
 	Enterprise model.Enterprise `json:"enterprise"`
+	Version    int              `json:"version,omitempty"`
 }
 
 // Compare behavior snippet from 53AIHub/model/enterprise.go:
@@ -103,44 +113,45 @@ func UpdateEnterprise(c *gin.Context) {
 		return
 	}
 
-	var currentEid int64
-	user, err := model.GetLoginUser(c)
-	if err == nil {
-		if user.Role < model.RoleAdminUser {
-			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
-			return
-		}
-		currentEid = config.GetEID(c)
-	} else {
-		// 兼容初始化
-		if err = model.DB.Where("eid = ?", 1).First(&user).Error; err != nil && err.Error() == "record not found" {
-			currentEid = 1
-		} else {
-			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
-			return
-		}
-	}
-	if currentEid <= 0 {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+	// 从路径参数获取解码后的企业 ID
+	pathEid, ok := middleware.MustParseIDParam(c, "id")
+	if !ok {
 		return
 	}
 
-	enterprise, err := model.GetEnterpriseModel(currentEid)
+	// SaaS 模式下需要登录并校验 EID
+	if config.IS_SAAS {
+		user, err := model.GetLoginUser(c)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(nil))
+			return
+		}
+		if user.Role < model.RoleAdminUser {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(nil))
+			return
+		}
+		if pathEid != user.Eid {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(errors.New("只能更新当前登录的企业")))
+			return
+		}
+	}
+
+	enterprise, err := model.GetEnterpriseModel(pathEid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.NotFound.ToResponse(nil))
 		return
 	}
 
 	if req.Type != model.EnterpriseTypeIndependent {
-		params := map[string]interface{}{
-			"from": "enterprise",
-			"type": req.Type,
-		}
-		_, err = service.IsFeatureAvailable(c, "internal_user", params)
-		if err != nil {
-			c.JSON(http.StatusForbidden, model.FeatureNotAvailableError.ToResponse(err))
-			return
-		}
+		// params := map[string]interface{}{
+		// 	"from": "enterprise",
+		// 	"type": req.Type,
+		// }
+		// _, err = service.IsFeatureAvailable(c, "internal_user", params)
+		// if err != nil {
+		// 	c.JSON(http.StatusForbidden, model.FeatureNotAvailableError.ToResponse(err))
+		// 	return
+		// }
 	}
 
 	oldEnterprise := *enterprise
@@ -202,7 +213,7 @@ func UpdateEnterprise(c *gin.Context) {
 	model.LogEntityChange(
 		"站点信息",
 		model.SystemLogActionUpdate,
-		currentEid,
+		pathEid,
 		config.GetUserId(c),
 		config.GetUserNickname(c),
 		model.SystemLogModuleSiteInfo,
@@ -293,6 +304,7 @@ func UpdateEnterpriseAttribute(c *gin.Context) {
 // @Success 200 {object} model.Enterprise "Current enterprise information"
 // @Router /api/enterprises/current [get]
 func GetCurrentEnterprise(c *gin.Context) {
+
 	// Get default enterprise ID
 	currentEid := config.GetEID(c)
 	if currentEid <= 0 {
@@ -313,9 +325,45 @@ func GetCurrentEnterprise(c *gin.Context) {
 		enterprise.LoadWecomCorpInfo(config.GetWecomSuiteID(), 0)
 		enterprise.LoadDingtalkCorpInfo(config.GetDingtalkSuiteID(), 0)
 	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(EnterpriseResponse{
-		Enterprise: *enterprise,
-	}))
+	if config.IS_SAAS {
+		version := service.GetSaaSVersion(c.Request.Context(), currentEid)
+		c.JSON(http.StatusOK, model.Success.ToResponse(CurrentEnterpriseResponse{
+			Enterprise: *enterprise,
+			Version:    version,
+		}))
+		return
+	}
+
+	response := EnterpriseResponse{}
+	response.Enterprise = *enterprise
+	if !config.IS_SAAS {
+		version := 1
+		response.ApplyInfo = saas_model.EnterpriseApply{
+			ApplyID:        1,
+			ContactName:    "123",
+			Domain:         config.ApiHost,
+			Eid:            currentEid,
+			Email:          config.ADMIN_EMAIL,
+			EnterpriseName: "53AI",
+			ExpiredTime:    0,
+			Phone:          config.ADMIN_MOBILE,
+			Reason:         "",
+			Status:         1,
+			UserID:         1,
+			Version:        version,
+		}
+		response.Domains = []saas_model.SaasDomain{
+			{
+				Config: "",
+				Domain: config.ApiHost,
+				Eid:    currentEid,
+				ID:     1, // 根据实际结构体字段名调整
+				Type:   1,
+			},
+		}
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(response))
 }
 
 type GetIsSaasResponse struct {
@@ -338,10 +386,14 @@ func GetIsSaas(c *gin.Context) {
 }
 
 type HomePageResponse struct {
-	AgentCount  int64 `json:"agent_count"`
-	UserCount   int64 `json:"user_count"`
-	PromptCount int64 `json:"prompt_count"`
-	AILinkCount int64 `json:"ai_link_count"`
+	AgentCount        int64 `json:"agent_count"`
+	UserCount         int64 `json:"user_count"`
+	InternalUserCount int64 `json:"internal_user_count"`
+	PromptCount       int64 `json:"prompt_count"`
+	AILinkCount       int64 `json:"ai_link_count"`
+	SpaceCount        int64 `json:"space_count"`
+	LibraryCount      int64 `json:"library_count"`
+	DocumentCount     int64 `json:"document_count"`
 }
 
 // @Summary Get homepage information
@@ -360,13 +412,19 @@ func GetHomePage(c *gin.Context) {
 	}
 
 	var agentCount int64
-	if err := model.DB.Model(&model.Agent{}).Where("eid = ?", eid).Count(&agentCount).Error; err != nil {
+	if err := model.DB.Model(&model.Agent{}).Where(map[string]interface{}{"eid": eid, "agent_usage": model.AgentUsageHub, "owner_id": model.AgentOwnerEnterprise}).Count(&agentCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
 
 	var userCount int64
 	if err := model.DB.Model(&model.User{}).Where("eid = ? AND type = ?", eid, model.UserTypeRegistered).Count(&userCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	var internalUserCount int64
+	if err := model.DB.Model(&model.User{}).Where("eid = ? AND type = ?", eid, model.UserTypeInternal).Count(&internalUserCount).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
@@ -384,11 +442,33 @@ func GetHomePage(c *gin.Context) {
 		return
 	}
 
+	var spaceCount int64
+	if err := model.DB.Model(&model.Space{}).Where("eid = ?", eid).Count(&spaceCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	var libraryCount int64
+	if err := model.DB.Model(&model.Library{}).Where("eid = ?", eid).Count(&libraryCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	var documentCount int64
+	if err := model.DB.Model(&model.File{}).Where("eid = ? AND is_deleted = ?", eid, false).Count(&documentCount).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(HomePageResponse{
-		AgentCount:  agentCount,
-		UserCount:   userCount,
-		PromptCount: promptCount,
-		AILinkCount: aiLinkCount,
+		AgentCount:        agentCount,
+		UserCount:         userCount,
+		InternalUserCount: internalUserCount,
+		PromptCount:       promptCount,
+		AILinkCount:       aiLinkCount,
+		SpaceCount:        spaceCount,
+		LibraryCount:      libraryCount,
+		DocumentCount:     documentCount,
 	}))
 }
 
@@ -450,7 +530,6 @@ func UpdateEnterpriseBanner(c *gin.Context) {
 		return
 	}
 
-	// Update Banner
 	updateData := map[string]interface{}{
 		"banner": req.Banner,
 	}
@@ -547,4 +626,21 @@ func GetEnterpriseTemplateType(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]string{
 		"template_type": enterprise.TemplateType,
 	}))
+}
+
+// @Summary Get enterprise feature limits
+// @Description Get all feature limits for the current enterprise
+// @Tags Enterprise
+// @Accept json
+// @Produce json
+// @Success 200 {object} model.CommonResponse{data=[]service.FeatureLimitResponse}
+// @Router /api/enterprises/features [get]
+func GetEnterpriseFeatureLimits(c *gin.Context) {
+	featureLimits, err := service.GetEnterpriseFeatureLimits(c)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse("Failed to get feature limits"))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(featureLimits))
 }

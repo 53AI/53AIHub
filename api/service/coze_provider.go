@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/common/utils/coze"
@@ -45,7 +46,7 @@ func (ser *CozeService) GetCozeApiSdk() (*coze.CozeApi, error) {
 	}, nil
 }
 
-func (ser *CozeService) HandlerAccessTokenByCode(coze string, callbackUrl string) error {
+func (ser *CozeService) HandlerAccessTokenByCode(cozeCode string, callbackUrl string) error {
 	if ser.Provider.ProviderType != model.ProviderTypeCozeCn && ser.Provider.ProviderType != model.ProviderTypeCozeCom {
 		return errors.New("invalid provider type")
 	}
@@ -67,7 +68,7 @@ func (ser *CozeService) HandlerAccessTokenByCode(coze string, callbackUrl string
 		return err
 	}
 
-	cozeApiToken, err := api.GetOAuthToken(config.ClientID, config.ClientSecret, coze, callbackUrl)
+	cozeApiToken, err := api.GetOAuthToken(config.ClientID, config.ClientSecret, cozeCode, callbackUrl)
 	if err != nil {
 		return err
 	}
@@ -78,6 +79,19 @@ func (ser *CozeService) HandlerAccessTokenByCode(coze string, callbackUrl string
 	ser.Provider.IsAuthorized = true
 	ser.Provider.AuthedTime = time.Now().UTC().UnixMilli()
 	err = model.UpdateProvider(&ser.Provider)
+	if err != nil {
+		return err
+	}
+	// Reset fail count on fresh OAuth authorization
+	model.DB.Model(&model.Provider{}).
+		Where("provider_id = ?", ser.Provider.ProviderID).
+		Update("token_refresh_fail_count", 0)
+
+	// Write cache on fresh OAuth authorization
+	cacheKey := coze.BuildTokenCacheKey(ser.Provider.Eid, ser.Provider.ProviderID, ser.Provider.ProviderType)
+	if cacheErr := coze.SetCachedToken(cacheKey, &ser.Provider); cacheErr != nil {
+		logger.SysErrorf("【cozetoken 刷新】OAuth写cache失败: provider_id=%d, err=%v", ser.Provider.ProviderID, cacheErr)
+	}
 
 	return err
 }
@@ -101,17 +115,43 @@ func (ser *CozeService) HandlerAccessTokenByRefreshToken() error {
 	if err != nil {
 		return err
 	}
+	logger.SysLogf("【cozetoken 刷新】HandlerAccessTokenByRefreshToken: provider_id=%d, refresh_token_prefix=%s, client_id=%s",
+		ser.Provider.ProviderID,
+		ser.Provider.RefreshToken[:min(len(ser.Provider.RefreshToken), 10)]+"...",
+		config.ClientID)
 	cozeApiToken, err := api.RefreshOAuthToken(config.ClientID, config.ClientSecret, ser.Provider.RefreshToken)
 	if err != nil {
+		// If refresh token expired, mark provider as unauthorized
+		if strings.Contains(err.Error(), "invalid_grant") || strings.Contains(err.Error(), "invalid_refresh_token") {
+			ser.Provider.IsAuthorized = false
+			if updateErr := model.UpdateProvider(&ser.Provider); updateErr != nil {
+				return fmt.Errorf("refresh token expired, failed to update provider: %w", updateErr)
+			}
+			// Delete cache when provider is deauthorized
+			cacheKey := coze.BuildTokenCacheKey(ser.Provider.Eid, ser.Provider.ProviderID, ser.Provider.ProviderType)
+			coze.DeleteCachedToken(cacheKey)
+			return fmt.Errorf("refresh token expired, reauthorization required: %w", err)
+		}
 		return err
 	}
 	ser.Provider.AccessToken = cozeApiToken.AccessToken
 	ser.Provider.RefreshToken = cozeApiToken.RefreshToken
 	ser.Provider.ExpiresIn = cozeApiToken.ExpiresIn
 	ser.Provider.IsAuthorized = true
+	ser.Provider.AuthedTime = time.Now().UTC().UnixMilli()
 	err = model.UpdateProvider(&ser.Provider)
 	if err != nil {
 		return err
+	}
+	// Reset fail count on successful refresh (use map to force update zero value)
+	model.DB.Model(&model.Provider{}).
+		Where("provider_id = ?", ser.Provider.ProviderID).
+		Update("token_refresh_fail_count", 0)
+
+	// Write cache after successful refresh
+	cacheKey := coze.BuildTokenCacheKey(ser.Provider.Eid, ser.Provider.ProviderID, ser.Provider.ProviderType)
+	if cacheErr := coze.SetCachedToken(cacheKey, &ser.Provider); cacheErr != nil {
+		logger.SysErrorf("【cozetoken 刷新】刷新后写cache失败: provider_id=%d, err=%v", ser.Provider.ProviderID, cacheErr)
 	}
 
 	// update channel key
@@ -131,15 +171,83 @@ func (ser *CozeService) CheckAndRefreshToken() (ok bool, err error) {
 		return false, nil
 	}
 
-	if ser.Provider.ExpiresIn <= time.Now().Unix() {
-		logger.SysLogf("Coze RefreshToken: eid = %d", ser.Provider.Eid)
-		err := ser.HandlerAccessTokenByRefreshToken()
+	cacheKey := coze.BuildTokenCacheKey(ser.Provider.Eid, ser.Provider.ProviderID, ser.Provider.ProviderType)
+
+	// Step 1: Check cache first (fast path for concurrent requests)
+	if cached := coze.GetCachedToken(cacheKey); cached != nil {
+		logger.SysLogf("【cozetoken 刷新】cache hit: eid=%d, provider_id=%d", ser.Provider.Eid, ser.Provider.ProviderID)
+		coze.ApplyCachedToken(&ser.Provider, cached)
+		// 缓存命中后仍需检查有效期：防止TTL尚在但token已接近到期时延迟刷新（最大延迟约270s）
+		if time.Now().Unix()+300 < coze.GetTokenExpiryUnix(&ser.Provider) {
+			return true, nil
+		}
+		logger.SysLogf("【cozetoken 刷新】cache hit but token near expiry, proceeding to refresh: eid=%d, provider_id=%d",
+			ser.Provider.Eid, ser.Provider.ProviderID)
+	}
+
+	// Step 2: Check if token needs refresh
+	expiryUnix := coze.GetTokenExpiryUnix(&ser.Provider)
+	needRefresh := time.Now().Unix()+300 >= expiryUnix
+	logger.SysLogf("【cozetoken 刷新】CheckAndRefreshToken: eid=%d, provider_id=%d, provider_type=%d, expires_in=%d, authed_time=%d, now=%d, expiry_unix=%d, need_refresh=%v",
+		ser.Provider.Eid, ser.Provider.ProviderID, ser.Provider.ProviderType,
+		ser.Provider.ExpiresIn, ser.Provider.AuthedTime,
+		time.Now().Unix(), expiryUnix, needRefresh)
+
+	if !needRefresh {
+		return false, nil
+	}
+
+	// Step 3: Acquire distributed lock
+	lockName := fmt.Sprintf("coze:refresh:%d", ser.Provider.ProviderID)
+	if !common.LOCKER.TryLock(lockName, 30*time.Second) {
+		// Lock busy: poll cache instead of crude sleep
+		logger.SysLogf("【cozetoken 刷新】lock busy, polling cache: eid=%d, provider_id=%d", ser.Provider.Eid, ser.Provider.ProviderID)
+		for i := 0; i < 30; i++ {
+			time.Sleep(1 * time.Second)
+			if cached := coze.GetCachedToken(cacheKey); cached != nil {
+				logger.SysLogf("【cozetoken 刷新】cache populated after lock wait: eid=%d, provider_id=%d", ser.Provider.Eid, ser.Provider.ProviderID)
+				coze.ApplyCachedToken(&ser.Provider, cached)
+				return true, nil
+			}
+		}
+		// Fallback: read from DB
+		logger.SysLogf("【cozetoken 刷新】cache poll timeout, fallback to DB: eid=%d, provider_id=%d", ser.Provider.Eid, ser.Provider.ProviderID)
+		freshProvider, err := model.GetProviderByID(ser.Provider.ProviderID, ser.Provider.Eid)
 		if err != nil {
 			return false, err
 		}
+		ser.Provider = *freshProvider
 		return true, nil
 	}
-	return false, nil
+	defer common.LOCKER.Unlock(lockName)
+
+	// Step 4: Lock acquired — double-check DB
+	freshProvider, err := model.GetProviderByID(ser.Provider.ProviderID, ser.Provider.Eid)
+	if err != nil {
+		return false, err
+	}
+	ser.Provider = *freshProvider
+	expiryUnix = coze.GetTokenExpiryUnix(&ser.Provider)
+	if time.Now().Unix()+300 < expiryUnix {
+		// Already refreshed by another request
+		logger.SysLogf("【cozetoken 刷新】锁内二次检查: token已被刷新，跳过: eid=%d", ser.Provider.Eid)
+		coze.SetCachedToken(cacheKey, &ser.Provider)
+		return true, nil
+	}
+
+	// Step 5: Call Coze API to refresh
+	logger.SysLogf("【cozetoken 刷新】执行刷新: eid=%d, provider_id=%d", ser.Provider.Eid, ser.Provider.ProviderID)
+	err = ser.HandlerAccessTokenByRefreshToken()
+	if err != nil {
+		return false, err
+	}
+
+	// Step 6: Write cache (non-fatal if fails)
+	if cacheErr := coze.SetCachedToken(cacheKey, &ser.Provider); cacheErr != nil {
+		logger.SysErrorf("【cozetoken 刷新】写cache失败: eid=%d, err=%v", ser.Provider.Eid, cacheErr)
+	}
+
+	return true, nil
 }
 
 func (ser *CozeService) GetAllWorkspace() ([]*coze.Workspace, error) {
@@ -192,16 +300,15 @@ func (ser *CozeService) GetAllWorkspace() ([]*coze.Workspace, error) {
 }
 
 func (ser *CozeService) GetAllBot(workspaceId string) ([]*coze.Bot, error) {
-	// 使用API工具类中的认证检查方式
-	api, err := ser.GetCozeApiSdk()
-	if err != nil {
-		logger.SysErrorf("GetCozeApiSdk failed: %v", err)
+	// 统一使用 CheckAndRefreshToken（含缓存 + 分布式锁）
+	if _, err := ser.CheckAndRefreshToken(); err != nil {
+		logger.SysErrorf("GetAllBot CheckAndRefreshToken failed: %v", err)
 		return nil, err
 	}
 
-	// 通过API工具类检查和刷新token
-	if err := api.RefreshTokenIfNeeded(&ser.Provider); err != nil {
-		logger.SysErrorf("RefreshTokenIfNeeded failed: %v", err)
+	api, err := ser.GetCozeApiSdk()
+	if err != nil {
+		logger.SysErrorf("GetCozeApiSdk failed: %v", err)
 		return nil, err
 	}
 
@@ -298,7 +405,7 @@ func (ser *CozeService) CacheBotIconWithUploadFile(botID string, iconURL string,
 	}
 
 	// 生成previewKey
-	previewKey, err := db_model.GetPreviewKey(urlHash, ext)
+	previewKey, err := db_model.GetPreviewKey(urlHash, ext, eid)
 	if err != nil {
 		return "", fmt.Errorf("生成预览键失败: %w", err)
 	}
@@ -334,7 +441,7 @@ func (ser *CozeService) CacheBotIconWithUploadFile(botID string, iconURL string,
 // findUploadFileByHash 根据哈希查找UploadFile记录
 func (ser *CozeService) findUploadFileByHash(hash string) *db_model.UploadFile {
 	var uploadFile db_model.UploadFile
-	if err := db_model.DB.Where("hash = ?", hash).First(&uploadFile).Error; err != nil {
+	if err := db_model.DB.Where("hash = ? AND (source_type = ? OR source_type = '' OR source_type IS NULL)", hash, db_model.UploadFileSourceUserUpload).First(&uploadFile).Error; err != nil {
 		if err.Error() == "record not found" {
 			return nil
 		}

@@ -3,6 +3,7 @@ package env
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	_ "github.com/joho/godotenv/autoload"
 )
@@ -51,5 +52,9 @@ func Bool(env string, defaultValue bool) bool {
 	if env == "" || os.Getenv(env) == "" {
 		return defaultValue
 	}
-	return os.Getenv(env) == "true"
+	value, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(env)))
+	if err != nil {
+		return defaultValue
+	}
+	return value
 }

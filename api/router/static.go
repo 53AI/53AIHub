@@ -86,18 +86,36 @@ func tryServeFile(c *gin.Context, fsys fs.FS, filePath string, logMsg string) bo
 
 // SetStaticRouter configures static file routes
 func SetStaticRouter(router *gin.Engine, buildFS embed.FS) error {
+	// 尝试获取前端资源,如果不存在则记录日志并跳过
 	rendererSubFS, err := fs.Sub(buildFS, "static/front")
 	if err != nil {
-		return err
+		logger.SysLog("static/front directory not found, skipping frontend routes")
+		return nil
 	}
 
 	distSubFS, err := fs.Sub(buildFS, "static/console")
 	if err != nil {
-		return err
+		logger.SysLog("static/console directory not found, skipping console routes")
+		return nil
 	}
 
-	router.StaticFS("/static/front", http.FS(rendererSubFS))
-	router.StaticFS("/static/console", http.FS(distSubFS))
+	// Handle /static/* path requests (for all static files under /static directory)
+	router.GET("/static/*filepath", func(c *gin.Context) {
+		filepath := c.Param("filepath")
+		staticPath := "static" + filepath
+
+		// Try rendererSubFS first
+		if tryServeFile(c, rendererSubFS, staticPath, "Processing /static request: "+staticPath) {
+			return
+		}
+
+		// Try distSubFS if not found in rendererSubFS
+		if tryServeFile(c, distSubFS, staticPath, "Processing /static request: "+staticPath) {
+			return
+		}
+
+		c.String(http.StatusNotFound, "File not found")
+	})
 
 	// Handle assets path requests
 	router.GET("/assets/*filepath", func(c *gin.Context) {

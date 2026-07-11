@@ -71,7 +71,7 @@ func DoRequestHelper(a adaptor.Adaptor, c *gin.Context, meta *meta.Meta, request
 			bodyStr = "<empty>"
 		}
 
-		logger.SysLogf("\n=== DEBUG REQUEST ===\n"+
+		logger.SysDebugf("\n=== DEBUG REQUEST ===\n"+
 			"URL: %s\n"+
 			"Method: %s\n"+
 			"Headers: %v\n"+

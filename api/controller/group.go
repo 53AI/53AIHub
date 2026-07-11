@@ -1,9 +1,9 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
-	"errors"
 
 	"github.com/53AI/53AIHub/common/utils"
 	"github.com/53AI/53AIHub/config"
@@ -17,7 +17,7 @@ type BaseGroupRequest struct {
 }
 
 type GroupRequest struct {
-	GroupType int64 `json:"group_type" example:"1"` // Group type: 1=USER_GROUP_TYPE, 2=AI_LINKS_TYPE, 3=AGENT_TYPE, 4=INTERNAL_USER_GROUP_TYPE， 5=SYSTEM_PROMPT_TYPE 6=PERSONAL_PROMPT_TYPE
+	GroupType int64 `json:"group_type" example:"1"` // Group type: 1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组
 	BaseGroupRequest
 }
 
@@ -36,7 +36,7 @@ type BatchSubmitGroupsRequest struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param group body GroupRequest true "Group information (GroupType: 1=USER_GROUP_TYPE, 2=AI_LINKS_TYPE, 3=AGENT_TYPE, 4=INTERNAL_USER_GROUP_TYPE， 5=SYSTEM_PROMPT_TYPE 6=PERSONAL_PROMPT_TYPE)"
+// @Param group body GroupRequest true "Group information (GroupType: 1=USER_GROUP_TYPE, 2=AI_LINKS_TYPE, 3=AGENT_TYPE, 4=INTERNAL_USER_GROUP_TYPE, 5=SYSTEM_PROMPT_TYPE, 6=PERSONAL_PROMPT_TYPE, 7=GROUP_TYPE_SKILL)"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups [post]
 // @Router /api/groups/prompt [post]
@@ -179,7 +179,7 @@ func DeleteGroup(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param group_type path int true "Group type"
+// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组）"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups/type/{group_type} [get]
 func GetGroups(c *gin.Context) {
@@ -203,7 +203,7 @@ func GetGroups(c *gin.Context) {
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Param group_type path int true "Group type"
+// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组）"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups/type/current/{group_type} [get]
 func GetCurrentGroups(c *gin.Context) {
@@ -232,7 +232,7 @@ func GetCurrentGroups(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param group_type path int true "Group type"
+// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组）"
 // @Param groups body BatchSubmitGroupsRequest true "Groups information to submit"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups/type/{group_type} [post]
@@ -286,8 +286,8 @@ type AddAgentsToGroupRequest struct {
 
 // AddResourcesToGroupRequest defines the request structure for adding resources to a Group
 type AddResourcesToGroupRequest struct {
-	ResourceIDs []int64 `json:"resource_ids" binding:"required" example:"1,2,3"` // Array of Resource IDs
-	ResourceType string `json:"resource_type" binding:"required" example:"agent, prompt, ai_link"` // Type of resource
+	ResourceIDs  []int64 `json:"resource_ids" binding:"required" example:"1,2,3"`                   // Array of Resource IDs
+	ResourceType string  `json:"resource_type" binding:"required" example:"agent, prompt, ai_link"` // Type of resource
 }
 
 // @Summary Add Agents to Group
@@ -414,11 +414,11 @@ func AddResourcesToGroup(c *gin.Context) {
 
 	// Validate resource type
 	validTypes := map[string]bool{
-		model.ResourceTypeAgent:   true,
-		model.ResourceTypeAILink:  true,
-		model.ResourceTypePrompt:  true,
+		model.ResourceTypeAgent:  true,
+		model.ResourceTypeAILink: true,
+		model.ResourceTypePrompt: true,
 	}
-	
+
 	if !validTypes[request.ResourceType] {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("invalid resource type")))
 		return
@@ -477,8 +477,8 @@ type RemoveAgentsFromGroupRequest struct {
 
 // RemoveResourcesFromGroupRequest defines the request structure for removing resources from a Group
 type RemoveResourcesFromGroupRequest struct {
-	ResourceIDs []int64 `json:"resource_ids" binding:"required" example:"1,2,3"` // Array of Resource IDs to remove
-	ResourceType string `json:"resource_type" binding:"required" example:"agent, prompt, ai_link"` // Type of resource
+	ResourceIDs  []int64 `json:"resource_ids" binding:"required" example:"1,2,3"`                   // Array of Resource IDs to remove
+	ResourceType string  `json:"resource_type" binding:"required" example:"agent, prompt, ai_link"` // Type of resource
 }
 
 // @Summary Remove Agents from Group
@@ -590,11 +590,11 @@ func RemoveResourcesFromGroup(c *gin.Context) {
 
 	// Validate resource type
 	validTypes := map[string]bool{
-		model.ResourceTypeAgent:   true,
-		model.ResourceTypeAILink:  true,
-		model.ResourceTypePrompt:  true,
+		model.ResourceTypeAgent:  true,
+		model.ResourceTypeAILink: true,
+		model.ResourceTypePrompt: true,
 	}
-	
+
 	if !validTypes[request.ResourceType] {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("invalid resource type")))
 		return
@@ -741,6 +741,10 @@ func GetGroupAgents(c *gin.Context) {
 		return
 	}
 
+	for i := range agents {
+		agents[i].FillBotID()
+	}
+
 	// Return result
 	c.JSON(http.StatusOK, model.Success.ToResponse(GroupAgentListResponse{
 		Count:  total,
@@ -807,11 +811,11 @@ func GetGroupResources(c *gin.Context) {
 
 	// Validate resource type
 	validTypes := map[string]bool{
-		model.ResourceTypeAgent:   true,
-		model.ResourceTypeAILink:  true,
-		model.ResourceTypePrompt:  true,
+		model.ResourceTypeAgent:  true,
+		model.ResourceTypeAILink: true,
+		model.ResourceTypePrompt: true,
 	}
-	
+
 	if !validTypes[req.ResourceType] {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("invalid resource type")))
 		return
@@ -844,10 +848,10 @@ func GetGroupResources(c *gin.Context) {
 	switch req.ResourceType {
 	case model.ResourceTypeAgent:
 		handleAgentResources(c, resourceIDs, req.Keyword, req.Offset, req.Limit)
-		
+
 	case model.ResourceTypeAILink:
 		handleAILinkResources(c, resourceIDs, req.Keyword, int64(req.Offset), int64(req.Limit), group.Eid)
-		
+
 	case model.ResourceTypePrompt:
 		handlePromptResources(c, resourceIDs, req.Keyword, int64(req.Offset), int64(req.Limit), group.Eid)
 	}
@@ -855,16 +859,16 @@ func GetGroupResources(c *gin.Context) {
 
 // GroupResourceListRequest defines the request structure for getting resource list in a group
 type GroupResourceListRequest struct {
-	Keyword      string `form:"keyword"`      // Search keyword for resource name
-	Offset       int    `form:"offset"`       // Pagination offset
-	Limit        int    `form:"limit"`        // Items per page
-	ResourceType string `form:"resource_type"`// Type of resource
+	Keyword      string `form:"keyword"`       // Search keyword for resource name
+	Offset       int    `form:"offset"`        // Pagination offset
+	Limit        int    `form:"limit"`         // Items per page
+	ResourceType string `form:"resource_type"` // Type of resource
 }
 
 // GroupResourceListResponse defines the response structure for getting resource list in a group
 type GroupResourceListResponse struct {
-	Count     int64       `json:"count"`      // Total count of resources
-	Resources interface{} `json:"resources"`  // List of resources
+	Count     int64       `json:"count"`     // Total count of resources
+	Resources interface{} `json:"resources"` // List of resources
 }
 
 // BatchAddUsersToGroupRequest defines the request structure for batch adding users to a group
@@ -1310,6 +1314,10 @@ func handleAgentResources(c *gin.Context, agentIDs []int64, keyword string, offs
 	if err := query.Order("sort DESC").Offset(offset).Limit(limit).Find(&agents).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
+	}
+
+	for i := range agents {
+		agents[i].FillBotID()
 	}
 
 	// Return result

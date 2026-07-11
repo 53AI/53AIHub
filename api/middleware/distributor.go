@@ -17,6 +17,7 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	c.Set(ctxkey.Channel, channel.Type)
 	c.Set(ctxkey.ChannelId, channel.ChannelID)
 	c.Set(ctxkey.ChannelName, channel.Name)
+	c.Set(ctxkey.SelectedChannel, channel)
 	// if channel.SystemPrompt != nil && *channel.SystemPrompt != "" {
 	// 	c.Set(ctxkey.SystemPrompt, *channel.SystemPrompt)
 	// }

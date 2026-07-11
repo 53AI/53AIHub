@@ -1,0 +1,43 @@
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  run_id VARCHAR(64) NOT NULL,
+  eid BIGINT NOT NULL,
+  conversation_id BIGINT NOT NULL DEFAULT 0,
+  message_id BIGINT NOT NULL DEFAULT 0,
+  request_id VARCHAR(255) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'queued',
+  current_step VARCHAR(64) NOT NULL DEFAULT '',
+  partial_text LONGTEXT,
+  reasoning_text LONGTEXT,
+  last_event_id BIGINT NOT NULL DEFAULT 0,
+  error_code VARCHAR(64) NOT NULL DEFAULT '',
+  error_message LONGTEXT,
+  cancel_requested_at BIGINT NOT NULL DEFAULT 0,
+  started_at BIGINT NOT NULL DEFAULT 0,
+  finished_at BIGINT NOT NULL DEFAULT 0,
+  created_time BIGINT NOT NULL DEFAULT 0,
+  updated_time BIGINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_agent_runs_run_id (run_id),
+  KEY idx_agent_runs_eid_status (eid, status),
+  KEY idx_agent_runs_eid_request_id (eid, request_id),
+  KEY idx_agent_runs_eid_conversation_id (eid, conversation_id)
+);
+
+CREATE TABLE IF NOT EXISTS agent_run_events (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  eid BIGINT NOT NULL,
+  run_id VARCHAR(64) NOT NULL,
+  request_id VARCHAR(255) NOT NULL DEFAULT '',
+  seq BIGINT NOT NULL DEFAULT 0,
+  event_type VARCHAR(64) NOT NULL,
+  message_id BIGINT NOT NULL DEFAULT 0,
+  payload_json LONGTEXT,
+  created_at BIGINT NOT NULL DEFAULT 0,
+  created_time BIGINT NOT NULL DEFAULT 0,
+  updated_time BIGINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_agent_run_events_seq (eid, run_id, seq),
+  KEY idx_agent_run_events_request (eid, request_id),
+  KEY idx_agent_run_events_event_type (event_type),
+  KEY idx_agent_run_events_message_id (message_id),
+  KEY idx_agent_run_events_created_at (created_at)
+);

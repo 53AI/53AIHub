@@ -10,6 +10,7 @@ import (
 type Prompt struct {
 	PromptID     int64        `json:"prompt_id" gorm:"primaryKey;autoIncrement;comment:自增id"`
 	Name         string       `json:"name" gorm:"size:255;not null;default:'';comment:名称"`
+	Logo         string       `json:"logo" gorm:"size:500;default:'';comment:图标URL"`
 	Content      string       `json:"content" gorm:"size:5000;not null;default:'';comment:技能提示语"`
 	Description  string       `json:"description" gorm:"type:text;comment:描述"`
 	Type         int          `json:"type" gorm:"not null;default:1;comment:类型。1个人；2系统"`

@@ -1,5 +1,7 @@
 package coze
 
+import "encoding/json"
+
 type Message struct {
 	Role        string `json:"role"`
 	Type        string `json:"type"`
@@ -64,6 +66,20 @@ type StreamResponseV3 struct {
 	ContentType    string      `json:"content_type"`
 	ChatId         string      `json:"chat_id"`
 	SectionId      string      `json:"section_id"`
+}
+
+type ChatFailedResponse struct {
+	ID             string           `json:"id"`
+	ConversationId string           `json:"conversation_id"`
+	BotId          string           `json:"bot_id"`
+	LastError      ErrorInformation `json:"last_error"`
+	Status         string           `json:"status"`
+}
+
+type CozeErrorResponse struct {
+	Code   int             `json:"code"`
+	Msg    string          `json:"msg"`
+	Detail json.RawMessage `json:"detail"`
 }
 
 // Workflow related structures

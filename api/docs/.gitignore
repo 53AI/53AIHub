@@ -2,3 +2,7 @@
 *
 # 但不忽略 .gitignore 文件本身
 !.gitignore
+
+# 保留 swagger 生成的 Go 包（编译依赖）
+!swagger/
+!swagger/*

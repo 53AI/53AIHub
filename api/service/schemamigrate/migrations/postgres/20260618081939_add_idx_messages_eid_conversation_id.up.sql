@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_messages_eid_conversation_id ON messages (eid, conversation_id, id);

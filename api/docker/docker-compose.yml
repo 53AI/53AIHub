@@ -1,43 +1,158 @@
 version: '3.8'
 
+# 提取公共配置（YAML 锚点）
+x-common-config: &common-restart
+  restart: unless-stopped
+
 services:
-  53aihub:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    env_file: .env
+  nginx:
+    image: 53ai/nginx:v1.0
     ports:
-      - "3000:3000"
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/html:/usr/share/nginx/html:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - km
+    env_file:
+      - .env
+    restart: always
+
+  km:
+    <<: *common-restart
+    image: 53ai/km:v1.0.test
+    env_file:
+      - .env
+    ports:
+      - "${KM_PORT:-9001}:${KM_PORT:-9001}"
+    volumes:
+      - ${DATA_ROOT:-./data}/km/storage:/app/static/uploads
     environment:
-      - REDIS_HOST=redis
-      - MYSQL_HOST=mysql
+      - AGENT_HUB_VERSION=v0.1.0
+      - PORT=${KM_PORT:-9001}
+      # Postgres connection
+      - SQL_DSN=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable&TimeZone=UTC
+      # Redis connection
+      - REDIS_CONN=redis://:${REDIS_PASSWORD}@redis:6379/0
+      # Storage configuration (Local mode)
+      - STORAGE=local
+      - BASE_PATH=static/uploads
+      - MAX_UPLOAD_FILE_SIZE=100MB
+      # System configuration
+      - API_HOST=${API_HOST:-http://localhost:9001/}
+      - HUB_SERVER=local
+      # Vector DB (Local Qdrant)
+      - VECTOR_DB_TYPE=qdrant
+      - VECTOR_DB_URL=http://qdrant:6333
+      - VECTOR_DB_API_KEY=${QDRANT_API_KEY}
+      # Document Conversion
+      - DOC_CONVERT_BASE_URL=${DOC_CONVERT_BASE_URL:-http://file-service:5022}
+      - DOC_CONVERT_API_KEY=${DOC_CONVERT_API_KEY:-}
+      - DOC_CONVERT_TIMEOUT=1800
+      - DOC_CONVERT_MAX_FILE_SIZE=100MB
+      - DOC_CONVERT_RETRY_TIMES=3
+      - DOC_CONVERT_POLL_INTERVAL=5
+      # RAG & DB
+      - RAG_JOB_LOCK_TTL=1800
+      - MIGRATE_DB_ENABLED=true
+      # - GORM_LOG_LEVEL=info
+      - RAG_JOB_PROCESS_DELAY_SECONDS=0
+      - ELASTICSEARCH_ADDRESSES=${ELASTICSEARCH_ADDRESSES:-http://elasticsearch:9200}
+      - ELASTICSEARCH_USERNAME=${ELASTICSEARCH_USERNAME:-}
+      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-}
+      - ELASTICSEARCH_DISABLED=${ELASTICSEARCH_DISABLED:-false}
     depends_on:
       - redis
-      - mysql
-    restart: unless-stopped
+      - postgres
+      - qdrant
+      - file-service
+      - elasticsearch
+
+  elasticsearch:
+    <<: *common-restart
+    image: 53ai/elasticsearch:v1.0
+    env_file:
+      - .env
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+    volumes:
+      - ${DATA_ROOT:-./data}/elasticsearch:/usr/share/elasticsearch/data
 
   redis:
-    image: redis:6-alpine
-    command: redis-server --requirepass your_redis_password  # 设置 Redis 密码
+    <<: *common-restart
+    image: 53ai/redis:v1.0
+    env_file:
+      - .env
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-9002}:6379"
     volumes:
-      - redis_data:/data
-    restart: unless-stopped
+      - ${DATA_ROOT:-./data}/redis:/data
 
-  mysql:
-    image: mysql:8.0
+  postgres:
+    <<: *common-restart
+    image: 53ai/postgres:v1.0
+    env_file:
+      - .env
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: 53ai_hub
-      MYSQL_USER: agent
-      MYSQL_PASSWORD: agentpassword
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "3306:3306"
+      - "${POSTGRES_PORT:-9003}:5432"
     volumes:
-      - mysql_data:/var/lib/mysql
-    restart: unless-stopped
+      - ${DATA_ROOT:-./data}/postgres:/var/lib/postgresql/data
 
-volumes:
-  redis_data:
-  mysql_data:
+  qdrant:
+    <<: *common-restart
+    image: 53ai/qdrant:v1.0
+    env_file:
+      - .env
+    ports:
+      - "${QDRANT_PORT:-9004}:6333"
+      - "${QDRANT_GRPC_PORT:-9005}:6334"
+    volumes:
+      - ${DATA_ROOT:-./data}/qdrant:/qdrant/storage
+
+  fileview:
+    image: 53ai/file-view:v1.prod
+    env_file:
+      - .env
+    restart: always
+    ports:
+      - "${KK_PORT:-9006}:8012"
+    environment:
+      - KK_REDIS_ADDRESS=redis:6379
+      - KK_REDIS_PASSWORD=${REDIS_PASSWORD}
+      - KK_BASE_URL=${KK_BASE_URL}
+      - KK_TRUST_HOST=*
+    volumes:
+      - ${DATA_ROOT:-./data}/kkfileview/config:/opt/kkFileView-4.4.0-beta/config
+      - ${DATA_ROOT:-./data}/kkfileview/file:/opt/kkFileView-4.4.0-beta/file
+      - ${DATA_ROOT:-./data}/kkfileview/log:/opt/kkFileView-4.4.0-beta/log
+
+  file-service:
+    image: 53ai/document-conversion:v0.8.prod
+    ports:
+      - "${FILE_SERVICE_PORT:-9007}:5022"
+    volumes:
+      - ${DATA_ROOT:-./data}/file-service:/app/data
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DOWNLOAD_TIMEOUT_SEC=1800
+      - CONVERT_TIMEOUT_SEC=1800
+      - PGSQL_DSN=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/file_service?sslmode=disable&TimeZone=Asia/Shanghai
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - APP_PORT=5022
+      - API_KEY=${DOC_CONVERT_API_KEY}

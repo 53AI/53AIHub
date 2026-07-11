@@ -187,7 +187,7 @@ func makeMaxKBRequest(url, applicationToken string) ([]byte, error) {
 // findMaxKBChannelByBotID 根据企业ID和botID查找包含该botID的MaxKB渠道
 func findMaxKBChannelByBotID(eid int64, botID string) (*model.Channel, error) {
 	// 获取企业下所有MaxKB类型的渠道
-	channels, err := model.GetChannelsByEidAndParams(eid, 0, []int{model.ChannelApiTypeMaxKB}, nil)
+	channels, err := model.GetChannelsByEidAndParams(eid, 0, []int{model.ChannelApiTypeMaxKB})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get MaxKB channels: %v", err)
 	}

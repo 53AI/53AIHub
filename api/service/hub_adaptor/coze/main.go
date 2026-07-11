@@ -11,13 +11,14 @@ import (
 	"strings"
 
 	"github.com/53AI/53AIHub/common/storage"
+	"github.com/53AI/53AIHub/common/logger"
 	db_model "github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service/hub_adaptor/coze/constant/event"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common"
 	"github.com/songquanpeng/one-api/common/conv"
 	"github.com/songquanpeng/one-api/common/helper"
-	"github.com/songquanpeng/one-api/common/logger"
 	"github.com/songquanpeng/one-api/common/render"
 	"github.com/songquanpeng/one-api/relay/adaptor/coze/constant/messagetype"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
@@ -43,6 +44,24 @@ func stopReasonCoze2OpenAI(reason *string) string {
 	}
 }
 
+// getNewMessagesAfterLastAssistant 返回最后一条 assistant 消息之后的 messages。
+// 用于延续已有 conversation 时，只发送增量消息，避免将全部历史重复发送。
+func getNewMessagesAfterLastAssistant(messages []model.Message) []model.Message {
+	lastAssistantIdx := -1
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == "assistant" {
+			lastAssistantIdx = i
+			break
+		}
+	}
+	if lastAssistantIdx < 0 {
+		// 没有 assistant 回复，说明是全新对话，返回全部
+		return messages
+	}
+	// 只取 assistant 之后的消息（通常是新的 user 消息）
+	return messages[lastAssistantIdx+1:]
+}
+
 func ConvertRequest(textRequest model.GeneralOpenAIRequest, meta *meta.Meta, customConfig *custom.CustomConfig) *Request {
 	modelName := "bot-" + strings.TrimPrefix(meta.ActualModelName, "bot-")
 	channelID := meta.ChannelId
@@ -51,7 +70,14 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest, meta *meta.Meta, cus
 		UserID: customConfig.UserId,
 		BotId:  strings.TrimPrefix(textRequest.Model, "bot-"),
 	}
-	for _, message := range textRequest.Messages {
+
+	// 当已有 conversation_id（延续对话）时，只发送增量消息，不重复发送历史
+	messages := textRequest.Messages
+	if customConfig.ConversationId != "" {
+		messages = getNewMessagesAfterLastAssistant(messages)
+	}
+
+	for _, message := range messages {
 		typeStr := TypeQuestion
 		contentType := ContentTypeText
 		if message.Role == "assistant" {
@@ -183,11 +209,49 @@ func ResponseCoze2OpenAI(cozeResponse *Response) (*openai.TextResponse, string) 
 	return &fullTextResponse, cozeResponse.ConversationId
 }
 
+// writeStreamError 通过 SSE 向客户端发送错误信息并刷新
+func writeStreamError(c *gin.Context, message string, code int) {
+	errChunk := map[string]interface{}{
+		"error": model.Error{
+			Message: message,
+			Code:    code,
+		},
+	}
+	jsonBytes, _ := json.Marshal(errChunk)
+	c.Writer.Write([]byte("data: "))
+	c.Writer.Write(jsonBytes)
+	c.Writer.Write([]byte("\n\n"))
+	c.Writer.Write([]byte("data: [DONE]\n\n"))
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusCode, *string, string) {
 	var responseText string
 	createdTime := helper.GetTimestamp()
+
+	// 处理非 200 响应：Coze 可能直接返回 HTTP 错误而非 SSE 流
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		errMsg := fmt.Sprintf("upstream error (status %d)", resp.StatusCode)
+		if readErr == nil && len(bodyBytes) > 0 {
+			logger.SysError(fmt.Sprintf("【Coze】非200响应: status=%d, body=%s", resp.StatusCode, string(bodyBytes)))
+			var cozeErr CozeErrorResponse
+			if json.Unmarshal(bodyBytes, &cozeErr) == nil && cozeErr.Msg != "" {
+				errMsg = cozeErr.Msg
+			}
+		} else {
+			logger.SysError(fmt.Sprintf("【Coze】非200响应且读取body失败: status=%d, readErr=%v", resp.StatusCode, readErr))
+		}
+
+		common.SetEventStreamHeaders(c)
+		writeStreamError(c, errMsg, resp.StatusCode)
+		return nil, &errMsg, ""
+	}
+
 	scanner := bufio.NewScanner(resp.Body)
-	// 设置更大的缓冲区以处理大型响应 (1MB)
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 	scanner.Split(bufio.ScanLines)
@@ -195,16 +259,102 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 	common.SetEventStreamHeaders(c)
 	conversationId := ""
 	var modelName string
+	errored := false
 
-	eventStr := ""
-	for scanner.Scan() {
-		data := scanner.Text()
-		if data == "" || data == "\n" {
-			continue
+		eventStr := ""
+		eventCount := 0
+		for scanner.Scan() {
+			data := scanner.Text()
+			eventCount++
+
+			if data == "" || data == "\n" {
+				eventStr = ""
+				continue
+			}
+			if strings.HasPrefix(data, "event:") {
+				eventStr = strings.TrimPrefix(data, "event:")
+				continue
+			}
+
+			if !strings.HasPrefix(data, "data:") {
+				continue
+			}
+
+			if eventStr == "" {
+				continue
+			}
+
+			if eventStr == event.ChatFailed {
+			if len(data) >= 5 && strings.HasPrefix(data, "data:") {
+				payload := strings.TrimPrefix(data, "data:")
+				payload = strings.TrimSuffix(payload, "\r")
+
+				var failedResp ChatFailedResponse
+				if err := json.Unmarshal([]byte(payload), &failedResp); err != nil {
+					logger.SysError("【Coze】解析 conversation.chat.failed 失败: " + err.Error() + ", 原始数据: " + payload)
+					continue
+				}
+				logger.SysError(fmt.Sprintf("【Coze】chat failed: code=%d, msg=%s",
+					failedResp.LastError.Code, failedResp.LastError.Msg))
+
+				// 不调用 writeStreamError——让 relay 层的统一错误处理路径发送 SSE 错误并正确终结 agent run
+				resp.Body.Close()
+				return &model.ErrorWithStatusCode{
+					Error: model.Error{
+						Message: failedResp.LastError.Msg,
+						Code:    failedResp.LastError.Code,
+					},
+					StatusCode: resp.StatusCode,
+				}, nil, failedResp.ConversationId
+			}
+			errored = true
+			break
 		}
-		// logger.SysLogf("coze stream : %s", data)
-		if strings.HasPrefix(data, "event:") {
-			eventStr = strings.TrimPrefix(data, "event:")
+
+		if eventStr == event.Error {
+			if len(data) >= 5 && strings.HasPrefix(data, "data:") {
+				payload := strings.TrimPrefix(data, "data:")
+				payload = strings.TrimSuffix(payload, "\r")
+
+				var cozeErr CozeErrorResponse
+				if err := json.Unmarshal([]byte(payload), &cozeErr); err != nil {
+					logger.SysError("【Coze】解析 error 事件失败: " + err.Error())
+					resp.Body.Close()
+					return &model.ErrorWithStatusCode{
+						Error: model.Error{
+							Message: "coze stream error",
+							Code:    500,
+						},
+						StatusCode: http.StatusInternalServerError,
+					}, nil, ""
+				} else {
+					errMsg := cozeErr.Msg
+					if errMsg == "" {
+						errMsg = "coze stream error"
+					}
+					logger.SysError(fmt.Sprintf("【Coze】error 事件: code=%d, msg=%s", cozeErr.Code, errMsg))
+					resp.Body.Close()
+					return &model.ErrorWithStatusCode{
+						Error: model.Error{
+							Message: errMsg,
+							Code:    cozeErr.Code,
+						},
+						StatusCode: resp.StatusCode,
+					}, nil, ""
+				}
+			} else {
+				logger.SysError("【Coze】error 事件缺少 data 字段: " + data)
+				resp.Body.Close()
+				return &model.ErrorWithStatusCode{
+					Error: model.Error{
+						Message: "coze stream error event without data",
+						Code:    http.StatusInternalServerError,
+					},
+					StatusCode: http.StatusInternalServerError,
+				}, nil, ""
+			}
+
+			// event.Error 已提前返回，不再需要 errored/break
 		}
 
 		if eventStr != "conversation.message.delta" {
@@ -254,7 +404,13 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 		logger.SysError("error reading stream: " + err.Error())
 	}
 
-	render.Done(c)
+	if eventCount == 0 {
+		logger.SysError("【Coze】流式响应返回空流（无任何SSE事件），conversation可能处于异常状态")
+	}
+
+	if !errored {
+		render.Done(c)
+	}
 
 	err := resp.Body.Close()
 	if err != nil {

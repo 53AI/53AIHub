@@ -158,3 +158,12 @@ func StrInArray(str string, arr []string) bool {
 	}
 	return false
 }
+
+func Int64InArray(i int64, arr []int64) bool {
+	for _, v := range arr {
+		if v == i {
+			return true
+		}
+	}
+	return false
+}
