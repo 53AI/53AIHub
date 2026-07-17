@@ -1,62 +1,168 @@
-version: '3.8'
-
 services:
   web:
-    image: 53ai/53ai-hub:0.2.4
-    env_file: .env
+    image: ${HUB_IMAGE:-registry.cn-hangzhou.aliyuncs.com/53ai/53aihub:latest}
+    container_name: 53aihub
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      HUB_SERVER: "${HUB_SERVER:-local}"
+      PORT: "${PORT:-3000}"
+      API_HOST: "${API_HOST:-http://localhost:3000}"
+      SQL_DSN: "${SQL_DSN:-agent:agentpassword@tcp(mysql:3306)/53ai_hub?charset=utf8mb4&parseTime=True&loc=UTC}"
+      REDIS_CONN: "${REDIS_CONN:-redis://:your_redis_password@redis:6379/0}"
+      VECTOR_DB_TYPE: "${VECTOR_DB_TYPE:-qdrant}"
+      VECTOR_DB_URL: "${VECTOR_DB_URL:-http://qdrant:6333}"
+      VECTOR_DB_API_KEY: "${VECTOR_DB_API_KEY:-your_qdrant_key}"
+      DOC_CONVERT_BASE_URL: "${DOC_CONVERT_BASE_URL:-http://file-service:5022}"
+      DOC_CONVERT_API_KEY: "${DOC_CONVERT_API_KEY:-}"
+      SANDBOX_SERVICE_URL: "${SANDBOX_SERVICE_URL:-http://sandbox:8000}"
+      KK_BASE_URL: "${KK_BASE_URL:-http://localhost:9006}"
+      DEPLOYMENT_MODE: "${DEPLOYMENT_MODE:-local}"
+      DEBUG: "${DEBUG:-false}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+      MIGRATE_DB_ENABLED: "${MIGRATE_DB_ENABLED:-true}"
+    volumes:
+      - ./.env:/app/.env:ro
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
     ports:
       - "3000:3000"
-    environment:
-      - REDIS_HOST=redis
-      - MYSQL_HOST=mysql
     depends_on:
-      redis:
-        condition: service_healthy
       mysql:
         condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      file-service:
+        condition: service_started
+      sandbox:
+        condition: service_started
+    networks:
+      - 53aihub-network
 
-  redis:
-    image: redis:6-alpine
-    command: redis-server --requirepass your_redis_password
-    volumes:
-      - redis_data:/data
+  mysql:
+    image: ${MYSQL_IMAGE:-mysql:8.0}
+    container_name: 53aihub-mysql
     restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-rootpassword}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-53ai_hub}"
+      MYSQL_USER: "${MYSQL_USER:-agent}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-agentpassword}"
+    volumes:
+      - ./data/mysql/data:/var/lib/mysql
+      - ./data/mysql/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "3306:3306"
+    networks:
+      - 53aihub-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  mysql:
-    image: mysql:8.0
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: 53ai_hub
-      MYSQL_USER: agent
-      MYSQL_PASSWORD: agentpassword
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
+  redis:
+    image: ${REDIS_IMAGE:-redis:7.2-bookworm}
+    container_name: 53aihub-redis
     restart: unless-stopped
+    env_file:
+      - .env
+    command:
+      - redis-server
+      - --requirepass
+      - "${REDIS_REQUIREPASS:-your_redis_password}"
+      - --maxmemory
+      - "${REDIS_MAXMEMORY:-256mb}"
+      - --maxmemory-policy
+      - "${REDIS_MAXMEMORY_POLICY:-allkeys-lru}"
+    volumes:
+      - ./data/redis/data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - 53aihub-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_REQUIREPASS\" ping"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
-    command: >
-      --default-authentication-plugin=mysql_native_password
-      --wait-timeout=28800
-      --interactive-timeout=28800
+      retries: 5
 
-volumes:
-  redis_data:
-  mysql_data:
+  qdrant:
+    image: ${QDRANT_IMAGE:-qdrant/qdrant:latest}
+    container_name: 53aihub-qdrant
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      QDRANT__API_KEY: "${VECTOR_DB_API_KEY:-your_qdrant_key}"
+    volumes:
+      - ./data/qdrant/data:/qdrant/storage
+    ports:
+      - "6333:6333"
+    networks:
+      - 53aihub-network
+
+  fileview:
+    image: registry.cn-hangzhou.aliyuncs.com/53ai/53ai-viewer:latest
+    container_name: 53ai-viewer
+    env_file:
+      - .env
+    restart: always
+    ports:
+      - "9006:8012"
+    environment:
+      KK_REDIS_ADDRESS: "${KK_REDIS_ADDRESS:-redis:6379}"
+      KK_REDIS_PASSWORD: "${KK_REDIS_PASSWORD:-your_redis_password}"
+      KK_BASE_URL: "${KK_BASE_URL:-http://localhost:9006}"
+      KK_TRUST_HOST: "${KK_TRUST_HOST:-*}"
+    volumes:
+      - ./data/kkfileview/config:/opt/kkFileView-4.4.0-beta/config
+      - ./data/kkfileview/file:/opt/kkFileView-4.4.0-beta/file
+      - ./data/kkfileview/log:/opt/kkFileView-4.4.0-beta/log
+    networks:
+      - 53aihub-network
+
+  file-service:
+    image: registry.cn-hangzhou.aliyuncs.com/53ai/53ai-standardparsing:latest
+    container_name: 53ai-standardparsing
+    ports:
+      - "9007:5022"
+    volumes:
+      - ./data/file-service:/app/data
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      - mysql
+      - redis
+    environment:
+      DOWNLOAD_TIMEOUT_SEC: "${FILE_SERVICE_DOWNLOAD_TIMEOUT_SEC:-1800}"
+      CONVERT_TIMEOUT_SEC: "${FILE_SERVICE_CONVERT_TIMEOUT_SEC:-1800}"
+      MYSQL_DSN: "${FILE_SERVICE_MYSQL_DSN:-agent:agentpassword@tcp(mysql:3306)/53ai_hub?charset=utf8mb4&parseTime=True&loc=UTC}"
+      REDIS_URL: "${FILE_SERVICE_REDIS_URL:-redis://:your_redis_password@redis:6379/1}"
+      APP_PORT: "${FILE_SERVICE_APP_PORT:-5022}"
+      API_KEY: "${DOC_CONVERT_API_KEY:-}"
+    networks:
+      - 53aihub-network
+
+  sandbox:
+    image: ${SANDBOX_IMAGE:-registry.cn-hangzhou.aliyuncs.com/53ai/53ai-sandbox:latest}
+    container_name: 53ai-sandbox
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    environment:
+      - NODE_PATH=/usr/lib/node_modules
+      - HOME=/home/sandboxer
+      - XDG_CACHE_HOME=/tmp/.cache
+    networks:
+      - 53aihub-network
+
+networks:
+  53aihub-network:
+    driver: bridge

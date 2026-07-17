@@ -36,6 +36,13 @@ type OpenAIError struct {
 	Code    interface{} `json:"code,omitempty"`
 }
 
+type OpenAIError struct {
+	Message string      `json:"message"`
+	Type    string      `json:"type"`
+	Param   interface{} `json:"param,omitempty"`
+	Code    interface{} `json:"code,omitempty"`
+}
+
 type OpenAIErrorResponse struct {
 	Error OpenAIError `json:"error"`
 }

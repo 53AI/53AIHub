@@ -43,6 +43,9 @@ AIエージェント、プロンプト、ツールの公開、管理、分類、
 | 内部ユーザー     | ✅                      | ❌           | ❌           | ❌            |
 | SSO対応          | WeCom、DingTalk、Feishu | ❌           | ❌           | ❌            |
 | ローカル導入     | ✅                      | ✅           | ✅           | ✅            |
+| AIナレッジベース | ✅                      | ❌           | ❌           | ❌            |
+| AIワークベンチ   | ✅                      | ❌           | ❌           | ❌            |
+| SKILL対応        | ✅                      | ❌           | ❌           | ❌            |
 
 ## 利用方法
 
@@ -64,7 +67,17 @@ AIエージェント、プロンプト、ツールの公開、管理、分類、
 
 ### クイックインストール
 
-[docker-compose.yml](docker/docker-compose.yaml) を使用すると簡単にインストールできます。事前に [Docker](https://docs.docker.com/get-docker/) と [Docker Compose](https://docs.docker.com/compose/install/) をインストールしてください。：
+まずは一行インストーラーを使う方法を推奨します。
+
+```bash
+sudo curl -fsSL https://download.53ai.com/install.sh | bash
+```
+
+スクリプト完了後、案内に従って初期設定を行い、その後 [`http://localhost:3000`](http://localhost:3000) にアクセスして管理画面を開けます。
+
+### 代替: Docker インストール
+
+Docker を使いたい場合は、[docker-compose.yml](docker/docker-compose.yaml) からも導入できます。事前に [Docker](https://docs.docker.com/get-docker/) と [Docker Compose](https://docs.docker.com/compose/install/) をインストールしてください。：
 
 1. `git clone` でリポジトリをクローン
 ```bash
@@ -76,8 +89,6 @@ cd 53aihub
 cd docker
 docker compose up -d
 ```
-
-ブラウザで [`http://localhost:3000`](http://localhost:3000) にアクセスし、管理画面で初期設定を行います。
 
 ### カスタム設定
 
@@ -111,4 +122,3 @@ docker compose up -d
 ## フォローしよう
 
 GitHubで53AI Hubにスターを付けると、最新のアップデート通知を受け取ることができます。
-

@@ -43,6 +43,9 @@ Supports one-click deployment on both cloud and local environments, and binding 
 | Internal Users     | ✅                      | ❌          | ❌          | ❌            |
 | SSO Support        | WeCom, DingTalk, Feishu | ❌          | ❌          | ❌            |
 | Local Deployment   | ✅                      | ✅          | ✅          | ✅            |
+| AI Knowledge Base  | ✅                      | ❌          | ❌          | ❌            |
+| AI Workbench       | ✅                      | ❌          | ❌          | ❌            |
+| SKILL Support      | ✅                      | ❌          | ❌          | ❌            |
 
 ## Usage
 
@@ -64,7 +67,17 @@ Minimum configuration for installing 53AI Hub:
 
 ### Quick Installation
 
-The simplest way to install 53AI Hub Community Edition is to run our docker/docker-compose.yaml file. Before running the installation command, ensure that https://docs.docker.com/get-docker/ and https://docs.docker.com/compose/install/ are installed on your machine. :
+The recommended way to install 53AI Hub Community Edition is to run the one-line installer:
+
+```bash
+sudo curl -fsSL https://download.53ai.com/install.sh | bash
+```
+
+After the script finishes, follow the prompts to complete the setup and then visit [`http://localhost:3000`](http://localhost:3000) to access the administration panel and begin setup.
+
+### Alternative: Docker Installation
+
+If you prefer Docker, you can still install from our `docker/docker-compose.yaml` file. Before running the installation command, ensure that https://docs.docker.com/get-docker/ and https://docs.docker.com/compose/install/ are installed on your machine.
 
 1. Clone the repository
 ```bash
@@ -76,8 +89,6 @@ cd 53aihub
 cd docker
 docker compose up -d
 ```
-
-Then visit [`http://localhost:3000`](http://localhost:3000) to access the administration panel and begin setup.
 
 ### Custom Configuration
 
@@ -113,4 +124,3 @@ This repository is licensed under the [53AI Open Source License](https://docs.53
 ## Follow Us
 
 Star 53AI Hub on GitHub to get notified about updates and new releases.
-
