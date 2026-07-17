@@ -19,6 +19,13 @@ type FileNameSearchRequest struct {
 	LibraryIDs     []int64
 	CaseSensitive  *bool
 	FuzzyThreshold *int
+	CreatorIDs     []int64
+	FileExtensions []string
+	TimeFrom       *int64
+	TimeTo         *int64
+	TimeField      string // "created_time" or "updated_time"
+	Page           int
+	Size           int
 }
 
 type SearchService struct {
@@ -111,15 +118,50 @@ func parseFileNameSearchRequest(args []interface{}) (int64, *FileNameSearchReque
 }
 
 func (s *SearchService) searchFileNameByDatabase(eid, userID int64, req *FileNameSearchRequest, startTime time.Time) (*es.FileNameSearchResponse, error) {
-	var files []model.File
-	query := model.DB.Where("eid = ? AND is_deleted = ?", eid, false)
+	query := model.DB.Model(&model.File{}).Where("eid = ? AND is_deleted = ? AND type = ?", eid, false, model.FILE_TYPE_FILE)
 	if len(req.LibraryIDs) > 0 {
 		query = query.Where("library_id IN ?", req.LibraryIDs)
 	}
 	if req.Query != "" {
 		query = query.Where("path LIKE ?", "%"+req.Query+"%")
 	}
-	query = query.Limit(req.TopK)
+	if len(req.CreatorIDs) > 0 {
+		query = query.Where("user_id IN ?", req.CreatorIDs)
+	}
+	if len(req.FileExtensions) > 0 {
+		var extConditions []string
+		for _, ext := range req.FileExtensions {
+			extConditions = append(extConditions, "path LIKE '%"+ext+"'")
+		}
+		query = query.Where(strings.Join(extConditions, " OR "))
+	}
+	if req.TimeFrom != nil && req.TimeField != "" {
+		query = query.Where(req.TimeField+" >= ?", *req.TimeFrom)
+	}
+	if req.TimeTo != nil && req.TimeField != "" {
+		query = query.Where(req.TimeField+" <= ?", *req.TimeTo)
+	}
+
+	size := req.TopK
+	if req.Size > 0 {
+		size = req.Size
+	}
+	if size > 100 {
+		size = 100
+	}
+	offset := 0
+	if req.Page > 1 && req.Size > 0 {
+		offset = (req.Page - 1) * req.Size
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, fmt.Errorf("数据库搜索统计失败: %v", err)
+	}
+
+	query = query.Order("updated_time DESC").Offset(offset).Limit(size)
+
+	var files []model.File
 	if err := query.Find(&files).Error; err != nil {
 		return nil, fmt.Errorf("数据库搜索失败: %v", err)
 	}
@@ -183,7 +225,7 @@ func (s *SearchService) searchFileNameByDatabase(eid, userID int64, req *FileNam
 
 	return &es.FileNameSearchResponse{
 		Results: results,
-		Total:   int64(len(results)),
+		Total:   total,
 		Time:    0,
 		Query:   req.Query,
 	}, nil

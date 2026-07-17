@@ -3,7 +3,8 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Empty, Spin, message, Button } from "antd";
 import { useEnterpriseStore, useIsSoftStyle } from "@/stores/modules/enterprise";
 import { useAgentStore } from "@/stores/modules/agent";
-import { UsageGuide, ChatConfigProvider } from "@km/shared-business";
+import { UsageGuide, ChatConfigProvider } from "@km/shared-business/chat";
+import { chatAdapters } from "@/adapters/chat-adapters";
 import { createPlatformsByType } from '@km/shared-business/agent-create';
 import { SvgIcon } from '@km/shared-components-react';
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
@@ -107,11 +108,9 @@ export function AgentDetailView() {
         setDetailData(response.data as Agent.State);
       } else {
         // 公司智能体：从列表中查找
-        const response = await agentsApi.available({
-          offset: 0,
-          limit: 1000,
-        });
-        const agent = response.data.agents.find(
+
+        const agents = await agentStore.loadAgentList()
+        const agent = agents.find(
           (a: any) => a.agent_id === agent_id || String(a.agent_id) === agent_id
         );
         setDetailData(agent as unknown as Agent.State);
@@ -123,7 +122,7 @@ export function AgentDetailView() {
       setLoading(false);
     }
   };
-  
+
   // 获取分组名称
   const groupName = useMemo(() => {
     const group = agentStore.categorys.find(c => c.group_id === detailData?.group_id)
@@ -134,7 +133,7 @@ export function AgentDetailView() {
     const custom_config_obj = JSON.parse(detailData?.custom_config || '{}') || {}
     const agentMode = custom_config_obj.agent_mode
     const agentType = custom_config_obj.agent_type
-    
+
     const platform = platforms.find(item => item.value === agentType)
 
     return {
@@ -170,7 +169,7 @@ export function AgentDetailView() {
   // 软件模式下跳转到工作台智能体页
   const handleUseAgentSoft = () => {
     if (agent_id) {
-      navigate(`/index/agent?agent_id=${agent_id}`)
+      navigate(`/agent/agent?agent_id=${agent_id}`)
     }
   }
 
@@ -255,12 +254,12 @@ export function AgentDetailView() {
           </p>
           {!isSoftStyle && detailData.user_group_ids && detailData.user_group_ids.length > 0 && (
             <div className="mt-5">
-              <AuthTagGroup value={detailData.user_group_ids} />
+              <AuthTagGroup value={detailData.user_group_ids} scopes={detailData.scopes} />
             </div>
           )}
 
           <div className="h-6"></div>
-          <ChatConfigProvider lang={locale}>
+          <ChatConfigProvider lang={locale} adapters={chatAdapters}>
             <UsageGuide
               useCases={useCasesData}
               defaultImage={DEFAULT_IMG}
@@ -275,7 +274,7 @@ export function AgentDetailView() {
               <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
                 <div className="flex-1 overflow-hidden">
                   {detailData.user_group_ids && detailData.user_group_ids.length > 0 && (
-                    <AuthTagGroup value={detailData.user_group_ids} mode="compact" />
+                    <AuthTagGroup value={detailData.user_group_ids} scopes={detailData.scopes} mode="compact" />
                   )}
                 </div>
                 {isAdded ? (

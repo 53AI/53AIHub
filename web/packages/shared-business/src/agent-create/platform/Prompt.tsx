@@ -105,7 +105,7 @@ export const Prompt = forwardRef<PromptRef, PromptProps>(
                   rules={[{ required: true, message: t("form.select_placeholder") }]}
                   getValueProps={() => ({ value: model })}
                   layout="horizontal"
-                  className="flex-1 mb-0"
+                  className="flex-1 mb-0 overflow-hidden"
                 >
                   <ModelSelect
                     valueKey="model_value"

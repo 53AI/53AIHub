@@ -1,24 +1,17 @@
-﻿import { memo, useCallback, useEffect, useRef } from "react";
+﻿import { memo, useCallback, useMemo, useRef } from "react";
 import { LoadingOutlined } from "@ant-design/icons";
 import { BubbleList, type BubbleListRef } from "@km/hub-ui-x-react";
 import Welcome from "../Welcome";
 import RelatedScene from "../related-scene/RelatedScene";
 import MessageItem from "../message/MessageItem";
 import { useTranslation } from "../../i18n";
-import type { TranslateFn } from "../process-flow";
-import type { IAgentInfo } from "../../adapters/types";
-import type {
-  Message,
-  ChatMessagesFeatures,
-  FileItem,
-  ChunkItem,
-  OutputFile,
-  SourceReferenceData,
-  OpenClawActivityItem,
-  OpenClawInteractionOption,
-} from "../../types/message";
+import type { ChatMessagesFeatures } from "../../types/message";
+import type { ChatMessagesProps } from "./types";
 
-/** 默认功能配置 */
+/**
+ * 默认功能配置
+ * 注意：除 menu 外的功能已改为数据驱动，此处的配置仅用于向后兼容
+ */
 const DEFAULT_FEATURES: ChatMessagesFeatures = {
   menu: {
     copy: true,
@@ -27,8 +20,9 @@ const DEFAULT_FEATURES: ChatMessagesFeatures = {
     addAsMd: false,
     feedback: false,
   },
+  // 以下字段已废弃，保留以维持向后兼容
   outputFiles: false,
-  fileFavorite: false, // 默认关闭文件收藏
+  fileFavorite: false,
   sourceRef: false,
   processFlow: false,
   specifiedFiles: false,
@@ -36,152 +30,94 @@ const DEFAULT_FEATURES: ChatMessagesFeatures = {
   skillTag: false,
 };
 
-const DEFAULT_IMG = "/images/default_agent.png";
-
-function handleImageError(e: React.SyntheticEvent<HTMLImageElement>) {
-  const target = e.target as HTMLImageElement;
-  if (target.src.endsWith(DEFAULT_IMG)) return;
-  target.src = DEFAULT_IMG;
-}
-
-export interface ChatMessagesProps {
-  /** 消息列表 */
-  messageList: Message[];
-  /** Agent 信息 */
-  agentInfo: IAgentInfo;
-  /** 是否正在流式输出 */
-  isStreaming: boolean;
-  /** 功能配置 */
-  features?: ChatMessagesFeatures;
-  /** 建议问题点击回调 */
-  onSuggestionClick?: (content: string) => void;
-  /** 分享模式 */
-  isShareMode?: boolean;
-  /** 是否显示欢迎页 */
-  showWelcome?: boolean;
-  /** 选中的消息 ID 列表 */
-  selectedMessageIds?: (string | number)[];
-  /** 全选状态 */
-  selectAll?: boolean;
-  /** 消息选择回调 */
-  onMessageSelect?: (msg: Message) => void;
-  /** 全选回调 */
-  onSelectAll?: () => void;
-  /** 消息菜单渲染函数 - 已弃用，请使用 features 配置 */
-  renderMessageMenu?: (type: "user" | "assistant", msg: Message) => React.ReactNode;
-  /** 欢迎页 AuthTags 渲染函数 */
-  renderAuthTags?: (userGroupIds: number[]) => React.ReactNode;
-  /** 是否显示推荐面板 */
-  showRecommend?: boolean;
-  /** 推荐智能体列表 */
-  recommendAgents?: IAgentInfo[];
-  /** 推荐智能体选择回调 */
-  onRecommendAgentSelect?: (agent: IAgentInfo) => void;
-  /** 下一个智能体回调 - 用于 RelatedScene */
-  onNextAgent?: (item: any, parameters: Record<string, string>) => void;
-  /** 重新初始化当前智能体回调 - 当跳转到同一智能体时触发 */
-  onInitAgent?: () => void;
-  /** Openclaw 模式 */
-  openclaw?: boolean;
-  /** 显示相关场景 */
-  showRelatedScene?: boolean;
-  /** 是否还有更早消息 */
-  hasMore?: boolean;
-  /** 是否正在加载更早消息 */
-  isLoadingMore?: boolean;
-  /** 是否正在加载当前会话消息 */
-  isConversationLoading?: boolean;
-  /** 上拉加载更早消息 */
-  onLoadMore?: (done: () => void) => void;
-  /** 重新生成回调 */
-  onRegenerate?: (msg: Message) => void;
-  /** 分享回调 */
-  onShare?: () => void;
-  /** 添加为文件回调 */
-  onAddAsMd?: (msg: Message) => void;
-  /** 反馈回调 */
-  onFeedback?: (msg: Message, type: 'satisfied' | 'unsatisfied', description?: string) => void;
-  /** 文件点击回调 */
-  onFileClick?: (file: FileItem) => void;
-  /** 源文件点击回调 */
-  onSourceClick?: (source: ChunkItem, msg: Message) => void;
-  /** 打开知识库侧边栏回调 */
-  onOpenKnow?: (msg: Message) => void;
-  /** Source 引用点击回调 */
-  onSourceReferenceClick?: (data: SourceReferenceData, msg: Message) => void;
-  /** Source 引用悬停回调 */
-  /** 自定义 Source 渲染函数 */
-  renderSource?: (type: string, number: number, msg: Message) => string;
-  /** 输出文件收藏回调 */
-  onOutputFileFavorite?: (file: OutputFile, msg: Message) => void;
-  /** 输出文件预览回调 */
-  onOutputFilePreview?: (file: OutputFile, msg: Message) => void;
-  /** 输出文件收藏状态检查回调 */
-  onOutputFileCheckFavorite?: (fileIds: string[]) => void;
-  /** OpenClaw 交互选项提交回调 */
-  onOpenClawInteractionSubmit?: (activity: OpenClawActivityItem, option: OpenClawInteractionOption, msg: Message) => Promise<void> | void;
-  /** 反馈面板关闭回调 */
-  onFeedbackClose?: (msg: Message) => void;
-  /** 反馈选项切换回调 */
-  onFeedbackToggle?: (msg: Message, key: string) => void;
-  /** 反馈描述变化回调 */
-  onFeedbackDescriptionChange?: (msg: Message, value: string) => void;
-  /** 显示错误详情回调 */
-  onShowErrorDetails?: (msg: Message) => void;
-  /** 自定义文件链接渲染（用于跳转） */
-  renderFileLink?: (file: FileItem, children: React.ReactNode) => React.ReactNode;
-  /** 外部传入的翻译函数（可选） */
-  t?: TranslateFn;
-  /** 自定义内容区域容器类名 */
-  boxClassName?: string;
-}
+const DEFAULTS = {
+  selection: { selectedMessageIds: [] as (string | number)[] },
+  welcome: { show: true },
+  agentRecommend: { showRelatedScene: false },
+  openclaw: { enabled: false },
+  loadMore: { hasMore: false, isLoadingMore: false, isConversationLoading: false },
+} as const;
 
 function ChatMessagesInner({
   messageList,
   agentInfo,
+  userAvatar,
   isStreaming,
   features,
-  onSuggestionClick,
+  openclaw: openclawConfig,
+  slots,
+  selection,
+  agentRecommend,
+  welcome,
+  loadMore,
+  messageAction,
+  fileAction,
+  sourceAction,
   isShareMode = false,
-  selectedMessageIds = [],
-  selectAll = false,
-  onMessageSelect,
-  onSelectAll,
-  renderMessageMenu,
-  renderAuthTags,
-  showRecommend = false,
-  showWelcome = true,
-  recommendAgents,
-  onRecommendAgentSelect,
-  onNextAgent,
-  onInitAgent,
-  openclaw = false,
-  showRelatedScene = false,
-  hasMore = false,
-  isLoadingMore = false,
-  isConversationLoading = false,
-  onLoadMore,
-  onRegenerate,
-  onShare,
-  onAddAsMd,
-  onFeedback,
-  onFileClick,
-  onSourceClick,
-  onOpenKnow,
-  onSourceReferenceClick,
-  renderSource,
-  onOutputFileFavorite,
-  onOutputFilePreview,
-  onOutputFileCheckFavorite,
-  onOpenClawInteractionSubmit,
-  onFeedbackClose,
-  onFeedbackToggle,
-  onFeedbackDescriptionChange,
-  onShowErrorDetails,
-  renderFileLink,
   t: externalT,
   boxClassName,
 }: ChatMessagesProps) {
+  // 解构分组属性，提供默认值
+  const selectedMessageIds = selection?.selectedMessageIds ?? DEFAULTS.selection.selectedMessageIds;
+  const showWelcome = welcome?.show ?? DEFAULTS.welcome.show;
+  const showRelatedScene = agentRecommend?.showRelatedScene ?? DEFAULTS.agentRecommend.showRelatedScene;
+  const openclawFeature = typeof openclawConfig === "object" ? openclawConfig : undefined;
+  const legacyOpenClaw = typeof openclawConfig === "boolean" ? openclawConfig : undefined;
+  const openclawEnabled = openclawFeature?.enabled ?? legacyOpenClaw ?? DEFAULTS.openclaw.enabled;
+  const onOpenClawInteractionSubmit =
+    openclawFeature?.onInteractionSubmit;
+  const {
+    hasMore = DEFAULTS.loadMore.hasMore,
+    isLoadingMore = DEFAULTS.loadMore.isLoadingMore,
+    isConversationLoading = DEFAULTS.loadMore.isConversationLoading,
+    onLoadMore,
+  } = loadMore ?? {};
+
+  // 解构消息操作
+  const {
+    onSuggestionClick,
+    onRegenerate,
+    onShare,
+    onAddAsMd,
+    onFeedback,
+    onFeedbackClose,
+    onFeedbackToggle,
+    onFeedbackDescriptionChange,
+    onFeedbackSubmit,
+    onShowErrorDetails,
+  } = messageAction ?? {};
+
+  // 解构文件操作
+  const {
+    onClick: onFileClick,
+    onFavorite: onOutputFileFavorite,
+    onPreview: onOutputFilePreview,
+    onCheckFavorite: onCheckFavorite,
+  } = fileAction ?? {};
+
+  // 解构源文件操作
+  const {
+    onClick: onSourceClick,
+    onOpenKnow,
+    onReferenceClick: onSourceReferenceClick,
+  } = sourceAction ?? {};
+
+  // 解构插槽
+  const {
+    messageMenu: renderMessageMenu,
+    authTags: renderAuthTags,
+    source: renderSource,
+    fileLink: renderFileLink,
+  } = slots ?? {};
+
+  // 解构选择操作
+  const onMessageSelect = selection?.onSelect;
+
+  // 解构智能体推荐
+  const {
+    onNavigateNext: onNextAgent,
+    onRefresh: onInitAgent,
+  } = agentRecommend ?? {};
   const { t: internalT } = useTranslation();
   const t = externalT || internalT;
   const bubbleListRef = useRef<BubbleListRef>(null);
@@ -223,9 +159,75 @@ function ChatMessagesInner({
     });
   }, []);
 
-  useEffect(() => {
-    bubbleListRef.current?.scrollToBottom();
-  }, [messageList.length]);
+  // 稳定传给 MessageItem 的 props 对象，避免 ChatMessages 任何重渲染都触发所有
+  // 历史消息完整重渲染（md.parse + renderTokens）。这是历史消息渲染卡死的根因之一。
+  const memoizedMessageAction = useMemo(
+    () => ({
+      onSelect: onMessageSelect,
+      onRegenerate,
+      onShare,
+      onAddAsMd,
+      onFeedback,
+      onFeedbackClose,
+      onFeedbackToggle,
+      onFeedbackDescriptionChange,
+      onFeedbackSubmit,
+      onShowErrorDetails,
+    }),
+    [
+      onMessageSelect,
+      onRegenerate,
+      onShare,
+      onAddAsMd,
+      onFeedback,
+      onFeedbackClose,
+      onFeedbackToggle,
+      onFeedbackDescriptionChange,
+      onFeedbackSubmit,
+      onShowErrorDetails,
+    ],
+  );
+
+  const memoizedFileAction = useMemo(
+    () => ({
+      onClick: onFileClick,
+      onFavorite: onOutputFileFavorite,
+      onPreview: onOutputFilePreview,
+      onCheckFavorite,
+    }),
+    [onFileClick, onOutputFileFavorite, onOutputFilePreview, onCheckFavorite],
+  );
+
+  const memoizedSourceAction = useMemo(
+    () => ({
+      onClick: onSourceClick,
+      onOpenKnow,
+      onReferenceClick: onSourceReferenceClick,
+    }),
+    [onSourceClick, onOpenKnow, onSourceReferenceClick],
+  );
+
+  const memoizedSlots = useMemo(
+    () => ({
+      messageMenu: renderMessageMenu,
+      source: renderSource,
+      fileLink: renderFileLink,
+    }),
+    [renderMessageMenu, renderSource, renderFileLink],
+  );
+
+  const memoizedOpenclaw = useMemo(
+    () => ({
+      enabled: openclawEnabled,
+      onInteractionSubmit: onOpenClawInteractionSubmit,
+    }),
+    [openclawEnabled, onOpenClawInteractionSubmit],
+  );
+
+  const memoizedFeatures = useMemo(
+    () => ({ ...DEFAULT_FEATURES, ...features }),
+    [features],
+  );
 
   return (
     <main className="flex-1 py-4 overflow-hidden flex relative">
@@ -234,7 +236,7 @@ function ChatMessagesInner({
         messages={messageList}
         autoScroll
         className="flex-1"
-        mainClass={showRecommend ? "w-[95%]" : boxClassName || "w-11/12 md:w-4/5 max-w-[1200px] mx-auto"}
+        mainClass={boxClassName || "w-11/12 md:w-4/5 max-w-[1200px] mx-auto"}
         enablePullUp={hasMore && !isLoadingMore}
         pullUpText="正在加载更早的消息..."
         onPullUp={onLoadMore}
@@ -246,7 +248,7 @@ function ChatMessagesInner({
             renderAuthTags={renderAuthTags}
           />
         )}
-        {openclaw && messageList.length === 0 && (
+        {openclawEnabled && messageList.length === 0 && (
           <div className="max-w-[520px] mt-5 mb-3 px-4 py-2 bg-[#F4F5F7] rounded-xl">
             {t("chat.openclaw_welcome_hint")}
           </div>
@@ -258,32 +260,19 @@ function ChatMessagesInner({
             <MessageItem
               message={msg}
               index={index}
-              openclaw={openclaw}
               total={messageList.length}
               agentInfo={agentInfo}
-              features={mergedFeatures}
+              userAvatar={userAvatar}
+              features={memoizedFeatures}
               isStreaming={isStreaming && msg.id === lastMessageId}
               isShareMode={isShareMode}
               selectedMessageIds={selectedMessageIds}
-              onMessageSelect={onMessageSelect}
-              onRegenerate={onRegenerate}
-              onShare={onShare}
-              onAddAsMd={onAddAsMd}
-              onFeedback={onFeedback}
-              onFileClick={onFileClick}
-              onSourceClick={onSourceClick}
-              onOpenKnow={onOpenKnow}
-              onSourceReferenceClick={onSourceReferenceClick}
-              renderSource={renderSource}
-              onOutputFileFavorite={onOutputFileFavorite}
-              onOutputFilePreview={onOutputFilePreview}
-              onOutputFileCheckFavorite={onOutputFileCheckFavorite}
-              onOpenClawInteractionSubmit={onOpenClawInteractionSubmit}
-              onFeedbackClose={onFeedbackClose}
-              onFeedbackToggle={onFeedbackToggle}
-              onFeedbackDescriptionChange={onFeedbackDescriptionChange}
-              onShowErrorDetails={onShowErrorDetails}
-              renderFileLink={renderFileLink}
+              isSelected={selectedMessageIds.includes(msg.id)}
+              openclaw={memoizedOpenclaw}
+              messageAction={memoizedMessageAction}
+              fileAction={memoizedFileAction}
+              sourceAction={memoizedSourceAction}
+              slots={memoizedSlots}
               preserveScrollDuringToggle={preserveScrollDuringToggle}
               t={t}
             />
@@ -314,40 +303,6 @@ function ChatMessagesInner({
           </div>
         </div>
       )}
-
-      {/* Recommend Panel */}
-      {showRecommend && recommendAgents && recommendAgents.length > 0 && (
-        <div className={`flex-none w-2/6 flex flex-col gap-4 pb-5 ${isShareMode ? "-mt-[70px]" : ""}`}>
-          <h2 className="flex-none text-base font-semibold text-regular">
-            {t("common.related_agent") || "相关智能体"}
-          </h2>
-          <div className="flex-1 overflow-y-auto flex flex-col gap-2.5">
-            {recommendAgents.map((agent) => (
-              <div
-                key={agent.agent_id}
-                className="flex-none h-24 border rounded p-4 cursor-pointer hover:bg-[#F1F2F3]"
-                onClick={() => onRecommendAgentSelect?.(agent)}
-              >
-                <div className="flex items-center gap-2">
-                  <img
-                    className="size-6 rounded-full"
-                    src={agent.logo || DEFAULT_IMG}
-                    alt={agent.name}
-                    onError={handleImageError}
-                  />
-                  <span className="text-sm text-primary">{agent.name}</span>
-                </div>
-                <div
-                  className="text-sm text-regular line-clamp-2 mt-1.5"
-                  title={agent.description || ""}
-                >
-                  {agent.description || t("chat.no_description") || "暂无描述"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </main>
   );
 }
@@ -357,4 +312,3 @@ ChatMessages.displayName = "ChatMessages";
 
 export default ChatMessages;
 export { DEFAULT_FEATURES };
-export type { ChatMessagesFeatures, FileItem, ChunkItem, OutputFile, SourceReferenceData };

@@ -44,8 +44,9 @@ function createPlatformOption(
   channel_type: number,
   agent_type: number = 0,
   agent_mode: string = 'chat',
+  agent_usage: number = 0,
 ): AgentPlatformOption {
-  return { value, label, icon, channel_type, agent_type, agent_mode }
+  return { value, label, icon, channel_type, agent_type, agent_mode, agent_usage }
 }
 
 /**
@@ -64,6 +65,8 @@ export function createPlatformsByType(
 
   return [
     ...openClawCompatiblePlatforms,
+    createPlatformOption('workbench', '小助理', getIconUrl('/agent/workbench.png'), 0, BACKEND_AGENT_TYPE.ASSISTANT, AGENT_MODES.ASSISTANT, 4),
+    { ...createPlatformOption('knowledge', 'AI搜问', getIconUrl('/agent/knowledge.png'), 0, BACKEND_AGENT_TYPE.ASSISTANT, AGENT_MODES.ASSISTANT, 1), hidden: true },
     createPlatformOption('prompt', '智能问答', getIconUrl('/agent/prompt.png'), 0, BACKEND_AGENT_TYPE.AGENT, AGENT_MODES.CHAT),
     createPlatformOption('coze_agent_cn', '扣子编程', getIconUrl('/agent/coze_agent_cn.png'), 34, BACKEND_AGENT_TYPE.AGENT, AGENT_MODES.CHAT),
     createPlatformOption('53ai_agent', '53AI Studio', getIconUrl('/agent/53ai_agent.png'), 1002, BACKEND_AGENT_TYPE.AGENT, AGENT_MODES.CHAT),

@@ -69,6 +69,7 @@ const PLATFORM_CONFIG = {
         id: AGENT_TYPE.COZE_WORKFLOW_CN,
         name: AGENT_TYPE.COZE_WORKFLOW_CN,
         mode: AGENT_MODES.COMPLETION,
+        label: window.$t?.('agent_app.coze_workflow_cn') || 'Coze Workflow (CN)',
         visible: false,
       },
     ],

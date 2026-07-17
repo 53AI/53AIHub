@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	vectorIndexingWaitTimeout      = 24 * time.Hour
-	vectorIndexingInitialPollDelay = 5 * time.Second
-	vectorIndexingMaximumPollDelay = 5 * time.Minute
+	vectorIndexingWaitTimeout          = 30 * time.Minute
+	vectorIndexingInitialPollDelay     = 5 * time.Second
+	vectorIndexingMaximumPollDelay     = 2 * time.Minute
+	maxDeleteVectorsByFilterIteration  = 50
 )
 
 // NewVectorIndexingHandler 创建 vector_indexing 步骤处理函数
@@ -273,7 +274,11 @@ func cleanupVectorsByFileID(ctx context.Context, eid, libraryID, fileID int64) e
 	if err != nil {
 		return err
 	}
-	collection := model.GetVectorCollectionName(library.UUID)
+
+	// 根据当前 collection 模式，确定要清理的集合列表
+	resolver := rag.VectorCollectionResolver{Mode: rag.GetVectorCollectionMode()}
+	collections := resolver.ResolveDocumentWriteCollections(eid, *library)
+	logger.SysLogf("【诊断-按文件清理向量】eid=%d, file_id=%d, library_id=%d, mode=%s, collections=%v", eid, fileID, libraryID, resolver.Mode, collections)
 
 	// 构建 file_id 过滤条件
 	filter := map[string]interface{}{
@@ -288,38 +293,55 @@ func cleanupVectorsByFileID(ctx context.Context, eid, libraryID, fileID int64) e
 	}
 
 	// 循环删除直到没有匹配项
-	for {
-		// 搜索旧向量
-		req := vectorstore.FilterSearchRequest{
-			Collection: collection,
-			Filters:    filter,
-			TopK:       100, // 每次批处理 100 条
-		}
-		resp, err := store.FilterSearch(ctx, req)
-		if err != nil {
-			// 如果集合不存在，直接返回成功
+	for _, collection := range collections {
+		if err := deleteVectorsByFilter(ctx, store, collection, filter); err != nil {
 			if vectorstore.IsNotFoundError(err) {
-				return nil
+				continue // 集合不存在时跳过
 			}
 			return err
 		}
+	}
+	return nil
+}
 
+// deleteVectorsByFilter 按过滤条件循环删除向量，直到无匹配项
+func deleteVectorsByFilter(ctx context.Context, store vectorstore.VectorStore, collection string, filter map[string]interface{}) error {
+	logger.Info(ctx, fmt.Sprintf("【诊断-删除向量-开始】collection=%s, filter=%v", collection, filter))
+	totalDeleted := 0
+	for i := 0; i < maxDeleteVectorsByFilterIteration; i++ {
+		req := vectorstore.FilterSearchRequest{
+			Collection: collection,
+			Filters:    filter,
+			TopK:       100,
+		}
+		resp, err := store.FilterSearch(ctx, req)
+		if err != nil {
+			return err
+		}
 		if len(resp.Results) == 0 {
-			break
+			if totalDeleted > 0 {
+				logger.Info(ctx, fmt.Sprintf("【诊断-删除向量-完成】collection=%s, total_deleted=%d", collection, totalDeleted))
+			} else {
+				logger.Info(ctx, fmt.Sprintf("【诊断-删除向量-无数据】collection=%s, 无需清理", collection))
+			}
+			return nil
 		}
 
-		// 提取 ID 进行删除
 		ids := make([]interface{}, 0, len(resp.Results))
 		for _, res := range resp.Results {
 			ids = append(ids, res.ID)
 		}
-
 		if err := store.Delete(ctx, collection, ids); err != nil {
 			return fmt.Errorf("删除向量失败: %v", err)
 		}
-		logger.Info(ctx, fmt.Sprintf("已清理 %d 个旧向量", len(ids)))
+		totalDeleted += len(ids)
+		logger.Info(ctx, fmt.Sprintf("【诊断-删除向量-迭代】collection=%s, iteration=%d, found=%d, total_deleted=%d", collection, i+1, len(ids), totalDeleted))
+
+		if i >= maxDeleteVectorsByFilterIteration-5 {
+			logger.Warn(ctx, fmt.Sprintf("【诊断-删除向量-接近上限】collection=%s, iteration=%d, total_deleted=%d, max=%d", collection, i+1, totalDeleted, maxDeleteVectorsByFilterIteration))
+		}
 	}
-	return nil
+	return fmt.Errorf("删除向量超过最大迭代次数 %d，请检查是否有并发写入，collection=%s, total_deleted=%d", maxDeleteVectorsByFilterIteration, collection, totalDeleted)
 }
 
 // waitForEmbeddingCompletion 等待向量化完成 (复用 V1 逻辑并简化)
@@ -548,14 +570,40 @@ func ensureVectorCollectionExists(ctx context.Context, db *gorm.DB, eid, fileID 
 	if err != nil {
 		return false, err
 	}
-	collection := model.GetVectorCollectionName(library.UUID)
-	createErr := store.CreateCollection(ctx, vectorstore.CollectionConfig{
-		Name:      collection,
-		Dimension: meta.Dimensions,
-		Metric:    cfg.DistanceMetric,
-	})
-	if createErr != nil && !vectorstore.IsExistsError(createErr) {
-		return false, createErr
+
+	// 根据当前 collection 模式创建对应集合
+	resolver := rag.VectorCollectionResolver{Mode: rag.GetVectorCollectionMode()}
+	collections := resolver.ResolveDocumentWriteCollections(eid, *library)
+	logger.SysLogf("【诊断-确保集合存在】eid=%d, file_id=%d, mode=%s, collections=%v", eid, fileID, resolver.Mode, collections)
+
+	for _, collection := range collections {
+		createErr := store.CreateCollection(ctx, vectorstore.CollectionConfig{
+			Name:      collection,
+			Dimension: meta.Dimensions,
+			Metric:    cfg.DistanceMetric,
+		})
+		if createErr != nil {
+			if vectorstore.IsExistsError(createErr) {
+				logger.SysLogf("【诊断-确保集合存在】collection已存在，尝试读取实际维度: %s", collection)
+				if info, infoErr := store.GetCollectionInfo(ctx, collection); infoErr == nil && info.Dimension > 0 && info.Dimension != meta.Dimensions {
+					logger.SysLogf("【诊断-确保集合存在】collection维度不匹配，先删除旧集合: %s, 期望=%d, 实际=%d", collection, meta.Dimensions, info.Dimension)
+					if delErr := store.DeleteCollection(ctx, collection); delErr != nil && !vectorstore.IsNotFoundError(delErr) {
+						return false, fmt.Errorf("删除旧集合失败: %w", delErr)
+					}
+					logger.SysLogf("【诊断-确保集合存在】旧集合已删除，准备重建: %s", collection)
+				} else if infoErr == nil {
+					logger.SysLogf("【诊断-确保集合存在】collection维度一致: %s, dimension=%d", collection, info.Dimension)
+				} else {
+					logger.SysLogf("【诊断-确保集合存在】读取collection信息失败: %s, err=%v", collection, infoErr)
+				}
+			} else {
+				return false, createErr
+			}
+		} else {
+			logger.SysLogf("【诊断-确保集合存在】collection创建成功: %s, dimension=%d", collection, meta.Dimensions)
+		}
+		// TODO(E4): 创建 payload index (eid, space_id, library_id, file_id, chunk_type, status)
+		// 当前 vectorstore.CreateIndex 为 stub，需要扩展 Qdrant API 调用 payload index 创建接口
 	}
 	return true, nil
 }

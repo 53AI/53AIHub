@@ -2,13 +2,20 @@ import { Tooltip } from 'antd'
 import { SvgIcon, PromptInput } from '@km/shared-components-react'
 import { useAgentCreateAdapter } from '../../adapters'
 import { useAgentForm } from '../../hooks'
+import { useAgentFormStore } from '../../store'
 import { copyToClip } from '@km/shared-utils'
 import { message } from 'antd'
 
-export function RoleInstruction() {
+
+interface InstrucationProps {
+  title?: string
+}
+
+export function RoleInstruction(props: InstrucationProps) {
   const form = useAgentForm()
   const adapter = useAgentCreateAdapter()
   const t = adapter.t || ((key: string) => key)
+  const title = props.title  || t('app.role_instruction')
 
   const prompt = form.formData.prompt
 
@@ -24,8 +31,10 @@ export function RoleInstruction() {
     return message.warning(t('term.feature_coming_soon'))
   }
 
-  const onCopy = async (text: string) => {
-    await copyToClip(text)
+  const onCopy = async () => {
+    // 直接从 store 获取最新值，避免 React 渲染周期导致的闭包问题
+    const currentPrompt = useAgentFormStore.getState().form_data.prompt
+    await copyToClip(currentPrompt)
     message.success(t('action.copy_success'))
   }
 
@@ -36,9 +45,9 @@ export function RoleInstruction() {
       >
         <div
           className="flex-1 text-sm text-[var(--ant-form-label-color] truncate"
-          title={t('app.role_instruction')}
+          title={title}
         >
-          {t('app.role_instruction')}
+          {title}
         </div>
         <div className="flex items-center gap-1">
           <Tooltip placement="top" title={t('term.optimize_tip')}>
@@ -70,7 +79,7 @@ export function RoleInstruction() {
               className="text-[#182B50] px-1 cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation()
-                onCopy(prompt)
+                onCopy()
               }}
             >
               <SvgIcon name="copy" size="18px" />

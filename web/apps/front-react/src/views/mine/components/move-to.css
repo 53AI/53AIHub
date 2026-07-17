@@ -1,0 +1,36 @@
+/* MoveToModal Tree 样式覆盖 */
+
+/* 节点高度：覆盖 antd 默认的 24px line-height / min-height */
+.move-to-tree .ant-tree-node-content-wrapper {
+	min-height: 36px;
+	line-height: 36px;
+	/* 关键：flex 子项默认 min-width: auto，文本不缩；改为 0 让 truncate 生效 */
+	min-width: 0;
+}
+
+.move-to-tree .ant-tree-title {
+	line-height: 36px;
+	height: 36px;
+	/* 标题容器禁止 X 轴溢出 + 不让内联子项撑宽 */
+	display: block;
+	max-width: 100%;
+	overflow: hidden;
+}
+
+.move-to-tree .ant-tree-title > div {
+	min-width: 0;
+	max-width: 100%;
+}
+
+/* switcher icon 容器高度对齐 36px（覆盖 antd 默认的 titleHeight=24） */
+.move-to-tree .ant-tree-switcher {
+	height: 36px;
+	line-height: 36px;
+}
+.move-to-tree .ant-tree-switcher::before {
+	top: 6px;
+}
+
+.move-to-tree .ant-tree-switcher .anticon {
+	font-size: 12px;
+}

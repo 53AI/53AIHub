@@ -255,7 +255,7 @@ export const EnvDialog = forwardRef<EnvDialogRef>((_, ref) => {
       width={700}
       onCancel={handleClose}
       footer={null}
-      maskClosable={false}
+      mask={{ closable: false }}
     >
       <div className="h-[400px] flex flex-col overflow-hidden">
         <Spin spinning={loading}>

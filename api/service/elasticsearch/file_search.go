@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ type FileDocument struct {
 	UserID        int64  `json:"user_id"`
 	CreatedTime   int64  `json:"created_time"`
 	UpdatedTime   int64  `json:"updated_time"`
+	FileExtension string `json:"file_extension"` // 文件扩展名（小写，含点号，如 .pdf .docx .md）
 }
 
 // FileNameSearchRequest 文件名搜索请求
@@ -44,6 +46,18 @@ type FileNameSearchRequest struct {
 	ExcludeOriginTypes []string `json:"exclude_origin_types"` // 排除的来源类型
 	CaseSensitive      *bool    `json:"case_sensitive"`       // 大小写敏感，nil表示不敏感
 	FuzzyThreshold     *int     `json:"fuzzy_threshold"`      // 模糊匹配阈值，1-2，nil表示自动
+	// 全局检索专用扩展字段
+	SpaceIDs         []int64  `json:"space_ids"`           // 空间 ID 列表（多选）
+	CreatorIDs       []int64  `json:"creator_ids"`          // 创建人 ID 列表（多选）
+	FileExtensions   []string `json:"file_extensions"`     // 文件扩展名列表（如 [".pdf", ".docx"]）
+	CreatedTimeFrom  *int64   `json:"created_time_from"`   // 创建时间范围起始（Unix 毫秒）
+	CreatedTimeTo    *int64   `json:"created_time_to"`     // 创建时间范围结束（Unix 毫秒）
+	UpdatedTimeFrom  *int64   `json:"updated_time_from"`   // 更新时间范围起始（Unix 毫秒）
+	UpdatedTimeTo    *int64   `json:"updated_time_to"`     // 更新时间范围结束（Unix 毫秒）
+	SortBy           string   `json:"sort_by"`              // "recent_update" | "recent_access"（默认 recent_update）
+	Page             int      `json:"page"`                 // 页码（从 1 开始）
+	Size             int      `json:"size"`                 // 每页条数（默认 20，最大 100）
+	From             int      `json:"from"`                 // ES from 参数（替代 Page/Size 计算）
 }
 
 // FileNameSearchResult 文件名搜索结果
@@ -93,33 +107,42 @@ func NewFileNameSearchService(client *Client, db *gorm.DB) *FileNameSearchServic
 func (s *FileNameSearchService) Search(eid int64, req *FileNameSearchRequest) (*FileNameSearchResponse, error) {
 	startTime := time.Now()
 
-	if s.client.IsDisabled() {
-		return nil, fmt.Errorf("Elasticsearch 已禁用")
+	if s.client == nil || s.client.IsDisabled() {
+		return &FileNameSearchResponse{
+			Results: []FileNameSearchResult{},
+			Total:   0,
+			Time:    time.Since(startTime).Milliseconds(),
+			Query:   req.Query,
+			Source:  "db",
+		}, nil
 	}
 
-	// 设置默认值
-	if req.TopK <= 0 {
-		req.TopK = 20
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.Size <= 0 {
+		req.Size = 20
+	}
+	if req.Size > 100 {
+		req.Size = 100
+	}
+	topK := req.TopK
+	if topK <= 0 {
+		topK = req.Size
 	}
 
-	logger.SysLogf("开始 Elasticsearch 文件名搜索: eid=%d, query=%s, topk=%d", eid, req.Query, req.TopK)
+	logger.SysLogf("开始 Elasticsearch 文件名搜索: eid=%d, query=%s, page=%d, size=%d", eid, req.Query, req.Page, req.Size)
 
-	// 构建搜索查询
 	query := s.buildSearchQuery(eid, req)
 
-	// 执行搜索
-	results, total, err := s.executeSearch(query, req.TopK)
+	from := (req.Page - 1) * req.Size
+	results, total, err := s.executeSearch(query, from, topK)
 	if err != nil {
 		return nil, fmt.Errorf("执行搜索失败: %v", err)
 	}
 
-	// 获取知识库信息
 	s.enrichWithLibraryInfo(results)
-
-	// 获取创建人信息
 	s.enrichWithCreatorInfo(results)
-
-	// 获取最新文件内容更新时间
 	s.enrichWithLatestFileBodyUpdateTime(results)
 
 	searchTime := time.Since(startTime).Milliseconds()
@@ -138,7 +161,6 @@ func (s *FileNameSearchService) Search(eid int64, req *FileNameSearchRequest) (*
 
 // buildSearchQuery 构建搜索查询
 func (s *FileNameSearchService) buildSearchQuery(eid int64, req *FileNameSearchRequest) map[string]interface{} {
-	// 构建布尔查询
 	boolQuery := map[string]interface{}{
 		"must": []map[string]interface{}{
 			{
@@ -154,106 +176,107 @@ func (s *FileNameSearchService) buildSearchQuery(eid int64, req *FileNameSearchR
 		},
 	}
 
-	// 添加知识库过滤
+	var filters []map[string]interface{}
+
 	if len(req.LibraryIDs) > 0 {
-		boolQuery["filter"] = []map[string]interface{}{
-			{
-				"terms": map[string]interface{}{
-					"library_id": req.LibraryIDs,
-				},
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"library_id": req.LibraryIDs,
 			},
-		}
+		})
 	}
 
-	// 添加文件ID过滤
 	if len(req.FileIDs) > 0 {
-		if libraryIDFilter, exists := boolQuery["filter"]; exists {
-			if filters, ok := libraryIDFilter.([]map[string]interface{}); ok {
-				boolQuery["filter"] = append(filters, map[string]interface{}{
-					"terms": map[string]interface{}{
-						"file_id": req.FileIDs,
-					},
-				})
-			}
-		} else {
-			boolQuery["filter"] = []map[string]interface{}{
-				{
-					"terms": map[string]interface{}{
-						"file_id": req.FileIDs,
-					},
-				},
-			}
-		}
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"file_id": req.FileIDs,
+			},
+		})
 	}
 
-	// 添加文件类型过滤
 	if req.FileType != nil {
-		if fileTypeFilter, exists := boolQuery["filter"]; exists {
-			if filters, ok := fileTypeFilter.([]map[string]interface{}); ok {
-				boolQuery["filter"] = append(filters, map[string]interface{}{
-					"term": map[string]interface{}{
-						"type": *req.FileType,
-					},
-				})
-			}
-		} else {
-			boolQuery["filter"] = []map[string]interface{}{
-				{
-					"term": map[string]interface{}{
-						"type": *req.FileType,
-					},
-				},
-			}
-		}
+		filters = append(filters, map[string]interface{}{
+			"term": map[string]interface{}{
+				"type": *req.FileType,
+			},
+		})
 	}
 
 	if len(req.OriginTypes) > 0 {
-		if originTypeFilter, exists := boolQuery["filter"]; exists {
-			if filters, ok := originTypeFilter.([]map[string]interface{}); ok {
-				boolQuery["filter"] = append(filters, map[string]interface{}{
-					"terms": map[string]interface{}{
-						"origin_type": req.OriginTypes,
-					},
-				})
-			}
-		} else {
-			boolQuery["filter"] = []map[string]interface{}{
-				{
-					"terms": map[string]interface{}{
-						"origin_type": req.OriginTypes,
-					},
-				},
-			}
-		}
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"origin_type": req.OriginTypes,
+			},
+		})
 	}
 
+	if len(req.CreatorIDs) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"user_id": req.CreatorIDs,
+			},
+		})
+	}
+
+	if len(req.FileExtensions) > 0 {
+		filters = append(filters, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"file_extension.keyword": req.FileExtensions,
+			},
+		})
+	}
+
+	if req.CreatedTimeFrom != nil || req.CreatedTimeTo != nil {
+		rangeClause := map[string]interface{}{}
+		if req.CreatedTimeFrom != nil {
+			rangeClause["gte"] = *req.CreatedTimeFrom
+		}
+		if req.CreatedTimeTo != nil {
+			rangeClause["lte"] = *req.CreatedTimeTo
+		}
+		filters = append(filters, map[string]interface{}{
+			"range": map[string]interface{}{
+				"created_time": rangeClause,
+			},
+		})
+	}
+
+	if req.UpdatedTimeFrom != nil || req.UpdatedTimeTo != nil {
+		rangeClause := map[string]interface{}{}
+		if req.UpdatedTimeFrom != nil {
+			rangeClause["gte"] = *req.UpdatedTimeFrom
+		}
+		if req.UpdatedTimeTo != nil {
+			rangeClause["lte"] = *req.UpdatedTimeTo
+		}
+		filters = append(filters, map[string]interface{}{
+			"range": map[string]interface{}{
+				"updated_time": rangeClause,
+			},
+		})
+	}
+
+	if len(filters) > 0 {
+		boolQuery["filter"] = filters
+	}
+
+	var mustNot []map[string]interface{}
 	if len(req.ExcludeOriginTypes) > 0 {
-		if originTypeFilter, exists := boolQuery["must_not"]; exists {
-			if filters, ok := originTypeFilter.([]map[string]interface{}); ok {
-				boolQuery["must_not"] = append(filters, map[string]interface{}{
-					"terms": map[string]interface{}{
-						"origin_type": req.ExcludeOriginTypes,
-					},
-				})
-			}
-		} else {
-			boolQuery["must_not"] = []map[string]interface{}{
-				{
-					"terms": map[string]interface{}{
-						"origin_type": req.ExcludeOriginTypes,
-					},
-				},
-			}
-		}
+		mustNot = append(mustNot, map[string]interface{}{
+			"terms": map[string]interface{}{
+				"origin_type": req.ExcludeOriginTypes,
+			},
+		})
+	}
+	if len(mustNot) > 0 {
+		boolQuery["must_not"] = mustNot
 	}
 
-	// 根据参数构建不同的文件名查询
-	fileNameQuery := s.buildFileNameQuery(req)
+	if req.Query != "" {
+		fileNameQuery := s.buildFileNameQuery(req)
+		boolQuery["must"] = append(boolQuery["must"].([]map[string]interface{}), fileNameQuery)
+	}
 
-	// 将文件名查询添加到 must 条件中
-	boolQuery["must"] = append(boolQuery["must"].([]map[string]interface{}), fileNameQuery)
-
-	// 构建完整查询
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
 			"bool": boolQuery,
@@ -266,20 +289,24 @@ func (s *FileNameSearchService) buildSearchQuery(eid int64, req *FileNameSearchR
 				},
 			},
 		},
-		"sort": []map[string]interface{}{
-			{
-				"_score": map[string]interface{}{
-					"order": "desc",
-				},
-			},
-		},
+	}
+
+	if req.SortBy == "recent_update" || req.SortBy == "" {
+		query["sort"] = []map[string]interface{}{
+			{"updated_time": map[string]interface{}{"order": "desc"}},
+			{"_score": map[string]interface{}{"order": "desc"}},
+		}
+	} else {
+		query["sort"] = []map[string]interface{}{
+			{"_score": map[string]interface{}{"order": "desc"}},
+		}
 	}
 
 	return query
 }
 
 // executeSearch 执行搜索
-func (s *FileNameSearchService) executeSearch(query map[string]interface{}, size int) ([]FileNameSearchResult, int64, error) {
+func (s *FileNameSearchService) executeSearch(query map[string]interface{}, from int, size int) ([]FileNameSearchResult, int64, error) {
 	// 序列化查询
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(query); err != nil {
@@ -291,6 +318,7 @@ func (s *FileNameSearchService) executeSearch(query map[string]interface{}, size
 		s.client.Search.WithContext(context.Background()),
 		s.client.Search.WithIndex(s.client.GetIndexName()),
 		s.client.Search.WithBody(&buf),
+		s.client.Search.WithFrom(from),
 		s.client.Search.WithSize(size),
 		s.client.Search.WithTrackTotalHits(true),
 	)
@@ -495,7 +523,7 @@ func (s *FileNameSearchService) enrichWithLatestFileBodyUpdateTime(results []Fil
 // IndexFile 索引单个文件
 func (s *FileNameSearchService) IndexFile(file *model.File) error {
 	if s.client.IsDisabled() {
-		return nil // 如果禁用，跳过索引
+		return nil
 	}
 
 	doc := s.convertToFileDocument(file)
@@ -505,12 +533,13 @@ func (s *FileNameSearchService) IndexFile(file *model.File) error {
 // IndexFilesBatch 批量索引文件
 func (s *FileNameSearchService) IndexFilesBatch(files []model.File) error {
 	if s.client.IsDisabled() {
-		return nil // 如果禁用，跳过索引
+		return nil
 	}
 
 	var docs []FileDocument
 	for _, file := range files {
-		docs = append(docs, s.convertToFileDocument(&file))
+		doc := s.convertToFileDocument(&file)
+		docs = append(docs, doc)
 	}
 
 	return s.indexDocumentsBatch(docs)
@@ -565,6 +594,20 @@ func (s *FileNameSearchService) convertToFileDocument(file *model.File) FileDocu
 	// 生成小写基本名称用于忽略大小写的搜索
 	lowerBaseName := strings.ToLower(baseName)
 
+	fileExtension := ""
+	// lazy: 仅查 upload_file，不新增 UploadFileID=0 文件的查询；如需要统一查所有文件的扩展名再改为 JOIN
+	if s.db != nil && file.UploadFileID > 0 {
+		var uploadFile model.UploadFile
+		if err := s.db.Select("extension").Where("id = ?", file.UploadFileID).First(&uploadFile).Error; err == nil && uploadFile.Extension != "" {
+			fileExtension = uploadFile.Extension
+		}
+	}
+	if fileExtension == "" {
+		if lastDot := strings.LastIndex(fileName, "."); lastDot > 0 {
+			fileExtension = strings.ToLower(fileName[lastDot:])
+		}
+	}
+
 	logger.SysLogf("转换文件文档: fileID=%d, path=%s, fileName=%s, baseName=%s, lowerBaseName=%s",
 		file.ID, file.Path, fileName, baseName, lowerBaseName)
 
@@ -584,6 +627,7 @@ func (s *FileNameSearchService) convertToFileDocument(file *model.File) FileDocu
 		UserID:        file.UserID,
 		CreatedTime:   file.CreatedTime,
 		UpdatedTime:   file.UpdatedTime,
+		FileExtension: fileExtension,
 	}
 }
 
@@ -652,6 +696,14 @@ func (s *FileNameSearchService) indexDocumentsBatch(docs []FileDocument) error {
 
 	if res.IsError() {
 		return fmt.Errorf("批量索引响应错误: %s", res.Status())
+	}
+
+	var bulkResp map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&bulkResp); err != nil {
+		return fmt.Errorf("解析批量索引响应失败: %v", err)
+	}
+	if itemsErr, ok := bulkResp["errors"].(bool); ok && itemsErr {
+		logger.SysLogf("批量索引存在逐项失败: index=%s, items=%v", s.client.GetIndexName(), bulkResp["items"])
 	}
 
 	return nil
@@ -843,4 +895,91 @@ func (s *FileNameSearchService) buildFileNameQuery(req *FileNameSearchRequest) m
 	}
 
 	return fileNameQuery
+}
+
+// SearchWithRecentAccessSort 按最近访问排序执行复合搜索
+func (s *FileNameSearchService) SearchWithRecentAccessSort(eid int64, userID int64, req *FileNameSearchRequest) (*FileNameSearchResponse, error) {
+	startTime := time.Now()
+
+	if s.client == nil || s.client.IsDisabled() {
+		return &FileNameSearchResponse{
+			Results: []FileNameSearchResult{},
+			Total:   0,
+			Time:    time.Since(startTime).Milliseconds(),
+			Query:   req.Query,
+			Source:  "db",
+		}, nil
+	}
+
+	recentFileIDs, err := model.GetUserRecentFileIDs(eid, userID, 1000)
+	if err != nil {
+		return nil, fmt.Errorf("获取最近访问文件失败: %v", err)
+	}
+	if len(recentFileIDs) == 0 {
+		return &FileNameSearchResponse{
+			Results: []FileNameSearchResult{},
+			Total:   0,
+			Time:    time.Since(startTime).Milliseconds(),
+			Query:   req.Query,
+			Source:  "es",
+		}, nil
+	}
+
+	query := s.buildSearchQuery(eid, req)
+
+	boolQuery := query["query"].(map[string]interface{})["bool"].(map[string]interface{})
+	var filters []map[string]interface{}
+	if f, ok := boolQuery["filter"].([]map[string]interface{}); ok {
+		filters = f
+	}
+	filters = append(filters, map[string]interface{}{
+		"terms": map[string]interface{}{
+			"file_id": recentFileIDs,
+		},
+	})
+	boolQuery["filter"] = filters
+
+	query["sort"] = []map[string]interface{}{
+		{"_score": map[string]interface{}{"order": "desc"}},
+	}
+
+	from := 0
+	size := req.Size
+	if size <= 0 {
+		size = 20
+	}
+	results, total, err := s.executeSearch(query, from, size)
+	if err != nil {
+		return nil, err
+	}
+
+	rankMap := make(map[int64]int, len(recentFileIDs))
+	for i, fid := range recentFileIDs {
+		rankMap[fid] = i
+	}
+	sort.SliceStable(results, func(i, j int) bool {
+		ri, oki := rankMap[results[i].FileID]
+		rj, okj := rankMap[results[j].FileID]
+		if !oki {
+			return false
+		}
+		if !okj {
+			return true
+		}
+		return ri < rj
+	})
+
+	s.enrichWithLibraryInfo(results)
+	s.enrichWithCreatorInfo(results)
+	s.enrichWithLatestFileBodyUpdateTime(results)
+
+	searchTime := time.Since(startTime).Milliseconds()
+
+	return &FileNameSearchResponse{
+		Results: results,
+		Total:   total,
+		Time:    searchTime,
+		Query:   req.Query,
+		Source:  "es",
+	}, nil
 }

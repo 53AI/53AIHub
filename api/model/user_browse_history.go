@@ -295,3 +295,14 @@ func GetUserRecentFilesByLibrary(eid, userID int64, libraryId int64, limit int) 
 
 	return sortedFiles, nil
 }
+
+// GetUserRecentFileIDs 获取用户最近访问的文件 ID 列表
+func GetUserRecentFileIDs(eid int64, userID int64, limit int) ([]int64, error) {
+	var fileIDs []int64
+	err := DB.Model(&UserBrowseHistory{}).
+		Where("eid = ? AND user_id = ? AND file_id > 0", eid, userID).
+		Order("updated_time DESC").
+		Limit(limit).
+		Pluck("file_id", &fileIDs).Error
+	return fileIDs, err
+}

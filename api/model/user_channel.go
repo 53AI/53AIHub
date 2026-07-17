@@ -132,6 +132,18 @@ func GetUserChannelByOpenID(eid int64, openid string) (*UserChannel, error) {
 	return &record, nil
 }
 
+func GetUserChannelByTypeAndOpenID(eid int64, channelType, openid string) (*UserChannel, error) {
+	var record UserChannel
+	err := DB.Where("eid = ? AND channel_type = ? AND openid = ?", eid, channelType, openid).First(&record).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrUserChannelNotFound
+		}
+		return nil, err
+	}
+	return &record, nil
+}
+
 func GetUserChannelByID(eid, channelID int64) (*UserChannel, error) {
 	var record UserChannel
 	err := DB.Where("id = ? AND eid = ?", channelID, eid).First(&record).Error

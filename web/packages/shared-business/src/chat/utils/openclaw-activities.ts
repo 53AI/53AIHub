@@ -1,13 +1,17 @@
 import type { OpenClawActivityItem, OpenClawActivityTone } from "../types";
 
-export interface OpenClawTimelineEventLike {
-  id?: string;
+/** OpenClaw 时间线事件（强类型，id/kind 必填） */
+export interface OpenClawTimelineEvent {
+  id: string;
   sessionId?: string;
   seq?: number;
-  kind?: string;
+  kind: string;
   payload?: Record<string, unknown>;
   createdAt?: string;
 }
+
+/** 弱类型别名（id/kind 全部 optional），用于 partial 形态的事件入参 */
+export type OpenClawTimelineEventLike = OpenClawTimelineEvent;
 
 const ACTIVITY_EVENT_KINDS = new Set([
   "assistant.thinking",
@@ -117,6 +121,34 @@ function readNested(payload: Record<string, unknown>, ...paths: string[][]): unk
 
 function readToolInputValue(payload: Record<string, unknown>): unknown {
   return readNested(payload, ["data", "args"], ["data", "arguments"], ["data", "input"], ["args"], ["arguments"], ["input"]);
+}
+
+function readToolOutputValue(payload: Record<string, unknown>): unknown {
+  return readNested(
+    payload,
+    ["data", "result", "details"],
+    ["data", "result", "output"],
+    ["data", "result", "content"],
+    ["data", "result", "result"],
+    ["data", "result", "aggregated"],
+    ["data", "result"],
+    ["data", "details", "aggregated"],
+    ["data", "details", "output"],
+    ["data", "details", "content"],
+    ["data", "output"],
+    ["data", "content"],
+    ["result", "details"],
+    ["result", "output"],
+    ["result", "content"],
+    ["result", "result"],
+    ["result", "aggregated"],
+    ["result"],
+    ["details", "aggregated"],
+    ["details", "output"],
+    ["details", "content"],
+    ["output"],
+    ["content"]
+  );
 }
 
 function readToolArgs(inputValue: unknown): Record<string, unknown> {
@@ -466,21 +498,8 @@ function buildToolActivity(event: OpenClawTimelineEventLike): OpenClawActivityIt
         inputValue,
         execCommand,
       });
-  const input = formatDetail(isExecToolKind(kind) ? execCommand || inputValue : inputValue);
-  const output = formatDetail(
-    readNested(
-      payload,
-      ["data", "result", "details"],
-      ["data", "result", "output"],
-      ["data", "result", "content"],
-      ["data", "result", "result"],
-      ["result", "details"],
-      ["result", "output"],
-      ["result", "content"],
-      ["output"],
-      ["content"]
-    )
-  );
+  const input = isToolResult ? "" : formatDetail(isExecToolKind(kind) ? execCommand || inputValue : inputValue);
+  const output = formatDetail(readToolOutputValue(payload));
   const isError = Boolean(data.isError || data.is_error || result.isError || result.is_error || payload.isError || payload.is_error);
   const tone: OpenClawActivityTone = isError ? "error" : event.kind === "tool.result" ? "success" : "neutral";
   const fallbackTitle = isExecToolKind(kind) ? displayName : `Used ${displayName}`;

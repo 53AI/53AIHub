@@ -1,7 +1,7 @@
-﻿// packages/shared-business/src/chat/components/message/AssistantMessage.tsx
+// packages/shared-business/src/chat/components/message/AssistantMessage.tsx
 
 import { memo, useState, useCallback, useMemo } from "react";
-import { Checkbox, message as antdMessage, Tooltip } from "antd";
+import { Checkbox, message as antdMessage } from "antd";
 import { BubbleAssistant } from "@km/hub-ui-x-react";
 import { MessageMenu } from "../MessageMenu";
 import { FeedbackPanel } from "../feedback";
@@ -10,18 +10,20 @@ import { OutputFiles } from "../output";
 import OpenClawTimeline from "./OpenClawTimeline";
 import { Quotation } from "../source";
 import { useTranslation, useKnowledgePanel } from "../../i18n";
+import type { Message, ChatMessagesFeatures } from "../../types/message";
 import type {
-  Message,
-  ChatMessagesFeatures,
-  FileItem,
-  ChunkItem,
-  OutputFile,
-  OpenClawActivityItem,
-  OpenClawInteractionOption,
-} from "../../types/message";
+  MessageActionFeature,
+  FileActionFeature,
+  SourceActionFeature,
+  OpenClawFeature,
+  ChatMessagesSlots,
+} from "../ChatMessages/types";
 import { getOutputFileDownloadStrategy } from "../../utils/output-file-download";
 
+// === Main Props ===
+
 export interface AssistantMessageProps {
+  // === 核心 ===
   /** 消息数据 */
   message: Message;
   /** Agent 信息 */
@@ -36,7 +38,11 @@ export interface AssistantMessageProps {
   };
   /** 功能开关 */
   features?: ChatMessagesFeatures;
-  /** 是否正在流式输出 */
+  /** 外部传入的翻译函数 */
+  t?: TranslateFn;
+
+  // === 功能分组 ===
+  /** 流式状态 */
   isStreaming?: boolean;
   /** 是否是最后一条消息 */
   isLastMessage?: boolean;
@@ -44,52 +50,27 @@ export interface AssistantMessageProps {
   isShareMode?: boolean;
   /** 是否被选中（分享模式） */
   isSelected?: boolean;
+  /** OpenClaw 模式 */
+  openclaw?: OpenClawFeature;
+
+  // === 回调分组 ===
+  /** 消息操作回调 */
+  messageAction?: MessageActionFeature;
+  /** 文件操作回调 */
+  fileAction?: FileActionFeature;
+  /** 源引用操作回调 */
+  sourceAction?: SourceActionFeature;
+
+  // === UI 插槽 ===
+  slots?: ChatMessagesSlots;
+
+  // === 其他 ===
   /** 自定义类名 */
   className?: string;
   /** 自定义样式 */
   style?: React.CSSProperties;
-  /** OpenClaw 时间线模式 */
-  openclaw?: boolean;
-  /** 消息选择回调 */
-  onSelect?: (message: Message) => void;
-  /** 重新生成回调 */
-  onRegenerate?: (message: Message) => void;
-  /** 分享回调 */
-  onShare?: () => void;
-  /** 添加为文件回调 */
-  onAddAsMd?: (message: Message) => void;
-  /** 反馈回调 */
-  onFeedback?: (message: Message, type: 'satisfied' | 'unsatisfied', description?: string) => void;
-  /** 文件点击回调 */
-  onFileClick?: (file: FileItem) => void;
-  /** 源文件点击回调 */
-  onSourceClick?: (source: ChunkItem, message: Message) => void;
-  /** 打开知识库侧边栏回调 */
-  onOpenKnow?: (message: Message) => void;
-  /** Source 引用点击回调 */
-  onSourceReferenceClick?: (data: any, message: Message) => void;
-  /** 自定义 Source 渲染函数 */
-  renderSource?: (type: string, number: number, message: Message) => string;
-  /** 输出文件收藏回调 */
-  onOutputFileFavorite?: (file: OutputFile, message: Message) => void;
-  /** 输出文件预览回调 */
-  onOutputFilePreview?: (file: OutputFile, message: Message) => void;
-  /** 输出文件收藏状态检查回调 */
-  onOutputFileCheckFavorite?: (fileIds: string[]) => void;
-  /** OpenClaw 交互选项提交回调 */
-  onOpenClawInteractionSubmit?: (activity: OpenClawActivityItem, option: OpenClawInteractionOption, message: Message) => Promise<void> | void;
-  /** 反馈面板关闭回调 */
-  onFeedbackClose?: (message: Message) => void;
-  /** 反馈选项切换回调 */
-  onFeedbackToggle?: (message: Message, key: string) => void;
-  /** 反馈描述变化回调 */
-  onFeedbackDescriptionChange?: (message: Message, value: string) => void;
-  /** 显示错误详情回调 */
-  onShowErrorDetails?: (message: Message) => void;
   /** 折叠/展开 OpenClaw 时间线时保持外层滚动位置 */
   preserveScrollDuringToggle?: (callback: () => void) => void;
-  /** 外部传入的翻译函数（可选，不传则使用内部 i18n） */
-  t?: TranslateFn;
 }
 
 const FEEDBACK_OPTIONS_SATISFIED = new Map([
@@ -141,31 +122,18 @@ function AssistantMessageInner({
   isSelected = false,
   className,
   style,
-  openclaw = false,
-  onSelect,
-  onRegenerate,
-  onShare,
-  onAddAsMd,
-  onFeedback,
-  onFileClick,
-  onSourceClick,
-  onOpenKnow,
-  onSourceReferenceClick,
-  renderSource,
-  onOutputFileFavorite,
-  onOutputFilePreview,
-  onOutputFileCheckFavorite,
-  onOpenClawInteractionSubmit,
-  onFeedbackClose,
-  onFeedbackToggle,
-  onFeedbackDescriptionChange,
-  onShowErrorDetails,
+  openclaw,
+  messageAction,
+  fileAction,
+  sourceAction,
+  slots,
   preserveScrollDuringToggle,
   t: externalT,
 }: AssistantMessageProps) {
   const { t: internalT } = useTranslation();
   const t = externalT || internalT;
   const onOpenKnowledgePanel = useKnowledgePanel();
+  const openclawEnabled = openclaw?.enabled ?? false;
 
   // 反馈状态 - 支持外部控制或内部状态
   const feedbackVisible = message.feedbackVisible ?? false;
@@ -183,8 +151,8 @@ function AssistantMessageInner({
   // 内部错误详情状态
   const [internalShowErrorDetails, setInternalShowErrorDetails] = useState(false);
 
-  // 使用外部状态还是内部状态
-  const useExternalFeedback = !!onFeedbackClose;
+  // 使用外部状态还是内部状态（当有 onFeedback 和 onFeedbackClose 时使用外部状态）
+  const useExternalFeedback = !!(messageAction?.onFeedback && messageAction?.onFeedbackClose);
   const actualFeedbackVisible = useExternalFeedback ? feedbackVisible : internalFeedbackVisible;
   const actualFeedbackType = useExternalFeedback ? feedbackType : internalFeedbackType;
   const actualFeedbackOptions = useExternalFeedback ? feedbackTypeOptions : internalFeedbackOptions;
@@ -195,26 +163,26 @@ function AssistantMessageInner({
   const showErrorDetails = message.showErrorDetails ?? internalShowErrorDetails;
 
   const handleSelect = useCallback(() => {
-    if (isShareMode && onSelect) {
-      onSelect(message);
+    if (isShareMode && messageAction?.onSelect) {
+      messageAction.onSelect(message);
     }
-  }, [isShareMode, onSelect, message]);
+  }, [isShareMode, messageAction, message]);
 
   const handleRegenerate = useCallback(() => {
-    onRegenerate?.(message);
-  }, [onRegenerate, message]);
+    messageAction?.onRegenerate?.(message);
+  }, [messageAction, message]);
 
   const handleShare = useCallback(() => {
-    onShare?.();
-  }, [onShare]);
+    messageAction?.onShare?.();
+  }, [messageAction]);
 
   const handleAddAsMd = useCallback(() => {
-    onAddAsMd?.(message);
-  }, [onAddAsMd, message]);
+    messageAction?.onAddAsMd?.(message);
+  }, [messageAction, message]);
 
   const handleFeedback = useCallback((type: "satisfied" | "unsatisfied") => {
     if (useExternalFeedback) {
-      onFeedback?.(message, type);
+      messageAction?.onFeedback?.(message, type);
     } else {
       setInternalFeedbackType(type);
       setInternalFeedbackOptions(type === "satisfied" ? new Map(FEEDBACK_OPTIONS_SATISFIED) : new Map(FEEDBACK_OPTIONS_UNSATISFIED));
@@ -222,11 +190,11 @@ function AssistantMessageInner({
       setInternalDescription("");
       setInternalFeedbackSuccessful(false);
     }
-  }, [useExternalFeedback, onFeedback, message]);
+  }, [useExternalFeedback, messageAction, message]);
 
   const handleFeedbackToggle = useCallback((key: string) => {
-    if (useExternalFeedback && onFeedbackToggle) {
-      onFeedbackToggle(message, key);
+    if (useExternalFeedback && messageAction?.onFeedbackToggle) {
+      messageAction.onFeedbackToggle(message, key);
     } else {
       setInternalFeedbackOptions((prev) => {
         const next = new Map(prev);
@@ -234,11 +202,10 @@ function AssistantMessageInner({
         return next;
       });
     }
-  }, [useExternalFeedback, onFeedbackToggle, message]);
+  }, [useExternalFeedback, messageAction, message]);
 
   const handleFeedbackSubmit = useCallback(() => {
     const options = useExternalFeedback ? feedbackTypeOptions : internalFeedbackOptions;
-    const desc = useExternalFeedback ? description : internalDescription;
 
     const selectedOptions = Array.from((options || new Map()).entries())
       .filter(([, value]) => value)
@@ -255,10 +222,9 @@ function AssistantMessageInner({
       return;
     }
 
-    const feedbackDescription = desc.trim() ? `${selectedOptions.join(", ")}: ${desc}` : selectedOptions.join(", ");
-    onFeedback?.(message, fbType, feedbackDescription);
-
-    if (!useExternalFeedback) {
+    if (useExternalFeedback && messageAction?.onFeedbackSubmit) {
+      messageAction.onFeedbackSubmit(message);
+    } else if (!useExternalFeedback) {
       setInternalFeedbackSuccessful(true);
       setInternalFeedbackVisible(false);
       // 2秒后重置成功状态
@@ -266,29 +232,29 @@ function AssistantMessageInner({
         setInternalFeedbackSuccessful(false);
       }, 2000);
     }
-  }, [useExternalFeedback, feedbackTypeOptions, internalFeedbackOptions, description, internalDescription, feedbackType, internalFeedbackType, onFeedback, message, t]);
+  }, [useExternalFeedback, feedbackTypeOptions, internalFeedbackOptions, description, internalDescription, feedbackType, internalFeedbackType, messageAction, message, t]);
 
   const handleFeedbackClose = useCallback(() => {
-    if (useExternalFeedback && onFeedbackClose) {
-      onFeedbackClose(message);
+    if (useExternalFeedback && messageAction?.onFeedbackClose) {
+      messageAction.onFeedbackClose(message);
     } else {
       setInternalFeedbackVisible(false);
       setInternalFeedbackType("");
       setInternalDescription("");
     }
-  }, [useExternalFeedback, onFeedbackClose, message]);
+  }, [useExternalFeedback, messageAction, message]);
 
   const handleDescriptionChange = useCallback((value: string) => {
-    if (useExternalFeedback && onFeedbackDescriptionChange) {
-      onFeedbackDescriptionChange(message, value);
+    if (useExternalFeedback && messageAction?.onFeedbackDescriptionChange) {
+      messageAction.onFeedbackDescriptionChange(message, value);
     } else {
       setInternalDescription(value);
     }
-  }, [useExternalFeedback, onFeedbackDescriptionChange, message]);
+  }, [useExternalFeedback, messageAction, message]);
 
-  const handleOutputFilePreview = useCallback((file: OutputFile) => {
-    if (onOutputFilePreview) {
-      onOutputFilePreview(file, message);
+  const handleOutputFilePreview = useCallback((file: any) => {
+    if (fileAction?.onPreview) {
+      fileAction.onPreview(file, message);
       return;
     }
 
@@ -347,21 +313,25 @@ function AssistantMessageInner({
     };
 
     void preview();
-  }, [message, onOutputFilePreview]);
+  }, [message, fileAction]);
 
-  const handleOutputFileFavorite = useCallback((file: OutputFile) => {
-    onOutputFileFavorite?.(file, message);
-  }, [onOutputFileFavorite, message]);
+  const handleOutputFileFavorite = useCallback((file: any) => {
+    fileAction?.onFavorite?.(file, message);
+  }, [fileAction, message]);
 
-  const handleSourceClick = useCallback((source: ChunkItem) => {
+  const handleOutputFileCheckFavorite = useCallback((fileIds: string[]) => {
+    fileAction?.onCheckFavorite?.(fileIds, message);
+  }, [fileAction, message]);
+
+  const handleSourceClick = useCallback((source: any) => {
     // 优先使用 context 中的回调
     if (onOpenKnowledgePanel) {
       const handled = onOpenKnowledgePanel({ type: 'source_click', source });
       if (handled !== false) return;
     }
     // 回退到外部 props
-    onSourceClick?.(source, message);
-  }, [onOpenKnowledgePanel, onSourceClick, message]);
+    sourceAction?.onClick?.(source, message);
+  }, [onOpenKnowledgePanel, sourceAction, message]);
 
   const handleOpenKnow = useCallback(() => {
     // 优先使用 context 中的回调
@@ -371,29 +341,29 @@ function AssistantMessageInner({
       if (handled !== false) return;
     }
     // 回退到外部 props
-    onOpenKnow?.(message);
-  }, [onOpenKnowledgePanel, onOpenKnow, message]);
+    sourceAction?.onOpenKnow?.(message);
+  }, [onOpenKnowledgePanel, sourceAction, message]);
 
   const handleSourceReferenceClick = useCallback((data: any) => {
-    onSourceReferenceClick?.(data, message);
-  }, [onSourceReferenceClick, message]);
+    sourceAction?.onReferenceClick?.(data, message);
+  }, [sourceAction, message]);
 
   const handleRenderSource = useCallback((type: string, number: number) => {
-    if (renderSource) {
-      return renderSource(type, number, message);
+    if (slots?.source) {
+      return slots.source({ type, number, message });
     }
     // 默认渲染
     return `${type}-${number}`;
-  }, [renderSource, message]);
+  }, [slots, message]);
 
   const handleShowErrorDetails = useCallback(() => {
-    if (onShowErrorDetails) {
-      onShowErrorDetails(message);
+    if (messageAction?.onShowErrorDetails) {
+      messageAction.onShowErrorDetails(message);
     } else {
       // 没有外部回调时，使用内部状态切换
       setInternalShowErrorDetails(true);
     }
-  }, [onShowErrorDetails, message]);
+  }, [messageAction, message]);
 
   const menuFeatures = useMemo(() => ({
     copy: features?.menu?.copy ?? true,
@@ -403,15 +373,157 @@ function AssistantMessageInner({
     addAsFile: features?.menu?.addAsMd ?? false,
   }), [features?.menu]);
 
-  const assistantMenuContent = openclaw ? getOpenClawAssistantContent(message) : (message.answer || message.content || "");
+  const assistantMenuContent = openclawEnabled ? getOpenClawAssistantContent(message) : (message.answer || message.content || "");
   const showMenu = !message.loading && !isShareMode;
-  const showProcessFlow = features?.processFlow && message.process_records && message.process_records.length > 0;
-  const showOutputFiles = !openclaw && features?.outputFiles && message.outputFiles && message.outputFiles.length > 0;
-  const showQuotation = features?.sourceRef && message.rag_stats?.file_quotations && message.rag_stats.file_quotations.length > 0;
+  // 数据驱动：有 process_records 数据就显示 ProcessFlow
+  const showProcessFlow = message.process_records && message.process_records.length > 0;
+  // 数据驱动：有 outputFiles 数据就显示输出文件
+  const showOutputFiles = !openclawEnabled && message.outputFiles && message.outputFiles.length > 0;
+  // 数据驱动：有 file_quotations 数据就显示引用
+  const showQuotation = message.rag_stats?.file_quotations && message.rag_stats.file_quotations.length > 0;
   const showAnswerRemarks = agentInfo?.settings?.answer_remarks_config?.enable && !message.loading;
 
+  // 稳定 BubbleAssistant 的 React 元素 prop 引用：
+  // - BubbleAssistant 的 memo 会比较 header / footer / menu / error 引用，
+  //   数据未变时复用旧元素可避免 MdRenderer 重跑 markdown 解析（性能关键）。
+  // - 数据变化时（如 message.process_records 流式追加），新元素让 memo 失效，
+  //   触发 ProcessFlowHeader 重渲染以反映最新数据。
+  // rag_stats?.files_search 在 useChatStream 内会被整体替换为新数组对象，
+  // 这里通过 JSON 序列化捕获其内容变化，避免引用漂移导致漏渲染。
+  const knowledgeSearchFilesSnapshot = useMemo(
+    () => JSON.stringify(message.rag_stats?.files_search ?? []),
+    [message.rag_stats?.files_search],
+  );
+
+  const headerNode = useMemo(() => {
+    if (!showProcessFlow) return undefined;
+    return (
+      <ProcessFlowHeader
+        t={t}
+        processRecords={message.process_records}
+        streaming={message.loading || (isStreaming && isLastMessage)}
+        hasContent={!!(message.answer || message.content)}
+        getKnowledgeSearchFiles={() => message.rag_stats?.files_search || []}
+        onOpenKnow={handleOpenKnow}
+        onSourceClick={handleSourceClick}
+      />
+    );
+  }, [
+    showProcessFlow,
+    t,
+    message.process_records,
+    message.loading,
+    isStreaming,
+    isLastMessage,
+    message.answer,
+    message.content,
+    knowledgeSearchFilesSnapshot,
+    handleOpenKnow,
+    handleSourceClick,
+  ]);
+
+  const footerNode = useMemo(() => {
+    return (
+      <>
+        {showOutputFiles && (
+          <OutputFiles
+            files={message.outputFiles!}
+            onPreview={handleOutputFilePreview}
+            onFavorite={fileAction?.onFavorite ? handleOutputFileFavorite : undefined}
+            onCheckFavorite={fileAction?.onCheckFavorite ? handleOutputFileCheckFavorite : undefined}
+          />
+        )}
+        {showAnswerRemarks && (
+          <div className="text-sm text-[#999999] break-words my-2">
+            {agentInfo?.settings?.answer_remarks_config?.content}
+          </div>
+        )}
+        {showQuotation && (
+          <Quotation
+            type={message.rag_stats?.type}
+            files={message.rag_stats?.file_quotations}
+            onFileClick={fileAction?.onClick}
+          />
+        )}
+      </>
+    );
+  }, [
+    showOutputFiles,
+    message.outputFiles,
+    message.rag_stats?.type,
+    message.rag_stats?.file_quotations,
+    showAnswerRemarks,
+    agentInfo?.settings?.answer_remarks_config?.content,
+    showQuotation,
+    handleOutputFilePreview,
+    fileAction?.onFavorite,
+    fileAction?.onCheckFavorite,
+    fileAction?.onClick,
+    handleOutputFileFavorite,
+    handleOutputFileCheckFavorite,
+  ]);
+
+  const menuNode = useMemo(() => {
+    if (!showMenu) return undefined;
+    return slots?.messageMenu ? (
+      slots.messageMenu({ type: "assistant", message })
+    ) : (
+      <MessageMenu
+        type="assistant"
+        content={assistantMenuContent}
+        features={menuFeatures}
+        feedbackType={message.feedback_type}
+        onRegenerate={handleRegenerate}
+        onShare={handleShare}
+        onFeedback={handleFeedback}
+        onAddAsFile={handleAddAsMd}
+      />
+    );
+  }, [
+    showMenu,
+    slots?.messageMenu,
+    message.id,
+    message.feedback_type,
+    assistantMenuContent,
+    menuFeatures,
+    handleRegenerate,
+    handleShare,
+    handleFeedback,
+    handleAddAsMd,
+  ]);
+
+  const errorNode = useMemo(() => {
+    if (!message.error) return undefined;
+    return (
+      <div className="text-[#262626]">
+        {t("chat.error_tip") || "回答出错"}
+        <span
+          className="text-blue-500 cursor-pointer underline ml-1"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleShowErrorDetails();
+          }}
+        >
+          {t("chat.error_details") || "查看详情"}
+        </span>
+        {showErrorDetails && (
+          <div className="mt-2 whitespace-pre-wrap text-sm">
+            {message.answer || message.content}
+          </div>
+        )}
+      </div>
+    );
+  }, [
+    message.error,
+    message.answer,
+    message.content,
+    showErrorDetails,
+    handleShowErrorDetails,
+    t,
+  ]);
+
   if (
-    openclaw &&
+    openclawEnabled &&
     message.openclawProjection &&
     (message.openclawProjection.timelineItems.length > 0 || message.openclawProjection.outputFiles.length > 0)
   ) {
@@ -437,32 +549,36 @@ function AssistantMessageInner({
             agentInfo={agentInfo}
             isStreaming={message.loading || (isStreaming && isLastMessage)}
             features={features}
-            renderSource={renderSource}
-            onSourceReferenceClick={onSourceReferenceClick}
+            renderSource={slots?.source ? (type, number) => slots.source!({ type, number, message }) : undefined}
+            onSourceReferenceClick={sourceAction?.onReferenceClick ? (data) => sourceAction.onReferenceClick!(data, message) : undefined}
             onOutputFilePreview={handleOutputFilePreview}
-            onOutputFileFavorite={onOutputFileFavorite}
-            onOutputFileCheckFavorite={onOutputFileCheckFavorite}
-            onInteractionSubmit={(activity, option) => onOpenClawInteractionSubmit?.(activity, option, message)}
+            onOutputFileFavorite={fileAction?.onFavorite ? handleOutputFileFavorite : undefined}
+            onOutputFileCheckFavorite={fileAction?.onCheckFavorite ? handleOutputFileCheckFavorite : undefined}
+            onInteractionSubmit={openclaw?.onInteractionSubmit ? (activity, option) => openclaw.onInteractionSubmit!(activity, option, message) : undefined}
             preserveScrollDuringToggle={preserveScrollDuringToggle}
             answerMenu={
               showMenu ? (
-                <MessageMenu
-                  type="assistant"
-                  content={assistantMenuContent}
-                  features={menuFeatures}
-                  feedbackType={message.feedback_type}
-                  onRegenerate={handleRegenerate}
-                  onShare={handleShare}
-                  onFeedback={handleFeedback}
-                  onAddAsFile={handleAddAsMd}
-                />
+                slots?.messageMenu ? (
+                  slots.messageMenu({ type: "assistant", message })
+                ) : (
+                  <MessageMenu
+                    type="assistant"
+                    content={assistantMenuContent}
+                    features={menuFeatures}
+                    feedbackType={message.feedback_type}
+                    onRegenerate={handleRegenerate}
+                    onShare={handleShare}
+                    onFeedback={handleFeedback}
+                    onAddAsFile={handleAddAsMd}
+                  />
+                )
               ) : undefined
             }
           />
 
           {showAnswerRemarks && (
             <div className="text-sm text-[#999999] break-words">
-              {agentInfo!.settings!.answer_remarks_config.content}
+              {agentInfo?.settings?.answer_remarks_config?.content}
             </div>
           )}
 
@@ -470,11 +586,11 @@ function AssistantMessageInner({
             <Quotation
               type={message.rag_stats?.type}
               files={message.rag_stats?.file_quotations}
-              onFileClick={onFileClick}
+              onFileClick={fileAction?.onClick}
             />
           )}
 
-          {features?.menu?.feedback && actualFeedbackVisible && (
+          {features?.menu?.feedback && (
             <FeedbackPanel
               visible={actualFeedbackVisible}
               feedbackType={actualFeedbackType}
@@ -507,7 +623,6 @@ function AssistantMessageInner({
           reasoning={message.reasoning_content}
           reasoningExpanded={message.reasoning_expanded}
           avatar={agentInfo?.logo}
-          name={agentInfo?.name}
           alwaysShowMenu={isLastMessage || actualFeedbackVisible}
           className={className}
           style={style}
@@ -515,82 +630,14 @@ function AssistantMessageInner({
           renderSource={handleRenderSource}
           onSourceReferenceClick={handleSourceReferenceClick}
           showError={message.error}
-          header={
-            showProcessFlow ? (
-              <ProcessFlowHeader
-                t={t}
-                processRecords={message.process_records}
-                streaming={message.loading || (isStreaming && isLastMessage)}
-                hasContent={!!(message.answer || message.content)}
-                getKnowledgeSearchFiles={() => message.rag_stats?.files_search || []}
-                onOpenKnow={handleOpenKnow}
-                onSourceClick={handleSourceClick}
-              />
-            ) : undefined
-          }
-          footer={
-            <>
-              {showOutputFiles && (
-                <OutputFiles
-                  files={message.outputFiles!}
-                  onPreview={handleOutputFilePreview}
-                  onFavorite={features?.outputFiles && onOutputFileFavorite ? handleOutputFileFavorite : undefined}
-                  onCheckFavorite={features?.outputFiles && onOutputFileCheckFavorite ? onOutputFileCheckFavorite : undefined}
-                />
-              )}
-              {showAnswerRemarks && (
-                <div className="text-sm text-[#999999] break-words my-2">
-                  {agentInfo!.settings!.answer_remarks_config.content}
-                </div>
-              )}
-              {showQuotation && (
-                <Quotation
-                  type={message.rag_stats?.type}
-                  files={message.rag_stats?.file_quotations}
-                  onFileClick={onFileClick}
-                />
-              )}
-            </>
-          }
-          menu={
-            showMenu ? (
-              <MessageMenu
-                type="assistant"
-                content={assistantMenuContent}
-                features={menuFeatures}
-                feedbackType={message.feedback_type}
-                onRegenerate={handleRegenerate}
-                onShare={handleShare}
-                onFeedback={handleFeedback}
-                onAddAsFile={handleAddAsMd}
-              />
-            ) : undefined
-          }
-          error={
-            message.error ? (
-              <div className="text-[#262626]">
-                {t("chat.error_tip") || "回答出错"}
-                <span
-                  className="text-blue-500 cursor-pointer underline ml-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleShowErrorDetails();
-                  }}
-                >
-                  {t("chat.error_details") || "查看详情"}
-                </span>
-                {showErrorDetails && (
-                  <div className="mt-2 whitespace-pre-wrap text-sm">
-                    {message.answer || message.content}
-                  </div>
-                )}
-              </div>
-            ) : undefined
-          }
+          header={headerNode}
+          footer={footerNode}
+          menu={menuNode}
+          error={errorNode}
         />
 
         {/* Feedback Panel */}
-        {features?.menu?.feedback && actualFeedbackVisible && (
+        {features?.menu?.feedback && (
           <FeedbackPanel
             visible={actualFeedbackVisible}
             feedbackType={actualFeedbackType}

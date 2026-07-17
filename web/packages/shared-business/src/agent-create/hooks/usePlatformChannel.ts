@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import type { FormInstance } from 'antd'
 import { Form } from 'antd'
 import { useAgentCreateAdapter } from '../adapters'
 import { useAgentFormStore } from '../store'
 import { useAgentForm } from './index'
-import { useChannelConfig } from '../context/ChannelConfigContext'
+import { useChannelConfig } from './useChannelConfig'
 import type { ChannelConfigData, ChannelFormState } from '../types'
 
 export interface UsePlatformChannelOptions {
@@ -19,7 +20,7 @@ export interface UsePlatformChannelReturn {
   /** 渠道配置对象 */
   channelConfig: Record<string, any>
   /** 渠道表单实例 */
-  channelForm: Form.FormInstance
+  channelForm: FormInstance
   /** 是否已编辑 */
   channelEditable: boolean
   /** 设置是否已编辑 */
@@ -27,7 +28,7 @@ export interface UsePlatformChannelReturn {
   /** 渠道表单状态 ref */
   channelFormState: React.MutableRefObject<ChannelFormState>
   /** Agent 表单实例 */
-  agentForm: Form.FormInstance
+  agentForm: FormInstance
   /** 保存渠道配置 */
   onChannelSave: () => Promise<void>
   /** 验证表单 */
@@ -106,8 +107,9 @@ export function usePlatformChannel(options: UsePlatformChannelOptions): UsePlatf
     // channel_config 在 custom_config 中（适配器返回的 AgentFormData 格式）
     // 或在顶层（原版 create 的原始 API 响应格式）
     const channel_config: ChannelConfigData = data?.custom_config?.channel_config || data?.channel_config || {}
-    setChannelEditable(!!+channel_config.channel_id)
-    channelConfig.channel_id = +channel_config.channel_id || 0
+    const channelId = Number(channel_config.channel_id || 0)
+    setChannelEditable(channelId > 0)
+    channelConfig.channel_id = channelId
     channelConfig.key = channelFormState.current.key = channel_config.key || ''
     channelConfig.base_url = channelFormState.current.base_url = channel_config.base_url || defaultBaseUrl
     channelConfig.models = channelFormState.current.models = channel_config.models || []

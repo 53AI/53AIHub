@@ -242,7 +242,7 @@ func InitializeSystem() error {
 	agentGroup := Group{
 		Eid:       enterprise.Eid,
 		CreatedBy: 0, // System created
-		GroupName: "默认",
+		GroupName: "默认分组",
 		GroupType: AGENT_TYPE,
 		Sort:      0,
 	}

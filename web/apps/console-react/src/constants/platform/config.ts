@@ -2,6 +2,8 @@ import { img_host } from '@/utils/config'
 
 // 智能体类型定义
 const AGENT_TYPE = {
+  WORKBENCH: 'workbench',
+  KNOWLEDGE: 'knowledge',
   PROMPT: 'prompt',
   COZE_AGENT_CN: 'coze_agent_cn',
   COZE_WORKFLOW_CN: 'coze_workflow_cn',

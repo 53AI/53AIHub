@@ -4,7 +4,7 @@ import { useLibraryStore } from "@/stores/modules/library";
 import { SvgIcon } from "@km/shared-components-react";
 import entitiesApi, { EntityType, RawEntity } from "@/api/modules/entities";
 import filesApi from "@/api/modules/files";
-import { DEFAULT_PIPELINE_STEP } from '../data-pipeline/constants';
+import { DEFAULT_PIPELINE_STEP } from '@km/shared-business/knowledge-pipeline';
 import "./metadata.css";
 import { t } from "@/locales";
 

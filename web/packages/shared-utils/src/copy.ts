@@ -3,14 +3,15 @@
  * 优先使用现代 Clipboard API，失败时降级为 execCommand
  *
  * @param text - 要复制的文本内容
+ * @param container - 可选的容器元素，用于在 Modal 等焦点陷阱场景下执行复制
  * @returns {Promise<boolean>} 返回复制是否成功的Promise
  */
-export function copyToClip(text: string): Promise<boolean> {
+export function copyToClip(text: string, container?: HTMLElement): Promise<boolean> {
   return new Promise((resolve) => {
     // 检查是否为安全上下文（HTTPS 或 localhost）
     const isSecureContext = window.isSecureContext
 
-    const fallback = (): boolean => {
+    const fallback = (fallbackContainer?: HTMLElement): boolean => {
       const textarea = document.createElement('textarea')
       textarea.value = text
 
@@ -30,7 +31,9 @@ export function copyToClip(text: string): Promise<boolean> {
       textarea.setAttribute('readonly', '')
       textarea.style.userSelect = 'text'
 
-      document.body.appendChild(textarea)
+      // 使用传入的容器或 document.body
+      const targetContainer = fallbackContainer || document.body
+      targetContainer.appendChild(textarea)
 
       // 保存当前焦点元素
       const activeElement = document.activeElement
@@ -46,7 +49,7 @@ export function copyToClip(text: string): Promise<boolean> {
         success = false
       }
 
-      document.body.removeChild(textarea)
+      targetContainer.removeChild(textarea)
 
       // 恢复焦点
       try {
@@ -62,7 +65,7 @@ export function copyToClip(text: string): Promise<boolean> {
 
     // 非安全上下文直接使用降级方案
     if (!isSecureContext) {
-      resolve(fallback())
+      resolve(fallback(container))
       return
     }
 
@@ -72,12 +75,12 @@ export function copyToClip(text: string): Promise<boolean> {
         navigator.clipboard
           .writeText(text)
           .then(() => resolve(true))
-          .catch(() => resolve(fallback()))
+          .catch(() => resolve(fallback(container)))
       } else {
-        resolve(fallback())
+        resolve(fallback(container))
       }
     } catch {
-      resolve(fallback())
+      resolve(fallback(container))
     }
   })
 }

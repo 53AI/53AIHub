@@ -17,11 +17,11 @@ import (
 type RetrievalChunk struct {
 	ID        int64 `json:"id" gorm:"primaryKey;autoIncrement"`
 	Eid       int64 `json:"eid" gorm:"not null;index:idx_retrieval_chunks_eid_fileid,priority:1;uniqueIndex:idx_retrieval_chunks_unique,priority:1"`
-	FileID    int64 `json:"file_id" gorm:"not null;index:idx_retrieval_chunks_eid_fileid,priority:2;uniqueIndex:idx_retrieval_chunks_unique,priority:2" comment:"文件ID"`
+	FileID    int64 `json:"file_id" gorm:"not null;index:idx_retrieval_chunks_eid_fileid,priority:2;uniqueIndex:idx_retrieval_chunks_unique,priority:2;index:idx_retrieval_chunks_kcid_fileid,priority:2" comment:"文件ID"`
 	LibraryID int64 `json:"library_id" gorm:"not null" comment:"知识库ID"`
 
 	// 关联的知识点分块
-	KnowledgeChunkID int64 `json:"knowledge_chunk_id" gorm:"not null;uniqueIndex:idx_retrieval_chunks_unique,priority:3" comment:"关联的知识点分块ID"`
+	KnowledgeChunkID int64 `json:"knowledge_chunk_id" gorm:"not null;uniqueIndex:idx_retrieval_chunks_unique,priority:3;index:idx_retrieval_chunks_kcid_fileid,priority:1" comment:"关联的知识点分块ID"`
 
 	// 检索块内容
 	Content     string `json:"content" gorm:"not null" comment:"检索块内容"`

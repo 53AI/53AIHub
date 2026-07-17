@@ -44,8 +44,8 @@ export function LoginForm({
   const [codeCount, setCodeCount] = useState(0);
   const [form] = Form.useForm();
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const codeTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const codeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const usernameValue = Form.useWatch("username", form);
   const isMobile = /^1[3-9]\d{9}$/.test(usernameValue || "");

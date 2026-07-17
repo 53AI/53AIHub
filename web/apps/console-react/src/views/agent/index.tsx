@@ -5,12 +5,14 @@ import {
   Switch,
   Modal,
   message,
-  Drawer
+  Drawer,
+  Tooltip
 } from "antd";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { t } from "@/locales";
 import { useNavigate } from "react-router-dom";
 import { agentApi, AgentData } from "@/api/modules/agent";
+import { AGENT_USAGES } from "@/constants/agent";
 import { providerApi } from "@/api/modules/provider";
 import { subscriptionApi } from "@/api/modules/subscription";
 import { groupApi, Group } from "@/api/modules/group";
@@ -18,7 +20,7 @@ import { channelApi } from "@/api/modules/channel";
 import {
   channels,
   getProvidersByAuth,
-  getProviderByAgentId, AgentType
+  getProviderByAgentId, AgentType, BACKEND_AGENT_TYPE
 } from "@/constants/platform/config";
 import { AGENT_APP_OPTIONS } from "@/constants/platform/agent";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -26,7 +28,7 @@ import { GROUP_TYPE } from "@/constants/group";
 import { PageLayoutContent } from "@/components/PageLayout";
 import { GroupDialog } from "@/components/GroupDialog";
 import { GroupTabs, type GroupTabsRef } from "@/components/GroupTabs";
-import { useListState, useVersion } from "@/hooks";
+import { useListState, useVersion, useScopeDictionary } from "@/hooks";
 import { eventBus } from "@km/shared-utils";
 import {
   CreateAgentDialog,
@@ -36,10 +38,15 @@ import {
 } from "@km/shared-business/agent-create";
 import type { AgentPlatformOption, CreateAgentDialogResult } from "@km/shared-business/agent-create";
 import { consoleAgentAdapter } from "@/adapters/agent-create-adapter";
+import ScopeDisplay from "@/components/ScopeDisplay";
 import { SvgIcon, Search } from "@km/shared-components-react";
 import { img_host, getPublicPath } from "@/utils/config";
 import { buildOpenClawEnterpriseAgentPayload } from "./openclaw-create";
-import { buildAgentListParams, createAgentPlatformFilterOptions } from "./platform-filter";
+import {
+  buildAgentListParams,
+  createAgentPlatformFilterOptions,
+  AGENT_USAGE_PLATFORM_VALUES,
+} from "./platform-filter";
 
 // 获取默认的注册用户和内部用户分组 ID
 const getDefaultGroupIds = async () => {
@@ -78,6 +85,7 @@ interface AgentState extends AgentData {
   user_group_names: string[];
   internal_members: string[];
   group_name: string;
+  is_system?: boolean;
 }
 
 export function AgentPage() {
@@ -100,6 +108,7 @@ export function AgentPage() {
   const { state: filterForm, stateRef: filterFormRef, updateState } = useListState<FilterForm>(
     defaultFilterForm,
     {
+      enableUrlSync: true,
       urlPrefix: 'agent_',
       searchFields: ['keyword', 'group_id', 'platform', 'type'],
     }
@@ -112,15 +121,14 @@ export function AgentPage() {
   const [addVisible, setAddVisible] = useState(false);
   const [legacyAddVisible, setLegacyAddVisible] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>(undefined);
-  const [subscriptionList, setSubscriptionList] = useState<SubscriptionItem[]>(
-    [],
-  );
   const [groupList, setGroupList] = useState<Group[]>([]);
   const [internalGroupOptions, setInternalGroupOptions] = useState<
     Record<number, string>
   >({});
   const [authProviders, setAuthProviders] = useState<ProviderItem[]>([]);
   const [initialized, setInitialized] = useState(false);
+  // ScopeDisplay 共享字典:全局 hook 自动 dedup,任意调用方只触发 3 个请求
+  const scopeDict = useScopeDictionary();
 
   // 从适配器获取图片上传组件
   const ImageUploadComponent = consoleAgentAdapter.ImageUploadComponent;
@@ -132,7 +140,6 @@ export function AgentPage() {
   });
 
   // 使用 ref 来追踪是否已加载，避免闭包问题
-  const subscriptionLoadedRef = useRef(false);
   const groupLoadedRef = useRef(false);
   const internalGroupLoadedRef = useRef(false);
   const providerLoadedRef = useRef(false);
@@ -145,6 +152,8 @@ export function AgentPage() {
 
   // 标记是否已初始化（避免初始化时重复请求）
   const initializedRef = useRef(false);
+  // 标记分组列表是否已初始化（避免初始化加载时重置筛选）
+  const groupInitializedRef = useRef(false);
 
   // 更新 authProvidersRef
   useEffect(() => {
@@ -218,15 +227,6 @@ export function AgentPage() {
     setLegacyAddVisible(false);
   };
 
-  const loadSubscriptionList = async () => {
-    if (subscriptionLoadedRef.current) return;
-    subscriptionLoadedRef.current = true;
-    const list = await subscriptionApi.list({
-      params: { offset: 0, limit: 1000 },
-    });
-    subscriptionListRef.current = list;
-    setSubscriptionList(list);
-  };
 
   const loadGroupList = async () => {
     if (groupLoadedRef.current) return;
@@ -266,7 +266,6 @@ export function AgentPage() {
 
   const loadListData = async () => {
     setTableLoading(true);
-    await loadSubscriptionList();
     await loadGroupList();
 
     try {
@@ -294,6 +293,25 @@ export function AgentPage() {
         agent.user_group_names = [];
         agent.internal_members = [];
         agent.group_name = groupOpts[agent.group_id] || "";
+        // 为小助理和AI搜问填充默认值
+        if (agent.agent_usage === AGENT_USAGES.WORK_AI) {
+          // 小助理
+          agent.logo = agent.logo || `${img_host}/agent/workbench.png`;
+          agent.name = agent.name || t('agent_app.workbench');
+          agent.agent_type = 'workbench';
+          agent.custom_config = agent.custom_config || {};
+          agent.custom_config.agent_type = agent.agent_type;
+          agent.backend_agent_type = BACKEND_AGENT_TYPE.ASSISTANT;
+        } else if (agent.agent_usage === AGENT_USAGES.KM_AI_SEARCH) {
+          // AI搜问
+          agent.logo = agent.logo || `${img_host}/agent/knowledge.png`;
+          agent.name = agent.name || t('agent_app.knowledge');
+          agent.agent_type = 'knowledge';
+          agent.custom_config = agent.custom_config || {};
+          agent.custom_config.agent_type = agent.agent_type;
+          agent.backend_agent_type = BACKEND_AGENT_TYPE.ASSISTANT;
+        }
+
         agent.user_group_ids.forEach((value) => {
           const subscription = currentSubscriptionList.find(
             (row) => row.group_id === value,
@@ -323,7 +341,15 @@ export function AgentPage() {
 
   const handleGroupChange = (result: { value: Group[] }) => {
     setGroupList(result.value);
-    updateState({ group_id: 0, page: 1 });
+
+    // 只在初始化完成后，分组变化才重置筛选
+    // 初始化加载（从空到有数据）不重置，避免浏览器返回时重置页码
+    if (groupInitializedRef.current) {
+      updateState({ group_id: 0, page: 1 });
+    } else {
+      // 标记初始化完成
+      groupInitializedRef.current = true
+    }
   };
 
   const onRowClick = (row: AgentState) => {
@@ -561,15 +587,16 @@ export function AgentPage() {
     },
     {
       title: t("usage_range"),
-      key: "usage_range",
+      key: "scopes",
       width: 180,
       ellipsis: true,
       render: (_: any, row: AgentState) => (
-        <div
-          className={`whitespace-nowrap truncate ${!row.internal_members?.length ? "text-placeholder" : ""}`}
-        >
-          {row.internal_members?.join("、") || "--"}
-        </div>
+        <ScopeDisplay
+          scopes={row.scopes}
+          treeData={scopeDict?.treeData}
+          users={scopeDict?.users}
+          groups={scopeDict?.groups}
+        />
       ),
     },
     {
@@ -577,18 +604,28 @@ export function AgentPage() {
       dataIndex: "enable",
       key: "enable",
       width: 100,
-      render: (_: any, row: AgentState) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <Switch
-            checked={row.enable}
-            onChange={(checked) => {
-              row.enable = checked;
-              setTableData([...tableData]);
-              onAgentStatusChange(row);
-            }}
-          />
-        </div>
-      ),
+      render: (_: any, row: AgentState) => {
+        // 内置智能体显示"内置"标签
+        if (row.is_system) {
+          return (
+            <span className="px-2 py-1 bg-[#F0F2F5] text-secondary text-xs rounded">
+              {t('agent.builtin')}
+            </span>
+          );
+        }
+        return (
+          <div onClick={(e) => e.stopPropagation()}>
+            <Switch
+              checked={row.enable}
+              onChange={(checked) => {
+                row.enable = checked;
+                setTableData([...tableData]);
+                onAgentStatusChange(row);
+              }}
+            />
+          </div>
+        );
+      },
     },
     {
       title: t("operation"),
@@ -607,23 +644,30 @@ export function AgentPage() {
               onAgentAdd(row.agent_type, row);
             }}
           />
-          <Button
-            type="text"
-            danger
-            icon={<SvgIcon name="delete" />}
-            className="invisible group-hover:visible hover:!text-tag-red"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAgentDelete(row);
-            }}
-          />
+          <Tooltip title={row.is_system ? t('agent.builtin_no_delete') : ''}>
+            <Button
+              type="text"
+              danger
+              icon={<SvgIcon name="delete" />}
+              className="invisible group-hover:visible hover:!text-tag-red"
+              disabled={row.is_system}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAgentDelete(row);
+              }}
+            />
+          </Tooltip>
         </>
       ),
     },
   ];
 
   const channelOptions = useMemo(
-    () => createAgentPlatformFilterOptions(Object.values(channels), platformsByType),
+    () =>
+      createAgentPlatformFilterOptions(Object.values(channels), platformsByType, [
+        { label: t("agent_app.knowledge"), value: AGENT_USAGE_PLATFORM_VALUES.KM_AI_SEARCH },
+        { label: t("agent_app.workbench"), value: AGENT_USAGE_PLATFORM_VALUES.WORK_AI },
+      ]),
     [platformsByType],
   );
 

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { Modal, message } from 'antd'
 import userApi from '@/api/modules/user/index'
 import { RawUserInfo } from '@/api/modules/user/types'
 import { subscriptionApi } from '@/api/modules/subscription'
@@ -6,6 +7,7 @@ import { eventBus } from '@km/shared-utils'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { EVENT_NAMES } from '@/constants/events'
 import { isOpLocalEnv, isPrivatePrem } from '@/utils/config'
+import { t } from '@/locales'
 
 export const DEFAULT_GROUP_NAME = '免费版'
 export const DEFAULT_GROUP_ICON = 'vip-1'
@@ -65,40 +67,55 @@ export const useUserStore = create<UserState>((set, get) => ({
   subscriptions: [],
 
   login: async (data: User.LoginForm) => {
-    const res = await userApi.login(data)
-    get().setAccessToken(res.data.access_token)
-    await get().getUserInfo()
-    eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
+    try {
+      const res = await userApi.login(data)
+      get().setAccessToken(res.data.access_token)
+      await get().getUserInfo()
+      eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
+      message.success(t("status.login_success"));
+    } catch (error) {
+      throw error
+    }
   },
 
   sms_login: async (data: User.SmsLoginForm) => {
-    const res = await userApi.sms_login(data)
-    get().setAccessToken(res.data.access_token)
-    await get().getUserInfo()
-    eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
+    try {
+      const res = await userApi.sms_login(data)
+      get().setAccessToken(res.data.access_token)
+      await get().getUserInfo()
+      eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
+      message.success(t("status.login_success"));
+    } catch (error) {
+      throw error
+    }
   },
 
   wechat_login: async (params: { unionid?: string }) => {
-    const res = await userApi.wechat_login(params).catch(() => ({ data: { access_token: '' } }))
-    if (!res.data.user.access_token) return Promise.reject(new Error('access_token is empty'))
-    get().setAccessToken(res.data.user.access_token)
-    await get().getUserInfo()
-    eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
-    return res.data
+    try {
+      const res = await userApi.wechat_login(params).catch(() => ({ data: { access_token: '' } }))
+      if (!res.data.user.access_token) return Promise.reject(new Error('access_token is empty'))
+      get().setAccessToken(res.data.user.access_token)
+      await get().getUserInfo()
+      eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
+      message.success(t("status.login_success"));
+      return res.data
+    } catch (error) {
+      throw error
+    }
   },
 
   sso_login: async (query: any = {}) => {
-    const res = await userApi.ssoLogin({
-      sign: query.sign || '',
-      timestamp: query.timestamp || '',
-      username: query.username || ''
-    })
-    if (res.code === 0) {
-      const token = res.data.access_token
-      get().setAccessToken(token)
-      await get().getUserInfo(true, token)
-      eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
-    }
+      const res = await userApi.ssoLogin({
+        sign: query.sign || '',
+        timestamp: query.timestamp || '',
+        username: query.username || ''
+      })
+      if (res.code === 0) {
+        const token = res.data.access_token
+        get().setAccessToken(token)
+        await get().getUserInfo(true, token)
+        eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
+      }
   },
 
   bind_wechat: async (data: User.BindWechatForm) => {
@@ -214,7 +231,23 @@ export const useUserStore = create<UserState>((set, get) => ({
     } catch (error: any) {
       const response = error.response || {}
       const data = response.data || error || {}
-      const { message } = data
+      const { message, code } = data
+
+      // 处理账户被禁用的情况
+      if (code === 9 || message?.includes('账户已被禁用')) {
+        Modal.info({
+          title: t('common.tip'),
+          content: t('status.account_disabled_desc'),
+          okText: t('action.confirm'),
+          okType: 'primary',
+          onOk: () => {
+            localStorage.removeItem(TOKEN_KEY)
+            eventBus.clearCache(EVENT_NAMES.LOGIN_SUCCESS)
+          },
+        })
+        throw error
+      }
+
       if (['token expired', 'forbidden'].includes(message)) {
         get().logout({ redirectDisabled: true })
       }

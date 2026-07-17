@@ -1029,14 +1029,8 @@ func (q *QdrantStore) Delete(ctx context.Context, collection string, ids []inter
 		return nil
 	}
 
-	// 将interface{}类型的ID转换为string类型
-	stringIds := make([]string, len(ids))
-	for i, id := range ids {
-		stringIds[i] = fmt.Sprintf("%v", id)
-	}
-
 	reqBody := map[string]interface{}{
-		"points": stringIds,
+		"points": ids,
 	}
 
 	jsonData, err := json.Marshal(reqBody)

@@ -101,6 +101,18 @@ func (s *CleanupVectorStoreChunksStep) Execute(parameters any) error {
 						log.Printf("已从向量库删除旧检索块向量 - EID:%d FileID:%d Collection:%s Count:%d",
 							params.Eid, params.FileID, collection, len(ids))
 					}
+					// enterprise/dual 模式下同时删除企业级集合中的向量
+					mode := rag.GetVectorCollectionMode()
+					if mode == rag.VectorCollectionModeEnterprise || mode == rag.VectorCollectionModeDual {
+						entCollection := model.GetDocumentVectorCollectionName(params.Eid)
+						if err := store.Delete(ctx, entCollection, ids); err != nil {
+							log.Printf("企业级集合向量删除失败（继续流程） - EID:%d FileID:%d Collection:%s Count:%d Err:%v",
+								params.Eid, params.FileID, entCollection, len(ids), err)
+						} else {
+							log.Printf("已从企业级集合删除旧向量 - EID:%d FileID:%d Collection:%s Count:%d",
+								params.Eid, params.FileID, entCollection, len(ids))
+						}
+					}
 				}
 			}
 		}

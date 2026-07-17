@@ -85,24 +85,28 @@ function ChatViewInner({ agentId: agentIdProp, agentInfo: agentInfoProp }: ChatV
       agentInfo={agentInfoProp}
       initialConversationId={initialConversationId}
       syncToUrl={false}
-      features={{
-        timeout: timeout > 0 ? Math.max(timeout, 600) : 0,
-        fileUpload: fileUploadEnabled,
-        enableDragUpload: fileUploadEnabled,
+      history={{ enabled: !isOpenclaw }}
+      newConversation={{ enabled: !isOpenclaw }}
+      fileUpload={{
+        enabled: fileUploadEnabled,
+        request: uploadRequest,
+        acceptTypes: acceptTypes,
+        enableDrag: fileUploadEnabled,
+        enablePaste: fileUploadEnabled,
         allowMultiple: true,
-        enablePasteUpload: fileUploadEnabled,
         allowSendWithFiles: ["53ai_agent", "fastgpt_agent"].includes(customConfigObj.agent_type),
-        // Openclaw 模式：隐藏历史会话和新会话按钮
-        history: !isOpenclaw,
-        newConversation: !isOpenclaw,
-        openclaw: isOpenclaw,
       }}
-      checkPermission={handleCheckPermission}
-      uploadRequest={uploadRequest}
-      acceptTypes={acceptTypes}
-      renderAuthTags={isSsoLogin ? (userGroupIds) => (
-        <AuthTagGroup value={userGroupIds} label="使用范围" />
-      ) : () => (<div className=""></div>)}
+      openclaw={{
+        enabled: isOpenclaw,
+      }}
+      permission={{
+        checkAccess: handleCheckPermission,
+      }}
+      slots={{
+        authTags: isSsoLogin ? (userGroupIds) => (
+          <AuthTagGroup value={userGroupIds} label="使用范围" />
+        ) : () => (<div className=""></div>),
+      }}
     />
   );
 }

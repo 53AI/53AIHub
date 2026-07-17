@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { ChatProvider, ChatConfigProvider } from "@km/shared-business/chat";
-import { config } from "./config";
+import { ChatConfigProvider } from "@km/shared-business/chat";
 import { adapters } from "./adapters";
 import { ChatView } from "./views/chat";
 import { useUserStore } from "./stores/user";
@@ -184,10 +183,8 @@ function App() {
   // Ready state - show chat
   return (
     <div className="relative h-screen">
-      <ChatConfigProvider lang="zh-cn">
-        <ChatProvider config={config} adapters={adapters}>
-          <ChatView agentId={agentInfo?.agent_id} agentInfo={agentInfo} />
-        </ChatProvider>
+      <ChatConfigProvider lang="zh-cn" adapters={adapters}>
+        <ChatView agentId={agentInfo?.agent_id} agentInfo={agentInfo} />
       </ChatConfigProvider>
     </div>
   );

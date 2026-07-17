@@ -149,6 +149,7 @@ fileLoop:
 
 			// 无时间范围：反向读取 + 提前终止
 			reader := NewReverseLineReader(f)
+			reader.MaxBytes = 100 * 1024 * 1024 // lazy: 最多反向扫描 100MB，防止 GB 级日志无匹配时长时间阻塞
 			linesRead := 0
 			for {
 				line, readErr := reader.ReadLine()
@@ -312,6 +313,10 @@ func resolveFiles(dir string, fileType string, skipArchive bool) ([]fileMeta, er
 			if strings.HasPrefix(base, "Ragjob-") {
 				files = append(files, f)
 			}
+		case "slow":
+			if base == "slow.log" {
+				files = append(files, f)
+			}
 		default:
 			return nil, errors.New("invalid file_type")
 		}
@@ -335,6 +340,7 @@ func collectLogFiles(dir string, skipArchive bool) ([]string, error) {
 	patterns := []string{
 		filepath.Join(dir, "53AIHub*.log"),
 		filepath.Join(dir, "Ragjob-*.log"),
+		filepath.Join(dir, "slow.log"),
 	}
 	if !skipArchive {
 		patterns = append(patterns,

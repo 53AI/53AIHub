@@ -22,7 +22,7 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { CollapsibleSection } from "./CollapsibleSection";
+import { CollapsibleSection } from "../shared/CollapsibleSection";
 
 const MAX_QUESTION_LENGTH = 10;
 

@@ -1,9 +1,16 @@
 import service from '../../config'
+<<<<<<<< HEAD:web/apps/front-react/src/api/modules/agents/index.ts
 import { handleError } from '../../errorHandler'
 import { MyAgentRequest } from './types'
 
 export interface RawAgentInfo {
   agent_id: string
+========
+import { handleError } from '../../error-handler'
+
+export interface RawAgentInfo {
+  agent_id: string | number
+>>>>>>>> origin/main:web/apps/console-react/src/api/modules/agents/index.ts
   eid: number
   name: string
   logo: string
@@ -63,7 +70,11 @@ interface AgentInfoRequest {
 }
 
 interface RawAgentModelInfo {
+<<<<<<<< HEAD:web/apps/front-react/src/api/modules/agents/index.ts
   agent_id: string
+========
+  agent_id: string | number
+>>>>>>>> origin/main:web/apps/console-react/src/api/modules/agents/index.ts
   channel_id: number
   channel_type: number
   created_time: number
@@ -96,7 +107,18 @@ const agentsApi = {
   }): Promise<AgentInfoResponse> {
     return service
       .get('/api/agents/group', { params })
-      .then(res => res.data)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+  list(params: {
+    offset?: number
+    limit?: number
+    keyword?: string
+    agent_usages?: string | number
+  }): Promise<AgentInfoResponse> {
+    return service
+      .get('/api/agents', { params })
+      .then((res: any) => res.data)
       .catch(handleError)
   },
   list(params: {
@@ -129,38 +151,77 @@ const agentsApi = {
   create(data: AgentInfoRequest) {
     return service
       .post('/api/agents', data)
-      .then(res => res.data)
-      .catch(handleError)
+      .then((res: any) => res.data)
+      .catch((err: any) => handleError(err, { functionName: window.$t('agent.name') }))
   },
   update(agent_id: RawAgentInfo['agent_id'], data: AgentInfoRequest) {
     return service
       .put(`/api/agents/${agent_id}`, data)
-      .then(res => res.data)
+      .then((res: any) => res.data)
       .catch(handleError)
+  },
+<<<<<<<< HEAD:web/apps/front-react/src/api/modules/agents/index.ts
+  models: {
+    list(agent_id: RawAgentInfo['agent_id']): Promise<AgentModelResponse> {
+      return service
+        .get(`/api/agents/${agent_id}/models`, { requiresAuth: true })
+        .then(res => res.data)
+========
+  delete(agent_id: RawAgentInfo['agent_id']) {
+    return service.delete(`/api/agents/${agent_id}`).catch(handleError)
+  },
+  status(agent_id: RawAgentInfo['agent_id'], data: { enable: boolean }) {
+    return service.patch(`/api/agents/${agent_id}/status`, data).catch(handleError)
   },
   models: {
     list(agent_id: RawAgentInfo['agent_id']): Promise<AgentModelResponse> {
       return service
         .get(`/api/agents/${agent_id}/models`)
-        .then(res => res.data)
+        .then((res: any) => res.data)
+        .catch(handleError)
+    },
+    batch(data: { agent_id: RawAgentInfo['agent_id']; models: RawAgentModelRequest[] }) {
+      return service
+        .post('/api/agents/models/batch', data)
+        .then((res: any) => res.data)
+>>>>>>>> origin/main:web/apps/console-react/src/api/modules/agents/index.ts
         .catch(handleError)
     },
     create(agent_id: RawAgentInfo['agent_id'], data: RawAgentModelRequest) {
       return service
         .get(`/api/agents/${agent_id}/models`, { params: data })
-        .then(res => res.data)
+        .then((res: any) => res.data)
         .catch(handleError)
     },
     update(agent_id: RawAgentInfo['agent_id'], model_id: number, data: RawAgentModelRequest) {
       return service
         .put(`/api/agents/${agent_id}/models/${model_id}`, { params: data })
-        .then(res => res.data)
+        .then((res: any) => res.data)
         .catch(handleError)
     },
     delete(agent_id: RawAgentInfo['agent_id'], model_id: number) {
       return service
         .delete(`/api/agents/${agent_id}/models/${model_id}`)
-        .then(res => res.data)
+        .then((res: any) => res.data)
+        .catch(handleError)
+    },
+  },
+  h5: {
+    getToken(agent_id: string | number): Promise<{ fixed_token: string; expires_at?: string }> {
+      return service
+        .get('/api/agents/h5/fixed-token', { params: { agent_id, limit: 1 } })
+        .then((res: any) => {
+          if (res?.data?.list?.length > 0) {
+            return { fixed_token: res.data.list[0].token, expires_at: res.data.list[0].expires_at }
+          }
+          return null
+        })
+        .catch(handleError)
+    },
+    generateToken(agent_id: string | number): Promise<{ fixed_token: string; expires_at?: string }> {
+      return service
+        .post('/api/agents/h5/fixed-token', { agent_id })
+        .then((res: any) => res.data)
         .catch(handleError)
     },
   },
@@ -203,3 +264,4 @@ const agentsApi = {
 }
 
 export default agentsApi
+

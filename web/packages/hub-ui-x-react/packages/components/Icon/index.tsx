@@ -16,6 +16,8 @@ const Icon: React.FC<IconProps> = ({ name = '', size = 18, color = 'currentColor
       return "0 0 1024 1024";
     } else if (name === 'fullscreen') {
       return "0 0 24 24";
+    } else if (name === 'skill') {
+      return "0 0 14 14";
     } else {
       return "0 0 48 48";
     }
@@ -122,6 +124,32 @@ const Icon: React.FC<IconProps> = ({ name = '', size = 18, color = 'currentColor
       case 'close':
         return (
           <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="m8 8l32 32M8 40L40 8"/>
+        );
+      case 'file':
+        return (
+          <g fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4">
+            <path d="M38 22H26a2 2 0 0 1-2-2V8"/>
+            <path d="M38 22v18a2 2 0 0 1-2 2H12a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h14l12 12v4Z"/>
+          </g>
+        );
+      case 'skill':
+        return (
+          // 钻石/技能图标(对齐原版 SvgIcon name="skill" 视觉)
+            <path fill="none" stroke="currentColor" strokeLinejoin="round" d="M11.39 5.73L9.73 4.07c.67-.15 1.17-.75 1.17-1.47c0-.83-.68-1.51-1.51-1.51c-.72 0-1.31.5-1.47 1.17L6.27.61a.37.37 0 0 0-.53 0L4.07 2.27c.67.15 1.17.75 1.17 1.47c0 .83-.68 1.51-1.51 1.51c-.72 0-1.31-.5-1.47-1.17L.61 5.73c-.15.15-.15.39 0 .53l1.66 1.66c-.67.16-1.17.76-1.17 1.47c0 .83.68 1.51 1.51 1.51c.72 0 1.31-.5 1.47-1.17l1.66 1.66c.15.15.39.15.53 0l1.66-1.66c-.67-.15-1.18-.75-1.18-1.47c0-.83.68-1.51 1.51-1.51c.72 0 1.31.5 1.47 1.17l1.66-1.66c.15-.14.15-.38 0-.53z" strokeWidth="1" />
+        );
+      case 'at':
+        return (
+          // @ 提及图标 - 圆环 + 内部 @
+          <g fill="none">
+            <path d="M44 24C44 12.9543 35.0457 4 24 4C12.9543 4 4 12.9543 4 24C4 35.0457 12.9543 44 24 44V44C28.9886 44 33.5507 42.1735 37.0539 39.1529" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M24 32C28.4183 32 32 28.4183 32 24C32 19.5817 28.4183 16 24 16C19.5817 16 16 19.5817 16 24C16 28.4183 19.5817 32 24 32Z" fill="none" stroke="currentColor" strokeWidth="3" strokeLinejoin="round"/>
+            <path d="M32 24C32 27.3137 34.6863 30 38 30V30C41.3137 30 44 27.3137 44 24" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M32 25V16" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+          </g>
+        );
+      case 'right':
+        return (
+          <path fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M16 8l16 16l-16 16"/>
         );
       case 'horizontal':
         return (

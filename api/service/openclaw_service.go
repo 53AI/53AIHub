@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/wsmanager"
@@ -21,9 +22,10 @@ const (
 )
 
 type OpenClawPaginationQuery struct {
-	Limit    int `form:"limit"`
-	Offset   int `form:"offset"`
-	AfterSeq int `form:"after_seq"`
+	Limit    int  `form:"limit"`
+	Offset   int  `form:"offset"`
+	AfterSeq int  `form:"after_seq"`
+	Fresh    bool `form:"fresh"`
 }
 
 type OpenClawRequestContext struct {
@@ -33,6 +35,7 @@ type OpenClawRequestContext struct {
 	GroupID        int64
 	AgentID        int64
 	ConversationID string
+	APIBaseURL     string
 	Query          OpenClawPaginationQuery
 }
 
@@ -58,6 +61,11 @@ func (e *OpenClawServiceError) Error() string {
 
 type OpenClawService struct{}
 
+const (
+	openClawSessionValidationPageLimit = 50
+	openClawSessionValidationMaxPages  = 100
+)
+
 func NewOpenClawService() *OpenClawService {
 	return &OpenClawService{}
 }
@@ -67,10 +75,53 @@ func (s *OpenClawService) ListConversations(ctx context.Context, req OpenClawReq
 	if svcErr != nil {
 		return nil, svcErr
 	}
-	return s.call(ctx, req, "sessions.list", payload)
+	if !req.Query.Fresh {
+		projectionService := NewOpenClawMessageProjectionService()
+		if openClawMessageProjectionPrimaryEnabled() {
+			if cached, cachedErr, ok := projectionService.ConversationList(ctx, req); ok {
+				return cached, cachedErr
+			}
+		}
+		if cached, cachedErr, ok := s.mirrorConversationList(ctx, req); ok {
+			return cached, cachedErr
+		}
+		if !openClawMessageProjectionPrimaryEnabled() {
+			if cached, cachedErr, ok := projectionService.ConversationList(ctx, req); ok {
+				return cached, cachedErr
+			}
+		}
+	}
+	data, svcErr := s.call(ctx, req, "sessions.list", payload)
+	if svcErr != nil {
+		if cached, cachedErr, ok := s.fallbackConversationList(ctx, req, svcErr); ok {
+			return cached, cachedErr
+		}
+		return nil, svcErr
+	}
+	s.cacheConversationList(ctx, req, data)
+	NewOpenClawMessageProjectionService().CacheConversationListMetadata(ctx, req, data)
+	s.pruneConversationMirrorsMissingFromFreshList(ctx, req, data)
+	data = withOpenClawConversationListHistoryStatus(req, data)
+	return withOpenClawHistoryMetadata(data, openClawHistorySourceOpenClaw, false, extractOpenClawLastSeq(data), nil), nil
 }
 
 func (s *OpenClawService) GetCurrentConversation(ctx context.Context, req OpenClawRequestContext) (json.RawMessage, *OpenClawServiceError) {
+	if !req.Query.Fresh {
+		projectionService := NewOpenClawMessageProjectionService()
+		if openClawMessageProjectionPrimaryEnabled() {
+			if cached, cachedErr, ok := projectionService.CurrentConversation(ctx, req); ok {
+				return cached, cachedErr
+			}
+		}
+		if cached, cachedErr, ok := s.mirrorCurrentConversation(ctx, req); ok {
+			return cached, cachedErr
+		}
+		if !openClawMessageProjectionPrimaryEnabled() {
+			if cached, cachedErr, ok := projectionService.CurrentConversation(ctx, req); ok {
+				return cached, cachedErr
+			}
+		}
+	}
 	userKey := openClawHubUserKey(req.UserID)
 	payload := map[string]interface{}{
 		"chat_id": userKey,
@@ -85,12 +136,33 @@ func (s *OpenClawService) GetCurrentConversation(ctx context.Context, req OpenCl
 	}
 	data, svcErr := s.callWithOptions(ctx, req, "sessions.current", payload, true)
 	if svcErr != nil {
+		if cached, cachedErr, ok := s.fallbackCurrentConversation(ctx, req, svcErr); ok {
+			return cached, cachedErr
+		}
 		return nil, svcErr
 	}
-	return filterOpenClawCurrentHubSession(data, userKey), nil
+	filtered := filterOpenClawCurrentHubSession(data, userKey, openClawHubUserName(req.UserID))
+	if req.Query.Fresh {
+		filtered = s.filterFreshCurrentConversationForAgentScope(ctx, req, filtered)
+	}
+	s.cacheCurrentConversation(ctx, req, filtered)
+	NewOpenClawMessageProjectionService().CacheCurrentConversationMetadata(ctx, req, filtered)
+	return withOpenClawHistoryMetadata(filtered, openClawHistorySourceOpenClaw, false, extractOpenClawLastSeq(filtered), nil), nil
 }
 
-func filterOpenClawCurrentHubSession(data json.RawMessage, userKey string) json.RawMessage {
+func (s *OpenClawService) filterFreshCurrentConversationForAgentScope(ctx context.Context, req OpenClawRequestContext, data json.RawMessage) json.RawMessage {
+	conversationID := openClawConversationIDFromSessionPayload(data)
+	if conversationID == "" {
+		return data
+	}
+	exists, authoritative := s.freshConversationIDExists(ctx, req, conversationID)
+	if !authoritative || exists {
+		return data
+	}
+	return json.RawMessage("null")
+}
+
+func filterOpenClawCurrentHubSession(data json.RawMessage, userKey string, userName string) json.RawMessage {
 	trimmed := strings.TrimSpace(string(data))
 	if trimmed == "" || trimmed == "null" {
 		return json.RawMessage("null")
@@ -102,24 +174,67 @@ func filterOpenClawCurrentHubSession(data json.RawMessage, userKey string) json.
 	if err := json.Unmarshal(data, &session); err != nil {
 		return data
 	}
-	if session.Title == "" || isOpenClawHubSessionTitle(session.Title, userKey) {
+	if session.Title == "" || openClawHubSessionTitleScore(session.Title, userKey, userName) > 0 {
 		return data
 	}
 	return json.RawMessage("null")
 }
 
+func openClawConversationIDFromSessionPayload(data json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(data))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	var session map[string]interface{}
+	if err := json.Unmarshal(data, &session); err != nil {
+		return ""
+	}
+	return openClawRecordString(session, "id", "conversation_id", "conversationId", "session_id", "sessionId")
+}
+
 func isOpenClawHubSessionTitle(title string, userKey string) bool {
+	return openClawHubSessionTitleScore(title, userKey, userKey) > 0
+}
+
+func openClawHubSessionTitleScore(title string, userKey string, userName string) int {
 	normalized := strings.TrimSpace(title)
 	if normalized == "" {
-		return true
+		return 1
+	}
+	userKey = strings.TrimSpace(userKey)
+	userName = strings.TrimSpace(userName)
+	if userName == "" {
+		userName = userKey
 	}
 	if strings.HasPrefix(normalized, "53AI Hub-") {
-		return true
+		owner := strings.TrimSpace(strings.TrimPrefix(normalized, "53AI Hub-"))
+		if separator := strings.IndexAny(owner, ":："); separator >= 0 {
+			owner = strings.TrimSpace(owner[:separator])
+		}
+		if owner != "" && owner == userName {
+			return 100
+		}
+		if owner != "" && owner == userKey {
+			return 90
+		}
+		if userName == userKey {
+			return 10
+		}
+		return 0
 	}
-	return normalized == "53AIHub "+userKey ||
-		normalized == "53AIHub:"+userKey ||
-		normalized == "53AIHub-"+userKey ||
-		normalized == userKey
+	for _, candidate := range []string{userName, userKey} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if normalized == "53AIHub "+candidate ||
+			normalized == "53AIHub:"+candidate ||
+			normalized == "53AIHub-"+candidate ||
+			normalized == candidate {
+			return 100
+		}
+	}
+	return 0
 }
 
 func (s *OpenClawService) ListMessages(ctx context.Context, req OpenClawRequestContext) (json.RawMessage, *OpenClawServiceError) {
@@ -130,10 +245,42 @@ func (s *OpenClawService) ListMessages(ctx context.Context, req OpenClawRequestC
 	if svcErr != nil {
 		return nil, svcErr
 	}
+	if !req.Query.Fresh {
+		projectionService := NewOpenClawMessageProjectionService()
+		if openClawMessageProjectionPrimaryEnabled() {
+			if cached, cachedErr, ok := projectionService.MirrorMessages(ctx, req); ok {
+				return cached, cachedErr
+			}
+		}
+		if cached, cachedErr, ok := s.mirrorConversationField(ctx, req, "messages"); ok {
+			return cached, cachedErr
+		}
+		if !openClawMessageProjectionPrimaryEnabled() {
+			if cached, cachedErr, ok := projectionService.MirrorMessages(ctx, req); ok {
+				return cached, cachedErr
+			}
+		}
+	}
 	attachOpenClawHubUserPayload(payload, req)
 	payload["conversation_id"] = req.ConversationID
 	payload["session_id"] = req.ConversationID
-	return s.call(ctx, req, "sessions.messages", payload)
+	data, svcErr := s.call(ctx, req, "sessions.messages", payload)
+	if svcErr != nil {
+		if svcErr.Code == model.NotFound {
+			s.deleteConversationMirror(ctx, req)
+		}
+		if cached, cachedErr, ok := s.fallbackConversationField(ctx, req, "messages", svcErr); ok {
+			return cached, cachedErr
+		}
+		return nil, svcErr
+	}
+	data = sanitizeOpenClawMirrorHistoryAnswers(data)
+	if svcErr := s.rejectMissingFreshConversationAfterEmptyHistory(ctx, req, data); svcErr != nil {
+		return nil, svcErr
+	}
+	s.cacheMessages(ctx, req, data)
+	NewOpenClawMessageProjectionService().CacheProjectionPayload(ctx, req, data)
+	return withOpenClawHistoryMetadata(data, openClawHistorySourceOpenClaw, false, extractOpenClawLastSeq(data), nil), nil
 }
 
 func (s *OpenClawService) ListEvents(ctx context.Context, req OpenClawRequestContext) (json.RawMessage, *OpenClawServiceError) {
@@ -144,10 +291,30 @@ func (s *OpenClawService) ListEvents(ctx context.Context, req OpenClawRequestCon
 	if svcErr != nil {
 		return nil, svcErr
 	}
+	if !req.Query.Fresh {
+		if cached, cachedErr, ok := s.mirrorConversationField(ctx, req, "events"); ok {
+			return cached, cachedErr
+		}
+	}
 	attachOpenClawHubUserPayload(payload, req)
 	payload["conversation_id"] = req.ConversationID
 	payload["session_id"] = req.ConversationID
-	return s.call(ctx, req, "sessions.events", payload)
+	data, svcErr := s.call(ctx, req, "sessions.events", payload)
+	if svcErr != nil {
+		if svcErr.Code == model.NotFound {
+			s.deleteConversationMirror(ctx, req)
+		}
+		if cached, cachedErr, ok := s.fallbackConversationField(ctx, req, "events", svcErr); ok {
+			return cached, cachedErr
+		}
+		return nil, svcErr
+	}
+	data = sanitizeOpenClawMirrorHistoryAnswers(data)
+	if svcErr := s.rejectMissingFreshConversationAfterEmptyHistory(ctx, req, data); svcErr != nil {
+		return nil, svcErr
+	}
+	s.cacheEvents(ctx, req, data)
+	return withOpenClawHistoryMetadata(data, openClawHistorySourceOpenClaw, false, extractOpenClawLastSeq(data), nil), nil
 }
 
 func (s *OpenClawService) GetSnapshot(ctx context.Context, req OpenClawRequestContext) (json.RawMessage, *OpenClawServiceError) {
@@ -158,16 +325,143 @@ func (s *OpenClawService) GetSnapshot(ctx context.Context, req OpenClawRequestCo
 	if svcErr != nil {
 		return nil, svcErr
 	}
+	if !req.Query.Fresh {
+		if cached, cachedErr, ok := s.mirrorConversationField(ctx, req, "snapshot"); ok {
+			return cached, cachedErr
+		}
+	}
 	attachOpenClawHubUserPayload(payload, req)
 	payload["conversation_id"] = req.ConversationID
 	payload["session_id"] = req.ConversationID
 	data, svcErr := s.call(ctx, req, "sessions.snapshot", payload)
 	if svcErr != nil {
 		traceOpenClawSnapshotError(ctx, req, svcErr)
+		if svcErr.Code == model.NotFound {
+			s.deleteConversationMirror(ctx, req)
+		}
+		if cached, cachedErr, ok := s.fallbackConversationField(ctx, req, "snapshot", svcErr); ok {
+			return cached, cachedErr
+		}
+		return nil, svcErr
+	}
+	data = sanitizeOpenClawMirrorHistoryAnswers(data)
+	if svcErr := s.rejectMissingFreshConversationAfterEmptyHistory(ctx, req, data); svcErr != nil {
+		traceOpenClawSnapshotError(ctx, req, svcErr)
 		return nil, svcErr
 	}
 	traceOpenClawSnapshotSummary(ctx, req, data)
-	return data, nil
+	s.cacheSnapshot(ctx, req, data)
+	return withOpenClawHistoryMetadata(data, openClawHistorySourceOpenClaw, false, extractOpenClawLastSeq(data), nil), nil
+}
+
+func (s *OpenClawService) rejectMissingFreshConversationAfterEmptyHistory(ctx context.Context, req OpenClawRequestContext, data json.RawMessage) *OpenClawServiceError {
+	if !req.Query.Fresh || req.Query.Offset > 0 || !openClawHistoryPayloadIsEmpty(data) {
+		return nil
+	}
+	exists, authoritative := s.freshConversationExists(ctx, req)
+	if !authoritative || exists {
+		return nil
+	}
+	s.deleteConversationMirror(ctx, req)
+	return newOpenClawServiceError(http.StatusNotFound, model.NotFound, "OpenClaw 会话不存在或已删除", nil)
+}
+
+func (s *OpenClawService) freshConversationExists(ctx context.Context, req OpenClawRequestContext) (bool, bool) {
+	conversationID := strings.TrimSpace(req.ConversationID)
+	if conversationID == "" {
+		return false, false
+	}
+	return s.freshConversationIDExists(ctx, req, conversationID)
+}
+
+func (s *OpenClawService) freshConversationIDExists(ctx context.Context, req OpenClawRequestContext, conversationID string) (bool, bool) {
+	conversationID = strings.TrimSpace(conversationID)
+	if conversationID == "" {
+		return false, false
+	}
+	offset := 0
+	for page := 0; page < openClawSessionValidationMaxPages; page++ {
+		payload := map[string]interface{}{
+			"limit":  openClawSessionValidationPageLimit,
+			"offset": offset,
+		}
+		attachOpenClawHubUserPayload(payload, req)
+		data, svcErr := s.call(ctx, req, "sessions.list", payload)
+		if svcErr != nil {
+			return false, false
+		}
+		records, ok := extractOpenClawSessionRecordsWithPresence(data)
+		if !ok {
+			return false, false
+		}
+		for _, record := range records {
+			if openClawRecordString(record, "id", "conversation_id", "conversationId", "session_id", "sessionId") == conversationID {
+				return true, true
+			}
+		}
+		hasMore, nextOffset := openClawSessionListPageCursor(data, offset, len(records))
+		if !hasMore {
+			return false, true
+		}
+		if nextOffset <= offset {
+			nextOffset = offset + len(records)
+		}
+		if nextOffset <= offset {
+			return false, false
+		}
+		offset = nextOffset
+	}
+	return false, false
+}
+
+func openClawHistoryPayloadIsEmpty(data json.RawMessage) bool {
+	if extractOpenClawLastSeq(data) > 0 {
+		return false
+	}
+	payload, ok := openClawJSONPayloadMap(data)
+	if !ok {
+		return false
+	}
+	hasKnownHistoryKey := false
+	for _, key := range []string{"messages", "events", "ledger_events", "ledgerEvents", "recent_events", "recentEvents", "active_turns", "activeTurns"} {
+		if _, ok := payload[key]; !ok {
+			continue
+		}
+		hasKnownHistoryKey = true
+		if len(openClawJSONList(payload[key])) > 0 {
+			return false
+		}
+	}
+	return hasKnownHistoryKey
+}
+
+func openClawSessionListPageCursor(data json.RawMessage, offset int, recordsLen int) (bool, int) {
+	payload, ok := openClawJSONPayloadMap(data)
+	if !ok {
+		return false, offset + recordsLen
+	}
+	pagination, ok := payload["pagination"].(map[string]interface{})
+	if !ok {
+		return false, offset + recordsLen
+	}
+	hasMore := openClawBool(pagination["hasMore"]) || openClawBool(pagination["has_more"])
+	nextOffset := int(maxOpenClawInt64(openClawNumber(pagination["nextOffset"]), openClawNumber(pagination["next_offset"])))
+	if nextOffset <= 0 {
+		nextOffset = offset + recordsLen
+	}
+	return hasMore, nextOffset
+}
+
+func openClawBool(value interface{}) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(typed))
+		return normalized == "true" || normalized == "1" || normalized == "yes"
+	default:
+		return false
+	}
 }
 
 func (s *OpenClawService) ControlConversation(ctx context.Context, req OpenClawRequestContext, action string, payload map[string]interface{}) (json.RawMessage, *OpenClawServiceError) {
@@ -211,7 +505,40 @@ func isSupportedOpenClawControlAction(action string) bool {
 }
 
 func (s *OpenClawService) GetStatus(ctx context.Context, req OpenClawRequestContext) (json.RawMessage, *OpenClawServiceError) {
-	return s.call(ctx, req, "runtime.get", map[string]interface{}{"include": "status"})
+	agent, svcErr := s.loadAgent(req)
+	if svcErr != nil {
+		return nil, svcErr
+	}
+
+	client, ok := wsmanager.WsClientManager.GetClient(agent.AgentID)
+	if !ok || client == nil {
+		return nil, newOpenClawServiceError(http.StatusServiceUnavailable, model.NetworkError, "OpenClaw 插件未连接", nil)
+	}
+
+	select {
+	case <-client.Done():
+		return nil, newOpenClawServiceError(http.StatusServiceUnavailable, model.NetworkError, "OpenClaw 插件未连接", nil)
+	default:
+	}
+
+	lastActive := client.GetLastActive()
+	payload, err := json.Marshal(map[string]interface{}{
+		"healthy":           true,
+		"connectionHealthy": true,
+		"source":            "websocket",
+		"hostKind":          agent.ResolveOpenClawCompatiblePlatformType(),
+		"createdAt":         client.CreatedAt().Format(time.RFC3339Nano),
+		"lastActiveAt":      lastActive.Format(time.RFC3339Nano),
+		"lastActiveMsAgo":   time.Since(lastActive).Milliseconds(),
+		"hub53ai": map[string]interface{}{
+			"connectionStatus": "connected",
+			"hostKind":         agent.ResolveOpenClawCompatiblePlatformType(),
+		},
+	})
+	if err != nil {
+		return nil, newOpenClawServiceError(http.StatusInternalServerError, model.SystemError, "OpenClaw 状态序列化失败", err)
+	}
+	return payload, nil
 }
 
 func (s *OpenClawService) GetConfig(ctx context.Context, req OpenClawRequestContext) (json.RawMessage, *OpenClawServiceError) {

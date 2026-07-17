@@ -220,7 +220,6 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
           });
         }
 
-        message.success(t("status.login_success"));
         agentStore.loadAgentList();
         close();
       } catch (error: any) {

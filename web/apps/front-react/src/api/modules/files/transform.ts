@@ -108,7 +108,7 @@ export const formatFile = (file: RawFileItem): FileItem => {
     permission: PERMISSION_TYPE.loading,
     file_type: isfolder ? 'folder' : 'file',
     icon: file_icon,
-    file_url: isfolder ? '' : `${api_host}/api/files/${file.id}/preview/${file.id}_${encodeURIComponent(urlFileName)}`,
+    file_url: isfolder ? '' : `${api_host}/api/files/${file.id}/preview/knowledge_file_${file.id}_${encodeURIComponent(urlFileName)}`,
     file_size: isfolder ? '' : formatFileSize(file.upload_file?.size || 0) ,
     parse_type: file.parse_type || '',
     last_body_time: file.last_body_time || 0,

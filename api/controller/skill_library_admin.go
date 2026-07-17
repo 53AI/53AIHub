@@ -44,16 +44,16 @@ type AdminSkillListQuery struct {
 
 // AdminUpdateSkillRequest 后台更新技能请求参数
 type AdminUpdateSkillRequest struct {
-	DisplayName          *string `json:"display_name"`          // 技能显示名称
-	Description          *string `json:"description"`           // 技能描述
-	UsageGuide           *string `json:"usage_guide"`           // 使用指南
-	Version              *string `json:"version"`               // 版本号
-	Sort                 *int64  `json:"sort"`                  // 排序权重
-	AdminStatus          *string `json:"admin_status"`          // 管理状态：enabled/disabled
-	GroupIDs             []int64 `json:"group_ids"`             // 权限分组ID列表
+	DisplayName          *string `json:"display_name"`           // 技能显示名称
+	Description          *string `json:"description"`            // 技能描述
+	UsageGuide           *string `json:"usage_guide"`            // 使用指南
+	Version              *string `json:"version"`                // 版本号
+	Sort                 *int64  `json:"sort"`                   // 排序权重
+	AdminStatus          *string `json:"admin_status"`           // 管理状态：enabled/disabled
+	GroupIDs             []int64 `json:"group_ids"`              // 权限分组ID列表
 	SubscriptionGroupIDs []int64 `json:"subscription_group_ids"` // 订阅分组ID列表
-	UserGroupIDs         []int64 `json:"user_group_ids"`        // 用户分组ID列表
-	Logo                 *string `json:"logo"`                  // 技能 logo URL
+	UserGroupIDs         []int64 `json:"user_group_ids"`         // 用户分组ID列表
+	Logo                 *string `json:"logo"`                   // 技能 logo URL
 }
 
 type AdminUpdateSkillStatusRequest struct {
@@ -188,13 +188,13 @@ func AdminImportSkillLibrary(c *gin.Context) {
 	allGroupIDs = append(allGroupIDs, req.SubscriptionGroupIDs...)
 	allGroupIDs = append(allGroupIDs, req.UserGroupIDs...)
 	result, err := svc.ImportSkillWithPermissionsAndStartScan(c.Request.Context(), &service.SkillImportRequest{
-		Eid:            eid,
-		SourceType:     strings.TrimSpace(req.SourceType),
-		UploadFileID:   strings.TrimSpace(req.UploadFileID),
-		GithubURL:      strings.TrimSpace(req.GithubURL),
-		Ref:            strings.TrimSpace(req.Ref),
-		SkillPath:      strings.TrimSpace(req.SkillPath),
-		MockRiskLevel:  strings.TrimSpace(req.MockRiskLevel),
+		Eid:           eid,
+		SourceType:    strings.TrimSpace(req.SourceType),
+		UploadFileID:  strings.TrimSpace(req.UploadFileID),
+		GithubURL:     strings.TrimSpace(req.GithubURL),
+		Ref:           strings.TrimSpace(req.Ref),
+		SkillPath:     strings.TrimSpace(req.SkillPath),
+		MockRiskLevel: strings.TrimSpace(req.MockRiskLevel),
 	}, allGroupIDs)
 	if err != nil {
 		toSkillAdminErrorResponse(c, err)
@@ -503,6 +503,41 @@ func AdminUpdateSkillLibraryStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+// AdminPublishSkillLibrary godoc
+// @Summary 后台发布技能
+// @Description 扫描通过后发布技能并启用
+// @Tags 技能库-后台
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "技能ID"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/admin/skill-library/{id}/publish [post]
+func AdminPublishSkillLibrary(c *gin.Context) {
+	skillID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || skillID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	eid := config.GetEID(c)
+	svc := service.NewSkillLibraryService()
+	if err := svc.PublishSkill(c.Request.Context(), eid, skillID); err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+	skillInfo, latestJob, err := svc.GetSkillByIDForAdmin(c.Request.Context(), eid, skillID)
+	if err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(&AdminSkillDetailResponse{
+		Skill:         skillInfo,
+		GitHubURL:     buildSkillGitHubURL(skillInfo),
+		LatestScanJob: latestJob,
+	}))
 }
 
 // AdminDeleteSkillLibrary godoc

@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildOpenClawActivities,
   buildOpenClawMessages as buildSharedOpenClawMessages,
   buildOpenClawTimelineItemFromActivity,
+  collapseDuplicateOpenClawIntermediateRows,
   createOpenClawConversationApiAdapter as createSharedOpenClawConversationApiAdapter,
   getOpenClawTimelineEventsFromLedgerPayload,
   mergeOpenClawTimelineEventsIntoMessage,
@@ -72,6 +73,355 @@ function ledgerEvent(overrides: Partial<OpenClawLedgerEvent> = {}): OpenClawLedg
 }
 
 describe("OpenClaw message history mapping", () => {
+  it.each(openClawMessageBuilders)(
+    "keeps the latest persisted assistant message for canonical history in %s builder",
+    (_name, builder) => {
+      const sessionId = "agent:main:dashboard:test";
+      const turnId = `${sessionId}:turn:file-2`;
+      const rows = builder(
+        [
+          {
+            id: `${sessionId}:user:295`,
+            sessionId,
+            role: "user",
+            content: "创建一个长度为2个字符的文件",
+            createdAt: "2026-06-23T08:20:00.000Z",
+          },
+          {
+            id: `${sessionId}:assistant:296`,
+            sessionId,
+            role: "assistant",
+            content: "我来为您创建一个正好2个字符长度的文件。",
+            createdAt: "2026-06-23T08:20:01.000Z",
+          },
+          {
+            id: `${sessionId}:assistant:298`,
+            sessionId,
+            role: "assistant",
+            content: "让我验证文件内容并更新输出产物清单。",
+            createdAt: "2026-06-23T08:20:02.000Z",
+          },
+          {
+            id: `${sessionId}:assistant:304`,
+            sessionId,
+            role: "assistant",
+            content: [
+              "**✅ 任务完成！**",
+              "",
+              "我已经成功创建了一个正好2个字符长度的文件。",
+              "",
+              "**📄 文件详情：**",
+              "- **文件名**：`2chars.txt`",
+            ].join("\n"),
+            createdAt: "2026-06-23T08:20:08.000Z",
+          },
+          {
+            id: `${sessionId}:user:305`,
+            sessionId,
+            role: "user",
+            content: "创建一个长度为4个字符的文件",
+            createdAt: "2026-06-23T08:21:00.000Z",
+          },
+          {
+            id: `${sessionId}:assistant:306`,
+            sessionId,
+            role: "assistant",
+            content: "我来为您创建一个正好4个字符长度的文件。",
+            createdAt: "2026-06-23T08:21:01.000Z",
+          },
+        ] as any,
+        sessionId,
+        2,
+        [
+          {
+            id: `${sessionId}:ledger:thinking:297`,
+            sessionId,
+            seq: 297,
+            kind: "assistant.thinking",
+            createdAt: "2026-06-23T08:20:01.500Z",
+            payload: {
+              content: "Need create a two-character file.",
+              openclaw_ledger: ledgerEvent({
+                seq: 297,
+                session_id: sessionId,
+                conversation_id: sessionId,
+                turn_id: turnId,
+                run_id: turnId,
+                active_request_id: "1782202800000",
+                part_id: `${turnId}:thinking:0`,
+                part_type: "thinking",
+                event_type: "part.replace",
+                operation: "replace",
+                visibility: "final",
+                text: "Need create a two-character file.",
+                created_at: "2026-06-23T08:20:01.500Z",
+              }),
+            },
+          },
+        ] as any,
+        { canonicalOnly: true }
+      );
+
+      expect(rows).toHaveLength(2);
+      expect(rows[0].question).toBe("创建一个长度为2个字符的文件");
+      expect(rows[0].answer).toContain("2chars.txt");
+      expect(rows[0].answer).not.toBe("我来为您创建一个正好2个字符长度的文件。");
+    }
+  );
+
+  it.each(openClawMessageBuilders)(
+    "uses the persisted assistant answer when a matched ledger answer belongs to another turn in %s builder",
+    (_name, builder) => {
+      const sessionId = "agent:main:dashboard:test";
+      const turnId = `${sessionId}:turn:file-2`;
+      const rows = builder(
+        [
+          {
+            id: `${sessionId}:user:295`,
+            sessionId,
+            role: "user",
+            content: "创建一个长度为2个字符的文件",
+            createdAt: "2026-06-23T08:20:00.000Z",
+          },
+          {
+            id: `${sessionId}:assistant:304`,
+            sessionId,
+            role: "assistant",
+            content: [
+              "**✅ 任务完成！**",
+              "我已经成功创建了一个正好2个字符长度的文件。",
+              "- **文件名**：`2chars.txt`",
+            ].join("\n\n"),
+            createdAt: "2026-06-23T08:20:08.000Z",
+          },
+        ] as any,
+        sessionId,
+        2,
+        [
+          {
+            id: `${sessionId}:ledger:answer:304`,
+            sessionId,
+            seq: 304,
+            kind: "assistant.message",
+            createdAt: "2026-06-23T08:20:08.000Z",
+            payload: {
+              content: [
+                "**✅ 任务完成！**",
+                "我已经成功创建了一个正好4个字符长度的文件。",
+                "- **文件名**：`4chars.txt`",
+                "2chars.txt - 2字符：ab",
+              ].join("\n\n"),
+              openclaw_ledger: ledgerEvent({
+                seq: 304,
+                session_id: sessionId,
+                conversation_id: sessionId,
+                turn_id: turnId,
+                run_id: turnId,
+                active_request_id: "1782202800000",
+                part_id: `${turnId}:answer:0`,
+                part_type: "answer",
+                event_type: "part.replace",
+                operation: "replace",
+                visibility: "final",
+                text: [
+                  "**✅ 任务完成！**",
+                  "我已经成功创建了一个正好4个字符长度的文件。",
+                  "- **文件名**：`4chars.txt`",
+                  "2chars.txt - 2字符：ab",
+                ].join("\n\n"),
+                created_at: "2026-06-23T08:20:08.000Z",
+              }),
+            },
+          },
+        ] as any,
+        { canonicalOnly: true }
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].answer).toContain("2chars.txt");
+      expect(rows[0].answer).not.toContain("4chars.txt");
+      const answerItems = rows[0].openclawTimelineItems.filter((item: any) => item.type === "answer");
+      expect(answerItems).toHaveLength(1);
+      expect(answerItems[0].content).toContain("2chars.txt");
+      expect(answerItems[0].content).not.toContain("4chars.txt");
+    }
+  );
+
+  it.each(openClawMessageBuilders)(
+    "projects historical Files prompt blocks as uploaded files in %s builder",
+    (_name, builder) => {
+      const sessionId = "agent:main:dashboard:test";
+      const previewUrl = "http://localhost:9001/api/preview/f7ab16610bc3971f816855b896db0d64.pdf";
+      const rows = builder(
+        [
+          {
+            id: "user-with-files",
+            sessionId,
+            role: "user",
+            content: [
+              "这个文件的内容是什么",
+              "",
+              "Files:",
+              "/Users/y65ng/.qclaw/input-files/0947fbbd-1ed0-4fcc-95b0-f4b0d9d4642b/2.pdf",
+              previewUrl,
+            ].join("\n"),
+            createdAt: "2026-06-18T08:20:00.000Z",
+          },
+          {
+            id: "assistant-with-files",
+            sessionId,
+            role: "assistant",
+            content: "我来帮您分析这个 PDF 文件内容。",
+            createdAt: "2026-06-18T08:20:02.000Z",
+          },
+        ] as any,
+        sessionId,
+        2,
+        []
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].question).toBe("这个文件的内容是什么");
+      expect(rows[0].question).not.toContain("Files:");
+      expect(rows[0].uploaded_files).toHaveLength(1);
+      expect(rows[0].uploaded_files[0]).toMatchObject({
+        name: "2.pdf",
+        url: previewUrl,
+        preview_url: previewUrl,
+        file_path: "/Users/y65ng/.qclaw/input-files/0947fbbd-1ed0-4fcc-95b0-f4b0d9d4642b/2.pdf",
+        mime_type: "application/pdf",
+      });
+    }
+  );
+
+  it.each(openClawMessageBuilders)(
+    "strips polluted runtime skill and attachment prompt blocks in %s builder",
+    (_name, builder) => {
+      const sessionId = "agent:main:dashboard:test";
+      const previewUrl = "http://localhost:9001/api/preview/legacy-probe.pdf";
+      const rows = builder(
+        [
+          {
+            id: "user-polluted-skill-files",
+            sessionId,
+            role: "user",
+            content: [
+              "/openclaw_pdf_probe 测试技能效果",
+              "",
+              "Attached files:",
+              "/Users/y65ng/.qclaw/input-files/req-1/probe.pdf",
+              previewUrl,
+              "",
+              "Selected skill: /openclaw_pdf_probe",
+              "",
+              "53AIHub selected skill instructions for /openclaw_pdf_probe:",
+              "When selected, inspect the attached document before answering.",
+              "Follow these instructions for this turn even if the host skill index has not refreshed yet.",
+            ].join("\n"),
+            createdAt: "2026-06-18T08:30:00.000Z",
+          },
+          {
+            id: "assistant-polluted-skill-files",
+            sessionId,
+            role: "assistant",
+            content: "技能测试完成。",
+            createdAt: "2026-06-18T08:30:02.000Z",
+          },
+        ] as any,
+        sessionId,
+        2,
+        []
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].question).toBe("测试技能效果");
+      expect(rows[0].question).not.toContain("Selected skill:");
+      expect(rows[0].question).not.toContain("Attached files:");
+      expect(rows[0].question).not.toContain("53AIHub selected skill instructions");
+      expect(rows[0].uploaded_files).toEqual([
+        expect.objectContaining({
+          name: "probe.pdf",
+          file_path: "/Users/y65ng/.qclaw/input-files/req-1/probe.pdf",
+          preview_url: previewUrl,
+        }),
+      ]);
+    }
+  );
+
+  it.each(openClawMessageBuilders)(
+    "restores OpenClaw skill and input files from user message metadata in %s builder",
+    (_name, builder) => {
+      const sessionId = "agent:main:dashboard:test";
+      const localPath = "/Users/y65ng/.qclaw/input-files/req-2/probe.md";
+      const previewUrl = "http://localhost:9001/api/preview/probe.md";
+      const rows = builder(
+        [
+          {
+            id: "user-metadata-skill-files",
+            sessionId,
+            role: "user",
+            content: [
+              "测试技能效果",
+              "",
+              "<53aihub-openclaw-runtime-context>",
+              "Local input files:",
+              `@${localPath}`,
+              "Selected skill: /openclaw_pdf_probe",
+              "</53aihub-openclaw-runtime-context>",
+            ].join("\n"),
+            metadata: {
+              openclaw_skill: {
+                skill_id: "skill-1",
+                skill_name: "openclaw_pdf_probe",
+                display_name: "PDF Probe",
+              },
+              openclaw_input_files: [
+                {
+                  id: "file-1",
+                  file_name: "probe.md",
+                  mime_type: "text/markdown",
+                  local_path: localPath,
+                  preview_url: previewUrl,
+                  signed_download_url: previewUrl,
+                },
+              ],
+            },
+            createdAt: "2026-06-18T08:35:00.000Z",
+          },
+          {
+            id: "assistant-metadata-skill-files",
+            sessionId,
+            role: "assistant",
+            content: "技能测试完成。",
+            createdAt: "2026-06-18T08:35:02.000Z",
+          },
+        ] as any,
+        sessionId,
+        2,
+        []
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].question).toBe("测试技能效果");
+      expect(rows[0].question).not.toContain("<53aihub-openclaw-runtime-context>");
+      expect(rows[0].skill).toEqual(
+        expect.objectContaining({
+          skill_name: "openclaw_pdf_probe",
+          display_name: "PDF Probe",
+        })
+      );
+      expect(rows[0].uploaded_files).toEqual([
+        expect.objectContaining({
+          id: "file-1",
+          file_name: "probe.md",
+          file_path: localPath,
+          preview_url: previewUrl,
+          mime_type: "text/markdown",
+        }),
+      ]);
+    }
+  );
+
   it("defaults the OpenClaw shared adapter to canonical-only history projection", async () => {
     const adapter = createSharedOpenClawConversationApiAdapter({
       agentId: 2,
@@ -118,6 +468,351 @@ describe("OpenClaw message history mapping", () => {
     expect(row.openclawProjection.visibleAnswer).toBe("persisted old answer");
     expect(row.openclawTimelineItems).toEqual([]);
     expect(JSON.stringify(row)).not.toContain("raw thinking should not reach UI");
+  });
+
+  it.each(openClawMessageBuilders)(
+    "keeps persisted assistant answers when canonical ledger has no visible answer in %s builder",
+    (_name, builder) => {
+      const sessionId = "agent:main:dashboard:persisted-answer";
+      const turnId = `${sessionId}:turn:req-1`;
+      const rows = builder(
+        [
+          {
+            id: "user-persisted",
+            sessionId,
+            role: "user",
+            content: "总结这个文件",
+            createdAt: "2026-06-22T02:00:00.000Z",
+          },
+          {
+            id: "assistant-persisted",
+            sessionId,
+            role: "assistant",
+            content: "这是从持久化历史恢复的回答。",
+            createdAt: "2026-06-22T02:00:01.000Z",
+          },
+        ] as any,
+        sessionId,
+        2,
+        [
+          ledgerEvent({
+            seq: 1,
+            session_id: sessionId,
+            conversation_id: sessionId,
+            turn_id: turnId,
+            part_id: `${turnId}:status`,
+            part_type: "status",
+            event_type: "part.replace",
+            text: "正在处理",
+          }),
+        ],
+        { canonicalOnly: true }
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].answer).toBe("这是从持久化历史恢复的回答。");
+      expect(rows[0].openclawProjection.visibleAnswer).toBe("这是从持久化历史恢复的回答。");
+    }
+  );
+
+  it("keeps cached mirror pages paginated instead of replacing them with the snapshot ledger", async () => {
+    const conversationId = "agent:main:cached";
+    const firstTurn = `${conversationId}:turn:first`;
+    const secondTurn = `${conversationId}:turn:second`;
+    const snapshot = {
+      source: "mirror",
+      stale: true,
+      ledger_events: [
+        ledgerEvent({
+          seq: 1,
+          session_id: conversationId,
+          conversation_id: conversationId,
+          turn_id: firstTurn,
+          active_request_id: "first",
+          part_id: `${firstTurn}:status`,
+          part_type: "status",
+          event_type: "turn.started",
+          operation: "noop",
+          visibility: "final",
+          text: "第一轮问题",
+          payload: { source_kind: "user.message", content: "第一轮问题" },
+          created_at: "2026-06-18T08:00:00.000Z",
+        }),
+        ledgerEvent({
+          seq: 2,
+          session_id: conversationId,
+          conversation_id: conversationId,
+          turn_id: firstTurn,
+          active_request_id: "first",
+          part_id: `${firstTurn}:answer:0`,
+          text: "第一轮回答",
+          payload: { source_kind: "assistant.message" },
+          created_at: "2026-06-18T08:00:01.000Z",
+        }),
+        ledgerEvent({
+          seq: 3,
+          session_id: conversationId,
+          conversation_id: conversationId,
+          turn_id: secondTurn,
+          active_request_id: "second",
+          part_id: `${secondTurn}:status`,
+          part_type: "status",
+          event_type: "turn.started",
+          operation: "noop",
+          visibility: "final",
+          text: "第二轮问题",
+          payload: { source_kind: "user.message", content: "第二轮问题" },
+          created_at: "2026-06-18T08:01:00.000Z",
+        }),
+        ledgerEvent({
+          seq: 4,
+          session_id: conversationId,
+          conversation_id: conversationId,
+          turn_id: secondTurn,
+          active_request_id: "second",
+          part_id: `${secondTurn}:answer:0`,
+          text: "第二轮回答",
+          payload: { source_kind: "assistant.message" },
+          created_at: "2026-06-18T08:01:01.000Z",
+        }),
+      ],
+    };
+    const snapshotSpy = vi.fn().mockResolvedValue(snapshot);
+    const adapter = createSharedOpenClawConversationApiAdapter({
+      agentId: 2,
+      completions: (() => Promise.resolve({})) as any,
+      openclawApi: {
+        conversations: async () => ({ sessions: [] }),
+        messages: async () => ({
+          source: "mirror",
+          stale: true,
+          messages: [
+            {
+              id: "second-user",
+              sessionId: conversationId,
+              role: "user",
+              content: "第二轮问题",
+              createdAt: "2026-06-18T08:01:00.000Z",
+            },
+            {
+              id: "second-assistant",
+              sessionId: conversationId,
+              role: "assistant",
+              content: "第二轮回答",
+              createdAt: "2026-06-18T08:01:01.000Z",
+            },
+          ],
+          pagination: { limit: 30, offset: 0, hasMore: false, nextOffset: 2 },
+        }),
+        snapshot: snapshotSpy,
+        events: async () => ({ events: [] }),
+        control: async () => undefined,
+      },
+    });
+
+    const response = await adapter.messages(conversationId);
+
+    expect(snapshotSpy).not.toHaveBeenCalled();
+    expect(response.data.messages.map((row: any) => row.question)).toEqual(["第二轮问题"]);
+    expect(response.data.messages.map((row: any) => row.answer)).toEqual(["第二轮回答"]);
+    expect(response.data.pagination).toMatchObject({ hasMore: false, nextOffset: 2 });
+  });
+
+  it("paginates cached mirror ledger fallback instead of returning every mirrored turn", async () => {
+    const conversationId = "agent:main:cached-ledger";
+    const firstTurn = `${conversationId}:turn:first`;
+    const secondTurn = `${conversationId}:turn:second`;
+    const ledgerEvents = [
+      ledgerEvent({
+        seq: 1,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: firstTurn,
+        active_request_id: "first",
+        part_id: `${firstTurn}:status`,
+        part_type: "status",
+        event_type: "turn.started",
+        operation: "noop",
+        visibility: "final",
+        text: "第一页问题",
+        payload: { source_kind: "user.message", content: "第一页问题" },
+      }),
+      ledgerEvent({
+        seq: 2,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: firstTurn,
+        active_request_id: "first",
+        part_id: `${firstTurn}:answer:0`,
+        text: "第一页回答",
+        payload: { source_kind: "assistant.message" },
+      }),
+      ledgerEvent({
+        seq: 3,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: secondTurn,
+        active_request_id: "second",
+        part_id: `${secondTurn}:status`,
+        part_type: "status",
+        event_type: "turn.started",
+        operation: "noop",
+        visibility: "final",
+        text: "第二页问题",
+        payload: { source_kind: "user.message", content: "第二页问题" },
+      }),
+      ledgerEvent({
+        seq: 4,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: secondTurn,
+        active_request_id: "second",
+        part_id: `${secondTurn}:answer:0`,
+        text: "第二页回答",
+        payload: { source_kind: "assistant.message" },
+      }),
+    ];
+    const snapshotSpy = vi.fn();
+    const adapter = createSharedOpenClawConversationApiAdapter({
+      agentId: 2,
+      completions: (() => Promise.resolve({})) as any,
+      openclawApi: {
+        conversations: async () => ({ sessions: [] }),
+        messages: async () => ({
+          source: "mirror",
+          stale: true,
+          messages: [],
+          ledger_events: ledgerEvents,
+          pagination: { limit: 1, offset: 1, total: 2, hasMore: false, nextOffset: 2 },
+        }),
+        snapshot: snapshotSpy,
+        events: async () => ({ events: [] }),
+        control: async () => undefined,
+      },
+    });
+
+    const response = await adapter.messages(conversationId, { offset: 1, limit: 1 });
+
+    expect(snapshotSpy).not.toHaveBeenCalled();
+    expect(response.data.messages.map((row: any) => row.question)).toEqual(["第二页问题"]);
+    expect(response.data.messages.map((row: any) => row.answer)).toEqual(["第二页回答"]);
+    expect(response.data.pagination).toMatchObject({ limit: 1, offset: 1, total: 2, hasMore: false, nextOffset: 2 });
+  });
+
+  it("restores uploaded files from cached mirror ledger-only pages", async () => {
+    const conversationId = "agent:main:cached-ledger-files";
+    const firstTurn = `${conversationId}:turn:first`;
+    const secondTurn = `${conversationId}:turn:second`;
+    const previewUrl = "http://localhost:9001/api/preview/cached-file.pdf";
+    const filePrompt = [
+      "这个文件的内容是什么",
+      "",
+      "Files:",
+      "/Users/y65ng/.qclaw/input-files/cached/2.pdf",
+      previewUrl,
+    ].join("\n");
+    const ledgerEvents = [
+      ledgerEvent({
+        seq: 1,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: firstTurn,
+        active_request_id: "first",
+        part_id: `${firstTurn}:status`,
+        part_type: "status",
+        event_type: "turn.started",
+        operation: "noop",
+        visibility: "final",
+        text: "第一页问题",
+        payload: { source_kind: "user.message", content: "第一页问题" },
+      }),
+      ledgerEvent({
+        seq: 2,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: firstTurn,
+        active_request_id: "first",
+        part_id: `${firstTurn}:answer:0`,
+        text: "第一页回答",
+        payload: { source_kind: "assistant.message" },
+      }),
+      ledgerEvent({
+        seq: 3,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: secondTurn,
+        active_request_id: "second",
+        part_id: `${secondTurn}:status`,
+        part_type: "status",
+        event_type: "turn.started",
+        operation: "noop",
+        visibility: "final",
+        text: filePrompt,
+        payload: { source_kind: "user.message", content: filePrompt },
+      }),
+      ledgerEvent({
+        seq: 4,
+        session_id: conversationId,
+        conversation_id: conversationId,
+        turn_id: secondTurn,
+        active_request_id: "second",
+        part_id: `${secondTurn}:answer:0`,
+        text: "第二页回答",
+        payload: { source_kind: "assistant.message" },
+      }),
+    ];
+    const adapter = createSharedOpenClawConversationApiAdapter({
+      agentId: 2,
+      completions: (() => Promise.resolve({})) as any,
+      openclawApi: {
+        conversations: async () => ({ sessions: [] }),
+        messages: async () => ({
+          source: "mirror",
+          stale: true,
+          messages: [],
+          ledger_events: ledgerEvents,
+          pagination: { limit: 1, offset: 1, total: 2, hasMore: false, nextOffset: 2 },
+        }),
+        snapshot: vi.fn(),
+        events: async () => ({ events: [] }),
+        control: async () => undefined,
+      },
+    });
+
+    const response = await adapter.messages(conversationId, { offset: 1, limit: 1 });
+
+    expect(response.data.messages).toHaveLength(1);
+    expect(response.data.messages[0].question).toBe("这个文件的内容是什么");
+    expect(response.data.messages[0].question).not.toContain("Files:");
+    expect(response.data.messages[0].uploaded_files).toEqual([
+      expect.objectContaining({
+        name: "2.pdf",
+        file_path: "/Users/y65ng/.qclaw/input-files/cached/2.pdf",
+        url: previewUrl,
+        preview_url: previewUrl,
+        mime_type: "application/pdf",
+      }),
+    ]);
+    expect(response.data.pagination).toMatchObject({ limit: 1, offset: 1, total: 2, hasMore: false, nextOffset: 2 });
+  });
+
+  it("ensures OpenClaw skills by skill_name when the library item has no id", async () => {
+    const ensureSkill = vi.fn().mockResolvedValue({ status: "installed" });
+    const adapter = createSharedOpenClawConversationApiAdapter({
+      agentId: 2,
+      completions: (() => Promise.resolve({})) as any,
+      openclawApi: {
+        conversations: async () => ({ sessions: [] }),
+        messages: async () => ({ messages: [] }),
+        events: async () => ({ events: [] }),
+        control: async () => undefined,
+        ensureSkill,
+      },
+    });
+
+    await adapter.ensureSkill?.({ skill_name: "openclaw_pdf_probe", display_name: "PDF Probe" } as any);
+
+    expect(ensureSkill).toHaveBeenCalledWith(2, "openclaw_pdf_probe");
   });
 
   it("matches canonical ledger groups to visible message turns instead of using group index", () => {
@@ -228,6 +923,404 @@ describe("OpenClaw message history mapping", () => {
     expect(rows.map((row: any) => row.answer)).toEqual(["1 收到", "2 收到"]);
     expect(JSON.stringify(rows)).not.toContain("旧天气回答不应挂到当前用户消息");
   });
+
+  it.each(openClawMessageBuilders)(
+    "keeps canonical output files with same turn identity when run_id is absent in %s builder",
+    (_name, builder) => {
+      const conversationId = "agent:main:dashboard:file-card";
+      const activeRequestId = String(Date.parse("2026-06-24T06:55:10.000Z"));
+      const turnId = `${conversationId}:turn:${activeRequestId}`;
+      const events = getOpenClawTimelineEventsFromLedgerPayload({
+        ledger_events: [
+          ledgerEvent({
+            seq: 101,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: turnId,
+            run_id: "history-page-file-card",
+            active_request_id: activeRequestId,
+            part_id: `${turnId}:answer:0`,
+            part_type: "answer",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "已经创建 `test4.txt`。",
+            payload: { source_kind: "assistant.message" },
+            created_at: "2026-06-24T06:55:20.000Z",
+          }),
+          ledgerEvent({
+            seq: 102,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: turnId,
+            run_id: "history-page-file-card",
+            active_request_id: activeRequestId,
+            part_id: `${turnId}:status`,
+            part_type: "status",
+            event_type: "turn.completed",
+            operation: "close",
+            text: "",
+            terminal_status: "completed",
+            payload: { source_kind: "run.completed" },
+            created_at: "2026-06-24T06:55:21.000Z",
+          }),
+          ledgerEvent({
+            seq: 287971,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: turnId,
+            active_request_id: activeRequestId,
+            part_id: `${turnId}:output_file:test4`,
+            part_type: "output_file",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "",
+            payload: {
+              source_kind: "process.step",
+              process_step: {
+                step_code: "output_files",
+                status: "completed",
+                message: "生成了 1 个文件",
+                data: {
+                  files: [
+                    {
+                      id: "artifact-test4",
+                      file_name: "test4.txt",
+                      mime_type: "text/plain",
+                      size: 4,
+                      preview_key: "preview-test4",
+                      preview_url: "/api/preview/preview-test4",
+                      download_url: "/api/openclaw/artifacts/artifact-test4/download",
+                      signed_download_url: "/api/openclaw/artifacts/artifact-test4/signed-download",
+                      artifact_id: "artifact-test4",
+                      upload_file_id: "upload-test4",
+                    },
+                  ],
+                },
+              },
+            },
+            created_at: "2026-06-24T06:55:22.000Z",
+          }),
+        ],
+      });
+
+      const rows = builder(
+        [
+          {
+            id: `${conversationId}:user:1`,
+            sessionId: conversationId,
+            role: "user",
+            content: "创建一个长度为4个字符的文件",
+            createdAt: "2026-06-24T06:55:10.000Z",
+          } as any,
+          {
+            id: `${conversationId}:assistant:2`,
+            sessionId: conversationId,
+            role: "assistant",
+            content: "persisted answer should be replaced",
+            createdAt: "2026-06-24T06:55:20.000Z",
+          } as any,
+        ],
+        conversationId,
+        "agent-1",
+        events,
+        { canonicalOnly: true }
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].answer).toContain("test4.txt");
+      expect(rows[0].openclawProjection.outputFiles).toEqual([
+        expect.objectContaining({
+          id: "artifact-test4",
+          file_name: "test4.txt",
+          preview_url: "/api/preview/preview-test4",
+          download_url: "/api/openclaw/artifacts/artifact-test4/download",
+          signed_download_url: "/api/openclaw/artifacts/artifact-test4/signed-download",
+          artifact_id: "artifact-test4",
+          upload_file_id: "upload-test4",
+        }),
+      ]);
+      expect(rows[0].openclawTimelineItems).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "output_files",
+            files: expect.arrayContaining([
+              expect.objectContaining({
+                file_name: "test4.txt",
+                preview_url: "/api/preview/preview-test4",
+              }),
+            ]),
+          }),
+        ])
+      );
+    }
+  );
+
+  it.each(openClawMessageBuilders)(
+    "renders persisted assistant answer when canonical ledger only has output files in %s builder",
+    (_name, builder) => {
+      const conversationId = "agent:main:dashboard:file-only-ledger";
+      const activeRequestId = String(Date.parse("2026-06-24T07:20:10.000Z"));
+      const turnId = `${conversationId}:turn:${activeRequestId}`;
+      const events = getOpenClawTimelineEventsFromLedgerPayload({
+        ledger_events: [
+          ledgerEvent({
+            seq: 287970,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: turnId,
+            active_request_id: activeRequestId,
+            part_id: `${turnId}:output_file:file4`,
+            part_type: "output_file",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "",
+            payload: {
+              source_kind: "process.step",
+              process_step: {
+                step_code: "output_files",
+                status: "completed",
+                data: {
+                  files: [
+                    {
+                      id: "artifact-file4",
+                      file_name: "file4.txt",
+                      preview_url: "/api/preview/preview-file4",
+                    },
+                  ],
+                },
+              },
+            },
+            created_at: "2026-06-24T07:20:22.000Z",
+          }),
+        ],
+      });
+
+      const rows = builder(
+        [
+          {
+            id: `${conversationId}:user:1`,
+            sessionId: conversationId,
+            role: "user",
+            content: "创建一个长度为4个字符的文件",
+            createdAt: "2026-06-24T07:20:10.000Z",
+          } as any,
+          {
+            id: `${conversationId}:assistant:2`,
+            sessionId: conversationId,
+            role: "assistant",
+            content: "✅ 任务完成！我已经成功创建了另一个正好4个字符长度的文件。",
+            createdAt: "2026-06-24T07:20:20.000Z",
+          } as any,
+        ],
+        conversationId,
+        "agent-1",
+        events,
+        { canonicalOnly: true }
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0].answer).toContain("任务完成");
+      expect(rows[0].openclawProjection.visibleAnswer).toContain("任务完成");
+      expect(rows[0].openclawProjection.outputFiles).toEqual([
+        expect.objectContaining({
+          file_name: "file4.txt",
+          preview_url: "/api/preview/preview-file4",
+        }),
+      ]);
+      expect(rows[0].openclawProjection.timelineItems).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "answer",
+            content: expect.stringContaining("任务完成"),
+          }),
+          expect.objectContaining({
+            type: "output_files",
+            files: expect.arrayContaining([
+              expect.objectContaining({
+                file_name: "file4.txt",
+              }),
+            ]),
+          }),
+        ])
+      );
+    }
+  );
+
+  it.each(openClawMessageBuilders)(
+    "collapses a duplicate short intermediate answer when a later same-file final answer exists in %s builder",
+    (_name, builder) => {
+      const conversationId = "agent:main:dashboard:duplicate-file4";
+      const firstRequestId = String(Date.parse("2026-06-24T07:18:00.000Z"));
+      const intermediateRequestId = String(Date.parse("2026-06-24T07:19:00.000Z"));
+      const finalRequestId = String(Date.parse("2026-06-24T07:19:25.000Z"));
+      const firstTurnId = `${conversationId}:turn:${firstRequestId}`;
+      const intermediateTurnId = `${conversationId}:turn:${intermediateRequestId}`;
+      const finalTurnId = `${conversationId}:turn:${finalRequestId}`;
+      const file4 = {
+        id: "artifact-file4",
+        file_name: "file4.txt",
+        preview_url: "/api/preview/preview-file4",
+      };
+      const events = getOpenClawTimelineEventsFromLedgerPayload({
+        ledger_events: [
+          ledgerEvent({
+            seq: 100,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: firstTurnId,
+            active_request_id: firstRequestId,
+            part_id: `${firstTurnId}:output_file:4chars`,
+            part_type: "output_file",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "",
+            payload: {
+              source_kind: "process.step",
+              process_step: {
+                step_code: "output_files",
+                status: "completed",
+                data: {
+                  files: [
+                    {
+                      id: "artifact-4chars",
+                      file_name: "4chars.txt",
+                      preview_url: "/api/preview/preview-4chars",
+                    },
+                  ],
+                },
+              },
+            },
+            created_at: "2026-06-24T07:18:08.000Z",
+          }),
+          ledgerEvent({
+            seq: 110,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: intermediateTurnId,
+            active_request_id: intermediateRequestId,
+            part_id: `${intermediateTurnId}:output_file:file4`,
+            part_type: "output_file",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "",
+            payload: {
+              source_kind: "process.step",
+              process_step: {
+                step_code: "output_files",
+                status: "completed",
+                data: { files: [file4] },
+              },
+            },
+            created_at: "2026-06-24T07:19:08.000Z",
+          }),
+          ledgerEvent({
+            seq: 120,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: finalTurnId,
+            active_request_id: finalRequestId,
+            part_id: `${finalTurnId}:answer:0`,
+            part_type: "answer",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "✅ 任务完成！我已经成功创建了另一个正好4个字符长度的文件。\n\n文件名：`file4.txt`",
+            payload: {
+              source_kind: "assistant.message",
+              content: "✅ 任务完成！我已经成功创建了另一个正好4个字符长度的文件。\n\n文件名：`file4.txt`",
+            },
+            created_at: "2026-06-24T07:19:32.000Z",
+          }),
+          ledgerEvent({
+            seq: 121,
+            session_id: conversationId,
+            conversation_id: conversationId,
+            turn_id: finalTurnId,
+            active_request_id: finalRequestId,
+            part_id: `${finalTurnId}:output_file:file4`,
+            part_type: "output_file",
+            event_type: "part.replace",
+            operation: "replace",
+            text: "",
+            payload: {
+              source_kind: "process.step",
+              process_step: {
+                step_code: "output_files",
+                status: "completed",
+                data: { files: [file4] },
+              },
+            },
+            created_at: "2026-06-24T07:19:34.000Z",
+          }),
+        ],
+      });
+
+      const rows = builder(
+        [
+          {
+            id: `${conversationId}:user:313`,
+            sessionId: conversationId,
+            role: "user",
+            content: "创建一个长度为4个字符的文件",
+            createdAt: "2026-06-24T07:18:00.000Z",
+          } as any,
+          {
+            id: `${conversationId}:assistant:314`,
+            sessionId: conversationId,
+            role: "assistant",
+            content: "✅ 任务完成！文件名：`4chars.txt`",
+            createdAt: "2026-06-24T07:18:08.000Z",
+          } as any,
+          {
+            id: `${conversationId}:user:317`,
+            sessionId: conversationId,
+            role: "user",
+            content: "创建一个长度为4个字符的文件",
+            createdAt: "2026-06-24T07:19:00.000Z",
+          } as any,
+          {
+            id: `${conversationId}:assistant:318`,
+            sessionId: conversationId,
+            role: "assistant",
+            content: "让我验证文件内容并更新输出产物清单。",
+            createdAt: "2026-06-24T07:19:08.000Z",
+          } as any,
+          {
+            id: `${conversationId}:user:323`,
+            sessionId: conversationId,
+            role: "user",
+            content: "创建一个长度为4个字符的文件",
+            createdAt: "2026-06-24T07:19:25.000Z",
+          } as any,
+          {
+            id: `${conversationId}:assistant:324`,
+            sessionId: conversationId,
+            role: "assistant",
+            content: "✅ 任务完成！我已经成功创建了另一个正好4个字符长度的文件。\n\n文件名：`file4.txt`",
+            createdAt: "2026-06-24T07:19:32.000Z",
+          } as any,
+        ],
+        conversationId,
+        "agent-1",
+        events,
+        { canonicalOnly: true }
+      );
+
+      expect(rows.map((row: any) => row.id)).toEqual([
+        `${conversationId}:assistant:314`,
+        `${conversationId}:assistant:324`,
+      ]);
+      expect(rows[0].answer).toContain("4chars.txt");
+      expect(rows[1].answer).toContain("file4.txt");
+      expect(rows[1].answer).toContain("任务完成");
+      expect(rows[1].answer).not.toBe("让我验证文件内容并更新输出产物清单。");
+      expect(rows[1].openclawProjection.outputFiles).toEqual([
+        expect.objectContaining({
+          file_name: "file4.txt",
+          preview_url: "/api/preview/preview-file4",
+        }),
+      ]);
+    }
+  );
 
   it("keeps repeated streaming tool calls separate when input and output arrive late", () => {
     const activities = buildOpenClawActivities([
@@ -2164,6 +3257,8 @@ describe("OpenClaw message history mapping", () => {
                     file_name: "chinese_classics.txt",
                     mime_type: "text/plain",
                     size: 14,
+                    preview_key: "chinese_classics.txt",
+                    preview_url: "/api/preview/chinese_classics.txt",
                     download_url: "/api/messages/msg-4/files/local-history-file",
                     signed_download_url: "https://example.com/download/chinese_classics.txt?sig=1",
                     message_id: "msg-4",
@@ -2200,7 +3295,9 @@ describe("OpenClaw message history mapping", () => {
       expect.objectContaining({
         id: "local-history-file",
         file_name: "chinese_classics.txt",
-        url: "https://example.com/download/chinese_classics.txt?sig=1",
+        url: "/api/preview/chinese_classics.txt",
+        preview_key: "chinese_classics.txt",
+        preview_url: "/api/preview/chinese_classics.txt",
         download_url: "/api/messages/msg-4/files/local-history-file",
         signed_download_url: "https://example.com/download/chinese_classics.txt?sig=1",
         message_id: "msg-4",
@@ -2222,6 +3319,8 @@ describe("OpenClaw message history mapping", () => {
           seq: 471,
           files: expect.arrayContaining([
             expect.objectContaining({
+              preview_url: "/api/preview/chinese_classics.txt",
+              download_url: "/api/messages/msg-4/files/local-history-file",
               signed_download_url: "https://example.com/download/chinese_classics.txt?sig=1",
             }),
           ]),
@@ -2318,6 +3417,59 @@ describe("OpenClaw message history mapping", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].answer).toBe("网络访问暂时不可用，我可以基于已知信息推荐5部电影。");
     expect(rows[0].raw_assistant_message.id).toBe("agent:main:dashboard:assistant:12");
+  });
+
+  it("drops a same-turn weak live row when history replay has the final answer", () => {
+    const sessionId = "agent:main:dashboard:test";
+    const question = "明天广州天气如何";
+    const finalAnswer =
+      "广州明天天气预报：最高温度 37°C，最低温度 28°C，下午可能有小雨。体感温度仍然较高，请尽量待在室内并及时补充水分。早晚短暂外出也需要防晒，午后避免户外运动，并关注高温预警。";
+    const weakLiveRow = {
+      id: `${sessionId}:user:393`,
+      conversation_id: sessionId,
+      question,
+      answer: "",
+      loading: true,
+      created_time: 1782308500000,
+      updated_time: 1782308501000,
+      _openclawTurnStartSeq: 393,
+      raw_user_message: {
+        id: `${sessionId}:user:393`,
+        content: question,
+        seq: 393,
+      },
+      openclawTurn: {
+        turnKey: `${sessionId}:turn:393`,
+        sessionId,
+        status: "completed",
+      },
+    };
+    const finalHistoryRow = {
+      id: `${sessionId}:assistant:398`,
+      conversation_id: sessionId,
+      question,
+      answer: finalAnswer,
+      created_time: 1782308500000,
+      updated_time: 1782308520000,
+      _openclawTurnStartSeq: 393,
+      raw_user_message: {
+        id: `${sessionId}:user:393`,
+        content: question,
+        seq: 393,
+      },
+      raw_assistant_message: {
+        id: `${sessionId}:assistant:398`,
+        content: finalAnswer,
+        seq: 398,
+      },
+    };
+
+    const collapsed = collapseDuplicateOpenClawIntermediateRows([weakLiveRow, finalHistoryRow]);
+
+    expect(collapsed).toHaveLength(1);
+    expect(collapsed[0].id).toBe(`${sessionId}:assistant:398`);
+    expect(collapsed[0].answer).toContain("广州明天天气预报");
+    expect(collapsed[0].loading).not.toBe(true);
   });
 
   it("drops named Hub tool placeholder thinking events when tool timeline events are present in history replay", () => {

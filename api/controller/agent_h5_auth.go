@@ -227,7 +227,7 @@ func GetAgentH5FixedTokenList(c *gin.Context) {
 	}
 
 	eid := config.GetEID(c)
-	total, list, err := model.GetAgentAccessKeyList(eid, req.AgentID, req.Offset, req.Limit)
+	total, list, err := model.GetAgentAccessKeyList(eid, req.AgentID, "", req.Offset, req.Limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return

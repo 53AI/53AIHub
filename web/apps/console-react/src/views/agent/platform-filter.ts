@@ -4,6 +4,7 @@ import {
   isOpenClawCompatibleChannelType,
 } from "@km/shared-business/agent-create";
 import type { AgentPlatformOption } from "@km/shared-business/agent-create";
+import { AGENT_USAGES } from "@/constants/agent";
 
 export interface AgentListFilterFormLike {
   group_id: number;  // 单选
@@ -17,6 +18,7 @@ export interface AgentListFilterFormLike {
 export interface AgentListParams {
   group_id: string;
   channel_types?: string;
+  agent_usages?: string;
   agent_types: string;
   keyword: string;
   offset: number;
@@ -33,9 +35,29 @@ export interface PlatformFilterOption {
   value: string;
 }
 
-export function resolveAgentPlatformFilter(platform?: string): Pick<AgentListParams, "channel_types"> {
+// agent_usage 维度的筛选值(下拉里用的语义 token,非数字)
+// 后端 /api/agents/group 接收 agent_usages 字符串,按 AGENT_USAGES 映射
+export const AGENT_USAGE_PLATFORM_VALUES = {
+  KM_AI_SEARCH: "km_ai_search", // AI搜问
+  WORK_AI: "work_ai",          // 小助理
+} as const;
+
+const AGENT_USAGE_VALUE_TO_USAGE: Record<string, number> = {
+  [AGENT_USAGE_PLATFORM_VALUES.KM_AI_SEARCH]: AGENT_USAGES.KM_AI_SEARCH,
+  [AGENT_USAGE_PLATFORM_VALUES.WORK_AI]: AGENT_USAGES.WORK_AI,
+};
+
+export type ResolveAgentPlatformResult =
+  | Pick<AgentListParams, "channel_types">
+  | Pick<AgentListParams, "agent_usages">;
+
+export function resolveAgentPlatformFilter(platform?: string): ResolveAgentPlatformResult {
   const platformValue = String(platform || "").trim();
   if (!platformValue) return {};
+  // AI搜问 / 小助理 通过 agent_usage 维度筛选,不走 channel_types
+  if (platformValue in AGENT_USAGE_VALUE_TO_USAGE) {
+    return { agent_usages: String(AGENT_USAGE_VALUE_TO_USAGE[platformValue]) };
+  }
   if (isOpenClawCompatibleAgentType(platformValue)) {
     return { channel_types: String(getOpenClawCompatibleChannelType(platformValue)) };
   }
@@ -56,6 +78,7 @@ export function buildAgentListParams(currentFilter: AgentListFilterFormLike): Ag
 export function createAgentPlatformFilterOptions(
   channelOptions: PlatformFilterChannelOption[],
   platforms: AgentPlatformOption[],
+  extraOptions: PlatformFilterOption[] = [],
 ): PlatformFilterOption[] {
   const legacyChannelOptions = channelOptions
     .filter((item) => !isOpenClawCompatibleChannelType(item.channelType))
@@ -71,5 +94,9 @@ export function createAgentPlatformFilterOptions(
       value: String(platform.channel_type),
     }));
 
-  return [...legacyChannelOptions, ...openClawCompatibleOptions];
+  return [
+    ...legacyChannelOptions,
+    ...openClawCompatibleOptions,
+    ...extraOptions,
+  ];
 }

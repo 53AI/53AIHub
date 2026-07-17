@@ -5,7 +5,8 @@ import {
   AdminSkillListQuery, SkillExploreQuery, SkillPublic, SkillDetail, SkillMyItem,
   PagedResponse, SkillFileItem, SkillFileContentResult, SkillFileUpdateRequest,
   SkillFileUpdateResult, SkillEnvVar, CreateSkillEnvVarRequest,
-  UpdateSkillEnvVarRequest, BatchUpdateSkillEnvVarsRequest, ForceImportSkillRequest
+  UpdateSkillEnvVarRequest, BatchUpdateSkillEnvVarsRequest, ForceImportSkillRequest,
+  AgentSkillBindingItem,
 } from './types'
 
 export const skillApi = {
@@ -62,7 +63,7 @@ export const skillApi = {
   explore(params?: SkillExploreQuery): Promise<{ items: SkillPublic[]; count: number }> {
     return service
       .get('/api/skill-library/explore', { params })
-      .then((res: { data: PagedResponse<SkillDetail> }) => ({
+      .then((res: { data: PagedResponse<SkillPublic> }) => ({
         items: res.data?.items || [],
         count: res.data?.count || 0,
       }))
@@ -142,6 +143,39 @@ export const skillApi = {
       .put(`/api/admin/skill-library/${skill_id}/env-vars/batch`, data)
       .catch(handleError)
     return resultData.items || []
+  },
+
+  // ========== Agent 内置技能绑定（管理员端） ==========
+
+  /**
+   * 获取 Agent 内置技能列表
+   * GET /api/admin/agent/:agent_id/skills/builtin
+   */
+  async getAgentBuiltinSkills(agentId: number | string): Promise<AgentSkillBindingItem[]> {
+    const { data = {} } = await service
+      .get(`/api/admin/agent/${agentId}/skills/builtin`)
+      .catch(handleError)
+    return data.items || []
+  },
+
+  /**
+   * 给 Agent 添加内置技能
+   * POST /api/admin/agent/:agent_id/skills/builtin
+   */
+  async addAgentBuiltinSkill(agentId: number | string, skillLibraryId: string): Promise<void> {
+    await service
+      .post(`/api/admin/agent/${agentId}/skills/builtin`, { skill_library_id: skillLibraryId })
+      .catch(handleError)
+  },
+
+  /**
+   * 删除 Agent 内置技能绑定
+   * DELETE /api/admin/agent/:agent_id/skills/builtin/:binding_id
+   */
+  async deleteAgentBuiltinSkill(agentId: number | string, bindingId: string): Promise<void> {
+    await service
+      .delete(`/api/admin/agent/${agentId}/skills/builtin/${bindingId}`)
+      .catch(handleError)
   },
 }
 

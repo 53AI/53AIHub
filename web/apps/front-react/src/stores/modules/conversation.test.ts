@@ -46,8 +46,8 @@ describe("conversation store routing", () => {
   });
 
   it("updates the index agent URL in place instead of hard reloading", () => {
-    window.history.replaceState(null, "", "/index/agent?agent_id=2&type=openclaw");
-    useConversationStore.getState().setBasePath("/index/agent");
+    window.history.replaceState(null, "", "/agent/agent?agent_id=2&type=openclaw");
+    useConversationStore.getState().setBasePath("/agent/agent");
     const replaceState = vi.spyOn(window.history, "replaceState");
 
     useConversationStore.getState().setCurrentState("2", "agent:main:dashboard:index-current");
@@ -55,8 +55,8 @@ describe("conversation store routing", () => {
     expect(replaceState).toHaveBeenCalledWith(
       null,
       "",
-      "/index/agent?agent_id=2&type=openclaw&conversation_id=agent%3Amain%3Adashboard%3Aindex-current"
+      "/agent/agent?agent_id=2&type=openclaw&conversation_id=agent%3Amain%3Adashboard%3Aindex-current"
     );
-    expect(window.location.pathname).toBe("/index/agent");
+    expect(window.location.pathname).toBe("/agent/agent");
   });
 });

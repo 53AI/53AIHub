@@ -474,7 +474,7 @@ export const FileSearch = forwardRef<FileSearchRef, FileSearchProps>(
                 searchQuery &&
                 searchResults.length === 0 && (
                   <div className="p-4">
-                    <div className="text-center text-gray-500">
+                    <div className="text-sm text-center text-gray-500">
                       <p>未找到相关文档</p>
                     </div>
                   </div>

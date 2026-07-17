@@ -23,9 +23,9 @@ export interface FeedbackConfigDialogRef {
 
 export const FeedbackConfigDialog = forwardRef<
   FeedbackConfigDialogRef,
-  { type?: "message" | "knowledge_map" }
+  { type?: 'message' | 'knowledge_map' | 'work_ai' | 'chat' | 'workflow' }
 >((props, ref) => {
-  const { type = "message" } = props;
+  const { type = 'message' } = props;
   const enterpriseStore = useEnterpriseStore();
   const [visible, setVisible] = useState(false);
   const [satisfiedTypeList, setSatisfiedTypeList] = useState<FeedbackType[]>(

@@ -13,7 +13,7 @@ import {
 } from "./RelateAgentsSetting";
 import { BACKEND_AGENT_TYPE } from "../../constants";
 import { SvgIcon } from "@km/shared-components-react";
-import { CollapsibleSection } from "./CollapsibleSection";
+import { CollapsibleSection } from "../shared/CollapsibleSection";
 
 export function RelateAgents() {
   const relateAgentsDialogRef = useRef<RelateAgentsDialogRef>(null);
@@ -128,7 +128,7 @@ export function RelateAgents() {
                   color="default"
                   variant="link"
                   className="px-0"
-                  onClick={() => handleDelete(item.agent_id)}
+                  onClick={() => handleDelete(Number(item.agent_id))}
                 >
                   <SvgIcon name="reduce-one" />
                 </Button>

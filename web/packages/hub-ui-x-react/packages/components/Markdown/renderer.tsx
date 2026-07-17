@@ -18,6 +18,7 @@ import "highlight.js/styles/github.css";
 import "katex/dist/katex.min.css";
 import { Typewriter } from "../../utils/typewriter";
 import { markdownItFixPlugin } from "../../utils/markdown-fix";
+import { fixTableColumns } from "./markdown-fix-table";
 import Code from "./components/code";
 import Mermaid from "./components/mermaid";
 import Mindmap from "./components/mindmap";
@@ -139,81 +140,10 @@ const TAG_MAP: Record<string, string> = {
   math_block: "div",
 };
 
-const fixTableColumns = (content: string) => {
-  if (!content.includes("|")) return content;
-
-  const lines = content.split("\n");
-  const lineCount = lines.length;
-  let headerCellCount = 0;
-  let maxCellCount = 0;
-  let headerLineIndex = -1;
-  let separatorLineIndex = -1;
-
-  for (let i = 0; i < lineCount; i += 1) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-      if (/^\|\s*[-:]+(\s*[-:]+)*\s*\|$/.test(trimmed)) {
-        if (separatorLineIndex === -1) {
-          separatorLineIndex = i;
-        }
-        continue;
-      }
-
-      let cellCount = 0;
-      let inCell = false;
-      for (let j = 1; j < trimmed.length - 1; j += 1) {
-        if (trimmed[j] === "|") {
-          if (inCell) {
-            cellCount += 1;
-            inCell = false;
-          }
-        } else if (trimmed[j] !== " ") {
-          inCell = true;
-        }
-      }
-      if (inCell) cellCount += 1;
-
-      if (headerLineIndex === -1 && cellCount > 0) {
-        headerCellCount = cellCount;
-        headerLineIndex = i;
-      } else if (headerLineIndex >= 0 && cellCount > 0) {
-        maxCellCount = Math.max(maxCellCount, cellCount);
-      }
-    }
-  }
-
-  if (
-    headerCellCount === 0 ||
-    maxCellCount <= headerCellCount ||
-    headerLineIndex < 0
-  ) {
-    return content;
-  }
-
-  const cellsToAdd = maxCellCount - headerCellCount;
-  const emptyCells = " |".repeat(cellsToAdd);
-  const emptySeparators = " | ---".repeat(cellsToAdd);
-
-  const fixedLines = lines.map((line, index) => {
-    if (index === headerLineIndex) {
-      const lastPipeIndex = line.lastIndexOf("|");
-      return lastPipeIndex > 0
-        ? `${line.substring(0, lastPipeIndex)}${emptyCells} |`
-        : line;
-    }
-    if (index === separatorLineIndex) {
-      const lastPipeIndex = line.lastIndexOf("|");
-      return lastPipeIndex > 0
-        ? `${line.substring(0, lastPipeIndex)}${emptySeparators} |`
-        : line;
-    }
-    return line;
-  });
-
-  return fixedLines.join("\n");
-};
+// fixTableColumns 抽到 ./markdown-fix-table，可单测且无灾难性回溯。
+// 原内联版本在分隔行 |---...---|---...---| 上会触发 (\s*[-:]+)* 的
+// 灾难性回溯，让 chat 渲染 test.txt 类的内容时主线程死锁 15+ 秒。
+// 见 markdown-fix-table.test.ts 的回归测试。
 
 const buildSourceRegex = (sourceRegex?: RegExp | string) => {
   if (!sourceRegex) return tolerantSourceRegex;
@@ -862,6 +792,26 @@ const MdRenderer: React.FC<MdRendererProps> = ({
     return result;
   };
 
+  // 把 renderTokens 的输出用 useMemo 缓存。tokens 不变（或影响渲染的 props 不变）
+  // 时直接复用上一次结果，避免每次 MdRenderer 渲染都重新构造 ~260 个 vnode，
+  // 对结构化 markdown 表格是主要的性能瓶颈。
+  const renderedNodes = useMemo(
+    () => renderTokens(tokens),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      tokens,
+      sourceEnabled,
+      sourceRegex,
+      renderSource,
+      mermaidClickable,
+      viewerClass,
+      viewerStyle,
+      imagePreview,
+      onImageClick,
+      onMermaidClick,
+    ],
+  );
+
   const mergedClassName = useMemo(() => {
     const base = ["markdown-body", className, viewerClass];
     if (isDarkMode) base.push("dark-mode");
@@ -876,7 +826,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
         style={viewerStyle}
         key={renderKey}
       >
-        {renderTokens(tokens)}
+        {renderedNodes}
       </div>
 
       {/* 图片预览弹窗 */}

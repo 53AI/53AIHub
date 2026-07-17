@@ -35,6 +35,7 @@ type UserAgentShortcutResponse struct {
 	AgentLogo          string `json:"agent_logo"`
 	AgentDescription   string `json:"agent_description"`
 	AgentUsage         int    `json:"agent_usage"`
+	IsSystem           bool   `json:"is_system"`
 	ChannelType        int    `json:"channel_type"`
 	CreatedTime        int64  `json:"created_time"`
 	UpdatedTime        int64  `json:"updated_time"`
@@ -62,12 +63,31 @@ func CreateUserAgentShortcut(eid, userID, agentID int64) (*UserAgentShortcut, er
 // content 策略：客户端发消息时传入用户问题，agent 回复后传入 agent 回答（始终取最新消息）
 // 无论手动添加还是默认 agent，只要有 shortcut 记录就会更新
 func AddOrUpdateUserAgentShortcut(eid, userID, agentID int64, content string) error {
-	now := time.Now().UTC().UnixMilli()
+	return AddOrUpdateUserAgentShortcutAt(eid, userID, agentID, content, time.Now().UTC().UnixMilli())
+}
+
+func AddOrUpdateUserAgentShortcutAt(eid, userID, agentID int64, content string, lastMessageTime int64) error {
+	if lastMessageTime <= 0 {
+		lastMessageTime = time.Now().UTC().UnixMilli()
+	}
 	result := DB.Model(&UserAgentShortcut{}).
 		Where("eid = ? AND user_id = ? AND agent_id = ?", eid, userID, agentID).
 		Updates(map[string]interface{}{
-			"last_message_time":    now,
+			"last_message_time":    lastMessageTime,
 			"last_message_content": content,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	return nil
+}
+
+func ClearUserAgentShortcutLastMessage(eid, userID, agentID int64) error {
+	result := DB.Model(&UserAgentShortcut{}).
+		Where("eid = ? AND user_id = ? AND agent_id = ?", eid, userID, agentID).
+		Updates(map[string]interface{}{
+			"last_message_time":    0,
+			"last_message_content": "",
 		})
 	if result.Error != nil {
 		return result.Error
@@ -116,6 +136,7 @@ func queryUserShortcuts(eid, userID int64) ([]*UserAgentShortcutResponse, error)
 			user_agent_shortcuts.last_message_content,
 			agents.name AS agent_name, agents.logo AS agent_logo,
 			agents.description AS agent_description, agents.agent_usage,
+			agents.is_system,
 			agents.channel_type,
 			user_agent_shortcuts.created_time, user_agent_shortcuts.updated_time`).
 		Joins("LEFT JOIN agents ON agents.agent_id = user_agent_shortcuts.agent_id").
@@ -127,12 +148,12 @@ func queryUserShortcuts(eid, userID int64) ([]*UserAgentShortcutResponse, error)
 }
 
 // ensureDefaultAgentShortcuts 确保默认 agent 有 shortcut 记录（幂等，仅首次执行懒初始化）
-// 查询结果已包含默认 agent 的 shortcut 后，后续请求只需一次 queryUserShortcuts
+// 仅初始化 AgentUsageSearch（AI 搜问）且 is_system=1 的 agent
 func ensureDefaultAgentShortcuts(eid, userID int64) error {
 	// 先快速检查：所有默认 agent 是否已有 shortcut
 	var missingCount int64
 	DB.Table("agents").
-		Where("eid = ? AND owner_id = ? AND agent_usage IN (?, ?)", eid, 0, AgentUsageSearch, AgentUsageWorkAI).
+		Where("eid = ? AND owner_id = ? AND agent_usage = ? AND is_system = ?", eid, 0, AgentUsageSearch, true).
 		Where("NOT EXISTS (SELECT 1 FROM user_agent_shortcuts WHERE agent_id = agents.agent_id AND user_id = ?)", userID).
 		Count(&missingCount)
 	if missingCount == 0 {
@@ -145,7 +166,7 @@ func ensureDefaultAgentShortcuts(eid, userID int64) error {
 	}
 	err := DB.Table("agents").
 		Select("agent_id, agent_usage").
-		Where("eid = ? AND owner_id = ? AND agent_usage IN (?, ?)", eid, 0, AgentUsageSearch, AgentUsageWorkAI).
+		Where("eid = ? AND owner_id = ? AND agent_usage = ? AND is_system = ?", eid, 0, AgentUsageSearch, true).
 		Where("NOT EXISTS (SELECT 1 FROM user_agent_shortcuts WHERE agent_id = agents.agent_id AND user_id = ?)", userID).
 		Find(&defaultAgents).Error
 	if err != nil || len(defaultAgents) == 0 {

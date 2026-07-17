@@ -23,6 +23,28 @@ import {
 } from "./openclaw-timeline";
 import { hasOpenClawLedgerProtocol, projectOpenClawLedgerTurn } from "./openclaw-ledger";
 
+type OpenClawMutableMessage = Message & {
+  openclawTurn?: OpenClawTurnState;
+  openclawProjection?: OpenClawTurnProjection;
+  openclawActivities?: OpenClawActivityItem[];
+  openclawTimelineItems?: OpenClawTimelineItem[];
+  outputFiles?: OutputFile[];
+  answer?: string;
+  reasoning_content?: string;
+  interrupted?: boolean;
+  loading?: boolean;
+  error?: boolean;
+  _openclawClientMessageId?: string | number;
+  _openclawTurnStartSeq?: number;
+};
+
+type PendingOpenClawAnswer = {
+  content: string;
+  seq?: number;
+  createdAt?: string;
+  authoritative: boolean;
+};
+
 const OPENCLAW_ANSWER_EVENT_KINDS = new Set(["assistant.message", "assistant.message.delta", "assistant.delta"]);
 const OPENCLAW_ACTIVITY_EVENT_KINDS = new Set([
   "assistant.thinking",
@@ -392,27 +414,27 @@ function canReplaceSameSeqEvent(existing: OpenClawTurnEvent, incoming: OpenClawT
 function compareEvents(left: OpenClawTurnEvent, right: OpenClawTurnEvent) {
   const leftSeq = readNumber(left.seq);
   const rightSeq = readNumber(right.seq);
-  if (Number.isFinite(leftSeq) && Number.isFinite(rightSeq) && leftSeq !== rightSeq) {
+  if (leftSeq !== undefined && rightSeq !== undefined && leftSeq !== rightSeq) {
     return leftSeq - rightSeq;
   }
-  if (Number.isFinite(leftSeq) !== Number.isFinite(rightSeq)) {
-    return Number.isFinite(leftSeq) ? -1 : 1;
+  if ((leftSeq !== undefined) !== (rightSeq !== undefined)) {
+    return leftSeq !== undefined ? -1 : 1;
   }
 
   const leftSegmentIndex = readNumber(left.segmentIndex);
   const rightSegmentIndex = readNumber(right.segmentIndex);
-  if (Number.isFinite(leftSegmentIndex) && Number.isFinite(rightSegmentIndex) && leftSegmentIndex !== rightSegmentIndex) {
+  if (leftSegmentIndex !== undefined && rightSegmentIndex !== undefined && leftSegmentIndex !== rightSegmentIndex) {
     return leftSegmentIndex - rightSegmentIndex;
   }
-  if (Number.isFinite(leftSegmentIndex) !== Number.isFinite(rightSegmentIndex)) {
-    return Number.isFinite(leftSegmentIndex) ? -1 : 1;
+  if ((leftSegmentIndex !== undefined) !== (rightSegmentIndex !== undefined)) {
+    return leftSegmentIndex !== undefined ? -1 : 1;
   }
   const leftCreated = Date.parse(String(left.createdAt || "")) || 0;
   const rightCreated = Date.parse(String(right.createdAt || "")) || 0;
   if (leftCreated !== rightCreated) return leftCreated - rightCreated;
   const leftDelta = readNumber(left.deltaIndex);
   const rightDelta = readNumber(right.deltaIndex);
-  if (Number.isFinite(leftDelta) && Number.isFinite(rightDelta) && leftDelta !== rightDelta) {
+  if (leftDelta !== undefined && rightDelta !== undefined && leftDelta !== rightDelta) {
     return leftDelta - rightDelta;
   }
   return getEventIdentity(left).localeCompare(getEventIdentity(right));
@@ -454,7 +476,7 @@ export function createOpenClawTurnState(input: {
 }
 
 export function ensureOpenClawTurnState(
-  message: Message,
+  message: OpenClawMutableMessage,
   options?: {
     sessionId?: string;
     turnKey?: string;
@@ -650,6 +672,12 @@ function normalizeOutputFilesFromPayload(payload: Record<string, unknown>): Outp
             : typeof record.path === "string"
               ? record.path
               : "";
+        const previewUrl =
+          typeof record.preview_url === "string"
+            ? record.preview_url
+            : typeof record.previewUrl === "string"
+              ? record.previewUrl
+              : "";
         const downloadUrl =
           typeof record.download_url === "string"
             ? record.download_url
@@ -663,23 +691,40 @@ function normalizeOutputFilesFromPayload(payload: Record<string, unknown>): Outp
               ? record.signedDownloadUrl
               : "";
         const url =
-          signedDownloadUrl ||
-          downloadUrl ||
+          previewUrl ||
           (typeof record.url === "string"
             ? record.url
             : typeof record.href === "string"
               ? record.href
               : "") ||
-          (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : "");
-        const id = record.id ?? record.file_id ?? record.fileId ?? url ?? fileName;
+          (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : signedDownloadUrl || downloadUrl || "");
+        const id =
+          record.id ??
+          record.file_id ??
+          record.fileId ??
+          record.artifact_id ??
+          record.artifactId ??
+          record.upload_file_id ??
+          record.uploadFileId ??
+          url ??
+          fileName;
         if (id == null && !url && !fileName) return null;
         return {
           ...record,
           id: String(id ?? `${url || ""}|${fileName || ""}`),
           file_name: fileName != null ? String(fileName) : "",
           url: url ? String(url) : "",
+          preview_key:
+            typeof record.preview_key === "string"
+              ? record.preview_key
+              : typeof record.previewKey === "string"
+                ? record.previewKey
+                : undefined,
+          preview_url: previewUrl || undefined,
           download_url: downloadUrl || undefined,
           signed_download_url: signedDownloadUrl || undefined,
+          artifact_id: record.artifact_id ?? record.artifactId,
+          upload_file_id: record.upload_file_id ?? record.uploadFileId,
           mime_type: mimeType != null ? String(mimeType) : undefined,
           size:
             typeof record.size === "number"
@@ -697,17 +742,31 @@ function normalizeOutputFilesFromPayload(payload: Record<string, unknown>): Outp
       .filter((file): file is OutputFile => Boolean(file));
   };
 
-  const files = payload.files;
-  if (Array.isArray(files)) return normalizeFiles(files);
-  const processStep = payload.process_step;
-  if (processStep && typeof processStep === "object") {
-    const stepData = (processStep as Record<string, unknown>).data;
-    if (stepData && typeof stepData === "object") {
-      const nestedFiles = (stepData as Record<string, unknown>).files;
-      if (Array.isArray(nestedFiles)) return normalizeFiles(nestedFiles);
+  const collectFilesFromRecord = (record: Record<string, unknown>): OutputFile[] => {
+    const candidates: unknown[] = [];
+    if (Array.isArray(record.files)) candidates.push(record.files);
+    if (Array.isArray(record.media_attachments)) candidates.push(record.media_attachments);
+    const processStep = record.process_step;
+    if (processStep && typeof processStep === "object") {
+      const stepData = (processStep as Record<string, unknown>).data;
+      if (stepData && typeof stepData === "object") {
+        const dataRecord = stepData as Record<string, unknown>;
+        if (Array.isArray(dataRecord.files)) candidates.push(dataRecord.files);
+        if (Array.isArray(dataRecord.media_attachments)) candidates.push(dataRecord.media_attachments);
+      }
+    }
+    return candidates.flatMap(normalizeFiles);
+  };
+
+  const files = collectFilesFromRecord(payload);
+  const nestedPayload = payload.payload;
+  if (nestedPayload && typeof nestedPayload === "object" && !Array.isArray(nestedPayload)) {
+    const nestedFiles = collectFilesFromRecord(nestedPayload as Record<string, unknown>);
+    if (nestedFiles.length) {
+      return mergeOutputFiles(files, nestedFiles, { logicalIdentity: true });
     }
   }
-  return [];
+  return files;
 }
 
 function buildOutputFilesEventItem(
@@ -987,12 +1046,7 @@ export function projectOpenClawTurn(
   let interrupted = false;
   let failed = false;
   let answerSegmentIndex = 0;
-  let pendingAnswer: {
-    content: string;
-    seq?: number;
-    createdAt?: string;
-    authoritative: boolean;
-  } | null = null;
+  let pendingAnswer: PendingOpenClawAnswer | null = null;
 
   const pushRawActivity = (event: OpenClawTurnEvent) => {
     const activity = buildOpenClawActivity({
@@ -1107,22 +1161,27 @@ export function projectOpenClawTurn(
       const sanitized = sanitizeOpenClawAnswer(getEventContent(event), reasoningSoFar);
       if (!sanitized.trim()) continue;
 
-      const nextContent = event.kind === "assistant.message"
+      const previousPendingAnswer = (pendingAnswer ?? null) as PendingOpenClawAnswer | null;
+      const previousContent = previousPendingAnswer?.content || "";
+      const previousSeq = previousPendingAnswer?.seq;
+      const previousCreatedAt = previousPendingAnswer?.createdAt;
+      const previousAuthoritative = previousPendingAnswer?.authoritative || false;
+      const nextContent: string = event.kind === "assistant.message"
         ? sanitized
         : event.replace
           ? sanitized
-          : pendingAnswer?.content
-            ? `${pendingAnswer.content}${sanitized}`
+          : previousContent
+            ? `${previousContent}${sanitized}`
             : sanitized;
 
       pendingAnswer = {
         content: nextContent,
         seq:
           event.kind === "assistant.message"
-            ? readNumber(event.seq) ?? pendingAnswer?.seq
-            : readNumber(event.seq) ?? pendingAnswer?.seq,
-        createdAt: event.createdAt || pendingAnswer?.createdAt,
-        authoritative: event.kind === "assistant.message" || event.replace || pendingAnswer?.authoritative || false,
+            ? readNumber(event.seq) ?? previousSeq
+            : readNumber(event.seq) ?? previousSeq,
+        createdAt: event.createdAt || previousCreatedAt,
+        authoritative: event.kind === "assistant.message" || event.replace || previousAuthoritative,
       };
       continue;
     }
@@ -1152,7 +1211,7 @@ export function projectOpenClawTurn(
 }
 
 export function syncOpenClawProjectionToMessage(
-  message: Message,
+  message: OpenClawMutableMessage,
   projection: OpenClawTurnProjection
 ) {
   message.openclawProjection = projection;
@@ -1213,5 +1272,9 @@ export function syncOpenClawProjectionToMessage(
   if (projection.failed) {
     message.error = true;
     message.loading = false;
+  }
+  if (!projection.isStreaming && !projection.interrupted && !projection.failed) {
+    message.loading = false;
+    message.error = false;
   }
 }

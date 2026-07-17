@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/vectorstore"
 	"github.com/google/uuid"
@@ -790,7 +791,9 @@ func (s *RetrievalChunkService) storeRetrievalChunkToVectorDB(eid int64, chunk *
 	if err != nil {
 		return "", fmt.Errorf("获取库信息失败: %v", err)
 	}
-	collection := model.GetVectorCollectionName(library.UUID)
+	resolver := VectorCollectionResolver{Mode: GetVectorCollectionMode()}
+	collections := resolver.ResolveDocumentWriteCollections(chunk.Eid, *library)
+	logger.SysLogf("【诊断-检索块写入】eid=%d, chunk_id=%d, library_id=%d, mode=%s, collections=%v", eid, chunk.ID, chunk.LibraryID, resolver.Mode, collections)
 
 	// 将float64转换为float32
 	vector32 := make([]float32, len(vector))
@@ -798,18 +801,23 @@ func (s *RetrievalChunkService) storeRetrievalChunkToVectorDB(eid int64, chunk *
 		vector32[i] = float32(v)
 	}
 
-	// 构建元数据
-	metadata := map[string]interface{}{
-		"chunk_id":           chunk.ID,
-		"chunk_type":         "retrieval",
-		"knowledge_chunk_id": chunk.KnowledgeChunkID,
-		"file_id":            chunk.FileID,
-		"library_id":         chunk.LibraryID,
-		"eid":                chunk.Eid,
-		"content":            chunk.Content,
-		"token_count":        chunk.TokenCount,
-		"search_weight":      chunk.SearchWeight,
-	}
+	// 构建元数据（使用统一的企业级 metadata 构建函数）
+	metadata := buildDocumentVectorMetadata(DocumentVectorMetadataInput{
+		Eid:                chunk.Eid,
+		SpaceID:            library.SpaceID,
+		LibraryID:          chunk.LibraryID,
+		FileID:             chunk.FileID,
+		ChunkID:            chunk.ID,
+		KnowledgeChunkID:   chunk.KnowledgeChunkID,
+		ChunkType:          "retrieval",
+		Content:            chunk.Content,
+		TokenCount:         chunk.TokenCount,
+		Status:             "enabled",
+		EmbeddingModel:     "",
+		EmbeddingChannelID: 0,
+	})
+	// 保留 search_weight 字段（兼容旧代码查询）
+	metadata["search_weight"] = chunk.SearchWeight
 
 	record := vectorstore.VectorRecord{
 		ID:       vectorID,
@@ -820,10 +828,11 @@ func (s *RetrievalChunkService) storeRetrievalChunkToVectorDB(eid int64, chunk *
 	// 获取配置中的距离度量
 	config := vectorstore.LoadFromEnv()
 
-	// 尝试直接插入向量，如果集合不存在则自动创建
-	err = s.insertRetrievalVectorWithAutoCreate(ctx, store, collection, record, len(vector32), config.DistanceMetric)
-	if err != nil {
-		return "", err
+	// 根据模式向每个目标集合写入向量
+	for _, collection := range collections {
+		if err := s.insertRetrievalVectorWithAutoCreate(ctx, store, collection, record, len(vector32), config.DistanceMetric); err != nil {
+			return "", fmt.Errorf("写入集合 %s 失败: %v", collection, err)
+		}
 	}
 
 	return vectorID, nil

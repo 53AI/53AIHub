@@ -127,7 +127,7 @@ export function Header({
 
   return (
     <header
-      className={`flex-none h-14 sticky top-0 z-10 bg-white ${border ? "border-b" : ""} ${className}`}
+      className={`flex-none h-16 sticky top-0 z-10 bg-white ${border ? "border-b" : ""} ${className}`}
     >
       <div
         className={`mx-auto px-5 flex items-center justify-between h-full ${mainClass}`}

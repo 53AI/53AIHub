@@ -109,17 +109,6 @@ func createTingwuPipeline(eid int64) (*model.RagPipelineProfile, error) {
             },
             {
                 "config": {
-                    "entity_extraction": {"enabled": true},
-                    "knowledge_map": {"enabled": false},
-                    "summary_faq": {"enabled": true}
-                },
-                "description": "生成文档摘要、文档标签与知识地图",
-                "name": "生成摘要",
-                "run_mode": "manual",
-                "step_key": "summary_generation"
-            },
-            {
-                "config": {
                     "execution_mode": "predefined",
                     "graph_template_id": "hfNBvQ"
                 },

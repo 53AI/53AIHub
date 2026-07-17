@@ -2,36 +2,30 @@ import { useRef, useCallback } from "react";
 import type {
   SkillRunItem,
   SkillRunSkillItem,
-  ProcessStep,
+  ProcessRecord,
   IntentData,
   Message,
   OutputFile,
   AgentRunReplayEvent,
   OpenClawActivityItem,
 } from "../types";
+import { useChatAdapters } from "../i18n";
 import {
   isOpenClawPendingConversationId,
   isOpenClawStatusAssistantContent,
-  sanitizeOpenClawAnswer,
-  stripOpenClawReasoningPrefixOnly,
+  sanitizeOpenClawAnswer
 } from "../utils/openclaw";
 import {
-  buildOpenClawActivities,
   buildOpenClawActivity,
-  isOpenClawToolPlaceholderThinkingText,
-  mergeOpenClawActivities,
+  isOpenClawToolPlaceholderThinkingText
 } from "../utils/openclaw-activities";
 import { getOpenClawTimelineEventsFromLedgerPayload } from "../utils/openclaw-ledger";
 import {
-  buildOpenClawOutputFilesTimelineItem,
-  buildOpenClawTimelineItemFromActivity,
   getOutputFileKey,
   getOpenClawTimelineMaxSeq as getOpenClawTimelineItemMaxSeq,
-  mergeOpenClawTimelineItems,
   mergeOutputFiles,
   rebaseOpenClawMessageConversation,
-  syncOpenClawMessageDerivedState,
-  upsertOpenClawAnswerTimelineItemInMessage,
+  syncOpenClawMessageDerivedState
 } from "../utils/openclaw-timeline";
 import {
   appendOpenClawEvents,
@@ -187,7 +181,7 @@ export function updateSkillItem(
 // ============ 流程步骤处理函数 ============
 
 function handleIntentClassification(
-  step: ProcessStep,
+  step: ProcessRecord,
   skillRunItems: SkillRunItem[]
 ): SkillRunItem[] {
   if (step.status === "start") {
@@ -213,7 +207,7 @@ function handleIntentClassification(
   return skillRunItems;
 }
 
-function handleSkillRouting(step: ProcessStep, skillRunItems: SkillRunItem[]): SkillRunItem[] {
+function handleSkillRouting(step: ProcessRecord, skillRunItems: SkillRunItem[]): SkillRunItem[] {
   if (step.status === "completed") {
     return updateSkillItem(
       skillRunItems,
@@ -227,7 +221,7 @@ function handleSkillRouting(step: ProcessStep, skillRunItems: SkillRunItem[]): S
   return skillRunItems;
 }
 
-function handleToolExecutionStart(step: ProcessStep, skillRunItems: SkillRunItem[]): SkillRunItem[] {
+function handleToolExecutionStart(step: ProcessRecord, skillRunItems: SkillRunItem[]): SkillRunItem[] {
   if (step.status !== "start" || !step.data) return skillRunItems;
 
   const data = step.data as {
@@ -267,7 +261,7 @@ function handleToolExecutionStart(step: ProcessStep, skillRunItems: SkillRunItem
   ];
 }
 
-function handleToolResult(step: ProcessStep, skillRunItems: SkillRunItem[]): SkillRunItem[] {
+function handleToolResult(step: ProcessRecord, skillRunItems: SkillRunItem[]): SkillRunItem[] {
   if (step.status !== "completed" || !step.data) return skillRunItems;
 
   const data = step.data as { tool_call_id?: string; result?: string; skill_name?: string };
@@ -301,7 +295,7 @@ function handleToolResult(step: ProcessStep, skillRunItems: SkillRunItem[]): Ski
   ];
 }
 
-function handleLlmDelta(step: ProcessStep, skillRunItems: SkillRunItem[]): SkillRunItem[] {
+function handleLlmDelta(step: ProcessRecord, skillRunItems: SkillRunItem[]): SkillRunItem[] {
   if (step.status !== "streaming" || !step.data) return skillRunItems;
 
   const data = step.data as { content?: string };
@@ -345,7 +339,7 @@ function finishLlmDelta(skillRunItems: SkillRunItem[]): SkillRunItem[] {
   ];
 }
 
-export function applyProcessStep(step: ProcessStep, items: SkillRunItem[]): { items: SkillRunItem[]; hasUpdate: boolean } {
+export function applyProcessStep(step: ProcessRecord, items: SkillRunItem[]): { items: SkillRunItem[]; hasUpdate: boolean } {
   let newItems = [...items];
 
   if (step.step_code !== "llm_delta") {
@@ -499,73 +493,6 @@ function appendOpenClawTurnEventsToMessage(
   syncProjectedOpenClawMessage(message);
 }
 
-function getOpenClawAnswerDisplaySignal(value = ""): string {
-  return value
-    .replace(/[*_`~#>\-\[\]\(\)]/g, "")
-    .replace(/\s+/g, "")
-    .trim();
-}
-
-function isOpenClawEphemeralAnswerFragment(value = ""): boolean {
-  const signal = getOpenClawAnswerDisplaySignal(value);
-  if (!signal) return true;
-  if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\p{P}\p{S}]+$/u.test(signal)) {
-    return true;
-  }
-  const textSignal = signal.replace(/[^\p{L}\p{N}\u3400-\u9fff]+/gu, "");
-  return textSignal.length > 0 ? textSignal.length <= 2 : signal.length <= 4;
-}
-
-function dropOpenClawEphemeralLastAnswerBeforeThinking(message: MessageWithStreamState): void {
-  const answerKey = message._openclawLastAnswerItemKey;
-  const items = message.openclawTimelineItems || [];
-  if (!answerKey || !items.length) return;
-
-  const answerIndex = items.findIndex((item) => item.type === "answer" && item.key === answerKey);
-  if (answerIndex < 0) return;
-
-  const answerItem = items[answerIndex];
-  if (!String(answerItem.key || "").startsWith("openclaw:answer:live:")) return;
-  if (!isOpenClawEphemeralAnswerFragment(answerItem.content || "")) return;
-
-  const nextItems = items.filter((_, index) => index !== answerIndex);
-  const lastRemainingAnswer = [...nextItems].reverse().find((item) => item.type === "answer");
-  message.openclawTimelineItems = mergeOpenClawTimelineItems([], nextItems);
-  message._openclawLastAnswerItemKey = lastRemainingAnswer?.key;
-  if (!lastRemainingAnswer) {
-    message.answer = "";
-  }
-  syncOpenClawMessageDerivedState(message);
-}
-
-function bumpOpenClawTrailingAnswerSeq(message: MessageWithStreamState): void {
-  const answerKey = message._openclawLastAnswerItemKey;
-  const items = message.openclawTimelineItems || [];
-  if (!answerKey || !items.length) return;
-
-  const answerIndex = items.findIndex((item) => item.type === "answer" && item.key === answerKey);
-  if (answerIndex < 0) return;
-
-  const maxNonAnswerSeq = items.reduce((maxSeq, item) => {
-    if (item.type === "answer") return maxSeq;
-    const seq = typeof item.seq === "number" ? item.seq : Number(item.seq);
-    return Number.isFinite(seq) ? Math.max(maxSeq, seq) : maxSeq;
-  }, 0);
-  if (!maxNonAnswerSeq) return;
-
-  const answerItem = items[answerIndex];
-  const answerSeq = typeof answerItem.seq === "number" ? answerItem.seq : Number(answerItem.seq);
-  if (Number.isFinite(answerSeq) && answerSeq > maxNonAnswerSeq) return;
-
-  const nextItems = [...items];
-  nextItems[answerIndex] = {
-    ...answerItem,
-    seq: maxNonAnswerSeq + 1,
-  };
-  message.openclawTimelineItems = mergeOpenClawTimelineItems([], nextItems);
-  syncOpenClawMessageDerivedState(message);
-}
-
 function cleanStreamText(value: unknown): string {
   return typeof value === "string" ? value.replaceAll("<decision>DONE</decision>", "") : "";
 }
@@ -638,18 +565,23 @@ function normalizeOutputFiles(value: unknown): OutputFile[] {
       const base64 = typeof file.base64 === "string" && file.base64.trim() ? file.base64.trim() : "";
       const content = typeof file.content === "string" ? file.content : undefined;
       const filePath = typeof file.file_path === "string" ? file.file_path : typeof file.path === "string" ? file.path : "";
+      const previewUrl = typeof file.preview_url === "string" ? file.preview_url : typeof file.previewUrl === "string" ? file.previewUrl : "";
       const downloadUrl = typeof file.download_url === "string" ? file.download_url : typeof file.downloadUrl === "string" ? file.downloadUrl : "";
       const signedDownloadUrl = typeof file.signed_download_url === "string" ? file.signed_download_url : typeof file.signedDownloadUrl === "string" ? file.signedDownloadUrl : "";
       const rawUrl = typeof file.url === "string" ? file.url : typeof file.href === "string" ? file.href : "";
-      const url = signedDownloadUrl || downloadUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : undefined);
-      const id = file.id ?? file.file_id ?? file.fileId ?? url ?? fileName;
+      const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : signedDownloadUrl || downloadUrl || undefined);
+      const id = file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url ?? fileName;
       if (id == null && !url && !fileName) return null;
       return {
         id: id ?? `${url || ""}|${fileName || ""}`,
         file_name: fileName != null ? String(fileName) : undefined,
         url: url != null ? String(url) : undefined,
+        preview_key: typeof file.preview_key === "string" ? file.preview_key : typeof file.previewKey === "string" ? file.previewKey : undefined,
+        preview_url: previewUrl || undefined,
         download_url: downloadUrl || undefined,
         signed_download_url: signedDownloadUrl || undefined,
+        artifact_id: file.artifact_id ?? file.artifactId,
+        upload_file_id: file.upload_file_id ?? file.uploadFileId,
         mime_type: mimeType,
         size: typeof file.size === "number" ? file.size : Number.isFinite(Number(file.size)) ? Number(file.size) : undefined,
         kind: file.kind,
@@ -1244,12 +1176,17 @@ function isOpenClawTimelineReplaceEvent(event: any, payload?: Record<string, unk
   );
 }
 
-function readOpenClawProcessStep(event: any): any {
+function readOpenClawProcessRecord(event: any): any {
   const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
   return (payload as any).process_step || (payload as any).data?.process_step || {};
 }
 
-export function getOpenClawTimelineMaxSeq(payload: any): number {
+/**
+ * 从 OpenClaw payload 中提取 timeline events 并获取最大 seq 值
+ * @param payload - OpenClaw payload 对象
+ * @returns timeline events 中的最大 seq 值，如果没有则返回 0
+ */
+export function getOpenClawPayloadTimelineMaxSeq(payload: any): number {
   return getOpenClawTimelineEvents(payload).reduce((maxSeq, event) => {
     const seq = typeof event?.seq === "number" ? event.seq : Number(event?.seq);
     return Number.isFinite(seq) ? Math.max(maxSeq, seq) : maxSeq;
@@ -1459,6 +1396,17 @@ function hasHydratedOpenClawEvents(message?: Message | null): boolean {
   );
 }
 
+function hasTerminalOpenClawTurn(message?: Message | null): boolean {
+  const status = message?.openclawTurn?.status;
+  return Boolean(
+    message?.interrupted ||
+      message?.error ||
+      status === "completed" ||
+      status === "failed" ||
+      status === "interrupted"
+  );
+}
+
 function getOpenClawComparableAnswer(message?: Message | null): string {
   if (!message) return "";
   const projectedAnswer = message.openclawProjection?.visibleAnswer;
@@ -1494,7 +1442,16 @@ function hasDuplicateOpenClawAnswerBlocks(message?: Message | null): boolean {
 }
 
 function shouldPreferHydratedOpenClawMessage(existing: Message, activeMessage: Message): boolean {
-  if (existing.loading || activeMessage.loading) return false;
+  if (existing.loading) return false;
+  if (activeMessage.loading && hasOpenClawAnswerTimeline(existing)) {
+    if (!hasTerminalOpenClawTurn(existing)) return false;
+    const existingAnswer = getOpenClawComparableAnswer(existing);
+    const activeAnswer = getOpenClawComparableAnswer(activeMessage);
+    if (!activeAnswer || existingAnswer.length >= activeAnswer.length) {
+      return true;
+    }
+  }
+  if (activeMessage.loading) return false;
   if (!hasOpenClawAnswerTimeline(existing) || !hasOpenClawAnswerTimeline(activeMessage)) return false;
   if (!hasHydratedOpenClawEvents(existing)) return false;
 
@@ -1728,7 +1685,7 @@ function mergeOpenClawTimelineEventsIntoMessageWithOptions(
     if (kind === "process.step") {
       const eventPayload =
         event?.payload && typeof event.payload === "object" ? event.payload as Record<string, unknown> : {};
-      const step = readOpenClawProcessStep(event);
+      const step = readOpenClawProcessRecord(event);
       if (step?.step_code !== "output_files" || step?.status !== "completed") return [];
       const files = [
         ...normalizeOutputFiles(step?.data?.files),
@@ -2028,14 +1985,6 @@ function normalizeOutputFilesFromOpenClawPayload(payload: Record<string, any>): 
   ];
 }
 
-function mergeOpenClawStreamText(current: string, next: string, replace: boolean): string {
-  if (!next) return current;
-  if (replace) return next;
-  if (!current) return next;
-  if (current === next || current.trim() === next.trim()) return current;
-  return current + next;
-}
-
 function mergeOpenClawReasoningText(
   current: string,
   next: string,
@@ -2073,43 +2022,6 @@ function readOpenClawTimelineSeq(data: any, delta: any): number | undefined {
     if (Number.isFinite(seq)) return seq;
   }
   return undefined;
-}
-
-function upsertOpenClawAnswerTimelineItem(
-  message: MessageWithStreamState,
-  content: string,
-  data: any,
-  delta: any,
-  replace: boolean
-) {
-  if (!content.trim()) return;
-  const seq = readOpenClawTimelineSeq(data, delta);
-  const sessionId = readOpenClawResolvedConversationId(data, getStreamPayload(data)) || String(message.conversation_id || "");
-  const previousAnswerKey = message._openclawLastAnswerItemKey;
-  const shouldStartNewBlock = Boolean(message._openclawNeedNewAnswerBlock);
-  if (shouldStartNewBlock) {
-    message._openclawAnswerBlockIndex = (message._openclawAnswerBlockIndex || 0) + 1;
-  }
-  const provisionalKey = shouldStartNewBlock || !previousAnswerKey
-    ? `openclaw:answer:live:${message._openclawAnswerBlockIndex || 0}`
-    : previousAnswerKey;
-  const key = provisionalKey;
-  const timelineMaxSeq = getOpenClawTimelineMax(message.openclawTimelineItems || []);
-  const effectiveSeq = Number.isFinite(seq)
-    ? Math.max(Number(seq), timelineMaxSeq > 0 ? timelineMaxSeq + 1 : Number(seq))
-    : timelineMaxSeq > 0
-      ? timelineMaxSeq + 1
-      : undefined;
-  upsertOpenClawAnswerTimelineItemInMessage(message, {
-    key,
-    sessionId,
-    seq: effectiveSeq,
-    createdAt: new Date().toISOString(),
-    content,
-    replace,
-    identityKey: key,
-  });
-  message._openclawNeedNewAnswerBlock = false;
 }
 
 export function processStreamDataItem(
@@ -2239,8 +2151,15 @@ export function processStreamDataItem(
 
   appendOutputFilesToMessage(message, extractStreamOutputFiles(data, streamPayload), Boolean(options?.openclaw));
 
-  if (data.object === "process.step") {
-    const ps = data.process_step || {};
+  const processStepPayload =
+    data.object === "process.step"
+      ? data
+      : data?.data?.object === "process.step"
+        ? data.data
+        : undefined;
+
+  if (processStepPayload) {
+    const ps = processStepPayload.process_step || {};
     const process_data = ps.data || {};
 
     if (!message.rag_temp) message.rag_temp = {};
@@ -2284,9 +2203,9 @@ export function processStreamDataItem(
             : undefined;
         appendOpenClawTurnEventsToMessage(message as MessageWithStreamState, [
           createOpenClawTurnEvent({
-            eventId: `${String(message.conversation_id || "openclaw")}:process.step:output_files:${ps.timestamp || Date.now()}`,
+            eventId: `${String(message.conversation_id || "openclaw")}:process.step:output_files:${ps.timestamp || processStepPayload.timestamp || Date.now()}`,
             sessionId: String(message.conversation_id || ""),
-            seq: readOpenClawTimelineSeq(data, streamPayload?.choices?.[0]?.delta),
+            seq: readOpenClawTimelineSeq(processStepPayload, streamPayload?.choices?.[0]?.delta),
             kind: "process.step",
             payload: { files, ...(stepTimeline ? { openclaw_timeline: stepTimeline } : {}) },
             createdAt: new Date().toISOString(),
@@ -2298,7 +2217,7 @@ export function processStreamDataItem(
 
     if (!Array.isArray(message.skillRunItems)) message.skillRunItems = [];
 
-    const step: ProcessStep = {
+    const step: ProcessRecord = {
       step_code: String(ps.step_code ?? ""),
       status: ps.status as any,
       message: String(ps.message ?? ""),
@@ -2449,10 +2368,41 @@ export function processStreamDataItem(
   traceOpenClawProjection("completed");
 }
 
+// ============ 文件下载 ============
+
+/**
+ * 下载沙箱文件
+ * 需要通过 ChatConfigProvider 注入 fileDownload 适配器
+ */
+export async function downloadSandboxFile(
+  id: string | number,
+  filename?: string,
+  downloadApi?: { downloadFile(id: string | number): Promise<Blob> }
+): Promise<void> {
+  if (!downloadApi) {
+    console.error("下载文件失败: 缺少 fileDownload 适配器");
+    return;
+  }
+  try {
+    const blob = await downloadApi.downloadFile(id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || `sandbox-file-${id}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("下载文件失败:", err);
+  }
+}
+
 // ============ 主 Hook ============
 
 export function useChatStream() {
   const jsonBufferRef = useRef("");
+  const adapters = useChatAdapters();
 
   const processStreamData = useCallback(
     (
@@ -2537,6 +2487,14 @@ export function useChatStream() {
     jsonBufferRef.current = "";
   }, []);
 
+  // 下载沙箱文件（绑定适配器）
+  const handleDownloadSandboxFile = useCallback(
+    async (id: string | number, filename?: string) => {
+      await downloadSandboxFile(id, filename, adapters?.fileDownload);
+    },
+    [adapters?.fileDownload]
+  );
+
   return {
     applyProcessStep,
     processStreamData,
@@ -2544,6 +2502,7 @@ export function useChatStream() {
     parseJson,
     processStreamDataItem,
     convertReplayEventToSSE,
+    downloadSandboxFile: handleDownloadSandboxFile,
   };
 }
 

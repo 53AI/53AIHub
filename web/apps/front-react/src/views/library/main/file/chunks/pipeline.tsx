@@ -4,10 +4,8 @@ import React, {
   useMemo,
   useRef,
   useCallback,
-  lazy,
-  Suspense,
 } from "react";
-import { Button, Modal, Radio, message, Spin } from "antd";
+import { Button, Modal, Radio, message } from "antd";
 import { Dropdown } from "@km/shared-components-react";
 import { CaretDownOutlined } from "@ant-design/icons";
 import { useLibraryStore } from "@/stores/modules/library";
@@ -22,6 +20,17 @@ import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { RUN_STATUS } from "@/constants/chunk";
 import { getParserConfig } from "@/constants/parser";
 import { t } from "@/locales";
+import {
+  ParseConfig,
+  ChunkConfig,
+  CleanConfig,
+  SummaryConfig,
+  VectorConfig,
+  GraphConfig,
+  PipelineProvider,
+  PipelineAdapterProvider,
+} from "@km/shared-business/knowledge-pipeline";
+import { createPipelineAdapter } from "../data-pipeline/adapters";
 import "./pipeline.css";
 
 type PipelineStatus =
@@ -108,26 +117,14 @@ const STEP_TYPE_MAP: Record<
 // Helper function
 const deepClone = <T,>(obj: T): T => JSON.parse(JSON.stringify(obj));
 
-// Config component map - will be loaded lazily
-const CONFIG_COMPONENT_MAP: Record<string, React.LazyExoticComponent<any>> = {
-  document_parsing: React.lazy(
-    () => import("../data-pipeline/components/configs/ParseConfig"),
-  ),
-  content_cleaning: React.lazy(
-    () => import("../data-pipeline/components/configs/CleanConfig"),
-  ),
-  summary_generation: React.lazy(
-    () => import("../data-pipeline/components/configs/SummaryConfig"),
-  ),
-  document_chunking: React.lazy(
-    () => import("../data-pipeline/components/configs/ChunkConfig"),
-  ),
-  vector_indexing: React.lazy(
-    () => import("../data-pipeline/components/configs/VectorConfig"),
-  ),
-  graph_generation: React.lazy(
-    () => import("../data-pipeline/components/configs/GraphConfig"),
-  ),
+// Config component map - import from shared-business
+const CONFIG_COMPONENT_MAP: Record<string, React.ComponentType<any>> = {
+  document_parsing: ParseConfig,
+  content_cleaning: CleanConfig,
+  summary_generation: SummaryConfig,
+  document_chunking: ChunkConfig,
+  vector_indexing: VectorConfig,
+  graph_generation: GraphConfig,
 };
 
 const getConfigComponent = (type: string) => CONFIG_COMPONENT_MAP[type] || null;
@@ -142,6 +139,15 @@ export function ChunksPipeline({
 }: PipelineProps) {
   const libraryStore = useLibraryStore();
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [locale] = useState(() => {
+    // 从 localStorage 获取当前语言
+    const stored = localStorage.getItem('default_lang');
+    if (stored === 'jp') return 'ja';
+    return stored || 'zh-cn';
+  });
+
+  // 创建适配器实例（只创建一次）
+  const adapter = useMemo(() => createPipelineAdapter(), []);
 
   // State
   const [jobData, setJobData] = useState<RagJobWithSteps[]>([]);
@@ -534,6 +540,8 @@ export function ChunksPipeline({
     if (!strategy || selectedStrategy?.id === strategyId) return;
 
     setSelectedStrategy(strategy);
+    // 切换策略时清除已保存的自定义配置，避免旧策略的配置影响新策略的展示
+    setSavedConfigs({});
 
     if (strategyId === cleaningInfo?.strategy_id) {
       fetchJobData(strategy.pipeline_id);
@@ -1209,37 +1217,30 @@ export function ChunksPipeline({
       </Modal>
 
       {/* Setting Dialog */}
-      <Modal
-        open={settingDialogVisible}
-        title={currentSettingStep?.name || "设置"}
-        onCancel={handleSettingDialogClose}
-        onOk={handleConfirmSetting}
-        okText="保存"
-        cancelText="取消"
-        width={800}
-        centered
-      >
-        <div className="py-4 h-[700px] overflow-y-auto overflow-x-hidden">
-          {currentSettingStep?.type &&
-            getConfigComponent(currentSettingStep.type) && (
-              <Suspense
-                fallback={
-                  <div className="flex items-center justify-center">
-                    <Spin />
-                  </div>
-                }
-              >
-                {React.createElement(
-                  getConfigComponent(currentSettingStep.type)!,
-                  {
-                    config: currentSettingConfig,
-                    onChange: handleConfigChange,
-                  },
-                )}
-              </Suspense>
-            )}
-        </div>
-      </Modal>
+      <PipelineProvider lang={locale as 'zh-cn' | 'zh-tw' | 'en' | 'ja'}>
+        <PipelineAdapterProvider adapter={adapter}>
+          <Modal
+            open={settingDialogVisible}
+            title={currentSettingStep?.name || "设置"}
+            onCancel={handleSettingDialogClose}
+            onOk={handleConfirmSetting}
+            okText="保存"
+            cancelText="取消"
+            width={800}
+            centered
+            destroyOnClose
+          >
+            <div className="py-4 h-[700px] overflow-y-auto overflow-x-hidden">
+              {currentSettingStep?.type &&
+                getConfigComponent(currentSettingStep.type) &&
+                React.createElement(getConfigComponent(currentSettingStep.type)!, {
+                  config: currentSettingConfig,
+                  onChange: handleConfigChange,
+                })}
+            </div>
+          </Modal>
+        </PipelineAdapterProvider>
+      </PipelineProvider>
     </div>
   );
 }

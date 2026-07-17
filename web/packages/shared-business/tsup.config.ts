@@ -6,6 +6,7 @@ export default defineConfig({
     'agent-create/index': 'src/agent-create/index.ts',
     'chat/index': 'src/chat/index.ts',
     'auth/index': 'src/auth/index.ts',
+    'knowledge-pipeline/index': 'src/knowledge-pipeline/index.ts',
   },
   format: ['esm'],
   dts: true,

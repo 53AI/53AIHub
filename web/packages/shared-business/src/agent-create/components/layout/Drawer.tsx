@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef, useCallback, useState } from 'react'
 import { useAgentFormStore } from '../../store'
 import { useAgentCreateAdapter } from '../../adapters'
-import { useChannelConfig } from '../../context/ChannelConfigContext'
+import { useChannelConfig } from '../../hooks/useChannelConfig'
 import { getInitialFormData } from '../../types'
 
 interface ChannelConfig {

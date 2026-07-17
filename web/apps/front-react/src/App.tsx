@@ -7,7 +7,7 @@ import { ExpireModal } from './components/ExpireModal'
 import { Upgrade } from './components/Upgrade'
 import { PermissionApplyProvider } from './contexts/PermissionApplyContext'
 import { router } from './router'
-import { eventBus, setupChunkErrorHandler } from '@km/shared-utils'
+import { eventBus } from '@km/shared-utils'
 import { EVENT_NAMES } from './constants/events'
 
 export function App() {
@@ -15,9 +15,6 @@ export function App() {
   const enterpriseStore = useEnterpriseStore()
 
   useEffect(() => {
-    // 初始化 chunk 加载错误处理
-    setupChunkErrorHandler()
-
     // Load enterprise info on mount
     enterpriseStore.loadInfo()
 

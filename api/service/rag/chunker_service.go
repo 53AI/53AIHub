@@ -275,6 +275,16 @@ func (s *ChunkerService) ReindexDocument(eid int64, fileID int64) error {
 						} else {
 							logger.Info(context.TODO(), fmt.Sprintf("[reindexVectorDeleted][eid=%d][fileID=%d][collection=%s][count=%d]", eid, fileID, collection, len(ids)))
 						}
+						// enterprise/dual 模式下同时删除企业级集合中的向量
+						mode := GetVectorCollectionMode()
+						if mode == VectorCollectionModeEnterprise || mode == VectorCollectionModeDual {
+							entCollection := model.GetDocumentVectorCollectionName(eid)
+							if err := store.Delete(ctx, entCollection, ids); err != nil {
+								logger.Warn(context.TODO(), fmt.Sprintf("[reindexVectorBatchDeleteFail][eid=%d][fileID=%d][collection=%s][count=%d]%+v", eid, fileID, entCollection, len(ids), err))
+							} else {
+								logger.Info(context.TODO(), fmt.Sprintf("[reindexVectorDeleted][eid=%d][fileID=%d][collection=%s][count=%d]", eid, fileID, entCollection, len(ids)))
+							}
+						}
 					}
 				}
 			}

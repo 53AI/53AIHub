@@ -39,7 +39,7 @@ func (e *graphTemplateSelectionLLMExecutor) Generate(ctx context.Context, system
 
 	request := &relaymodel.GeneralOpenAIRequest{
 		Model:     e.modelName,
-		MaxTokens: maxTokens,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 		Messages: []relaymodel.Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},

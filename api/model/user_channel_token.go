@@ -15,6 +15,7 @@ import (
 var (
 	ErrUserChannelTokenNotFound = errors.New("user channel token not found")
 	ErrUserChannelTokenExpired  = errors.New("user channel token expired")
+	ErrUserDisabled             = errors.New("user is disabled")
 )
 
 type UserChannelToken struct {
@@ -122,7 +123,7 @@ func ValidateUserChannelToken(token string) (*User, *UserChannel, *UserChannelTo
 		return nil, nil, nil, fmt.Errorf("failed to query user: %w", err)
 	}
 	if user.Status == UserStatusDisabled {
-		return nil, nil, nil, errors.New("user is disabled")
+		return nil, nil, nil, ErrUserDisabled
 	}
 
 	var channel UserChannel

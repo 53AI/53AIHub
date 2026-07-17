@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { PlusOutlined, MoreOutlined, CommentOutlined } from "@ant-design/icons";
+import { PlusOutlined, MoreOutlined } from "@ant-design/icons";
 import { Modal, message, Spin, Switch } from "antd";
 import { Dropdown } from "@km/shared-components-react";
 import agentsApi from "@/api/modules/agents/index";
@@ -10,7 +10,7 @@ import { transformAgentInfo } from "@/api/modules/agents/transform";
 import type { AgentInfo } from "@/api/modules/agents/index";
 import { getPublicPath } from "@/utils/config";
 import RelateAgentsDialog, {
-    RelateAgentsDialogRef,
+  RelateAgentsDialogRef,
 } from "@/views/agent/create/components/config/RelateAgentsDialog";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -151,7 +151,7 @@ export function AssistantPage() {
       <div className="h-full bg-white py-5 px-2 overflow-auto">
         <div className="text-base text-black">{t("module.system")}</div>
         <div className="grid grid-cols-3 gap-6 mt-3">
-          {!["5bmQZn"].includes(enterpriseStore.info?.eid) &&
+          {/* {!["5bmQZn"].includes(enterpriseStore.info?.eid) &&
             canUseKnowledgeBase && (
               <Link
                 to="/search"
@@ -169,7 +169,7 @@ export function AssistantPage() {
                   {t("module.search_desc")}
                 </p>
               </Link>
-            )}
+            )} */}
 
           <Link
             to="/assistant/chat"

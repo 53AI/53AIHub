@@ -37,7 +37,7 @@ type FeedbackListRequest struct {
 
 // FeedbackConfigRequest represents the request structure for feedback configuration
 type FeedbackConfigRequest struct {
-	Type        string   `json:"type" form:"type" example:"message"` // message, knowledge_map
+	Type        string   `json:"type" form:"type" example:"message"` // message, knowledge_map, work_ai, chat, workflow
 	Satisfied   []string `json:"satisfied"`
 	Unsatisfied []string `json:"unsatisfied"`
 }
@@ -50,7 +50,7 @@ type FeedbackConfigRequest struct {
 // @Produce json
 // @Security BearerAuth
 // @Param eid query int true "企业ID"
-// @Param type query string false "配置类型(message, knowledge_map)"
+// @Param type query string false "配置类型(message, knowledge_map, work_ai, chat, workflow)"
 // @Success 200 {object} model.CommonResponse{data=model.Setting}
 // @Router /api/feedback/config [get]
 func GetFeedbackConfig(c *gin.Context) {
@@ -413,14 +413,6 @@ func GetFeedbackList(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
-	}
-
-	// 组装 MessageInfo 和 UserInfo 到 feedbacks 中
-	for _, feedback := range feedbacks {
-		// 加载消息信息
-		_ = feedback.LoadMessageInfo()
-		// 加载用户信息
-		_ = feedback.LoadUserInfo()
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(&FeedbackListResponse{

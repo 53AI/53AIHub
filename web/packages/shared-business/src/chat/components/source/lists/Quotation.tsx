@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { UpOutlined, RightOutlined, LinkOutlined } from '@ant-design/icons';
 import { useTranslation, useChatConfig, buildLibraryUrl } from '../../../i18n';
 import type { FileItem } from '../../../types/message';
+import RagPill from '../RagPill';
 
 interface QuotationProps {
   type?: string;
@@ -19,7 +20,7 @@ export function Quotation({ type, files = [], onFileClick }: QuotationProps) {
 
   const isWebSearch = type === 'web_search';
 
-  const getIndex = (item: FileItem, sourceKey?: string) => {
+  const getIndex = (sourceKey?: string) => {
     const match = (sourceKey || '').replace('[Source:', '').replace(']', '').split('-');
     const index = isWebSearch ? match[1] : match[0];
     return Number(index) > -1 ? index : '';
@@ -28,9 +29,9 @@ export function Quotation({ type, files = [], onFileClick }: QuotationProps) {
   const fileList = useMemo(() => {
     const list = files.map(item => ({
       ...item,
-      index: getIndex(item, item.source_key || item.source)
+      index: getIndex(item.source_key || item.source)
     }));
-    return list.sort((a, b) => (a.index as number) - (b.index as number));
+    return list.sort((a, b) => Number(a.index) - Number(b.index));
   }, [files, isWebSearch]);
 
   if (!files.length) return null;
@@ -49,8 +50,8 @@ export function Quotation({ type, files = [], onFileClick }: QuotationProps) {
 
   return (
     <>
-      <div
-        className="h-8 px-2 rounded-lg cursor-pointer bg-[#F4F5F7] hover:bg-[#E1E2E3] inline-flex items-center mt-3"
+      <RagPill
+        className="mt-3"
         onClick={() => setShowFiles(!showFiles)}
       >
         <p className="text-sm text-[#1D1E1F]">
@@ -61,12 +62,12 @@ export function Quotation({ type, files = [], onFileClick }: QuotationProps) {
         ) : (
           <RightOutlined className="text-[#939499] ml-2" />
         )}
-      </div>
+      </RagPill>
       {showFiles && (
         <div className="space-y-1.5 mt-3">
           {fileList.map((item, index) => {
             const displayIndex = item.source_key || item.source
-              ? getIndex(item, item.source_key || item.source)
+              ? getIndex(item.source_key || item.source)
               : index + 1;
 
             // web_search 类型：外链

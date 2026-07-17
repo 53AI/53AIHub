@@ -305,6 +305,11 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 	}
 
 	if replyMessageID > 0 {
+		if userID > 0 {
+			if err := model.AddOrUpdateUserAgentShortcut(agent.Eid, userID, agent.AgentID, replyContent); err != nil {
+				logger.Warnf(ctx, "【快捷Agent】超纲回复更新快捷失败: eid=%d user_id=%d agent_id=%d err=%v", agent.Eid, userID, agent.AgentID, err)
+			}
+		}
 		mirrorOutOfRangeReplyForSubscribe(c, requestId, replyMessageID, replyContent)
 		finalizeAgentRunForMessage(ctx, agent, conversationId, replyMessageID, requestId, model.AgentRunStatusCompleted, "", "")
 	}

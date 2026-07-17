@@ -14,6 +14,7 @@ func registerSaasRoutes(router *gin.Engine) {
 		apiRouter := router.Group("/api")
 		// apiRouter.Use(middleware.CORS())
 		apiRouter.Use(middleware.Logger())
+		apiRouter.Use(middleware.SlowAPILogger())
 
 		maybeUseSaasEnv(apiRouter)
 

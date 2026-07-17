@@ -114,7 +114,7 @@ func main() {
 	} else {
 		logger.SysLogf("Skill Manager initialized successfully")
 		// 预热技能环境变量缓存
-		service.WarmupSkillEnvVarCache(context.Background())
+		go service.WarmupSkillEnvVarCache(context.Background())
 	}
 
 	// 初始化图片资源服务

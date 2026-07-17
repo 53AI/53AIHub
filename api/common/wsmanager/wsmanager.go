@@ -896,7 +896,7 @@ func HandleOpenClawWS(c *gin.Context) {
 				if client.HandleIncomingMessage(msg) {
 					continue
 				}
-				logger.SysError(fmt.Sprintf("[openclaw-ws] Writer not found for reqID=%s", msg.ReqID))
+				logger.SysWarnf("[openclaw-ws] Writer not found for reqID=%s action=%s status=%s", msg.ReqID, msg.Action, msg.Status)
 			} else {
 				logger.SysError(fmt.Sprintf("[openclaw-ws] Received message with empty reqID: action=%s", msg.Action))
 			}

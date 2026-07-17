@@ -25,10 +25,10 @@ const (
 // MemberBinding represents a binding between a member and a third-party platform
 type MemberBinding struct {
 	ID        int64  `json:"id" gorm:"column:id;primaryKey;autoIncrement;comment:'Serial ID'"`
-	MID       int64  `json:"mid" gorm:"column:mid;not null;default:0;comment:'enterprise_member.id'"`
-	EID       int64  `json:"eid" gorm:"column:eid;not null;default:0;comment:'Enterprise ID'"`
+	MID       int64  `json:"mid" gorm:"column:mid;not null;default:0;index:idx_mid_eid,priority:1;comment:'enterprise_member.id'"`
+	EID       int64  `json:"eid" gorm:"column:eid;not null;default:0;index:idx_mid_eid,priority:2;index:idx_eid_bindvalue;comment:'Enterprise ID'"`
 	Name      string `json:"name" gorm:"column:name;size:255;not null;default:'';comment:'Name obtained under different authorization scenarios'"`
-	BindValue string `json:"bind_value" gorm:"column:bindvalue;size:255;not null;default:'';comment:'WeChat Enterprise, DingTalk unionid'"`
+	BindValue string `json:"bind_value" gorm:"column:bindvalue;size:255;not null;default:'';index:idx_eid_bindvalue,length:50;comment:'WeChat Enterprise, DingTalk unionid'"`
 	Status    int    `json:"status" gorm:"column:status;not null;default:0;comment:'Status'"`
 	From      int    `json:"from" gorm:"column:from;not null;default:0;comment:'Binding source: 0-Default;1-WeChat Enterprise;'"`
 	BaseModel

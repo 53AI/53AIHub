@@ -41,6 +41,9 @@ type SearchRequest struct {
 	DocumentType             string                  `json:"document_type,omitempty"`
 	KnowledgeChunkIDs        []int64                 `json:"knowledge_chunk_ids,omitempty"`
 	SkipEntityScopeNarrowing bool                    `json:"skip_entity_scope_narrowing,omitempty"`
+	// Scope 是统一搜索范围模型，替代松散传递 library_ids / file_ids / chunk_types
+	// 当 Scope 不为 nil 时，buildVectorFilter 优先使用 Scope 构建 payload filter
+	Scope *SearchScope `json:"scope,omitempty"`
 	trace                    *searchTimingRecorder
 	// 预计算的向量（用于多库并发搜索时避免重复调用 embedding）
 	precomputedQueryVector []float32
@@ -167,6 +170,28 @@ func NewSearchService(db *gorm.DB) *SearchService {
 		embedding: NewEmbeddingService(db),
 	}
 	return service
+}
+
+// NewSearchServiceWithResolver 创建带自定义解析器的检索服务（用于测试）
+func NewSearchServiceWithResolver(db *gorm.DB, resolver VectorCollectionResolver) *SearchService {
+	config := vectorstore.LoadFromEnv()
+	store, err := vectorstore.NewVectorStore(config)
+	if err != nil {
+		logger.SysLogf("警告: 创建向量存储失败: %v", err)
+		store = nil
+	}
+	if store != nil {
+		ctx := context.Background()
+		if err := store.Connect(ctx); err != nil {
+			logger.SysLogf("警告: 连接向量存储失败: %v", err)
+			store = nil
+		}
+	}
+	return &SearchService{
+		db:        db,
+		vectorDB:  store,
+		embedding: NewEmbeddingService(db),
+	}
 }
 
 // Search 统一搜索接口
@@ -768,6 +793,11 @@ func (s *SearchService) resolveBatchCollection(eid int64, reqs []*SearchRequest)
 		}
 	}
 
+	// enterprise 模式直接返回企业级集合
+	if GetEnterpriseVectorReadMode(eid) == VectorCollectionModeEnterprise {
+		return model.GetDocumentVectorCollectionName(eid), nil
+	}
+
 	libraries, err := s.batchGetLibrariesByIDs(eid, []int64{libraryID})
 	if err != nil {
 		return "", err
@@ -792,6 +822,14 @@ func (s *SearchService) resolveBatchCollections(eid int64, reqs []*SearchRequest
 		if reqs[i] == nil || !sameInt64IDSet(reqs[i].LibraryIDs, libraryIDs) {
 			return nil, fmt.Errorf("批量搜索需要相同的知识库范围")
 		}
+	}
+
+	// enterprise 模式直接返回企业级集合
+	if GetEnterpriseVectorReadMode(eid) == VectorCollectionModeEnterprise {
+		return []batchVectorCollection{{
+			LibraryID:  0,
+			Collection: model.GetDocumentVectorCollectionName(eid),
+		}}, nil
 	}
 
 	libraries, err := s.batchGetLibrariesByIDs(eid, libraryIDs)
@@ -824,6 +862,13 @@ func (s *SearchService) resolveVectorCollections(eid int64, req *SearchRequest) 
 	if err != nil {
 		logger.SysLogf("批量获取库信息失败: %v", err)
 	}
+
+	// 企业级读模式检查
+	enterpriseReadMode := GetEnterpriseVectorReadMode(eid)
+	if enterpriseReadMode == VectorCollectionModeEnterprise {
+		return []string{model.GetDocumentVectorCollectionName(eid)}, nil
+	}
+
 	collections := make([]string, 0, len(req.LibraryIDs))
 	for _, libraryID := range req.LibraryIDs {
 		library, ok := libraryMap[libraryID]
@@ -1350,7 +1395,7 @@ func scoreScopeLibraryCandidate(library *model.Library, files []model.File, sign
 
 		fileScore := scoreScopeText(file.Path, signals) * 2
 		fileScore += scoreScopeText(file.Summary, signals) * 5
-		fileScore += scoreScopeText(file.InsightSummary, signals) * 5
+		fileScore += scoreScopeText(string(file.InsightSummary), signals) * 5
 		if fileScore > bestFileScore {
 			bestFileScore = fileScore
 		}
@@ -2151,13 +2196,23 @@ func (s *SearchService) singleVectorSearch(eid int64, req *SearchRequest, config
 	if err != nil {
 		logger.SysLogf("批量获取库信息失败: %v", err)
 	}
-	collections := make([]string, 0, len(libraryIDs))
-	for _, libraryID := range libraryIDs {
-		library, ok := libraryMap[libraryID]
-		if !ok || library == nil {
-			continue
+
+	// 企业级读模式检查：如果命中则直接使用 doc_eid_{eid}
+	var collections []string
+	enterpriseReadMode := GetEnterpriseVectorReadMode(eid)
+	if enterpriseReadMode == VectorCollectionModeEnterprise {
+		collections = []string{model.GetDocumentVectorCollectionName(eid)}
+		logger.SysDebugf("【向量检索】企业级检索集合: eid=%d, query=%q, collection=%s, filter=%s",
+			eid, truncateForDebug(req.Query, 256), collections[0], truncateForDebug(fmt.Sprintf("%v", filter), 1000))
+	} else {
+		collections = make([]string, 0, len(libraryIDs))
+		for _, libraryID := range libraryIDs {
+			library, ok := libraryMap[libraryID]
+			if !ok || library == nil {
+				continue
+			}
+			collections = append(collections, model.GetVectorCollectionName(library.UUID))
 		}
-		collections = append(collections, model.GetVectorCollectionName(library.UUID))
 	}
 
 	if len(collections) == 0 {
@@ -2458,6 +2513,27 @@ func (s *SearchService) mergeSearchResults(vectorResults, textResults []SearchRe
 }
 
 // buildVectorFilter 构建向量搜索过滤条件
+// extractLibraryIDFromMetadata 从向量 payload 中提取 library_id
+func extractLibraryIDFromMetadata(metadata map[string]interface{}) int64 {
+	if metadata == nil {
+		return 0
+	}
+	v, ok := metadata["library_id"]
+	if !ok {
+		return 0
+	}
+	switch v := v.(type) {
+	case float64:
+		return int64(v)
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	default:
+		return 0
+	}
+}
+
 func (s *SearchService) buildVectorFilter(eid int64, req *SearchRequest) map[string]interface{} {
 	filter := map[string]interface{}{
 		"must": []map[string]interface{}{
@@ -3395,84 +3471,151 @@ func (s *SearchService) multiLibraryVectorSearch(eid int64, req *SearchRequest, 
 	sem := make(chan struct{}, maxConcurrentSearches)
 	var recordVectorOnce sync.Once
 
-	// 为每个知识库启动独立的搜索
-	for _, libraryID := range req.LibraryIDs {
-		sem <- struct{}{}
-		go func(libID int64) {
-			libStart := time.Now()
-			defer func() {
-				<-sem
-			}()
+	// enterprise 模式下所有库共享 doc_eid_{eid} 集合，合并为一次请求
+	if GetEnterpriseVectorReadMode(eid) == VectorCollectionModeEnterprise {
+		collection := model.GetDocumentVectorCollectionName(eid)
+		mergedReq := &SearchRequest{
+			Query:                  req.Query,
+			SearchType:             req.SearchType,
+			TopK:                   req.TopK * len(req.LibraryIDs),
+			LibraryIDs:             req.LibraryIDs,
+			FileIDs:                req.FileIDs,
+			ChunkTypes:             req.ChunkTypes,
+			SearchConfig:           normalizeSearchConfigForExecution(req.SearchConfig),
+			precomputedQueryVector: queryVector,
+			precomputedChunkConfig: config,
+			trace:                  req.trace,
+		}
+		searchReq := vectorstore.SearchRequest{
+			Collection: collection,
+			Query:      req.Query,
+			Vector:     queryVector,
+			TopK:       mergedReq.TopK,
+			Filters:    s.buildVectorFilter(eid, mergedReq),
+		}
+		if req.SearchConfig != nil && req.SearchConfig.ScoreThresholdEnabled && req.SearchConfig.ScoreThreshold > 0 {
+			searchReq.ScoreThreshold = float32(req.SearchConfig.ScoreThreshold)
+		}
 
-			library, ok := libraryMap[libID]
-			if !ok || library == nil {
+		libStart := time.Now()
+		searchResp, err := s.vectorDB.Search(context.Background(), searchReq)
+		if err != nil {
+			for _, libID := range req.LibraryIDs {
 				resultChan <- libraryResult{
 					libraryID: libID,
-					err:       fmt.Errorf("知识库不存在或无权限"),
+					err:       err,
 					elapsedMs: time.Since(libStart).Milliseconds(),
 				}
-				return
 			}
-
-			singleReq := &SearchRequest{
-				Query:                  req.Query,
-				SearchType:             req.SearchType,
-				TopK:                   req.TopK,
-				LibraryIDs:             []int64{libID},
-				FileIDs:                req.FileIDs,
-				ChunkTypes:             req.ChunkTypes,
-				SearchConfig:           normalizeSearchConfigForExecution(req.SearchConfig),
-				precomputedQueryVector: queryVector,
-				precomputedChunkConfig: config,
-				trace:                  req.trace,
-			}
-
-			collection := model.GetVectorCollectionName(library.UUID)
-			searchReq := vectorstore.SearchRequest{
-				Collection: collection,
-				Query:      req.Query,
-				Vector:     queryVector,
-				TopK:       req.TopK,
-				Filters:    s.buildVectorFilter(eid, singleReq),
-			}
-			if req.SearchConfig != nil && req.SearchConfig.ScoreThresholdEnabled && req.SearchConfig.ScoreThreshold > 0 {
-				searchReq.ScoreThreshold = float32(req.SearchConfig.ScoreThreshold)
-			}
-
-			searchResp, err := s.vectorDB.Search(context.Background(), searchReq)
-			if err != nil {
-				resultChan <- libraryResult{
-					libraryID:  libID,
-					collection: collection,
-					err:        err,
-					elapsedMs:  time.Since(libStart).Milliseconds(),
-				}
-				return
-			}
+		} else {
 			recordVectorOnce.Do(func() {
 				if req.trace != nil {
 					req.trace.add("vector_search_ms", time.Since(multiSearchStart))
 				}
 			})
 
-			vectorResults := make([]vectorstore.SearchResult, 0)
-			if searchResp != nil {
-				vectorResults = make([]vectorstore.SearchResult, len(searchResp.Results))
-				for i, result := range searchResp.Results {
-					vectorResults[i] = vectorstore.SearchResult{
-						ID:       result.ID,
-						Score:    result.Score,
-						Metadata: result.Metadata,
-					}
+			libResults := make(map[int64][]vectorstore.SearchResult)
+			for _, result := range searchResp.Results {
+				libID := extractLibraryIDFromMetadata(result.Metadata)
+				libResults[libID] = append(libResults[libID], vectorstore.SearchResult{
+					ID:       result.ID,
+					Score:    result.Score,
+					Metadata: result.Metadata,
+				})
+			}
+			for _, libID := range req.LibraryIDs {
+				results := libResults[libID]
+				if results == nil {
+					results = []vectorstore.SearchResult{}
+				}
+				resultChan <- libraryResult{
+					libraryID:     libID,
+					collection:    collection,
+					vectorResults: results,
+					elapsedMs:     time.Since(libStart).Milliseconds(),
 				}
 			}
-			resultChan <- libraryResult{
-				libraryID:     libID,
-				collection:    collection,
-				vectorResults: vectorResults,
-				elapsedMs:     time.Since(libStart).Milliseconds(),
-			}
-		}(libraryID)
+		}
+	} else {
+		// 为每个知识库启动独立的搜索
+		for _, libraryID := range req.LibraryIDs {
+			sem <- struct{}{}
+			go func(libID int64) {
+				libStart := time.Now()
+				defer func() {
+					<-sem
+				}()
+
+				library, ok := libraryMap[libID]
+				if !ok || library == nil {
+					resultChan <- libraryResult{
+						libraryID: libID,
+						err:       fmt.Errorf("知识库不存在或无权限"),
+						elapsedMs: time.Since(libStart).Milliseconds(),
+					}
+					return
+				}
+
+				singleReq := &SearchRequest{
+					Query:                  req.Query,
+					SearchType:             req.SearchType,
+					TopK:                   req.TopK,
+					LibraryIDs:             []int64{libID},
+					FileIDs:                req.FileIDs,
+					ChunkTypes:             req.ChunkTypes,
+					SearchConfig:           normalizeSearchConfigForExecution(req.SearchConfig),
+					precomputedQueryVector: queryVector,
+					precomputedChunkConfig: config,
+					trace:                  req.trace,
+				}
+
+				collection := model.GetVectorCollectionName(library.UUID)
+				searchReq := vectorstore.SearchRequest{
+					Collection: collection,
+					Query:      req.Query,
+					Vector:     queryVector,
+					TopK:       req.TopK,
+					Filters:    s.buildVectorFilter(eid, singleReq),
+				}
+				if req.SearchConfig != nil && req.SearchConfig.ScoreThresholdEnabled && req.SearchConfig.ScoreThreshold > 0 {
+					searchReq.ScoreThreshold = float32(req.SearchConfig.ScoreThreshold)
+				}
+
+				searchResp, err := s.vectorDB.Search(context.Background(), searchReq)
+				if err != nil {
+					resultChan <- libraryResult{
+						libraryID:  libID,
+						collection: collection,
+						err:        err,
+						elapsedMs:  time.Since(libStart).Milliseconds(),
+					}
+					return
+				}
+				recordVectorOnce.Do(func() {
+					if req.trace != nil {
+						req.trace.add("vector_search_ms", time.Since(multiSearchStart))
+					}
+				})
+
+				vectorResults := make([]vectorstore.SearchResult, 0)
+				if searchResp != nil {
+					vectorResults = make([]vectorstore.SearchResult, len(searchResp.Results))
+					for i, result := range searchResp.Results {
+						vectorResults[i] = vectorstore.SearchResult{
+							ID:       result.ID,
+							Score:    result.Score,
+							Metadata: result.Metadata,
+						}
+					}
+				}
+				resultChan <- libraryResult{
+					libraryID:     libID,
+					collection:    collection,
+					vectorResults: vectorResults,
+					elapsedMs:     time.Since(libStart).Milliseconds(),
+				}
+			}(libraryID)
+		}
 	}
 
 	// 收集所有结果

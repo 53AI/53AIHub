@@ -1,15 +1,9 @@
 import service from '../config'
 import { handleError } from '../error-handler'
-
-export interface OpenClawPaginationParams {
-  limit?: number
-  offset?: number
-  after_seq?: number
-}
-
-export interface OpenClawControlParams {
-  action: 'stop'
-}
+import type {
+  OpenClawPaginationParams,
+  ConversationControlParams as OpenClawControlParams,
+} from '@km/shared-business/chat'
 
 function buildPaginationParams(params: OpenClawPaginationParams = {}) {
   const query: OpenClawPaginationParams = {}

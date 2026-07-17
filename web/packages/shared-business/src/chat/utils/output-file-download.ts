@@ -13,6 +13,9 @@ export function getOutputFileDownloadStrategy(file: OutputFile): OutputFileDownl
   if (file.download_url) {
     return { kind: "direct_url", url: file.download_url };
   }
+  if (file.preview_url) {
+    return { kind: "direct_url", url: file.preview_url };
+  }
   if (typeof file.url === "string" && file.url.startsWith("data:")) {
     return { kind: "data_url", url: file.url };
   }

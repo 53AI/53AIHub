@@ -19,6 +19,7 @@ import { departmentApi, getRootDepartmentData } from "@/api/modules/department";
 import { groupApi } from "@/api/modules/group";
 import { INTERNAL_USER_STATUS_ALL, userApi } from "@/api/modules/user";
 import { GROUP_TYPE, type GroupType } from "@/constants/group";
+import type { ScopeItem } from "@km/shared-business/agent-create";
 
 export interface DeptMemberPickerValue {
   value: number | string;
@@ -26,11 +27,12 @@ export interface DeptMemberPickerValue {
   name?: string;
   user_id?: number;
   did?: number;
-  type?: "member" | "group" | "department";
+  type?: "member" | "group" | "department" | "company";
   dept_id_list?: number[];
   group_id?: number;
   group_name?: string;
   nickname?: string;
+  scope_type?: "company" | "department" | "user" | "group";
 }
 
 export interface DeptMemberPickerRef {
@@ -47,7 +49,7 @@ export interface DeptMemberPickerProps {
   onValueChange?: (result: {
     value: DeptMemberPickerValue[] | number[];
   }) => void;
-  type?: "general" | "department" | "user" | "group";
+  type?: "general" | "department" | "user" | "group" | "scope";
   defaultFirstValue?: boolean;
   defaultAll?: boolean;
   defaultFirst?: boolean;
@@ -96,6 +98,7 @@ function DeptMemberPickerInner(
   } = props;
 
   const isGroupMode = type === "group";
+  const isScopeMode = type === "scope";
   const triggerElement = trigger || children;
 
   const [visible, setVisible] = useState(false);
@@ -120,14 +123,88 @@ function DeptMemberPickerInner(
   const onChangeRef = useRef(onChange);
   const onConfirmRef = useRef(onConfirm);
   const onValueChangeRef = useRef(onValueChange);
+  const defaultFirstValueRef = useRef(defaultFirstValue);
+  const valueRef = useRef(value);
+
+  // 跟踪所有延迟应用默认值的 setTimeout ID
+  // 修复 race condition: 编辑模式 store 残留 is_new=true 时, 首次渲染调度 setTimeout,
+  // 父组件 reset() 后 defaultFirstValue 翻转为 false, 但 setTimeout 仍待触发
+  const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+
+  // 调度延迟调用并自动注册, 便于 unmount / deps 变化时统一清理
+  const scheduleDefault = (cb: () => void) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current.delete(id);
+      cb();
+    }, 0);
+    pendingTimersRef.current.add(id);
+  };
+
   useEffect(() => {
     onChangeRef.current = onChange;
     onConfirmRef.current = onConfirm;
     onValueChangeRef.current = onValueChange;
   }, [onChange, onConfirm, onValueChange]);
 
+  useEffect(() => {
+    defaultFirstValueRef.current = defaultFirstValue;
+  }, [defaultFirstValue]);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  // unmount 时清理所有 in-flight timers
+  useEffect(() => {
+    return () => {
+      pendingTimersRef.current.forEach((id) => clearTimeout(id));
+      pendingTimersRef.current.clear();
+    };
+  }, []);
+
+  // 当 defaultFirstValue 从 false 变为 true 时，重置 didApplyDefault
+  const prevDefaultFirstValueRef = useRef(defaultFirstValue);
+  useEffect(() => {
+    if (defaultFirstValue && !prevDefaultFirstValueRef.current) {
+      didApplyDefault.current = false;
+    }
+    prevDefaultFirstValueRef.current = defaultFirstValue;
+  }, [defaultFirstValue]);
+
+  // 辅助函数：在树中查找节点
+  const findNodeInTree = useCallback((nodes: TreeNode[], targetId: number | string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.value === targetId || node.did === targetId || node.user_id === targetId) {
+        return node;
+      }
+      if (node.children) {
+        const found = findNodeInTree(node.children, targetId);
+        if (found) return found;
+      }
+    }
+    return null;
+  }, []);
+
   // Normalize value for display (handles simpleValue number[] → display items)
   const displayItems = useMemo(() => {
+    if (isScopeMode && simpleValue && Array.isArray(value) && value.length > 0) {
+      // value 是 ScopeItem[]，需要转换为显示格式
+      return (value as ScopeItem[]).map((item) => {
+        if (item.scope_type === 'company') {
+          return { value: 0, label: '全部成员', type: 'company', scope_type: 'company' };
+        }
+        // 从树数据或分组数据中查找真实名称
+        const node = findNodeInTree(treeData, item.target_id);
+        const group = groupData.find(g => g.value === item.target_id);
+        return {
+          value: item.target_id,
+          label: node?.label || node?.name || group?.label || group?.group_name || String(item.target_id),
+          type: item.scope_type === 'group' ? 'group' :
+                item.scope_type === 'user' ? 'member' : 'department',
+          scope_type: item.scope_type,
+        };
+      });
+    }
     if (
       isGroupMode &&
       simpleValue &&
@@ -157,7 +234,7 @@ function DeptMemberPickerInner(
       label: item.label || item.name || "",
       value: item.value ?? item.did ?? item.user_id ?? 0,
     }));
-  }, [isGroupMode, simpleValue, value, groupData]);
+  }, [isScopeMode, isGroupMode, simpleValue, value, groupData, treeData, findNodeInTree]);
 
   // 检测是否换行，动态调整显示数量
   useEffect(() => {
@@ -254,6 +331,63 @@ function DeptMemberPickerInner(
   // 初始化
   useEffect(() => {
     const init = async () => {
+      if (isScopeMode) {
+        setLoading(true);
+        try {
+          const [deptTree, users, groups] = await Promise.all([
+            fetchDepartmentTree(),
+            fetchInternalUserData(),
+            fetchGroupData(GROUP_TYPE.INTERNAL_USER),
+          ]);
+
+          // 构建包含用户的树（复用现有的 buildTreeWithUsers 逻辑）
+          const findData = (data: any = {}): TreeNode => {
+            const children = (data.children || []).map((item: any) => findData(item));
+            users.forEach((item: any) => {
+              const deptIdList = item.dept_id_list || [];
+              if (deptIdList.includes(data.did) || (!deptIdList.length && data.did === 0)) {
+                children.push(JSON.parse(JSON.stringify(item)));
+              }
+            });
+            return { ...data, children };
+          };
+          const treeWithUsers = deptTree.map((item: any) => findData(item));
+          setTreeData(treeWithUsers);
+          setGroupData(groups);
+
+          const root = await getRootDepartmentData();
+          setRootData(root);
+
+          // 默认选中全公司（初始化时应用）
+          const isEmpty = !valueRef.current || (Array.isArray(valueRef.current) && valueRef.current.length === 0);
+          if (!didApplyDefault.current && isEmpty && defaultFirstValueRef.current) {
+            didApplyDefault.current = true;
+            const companyNode = {
+              value: 0,
+              label: '全部成员',
+              type: 'company' as const,
+              scope_type: 'company' as const,
+            };
+            scheduleDefault(() => {
+              // re-check: 调度后 defaultFirstValue 可能已翻转为 false (例如父组件 reset)
+              // 或 value 已被外部填入, 此时不应再覆盖
+              if (!defaultFirstValueRef.current) return;
+              const currentValue = valueRef.current;
+              const stillEmpty = !currentValue || (Array.isArray(currentValue) && currentValue.length === 0);
+              if (!stillEmpty) return;
+              if (simpleValue) {
+                onChangeRef.current?.([{ scope_type: 'company', target_id: 0 }]);
+              } else {
+                onChangeRef.current?.([companyNode]);
+              }
+            });
+          }
+        } finally {
+          setLoading(false);
+        }
+        return;
+      }
+
       if (isGroupMode) {
         setLoading(true);
         try {
@@ -264,21 +398,29 @@ function DeptMemberPickerInner(
             didApplyDefault.current = true;
             if (defaultAll) {
               const allIds = groups.map((g) => g.value);
-              setTimeout(() => {
+              scheduleDefault(() => {
+                // re-check: value 可能已被外部填入
+                const currentValue = valueRef.current;
+                const stillEmpty = !currentValue || (Array.isArray(currentValue) && currentValue.length === 0);
+                if (!stillEmpty) return;
                 if (simpleValue) {
                   onChangeRef.current?.(allIds as number[]);
                 } else {
                   onChangeRef.current?.(groups as DeptMemberPickerValue[]);
                 }
-              }, 0);
+              });
             } else if (defaultFirst && groups.length > 0) {
-              setTimeout(() => {
+              const firstGroup = groups[0];
+              scheduleDefault(() => {
+                const currentValue = valueRef.current;
+                const stillEmpty = !currentValue || (Array.isArray(currentValue) && currentValue.length === 0);
+                if (!stillEmpty) return;
                 if (simpleValue) {
-                  onChangeRef.current?.([groups[0].value] as number[]);
+                  onChangeRef.current?.([firstGroup.value] as number[]);
                 } else {
-                  onChangeRef.current?.([groups[0]] as DeptMemberPickerValue[]);
+                  onChangeRef.current?.([firstGroup] as DeptMemberPickerValue[]);
                 }
-              }, 0);
+              });
             }
           }
         } finally {
@@ -332,10 +474,89 @@ function DeptMemberPickerInner(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 当 defaultFirstValue 变化且数据加载完成时，应用默认值（用于新建模式）
+  useEffect(() => {
+    if (!isScopeMode) return;
+    if (!defaultFirstValue) return;
+    if (treeData.length === 0) return; // 数据还没加载完成
+
+    const isEmpty = !valueRef.current || (Array.isArray(valueRef.current) && valueRef.current.length === 0);
+    if (!didApplyDefault.current && isEmpty) {
+      didApplyDefault.current = true;
+      const companyNode = {
+        value: 0,
+        label: '全部成员',
+        type: 'company' as const,
+        scope_type: 'company' as const,
+      };
+      scheduleDefault(() => {
+        // re-check: deps 变化时 (如 defaultFirstValue: true → false) 清理 in-flight timer
+        // 但同 effect 实例 cleanup 不会触发, 需回调内再检
+        if (!defaultFirstValue) return;
+        const currentValue = valueRef.current;
+        const stillEmpty = !currentValue || (Array.isArray(currentValue) && currentValue.length === 0);
+        if (!stillEmpty) return;
+        if (simpleValue) {
+          onChangeRef.current?.([{ scope_type: 'company', target_id: 0 }]);
+        } else {
+          onChangeRef.current?.([companyNode]);
+        }
+      });
+    }
+    return () => {
+      // deps 变化时清理 in-flight timer
+      pendingTimersRef.current.forEach((id) => clearTimeout(id));
+      pendingTimersRef.current.clear();
+    };
+  }, [isScopeMode, defaultFirstValue, treeData.length, simpleValue]);
+
   // 打开对话框
   const open = () => {
     let normalizedValue: DeptMemberPickerValue[];
-    if (
+
+    // scope 模式：将 ScopeItem[] 转换为 DeptMemberPickerValue[]
+    if (isScopeMode && simpleValue && Array.isArray(value) && value.length > 0) {
+      normalizedValue = (value as ScopeItem[]).map((item) => {
+        if (item.scope_type === 'company') {
+          return {
+            value: 0,
+            label: '全部成员',
+            type: 'company' as const,
+            scope_type: 'company' as const,
+          };
+        }
+        // 从树数据或分组数据中查找真实名称
+        const node = findNodeInTree(treeData, item.target_id);
+        const group = groupData.find(g => g.value === item.target_id);
+
+        if (item.scope_type === 'group') {
+          return {
+            value: item.target_id,
+            label: group?.label || group?.group_name || String(item.target_id),
+            type: 'group' as const,
+            scope_type: 'group' as const,
+            group_id: item.target_id,
+          };
+        } else if (item.scope_type === 'user') {
+          return {
+            value: item.target_id,
+            label: node?.label || node?.name || String(item.target_id),
+            type: 'member' as const,
+            scope_type: 'user' as const,
+            user_id: item.target_id,
+          };
+        } else {
+          // department
+          return {
+            value: item.target_id,
+            label: node?.label || node?.name || String(item.target_id),
+            type: 'department' as const,
+            scope_type: 'department' as const,
+            did: item.target_id,
+          };
+        }
+      });
+    } else if (
       isGroupMode &&
       simpleValue &&
       Array.isArray(value) &&
@@ -431,6 +652,30 @@ function DeptMemberPickerInner(
 
   // 处理节点点击 - 与 Vue 的 handleNodeClick 一致
   const handleNodeClick = (data: TreeNode) => {
+    if (isScopeMode) {
+      const scopeType = data.did === 0 ? 'company' :
+                        data.user_id ? 'user' : 'department';
+      const nodeValue = {
+        value: data.value,
+        label: data.label || data.name || '',
+        type: data.user_id ? 'member' : (data.did === 0 ? 'company' : 'department'),
+        scope_type: scopeType,
+        user_id: data.user_id,
+        did: data.did,
+      };
+      // 多选切换逻辑
+      if (multiple) {
+        if (selectedValue.some((i) => i.value === data.value)) {
+          setSelectedValue(selectedValue.filter((i) => i.value !== data.value));
+        } else {
+          setSelectedValue([...selectedValue, nodeValue]);
+        }
+      } else {
+        setSelectedValue([nodeValue]);
+      }
+      return;
+    }
+
     if (type === "user") {
       if (allowSelectAllCompany) {
         if (!data.user_id && data.value) return;
@@ -452,10 +697,17 @@ function DeptMemberPickerInner(
 
   // 处理分组节点点击 - 与 Vue 的 handleNodeClickGroup 一致
   const handleNodeClickGroup = (data: TreeNode) => {
+    // 为 scope 模式添加必要的类型标识
+    const nodeValue = isScopeMode ? {
+      ...data,
+      type: 'group' as const,
+      scope_type: 'group' as const,
+    } : data;
+
     if (selectedValue.some((i) => i.value === data.value)) {
       setSelectedValue(selectedValue.filter((i) => i.value !== data.value));
     } else {
-      setSelectedValue([...selectedValue, data]);
+      setSelectedValue([...selectedValue, nodeValue]);
     }
   };
 
@@ -471,6 +723,22 @@ function DeptMemberPickerInner(
 
   // 确认
   const handleConfirm = () => {
+    if (isScopeMode) {
+      const scopes = selectedValue.map((item) => ({
+        scope_type: item.scope_type || (
+          item.did === 0 ? 'company' :
+          item.user_id ? 'user' :
+          'department'
+        ),
+        target_id: item.value as number,
+      }));
+      onChangeRef.current?.(scopes);
+      onConfirmRef.current?.({ value: scopes });
+      onValueChangeRef.current?.({ value: scopes });
+      close();
+      return;
+    }
+
     if (simpleValue) {
       const ids = selectedValue.map((item) => item.value);
       onChangeRef.current?.(ids as number[]);
@@ -571,7 +839,7 @@ function DeptMemberPickerInner(
   };
 
   return (
-    <Skeleton className="w-full" active loading={isGroupMode && loading}>
+    <Skeleton className="w-full" active loading={(isGroupMode || isScopeMode) && loading}>
       <div className="relative">
         {/* 隐藏的测量容器，用于检测换行 */}
         {displayItems.length > 3 && !triggerElement && (
@@ -598,6 +866,37 @@ function DeptMemberPickerInner(
 
         {triggerElement ? (
           <div onClick={open}>{triggerElement}</div>
+        ) : isScopeMode ? (
+          <ul className="w-full flex items-center flex-wrap gap-2">
+            {displayItems.slice(0, visibleCount ?? 3).map((item, index) => (
+              <li
+                key={item.value ?? index}
+                className="h-8 flex items-center gap-2 px-2 box-border border border-[#E5E5E5] rounded text-tertiary"
+              >
+                <SvgIcon
+                  name={
+                    item.type === 'company' ? 'department' :
+                    item.type === 'group' ? 'user-group' :
+                    item.type === 'member' ? 'member' : 'department'
+                  }
+                  width="16px"
+                  height="16px"
+                  color="#57A1FF"
+                />
+                {item.label || item.name}
+              </li>
+            ))}
+            {displayItems.length > (visibleCount ?? 3) && (
+              <Tooltip title={displayItems.slice(visibleCount ?? 3).map(i => i.label || i.name || '').join('、')}>
+                <li className="h-8 flex items-center px-2 border border-[#E5E5E5] rounded text-tertiary">
+                  +{displayItems.length - (visibleCount ?? 3)}
+                </li>
+              </Tooltip>
+            )}
+            <Button color="primary" variant="link" className="px-0" onClick={open}>
+              {t(!displayItems.length ? "action_add" : "action_modify")}
+            </Button>
+          </ul>
         ) : isGroupMode ? (
           <ul className="w-full flex items-center flex-wrap gap-2">
             {displayItems.slice(0, visibleCount ?? 3).map((item, index) => (
@@ -687,17 +986,55 @@ function DeptMemberPickerInner(
                 onDebouncedChange={setKeyword}
                 className="w-full"
                 placeholder={
-                  isGroupMode
-                    ? t("internal_user.group.search_placeholder_v2")
-                    : type === "user"
-                      ? t("internal_user.organization.user_search_placeholder")
-                      : t(
-                          "internal_user.organization.department_search_placeholder",
-                        )
+                  isScopeMode
+                    ? t("internal_user.scope.search_placeholder")
+                    : isGroupMode
+                      ? t("internal_user.group.search_placeholder_v2")
+                      : type === "user"
+                        ? t("internal_user.organization.user_search_placeholder")
+                        : t(
+                            "internal_user.organization.department_search_placeholder",
+                          )
                 }
               />
 
-              {isGroupMode ? (
+              {isScopeMode ? (
+                <>
+                  <Radio.Group
+                    value={selectionMode}
+                    onChange={(e) => setSelectionMode(e.target.value)}
+                    className="mt-4"
+                  >
+                    <Radio.Button value="member">
+                      {t("common.member")}
+                    </Radio.Button>
+                    <Radio.Button value="group">{t("group")}</Radio.Button>
+                  </Radio.Group>
+
+                  {selectionMode === "member" && (
+                    <Tree
+                      ref={treeRef}
+                      className="mt-4 flex-1 h-0 box-border pr-1 overflow-auto"
+                      treeData={renderTreeData(filteredTreeData)}
+                      defaultExpandedKeys={[0]}
+                      selectable={false}
+                      titleRender={renderTreeTitle}
+                      blockNode
+                    />
+                  )}
+                  {selectionMode === "group" && (
+                    <Tree
+                      ref={treeGroupRef}
+                      className="mt-4 flex-1 h-0 box-border pr-1 overflow-auto"
+                      treeData={renderGroupTreeData(filteredGroupData)}
+                      defaultExpandedKeys={[0]}
+                      selectable={false}
+                      titleRender={renderGroupTreeTitle}
+                      blockNode
+                    />
+                  )}
+                </>
+              ) : isGroupMode ? (
                 <Tree
                   ref={treeGroupRef}
                   className="mt-4 flex-1 h-0 box-border pr-1 overflow-auto"
@@ -760,6 +1097,14 @@ function DeptMemberPickerInner(
                       key={item.value ?? item.did ?? index}
                       className="py-1 bg-white px-2 box-border border border-[#E5E5E5] rounded-sm flex items-center gap-1"
                     >
+                      {item.type === "company" && (
+                        <SvgIcon
+                          name="department"
+                          width="12px"
+                          height="12px"
+                          color="#939499"
+                        />
+                      )}
                       {item.type === "member" && (
                         <SvgIcon
                           name={item.user_id ? "member" : "department"}

@@ -62,9 +62,9 @@ export function PromptPage() {
   const { state: filterForm, stateRef: filterFormRef, updateState } = useListState<FilterForm>(
     defaultFilterForm,
     {
+      enableUrlSync: true,
       urlPrefix: 'prompt_',
       searchFields: ['keyword', 'group_id'],
-      persistToSession: true,
     }
   );
 
@@ -402,7 +402,7 @@ export function PromptPage() {
         title={t("dialog.basic_info")}
         onCancel={() => setCreateModalVisible(false)}
         onOk={handleCreateConfirm}
-        destroyOnClose
+        destroyOnHidden
         width="50%"
       >
         <PromptBasicInfo

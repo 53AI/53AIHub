@@ -19,7 +19,7 @@ export function UserOrganization() {
 
   const handleNodeClick = (data: { data: any }) => {
     setOrganizationData(data.data || {});
-    memberRef.current?.refresh();
+    // 不手动调用 refresh()，Member 组件内的 useEffect 会自动响应 department.did 变化
   };
 
   useEffect(() => {

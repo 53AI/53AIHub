@@ -5,7 +5,7 @@
  * Header 包含编辑入口（点击编辑图标打开弹框）
  */
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Modal, message } from 'antd'
 import { EditOutlined } from '@ant-design/icons'
@@ -19,7 +19,8 @@ import {
   AgentDrawerRef,
   CreatePageLayout,
   getInitialFormData,
-  AgentBasicInfo, createPlatformsByType
+  AgentBasicInfo, createPlatformsByType,
+  isOpenClawCompatibleAgentType
 } from '@km/shared-business/agent-create'
 import { eventBus } from '@km/shared-utils'
 import { GROUP_TYPE } from "@/constants/group"
@@ -28,10 +29,12 @@ import { consoleAgentAdapter } from '@/adapters/agent-create-adapter'
 import { attachDefaultImg } from '@/directive/default-img'
 import { AgentDataTab } from './DataTab'
 import { AgentIntegrateTab } from './IntegrateTab'
+import { AgentFeedbackTab } from './FeedbackTab'
 import { subscriptionApi } from "@/api/modules/subscription"
 import { groupApi, Group } from "@/api/modules/group"
 import { isEqual } from 'lodash-es'
 import { SvgIcon } from '@km/shared-components-react'
+import { useEnterpriseStore } from '@/stores'
 
 /**
  * 头像上传 slot 组件
@@ -107,8 +110,6 @@ function AgentCreatePageContent() {
   const setFormData = useAgentFormStore((state) => state.setFormData)
   const setAgentData = useAgentFormStore((state) => state.setAgentData)
   const initialFormData = useAgentFormStore((state) => state.initial_form_data)
-  const setInitialFormData = useAgentFormStore((state) => state.setInitialFormData)
-  const isDirty = useAgentFormStore((state) => state.is_dirty)
 
   const infoDrawerRef = useRef<AgentDrawerRef>(null)
   const channelConfig = useRef<Record<string, any>>({})
@@ -219,11 +220,11 @@ function AgentCreatePageContent() {
 
   // 保存编辑
   const handleEditSave = useCallback(() => {
-    setFormData({
-      name: editBasicInfo.name,
-      description: editBasicInfo.description,
-      logo: editBasicInfo.logo,
-    })
+      setFormData({
+        name: editBasicInfo.name,
+        description: editBasicInfo.description,
+        logo: editBasicInfo.logo,
+      })
     setEditVisible(false)
   }, [setFormData, editBasicInfo])
 
@@ -285,6 +286,10 @@ function AgentCreatePageContent() {
 
         // 加载分组选项
         await useAgentFormStore.getState().loadGroupOptions()
+        
+        // 所有异步操作完成后，设置初始数据
+        const finalFormData = useAgentFormStore.getState().form_data
+        useAgentFormStore.getState().setInitialFormData(finalFormData)
       } else {
         // 创建模式：从 URL 参数获取弹框数据，统一初始化
         const nameParam = searchParams.get('name')
@@ -307,14 +312,19 @@ function AgentCreatePageContent() {
           groupId = groupOptions[0].value
         }
 
+        // 获取企业信息，判断是否需要设置 scopes 默认值
+        const enterprise = useEnterpriseStore.getState().info
+        const shouldSetDefaultScopes = enterprise.is_enterprise || enterprise.is_industry
+
         const initialFormData = {
           ...getInitialFormData(),
           name: nameParam || agentInfo.label || 'agent',
           logo: logoParam || agentInfo.icon || '',
           description: descParam || '',
           group_id: groupId,
-          user_group_ids: internalGroupIds,
           subscription_group_ids: subscriptionGroupIds,
+          // 新建时默认选中"全部成员"；编辑模式按接口返回值显示
+          scopes: shouldSetDefaultScopes ? [{ scope_type: 'company', target_id: 0 }] : [],
           custom_config: {
             ...getInitialFormData().custom_config,
             agent_mode: agentModeParam || 'chat',
@@ -412,7 +422,9 @@ function AgentCreatePageContent() {
           />
         )
       case 'data':
-        return <AgentDataTab agentId={agentId} />
+        return <AgentDataTab agentId={agentId} agentType={agentType} />
+      case 'feedback':
+        return <AgentFeedbackTab agentId={agentId} agentType={agentType} backendAgentType={backendAgentType} />
       case 'integrate':
         return <AgentIntegrateTab agentId={agentId} />
       default:
@@ -420,16 +432,49 @@ function AgentCreatePageContent() {
     }
   }
 
-  // Tab 配置
-  const tabItems = [
-    { key: 'config', label: t('agent.tab_config') },
-    { key: 'data', label: t('agent.tab_data') },
-    { key: 'integrate', label: t('agent.tab_integrate') },
-  ]
+  // Tab 配置 - 根据 backend_agent_type 动态生成（0=对话, 1=工作流/补全, 2=助理）
+  // openclaw 家族：反馈由 OpenClawEmbeddedChatWorkspace 承载，隐藏反馈 Tab
+  const tabItems = useMemo(() => {
+    const baseTabs = [{ key: 'config', label: t('agent.tab_config') }]
+
+    // 助理型（2）：小助理、AI搜问等 → 仅反馈 Tab
+    if (backendAgentType === 2) {
+      baseTabs.push(
+        { key: 'data', label: t('agent.tab_data') },
+        { key: 'feedback', label: t('agent.tab_feedback') },
+      )
+    } else if (backendAgentType === 0 || backendAgentType === 1) {
+      // 对话型（0）和工作流（1）→ 接入 Tab 与反馈 Tab 并存
+      baseTabs.push(
+        { key: 'data', label: t('agent.tab_data') },
+        { key: 'feedback', label: t('agent.tab_feedback') },
+        { key: 'integrate', label: t('agent.tab_integrate') },
+      )
+    } else {
+      // 其他类型：仅接入 Tab
+      baseTabs.push(
+        { key: 'data', label: t('agent.tab_data') },
+        { key: 'integrate', label: t('agent.tab_integrate') },
+      )
+    }
+
+    if (isOpenClawCompatibleAgentType(agentType)) {
+      return baseTabs.filter((tab) => tab.key !== 'feedback')
+    }
+    return baseTabs
+  }, [backendAgentType, agentType, t])
+
+  // 当 tabItems 变化（如 agentType 改变导致反馈 Tab 被隐藏）时，校正 activeTab 到合法 tab
+  // 防止 ?tab=feedback 直接进入 openclaw 智能体导致空白页
+  useEffect(() => {
+    if (agentId && tabItems.length > 0 && !tabItems.some((tab) => tab.key === activeTab)) {
+      setActiveTab(tabItems[0].key)
+    }
+  }, [tabItems, agentId, activeTab])
 
   return (
     <PageLayoutContent
-      className="fixed inset-0 !px-0 !py-0 bg-[#F7F9FC]"
+      className="h-full w-full !px-0 !py-0 bg-[#F7F9FC]"
       header={{
         title: (
           <div className="flex items-center gap-2">

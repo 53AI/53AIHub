@@ -374,15 +374,17 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave }, ref) 
       {/* 发送区域 */}
       <div className="px-6 py-3">
         <XSender
-          enableUpload={enableUpload}
-          acceptTypes={uploadAccept}
-          httpRequest={httpRequest}
           loading={chatLoading}
-          allowMultiple={true}
-          enableDragUpload={true}
-          allowSendWithFiles={allowSendWithFiles}
           onSend={onSendConfirm}
           onStop={onStopGeneration}
+          fileUpload={{
+            enabled: enableUpload,
+            acceptTypes: uploadAccept,
+            request: httpRequest,
+            allowMultiple: true,
+            enableDrag: true,
+            allowSendWithFiles,
+          }}
         />
       </div>
     </div>

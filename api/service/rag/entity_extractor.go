@@ -66,7 +66,7 @@ func (s *EntityExtractionService) ExtractAndStoreForChunk(ctx context.Context, e
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: 8192, // 16K 上下文的一半，预留充足空间
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 		Messages: []relaymodel.Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},
@@ -438,9 +438,13 @@ func (s *EntityExtractionService) ExtractAndStoreForFileContent(ctx context.Cont
 	systemPrompt := s.buildEntityExtractionSystemPrompt()
 	userPrompt := s.buildEntityExtractionUserPrompt(content)
 
+	// 使用统一预算模型：caller_requested=8192，stepMaxInput=6000
+	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 8192, 6000)
+	content = tokenlimit.TruncateContent(content, budget.InputAvailable)
+
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: 8192, // 16K 上下文的一半，预留充足空间
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 		Messages: []relaymodel.Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userPrompt},

@@ -122,7 +122,7 @@ export function handleError(error: ErrorResponse, options?: HandleErrorOptions):
   }
 
   // 使用带去重功能的消息显示
-  if (msg && !options?.ignoreMessage) {
+  if (msg && !options?.ignoreMessage && msg !== '账户已被禁用') {
     showMessage(msg)
   }
 

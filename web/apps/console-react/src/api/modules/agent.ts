@@ -5,9 +5,17 @@ import { AGENT_TYPE, type AgentType } from '@/constants/platform'
 
 export { AGENT_TYPE, type AgentType }
 
+export interface ScopeItem {
+  scope_type: 'company' | 'department' | 'user' | 'group'
+  target_id: number
+}
+
 export interface AgentData {
+  logo: string
+  name: string
   agent_id?: number | string
   user_group_ids?: string | number[]
+  scopes?: string | ScopeItem[]
   tools?: string | any[]
   use_cases?: string | any[]
   configs?: string | Record<string, any>
@@ -28,6 +36,7 @@ export interface AgentData {
   count?: number
   settings?: Record<string, any>
   internal_members?: string[]
+  agent_usage: number
 }
 
 interface ListParams {
@@ -36,6 +45,7 @@ interface ListParams {
   keyword?: string
   group_id?: string
   channel_types?: string
+  agent_usages?: string
   agent_types?: string
 }
 
@@ -54,9 +64,11 @@ interface SaveParams {
   tools?: any[] | string
   use_cases?: any[] | string
   user_group_ids?: number[]
+  scopes?: ScopeItem[]
   custom_config?: Record<string, any> | string
   settings?: Record<string, any> | string
   enable?: boolean
+  agent_usage?: number
 }
 
 interface SaveRequestData
@@ -208,6 +220,7 @@ const parseJsonField = <T>(value: string | T, defaultValue: T): T => {
 export function getFormatAgentData(data: AgentData = {}): AgentData {
   data.user_group_ids = parseJsonField(data.user_group_ids, [])
   data.user_group_ids = [...new Set(data.user_group_ids)]
+  data.scopes = parseJsonField(data.scopes, [])
   data.tools = parseJsonField(data.tools, [])
   data.use_cases = parseJsonField(data.use_cases, [])
   data.configs = parseJsonField(data.configs, {})
@@ -237,6 +250,8 @@ export const agentApi = {
 
     if (!params.channel_types) delete params.channel_types
 
+    if (!params.agent_usages) delete params.agent_usages
+
     const { data = {} } = await service.get('/api/agents/group', { params }).catch(handleError)
     const result = data as AgentData
     result.agents = (result.agents || []).map(item => getFormatAgentData(item))
@@ -259,6 +274,7 @@ export const agentApi = {
       tools: [],
       use_cases: [],
       user_group_ids: [],
+      scopes: [],
       custom_config: {},
       settings: {},
       enable: true,

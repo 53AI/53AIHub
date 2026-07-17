@@ -1,7 +1,7 @@
 import { Switch } from "antd";
 import { useAgentCreateAdapter } from "../../adapters";
 import { useAgentForm } from "../../hooks";
-import { CollapsibleSection } from "./CollapsibleSection";
+import { CollapsibleSection } from "../shared/CollapsibleSection";
 
 export function ExpandConfig() {
   // 使用 adapter 获取翻译函数

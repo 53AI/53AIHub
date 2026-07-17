@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
@@ -120,6 +121,41 @@ func ParseConfig(ctx context.Context, channelID int64, configJSON string, modelN
 			LogPrefix, channelID, cfg.ContextLength, cfg.MaxTokens)
 	}
 	return cfg
+}
+
+// lookupModelContextLength 从模型目录获取模型上下文长度
+func lookupModelContextLength(modelName string) int {
+	if modelName == "" {
+		return 0
+	}
+	loader := common.GetModelCatalogLoader()
+	if loader == nil {
+		return 0
+	}
+	return loader.GetModelContextLength(modelName)
+}
+
+// ReportConfigSource 构建配置来源描述字符串
+func ReportConfigSource(cfg Config, modelName string) (contextSource string, maxTokensSource string) {
+	if cfg.ContextLength > 0 {
+		contextSource = fmt.Sprintf("渠道配置(%d)", cfg.ContextLength)
+	} else if ctxLen := lookupModelContextLength(modelName); ctxLen > 0 {
+		contextSource = fmt.Sprintf("模型目录(%d)", ctxLen)
+	} else {
+		contextSource = fmt.Sprintf("默认(%d)", DefaultContextBudget)
+	}
+	if cfg.MaxTokens > 0 {
+		maxTokensSource = fmt.Sprintf("渠道配置(%d)", cfg.MaxTokens)
+	} else if ctxLen := lookupModelContextLength(modelName); ctxLen > 0 {
+		derived := ctxLen / 10
+		if derived < DefaultOutputBudget {
+			derived = DefaultOutputBudget
+		}
+		maxTokensSource = fmt.Sprintf("模型目录推导(%d)", derived)
+	} else {
+		maxTokensSource = fmt.Sprintf("默认(%d)", DefaultOutputBudget)
+	}
+	return
 }
 
 // ParseModelConfigs 解析渠道配置中所有模型的配置（供 adaptor 遍历使用）
@@ -333,14 +369,10 @@ func estimateTokens(messages []relaymodel.Message) int {
 // 规则：用户未设置时用配置值作为默认值；用户已设置时取 min(用户值, 配置值)
 // configMaxTokens <= 0 时不做任何修改
 func ApplyMaxTokens(ctx context.Context, channelID int64, request *relaymodel.GeneralOpenAIRequest, configMaxTokens int64) {
-	if configMaxTokens <= 0 {
+	if configMaxTokens <= 0 || request.MaxTokens <= 0 {
 		return
 	}
-	if request.MaxTokens == 0 {
-		request.MaxTokens = int(configMaxTokens)
-		logger.Debugf(ctx, "%smax_tokens 应用默认值: 渠道ID=%d, configMaxTokens=%d",
-			LogPrefix, channelID, configMaxTokens)
-	} else if int64(request.MaxTokens) > configMaxTokens {
+	if int64(request.MaxTokens) > configMaxTokens {
 		original := request.MaxTokens
 		request.MaxTokens = int(configMaxTokens)
 		logger.Debugf(ctx, "%smax_tokens 封顶: 渠道ID=%d, 用户请求=%d, 配置上限=%d, 实际使用=%d",
@@ -365,19 +397,28 @@ type PipelineBudget struct {
 
 // ComputeBudget 计算三保险后的输入预算和输出上限：
 //
-//	effectiveInput = min(channel.context_length × 80%, stepMaxInput, DefaultContextBudget)
+//	effectiveInput = min(channel.context_length × 80%, stepMaxInput, 128000)
 //	InputAvailable = effectiveInput - systemTokens - OutputLimit
-//	OutputLimit   = min(cfg.MaxTokens(>0) 或 DefaultOutputBudget, requestedOutput)
+//	OutputLimit   = min(cfg.MaxTokens(>0) 或 max(4096, model_context/10), requestedOutput)
 //
 //	stepMaxInput=0 时表示不限。
 //	如果 InputAvailable <= 0，返回 1000 兜底并打 Warn 日志。
+//
+//	model_context 来源优先级：渠道配置 > 模型目录 > DefaultContextBudget(128000)
 func ComputeBudget(ctx context.Context, channelID int64, configJSON string, modelName string, systemTokens, requestedOutput, stepMaxInput int) PipelineBudget {
 	cfg := ParseConfig(ctx, channelID, configJSON, modelName)
+	modelCtx := lookupModelContextLength(modelName)
 
 	// 输出上限
 	outputLimit := DefaultOutputBudget
 	if cfg.MaxTokens > 0 {
 		outputLimit = int(cfg.MaxTokens)
+	} else if modelCtx > 0 {
+		// 渠道未配置 max_tokens 时，从模型上下文推导：modelCtx/10，保底 DefaultOutputBudget
+		derived := modelCtx / 10
+		if derived > DefaultOutputBudget {
+			outputLimit = derived
+		}
 	}
 	if requestedOutput > 0 && requestedOutput < outputLimit {
 		outputLimit = requestedOutput
@@ -387,6 +428,8 @@ func ComputeBudget(ctx context.Context, channelID int64, configJSON string, mode
 	inputRaw := int64(DefaultContextBudget)
 	if cfg.ContextLength > 0 {
 		inputRaw = cfg.ContextLength
+	} else if modelCtx > 0 {
+		inputRaw = int64(modelCtx)
 	}
 	after80 := int(float64(inputRaw) * 0.8)
 

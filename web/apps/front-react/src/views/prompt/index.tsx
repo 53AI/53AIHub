@@ -38,7 +38,7 @@ export function PromptView() {
         </div>
 
         {/* Content */}
-        {activeType === "explore" && (<GroupList></GroupList>)}
+        {activeType === "explore" && (<GroupList enableUrlSync></GroupList>)}
       </div>
       <Footer />
     </>

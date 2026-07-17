@@ -3,10 +3,10 @@
   flex-direction: column;
   border-radius: 8px;
   background-color: var(--hubx-color-bg);
-  padding: 8px 16px;
+  padding: 12px; /* px-3 py-3 */
   position: relative;
-  border: 1px solid var(--hubx-color-border);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);  
+  border: 1px solid #E3E8FF; /* 原版边框色 */
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1); /* shadow-lg */
 }
 
 .x-sender--file-list-show {
@@ -17,6 +17,7 @@
   border-color: var(--hubx-color-focus);
 }
 
+/* 文件列表 */
 .x-sender__file-list {
   display: flex;
   align-items: center;
@@ -121,6 +122,7 @@
   animation: spin 1s linear infinite;
 }
 
+/* 拖拽覆盖层 */
 .x-sender__drag-overlay {
   position: absolute;
   inset: 0;
@@ -139,65 +141,200 @@
   font-weight: 500;
 }
 
+/* 链接列表 */
+.x-sender__link-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.x-sender__link-item {
+  display: flex;
+  align-items: center;
+  height: 24px; /* h-6 */
+  max-width: 200px;
+  padding: 0 6px; /* px-1.5 */
+  border-radius: 4px;
+  background-color: #F3F3F5; /* 原版灰色背景 */
+  color: #6B6C70; /* 原版灰色文字 */
+  font-size: 14px;
+  cursor: pointer;
+  position: relative; /* 支持 hover 定位 */
+}
+
+.x-sender__link-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+}
+
+.x-sender__link-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-sender__link-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px; /* size-4 */
+  height: 16px;
+  margin-left: 4px;
+  cursor: pointer;
+  color: #B8B8B8; /* 原版灰色 */
+  opacity: 0; /* 默认隐藏 */
+  transition: opacity 0.2s;
+  position: absolute; /* 支持绝对定位 */
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: white;
+  border-radius: 9999px;
+  border: 1px solid #E5E5E5;
+}
+
+.x-sender__link-item:hover .x-sender__link-delete {
+  opacity: 1; /* hover 时显示 */
+}
+
+.x-sender__link-delete:hover {
+  color: #ef4444;
+}
+
+/* 编辑器区域 */
 .x-sender--file-list-show .x-sender__main {
   padding: 8px 16px;
 }
 
-.x-sender__textarea {
+.x-sender__main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.x-sender__editor-wrapper {
+  position: relative;
+}
+
+.x-sender__editor {
   width: 100%;
-  padding: 0.25rem;
+  height: 80px; /* 固定高度 h-20 */
+  min-height: 80px;
+  max-height: 200px;
   border: none;
   outline: none;
   font-size: 14px;
+  line-height: 1.625; /* leading-relaxed - 对齐原版 Sender.tsx 编辑器样式 */
   resize: none;
-  height: 60px;
-  background-color: white;
+  background-color: transparent;
+  overflow-y: auto;
+  /* white-space 默认 normal - 对齐原版 Sender,避免 inline-block mention-input
+     在编辑器内被强制换到下一行 */
+  color: #1F1E25; /* 原版文字颜色 */
+  transition: all 0.2s; /* transition-all */
 }
 
+.x-sender__editor:focus {
+  outline: none;
+}
+
+.x-sender__editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--hubx-color-text-secondary);
+  pointer-events: none;
+}
+
+.x-sender__placeholder {
+  position: absolute;
+  top: 0; /* inset-0 */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 0; /* px-0 py-0 */
+  color: #999999; /* 原版 placeholder 颜色 */
+  font-size: 14px;
+  line-height: 1.5; /* leading-relaxed */
+  pointer-events: none;
+}
+
+/* 操作栏 */
 .x-sender__action-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .x-sender__action-buttons {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .x-sender__action-button {
-  width: 2rem;
-  height: 2rem;
+  width: auto; /* Ant Design Button 默认 */
+  height: auto;
+  min-width: 2rem;
+  min-height: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 9999px;
+  border-radius: 4px; /* 原版方形 */
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: none; /* 原版无阴影 */
   position: relative;
   overflow: hidden;
+  padding: 0; /* px-0 */
+  font-size: 1.125rem; /* text-lg */
 }
 
 .x-sender__action-button--upload {
-  color: var(--hubx-color-text-tertiary);
+  color: #4F5052; /* 原版颜色 */
   box-shadow: none;
+  background: transparent;
+}
+
+.x-sender__action-button--upload:hover {
+  color: #2563EB; /* hover 变蓝 */
+  background-color: transparent;
 }
 
 .x-sender__action-button--stop {
-  background-color: var(--hubx-color-bg);
-  color: var(--hubx-color-bg);
+  width: 32px; /* size-8 */
+  height: 32px;
+  border-radius: 9999px; /* 保持圆形 */
+  background-color: white;
+  color: #2563EB;
+  box-shadow: none;
 }
 
 .x-sender__action-button--send {
-  background-color: var(--hubx-color-primary);
-  color: var(--hubx-color-bg);
+  width: 32px; /* size-8 */
+  height: 32px;
+  border-radius: 9999px; /* 保持圆形发送按钮 */
+  background-color: #2563EB; /* 原版蓝色 */
+  color: white;
 }
 
 .x-sender__action-button--disabled {
-  background-color: var(--hubx-color-bg-tertiary);
-  color: var(--hubx-color-bg);
+  /* 通用禁用态:只把图标颜色变浅,不加背景块。
+     @ / 技能 / 附件 三个按钮本身是 transparent,加灰底会出现闪烁。
+     Send / Stop 有自身底色,在下方单独覆盖。 */
+  color: #D3D4D9; /* 沿用原禁用灰,作为禁用色 */
+  cursor: not-allowed;
+  opacity: 1; /* 移除透明度 */
+}
+
+/* Send / Stop 在禁用时必须改底色,否则会保留蓝/白底,看起来像可点。
+   @ / 技能 / 附件 不进这条规则,继续保持 transparent。 */
+.x-sender__action-button--send.x-sender__action-button--disabled,
+.x-sender__action-button--stop.x-sender__action-button--disabled {
+  background-color: #D3D4D9;
+  color: white; /* 灰底白图,保留可读性 */
 }
 
 .x-sender__loading-border {
@@ -211,6 +348,304 @@
 
 .x-sender__file-input {
   display: none;
+}
+
+/* Mention 元素 */
+.mention-line-block {
+  height: 22px;
+  line-height: 20px;
+  box-sizing: border-box;
+  display: inline-block;
+  position: relative;
+  bottom: 2px;
+  vertical-align: middle;
+  font-weight: 400;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--color-brand-20, #98a2b1);
+}
+
+.mention-input,
+.skill-input {
+  background: var(--color-brand-20, #F4F4F4);
+  /* 对齐原版 Sender.tsx line 2746: min-width 160px,让 input 有足够宽度 */
+  min-width: 160px;
+  max-width: 100%;
+  word-break: keep-all;
+  white-space: nowrap;
+  overflow-x: auto;
+  border-radius: 12px;
+}
+
+.mention-input.empty,
+.skill-input.empty {
+  color: #2563EB;
+}
+
+/* Mention Link */
+.mention-link {
+  user-select: none;
+  -webkit-user-select: none;
+  display: inline-flex;
+  align-items: center;
+  background-color: #E1E8FF;
+  border-radius: 4px;
+  padding: 0 4px;
+  margin: 0 2px;
+  color: #1B3F94;
+  text-decoration: none;
+  font-size: 14px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+.mention-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.mention-link-icon-img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.mention-link-text {
+  margin: 0 4px;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-link-close {
+  cursor: pointer;
+  color: #8F95AE;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mention-link-close:hover {
+  color: #ef4444;
+}
+
+/* Skill Tag */
+.skill-tag {
+  user-select: none;
+  -webkit-user-select: none;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 0 6px;
+  color: #2563EB;
+  font-size: 14px;
+  height: 24px;
+  font-weight: 600;
+  vertical-align: middle;
+  background: transparent;
+}
+
+.skill-tag-text {
+  margin-right: 4px;
+}
+
+.skill-tag-close {
+  cursor: pointer;
+  color: #2563EB;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 下拉弹窗 */
+.x-sender__mention-dropdown,
+.x-sender__skill-dropdown {
+  pointer-events: auto;
+  position: absolute;
+  z-index: 20;
+  max-height: 450px;
+  width: 308px;
+  padding: 12px;
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
+  background-color: #fff;
+}
+
+.x-sender__dropdown-search {
+  padding: 4px 0 12px 0;
+  border-bottom: 1px solid #F0F0F0;
+  margin-bottom: 4px;
+}
+
+.x-sender__dropdown-search-inner {
+  position: relative; /* 让 .x-sender__dropdown-loading 绝对定位的参考 */
+}
+
+.x-sender__dropdown-input {
+  width: 100%;
+  height: 36px;
+  padding: 4px 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  background-color: #F9FAFB;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.x-sender__dropdown-input:focus {
+  border-color: #2563EB;
+  background-color: #fff;
+}
+
+.x-sender__dropdown-input:focus {
+  border-color: #2563EB;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+.x-sender__dropdown-loading {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #2563EB;
+}
+
+.x-sender__dropdown-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 8px;
+  font-size: 12px;
+  color: #999999;
+}
+
+.x-sender__dropdown-close {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+}
+
+.x-sender__dropdown-close:hover {
+  color: #333;
+}
+
+.x-sender__dropdown-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px; /* 给滚动条留出空间 */
+}
+
+.x-sender__dropdown-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  gap: 12px;
+}
+
+.x-sender__dropdown-item:hover,
+.x-sender__dropdown-item--selected {
+  background-color: #EBF1FF;
+}
+
+.x-sender__dropdown-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  background-color: #F0F2F5;
+  border-radius: 6px;
+}
+
+.x-sender__dropdown-item-img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.x-sender__dropdown-item-content {
+  flex: 1;
+  overflow: hidden;
+}
+
+.x-sender__dropdown-item-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #1D1E1F;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-sender__dropdown-item-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  font-size: 10px;
+  color: #999;
+  background: #EFF0F2;
+  border-radius: 4px;
+}
+
+.x-sender__dropdown-item-desc {
+  font-size: 12px;
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.x-sender__dropdown-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 12px;
+  color: #9FA4C5;
+}
+
+.x-sender__dropdown-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 10px;
+  margin-top: 4px;
+  border-top: 1px solid #F0F0F0;
+  border-radius: 0 0 8px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #2563EB;
+}
+
+.x-sender__dropdown-footer:hover {
+  background-color: #EBF1FF;
+}
+
+.x-sender__dropdown-footer-text {
+  flex: 1;
+}
+
+/* 禁用提示 */
+.x-sender__disabled-reason {
+  margin-top: 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #E8A600;
 }
 
 @keyframes spin {

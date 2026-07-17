@@ -66,21 +66,6 @@ func GetFeedbackByID(id int64) (*Feedback, error) {
 	return &feedback, nil
 }
 
-// LoadUserInfo 根据 user_id 获取 name
-func (f *Feedback) LoadUserInfo() error {
-	if f.UserID <= 0 {
-		return errors.New("invalid user_id")
-	}
-
-	user, err := GetUserByID(f.UserID)
-	if err != nil {
-		return err
-	}
-
-	f.UserInfo = user
-	return nil
-}
-
 // UpdateFeedback updates an existing feedback
 func UpdateFeedback(feedback *Feedback) error {
 	if err := feedback.Validate(); err != nil {
@@ -92,21 +77,6 @@ func UpdateFeedback(feedback *Feedback) error {
 // DeleteFeedback deletes a feedback by its ID
 func DeleteFeedback(id int64) error {
 	return DB.Delete(&Feedback{}, id).Error
-}
-
-// LoadMessageInfo 根据 message_id 获取 model
-func (f *Feedback) LoadMessageInfo() error {
-	if f.MessageID <= 0 {
-		return errors.New("invalid message_id")
-	}
-
-	message, err := GetMessageByID(f.Eid, f.MessageID)
-	if err != nil {
-		return err
-	}
-
-	f.MessageInfo = message
-	return nil
 }
 
 // GetFeedbackByMessageAndUser retrieves a feedback by message ID and user ID
@@ -253,6 +223,50 @@ func GetFeedbackList(eid, startTime, endTime int64, question, feedbackType, reas
 
 	if err := db.Order("id DESC").Offset(offset).Limit(limit).Find(&feedbacks).Error; err != nil {
 		return 0, nil, err
+	}
+
+	if len(feedbacks) == 0 {
+		return total, feedbacks, nil
+	}
+
+	userIDs := make([]int64, 0, len(feedbacks))
+	messageIDs := make([]int64, 0, len(feedbacks))
+	for _, f := range feedbacks {
+		if f.UserID > 0 {
+			userIDs = append(userIDs, f.UserID)
+		}
+		if f.MessageID > 0 {
+			messageIDs = append(messageIDs, f.MessageID)
+		}
+	}
+
+	userMap := make(map[int64]*User)
+	if len(userIDs) > 0 {
+		users, err := GetUsersByIDs(userIDs)
+		if err == nil && len(users) > 0 {
+			for _, u := range users {
+				userMap[u.UserID] = u
+			}
+		}
+	}
+
+	messageMap := make(map[int64]*Message)
+	if len(messageIDs) > 0 {
+		messages, err := GetMessagesByIDsOrderedAsc(eid, messageIDs)
+		if err == nil && len(messages) > 0 {
+			for _, m := range messages {
+				messageMap[m.ID] = m
+			}
+		}
+	}
+
+	for _, f := range feedbacks {
+		if u, ok := userMap[f.UserID]; ok {
+			f.UserInfo = u
+		}
+		if m, ok := messageMap[f.MessageID]; ok {
+			f.MessageInfo = m
+		}
 	}
 
 	return total, feedbacks, nil

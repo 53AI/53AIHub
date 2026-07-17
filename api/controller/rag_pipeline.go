@@ -311,13 +311,65 @@ func (c *RagPipelineController) DeletePipeline(ctx *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param detail query int false "是否返回关联流水线详情(1:是)"
 // @Success 200 {object} model.CommonResponse{data=[]model.RoutingStrategyDetail}
 // @Failure 500 {object} model.CommonResponse
 // @Router /api/rag/v2/strategies [get]
 func (c *RagPipelineController) ListStrategies(ctx *gin.Context) {
 	eid := config.GetEID(ctx)
+	detail := ctx.Query("detail")
+
+	if detail == "1" {
+		// detail 模式：返回完整 pipeline 信息
+		var strategies []model.RagRoutingStrategy
+		if err := c.DB.Where("eid = ?", eid).
+			Order("priority ASC").
+			Find(&strategies).Error; err != nil {
+			logger.Errorf(ctx, "获取策略列表失败: %v", err)
+			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+			return
+		}
+
+		// 收集所有 pipeline_id
+		pipelineIDs := make([]int64, 0, len(strategies))
+		for _, s := range strategies {
+			pipelineIDs = append(pipelineIDs, s.PipelineID)
+		}
+
+		// 批量查询 pipeline
+		var pipelines []model.RagPipelineProfile
+		if len(pipelineIDs) > 0 {
+			if err := c.DB.Where("id IN ?", pipelineIDs).Find(&pipelines).Error; err != nil {
+				logger.Errorf(ctx, "获取流水线详情失败: %v", err)
+				ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+				return
+			}
+		}
+
+		// map 索引
+		pipelineMap := make(map[int64]*model.RagPipelineProfile, len(pipelines))
+		for i := range pipelines {
+			pipelineMap[pipelines[i].ID] = &pipelines[i]
+		}
+
+		// 组装响应
+		resp := make([]model.StrategyWithPipelineResponse, 0, len(strategies))
+		for _, s := range strategies {
+			item := model.StrategyWithPipelineResponse{
+				RagRoutingStrategy: s,
+			}
+			if p, ok := pipelineMap[s.PipelineID]; ok {
+				item.Pipeline = p
+			}
+			resp = append(resp, item)
+		}
+
+		ctx.JSON(http.StatusOK, model.Success.ToResponse(resp))
+		return
+	}
+
+	// 原有逻辑：关联 Pipeline 名称
 	var strategies []model.RoutingStrategyDetail
-	// 关联 Pipeline 名称
 	err := c.DB.Table("rag_routing_strategies").
 		Select("rag_routing_strategies.*, rag_pipeline_profiles.name as pipeline_name").
 		Joins("JOIN rag_pipeline_profiles ON rag_pipeline_profiles.id = rag_routing_strategies.pipeline_id").

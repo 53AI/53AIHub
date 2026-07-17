@@ -615,7 +615,7 @@ function VirtualListInner<T>(
   return (
     <div
       ref={containerRef}
-      className={`virtual-list-container ${isScrolling ? 'overflow-hidden' : ''}`}
+      className="virtual-list-container"
       onScroll={handleScroll}
     >
       {/* Loading overlay */}

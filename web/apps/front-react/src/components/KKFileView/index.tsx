@@ -22,20 +22,35 @@ export function KKFileView({ url }: KKFileViewProps) {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [retryKey, setRetryKey] = useState(0); // 用于强制重新加载 iframe
 
+  // 仅 .doc / .docx / .pdf 需要 kkfileview 的"转换服务"（officePreviewType=pdf）；
+  // 图片、txt 等其他格式 kkfileview 拿到 URL 直接渲染，没有"转换"阶段。
+  const isDoc = useMemo(() => {
+    const pathname = url.split("?")[0];
+    return (
+      pathname.endsWith(".doc") ||
+      pathname.endsWith(".docx") ||
+      pathname.endsWith(".pdf")
+    );
+  }, [url]);
+
+  // onMessage 闭包需要读取最新 isDoc，用 ref 避免把它加入 useCallback deps
+  // （否则 URL 变更时 listener 会反复重绑，连接超时也会被重置）
+  const isDocRef = useRef(isDoc);
+  useEffect(() => {
+    isDocRef.current = isDoc;
+  }, [isDoc]);
+
   const previewUrl = useMemo(() => {
     const kk = getKkfileviewUrl();
     if (!kk) return "";
     const realUrl = encodeURIComponent(base64Encode(url));
-    const pathname = url.split("?")[0];
-    const isDoc =
-      pathname.endsWith(".doc") ||
-      pathname.endsWith(".docx") ||
-      pathname.endsWith(".pdf");
-    if (isDoc) {
-      return `${kk}/onlinePreview?url=${realUrl}&officePreviewType=pdf&forceUpdatedCache=true`;
-    }
-    return `${kk}/onlinePreview?url=${realUrl}&forceUpdatedCache=true`;
-  }, [url]);
+    const forceParams = url.includes("knowledge_file_")
+      ? ""
+      : "&forceUpdatedCache=true";
+    return isDoc
+      ? `${kk}/onlinePreview?url=${realUrl}&officePreviewType=pdf${forceParams}`
+      : `${kk}/onlinePreview?url=${realUrl}${forceParams}`;
+  }, [url, isDoc]);
 
   // 清除超时定时器
   const clearTimeout = useCallback(() => {
@@ -78,8 +93,14 @@ export function KKFileView({ url }: KKFileViewProps) {
         switch (status) {
           case "ready":
             clearTimeout(); // 收到 ready 消息，清除连接超时
-            setLoadingStatus("ready");
-            startTimeout("convert"); // 开始转换超时
+            if (isDocRef.current) {
+              // doc/pdf 需要 kkfileview 转 PDF，进入"ready + 转换超时"阶段
+              setLoadingStatus("ready");
+              startTimeout("convert");
+            } else {
+              // 其他格式 kkfileview 无需转换，ready 即完成
+              setLoadingStatus("complete");
+            }
             break;
           case "complete":
             clearTimeout();
@@ -170,9 +191,7 @@ export function KKFileView({ url }: KKFileViewProps) {
     }
   }, [loadingStatus, errorMessage]);
 
-  const isLoading =
-    loadingStatus !== "complete" && loadingStatus !== "error";
-
+  const isLoading = loadingStatus !== "complete" && loadingStatus !== "error";
 
   // iframe 加载失败
   const handleIframeError = useCallback(() => {
@@ -192,7 +211,11 @@ export function KKFileView({ url }: KKFileViewProps) {
       {loadingStatus === "error" && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-white/90">
           <p className="mb-4 text-red-500">{errorMessage}</p>
-          <Button type="primary" icon={<ReloadOutlined />} onClick={handleRetry}>
+          <Button
+            type="primary"
+            icon={<ReloadOutlined />}
+            onClick={handleRetry}
+          >
             重试
           </Button>
         </div>
@@ -205,7 +228,6 @@ export function KKFileView({ url }: KKFileViewProps) {
         height="100%"
         frameBorder="0"
         title="File Preview"
-        style={{ display: loadingStatus === "loading" ? "none" : "block" }}
         onError={handleIframeError}
       />
     </div>

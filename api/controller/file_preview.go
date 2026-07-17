@@ -265,19 +265,7 @@ func PreviewRawFileContent(c *gin.Context) {
 }
 
 func serveUploadFilePreview(c *gin.Context, fileID int64, uploadFile *model.UploadFile, ext string) error {
-	contentType := uploadFile.MimeType
-	if contentType == "" {
-		switch ext {
-		case ".txt":
-			contentType = "text/plain; charset=utf-8"
-		case ".html", ".htm":
-			contentType = "text/html; charset=utf-8"
-		case ".md":
-			contentType = "text/markdown; charset=utf-8"
-		default:
-			contentType = "application/octet-stream"
-		}
-	}
+	contentType := normalizeUploadFileContentType(uploadFile.MimeType, ext)
 
 	downloadName := path.Base(strings.TrimSpace(uploadFile.FileName))
 	if downloadName == "" || downloadName == "." || downloadName == "/" {
@@ -374,6 +362,33 @@ func serveUploadFilePreview(c *gin.Context, fileID int64, uploadFile *model.Uplo
 	c.Header("Content-Type", contentType)
 	http.ServeContent(c.Writer, c.Request, downloadName, fileInfo.ModTime(), file)
 	return nil
+}
+
+func normalizeUploadFileContentType(contentType string, ext string) string {
+	normalizedExt := strings.ToLower(strings.TrimSpace(ext))
+	baseType := strings.TrimSpace(strings.Split(strings.TrimSpace(contentType), ";")[0])
+	switch normalizedExt {
+	case ".md", ".markdown":
+		return "text/markdown; charset=utf-8"
+	case ".txt", ".log", ".csv":
+		return "text/plain; charset=utf-8"
+	case ".html", ".htm":
+		return "text/html; charset=utf-8"
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".yaml", ".yml":
+		return "text/yaml; charset=utf-8"
+	case ".py":
+		return "text/x-python; charset=utf-8"
+	case ".js":
+		return "application/javascript; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	}
+	if baseType == "" {
+		return "application/octet-stream"
+	}
+	return baseType
 }
 
 // parseRangeHeaderForPreview 解析Range请求头，用于预览功能

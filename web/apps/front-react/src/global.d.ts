@@ -143,6 +143,7 @@ declare namespace Agent {
     settings?: string
     settings_obj?: Record<string, any>
     agent_usage?: number
+    is_system?: boolean
     [key: string]: any
   }
 }

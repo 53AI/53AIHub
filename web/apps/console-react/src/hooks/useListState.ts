@@ -2,9 +2,11 @@ import { useSearchParams } from 'react-router-dom'
 import { useState, useCallback, useRef, useEffect } from 'react'
 
 interface ListStateOptions {
-  /** URL 参数前缀，避免多页面冲突 */
+  /** 是否启用 URL 参数序列化（默认 false，关闭时等同于本地 useState） */
+  enableUrlSync?: boolean
+  /** URL 参数前缀，避免多页面冲突（仅 enableUrlSync 时生效） */
   urlPrefix?: string
-  /** 搜索字段名（变更时自动重置 page=1） */
+  /** 搜索字段名（变更时自动重置 page=1，仅 enableUrlSync 时生效） */
   searchFields?: string[]
 }
 
@@ -18,12 +20,13 @@ export function useListState<T extends Record<string, any>>(
   defaultState: T,
   options: ListStateOptions = {}
 ) {
-  const { urlPrefix = '', searchFields = ['keyword'] } = options
+  const { enableUrlSync = false, urlPrefix = '', searchFields = ['keyword'] } = options
 
   const [searchParams, setSearchParams] = useSearchParams()
 
   // 从 URL 解析状态
   const parseStateFromUrl = useCallback((): T => {
+    if (!enableUrlSync) return defaultState
     const result: Partial<T> = {}
     let hasParams = false
 
@@ -37,7 +40,7 @@ export function useListState<T extends Record<string, any>>(
     }
 
     return hasParams ? { ...defaultState, ...result } : defaultState
-  }, [searchParams, urlPrefix, defaultState])
+  }, [searchParams, urlPrefix, defaultState, enableUrlSync])
 
   const [state, setState] = useState<T>(parseStateFromUrl)
   const stateRef = useRef<T>(state)
@@ -49,6 +52,7 @@ export function useListState<T extends Record<string, any>>(
 
   // 监听导航变化（侧边栏点击、刷新等）
   useEffect(() => {
+    if (!enableUrlSync) return
     // 如果是内部更新触发的，跳过
     if (isInternalUpdateRef.current) {
       isInternalUpdateRef.current = false
@@ -63,10 +67,11 @@ export function useListState<T extends Record<string, any>>(
       stateRef.current = newState
       setState(newState)
     }
-  }, [parseStateFromUrl])
+  }, [parseStateFromUrl, enableUrlSync])
 
   // 延迟同步 URL（在 effect 中执行，避免渲染期间更新）
   useEffect(() => {
+    if (!enableUrlSync) return
     if (pendingUrlUpdateRef.current === null) return
 
     const newState = pendingUrlUpdateRef.current
@@ -75,17 +80,19 @@ export function useListState<T extends Record<string, any>>(
     // 标记为内部更新
     isInternalUpdateRef.current = true
 
-    // 同步 URL
-    const params = new URLSearchParams()
+    // 同步 URL：保留当前所有参数，仅更新本 hook 关心的 keys
+    const params = new URLSearchParams(searchParams)
     for (const key in newState) {
       const urlKey = urlPrefix + key
       const value = newState[key]
-      if (!isEmptyValue(value)) {
+      if (isEmptyValue(value)) {
+        params.delete(urlKey)
+      } else {
         params.set(urlKey, serializeValue(value))
       }
     }
     setSearchParams(params, { replace: true })
-  }, [state, urlPrefix, setSearchParams])
+  }, [state, urlPrefix, searchParams, setSearchParams, enableUrlSync])
 
   // 更新状态并标记需要同步 URL
   const updateState = useCallback(
@@ -100,34 +107,44 @@ export function useListState<T extends Record<string, any>>(
           }
         }
 
-        // 搜索字段变更时重置页码
-        const isSearchChange = searchFields.some(
-          (field) => field in updates && !arraysEqual(updates[field], prev[field])
-        )
-        if (isSearchChange && 'page' in newState) {
-          ;(newState as any).page = 1
+        // 搜索字段变更时重置页码（仅 URL 同步模式生效）
+        if (enableUrlSync) {
+          const isSearchChange = searchFields.some(
+            (field) => field in updates && !arraysEqual(updates[field], prev[field])
+          )
+          if (isSearchChange && 'page' in newState) {
+            ;(newState as any).page = 1
+          }
         }
 
         // 同步 ref
         stateRef.current = newState
 
         // 标记需要同步 URL（延迟到 effect 中执行）
-        pendingUrlUpdateRef.current = newState
+        if (enableUrlSync) {
+          pendingUrlUpdateRef.current = newState
+        }
 
         return newState
       })
     },
-    [searchFields]
+    [searchFields, enableUrlSync]
   )
 
   // 重置状态
   const resetState = useCallback(() => {
     stateRef.current = defaultState
     setState(defaultState)
+    if (!enableUrlSync) return
     pendingUrlUpdateRef.current = defaultState
     isInternalUpdateRef.current = true
-    setSearchParams(new URLSearchParams(), { replace: true })
-  }, [defaultState, setSearchParams])
+    // 仅清除本 hook 的 keys，保留其他参数
+    const params = new URLSearchParams(searchParams)
+    for (const key in defaultState) {
+      params.delete(urlPrefix + key)
+    }
+    setSearchParams(params, { replace: true })
+  }, [defaultState, urlPrefix, searchParams, setSearchParams, enableUrlSync])
 
   return { state, stateRef, updateState, resetState }
 }

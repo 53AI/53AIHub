@@ -206,4 +206,23 @@ export function createValidateForm(form: any) {
 export { usePlatformChannel } from './usePlatformChannel'
 export type { UsePlatformChannelOptions, UsePlatformChannelReturn } from './usePlatformChannel'
 
+export { default as ChannelConfigContext, useChannelConfig } from './useChannelConfig'
+export type { ChannelConfig } from './useChannelConfig'
+
+// 模型值工具
+export { parseModelValue, encodeModelValue, isModelValueEmpty } from './useModelValue'
+export type { ModelValueParts } from './useModelValue'
+
+// 模型验证工具
+export { validateModelConfig } from './useModelValidation'
+export type { ModelConfig, ValidateModelOptions } from './useModelValidation'
+
+// Preview sender capability hook (workbench skills + knowledge models)
+export { useAgentPreviewSender } from './useAgentPreviewSender'
+export type {
+  AgentPreviewSenderConfig,
+  AgentPreviewModelOption,
+  PreviewKnowledgeSourceState,
+} from './useAgentPreviewSender'
+
 export default useAgentForm

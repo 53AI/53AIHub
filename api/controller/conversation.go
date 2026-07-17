@@ -169,7 +169,13 @@ func GetConversations(c *gin.Context) {
 		convType = *req.ConversationType
 	}
 
-	conversations, err := model.GetConversationsByUserIDAndTypeWithVisitor(config.GetEID(c), config.GetUserId(c), req.AgentID, convType, session.GetVisitorID(c))
+	offset := req.Offset
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPaged(config.GetEID(c), config.GetUserId(c), req.AgentID, convType, session.GetVisitorID(c), offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
@@ -191,7 +197,7 @@ func GetConversations(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(&ConversationResponse{
-		Count:         int64(len(conversations)),
+		Count:         total,
 		Conversations: items,
 	}))
 }

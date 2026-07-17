@@ -44,6 +44,42 @@ describe("OpenClaw history pagination", () => {
     ).toBe("fetch-more");
   });
 
+  it("does nothing when the list is not near the bottom", () => {
+    expect(
+      getOpenClawHistoryScrollAction({
+        isNearBottom: false,
+        loading: false,
+        visibleCount: 30,
+        cachedCount: 30,
+        hasMoreRemote: true,
+      }),
+    ).toBe("idle");
+  });
+
+  it("does nothing while a history page is already loading", () => {
+    expect(
+      getOpenClawHistoryScrollAction({
+        isNearBottom: true,
+        loading: true,
+        visibleCount: 30,
+        cachedCount: 30,
+        hasMoreRemote: true,
+      }),
+    ).toBe("idle");
+  });
+
+  it("does not fetch when no remote history remains", () => {
+    expect(
+      getOpenClawHistoryScrollAction({
+        isNearBottom: true,
+        loading: false,
+        visibleCount: 30,
+        cachedCount: 30,
+        hasMoreRemote: false,
+      }),
+    ).toBe("idle");
+  });
+
   it("knows when showing cached items reaches the remote fetch boundary", () => {
     expect(
       shouldFetchOpenClawHistoryAfterShowMore({

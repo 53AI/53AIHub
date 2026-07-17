@@ -96,9 +96,31 @@ export interface SkillPublic {
 
 /** 技能详情 */
 export interface SkillDetail extends SkillPublic {
-  binding_id: string;
-  added: boolean;
-  binding_status: BindingStatus;
+  // 已废弃字段：binding_id、added、binding_status
+}
+
+// ========== Agent 技能绑定相关 ==========
+
+/**
+ * Agent 技能绑定项
+ * 对应 GET /api/agent/:agent_id/skills 返回的 items 中的每一项
+ */
+export interface AgentSkillBindingItem {
+  binding_id: number;
+  skill_id: string;              // 技能ID（HashID）
+  skill_library_id: number;      // 技能库ID（用于 add/delete API）
+  bind_type: 'builtin' | 'user';
+  status: 'enabled' | 'disabled';
+  skill_name: string;
+  display_name: string;
+  description: string;
+  version: string;
+  logo: string;
+  publish_status: PublishStatus;
+  admin_status: AdminStatus;
+  risk_level: RiskLevel;
+  created_time: number;
+  updated_time: number;
 }
 
 /** 我的技能列表项 */

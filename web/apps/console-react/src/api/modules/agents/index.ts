@@ -1,5 +1,15 @@
 import service from '../../config'
 import { handleError } from '../../error-handler'
+import type {
+  CreateAgentAPIKeyResponse,
+  ListAgentAPIKeyResponse,
+  CreateAgentAPIKeyRequest,
+  RotateAgentAPIKeyResponse,
+  RevokeAgentAPIKeyResponse,
+  AgentOpenAPIDocsTemplate,
+} from './types'
+
+export * from './types'
 
 export interface RawAgentInfo {
   agent_id: string | number
@@ -86,6 +96,73 @@ interface AgentModelResponse {
   count: number
 }
 
+/**
+ * Agent API Key 管理接口（从 api-key.ts 移动）
+ */
+export const agentApiKeyApi = {
+  /**
+   * 创建 Agent API Key
+   * POST /api/agents/api/keys
+   */
+  create(data: CreateAgentAPIKeyRequest): Promise<CreateAgentAPIKeyResponse> {
+    return service
+      .post('/api/agents/api/keys', data)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+
+  /**
+   * 获取 Agent API Key 列表
+   * GET /api/agents/api/keys
+   */
+  list(params?: {
+    agent_id?: string
+    offset?: number
+    limit?: number
+  }): Promise<ListAgentAPIKeyResponse> {
+    return service
+      .get('/api/agents/api/keys', { params })
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+
+  /**
+   * 轮换 Agent API Key
+   * POST /api/agents/api/keys/{id}/rotate
+   */
+  rotate(id: string): Promise<RotateAgentAPIKeyResponse> {
+    return service
+      .post(`/api/agents/api/keys/${id}/rotate`)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+
+  /**
+   * 吊销 Agent API Key
+   * DELETE /api/agents/api/keys/{id}
+   */
+  revoke(id: string): Promise<RevokeAgentAPIKeyResponse> {
+    return service
+      .delete(`/api/agents/api/keys/${id}`)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+
+  /**
+   * 获取 OpenAPI 文档模板
+   * GET /api/agents/openapi/docs-template
+   */
+  getDocsTemplate(): Promise<AgentOpenAPIDocsTemplate> {
+    return service
+      .get('/api/agents/openapi/docs-template')
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+}
+
+/**
+ * Agent 接口（原有内容）
+ */
 const agentsApi = {
   group(params: {
     group_id: number
@@ -181,4 +258,3 @@ const agentsApi = {
 }
 
 export default agentsApi
-

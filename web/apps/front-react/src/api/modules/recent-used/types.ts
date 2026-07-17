@@ -14,7 +14,7 @@ export interface RecentUsedItem {
   resource_id: string
   name: string
   icon?: string
-  path?: string
+  path: string
   file_type?: string
   is_dir?: boolean
   library_id?: string

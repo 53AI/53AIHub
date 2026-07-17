@@ -173,7 +173,7 @@ export function SourceEditView() {
       const content = res.chunks
         .map(
           (item: KnowledgeChunk) =>
-            `\n\n:::{ "chunkid":${item.id} }:::\n\n${item.content}`,
+            `${item.content}`,
         )
         .join("\n");
       setEditContent(content);

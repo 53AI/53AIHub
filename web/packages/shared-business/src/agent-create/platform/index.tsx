@@ -26,6 +26,8 @@ const componentMap: Record<
   React.LazyExoticComponent<React.ComponentType<any>>
 > = {
   [AGENT_TYPES.PROMPT]: lazy(() => import("./Prompt")),
+  [AGENT_TYPES.WORKBENCH]: lazy(() => import("./Workbench")),
+  [AGENT_TYPES.KNOWLEDGE]: lazy(() => import("./Knowledge")),
   [AGENT_TYPES.COZE_AGENT_CN]: lazy(() => import("./CozeCN")),
   [AGENT_TYPES.COZE_WORKFLOW_CN]: lazy(() => import("./CozeCN")),
   [AGENT_TYPES.COZE_AGENT_OSV]: lazy(() => import("./CozeOSV")),

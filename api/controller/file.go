@@ -24,6 +24,7 @@ import (
 	mcpsvc "github.com/53AI/53AIHub/service/mcp"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 var knowledgeBaseFeatureAvailable = service.IsFeatureAvailable
@@ -489,13 +490,12 @@ func GetFile(c *gin.Context) {
 
 	file, err := model.GetFileByID(eid, fileID)
 	if err != nil {
-		// 文件不存在时，清理 Elasticsearch 中的对应索引，防止出现"能查到但无法查看"的情况
-
-		go func() {
-			// 异步执行删除操作，避免阻塞主流程
-			elasticsearch.SyncFileToES(&model.File{ID: fileID}, "delete")
-			logger.SysLogf("清理不存在文件的ES索引: fileID=%d", fileID)
-		}()
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			go func() {
+				elasticsearch.SyncFileToES(&model.File{ID: fileID}, "delete")
+				logger.SysLogf("清理不存在文件的ES索引: fileID=%d", fileID)
+			}()
+		}
 
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
 		return
@@ -2357,7 +2357,7 @@ func GenerateQuestionsAndSummary(c *gin.Context) {
 				StepKey: "summary_generation",
 				RunMode: v2model.RunModeAuto,
 				Enabled: true,
-				Config:  json.RawMessage(`{"summary_faq":{"enabled":true},"knowledge_map":{"enabled":true},"entity_extraction":{"enabled":true}}`),
+				Config:  json.RawMessage(`{"summary_faq":{"enabled":true},"entity_extraction":{"enabled":true}}`),
 			},
 		},
 	}

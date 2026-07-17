@@ -61,4 +61,14 @@ func SetKmApiRouter(apiRouter *gin.RouterGroup) {
 		recentUsedRoute.POST("", controller.SaveUserRecentUsed)
 		recentUsedRoute.DELETE("", controller.BatchDeleteUserRecentUsed)
 	}
+
+	// 全局高级检索路由
+	globalSearchRoute := apiRouter.Group("/global-search")
+	globalSearchRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		globalSearchRoute.GET("/quick-tags", controller.GetQuickTags)
+		globalSearchRoute.POST("/search", controller.GlobalSearch)
+		globalSearchRoute.GET("/spaces", controller.SearchSpacesByName)
+		globalSearchRoute.GET("/libraries", controller.SearchGlobalLibrariesByName)
+	}
 }

@@ -44,7 +44,7 @@ export function FeedbackPanel({
     return Array.from(feedbackTypeOptions.entries());
   }, [feedbackTypeOptions]);
 
-  const showOtherInput = feedbackTypeOptions?.get("其它") === true;
+  const showOtherInput = feedbackTypeOptions?.get("其它") === true || feedbackTypeOptions?.get("Other") === true;
 
   return (
     <div>

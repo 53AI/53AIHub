@@ -2,7 +2,7 @@ import request from '../index'
 
 export type UploadTarget = 'attachment' | 'my_uploads'
 
-export interface UploadResponse {
+export interface UploadedFileData {
   id: string
   file_name: string
   extension: string
@@ -12,6 +12,12 @@ export interface UploadResponse {
   key: string
   preview_key: string
   status: string
+}
+
+export interface UploadResponse {
+  data: UploadedFileData
+  code?: number
+  message?: string
 }
 
 export const uploadApi = {

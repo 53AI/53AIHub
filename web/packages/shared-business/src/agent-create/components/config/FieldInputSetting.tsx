@@ -31,8 +31,12 @@ interface FieldInputSettingProps {
   onSave: (value: FieldItem) => void
 }
 
+type EditableFieldItem = Partial<Omit<FieldItem, 'file_accept'>> & {
+  file_accept?: string | string[]
+}
+
 export interface FieldInputSettingRef {
-  open: (data?: Partial<FieldItem>) => void
+  open: (data?: EditableFieldItem) => void
 }
 
 const defaultField: FieldItem = {
@@ -148,7 +152,8 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
     }
 
     useImperativeHandle(ref, () => ({
-      open: (data = {} as Partial<FieldItem>) => {
+      open: (data = {} as EditableFieldItem) => {
+        const rawFileAccept = data.file_accept as unknown
         const newForm = {
           id: data.id || '',
           variable: data.variable || '',
@@ -162,10 +167,10 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
           multiple: data.multiple || false,
           date_format: data.date_format || '',
           file_type: data.file_type || 'all',
-          file_accept: Array.isArray(data.file_accept)
-            ? data.file_accept
-            : typeof data.file_accept === 'string' && data.file_accept
-              ? data.file_accept.split(',')
+          file_accept: Array.isArray(rawFileAccept)
+            ? rawFileAccept
+            : typeof rawFileAccept === 'string' && rawFileAccept
+              ? rawFileAccept.split(',')
               : [],
           file_limit: data.file_limit || 1,
           file_size: data.file_size || 30,

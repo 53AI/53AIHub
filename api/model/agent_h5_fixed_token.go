@@ -17,12 +17,18 @@ var (
 	ErrAgentAccessKeyDuplicated = errors.New("agent access key duplicated")
 )
 
+const (
+	SourceH5  = "h5"
+	SourceAPI = "api"
+)
+
 type AgentAccessKey struct {
 	ID        int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Eid       int64  `json:"eid" gorm:"not null;index:idx_agent_access_keys_lookup,priority:1;index:idx_agent_access_keys_expires_at,priority:1;uniqueIndex:uk_agent_access_key_pair,priority:1"`
-	AgentID   int64  `json:"agent_id" gorm:"not null;index:idx_agent_access_keys_lookup,priority:2;uniqueIndex:uk_agent_access_key_pair,priority:2"`
+	Eid       int64  `json:"eid" gorm:"not null;index:idx_agent_access_keys_lookup,priority:1;index:idx_agent_access_keys_expires_at,priority:1"`
+	AgentID   int64  `json:"agent_id" gorm:"not null;index:idx_agent_access_keys_lookup,priority:2"`
 	Source    string `json:"source" gorm:"size:64;not null;index:idx_agent_access_keys_lookup,priority:3"`
 	Token     string `json:"token" gorm:"size:64;not null;uniqueIndex"`
+	Status    string `json:"status" gorm:"size:32;not null;default:'active'"`
 	ExpiresAt int64  `json:"expires_at" gorm:"not null;index:idx_agent_access_keys_expires_at,priority:2"`
 	BaseModel
 }
@@ -38,10 +44,6 @@ func CreateAgentAccessKey(eid, agentID int64, source string, ttl time.Duration) 
 	source = strings.TrimSpace(source)
 	if source == "" {
 		source = "h5"
-	}
-
-	if err := DeleteAgentAccessKeyByPair(eid, agentID); err != nil {
-		return nil, err
 	}
 
 	now := time.Now().UTC()
@@ -123,6 +125,10 @@ func ValidateAgentAccessKey(token string) (*AgentAccessKey, error) {
 		return nil, ErrAgentAccessKeyExpired
 	}
 
+	if record.Status == "revoked" {
+		return nil, ErrAgentAccessKeyNotFound
+	}
+
 	if _, err := GetAgentByID(record.Eid, record.AgentID); err != nil {
 		return nil, fmt.Errorf("agent not found in agents table: eid=%d, agent_id=%d: %w", record.Eid, record.AgentID, err)
 	}
@@ -135,15 +141,49 @@ func generateAgentAccessKeyValue() (string, error) {
 	if _, err := rand.Read(buf[:]); err != nil {
 		return "", err
 	}
-	return strings.TrimRight(base64.RawURLEncoding.EncodeToString(buf[:]), "="), nil
+	return "sk_" + strings.TrimRight(base64.RawURLEncoding.EncodeToString(buf[:]), "="), nil
 }
 
-func GetAgentAccessKeyList(eid int64, agentID int64, offset, limit int) (int64, []*AgentAccessKey, error) {
+func GetAgentAccessKeyByID(id int64, eid int64) (*AgentAccessKey, error) {
+	if id <= 0 || eid <= 0 {
+		return nil, ErrAgentAccessKeyNotFound
+	}
+
+	var record AgentAccessKey
+	if err := DB.Where("id = ? AND eid = ?", id, eid).First(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrAgentAccessKeyNotFound
+		}
+		return nil, err
+	}
+	return &record, nil
+}
+
+func UpdateAgentAccessKeyStatus(id int64, status string) error {
+	if id <= 0 {
+		return fmt.Errorf("id is required")
+	}
+	return DB.Model(&AgentAccessKey{}).Where("id = ?", id).Update("status", status).Error
+}
+
+func MaskAgentAccessKeyToken(token string) string {
+	if len(token) <= 8 {
+		return token
+	}
+	return token[:8] + "****"
+}
+
+func GetAgentAccessKeyList(eid int64, agentID int64, source string, offset, limit int) (int64, []*AgentAccessKey, error) {
 	if eid <= 0 {
 		return 0, nil, fmt.Errorf("eid is required")
 	}
 
 	db := DB.Model(&AgentAccessKey{}).Where("eid = ?", eid)
+
+	if source == "" {
+		source = "h5"
+	}
+	db = db.Where("source = ?", source)
 
 	if agentID > 0 {
 		db = db.Where("agent_id = ?", agentID)

@@ -9,6 +9,7 @@ import type {
   PagedResponse,
   ApiResponse,
   UpdateMySkillStatusRequest,
+  AgentSkillBindingItem,
 } from './types'
 import type { Skill } from './types'
 
@@ -18,6 +19,7 @@ export const skillApi = {
   /**
    * 获取探索列表
    * GET /api/skill-library/explore
+   * 注：已不再返回 binding_id、added、binding_status
    */
   explore(params?: SkillExploreQuery): Promise<{ items: SkillExploreItem[]; count: number }> {
     return service
@@ -32,6 +34,7 @@ export const skillApi = {
   /**
    * 获取技能详情
    * GET /api/skill-library/:id
+   * 注：已不再返回 binding_id、added、binding_status
    */
   getDetail(id: string): Promise<SkillDetail> {
     return service
@@ -168,6 +171,41 @@ export const skillApi = {
       .then((res: { data: { items?: Array<{ id: string | number; key: string; value: string; sensitive: boolean }> } }) =>
         (res.data?.items || []).map(normalizeSkillEnvVarItem),
       )
+      .catch(handleError)
+  },
+
+  // ========== Agent 技能绑定（用户端） ==========
+
+  /**
+   * 获取 Agent 技能列表
+   * GET /api/agent/:agent_id/skills
+   */
+  getAgentSkills(agentId: number | string): Promise<AgentSkillBindingItem[]> {
+    return service
+      .get(`/api/agent/${agentId}/skills`)
+      .then((res: { data: { items: AgentSkillBindingItem[] } }) => res.data?.items || [])
+      .catch(handleError)
+  },
+
+  /**
+   * 给 Agent 添加个人技能
+   * POST /api/agent/:agent_id/skills
+   */
+  addAgentSkill(agentId: number | string, skillLibraryId: number | string): Promise<void> {
+    return service
+      .post(`/api/agent/${agentId}/skills`, { skill_library_id: skillLibraryId })
+      .then(() => undefined)
+      .catch(handleError)
+  },
+
+  /**
+   * 删除 Agent 个人技能绑定（仅 bind_type=user 可删）
+   * DELETE /api/agent/:agent_id/skills/:binding_id
+   */
+  deleteAgentSkill(agentId: number | string, bindingId: number | string): Promise<void> {
+    return service
+      .delete(`/api/agent/${agentId}/skills/${bindingId}`)
+      .then(() => undefined)
       .catch(handleError)
   },
 }

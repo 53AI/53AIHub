@@ -163,6 +163,13 @@ const BubbleListInner = forwardRef<BubbleListRef, BubbleListProps>(
       const prevLen = lastMessageLength.current;
       const prevLastId = lastMessageId.current;
 
+      if (!autoScroll) {
+        lastMessageLength.current = newLen;
+        lastMessageId.current = newLastId;
+        savedScrollHeightRef.current = 0;
+        return;
+      }
+
       // 消息数量增加
       if (newLen > prevLen) {
         // 检查是否是加载历史数据（消息 prepend 到前面）
@@ -195,7 +202,7 @@ const BubbleListInner = forwardRef<BubbleListRef, BubbleListProps>(
 
       lastMessageLength.current = newLen;
       lastMessageId.current = newLastId;
-    }, [messages, scrollToBottom]);
+    }, [autoScroll, messages, scrollToBottom]);
 
     useEffect(() => {
       observeContentChanges();

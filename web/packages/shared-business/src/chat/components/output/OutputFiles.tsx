@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
+import { formatFileInfo } from "@km/shared-utils";
 import { useTranslation } from "../../i18n";
-import { formatFileInfo } from "../process-flow/utils";
 import type { OutputFile } from "../../types/message";
 
 export interface OutputFilesProps {
@@ -49,7 +49,7 @@ export function OutputFiles({ files, onPreview, onFavorite, onCheckFavorite, cla
   if (!files?.length) return null;
 
   return (
-    <div ref={containerRef} className={className || "flex flex-wrap gap-3 mt-3"}>
+    <div ref={containerRef} className={className || "flex flex-wrap gap-3 mt-3 pb-6"}>
       {files.map((file) => {
         const fileName = file.file_name?.split("/").pop() || file.file_name || "";
         const { icon: displayIcon, fname: displayName } = formatFileInfo(fileName);
@@ -80,13 +80,13 @@ export function OutputFiles({ files, onPreview, onFavorite, onCheckFavorite, cla
                   placement="top"
                 >
                   <div
-                    className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                    className="absolute inset-0  opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
                     onClick={(e) => {
                       e.stopPropagation();
                       onFavorite(file);
                     }}
                   >
-                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shadow-md">
+                    <div className="w-8 h-8 rounded-full bg-white/90 flex items-center justify-center shadow-md">
                       {file.is_favorite ? (
                         <SvgIcon name="star-filled" color="#FFB300" size={16} />
                       ) : (

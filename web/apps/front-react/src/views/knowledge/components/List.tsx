@@ -209,7 +209,7 @@ export const List = forwardRef<ListRef, ListProps>(({ spaceId, keyword = "", sor
           </PermissionEmpty>
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-3 gap-5 max-md:grid-cols-2">
+        <div className="mt-3 grid grid-cols-3 gap-4 max-md:grid-cols-2">
           {/* Library cards */}
           
           {/* Create library button */}

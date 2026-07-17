@@ -68,6 +68,11 @@ export default function SkillDetail() {
     } else {
       setLoading(false);
     }
+
+    // 组件卸载时清理编辑状态
+    return () => {
+      useSkillEditStore.getState().reset();
+    };
   }, [skillId]);
 
   // beforeunload 拦截
@@ -300,7 +305,6 @@ export default function SkillDetail() {
       // 判断是否有上一页
       const state = window.history.state || {}
       const hasHistory = state.idx !== undefined ? state.idx > 0 : false
-      useSkillEditStore.getState().reset()
       navigate(hasHistory ? -1 : '/skills')
     }
 
@@ -468,14 +472,14 @@ export default function SkillDetail() {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 h-full flex items-center justify-center  bg-[#FCFCFF]  overflow-hidden">
+      <div className="h-full w-full flex items-center justify-center bg-[#FCFCFF] overflow-hidden">
         <Spin size="large" />
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 w-full h-full flex flex-col overflow-hidden bg-[#FCFCFF]">
+    <div className="h-full w-full flex flex-col overflow-hidden bg-[#FCFCFF]">
       <div className="flex-none px-4 py-3 border-b border-[#E9EEF7] bg-[#F7F9FC]">
         <PageHeader
           config={{

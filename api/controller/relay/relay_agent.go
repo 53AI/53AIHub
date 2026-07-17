@@ -2117,8 +2117,11 @@ func buildConversationSandboxID(conversationID int64) string {
 	return fmt.Sprintf("conversation-%d", conversationID)
 }
 
-func buildSkillToolContext(baseCtx context.Context, messageStatus *MessageStatsInfo, conversationSandboxID string, toolSessionID string) context.Context {
+func buildSkillToolContext(baseCtx context.Context, messageStatus *MessageStatsInfo, conversationSandboxID string, toolSessionID string, agentEid int64, agentID int64, userID int64) context.Context {
 	toolCtx := baseCtx
+	toolCtx = context.WithValue(toolCtx, tools.ToolEIDKey, agentEid)
+	toolCtx = context.WithValue(toolCtx, tools.ToolUserIDKey, userID)
+	toolCtx = context.WithValue(toolCtx, tools.ToolAgentIDKey, agentID)
 	if messageStatus != nil && messageStatus.RouterResult != nil && messageStatus.RouterResult.Skill != nil {
 		if messageStatus.RouterResult.Skill.Path != "" {
 			toolCtx = context.WithValue(toolCtx, tools.SkillRootPathKey, messageStatus.RouterResult.Skill.Path)
@@ -3434,7 +3437,7 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 							turnCount, getCurrentSkillName(), functionName, len(argsStrString), writeLikeContentLength(args), maxWriteFileArgsChars)
 					}
 
-					toolCtx := buildSkillToolContext(ctx, messageStatus, conversationSandboxID, toolSessionID)
+					toolCtx := buildSkillToolContext(ctx, messageStatus, conversationSandboxID, toolSessionID, agent.Eid, agent.AgentID, config.GetUserId(c))
 					if messageStatus != nil && len(messageStatus.UploadedFiles) > 0 {
 						logger.Infof(ctx, "Injected %d uploaded files to tool context", len(messageStatus.UploadedFiles))
 					}

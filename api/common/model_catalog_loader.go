@@ -469,6 +469,24 @@ func (l *ModelCatalogLoader) GetModelMeta(channelType int, modelName string) (in
 	return nil, fmt.Errorf("未找到模型 %s 在渠道类型 %d 下的元数据", modelName, channelType)
 }
 
+// GetModelContextLength 根据模型名称查找模型的上下文长度（MaxTokens）
+// 遍历所有平台和分类，返回第一个匹配的 MaxTokens 值；未找到返回 0。
+func (l *ModelCatalogLoader) GetModelContextLength(modelName string) int {
+	if l.loadErr != nil || l.catalog == nil {
+		return 0
+	}
+	for _, platform := range l.catalog.Platforms {
+		for _, category := range platform.Categories {
+			for _, model := range category.Models {
+				if model.ModelID == modelName && model.MaxTokens > 0 {
+					return model.MaxTokens
+				}
+			}
+		}
+	}
+	return 0
+}
+
 // validateEmbeddingModels 启动时校验embedding模型元数据完整性
 func (l *ModelCatalogLoader) validateEmbeddingModels() {
 	if l.loadErr != nil {

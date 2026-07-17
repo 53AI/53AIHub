@@ -1,18 +1,22 @@
 import { useRef, useCallback, useState } from "react";
-import type { IConversationApi, ChatCompletionParams } from "../adapters/types";
+import type { IConversationApi, ChatCompletionParams, AgentRunInfo } from "../adapters/types";
 import type { Message, SendMessageOptions, Skill, MessageFile, SpecifiedFile } from "../types";
 import {
   getOpenClawMessageListMaxActivitySeq,
-  getOpenClawTimelineMaxSeq,
+  getOpenClawPayloadTimelineMaxSeq,
   mergeOpenClawActiveMessageIntoList,
   mergeOpenClawTimelineEventsIntoMessage,
   replaceOpenClawTurnWithTimelineEvents,
   useChatStream,
 } from "./useChatStream";
 import { useRagStats } from "./useRagStats";
+import { useAgentRun } from "./useAgentRun";
 import { isOpenClawPendingConversationId } from "../utils/openclaw";
+import { hasConversationId } from "../utils/openclaw-chatview-helpers";
 import { getOpenClawTimelineEventsFromLedgerPayload } from "../utils/openclaw-ledger";
 import { buildOpenClawTurnKey, createOpenClawTurnState } from "../utils/openclaw-turn";
+import { useChatAdapters } from "../i18n";
+import { useConversationStore } from "../stores/conversation";
 
 /**
  * 格式化问题：添加技能前缀
@@ -32,11 +36,65 @@ function buildFileContent(file: any, useUploadId: boolean = false): any | null {
   return {
     type: "file",
     content: `file_id:${fileId}`,
-    filename: file.name,
+    filename: file.filename || file.name,
+    file_id: file.id ?? '',
+    library_id: file.library_id ?? '',
     size: file.file_size ?? file.size,
     mime_type: file.file_mime ?? file.mime_type,
     preview_key: file.preview_key,
+    url: file.url,
+    preview_url: file.preview_url,
+    download_url: file.download_url,
+    signed_download_url: file.signed_download_url,
   };
+}
+
+function buildOpenClawInputFileMetadata(files: any[]): any[] {
+  return files
+    .map((file) => {
+      const id = file.id ?? file.file_id ?? file.upload_file_id;
+      if (!id && !file.url && !file.preview_url && !file.download_url && !file.signed_download_url) {
+        return null;
+      }
+      return {
+        ...(id ? { id, file_id: id } : {}),
+        name: file.name ?? file.file_name ?? file.filename,
+        file_name: file.file_name ?? file.name ?? file.filename,
+        filename: file.filename ?? file.name ?? file.file_name,
+        size: file.file_size ?? file.size,
+        mime_type: file.file_mime ?? file.mime_type,
+        preview_key: file.preview_key,
+        url: file.url,
+        preview_url: file.preview_url,
+        download_url: file.download_url,
+        signed_download_url: file.signed_download_url,
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildOpenClawSkillMetadata(skill?: Skill): Record<string, any> | undefined {
+  if (!skill?.skill_name && !skill?.id && !skill?.skill_id) {
+    return undefined;
+  }
+  return {
+    skill_id: skill.skill_id ?? skill.id,
+    skill_name: skill.skill_name,
+    display_name: skill.display_name,
+    ensure: true,
+  };
+}
+
+function readOpenClawSkillEnsureData(response: any): any {
+  return response?.data?.data ?? response?.data ?? response;
+}
+
+function assertOpenClawSkillEnsureSucceeded(response: any): void {
+  const data = readOpenClawSkillEnsureData(response);
+  if (!data || (data.status !== "failed" && data.ok !== false)) {
+    return;
+  }
+  throw new Error(data.error || "OpenClaw 技能安装失败");
 }
 
 /**
@@ -45,13 +103,16 @@ function buildFileContent(file: any, useUploadId: boolean = false): any | null {
 function buildSpecifiedFilesInfo(links: SpecifiedFile[]): { content: string; role: string } {
   return {
     content: JSON.stringify({
-      type: "specified_files",
-      list: links.map((item) => ({
+      type: 'specified_files',
+      list: links.map(item => ({
         id: item.id,
         name: item.name,
+        icon: item.icon,
         library_id: item.library_id,
         ...(item.isfolder !== undefined && { isfolder: item.isfolder }),
-      })),
+        ...(item.islibrary && { islibrary: item.islibrary }),
+        ...(item.isspace && { isspace: item.isspace })
+      }))
     }),
     role: "info",
   };
@@ -65,10 +126,6 @@ function buildSpecifiedContentInfo(text: string): { content: string; role: strin
     content: JSON.stringify({ type: "specified_content", content: text }),
     role: "info",
   };
-}
-
-function hasUsableConversationId(conversationId?: string | number) {
-  return Boolean(conversationId) && conversationId !== 0 && conversationId !== "0";
 }
 
 type OpenClawTurnPhase = "idle" | "queued" | "dispatching" | "stopping";
@@ -151,10 +208,29 @@ function hasOpenClawTerminalState(message: Message): boolean {
  * Uses injected conversation API adapter for actual API calls
  *
  * 支持请求锁机制：防止并发请求覆盖 currentMessageRef
+ *
+ * 通过 ChatConfigProvider 注入完整 `IConversationApi`（unify-chat-adapters 之后）：
+ * ```tsx
+ * <ChatConfigProvider adapters={{ conversationApi, ... }}>
+ *   <YourComponent />
+ * </ChatConfigProvider>
+ * ```
  */
-export function useChatSend(conversationApi: IConversationApi) {
+export function useChatSend(legacyConversationApi?: IConversationApi) {
+  const adapters = useChatAdapters();
+  const conversationApi = legacyConversationApi || adapters?.conversationApi;
+
+  if (!conversationApi) {
+    throw new Error(
+      'useChatSend requires conversationApi adapter. ' +
+      'Please provide it in ChatConfigProvider: adapters={{ conversationApi }}'
+    );
+  }
+
   const { processStreamData, clearBuffer } = useChatStream();
   const { formatRagStats } = useRagStats();
+  const agentRun = useAgentRun();
+  const recentUsedApi = adapters?.recentUsed;
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentMessageRef = useRef<Message | null>(null);
@@ -164,6 +240,56 @@ export function useChatSend(conversationApi: IConversationApi) {
   const openClawTurnPhaseRef = useRef<OpenClawTurnPhase>("idle");
   /** 请求锁：防止并发请求覆盖 currentMessageRef */
   const requestIdRef = useRef(0);
+  /**
+   * 守护:每次 sendMessage 内最多拉一次 latest run。
+   * 对齐老 IndexChat.tsx 第 207 行的 latestRunFetchedRef —— 在 sendMessage 开头
+   * 重置为 false,在首次拿到 server 真实 message_id 后置为 true 并触发 latest,
+   * 避免重入 + 避免在流式未启动时把上一条消息的 run 当成当前消息的 run。
+   */
+  const latestRunFetchedRef = useRef(false);
+  /**
+   * 记录当前 run 所属的 conversation_id,用于在 clearStreamingState/handleStop/
+   * sendMessage 收尾时精准清掉 useConversationStore.conversations[X].latest_run,
+   * 让 ChatHistory 的 loading spinner 与 store 状态保持一致。
+   *
+   * 为什么需要这个 ref:
+   * - useAgentRun.setCurrentRun 维护的是"当前在跑的 run",是 hook 局部 React state,
+   *   与 useConversationStore 里的 latest_run 字段是两份独立状态。
+   * - ChatHistory 只能读 store 的 latest_run 来判断 isRunRunning(item.latest_run)
+   *   是否显示 spinner;若不主动同步,新启动的 run 永远反映不到列表上。
+   * - 主动清时也必须用 ref 记住上次写入的是哪个会话,否则在切流/并发请求时会把
+   *   无关会话的 latest_run 误清。
+   */
+  const currentRunConversationIdRef = useRef<string | null>(null);
+  /**
+   * 把当前 run 同步到 useConversationStore.conversations[X].latest_run,
+   * 让 ChatHistory 侧能正确显示 loading 状态。
+   *
+   * 行为:
+   * - run 非 null:记录 run.conversation_id 到 ref,并把 run 写入 store 的 latest_run。
+   * - run 为 null:读取 ref 拿到上次写入的会话,把它的 latest_run 清成 null。
+   *
+   * 注:这里和 agentRun.setCurrentRun 解耦 —— agentRun 的 currentRun 是为了
+   * handleStop 时的 cancel() 定位 run_id;store 的 latest_run 是给 ChatHistory
+   * 显示 spinner 用的。两者用途不同,清理时机也可以独立。
+   */
+  const syncLatestRunToStore = useCallback(
+    (run: AgentRunInfo | null) => {
+      const updateConversationLatestRun = useConversationStore.getState()
+        .updateConversationLatestRun;
+      if (run) {
+        currentRunConversationIdRef.current = String(run.conversation_id);
+        updateConversationLatestRun(run.conversation_id, run);
+        return;
+      }
+      const previousConversationId = currentRunConversationIdRef.current;
+      if (previousConversationId) {
+        updateConversationLatestRun(previousConversationId, null);
+        currentRunConversationIdRef.current = null;
+      }
+    },
+    [],
+  );
   const [isStreaming, setIsStreaming] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
 
@@ -179,6 +305,7 @@ export function useChatSend(conversationApi: IConversationApi) {
         links = [],
         networkSearch = false,
         knowledgeGraph = false,
+        allKnowledge = false,
         library,
         agentInfo,
         files = [],
@@ -204,24 +331,40 @@ export function useChatSend(conversationApi: IConversationApi) {
       const requestId = ++requestIdRef.current;
       openClawRequestRef.current = openclaw;
       messageListChangeRef.current = onMessageListChange || null;
+      // 重置 latest-run 守护:本轮 sendMessage 内首次拿到 server 真实 message_id
+      // 后才会触发一次 latest run 拉取并回填 currentRun(对齐 IndexChat 老版 latestRunFetchedRef)
+      latestRunFetchedRef.current = false;
+
+      if (openclaw && skill && conversationApi.ensureSkill) {
+        const ensureResponse = await conversationApi.ensureSkill(skill);
+        assertOpenClawSkillEnsureSucceeded(ensureResponse);
+      }
 
       // ========== 场景标识 ==========
       const isFromWorkAI = type === "work-ai";
       const isAgentType = type === "agent";
       const hasFiles = files.length > 0;
-      const hasLinks = links.length > 0;
+      const linkLibraries = links.filter(link => link.islibrary)
+      const linkSpaces = links.filter(link => link.isspace)
+      const linkFiles = links.filter(link => !link.islibrary && !link.isspace)
+      const hasLinkFiles = links.filter(link => !link.islibrary && !link.isspace).length > 0
+      const hasLinkLibraries = linkLibraries.length > 0
+      const hasLinkSpaces = linkSpaces.length > 0
+
 
       // ========== 1. 构建用户消息内容 ==========
-      const formattedQuestion = formatQuestionWithSkill(question, skill);
+      const formattedQuestion = openclaw ? question : formatQuestionWithSkill(question, skill);
       const userMessageContent: any[] = [{ type: "text", content: formattedQuestion }];
       const uploadedFiles: MessageFile[] = [];
       const specifiedFiles: SpecifiedFile[] = [];
 
-      if (isAgentType && hasFiles) {
+      if (openclaw && hasFiles) {
+        uploadedFiles.push(...(files as MessageFile[]));
+      } else if (isAgentType && hasFiles) {
         // agent 场景：文件直接序列化
         userMessageContent.push(...files);
         uploadedFiles.push(...(files as MessageFile[]));
-      } else if (hasFiles || hasLinks) {
+      } else if (hasFiles || hasLinkFiles) {
         // 其他场景：文件转为 file_id 格式
         files.forEach((file) => {
           const item = buildFileContent(file);
@@ -236,8 +379,8 @@ export function useChatSend(conversationApi: IConversationApi) {
         });
       }
 
-      // UI 展示用的 specified_files
-      if (hasLinks) {
+      // UI 展示用的 specified_files（含文件/知识库/空间）
+      if (links.length > 0) {
         specifiedFiles.push(
           ...links.map((item) => ({
             id: item.id,
@@ -246,6 +389,8 @@ export function useChatSend(conversationApi: IConversationApi) {
             library_id: item.library_id,
             ...(item.file_size && { file_size: item.file_size }),
             ...(item.file_mime && { file_mime: item.file_mime }),
+            ...(item.islibrary !== undefined && { islibrary: item.islibrary }),
+            ...(item.isspace !== undefined && { isspace: item.isspace }),
           }))
         );
       }
@@ -264,22 +409,30 @@ export function useChatSend(conversationApi: IConversationApi) {
       }
 
       // specified_files（非 work-ai 场景）
-      if (!isFromWorkAI && hasLinks) {
+    if (hasLinkFiles || hasLinkLibraries || hasLinkSpaces) {
         messages.push(buildSpecifiedFilesInfo(links as SpecifiedFile[]));
       }
 
       // user 消息
-      const userContent = hasFiles || hasLinks ? JSON.stringify(userMessageContent) : formattedQuestion;
+      const userContent = openclaw
+        ? formattedQuestion
+        : hasFiles || hasLinkFiles
+          ? JSON.stringify(userMessageContent)
+          : formattedQuestion;
       messages.push({ role: "user", content: userContent });
 
       // ========== 3. 创建 UI 消息对象 ==========
       const optimisticMessageId = Date.now().toString();
+      const openClawInputFiles = openclaw ? buildOpenClawInputFileMetadata(files) : [];
+      const openClawSkill = openclaw ? buildOpenClawSkillMetadata(skill) : undefined;
       const openClawRequestMetadata = openclaw
         ? {
             ...(openclawConversationTitle
               ? { openclaw_conversation_title: openclawConversationTitle }
               : {}),
             openclaw_client_message_id: optimisticMessageId,
+            ...(openClawInputFiles.length > 0 ? { openclaw_input_files: openClawInputFiles } : {}),
+            ...(openClawSkill ? { openclaw_skill: openClawSkill } : {}),
           }
         : undefined;
       const effectiveOpenClawStartSeq = openclaw
@@ -290,6 +443,7 @@ export function useChatSend(conversationApi: IConversationApi) {
         : 0;
       const newMessage: Message = {
         id: optimisticMessageId,
+        role: "assistant",
         _openclawClientMessageId: openclaw ? optimisticMessageId : undefined,
         _openclawActiveRequestId: openclaw ? optimisticMessageId : undefined,
         question,
@@ -363,9 +517,17 @@ export function useChatSend(conversationApi: IConversationApi) {
             top_p: 1,
             presence_penalty: 0,
             stream: true,
-            knowledge_base_ids:
-              networkSearch || hasLinks ? [] : library?.value || (fileInfo ? [] : [-1]),
-            file_ids: hasLinks ? links.map((item) => item.id) : [],
+            knowledge_base_ids: networkSearch
+              ? []
+              : hasLinkLibraries
+                ? linkLibraries.map(lib => String(lib.id))
+                : allKnowledge
+                  ? ["all"]
+                  : fileInfo
+                    ? []
+                    : library?.value || [],
+            file_ids: hasLinkFiles ? linkFiles.map((item) => item.id) : [],
+            space_ids: hasLinkSpaces ? linkSpaces.map(item => String(item.id)) : [],
             message_file_id: fileInfo?.id,
             solo_file_mode: !!fileInfo,
             search_config: {
@@ -398,6 +560,45 @@ export function useChatSend(conversationApi: IConversationApi) {
         onMessageListChange?.((list) => [...list], messageToPublish);
       };
 
+      /**
+       * 流式 chunk 处理后调用:仅当 message.id 已被 server 真实 id 覆盖
+       * (不再是 optimisticMessageId),且本轮 sendMessage 内尚未触发 latest 时,
+       * 拉一次 latest run 并显式覆盖 run.message_id,让 handleStop 时 cancel()
+       * 能用 currentMessage.id 精确定位当前消息对应的 run。
+       *
+       * 对齐老 IndexChat.tsx 第 555-569 行 latestRunFetchedRef + run.message_id = newMessage.id
+       * 的模式 —— 修复前在 await completions 之前同步触发 latest,此时流式尚未开始,
+       * message.id 还是 optimistic(Date.now()),latest run 可能是上一条消息的 run,
+       * run.message_id 与当前消息没有强绑定关系。
+       */
+      const ensureLatestRunFetched = () => {
+        if (latestRunFetchedRef.current) return;
+        if (!agentRun.enabled || openclaw) return;
+        if (!hasConversationId(initialConversationId)) return;
+        const message = currentMessageRef.current;
+        if (!message?.id) return;
+        // 关键守卫:只信任 server 真实返回的 message_id(乐观 ID 是 Date.now().toString() 形式,
+        // 一旦 processStreamDataItem 写入 server message_id,就视为"已有真实 id")
+        if (message.id === optimisticMessageId) return;
+        const adapter = adapters?.agentRun;
+        if (!adapter?.latest) return;
+
+        latestRunFetchedRef.current = true;
+        const messageIdAtFetch = message.id;
+        adapter.latest(initialConversationId).then(({ run }) => {
+          // 仅在请求未被覆盖、且 currentMessage 仍是同一条消息时回填,避免旧请求污染新消息
+          if (requestId !== requestIdRef.current) return;
+          if (!run) return;
+          const currentMessage = currentMessageRef.current;
+          if (currentMessage?.id && currentMessage.id !== messageIdAtFetch) return;
+          run.message_id = messageIdAtFetch;
+          agentRun.setCurrentRun(run);
+          // 同步到 conversation store,让 ChatHistory 在历史列表里对这个会话显示 loading。
+          // 只在 run 真实归属于当前消息时写,避免被中途被覆盖的旧请求污染 store。
+          syncLatestRunToStore(run);
+        }).catch(() => {});
+      };
+
       const publishReconciledOpenClawMessage = (messageToPublish: Message, conversationId: string) => {
         onMessageListChange?.(
           (list) => mergeOpenClawActiveMessageIntoList([...list], messageToPublish, conversationId),
@@ -411,7 +612,7 @@ export function useChatSend(conversationApi: IConversationApi) {
         messageToHydrate?: Message
       ): Promise<boolean> => {
         if (!openclaw || (!conversationApi.events && !conversationApi.snapshot) || !conversationId) return false;
-        if (!hasUsableConversationId(conversationId) || isOpenClawPendingConversationId(conversationId)) return false;
+        if (!hasConversationId(conversationId) || isOpenClawPendingConversationId(conversationId)) return false;
         if (openClawEventFetchInFlight && !force) return false;
         const targetMessage = messageToHydrate || currentMessageRef.current;
         if (!targetMessage) return false;
@@ -439,7 +640,7 @@ export function useChatSend(conversationApi: IConversationApi) {
           if (!force && !hasOpenClawEventsAfterSeq(rawPayload, requestAfterSeq)) {
             return false;
           }
-          const nextSeq = getOpenClawTimelineMaxSeq(payload);
+          const nextSeq = getOpenClawPayloadTimelineMaxSeq(payload);
           if (nextSeq > openClawLastEventSeq) {
             openClawLastEventSeq = nextSeq;
             onOpenClawEventSeqChange?.(conversationId, nextSeq);
@@ -488,21 +689,27 @@ export function useChatSend(conversationApi: IConversationApi) {
 
       const finishOpenClawRequest = async (currentMessage: Message) => {
         const finalConversationId = String(currentMessage.conversation_id || openClawEventConversationId || "");
-        if (!hasUsableConversationId(finalConversationId)) {
+        if (!hasConversationId(finalConversationId)) {
           currentMessage.loading = false;
           publishMessageList(currentMessage);
           return;
         }
+        if (!hasOpenClawTerminalState(currentMessage)) {
+          currentMessage.loading = true;
+        }
         await hydrateOpenClawEvents(finalConversationId, true, currentMessage);
+        if (!hasOpenClawTerminalState(currentMessage)) {
+          currentMessage.loading = true;
+        }
         if (!finishOpenClawLoadingIfReady(currentMessage, finalConversationId)) {
-          publishMessageList(currentMessage);
+          publishReconciledOpenClawMessage(currentMessage, finalConversationId);
         }
         void reconcileFinalOpenClawEvents(finalConversationId, currentMessage);
       };
 
       const scheduleOpenClawEventPolling = (conversationId: string) => {
         if (!openclaw || (!conversationApi.events && !conversationApi.snapshot)) return;
-        if (!hasUsableConversationId(conversationId) || isOpenClawPendingConversationId(conversationId)) return;
+        if (!hasConversationId(conversationId) || isOpenClawPendingConversationId(conversationId)) return;
 
         openClawEventConversationId = conversationId;
         if (openClawEventPollingStopped || openClawEventTimer) return;
@@ -526,7 +733,7 @@ export function useChatSend(conversationApi: IConversationApi) {
       const notifyOpenClawConversationResolved = () => {
         if (!openclaw || openClawConversationResolved || !currentMessageRef.current) return;
         const nextConversationId = String(currentMessageRef.current.conversation_id || "");
-        if (!hasUsableConversationId(nextConversationId)) return;
+        if (!hasConversationId(nextConversationId)) return;
         if (isOpenClawPendingConversationId(nextConversationId)) return;
         if (nextConversationId === initialConversationId) return;
 
@@ -535,12 +742,40 @@ export function useChatSend(conversationApi: IConversationApi) {
         onOpenClawConversationResolved?.(nextConversationId);
       };
 
-      if (openclaw && hasUsableConversationId(initialConversationId) && !isOpenClawPendingConversationId(initialConversationId)) {
+      if (openclaw && hasConversationId(initialConversationId) && !isOpenClawPendingConversationId(initialConversationId)) {
         scheduleOpenClawEventPolling(initialConversationId);
       }
 
       setIsStreaming(true);
       try {
+        // 保存最近使用记录（仅知识库 / 工作台 AI 场景，对齐旧版 useChatSend.ts:391-399）
+        // openclaw 场景跳过：openclaw 通过自己的会话管理记录使用历史
+        if (recentUsedApi && !openclaw && !isAgentType && links.length > 0) {
+          const recentItems = links
+            .map((link) => {
+              const resourceType = (link as any).isspace ? 0 : link.islibrary ? 1 : 2;
+              const resourceId = link.id ?? "";
+              if (!resourceId) return null;
+              return {
+                resource_type: resourceType as 0 | 1 | 2,
+                resource_id: resourceId,
+              };
+            })
+            .filter((item): item is { resource_type: 0 | 1 | 2; resource_id: string | number } => item !== null);
+          if (recentItems.length > 0) {
+            // fire-and-forget：失败仅记录，不影响发送主流程
+            recentUsedApi.save(recentItems).catch(() => {});
+          }
+        }
+
+        // 注：原"在 await completions 之前同步触发 adapter.latest"已移除。
+        // 旧实现的问题:此时流式尚未开始,message.id 还是 optimistic(Date.now()),
+        // latest 拉回的 run.message_id 与当前消息没有强绑定关系,且与 handleStop
+        // 时 cancel() 所需的 currentMessage.id 也对不上。
+        // 现在改为在 onDownloadProgress 内 processStreamData 把 message.id 覆盖为
+        // server 真实 id 后再触发(见 ensureLatestRunFetched),对齐老 IndexChat.tsx
+        // 的 latestRunFetchedRef + run.message_id = newMessage.id 模式。
+
         await conversationApi.completions(completionsPayload, {
           responseType: "stream",
           onDownloadProgress: (e: any) => {
@@ -557,6 +792,11 @@ export function useChatSend(conversationApi: IConversationApi) {
               { openclaw, canonicalOnly: openclaw }
             );
             notifyOpenClawConversationResolved();
+
+            // 流式 chunk 处理后:message.id 可能已被 server 真实 id 覆盖。
+            // 若已覆盖且本轮 sendMessage 内尚未拉过 latest,补拉一次并覆盖 run.message_id
+            // (对齐老 IndexChat.tsx 第 555-569 行的 latestRunFetchedRef 模式)。
+            ensureLatestRunFetched();
 
             // 节流触发 React 重渲染
             const now = Date.now();
@@ -599,13 +839,20 @@ export function useChatSend(conversationApi: IConversationApi) {
           } else if (onMessageListChange) {
             publishMessageList();
           }
+          // 流式自然结束时清掉 store 中对应会话的 latest_run,
+          // 避免 ChatHistory 列表里的 spinner 一直挂着等 5s 轮询兜底。
+          // openclaw 模式 ensureLatestRunFetched 早返回,ref 从未被写入,
+          // syncLatestRunToStore(null) 内部判定 previousConversationId 为空,直接 no-op。
+          if (agentRun.enabled) {
+            syncLatestRunToStore(null);
+          }
           if (openclaw) {
             openClawTurnPhaseRef.current = "idle";
           }
         }
       }
     },
-    [conversationApi, processStreamData, clearBuffer, formatRagStats]
+    [conversationApi, processStreamData, clearBuffer, formatRagStats, syncLatestRunToStore]
   );
 
   /** 停止生成 */
@@ -653,7 +900,7 @@ export function useChatSend(conversationApi: IConversationApi) {
     const shouldStopRemoteOpenClawRequest =
       openClawRequestRef.current &&
       currentMessage &&
-      hasUsableConversationId(currentMessage.conversation_id) &&
+      hasConversationId(currentMessage.conversation_id) &&
       !isOpenClawPendingConversationId(currentMessage.conversation_id) &&
       controlOpenClawConversation;
 
@@ -679,6 +926,24 @@ export function useChatSend(conversationApi: IConversationApi) {
       setIsStopping(true);
     }
 
+    // AgentRun: 取消远程 run
+    // 注：openclaw 模式不调 recover，currentRun 始终为 null，
+    // 因此这里的判断天然排除 openclaw 场景。
+    // 修复：sendMessage 中已通过 agentRun.latest() 异步回填 currentRun，
+    // 此处 cancel 才能拿到 run_id 调用 agentRunApi.cancel(runId)。
+    if (agentRun.enabled && currentMessage && agentRun.currentRun) {
+      agentRun.cancel().catch(() => {});
+    }
+    // 取消后清理 currentRun，避免下次发送误用旧 run_id
+    if (agentRun.enabled) {
+      agentRun.setCurrentRun(null);
+    }
+    // 同步清掉 store 中对应会话的 latest_run,让 ChatHistory 的 spinner
+    // 在用户主动 stop 时立刻消失(不等 5s 轮询兜底)。
+    if (agentRun.enabled) {
+      syncLatestRunToStore(null);
+    }
+
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -690,10 +955,31 @@ export function useChatSend(conversationApi: IConversationApi) {
     }
     clearBuffer();
     setIsStreaming(false);
-  }, [clearBuffer, conversationApi]);
+  }, [clearBuffer, conversationApi, agentRun, syncLatestRunToStore]);
 
   /** 获取当前 AbortController */
   const getAbortController = useCallback(() => abortControllerRef.current, []);
+
+  /**
+   * 仅重置"运行中"前端状态,不做任何副作用(不 abort、不 cancel agent run、
+   * 不调 controlOpenClawConversation)。用于"新建会话"路径:用户主动放弃当前会话
+   * 上下文时,让 Sender 立即退出 loading 态、sendBlocked 归零、in-flight 流回调
+   * 因 requestIdRef 自增而早返回,后续残留数据不会写回已清空的消息列表。
+   *
+   * 跟 handleStop 的区别:
+   * - handleStop:取消一切(用户意图 = 停止当前生成)
+   * - clearStreamingState:只重置 UI 状态(用户意图 = 切到新会话,底层请求让其自然结束)
+   */
+  const clearStreamingState = useCallback(() => {
+    requestIdRef.current += 1;
+    currentMessageRef.current = null;
+    openClawStopPromiseRef.current = null;
+    openClawTurnPhaseRef.current = "idle";
+    openClawRequestRef.current = false;
+    setIsStopping(false);
+    setIsStreaming(false);
+    clearBuffer();
+  }, [clearBuffer]);
 
   return {
     sendMessage,
@@ -701,6 +987,7 @@ export function useChatSend(conversationApi: IConversationApi) {
     isStreaming,
     isStopping,
     getAbortController,
+    clearStreamingState,
   };
 }
 

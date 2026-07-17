@@ -124,6 +124,7 @@ export function handleError(error: ErrorResponse, options?: HandleErrorOptions):
   if (
     code === RESPONSE_CODE.TOKEN_EXPIRED_ERROR ||
     code === RESPONSE_CODE.UNAUTHORIZED_ERROR ||
+    code === RESPONSE_CODE.FORBIDDEN_ERROR ||
     (status === RESPONSE_STATUS.UNAUTHORIZED && localStorage.getItem('access_token'))
   ) {
     localStorage.removeItem('access_token')

@@ -8,6 +8,7 @@ import {
 } from "./components/integrate/config";
 import { LinkAndQrContent } from "./components/integrate/LinkAndQrContent";
 import { WebEmbedContent } from "./components/integrate/WebEmbedContent";
+import { ApiContent } from "./components/integrate/api";
 import { useAgentFormStore } from "@km/shared-business/agent-create";
 import agentsApi from "@/api/modules/agents";
 
@@ -91,23 +92,28 @@ export function AgentIntegrateTab({ agentId }: AgentIntegrateTabProps) {
             </div>
             </>
           )}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          {activeTab === "link" && <LinkAndQrContent agentId={currentAgentId} fixedToken={fixedToken} />}
-          {activeTab !== "link" && activeTab !== "web" && (
-            <div className="h-full flex flex-col items-center justify-center text-gray-400">
-              <div className="text-4xl mb-4 text-gray-200">
-                {directUseItems.find((i) => i.id === activeTab)?.icon ||
-                  externalUseItems.find((i) => i.id === activeTab)?.icon}
-              </div>
-              <div>
-                [
-                {directUseItems.find((i) => i.id === activeTab)?.title ||
-                  externalUseItems.find((i) => i.id === activeTab)?.title}
-                ] {t('integrate.developing')}
+          {activeTab === "api" && <ApiContent agentId={currentAgentId} />}
+          {activeTab === "link" && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <LinkAndQrContent agentId={currentAgentId} fixedToken={fixedToken} />
+            </div>
+          )}
+          {activeTab !== "link" && activeTab !== "web" && activeTab !== "api" && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                <div className="text-4xl mb-4 text-gray-200">
+                  {directUseItems.find((i) => i.id === activeTab)?.icon ||
+                    externalUseItems.find((i) => i.id === activeTab)?.icon}
+                </div>
+                <div>
+                  [
+                  {directUseItems.find((i) => i.id === activeTab)?.title ||
+                    externalUseItems.find((i) => i.id === activeTab)?.title}
+                  ] {t('integrate.developing')}
+                </div>
               </div>
             </div>
           )}
-        </div>
       </div>
     </div>
   );

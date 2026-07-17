@@ -95,20 +95,40 @@ export interface Skill extends SkillPublic {
   binding_status: BindingStatus;
 }
 
-/** 探索列表项 */
+/** 探索列表项（不再返回 binding 相关字段） */
 export interface SkillExploreItem extends SkillPublic {
-  binding_id: string;
-  added: boolean;
-  binding_status: BindingStatus;
+  // 已废弃字段：binding_id、added、binding_status
 }
 
-/** 技能详情 */
+/** 技能详情（不再返回 binding 相关字段） */
 export interface SkillDetail extends SkillPublic {
-  binding_id: string;
-  added: boolean;
-  binding_status: BindingStatus;
+  // 已废弃字段：binding_id、added、binding_status
   env_vars?: SkillEnvVarTemplate[];
   group_id?: number;
+}
+
+// ========== Agent 技能绑定相关 ==========
+
+/**
+ * Agent 技能绑定项
+ * 对应 GET /api/agent/:agent_id/skills 返回的 items 中的每一项
+ */
+export interface AgentSkillBindingItem {
+  id: string;                    // 技能ID（HashID）
+  binding_id: number;
+  skill_library_id: number;      // 技能库ID
+  bind_type: 'builtin' | 'user';
+  status: 'enabled' | 'disabled';
+  skill_name: string;
+  display_name: string;
+  description: string;
+  version: string;
+  logo: string;
+  publish_status: PublishStatus;
+  admin_status: AdminStatus;
+  risk_level: RiskLevel;
+  created_time: number;
+  updated_time: number;
 }
 
 /** 技能环境变量模板（企业级 key 列表） */

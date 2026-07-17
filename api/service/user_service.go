@@ -404,8 +404,8 @@ func (s *UserService) GetInternalUsersWithPagination(
 		return nil, err
 	}
 
+	model.BatchLoadUserInfo(users, from)
 	for _, user := range users {
-		user.LoadUserInfo(from)
 		result.Users = append(result.Users, convertInternalUserView(user))
 	}
 

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/config"
@@ -90,4 +91,12 @@ func GetAllResponseCodes(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, codes)
+}
+
+// AgentAPIHealth returns a simple health check for the Agent API.
+func AgentAPIHealth(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "ok",
+		"timestamp": time.Now().UnixMilli(),
+	})
 }

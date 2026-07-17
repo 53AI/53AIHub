@@ -67,6 +67,7 @@ export function buildOpenClawEnterpriseAgentPayload({
       input_fields: [],
       output_fields: [],
     },
+    scopes: [{ scope_type: 'company', target_id: 0 }],
     enable: true,
   }
 }

@@ -1,0 +1,759 @@
+{
+  "version": "v1",
+  "source_eid": 192,
+  "exported_at": "2026-04-13T09:19:56Z",
+  "templates": [
+    {
+      "name": "会议记录",
+      "description": "软件行业的会议纪要",
+      "logo": "",
+      "entities": [
+        {
+          "name": "客户",
+          "properties": [
+            "名称",
+            "行业"
+          ],
+          "order_num": 1
+        },
+        {
+          "name": "对接人",
+          "properties": [
+            "职位",
+            "性别",
+            "爱好",
+            "资历"
+          ],
+          "order_num": 2
+        },
+        {
+          "name": "痛点",
+          "properties": [
+            "业务挑战"
+          ],
+          "order_num": 3
+        },
+        {
+          "name": "预期",
+          "properties": [
+            "上线时间",
+            "预算范围",
+            "实现效果"
+          ],
+          "order_num": 4
+        },
+        {
+          "name": "项目",
+          "properties": [
+            "项目名称",
+            "应用场景"
+          ],
+          "order_num": 5
+        },
+        {
+          "name": "里程碑",
+          "properties": [
+            "POC测试",
+            "试运行",
+            "正式上线"
+          ],
+          "order_num": 6
+        },
+        {
+          "name": "风险",
+          "properties": [
+            "描述"
+          ],
+          "order_num": 7
+        },
+        {
+          "name": "需求",
+          "properties": [
+            "需求描述",
+            "功能描述"
+          ],
+          "order_num": 8
+        },
+        {
+          "name": "技术栈",
+          "properties": [
+            "前端",
+            "后端",
+            "数据库",
+            "部署方式"
+          ],
+          "order_num": 9
+        },
+        {
+          "name": "会议",
+          "properties": [
+            "主题",
+            "日期",
+            "类型"
+          ],
+          "order_num": 10
+        },
+        {
+          "name": "决策",
+          "properties": [
+            "关键共识"
+          ],
+          "order_num": 11
+        },
+        {
+          "name": "待办",
+          "properties": [
+            "责任人",
+            "完成时间"
+          ],
+          "order_num": 12
+        }
+      ],
+      "relations": [
+        {
+          "source": "客户",
+          "predicate": "提出了",
+          "target": "需求"
+        },
+        {
+          "source": "项目",
+          "predicate": "使用了",
+          "target": "技术栈"
+        },
+        {
+          "source": "客户",
+          "predicate": "面临了",
+          "target": "痛点"
+        },
+        {
+          "source": "会议",
+          "predicate": "产生了",
+          "target": "决策"
+        },
+        {
+          "source": "会议",
+          "predicate": "产生了",
+          "target": "待办"
+        },
+        {
+          "source": "会议",
+          "predicate": "关联了",
+          "target": "客户"
+        },
+        {
+          "source": "会议",
+          "predicate": "讨论了",
+          "target": "项目"
+        },
+        {
+          "source": "对接人",
+          "predicate": "归属于",
+          "target": "客户"
+        }
+      ]
+    },
+    {
+      "name": "技术标准与规范",
+      "description": "",
+      "logo": "",
+      "entities": [
+        {
+          "name": "标准文档",
+          "properties": [
+            "标准编号",
+            "标准名称",
+            "发布日期",
+            "实施日期",
+            "发布机构",
+            "状态",
+            "版本号",
+            "摘要",
+            "ICS分类号",
+            "CCS分类号"
+          ],
+          "order_num": 1
+        },
+        {
+          "name": "标准类别",
+          "properties": [
+            "类别名称",
+            "类别代码",
+            "描述"
+          ],
+          "order_num": 2
+        },
+        {
+          "name": "引用标准",
+          "properties": [
+            "被引用标准编号",
+            "引用条款",
+            "引用类型"
+          ],
+          "order_num": 3
+        },
+        {
+          "name": "适用范围",
+          "properties": [
+            "适用领域",
+            "适用对象",
+            "排除范围"
+          ],
+          "order_num": 4
+        },
+        {
+          "name": "技术要求",
+          "properties": [
+            "要求类型",
+            "要求内容",
+            "条款编号"
+          ],
+          "order_num": 5
+        },
+        {
+          "name": "质量指标",
+          "properties": [
+            "指标名称",
+            "指标值",
+            "单位",
+            "检测方法"
+          ],
+          "order_num": 6
+        },
+        {
+          "name": "章节条款",
+          "properties": [
+            "章节编号",
+            "章节标题",
+            "章节层级",
+            "内容摘要",
+            "页码范围"
+          ],
+          "order_num": 7
+        },
+        {
+          "name": "发布机构",
+          "properties": [
+            "机构名称",
+            "机构类型",
+            "机构代码",
+            "官网链接"
+          ],
+          "order_num": 8
+        }
+      ],
+      "relations": [
+        {
+          "source": "标准文档",
+          "predicate": "属于",
+          "target": "标准类别"
+        },
+        {
+          "source": "标准文档",
+          "predicate": "适用",
+          "target": "适用范围"
+        },
+        {
+          "source": "标准文档",
+          "predicate": "发布",
+          "target": "发布机构"
+        },
+        {
+          "source": "标准文档",
+          "predicate": "包含",
+          "target": "章节条款"
+        },
+        {
+          "source": "标准文档",
+          "predicate": "包含",
+          "target": "技术要求"
+        },
+        {
+          "source": "标准文档",
+          "predicate": "引用",
+          "target": "引用标准"
+        },
+        {
+          "source": "技术要求",
+          "predicate": "对应",
+          "target": "质量指标"
+        },
+        {
+          "source": "章节条款",
+          "predicate": "包含",
+          "target": "技术要求"
+        },
+        {
+          "source": "章节条款",
+          "predicate": "包含",
+          "target": "质量指标"
+        }
+      ]
+    },
+    {
+      "name": "业务合同",
+      "description": "",
+      "logo": "",
+      "entities": [
+        {
+          "name": "合同",
+          "properties": [
+            "合同编号",
+            "合同名称",
+            "合同类型",
+            "签订日期",
+            "生效日期",
+            "到期日期",
+            "合同金额",
+            "币种",
+            "付款方式",
+            "合同状态",
+            "保密级别"
+          ],
+          "order_num": 1
+        },
+        {
+          "name": "合同方",
+          "properties": [
+            "主体名称",
+            "主体类型",
+            "统一社会信用代码",
+            "法定代表人",
+            "联系方式",
+            "注册地址",
+            "签约代表"
+          ],
+          "order_num": 2
+        },
+        {
+          "name": "合同标的",
+          "properties": [
+            "标的名称",
+            "标的类型",
+            "规格型号",
+            "数量",
+            "单价",
+            "总价"
+          ],
+          "order_num": 3
+        },
+        {
+          "name": "付款条款",
+          "properties": [
+            "条款编号",
+            "付款阶段",
+            "付款比例",
+            "付款金额",
+            "付款条件",
+            "付款期限"
+          ],
+          "order_num": 4
+        },
+        {
+          "name": "合同附件",
+          "properties": [
+            "附件名称",
+            "附件编号",
+            "附件类型",
+            "页数"
+          ],
+          "order_num": 5
+        },
+        {
+          "name": "违约责任",
+          "properties": [
+            "违约情形",
+            "违约金比例",
+            "违约金金额",
+            "赔偿范围"
+          ],
+          "order_num": 6
+        },
+        {
+          "name": "争议解决",
+          "properties": [
+            "解决方式",
+            "管辖机构",
+            "适用法律"
+          ],
+          "order_num": 7
+        },
+        {
+          "name": "交付条款",
+          "properties": [
+            "交付内容",
+            "交付时间",
+            "交付地点",
+            "交付方式",
+            "验收标准"
+          ],
+          "order_num": 8
+        }
+      ],
+      "relations": [
+        {
+          "source": "合同方",
+          "predicate": "承担",
+          "target": "违约责任"
+        },
+        {
+          "source": "合同",
+          "predicate": "签署",
+          "target": "合同方"
+        },
+        {
+          "source": "合同",
+          "predicate": "约束",
+          "target": "合同方"
+        },
+        {
+          "source": "合同",
+          "predicate": "包含",
+          "target": "合同标的"
+        },
+        {
+          "source": "合同",
+          "predicate": "约定",
+          "target": "付款条款"
+        },
+        {
+          "source": "合同",
+          "predicate": "关联",
+          "target": "合同附件"
+        },
+        {
+          "source": "合同",
+          "predicate": "规定",
+          "target": "违约责任"
+        },
+        {
+          "source": "合同",
+          "predicate": "规定",
+          "target": "争议解决"
+        },
+        {
+          "source": "合同",
+          "predicate": "规定",
+          "target": "交付条款"
+        },
+        {
+          "source": "付款条款",
+          "predicate": "涉及",
+          "target": "合同标的"
+        },
+        {
+          "source": "交付条款",
+          "predicate": "关联",
+          "target": "合同标的"
+        },
+        {
+          "source": "违约责任",
+          "predicate": "适用",
+          "target": "合同方"
+        }
+      ]
+    },
+    {
+      "name": "用户手册",
+      "description": "",
+      "logo": "",
+      "entities": [
+        {
+          "name": "产品",
+          "properties": [
+            "产品名称",
+            "产品型号",
+            "产品版本",
+            "制造商",
+            "发布日期"
+          ],
+          "order_num": 1
+        },
+        {
+          "name": "功能模块",
+          "properties": [
+            "模块名称",
+            "模块编号",
+            "功能描述",
+            "操作难度"
+          ],
+          "order_num": 2
+        },
+        {
+          "name": "操作步骤",
+          "properties": [
+            "步骤序号",
+            "步骤描述",
+            "预期结果",
+            "注意事项",
+            "配图编号"
+          ],
+          "order_num": 3
+        },
+        {
+          "name": "技术参数",
+          "properties": [
+            "参数名称",
+            "参数值",
+            "单位",
+            "适用条件"
+          ],
+          "order_num": 4
+        },
+        {
+          "name": "故障代码",
+          "properties": [
+            "故障代码",
+            "故障名称",
+            "故障描述",
+            "可能原因"
+          ],
+          "order_num": 5
+        },
+        {
+          "name": "解决方案",
+          "properties": [
+            "方案编号",
+            "解决方案描述",
+            "所需工具",
+            "预计时间"
+          ],
+          "order_num": 6
+        },
+        {
+          "name": "安全警告",
+          "properties": [
+            "警告等级",
+            "警告内容",
+            "预防措施",
+            "后果说明"
+          ],
+          "order_num": 7
+        }
+      ],
+      "relations": [
+        {
+          "source": "产品",
+          "predicate": "包含",
+          "target": "功能模块"
+        },
+        {
+          "source": "产品",
+          "predicate": "关联",
+          "target": "技术参数"
+        },
+        {
+          "source": "安全警告",
+          "predicate": "针对",
+          "target": "产品"
+        },
+        {
+          "source": "功能模块",
+          "predicate": "关联",
+          "target": "操作步骤"
+        },
+        {
+          "source": "操作步骤",
+          "predicate": "用于",
+          "target": "功能模块"
+        },
+        {
+          "source": "故障代码",
+          "predicate": "关联",
+          "target": "产品"
+        },
+        {
+          "source": "故障代码",
+          "predicate": "对应",
+          "target": "解决方案"
+        },
+        {
+          "source": "解决方案",
+          "predicate": "解决",
+          "target": "故障代码"
+        },
+        {
+          "source": "操作步骤",
+          "predicate": "可能触发",
+          "target": "故障代码"
+        },
+        {
+          "source": "操作步骤",
+          "predicate": "关联",
+          "target": "安全警告"
+        },
+        {
+          "source": "解决方案",
+          "predicate": "包含",
+          "target": "操作步骤"
+        }
+      ]
+    },
+    {
+      "name": "项目文档",
+      "description": "",
+      "logo": "",
+      "entities": [
+        {
+          "name": "项目",
+          "properties": [
+            "项目编号",
+            "项目名称",
+            "项目类型",
+            "开始日期"
+          ],
+          "order_num": 1
+        },
+        {
+          "name": "项目阶段",
+          "properties": [
+            "阶段名称",
+            "阶段编号"
+          ],
+          "order_num": 2
+        },
+        {
+          "name": "任务",
+          "properties": [
+            "任务编号",
+            "任务名称",
+            "任务描述",
+            "优先级",
+            "工作量",
+            "状态"
+          ],
+          "order_num": 3
+        },
+        {
+          "name": "项目成员",
+          "properties": [
+            "姓名",
+            "角色",
+            "所属部门",
+            "联系方式",
+            "职责描述"
+          ],
+          "order_num": 4
+        },
+        {
+          "name": "里程碑",
+          "properties": [
+            "里程碑名称",
+            "计划日期",
+            "实际日期",
+            "完成状态",
+            "验收标准"
+          ],
+          "order_num": 5
+        },
+        {
+          "name": "项目风险",
+          "properties": [
+            "风险描述",
+            "风险类型",
+            "风险编号",
+            "风险等级",
+            "影响范围",
+            "应对措施"
+          ],
+          "order_num": 6
+        },
+        {
+          "name": "交付物",
+          "properties": [
+            "交付物名称",
+            "交付物类型",
+            "版本号",
+            "提交日期",
+            "验收状态"
+          ],
+          "order_num": 7
+        },
+        {
+          "name": "变更记录",
+          "properties": [
+            "变更编号",
+            "变更类型",
+            "变更原因",
+            "变更内容",
+            "申请人",
+            "申请日期",
+            "审批状态"
+          ],
+          "order_num": 8
+        }
+      ],
+      "relations": [
+        {
+          "source": "项目",
+          "predicate": "包含",
+          "target": "项目阶段"
+        },
+        {
+          "source": "项目阶段",
+          "predicate": "包含",
+          "target": "任务"
+        },
+        {
+          "source": "项目阶段",
+          "predicate": "达成",
+          "target": "里程碑"
+        },
+        {
+          "source": "任务",
+          "predicate": "分配给",
+          "target": "项目成员"
+        },
+        {
+          "source": "项目",
+          "predicate": "分配",
+          "target": "项目成员"
+        },
+        {
+          "source": "交付物",
+          "predicate": "关联于",
+          "target": "里程碑"
+        },
+        {
+          "source": "项目风险",
+          "predicate": "属于",
+          "target": "项目"
+        },
+        {
+          "source": "变更记录",
+          "predicate": "影响",
+          "target": "交付物"
+        },
+        {
+          "source": "变更记录",
+          "predicate": "影响",
+          "target": "任务"
+        },
+        {
+          "source": "变更记录",
+          "predicate": "影响",
+          "target": "项目风险"
+        },
+        {
+          "source": "变更记录",
+          "predicate": "由...申请",
+          "target": "项目成员"
+        },
+        {
+          "source": "项目",
+          "predicate": "产出",
+          "target": "交付物"
+        },
+        {
+          "source": "里程碑",
+          "predicate": "验证",
+          "target": "交付物"
+        },
+        {
+          "source": "项目",
+          "predicate": "具有",
+          "target": "项目风险"
+        }
+      ]
+    }
+  ]
+}

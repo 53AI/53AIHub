@@ -2,7 +2,7 @@ import type {
   IConversationApi,
   IAgentApi,
   ChatCompletionParams,
-} from "@km/shared-business/chat/adapters/types";
+} from "@km/shared-business/chat";
 import {
   buildOpenClawConversation as buildSharedOpenClawConversation,
   buildOpenClawMessages as buildSharedOpenClawMessages,
@@ -23,14 +23,14 @@ export const conversationApiAdapter: IConversationApi = {
     return conversationApi.create({
       agent_id: agentId,
       title: title || question.slice(0, 20),
-      conversation_type: conversationType,
+      conversation_type: conversationType as any,
     });
   },
 
   list: async (agentId: string, params?: { conversation_type?: string }) => {
     const result = await conversationApi.list({
       agent_id: agentId,
-      conversation_type: params?.conversation_type ? Number(params.conversation_type) : undefined,
+      conversation_type: (params?.conversation_type ? Number(params.conversation_type) : undefined) as any,
     });
     return result;
   },
@@ -99,24 +99,26 @@ export function createOpenClawConversationApiAdapter(agentId: string | number): 
  * 桥接 shared-business 的 IAgentApi 和 front-react 的 API
  */
 export const agentApiAdapter: IAgentApi = {
-  detail: async (agentId: string) => {
-    const res = await agentsApi.explore.detail(agentId);
-    return transformAgentInfo(res.data);
+  detail: async (agentId: string | number) => {
+    const res = await agentsApi.detail(String(agentId));
+    return transformAgentInfo((res as any)?.data ?? res);
   },
 
   list: async () => {
-    const res = await agentsApi.explore.list({});
-    return (res.data?.agents || []).map(transformAgentInfo);
+    const res = await agentsApi.list({ offset: 0, limit: 20 });
+    const payload = (res as any)?.data ?? res;
+    return (payload?.agents || []).map(transformAgentInfo);
   },
 
-  myDetail: async (agentId: string) => {
+  myDetail: async (agentId: string | number) => {
     const res = await agentsApi.my.detail(agentId);
-    return transformAgentInfo(res.data);
+    return transformAgentInfo((res as any)?.data ?? res);
   },
 
   myList: async () => {
-    const res = await agentsApi.my.list({});
-    return (res.data?.agents || []).map(transformAgentInfo);
+    const res = await agentsApi.my.list({ offset: 0, limit: 20 });
+    const payload = (res as any)?.data ?? res;
+    return (payload?.agents || []).map(transformAgentInfo);
   },
 };
 

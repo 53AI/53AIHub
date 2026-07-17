@@ -37,6 +37,9 @@ const (
 	UploadedFilesKey         contextKey = "uploaded_files" // 用户上传的文件列表
 	RuntimeSeedFilesKey      contextKey = "runtime_seed_files"
 	SkillRunIDKey            contextKey = "skill_run_id"
+	ToolEIDKey               contextKey = "tool_eid"
+	ToolUserIDKey            contextKey = "tool_user_id"
+	ToolAgentIDKey           contextKey = "tool_agent_id"
 	SandboxConversationIDKey contextKey = "sandbox_conversation_id"
 	SandboxSessionIDKey      contextKey = "sandbox_session_id"
 	SandboxCWDKey            contextKey = "sandbox_cwd"
@@ -159,6 +162,12 @@ func ExecuteToolWithResult(ctx context.Context, name string, args map[string]int
 
 	case "web_fetch":
 		return executeWebFetch(ctx, args)
+
+	case "memory_search":
+		return executeMemorySearch(ctx, args)
+
+	case "save_memory":
+		return executeSaveMemory(ctx, args)
 
 	default:
 		return nil, fmt.Errorf("tool execution not implemented for: %s", name)

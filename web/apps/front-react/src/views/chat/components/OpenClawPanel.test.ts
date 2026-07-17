@@ -88,6 +88,7 @@ function mockConnectedPanelData() {
 
 beforeEach(() => {
   vi.useRealTimers();
+  localStorage.setItem("default_lang", "zh-cn");
   mocks.status.mockReset();
   mocks.config.mockReset();
   mocks.skills.mockReset();
@@ -97,6 +98,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  localStorage.removeItem("default_lang");
 });
 
 describe("formatOpenClawGatewayName", () => {
@@ -178,6 +180,11 @@ describe("OpenClawPanel loading", () => {
             name: "weixinpay-intro",
             description: "微信支付技能",
           },
+          {
+            skill_id: "skill-1",
+            skill_name: "openclaw_pdf_probe",
+            display_name: "PDF Probe",
+          },
         ],
       },
     });
@@ -212,6 +219,8 @@ describe("OpenClawPanel loading", () => {
     expect(document.body.textContent).toContain("bypassPermissions");
     expect(document.body.textContent).toContain("已激活 / 2 个");
     expect(document.body.textContent).toContain("weixinpay-intro");
+    expect(document.body.textContent).toContain("PDF Probe");
+    expect(document.body.textContent).toContain("skill-1");
     expect(document.body.textContent).not.toContain("modelroute");
   });
 

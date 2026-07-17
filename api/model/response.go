@@ -26,6 +26,14 @@ type CommonResponse struct {
 	Code    int         `json:"code" example:"0" enums:"0,1,2,3,4,5,6,7,8,9,10,11,12,13"`
 	Message string      `json:"message" example:"ok" description:"Response message"`
 	Data    interface{} `json:"data" description:"Response data payload"`
+	Warning string      `json:"warning,omitempty" description:"Optional warning message for client"`
+}
+
+type OpenAIError struct {
+	Message string      `json:"message"`
+	Type    string      `json:"type"`
+	Param   interface{} `json:"param,omitempty"`
+	Code    interface{} `json:"code,omitempty"`
 }
 
 type OpenAIError struct {
@@ -120,6 +128,15 @@ func (c ResponseCode) ToResponse(data interface{}) CommonResponse {
 	}
 }
 
+func (c ResponseCode) ToResponseWithWarning(data interface{}, warning string) CommonResponse {
+	return CommonResponse{
+		Code:    int(c),
+		Message: c.Message(),
+		Data:    data,
+		Warning: warning,
+	}
+}
+
 func (c ResponseCode) ToErrorResponse(err error) CommonResponse {
 	return CommonResponse{
 		Code:    int(c),
@@ -153,4 +170,31 @@ func (c ResponseCode) ToOpenAIErrorRespone(data interface{}) OpenAIErrorResponse
 			Type:    "53aihub_error",
 		},
 	}
+}
+
+// OpenAIErrorType returns the OpenAI-compatible error type for this response code.
+func (c ResponseCode) OpenAIErrorType() string {
+	switch c {
+	case UnauthorizedError, TokenExpiredError, AgentAuthError:
+		return "authentication_error"
+	case ForbiddenError:
+		return "permission_error"
+	case NotFound:
+		return "not_found"
+	case ParamError, ChatError:
+		return "invalid_request_error"
+	case OperateTooFast:
+		return "rate_limit_error"
+	default:
+		return "server_error"
+	}
+}
+
+// ToOpenAIErrorResponeWithType returns an OpenAIErrorResponse with a custom error type.
+func (c ResponseCode) ToOpenAIErrorResponeWithType(data interface{}, errorType string) OpenAIErrorResponse {
+	resp := c.ToOpenAIErrorRespone(data)
+	if errorType != "" {
+		resp.Error.Type = errorType
+	}
+	return resp
 }

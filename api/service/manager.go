@@ -381,6 +381,18 @@ func (sm *ServiceManager) rechunkAndReindex(eid, fileID int64, userID int64) err
 							rag.CheckEmbeddingStepStatusSave(eid, fileID, fmt.Sprintf("已从向量库删除旧检索块向量 - EID:%d FileID:%d Collection:%s Count:%d",
 								eid, fileID, collection, len(ids)))
 						}
+						// enterprise/dual 模式下同时删除企业级集合中的向量
+						mode := rag.GetVectorCollectionMode()
+						if mode == rag.VectorCollectionModeEnterprise || mode == rag.VectorCollectionModeDual {
+							entCollection := model.GetDocumentVectorCollectionName(eid)
+							if err := store.Delete(ctx, entCollection, ids); err != nil {
+								log.Printf("rechunk_and_reindex 企业级集合向量删除失败（继续流程） - EID:%d FileID:%d Collection:%s Count:%d Err:%v",
+									eid, fileID, entCollection, len(ids), err)
+							} else {
+								log.Printf("rechunk_and_reindex 已从企业级集合删除旧向量 - EID:%d FileID:%d Collection:%s Count:%d",
+									eid, fileID, entCollection, len(ids))
+							}
+						}
 					}
 				}
 			}

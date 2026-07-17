@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AGENT_USAGE_PLATFORM_VALUES,
   buildAgentListParams,
   createAgentPlatformFilterOptions,
   resolveAgentPlatformFilter,
@@ -17,6 +18,15 @@ describe("agent platform filter", () => {
   it("keeps regular platform values on channel_types", () => {
     expect(resolveAgentPlatformFilter("22")).toEqual({ channel_types: "22" });
     expect(resolveAgentPlatformFilter("1,3,44,36")).toEqual({ channel_types: "1,3,44,36" });
+  });
+
+  it("routes AI搜问 / 小助理 through agent_usages instead of channel_types", () => {
+    expect(resolveAgentPlatformFilter(AGENT_USAGE_PLATFORM_VALUES.KM_AI_SEARCH)).toEqual({
+      agent_usages: "1",
+    });
+    expect(resolveAgentPlatformFilter(AGENT_USAGE_PLATFORM_VALUES.WORK_AI)).toEqual({
+      agent_usages: "4",
+    });
   });
 
   it("builds list params with channel_types for QClaw", () => {
@@ -39,6 +49,46 @@ describe("agent platform filter", () => {
     });
   });
 
+  it("builds list params with agent_usages for 小助理", () => {
+    expect(
+      buildAgentListParams({
+        group_id: 12,
+        platform: AGENT_USAGE_PLATFORM_VALUES.WORK_AI,
+        type: "",
+        keyword: "",
+        page: 1,
+        page_size: 10,
+      }),
+    ).toEqual({
+      group_id: "12",
+      agent_usages: "4",
+      agent_types: "",
+      keyword: "",
+      offset: 0,
+      limit: 10,
+    });
+  });
+
+  it("builds list params with agent_usages for AI搜问", () => {
+    expect(
+      buildAgentListParams({
+        group_id: 12,
+        platform: AGENT_USAGE_PLATFORM_VALUES.KM_AI_SEARCH,
+        type: "",
+        keyword: "",
+        page: 1,
+        page_size: 10,
+      }),
+    ).toEqual({
+      group_id: "12",
+      agent_usages: "1",
+      agent_types: "",
+      keyword: "",
+      offset: 0,
+      limit: 10,
+    });
+  });
+
   it("expands currently exposed OpenClaw compatible entries into independent platform options", () => {
     const options = createAgentPlatformFilterOptions(
       [
@@ -57,6 +107,23 @@ describe("agent platform filter", () => {
       { label: "FastGPT", value: "22" },
       { label: "OpenClaw", value: "1014" },
       { label: "QClaw", value: "1015" },
+    ]);
+  });
+
+  it("appends extra options (AI搜问 / 小助理) at the end", () => {
+    const options = createAgentPlatformFilterOptions(
+      [{ label: "Prompt", channelType: 0 }],
+      [],
+      [
+        { label: "AI搜问", value: AGENT_USAGE_PLATFORM_VALUES.KM_AI_SEARCH },
+        { label: "小助理", value: AGENT_USAGE_PLATFORM_VALUES.WORK_AI },
+      ],
+    );
+
+    expect(options).toEqual([
+      { label: "Prompt", value: "1,3,44,36" },
+      { label: "AI搜问", value: "km_ai_search" },
+      { label: "小助理", value: "work_ai" },
     ]);
   });
 });

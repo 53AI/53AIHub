@@ -1,10 +1,13 @@
 import { parseCSV, csvToMessages } from '@km/shared-utils'
 import { agentCreateMessages } from '@km/shared-business/agent-create'
 import { chatMessages } from '@km/shared-business/chat'
+import { dataPipelineMessages } from '@km/shared-business/knowledge-pipeline'
 
 // 直接复用 console 的 CSV 源，保证 key 与文案完全一致
 // eslint-disable-next-line import/no-relative-packages
 import csvRaw from './source.csv?raw'
+
+export type Locale = 'zh-cn' | 'zh-tw' | 'en' | 'ja'
 
 const localeMessages = csvToMessages(parseCSV(csvRaw))
 
@@ -31,24 +34,28 @@ const messages = {
     {},
     agentCreateMessages['zh-cn'],
     chatMessages['zh-cn'],
+    dataPipelineMessages['zh-cn'],
     localeMessages['zh-cn']
   ),
   'zh-tw': deepMerge(
     {},
     agentCreateMessages['zh-tw'],
     chatMessages['zh-tw'],
+    dataPipelineMessages['zh-tw'],
     localeMessages['zh-tw']
   ),
   en: deepMerge(
     {},
     agentCreateMessages.en,
     chatMessages.en,
+    dataPipelineMessages.en,
     localeMessages.en
   ),
   ja: deepMerge(
     {},
     agentCreateMessages.ja,
     chatMessages.ja,
+    dataPipelineMessages.ja,
     localeMessages.ja
   ),
 }
@@ -60,7 +67,7 @@ function getCurrentLocale(): string {
   if (stored) {
     // 兼容 'jp' -> 'ja' 映射
     if (stored === 'jp') return 'ja'
-    return stored
+      return stored
   }
 
   const browserLang = navigator.language.toLowerCase()
@@ -130,8 +137,14 @@ if (typeof window !== 'undefined') window.$t = t
 
 export { messages }
 
+/** 动态更新翻译（用于 navigation 等需要动态设置名称的场景） */
+export function updateMessages(locale: Locale, updates: Record<string, string>) {
+  Object.assign(messages[locale], updates)
+}
+
 export default {
   t,
   messages,
+  updateMessages,
 }
 

@@ -47,11 +47,12 @@ export const menuTree: MenuItemConfig[] = [
     icon: 'app',
     children: [
       {
-        path: '/work-ai',
-        name: 'WorkAI',
-        title: 'module.work_ai',
-        icon: 'work-ai',
-        visible: () => checkVersion(VERSION_MODULE.WORKBENCH),
+        path: '/agent',
+        name: 'Agent',
+        title: 'module.agent',
+        icon: 'agent_v2',
+        visible: (ctx: VisibilityContext) =>
+          !['aibtNv'].includes(ctx.eid) && checkVersion(VERSION_MODULE.AGENT),
       },
       ...(includeKm
         ? [
@@ -71,14 +72,6 @@ export const menuTree: MenuItemConfig[] = [
         title: 'module.skills',
         icon: 'skills',
         visible: () => checkVersion(VERSION_MODULE.WORKBENCH),
-      },
-      {
-        path: '/agent',
-        name: 'Agent',
-        title: 'module.agent',
-        icon: 'agent_v2',
-        visible: (ctx: VisibilityContext) =>
-          !['aibtNv'].includes(ctx.eid) && checkVersion(VERSION_MODULE.AGENT),
       },
       {
         path: '/prompt',
@@ -181,8 +174,8 @@ export const hiddenRoutes: MenuItemConfig[] = [
     hidden: true,
   },
   {
-    path: '/skill-detail',
-    name: 'SkillDetail',
+    path: '/skills/create',
+    name: 'SkillCreate',
     title: 'module.skills',
     hidden: true,
   },

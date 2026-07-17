@@ -20,10 +20,6 @@ type SkillExploreQuery struct {
 	Limit   int    `form:"limit"`
 }
 
-type UpdateMySkillStatusRequest struct {
-	Status string `json:"status" binding:"required"`
-}
-
 type SkillPublicResponse struct {
 	ID                int64   `json:"id"`
 	Eid               int64   `json:"eid"`
@@ -54,29 +50,16 @@ type SkillPublicResponse struct {
 
 type SkillExploreListItemResponse struct {
 	SkillPublicResponse
-	BindingID     int64  `json:"binding_id"`
-	Added         bool   `json:"added"`
-	BindingStatus string `json:"binding_status"`
 }
 
 type SkillDetailResponse struct {
 	SkillPublicResponse
-	BindingID     int64                         `json:"binding_id"`
-	Added         bool                          `json:"added"`
-	BindingStatus string                        `json:"binding_status"`
-	EnvVars       []SkillEnvVarTemplateResponse `json:"env_vars,omitempty"`
+	EnvVars []SkillEnvVarTemplateResponse `json:"env_vars,omitempty"`
 }
 
 type SkillEnvVarTemplateResponse struct {
 	Key       string `json:"key"`
 	Sensitive bool   `json:"sensitive"`
-}
-
-type SkillMyListItemResponse struct {
-	// 注意：该结构体中的 created_time / updated_time 表示“我的技能”绑定记录的创建、更新时间，不表示技能本身的时间。
-	BindingID int64 `json:"binding_id"`
-	SkillPublicResponse
-	BindingStatus string `json:"binding_status"`
 }
 
 func buildSkillPublicResponse(skillInfo *model.SkillLibrary) *SkillPublicResponse {
@@ -153,7 +136,7 @@ func toSkillUserEnvErrorResponse(c *gin.Context, err error) {
 
 // GetSkillExploreList godoc
 // @Summary 获取技能库探索列表
-// @Description 获取当前企业可见的已发布技能列表（含平台技能），无需登录。已登录时每个技能包含当前用户绑定状态。
+// @Description 获取当前企业可见的已发布技能列表（含平台技能），无需登录。
 // @Tags 技能库
 // @Accept json
 // @Produce json
@@ -194,12 +177,8 @@ func GetSkillExploreList(c *gin.Context) {
 		if item == nil || item.SkillLibrary == nil {
 			continue
 		}
-		public := buildSkillPublicResponse(item.SkillLibrary)
 		items = append(items, &SkillExploreListItemResponse{
-			SkillPublicResponse: *public,
-			BindingID:           item.BindingID,
-			Added:               item.Added,
-			BindingStatus:       item.BindingStatus,
+			SkillPublicResponse: *buildSkillPublicResponse(item.SkillLibrary),
 		})
 	}
 
@@ -211,7 +190,7 @@ func GetSkillExploreList(c *gin.Context) {
 
 // GetSkillDetail godoc
 // @Summary 获取技能详情
-// @Description 获取技能详情，包含技能基础信息、评分、风险等级、当前用户绑定状态（binding_id、added、binding_status）及企业环境变量 key 列表
+// @Description 获取技能详情，包含技能基础信息、评分、风险等级及企业环境变量 key 列表
 // @Tags 技能库
 // @Accept json
 // @Produce json
@@ -240,9 +219,6 @@ func GetSkillDetail(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(&SkillDetailResponse{
 		SkillPublicResponse: *buildSkillPublicResponse(skillInfo.SkillLibrary),
-		BindingID:           skillInfo.BindingID,
-		Added:               skillInfo.Added,
-		BindingStatus:       skillInfo.BindingStatus,
 		EnvVars: func() []SkillEnvVarTemplateResponse {
 			if len(skillInfo.EnvVars) == 0 {
 				return []SkillEnvVarTemplateResponse{}
@@ -257,178 +233,6 @@ func GetSkillDetail(c *gin.Context) {
 			return envVars
 		}(),
 	}))
-}
-
-// AddSkillToMy godoc
-// @Summary 添加技能到我的
-// @Description 将探索技能添加到当前用户"我的技能"列表。接口幂等，重复添加不会报错，添加后默认状态为enabled。
-// @Tags 技能库
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param id path int true "技能ID（HashID编码）"
-// @Success 200 {object} model.CommonResponse "成功"
-// @Failure 400 {object} model.CommonResponse "参数错误：ID格式不正确"
-// @Failure 403 {object} model.CommonResponse "权限不足：技能不可见、未发布或已禁用"
-// @Failure 404 {object} model.CommonResponse "技能不存在"
-// @Router /api/skill-library/{id}/add [post]
-func AddSkillToMy(c *gin.Context) {
-	skillID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || skillID <= 0 {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
-		return
-	}
-	eid := config.GetEID(c)
-	userID := config.GetUserId(c)
-	userGroupID := config.GetUserGroupID(c)
-
-	svc := service.NewSkillLibraryService()
-	if addErr := svc.AddSkillToMy(c.Request.Context(), eid, userID, userGroupID, skillID); addErr != nil {
-		toSkillErrorResponse(c, addErr)
-		return
-	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
-}
-
-// GetMySkillList godoc
-// @Summary 获取我的技能列表
-// @Description 获取当前用户已添加的技能列表，包含技能详情、绑定状态（binding_status: enabled/disabled）以及绑定记录的创建时间和更新时间。
-// @Tags 技能库
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param offset query int false "分页偏移" default(0)
-// @Param limit query int false "分页大小" default(20)
-// @Success 200 {object} model.CommonResponse{data=object{count=int64,items=[]controller.SkillMyListItemResponse}} "成功"
-// @Failure 401 {object} model.CommonResponse "未授权"
-// @Failure 500 {object} model.CommonResponse "服务器错误"
-// @Router /api/skill-library/my [get]
-func GetMySkillList(c *gin.Context) {
-	offset, _ := strconv.Atoi(c.Query("offset"))
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	if limit <= 0 {
-		limit = 20
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	eid := config.GetEID(c)
-	userID := config.GetUserId(c)
-	svc := service.NewSkillLibraryService()
-	result, err := svc.ListMySkills(c.Request.Context(), eid, userID, offset, limit)
-	if err != nil {
-		toSkillErrorResponse(c, err)
-		return
-	}
-
-	items := make([]*SkillMyListItemResponse, 0, len(result.Items))
-	for _, item := range result.Items {
-		if item == nil {
-			continue
-		}
-		public := &SkillPublicResponse{
-			ID:                item.SkillLibraryID,
-			Eid:               item.Eid,
-			SourceType:        item.SourceType,
-			Logo:              item.Logo,
-			SkillName:         item.SkillName,
-			Sort:              item.Sort,
-			DisplayName:       item.DisplayName,
-			Description:       item.Description,
-			Version:           item.Version,
-			UsageGuide:        item.UsageGuide,
-			OriginZipName:     item.OriginZipName,
-			OriginZipSize:     item.OriginZipSize,
-			OriginZipSHA256:   item.OriginZipSHA256,
-			PublishStatus:     item.PublishStatus,
-			AdminStatus:       item.AdminStatus,
-			RiskLevel:         item.RiskLevel,
-			ScoreIntegrity:    item.ScoreIntegrity,
-			ScorePracticality: item.ScorePracticality,
-			ScoreSafety:       item.ScoreSafety,
-			ScoreCodeQuality:  item.ScoreCodeQuality,
-			ScoreDocQuality:   item.ScoreDocQuality,
-			ScanMessage:       item.ScanMessage,
-			CreatedTime:       item.CreatedTime,
-			UpdatedTime:       item.UpdatedTime,
-		}
-		items = append(items, &SkillMyListItemResponse{
-			BindingID:           item.BindingID,
-			SkillPublicResponse: *public,
-			BindingStatus:       item.BindingStatus,
-		})
-	}
-
-	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
-		"count": result.Count,
-		"items": items,
-	}))
-}
-
-// UpdateMySkillStatus godoc
-// @Summary 更新我的技能启停状态
-// @Description 启用或禁用当前用户已添加的技能。禁用后该技能不参与工作AI匹配。
-// @Tags 技能库
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param binding_id path int true "绑定ID（HashID编码）"
-// @Param request body controller.UpdateMySkillStatusRequest true "状态参数"
-// @Success 200 {object} model.CommonResponse "成功"
-// @Failure 400 {object} model.CommonResponse "参数错误：binding_id格式不正确或status值非法"
-// @Failure 404 {object} model.CommonResponse "绑定关系不存在或越权操作"
-// @Router /api/skill-library/my/{binding_id}/status [patch]
-func UpdateMySkillStatus(c *gin.Context) {
-	bindingID, err := strconv.ParseInt(c.Param("binding_id"), 10, 64)
-	if err != nil || bindingID <= 0 {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
-		return
-	}
-
-	var req UpdateMySkillStatusRequest
-	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(bindErr))
-		return
-	}
-
-	eid := config.GetEID(c)
-	userID := config.GetUserId(c)
-	svc := service.NewSkillLibraryService()
-	if updateErr := svc.UpdateMySkillStatus(c.Request.Context(), eid, userID, bindingID, req.Status); updateErr != nil {
-		toSkillErrorResponse(c, updateErr)
-		return
-	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
-}
-
-// DeleteMySkill godoc
-// @Summary 删除我的技能
-// @Description 删除当前用户技能绑定关系，删除后技能不再出现在"我的技能"列表中
-// @Tags 技能库
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param binding_id path int true "绑定ID（HashID编码）"
-// @Success 200 {object} model.CommonResponse "成功"
-// @Failure 400 {object} model.CommonResponse "参数错误：binding_id格式不正确"
-// @Failure 404 {object} model.CommonResponse "绑定关系不存在或越权操作"
-// @Router /api/skill-library/my/{binding_id} [delete]
-func DeleteMySkill(c *gin.Context) {
-	bindingID, err := strconv.ParseInt(c.Param("binding_id"), 10, 64)
-	if err != nil || bindingID <= 0 {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
-		return
-	}
-
-	eid := config.GetEID(c)
-	userID := config.GetUserId(c)
-	svc := service.NewSkillLibraryService()
-	if delErr := svc.DeleteMySkill(c.Request.Context(), eid, userID, bindingID); delErr != nil {
-		toSkillErrorResponse(c, delErr)
-		return
-	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 }
 
 // DownloadSkillZip godoc

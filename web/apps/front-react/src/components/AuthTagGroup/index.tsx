@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Skeleton, Divider, Tooltip } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
+import type { ScopeItem } from '@km/shared-business/agent-create'
 import { subscriptionApi } from '@/api/modules/subscription'
 import groupApi from '@/api/modules/group'
+import { departmentApi } from '@/api/modules/department'
+import { userApi } from '@/api/modules/user'
 import { useEnterpriseType } from '@/stores/modules/enterprise'
 import { GROUP_TYPE } from '@/constants/group'
 import { getPublicPath } from '@/utils/config'
@@ -16,6 +19,14 @@ interface DisplayItem {
   logo?: string
 }
 
+interface TreeNode {
+  value: number | string
+  label: string
+  did?: number
+  user_id?: number
+  children?: TreeNode[]
+}
+
 interface AuthTagGroupProps {
   value?: (string | number)[]
   label?: string
@@ -23,6 +34,8 @@ interface AuthTagGroupProps {
   hideLabel?: boolean
   emptyText?: string
   mode?: 'default' | 'compact'
+  /** 可见范围 scopes，可选。传入时将展示权限范围标签 */
+  scopes?: ScopeItem[]
 }
 
 interface SubscriptionItem {
@@ -36,14 +49,20 @@ interface UserGroupItem {
   group_name: string
 }
 
+// 内部用户全状态常量（与 api/modules/user 中一致）
+const INTERNAL_USER_STATUS_ALL = -1
+
 export function AuthTagGroup({
-  value = [],
+  value: valueProp,
   label,
   labelPosition = 'left',
   hideLabel = false,
   emptyText = '--',
-  mode = 'default'
+  mode = 'default',
+  scopes,
 }: AuthTagGroupProps) {
+  // 防御性处理：确保 value 始终是数组
+  const value = Array.isArray(valueProp) ? valueProp : [];
   const { isIndependent, isEnterprise } = useEnterpriseType()
   const [loading, setLoading] = useState(false)
   const [subscriptionList, setSubscriptionList] = useState<SubscriptionItem[]>([])
@@ -51,6 +70,11 @@ export function AuthTagGroup({
   const [visibleCount, setVisibleCount] = useState<number | null>(null)
   const ulRef = useRef<HTMLUListElement>(null)
   const visibleUlRef = useRef<HTMLUListElement>(null)
+
+  // scopes 相关
+  const [scopeDeptTree, setScopeDeptTree] = useState<TreeNode[]>([])
+  const [scopeUsers, setScopeUsers] = useState<TreeNode[]>([])
+  const [scopeGroups, setScopeGroups] = useState<TreeNode[]>([])
 
   const labelText = label || t('authority.use_range')
 
@@ -64,6 +88,34 @@ export function AuthTagGroup({
         ])
         setSubscriptionList(subRes.list || [])
         setUserGroupList(groupRes || [])
+
+        // 如果有 scopes，加载作用域数据
+        if (scopes && scopes.length > 0) {
+          const needsDept = scopes.some(s => s.scope_type === 'department' || s.scope_type === 'company')
+          const needsUsers = scopes.some(s => s.scope_type === 'user')
+          const needsGroups = scopes.some(s => s.scope_type === 'group')
+
+          const [deptTree, userList, groupList] = await Promise.all([
+            needsDept ? departmentApi.fetch_department_tree() : Promise.resolve([]),
+            needsUsers ? userApi.fetch_internal_user({ status: INTERNAL_USER_STATUS_ALL, offset: 0, limit: 10000 }) : Promise.resolve({ list: [] }),
+            needsGroups ? groupApi.current_list(GROUP_TYPE.INTERNAL_USER) : Promise.resolve([]),
+          ])
+
+          setScopeDeptTree(deptTree as TreeNode[])
+          setScopeUsers(
+            (userList.list || []).map((item: any) => ({
+              value: item.user_id,
+              label: item.nickname || item.name || '',
+              user_id: item.user_id,
+            }))
+          )
+          setScopeGroups(
+            (groupList || []).map((item: any) => ({
+              value: item.group_id,
+              label: item.group_name || '',
+            }))
+          )
+        }
       } catch (error) {
         console.error('Failed to fetch auth tag data:', error)
       } finally {
@@ -71,7 +123,7 @@ export function AuthTagGroup({
       }
     }
     fetchData()
-  }, [])
+  }, [scopes])
 
   const hasVisibleSubscriptionItems = useMemo(() => {
     return subscriptionList.some((item) => value.includes(item.group_id))
@@ -119,6 +171,53 @@ export function AuthTagGroup({
 
     return [...subscriptionItems, ...userGroupItems]
   }, [subscriptionList, userGroupList, value, isIndependent, isEnterprise, getLogoSrc])
+
+  // scopes 辅助函数：在树中递归查找节点
+  const findNodeInTree = (nodes: TreeNode[], targetId: number | string): TreeNode | null => {
+    for (const node of nodes) {
+      if (node.value === targetId || node.did === targetId || node.user_id === targetId) {
+        return node
+      }
+      if (node.children) {
+        const found = findNodeInTree(node.children, targetId)
+        if (found) return found
+      }
+    }
+    return null
+  }
+
+  // 作用域显示项
+  const scopeDisplayItems = useMemo(() => {
+    if (!scopes || scopes.length === 0) return []
+
+    return scopes.map((scope) => {
+      if (scope.scope_type === 'company') {
+        return { value: 0, label: '全部成员', type: 'company' as const }
+      }
+      if (scope.scope_type === 'group') {
+        const group = scopeGroups.find((g) => g.value === scope.target_id)
+        return { value: scope.target_id, label: group?.label || String(scope.target_id), type: 'group' as const }
+      }
+      if (scope.scope_type === 'user') {
+        const user = scopeUsers.find((u) => u.value === scope.target_id)
+        return { value: scope.target_id, label: user?.label || String(scope.target_id), type: 'member' as const }
+      }
+      // department
+      const node = findNodeInTree(scopeDeptTree, scope.target_id)
+      return { value: scope.target_id, label: node?.label || String(scope.target_id), type: 'department' as const }
+    })
+  }, [scopes, scopeDeptTree, scopeUsers, scopeGroups])
+
+  // 图标映射
+  const getScopeIconName = (type: 'company' | 'department' | 'member' | 'group') => {
+    const iconMap = {
+      company: 'department',
+      department: 'department',
+      member: 'member',
+      group: 'user-group',
+    }
+    return iconMap[type]
+  }
 
   // 宽度容量检测（compact 模式）
   useEffect(() => {
@@ -282,7 +381,7 @@ export function AuthTagGroup({
           </label>
         )}
 
-        {!hasVisibleItems && (
+        {!hasVisibleItems && scopeDisplayItems.length === 0 && (
           <span className="text-sm text-placeholder">{emptyText}</span>
         )}
 
@@ -366,6 +465,35 @@ export function AuthTagGroup({
               <Tooltip title={displayItems.slice(visibleCount).map(i => i.name).join('、')}>
                 <li className="flex-none flex items-center border rounded px-2 h-6 gap-1 text-sm text-primary cursor-pointer">
                   +{displayItems.length - visibleCount}
+                </li>
+              </Tooltip>
+            )}
+          </>
+        )}
+
+        {/* scopes 作用域 */}
+        {scopeDisplayItems.length > 0 && (
+          <>
+            {(hasVisibleItems || (value && value.length > 0)) && (
+              <Divider type="vertical" className="!mx-0" />
+            )}
+            {scopeDisplayItems.slice(0, 3).map((item, index) => (
+              <li
+                key={`scope-${item.value}-${index}`}
+                data-item="true"
+                className="flex items-center gap-1 text-sm text-theme"
+              >
+                <SvgIcon
+                  name={getScopeIconName(item.type)}
+                  className="flex-none size-6 "
+                />
+                <span className="text-primary">{item.label}</span>
+              </li>
+            ))}
+            {scopeDisplayItems.length > 3 && (
+              <Tooltip title={scopeDisplayItems.slice(3).map((i) => i.label).join('、')}>
+                <li className="flex-none flex items-center border rounded px-2 h-6 gap-1 text-sm text-primary cursor-pointer">
+                  +{scopeDisplayItems.length - 3}
                 </li>
               </Tooltip>
             )}

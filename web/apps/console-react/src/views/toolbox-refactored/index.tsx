@@ -50,7 +50,7 @@ export function ToolboxRefactoredPage() {
   // 使用 useListState 管理 URL持久化状态
   const { state: urlState, stateRef: urlStateRef, updateState } = useListState<UrlPersistedState>(
     defaultUrlState,
-    { urlPrefix: 'toolbox_', searchFields: ['keyword'] }
+    { enableUrlSync: true, urlPrefix: 'toolbox_', searchFields: ['keyword'] }
   );
 
   // 从 Store 获取数据状态和方法

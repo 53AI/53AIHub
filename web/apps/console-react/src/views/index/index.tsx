@@ -74,10 +74,10 @@ export function HomePage() {
           query: { tab: "document-setting" },
         },
         {
-          name: t("module.cleaning-policy"),
+          name: t("module.cleaning_pipeline"),
           icon: "whole-site-accelerator",
           path: "/knowledge",
-          query: { tab: "cleaning-policy" },
+          query: { tab: "cleaning-pipeline" },
         },
         {
           name: t("module.model_setting"),

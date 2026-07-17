@@ -6,6 +6,22 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "agent-create": [
+        "dist/agent-create/index.d.ts"
+      ],
+      "chat": [
+        "dist/chat/index.d.ts"
+      ],
+      "auth": [
+        "dist/auth/index.d.ts"
+      ],
+      "knowledge-pipeline": [
+        "dist/knowledge-pipeline/index.d.ts"
+      ]
+    }
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -22,6 +38,10 @@
     "./auth": {
       "import": "./dist/auth/index.js",
       "types": "./dist/auth/index.d.ts"
+    },
+    "./knowledge-pipeline": {
+      "import": "./dist/knowledge-pipeline/index.js",
+      "types": "./dist/knowledge-pipeline/index.d.ts"
     }
   },
   "scripts": {

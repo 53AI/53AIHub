@@ -1,13 +1,14 @@
 import { Modal, Button, Table, Tag } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { Search } from "@km/shared-components-react";
+import "./index.css";
 import {
-    useRef,
-    useState,
-    useMemo,
-    useCallback,
-    forwardRef,
-    useImperativeHandle
+  useRef,
+  useState,
+  useMemo,
+  useCallback,
+  forwardRef,
+  useImperativeHandle
 } from "react";
 import { agentApi } from "@/api/modules/agent";
 import { aiLinkApi } from "@/api/modules/ai-link";
@@ -16,6 +17,9 @@ import skillApi from "@/api/modules/skill";
 import { GROUP_TYPE, type GroupType } from "@/constants/group";
 import { GroupTabs } from "@/components/GroupTabs";
 import type { ColumnsType } from "antd/es/table";
+import { api_host, getPublicPath } from "@/utils/config";
+
+const DEFAULT_SKILL_LOGO = `${api_host}/api/images/skill/logo.png`;
 
 export interface ResourcePickerItem {
   value: number;
@@ -124,7 +128,7 @@ function ResourcePickerInner(
                 alt=""
                 onError={(e) => {
                   (e.target as HTMLImageElement).src =
-                    "/images/default-avatar.png";
+                    getPublicPath("/images/default-avatar.png");
                 }}
               />
               <div className="flex-1 min-w-0">
@@ -175,13 +179,21 @@ function ResourcePickerInner(
           minWidth: 200,
           render: (displayName: string, record) => (
             <div className="flex items-center gap-2 w-full">
+              <img
+                className="flex-none w-8 h-8 rounded overflow-hidden"
+                src={record.logo || DEFAULT_SKILL_LOGO}
+                alt=""
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = DEFAULT_SKILL_LOGO;
+                }}
+              />
               <div className="flex-1 w-0 text-sm flex flex-col">
                 <div className="text-brand truncate">
-                  {displayName || "--"}
+                  {record.skill_name || "--"}
                 </div>
-                {record.skill_name && (
+                {record.description && (
                   <div className="text-xs text-placeholder truncate">
-                    {record.skill_name || "--"}
+                    {record.description}
                   </div>
                 )}
               </div>
@@ -189,9 +201,9 @@ function ResourcePickerInner(
           ),
         },
         {
-          title: t("description"),
-          dataIndex: "description",
-          key: "description",
+          title: t("skills.display_name"),
+          dataIndex: "display_name",
+          key: "display_name",
           minWidth: 300,
           render: (desc: string) => desc || "--",
         },
@@ -297,6 +309,10 @@ function ResourcePickerInner(
         if (isInCheckedList) {
           keysToSelect.push(item[idName]);
         }
+        // 已选项显示为选中状态
+        if (value.some((v) => v[idName] === item[idName])) {
+          keysToSelect.push(item[idName]);
+        }
       });
       setSelectedRowKeys(keysToSelect);
     } catch (error) {
@@ -304,7 +320,7 @@ function ResourcePickerInner(
     } finally {
       setLoading(false);
     }
-  }, [groupType, idName]);
+  }, [groupType, idName, value]);
 
   // Open dialog
   const open = useCallback(() => {
@@ -446,9 +462,9 @@ function ResourcePickerInner(
         open={visible}
         onCancel={close}
         footer={
-          <div className="py-4 flex items-center justify-between">
+          <div className="flex items-center justify-between">
             <div className="text-sm text-hint text-left">
-              已选择 <span className="text-brand">{checkedList.length}</span> 个
+              已选择 <span className="text-brand">{value.length + checkedList.length}</span> 个
             </div>
             <div className="flex gap-2">
               <Button onClick={close}>{t("action_cancel")}</Button>
@@ -464,6 +480,7 @@ function ResourcePickerInner(
           </div>
         }
         width={800}
+        styles={{ body: { maxHeight: "72vh", overflow: "hidden" } }}
         destroyOnHidden
       >
         <div className="w-full flex items-center justify-between gap-4 mb-5">
@@ -486,37 +503,48 @@ function ResourcePickerInner(
           />
         </div>
 
-        <Table
-          rowKey={idName}
-          columns={columns}
-          dataSource={tableData}
-          loading={loading}
-          rowSelection={rowSelection}
-          pagination={
-            tableTotal
-              ? {
-                  current: filterFormRef.current.page,
-                  pageSize: filterFormRef.current.pageSize,
-                  total: tableTotal,
-                  showSizeChanger: true,
-                  showTotal: (total: number) => `共 ${total} 条`,
-                }
-              : {
-                  current: filterFormRef.current.page,
-                  pageSize: filterFormRef.current.pageSize,
-                  showSizeChanger: true,
-                }
-          }
-          scroll={{ y: "54vh" }}
-          onChange={handleTableChange}
-          components={{
-            header: {
-              cell: (props: any) => (
-                <th {...props} className="!bg-[#F6F7F8] !border-none" />
-              ),
-            },
-          }}
-        />
+          <Table
+            rowKey={idName}
+            columns={columns}
+            dataSource={tableData}
+            loading={loading}
+            rowSelection={rowSelection}
+            pagination={
+              tableTotal
+                ? {
+                    current: filterFormRef.current.page,
+                    pageSize: filterFormRef.current.pageSize,
+                    total: tableTotal,
+                    showSizeChanger: true,
+                    showTotal: (total: number) => `共 ${total} 条`,
+                  }
+                : {
+                    current: filterFormRef.current.page,
+                    pageSize: filterFormRef.current.pageSize,
+                    showSizeChanger: true,
+                  }
+            }
+          scroll={{ y: "calc(56vh - 64px)" }}
+            onChange={handleTableChange}
+            components={{
+              header: {
+                cell: (props: any) => (
+                  <th {...props} className="!bg-[#F6F7F8] !border-none" />
+                ),
+              },
+              body: {
+                row: (props: any) => {
+                  const { className, ...rest } = props;
+                  return (
+                    <tr
+                      {...rest}
+                      className={`${className || ""} resource-picker-row`}
+                    />
+                  );
+                },
+              },
+            }}
+          />
       </Modal>
     </div>
   );

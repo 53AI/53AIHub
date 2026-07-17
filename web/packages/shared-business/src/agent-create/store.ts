@@ -12,6 +12,7 @@ import type {
   IAgentCreateAdapter,
 } from './types'
 import { getInitialFormData, getInitialState } from './types'
+import { AGENT_TYPES } from './constants'
 
 // ==================== Store 状态接口 ====================
 
@@ -239,18 +240,19 @@ export const useAgentFormStore = create<AgentFormStore>((set, get) => ({
     try {
       let data = await adapter.getDetail(agent_id)
       // 应用适配器的数据过滤
+
       if (adapter.filterResponseData) {
         data = adapter.filterResponseData(data)
       }
 
-      const agent_type = data.custom_config?.agent_type || 'prompt'
+      const agent_type = data.custom_config?.agent_type || AGENT_TYPES.PROMPT
 
       // 根据 API 返回数据或 agent_type 判断是否支持图片解析
       let supportImage = false
       if (data.settings?.image_parse?.vision) {
         supportImage = true
       }
-      if (agent_type !== 'prompt') {
+      if (agent_type !== AGENT_TYPES.PROMPT) {
         supportImage = true
       }
       

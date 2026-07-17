@@ -60,7 +60,7 @@ export function SystemLogRefactoredPage() {
   // 使用 useListState 管理 URL持久化状态
   const { state: urlState, stateRef: urlStateRef, updateState } = useListState<UrlPersistedState>(
     defaultUrlState,
-    { urlPrefix: 'log_' }
+    { enableUrlSync: true, urlPrefix: 'log_' }
   );
 
   // 标记是否已初始化

@@ -5,23 +5,15 @@ import { getSimpleDateFormatString } from '@km/shared-utils'
 import { setRouterQuery } from '@/utils/router'
 import { isHashRouter, pathIncludes } from '@/router'
 import { AGENT_USAGES } from '@/constants/agent'
+import { isOpenClawConversationId } from '@km/shared-business/chat'
 
 interface RouterOptions {
   agent_id?: string | null
   conversation_id?: number | string | null
 }
 
-function isOpenClawConversationId(conversationId?: string | number | null) {
-  return typeof conversationId === 'string' && (
-    conversationId.startsWith('agent:') ||
-    conversationId.startsWith('agenthub_') ||
-    conversationId.startsWith('agenthub-') ||
-    conversationId.startsWith('hub53ai:new:')
-  )
-}
-
 function isConversationHistoryRoute() {
-  return pathIncludes('/chat') || pathIncludes('/index/agent')
+  return pathIncludes('/chat') || pathIncludes('/agent/agent')
 }
 
 export const useCurrentConversation = () => {

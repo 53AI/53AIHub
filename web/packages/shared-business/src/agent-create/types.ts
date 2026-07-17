@@ -11,6 +11,7 @@ import type {
   SuggestedQuestion,
   FieldItem,
   RelateAgent,
+  ScopeItem,
   IAgentCreateAdapter,
 } from './adapters/types'
 
@@ -28,6 +29,7 @@ export type {
   SuggestedQuestion,
   FieldItem,
   RelateAgent,
+  ScopeItem,
   IAgentCreateAdapter,
 }
 
@@ -111,7 +113,7 @@ export interface UseAgentFormReturn {
   // 状态访问
   formData: AgentFormData
   agentType: string
-  agentId: number
+  agentId: string | number
   isNew: boolean
   loading: boolean
   saving: boolean
@@ -218,6 +220,7 @@ export function getInitialFormData(): AgentFormData {
     prompt: '',
     user_group_ids: [],
     subscription_group_ids: [],
+    scopes: [],  // 默认空，新建模式时由 GroupSelect 设置默认值
     tools: [],
     use_cases: [],
     configs: {

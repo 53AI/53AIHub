@@ -36,6 +36,8 @@ function deepCopy<T>(obj: T): T {
 interface ChunkInfo extends ChunkItem {
   token_count?: number;
   chunk_index?: number;
+  library_icon?: string;
+  space_name?: string;
 }
 
 const Chunk = forwardRef<ChunkRef, ChunkProps>(

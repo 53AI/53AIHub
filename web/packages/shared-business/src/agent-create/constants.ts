@@ -1,6 +1,8 @@
 /** Agent 平台类型常量 */
 export const AGENT_TYPES = {
   PROMPT: 'prompt',
+  WORKBENCH: 'workbench',
+  KNOWLEDGE: 'knowledge',
   COZE_AGENT_CN: 'coze_agent_cn',
   COZE_WORKFLOW_CN: 'coze_workflow_cn',
   COZE_AGENT_OSV: 'coze_agent_osv',
@@ -193,7 +195,7 @@ export function normalizeOpenClawCompatibleCustomConfig(
   agentType?: unknown,
 ): Record<string, any> {
   const metadata = getOpenClawCompatibleAgentMetadata(agentType)
-  const normalizedConfig = {
+  const normalizedConfig: Record<string, any> = {
     ...(customConfig || {}),
     agent_type: metadata.agentType,
     hostKind: metadata.hostKind,
@@ -218,8 +220,51 @@ export const AGENT_MODES = {
   CHAT: 'chat',
   COMPLETION: 'completion',
   ASSISTANT: 'assistant',
-
 } as const
+
+// ==================== 模型配置相关常量 ====================
+
+/** 模型值分隔符（用于 channel_id、model_name、channel_type 编码） */
+export const MODEL_VALUE_SEPARATOR = "_53aikm_"
+
+/** 技能最大数量 */
+export const MAX_SKILLS_COUNT = 6
+
+/** 拒答策略类型 */
+export const OUT_REPLY_TYPE = {
+  FIXED_REPLY: "fixed_reply",
+  CONTINUE: "continue",
+} as const
+
+// ==================== 默认配置 ====================
+
+/** 默认重排序配置 */
+export const DEFAULT_RERANK_CONFIG = {
+  top_k: 20,
+  rerank_channel_id: 0,
+  rerank_model_name: "",
+  reranking_enable: true,
+  score_threshold: 0,
+  score_threshold_enabled: false,
+}
+
+/** 默认快速推理配置 */
+export const DEFAULT_FAST_REASONING_CONFIG = {
+  enable: true,
+  channel_id: 0,
+  channel_type: 0,
+  model_name: "",
+  temperature: 0.7,
+}
+
+/** 默认深度思考配置 */
+export const DEFAULT_DEEP_THINKING_CONFIG = {
+  enable: false,
+  channel_id: 0,
+  channel_type: 0,
+  model_name: "",
+  temperature: 0.7,
+}
 
 /** 输入字段类型项 */
 export interface FieldTypeItem {

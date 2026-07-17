@@ -1,6 +1,7 @@
 package router
 
 import (
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/wsmanager"
 	"github.com/53AI/53AIHub/controller"
 	"github.com/53AI/53AIHub/controller/relay"
@@ -13,6 +14,7 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter := router.Group("/api")
 	// apiRouter.Use(middleware.CORS())
 	apiRouter.Use(middleware.Logger())
+	apiRouter.Use(middleware.SlowAPILogger())
 
 	maybeUseSaasEnv(apiRouter)
 
@@ -111,6 +113,53 @@ func SetApiRouter(router *gin.Engine) {
 		agentH5Route.POST("/fixed-token", middleware.UserTokenAuth(model.RoleAdminUser), controller.CreateAgentH5FixedToken)
 		agentH5Route.GET("/fixed-token", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetAgentH5FixedTokenList)
 	}
+
+	// Agent OpenAPI 管理端路由
+	agentOpenAPIManageRoute := apiRouter.Group("/agents")
+	agentOpenAPIManageRoute.Use(middleware.UserTokenAuth(model.RoleAdminUser))
+	{
+		agentAPIKeyRoute := agentOpenAPIManageRoute.Group("/api/keys")
+		{
+			agentAPIKeyRoute.POST("", controller.CreateAgentAPIKey)
+			agentAPIKeyRoute.GET("", controller.ListAgentAPIKey)
+			agentAPIKeyRoute.POST("/:id/rotate", controller.RotateAgentAPIKey)
+			agentAPIKeyRoute.DELETE("/:id", controller.RevokeAgentAPIKey)
+		}
+
+		agentOpenAPIDocsRoute := agentOpenAPIManageRoute.Group("/openapi")
+		{
+			agentOpenAPIDocsRoute.GET("/docs-template", controller.GetAgentOpenAPIDocsTemplate)
+		}
+	}
+
+	// Agent OpenAPI 路由（使用 API Key 认证）
+	// 挂在 router 直接（无 /api 前缀），符合 Spec §4.1
+	openAPIRoute := router.Group("/openapi/v1")
+	openAPIRoute.Use(middleware.CORS())
+	openAPIRoute.Use(middleware.Logger())
+	openAPIRoute.Use(middleware.SlowAPILogger())
+	openAPIRoute.Use(middleware.HashidsDecoder())
+	openAPIRoute.Use(middleware.RequestDecoder())
+	openAPIRoute.Use(middleware.ResponseEncoder())
+	openAPIRoute.Use(middleware.AgentAPIAuth())
+	openAPIRoute.Use(middleware.AgentAPIRateLimit())
+	{
+		openAPIRoute.POST("/chat/completions", relay.HandleAgentAPIChatCompletions)
+		openAPIRoute.POST("/chat/completions/:run_id/cancel", controller.CancelOpenAPIChatCompletion)
+		openAPIRoute.GET("/conversations", controller.GetOpenAPIConversations)
+		openAPIRoute.POST("/conversations", controller.CreateOpenAPIConversation)
+		openAPIRoute.GET("/conversations/:id", controller.GetOpenAPIConversationDetail)
+		openAPIRoute.DELETE("/conversations/:id", controller.DeleteOpenAPIConversation)
+		openAPIRoute.PATCH("/conversations/:id", controller.UpdateOpenAPIConversation)
+		openAPIRoute.POST("/files", controller.UploadOpenAPIFile)
+		openAPIRoute.GET("/files/:id", controller.GetOpenAPIFileInfo)
+		openAPIRoute.GET("/agent", controller.GetOpenAPIAgentInfo)
+		openAPIRoute.GET("/agent/skills", controller.GetOpenAPIAgentSkills)
+		openAPIRoute.POST("/messages/:id/rating", controller.RateOpenAPIMessage)
+	}
+
+	// Agent API 健康检查（无需认证）
+	router.GET("/openapi/v1/health", middleware.CORS(), controller.AgentAPIHealth)
 
 	mySpaceRoute := apiRouter.Group("/my-space")
 	mySpaceRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
@@ -232,11 +281,15 @@ func SetApiRouter(router *gin.Engine) {
 		skillLibraryRoute.DELETE("/:id/env-vars/:env_var_id", controller.DeleteMySkillEnvVar)
 		skillLibraryRoute.PUT("/:id/env-vars/batch", controller.BatchUpdateMySkillEnvVars)
 		skillLibraryRoute.GET("/:id/skill-md", controller.GetSkillMD)
-		skillLibraryRoute.POST("/:id/add", controller.AddSkillToMy)
-		skillLibraryRoute.GET("/my", controller.GetMySkillList)
-		skillLibraryRoute.PATCH("/my/:binding_id/status", controller.UpdateMySkillStatus)
-		skillLibraryRoute.DELETE("/my/:binding_id", controller.DeleteMySkill)
 		skillLibraryRoute.GET("/:id/download", controller.DownloadSkillZip)
+	}
+
+	agentSkillRoute := apiRouter.Group("/agent")
+	agentSkillRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		agentSkillRoute.GET("/:agent_id/skills", controller.ListAgentSkills)
+		agentSkillRoute.POST("/:agent_id/skills", controller.AddAgentSkill)
+		agentSkillRoute.DELETE("/:agent_id/skills/:binding_id", controller.DeleteAgentSkill)
 	}
 
 	adminSkillLibraryRoute := apiRouter.Group("/admin/skill-library")
@@ -250,6 +303,7 @@ func SetApiRouter(router *gin.Engine) {
 		adminSkillLibraryRoute.GET("/:id", controller.AdminGetSkillLibrary)
 		adminSkillLibraryRoute.PUT("/:id", controller.AdminUpdateSkillLibrary)
 		adminSkillLibraryRoute.PATCH("/:id/status", controller.AdminUpdateSkillLibraryStatus)
+		adminSkillLibraryRoute.POST("/:id/publish", controller.AdminPublishSkillLibrary)
 		adminSkillLibraryRoute.DELETE("/:id", controller.AdminDeleteSkillLibrary)
 		adminSkillLibraryRoute.POST("/:id/ai-generate", controller.AdminGenerateSkillLibraryContent)
 		adminSkillLibraryRoute.GET("/:id/files", controller.GetSkillFileTree)
@@ -261,6 +315,14 @@ func SetApiRouter(router *gin.Engine) {
 		adminSkillLibraryRoute.PUT("/:id/env-vars/:env_var_id", controller.AdminUpdateSkillEnvVar)
 		adminSkillLibraryRoute.DELETE("/:id/env-vars/:env_var_id", controller.AdminDeleteSkillEnvVar)
 		adminSkillLibraryRoute.PUT("/:id/env-vars/batch", controller.AdminBatchUpdateSkillEnvVars)
+	}
+
+	adminAgentSkillRoute := apiRouter.Group("/admin/agent")
+	adminAgentSkillRoute.Use(middleware.UserTokenAuth(model.RoleAdminUser))
+	{
+		adminAgentSkillRoute.GET("/:agent_id/skills/builtin", controller.ListAgentBuiltinSkills)
+		adminAgentSkillRoute.POST("/:agent_id/skills/builtin", controller.AddAgentBuiltinSkill)
+		adminAgentSkillRoute.DELETE("/:agent_id/skills/builtin/:binding_id", controller.DeleteAgentBuiltinSkill)
 	}
 
 	aiLinkRoute := apiRouter.Group("/ai_links")
@@ -353,6 +415,20 @@ func SetApiRouter(router *gin.Engine) {
 		personalAgentGroup.PUT("/:agent_id", controller.UpdateAgent)
 		personalAgentGroup.DELETE("/:agent_id", controller.DeleteAgent)
 		personalAgentGroup.POST("/:agent_id/reset-secret", controller.ResetPersonalAgentSecret)
+
+		// Agent 记忆（MEMORY.md）
+		personalAgentGroup.GET("/:agent_id/memory-list", controller.GetAgentMemoryList)
+		personalAgentGroup.GET("/:agent_id/memory", controller.GetAgentMemory)
+		personalAgentGroup.PUT("/:agent_id/memory", controller.UpdateAgentMemory)
+		personalAgentGroup.POST("/:agent_id/memory/compress", controller.CompressAgentMemory)
+		personalAgentGroup.POST("/:agent_id/memory/items", controller.AppendAgentMemoryItem)
+		personalAgentGroup.DELETE("/:agent_id/memory/items/:index", controller.DeleteAgentMemoryItem)
+
+		// Agent 工具教训（TOOLS.md）
+		personalAgentGroup.GET("/:agent_id/tool-lessons", controller.GetAgentToolLessons)
+		personalAgentGroup.PUT("/:agent_id/tool-lessons", controller.UpdateAgentToolLessons)
+		personalAgentGroup.POST("/:agent_id/tool-lessons/append", controller.AppendAgentToolLesson)
+		personalAgentGroup.DELETE("/:agent_id/tool-lessons/:index", controller.DeleteAgentToolLessonItem)
 	}
 
 	// 用户快捷 Agent 列表
@@ -366,6 +442,27 @@ func SetApiRouter(router *gin.Engine) {
 		agentShortcutGroup.PATCH("/:agent_id/pin", controller.UpdateUserAgentShortcutPin)
 	}
 
+	// 用户全局记忆
+	myMemoryGroup := apiRouter.Group("/my/memory")
+	myMemoryGroup.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		myMemoryGroup.GET("", controller.GetMyMemory)
+		myMemoryGroup.PUT("", controller.UpdateMyMemory)
+		myMemoryGroup.POST("/merge", controller.MergeMyMemory)
+		myMemoryGroup.POST("/import", controller.ImportMyMemory)
+		myMemoryGroup.DELETE("/smart-memory/:index", controller.DeleteSmartMemoryItem)
+		myMemoryGroup.DELETE("/custom-memory/:index", controller.DeleteCustomMemoryItem)
+	}
+
+	// 资源范围（通用，不绑定具体资源类型）
+	resourceScopeGroup := apiRouter.Group("/resource-scopes")
+	resourceScopeGroup.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	logger.SysDebugf("resource-scopes group registered with required_role=%d", model.RoleCommonUser)
+	{
+		resourceScopeGroup.GET("", controller.GetResourceScopes)
+		resourceScopeGroup.PUT("", controller.ReplaceResourceScopes)
+		resourceScopeGroup.GET("/check", controller.CheckResourceScopeAccess)
+	}
 	conversationGroup := apiRouter.Group("/conversations")
 	conversationGroup.Use(middleware.UserTokenAuth(model.RoleGuestUser))
 	{
@@ -476,6 +573,12 @@ func SetApiRouter(router *gin.Engine) {
 		openclawWSRouter.GET("/connect", wsmanager.HandleOpenClawWS)
 	}
 
+	openclawPluginRouter := apiRouter.Group("/v1/openclaw")
+	{
+		openclawPluginRouter.POST("/artifacts", controller.UploadOpenClawArtifact)
+		openclawPluginRouter.GET("/skills/:skill_id/package", controller.DownloadOpenClawSkillPackage)
+	}
+
 	openclawRouter := apiRouter.Group("/openclaw/agents/:agent_id")
 	openclawRouter.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
@@ -488,12 +591,16 @@ func SetApiRouter(router *gin.Engine) {
 		openclawRouter.GET("/status", controller.GetOpenClawStatus)
 		openclawRouter.GET("/config", controller.GetOpenClawConfig)
 		openclawRouter.GET("/skills", controller.GetOpenClawSkills)
+		openclawRouter.POST("/skills/:skill_id/ensure", controller.EnsureOpenClawSkill)
+		openclawRouter.GET("/artifacts/:artifact_id/preview", controller.PreviewOpenClawArtifact)
+		openclawRouter.GET("/artifacts/:artifact_id/download", controller.DownloadOpenClawArtifact)
 		openclawRouter.GET("/cron-tasks", controller.GetOpenClawCronTasks)
 	}
 
 	apiV1Router := router.Group("/v1")
 	apiV1Router.Use(middleware.CORS())
 	apiV1Router.Use(middleware.Logger())
+	apiV1Router.Use(middleware.SlowAPILogger())
 	apiV1Router.Use(middleware.HashidsDecoder()) // 路由参数解码
 	apiV1Router.Use(middleware.RequestDecoder()) // 请求体解码
 	apiV1Router.Use(middleware.RelayTokenAuth())
@@ -619,6 +726,10 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.GET("/system_logs/file_logs/ui", controller.GetFileLogsUI)
 	apiRouter.GET("/system_logs/file_logs/search", middleware.FileLogViewerAuth(), controller.SearchFileLogs)
 	apiRouter.POST("/system_logs/file_logs/archive", middleware.FileLogViewerAuth(), controller.ArchiveFileLogs)
+	apiRouter.GET("/system_logs/slow_logs/ui", controller.GetSlowLogsUI)
+	apiRouter.GET("/system_logs/slow_logs", middleware.FileLogViewerAuth(), controller.GetSlowLogs)
+	apiRouter.POST("/system_logs/slow_logs/:id/resolve", middleware.FileLogViewerAuth(), controller.ResolveSlowLog)
+	apiRouter.POST("/system_logs/slow_logs/:id/ignore", middleware.FileLogViewerAuth(), controller.IgnoreSlowLog)
 	systemLogRouter.Use(middleware.UserTokenAuth(model.RoleAdminUser))
 	{
 		systemLogRouter.GET("/modules", controller.GetModules)
@@ -975,6 +1086,7 @@ func SetApiRouter(router *gin.Engine) {
 	// RAG V2 路由组 - 统一挂载在 /api/rag/v2 下
 	ragV2Route := ragRoute.Group("/v2")
 	ragV2Route.Use(middleware.Logger())
+	ragV2Route.Use(middleware.SlowAPILogger())
 	ragV2Route.Use(middleware.HashidsDecoder())
 	ragV2Route.Use(middleware.RequestDecoder())
 	ragV2Route.Use(middleware.ResponseEncoder())

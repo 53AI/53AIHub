@@ -288,7 +288,15 @@ function getLedgerStateRunIdentity(state: OpenClawLedgerReducerState) {
   return "";
 }
 
+function isSameLedgerTurnScope(state: OpenClawLedgerReducerState, event: OpenClawLedgerEvent) {
+  return Boolean(
+    (state.turnId && event.turn_id && state.turnId === event.turn_id) ||
+      (state.activeRequestId && event.active_request_id && state.activeRequestId === event.active_request_id)
+  );
+}
+
 function isSameLedgerRun(state: OpenClawLedgerReducerState, event: OpenClawLedgerEvent) {
+  if (isSameLedgerTurnScope(state, event)) return true;
   const stateRunIdentity = getLedgerStateRunIdentity(state);
   const eventRunIdentity = getLedgerEventRunIdentity(event);
   return Boolean(stateRunIdentity && eventRunIdentity && stateRunIdentity === eventRunIdentity);
@@ -416,12 +424,19 @@ export function reduceOpenClawLedgerEvents(events: OpenClawLedgerEvent[]): OpenC
 
 function extractOutputFiles(payload: Record<string, unknown> | undefined): OutputFile[] {
   const record = readRecord(payload);
+  const nestedPayload = readRecord(record.payload);
   const processStep = readRecord(record.process_step);
+  const nestedProcessStep = readRecord(nestedPayload.process_step);
   const processData = readRecord(processStep.data);
+  const nestedProcessData = readRecord(nestedProcessStep.data);
   const directFiles = Array.isArray(record.files) ? record.files : [];
+  const nestedDirectFiles = Array.isArray(nestedPayload.files) ? nestedPayload.files : [];
   const processFiles = Array.isArray(processData.files) ? processData.files : [];
+  const nestedProcessFiles = Array.isArray(nestedProcessData.files) ? nestedProcessData.files : [];
   const mediaAttachments = Array.isArray(processData.media_attachments) ? processData.media_attachments : [];
+  const nestedMediaAttachments = Array.isArray(nestedProcessData.media_attachments) ? nestedProcessData.media_attachments : [];
   return [...directFiles, ...processFiles, ...mediaAttachments]
+    .concat(nestedDirectFiles, nestedProcessFiles, nestedMediaAttachments)
     .map(normalizeLedgerOutputFile)
     .filter((file): file is OutputFile => Boolean(file));
 }
@@ -435,19 +450,25 @@ function normalizeLedgerOutputFile(value: unknown): OutputFile | null {
   const base64 = readString(file.base64);
   const content = typeof file.content === "string" ? file.content : undefined;
   const filePath = readString(file.file_path) || readString(file.path);
+  const previewKey = readString(file.preview_key) || readString(file.previewKey);
+  const previewUrl = readString(file.preview_url) || readString(file.previewUrl);
   const downloadUrl = readString(file.download_url) || readString(file.downloadUrl);
   const signedDownloadUrl = readString(file.signed_download_url) || readString(file.signedDownloadUrl);
   const rawUrl = readString(file.url) || readString(file.href);
-  const url = signedDownloadUrl || downloadUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : "");
-  const id = (file.id ?? file.file_id ?? file.fileId ?? url) || fileName;
+  const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : "") || signedDownloadUrl || downloadUrl;
+  const id = (file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url) || fileName;
   if (id == null && !url && !fileName) return null;
 
   return {
     id: String(id ?? `${url}|${fileName}`),
     file_name: fileName,
     url,
+    preview_key: previewKey,
+    preview_url: previewUrl,
     download_url: downloadUrl,
     signed_download_url: signedDownloadUrl,
+    artifact_id: (file.artifact_id ?? file.artifactId) as string | number | undefined,
+    upload_file_id: (file.upload_file_id ?? file.uploadFileId) as string | number | undefined,
     mime_type: mimeType,
     size: readNumber(file.size),
     kind: readString(file.kind),
@@ -564,4 +585,43 @@ export function projectOpenClawLedgerTurn(
     failed: state.status === "failed",
     isStreaming: options?.isStreaming ?? toTurnStatus(state.status) === "streaming",
   };
+}
+
+// ============================================================================
+// Session Snapshot 类型（上移自 apps/front-react/src/api/modules/openclaw）
+// ============================================================================
+
+/** Snapshot 中单个 active turn 的形态（兼容 snake/camel 命名） */
+export interface OpenClawSnapshotActiveTurn {
+  turn_id?: string;
+  turnId?: string;
+  run_id?: string;
+  runId?: string;
+  active_request_id?: string;
+  activeRequestId?: string;
+  status?: OpenClawLedgerTerminalStatus | string;
+  terminal_status?: OpenClawLedgerTerminalStatus;
+  terminalStatus?: string;
+  last_seq?: number;
+  lastSeq?: number;
+  part_ids?: string[];
+  partIds?: string[];
+}
+
+/** 会话 snapshot 载荷（兼容 snake/camel 命名 + 顶层/data 双层嵌套） */
+export interface OpenClawSessionSnapshot {
+  session_id?: string;
+  sessionId?: string;
+  conversation_id?: string;
+  conversationId?: string;
+  last_seq?: number;
+  lastSeq?: number;
+  active_turns?: OpenClawSnapshotActiveTurn[];
+  activeTurns?: OpenClawSnapshotActiveTurn[];
+  recent_events?: OpenClawLedgerEvent[];
+  recentEvents?: OpenClawLedgerEvent[];
+  ledger_events?: OpenClawLedgerEvent[];
+  ledgerEvents?: OpenClawLedgerEvent[];
+  /** 部分 API 会把 snapshot 整体包在 data 字段里 */
+  data?: OpenClawSessionSnapshot;
 }

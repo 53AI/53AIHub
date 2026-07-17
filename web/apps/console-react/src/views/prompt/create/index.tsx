@@ -239,7 +239,7 @@ export function PromptCreatePage() {
 
   return (
     <PageLayoutContent
-      className="fixed inset-0 !px-0 !py-0 bg-[#F7F9FC]"
+      className="h-full w-full !px-0 !py-0 bg-[#F7F9FC]"
       header={{
         title: (
           <div className="flex items-center gap-2">

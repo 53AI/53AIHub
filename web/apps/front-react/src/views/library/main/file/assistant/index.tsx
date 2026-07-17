@@ -14,6 +14,9 @@ import { getPublicPath } from "@/utils/config";
 import { ChatAssistant, ChatRef } from "./Chat";
 import { MapAssistant } from "./Map";
 import { AgentApp } from "./AgentApp";
+import { ChatConfigProvider } from "@km/shared-business/chat";
+import { chatAdapters } from "@/adapters/chat-adapters";
+import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import "./index.css";
 
 interface CustomAppItem {
@@ -62,6 +65,7 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
     const pendingMessageRef = useRef<{ textContent: string; from: string } | null>(null);
 
     const chatAppRef = useRef<ChatRef>(null);
+    const locale = useEnterpriseStore((state) => state.language);
 
     const maxWidth = "100%";
     const minWidth = "452px";
@@ -209,10 +213,11 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
     if (!visible) return null;
 
     return (
-      <div
-        className="file-chat flex-1 h-full flex flex-col bg-white border-l relative overflow-hidden transition-all duration-300"
-        style={{ width: isCollapsed ? maxWidth : minWidth }}
-      >
+      <ChatConfigProvider lang={locale} adapters={chatAdapters}>
+        <div
+          className="file-chat flex-1 h-full flex flex-col bg-white border-l relative overflow-hidden transition-all duration-300"
+          style={{ width: isCollapsed ? maxWidth : minWidth }}
+        >
         {/* Header */}
         <div className="flex-none h-[68px] py-1 px-5 flex items-center gap-2 border-b">
           <img
@@ -284,6 +289,7 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
           <AgentApp agentInfo={curCustomApp} fileInfo={fileInfo} />
         )}
       </div>
+      </ChatConfigProvider>
     );
   },
 );

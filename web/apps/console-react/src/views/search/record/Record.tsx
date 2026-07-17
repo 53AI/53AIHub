@@ -331,7 +331,7 @@ export function Record({ agentId }: RecordProps) {
   ];
 
   return (
-    <div>
+    <div className="h-full overflow-y-auto">
       <div className="flex justify-between items-center">
         <div>
           <span className="text-lg">{t("search-record.statistics")}</span>
@@ -379,7 +379,7 @@ export function Record({ agentId }: RecordProps) {
       </div>
       <div className="mt-8 text-lg">{t("search-record.detail")}</div>
       <div className="mt-5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 mb-4">
           <div className="flex-none">
             <DateRangeFilter
               value={detailedDate}
@@ -470,7 +470,8 @@ export function Record({ agentId }: RecordProps) {
             </Select.Option>
           </Select>
           <Button
-            className={`border-none px-3 ${isClearIconAvailable ? "!bg-[#2563EB] !text-white" : "!bg-gray-100 !text-gray-400"}`}
+            className="border-none px-3"
+            type={isClearIconAvailable ? "primary" : "default"}
             disabled={!isClearIconAvailable}
             onClick={handleClear}
           >

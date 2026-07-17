@@ -10,20 +10,20 @@ apps/<plugin-name>/
 ├── src/
 │   ├── main.tsx          # 入口，挂载 React
 │   ├── App.tsx           # useAuthGuard + LoginForm/ChatView 切换
-│   ├── config.ts         # 插件配置（PluginConfig）
 │   ├── adapters/
-│   │   ├── index.ts      # 导出所有适配器
+│   │   ├── index.ts      # 导出所有适配器（IChatAdapters）
 │   │   ├── conversation.ts  # IConversationApi 实现
 │   │   ├── agent.ts         # IAgentApi 实现
-│   │   └── upload.ts        # IUploadApi 实现
+│   │   └── workflow.ts      # IWorkflowApi 实现
 │   └── ChatView.tsx      # 组合 BubbleList、Sender，注入 adapters
 ```
 
+> **unify-chat-adapters**：原 `PluginConfig / PluginAdapters / ChatPluginProvider` 已并入 `IChatAdapters` 与 `ChatConfigProvider`，`config.ts` 不再需要。
+
 ## 必须实现
 
-1. **PluginConfig** - 定义插件类型和功能开关
-2. **PluginAdapters** - 实现 IConversationApi、IAgentApi、IUploadApi
-3. **App.tsx** - 处理登录/聊天视图切换
+1. **IChatAdapters** - 实现 IConversationApi、IAgentApi、IWorkflowApi 等
+2. **App.tsx** - 处理登录/聊天视图切换
 
 ## 使用方式
 

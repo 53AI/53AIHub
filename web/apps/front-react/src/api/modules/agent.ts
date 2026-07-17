@@ -326,6 +326,12 @@ const agentApi = {
     },
   },
 
+  providers: {
+    list(params?: { provider_type?: number }) {
+      return service.get('/api/providers', { params }).then(res => res.data || []).catch(handleError)
+    },
+  },
+
   async updateStatus({ data: { agent_id, enable } }: { data: { agent_id: string; enable: boolean } }) {
     return service.patch(`/api/agents/${agent_id}/status`, { enable }).catch(handleError)
   },

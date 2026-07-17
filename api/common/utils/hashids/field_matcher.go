@@ -83,6 +83,7 @@ var DefaultIDFieldMatcher = &IDFieldMatcher{
 		"relatedId",
 		"binding_id",
 		"env_var_id",
+		"skill_library_id",
 		// "user_ids",
 		// "receiver_user_ids",
 	},

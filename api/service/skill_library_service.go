@@ -182,13 +182,13 @@ func parseGitHubOwnerRepo(canonicalRepoURL string) (string, string, error) {
 }
 
 type SkillImportRequest struct {
-	Eid            int64
-	SourceType     string // zip|github
-	UploadFileID   string // numeric or hashid
-	GithubURL      string
-	Ref            string
-	SkillPath      string // github import extension point, default to repo root
-	MockRiskLevel  string // 调试参数，指定风险等级跳过扫描
+	Eid           int64
+	SourceType    string // zip|github
+	UploadFileID  string // numeric or hashid
+	GithubURL     string
+	Ref           string
+	SkillPath     string // github import extension point, default to repo root
+	MockRiskLevel string // 调试参数，指定风险等级跳过扫描
 }
 
 type SkillImportJobPayload struct {
@@ -197,6 +197,7 @@ type SkillImportJobPayload struct {
 	GithubURL          string  `json:"github_url,omitempty"`
 	Ref                string  `json:"ref,omitempty"`
 	SkillPath          string  `json:"skill_path,omitempty"`
+	MockRiskLevel      string  `json:"mock_risk_level,omitempty"`
 	PermissionGroupIDs []int64 `json:"permission_group_ids,omitempty"`
 	OriginZipKey       string  `json:"origin_zip_key,omitempty"`
 }
@@ -245,6 +246,7 @@ func (s *SkillLibraryService) submitSkillImportJob(ctx context.Context, req *Ski
 		GithubURL:          strings.TrimSpace(req.GithubURL),
 		Ref:                strings.TrimSpace(req.Ref),
 		SkillPath:          strings.TrimSpace(req.SkillPath),
+		MockRiskLevel:      strings.TrimSpace(req.MockRiskLevel),
 		PermissionGroupIDs: normalizePermissionGroupIDs(permissionGroupIDs),
 	}
 	payloadBytes, err := json.Marshal(payload)
@@ -439,5 +441,3 @@ func (s *SkillLibraryService) RunAsyncImportJob(ctx context.Context, jobID int64
 		_ = s.runImportWorker(context.Background(), jobID)
 	}()
 }
-
-

@@ -13,7 +13,7 @@ import { AppRouter } from "./router";
 import { useEnterpriseStore, useLocaleStore, useUserStore } from "@/stores";
 import { useEnv } from "@/hooks/useEnv";
 import { useMultiAccountGuard } from "@/hooks/useMultiAccountGuard";
-import { eventBus, setupChunkErrorHandler } from "@km/shared-utils";
+import { eventBus } from "@km/shared-utils";
 import { gotoLogin } from "./router/guards";
 import settingApi from "./api/modules/setting";
 
@@ -52,11 +52,6 @@ export function App() {
     if (href.includes('?') && !search) {
       window.history.replaceState(null, '', `${origin}${pathname}${hash}`);
     }
-  }, []);
-
-  // chunk 加载失败处理（部署后旧代码失效）
-  useEffect(() => {
-    setupChunkErrorHandler();
   }, []);
 
   // 动态切换 dayjs locale
@@ -124,7 +119,13 @@ export function App() {
 
   eventBus.on("user-login-expired", handleLoginExpired);
   return (
-    <ConfigProvider locale={antdLocaleMap[locale] || zhCN}>
+    <ConfigProvider
+      locale={antdLocaleMap[locale] || zhCN}
+      modal={{
+        centered: true,
+        mask: { closable: false },
+      }}
+    >
       <AntApp className="h-full overflow-hidden flex">
         <AppRouter />
       </AntApp>

@@ -1,19 +1,18 @@
-﻿// packages/shared-business/src/chat/components/message/MessageItem.tsx
+// packages/shared-business/src/chat/components/message/MessageItem.tsx
 
 import { memo } from "react";
 import UserMessage from "./UserMessage";
 import AssistantMessage from "./AssistantMessage";
-import type { TranslateFn } from "../process-flow";
+import type { Message, ChatMessagesFeatures } from "../../types/message";
+import type { IAgentInfo } from "../../adapters/types";
 import type {
-  Message,
-  ChatMessagesFeatures,
-  FileItem,
-  ChunkItem,
-  OutputFile,
-  SourceReferenceData,
-  OpenClawActivityItem,
-  OpenClawInteractionOption,
-} from "../../types/message";
+  MessageActionFeature,
+  FileActionFeature,
+  SourceActionFeature,
+  OpenClawFeature,
+  ChatMessagesSlots,
+} from "../ChatMessages/types";
+import type { TranslateFn } from "../process-flow";
 
 function readOpenClawVisibleAssistantContent(message: Message): string {
   return String(message.openclawProjection?.visibleAnswer || "").trim();
@@ -48,7 +47,10 @@ function traceOpenClawMessageRender(label: string, payload: Record<string, unkno
   console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
 }
 
+// === Main Props ===
+
 export interface MessageItemProps {
+  // === 核心 ===
   /** 消息数据 */
   message: Message;
   /** 消息索引 */
@@ -56,67 +58,40 @@ export interface MessageItemProps {
   /** 消息总数 */
   total: number;
   /** Agent 信息 */
-  agentInfo?: {
-    agent_id?: string | number;
-    name?: string;
-    logo?: string;
-    settings?: {
-      opening_statement?: string;
-      answer_remarks_config?: { enable: boolean; content: string };
-    };
-  };
+  agentInfo?: IAgentInfo;
+  /** 用户头像 URL（用于 UserMessage） */
+  userAvatar?: string;
   /** 功能开关 */
   features?: ChatMessagesFeatures;
-  /** 是否正在流式输出 */
+  /** 外部传入的翻译函数 */
+  t?: TranslateFn;
+
+  // === 功能分组 ===
+  /** 流式状态 */
   isStreaming?: boolean;
+  /** OpenClaw 模式 */
+  openclaw?: OpenClawFeature;
   /** 分享模式 */
   isShareMode?: boolean;
   /** 选中的消息 ID 列表 */
   selectedMessageIds?: (string | number)[];
-  /** Openclaw 模式 */
-  openclaw?: boolean;
-  /** 消息选择回调 */
-  onMessageSelect?: (message: Message) => void;
-  /** 重新生成回调 */
-  onRegenerate?: (message: Message) => void;
-  /** 分享回调 */
-  onShare?: () => void;
-  /** 添加为文件回调 */
-  onAddAsMd?: (message: Message) => void;
-  /** 反馈回调 */
-  onFeedback?: (message: Message, type: 'satisfied' | 'unsatisfied', description?: string) => void;
-  /** 文件点击回调 */
-  onFileClick?: (file: FileItem) => void;
-  /** 源文件点击回调 */
-  onSourceClick?: (source: ChunkItem, message: Message) => void;
-  /** 打开知识库侧边栏回调 */
-  onOpenKnow?: (message: Message) => void;
-  /** Source 引用点击回调 */
-  onSourceReferenceClick?: (data: SourceReferenceData, message: Message) => void;
-  /** 自定义 Source 渲染函数 */
-  renderSource?: (type: string, number: number, message: Message) => string;
-  /** 输出文件收藏回调 */
-  onOutputFileFavorite?: (file: OutputFile, message: Message) => void;
-  /** 输出文件预览回调 */
-  onOutputFilePreview?: (file: OutputFile, message: Message) => void;
-  /** 输出文件收藏状态检查回调 */
-  onOutputFileCheckFavorite?: (fileIds: string[]) => void;
-  /** OpenClaw 交互选项提交回调 */
-  onOpenClawInteractionSubmit?: (activity: OpenClawActivityItem, option: OpenClawInteractionOption, message: Message) => Promise<void> | void;
-  /** 反馈面板关闭回调 */
-  onFeedbackClose?: (message: Message) => void;
-  /** 反馈选项切换回调 */
-  onFeedbackToggle?: (message: Message, key: string) => void;
-  /** 反馈描述变化回调 */
-  onFeedbackDescriptionChange?: (message: Message, value: string) => void;
-  /** 显示错误详情回调 */
-  onShowErrorDetails?: (message: Message) => void;
-  /** 自定义文件链接渲染（用于跳转） */
-  renderFileLink?: (file: FileItem, children: React.ReactNode) => React.ReactNode;
+  /** 是否被选中（分享模式） */
+  isSelected?: boolean;
+
+  // === 回调分组 ===
+  /** 消息操作回调 */
+  messageAction?: MessageActionFeature;
+  /** 文件操作回调 */
+  fileAction?: FileActionFeature;
+  /** 源引用操作回调 */
+  sourceAction?: SourceActionFeature;
+
+  // === UI 插槽 ===
+  slots?: ChatMessagesSlots;
+
+  // === 其他 ===
   /** 折叠/展开 OpenClaw 时间线时保持外层滚动位置 */
   preserveScrollDuringToggle?: (callback: () => void) => void;
-  /** 外部传入的翻译函数（可选） */
-  t?: TranslateFn;
 }
 
 function MessageItemInner({
@@ -124,39 +99,25 @@ function MessageItemInner({
   index,
   total,
   agentInfo,
+  userAvatar,
   features,
   isStreaming = false,
+  openclaw,
   isShareMode = false,
-  selectedMessageIds = [],
-  openclaw = false,
-  onMessageSelect,
-  onRegenerate,
-  onShare,
-  onAddAsMd,
-  onFeedback,
-  onFileClick,
-  onSourceClick,
-  onOpenKnow,
-  onSourceReferenceClick,
-  renderSource,
-  onOutputFileFavorite,
-  onOutputFilePreview,
-  onOutputFileCheckFavorite,
-  onOpenClawInteractionSubmit,
-  onFeedbackClose,
-  onFeedbackToggle,
-  onFeedbackDescriptionChange,
-  onShowErrorDetails,
-  renderFileLink,
+  isSelected = false,
+  messageAction,
+  fileAction,
+  sourceAction,
+  slots,
   preserveScrollDuringToggle,
   t,
 }: MessageItemProps) {
+  const openclawEnabled = openclaw?.enabled ?? false;
   const isLastMessage = index === total - 1;
-  const isSelected = selectedMessageIds.includes(message.id);
-  const visibleAssistantContent = openclaw
+  const visibleAssistantContent = openclawEnabled
     ? readOpenClawVisibleAssistantContent(message)
     : String(message.answer || message.content || "").trim();
-  const hasAssistantSurface = openclaw
+  const hasAssistantSurface = openclawEnabled
     ? message.loading ||
       Boolean(visibleAssistantContent) ||
       Boolean(message.openclawProjection?.timelineItems?.length) ||
@@ -167,8 +128,9 @@ function MessageItemInner({
           message.outputFiles?.length ||
           message.process_records?.length
       );
-  const shouldRenderAssistant = !openclaw || hasAssistantSurface;
-  if (openclaw) {
+  const shouldRenderAssistant = !openclawEnabled || hasAssistantSurface;
+
+  if (openclawEnabled) {
     traceOpenClawMessageRender("message-item.render", {
       id: message.id,
       questionLen: String(message.question || "").length,
@@ -190,13 +152,12 @@ function MessageItemInner({
       {/* User Message */}
       <UserMessage
         message={message}
-        agentLogo={agentInfo?.logo}
+        userAvatar={userAvatar}
         features={features}
         isShareMode={isShareMode}
         isSelected={isSelected}
-        onSelect={onMessageSelect}
-        onFileClick={onFileClick}
-        renderFileLink={renderFileLink}
+        fileAction={fileAction}
+        slots={slots}
       />
 
       {/* Assistant Message */}
@@ -210,24 +171,10 @@ function MessageItemInner({
           isShareMode={isShareMode}
           isSelected={isSelected}
           openclaw={openclaw}
-          onSelect={onMessageSelect}
-          onRegenerate={onRegenerate}
-          onShare={onShare}
-          onAddAsMd={onAddAsMd}
-          onFeedback={onFeedback}
-          onFileClick={onFileClick}
-          onSourceClick={onSourceClick}
-          onOpenKnow={onOpenKnow}
-          onSourceReferenceClick={onSourceReferenceClick}
-          renderSource={renderSource}
-          onOutputFileFavorite={onOutputFileFavorite}
-          onOutputFilePreview={onOutputFilePreview}
-          onOutputFileCheckFavorite={onOutputFileCheckFavorite}
-          onOpenClawInteractionSubmit={onOpenClawInteractionSubmit}
-          onFeedbackClose={onFeedbackClose}
-          onFeedbackToggle={onFeedbackToggle}
-          onFeedbackDescriptionChange={onFeedbackDescriptionChange}
-          onShowErrorDetails={onShowErrorDetails}
+          messageAction={messageAction}
+          fileAction={fileAction}
+          sourceAction={sourceAction}
+          slots={slots}
           preserveScrollDuringToggle={preserveScrollDuringToggle}
           t={t}
         />

@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Collapse, Empty, Spin } from "antd";
 import { CloseOutlined, DownOutlined, UpOutlined } from "@ant-design/icons";
 import openclawApi from "@/api/modules/openclaw";
+import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
+import { getOpenClawPayload } from "@km/shared-business/chat";
 import {
   type OpenClawConnectionState,
   getOpenClawInputDisabledReason,
   getOpenClawGatewayDisplayName,
   getOpenClawHostKind,
   isOpenClawGatewayUnavailableError,
-  readOpenClawResponsePayload,
 } from "../openclaw-status";
 
 export { formatOpenClawGatewayName } from "../openclaw-status";
@@ -32,6 +33,8 @@ interface PanelState {
   error: string;
 }
 
+type OpenClawTaskState = "executed" | "disabled" | "pending";
+
 const QCLAW_LOGO = "/images/vibe/openclaw-panel/qclaw-logo.svg";
 const OPENCLAW_LOGO = "/images/vibe/openclaw-panel/openclaw-logo.svg";
 const OVERVIEW_ICON = "/images/vibe/openclaw-panel/overview.svg";
@@ -43,7 +46,7 @@ const SKILL_ITEM_ICON = "/images/vibe/openclaw-panel/skill-item.svg";
 
 function textValue(value: unknown, fallback = "-") {
   if (value === undefined || value === null || value === "") return fallback;
-  if (typeof value === "boolean") return value ? "是" : "否";
+  if (typeof value === "boolean") return value ? t("openclaw.panel.yes") : t("openclaw.panel.no");
   if (typeof value === "string" || typeof value === "number") return String(value);
   return JSON.stringify(value);
 }
@@ -65,9 +68,9 @@ function readString(...values: unknown[]) {
 
 function getOpenClawErrorMessage(error: unknown, gatewayName = "OpenClaw") {
   if (isOpenClawGatewayUnavailableError(error)) {
-    return getOpenClawInputDisabledReason("disconnected", gatewayName);
+    return getOpenClawInputDisabledReason("disconnected", gatewayName, t);
   }
-  return error instanceof Error ? error.message : "OpenClaw 信息加载失败";
+  return error instanceof Error ? error.message : t("openclaw.panel.info_load_failed");
 }
 
 function getOpenClawGatewayLogo(hostKind?: unknown) {
@@ -78,7 +81,9 @@ function formatDateTime(value?: string) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", {
+  const lang = typeof window === "undefined" ? "zh-cn" : localStorage.getItem("default_lang");
+  const locale = lang === "en" ? "en-US" : lang === "zh-tw" ? "zh-TW" : lang === "ja" || lang === "jp" ? "ja-JP" : "zh-CN";
+  return date.toLocaleString(locale, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -148,20 +153,26 @@ function ConnectionBadge({ connectionState }: { connectionState: OpenClawConnect
             : "bg-[#FFF1F1] text-[#FF5A5F]"
       }`}
     >
-      • {connected ? "已连接" : checking ? "检测中" : "未连接"}
+      • {connected ? t("openclaw.panel.connected") : checking ? t("openclaw.panel.checking") : t("openclaw.panel.disconnected")}
     </span>
   );
 }
 
-function getTaskLabel(task: any) {
-  if (task?.status === "completed" || task?.lastRunAt || task?.last_run_at) return "已执行";
-  if (task?.enabled === false || task?.status === "disabled") return "未开启";
-  return "待执行";
+function getTaskState(task: any): OpenClawTaskState {
+  if (task?.status === "completed" || task?.lastRunAt || task?.last_run_at) return "executed";
+  if (task?.enabled === false || task?.status === "disabled") return "disabled";
+  return "pending";
 }
 
-function getTaskBadgeClass(label: string) {
-  if (label === "已执行") return "bg-[#EFFFF4] text-[#20B970]";
-  if (label === "未开启") return "bg-[#F4F6FA] text-[#A0A7B5]";
+function getTaskLabel(state: OpenClawTaskState) {
+  if (state === "executed") return t("openclaw.panel.executed");
+  if (state === "disabled") return t("openclaw.panel.disabled");
+  return t("openclaw.panel.pending");
+}
+
+function getTaskBadgeClass(state: OpenClawTaskState) {
+  if (state === "executed") return "bg-[#EFFFF4] text-[#20B970]";
+  if (state === "disabled") return "bg-[#F4F6FA] text-[#A0A7B5]";
   return "bg-[#FFF8E6] text-[#E8A600]";
 }
 
@@ -206,9 +217,9 @@ export default function OpenClawPanel({
       detailLoadedRef.current = true;
       setState((prev) => ({
         ...prev,
-        config: readOpenClawResponsePayload(configRes),
-        skills: readOpenClawResponsePayload(skillsRes),
-        cronTasks: readOpenClawResponsePayload(cronTasksRes),
+        config: getOpenClawPayload(configRes),
+        skills: getOpenClawPayload(skillsRes),
+        cronTasks: getOpenClawPayload(cronTasksRes),
         detailLoading: false,
         error: "",
       }));
@@ -292,14 +303,14 @@ export default function OpenClawPanel({
     state.config?.model?.name ||
     state.config?.modelName ||
     status?.modelPrimary ||
-    (isWorkBuddy ? "auto" : isCodex ? "由 Codex 决定" : "modelroute");
+    (isWorkBuddy ? t("openclaw.panel.auto") : isCodex ? t("openclaw.panel.codex_decides") : "modelroute");
   const maxContext =
     state.config?.model?.maxContext ||
     state.config?.model?.max_context ||
     state.config?.maxContext ||
     codexConfig?.maxContext ||
-    (isCodex ? "由 Codex 决定" : undefined) ||
-    (isWorkBuddy ? "由 WorkBuddy 决定" : "200k token");
+    (isCodex ? t("openclaw.panel.codex_decides") : undefined) ||
+    (isWorkBuddy ? t("openclaw.panel.workbuddy_decides") : "200k token");
   const expertName = readString(
     status?.expertName,
     status?.expertId,
@@ -312,49 +323,49 @@ export default function OpenClawPanel({
   const collapseItems = [
     {
       key: "overview",
-      label: <SectionTitle iconSrc={OVERVIEW_ICON} title="概览" />,
+      label: <SectionTitle iconSrc={OVERVIEW_ICON} title={t("openclaw.panel.overview")} />,
       children: (
         <div className="px-1 pb-1">
-          <div className="text-xs font-medium text-[#BEC4D0]">快照</div>
+          <div className="text-xs font-medium text-[#BEC4D0]">{t("openclaw.panel.snapshot")}</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <StatCard label="状态" value={status?.healthy ? "正常" : "异常"} highlight={status?.healthy} />
+            <StatCard label={t("openclaw.panel.status")} value={status?.healthy ? t("openclaw.panel.normal") : t("openclaw.panel.abnormal")} highlight={status?.healthy} />
             {isWorkBuddy ? (
               <>
                 <StatCard
                   label="Worker"
-                  value={`${workerStatus?.sharedSessionActive ? "已激活" : "未激活"} / ${workerCount || "-"} 个`}
+                  value={`${workerStatus?.sharedSessionActive ? t("openclaw.panel.activated") : t("openclaw.panel.inactive")} / ${workerCount ? t("openclaw.panel.worker_count", { count: workerCount }) : "-"}`}
                   highlight={Boolean(workerStatus?.sharedSessionActive)}
                 />
-                <StatCard label="会话" value={textValue(workerStatus?.sharedSessionId || workbuddyConfig?.sessionId)} />
-                <StatCard label="端点" value={textValue(workerStatus?.endpoint || workbuddyConfig?.workerEndpoint)} />
+                <StatCard label={t("openclaw.panel.session")} value={textValue(workerStatus?.sharedSessionId || workbuddyConfig?.sessionId)} />
+                <StatCard label={t("openclaw.panel.endpoint")} value={textValue(workerStatus?.endpoint || workbuddyConfig?.workerEndpoint)} />
               </>
             ) : isCodex ? (
               <>
-                <StatCard label="运行时间" value={formatDurationFrom(status?.lastConnectedAt || status?.hub53ai?.lastConnectedAt)} />
-                <StatCard label="Workspace 根目录" value={textValue(codexWorkspaceRoot || codexConfig?.workspaceRoot, "~/.53ai/codex-workspaces")} />
-                <StatCard label="最后通知点" value={formatDateTime(status?.lastHeartbeatAt || status?.hub53ai?.lastHeartbeatAt)} />
+                <StatCard label={t("openclaw.panel.uptime")} value={formatDurationFrom(status?.lastConnectedAt || status?.hub53ai?.lastConnectedAt)} />
+                <StatCard label={t("openclaw.panel.workspace_root")} value={textValue(codexWorkspaceRoot || codexConfig?.workspaceRoot, "~/.53ai/codex-workspaces")} />
+                <StatCard label={t("openclaw.panel.last_heartbeat")} value={formatDateTime(status?.lastHeartbeatAt || status?.hub53ai?.lastHeartbeatAt)} />
               </>
             ) : (
               <>
-                <StatCard label="运行时间" value={formatDurationFrom(status?.hub53ai?.lastConnectedAt)} />
-                <StatCard label="刻度间隔" value="30s" />
-                <StatCard label="最后通知点" value={formatDateTime(status?.hub53ai?.lastHeartbeatAt)} />
+                <StatCard label={t("openclaw.panel.uptime")} value={formatDurationFrom(status?.hub53ai?.lastConnectedAt)} />
+                <StatCard label={t("openclaw.panel.tick_interval")} value="30s" />
+                <StatCard label={t("openclaw.panel.last_heartbeat")} value={formatDateTime(status?.hub53ai?.lastHeartbeatAt)} />
               </>
             )}
           </div>
           <div className="mt-3 text-xs leading-5 text-[#C0C6D2]">
             {isWorkBuddy
-              ? `WorkBuddy API：${textValue(workbuddyConfig?.mainEndpoint || workerStatus?.mainEndpoint)}`
+              ? t("openclaw.panel.workbuddy_api", { value: textValue(workbuddyConfig?.mainEndpoint || workerStatus?.mainEndpoint) })
               : isCodex
-                ? `Codex App Server：${textValue(status?.runnerCommand || state.config?.gateway?.runnerCommand, "codex-app-server")}`
-              : "使用频道连接 WhatsApp、Telegram、Discord、Signal 或 iMessage。"}
+                ? t("openclaw.panel.codex_app_server", { value: textValue(status?.runnerCommand || state.config?.gateway?.runnerCommand, "codex-app-server") })
+              : t("openclaw.panel.channel_connection_desc")}
           </div>
-          <div className="mt-5 text-xs font-medium text-[#BEC4D0]">版本</div>
+          <div className="mt-5 text-xs font-medium text-[#BEC4D0]">{t("openclaw.panel.version")}</div>
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-[#F7F8FA] px-4 py-3">
             <span className="flex size-8 items-center justify-center rounded-full bg-[#5AA7FF] text-white">
-              <img className="size-4" src={getPublicPath(VERSION_ICON)} alt="当前版本" />
+              <img className="size-4" src={getPublicPath(VERSION_ICON)} alt={t("openclaw.panel.current_version")} />
             </span>
-            <span className="flex-1 text-sm font-semibold text-[#3F4248]">当前版本</span>
+            <span className="flex-1 text-sm font-semibold text-[#3F4248]">{t("openclaw.panel.current_version")}</span>
             <span className="text-xs font-medium text-[#AEB5C2]">
               {textValue(
                 status?.workbuddyVersion ||
@@ -372,53 +383,54 @@ export default function OpenClawPanel({
     },
     {
       key: "model",
-      label: <SectionTitle iconSrc={MODEL_ICON} title="模型" />,
+      label: <SectionTitle iconSrc={MODEL_ICON} title={t("openclaw.panel.model")} />,
       children: (
         <div className="grid grid-cols-2 gap-2 px-1 pb-1">
-          <StatCard label="模型名称" value={textValue(modelName)} />
-          <StatCard label="最大上下文" value={textValue(maxContext)} />
+          <StatCard label={t("openclaw.panel.model_name")} value={textValue(modelName)} />
+          <StatCard label={t("openclaw.panel.max_context")} value={textValue(maxContext)} />
           {isWorkBuddy && <StatCard label="Expert" value={textValue(expertName)} />}
-          {isWorkBuddy && <StatCard label="权限模式" value={textValue(permissionMode)} />}
+          {isWorkBuddy && <StatCard label={t("openclaw.panel.permission_mode")} value={textValue(permissionMode)} />}
         </div>
       ),
     },
     {
       key: "cron",
-      label: <SectionTitle iconSrc={CRON_ICON} title="定时任务" />,
+      label: <SectionTitle iconSrc={CRON_ICON} title={t("openclaw.panel.cron_tasks")} />,
       children: (
         <div className="px-1 pb-1">
-          <div className="text-xs font-medium text-[#BEC4D0]">任务总览</div>
+          <div className="text-xs font-medium text-[#BEC4D0]">{t("openclaw.panel.task_overview")}</div>
           <div className="mt-3 grid grid-cols-3 gap-2">
-            <StatCard label="任务总数" value={cronTotal} />
-            <StatCard label="已开启" value={enabledCronCount} highlight={enabledCronCount > 0} />
-            <StatCard label="未开启" value={Math.max(cronTotal - enabledCronCount, 0)} />
+            <StatCard label={t("openclaw.panel.total_tasks")} value={cronTotal} />
+            <StatCard label={t("openclaw.panel.enabled")} value={enabledCronCount} highlight={enabledCronCount > 0} />
+            <StatCard label={t("openclaw.panel.disabled")} value={Math.max(cronTotal - enabledCronCount, 0)} />
           </div>
 
-          <div className="mt-4 text-xs font-medium text-[#BEC4D0]">已启用</div>
+          <div className="mt-4 text-xs font-medium text-[#BEC4D0]">{t("openclaw.panel.enabled_section")}</div>
           <div className="mt-3 space-y-3">
             {cronTasks.length > 0 ? (
               cronTasks.map((task: any, index: number) => {
-                const label = getTaskLabel(task);
+                const taskState = getTaskState(task);
+                const label = getTaskLabel(taskState);
                 return (
                   <div key={task?.id || index} className="rounded-xl border border-[#EEF0F5] bg-white p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-semibold text-[#3F4248]">
-                          {textValue(task?.title || task?.name || task?.id, `任务 ${index + 1}`)}
+                          {textValue(task?.title || task?.name || task?.id, t("openclaw.panel.task_fallback", { index: index + 1 }))}
                         </div>
                         <div className="mt-2 text-xs leading-5 text-[#AEB5C2]">
-                          频率：{textValue(task?.frequency || task?.schedule || task?.cron, "每天")}
+                          {t("openclaw.panel.frequency", { value: textValue(task?.frequency || task?.schedule || task?.cron, t("openclaw.panel.every_day")) })}
                           <br />
-                          上次：{textValue(task?.lastRunAt || task?.last_run_at, "暂无记录")}
+                          {t("openclaw.panel.last_run", { value: textValue(task?.lastRunAt || task?.last_run_at, t("openclaw.panel.no_record")) })}
                         </div>
                       </div>
-                      <span className={`shrink-0 rounded px-2 py-1 text-xs ${getTaskBadgeClass(label)}`}>{label}</span>
+                      <span className={`shrink-0 rounded px-2 py-1 text-xs ${getTaskBadgeClass(taskState)}`}>{label}</span>
                     </div>
                   </div>
                 );
               })
             ) : (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无定时任务" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("openclaw.panel.no_cron_tasks")} />
             )}
           </div>
         </div>
@@ -426,17 +438,17 @@ export default function OpenClawPanel({
     },
     {
       key: "skills",
-      label: <SectionTitle iconSrc={SKILLS_ICON} title="技能" />,
+      label: <SectionTitle iconSrc={SKILLS_ICON} title={t("openclaw.panel.skills")} />,
       children: (
         <div className="openclaw-skills-scroll max-h-[320px] space-y-2 overflow-y-auto px-1 pb-1 pr-2">
           {skills.length > 0 ? (
             skills.map((item: any, index: number) => {
-              const title = typeof item === "string" ? item : textValue(item?.name || item?.title || item?.id);
-              const subtitle = typeof item === "string" ? item : textValue(item?.id || item?.description, "");
+              const title = typeof item === "string" ? item : textValue(item?.display_name || item?.title || item?.name || item?.skill_name || item?.id);
+              const subtitle = typeof item === "string" ? item : textValue(item?.skill_id || item?.id || item?.description, "");
               return (
                 <div key={`${title}-${index}`} className="flex items-center gap-3 rounded-xl bg-[#F7F8FA] px-4 py-3">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-white">
-                    <img className="size-6" src={getPublicPath(SKILL_ITEM_ICON)} alt={`${title} 图标`} />
+                    <img className="size-6" src={getPublicPath(SKILL_ITEM_ICON)} alt={t("openclaw.panel.skill_icon", { title })} />
                   </span>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-[#3F4248]">{title}</div>
@@ -446,7 +458,7 @@ export default function OpenClawPanel({
               );
             })
           ) : (
-            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无技能信息" />
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("openclaw.panel.no_skills")} />
           )}
         </div>
       ),
@@ -458,10 +470,10 @@ export default function OpenClawPanel({
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
       <div className="h-15 flex items-center justify-between px-5 border-b">
-        <h4 className="text-lg text-primary">Gateway 设置</h4>
+        <h4 className="text-lg text-primary">{t("openclaw.panel.settings")}</h4>
         <button
           type="button"
-          aria-label="关闭 Gateway 设置"
+          aria-label={t("openclaw.panel.close_settings")}
           className="flex-center size-6 rounded cursor-pointer border-0 bg-transparent p-0 hover:bg-[#ECEDEE]"
           onClick={onClose}
         >
@@ -485,7 +497,7 @@ export default function OpenClawPanel({
                 className="mb-2"
                 type="warning"
                 showIcon
-                message={getOpenClawInputDisabledReason(connectionState, gatewayName)}
+                message={getOpenClawInputDisabledReason(connectionState, gatewayName, t)}
               />
             )}
 

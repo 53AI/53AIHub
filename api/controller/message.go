@@ -445,7 +445,7 @@ func GetMessagesByConversation(c *gin.Context) {
 
 	// 传递方向参数到模型层
 	count, messages, err = model.GetMessagesByConversationIDWithDirectionWithVisitor(
-		eid, conversation_id,
+		eid, conversation_id, 0,
 		messageListRequest.Keyword, session.GetVisitorID(c), messageListRequest.Limit, messageListRequest.Offset,
 		messageListRequest.Direction)
 
@@ -934,8 +934,9 @@ func serveUploadFile(c *gin.Context, file *model.UploadFile) {
 	if downloadName == "" || downloadName == "." || downloadName == "/" {
 		downloadName = "download.bin"
 	}
+	contentType := normalizeUploadFileContentType(file.MimeType, strings.ToLower(path.Ext(downloadName)))
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", downloadName))
-	c.Header("Content-Type", file.MimeType)
+	c.Header("Content-Type", contentType)
 	c.Header("Content-Length", strconv.FormatInt(file.Size, 10))
-	c.Data(http.StatusOK, file.MimeType, content)
+	c.Data(http.StatusOK, contentType, content)
 }

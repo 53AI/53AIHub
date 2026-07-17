@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Input } from "antd";
 import { Search as SearchInput, Tabs } from "@km/shared-components-react";
 import { SearchOutlined } from "@ant-design/icons";
@@ -6,20 +6,42 @@ import { useLinksStore } from "@/stores/modules/links";
 import { t } from "@/locales";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { scrollToElement } from "@km/shared-utils";
-import { useSearchParams } from "react-router-dom";
+import { useListState } from "@/hooks";
 import { showLoginModal, isLoggedIn } from "@/utils/permission";
 import ListView from "./List";
 
-interface ExploreToolkitProps {
-  stickyOffset?: number;
+/**
+ * URL 持久化状态（snake_case key 兼容既有 ?group_id= URL）
+ */
+interface ExploreState {
+  group_id: number;
+  keyword: string;
 }
 
-export function GroupList({ stickyOffset = 0 }: ExploreToolkitProps) {
+interface ExploreToolkitProps {
+  stickyOffset?: number;
+  /** 是否启用 URL 参数同步，由父级页面（index.tsx）显式开启 */
+  enableUrlSync?: boolean;
+}
+
+export function GroupList({
+  stickyOffset = 0,
+  enableUrlSync = false,
+}: ExploreToolkitProps) {
   const linksStore = useLinksStore();
   const isSoftStyle = useIsSoftStyle();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [groupId, setGroupId] = useState(0);
-  const [keyword, setKeyword] = useState("");
+
+  // 筛选状态（URL 持久化由 enableUrlSync 控制，默认关闭）
+  const defaultState = useMemo<ExploreState>(
+    () => ({
+      group_id: 0,
+      keyword: "",
+    }),
+    [],
+  );
+  const { state, updateState } = useListState<ExploreState>(defaultState, {
+    enableUrlSync,
+  });
 
   // 有缓存则静默刷新，无缓存则显示骨架屏
   const [loading, setLoading] = useState(!linksStore.links.length);
@@ -34,27 +56,11 @@ export function GroupList({ stickyOffset = 0 }: ExploreToolkitProps) {
     ]).finally(() => setLoading(false));
   }, []);
 
-  // 响应 URL 参数变化选中分组
-  useEffect(() => {
-    const groupIdParam = searchParams.get("group_id");
-    if (groupIdParam) {
-      const id = Number(groupIdParam);
-      if (!isNaN(id) && id >= 0) {
-        const categorys = linksStore.categorys || [];
-        const exists =
-          id === 0 || categorys.some((cat) => cat.group_id === id);
-        if (exists) {
-          setGroupId(id);
-        }
-      }
-    }
-  }, [searchParams, linksStore.categorys]);
-
   const categorys = linksStore.categorys || [];
 
   const links = (linksStore.links || []).filter((item) => {
-    if (groupId === 0) return true;
-    return item.group_id === groupId;
+    if (state.group_id === 0) return true;
+    return item.group_id === state.group_id;
   });
 
   const tabItems = categorys.map((item) => ({
@@ -64,22 +70,15 @@ export function GroupList({ stickyOffset = 0 }: ExploreToolkitProps) {
 
   const handleTabChange = (key: string) => {
     if (!isLoggedIn()) {
-      showLoginModal()
+      showLoginModal();
     }
-    setGroupId(Number(key));
-    const newParams = new URLSearchParams(searchParams);
-    if (key === "0") {
-      newParams.delete("group_id");
-    } else {
-      newParams.set("group_id", key);
-    }
-    setSearchParams(newParams, { replace: true });
+    updateState({ group_id: Number(key) });
     scrollToElement(`#group_${key}`, (stickyOffset || 0) + 150);
   };
 
   const handleSearchFocus = () => {
     if (!isLoggedIn()) {
-      showLoginModal()
+      showLoginModal();
     }
   };
 
@@ -91,7 +90,7 @@ export function GroupList({ stickyOffset = 0 }: ExploreToolkitProps) {
       >
         <div className="flex md:flex-row flex-col-reverse gap-5 items-stretch md:items-center justify-between bg-white py-1">
           <Tabs
-            activeKey={String(groupId)}
+            activeKey={String(state.group_id)}
             onChange={handleTabChange}
             items={tabItems}
             className="flex-1 overflow-hidden toolkit-tabs"
@@ -99,14 +98,14 @@ export function GroupList({ stickyOffset = 0 }: ExploreToolkitProps) {
           <div className="w-full md:w-auto">
             <SearchInput
               className="hidden md:flex"
-              value={keyword}
-              onDebouncedChange={setKeyword}
+              value={state.keyword}
+              onDebouncedChange={(val) => updateState({ keyword: val })}
               onFocus={handleSearchFocus}
               placeholder={t("action.search") + t("module.toolbox")}
             />
             <Input
-              value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              value={state.keyword}
+              onChange={(e) => updateState({ keyword: e.target.value })}
               onFocus={handleSearchFocus}
               placeholder={t("toolbox.search_placeholder")}
               prefix={<SearchOutlined className="text-gray-400" />}
@@ -118,10 +117,10 @@ export function GroupList({ stickyOffset = 0 }: ExploreToolkitProps) {
         </div>
       </div>
       <ListView
-        className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 ${isSoftStyle ? "mt-3 mb-16" : "my-3"}`}
-        keyword={keyword}
+        className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${isSoftStyle ? "mt-3 mb-16" : "my-3"}`}
+        keyword={state.keyword}
         list={links}
-        groupId={groupId}
+        groupId={state.group_id}
         loading={loading}
       />
     </>

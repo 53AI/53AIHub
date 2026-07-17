@@ -89,7 +89,7 @@ func handleOpenClawAgent(
 			Model:       agent.Model,
 			FileID:      chatRequest.MessageFileID,
 		}
-		applyVisitorIdentityToConversation(c, conversation)
+		ApplyVisitorIdentityToConversation(c, conversation)
 		if err := model.CreateConversation(conversation); err != nil {
 			return fmt.Errorf("create conversation: %w", err)
 		}

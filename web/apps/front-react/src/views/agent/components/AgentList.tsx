@@ -17,6 +17,13 @@ interface AgentListProps {
   onRefresh?: () => void        // 我的模式刷新回调
   selectMode?: boolean          // 选择模式
   flatMode?: boolean            // 扁平渲染模式
+  canView?: boolean
+  /** 分页模式：当前页（1-based）；与 pageSize 配合使用 */
+  page?: number
+  /** 分页模式：每页条数。设置后启用切片 */
+  pageSize?: number
+  /** 选中 Agent 时的回调（透传给卡片，用于关闭外层 Modal 等） */
+  onSelect?: () => void
 }
 
 export function AgentList({
@@ -29,7 +36,11 @@ export function AgentList({
   className,
   onRefresh,
   selectMode = false,
-  flatMode = false
+  flatMode = false,
+  canView = true,
+  page = 1,
+  pageSize,
+  onSelect,
 }: AgentListProps) {
   const agentStore = useAgentStore()
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -53,8 +64,14 @@ export function AgentList({
       )
     }
 
+    // 分页切片（在过滤/排序之后）
+    if (pageSize && pageSize > 0) {
+      const start = (page - 1) * pageSize
+      result = result.slice(start, start + pageSize)
+    }
+
     return result
-  }, [type, list, agentStore.myAgentList, keyword, sort])
+  }, [type, list, agentStore.myAgentList, keyword, sort, page, pageSize])
 
   // 加载状态判断
   const isLoading = type === 'explore' ? loading : agentStore.myAgentLoading
@@ -68,66 +85,68 @@ export function AgentList({
     })
   }
 
+  {/* 空状态 */}
+  if(!isLoading && type !== 'my' && showList.length === 0) {
+    return <AgentEmpty className="max-h-[600px] h-[63vh] flex-center" />
+  }
+
   return (
-    <div className={flatMode ? `flex flex-col gap-2 ${className}` : className}>
-      {/* 我的模式：添加卡片（扁平模式隐藏） */}
-      {type === 'my' && !flatMode && (
-        <div
-          className="min-h-[130px] relative flex items-center justify-center p-4 rounded-lg overflow-hidden border border-[#E8EEFA] bg-[#F7FAFF] hover:bg-[#F5F8FF] cursor-pointer transition-all duration-300"
-          onClick={handleAddAgent}
-        >
-          <div className="size-10 rounded-lg bg-[#E6EEFF] flex items-center justify-center mr-2">
-            <PlusOutlined style={{ fontSize: 16, color: '#2563EB' }} />
+      <div className={flatMode ? `flex flex-col gap-2 ${className}` : className}>
+        {/* 我的模式：添加卡片（扁平模式隐藏） */}
+        {type === 'my' && !flatMode && (
+          <div
+            className="min-h-[130px] relative flex items-center justify-center p-4 rounded-lg overflow-hidden border border-[#E8EEFA] bg-[#F7FAFF] hover:bg-[#F5F8FF] cursor-pointer transition-all duration-300"
+            onClick={handleAddAgent}
+          >
+            <div className="size-10 rounded-lg bg-[#E6EEFF] flex items-center justify-center mr-2">
+              <PlusOutlined style={{ fontSize: 16, color: '#2563EB' }} />
+            </div>
+            <span className="text-sm text-[#2563EB]">{t('action.add')}</span>
           </div>
-          <span className="text-sm text-[#2563EB]">{t('action.add')}</span>
-        </div>
-      )}
+        )}
 
-      {/* 加载骨架屏 */}
-      {isLoading && (
-        <>
-          {Array.from({ length: type === 'my' ? 5 : 6 }).map((_, i) => (
-            <AgentCardSkeleton key={i} flatMode={flatMode} />
-          ))}
-        </>
-      )}
+        {/* 加载骨架屏 */}
+        {isLoading && (
+          <>
+            {Array.from({ length: type === 'my' ? 5 : 6 }).map((_, i) => (
+              <AgentCardSkeleton key={i} flatMode={flatMode} />
+            ))}
+          </>
+        )}
 
-      {/* Agent 卡片列表 */}
-      {!isLoading && showList.length > 0 && (
-        <>
-          {showList.map((item) => (
-            <AgentCard
-              key={item.agent_id}
-              item={item}
-              keyword={keyword}
-              type={type}
-              groupId={groupId}
-              fixedType={type === 'my' ? 'Openclaw' : undefined}
-              onRefresh={onRefresh}
-              selectMode={selectMode}
-              flatMode={flatMode}
-              showTypeTag={!flatMode}
-            />
-          ))}
-        </>
-      )}
+        {/* Agent 卡片列表 */}
+        {!isLoading && showList.length > 0 && (
+          <>
+            {showList.map((item) => (
+              <AgentCard
+                key={item.agent_id}
+                item={item}
+                keyword={keyword}
+                type={type}
+                groupId={groupId}
+                canView={canView}
+                fixedType={type === 'my' ? 'Openclaw' : undefined}
+                onRefresh={onRefresh}
+                selectMode={selectMode}
+                flatMode={flatMode}
+                showTypeTag={!flatMode}
+                onSelect={onSelect}
+              />
+            ))}
+          </>
+        )}
 
-      {/* 空状态 */}
-      {!isLoading && type !== 'my' && showList.length === 0 && (
-        <AgentEmpty />
-      )}
-
-      {/* 我的模式：添加弹窗 */}
-      {type === 'my' && (
-        <AddMyList
-          visible={showAddDialog}
-          onClose={() => setShowAddDialog(false)}
-          onSuccess={() => {
-            onRefresh?.()
-          }}
-        />
-      )}
-    </div>
+        {/* 我的模式：添加弹窗 */}
+        {type === 'my' && (
+          <AddMyList
+            visible={showAddDialog}
+            onClose={() => setShowAddDialog(false)}
+            onSuccess={() => {
+              onRefresh?.()
+            }}
+          />
+        )}
+      </div>
   )
 }
 

@@ -1,9 +1,33 @@
-﻿/** 流程记录 */
+// packages/shared-business/src/chat/types/message.ts
+
+// ============================================================================
+// 基础类型（非消息相关）
+// ============================================================================
+
+/** 流程记录 */
 export interface ProcessRecord {
   step_code: string;
   status: 'start' | 'completed' | 'success' | 'streaming';
   message: string;
   data?: string | object;
+}
+
+export interface IntentData {
+  intent?: string;
+  skill_name?: string;
+  confidence?: number;
+  reasoning?: string;
+  keywords?: string[];
+  answer?: string;
+  expanded_queries?: unknown;
+}
+
+export interface AgentRunReplayEvent {
+  event_type?: string;
+  type?: string;
+  payload?: any;
+  message_id?: string | number;
+  [key: string]: any;
 }
 
 /** 技能运行项状态 */
@@ -62,6 +86,10 @@ export type SkillRunItem =
   | SkillRunSkillItem
   | SkillRunLlmItem;
 
+// ============================================================================
+// OpenClaw 类型
+// ============================================================================
+
 /** Openclaw 活动 */
 export interface OpenClawInteractionOption {
   id?: string | number;
@@ -84,6 +112,9 @@ export interface OpenClawInteractionInfo {
   [key: string]: unknown;
 }
 
+/** OpenClaw 活动 tone 类型 */
+export type OpenClawActivityTone = 'neutral' | 'success' | 'warning' | 'error';
+
 export interface OpenClawActivityItem {
   key: string;
   sessionId?: string;
@@ -93,7 +124,7 @@ export interface OpenClawActivityItem {
   summary?: string;
   detail?: string;
   createdAt?: string;
-  tone?: 'neutral' | 'success' | 'warning' | 'error';
+  tone?: OpenClawActivityTone;
   tool?: {
     toolCallId?: string;
     name?: string;
@@ -117,40 +148,149 @@ export type OpenClawTimelineItemType =
   | 'run_terminal'
   | 'output_files';
 
+/** OpenClaw 时间线项 */
+export interface OpenClawTimelineItem {
+  key: string;
+  mergeKey?: string;
+  sessionId?: string;
+  seq?: number;
+  createdAt?: string;
+  type: OpenClawTimelineItemType;
+  title?: string;
+  content?: string;
+  detail?: string;
+  tone?: 'neutral' | 'success' | 'warning' | 'error';
+  kind?: string;
+  replace?: boolean;
+  tool?: OpenClawActivityItem['tool'];
+  requiresUserInput?: boolean;
+  interaction?: OpenClawInteractionInfo;
+  questions?: OpenClawInteractionInfo[];
+  resolved?: boolean;
+  files?: OutputFile[];
+  activity?: OpenClawActivityItem;
+}
+
+/** OpenClaw Turn 事件 */
+export interface OpenClawTurnEvent {
+  eventId: string;
+  sessionId?: string;
+  seq?: number;
+  kind: string;
+  createdAt?: string;
+  payload?: Record<string, unknown>;
+  source?: 'stream' | 'events' | 'history';
+  provisional?: boolean;
+  replace?: boolean;
+  messageId?: string | number;
+  messageSeq?: number;
+  segmentId?: string;
+  turnId?: string;
+  segmentType?: 'answer' | 'thinking' | 'tool_call' | 'tool_result' | 'run' | 'output_files';
+  segmentIndex?: number;
+  deltaIndex?: number;
+  operation?: 'append' | 'replace' | 'close';
+  visibility?: 'hidden' | 'stream' | 'final';
+  final?: boolean;
+}
+
+/** OpenClaw Turn 状态 */
+export interface OpenClawTurnState {
+  turnKey: string;
+  sessionId?: string;
+  status?: 'streaming' | 'completed' | 'failed' | 'interrupted';
+  maxSeq: number;
+  events: OpenClawTurnEvent[];
+  resolvedMessageId?: string | number;
+}
+
+/** OpenClaw Turn 投影 */
+export interface OpenClawTurnProjection {
+  timelineItems: OpenClawTimelineItem[];
+  visibleAnswer: string;
+  outputFiles: OutputFile[];
+  activities: OpenClawActivityItem[];
+  interrupted?: boolean;
+  failed?: boolean;
+  isStreaming?: boolean;
+}
+
+// ============================================================================
+// 文件类型
+// ============================================================================
+
 /** 文件项 */
 export interface FileItem {
   id: string | number;
   name?: string;
   file_name?: string;
+  filename?: string;
+  file_id?: string | number;
   file_path?: string;
   file_ext?: string;
   file_mime?: string;
   file_size?: number;
   file_url?: string;
   icon?: string;
+  file_icon?: string;
   url?: string;
   preview_key?: string;
   library_id?: string | number;
   upload_file_id?: string | number;
   isfolder?: boolean;
+  isspace?: boolean;
+  islibrary?: boolean;
   is_favorite?: boolean;
   chunk_type?: string;
   source_key?: string;
   source?: string;
 }
 
+/** 输出文件 */
+export interface OutputFile {
+  id: string | number;
+  file_name?: string;
+  url?: string;
+  preview_key?: string;
+  preview_url?: string;
+  download_url?: string;
+  signed_download_url?: string;
+  artifact_id?: string | number;
+  upload_file_id?: string | number;
+  mime_type?: string;
+  size?: number;
+  kind?: string;
+  message_id?: string | number;
+  source_kind?: string;
+  base64?: string;
+  content?: string;
+  file_path?: string;
+  is_favorite?: boolean;
+}
+
+// ============================================================================
+// RAG 类型
+// ============================================================================
+
 /** 知识图谱实体 */
 export interface GraphEntity {
   id: string;
   name?: string;
   description?: string;
+  type?: string;
+  properties?: Record<string, any>;
+  chunk_ids?: string[];
+  created_time?: number;
 }
 
 /** 知识图谱关系 */
 export interface GraphRelation {
+  id?: string;
   source_entity_id: string;
   target_entity_id: string;
   predicate?: string;
+  chunk_ids?: string[];
+  created_time?: number;
 }
 
 /** 知识图谱数据 */
@@ -181,26 +321,228 @@ export interface ChunkItem {
 export interface RagStats {
   type?: string;
   chunks?: ChunkItem[];
-  files_search?: FileItem[];
-  library_search?: Array<{ id: string | number; name: string }>;
-  file_quotations?: FileItem[];
+  files_search?: ChunkItem[];
+  library_search?: ChunkItem[];
+  file_quotations?: ChunkItem[];
+  document_quotations?: ChunkItem[];
+  document_search?: { chunks?: ChunkItem[] };
 }
+
+// ============================================================================
+// 技能类型
+// ============================================================================
 
 /** 技能信息 */
 export interface SkillInfo {
+  id?: string | number;
+  skill_id?: string | number;
   display_name?: string;
   skill_name?: string;
+  binding_status?: string;
 }
 
 export type Skill = SkillInfo;
 export type MessageFile = FileItem;
 export type SpecifiedFile = FileItem;
 
+// ============================================================================
+// 消息类型（拆分版）
+// ============================================================================
+
+/**
+ * 基础消息类型
+ * 所有消息共享的字段
+ */
+export interface BaseMessage {
+  id: string | number;
+  agent_id?: string | number;
+  conversation_id?: string | number;
+  time?: string;
+  /** 是否显示时间（历史数据为 true，实时数据为 false） */
+  showTime?: boolean;
+  /** 创建时间戳（毫秒） */
+  created_time?: number;
+  updated_time?: number;
+  created_at?: string | number;
+  updated_at?: string | number;
+  question?: string;
+  original_question?: string;
+  answer?: string;
+  content?: string;
+  specified_content?: string;
+  specified_files?: FileItem[];
+  uploaded_files?: FileItem[];
+  skill?: SkillInfo;
+  reasoning_content?: string;
+  reasoning_expanded?: boolean;
+  outputFiles?: OutputFile[];
+  rag_temp?: any;
+  rag_stats?: RagStats | null;
+  rag_search_text?: string;
+  knowledge_graph?: boolean;
+  process_records?: ProcessRecord[];
+  skillRunItems?: SkillRunItem[];
+  openclawActivities?: OpenClawActivityItem[];
+  openclawTimelineItems?: OpenClawTimelineItem[];
+  openclawTurn?: OpenClawTurnState;
+  openclawProjection?: OpenClawTurnProjection;
+  interrupted?: boolean;
+  loading?: boolean;
+  error?: boolean;
+  showErrorDetails?: boolean;
+  feedbackVisible?: boolean;
+  feedback_type?: 'satisfied' | 'unsatisfied' | '';
+  feedbackTypeOptions?: Map<string, boolean> | null;
+  feedbackLoading?: boolean;
+  submitBtnDisabled?: boolean;
+  feedbackSuccessful?: boolean;
+  description?: string;
+  feedbackId?: number | null;
+  _openclawTurnStartSeq?: number;
+  _openclawClientMessageId?: string | number;
+  _openclawActiveRequestId?: string | number;
+}
+
+/**
+ * 用户消息
+ * 仅包含用户发送的消息字段
+ */
+export interface UserMessage extends BaseMessage {
+  role: 'user';
+  question?: string;
+  original_question?: string;
+  /** 用户上传的文件 */
+  uploaded_files?: FileItem[];
+  /** 用户指定的文件 */
+  specified_files?: FileItem[];
+  /** 用户选择的文件 */
+  user_files?: FileItem[];
+  /** 技能信息（如果有） */
+  skill?: SkillInfo;
+  /** 原始用户消息（API 返回） */
+  raw_user_message?: any;
+}
+
+/**
+ * 反馈状态
+ * 可用于助手消息
+ */
+export interface FeedbackState {
+  feedback_type?: 'satisfied' | 'unsatisfied' | '';
+  feedbackVisible?: boolean;
+  feedbackTypeOptions?: Map<string, boolean> | null;
+  submitBtnDisabled?: boolean;
+  feedbackSuccessful?: boolean;
+  description?: string;
+  feedbackId?: number | null;
+}
+
+/**
+ * 消息 UI 状态
+ * 用于控制消息渲染
+ */
+export interface MessageUIState {
+  loading?: boolean;
+  error?: boolean;
+  showErrorDetails?: boolean;
+  reasoning_expanded?: boolean;
+}
+
+/**
+ * 助手消息 - 普通模式
+ * 标准聊天场景
+ */
+export interface AssistantMessageNormal extends BaseMessage, FeedbackState, MessageUIState {
+  role: 'assistant';
+  /** 回答内容 */
+  answer?: string;
+  /** 内容（兼容字段） */
+  content?: string;
+  /** 推理内容 */
+  reasoning_content?: string;
+  /** 输出文件 */
+  outputFiles?: OutputFile[];
+  /** RAG 统计数据 */
+  rag_stats?: RagStats | null;
+  /** 流程记录 */
+  process_records?: ProcessRecord[];
+  /** 技能运行项 */
+  skillRunItems?: SkillRunItem[];
+  /** 原始助手消息（API 返回） */
+  raw_assistant_message?: any;
+}
+
+/**
+ * 助手消息 - OpenClaw 模式
+ * WorkBuddy 运行时场景
+ */
+export interface AssistantMessageOpenClaw extends BaseMessage, FeedbackState, MessageUIState {
+  role: 'assistant';
+  /** OpenClaw 活动列表 */
+  openclawActivities?: OpenClawActivityItem[];
+  /** OpenClaw 时间线项 */
+  openclawTimelineItems?: OpenClawTimelineItem[];
+  /** OpenClaw Turn 状态 */
+  openclawTurn?: OpenClawTurnState;
+  /** OpenClaw 投影数据 */
+  openclawProjection?: OpenClawTurnProjection;
+  /** OpenClaw 内部字段 */
+  _openclawTurnStartSeq?: number;
+  _openclawClientMessageId?: string | number;
+  _openclawActiveRequestId?: string | number;
+}
+
+/**
+ * 消息联合类型
+ * 根据 role 字段区分用户消息和助手消息
+ */
+export type Message = UserMessage | AssistantMessageNormal | AssistantMessageOpenClaw;
+
+/**
+ * 兼容性消息类型
+ * 用于向后兼容现有代码，包含所有可能的字段
+ * @deprecated 请使用 Message 联合类型
+ */
+export interface LegacyMessage extends BaseMessage, FeedbackState, MessageUIState {
+  // 用户消息字段
+  question?: string;
+  original_question?: string;
+  uploaded_files?: FileItem[];
+  specified_files?: FileItem[];
+  user_files?: FileItem[];
+  skill?: SkillInfo;
+  raw_user_message?: any;
+
+  // 助手消息字段
+  answer?: string;
+  content?: string;
+  reasoning_content?: string;
+  outputFiles?: OutputFile[];
+  rag_stats?: RagStats;
+  process_records?: ProcessRecord[];
+  skillRunItems?: SkillRunItem[];
+  raw_assistant_message?: any;
+
+  // OpenClaw 字段
+  openclawActivities?: OpenClawActivityItem[];
+  openclawTimelineItems?: OpenClawTimelineItem[];
+  openclawTurn?: OpenClawTurnState;
+  openclawProjection?: OpenClawTurnProjection;
+  _openclawTurnStartSeq?: number;
+  _openclawClientMessageId?: string | number;
+  _openclawActiveRequestId?: string | number;
+}
+
+// ============================================================================
+// 其他类型
+// ============================================================================
+
+/** 发送消息选项 */
 export interface SendMessageOptions {
   question: string;
   agent_id: string | number;
   conversation_id: string | number;
-  modelId?: string;
+  modelId?: string | number;
   completion_params?: Record<string, any>;
   messageList?: Message[];
   links?: SpecifiedFile[];
@@ -210,6 +552,7 @@ export interface SendMessageOptions {
   agentInfo?: any;
   files?: any[];
   fileInfo?: any;
+  allKnowledge?: boolean;
   options?: {
     prompt?: string;
     text?: string;
@@ -225,129 +568,13 @@ export interface SendMessageOptions {
   onOpenClawEventSeqChange?: (conversationId: string, seq: number) => void;
 }
 
-/** 输出文件 */
-export interface OutputFile {
-  id: string | number;
-  file_name?: string;
-  url?: string;
-  download_url?: string;
-  signed_download_url?: string;
-  mime_type?: string;
-  size?: number;
-  kind?: string;
-  message_id?: string | number;
-  source_kind?: string;
-  base64?: string;
-  content?: string;
-  file_path?: string;
-  is_favorite?: boolean;
-}
-
-export interface OpenClawTimelineItem {
-  key: string;
-  mergeKey?: string;
-  sessionId?: string;
-  seq?: number;
-  createdAt?: string;
-  type: OpenClawTimelineItemType;
-  title?: string;
-  content?: string;
-  detail?: string;
-  tone?: 'neutral' | 'success' | 'warning' | 'error';
-  kind?: string;
-  replace?: boolean;
-  tool?: OpenClawActivityItem['tool'];
-  requiresUserInput?: boolean;
-  interaction?: OpenClawInteractionInfo;
-  questions?: OpenClawInteractionInfo[];
-  resolved?: boolean;
-  files?: OutputFile[];
-  activity?: OpenClawActivityItem;
-}
-
-export interface OpenClawTurnEvent {
-  eventId: string;
-  sessionId?: string;
-  seq?: number;
-  kind: string;
-  createdAt?: string;
-  payload?: Record<string, unknown>;
-  source?: 'stream' | 'events' | 'history';
-  provisional?: boolean;
-  replace?: boolean;
-  messageId?: string | number;
-  messageSeq?: number;
-  segmentId?: string;
-  turnId?: string;
-  segmentType?: 'answer' | 'thinking' | 'tool_call' | 'tool_result' | 'run' | 'output_files';
-  segmentIndex?: number;
-  deltaIndex?: number;
-  operation?: 'append' | 'replace' | 'close';
-  visibility?: 'hidden' | 'stream' | 'final';
-  final?: boolean;
-}
-
-export interface OpenClawTurnState {
-  turnKey: string;
-  sessionId?: string;
-  status?: 'streaming' | 'completed' | 'failed' | 'interrupted';
-  maxSeq: number;
-  events: OpenClawTurnEvent[];
-  resolvedMessageId?: string | number;
-}
-
-export interface OpenClawTurnProjection {
-  timelineItems: OpenClawTimelineItem[];
-  visibleAnswer: string;
-  outputFiles: OutputFile[];
-  activities: OpenClawActivityItem[];
-  interrupted?: boolean;
-  failed?: boolean;
-  isStreaming?: boolean;
-}
-
-/** 消息类型 */
-export interface Message {
-  id: string | number;
-  conversation_id?: string | number;
-  question?: string;
-  original_question?: string;
-  answer?: string;
-  content?: string;
-  reasoning_content?: string;
-  reasoning_expanded?: boolean;
-  loading?: boolean;
-  error?: boolean;
-  showErrorDetails?: boolean;
-  feedback_type?: 'satisfied' | 'unsatisfied' | '';
-  feedbackVisible?: boolean;
-  feedbackTypeOptions?: Map<string, boolean>;
-  submitBtnDisabled?: boolean;
-  feedbackSuccessful?: boolean;
-  description?: string;
-  feedbackId?: number | null;
-  user_files?: FileItem[];
-  specified_files?: FileItem[];
-  uploaded_files?: FileItem[];
-  skill?: SkillInfo;
-  outputFiles?: OutputFile[];
-  rag_stats?: RagStats;
-  process_records?: ProcessRecord[];
-  skillRunItems?: SkillRunItem[];
-  openclawActivities?: OpenClawActivityItem[];
-  openclawTimelineItems?: OpenClawTimelineItem[];
-  openclawTurn?: OpenClawTurnState;
-  openclawProjection?: OpenClawTurnProjection;
-  raw_user_message?: any;
-  raw_assistant_message?: any;
-  time?: string;
-  _openclawTurnStartSeq?: number;
-  _openclawClientMessageId?: string | number;
-  _openclawActiveRequestId?: string | number;
-}
-
-/** ChatMessages 功能配置 */
+/**
+ * ChatMessages 功能配置
+ *
+ * **数据驱动渲染**：除 `menu` 外的所有功能已改为数据驱动渲染。
+ */
 export interface ChatMessagesFeatures {
+  /** 消息菜单配置（唯一需要配置的功能） */
   menu?: {
     copy?: boolean;
     regenerate?: boolean;
@@ -355,14 +582,19 @@ export interface ChatMessagesFeatures {
     addAsMd?: boolean;
     feedback?: boolean;
   };
+  /** @deprecated 数据驱动渲染 */
   outputFiles?: boolean;
-  /** 输出文件收藏功能开关 */
+  /** @deprecated 数据驱动渲染 */
   fileFavorite?: boolean;
+  /** @deprecated 数据驱动渲染 */
   sourceRef?: boolean;
+  /** @deprecated 数据驱动渲染 */
   processFlow?: boolean;
+  /** @deprecated 数据驱动渲染 */
   specifiedFiles?: boolean;
-  /** 指定文件显示类型：no_jump 不跳转，jump 支持跳转 */
+  /** @deprecated 不再需要类型配置 */
   specifiedFilesType?: 'no_jump' | 'jump';
+  /** @deprecated 数据驱动渲染 */
   skillTag?: boolean;
 }
 
@@ -373,47 +605,108 @@ export interface SourceReferenceData {
   sourceNumber: number;
 }
 
-/** ChatMessages Props */
-export interface ChatMessagesProps {
-  messageList: Message[];
-  agentInfo?: {
-    agent_id?: string | number;
-    name?: string;
-    logo?: string;
-    settings?: {
-      opening_statement?: string;
-      answer_remarks_config?: { enable: boolean; content: string };
-    };
-  };
-  isStreaming?: boolean;
-  features?: ChatMessagesFeatures;
-  onRegenerate?: (msg: Message) => void;
-  onFeedback?: (msg: Message, type: 'satisfied' | 'unsatisfied', description?: string) => void;
-  onShare?: () => void;
-  onAddAsMd?: (msg: Message) => void;
-  onFileClick?: (file: FileItem) => void;
-  onSourceClick?: (source: ChunkItem, msg: Message) => void;
-  /** 打开知识库侧边栏回调 */
-  onOpenKnow?: (msg: Message) => void;
-  /** Source 引用悬停回调（用于显示 Chunk/Graph 弹窗） */
-  /** 自定义 Source 渲染函数 */
-  renderSource?: (type: string, number: number, msg: Message) => string;
-  /** 输出文件收藏回调 */
-  onOutputFileFavorite?: (file: OutputFile, msg: Message) => void;
-  /** 输出文件收藏状态检查回调 */
-  onOutputFileCheckFavorite?: (fileIds: string[]) => void;
-  /** 反馈面板关闭回调（用于更新 message 状态） */
-  onFeedbackClose?: (msg: Message) => void;
-  /** 反馈选项切换回调 */
-  onFeedbackToggle?: (msg: Message, key: string) => void;
-  /** 反馈描述变化回调 */
-  onFeedbackDescriptionChange?: (msg: Message, value: string) => void;
-  /** 显示错误详情回调 */
-  onShowErrorDetails?: (msg: Message) => void;
-  onLoadMore?: (done: () => void) => void;
-  isShareMode?: boolean;
-  selectedMessageIds?: (string | number)[];
-  onMessageSelect?: (msg: Message) => void;
-  hasMore?: boolean;
-  isLoadingMore?: boolean;
+// ============================================================================
+// 类型守卫函数
+// ============================================================================
+
+/** 判断是否为用户消息 */
+export function isUserMessage(message: Message): message is UserMessage {
+  return message.role === 'user';
+}
+
+/** 判断是否为助手消息 */
+export function isAssistantMessage(message: Message): message is AssistantMessageNormal | AssistantMessageOpenClaw {
+  return message.role === 'assistant';
+}
+
+/** 判断是否为 OpenClaw 模式的助手消息 */
+export function isOpenClawAssistantMessage(message: Message): message is AssistantMessageOpenClaw {
+  return message.role === 'assistant' && Boolean(message.openclawTurn || message.openclawProjection);
+}
+
+/** 判断是否为普通模式的助手消息 */
+export function isNormalAssistantMessage(message: Message): message is AssistantMessageNormal {
+  return message.role === 'assistant' && !message.openclawTurn && !message.openclawProjection;
+}
+
+// ============================================================================
+// 类型转换函数
+// ============================================================================
+
+/**
+ * 将 LegacyMessage 转换为 Message
+ * 根据 openclawTurn/openclawProjection 判断消息类型
+ */
+export function convertLegacyMessage(msg: LegacyMessage): Message {
+  // 判断是否有 OpenClaw 数据
+  if (msg.openclawTurn || msg.openclawProjection) {
+    return {
+      id: msg.id,
+      conversation_id: msg.conversation_id,
+      time: msg.time,
+      role: 'assistant',
+      loading: msg.loading,
+      error: msg.error,
+      showErrorDetails: msg.showErrorDetails,
+      reasoning_expanded: msg.reasoning_expanded,
+      feedback_type: msg.feedback_type,
+      feedbackVisible: msg.feedbackVisible,
+      feedbackTypeOptions: msg.feedbackTypeOptions,
+      submitBtnDisabled: msg.submitBtnDisabled,
+      feedbackSuccessful: msg.feedbackSuccessful,
+      description: msg.description,
+      feedbackId: msg.feedbackId,
+      openclawActivities: msg.openclawActivities,
+      openclawTimelineItems: msg.openclawTimelineItems,
+      openclawTurn: msg.openclawTurn,
+      openclawProjection: msg.openclawProjection,
+      _openclawTurnStartSeq: msg._openclawTurnStartSeq,
+      _openclawClientMessageId: msg._openclawClientMessageId,
+      _openclawActiveRequestId: msg._openclawActiveRequestId,
+    } as AssistantMessageOpenClaw;
+  }
+
+  // 判断是否有用户消息字段（question 且没有 answer）
+  if (msg.question && !msg.answer && !msg.content) {
+    return {
+      id: msg.id,
+      conversation_id: msg.conversation_id,
+      time: msg.time,
+      role: 'user',
+      question: msg.question,
+      original_question: msg.original_question,
+      uploaded_files: msg.uploaded_files,
+      specified_files: msg.specified_files,
+      user_files: msg.user_files,
+      skill: msg.skill,
+      raw_user_message: msg.raw_user_message,
+    } as UserMessage;
+  }
+
+  // 默认为普通助手消息
+  return {
+    id: msg.id,
+    conversation_id: msg.conversation_id,
+    time: msg.time,
+    role: 'assistant',
+    answer: msg.answer,
+    content: msg.content,
+    reasoning_content: msg.reasoning_content,
+    loading: msg.loading,
+    error: msg.error,
+    showErrorDetails: msg.showErrorDetails,
+    reasoning_expanded: msg.reasoning_expanded,
+    outputFiles: msg.outputFiles,
+    rag_stats: msg.rag_stats,
+    process_records: msg.process_records,
+    skillRunItems: msg.skillRunItems,
+    raw_assistant_message: msg.raw_assistant_message,
+    feedback_type: msg.feedback_type,
+    feedbackVisible: msg.feedbackVisible,
+    feedbackTypeOptions: msg.feedbackTypeOptions,
+    submitBtnDisabled: msg.submitBtnDisabled,
+    feedbackSuccessful: msg.feedbackSuccessful,
+    description: msg.description,
+    feedbackId: msg.feedbackId,
+  } as AssistantMessageNormal;
 }

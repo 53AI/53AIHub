@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Drawer, Form, Input, Button, message, Modal } from "antd";
 import { t } from "@/locales";
 import UserStatus from "./UserInternalStatus";
 import { DeptMemberPicker } from "@/components/DeptMemberPicker";
 import { INTERNAL_USER_STATUS_UNDEFINED, userApi } from "@/api/modules/user";
+import { useUserStore } from "@/stores";
 
 interface UserInternalEditDrawerProps {
   open: boolean;
@@ -18,9 +19,12 @@ const UserInternalEditDrawer: React.FC<UserInternalEditDrawerProps> = ({
   onClose,
   onSuccess,
 }) => {
+  const userStore = useUserStore();
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [originalData, setOriginalData] = useState<any>({});
+
+  const userInfo = useMemo(() => userStore.info, [userStore.info]);
 
   useEffect(() => {
     if (open && data) {
@@ -178,7 +182,7 @@ const UserInternalEditDrawer: React.FC<UserInternalEditDrawerProps> = ({
         </Form.Item>
 
         <Form.Item label={t("internal_user.account.status")} name="status">
-          <UserStatus userData={originalData} actionDisabled />
+          <UserStatus userData={originalData} actionDisabled buttonDisabled={originalData.user_id === userInfo?.user_id || originalData.is_creator} />
         </Form.Item>
       </Form>
     </Drawer>

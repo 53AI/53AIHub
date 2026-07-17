@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DownOutlined, UpOutlined } from "@ant-design/icons";
 import { Popover } from "antd";
 import type { ChatCompletionParams, IAgentInfo } from "../../adapters/types";
-import { ChatProvider } from "../../context";
+// unify-chat-adapters：ChatPluginProvider 已删除，所有 adapter 合并到 ChatConfigProvider.adapters。
 import { ChatConfigProvider, type Lang } from "../../i18n";
 import { useConversationStore } from "../../stores";
-import { ChatView, type ChatViewFeatures } from "../ChatView";
+import { ChatView } from "../ChatView";
 import {
   buildOpenClawConversation,
   createOpenClawConversationApiAdapter,
@@ -167,6 +167,11 @@ export function OpenClawPreviewWorkspace({
     [agentId, completions, openclawApi, requestSource]
   );
 
+  // unify-chat-adapters：原 ChatPluginProvider 已被并入 ChatConfigProvider。
+  // 所有 adapter 合并到单个对象里传。
+  // 注：uploadApi / workflowApi 在 OpenClaw 预览场景下没有真实实现，不注入占位（no-op），
+  // 让 useChatSend/useWorkflowSend 在错误路径上 throw actionable 错误，而不是
+  // 静默吞掉 { data: null } 再被 JSON.parse 炸掉。
   const adapters = useMemo(
     () => ({
       conversationApi,
@@ -176,40 +181,13 @@ export function OpenClawPreviewWorkspace({
         myDetail: async () => currentAgentInfo,
         myList: async () => [],
       },
-      uploadApi: {
-        upload: async (file: File) => {
-          if (!uploadFile) return {};
-          const res = await uploadFile(file);
-          return {
-            id: res.id,
-            url: res.url || `${apiHost}/api/preview/${res.preview_key || ""}`,
-            name: res.name || res.file_name,
-            size: res.size || res.file_size,
-            mime_type: res.mime_type,
-            preview_key: res.preview_key,
-          };
-        },
-      },
-      workflowApi: {
-        run: async () => Promise.resolve({ data: null }),
-      },
     }),
-    [apiHost, conversationApi, currentAgentInfo, uploadFile]
+    [conversationApi, currentAgentInfo]
   );
 
-  const pluginConfig = useMemo(
-    () => ({
-      type: "agent" as const,
-      title: currentAgentInfo.name || "OpenClaw",
-      logo: currentAgentInfo.logo || DEFAULT_OPENCLAW_LOGO,
-      features: {
-        showRagStats: true,
-        showFileUpload: Boolean(currentAgentInfo.settings_obj?.file_parse?.enable || currentAgentInfo.settings_obj?.image_parse?.enable),
-        showConversationList: false,
-      },
-    }),
-    [currentAgentInfo]
-  );
+  // unify-chat-adapters：pluginConfig 已被 ChatView 移除依赖，
+  // 这里仅保留 features 元数据供 ChatView 内部使用（如有）。
+  // 当前 ChatView 不再消费 pluginConfig，因此本块不再需要。
 
   const loadConversationPage = useCallback(async () => {
     if (!agentIdKey) return;
@@ -335,7 +313,7 @@ export function OpenClawPreviewWorkspace({
     return accept || "*/*";
   }, [currentAgentInfo]);
 
-  const features: ChatViewFeatures = useMemo(
+  const features = useMemo(
     () => ({
       history: false,
       newConversation: false,
@@ -343,10 +321,8 @@ export function OpenClawPreviewWorkspace({
       fileUpload: Boolean(currentAgentInfo.settings_obj?.file_parse?.enable || currentAgentInfo.settings_obj?.image_parse?.enable),
       guide: true,
       share: false,
-      agentTooltip: false,
       messageMenu: true,
       skipInitialLoad: false,
-      showRecommend: false,
       enableDragUpload: true,
       allowMultiple: true,
       allowSendWithFiles: false,
@@ -357,6 +333,8 @@ export function OpenClawPreviewWorkspace({
         ? getOpenClawInputDisabledReason(healthy, getOpenClawGatewayDisplayName(statusPayload, currentAgentInfo))
         : undefined,
       initialConversationResolving: healthy === null || currentResolving,
+      showWelcome: true,
+      indexWelcomeLayout: false,
     }),
     [currentAgentInfo, currentResolving, healthy, statusPayload]
   );
@@ -384,7 +362,7 @@ export function OpenClawPreviewWorkspace({
               open={historyOpen}
               onOpenChange={setHistoryOpen}
               arrow={false}
-              styles={{ body: { padding: 0 } }}
+              overlayInnerStyle={{ padding: 0 }}
               content={
                 <div className="openclaw-history-popover w-full rounded-[14px] bg-white p-3 shadow-[0_12px_30px_rgba(31,33,35,0.10)]">
                   {healthy !== true ? (
@@ -484,20 +462,41 @@ export function OpenClawPreviewWorkspace({
 
   return (
     <div className={`openclaw-preview-workspace h-full max-w-full ${className || ""}`}>
-      <ChatConfigProvider lang={lang}>
-        <ChatProvider config={pluginConfig as any} adapters={adapters as any}>
-          <ChatView
-            agentId={String(agentId)}
-            initialConversationId={initialConversationId}
-            features={features}
-            syncToUrl={false}
-            agentInfo={currentAgentInfo}
-            renderHeader={renderHeader}
-            uploadRequest={uploadRequest}
-            acceptTypes={acceptTypes}
-            boxClassName={boxClassName}
-          />
-        </ChatProvider>
+      <ChatConfigProvider lang={lang} adapters={adapters as any}>
+        <ChatView
+          agentId={String(agentId)}
+          initialConversationId={initialConversationId}
+          syncToUrl={false}
+          agentInfo={currentAgentInfo}
+          slots={{
+            header: renderHeader,
+          }}
+          history={{ enabled: features.history }}
+          newConversation={{ enabled: features.newConversation }}
+          languageSwitcher={{ enabled: features.languageSwitcher }}
+          guide={{ enabled: features.guide }}
+          welcome={{ show: features.showWelcome, indexLayout: features.indexWelcomeLayout }}
+          fileUpload={{
+            enabled: features.fileUpload,
+            request: uploadRequest,
+            acceptTypes: acceptTypes,
+            enableDrag: features.enableDragUpload,
+            enablePaste: features.enablePasteUpload,
+            allowMultiple: features.allowMultiple,
+            allowSendWithFiles: features.allowSendWithFiles,
+          }}
+          openclaw={{
+            enabled: features.openclaw,
+            inputDisabled: features.openclawInputDisabled,
+            inputDisabledReason: features.openclawInputDisabledReason,
+            initialConversationResolving: features.initialConversationResolving,
+            skipInitialLoad: features.skipInitialLoad,
+          }}
+          message={{
+            showMenu: features.messageMenu,
+          }}
+          boxClassName={boxClassName}
+        />
       </ChatConfigProvider>
     </div>
   );

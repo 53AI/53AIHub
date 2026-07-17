@@ -461,28 +461,10 @@ func ensureDefaultAgentsFromInitializedChannels(tx *gorm.DB, eid int64, createdB
 		return errors.New("db is nil")
 	}
 
-	channels, modelSelection, err := resolveDefaultModelSelectionFromInitializedChannels(tx, eid)
+	_, modelSelection, err := resolveDefaultModelSelectionFromInitializedChannels(tx, eid)
 	if err != nil {
 		return err
 	}
-	if modelSelection == nil {
-		logger.Debugf(nil, "【企业初始化】默认 Agent 初始化跳过: eid=%d, 初始化渠道数=%d", eid, len(channels))
-		return nil
-	}
-
-	logger.Debugf(nil, "【企业初始化】默认 Agent 模型推导结果: eid=%d, logic_channel_id=%d, logic_channel_type=%d, logic_model=%s, rerank_channel_id=%d, rerank_model=%s",
-		eid, modelSelection.LogicReasoning.ChannelID, modelSelection.LogicReasoning.ChannelType, modelSelection.LogicReasoning.ModelName,
-		func() int64 {
-			if modelSelection.Rerank == nil {
-				return 0
-			}
-			return modelSelection.Rerank.ChannelID
-		}(), func() string {
-			if modelSelection.Rerank == nil {
-				return ""
-			}
-			return modelSelection.Rerank.ModelName
-		}())
 
 	for _, agent := range buildDefaultAgents(modelSelection, createdBy) {
 		createdAgent, err := ensureDefaultAgent(tx, eid, agent)
@@ -490,11 +472,57 @@ func ensureDefaultAgentsFromInitializedChannels(tx *gorm.DB, eid int64, createdB
 			return err
 		}
 
-		if err := ensureDefaultAgentModel(tx, eid, createdAgent.AgentID, modelSelection.LogicReasoning); err != nil {
+		if err := ensureAgentCompanyScope(tx, eid, createdAgent.AgentID); err != nil {
 			return err
+		}
+
+		if modelSelection != nil {
+			if err := ensureDefaultAgentModel(tx, eid, createdAgent.AgentID, modelSelection.LogicReasoning); err != nil {
+				return err
+			}
 		}
 	}
 
+	if err := assignDefaultAgentsToGroup(tx, eid); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func assignDefaultAgentsToGroup(tx *gorm.DB, eid int64) error {
+	var group model.Group
+	if err := tx.Where("eid = ? AND group_type = ? AND group_name = ?", eid, model.AGENT_TYPE, "默认分组").First(&group).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	for _, usage := range []int{model.AgentUsageSearch, model.AgentUsageWorkAI} {
+		var agent model.Agent
+		if err := tx.Where("eid = ? AND owner_id = ? AND agent_usage = ?", eid, model.AgentOwnerEnterprise, usage).First(&agent).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+
+		var count int64
+		tx.Model(&model.ResourcePermission{}).
+			Where("group_id = ? AND resource_id = ? AND resource_type = ?", group.GroupId, agent.AgentID, model.ResourceTypeAgent).
+			Count(&count)
+		if count == 0 {
+			if err := tx.Create(&model.ResourcePermission{
+				GroupID:      group.GroupId,
+				ResourceID:   agent.AgentID,
+				ResourceType: model.ResourceTypeAgent,
+				Permission:   model.PermissionRead,
+			}).Error; err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -559,9 +587,39 @@ func ensureDefaultAgentModel(tx *gorm.DB, eid, agentID int64, selection *selecte
 	return nil
 }
 
+func ensureAgentCompanyScope(tx *gorm.DB, eid, agentID int64) error {
+	var exists int64
+	if err := tx.Model(&model.ResourceScope{}).
+		Where("resource_id = ? AND resource_type = ? AND scope_type = ? AND target_id = ? AND eid = ?",
+			agentID, model.ResourceTypeAgent, model.ScopeTypeCompany, 0, eid).
+		Count(&exists).Error; err != nil {
+		return err
+	}
+	if exists > 0 {
+		return nil
+	}
+
+	scope := model.ResourceScope{
+		ResourceID:   agentID,
+		ResourceType: model.ResourceTypeAgent,
+		ScopeType:    model.ScopeTypeCompany,
+		TargetID:     0,
+		Eid:          eid,
+	}
+	if err := tx.Create(&scope).Error; err != nil {
+		return err
+	}
+
+	logger.Debugf(nil, "【企业初始化】Agent company scope 创建成功: eid=%d, agent_id=%d", eid, agentID)
+	return nil
+}
+
 func buildDefaultAgents(selection *defaultModelSelection, createdBy int64) []model.Agent {
-	logic := selection.LogicReasoning
-	rerank := selection.Rerank
+	var logic, rerank *selectedModelChannel
+	if selection != nil {
+		logic = selection.LogicReasoning
+		rerank = selection.Rerank
+	}
 	agents := []model.Agent{
 		buildWorkAIAgent(logic, createdBy),
 		buildAISearchAgent(logic, rerank, createdBy),
@@ -576,28 +634,28 @@ func buildWorkAIAgent(logic *selectedModelChannel, createdBy int64) model.Agent 
 		"opening_statement": "下午好，希望我为你做些什么？",
 		"fast_reasoning_config": map[string]interface{}{
 			"enable":       true,
-			"channel_id":   logic.ChannelID,
-			"channel_type": logic.ChannelType,
-			"model_name":   logic.ModelName,
+			"channel_id":   selectedChannelID(logic),
+			"channel_type": selectedChannelType(logic),
+			"model_name":   selectedChannelModel(logic),
 			"temperature":  0.7,
 		},
 		"skill_run_config": map[string]interface{}{
 			"enable":       true,
-			"channel_id":   logic.ChannelID,
-			"channel_type": logic.ChannelType,
-			"model_name":   logic.ModelName,
+			"channel_id":   selectedChannelID(logic),
+			"channel_type": selectedChannelType(logic),
+			"model_name":   selectedChannelModel(logic),
 			"temperature":  0.7,
 		},
 		"skills": []interface{}{},
 	}
 
 	return model.Agent{
-		Name:         "工作台",
+		Name:         "小助理",
 		Logo:         "",
 		Sort:         0,
 		Description:  "",
-		ChannelType:  logic.ChannelType,
-		Model:        logic.ModelName,
+		ChannelType:  selectedChannelType(logic),
+		Model:        selectedChannelModel(logic),
 		Prompt:       "你是一个全能的数字员工。你不仅能回答问题，还能使用浏览器、代码解释器等工具自主完成复杂任务。面对任务时，请先进行规划(Plan)，然后逐步执行(Execute)，并在每一步后进行观察(0bserve)和反思(Reflect)。",
 		Configs:      `{"completion_params":{"temperature":0.2,"top_p":0.75,"presence_penalty":0.5,"frequency_penalty":0.5}}`,
 		Tools:        `[]`,
@@ -610,6 +668,7 @@ func buildWorkAIAgent(logic *selectedModelChannel, createdBy int64) model.Agent 
 		AgentType:    model.AgentTypeApp,
 		AgentUsage:   model.AgentUsageWorkAI,
 		OwnerID:      model.AgentOwnerEnterprise,
+		IsSystem:     true,
 	}
 }
 
@@ -650,9 +709,9 @@ func buildAISearchAgent(logic *selectedModelChannel, rerank *selectedModelChanne
 		},
 		"fast_reasoning_config": map[string]interface{}{
 			"enable":       true,
-			"channel_id":   logic.ChannelID,
-			"channel_type": logic.ChannelType,
-			"model_name":   logic.ModelName,
+			"channel_id":   selectedChannelID(logic),
+			"channel_type": selectedChannelType(logic),
+			"model_name":   selectedChannelModel(logic),
 			"temperature":  0.7,
 		},
 		"deep_thinking_config": map[string]interface{}{
@@ -669,8 +728,8 @@ func buildAISearchAgent(logic *selectedModelChannel, rerank *selectedModelChanne
 		Logo:         "",
 		Sort:         0,
 		Description:  "",
-		ChannelType:  logic.ChannelType,
-		Model:        logic.ModelName,
+		ChannelType:  selectedChannelType(logic),
+		Model:        selectedChannelModel(logic),
 		Prompt:       "",
 		Configs:      `{"completion_params":{"temperature":0.2,"top_p":0.75,"presence_penalty":0.5,"frequency_penalty":0.5}}`,
 		Tools:        `[]`,
@@ -683,6 +742,7 @@ func buildAISearchAgent(logic *selectedModelChannel, rerank *selectedModelChanne
 		AgentType:    model.AgentTypeApp,
 		AgentUsage:   model.AgentUsageSearch,
 		OwnerID:      model.AgentOwnerEnterprise,
+		IsSystem:     true,
 	}
 }
 
@@ -712,9 +772,9 @@ func buildDocumentAppAgent(logic *selectedModelChannel, rerank *selectedModelCha
 		},
 		"fast_reasoning_config": map[string]interface{}{
 			"enable":       true,
-			"channel_id":   logic.ChannelID,
-			"channel_type": logic.ChannelType,
-			"model_name":   logic.ModelName,
+			"channel_id":   selectedChannelID(logic),
+			"channel_type": selectedChannelType(logic),
+			"model_name":   selectedChannelModel(logic),
 			"temperature":  0.7,
 		},
 		"deep_thinking_config": map[string]interface{}{
@@ -731,8 +791,8 @@ func buildDocumentAppAgent(logic *selectedModelChannel, rerank *selectedModelCha
 		Logo:         "",
 		Sort:         0,
 		Description:  "",
-		ChannelType:  logic.ChannelType,
-		Model:        logic.ModelName,
+		ChannelType:  selectedChannelType(logic),
+		Model:        selectedChannelModel(logic),
 		Prompt:       "",
 		Configs:      `{"completion_params":{"temperature":0.2,"top_p":0.75,"presence_penalty":0.5,"frequency_penalty":0.5}}`,
 		Tools:        `[]`,
@@ -745,6 +805,7 @@ func buildDocumentAppAgent(logic *selectedModelChannel, rerank *selectedModelCha
 		AgentType:    model.AgentTypeApp,
 		AgentUsage:   model.AgentUsageFileChat,
 		OwnerID:      model.AgentOwnerEnterprise,
+		IsSystem:     true,
 	}
 }
 
@@ -756,9 +817,9 @@ func buildKnowledgeMapAgent(logic *selectedModelChannel, createdBy int64) model.
 		},
 		"fast_reasoning_config": map[string]interface{}{
 			"enable":       true,
-			"channel_id":   logic.ChannelID,
-			"channel_type": logic.ChannelType,
-			"model_name":   logic.ModelName,
+			"channel_id":   selectedChannelID(logic),
+			"channel_type": selectedChannelType(logic),
+			"model_name":   selectedChannelModel(logic),
 			"temperature":  0.7,
 		},
 		"opening_statement": "你好，我是知识地图助手。",
@@ -770,7 +831,7 @@ func buildKnowledgeMapAgent(logic *selectedModelChannel, createdBy int64) model.
 	customConfig := map[string]interface{}{
 		"agent_type":     "prompt",
 		"provider_id":    0,
-		"channel_id":     logic.ChannelID,
+		"channel_id":     selectedChannelID(logic),
 		"channel_config": map[string]interface{}{},
 		"agent_mode":     "chat",
 		"file_parse": map[string]interface{}{
@@ -786,8 +847,8 @@ func buildKnowledgeMapAgent(logic *selectedModelChannel, createdBy int64) model.
 		Logo:         "",
 		Sort:         0,
 		Description:  "",
-		ChannelType:  logic.ChannelType,
-		Model:        logic.ModelName,
+		ChannelType:  selectedChannelType(logic),
+		Model:        selectedChannelModel(logic),
 		Prompt:       "",
 		Configs:      `{"completion_params":{"temperature":0.2,"top_p":0.75,"presence_penalty":0.5,"frequency_penalty":0.5}}`,
 		Tools:        `[]`,
@@ -800,6 +861,7 @@ func buildKnowledgeMapAgent(logic *selectedModelChannel, createdBy int64) model.
 		AgentType:    model.AgentTypeApp,
 		AgentUsage:   model.AgentUsageKnowledgeMap,
 		OwnerID:      model.AgentOwnerEnterprise,
+		IsSystem:     true,
 	}
 }
 
@@ -831,6 +893,27 @@ func buildDefaultRerankConfig(scoreThreshold float64, topK int, scoreThresholdEn
 	}
 
 	return config
+}
+
+func selectedChannelID(s *selectedModelChannel) int64 {
+	if s == nil {
+		return 0
+	}
+	return s.ChannelID
+}
+
+func selectedChannelType(s *selectedModelChannel) int {
+	if s == nil {
+		return 0
+	}
+	return s.ChannelType
+}
+
+func selectedChannelModel(s *selectedModelChannel) string {
+	if s == nil {
+		return ""
+	}
+	return s.ModelName
 }
 
 func mustMarshalJSONString(v interface{}) string {
@@ -1235,22 +1318,6 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 					"run_mode": "auto",
 					"step_key": "vector_indexing",
 					"config":   map[string]interface{}{},
-				},
-				{
-					"run_mode": "auto",
-					"step_key": "summary_generation",
-					"config": map[string]interface{}{
-						"summary_faq": map[string]interface{}{
-							"enabled": true,
-						},
-						"knowledge_map": map[string]interface{}{
-							"enabled": false,
-						},
-						"entity_extraction": map[string]interface{}{
-							// 默认关闭，避免与 graph_generation 的实体抽取重复消耗 token
-							"enabled": false,
-						},
-					},
 				},
 				{
 					"run_mode": "auto",

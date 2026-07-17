@@ -86,3 +86,29 @@ func GetInternalUserListCacheKey(eid int64, keyword string, status, offset, limi
 func GetInternalUserListCachePattern(eid int64) string {
 	return fmt.Sprintf("Cache:user:internal:list:eid:%d:*", eid)
 }
+
+// GetUserMemoryCacheKey 生成用户记忆缓存 Key
+// Key 格式: Cache:user:memory:eid:{eid}:user:{userID}
+func GetUserMemoryCacheKey(eid, userID int64) string {
+	return fmt.Sprintf("Cache:user:memory:eid:%d:user:%d", eid, userID)
+}
+
+// GetUserMemoryCachePattern 生成用户记忆缓存批量失效模式
+// Pattern 格式: Cache:user:memory:eid:{eid}:*
+func GetUserMemoryCachePattern(eid int64) string {
+	return fmt.Sprintf("Cache:user:memory:eid:%d:*", eid)
+}
+
+// GetOpenClawProjectionMutexKey 生成 OpenClaw 投影写入分布式锁 Key。
+// Key 格式: Lock:openclaw:projection:mu:eid:{eid}:conv:{conversationID}
+func GetOpenClawProjectionMutexKey(eid int64, conversationID string) string {
+	return fmt.Sprintf("Lock:openclaw:projection:mu:eid:%d:conv:%s", eid, conversationID)
+}
+
+// GetOpenClawProjectionSyncedCacheKey 生成 OpenClaw 投影已同步缓存 Key。
+// 用于防止在 TTL 内重复写入同一投影记录。
+// Key 格式: Cache:openclaw:projection:synced:eid:{eid}:agent:{agentID}:user:{userID}:conv:{conversationID}:key:{projectionKey}
+func GetOpenClawProjectionSyncedCacheKey(eid int64, agentID int64, userID int64, conversationID string, projectionKey string) string {
+	return fmt.Sprintf("Cache:openclaw:projection:synced:eid:%d:agent:%d:user:%d:conv:%s:key:%s",
+		eid, agentID, userID, conversationID, projectionKey)
+}

@@ -13,7 +13,7 @@ import (
 )
 
 // Version 硬编码的系统版本号
-var Version = "v0.4.0"
+var Version = "v0.4.1"
 
 // BuildTime 编译时间，通过 init 记录进程启动时间作为构建参考
 var BuildTime = time.Now().Format("20060102150405")
@@ -65,6 +65,9 @@ var FileStorageURL = env.String("FILE_STORAGE_URL", "/api/files")     // 文件�
 var LogDir = env.String("LOG_DIR", "")
 var LOG_LEVEL = env.String("LOG_LEVEL", "info")
 var FILE_LOG_VIEWER_ACCESS_TOKEN = env.String("FILE_LOG_VIEWER_ACCESS_TOKEN", "")
+var SLOW_LOG_ENABLED = env.Bool("SLOW_LOG_ENABLED", false)
+var SLOW_API_THRESHOLD_MS = env.Int("SLOW_API_THRESHOLD_MS", 1000)
+var SLOW_SQL_THRESHOLD_MS = env.Int("SLOW_SQL_THRESHOLD_MS", 200)
 var DebugEnabled = env.Bool("DEBUG", false)
 var OnlyOneLogFile = env.Bool("ONLY_ONE_LOG_FILE", false)
 var StartTime = time.Now().Format("2006-01-02 15:04:05")

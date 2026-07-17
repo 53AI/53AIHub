@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // EntityType* 实体类型枚举（用于统一管理实体分类）
@@ -191,7 +192,10 @@ func ReplaceEntityScopeRelationsBySourceWithDB(db *gorm.DB, eid int64, spaceID, 
 	if len(relations) == 0 {
 		return nil
 	}
-	return db.CreateInBatches(relations, 200).Error
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "eid"}, {Name: "entity_id"}, {Name: "space_id"}, {Name: "library_id"}, {Name: "file_id"}, {Name: "chunk_id"}},
+		DoNothing: true,
+	}).CreateInBatches(relations, 200).Error
 }
 
 func DeleteOrphanEntitiesByIDsWithDB(db *gorm.DB, eid int64, entityIDs []int64) error {

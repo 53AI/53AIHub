@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/model"
 )
 
 var (
@@ -41,4 +42,5 @@ func Init() {
 	// Initialize the logger
 	InitRedisClient()
 	InitLocker()
+	model.InitSlowLogRecorder()
 }

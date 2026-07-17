@@ -56,6 +56,7 @@ export default function Skills() {
   const { state: filterForm, stateRef: filterFormRef, updateState } = useListState<FilterForm>(
     defaultFilterForm,
     {
+      enableUrlSync: true,
       urlPrefix: 'skill_',
       searchFields: ['keyword', 'group_id'],
     }
@@ -170,7 +171,7 @@ export default function Skills() {
         break;
       case "edit":
         navigate({
-          pathname: "/skill-detail",
+          pathname: "/skills/create",
           search: `?skill_id=${data.id}`,
         });
         break;
@@ -237,7 +238,7 @@ export default function Skills() {
       ),
     },
     {
-      title: "中文名称",
+      title: t("skills.display_name"),
       dataIndex: "display_name",
       key: "display_name",
       width: 160,

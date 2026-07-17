@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { message } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
-import { safeParseJson, formatLlmContent, formatFileInfo } from "./utils";
+import { formatFileInfo } from "@km/shared-utils";
+import { safeParseJson, formatLlmContent } from "./utils";
 import { copyToClip } from "@km/shared-utils";
 import { useTranslation, useKnowledgePanel } from "../../i18n";
 import type { ProcessFlowHeaderProps, ProcessRecord, StepStatus, TranslateFn } from "./types";
@@ -392,9 +393,55 @@ function parseProcessSteps(
           });
         }
       } else if (record.status === "completed") {
-        // tool_execution completed: 只保存当前的 llm block，不标记整个 skill 完成
-        // 同一个 skill 的多个 tool_execution 会合并在一个步骤中
+        // tool_execution completed: 在 replay 场景下 agentrun-events.ts 会把
+        // start 和 completed 合并成一条 completed 记录(保留 start 的 tool_calls)。
+        // 这里必须:① 若 skillExecutionMap 已有该 skill 的步骤,标记 completed;
+        //          ② 若没有(replay 时只回了 completed 事件),用 data 里的
+        //             tool_calls + skill_name 新建一个 completed 步骤。
         finalizeCurrentLlmBlock();
+        const existingExecutionStep = skillExecutionMap.get(skillName);
+        if (existingExecutionStep) {
+          existingExecutionStep.status = "completed";
+          existingExecutionStep.title = t("process.tool_execution.completed");
+          existingExecutionStep.icon = "skill";
+          const items = (existingExecutionStep.data as any)?.items as ExecutionItem[] | undefined;
+          if (items) {
+            items.forEach(item => {
+              if (item.type === "tool" && item.toolCall.status === "running") {
+                item.toolCall.status = "completed";
+              }
+            });
+          }
+        } else if (data && Array.isArray((data as any)?.tool_calls) && (data as any).tool_calls.length > 0) {
+          // 单条 completed 记录(无对应 start)——用 data 重建步骤
+          const toolCalls: ToolCall[] = ((data as any).tool_calls as any[]).map((call: any) => {
+            const toolCallId = call?.id || `tool-${toolCallIdCounter++}`;
+            const func = call?.function || {};
+            const tc: ToolCall = {
+              id: toolCallId,
+              name: func?.name || "unknown",
+              arguments: func?.arguments || "",
+              status: "completed",
+              result: "",
+            };
+            toolCallMap.set(toolCallId, tc);
+            return tc;
+          });
+          const executionStep: StepData = {
+            id: `tool_execution_${toolExecutionCounter++}`,
+            type: "tool_execution",
+            status: "completed",
+            title: t("process.tool_execution.completed"),
+            icon: "skill",
+            data: {
+              skillName,
+              items: toolCalls.map(tc => ({ id: tc.id, type: "tool" as const, toolCall: tc })),
+            },
+          };
+          steps.push(executionStep);
+          skillExecutionMap.set(skillName, executionStep);
+          currentActiveSkillName = skillName;
+        }
       }
       continue;
     }
@@ -454,8 +501,8 @@ function parseProcessSteps(
 
 const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
   processRecords,
-  streaming,
-  hasContent,
+  streaming = false,
+  hasContent = false,
   onOpenKnow,
   onSourceClick,
   getKnowledgeSearchFiles,
@@ -466,8 +513,8 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
   const t: TranslateFn = externalT || internalT;
   const onOpenKnowledgePanel = useKnowledgePanel();
 
-  // 是否支持点击交互（有回调时才显示可点击样式）
-  const isInteractive = !!onOpenKnowledgePanel;
+  // 是否支持点击交互（有 context 或 props 回调时显示可点击样式）
+  const isInteractive = !!(onOpenKnowledgePanel || onOpenKnow || onSourceClick);
 
   // 统一处理知识检索标签点击
   const handleKnowledgeTagClick = useCallback(() => {
@@ -482,11 +529,13 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
   // 统一处理源文件点击
   const handleSourceItemClick = useCallback((source: any) => {
     if (onOpenKnowledgePanel) {
-      onOpenKnowledgePanel({ type: 'source_click', source });
+      // 传递完整 files 数据，让 ThinkKnowledge 能先更新再选中
+      const files = getKnowledgeSearchFiles?.();
+      onOpenKnowledgePanel({ type: 'source_click', source, files });
     } else {
       onSourceClick?.(source);
     }
-  }, [onOpenKnowledgePanel, onSourceClick]);
+  }, [onOpenKnowledgePanel, onSourceClick, getKnowledgeSearchFiles]);
 
   const STEP_CONFIG = useMemo(() => getStepConfig(t), [t]);
   const [expanded, setExpanded] = useState(true);
@@ -530,7 +579,7 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
     }
   }, [streaming, hasContent]);
 
-  const steps = useMemo(() => {
+  const steps = useMemo<StepData[]>(() => {
     const shouldComplete = !streaming || hasContent;
     const parsed = parseProcessSteps(processRecords, shouldComplete, t);
     // 流结束时修正所有 running 状态
@@ -541,7 +590,7 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
         if (!config) return step;
         return {
           ...step,
-          status: "completed",
+          status: "completed" as const,
           title: config.completed.title,
           icon: config.completed.icon,
         };
@@ -998,25 +1047,27 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
             if (step.type === "llm_delta") {
               return (
                 <div key={step.id} className="x-skill-step">
-                  <div className="x-skill-step-connector" />
-                  <div
-                    className="x-skill-step-header"
-                    style={{ justifyContent: "space-between" }}
-                    onClick={() => toggleStep(step.id)}
-                  >
-                    <div className={`x-skill-step-icon ${isRunning ? "x-skill-step-icon--running" : ""}`}>
-                      <SvgIcon name={isRunning ? "loading" : "brain"} size={16} />
+                  <>
+                    <div className="x-skill-step-connector" />
+                    <div
+                      className="x-skill-step-header"
+                      style={{ justifyContent: "space-between" }}
+                      onClick={() => toggleStep(step.id)}
+                    >
+                      <div className={`x-skill-step-icon ${isRunning ? "x-skill-step-icon--running" : ""}`}>
+                        <SvgIcon name={isRunning ? "loading" : "brain"} size={16} />
+                      </div>
+                      <div className={`x-skill-step-title ${isRunning ? "x-skill-step-title--running" : ""}`}>
+                        {isRunning ? t("process.llm_delta.running") : t("process.llm_delta.completed")}
+                      </div>
+                      <SvgIcon name={stepExpanded ? "up" : "down"} size={14} style={{ color: "#9ca3af" }} />
                     </div>
-                    <div className={`x-skill-step-title ${isRunning ? "x-skill-step-title--running" : ""}`}>
-                      {isRunning ? t("process.llm_delta.running") : t("process.llm_delta.completed")}
-                    </div>
-                    <SvgIcon name={stepExpanded ? "up" : "down"} size={14} style={{ color: "#9ca3af" }} />
-                  </div>
-                  {stepExpanded && step.data && (
-                    <div className="x-skill-step-body">
-                      {formatLlmContent(step.data as string)}
-                    </div>
-                  )}
+                    {stepExpanded && step.data && (
+                      <div className="x-skill-step-body">
+                        {formatLlmContent(step.data as string)}
+                      </div>
+                    )}
+                  </>
                 </div>
               );
             }

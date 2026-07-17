@@ -1,3 +1,5 @@
+import { hasConversationId } from "./openclaw-chatview-helpers";
+
 type OpenClawAgentLike = {
   agent_id?: string | number | null;
   agent_type?: string | number | null;
@@ -26,10 +28,6 @@ export function createOpenClawPendingConversationId(): string {
     globalThis.crypto?.randomUUID?.() ||
     `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   return `hub53ai:new:${randomId}`;
-}
-
-function hasConversationId(conversationId?: string | number | null): boolean {
-  return Boolean(conversationId) && conversationId !== 0 && conversationId !== "0";
 }
 
 export function shouldStartOpenClawBlankConversation(input: {
@@ -99,7 +97,10 @@ export function isOpenClawDiscardableAssistantContent(content?: string | null): 
   const normalized = String(content || "").trim().replace(/\s+/g, " ").toLowerCase();
   if (!normalized) return true;
   if (isOpenClawStatusAssistantContent(content)) return true;
-  return normalized === "no_reply" || normalized === "no reply" || normalized === "no";
+  return normalized === "no_reply" ||
+    normalized === "no reply" ||
+    normalized === "no" ||
+    normalized === "heartbeat_ok";
 }
 
 function normalizeWithSourceMap(value: string): { text: string; sourceIndexes: number[] } {

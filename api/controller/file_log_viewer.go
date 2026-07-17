@@ -28,6 +28,7 @@ type SearchFileLogsRequest struct {
 	AnchorLine      int    `form:"anchor_line"`
 	Around          int    `form:"around" default:"20"`
 	AnchorDirection string `form:"anchor_direction"`
+	NoArchive       bool   `form:"no_archive"` // 是否跳过 archive/ 目录中的归档日志
 }
 
 type FileLogsSearchResponse struct {
@@ -55,6 +56,7 @@ type FileLogsSearchResponse struct {
 // @Param anchor_line query int false "锚点行号（用于查看附近日志）"
 // @Param around query int false "上下文行数（默认20，最大200）"
 // @Param anchor_direction query string false "锚点方向：up/down/around（默认around）"
+// @Param no_archive query bool false "是否跳过归档日志" default(false)
 // @Success 200 {object} model.CommonResponse{data=FileLogsSearchResponse}
 // @Failure 400 {object} model.CommonResponse
 // @Failure 500 {object} model.CommonResponse
@@ -90,7 +92,7 @@ func SearchFileLogs(c *gin.Context) {
 		AnchorLine: req.AnchorLine,
 		Around:     req.Around,
 		Direction:  req.AnchorDirection,
-		NoArchive:  true, // 默认跳过 archive/ 目录中的旧日志
+		NoArchive:  req.NoArchive, // 默认 false=搜索时包含 archive/ 目录中的归档日志
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToErrorResponse(err))
@@ -226,7 +228,7 @@ const fileLogsUIHTML = `<!doctype html>
         <input id="token" placeholder="粘贴 FILE_LOG_VIEWER_ACCESS_TOKEN，刷新后会自动保留" />
       </div>
       <div class="grid">
-        <div><label>文件类型</label><select id="fileType"><option value="all">all</option><option value="main">main</option><option value="error">error</option><option value="crash">crash</option><option value="ragjob">ragjob</option></select></div>
+        <div><label>文件类型</label><select id="fileType"><option value="all">all</option><option value="main">main</option><option value="error">error</option><option value="crash">crash</option><option value="ragjob">ragjob</option><option value="slow">slow（慢日志）</option></select></div>
         <div><label>级别</label><select id="level"><option value="">全部</option><option>debug</option><option>info</option><option>warn</option><option>error</option><option>crash</option><option>fatal</option></select></div>
         <div><label>关键词</label><input id="keyword" placeholder="msg/raw 模糊匹配" /></div>
         <div><label>request_id</label><input id="requestId" placeholder="精确匹配" /></div>
@@ -235,6 +237,7 @@ const fileLogsUIHTML = `<!doctype html>
         <div><label>结束时间</label><input id="end" type="datetime-local" /></div>
         <div><label>每页数量</label><input id="limit" type="number" value="50" min="1" max="200" /></div>
         <div><label>定位加载行数</label><input id="around" type="number" value="40" min="1" max="200" /></div>
+        <div class="row" style="align-items:end;"><label><input id="includeArchive" type="checkbox" /> 包含归档日志</label></div>
         <div class="row" style="align-items:end;"><button class="btn-primary" id="searchBtn">搜索</button></div>
       </div>
       <div class="toolbar">
@@ -328,6 +331,7 @@ const fileLogsUIHTML = `<!doctype html>
       if (lineNo > 0) p.set('line', String(lineNo));
       if (start) p.set('start_time', start);
       if (end) p.set('end_time', end);
+      p.set('no_archive', document.getElementById('includeArchive').checked ? 'false' : 'true');
       return p;
     }
 
@@ -628,7 +632,7 @@ const fileLogsUIHTML = `<!doctype html>
     });
 
     document.getElementById('archiveBtn').addEventListener('click', async () => {
-      if (!confirm('确定归档所有非当前活跃的日志文件？\n旧日志将被 gzip 压缩并移至 archive/ 目录。')) return;
+      if (!confirm('确定归档所有日志文件？\n日志将被复制到 archive/ 目录，原日志将被清空。')) return;
       const btn = document.getElementById('archiveBtn');
       btn.disabled = true;
       btn.textContent = '归档中...';

@@ -2,50 +2,22 @@ import { memo, useCallback } from "react";
 import { Sender } from "@km/hub-ui-x-react";
 import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation } from "../../i18n";
+import type {
+  ChatInputSlots,
+  ChatInputProps,
+  InputStateFeature,
+  SendData,
+} from "./types";
 
-export interface SendData {
-  textContent?: string;
-  pureTextContent?: string;
-  files?: any[];
-}
+// 重新导出,保持 ChatInput.tsx 旧导入路径兼容
+export type { ChatInputSlots, ChatInputProps, InputStateFeature, SendData };
 
-export interface ChatInputProps {
-  inputValue: string;
-  onChange: (value: string) => void;
-  onSend: (data: SendData | string, files?: any[]) => void;
-  onStop: () => void;
-  isStreaming: boolean;
-  disabled?: boolean;
-  stopDisabled?: boolean;
-  disabledReason?: string;
-  enableUpload?: boolean;
-  placeholder?: string;
-  features?: {
-    history?: boolean;
-    newConversation?: boolean;
-  };
-  onNewConversation?: () => void;
-  onHistoryOpen?: () => void;
-  /** 左侧按钮区域 - 用于 AgentTooltip 等组件 */
-  renderLeftButtons?: () => React.ReactNode;
-  /** 启用拖拽上传 */
-  enableDragUpload?: boolean;
-  /** 允许多文件选择 */
-  allowMultiple?: boolean;
-  /** 允许仅文件发送 */
-  allowSendWithFiles?: boolean;
-  /** 接受的文件类型 */
-  acceptTypes?: string;
-  /** 最大文件大小（字节） */
-  maxFileSize?: number;
-  /** 自定义上传函数 */
-  httpRequest?: (file: File) => Promise<any>;
-  /** 启用粘贴上传 */
-  enablePasteUpload?: boolean;
-  /** 是否显示推荐面板（调整宽度） */
-  showRecommend?: boolean;
-  boxClassName?: string
-}
+const DEFAULTS = {
+  history: { enabled: true },
+  newConversation: { enabled: true },
+  fileUpload: { enabled: false },
+  inputState: { disabled: false, stopDisabled: false, disabledReason: undefined },
+} as const;
 
 function ChatInputInner({
   inputValue,
@@ -53,27 +25,51 @@ function ChatInputInner({
   onSend,
   onStop,
   isStreaming,
-  disabled = false,
-  stopDisabled = false,
-  disabledReason,
-  enableUpload = false,
+  slots,
+  history,
+  newConversation,
+  fileUpload,
+  inputState,
+  disabled: legacyDisabled,
+  stopDisabled: legacyStopDisabled,
+  disabledReason: legacyDisabledReason,
+  mention,
+  skill,
+  actionPosition,
+  senderPlaceholder,
   placeholder,
-  features = {},
-  onNewConversation,
-  onHistoryOpen,
-  renderLeftButtons,
-  enableDragUpload,
-  allowMultiple,
-  allowSendWithFiles,
-  acceptTypes,
-  maxFileSize,
-  httpRequest,
-  enablePasteUpload,
-  showRecommend = false,
-  boxClassName= ''
+  boxClassName = "",
 }: ChatInputProps) {
   const { t } = useTranslation();
-  const { history = true, newConversation = true } = features;
+
+  // 解构分组属性，提供默认值
+  const historyEnabled = history?.enabled ?? DEFAULTS.history.enabled;
+  const newConversationEnabled = newConversation?.enabled ?? DEFAULTS.newConversation.enabled;
+  const fileUploadEnabled = fileUpload?.enabled ?? DEFAULTS.fileUpload.enabled;
+  const {
+    disabled = legacyDisabled ?? DEFAULTS.inputState.disabled,
+    stopDisabled = legacyStopDisabled ?? DEFAULTS.inputState.stopDisabled,
+    disabledReason = legacyDisabledReason,
+  } = inputState ?? {};
+
+  // 回调
+  const onHistoryOpen = history?.onOpen;
+  const onNewConversationClick = newConversation?.onCreate;
+
+  // 文件上传配置
+  const enableUpload = fileUploadEnabled;
+  const enableDragUpload = fileUpload?.enableDrag;
+  const allowMultiple = fileUpload?.allowMultiple;
+  const allowSendWithFiles = fileUpload?.allowSendWithFiles;
+  const acceptTypes = fileUpload?.acceptTypes;
+  const maxFileSize = fileUpload?.maxFileSize;
+  const httpRequest = fileUpload?.request;
+  const enablePasteUpload = fileUpload?.enablePaste;
+
+  // 插槽
+  const renderLeftButtons = slots?.leftButtons;
+  const renderLeftExtras = slots?.renderLeftExtras;
+  const senderInnerSlots = slots?.senderSlots;
 
   const handleSend = useCallback(
     (data: SendData | string, files?: any[]) => {
@@ -82,14 +78,21 @@ function ChatInputInner({
     [onSend]
   );
 
+  // 合并 sender 内部 slots:调用方提供的 linkList / mentionDropdown / skillDropdown 等,
+  // 与 ChatInput 自身的 renderLeftExtras 合并到 extrasLeft
+  const mergedSenderSlots = {
+    ...(senderInnerSlots ?? {}),
+    extrasLeft: renderLeftExtras ?? senderInnerSlots?.extrasLeft,
+  };
+
   return (
-    <div className={`pb-5 sticky bottom-0 bg-white ${showRecommend ? "w-4/6" : (boxClassName || "w-11/12 md:w-4/5 max-w-[1200px]")} mx-auto`}>
+    <div className={`pb-5 sticky z-10 bottom-0 bg-white ${boxClassName || "w-11/12 md:w-4/5 max-w-[1200px]"} mx-auto`}>
       <div className="flex gap-2 mb-2.5">
         {renderLeftButtons?.()}
 
         <div className="flex-1"></div>
 
-        {history && onHistoryOpen && (
+        {historyEnabled && onHistoryOpen && (
           <div
             className="h-8 px-2 rounded-full flex items-center gap-1.5 bg-[#F1F2F3] text-sm text-[#1F2123] cursor-pointer hover:bg-[#E1E2E3]"
             onClick={onHistoryOpen}
@@ -99,10 +102,10 @@ function ChatInputInner({
           </div>
         )}
 
-        {newConversation && onNewConversation && (
+        {newConversationEnabled && onNewConversationClick && (
           <div
             className="h-8 px-2 rounded-full flex items-center gap-1.5 bg-[#F1F2F3] text-sm text-[#1F2123] cursor-pointer hover:bg-[#E1E2E3]"
-            onClick={onNewConversation}
+            onClick={onNewConversationClick}
           >
             <SvgIcon name="plus" size={16} />
             {t("chat.new_conversation")}
@@ -116,23 +119,37 @@ function ChatInputInner({
         onSend={handleSend}
         onStop={onStop}
         loading={isStreaming}
-        disabled={disabled}
-        stopDisabled={stopDisabled}
-        enableUpload={enableUpload}
-        placeholder={(disabled && disabledReason) || placeholder || t("chat.input_placeholder")}
-        enableDragUpload={enableDragUpload}
-        allowMultiple={allowMultiple}
-        allowSendWithFiles={allowSendWithFiles}
-        acceptTypes={acceptTypes}
-        maxFileSize={maxFileSize}
-        httpRequest={httpRequest}
-        enablePasteUpload={enablePasteUpload}
+        placeholder={(disabled && disabledReason) || senderPlaceholder || placeholder || t("chat.input_placeholder")}
+        // 透传 mention / skill(由 ChatContainer 按 agent_usage 注入)
+        mention={mention}
+        skill={skill}
+        // inputState 分组
+        inputState={{
+          disabled,
+          stopDisabled,
+          disabledReason,
+        }}
+        // fileUpload 分组
+        fileUpload={{
+          enabled: enableUpload,
+          acceptTypes,
+          maxFileSize,
+          allowMultiple,
+          allowSendWithFiles,
+          enableDrag: enableDragUpload,
+          enablePaste: enablePasteUpload,
+          request: httpRequest,
+        }}
+        // ui 分组
+        ui={actionPosition ? { actionPosition } : undefined}
+        // 透传 Sender 内部 slot,合并 extrasLeft
+        slots={mergedSenderSlots}
       />
-      {disabled && disabledReason && (
+      {/* {disabled && disabledReason && (
         <div className="mt-2 text-center text-xs text-[#E8A600]">
           {disabledReason}
         </div>
-      )}
+      )} */}
       <div className="text-center text-xs text-gray-400 mt-2">
         {t("chat.ai_disclaimer")}
       </div>

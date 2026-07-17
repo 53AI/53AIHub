@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Icon from "../../Icon/index.tsx";
-import Tooltip from "../../Tooltip/index.tsx";
+import Tooltip from "../../Tooltip";
 import { copyToClip } from "../../../utils/copy";
 import { onClickOutside } from "../../../utils/helper";
 import { t } from "../../../locale";

@@ -26,6 +26,7 @@ interface ChunkEditorProps {
 
 export interface ChunkEditorRef {
   setEditMode: (type: string, mode: string) => void;
+  getValue: () => string;
 }
 
 const EDIT_MODES: EditConfig[] = [
@@ -213,6 +214,9 @@ const ChunkEditor = forwardRef<ChunkEditorRef, ChunkEditorProps>(
         if (vditor.current) {
           vditor.current?.setEditMode(editType, editMode);
         }
+      },
+      getValue() {
+        return vditor.current?.getValue() || '';
       },
     }));
 

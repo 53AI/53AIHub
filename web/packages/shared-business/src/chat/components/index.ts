@@ -9,16 +9,35 @@ export { default as MessageMenu, type MessageMenuProps, type MessageMenuFeatures
 
 // Chat components (new structure)
 export * from "./ChatView";
-export * from "./ChatMessages";
+export { ChatMessages, DEFAULT_FEATURES, OpenClawActivityList } from "./ChatMessages";
+export type {
+  ChatMessagesProps,
+  ChatMessagesSlots,
+  MessageMenuSlotProps,
+  MessageSelectionFeature,
+  WelcomeFeature as ChatMessagesWelcomeFeature,
+  OpenClawFeature as ChatMessagesOpenClawFeature,
+  LoadMoreFeature,
+  MessageActionFeature,
+  FileActionFeature,
+  SourceActionFeature,
+} from "./ChatMessages";
 
 // Feature components
 export * from "./completion";
 export * from "./share";
-export * from "./skill-run";
-export * from "./agent-tooltip";
 export * from "./related-scene";
 export * from "./process-flow";
-export * from "./message";
+export {
+  UserMessage as UserMessageComponent,
+  type UserMessageProps,
+  AssistantMessage,
+  type AssistantMessageProps,
+  MessageItem,
+  type MessageItemProps,
+  OpenClawTimeline,
+  type OpenClawTimelineProps,
+} from "./message";
 export * from "./feedback";
 export * from "./source";
 export * from "./output";

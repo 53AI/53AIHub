@@ -3,8 +3,7 @@ import { t } from "@/locales";
 import { useSearchParams } from "react-router-dom";
 import { PageLayoutTabs } from "@/components/PageLayout";
 import { SpacePage } from "@/views/space";
-import { KnowledgeCleaningPolicy } from "./cleaning-policy";
-import { KnowledgeDataPipeline } from "./data-pipeline";
+import { KnowledgeCleaningPolicy } from "./cleaning-pipeline";
 import { KnowledgeModel } from "./model";
 import { AssistantPage } from "@/views/assistant";
 import { getPublicPath } from "@/utils/config";
@@ -30,14 +29,9 @@ export function KnowledgePage() {
     { key: "space", label: t("module.space"), children: <SpacePage /> },
 
     {
-      key: "cleaning-policy",
-      label: t("module.cleaning-policy"),
+      key: "cleaning-pipeline",
+      label: t("module.cleaning_pipeline"),
       children: <KnowledgeCleaningPolicy />,
-    },
-    {
-      key: "data-pipeline",
-      label: t("module.data-pipeline"),
-      children: <KnowledgeDataPipeline />,
     },
     {
       key: "model",

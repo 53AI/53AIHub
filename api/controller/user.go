@@ -494,6 +494,7 @@ func DeleteEnterpriseUser(c *gin.Context) {
 		return
 	}
 	service.InvalidateInternalUserListCache(eid)
+	service.InvalidateUserMemoryCache(eid)
 
 	var module uint8
 	module = model.SystemLogModuleRegistered
@@ -583,6 +584,7 @@ func UpdateEnterpriseUser(c *gin.Context) {
 	}
 
 	service.InvalidateInternalUserListCache(user.Eid)
+	service.InvalidateUserMemoryCache(user.Eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
@@ -609,14 +611,12 @@ func GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	// Type assertion for user ID
 	uid, ok := userID.(int64)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(nil))
 		return
 	}
 
-	// Query database for user
 	user, err := model.GetUserByID(uid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
@@ -717,6 +717,9 @@ func UpdateCurrentUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
+
+	eid := config.GetEID(c)
+	service.InvalidateUserMemoryCache(eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }
@@ -1496,6 +1499,7 @@ func UpdateInternalUser(c *gin.Context) {
 		fieldMap,
 	)
 	service.InvalidateInternalUserListCache(eid)
+	service.InvalidateUserMemoryCache(eid)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(user))
 }

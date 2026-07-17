@@ -1,1 +1,1 @@
-export { CompletionView, type CompletionViewProps, type CompletionViewRef, type CompletionViewFeatures } from './CompletionView';
+export { CompletionView, type CompletionViewProps, type CompletionViewRef } from './CompletionView';

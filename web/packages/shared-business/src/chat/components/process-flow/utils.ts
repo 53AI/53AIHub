@@ -3,10 +3,10 @@
  */
 
 // 从 shared-utils 导入通用工具
-import { safeParseJson, formatFileInfo, getFileIconPath, type FormatFileInfoResult } from "@km/shared-utils";
+import { safeParseJson, getFileIconPath, type FormatFileInfoResult } from "@km/shared-utils";
 
 // 重新导出供其他组件使用
-export { safeParseJson, formatFileInfo, getFileIconPath, type FormatFileInfoResult };
+export { safeParseJson, getFileIconPath, type FormatFileInfoResult };
 
 /** 格式化工具参数 */
 export function formatArguments(args?: string): string {

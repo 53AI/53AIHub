@@ -3,7 +3,7 @@ import navigationApi from '@/api/modules/navigation'
 import { NAVIGATION_TYPE, NAVIGATION_TARGET, INIT_DATA_LIST } from '@/constants/navigation'
 import { cacheManager as cache } from '@km/shared-utils'
 import { img_host } from '@/utils/config'
-import i18n from '@/locales/i18n'
+import { updateMessages } from '@/locales'
 import { buildUrl } from '@/utils/router'
 import { checkVersion } from '@/utils/version'
 import { VERSION_MODULE } from '@/constants/enterprise'
@@ -126,16 +126,14 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
       hasKnowledge: hasKnowledge && !!knowledgeNavigation.status,
     })
 
-    // Update i18n translations for module names, do not overwrite other module fields
-    i18n.addResourceBundle('zh-cn', 'translation', {
-      module: {
-        agent: (agentNavigation as Navigation.State).name,
-        prompt: (promptNavigation as Navigation.State).name,
-        toolbox: (toolkitNavigation as Navigation.State).name,
-        index: (homeNavigation as Navigation.State).name,
-        skill: (skillsNavigation as Navigation.State).name
-      }
-    }, true, true)
+    // 动态更新导航模块名称翻译（扁平 key 结构）
+    updateMessages('zh-cn', {
+      'module.agent': (agentNavigation as Navigation.State).name,
+      'module.prompt': (promptNavigation as Navigation.State).name,
+      'module.toolbox': (toolkitNavigation as Navigation.State).name,
+      'module.index': (homeNavigation as Navigation.State).name,
+      'module.skill': (skillsNavigation as Navigation.State).name
+    })
 
     // 缓存完整结果（包含版本检查结果）
     localStorage.setItem(CACHE_KEYS.NAVIGATION_LIST, JSON.stringify({ list: navigations, hasKnowledge }))

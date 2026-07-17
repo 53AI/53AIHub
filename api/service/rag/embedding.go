@@ -829,7 +829,9 @@ func (s *EmbeddingService) storeToVectorDB(chunkID int64, vector []float64, chun
 
 	// 构建向量记录
 	vectorID := uuid.New().String()
-	collection := model.GetVectorCollectionName(library.UUID)
+	resolver := VectorCollectionResolver{Mode: GetVectorCollectionMode()}
+	collections := resolver.ResolveDocumentWriteCollections(chunk.Eid, *library)
+	logger.SysLogf("【诊断-文档块写入】eid=%d, chunk_id=%d, library_id=%d, mode=%s, collections=%v", chunk.Eid, chunkID, chunk.LibraryID, resolver.Mode, collections)
 
 	// 转换向量格式 (float64 -> float32)
 	vector32 := make([]float32, len(vector))
@@ -837,18 +839,25 @@ func (s *EmbeddingService) storeToVectorDB(chunkID int64, vector []float64, chun
 		vector32[i] = float32(v)
 	}
 
-	// 构建元数据
-	metadata := map[string]interface{}{
-		"chunk_id":     chunkID,
-		"file_id":      chunk.FileID,
-		"library_id":   chunk.LibraryID,
-		"library_uuid": library.UUID,
-		"eid":          chunk.Eid,
-		"chunk_type":   chunk.ChunkType,
-		"content":      chunk.Content,
-		"token_count":  chunk.TokenCount,
-		"created_at":   time.Now().Unix(),
-	}
+	// 构建元数据（使用统一的企业级 metadata 构建函数）
+	metadata := buildDocumentVectorMetadata(DocumentVectorMetadataInput{
+		Eid:                chunk.Eid,
+		SpaceID:            library.SpaceID,
+		LibraryID:          chunk.LibraryID,
+		FileID:             chunk.FileID,
+		ChunkID:            chunkID,
+		KnowledgeChunkID:   0, // 文档 chunk 暂无可关联的知识点 chunk ID
+		ChunkType:          chunk.ChunkType,
+		Content:            chunk.Content,
+		TokenCount:         chunk.TokenCount,
+		Status:             "enabled",
+		EmbeddingModel:     "",
+		EmbeddingChannelID: 0,
+	})
+	// 保留 library_uuid 字段（兼容旧代码查询）
+	metadata["library_uuid"] = library.UUID
+	// 保留 created_at 时间戳
+	metadata["created_at"] = time.Now().Unix()
 
 	record := vectorstore.VectorRecord{
 		ID:       vectorID,
@@ -858,15 +867,14 @@ func (s *EmbeddingService) storeToVectorDB(chunkID int64, vector []float64, chun
 
 	ctx := context.Background()
 
-	// 尝试直接插入向量，如果集合不存在则创建
-	err = s.insertWithAutoCreateCollection(ctx, collection, record, len(vector32))
-	if err != nil {
-		return "", err
-	}
-
-	logger.SysLogf("成功存储向量: VectorID=%s, Collection=%s", vectorID, collection)
-	fmt.Printf("成功存储向量到集合 %s，向量ID: %s\n", collection, vectorID)
-	return vectorID, nil
+			// 根据模式向每个目标集合写入向量
+		for _, collection := range collections {
+			if err := s.insertWithAutoCreateCollection(ctx, collection, record, len(vector32)); err != nil {
+				return "", fmt.Errorf("写入集合 %s 失败: %v", collection, err)
+			}
+			logger.SysLogf("成功存储向量: VectorID=%s, Collection=%s", vectorID, collection)
+		}
+		return vectorID, nil
 }
 
 // insertWithAutoCreateCollection 插入向量，如果集合不存在则自动创建
@@ -880,6 +888,7 @@ func (s *EmbeddingService) insertWithAutoCreateCollection(ctx context.Context, c
 	// 检查是否是集合不存在的错误
 	if vsErr, ok := err.(*vectorstore.VectorStoreError); ok {
 		if vsErr.Code == vectorstore.ErrCodeCollectionNotFound || vsErr.Code == vectorstore.ErrCodeUnknown {
+			logger.SysLogf("【诊断-插入向量】collection不存在，尝试创建: %s, dimension=%d", collection, dimension)
 			// 尝试创建集合
 			collectionConfig := vectorstore.CollectionConfig{
 				Name:      collection,
@@ -888,9 +897,14 @@ func (s *EmbeddingService) insertWithAutoCreateCollection(ctx context.Context, c
 				IndexType: "HNSW",
 			}
 
-			logger.SysLogf("集合不存在，正在创建集合: %s", collection)
-			if createErr := s.vectorStore.CreateCollection(ctx, collectionConfig); createErr != nil && !vectorstore.IsExistsError(createErr) {
+			createErr := s.vectorStore.CreateCollection(ctx, collectionConfig)
+			if createErr != nil && !vectorstore.IsExistsError(createErr) {
 				return fmt.Errorf("创建集合失败: %v", createErr)
+			}
+			if createErr != nil && vectorstore.IsExistsError(createErr) {
+				logger.SysLogf("【诊断-插入向量】collection已存在，继续尝试插入: %s, dimension=%d", collection, dimension)
+			} else {
+				logger.SysLogf("【诊断-插入向量】collection创建成功，重新插入: %s, dimension=%d", collection, dimension)
 			}
 
 			// 重新尝试插入
@@ -899,6 +913,7 @@ func (s *EmbeddingService) insertWithAutoCreateCollection(ctx context.Context, c
 			}
 			return nil
 		}
+		logger.SysLogf("【诊断-插入向量】非collection not found错误: collection=%s, code=%s, err=%v", collection, vsErr.Code, err)
 	}
 
 	// 其他错误，使用重试机制

@@ -27,7 +27,7 @@ import { FileUpload } from "./components/file-upload";
 import { ApplyDialog, type ApplyDialogRef } from "../components/apply";
 import { FileSearch } from "@/components/FileSearch";
 import { MoreDropdown } from "@/components/MoreDropdown";
-import { ProfileView } from "@/views/profile";
+import { ProfileModal } from "@/views/profile";
 import { RecordingFloat } from "@/components/RecordingFloat";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { LibraryPermission } from "../components/permission";
@@ -656,34 +656,10 @@ export function LibraryMainView() {
               }}
             >
               {loading ? null : <Outlet />}
-              {/* 个人信息面板 */}
-              {showProfile && (
-                <div className="absolute inset-0 z-50 flex flex-col bg-white">
-                  <div className="flex-none h-17 px-6 flex items-center border-b">
-                    {!libraryStore.siderVisible && (
-                      <>
-                        <div
-                          className="size-6 flex items-center justify-center cursor-pointer"
-                          title="展开"
-                          onClick={() => libraryStore.toggleSider()}
-                        >
-                          <SvgIcon name="left-bar" />
-                        </div>
-                        <div className="h-4 border-l mx-4" />
-                      </>
-                    )}
-                    <h2 className="flex-1 text-xl text-[#1D1E1F]">个人信息</h2>
-                    <div
-                      className="size-6 flex items-center justify-center cursor-pointer"
-                      onClick={handleCloseProfile}
-                    >
-                      <SvgIcon name="close" />
-                    </div>
-                  </div>
-                  <ProfileView />
-                </div>
-              )}
             </div>
+
+            {/* 个人信息弹窗 */}
+            <ProfileModal open={showProfile} onClose={handleCloseProfile} />
 
             {/* 文件上传组件 */}
             <FileUpload

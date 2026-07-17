@@ -17,7 +17,10 @@ export const agentConversationApi: IConversationApi = {
     });
   },
 
-  list(agentId: string, params?: { conversation_type?: string }): Promise<any> {
+  list(
+    agentId: string,
+    params?: { conversation_type?: string; offset?: number; limit?: number }
+  ): Promise<any> {
     return request.get("/api/conversations", {
       params: { agent_id: agentId, ...params },
     });

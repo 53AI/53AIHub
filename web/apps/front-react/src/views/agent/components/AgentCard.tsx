@@ -24,6 +24,9 @@ interface AgentCardProps {
   fixedType?: string // 固定类型显示（如 'Openclaw'）
   selectMode?: boolean  // 选择模式：区分已添加/待添加
   flatMode?: boolean    // 扁平渲染模式
+  canView?: boolean
+  /** 选中并触发跳转/操作时回调（用于关闭外层 Modal 等） */
+  onSelect?: () => void
 }
 
 export function AgentCard({
@@ -35,7 +38,9 @@ export function AgentCard({
   showTypeTag = true,
   fixedType,
   selectMode = false,
-  flatMode = false
+  flatMode = false,
+  canView = true,
+  onSelect,
 }: AgentCardProps) {
   const navigate = useNavigate()
   const isSoftStyle = useIsSoftStyle()
@@ -82,7 +87,7 @@ export function AgentCard({
 
   const handleCardClick = () => {
     // 选择模式下不跳转
-    if (selectMode) return
+    if (selectMode || !canView) return
 
     // 构建查询参数
     const params = new URLSearchParams()
@@ -96,10 +101,12 @@ export function AgentCard({
     // 软件模式：跳转详情页
     if (isSoftStyle) {
       const searchStr = params.toString()
+      onSelect?.()
       navigate(`/agent/${item.agent_id}${searchStr ? '?' + searchStr : ''}`)
       return
     }
     // 网站模式：直接跳转对话
+    onSelect?.()
     navigate({ pathname: '/chat', search: getNavigateSearch() })
   }
 
@@ -146,13 +153,15 @@ export function AgentCard({
   // 使用按钮跳转（网页版）
   const handleUseAgent = (e: React.MouseEvent) => {
     e.stopPropagation()
+    onSelect?.()
     navigate({ pathname: '/chat', search: getNavigateSearch() })
   }
 
   // 软件模式下跳转到工作台智能体页
   const handleUseAgentSoft = (e: React.MouseEvent) => {
     e.stopPropagation()
-    navigate(`/index/agent?agent_id=${item.agent_id}`)
+    onSelect?.()
+    navigate(`/agent/agent?agent_id=${item.agent_id}`)
   }
 
   // 获取类型图标和名称
@@ -220,7 +229,7 @@ export function AgentCard({
 
   return (
     <div
-      className="relative flex flex-col justify-between p-5 rounded-lg overflow-hidden bg-cover cursor-pointer group border border-[#E6E6E6] hover:shadow-md transition-all duration-300 bg-white"
+      className="h-[186px] relative flex flex-col justify-between p-5 rounded-lg overflow-hidden bg-cover cursor-pointer group border border-[#E6E6E6] hover:shadow-md transition-all duration-300 bg-white"
       onClick={handleCardClick}
     >
       <div className="flex items-start flex-1">
@@ -283,13 +292,13 @@ export function AgentCard({
         </div>
       </div>
       <p
-        className="text-sm text-placeholder line-clamp-2 leading-relaxed my-2"
+        className="flex-1 text-sm text-placeholder line-clamp-2 leading-relaxed my-2"
         title={item.description}
         dangerouslySetInnerHTML={{
           __html: type === 'explore' ? highlightKeyword(item.description || '', keyword) : item.description || ''
         }}
       />
-      <div className="flex items-center justify-between">
+      <div className="flex-1 flex items-center justify-between">
         {/* 左侧：使用次数（仅 explore 类型） */}
         {selectMode || type === 'my' ? (
           <div></div>

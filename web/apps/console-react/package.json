@@ -45,6 +45,7 @@
     "@km/shared-business": "workspace:*",
     "@km/shared-components-react": "workspace:*",
     "@km/shared-utils": "workspace:*",
+    "@lezer/highlight": "^1.2.3",
     "@tiptap/core": "^3.20.4",
     "@tiptap/extension-document": "^3.20.4",
     "@tiptap/extension-history": "^3.20.4",

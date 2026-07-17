@@ -9,7 +9,7 @@ export const ConversationType = {
 export type Conversation_Type = typeof ConversationType[keyof typeof ConversationType]
 
 export const conversationApi = {
-  list(params: { agent_id?: string, conversation_type?: Conversation_Type } = {}) {
+  list(params: { agent_id?: string, conversation_type?: Conversation_Type, offset?: number, limit?: number } = {}) {
     return service.get(`/api/conversations`, { params, requiresAuth: true }).catch(handleError)
   },
   create(data: { agent_id: string, title: string, file_id?: string, conversation_type?: Conversation_Type }) {

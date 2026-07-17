@@ -33,6 +33,8 @@ export type {
   CreateAgentDialogProps,
   CreateAgentDialogResult,
   AvatarSlotProps,
+  // Scope types
+  ScopeItem,
 } from './adapters'
 
 // Types (includes default value factories)
@@ -58,8 +60,14 @@ export {
 export { useAgentFormStore } from './store'
 
 // Hooks
-export { useAgentForm, usePlatformChannel } from './hooks'
-export type { UsePlatformChannelOptions, UsePlatformChannelReturn } from './hooks'
+export { useAgentForm, usePlatformChannel, useAgentPreviewSender } from './hooks'
+export type {
+  UsePlatformChannelOptions,
+  UsePlatformChannelReturn,
+  AgentPreviewSenderConfig,
+  AgentPreviewModelOption,
+  PreviewKnowledgeSourceState,
+} from './hooks'
 
 // Components
 export {
@@ -83,6 +91,8 @@ export {
   UsageChannel,
   Chat,
   Completion,
+  PreviewModelSelector,
+  PreviewKnowledgeSourceSelector,
 } from './components'
 
 export type {
@@ -94,6 +104,9 @@ export type {
   UsageChannelProps,
   ChatRef,
   CompletionRef,
+  PreviewModelSelectorProps,
+  PreviewKnowledgeSourceSelectorProps,
+  PreviewSourceMode,
 } from './components'
 
 // Constants

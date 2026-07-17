@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation } from "../../i18n";
 
@@ -68,7 +68,7 @@ function RelatedSceneInner({
   const handleNextAgent = (item: RelatedSceneItem) => {
     const parameters = getParameter();
     const mappedParams = Object.keys(item.field_mapping || {}).reduce((acc, key) => {
-      acc[key] = item.field_mapping[key].replace(/\{\#(.*?)\#\}/g, (match, p1) => {
+      acc[key] = item.field_mapping[key].replace(/\{\#(.*?)\#\}/g, (_match, p1) => {
         return parameters.find((param) => param.variable === p1)?.value || "";
       });
       return acc;

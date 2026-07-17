@@ -37,6 +37,8 @@ const (
 	SETTING_KM_KNOWLEDGE_MAP_SETTING = "km_knowledge_map_setting" // KM 知识地图设置（是否启用、是否自动生成）
 	SETTING_KM_FEEDBACK_CONFIG       = "km_feedback_config"       // KM 知识地图反馈配置
 	SETTING_WORKAI_FEEDBACK_CONFIG   = "workai_feedback_config"   // 工作AI反馈配置
+	SETTING_CHAT_FEEDBACK_CONFIG     = "chat_feedback_config"     // 对话型反馈配置
+	SETTING_WORKFLOW_FEEDBACK_CONFIG = "workflow_feedback_config" // 工作流型反馈配置
 	SETTING_DOCUMENT_APPLICATION     = "document_application"     // 文档应用设置
 	SETTING_RECORDING_CONFIG         = "recording_config"         // 录音配置
 )

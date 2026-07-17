@@ -5,7 +5,7 @@ export {
   convertReplayEventToSSE,
   applyProcessStep,
   getOpenClawMessageListMaxActivitySeq,
-  getOpenClawTimelineMaxSeq,
+  getOpenClawPayloadTimelineMaxSeq,
   mergeOpenClawActiveMessageIntoList,
   mergeOpenClawTimelineEventsIntoMessage,
   replaceOpenClawTurnWithTimelineEvents,
@@ -16,3 +16,7 @@ export { useChatMessages } from "./useChatMessages";
 export { useEmbedMode } from "./useEmbedMode";
 export { useChatTimeout } from "./useChatTimeout";
 export { isParsedAnswerError, isParsedAnswerCatchError, getErrorMessage } from "./errorUtils";
+export { useChatFeedback } from "./useChatFeedback";
+export { useChatShare, DISPLAY_MODE } from "./useChatShare";
+export { useWorkflowSend } from "./useWorkflowSend";
+export { useAgentRun, type UseAgentRunReturn, type AgentRunConnectionStatus, type RecoverCallbacks } from "./useAgentRun";

@@ -45,8 +45,9 @@ type AgentRequest struct {
 	UseCases             string  `json:"use_cases" example:"[]"`
 	Tools                string  `json:"tools"  example:"[]"`
 	CustomConfig         string  `json:"custom_config" example:"{}"`
-	UserGroupIds         []int64 `json:"user_group_ids"`
-	Enable               bool    `json:"enable" example:"true"`
+	UserGroupIds         []int64               `json:"user_group_ids"`
+	Scopes               []model.ResourceScopeItem `json:"scopes"`
+	Enable               bool                  `json:"enable" example:"true"`
 	SubscriptionGroupIds []int64 `json:"subscription_group_ids"` // 订阅分组IDs
 	Settings             string  `json:"settings" example:"{}"`
 	AgentType            int     `json:"agent_type" example:"0"`  // Agent type (0=App, 1=Workflow, 2=Assistant), default is 0
@@ -184,6 +185,13 @@ func CreateAgent(c *gin.Context) {
 		}
 	}
 
+	// 持久化资源范围
+	if err := service.ReplaceResourceScopes(tx, agent.AgentID, model.ResourceTypeAgent, agentReq.Scopes, agent.Eid); err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
+
 	// Commit transaction
 	if err := tx.Commit().Error; err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
@@ -214,6 +222,10 @@ func CreateAgent(c *gin.Context) {
 
 	agent.FillBotID()
 	agent.NormalizeOpenClawCompatibleResponseConfig()
+	if err := agent.LoadScopes(); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(agent))
 }
 
@@ -235,31 +247,47 @@ func GetAgent(c *gin.Context) {
 	eid := config.GetEID(c)
 	userID := config.GetUserId(c)
 
-	// 统一查询，不过滤 owner_id
-	agent, err := model.GetAgentByID(eid, agent_id)
+	// admin 跳过权限检查
+	if common.IsAdmin(c) {
+		agent, err := model.GetAgentByID(eid, agent_id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+			return
+		}
+		if agent.OwnerID == 0 {
+			if err := agent.LoadUserGroupIds(); err != nil {
+				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+				return
+			}
+			if err := agent.LoadScopes(); err != nil {
+				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+				return
+			}
+		}
+		agent.FillBotID()
+		agent.NormalizeOpenClawCompatibleResponseConfig()
+		c.JSON(http.StatusOK, model.Success.ToResponse(agent))
+		return
+	}
+
+	// 统一权限检查（个人智能体 owner 判断 + 企业智能体 resource_permissions / 用户组交集）
+	canAccess, agent, err := model.CanUserAccessAgent(eid, userID, agent_id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
 		return
 	}
+	if !canAccess {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+		return
+	}
 
-	// 根据 owner_id 判断权限
 	if agent.OwnerID == 0 {
-		// 企业智能体：admin 或 permission
-		if !common.IsAdmin(c) {
-			hasPermission, err := model.CheckPermission(config.GetUserGroupID(c), agent_id, model.ResourceTypeAgent, model.PermissionRead)
-			if err != nil || !hasPermission {
-				c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
-				return
-			}
-		}
 		if err := agent.LoadUserGroupIds(); err != nil {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
 		}
-	} else {
-		// 个人智能体：仅 owner 可访问
-		if agent.OwnerID != userID {
-			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+		if err := agent.LoadScopes(); err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
 		}
 	}
@@ -375,6 +403,12 @@ func UpdateAgent(c *gin.Context) {
 			return
 		}
 
+		if err := service.ReplaceResourceScopes(tx, agent.AgentID, model.ResourceTypeAgent, agentReq.Scopes, eid); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
+
 		if err := tx.Commit().Error; err != nil {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
@@ -398,6 +432,10 @@ func UpdateAgent(c *gin.Context) {
 		)
 
 		if err := agent.LoadUserGroupIds(); err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
+		if err := agent.LoadScopes(); err != nil {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
 		}
@@ -537,6 +575,12 @@ func DeleteAgent(c *gin.Context) {
 		}
 	}
 
+	// 系统 Agent 不可删除
+	if agent.IsSystem {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+		return
+	}
+
 	// Start transaction
 	tx := model.DB.Begin()
 	if tx.Error != nil {
@@ -564,6 +608,13 @@ func DeleteAgent(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
 		}
+	}
+
+	// Delete associated resource scopes
+	if err := tx.Where("resource_id = ? AND resource_type = ?", agent_id, model.ResourceTypeAgent).Delete(&model.ResourceScope{}).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
 	}
 
 	// Commit transaction
@@ -660,6 +711,10 @@ func GetAgents(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 				return
 			}
+			if err := agent.LoadScopes(); err != nil {
+				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+				return
+			}
 			agent.FillBotID()
 		}
 		c.JSON(http.StatusOK, model.Success.ToResponse(AgentsResponse{
@@ -702,6 +757,10 @@ func GetAgents(c *gin.Context) {
 	for _, agent := range agents {
 		agent.NormalizeOpenClawCompatibleResponseConfig()
 		if err := agent.LoadUserGroupIds(); err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
+		if err := agent.LoadScopes(); err != nil {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
 		}
@@ -758,6 +817,10 @@ func GetAgentsByGroup(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 			return
 		}
+		if err := agent.LoadScopes(); err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
 		agent.FillBotID()
 	}
 
@@ -790,8 +853,9 @@ func GetAvailableAgents(c *gin.Context) {
 
 	agentTypes := splitAgentTypesString(agentListRequest.AgentTypes)
 	agentUsages := splitAgentUsagesString(agentListRequest.AgentUsages)
+	eid := config.GetEID(c)
 	var total, agents, err = model.GetAvailableAgentList(
-		config.GetEID(c),
+		eid,
 		agentTypes,
 		agentUsages,
 		agentListRequest.Offset,
@@ -805,14 +869,22 @@ func GetAvailableAgents(c *gin.Context) {
 
 	for _, agent := range agents {
 		agent.NormalizeOpenClawCompatibleResponseConfig()
-		if err = agent.LoadUserGroupIds(); err != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
-		if err = agent.LoadConversationCount(); err != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
-			return
-		}
+	}
+
+	if err = model.LoadUserGroupIdsBatch(agents); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
+	if err = model.LoadScopesBatch(agents); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
+	if err = model.LoadConversationCountBatch(agents, eid); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	for _, agent := range agents {
 		agent.FillBotID()
 	}
 
@@ -994,9 +1066,9 @@ func splitAgentTypesString(agentTypesStr string) []int {
 }
 
 func splitAgentUsagesString(agentUsagesStr string) []int {
-	// 如果没有指定 agent_usages 参数，默认返回 [0] 即 hub 类型
+	// 默认只返回 hub(0)、搜索(1)、工作AI(4)
 	if agentUsagesStr == "" {
-		return []int{0}
+		return []int{model.AgentUsageHub, model.AgentUsageSearch, model.AgentUsageWorkAI}
 	}
 
 	var agentUsages []int

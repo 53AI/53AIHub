@@ -7,7 +7,8 @@ import { cacheManager as cache, eventBus } from '@km/shared-utils'
 import { GROUP_TYPE } from '@/constants/group'
 import { useConversationStore } from './conversation'
 import { EVENT_NAMES } from '@/constants/events'
-
+import { AGENT_USAGES } from '@/constants/agent'
+import { getPublicPath } from '@/utils/config'
 // 缓存key常量
 const CACHE_KEYS = {
   AGENT_LIST: 'agent_list',
@@ -71,15 +72,38 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       // const { is_internal } = userStore.info
       // 接口不用区分内外部，直接展示，然后点击时候判断权限
       // const { data: { agents = [] } = {} } = is_internal ? await agentApi.internalList() : await agentApi.list()
-      const { data: { agents = [] } = {} } = await agentApi.available({ limit: 500 })
-      return agents.map((originalItem: Agent.State) => {
+      // limit: 1000 用于获取完整的智能体列表（包括 agent_usage 等字段）
+      const { data: { agents = [] } = {} } = await agentApi.available({ limit: 1000 })
+      const list = agents.map((originalItem: Agent.State) => {
         const item = { ...originalItem }
         item.custom_config_obj = item.custom_config ? JSON.parse(item.custom_config) : {}
         item.settings_obj = item.settings ? JSON.parse(item.settings) : {}
+
+        if (item.agent_usage === AGENT_USAGES.KM_AI_SEARCH) {
+          item.name = item.name || 'AI搜问'
+          item.logo = item.logo || getPublicPath('/images/chat/knowledge.png')
+          item.custom_config_obj.agent_type = 'knowledge'
+        } else if (item.agent_usage === AGENT_USAGES.WORK_AI) {
+          item.name = item.name || '小助理'
+          item.logo = item.logo || getPublicPath('/images/chat/workbench.png')
+          item.custom_config_obj.agent_type = 'workbench'
+        }
         return item
       })
+      
+      list.sort((a, b) => {
+        // 排序优先级：AI搜问（is_system=true） > 小助理（is_system=true） > 其他
+        const getRank = (item: Agent.State) => {
+          if (item.is_system && item.agent_usage === AGENT_USAGES.KM_AI_SEARCH) return 0
+          if (item.is_system && item.agent_usage === AGENT_USAGES.WORK_AI) return 1
+          return 2
+        }
+        return getRank(a) - getRank(b)
+      })
+
+      return list
     }
-    const agentList = await cache.getOrFetch(CACHE_KEYS.AGENT_LIST, fetchAgents)
+    const agentList = await cache.getOrFetch(CACHE_KEYS.AGENT_LIST, fetchAgents, 0.1)
     set({ agentList })
     return agentList
   },

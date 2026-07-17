@@ -51,7 +51,24 @@ export {
 };
 
 // 导出类型
-export type { SenderRef } from "./components/Sender/index";
+export type { SenderRef, SenderProps, SenderSendData } from "./components/Sender/types";
+export type {
+  UploadFile,
+  FileUploadResult,
+  MentionDocItem,
+  MentionLinkItem,
+  SkillItem,
+  InputStateFeature,
+  FileUploadFeature,
+  MentionFeature,
+  SkillFeature,
+  UIConfig,
+  SenderSlots,
+  MentionDropdownSlotProps,
+  SkillDropdownSlotProps,
+  FileListSlotProps,
+  LinkListSlotProps,
+} from "./components/Sender/types";
 export type { BubbleListRef } from "./components/Bubble/list";
 
 // 导出 Props 类型（解决 DTS 构建错误）
@@ -59,6 +76,7 @@ export type { BubbleUserProps } from "./components/Bubble/user";
 export type { BubbleAssistantProps } from "./components/Bubble/assistant";
 export type { BubbleListProps } from "./components/Bubble/list";
 export type { MdRendererProps } from "./components/Markdown/renderer";
+export type { TooltipProps } from "./components/Tooltip";
 
 // 默认导出
 export default {

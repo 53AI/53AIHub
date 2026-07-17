@@ -59,12 +59,14 @@ type Agent struct {
 	CreatedBy         int64   `json:"created_by" gorm:"not null"`
 	CustomConfig      string  `json:"custom_config" gorm:"not null;type:text"`
 	Settings          string  `json:"settings" gorm:"not null;type:text"`
-	UserGroupIds      []int64 `json:"user_group_ids" gorm:"-"`
-	Enable            bool    `json:"enable" gorm:"default:false;comment:enable status"`
+	UserGroupIds      []int64             `json:"user_group_ids" gorm:"-"`
+	Scopes            []ResourceScopeItem `json:"scopes" gorm:"-"`
+	Enable            bool                `json:"enable" gorm:"default:false;comment:enable status"`
 	ConversationCount int64   `json:"conversation_count" gorm:"-"`
 	AgentType         int     `json:"agent_type" gorm:"default:0"`
 	AgentUsage        int     `json:"agent_usage" gorm:"default:0"`
 	OwnerID           int64   `json:"owner_id" gorm:"default:0;index:idx_agent_owner"` // 归属用户ID，0=企业智能体，>0=个人智能体
+	IsSystem          bool    `json:"is_system" gorm:"default:false;comment:系统创建标记"`
 	BaseModel
 }
 
@@ -193,7 +195,7 @@ func GetAgentListWithIDs(eid int64, keyword string, group_id int64, permittedAge
 
 	db.Count(&count)
 
-	err = db.Offset(offset).Limit(limit).Order("sort DESC").Order("agent_id DESC").Find(&agents).Error
+	err = db.Offset(offset).Limit(limit).Order("(CASE WHEN is_system = true AND agent_usage IN (1, 4) THEN 0 ELSE 1 END), (CASE WHEN is_system = true AND agent_usage = 1 THEN 0 WHEN is_system = true AND agent_usage = 4 THEN 1 ELSE 2 END), sort DESC, agent_id DESC").Find(&agents).Error
 
 	return count, agents, err
 }
@@ -246,6 +248,22 @@ func (a *Agent) LoadUserGroupIds() error {
 	return nil
 }
 
+func (a *Agent) LoadScopes() error {
+	scopes, err := GetResourceScopesByResource(a.AgentID, ResourceTypeAgent)
+	if err != nil {
+		return err
+	}
+	items := make([]ResourceScopeItem, 0, len(scopes))
+	for _, s := range scopes {
+		items = append(items, ResourceScopeItem{
+			ScopeType: s.ScopeType,
+			TargetID:  s.TargetID,
+		})
+	}
+	a.Scopes = items
+	return nil
+}
+
 func (a *Agent) LoadConversationCount() error {
 	var count int64
 	err := DB.Model(&Conversation{}).Where("agent_id =?", a.AgentID).Count(&count).Error
@@ -253,6 +271,112 @@ func (a *Agent) LoadConversationCount() error {
 		return err
 	}
 	a.ConversationCount = count
+	return nil
+}
+
+func LoadUserGroupIdsBatch(agents []*Agent) error {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	agentIDs := make([]int64, len(agents))
+	for i, a := range agents {
+		agentIDs[i] = a.AgentID
+	}
+
+	var permissions []ResourcePermission
+	err := DB.Where("resource_id IN ? AND resource_type = ?", agentIDs, ResourceTypeAgent).Find(&permissions).Error
+	if err != nil {
+		return err
+	}
+
+	permMap := make(map[int64][]int64)
+	seen := make(map[int64]map[int64]bool)
+	for _, p := range permissions {
+		if seen[p.ResourceID] == nil {
+			seen[p.ResourceID] = make(map[int64]bool)
+		}
+		if !seen[p.ResourceID][p.GroupID] {
+			seen[p.ResourceID][p.GroupID] = true
+			permMap[p.ResourceID] = append(permMap[p.ResourceID], p.GroupID)
+		}
+	}
+
+	for _, a := range agents {
+		a.UserGroupIds = permMap[a.AgentID]
+		if a.UserGroupIds == nil {
+			a.UserGroupIds = []int64{}
+		}
+	}
+	return nil
+}
+
+func LoadScopesBatch(agents []*Agent) error {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	agentIDs := make([]int64, len(agents))
+	for i, a := range agents {
+		agentIDs[i] = a.AgentID
+	}
+
+	var scopes []ResourceScope
+	err := DB.Where("resource_id IN ? AND resource_type = ?", agentIDs, ResourceTypeAgent).Find(&scopes).Error
+	if err != nil {
+		return err
+	}
+
+	scopeMap := make(map[int64][]ResourceScopeItem)
+	for _, s := range scopes {
+		scopeMap[s.ResourceID] = append(scopeMap[s.ResourceID], ResourceScopeItem{
+			ScopeType: s.ScopeType,
+			TargetID:  s.TargetID,
+		})
+	}
+
+	for _, a := range agents {
+		a.Scopes = scopeMap[a.AgentID]
+		if a.Scopes == nil {
+			a.Scopes = []ResourceScopeItem{}
+		}
+	}
+	return nil
+}
+
+type agentConversationCount struct {
+	AgentID int64
+	Count   int64
+}
+
+func LoadConversationCountBatch(agents []*Agent, eid int64) error {
+	if len(agents) == 0 {
+		return nil
+	}
+
+	agentIDs := make([]int64, len(agents))
+	for i, a := range agents {
+		agentIDs[i] = a.AgentID
+	}
+
+	var results []agentConversationCount
+	err := DB.Model(&Conversation{}).
+		Select("agent_id, count(*) as count").
+		Where("agent_id IN ? AND eid = ?", agentIDs, eid).
+		Group("agent_id").
+		Find(&results).Error
+	if err != nil {
+		return err
+	}
+
+	countMap := make(map[int64]int64)
+	for _, r := range results {
+		countMap[r.AgentID] = r.Count
+	}
+
+	for _, a := range agents {
+		a.ConversationCount = countMap[a.AgentID]
+	}
 	return nil
 }
 
@@ -713,6 +837,68 @@ func GetPersonalAgentByID(eid, userID, agentID int64) (*Agent, error) {
 		return nil, err
 	}
 	return &agent, nil
+}
+
+// CanUserAccessAgent 检查用户是否有权限使用/访问某个智能体
+// 权限规则：
+// 1. 个人智能体（owner_id > 0）：只有 owner 可以访问
+// 2. 企业智能体且 agent_usage 为 1(KM AI搜索) 或 4(工作AI)：默认可用，跳过组权限检查
+// 3. 其他企业智能体（owner_id == 0）：
+//    - 用户在 resource_permissions 表中有该 agent 的 read 权限
+//    - 或用户所属组在智能体的 UserGroupIds 中
+// 两者满足其一即可访问
+func CanUserAccessAgent(eid, userID, agentID int64) (bool, *Agent, error) {
+	agent, err := GetAgentByID(eid, agentID)
+	if err != nil {
+		return false, nil, err
+	}
+
+	// 个人智能体：只有 owner 可以访问
+	if agent.OwnerID > 0 {
+		if agent.OwnerID == userID {
+			return true, agent, nil
+		}
+		return false, agent, nil
+	}
+
+	// 企业智能体且 agent_usage 为 1(KM AI搜索) 或 4(工作AI)：默认可用，跳过组权限检查
+	if agent.AgentUsage == AgentUsageSearch || agent.AgentUsage == AgentUsageWorkAI {
+		return true, agent, nil
+	}
+
+	user, err := GetUserByID(userID)
+	if err != nil {
+		return false, agent, err
+	}
+
+	userGroupIds, err := user.GetUserGroupIds()
+	if err != nil {
+		return false, agent, err
+	}
+
+	// 检查方式1：resource_permissions 表
+	for _, groupID := range userGroupIds {
+		hasPermission, err := CheckPermission(groupID, agentID, ResourceTypeAgent, PermissionRead)
+		if err == nil && hasPermission {
+			return true, agent, nil
+		}
+	}
+
+	// 检查方式2：agent.user_group_ids 交集
+	agentGroupIds, err := agent.GetUserGroupIds()
+	if err != nil {
+		return false, agent, err
+	}
+
+	for _, ug := range userGroupIds {
+		for _, ag := range agentGroupIds {
+			if ug == ag {
+				return true, agent, nil
+			}
+		}
+	}
+
+	return false, agent, nil
 }
 
 func GenerateOpenClawAppSecret() string {

@@ -36,7 +36,9 @@ function lazyWithSuspense<T extends React.ComponentType<any>>(
   importFn: () => Promise<{ default: T }>,
 ) {
   const LazyComponent = lazy(() => importFn().catch((error) => {
-    if (handleChunkLoadError(error)) {
+    // 确保 error 是 Error 对象
+    const err = error instanceof Error ? error : new Error(String(error));
+    if (handleChunkLoadError(err)) {
       // 返回一个永远 pending 的 Promise，阻止后续渲染
       return new Promise(() => {}) as Promise<{ default: T }>;
     }
@@ -58,13 +60,10 @@ const Layout = lazyWithSuspense(() =>
 const IndexView = lazyWithSuspense(() =>
   import("@/views/index/index").then((m) => ({ default: m.IndexView })),
 );
-const IndexChatView = lazyWithSuspense(() =>
-  import("@/views/index/IndexChat").then((m) => ({ default: m.IndexChatView })),
-);
 
-const KnowledgeChatView = lazyWithSuspense(() =>
-  import("@/views/knowledge/chat").then((m) => ({
-    default: m.KnowledgeChatView,
+const LibraryChatView = lazyWithSuspense(() =>
+  import("@/views/chat/LibraryChatView").then((m) => ({
+    default: m.LibraryChatView,
   })),
 );
 const IndexLayout = lazyWithSuspense(() =>
@@ -109,10 +108,10 @@ const KnowledgeView = lazyWithSuspense(() =>
   import("@/views/knowledge").then((m) => ({ default: m.KnowledgeView })),
 );
 const MineView = lazyWithSuspense(() =>
-  import("@/views/mine2").then((m) => ({ default: m.MineView2 })),
+  import("@/views/mine").then((m) => ({ default: m.MineView })),
 );
 const ProfileView = lazyWithSuspense(() =>
-  import("@/views/profile").then((m) => ({ default: m.ProfileView })),
+  import("@/views/profile/userInfo").then((m) => ({ default: m.ProfileView })),
 );
 const OrderView = lazyWithSuspense(() =>
   import("@/views/order").then((m) => ({ default: m.OrderView })),
@@ -245,7 +244,6 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 // 需要登录认证的路径匹配规则
 const AUTH_REQUIRED_PATTERNS = [
-  /^\/agent\/[^/]+$/, // /agent/:agent_id
   /^\/skills\/[^/]+$/, // /skills/:skill_id
   /^\/prompt\/[^/]+$/, // /prompt/:prompt_id
 ];
@@ -316,19 +314,26 @@ function useVisibleNavigations() {
       .filter((item) =>
         item.jump_path === "/knowledge" ? userStore.info.is_internal : true,
       )
-      .filter((item) =>
-        ((isSoftStyle && item.jump_path === "/index") || item.jump_path === "/skills") ? checkVersion(VERSION_MODULE.WORKBENCH) : true,
-      )
+      .filter((item) => {
+        // 软件模式下不展示首页（无论版本如何）
+        if (isSoftStyle && item.jump_path === "/index") return false;
+        // /skills 在两种模式下都需要检查 WORKBENCH 版本
+        return item.jump_path === "/skills"
+          ? checkVersion(VERSION_MODULE.WORKBENCH)
+          : true;
+      })
       .filter((item) => item.jump_path !== "/___placeholder");
   }, [isSoftStyle, navigations, userStore.info.is_internal]);
 }
 
 function RootRedirect() {
   const visibleNavigations = useVisibleNavigations();
+  const isSoftStyle = useIsSoftStyle();
   const firstNav = visibleNavigations[0];
 
   if (!firstNav) {
-    return <Navigate to="/index" replace />;
+    // 软件模式下首页不可达，fallback 直接走 /agent，避免 /index → /agent 的二次跳转
+    return <Navigate to={isSoftStyle ? "/agent" : "/index"} replace />;
   }
 
   return <Navigate to={firstNav.jump_path} replace />;
@@ -338,10 +343,19 @@ function RootRedirect() {
 function IndexComponent() {
   const isSoftStyle = useIsSoftStyle();
 
+  // 软件模式下访问 /index 重定向到 /agent
   if (isSoftStyle) {
-    return <IndexLayout />;
+    return <Navigate to="/agent" replace />;
   }
   return <IndexView />;
+}
+
+function AgentComponent () {
+  const isSoftStyle = useIsSoftStyle();
+  if (isSoftStyle) {
+    return <IndexLayout />
+  }
+  return <AgentView />
 }
 
 // Dynamic component for knowledge route
@@ -410,29 +424,19 @@ const buildRoutes = () => {
             {
               path: "index",
               element: <IndexComponent />,
-              children: [
-                { index: true, element: <Navigate to="chat" replace /> },
-                { path: "chat", element: <IndexChatView /> },
-                { path: "knowledge", element: <KnowledgeChatView /> },
-                { path: "agent", element: <ChatView /> },
-              ],
             },
             {
               path: "index/apilogin",
               element: <SsoLoginView />,
             },
             {
-              path: "chat",
-              element: <ChatView />,
-            },
-            {
-              path: 'portal',
-              element: <PortalView />,
-            },
-            {
               path: "agent",
-              element: <AgentView />,
+              element: <AgentComponent />,
               handle: { banner: true },
+              children: [
+                { index: true, element: <Navigate to="agent" replace /> },
+                { path: "agent", element: <ChatView /> },
+              ],
             },
             {
               path: "agent/create-v2",
@@ -443,6 +447,14 @@ const buildRoutes = () => {
               element: (
                   <AgentDetailView />
               ),
+            },
+            {
+              path: "chat",
+              element: <ChatView />,
+            },
+            {
+              path: 'portal',
+              element: <PortalView />,
             },
             {
               path: "toolkit",
@@ -541,7 +553,7 @@ const buildRoutes = () => {
                     element: <LibraryMainView />,
                     children: [
                       { index: true, element: <LibraryHomeView /> },
-                      { path: "chat", element: <KnowledgeChatView /> },
+                      { path: "chat", element: <LibraryChatView /> },
                       {
                         path: "file/:fid",
                         element: <LibraryFileLayout />,

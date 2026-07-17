@@ -164,9 +164,8 @@ function DocumentApp({ onHide }: DocumentAppProps) {
   };
 
   const handleClickMenu = (menu: string, item?: CustomAppItem) => {
+    // 点击已选中的菜单项，不做任何操作
     if (activeMenu === menu) {
-      assistantIndexRef.current?.close();
-      setActiveMenu("");
       return;
     }
     setActiveMenu(menu);
@@ -386,6 +385,7 @@ function DocumentApp({ onHide }: DocumentAppProps) {
                   : "right-bar-bottom-expand"
               }
               size={19}
+              color="#999"
             />
           </div>
         )}

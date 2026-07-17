@@ -22,6 +22,8 @@ export interface AgentPlatformOption {
   channel_type: number
   agent_type: number
   agent_mode: string
+  agent_usage?: number  // 新增可选字段
+  hidden?: boolean
 }
 
 /** 创建弹框返回结果 */
@@ -77,6 +79,14 @@ export type ConfigKey =
 export interface GroupOption {
   value: number
   label: string
+}
+
+// ==================== Scope 相关类型 ====================
+
+/** 可见范围项 */
+export interface ScopeItem {
+  scope_type: 'company' | 'department' | 'user' | 'group';
+  target_id: number;
 }
 
 // ==================== 模型选择器相关类型 ====================
@@ -208,6 +218,7 @@ export interface AgentFormData {
   prompt: string
   user_group_ids: number[]
   subscription_group_ids: number[]
+  scopes?: ScopeItem[]  // 新增：可见范围
   tools: any[]
   use_cases: any[]
   configs: Record<string, any>
@@ -310,7 +321,7 @@ export interface IAgentCreateAdapter {
     workspace_id?: string
     channel_id?: number
     bot_id?: string | number
-    agent_id?: string
+    agent_id?: string | number
     group_id?: number
     keyword?: string
     offset?: number
@@ -344,8 +355,25 @@ export interface IAgentCreateAdapter {
     limit?: number
   }) => Promise<{ count: number; agents: any[] }>
 
+  /**
+   * 获取智能体已配置的模型列表（preview 用）
+   * 返回的 items 每条带后端分配的独立 `id` 字段，preview 按 value 匹配后取真实 modelId，
+   * 对齐 apps/front-react/src/views/knowledge/chat.tsx 行 435 的
+   * `modelId = currentModel?.id` 语义。
+   */
+  getAgentModels?: (agentId: string | number) => Promise<Array<{
+    id: string | number
+    channel_id: number
+    channel_type: number
+    model: string
+    [key: string]: any
+  }>>
+
   /** 加载模型列表（供 ModelSelect 使用） */
   loadModels?: () => Promise<ChannelOption[]>
+
+  /** 加载重排序模型列表 */
+  loadRerankModels?: () => Promise<ChannelOption[]>
 
   // ========== UI 组件注入 ==========
 
@@ -415,12 +443,17 @@ export interface IAgentCreateAdapter {
 
   /** 分组选择组件 */
   GroupSelectComponent?: ComponentType<{
-    value?: number | number[]
-    onChange?: (value: number | number[]) => void
-    type?: string
+    value?: number | number[] | ScopeItem[]
+    onChange?: (value: number | number[] | ScopeItem[]) => void
+    type?: 'select' | 'checkbox' | 'picker' | 'radio' | 'scope'
     groupType?: string
     multiple?: boolean
+    defaultFirst?: boolean
+    defaultFirstValue?: boolean
+    defaultAll?: boolean
+    simpleValue?: boolean
     onOptionsLoad?: (options: any[]) => void
+    children?: React.ReactNode
   }>
 
   // ========== 分组标签组件 ==========
@@ -452,35 +485,112 @@ export interface IAgentCreateAdapter {
   /** 使用范围组件（注册用户/内部用户分组选择，仅管理端需要） */
   UseScopeComponent?: ComponentType<{}>
 
+  /** 技能选择器组件（用于小助理技能配置） */
+  SkillPickerComponent?: ComponentType<{
+    value?: any[]
+    onChange?: (skills: any[]) => void
+    disabled?: boolean
+    /** 翻译函数 */
+    translate?: (key: string) => string
+  }>
+
+  // ========== Agent 内置技能绑定 API ==========
+
+  /** 获取 Agent 内置技能列表 */
+  getAgentBuiltinSkills?: (agentId: string | number) => Promise<Array<{
+    skill_id: string
+    skill_library_id: number
+    display_name: string
+    skill_name?: string
+    logo?: string
+    description?: string
+  }>>
+
+  /** 添加内置技能绑定 */
+  addAgentBuiltinSkill?: (agentId: string | number, skillLibraryId: number) => Promise<{
+    skill_id: string
+    skill_library_id: number
+    display_name: string
+    skill_name?: string
+    logo?: string
+    description?: string
+  }>
+
+  /** 删除内置技能绑定 */
+  deleteAgentBuiltinSkill?: (agentId: string | number, bindingId: number) => Promise<void>
+
   // ========== 会话/预览相关 API ==========
 
   /** AGENT_TYPES 常量 */
   AGENT_TYPES?: Record<string, string>
 
   /** 创建会话 */
-  createConversation?: (data: { agent_id: string | number; title?: string; conversation_type?: number }) => Promise<{ conversation_id: number }>
+  createConversation?: (data: { agent_id: string | number; title?: string; conversation_type?: number }) => Promise<{ conversation_id: string | number }>
 
   /** 发送聊天消息 */
   sendChatMessage?: (params: {
-    conversation_id: number
+    conversation_id: string | number
     messages: any[]
     agent_id: string | number
     agent_configs?: Record<string, any>
+
+    /**
+     * 场景标识，影响 adapter 构造的 payload 形态：
+     * - 'agent'    普通智能体 → minimal 模式（不带 enable_process_steps / knowledge_base_ids 等）
+     * - 'work-ai'  工作台 AI → full 模式 + skill 前缀
+     * - ''         知识库/AI 搜问 → full 模式 + modelId 后缀 + library/search/graph
+     */
+    type?: 'work-ai' | 'agent' | ''
+    /**
+     * 强制 minimal 模式（不带 enable_process_steps / knowledge_base_ids 等），
+     * 等价于 type='agent'。后端 payload 参考 agent.json。
+     */
+    minimalParams?: boolean
+    /** 智能体配置（提取 rerank_config / web_search_setting / completion_params） */
+    agentInfo?: any
+    /** workbench 单选技能 */
+    skill?: { display_name?: string; skill_name?: string }
+    /** knowledge 模型 id，格式：channel_id_channel_type_model，拼到 model 后缀 */
+    modelId?: string
+    /** 启用联网搜索 */
+    networkSearch?: boolean
+    /** 启用知识图谱 */
+    knowledgeGraph?: boolean
+    /** 知识库 ID 列表 */
+    library?: { value: string[] | number[] }
+    /** @文件选择（知识库/空间） */
+    links?: any[]
+    /**
+     * 上传的文件列表
+     * - work-ai: 用 upload_file_id 加入 user 消息（不带 specified_files info）
+     * - 其他场景: 转为 file_id 格式
+     */
+    files?: Array<{
+      id: string | number
+      name: string
+      size: number
+      mime_type: string
+      preview_key?: string
+      upload_file_id?: string
+    }>
+    /** 消息增强选项 */
+    options?: { prompt?: string; text?: string }
+
     signal?: AbortSignal
     onDownloadProgress?: (data: any) => void
   }) => Promise<void>
 
   /** 运行工作流 */
   runWorkflow?: (data: {
-    conversation_id: number
+    conversation_id: string | number
     model: string
     parameters: Record<string, any>
     stream: boolean
-  }, options?: { signal?: AbortSignal }) => Promise<any>
+  }, options?: { responseType?: string; signal?: AbortSignal }) => Promise<any>
 
   /** 上传文件 */
   uploadFile?: (file: File) => Promise<{
-    id: string
+    id: string | number
     url: string
     size: number
     name: string
@@ -500,7 +610,24 @@ export interface IAgentCreateAdapter {
   OtherComponents?: {
     PromptInput?: ComponentType<any>
     DatePicker?: ComponentType<any>
+    MarkdownEditor?: ComponentType<any>
+    SelectPlus?: ComponentType<any>
+    ModelSelectPopover?: ComponentType<{
+      className?: string
+      value?: string
+      channelId?: number
+      modelName?: string
+      temperature?: number
+      type?: any
+      mode?: any
+      customClass?: string
+      onChange?: (value: string) => void
+      onTemperatureChange?: (value: number) => void
+    }>
   }
+
+  /** 加载平台设置（博查等） */
+  loadPlatformSettings?: () => Promise<any[]>
 
   /** 重置 Openclaw 密钥 */
   resetSecret?: (agentId: string | number) => Promise<{ secret: string }>

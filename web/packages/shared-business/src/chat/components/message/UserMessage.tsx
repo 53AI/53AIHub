@@ -1,34 +1,43 @@
-﻿// packages/shared-business/src/chat/components/message/UserMessage.tsx
+// packages/shared-business/src/chat/components/message/UserMessage.tsx
 
 import { memo, useCallback, useMemo } from "react";
 import { Checkbox } from "antd";
+import { getSimpleDateFormatString } from "@km/shared-utils";
 import { BubbleUser } from "@km/hub-ui-x-react";
 import { MessageMenu } from "../MessageMenu";
 import { SpecifiedFiles } from "../source";
-import { useTranslation } from "../../i18n";
 import type { Message, ChatMessagesFeatures, FileItem } from "../../types/message";
+import type { FileActionFeature, ChatMessagesSlots } from "../ChatMessages/types";
+
+// === Main Props ===
 
 export interface UserMessageProps {
+  // === 核心 ===
   /** 消息数据 */
   message: Message;
-  /** Agent Logo */
-  agentLogo?: string;
+  /** 用户头像 URL（与 agent 头像不同来源） */
+  userAvatar?: string;
   /** 功能开关 */
   features?: ChatMessagesFeatures;
+
+  // === 功能分组 ===
   /** 分享模式 */
   isShareMode?: boolean;
   /** 是否被选中（分享模式） */
   isSelected?: boolean;
+
+  // === 回调分组 ===
+  /** 文件操作回调 */
+  fileAction?: FileActionFeature;
+
+  // === UI 插槽 ===
+  slots?: ChatMessagesSlots;
+
+  // === 其他 ===
   /** 自定义类名 */
   className?: string;
   /** 自定义样式 */
   style?: React.CSSProperties;
-  /** 消息选择回调 */
-  onSelect?: (message: Message) => void;
-  /** 文件点击回调 */
-  onFileClick?: (file: FileItem) => void;
-  /** 自定义文件链接渲染（用于跳转） */
-  renderFileLink?: (file: FileItem, children: React.ReactNode) => React.ReactNode;
 }
 
 /**
@@ -67,27 +76,24 @@ function parseMessageContent(msg: Message): string {
 
 function UserMessageInner({
   message,
-  agentLogo,
+  userAvatar,
   features,
   isShareMode = false,
   isSelected = false,
+  fileAction,
+  slots,
   className,
   style,
-  onSelect,
-  onFileClick,
-  renderFileLink,
 }: UserMessageProps) {
-  const { t } = useTranslation();
-
   const handleSelect = useCallback(() => {
-    if (isShareMode && onSelect) {
-      onSelect(message);
+    if (isShareMode && fileAction) {
+      // 分享模式下点击选择消息
     }
-  }, [isShareMode, onSelect, message]);
+  }, [isShareMode, fileAction]);
 
   const handleFileClick = useCallback((file: FileItem) => {
-    onFileClick?.(file);
-  }, [onFileClick]);
+    fileAction?.onClick?.(file);
+  }, [fileAction]);
 
   // 解析后的内容
   const parsedContent = useMemo(() => parseMessageContent(message), [message]);
@@ -101,29 +107,38 @@ function UserMessageInner({
     return files;
   }, [message.specified_files, message.uploaded_files]);
 
-  // 渲染技能标签
+  // 渲染技能标签（数据驱动：有 skill 数据就显示）
   const renderSkillTag = () => {
-    if (!features?.skillTag || !message.skill || !(message.skill.skill_name && message.skill.display_name)) return null;
+    if (!message.skill?.display_name) return null;
     return (
       <span className="bg-[#e6e9f2] rounded py-1 px-2 text-sm mr-2">
-        {message.skill.display_name || message.skill.skill_name}
+        {message.skill.display_name}
       </span>
     );
   };
 
-  // 渲染指定文件头部
+  // 渲染指定文件头部（数据驱动：有文件数据就显示）
+  // SpecifiedFiles 会根据 renderLink 和 fileLink adapter 自动推断跳转模式
   const renderSpecifiedFilesHeader = () => {
-    if (!features?.specifiedFiles || !specifiedFiles.length) return undefined;
-    
+    if (!specifiedFiles.length) return undefined;
+
     return (
       <SpecifiedFiles
         files={specifiedFiles}
-        type={features?.specifiedFilesType || "no_jump"}
         onFileClick={handleFileClick}
-        renderFileLink={renderFileLink}
+        renderLink={slots?.fileLink ? (file, children) => slots.fileLink!({ file, children }) : undefined}
       />
     );
   };
+
+  // 格式化时间显示
+  const formattedTime = useMemo(() => {
+    if (!message.showTime || !message.created_time) return null;
+    return getSimpleDateFormatString({
+      date: message.created_time,
+      format: 'YYYY-MM-DD hh:mm:ss',
+    });
+  }, [message.showTime, message.created_time]);
 
   return (
     <div
@@ -133,15 +148,22 @@ function UserMessageInner({
       {isShareMode && <Checkbox checked={isSelected} />}
 
       <div className="flex-1 overflow-hidden">
+        {/* 时间显示（仅历史数据显示） */}
+        {formattedTime && (
+          <div className="flex items-center justify-center mb-2">
+            <span className="text-xs text-gray-400">{formattedTime}</span>
+          </div>
+        )}
+
         <BubbleUser
           content={parsedContent}
           files={message.uploaded_files}
-          avatar={agentLogo}
+          avatar={userAvatar}
           className={className}
           style={{
             "--hubx-color-bg-message": "#EBF1FF",
             ...style,
-          }}
+          } as React.CSSProperties}
           header={renderSpecifiedFilesHeader()}
           contentBefore={renderSkillTag()}
           menu={

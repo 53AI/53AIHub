@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useState, useMemo, useCallback } from 'react'
+import { forwardRef, useImperativeHandle, useMemo, useCallback } from 'react'
 import { Tooltip, message, Spin } from 'antd'
 import { CopyOutlined, SyncOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { useAgentCreateAdapter } from '../adapters'
@@ -47,8 +47,6 @@ export const Openclaw = forwardRef<OpenclawRef, OpenclawProps>(
     const agentId = useAgentFormStore((state) => state.agent_id)
     const loading = useAgentFormStore((state) => state.loading)
     const setFormData = useAgentFormStore((state) => state.setFormData)
-
-    const [activeCollapse, setActiveCollapse] = useState(['config', 'process'])
 
     // 从 formData 获取配置
     const botId = useMemo(() => {
@@ -133,7 +131,7 @@ export const Openclaw = forwardRef<OpenclawRef, OpenclawProps>(
                     <QuestionCircleOutlined className="text-[#999] cursor-pointer" style={{ fontSize: 14 }} />
                   </Tooltip>
                 </div>
-                <div className="flex-1 flex items-center gap-2 px-3 py-1 border border-[#E9EBF2] rounded">
+                <div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1 border border-[#E9EBF2] rounded">
                   <span className="text-sm text-[#333] flex-1">{botId}</span>
                   <Tooltip title={t('action.copy')}>
                     <CopyOutlined
@@ -152,8 +150,8 @@ export const Openclaw = forwardRef<OpenclawRef, OpenclawProps>(
                     <QuestionCircleOutlined className="text-[#999] cursor-pointer" style={{ fontSize: 14 }} />
                   </Tooltip>
                 </div>
-                <div className="flex-1 flex items-center gap-2 px-3 py-1 border border-[#E9EBF2] rounded overflow-hidden">
-                  <span className="text-sm text-[#333] flex-1 overflow-hidden text-ellipsis font-mono">{secret}</span>
+                <div className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1 border border-[#E9EBF2] rounded ">
+                  <span className="text-sm text-[#333] flex-1 overflow-hidden whitespace-nowrap text-ellipsis font-mono">{secret}</span>
                   <Tooltip title={t('action.reset')}>
                     <SyncOutlined
                       className="cursor-pointer text-[#999] hover:text-[#666]"
@@ -172,7 +170,7 @@ export const Openclaw = forwardRef<OpenclawRef, OpenclawProps>(
               </div>
               {/* WS Url */}
               <div className="flex items-center gap-3 overflow-hidden">
-                <div className="flex items-center gap-1 w-16 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   <span className="text-sm text-[#333]">{t('agent.ws_url')}</span>
                   <Tooltip title={t('agent.ws_url_tooltip')}>
                     <QuestionCircleOutlined className="text-[#999] cursor-pointer" style={{ fontSize: 14 }} />
@@ -235,15 +233,15 @@ export const Openclaw = forwardRef<OpenclawRef, OpenclawProps>(
               <Spin size="large" />
             </div>
           )}
-          { collapseItems.map(item => (
-            <>
+          { collapseItems.map((item, index) => (
+            <div key={item.key || index}>
               <div className='flex items-center text-sm text-[#373A3D]'>
                 {item.label}
               </div>
               <div className="p-4 bg-white rounded-xl mb-4 mt-3">
                 {item.children}
               </div>
-            </>
+            </div>
           )) }
         </div>
       )

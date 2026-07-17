@@ -2,11 +2,15 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { App } from "./App";
 import { setupGlobalConfig } from "./global";
+import { setupChunkErrorHandler } from "@km/shared-utils";
 
 import "./locales";
 
 import "antd/dist/reset.css";
 import "./styles/index.css";
+
+// 尽早初始化 chunk 错误处理（在任何路由加载之前）
+setupChunkErrorHandler();
 
 // 异步加载 SVG 图标，加载完成后标记 window 状态
 if (typeof window !== "undefined") {

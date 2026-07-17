@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import { Checkbox } from "antd";
 import { CloseOutlined, LinkOutlined } from "@ant-design/icons";
 import { useTranslation } from "../../i18n";
@@ -25,13 +25,9 @@ function ShareHeaderInner({
 }: ShareHeaderProps) {
   const { t } = useTranslation();
 
-  const handleCreateShare = useCallback(() => {
-    onCreateShare();
-  }, [onCreateShare]);
-
   return (
     <header className="flex-none sticky top-0 z-10 bg-white border-b">
-      <div className="h-[70px] flex items-center justify-between">
+      <div className="h-[70px] px-4 flex items-center justify-between">
         <Checkbox checked={selectAll} onChange={onSelectAll}>
           {selectAll ? (t("action.unselect_all") || "取消全选") : (t("action.select_all") || "全选")}
         </Checkbox>
@@ -39,7 +35,7 @@ function ShareHeaderInner({
           {selectedCount > 0 && (
             <div
               className="h-8 flex items-center gap-1 px-2 rounded-md bg-[#F5F5F7] cursor-pointer hover:bg-[#E1E2E3] text-[#2563EB]"
-              onClick={handleCreateShare}
+              onClick={onCreateShare}
             >
               <LinkOutlined style={{ fontSize: 16 }} />
               <span className="text-sm">{t("action.copy_link") || "复制链接"}</span>

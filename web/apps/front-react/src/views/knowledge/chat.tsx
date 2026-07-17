@@ -13,8 +13,9 @@ import { DownOutlined } from "@ant-design/icons";
 // 共享组件
 import { SvgIcon } from "@km/shared-components-react";
 import { BubbleList, BubbleUser, BubbleAssistant } from "@km/hub-ui-x-react";
-import { ProcessFlowHeader, ChatConfigProvider, type KnowledgePanelData } from "@km/shared-business";
-import { cacheManager as cache, CacheMode, eventBus } from "@km/shared-utils";
+import { ProcessFlowHeader, ChatConfigProvider, type KnowledgePanelData } from "@km/shared-business/chat";
+import { chatAdapters } from "@/adapters/chat-adapters";
+import { cacheManager as cache, CacheMode, eventBus, formatFileInfo } from "@km/shared-utils";
 
 // 内部 Stores
 import { useConversationStore } from "./conversation";
@@ -26,34 +27,40 @@ import { useSpaceStore } from "@/stores/modules/space";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 
 // 内部 Composables
-import { useChatFeedback } from "@/composables/useChatFeedback";
-import { useChatMessages } from "@/composables/useChatMessages";
-import { useChatSend } from "@/composables/useChatSend";
-import { useChatShare } from "@/composables/useChatShare";
-import { useRagStats } from "@/composables/useRagStats";
-import { convertReplayEventToSSE, processStreamDataItem } from "@/composables/useChatStream";
+import {
+  useChatFeedback,
+  useChatMessages,
+  useChatSend,
+  useChatShare,
+  useRagStats,
+  convertReplayEventToSSE,
+  processStreamDataItem,
+} from "@km/shared-business/chat";
 
 // 内部 API
 import { TERMINAL_EVENTS } from "@/api/modules/agentRun/types";
 import { agentRunApi } from "@/api/modules/agentRun";
 import agentsApi from "@/api/modules/agents/index";
 import { transformAgentInfo } from "@/api/modules/agents/transform";
+import chunksApi from "@/api/modules/chunks";
 
 // 内部组件
 import Header from "@/components/Layout/Header";
-import { Sender } from "@/components/Chat/Sender";
-import { FeedbackPanel } from "@/components/Chat/FeedbackPanel";
-import { ShareHeader } from "@/components/Chat/ShareHeader";
-import { ThinkKnowledge } from "@/components/Chat/ThinkKnowledge";
-import { Quotation } from "@/components/Chat/Quotation";
-import { Chunk } from "@/components/Chat/Chunk";
-import { Graph } from "@/components/Chat/Graph";
-import { MessageMenu } from "@/components/Chat/MessageMenu";
-import { SpecifiedFiles } from "@/components/Chat/SpecifiedFiles";
+import {
+  Sender,
+  FeedbackPanel,
+  ShareHeader,
+  ThinkKnowledge,
+  Quotation,
+  Chunk,
+  Graph,
+  MessageMenu,
+  SpecifiedFiles,
+  AddAnswerAsMd,
+} from "@/components/Chat";
 import { ModelView } from "@/components/Model/view";
 import { KnowledgeSourceSelector } from "@/components/KnowledgeSource";
 import type { KnowledgeSourceState } from "@/components/KnowledgeSource";
-import AddAnswerAsMd from "@/components/Chat/AddAnswerAsMd";
 import ChatHistory from "./history";
 
 // 工具与常量
@@ -62,6 +69,7 @@ import { checkPermission, checkLoginStatus } from "@/utils/permission";
 import { t } from "@/locales";
 import { AGENT_USAGES } from "@/constants/agent";
 import { EVENT_NAMES } from "@/constants/events";
+import { markdownPreview } from "@/components/Markdown/helper";
 
 // 样式
 import "./chat.css";
@@ -106,9 +114,26 @@ interface ModelItem {
   type: string;
 }
 
-// ==================== 组件定义 ====================
-
+// ==================== 外层组件：注入 ChatConfigProvider ====================
+/**
+ * KnowledgeChatView 外层包装
+ *
+ * 将 ChatConfigProvider 提升到组件顶层，确保 useChatFeedback 等 hook
+ * 能正确读取到 adapters 上下文（React Context 只读祖先，不读自身 JSX）
+ */
 export function KnowledgeChatView() {
+  const locale = useEnterpriseStore((state) => state.language);
+
+  return (
+    <ChatConfigProvider lang={locale} adapters={chatAdapters}>
+      <KnowledgeChatViewInner />
+    </ChatConfigProvider>
+  );
+}
+
+// ==================== 内层组件：使用 ChatConfigProvider 的 context ====================
+
+function KnowledgeChatViewInner() {
   // ==================== Router Hooks ====================
   const location = useLocation();
   const { space_id } = useParams<{ space_id: string }>();
@@ -148,6 +173,8 @@ export function KnowledgeChatView() {
   const [showHistory, setShowHistory] = useState(false);
   /** 是否显示思考知识库侧边栏 */
   const [showThinkKnowledge, setShowThinkKnowledge] = useState(false);
+  const [showUserMemory, setShowUserMemory] = useState(false);
+  const [isUserMemoryFullscreen, setIsUserMemoryFullscreen] = useState(false);
   /** 智能体信息 */
   const [agentInfo, setAgentInfo] = useState<AgentInfo | null>(null);
   /** 智能体可用模型列表 */
@@ -194,7 +221,6 @@ export function KnowledgeChatView() {
     handleLoadListMore: handleLoadListMoreBase,
     loadMessageList: loadMessageListBase,
     handleRegenerate: handleRegenerateBase,
-    renderSource,
     handleSourceReferenceHover: handleSourceReferenceHoverBase,
     handleOpenKnow: handleOpenKnowBase,
     clearMessageList,
@@ -202,7 +228,7 @@ export function KnowledgeChatView() {
   } = useChatMessages({ limit: 10 });
 
   const { sendMessage: sendMessageBase, handleStop: handleStopBase } = useChatSend();
-  const { formatRagStats } = useRagStats();
+  const { formatRagStats } = useRagStats({ formatFileInfo });
 
   const {
     state: shareState,
@@ -636,6 +662,24 @@ export function KnowledgeChatView() {
     }, 0);
   }, []);
 
+  // Chunk 详情获取回调
+  const handleFetchChunkDetail = useCallback(async (chunkId: string) => {
+    const chunk = await chunksApi.get(chunkId);
+    return {
+      content: chunk.content,
+      token_count: chunk.token_count,
+      chunk_index: chunk.chunk_index,
+    };
+  }, []);
+
+  // Markdown 渲染回调
+  const handleRenderMarkdown = useCallback(
+    async (element: HTMLDivElement, content: string) => {
+      await markdownPreview(element, content);
+    },
+    []
+  );
+
   // 前台场景：知识面板打开回调（统一处理 ProcessFlow 中的点击事件）
   const handleOpenKnowledgePanel = useCallback((msg: any) => (data: KnowledgePanelData) => {
     // knowledge_search: 打开知识检索结果侧边栏
@@ -1017,7 +1061,7 @@ export function KnowledgeChatView() {
   const isEmpty = !messageList.length && !isStreaming && !isInitializing;
 
   return (
-    <div className="w-full h-full overflow-hidden flex">
+      <div className="w-full h-full overflow-hidden flex">
       {/* History 侧边栏 */}
       {showHistory && (
         <div className="w-60">
@@ -1069,6 +1113,14 @@ export function KnowledgeChatView() {
                 </>
               ) : undefined
             }
+            // right={
+            //   <div
+            //     className={`size-7 cursor-pointer rounded flex items-center justify-center ${showUserMemory ? 'bg-[#F5F5F7]' : 'hover:bg-[#F5F5F7]'}`}
+            //     onClick={() => setShowUserMemory(true)}
+            //   >
+            //     <SvgIcon name="brain" />
+            //   </div>
+            // }
           />
         )}
 
@@ -1148,9 +1200,6 @@ export function KnowledgeChatView() {
                           msg.feedbackVisible
                         }
                         className={isShareMode ? "!mb-0" : ""}
-                        renderSource={(type: string, number: number) =>
-                          renderSource(type, number, msg)
-                        }
                         sourceEnabled
                         showError={msg.error}
                         onSourceReferenceClick={(data: any) =>
@@ -1160,10 +1209,7 @@ export function KnowledgeChatView() {
                           "--hubx-color-bg-message": "transparent",
                         }}
                         header={
-                          <ChatConfigProvider
-                            lang={locale}
-                            onOpenKnowledgePanel={handleOpenKnowledgePanel(msg)}
-                          >
+                          <ChatConfigProvider lang={locale} adapters={chatAdapters} onOpenKnowledgePanel={handleOpenKnowledgePanel(msg)}>
                             <ProcessFlowHeader
                               processRecords={msg.process_records}
                               streaming={msg.loading}
@@ -1200,13 +1246,13 @@ export function KnowledgeChatView() {
                               type="assistant"
                               content={msg.answer || msg.content}
                               feedbackType={msg.feedback_type}
-                              showShare={true}
+                              features={{ share: true, feedback: true, addAsFile: true }}
                               onRegenerate={() => handleRegenerate(msg)}
                               onFeedback={(type) =>
                                 handleClickFeedbackBtn(msg, type)
                               }
                               onShare={handleOpenShareBase}
-                              onAddAsMd={() => handleAddAsMd(msg)}
+                              onAddAsFile={() => handleAddAsMd(msg)}
                             />
                           ) : null
                         }
@@ -1373,7 +1419,7 @@ export function KnowledgeChatView() {
                   });
                 }}
                 extras={
-                  <div className="flex items-center gap-2 mt-3">
+                  <div className="flex items-center gap-2">
                     {/* 模型选择 */}
                     <Dropdown
                       menu={{
@@ -1445,7 +1491,12 @@ export function KnowledgeChatView() {
           )}
 
           {/* Chunk 弹窗 */}
-          <Chunk ref={chunkRef} virtualRef={chunkSourceRef} />
+          <Chunk
+            ref={chunkRef}
+            virtualRef={chunkSourceRef}
+            fetchChunkDetail={handleFetchChunkDetail}
+            renderMarkdown={handleRenderMarkdown}
+          />
           {/* Graph 弹窗 */}
           <Graph
             ref={graphRef}
@@ -1464,6 +1515,21 @@ export function KnowledgeChatView() {
           />
         </div>
       )}
+
+      {/* 用户记忆侧边栏 */}
+      {/* {showUserMemory && (
+        <div className={isUserMemoryFullscreen ? "fixed inset-0 z-[201] bg-white" : "h-full w-[482px] border-l"}>
+          <UserMemory
+            agentId={agentInfo?.agent_id || ''}
+            onClose={() => {
+              setShowUserMemory(false)
+              setIsUserMemoryFullscreen(false)
+            }}
+            onToggleFullscreen={() => setIsUserMemoryFullscreen(!isUserMemoryFullscreen)}
+            isFullscreen={isUserMemoryFullscreen}
+          />
+        </div>
+      )} */}
 
       {/* 添加回答为MD */}
       <AddAnswerAsMd ref={addAnswerAsMdRef} />

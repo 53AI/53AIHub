@@ -23,7 +23,9 @@ export function isChunkLoadError(error: Error): boolean {
     error.message.includes('Failed to fetch dynamically imported module') ||
     error.message.includes('Unable to preload CSS') ||
     error.message.includes('imported module') ||
-    error.message.match(/failed to fetch|chunk.*failed|loading chunk/i) !== null
+    error.message.includes('.js not found') ||
+    error.message.includes('.css not found') ||
+    error.message.match(/failed to fetch|chunk.*failed|loading chunk|not found/i) !== null
   )
 }
 

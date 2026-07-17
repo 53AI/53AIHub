@@ -3,28 +3,52 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Spin } from "antd";
 import { LayoutShell } from "@/layout/Layout";
 import { RequireAuth } from "./guards";
+import { handleChunkLoadError } from "@km/shared-utils";
+
+// 页面加载中的 Loading 组件
+const PageLoading = () => (
+  <div className="w-full h-full flex items-center justify-center">
+    <Spin size="large" />
+  </div>
+);
+
+// 包装 lazy 组件，添加 chunk 错误处理
+function lazyWithCatch<T extends React.ComponentType<any>>(
+  importFn: () => Promise<{ default: T }>,
+) {
+  return lazy(() =>
+    importFn().catch((error) => {
+      const err = error instanceof Error ? error : new Error(String(error));
+      if (handleChunkLoadError(err)) {
+        // 返回一个永远 pending 的 Promise，阻止后续渲染
+        return new Promise(() => {}) as Promise<{ default: T }>;
+      }
+      throw error;
+    }),
+  );
+}
 
 // 懒加载页面组件 - 减少首屏 JS 体积
-const LoginPage = lazy(() =>
+const LoginPage = lazyWithCatch(() =>
   import("@/views/login/index").then((m) => ({ default: m.LoginPage })),
 );
-const RegisterForm = lazy(() =>
+const RegisterForm = lazyWithCatch(() =>
   import("@/views/login/components/RegisterForm").then((m) => ({
     default: m.RegisterForm,
   })),
 );
-const ApplyForm = lazy(() =>
+const ApplyForm = lazyWithCatch(() =>
   import("@/views/login/components/ApplyForm").then((m) => ({
     default: m.ApplyForm,
   })),
 );
-const HomePage = lazy(() =>
+const HomePage = lazyWithCatch(() =>
   import("@/views/index/index").then((m) => ({ default: m.HomePage })),
 );
-const InfoPage = lazy(() =>
+const InfoPage = lazyWithCatch(() =>
   import("@/views/info/index").then((m) => ({ default: m.InfoPage })),
 );
-const ConfigPage = lazy(() =>
+const ConfigPage = lazyWithCatch(() =>
   import("@/views/config/index").then((m) => ({ default: m.ConfigPage })),
 );
 const SystemLogRefactoredPage = lazy(() =>
@@ -32,138 +56,131 @@ const SystemLogRefactoredPage = lazy(() =>
     default: m.SystemLogRefactoredPage,
   })),
 );
-const ToolboxRefactoredPage = lazy(() =>
+const ToolboxRefactoredPage = lazyWithCatch(() =>
   import("@/views/toolbox-refactored/index").then((m) => ({
     default: m.ToolboxRefactoredPage,
   })),
 );
-const ToolkitCreatePage = lazy(() =>
+const ToolkitCreatePage = lazyWithCatch(() =>
   import("@/views/toolbox-refactored/create/index").then((m) => ({
     default: m.ToolboxCreatePage,
   })),
 );
-const SMTPPage = lazy(() =>
+const SMTPPage = lazyWithCatch(() =>
   import("@/views/smtp/index").then((m) => ({ default: m.SMTPPage })),
 );
-const DomainPage = lazy(() =>
+const DomainPage = lazyWithCatch(() =>
   import("@/views/domain/index").then((m) => ({ default: m.DomainPage })),
 );
-const NavigationPage = lazy(() =>
+const NavigationPage = lazyWithCatch(() =>
   import("@/views/navigation/index").then((m) => ({
     default: m.NavigationPage,
   })),
 );
-const WebSettingPage = lazy(() =>
+const WebSettingPage = lazyWithCatch(() =>
   import("@/views/navigation/WebSetting").then((m) => ({
     default: m.WebSettingPage,
   })),
 );
-const OrderPage = lazy(() =>
+const OrderPage = lazyWithCatch(() =>
   import("@/views/order/index").then((m) => ({ default: m.OrderPage })),
 );
-const PaymentPage = lazy(() =>
+const PaymentPage = lazyWithCatch(() =>
   import("@/views/payment/index").then((m) => ({ default: m.PaymentPage })),
 );
-const StatisticsPage = lazy(() =>
+const StatisticsPage = lazyWithCatch(() =>
   import("@/views/statistics/index").then((m) => ({
     default: m.StatisticsPage,
   })),
 );
-const SubscriptionPage = lazy(() =>
+const SubscriptionPage = lazyWithCatch(() =>
   import("@/views/subscription/index").then((m) => ({
     default: m.SubscriptionPage,
   })),
 );
-const KnowledgePage = lazy(() =>
+const KnowledgePage = lazyWithCatch(() =>
   import("@/views/knowledge/index").then((m) => ({ default: m.KnowledgePage })),
 );
-const PromptPage = lazy(() =>
+const PromptPage = lazyWithCatch(() =>
   import("@/views/prompt/index").then((m) => ({ default: m.PromptPage })),
 );
-const PromptCreatePage = lazy(() =>
+const PromptCreatePage = lazyWithCatch(() =>
   import("@/views/prompt/create/index").then((m) => ({
     default: m.PromptCreatePage,
   })),
 );
-const SearchPage = lazy(() =>
+const SearchPage = lazyWithCatch(() =>
   import("@/views/search/index").then((m) => ({ default: m.SearchPage })),
 );
-const PlatformPage = lazy(() =>
+const PlatformPage = lazyWithCatch(() =>
   import("@/views/platform/index").then((m) => ({ default: m.PlatformPage })),
 );
-const UserAdminPage = lazy(() =>
+const UserAdminPage = lazyWithCatch(() =>
   import("@/views/user/admin/index").then((m) => ({
     default: m.UserAdminPage,
   })),
 );
-const UserInternalPage = lazy(() =>
+const UserInternalPage = lazyWithCatch(() =>
   import("@/views/user/internal/index").then((m) => ({
     default: m.UserInternalPage,
   })),
 );
-const UserRegisterPage = lazy(() =>
+const UserRegisterPage = lazyWithCatch(() =>
   import("@/views/user/register/register").then((m) => ({
     default: m.UserRegisterPage,
   })),
 );
-const AgentPage = lazy(() =>
+const AgentPage = lazyWithCatch(() =>
   import("@/views/agent/index").then((m) => ({ default: m.AgentPage })),
 );
-const AgentCreatePage = lazy(() =>
+const AgentCreatePage = lazyWithCatch(() =>
   import("@/views/agent/create/index").then((m) => ({
     default: m.AgentCreatePage,
   })),
 );
-const AgentCreateV2Page = lazy(() =>
+const AgentCreateV2Page = lazyWithCatch(() =>
   import("@/views/agent/create-v2/index").then((m) => ({
     default: m.AgentCreatePageV2,
   })),
 );
-const AssistantPage = lazy(() =>
+const AssistantPage = lazyWithCatch(() =>
   import("@/views/assistant/index").then((m) => ({ default: m.AssistantPage })),
 );
-const AssistantMapPage = lazy(() =>
+const AssistantMapPage = lazyWithCatch(() =>
   import("@/views/assistant/map/index").then((m) => ({
     default: m.AssistantMapPage,
   })),
 );
-const AppSettingPage = lazy(() =>
+const AppSettingPage = lazyWithCatch(() =>
   import("@/views/assistant/AppSetting").then((m) => ({
     default: m.AppSettingPage,
   })),
 );
-const ChatPage = lazy(() =>
+const ChatPage = lazyWithCatch(() =>
   import("@/views/assistant/chat/index").then((m) => ({ default: m.ChatPage })),
 );
-const RecordingPage = lazy(() =>
+const RecordingPage = lazyWithCatch(() =>
   import("@/views/recording/index").then((m) => ({ default: m.RecordingPage })),
 );
-const SkillsPage = lazy(() => import("@/views/skills/index"));
-const SkillDetailPage = lazy(() => import("@/views/skills/Detail"));
-const TemplateStylePage = lazy(() =>
+const SkillsPage = lazyWithCatch(() => import("@/views/skills/index"));
+const SkillDetailPage = lazyWithCatch(() => import("@/views/skills/Detail"));
+const TemplateStylePage = lazyWithCatch(() =>
   import("@/views/template-style/index").then((m) => ({
     default: m.TemplateStylePage,
   })),
 );
-const WorkAIPage = lazy(() => import("@/views/work-ai/index"));
-const SvgPage = lazy(() =>
+const WorkAIPage = lazyWithCatch(() => import("@/views/work-ai/index"));
+const SvgPage = lazyWithCatch(() =>
   import("@/views/svg/index").then((m) => ({ default: m.SvgPage })),
 );
-const NotFound = lazy(() =>
+const NotFound = lazyWithCatch(() =>
   import("@/views/exception/404").then((m) => ({ default: m.NotFound })),
 );
-const ServerError = lazy(() =>
+const ServerError = lazyWithCatch(() =>
   import("@/views/exception/500").then((m) => ({ default: m.ServerError })),
 );
-const MobileTip = lazy(() =>
+const MobileTip = lazyWithCatch(() =>
   import("@/views/exception/MobileTip").then((m) => ({ default: m.MobileTip })),
-);
-
-// 页面加载中的 Loading 组件
-const PageLoading = () => (
-  <div className="w-full h-full flex items-center justify-center">
-    <Spin size="large" />
-  </div>
 );
 
 export function AppRouter() {
@@ -198,6 +215,32 @@ export function AppRouter() {
             element={
               <RequireAuth>
                 <ApplyForm />
+              </RequireAuth>
+            }
+          />
+
+          {/* Full-screen editor routes (outside LayoutShell) */}
+          <Route
+            path="agent/create-v2"
+            element={
+              <RequireAuth>
+                <AgentCreateV2Page />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="skills/create"
+            element={
+              <RequireAuth>
+                <SkillDetailPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="prompt/create"
+            element={
+              <RequireAuth>
+                <PromptCreatePage />
               </RequireAuth>
             }
           />
@@ -244,7 +287,6 @@ export function AppRouter() {
 
             {/* Prompt */}
             <Route path="prompt" element={<PromptPage />} />
-            <Route path="prompt/create" element={<PromptCreatePage />} />
 
             {/* Search */}
             <Route path="search" element={<SearchPage />} />
@@ -265,14 +307,12 @@ export function AppRouter() {
             {/* Agent */}
             <Route path="agent" element={<AgentPage />} />
             <Route path="agent/create" element={<AgentCreatePage />} />
-            <Route path="agent/create-v2" element={<AgentCreateV2Page />} />
 
             {/* Work AI */}
             <Route path="work-ai" element={<WorkAIPage />} />
 
             {/* Skills */}
             <Route path="skills" element={<SkillsPage />} />
-            <Route path="skill-detail" element={<SkillDetailPage />} />
 
             {/* Toolbox */}
             <Route path="toolbox" element={<ToolboxRefactoredPage />} />

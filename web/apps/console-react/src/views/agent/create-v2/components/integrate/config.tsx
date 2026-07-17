@@ -14,12 +14,12 @@ export const directUseItems = [
     desc: t('integrate.link_qr_desc'),
     icon: getPublicPath('/images/agent/access-link.png'),
   },
-  // {
-  //   id: "api",
-  //   title: t('integrate.api_access'),
-  //   desc: t('integrate.api_access_desc'),
-  //   icon: <ApiOutlined className="text-cyan-500" />,
-  // },
+  {
+    id: "api",
+    title: t('integrate.api_access'),
+    desc: t('integrate.api_access_desc'),
+    icon: getPublicPath('/images/agent/access-api.png'),
+  },
 ];
 
 export const externalUseItems = [

@@ -271,6 +271,63 @@ var registry = map[string]ToolDefinition{
 			},
 		},
 	},
+	"save_memory": {
+		Type: "function",
+		Function: Function{
+			Name:        "save_memory",
+			Description: "保存一条记忆到数据库中。当用户明确要求记住某信息（如'记住'、'记录'、'保存'、'请记住'）时调用此工具。支持保存偏好、事实知识或工具使用教训。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"content": map[string]interface{}{
+						"type":        "string",
+						"description": "需要记住的记忆内容，用中文描述",
+					},
+					"type": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"preference", "fact", "tool_lesson"},
+						"description": "记忆类型：preference=用户偏好/习惯, fact=事实/知识/画像, tool_lesson=工具使用教训",
+					},
+					"scope": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"agent", "user"},
+						"description": "保存范围：agent=助手对该用户的记忆(默认，仅当前助手可见), user=用户全局记忆(跨所有助手可见)",
+					},
+					"topic": map[string]interface{}{
+						"type":        "string",
+						"description": "当 type=tool_lesson 时指定关联的工具名称（如 web_search、memory_search）",
+					},
+				},
+				"required": []string{"content", "type"},
+			},
+		},
+	},
+	"memory_search": {
+		Type: "function",
+		Function: Function{
+			Name:        "memory_search",
+			Description: "搜索用户或助手的记忆。只读操作，不会修改任何数据。当需要回顾用户信息、历史偏好、项目知识或工具教训时调用此工具。query 越长越精确则召回越准。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "搜索关键词，越精确召回越准。例如搜索用户技术栈可传'技术栈 开发语言'",
+					},
+					"memory_type": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"user", "agent", "tool_lesson", "all"},
+						"description": "搜索范围：user=用户全局记忆(画像/知识/偏好), agent=助手对用户的记忆, tool_lesson=工具使用教训, all=全部范围(默认)",
+					},
+					"max_results": map[string]interface{}{
+						"type":        "integer",
+						"description": "最大返回条数(1-10)，默认5",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
 }
 
 // GetToolDefinition returns the full tool definition for a given tool name

@@ -112,7 +112,7 @@ export function FileViewer({
   return (
     <div className="file-viewer">
       <Suspense fallback={<LoadingFallback />}>
-        {isMarkdownFile && url && (
+        {isMarkdownFile && (
           <MarkdownViewer url={url} content={content} />
         )}
         {isEpubFile && url && (

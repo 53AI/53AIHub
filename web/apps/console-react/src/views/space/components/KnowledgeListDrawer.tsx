@@ -1,10 +1,10 @@
 import { Table, Button, message } from "antd";
 import {
-    forwardRef,
-    useImperativeHandle,
-    useState,
-    useCallback,
-    useMemo,
+  forwardRef,
+  useImperativeHandle,
+  useState,
+  useCallback,
+  useMemo,
 } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { librariesApi } from "@/api/modules/libraries";
@@ -134,7 +134,7 @@ function KnowledgeListDrawerInner(
                 alt="creator"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  target.src = "/images/default_avatar.png";
+                  target.src = getPublicPath("/images/default_avatar.png");
                 }}
               />
             ) : (

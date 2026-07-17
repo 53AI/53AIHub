@@ -1,96 +1,23 @@
 import service from "../../config";
 import { handleError } from "../../errorHandler";
+import type {
+  OpenClawSession,
+  OpenClawPaginationParams,
+  ConversationControlParams as OpenClawControlParams,
+} from "@km/shared-business/chat";
 
-export interface OpenClawPaginationParams {
-  limit?: number;
-  offset?: number;
-}
-
-export interface OpenClawSession {
-  id: string;
-  title?: string;
-  status?: string;
-  hostKind?: string;
-  runnerCommand?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  lastEventSeq?: number;
-}
-
-export interface OpenClawMessage {
-  id: string;
-  sessionId?: string;
-  role: string;
-  content?: string;
-  createdAt?: string;
-  reasoning?: string;
-  reasoningText?: string;
-  reasoning_content?: string;
-  thinking?: string;
-  thinkingText?: string;
-  payload?: Record<string, unknown>;
-  metadata?: Record<string, unknown>;
-  data?: Record<string, unknown>;
-}
-
-export interface OpenClawTimelineEvent {
-  id: string;
-  sessionId?: string;
-  seq?: number;
-  kind: string;
-  payload?: Record<string, unknown>;
-  createdAt?: string;
-}
-
-export interface OpenClawLedgerEvent {
-  protocol_version: "openclaw.ledger.v1";
-  seq: number;
-  session_id: string;
-  conversation_id: string;
-  turn_id: string;
-  run_id?: string;
-  active_request_id: string;
-  part_id: string;
-  part_type: "answer" | "thinking" | "tool" | "output_file" | "status";
-  event_type: "turn.started" | "part.delta" | "part.replace" | "part.done" | "turn.completed" | "turn.interrupted" | "turn.failed";
-  operation: "append" | "replace" | "close" | "noop";
-  visibility: "stream" | "final" | "hidden";
-  text?: string;
-  payload?: Record<string, unknown>;
-  terminal_status?: "running" | "completed" | "interrupted" | "failed" | "cancelled";
-  created_at: string;
-  raw_event_ref?: string;
-}
-
-export interface OpenClawSessionSnapshot {
-  session_id: string;
-  conversation_id: string;
-  last_seq: number;
-  active_turns: Array<{
-    turn_id: string;
-    run_id?: string;
-    active_request_id: string;
-    status: "running" | "completed" | "interrupted" | "failed" | "cancelled";
-    last_seq: number;
-    part_ids: string[];
-  }>;
-  recent_events: OpenClawLedgerEvent[];
-  ledger_events?: OpenClawLedgerEvent[];
-  ledgerEvents?: OpenClawLedgerEvent[];
-}
-
-export interface OpenClawControlParams {
-  action: "stop" | "respond_interruption" | "submit_answer" | "resolve_interruption";
-  [key: string]: unknown;
-}
+export type { OpenClawSession, OpenClawControlParams };
 
 function buildPaginationParams(params: OpenClawPaginationParams = {}) {
-  const query: OpenClawPaginationParams = {};
+  const query: Record<string, number> = {};
   if (typeof params.limit === "number" && params.limit > 0) {
     query.limit = params.limit;
   }
   if (typeof params.offset === "number" && params.offset > 0) {
     query.offset = params.offset;
+  }
+  if (params.fresh) {
+    query.fresh = 1;
   }
   return query;
 }
@@ -105,9 +32,10 @@ export const openclawApi = {
       .catch(handleError);
   },
 
-  currentConversation(agentId: string | number, options?: { ignoreMessage?: boolean }) {
+  currentConversation(agentId: string | number, options?: { ignoreMessage?: boolean; fresh?: boolean }) {
     return service
       .get(`/api/openclaw/agents/${agentId}/conversations/current`, {
+        params: options?.fresh ? { fresh: 1 } : undefined,
         requiresAuth: true,
       })
       .catch((error) => handleError(error, { ignoreMessage: options?.ignoreMessage }));
@@ -140,12 +68,13 @@ export const openclawApi = {
       .catch(handleError);
   },
 
-  snapshot(agentId: string | number, conversationId: string, params: { after_seq?: number } = {}) {
+  snapshot(agentId: string | number, conversationId: string, params: { after_seq?: number; fresh?: boolean } = {}) {
     return service
       .get(
         `/api/openclaw/agents/${agentId}/conversations/${encodeURIComponent(conversationId)}/snapshot`,
         {
           params: {
+            ...(params.fresh ? { fresh: 1 } : {}),
             ...(typeof params.after_seq === "number" && params.after_seq > 0 ? { after_seq: params.after_seq } : {}),
           },
           requiresAuth: true,
@@ -180,6 +109,12 @@ export const openclawApi = {
     return service
       .get(`/api/openclaw/agents/${agentId}/skills`, { requiresAuth: true })
       .catch((error) => handleError(error, { ignoreMessage: options?.ignoreMessage }));
+  },
+
+  ensureSkill(agentId: string | number, skillId: string | number) {
+    return service
+      .post(`/api/openclaw/agents/${agentId}/skills/${encodeURIComponent(String(skillId))}/ensure`, {}, { requiresAuth: true })
+      .catch(handleError);
   },
 
   cronTasks(agentId: string | number, params: OpenClawPaginationParams = {}, options?: { ignoreMessage?: boolean }) {

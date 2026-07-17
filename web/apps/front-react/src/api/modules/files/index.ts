@@ -72,7 +72,7 @@ export const filesApi = {
     limit?: number
     keyword?: string
   } = {}): Promise<RawFileItem[]> {
-    return request.get('/api/files/recently', { params }).then((res) => res.data)
+    return request.get('/api/files/recently', { params, requiresAuth: true }).then((res) => res.data)
   },
 
   recentlyUpdated(params: { library_id?: RawFileItem['library_id'] } = {}): Promise<RawFileItem[]> {

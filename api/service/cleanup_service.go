@@ -194,6 +194,9 @@ func (s *CleanupService) deleteVectorsByInfos(eid int64, infos []vectorInfo) err
 		}
 	}
 
+	// enterprise/dual 模式下同时删除企业级集合中的向量
+	cleanupEnterpriseVectors(ctx, store, eid, infos)
+
 	return nil
 }
 
@@ -267,6 +270,21 @@ func (s *CleanupService) deleteVectorsFromDB(eid int64, vectorIDs []string) erro
 			logger.SysLogf("警告: 从向量数据库删除失败 - EID:%d Collection:%s Count:%d Err:%v",
 				eid, collection, len(ids), err)
 			// 继续处理其他库，不因单库失败而整体失败
+		}
+	}
+
+	// enterprise/dual 模式下同时删除企业级集合中的向量
+	if mode := rag.GetVectorCollectionMode(); mode == rag.VectorCollectionModeEnterprise || mode == rag.VectorCollectionModeDual {
+		entCollection := model.GetDocumentVectorCollectionName(eid)
+		for _, libVectors := range libraryVectorsMap {
+			ids := make([]interface{}, len(libVectors.VectorIDs))
+			for i, id := range libVectors.VectorIDs {
+				ids[i] = id
+			}
+			if err := store.Delete(ctx, entCollection, ids); err != nil {
+				logger.SysLogf("警告: 从企业级集合删除失败 - EID:%d Collection:%s Count:%d Err:%v",
+					eid, entCollection, len(ids), err)
+			}
 		}
 	}
 
@@ -450,4 +468,19 @@ func (s *CleanupService) deleteRetrievalChunks(eid int64, chunkIDs []int64) erro
 
 	// 从数据库删除检索分块记录
 	return s.db.Where("eid = ? AND id IN ?", eid, chunkIDs).Delete(&model.RetrievalChunk{}).Error
+}
+
+// cleanupEnterpriseVectors enterprise/dual 模式下清理企业级集合中的向量
+func cleanupEnterpriseVectors(ctx context.Context, store vectorstore.VectorStore, eid int64, infos []vectorInfo) {
+	mode := rag.GetVectorCollectionMode()
+	if mode != rag.VectorCollectionModeEnterprise && mode != rag.VectorCollectionModeDual {
+		return
+	}
+	entCollection := model.GetDocumentVectorCollectionName(eid)
+	for _, info := range infos {
+		if err := store.Delete(ctx, entCollection, []interface{}{info.vectorID}); err != nil {
+			logger.SysLogf("警告: 从企业级集合删除失败 - EID:%d Collection:%s VectorID:%s Err:%v",
+				eid, entCollection, info.vectorID, err)
+		}
+	}
 }

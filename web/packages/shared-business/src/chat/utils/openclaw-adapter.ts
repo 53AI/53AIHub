@@ -1,8 +1,10 @@
 import type { ChatCompletionParams, ConversationControlParams, IConversationApi } from "../adapters/types";
+import type { OpenClawTurnEvent } from "../types";
 import {
   getOpenClawEventReasoningText,
   isOpenClawActivityEvent,
   mergeOpenClawActivities,
+  type OpenClawTimelineEvent,
 } from "./openclaw-activities";
 import {
   isOpenClawDiscardableAssistantContent,
@@ -10,6 +12,8 @@ import {
   sanitizeOpenClawAnswer,
 } from "./openclaw";
 import {
+  buildOpenClawAnswerTimelineItem,
+  getOutputFileKeys,
   mergeOutputFiles,
 } from "./openclaw-timeline";
 import {
@@ -56,6 +60,7 @@ export interface OpenClawPaginationParams {
   limit?: number;
   offset?: number;
   after_seq?: number;
+  fresh?: boolean;
 }
 
 export interface OpenClawSession {
@@ -67,6 +72,8 @@ export interface OpenClawSession {
   createdAt?: string;
   updatedAt?: string;
   lastEventSeq?: number;
+  has_cached_history?: boolean;
+  hasCachedHistory?: boolean;
 }
 
 export interface OpenClawMessage {
@@ -85,22 +92,14 @@ export interface OpenClawMessage {
   data?: Record<string, unknown>;
 }
 
-export interface OpenClawTimelineEvent {
-  id: string;
-  sessionId?: string;
-  seq?: number;
-  kind: string;
-  payload?: Record<string, unknown>;
-  createdAt?: string;
-}
-
 export interface OpenClawApiLike {
   conversations(agentId: string | number, params?: OpenClawPaginationParams): Promise<any>;
-  currentConversation?(agentId: string | number): Promise<any>;
+  currentConversation?(agentId: string | number, options?: { fresh?: boolean; ignoreMessage?: boolean }): Promise<any>;
   messages(agentId: string | number, conversationId: string, params?: OpenClawPaginationParams): Promise<any>;
   events(agentId: string | number, conversationId: string, params?: OpenClawPaginationParams): Promise<any>;
-  snapshot?(agentId: string | number, conversationId: string, params?: { after_seq?: number }): Promise<any>;
+  snapshot?(agentId: string | number, conversationId: string, params?: { after_seq?: number; fresh?: boolean }): Promise<any>;
   control(agentId: string | number, conversationId: string, params: ConversationControlParams): Promise<any>;
+  ensureSkill?(agentId: string | number, skillIdentifier: string | number): Promise<any>;
   status?(agentId: string | number, options?: { ignoreMessage?: boolean }): Promise<any>;
 }
 
@@ -121,6 +120,24 @@ export interface CreateOpenClawConversationApiAdapterOptions {
 
 export function getOpenClawPayload(response: any) {
   return response?.data || response || {};
+}
+
+function isOpenClawMirrorPayload(payload: any): boolean {
+  return String(payload?.source || "") === "mirror" || (payload?.cached === true && String(payload?.source || "") === "mirror");
+}
+
+function openClawHistoryMeta(payload: any) {
+  const source = String(payload?.source || "");
+  const messagesLastSeq = typeof payload?.messages_last_seq === "number" ? payload.messages_last_seq : Number(payload?.messages_last_seq);
+  const mirrorLastSeq = typeof payload?.mirror_last_seq === "number" ? payload.mirror_last_seq : Number(payload?.mirror_last_seq);
+  return {
+    ...(source ? { source } : {}),
+    ...(typeof payload?.stale === "boolean" ? { stale: payload.stale } : {}),
+    ...(typeof payload?.last_seq === "number" ? { last_seq: payload.last_seq } : {}),
+    ...(Number.isFinite(messagesLastSeq) && messagesLastSeq > 0 ? { messages_last_seq: messagesLastSeq } : {}),
+    ...(Number.isFinite(mirrorLastSeq) && mirrorLastSeq > 0 ? { mirror_last_seq: mirrorLastSeq } : {}),
+    ...(typeof payload?.refresh_recommended === "boolean" ? { refresh_recommended: payload.refresh_recommended } : {}),
+  };
 }
 
 export function toOpenClawTimestampMs(value?: string | number) {
@@ -465,6 +482,34 @@ function getOpenClawUserEventContent(event?: OpenClawTimelineEvent | null): stri
   const payload = event?.payload || {};
   const content = payload.content ?? payload.text ?? payload.message;
   return typeof content === "string" ? content.trim() : "";
+}
+
+function getOpenClawTimelineEventLedger(event?: OpenClawTimelineEvent | null): Record<string, any> {
+  const ledger = event?.payload?.openclaw_ledger;
+  return ledger && typeof ledger === "object" && !Array.isArray(ledger) ? ledger as Record<string, any> : {};
+}
+
+function getOpenClawTimelineTurnId(event: OpenClawTimelineEvent): string {
+  const ledger = getOpenClawTimelineEventLedger(event);
+  const payload = event.payload || {};
+  return String(
+    ledger.turn_id ||
+      (payload as any).turn_id ||
+      (payload as any).turnId ||
+      ledger.active_request_id ||
+      (payload as any).active_request_id ||
+      (payload as any).activeRequestId ||
+      event.id ||
+      ""
+  );
+}
+
+function isOpenClawQuestionSeedEvent(event?: OpenClawTimelineEvent | null): boolean {
+  if (!event) return false;
+  const ledger = getOpenClawTimelineEventLedger(event);
+  const payload = event.payload || {};
+  const sourceKind = String(ledger?.payload?.source_kind || (payload as any).source_kind || event.kind || "");
+  return event.kind === "user.message" || sourceKind === "user.message" || event.kind === "run.started";
 }
 
 function isOpenClawUserMessageEvent(event?: OpenClawTimelineEvent | null): boolean {
@@ -818,7 +863,7 @@ function collectReasoningFromEvents(events: OpenClawTimelineEvent[]): string {
 }
 
 function getOpenClawLedgerGroupKey(event: OpenClawTimelineEvent): string {
-  return getOpenClawLedgerRunId(event) || getOpenClawLedgerTurnId(event);
+  return getOpenClawLedgerTurnId(event) || getOpenClawLedgerActiveRequestId(event) || getOpenClawLedgerRunId(event);
 }
 
 function collectCanonicalLedgerTurnGroups(events: OpenClawTimelineEvent[]): OpenClawTimelineEvent[][] {
@@ -963,15 +1008,17 @@ function findCanonicalLedgerGroupForMessageTurn(
 
 function collectOpenClawVisibleMessageTurns(
   messages: OpenClawMessage[],
-  scopedEvents: OpenClawTimelineEvent[]
-): OpenClawVisibleMessageTurn[] {
+  scopedEvents: OpenClawTimelineEvent[] = [],
+) {
   const turns: OpenClawVisibleMessageTurn[] = [];
   let pendingUserMessage: OpenClawMessage | null = null;
+  let pendingAssistantMessage: OpenClawMessage | null = null;
 
   const flush = () => {
     if (!pendingUserMessage) return;
-    turns.push({ userMessage: pendingUserMessage, assistantMessage: null });
+    turns.push({ userMessage: pendingUserMessage, assistantMessage: pendingAssistantMessage });
     pendingUserMessage = null;
+    pendingAssistantMessage = null;
   };
 
   for (const item of messages) {
@@ -990,6 +1037,7 @@ function collectOpenClawVisibleMessageTurns(
 
       flush();
       pendingUserMessage = enrichOpenClawUserMessageFromEvents(item, scopedEvents);
+      pendingAssistantMessage = null;
       continue;
     }
 
@@ -1002,9 +1050,13 @@ function collectOpenClawVisibleMessageTurns(
         continue;
       }
 
-      const lastTurn = { userMessage: pendingUserMessage, assistantMessage: item };
-      turns.push(lastTurn);
-      pendingUserMessage = null;
+      if (!assistantMessageBelongsToUserTurn(pendingUserMessage, item)) {
+        continue;
+      }
+
+      if (shouldReplaceOpenClawPendingAssistant(pendingAssistantMessage, item)) {
+        pendingAssistantMessage = item;
+      }
     }
   }
 
@@ -1063,8 +1115,7 @@ function buildOpenClawMessagesFromCanonicalLedger(
         turnEvents,
         options
       );
-    })
-    .filter(shouldKeepOpenClawMessageRow);
+    });
 
   traceOpenClawUi("canonical.match", {
     conversationId,
@@ -1075,7 +1126,91 @@ function buildOpenClawMessagesFromCanonicalLedger(
     rows: matchTrace,
   });
 
-  return rows;
+  return rows.filter(shouldKeepOpenClawMessageRow);
+}
+
+function buildOpenClawMessagesFromLedgerOnly(
+  events: OpenClawTimelineEvent[],
+  conversationId: string,
+  agentId: string | number,
+  options?: { canonicalOnly?: boolean }
+) {
+  const scopedEvents = filterSupersededHistoryThinkingEvents(
+    events
+      .filter((event) => event.sessionId === conversationId)
+      .sort((left, right) => getEventSeq(left) - getEventSeq(right))
+  );
+  const groups = new Map<string, OpenClawTimelineEvent[]>();
+
+  for (const event of scopedEvents) {
+    const turnId = getOpenClawTimelineTurnId(event);
+    if (!turnId) continue;
+    const group = groups.get(turnId) || [];
+    group.push(event);
+    groups.set(turnId, group);
+  }
+
+  const rows = [...groups.entries()]
+    .map(([turnId, turnEvents]) => {
+      const orderedTurnEvents = [...turnEvents].sort((left, right) => getEventSeq(left) - getEventSeq(right));
+      const firstEvent = orderedTurnEvents[0];
+      if (!firstEvent) return null;
+
+      const questionEvent =
+        orderedTurnEvents.find((event) => isOpenClawQuestionSeedEvent(event) && getOpenClawUserEventContent(event)) ||
+        orderedTurnEvents.find(isOpenClawQuestionSeedEvent);
+      const question = getOpenClawUserEventContent(questionEvent) || "";
+      if (!question.trim()) return null;
+      const questionSeq = getEventSeq(questionEvent || firstEvent);
+      const reasoning = collectReasoningFromEvents(orderedTurnEvents);
+      const interrupted = orderedTurnEvents.some((event) => event.kind === "run.interrupted");
+
+      return buildOpenClawMessageRow(
+        {
+          id: `${turnId}:ledger-user`,
+          sessionId: conversationId,
+          role: "user",
+          content: question,
+          createdAt: questionEvent?.createdAt || firstEvent.createdAt,
+          payload: {
+            ...(questionSeq > 0 ? { rawSeq: questionSeq } : {}),
+            recoveredFromEvent: true,
+          },
+        },
+        null,
+        conversationId,
+        agentId,
+        reasoning,
+        interrupted,
+        orderedTurnEvents,
+        options
+      );
+    })
+    .filter((row): row is any => Boolean(row))
+    .filter(shouldKeepOpenClawMessageRow);
+
+  return rows.length ? rows : null;
+}
+
+function paginateOpenClawProjectedRows(rows: any[], params?: { offset?: number; limit?: number }) {
+  const total = rows.length;
+  const requestedOffset = Number(params?.offset || 0);
+  const offset = Number.isFinite(requestedOffset) && requestedOffset > 0 ? Math.floor(requestedOffset) : 0;
+  const requestedLimit = Number(params?.limit || 0);
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : total;
+  const pageRows = rows.slice(offset, offset + limit);
+  const nextOffset = offset + pageRows.length;
+
+  return {
+    rows: pageRows,
+    pagination: {
+      limit,
+      offset,
+      total,
+      hasMore: nextOffset < total,
+      nextOffset,
+    },
+  };
 }
 
 function readOpenClawProcessStep(event: OpenClawTimelineEvent): any {
@@ -1116,18 +1251,23 @@ function normalizeOpenClawOutputFiles(value: unknown): any[] {
       const fileName = file.file_name ?? file.fileName ?? file.filename ?? file.name;
       const mimeType = file.mime_type ?? file.mimeType ?? file.mime;
       const base64 = typeof file.base64 === "string" && file.base64.trim() ? file.base64.trim() : "";
+      const previewUrl = typeof file.preview_url === "string" ? file.preview_url : typeof file.previewUrl === "string" ? file.previewUrl : "";
       const downloadUrl = typeof file.download_url === "string" ? file.download_url : typeof file.downloadUrl === "string" ? file.downloadUrl : "";
       const signedDownloadUrl = typeof file.signed_download_url === "string" ? file.signed_download_url : typeof file.signedDownloadUrl === "string" ? file.signedDownloadUrl : "";
       const rawUrl = typeof file.url === "string" ? file.url : typeof file.href === "string" ? file.href : "";
-      const url = signedDownloadUrl || downloadUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : undefined);
-      const id = file.id ?? file.file_id ?? file.fileId ?? url ?? fileName;
+      const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : signedDownloadUrl || downloadUrl || undefined);
+      const id = file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url ?? fileName;
       if (id == null && !url && !fileName) return null;
       return {
         id: String(id ?? `${url || ""}|${fileName || ""}`),
         file_name: fileName != null ? String(fileName) : "",
         url: url != null ? String(url) : "",
+        preview_key: typeof file.preview_key === "string" ? file.preview_key : typeof file.previewKey === "string" ? file.previewKey : undefined,
+        preview_url: previewUrl || undefined,
         download_url: downloadUrl || undefined,
         signed_download_url: signedDownloadUrl || undefined,
+        artifact_id: file.artifact_id ?? file.artifactId,
+        upload_file_id: file.upload_file_id ?? file.uploadFileId,
         mime_type: mimeType,
         size: typeof file.size === "number" ? file.size : Number.isFinite(Number(file.size)) ? Number(file.size) : undefined,
         kind: file.kind,
@@ -1172,6 +1312,248 @@ function outputFilesFromOpenClawProcessRecords(records: any[]): any[] {
     }
   }
   return files;
+}
+
+function isOpenClawHistoricalFileReference(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^https?:\/\//i.test(trimmed) || /^file:\/\//i.test(trimmed)) return true;
+  return /^\/[^:]+/.test(trimmed);
+}
+
+function getOpenClawFileNameFromReference(value: string): string {
+  const fallback = "附件";
+  try {
+    const parsed = new URL(value);
+    const fromPath = parsed.pathname.split("/").filter(Boolean).pop();
+    return fromPath ? decodeURIComponent(fromPath) : fallback;
+  } catch {
+    const fromPath = value.split(/[\\/]/).filter(Boolean).pop();
+    return fromPath ? decodeURIComponent(fromPath) : fallback;
+  }
+}
+
+function inferOpenClawFileMimeType(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase() || "";
+  const mimeByExt: Record<string, string> = {
+    csv: "text/csv",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    gif: "image/gif",
+    htm: "text/html",
+    html: "text/html",
+    jpeg: "image/jpeg",
+    jpg: "image/jpeg",
+    json: "application/json",
+    md: "text/markdown",
+    pdf: "application/pdf",
+    png: "image/png",
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    txt: "text/plain",
+    webp: "image/webp",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  };
+  return mimeByExt[ext] || "application/octet-stream";
+}
+
+function buildOpenClawHistoricalUploadedFile(ref: string, localPath = "") {
+  const isUrl = /^https?:\/\//i.test(ref) || /^file:\/\//i.test(ref);
+  const fileName = getOpenClawFileNameFromReference(localPath || ref);
+  return {
+    id: ref,
+    name: fileName,
+    file_name: fileName,
+    filename: fileName,
+    mime_type: inferOpenClawFileMimeType(fileName),
+    ...(localPath ? { file_path: localPath } : {}),
+    ...(isUrl ? { url: ref, preview_url: ref, download_url: ref } : { file_path: ref }),
+  };
+}
+
+function asOpenClawRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+function readOpenClawMessageMetadata(message: OpenClawMessage): Record<string, unknown> {
+  return {
+    ...asOpenClawRecord(message.payload),
+    ...asOpenClawRecord(message.data),
+    ...asOpenClawRecord(message.metadata),
+  };
+}
+
+function normalizeOpenClawSkillFromMessage(message: OpenClawMessage): any | null {
+  const metadata = readOpenClawMessageMetadata(message);
+  const skill = asOpenClawRecord(metadata.openclaw_skill);
+  const skillName = readStringValue(skill.skill_name, skill.name);
+  const displayName = readStringValue(skill.display_name, skill.displayName, skillName);
+  if (!skillName && !displayName) {
+    return null;
+  }
+  return {
+    ...(skill.id ? { id: skill.id } : {}),
+    ...(skill.skill_id ? { skill_id: skill.skill_id } : {}),
+    skill_name: skillName,
+    display_name: displayName,
+  };
+}
+
+function normalizeOpenClawInputFilesFromMessage(message: OpenClawMessage): any[] {
+  const metadata = readOpenClawMessageMetadata(message);
+  const rawFiles = Array.isArray(metadata.openclaw_input_files) ? metadata.openclaw_input_files : [];
+  return rawFiles
+    .map((file) => normalizeOpenClawInputFile(file))
+    .filter(Boolean);
+}
+
+function normalizeOpenClawInputFile(value: unknown): any | null {
+  const file = asOpenClawRecord(value);
+  if (!Object.keys(file).length) {
+    return null;
+  }
+  const localPath = readStringValue(file.local_path, file.file_path, file.path);
+  const previewUrl = readStringValue(file.preview_url, file.previewUrl, file.url);
+  const downloadUrl = readStringValue(file.download_url, file.signed_download_url, file.downloadUrl, file.url);
+  const url = previewUrl || downloadUrl || readStringValue(file.url);
+  const explicitFileName = readStringValue(file.file_name, file.filename, file.name);
+  const fileName = explicitFileName || getOpenClawFileNameFromReference(localPath || url || readStringValue(file.id));
+  const size = readNumberValue(file.size, file.file_size);
+  return {
+    id: readStringValue(file.id, file.file_id, file.upload_file_id, file.artifact_id, url, localPath, fileName),
+    name: fileName,
+    file_name: fileName,
+    filename: fileName,
+    mime_type: readStringValue(file.mime_type, file.file_mime) || inferOpenClawFileMimeType(fileName),
+    ...(size > 0 ? { size } : {}),
+    ...(localPath ? { file_path: localPath, local_path: localPath } : {}),
+    ...(url ? { url } : {}),
+    ...(previewUrl || url ? { preview_url: previewUrl || url } : {}),
+    ...(downloadUrl || url ? { download_url: downloadUrl || url } : {}),
+    ...(file.signed_download_url ? { signed_download_url: file.signed_download_url } : {}),
+    ...(file.upload_file_id ? { upload_file_id: file.upload_file_id } : {}),
+    ...(file.artifact_id ? { artifact_id: file.artifact_id } : {}),
+  };
+}
+
+function dedupeOpenClawFiles(files: any[]): any[] {
+  const seen = new Set<string>();
+  const output: any[] = [];
+  for (const file of files) {
+    const key = `${file?.id || ""}|${file?.url || ""}|${file?.preview_url || ""}|${file?.file_path || ""}|${file?.file_name || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(file);
+  }
+  return output;
+}
+
+function stripOpenClawRuntimePromptSections(content: string): string {
+  const selectedSkillMatch = content.match(/(?:^|\n)\s*Selected skill:\s*\/?([^\s\n]+)/i);
+  const selectedSkillName = selectedSkillMatch?.[1] || "";
+  let stripped = content.replace(/<53aihub-openclaw-runtime-context>[\s\S]*?<\/53aihub-openclaw-runtime-context>/gi, "");
+  const lines = stripped.split(/\r?\n/);
+  const kept: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] || "";
+    const trimmed = line.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith("53aihub selected skill instructions for ")) {
+      break;
+    }
+    if (lower === "attached files:" || lower === "selected local files:" || lower === "local input files:") {
+      while (index + 1 < lines.length && (lines[index + 1] || "").trim()) {
+        index += 1;
+      }
+      continue;
+    }
+    if (lower.startsWith("selected skill:")) {
+      continue;
+    }
+    if (lower.startsWith("follow these instructions for this turn")) {
+      continue;
+    }
+    if (/^@(?:\/|~\/)/.test(trimmed)) {
+      continue;
+    }
+    kept.push(line);
+  }
+  stripped = kept.join("\n").trim();
+  if (selectedSkillName) {
+    stripped = stripped.replace(new RegExp(`^/${selectedSkillName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`), "");
+  }
+  return stripped.trim();
+}
+
+function stripSelectedOpenClawSkillPrefix(question: string, sourceContent: string): string {
+  const selectedSkillMatch = sourceContent.match(/(?:^|\n)\s*Selected skill:\s*\/?([^\s\n]+)/i);
+  const selectedSkillName = selectedSkillMatch?.[1] || "";
+  if (!selectedSkillName) {
+    return question.trim();
+  }
+  return question
+    .replace(new RegExp(`^/${selectedSkillName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+`), "")
+    .trim();
+}
+
+function extractOpenClawHistoricalUserFiles(content?: string | null): { question: string; files: any[] } {
+  const raw = String(content || "");
+  const lines = raw.split(/\r?\n/);
+  let filesLineIndex = -1;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const marker = lines[index]?.trim().toLowerCase();
+    if (marker === "files:" || marker === "attached files:") {
+      filesLineIndex = index;
+      break;
+    }
+  }
+  if (filesLineIndex < 0) {
+    return { question: stripOpenClawRuntimePromptSections(raw), files: [] };
+  }
+
+  const refs = lines
+    .slice(filesLineIndex + 1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(isOpenClawHistoricalFileReference);
+  if (!refs.length) {
+    return { question: stripOpenClawRuntimePromptSections(raw), files: [] };
+  }
+
+  const pendingLocalPaths: string[] = [];
+  const files: any[] = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    const isUrl = /^https?:\/\//i.test(ref) || /^file:\/\//i.test(ref);
+    if (!isUrl) {
+      pendingLocalPaths.push(ref);
+      continue;
+    }
+    const localPath = pendingLocalPaths.shift() || "";
+    const key = `${ref}|${localPath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    files.push(buildOpenClawHistoricalUploadedFile(ref, localPath));
+  }
+
+  for (const localPath of pendingLocalPaths) {
+    if (seen.has(localPath)) continue;
+    seen.add(localPath);
+    files.push(buildOpenClawHistoricalUploadedFile(localPath));
+  }
+
+  if (!files.length) {
+    return { question: stripOpenClawRuntimePromptSections(raw), files: [] };
+  }
+
+  return {
+    question: stripSelectedOpenClawSkillPrefix(
+      stripOpenClawRuntimePromptSections(lines.slice(0, filesLineIndex).join("\n")),
+      raw
+    ),
+    files,
+  };
 }
 
 function getOpenClawAnswerSeq(
@@ -1255,6 +1637,7 @@ export function buildOpenClawConversation(session: OpenClawSession, agentId: str
     is_valid: 1,
     openclaw_status: session.status,
     openclaw_host_kind: session.hostKind,
+    has_cached_history: session.has_cached_history ?? session.hasCachedHistory,
     raw: session,
   };
 }
@@ -1275,11 +1658,17 @@ function buildOpenClawMessageRow(
   const primaryTurnEvents = filterOpenClawEventsToPrimaryLedgerTurn(turnEvents);
   const outputProcessRecords = buildOpenClawOutputProcessRecords(primaryTurnEvents);
   const answerSeq = getOpenClawAnswerSeq(primaryTurnEvents, assistantMessage, userMessage);
+  const historicalUserContent = extractOpenClawHistoricalUserFiles(userMessage.content || "");
   const persistedAssistantAnswer = sanitizeOpenClawAnswer(assistantMessage?.content || "", reasoningContent).trim();
   const hasPersistedAssistantAnswer = !isOpenClawDiscardableAssistantContent(persistedAssistantAnswer);
   const hasCanonicalAnswerEvent = primaryTurnEvents.some(hasOpenClawLedgerAnswerEvent);
+  const historicalUserFiles = dedupeOpenClawFiles([
+    ...normalizeOpenClawInputFilesFromMessage(userMessage),
+    ...historicalUserContent.files,
+  ]);
+  const historicalUserSkill = normalizeOpenClawSkillFromMessage(userMessage);
 
-  const normalizedTurnEvents = primaryTurnEvents
+  const normalizedTurnEvents: OpenClawTurnEvent[] = primaryTurnEvents
     .filter((event) => !(hasPersistedAssistantAnswer && !hasCanonicalAnswerEvent && isOpenClawAnswerEvent(event)))
     .map((event) => ({
       eventId: event.id || `${conversationId}:${event.kind}:${event.seq || ""}:${event.createdAt || ""}`,
@@ -1307,7 +1696,7 @@ function buildOpenClawMessageRow(
 
   if (hasPersistedAssistantAnswer && !hasCanonicalAnswerEvent) {
     normalizedTurnEvents.push({
-      eventId: `${conversationId}:history:answer:${assistantMessage.id || userMessage.id}`,
+      eventId: `${conversationId}:history:answer:${assistantMessage?.id || userMessage.id}`,
       sessionId: conversationId,
       seq: answerSeq || undefined,
       kind: "assistant.message",
@@ -1316,7 +1705,7 @@ function buildOpenClawMessageRow(
       },
       createdAt: assistantMessage?.createdAt || userMessage.createdAt,
       source: "history",
-      messageId: assistantMessage.id,
+      messageId: assistantMessage?.id || userMessage.id,
       messageSeq: answerSeq || undefined,
     });
   }
@@ -1346,23 +1735,17 @@ function buildOpenClawMessageRow(
     isStreaming: false,
     canonicalOnly: Boolean(options?.canonicalOnly),
   });
-  if (
-    hasPersistedAssistantAnswer &&
-    !projection.visibleAnswer &&
-    !hasCanonicalAnswerEvent
-  ) {
-    projection = {
-      ...projection,
-      visibleAnswer: persistedAssistantAnswer,
-    };
+  if (hasPersistedAssistantAnswer && shouldPreferPersistedOpenClawAnswer(projection, persistedAssistantAnswer)) {
+    projection = applyPersistedAnswerToOpenClawProjection(projection, persistedAssistantAnswer);
   }
 
   const row = {
     id: assistantMessage?.id || userMessage.id,
+    role: "assistant" as const,
     agent_id: agentId,
     conversation_id: conversationId,
-    question: userMessage.content || "",
-    message: JSON.stringify([{ role: "user", content: userMessage.content || "" }]),
+    question: historicalUserContent.question,
+    message: JSON.stringify([{ role: "user", content: historicalUserContent.question }]),
     answer: projection.visibleAnswer,
     interrupted,
     reasoning_content: "",
@@ -1377,12 +1760,14 @@ function buildOpenClawMessageRow(
     updated_at: Math.floor(updatedMs / 1000),
     process_records: outputProcessRecords,
     outputFiles: outputFilesFromOpenClawProcessRecords(outputProcessRecords),
+    uploaded_files: historicalUserFiles,
+    ...(historicalUserSkill ? { skill: historicalUserSkill } : {}),
     rag_stats: null,
     raw_user_message: userMessage,
     raw_assistant_message: assistantMessage,
     _openclawTurnStartSeq: getMessageSeq(userMessage) || undefined,
   };
-  syncOpenClawProjectionToMessage(row, projection);
+  syncOpenClawProjectionToMessage(row as any, projection);
   row.reasoning_content = "";
   return row;
 }
@@ -1465,6 +1850,182 @@ function mergeAdjacentOpenClawAssistantRows(rows: any[]): any[] {
   return merged;
 }
 
+function getOpenClawRowOutputFiles(row: any): any[] {
+  return [
+    ...(Array.isArray(row?.openclawProjection?.outputFiles) ? row.openclawProjection.outputFiles : []),
+    ...(Array.isArray(row?.outputFiles) ? row.outputFiles : []),
+  ];
+}
+
+function rowsShareOpenClawOutputFile(left: any, right: any): boolean {
+  const leftKeys = new Set<string>();
+  for (const file of getOpenClawRowOutputFiles(left)) {
+    for (const key of getOutputFileKeys(file, { logicalIdentity: true })) {
+      if (key) leftKeys.add(key);
+    }
+  }
+  if (leftKeys.size === 0) return false;
+
+  for (const file of getOpenClawRowOutputFiles(right)) {
+    for (const key of getOutputFileKeys(file, { logicalIdentity: true })) {
+      if (key && leftKeys.has(key)) return true;
+    }
+  }
+
+  return false;
+}
+
+function getOpenClawRowTurnStartSeq(row: any): number {
+  return readNumberValue(
+    row?._openclawTurnStartSeq,
+    row?.openclawTurn?.turnStartSeq,
+    row?.raw_user_message?.seq,
+    row?.raw_user_message?.messageSeq,
+    row?.raw_user_message?.message_seq,
+    row?.raw_user_message?.payload?.rawSeq,
+    row?.raw_user_message?.payload?.messageSeq,
+    row?.raw_user_message?.metadata?.rawSeq,
+    row?.raw_user_message?.metadata?.messageSeq
+  );
+}
+
+function rowsShareOpenClawTurnIdentity(left: any, right: any): boolean {
+  const leftSeq = getOpenClawRowTurnStartSeq(left);
+  const rightSeq = getOpenClawRowTurnStartSeq(right);
+  if (leftSeq > 0 && rightSeq > 0) return leftSeq === rightSeq;
+
+  const leftUserId = String(left?.raw_user_message?.id || "");
+  const rightUserId = String(right?.raw_user_message?.id || "");
+  if (leftUserId && rightUserId) return leftUserId === rightUserId;
+
+  const leftTurnKey = String(left?.openclawTurn?.turnKey || "");
+  const rightTurnKey = String(right?.openclawTurn?.turnKey || "");
+  return Boolean(leftTurnKey && rightTurnKey && leftTurnKey === rightTurnKey);
+}
+
+function isLikelyOpenClawIntermediatePersistedAnswer(answer: string): boolean {
+  const normalized = String(answer || "").trim().replace(/\s+/g, " ");
+  if (!normalized) return true;
+  if (extractOpenClawAnswerFileRefs(normalized).length > 0) return false;
+  if (/任务完成|已成功|文件详情|SHA256|输出产物清单已更新/.test(normalized)) return false;
+  if (normalized.length <= 80 && /(?:验证|检查|确认|计算|更新).*(?:文件|内容|哈希|SHA256|输出产物|清单)/.test(normalized)) {
+    return true;
+  }
+  return normalized.length <= 60;
+}
+
+function isStrongerOpenClawFinalAnswer(answer: string): boolean {
+  const normalized = String(answer || "").trim();
+  if (isLikelyOpenClawIntermediatePersistedAnswer(normalized)) return false;
+  return normalized.length > 80 || extractOpenClawAnswerFileRefs(normalized).length > 0 || /任务完成|已成功|文件详情/.test(normalized);
+}
+
+function areOpenClawRowsNearInTime(left: any, right: any): boolean {
+  const leftTime = readNumberValue(left?.updated_time, left?.created_time);
+  const rightTime = readNumberValue(right?.created_time, right?.updated_time);
+  if (!leftTime || !rightTime) return true;
+  return Math.abs(rightTime - leftTime) <= 5 * 60 * 1000;
+}
+
+function shouldDropDuplicateOpenClawIntermediateRow(row: any, laterRow: any): boolean {
+  const rowQuestion = String(row?.question || row?.raw_user_message?.content || "").trim();
+  const laterQuestion = String(laterRow?.question || laterRow?.raw_user_message?.content || "").trim();
+  if (!rowQuestion || rowQuestion !== laterQuestion) return false;
+  if (!areOpenClawRowsNearInTime(row, laterRow)) return false;
+  if (!rowsShareOpenClawOutputFile(row, laterRow) && !rowsShareOpenClawTurnIdentity(row, laterRow)) return false;
+
+  const answer = String(row?.answer || row?.openclawProjection?.visibleAnswer || "").trim();
+  const laterAnswer = String(laterRow?.answer || laterRow?.openclawProjection?.visibleAnswer || "").trim();
+  return isLikelyOpenClawIntermediatePersistedAnswer(answer) && isStrongerOpenClawFinalAnswer(laterAnswer);
+}
+
+export function collapseDuplicateOpenClawIntermediateRows(rows: any[]): any[] {
+  const collapsed: any[] = [];
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    const duplicateFinalRow = rows
+      .slice(index + 1, index + 4)
+      .find((candidate) => shouldDropDuplicateOpenClawIntermediateRow(row, candidate));
+
+    if (duplicateFinalRow) {
+      traceOpenClawUi("duplicate-intermediate.drop", {
+        id: row?.id,
+        nextId: duplicateFinalRow?.id,
+        questionHash: hashOpenClawText(row?.question || row?.raw_user_message?.content),
+        answerLength: String(row?.answer || row?.openclawProjection?.visibleAnswer || "").length,
+        nextAnswerLength: String(duplicateFinalRow?.answer || duplicateFinalRow?.openclawProjection?.visibleAnswer || "").length,
+      });
+      continue;
+    }
+
+    collapsed.push(row);
+  }
+
+  return collapsed;
+}
+
+function extractOpenClawAnswerFileRefs(answer: string): string[] {
+  const matches = String(answer || "").match(/[A-Za-z0-9._-]+\.(?:txt|md|pdf|docx|xlsx|pptx|csv|json|html|zip|png|jpg|jpeg|webp)/gi) || [];
+  return [...new Set(matches.map((item) => item.toLowerCase()))];
+}
+
+function extractPrimaryOpenClawAnswerFileRef(answer: string): string {
+  return extractOpenClawAnswerFileRefs(answer)[0] || "";
+}
+
+function shouldPreferPersistedOpenClawAnswer(projection: any, answer: string): boolean {
+  const persistedAnswer = String(answer || "").trim();
+  const projectedAnswer = String(projection?.visibleAnswer || "").trim();
+  if (!persistedAnswer) return false;
+  if (!projectedAnswer) return true;
+  if (persistedAnswer === projectedAnswer) return true;
+
+  const persistedFiles = extractOpenClawAnswerFileRefs(persistedAnswer);
+  if (persistedFiles.length === 0) return false;
+  const persistedPrimaryFile = extractPrimaryOpenClawAnswerFileRef(persistedAnswer);
+  const projectedPrimaryFile = extractPrimaryOpenClawAnswerFileRef(projectedAnswer);
+  if (persistedPrimaryFile && projectedPrimaryFile && persistedPrimaryFile !== projectedPrimaryFile) return true;
+  const projectedFiles = new Set(extractOpenClawAnswerFileRefs(projectedAnswer));
+  return persistedFiles.some((fileName) => !projectedFiles.has(fileName));
+}
+
+function applyPersistedAnswerToOpenClawProjection(projection: any, answer: string) {
+  const persistedAnswer = String(answer || "").trim();
+  if (!persistedAnswer) return projection;
+
+  let replacedAnswerItem = false;
+  const timelineItems = Array.isArray(projection?.timelineItems) ? projection.timelineItems : [];
+  const nextTimelineItems = timelineItems.map((item: any) => {
+    if (item?.type !== "answer" || replacedAnswerItem) return item;
+    replacedAnswerItem = true;
+    return {
+      ...item,
+      content: persistedAnswer,
+    };
+  });
+  if (!replacedAnswerItem && timelineItems.length > 0) {
+    const anchorItem = timelineItems[0];
+    nextTimelineItems.push(
+      buildOpenClawAnswerTimelineItem({
+        key: `${anchorItem?.sessionId || "openclaw"}:persisted-answer:${hashOpenClawText(persistedAnswer)}`,
+        sessionId: anchorItem?.sessionId,
+        seq: anchorItem?.seq,
+        createdAt: anchorItem?.createdAt,
+        content: persistedAnswer,
+        replace: true,
+        identityKey: `persisted:${hashOpenClawText(persistedAnswer)}`,
+      })
+    );
+  }
+
+  return {
+    ...projection,
+    visibleAnswer: persistedAnswer,
+    timelineItems: nextTimelineItems,
+  };
+}
+
 export function buildOpenClawMessages(
   messages: OpenClawMessage[],
   conversationId: string,
@@ -1480,7 +2041,7 @@ export function buildOpenClawMessages(
   if (options?.canonicalOnly && scopedEvents.some(hasOpenClawLedgerEvent)) {
     const canonicalRows = buildOpenClawMessagesFromCanonicalLedger(messages, conversationId, agentId, scopedEvents, options);
     if (canonicalRows) {
-      return canonicalRows;
+      return collapseDuplicateOpenClawIntermediateRows(canonicalRows);
     }
   }
 
@@ -1594,7 +2155,9 @@ export function buildOpenClawMessages(
 
   flushPendingTurn();
 
-  return mergeAdjacentOpenClawAssistantRows(rows).filter(shouldKeepOpenClawMessageRow);
+  return collapseDuplicateOpenClawIntermediateRows(
+    mergeAdjacentOpenClawAssistantRows(rows).filter(shouldKeepOpenClawMessageRow)
+  );
 }
 
 function omitEmptyOpenClawConversationId(params: ChatCompletionParams, requestSource: string) {
@@ -1642,6 +2205,7 @@ export function createOpenClawConversationApiAdapter({
       const response = await openclawApi.conversations(agentId, {
         limit: params?.limit || OPENCLAW_CONVERSATION_LIST_LIMIT,
         offset: params?.offset,
+        fresh: (params as any)?.fresh,
       });
       const payload = getOpenClawPayload(response);
       const sessions: OpenClawSession[] = payload.sessions || [];
@@ -1650,20 +2214,47 @@ export function createOpenClawConversationApiAdapter({
         data: {
           conversations: sessions.map((session) => buildOpenClawConversation(session, agentId)),
           pagination: payload.pagination,
+          ...openClawHistoryMeta(payload),
         },
       };
     },
 
-    messages: async (conversationId: string, params?: { offset?: number; limit?: number }) => {
+    messages: async (conversationId: string, params?: { offset?: number; limit?: number; fresh?: boolean }) => {
       const response = await openclawApi.messages(agentId, conversationId, {
         limit: params?.limit,
         offset: params?.offset,
+        fresh: params?.fresh,
       });
       const payload = getOpenClawPayload(response);
       const messages: OpenClawMessage[] = payload.messages || [];
       const ledgerEvents = getOpenClawTimelineEventsFromLedgerPayload(payload);
       const events: OpenClawTimelineEvent[] = ledgerEvents.length ? ledgerEvents : canonicalOnly ? [] : payload.events || [];
-      const projectedMessages = buildOpenClawMessages(messages, conversationId, agentId, events, { canonicalOnly });
+
+      let projectedMessages = buildOpenClawMessages(messages, conversationId, agentId, events, { canonicalOnly });
+      let pagination = payload.pagination;
+
+      if (isOpenClawMirrorPayload(payload) && projectedMessages.length === 0) {
+        const ledgerRows = buildOpenClawMessagesFromLedgerOnly(events, conversationId, agentId, { canonicalOnly });
+        if (ledgerRows && ledgerRows.length > 0) {
+          const page = paginateOpenClawProjectedRows(ledgerRows, params);
+          projectedMessages = page.rows;
+          pagination = page.pagination;
+        } else if (openclawApi.snapshot) {
+          try {
+            const snapshotResponse = await openclawApi.snapshot(agentId, conversationId);
+            const snapshotPayload = getOpenClawPayload(snapshotResponse);
+            const snapshotEvents = getOpenClawTimelineEventsFromLedgerPayload(snapshotPayload);
+            const snapshotRows = buildOpenClawMessagesFromLedgerOnly(snapshotEvents, conversationId, agentId, { canonicalOnly });
+            if (snapshotRows && snapshotRows.length > 0) {
+              const page = paginateOpenClawProjectedRows(snapshotRows, params);
+              projectedMessages = page.rows;
+              pagination = page.pagination;
+            }
+          } catch {
+            // Cached messages are still usable when the mirrored snapshot is unavailable.
+          }
+        }
+      }
       traceOpenClawUi("messages.projected", {
         conversationId,
         rawMessageCount: messages.length,
@@ -1686,19 +2277,20 @@ export function createOpenClawConversationApiAdapter({
       return {
         data: {
           messages: projectedMessages,
-          pagination: payload.pagination,
+          pagination,
+          ...openClawHistoryMeta(payload),
         },
       };
     },
 
-    events: async (conversationId: string, params?: { offset?: number; limit?: number; after_seq?: number }) => {
+    events: async (conversationId: string, params?: { offset?: number; limit?: number; after_seq?: number; fresh?: boolean }) => {
       const response = await openclawApi.events(agentId, conversationId, params);
       return {
         data: getOpenClawPayload(response),
       };
     },
 
-    snapshot: async (conversationId: string, params?: { after_seq?: number }) => {
+    snapshot: async (conversationId: string, params?: { after_seq?: number; fresh?: boolean }) => {
       if (!openclawApi.snapshot) {
         return { data: null };
       }
@@ -1710,6 +2302,14 @@ export function createOpenClawConversationApiAdapter({
 
     control: async (conversationId: string, data: ConversationControlParams) => {
       return openclawApi.control(agentId, conversationId, data);
+    },
+
+    ensureSkill: async (skill) => {
+      const skillIdentifier = skill.skill_id || skill.id || skill.skill_name;
+      if (!skillIdentifier || !openclawApi.ensureSkill) {
+        return null;
+      }
+      return openclawApi.ensureSkill(agentId, skillIdentifier);
     },
 
     edit: async () => Promise.resolve({ data: null }),

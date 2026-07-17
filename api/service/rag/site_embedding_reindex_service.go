@@ -222,7 +222,6 @@ func (s *SiteEmbeddingReindexService) ProcessNextPage(ctx context.Context, runID
 
 	// 循环处理：当前库无文件时自动前进到下一库，直到有文件可处理或所有库完成
 	maxLibIter := siteEmbeddingReindexDefaultPageSize // 防止无限循环
-	rebuiltLibraries := map[int64]struct{}{}
 	for maxLibIter > 0 {
 		maxLibIter--
 
@@ -297,12 +296,46 @@ func (s *SiteEmbeddingReindexService) ProcessNextPage(ctx context.Context, runID
 		}
 
 		if run.DimensionChanged {
-			if _, ok := rebuiltLibraries[file.LibraryID]; !ok {
-				if err := siteEmbeddingReindexRuntimeHooks.rebuildCollection(ctx, run.Eid, file.LibraryID, run.NewDimension); err != nil {
-					return err
+			mode := GetVectorCollectionMode()
+			isEnterpriseMode := mode == VectorCollectionModeEnterprise || mode == VectorCollectionModeDual
+			logger.SysLogf("【诊断-重建集合触发】eid=%d, file_id=%d, library_id=%d, new_dimension=%d, mode=%s, rebuilt_library_ids=%s", run.Eid, file.ID, file.LibraryID, run.NewDimension, mode, run.RebuiltLibraryIDs)
+			if isEnterpriseMode {
+				if !run.IsEnterpriseRebuilt() {
+					logger.SysLogf("【诊断-重建集合执行-enterprise】eid=%d, library_id=%d", run.Eid, file.LibraryID)
+					if err := siteEmbeddingReindexRuntimeHooks.rebuildCollection(ctx, run.Eid, file.LibraryID, run.NewDimension); err != nil {
+						logger.SysLogf("【诊断-重建集合失败】eid=%d, library_id=%d, err=%v", run.Eid, file.LibraryID, err)
+						return err
+					}
+					logger.SysLogf("【诊断-重建集合成功-enterprise】eid=%d, library_id=%d", run.Eid, file.LibraryID)
+					run.MarkEnterpriseRebuilt()
+					if err := model.UpdateEmbeddingReindexRunProgress(s.db.WithContext(ctx), run.RunID, map[string]interface{}{
+						"rebuilt_library_ids": run.RebuiltLibraryIDs,
+					}); err != nil {
+						return err
+					}
+				} else {
+					logger.SysLogf("【诊断-重建集合跳过-enterprise】eid=%d, library_id=%d, enterprise集合已重建", run.Eid, file.LibraryID)
 				}
-				rebuiltLibraries[file.LibraryID] = struct{}{}
+			} else {
+				if !run.IsLibraryRebuilt(file.LibraryID) {
+					logger.SysLogf("【诊断-重建集合执行】eid=%d, library_id=%d", run.Eid, file.LibraryID)
+					if err := siteEmbeddingReindexRuntimeHooks.rebuildCollection(ctx, run.Eid, file.LibraryID, run.NewDimension); err != nil {
+						logger.SysLogf("【诊断-重建集合失败】eid=%d, library_id=%d, err=%v", run.Eid, file.LibraryID, err)
+						return err
+					}
+					logger.SysLogf("【诊断-重建集合成功】eid=%d, library_id=%d", run.Eid, file.LibraryID)
+					run.MarkLibraryRebuilt(file.LibraryID)
+					if err := model.UpdateEmbeddingReindexRunProgress(s.db.WithContext(ctx), run.RunID, map[string]interface{}{
+						"rebuilt_library_ids": run.RebuiltLibraryIDs,
+					}); err != nil {
+						return err
+					}
+				} else {
+					logger.SysLogf("【诊断-重建集合跳过】eid=%d, library_id=%d 已被重建", run.Eid, file.LibraryID)
+				}
 			}
+		} else {
+			logger.SysLogf("【诊断-重建集合未触发】eid=%d, file_id=%d, library_id=%d, dimension_changed=false, old_dimension=%d, new_dimension=%d", run.Eid, file.ID, file.LibraryID, run.OldDimension, run.NewDimension)
 		}
 
 		if err := s.resetFileVectorState(ctx, run, &file); err != nil {
@@ -593,13 +626,36 @@ func rebuildSiteEmbeddingReindexCollection(ctx context.Context, eid, libraryID i
 	}
 	defer store.Disconnect(ctx)
 
-	collection := model.GetVectorCollectionName(library.UUID)
-	if err := store.DeleteCollection(ctx, collection); err != nil {
-		if vectorstore.IsNotFoundError(err) {
-			return nil
+	mode := GetVectorCollectionMode()
+	logger.SysLogf("【诊断-重建删除集合】eid=%d, library_id=%d, mode=%s", eid, libraryID, mode)
+
+	// 1. 对于 library-level 集合：删除整个集合（因为每个库独立）
+	libCollection := model.GetVectorCollectionName(library.UUID)
+	if err := store.DeleteCollection(ctx, libCollection); err != nil {
+		if !vectorstore.IsNotFoundError(err) {
+			return fmt.Errorf("删除库级集合 %s 失败: %v", libCollection, err)
 		}
-		return err
+		logger.SysLogf("【诊断-重建删除集合】库级集合不存在跳过: %s", libCollection)
+	} else {
+		logger.SysLogf("【诊断-重建删除集合】已删除库级集合: %s", libCollection)
 	}
+
+	// 2. 对于 enterprise-level 集合：维度变化时整个集合必须重建（Qdrant 集合维度固定不可变）
+	if mode == VectorCollectionModeEnterprise || mode == VectorCollectionModeDual {
+		entCollection := model.GetDocumentVectorCollectionName(eid)
+		logger.SysLogf("【诊断-重建删除集合-enterprise】eid=%d, library_id=%d, dimension=%d, collection=%s", eid, libraryID, newDimension, entCollection)
+		if err := store.DeleteCollection(ctx, entCollection); err != nil {
+			if !vectorstore.IsNotFoundError(err) {
+				return fmt.Errorf("删除企业级集合 %s 失败: %v", entCollection, err)
+			}
+			logger.SysLogf("【诊断-重建删除集合-enterprise】企业级集合不存在跳过: %s", entCollection)
+		} else {
+			logger.SysLogf("【诊断-重建删除集合-enterprise】已删除企业级集合: %s", entCollection)
+		}
+	}
+
+	logger.SysLogf("【诊断-重建删除集合完成】eid=%d, library_id=%d, mode=%s, new_dimension=%d", eid, libraryID, mode, newDimension)
+
 	return nil
 }
 

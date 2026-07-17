@@ -172,10 +172,9 @@ func (s *ContentGeneratorService) GenerateSummary(ctx context.Context, eid int64
 	defer cancel()
 
 	// 使用带超时的上下文（虽然Chat方法目前不接受context，但保留以便后续改进）
-	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 1024, 6000)
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: budget.OutputLimit,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 	}
 	testMessage := relaymodel.Message{
 		Role:    "system",
@@ -207,10 +206,9 @@ func (s *ContentGeneratorService) GenerateQuestions(ctx context.Context, eid int
 	// 构建问题生成的提示词
 	prompt := s.buildQuestionsPrompt(req.Content, req.MaxQuestions)
 
-	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 1024, 6000)
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: budget.OutputLimit,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 	}
 	testMessage := relaymodel.Message{
 		Role:    "system",
@@ -617,7 +615,7 @@ func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Contex
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: budget.OutputLimit,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 	}
 	systemMessage := relaymodel.Message{
 		Role:    "system",
@@ -667,7 +665,7 @@ func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx contex
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: budget.OutputLimit,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 	}
 	systemMessage := relaymodel.Message{
 		Role:    "system",
@@ -714,7 +712,7 @@ func (s *ContentGeneratorService) GenerateSummaryQuestionsKnowledgeMap(ctx conte
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: budget.OutputLimit,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 	}
 	systemMessage := relaymodel.Message{
 		Role:    "system",
@@ -813,7 +811,7 @@ func (s *ContentGeneratorService) GenerateKnowledgeMap(ctx context.Context, chan
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     modelName,
-		MaxTokens: budget.OutputLimit,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 	}
 	systemMessage := relaymodel.Message{
 		Role:    "system",
@@ -1117,7 +1115,7 @@ func (s *ContentGeneratorService) GenerateContentForKnowledgeChunk(ctx context.C
 			summaries, err = s.GenerateSummary(ctx, eid, config, &GenerateSummaryRequest{
 				Content:      content,
 				MaxSummaries: 3,   // 默认生成3个概要
-				MaxTokens:    150, // 每个概要最多150个token
+				MaxTokens:    0, // 不限制输出，由模型自由生成
 			})
 		}
 		summaryChan <- SummaryResult{summaries: summaries, err: err}
@@ -1132,7 +1130,7 @@ func (s *ContentGeneratorService) GenerateContentForKnowledgeChunk(ctx context.C
 			questions, err = s.GenerateQuestions(ctx, eid, config, &GenerateQuestionsRequest{
 				Content:      content,
 				MaxQuestions: 5,   // 默认生成5个问题
-				MaxTokens:    100, // 每个问题最多100个token
+				MaxTokens:    0, // 不限制输出，由模型自由生成
 			})
 		}
 		questionChan <- QuestionResult{questions: questions, err: err}
@@ -1176,7 +1174,11 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 	c.Request.Header.Set("Authorization", "Bearer "+channel.Key)
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set(ctxkey.Channel, channel.Type)
-	c.Set(ctxkey.BaseURL, channel.GetBaseURL())
+	baseURL := channel.GetBaseURL()
+	if baseURL == "" && channel.Type >= 1000 {
+		return "", nil, fmt.Errorf("channel %d (type %d) has no base URL configured", channel.ChannelID, channel.Type), nil
+	}
+	c.Set(ctxkey.BaseURL, baseURL)
 	cfg, _ := channel.LoadConfig()
 	c.Set(ctxkey.Config, cfg)
 	middleware.SetupContextForSelectedChannel(c, channel, "")
@@ -1281,6 +1283,22 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 	if err != nil {
 		return "", nil, err, nil
 	}
+
+	// 统一 token 预算日志
+	usageTokenCfg := tokenlimit.ParseConfig(ctx, channel.ChannelID, channel.Config, meta.ActualModelName)
+	ctxSource, mtSource := tokenlimit.ReportConfigSource(usageTokenCfg, meta.ActualModelName)
+	inputBudget := tokenlimit.DefaultContextBudget
+	if usageTokenCfg.ContextLength > 0 {
+		inputBudget = int(usageTokenCfg.ContextLength)
+	}
+	logger.Infof(ctx, "【智能生成-token 预算】类型=content_gen 步骤=test_channel 模型=%s\n"+
+		"  输入预算=%d 实际输入token=%d 输出上限=%d 实际输出token=%d\n"+
+		"  上下文来源=%s 输出上限来源=%s",
+		meta.ActualModelName,
+		inputBudget, usage.PromptTokens,
+		request.MaxTokens, usage.CompletionTokens,
+		ctxSource, mtSource)
+
 	return responseMessage, usage, nil, nil
 }
 

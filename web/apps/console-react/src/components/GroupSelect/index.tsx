@@ -4,15 +4,17 @@ import { t } from "@/locales";
 import groupApi from "@/api/modules/group";
 import { GROUP_TYPE, type GroupType } from "@/constants/group";
 import { DeptMemberPicker } from "@/components/DeptMemberPicker";
+import type { ScopeItem } from "@km/shared-business/agent-create";
 
 export interface GroupSelectProps {
   value?: number | string | number[] | string[] | null;
   onChange?: (value: number | string | number[] | string[] | null) => void;
   onConfirm?: (value: number | string | number[] | string[] | null) => void;
   groupType?: GroupType;
-  type?: "select" | "checkbox" | "picker" | "radio";
+  type?: "select" | "checkbox" | "picker" | "radio" | "scope";
   defaultAll?: boolean;
   defaultFirst?: boolean;
+  defaultFirstValue?: boolean;
   disabled?: boolean;
   size?: "large" | "middle" | "small";
   style?: React.CSSProperties;
@@ -50,6 +52,7 @@ function GroupSelectInner(
     type = "select",
     defaultAll = false,
     defaultFirst = false,
+    defaultFirstValue = false,
     disabled = false,
     size = "middle",
     style,
@@ -179,6 +182,24 @@ function GroupSelectInner(
         defaultAll={defaultAll}
         defaultFirst={defaultFirst}
         simpleValue
+        trigger={children || undefined}
+      />
+    );
+  }
+
+  // Render scope type - delegate to DeptMemberPicker with scope mode
+  if (type === "scope") {
+    return (
+      <DeptMemberPicker
+        ref={pickerRef}
+        value={value as ScopeItem[]}
+        onChange={(val) => onChangeRef.current?.(val as ScopeItem[])}
+        onConfirm={(result) => onConfirmRef.current?.(result.value as ScopeItem[])}
+        type="scope"
+        defaultFirstValue={defaultFirstValue}
+        defaultAll={defaultAll}
+        simpleValue
+        multiple
         trigger={children || undefined}
       />
     );

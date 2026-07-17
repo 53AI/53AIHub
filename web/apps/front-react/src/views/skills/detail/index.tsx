@@ -14,7 +14,6 @@ import Header, { BreadcrumbItem } from "@/components/Layout/Header";
 import Footer from "@/components/Layout/Footer";
 import DetailBreadcrumb, { MODULE_CONFIGS } from "@/components/DetailBreadcrumb";
 import { useSkillsStore } from "@/stores/modules/skills";
-import { useNavigationStore } from "@/stores/modules/navigation";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { t } from "@/locales";
 import { skillApi } from "@/api/modules/skill";
@@ -22,18 +21,8 @@ import type { SkillDetail } from "@/api/modules/skill/types";
 import SkillEnvVarsDrawer from "../components/SkillEnvVarsDrawer";
 import { api_host } from '@/utils/config';
 import AuthTagGroup from "@/components/AuthTagGroup";
+import AddSkillModal from "../components/AddSkillModal";
 import { checkPermission } from "@/utils/permission";
-
-const getStarClipRight = (starIndex: number, value: number): number => {
-  if (starIndex <= Math.floor(value)) {
-    return 0;
-  } else if (starIndex === Math.ceil(value)) {
-    const decimal = value - Math.floor(value);
-    return (1 - decimal) * 100;
-  } else {
-    return 100;
-  }
-};
 
 const getQualityIcon = (key: string) => {
   const iconMap: Record<string, string> = {
@@ -51,13 +40,13 @@ export function SkillDetailView() {
   const { skill_id } = useParams<{ skill_id: string }>();
   const [searchParams] = useSearchParams();
   const skillsStore = useSkillsStore();
-  const navigationStore = useNavigationStore();
   const isSoftStyle = useIsSoftStyle();
 
   const [skill, setSkill] = useState<SkillDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeFaq, setActiveFaq] = useState("0");
   const [envDrawerOpen, setEnvDrawerOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
 
   const type = (searchParams.get("type") as "explore" | "my") || "explore";
   const urlGroupId = searchParams.get("group_id");
@@ -209,20 +198,12 @@ export function SkillDetailView() {
     });
   };
 
-  const handleAdd = async () => {
-    if (!skill || skill.added) return;
+  const handleAdd = () => {
+    if (!skill) return;
     checkPermission({
       groupIds: skill?.group_ids || [],
       onClick: async () => {
-        try {
-          await skillApi.addToMy(skill.id);
-          fetchSkillDetail();
-          await skillsStore.loadSkillList({ isRefresh: true });
-          await skillsStore.loadMySkillList(true);
-          message.success(t('agent.add_success'));
-        } catch (error) {
-          message.error(t('agent.add_failed'));
-        }
+        setAddModalOpen(true);
       }
     })
   };
@@ -542,7 +523,17 @@ export function SkillDetailView() {
         skillDisplayName={skill.display_name}
         onClose={() => setEnvDrawerOpen(false)}
       />
-      
+
+      {/* 添加技能弹窗 */}
+      <AddSkillModal
+        open={addModalOpen}
+        skillId={skill.id}
+        groupIds={skill.group_ids}
+        onClose={() => setAddModalOpen(false)}
+        onSuccess={() => {
+          setAddModalOpen(false);
+        }}
+      />
     </div>
   );
 }

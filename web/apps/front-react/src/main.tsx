@@ -6,12 +6,16 @@ import { App } from "./App";
 import { setupRouter } from "./router";
 import { setupGlobalMethods } from "./global/methods";
 import { getEnvConfig } from "./api/modules/env-config";
+import { setupChunkErrorHandler } from "@km/shared-utils";
 import "./locales";
 
 // Styles
 import "antd/dist/reset.css";
 import "./styles/index.css";
 import "@km/hub-ui-x-react/index.css";
+
+// 尽早初始化 chunk 错误处理（在任何路由加载之前）
+setupChunkErrorHandler();
 
 // 异步加载 SVG 图标
 if (typeof window !== "undefined") {
@@ -59,7 +63,13 @@ async function bootstrap() {
 
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
-      <ConfigProvider locale={zhCN}>
+      <ConfigProvider
+        locale={zhCN}
+        modal={{
+          centered: true,
+          mask: { closable: false },
+        }}
+      >
         <App />
       </ConfigProvider>
     </React.StrictMode>,

@@ -1,62 +1,13 @@
 import { useCallback } from "react";
+import type { ChunkItem, RagStats } from "../types";
 import { parseJson } from "./useChatStream";
+import { formatFileInfo } from '@km/shared-utils';
 
-interface RagChunk {
-  chunk_id?: string;
-  chunk_type?: string;
-  file_id?: string;
-  file_name?: string;
-  file_path?: string;
-  library_id?: string;
-  source_key?: string;
-  content?: string;
-  score?: number;
-  source?: string;
-  url?: string;
-  icon?: string;
-  file_icon?: string;
-}
+type RagChunk = ChunkItem;
 
-interface RagStats {
-  type?: string;
-  chunks?: RagChunk[];
-  document_quotations?: string[];
-  file_quotations?: string[];
-  library_search?: RagChunk[];
-  files_search?: RagChunk[];
-  document_search?: {
-    chunks?: RagChunk[];
-  };
-}
 
-interface FormatFileInfoResult {
-  ext: string;
-  mime: string;
-  fname: string;
-  icon: string;
-}
+export function useRagStats() {
 
-type FormatFileInfoFn = (fileName: string, isfolder?: boolean) => FormatFileInfoResult;
-
-// Default simple implementation - should be overridden by providing formatFileInfo
-const defaultFormatFileInfo: FormatFileInfoFn = (fileName: string) => {
-  const name = fileName || "";
-  const parts = name.split(".");
-  const ext = parts.length > 1 ? parts.pop() || "" : "";
-  return {
-    ext,
-    mime: ext,
-    fname: parts.join(".") || name,
-    icon: ext,
-  };
-};
-
-interface UseRagStatsOptions {
-  formatFileInfo?: FormatFileInfoFn;
-}
-
-export function useRagStats(options?: UseRagStatsOptions) {
-  const formatFileInfo = options?.formatFileInfo || defaultFormatFileInfo;
 
   const formatRagStats = useCallback(
     (ragStats: any, processRecords: any[] = []): RagStats | null => {

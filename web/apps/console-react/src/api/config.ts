@@ -32,9 +32,16 @@ const defaultRetryConfig: RetryConfig = {
 }
 
 // 解析流式响应
+// 与 front-react/src/api/config.ts 对齐：回调参数中附带原始 progressEvent，
+// 供调用方（例如 useChatStream.processStreamData）按 e.event.target.response 二次解析。
 const parseStreamResponse = (
   progressEvent: AxiosProgressEvent,
-  originalCallback?: (data: { chunks: any[]; intact_content: string; intact_reasoning_content: string }) => void
+  originalCallback?: (data: {
+    progressEvent: AxiosProgressEvent
+    chunks: any[]
+    intact_content: string
+    intact_reasoning_content: string
+  }) => void
 ) => {
   const responseText = (progressEvent as any)?.event?.target?.responseText || ''
   let chunks: any[] = []
@@ -74,7 +81,7 @@ const parseStreamResponse = (
   }
 
   if (originalCallback) {
-    originalCallback({ chunks, intact_content, intact_reasoning_content })
+    originalCallback({ progressEvent, chunks, intact_content, intact_reasoning_content })
   }
 }
 

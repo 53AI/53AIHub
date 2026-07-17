@@ -89,7 +89,7 @@ export function RecentAccess({
   }));
 
   const fileItems = recentFiles.map((item) => {
-    const { icon, fname } = formatFileInfo(item.path || item.name, item.is_dir || false);
+    const { icon, fname } = formatFileInfo(item.is_dir ? item.name : item.path, item.is_dir || false);
     return {
       id: item.resource_id,
       name: fname,

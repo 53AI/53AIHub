@@ -179,8 +179,10 @@ export function ModelSaveDialog({
   // 展开的模型 ID 集合
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
 
-  // 切换模型展开状态
-  const toggleExpand = (modelId: string) => {
+  // 切换模型展开状态（仅推理模型可展开）
+  const toggleExpand = (modelId: string, modelType?: string) => {
+    // 非推理模型不允许展开
+    if (modelType && String(modelType) !== MODEL_USE_TYPE.REASONING) return;
     setExpandedModels((prev) => {
       const next = new Set(prev);
       if (next.has(modelId)) {
@@ -255,11 +257,11 @@ export function ModelSaveDialog({
       }));
 
     return modelOptions.map((item) => ({
-      ...item,
+        ...item,
       models: item.models.concat(
-        customModels.filter(
-          (model: any) => model.model_type === item.model_type,
-        ),
+            customModels.filter(
+              (model: any) => model.model_type === item.model_type,
+            ),
       ),
     }));
   }, [modelOptions, formData.custom_config]);
@@ -414,6 +416,7 @@ export function ModelSaveDialog({
           models: item.models.map((model: any) => ({
             ...model,
             is_system: true,
+            model_type: item.model_type,
             value: buildModelValue(item.model_type, model.model_id),
             label: model.model_name,
           })),
@@ -1096,12 +1099,15 @@ export function ModelSaveDialog({
             {opt.models.map((item) => (
               <div key={item.value} className="flex flex-col">
                 <div className="h-8 flex items-center gap-1.5">
-                  <SvgIcon
-                    name={expandedModels.has(item.model_id) ? "down" : "right"}
-                    width={14}
-                    className="cursor-pointer text-gray-400 hover:text-gray-600 flex-none"
-                    onClick={() => toggleExpand(item.model_id)}
-                  />
+                  {/* 只有推理模型才显示展开/折叠图标 */}
+                  {String(item.model_type) === MODEL_USE_TYPE.REASONING && (
+                    <SvgIcon
+                      name={expandedModels.has(item.model_id) ? "down" : "right"}
+                      width={14}
+                      className="cursor-pointer text-gray-400 hover:text-gray-600 flex-none"
+                      onClick={() => toggleExpand(item.model_id, String(item.model_type))}
+                    />
+                  )}
                   {item.icon && (
                     <img
                       src={item.icon}
@@ -1109,7 +1115,7 @@ export function ModelSaveDialog({
                       alt=""
                     />
                   )}
-                  <div className="flex-1 flex items-center gap-1 overflow-hidden cursor-pointer" onClick={() => toggleExpand(item.model_id)}>
+                  <div className="flex-1 flex items-center gap-1 overflow-hidden cursor-pointer" onClick={() => toggleExpand(item.model_id, String(item.model_type))}>
                     <span className="text-sm truncate">{item.model_name}</span>
                     {item.model_name !== item.model_id && (
                       <>
@@ -1239,7 +1245,7 @@ export function ModelSaveDialog({
         centered
         destroyOnHidden
         getContainer={false}
-        maskClosable={false}
+        mask={{ closable: false }}
         styles={{
           body: {
             maxHeight: "60vh",
@@ -1318,7 +1324,7 @@ export function ModelSaveDialog({
         centered
         destroyOnHidden
         getContainer={false}
-        maskClosable={false}
+        mask={{ closable: false }}
         footer={[
           <Button key="cancel" onClick={() => setModelAddVisible(false)}>
             {t("action_cancel")}
@@ -1375,7 +1381,7 @@ export function ModelSaveDialog({
               <Form.Item
                 label={t("module.platform_model_max_tokens")}
                 name="max_tokens"
-              >{}
+              >
                 <InputNumber
                   className="w-full"
                   min={1}
@@ -1423,17 +1429,17 @@ export function ModelSaveDialog({
           )}
           {modelAddData.model_type === MODEL_USE_TYPE.EMBEDDING && (
             <>
-              <Form.Item
-                label={t("module.platform_model_vector_dimension")}
-                name="vector_dimension"
-              >
-                <InputNumber
-                  className="w-full"
-                  min={1}
-                  controls={false}
-                  onChange={handleVectorDimensionChange}
-                />
-              </Form.Item>
+            <Form.Item
+              label={t("module.platform_model_vector_dimension")}
+              name="vector_dimension"
+            >
+              <InputNumber
+                className="w-full"
+                min={1}
+                controls={false}
+                onChange={handleVectorDimensionChange}
+              />
+            </Form.Item>
               <Form.Item
                 label={t("module.platform_model_context_length")}
                 name="context_length"

@@ -10,7 +10,7 @@ import type {
 export const ragStrategyApi = {
   getList(): Promise<Strategy[]> {
     return service
-      .get('/api/rag/v2/strategies')
+      .get('/api/rag/v2/strategies?detail=1')
       .then((res: any) => res?.data ?? [])
       .catch(handleError)
   },

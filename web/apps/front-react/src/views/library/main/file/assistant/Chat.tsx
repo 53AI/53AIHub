@@ -12,16 +12,17 @@ import { Dropdown } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
-import { Sender } from "@/components/Chat/Sender";
-import { MessageMenu } from "@/components/Chat/MessageMenu";
-import { FeedbackPanel } from "@/components/Chat/FeedbackPanel";
-import { RagHeader } from "@/components/Chat/RagHeader";
-import { Quotation } from "@/components/Chat/Quotation";
-import { SpecifiedFiles } from "@/components/Chat/SpecifiedFiles";
-import { ShareHeader } from "@/components/Chat/ShareHeader";
+import { Sender, MessageMenu } from "@/components/Chat";
+import {
+  FeedbackPanel,
+  RagHeader,
+  Quotation,
+  SpecifiedFiles,
+  ShareHeader,
+  Chunk,
+  ThinkKnowledge
+} from "@km/shared-business/chat";
 import { AddAnswerAsMd } from "@/components/Chat/AddAnswerAsMd";
-import { Chunk } from "@/components/Chat/Chunk";
-import { ThinkKnowledge } from "@/components/Chat/ThinkKnowledge";
 import { ModelView } from "@/components/Model/view";
 import { ChatHistoryDrawer } from "./components/ChatHistoryDrawer";
 import {
@@ -34,16 +35,20 @@ import { useFileConversationStore } from "./conversation";
 import { useUserStore } from "@/stores/modules/user";
 import { useSpaceStore } from "@/stores/modules/space";
 import { usePoll } from "@/hooks/usePoll";
-import { useChatMessages } from "@/composables/useChatMessages";
-import { useChatSend } from "@/composables/useChatSend";
-import { useChatFeedback } from "@/composables/useChatFeedback";
-import { useChatShare } from "@/composables/useChatShare";
+import {
+  useChatMessages,
+  useChatSend,
+  useChatFeedback,
+  useChatShare,
+} from "@km/shared-business/chat";
 import { getGreetingByTime } from "@km/shared-utils";
 import { GROUP_TYPE } from "@/constants/group";
 import { RUN_STATUS } from "@/constants/chunk";
 import agentsApi from "@/api/modules/agents";
 import filesApi from "@/api/modules/files";
 import promptApi from "@/api/modules/prompt";
+import chunksApi from "@/api/modules/chunks";
+import { markdownPreview } from "@/components/Markdown/helper";
 import "./Chat.css";
 
 interface ModelItem {
@@ -397,6 +402,24 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
       handleSourceReferenceHoverBase(data, msg, chunkRef, chunkSourceRef);
     };
 
+    // Chunk 详情获取回调
+    const handleFetchChunkDetail = useCallback(async (chunkId: string) => {
+      const chunk = await chunksApi.get(Number(chunkId));
+      return {
+        content: chunk.content,
+        token_count: chunk.token_count,
+        chunk_index: chunk.chunk_index,
+      };
+    }, []);
+
+    // Markdown 渲染回调
+    const handleRenderMarkdown = useCallback(
+      async (element: HTMLDivElement, content: string) => {
+        await markdownPreview(element, content);
+      },
+      []
+    );
+
     // 来源编号渲染
     const renderSource = (type: string, number: number, msg: any) => {
       if (msg.rag_stats?.type === "web_search") {
@@ -722,13 +745,13 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
                           type="assistant"
                           content={msg.answer}
                           feedbackType={msg.feedback_type}
-                          showShare={true}
+                          features={{ share: true, feedback: true, addAsFile: true }}
                           onRegenerate={() => handleRegenerate(msg)}
                           onFeedback={(type) =>
                             handleClickFeedbackBtn(msg, type)
                           }
                           onShare={() => handleOpenShare(msg)}
-                          onAddAsMd={() => handleAddAsMd(msg)}
+                          onAddAsFile={() => handleAddAsMd(msg)}
                         />
                       ) : undefined
                     }
@@ -953,7 +976,12 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
         )}
 
         {/* Chunk popup */}
-        <Chunk ref={chunkRef} virtualRef={chunkSourceRef} />
+        <Chunk
+          ref={chunkRef}
+          virtualRef={chunkSourceRef}
+          fetchChunkDetail={handleFetchChunkDetail}
+          renderMarkdown={handleRenderMarkdown}
+        />
 
         {/* Think Knowledge sidebar */}
         {showThinkKnowledge && (

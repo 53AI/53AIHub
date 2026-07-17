@@ -5,17 +5,16 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { Spin, message } from "antd";
+import { Spin, message, Button } from "antd";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
-import { MessageMenu } from "@/components/Chat/MessageMenu";
-import { FeedbackPanel } from "@/components/Chat/FeedbackPanel";
+import { MessageMenu, FeedbackPanel } from "@/components/Chat";
 import { BubbleAssistant } from "@km/hub-ui-x-react";
 import { filesApi } from "@/api/modules/files";
 import conversationApi from "@/api/modules/conversation";
 import { usePoll } from "@/hooks/usePoll";
-import { useChatFeedback } from "@/composables/useChatFeedback";
+import { useChatFeedback } from "@km/shared-business/chat";
 import "./Map.css";
 
 interface MapProps {
@@ -215,8 +214,7 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
               type="assistant"
               content={msg.answer}
               feedbackType={msg.feedback_type}
-              showAddMd={false}
-              showFeedback={!!msg.id}
+              features={{ feedback: !!msg.id, addAsFile: false }}
               onRegenerate={handleGenerateKnowledgeMap}
               onFeedback={(type) => handleClickFeedbackBtn(type)}
             />
@@ -274,6 +272,16 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
           <p>- {t("library.use_case_1")}</p>
           <p>- {t("library.use_case_2")}</p>
           <p>- {t("library.use_case_3")}</p>
+        </div>
+        <div className="mt-7">
+          <Button
+            className="w-full"
+            type="primary"
+            size="large"
+            onClick={handleGenerateKnowledgeMap}
+          >
+            {t("chat.start_generate")}
+          </Button>
         </div>
         <div className="text-xs text-[#999999] text-center mt-3">
           {t("library.ai_disclaimer")}

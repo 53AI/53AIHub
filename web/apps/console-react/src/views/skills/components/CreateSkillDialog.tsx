@@ -281,7 +281,7 @@ const CreateSkillDialog = forwardRef<CreateSkillDialogRef>((props, ref) => {
       setLoadingDialogVisible(false);
       setDialogVisible(false);
       navigate({
-        pathname: "/skill-detail",
+        pathname: "/skills/create",
         search: `?skill_id=${result.skill_id}&isNew=true`,
       });
     } catch (error: any) {
@@ -324,7 +324,7 @@ const CreateSkillDialog = forwardRef<CreateSkillDialogRef>((props, ref) => {
       setDialogVisible(false);
       setScanJobId(null);
       navigate({
-        pathname: "/skill-detail",
+        pathname: "/skills/create",
         search: `?skill_id=${skillId}&isNew=true`,
       });
     } catch (error: any) {

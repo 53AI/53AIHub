@@ -41,6 +41,8 @@ export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
   const previewRef = useRef<HTMLDivElement>(null)
   const highlighterInstanceRef = useRef<any>(null)
   const eventCallbackRef = useRef<Event[]>([])
+  const renderTimerRef = useRef<number | null>(null)
+  const renderSeqRef = useRef(0)
 
   const handleMenuClick = useCallback((item: any, text: string) => {
     window.dispatchEvent(new CustomEvent('quick-command', {
@@ -107,6 +109,14 @@ export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
   const loadFile = useCallback(async () => {
     setLoading(true)
     setError('')
+    renderSeqRef.current += 1
+    if (renderTimerRef.current != null) {
+      window.clearTimeout(renderTimerRef.current)
+      renderTimerRef.current = null
+    }
+    if (previewRef.current) {
+      previewRef.current.innerHTML = ''
+    }
 
     try {
       let mdContent = ''
@@ -128,8 +138,12 @@ export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
       setMarkdownContent(mdContent)
 
       // 等待 DOM 更新后渲染
-      setTimeout(async () => {
+      const renderSeq = renderSeqRef.current
+      renderTimerRef.current = window.setTimeout(async () => {
+        renderTimerRef.current = null
+        if (renderSeqRef.current !== renderSeq) return
         if (previewRef.current && mdContent) {
+          previewRef.current.innerHTML = ''
           await markdownPreview(previewRef.current, mdContent, {
             mode: 'light',
             hljs: {
@@ -164,6 +178,11 @@ export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
 
     return () => {
       window.removeEventListener('viewer-event', viewerEvent)
+      renderSeqRef.current += 1
+      if (renderTimerRef.current != null) {
+        window.clearTimeout(renderTimerRef.current)
+        renderTimerRef.current = null
+      }
       if (highlighterInstanceRef.current) {
         try {
           highlighterInstanceRef.current.destroy()
@@ -199,10 +218,10 @@ export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
   }
 
   return (
-    <div className="h-full w-full overflow-hidden bg-white">
+    <div className="markdown-viewer-root h-full w-full overflow-hidden bg-white">
       <div className="h-full flex flex-col">
         <div className="flex-1 overflow-auto">
-          <div ref={previewRef} className="vditor-reset p-6" />
+          <div ref={previewRef} className="markdown-viewer-content vditor-reset p-6" />
         </div>
       </div>
     </div>

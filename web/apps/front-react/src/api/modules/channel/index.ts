@@ -1,5 +1,5 @@
 import request from '../../index'
-import { ChannelRequestData } from './types'
+import { ChannelRequestData, ChannelTestResponse } from './types'
 import { REASONING_MODE } from '@/constants/agent'
 
 export interface RawChannelItem {
@@ -201,6 +201,12 @@ const channelApi = {
   },
   create(data: ChannelRequestData) {
     return request.post('/api/channels', data)
+  },
+  /**
+   * 测试渠道连接
+   */
+  test(channel_id: number, params?: { model?: string; model_type?: number | string }): Promise<ChannelTestResponse> {
+    return request.get(`/api/channels/test/${channel_id}`, { params }).then((res) => res.data ?? res)
   },
 }
 

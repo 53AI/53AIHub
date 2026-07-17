@@ -1,4 +1,4 @@
-import { memo, useCallback } from "react";
+import { memo } from "react";
 import { BubbleAssistant } from "@km/hub-ui-x-react";
 import { DEFAULT_AGENT_IMG } from "../stores/conversation";
 
@@ -17,7 +17,7 @@ export interface WelcomeProps {
   onSuggestion?: (content: string) => void;
   className?: string;
   /** 渲染使用范围标签 - 如 AuthTagGroup */
-  renderAuthTags?: (userGroupIds: number[]) => React.ReactNode;
+  renderAuthTags?: (props: { userGroupIds: number[] }) => React.ReactNode;
 }
 
 function handleImageError(e: React.SyntheticEvent<HTMLImageElement>) {
@@ -31,13 +31,6 @@ function WelcomeInner({ agentInfo, onSuggestion, className, renderAuthTags }: We
   const settings = agentInfo?.settings || (agentInfo as any)?.settings_obj || {};
   const openingStatement = settings.opening_statement || "";
   const suggestedQuestions = settings.suggested_questions || [];
-
-  const handleSuggestion = useCallback(
-    (content: string) => {
-      onSuggestion?.(content);
-    },
-    [onSuggestion]
-  );
 
   const showWelcome = openingStatement?.replace(/\s/g, "") ||
     (suggestedQuestions && suggestedQuestions.some((item: any) => item.content?.replace(/\s/g, "")));
@@ -71,7 +64,7 @@ function WelcomeInner({ agentInfo, onSuggestion, className, renderAuthTags }: We
       {/* Auth Tags / 使用范围 */}
       {renderAuthTags && (
         <div className="my-5">
-          {renderAuthTags(agentInfo?.user_group_ids || [])}
+          {renderAuthTags({ userGroupIds: agentInfo?.user_group_ids || [] })}
         </div>
       )}
 
@@ -81,7 +74,7 @@ function WelcomeInner({ agentInfo, onSuggestion, className, renderAuthTags }: We
           type="welcome"
           content={openingStatement}
           suggestions={suggestedQuestions}
-          onSuggestion={handleSuggestion}
+          onSuggestion={(content: string) => onSuggestion?.(content)}
         />
       )}
     </div>

@@ -16,6 +16,8 @@ const (
 	FeedbackConfigTypeMessage      = "message"
 	FeedbackConfigTypeKnowledgeMap = "knowledge_map"
 	FeedbackConfigTypeWorkAI       = "work_ai"
+	FeedbackConfigTypeChat         = "chat"
+	FeedbackConfigTypeWorkflow     = "workflow"
 )
 
 // GetFeedbackConfigByType 根据类型获取反馈配置
@@ -25,6 +27,10 @@ func GetFeedbackConfigByType(eid int64, configType string) (*model.Setting, erro
 		key = model.SETTING_KM_FEEDBACK_CONFIG
 	} else if configType == FeedbackConfigTypeWorkAI {
 		key = model.SETTING_WORKAI_FEEDBACK_CONFIG
+	} else if configType == FeedbackConfigTypeChat {
+		key = model.SETTING_CHAT_FEEDBACK_CONFIG
+	} else if configType == FeedbackConfigTypeWorkflow {
+		key = model.SETTING_WORKFLOW_FEEDBACK_CONFIG
 	}
 
 	setting, err := model.GetFeedbackConfigByKey(eid, key)
@@ -47,6 +53,10 @@ func SaveFeedbackConfigByType(eid int64, configType string, config *model.Settin
 		key = model.SETTING_KM_FEEDBACK_CONFIG
 	} else if configType == FeedbackConfigTypeWorkAI {
 		key = model.SETTING_WORKAI_FEEDBACK_CONFIG
+	} else if configType == FeedbackConfigTypeChat {
+		key = model.SETTING_CHAT_FEEDBACK_CONFIG
+	} else if configType == FeedbackConfigTypeWorkflow {
+		key = model.SETTING_WORKFLOW_FEEDBACK_CONFIG
 	}
 
 	// Try to get existing setting
@@ -103,6 +113,34 @@ func GetDefaultFeedbackConfigByType(configType string) *model.Setting {
 				"任务失败",
 				"结果错误",
 				"响应超时",
+			},
+		}
+	} else if configType == FeedbackConfigTypeChat {
+		key = model.SETTING_CHAT_FEEDBACK_CONFIG
+		defaultConfig = &FeedbackConfig{
+			Satisfied: []string{
+				"回答准确",
+				"理解到位",
+				"表达清晰",
+			},
+			Unsatisfied: []string{
+				"答非所问",
+				"内容错误",
+				"回复冗长",
+			},
+		}
+	} else if configType == FeedbackConfigTypeWorkflow {
+		key = model.SETTING_WORKFLOW_FEEDBACK_CONFIG
+		defaultConfig = &FeedbackConfig{
+			Satisfied: []string{
+				"任务完成",
+				"结果准确",
+				"步骤清晰",
+			},
+			Unsatisfied: []string{
+				"任务失败",
+				"结果错误",
+				"步骤遗漏",
 			},
 		}
 	} else {

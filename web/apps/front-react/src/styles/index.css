@@ -79,3 +79,21 @@ a:-webkit-any-link {
   align-items: center;
   justify-content: center;
 }
+
+.ant-tree-switcher {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ant-tree-switcher::before {
+  position: absolute !important;
+  left: 50% !important;
+  top: 50% !important;
+  transform: translate(-50%, -50%);
+}
+
+.css-var-root.ant-modal-css-var {
+  --ant-modal-content-padding: 24px;
+  --ant-modal-title-font-size: 18px;
+  --ant-modal-title-line-height: 24px;
+}

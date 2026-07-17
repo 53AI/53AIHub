@@ -26,7 +26,6 @@ export {
   formatResult,
   formatLlmContent,
   getFlowType,
-  formatFileInfo,
   getFileIcon,
 } from "./utils";
 

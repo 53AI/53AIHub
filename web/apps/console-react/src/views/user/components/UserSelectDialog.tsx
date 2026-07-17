@@ -186,7 +186,7 @@ export default function UserSelectDialog({
       width={800}
       centered
       footer={
-        <div className="py-4 flex items-center justify-between">
+        <div className="flex items-center justify-between">
           <div
             className="text-sm text-gray-500"
             dangerouslySetInnerHTML={{

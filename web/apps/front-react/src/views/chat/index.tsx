@@ -12,12 +12,12 @@
  * - ChatContainer（来自 shared-business）
  */
 import {
-  useEffect,
-  useRef,
-  useMemo,
-  forwardRef,
-  useImperativeHandle,
-  useState,
+    useEffect,
+    useRef,
+    useMemo,
+    forwardRef,
+    useImperativeHandle,
+    useState,
 } from "react";
 import { useSearchParams, useNavigate, Outlet, useLocation } from "react-router-dom";
 import { Button } from "antd";
@@ -25,7 +25,7 @@ import { SvgIcon } from "@km/shared-components-react";
 import { useAgentStore, useCurrentAgent } from "@/stores/modules/agent";
 import { useConversationStore } from "@/stores/modules/conversation";
 import {
-  useIsSoftStyle,
+    useIsSoftStyle,
 } from "@/stores/modules/enterprise";
 import { useUserStore } from "@/stores/modules/user";
 import agentsApi from "@/api/modules/agents";
@@ -35,7 +35,6 @@ import { t } from "@/locales";
 import DetailBreadcrumb, { MODULE_CONFIGS } from "@/components/DetailBreadcrumb";
 import ChatContainer, { ChatContainerRef } from "./ChatContainer";
 import { isOpenClawCompatibleChannelType } from "@km/shared-business/agent-create";
-import "./index.css";
 
 export interface ChatViewRef {
   showUseCase: () => void;
@@ -51,6 +50,8 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
   const chatRef = useRef<ChatContainerRef>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [hideBottomActions, setHideBottomActions] = useState(true);
+  const [showUserMemory, setShowUserMemory] = useState(false);
+  const [showSetting, setShowSetting] = useState(false);
 
   const agentStore = useAgentStore();
   const convStore = useConversationStore();
@@ -62,7 +63,7 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
   const isWebsite = !isSoftStyle;
 
   // 工作台入口路径判断
-  const isIndexRoute = location.pathname.startsWith('/index');
+  const isIndexRoute = isSoftStyle
 
   // 当前智能体 ID（支持 string 类型如 "U5KLWZ"）
   const agentId = useMemo(() => {
@@ -88,6 +89,13 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
       const agent_id = searchParams.get("agent_id") || "";
       const conversation_id = searchParams.get("conversation_id") || "";
       const from = searchParams.get("from") || "";
+
+      // 没有 agent_id 时直接返回，避免把 current_agentid fallback 到 exploreList[0]
+      // （之前在 StrictMode + 路由跳转 race 下会被重复 run 覆盖成 completion agent）
+      // 当前 current_agentid 保留前置状态，等待 IndexSidebar 写入默认 agent_id
+      if (!agent_id) {
+        return;
+      }
 
       let agent: Agent.State | undefined;
       let isMyAgent = false;
@@ -131,20 +139,19 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
           }
         }
 
-        // 先在我的列表查找，再在探索列表查找
+        // 先在我的列表查找，再在探索列表查找；找不到就保持 agent 为 undefined，
+        // 不再 fallback 到 exploreList[0] 以避免在 race 中覆盖 current_agentid
         agent = myList.find((item) => String(item.agent_id) === String(agent_id));
         if (agent) {
           isMyAgent = true;
         } else {
           agent = exploreList.find((item) => String(item.agent_id) === String(agent_id));
-          if (!agent) {
-            agent = exploreList?.[0];
-          }
         }
       }
 
       // 检查智能体是否为 Openclaw 渠道类型
       const isOpenclaw = isOpenClawCompatibleChannelType(agent?.channel_type);
+      const isOpenclawRoute = searchParams.get("type") === "openclaw";
 
       // 更新 store - Openclaw 智能体和"我的智能体"一样隐藏底部操作
       if (isMyAgent || isOpenclaw) {
@@ -155,10 +162,10 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
 
       // 设置 front-react 的 conversation store，让 useCurrentAgent 能找到 agent
       const actualAgentId = agent?.agent_id || agent_id;
-      // isReplace=false 阻止 setRouter 触发页面跳转，避免 /index/agent 路径下的无限刷新循环
+      // isReplace=false 阻止 setRouter 触发页面跳转，避免 /agent/agent 路径下的无限刷新循环
       convStore.setCurrentState(actualAgentId, conversation_id, false);
       // 加载会话列表以获取会话标题
-      if (actualAgentId) {
+      if (actualAgentId && !isOpenclaw && !isOpenclawRoute) {
         convStore.loadConversations(actualAgentId);
       }
     };
@@ -200,6 +207,12 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
     agentStore.loadCategorys();
 
     const handleLoginSuccess = () => {
+      const params = new URLSearchParams(window.location.search || "");
+      const routeAgentId = params.get("agent_id") || convStore.current_agentid;
+      const routeAgent = routeAgentId ? useAgentStore.getState().findAgentByAgentId(String(routeAgentId)) : undefined;
+      if (params.get("type") === "openclaw" || isOpenClawCompatibleChannelType(routeAgent?.channel_type)) {
+        return;
+      }
       convStore.loadConversations();
     };
 
@@ -212,9 +225,10 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
   }, []);
 
   return (
-    <section
-      className={`h-full flex flex-col ${isWebsite ? "overflow-hidden pt-6" : ""}`}
-    >
+    <>
+      <section
+        className={`h-full flex flex-col ${isWebsite ? "overflow-hidden pt-6" : ""}`}
+      >
       {isWebsite && (
         <div className="relative flex-none w-11/12 lg:w-4/5 max-w-[1200px] mx-auto">
           <DetailBreadcrumb
@@ -222,6 +236,12 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
             name={detailData.name}
             extra={
               <div className="flex items-center gap-2">
+                {/* <div
+                  className={`size-7 cursor-pointer rounded flex items-center justify-center ${showUserMemory ? 'bg-[#F5F5F7]' : 'hover:bg-[#F5F5F7]'}`}
+                  onClick={() => setShowUserMemory(true)}
+                >
+                  <SvgIcon name="brain" />
+                </div> */}
                 {!isCompletion && (
                   <Button className="px-0" type="text" onClick={showShare}>
                     <SvgIcon name="share-two" size={18} color="#4F5052" />
@@ -257,11 +277,16 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
             showRecommend={false}
             hideMenuHeader={isWebsite}
             isIndexRoute={isIndexRoute}
+            showUserMemory={showUserMemory}
+            onShowUserMemoryChange={setShowUserMemory}
+            showSetting={showSetting}
+            onShowSettingChange={setShowSetting}
             className="flex-1"
           />
         </div>
       </div>
     </section>
+    </>
   );
 });
 

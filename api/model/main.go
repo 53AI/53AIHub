@@ -18,6 +18,15 @@ import (
 
 var DB *gorm.DB
 
+type LongText string
+
+func (LongText) DataType(db *gorm.DB) string {
+	if db != nil && db.Dialector != nil && db.Dialector.Name() == "mysql" {
+		return "longtext"
+	}
+	return "text"
+}
+
 func InitDB() {
 	logger.SysLog("database init started")
 	var err error
@@ -38,9 +47,12 @@ func InitDB() {
 		}
 		logger.SysLog("database migrated")
 	} else {
-		logger.SysLog("database migration skipped (MIGRATE_DB_ENABLED=false)")
+	  logger.SysLog("database migration skipped (MIGRATE_DB_ENABLED=false)")
+	 }
+
+	 // 注册 GORM 慢查询回调，输出到独立的 slow.log
+	 dbgormlogger.RegisterSlowQueryCallback(DB)
 	}
-}
 
 func GetDbConn() (*gorm.DB, error) {
 	dsn := os.Getenv("SQL_DSN")
@@ -122,6 +134,12 @@ func migrateDB() error {
 	if err = DB.AutoMigrate(&UploadFile{}); err != nil {
 		return err
 	}
+	if err = DB.AutoMigrate(&OpenClawArtifact{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&OpenClawConversationMirror{}); err != nil {
+		return err
+	}
 	if err = DB.AutoMigrate(&Group{}); err != nil {
 		return err
 	}
@@ -142,7 +160,7 @@ func migrateDB() error {
 	}
 	if err = DB.AutoMigrate(
 		&SkillLibrary{},
-		&UserSkillBinding{},
+		&AgentSkillBinding{},
 		&SkillScanJob{},
 		&SkillEnvVarRecord{},
 		&SkillUserEnvVarRecord{},
@@ -313,6 +331,26 @@ func migrateDB() error {
 	if err := DB.AutoMigrate(&UserAgentShortcut{}); err != nil {
 		return err
 	}
+
+	// 用户记忆系统：全局记忆 + Agent记忆 + 工具教训
+	if err := DB.AutoMigrate(
+		&UserMemory{},
+		&AgentUserMemory{},
+		&AgentToolLesson{},
+	); err != nil {
+		return err
+	}
+
+	// Agent 资源范围隔离
+	if err := DB.AutoMigrate(&ResourceScope{}); err != nil {
+		return err
+	}
+
+	// 慢日志记录表
+	if err := DB.AutoMigrate(&SlowLogRecord{}); err != nil {
+		return err
+	}
+
 	return nil
 }
 

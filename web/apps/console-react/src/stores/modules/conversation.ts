@@ -59,9 +59,46 @@ export const useConversationStore = create<ConversationState>(() => ({
     }
 
     if (finalData.agent_id) {
-      finalData.model = `agent-${finalData.agent_id}`
+      // modelId 拼到 model 后缀（AI 搜问场景），普通智能体不带后缀
+      const modelId = (finalData as any).modelId
+      finalData.model = `agent-${finalData.agent_id}${modelId ? `-${modelId}` : ''}`
       delete finalData.agent_id
+      if (modelId) delete (finalData as any).modelId
     }
+
+    // minimal 模式：普通智能体。不带 enable_process_steps / knowledge_base_ids /
+    // search_config 等知识库字段，对应后端 agent.json payload 形态。
+    const isMinimal = (finalData as any).type === 'agent' || (finalData as any).minimalParams === true
+    if (!isMinimal) {
+      const networkSearch = !!(finalData as any).networkSearch
+      const knowledgeGraph = !!(finalData as any).knowledgeGraph
+      const agentInfo = (finalData as any).agentInfo
+      const library = (finalData as any).library
+      const rerankConfig = agentInfo?.settings?.rerank_config || {}
+      const webSearchConfig = agentInfo?.settings?.web_search_setting || {}
+      Object.assign(finalData, {
+        enable_process_steps: true,
+        knowledge_base_ids: networkSearch ? [] : (library?.value ?? ['all']),
+        file_ids: [],
+        space_ids: [],
+        solo_file_mode: false,
+        search_config: {
+          ...rerankConfig,
+          top_k: networkSearch
+            ? webSearchConfig.top_k ?? rerankConfig.top_k
+            : rerankConfig.top_k,
+        },
+        web_search_config: networkSearch ? webSearchConfig : {},
+        enable_graph_search: knowledgeGraph,
+      })
+      delete (finalData as any).networkSearch
+      delete (finalData as any).knowledgeGraph
+      delete (finalData as any).library
+      delete (finalData as any).agentInfo
+    }
+    delete (finalData as any).type
+    delete (finalData as any).minimalParams
+
     return conversationApi.chat(finalData, { onDownloadProgress, signal, hideError })
   },
 }))

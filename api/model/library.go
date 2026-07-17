@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 
@@ -504,7 +505,12 @@ func GetDefaultLibrary(eid int64, spaceID int64) (*Library, error) {
 	return nil, gorm.ErrRecordNotFound
 }
 
-// GetVectorCollectionName 获取向量集合名称的统一方法
+// GetVectorCollectionName 获取向量集合名称的统一方法（旧模式：library级）
 func GetVectorCollectionName(libraryUUID string) string {
 	return "library_" + libraryUUID
+}
+
+// GetDocumentVectorCollectionName 获取企业级文档向量集合名称
+func GetDocumentVectorCollectionName(eid int64) string {
+	return fmt.Sprintf("doc_eid_%d", eid)
 }

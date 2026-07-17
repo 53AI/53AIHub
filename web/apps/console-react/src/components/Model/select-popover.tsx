@@ -91,7 +91,8 @@ export function ModelSelectPopover({
     >
       <div
         className={[
-          "w-[355px] h-9 px-3 border rounded flex items-center gap-1 cursor-pointer",
+          "h-9 px-3 border rounded flex items-center gap-1 cursor-pointer",
+          className || "w-full",
           customClass,
         ].join(" ")}
       >

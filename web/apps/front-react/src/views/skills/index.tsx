@@ -42,7 +42,9 @@ export function SkillsView() {
             onClick={() => {
               checkLoginStatus()
               setActiveType("explore");
-              setSearchParams({ from: "explore" });
+              const newParams = new URLSearchParams(searchParams);
+              newParams.set("from", "explore");
+              setSearchParams(newParams, { replace: true });
             }}
           >
             {t("agent.explore")}
@@ -55,12 +57,14 @@ export function SkillsView() {
               />
             )}
           </div>
-          <div
+          {/* <div
             className={`h-8 text-xl font-medium flex items-center cursor-pointer relative ${activeType === "my" ? "text-[#1D1E1F]" : "text-[#999999]"}`}
             onClick={() => {
               checkLoginStatus()
               setActiveType("my");
-              setSearchParams({ from: "my" });
+              const newParams = new URLSearchParams(searchParams);
+              newParams.set("from", "my");
+              setSearchParams(newParams, { replace: true });
             }}
           >
             {t("module.mine")}
@@ -72,10 +76,10 @@ export function SkillsView() {
                 color="var(--el-color-primary, #2563eb)"
               />
             )}
-          </div>
+          </div> */}
         </div>
 
-        {activeType === "explore" ? <GroupList /> : <MyList />}
+        {activeType === "explore" ? <GroupList enableUrlSync /> : <MyList />}
       </div>
       <Footer />
     </>

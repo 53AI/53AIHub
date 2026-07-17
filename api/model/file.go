@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -52,7 +53,7 @@ type File struct {
 	Summary        string `json:"summary" gorm:"type:text;comment:'AI生成的简介内容'"`
 	Questions      string `json:"questions" gorm:"type:text;comment:'AI生成的问题JSON数组字符串'"`
 	KnowledgeMap   string `json:"knowledge_map" gorm:"type:text;comment:'知识地图(Mermaid mindmap)'"`
-	InsightSummary string `json:"insight_summary" gorm:"type:longtext;comment:'洞察和总结(Markdown格式,用于页面展示)'"`
+	InsightSummary LongText `json:"insight_summary" gorm:"comment:'洞察和总结(Markdown格式,用于页面展示)'"`
 
 	// 索引禁用相关字段
 	DisabledReason string `json:"disabled_reason,omitempty" gorm:"type:varchar(255);comment:'禁用原因'"`
@@ -1328,6 +1329,15 @@ func deleteVectorsFromDB(eid int64, fileID int64, vectorIDs []string) error {
 	err = store.Delete(ctx, collection, ids)
 	if err != nil {
 		return fmt.Errorf("删除向量失败: %v", err)
+	}
+
+	// enterprise/dual 模式下同时删除企业级集合中的向量
+	mode := os.Getenv("RAG_DOCUMENT_VECTOR_COLLECTION_MODE")
+	if mode == "enterprise" || mode == "dual" {
+		entCollection := GetDocumentVectorCollectionName(eid)
+		if delErr := store.Delete(ctx, entCollection, ids); delErr != nil {
+			log.Printf("删除企业级集合向量失败: %v", delErr)
+		}
 	}
 
 	return nil

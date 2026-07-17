@@ -31,10 +31,10 @@ type Conversation struct {
 
 func normalizeConversationSource(source string, visitorID string) string {
 	visitorID = strings.TrimSpace(visitorID)
-	if visitorID != "" {
+	source = strings.TrimSpace(source)
+	if visitorID != "" && (source == "" || source == MessageRequestSourceConsole) {
 		return MessageRequestSourceH5
 	}
-	source = strings.TrimSpace(source)
 	if source == "" {
 		return MessageRequestSourceConsole
 	}
@@ -46,7 +46,7 @@ func applyVisitorConversationScope(query *gorm.DB, visitorID string) *gorm.DB {
 	if visitorID == "" || query == nil {
 		return query
 	}
-	return query.Where("visitor_id = ?", visitorID).Where("source = ?", MessageRequestSourceH5)
+	return query.Where("visitor_id = ? AND (source = ? OR source = ?)", visitorID, MessageRequestSourceH5, MessageRequestSourceAPI)
 }
 
 func (c *Conversation) BeforeSave(tx *gorm.DB) error {
@@ -187,6 +187,31 @@ func GetConversationsByUserIDAndTypeWithVisitor(eid, userID, agentID int64, conv
 		conversation.LoadAgent()
 	}
 	return conversations, nil
+}
+
+func GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID int64, convType int, visitorID string, offset, limit int) ([]*Conversation, int64, error) {
+	query := DB.Where("eid = ? AND user_id = ?", eid, userID)
+	query = applyVisitorConversationScope(query, visitorID)
+	if convType >= 0 {
+		query = query.Where("conversation_type = ?", convType)
+	}
+	if agentID > 0 {
+		query = query.Where("agent_id = ?", agentID)
+	}
+
+	var total int64
+	if err := query.Model(&Conversation{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var conversations []*Conversation
+	if err := query.Order("updated_time DESC").Offset(offset).Limit(limit).Find(&conversations).Error; err != nil {
+		return nil, 0, err
+	}
+	for _, conversation := range conversations {
+		conversation.LoadAgent()
+	}
+	return conversations, total, nil
 }
 
 func GetUserConversationsWithFilter(eid, userID, agentID int64, keyword string, createdAtStart, createdAtEnd int64, offset, limit int) ([]*Conversation, int64, error) {
@@ -396,6 +421,10 @@ func UpdateConversation(conversation *Conversation) error {
 
 func DeleteConversation(eid int64, conversation_id int64) error {
 	return DB.Where("eid = ? AND conversation_id = ?", eid, conversation_id).Delete(&Conversation{}).Error
+}
+
+func DeleteConversationByUser(eid, userID, conversationID int64) error {
+	return DB.Where("eid = ? AND conversation_id = ? AND user_id = ?", eid, conversationID, userID).Delete(&Conversation{}).Error
 }
 
 func GetConversationByIdAndUserId(eid int64, conversation_id int64, user_id int64) (*Conversation, error) {

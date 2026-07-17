@@ -1,6 +1,6 @@
 import React from "react";
 import Icon from "../../Icon/index.tsx";
-import Tooltip from "../../Tooltip/index.tsx";
+import Tooltip from "../../Tooltip";
 import { t } from "../../../locale";
 import "./code.css";
 

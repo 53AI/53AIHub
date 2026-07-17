@@ -3,7 +3,7 @@ import { Button, Modal, Form, Input } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { useAgentCreateAdapter } from '../../adapters'
 import { useAgentFormStore } from '../../store'
-import { CollapsibleSection } from './CollapsibleSection'
+import { CollapsibleSection } from '../shared/CollapsibleSection'
 import { SvgIcon } from '@km/shared-components-react'
 import { generateRandomId } from '@km/shared-utils'
 

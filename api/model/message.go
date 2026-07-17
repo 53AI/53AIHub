@@ -10,7 +10,7 @@ import (
 
 // Message 不嵌入 BaseModel，CreatedTime/UpdatedTime 为直接字段。
 // 之前因 BaseModel 嵌入 + 直接字段重复导致 CreatedTime 始终为 0
-//（BaseModel.BeforeCreate 设置嵌入字段，GORM 写库用直接字段）。
+// （BaseModel.BeforeCreate 设置嵌入字段，GORM 写库用直接字段）。
 // 如需修改时间字段行为，同步更新 BeforeCreate / BeforeUpdate / BeforeSave 三个 hook。
 type Message struct {
 	ID                int64  `json:"id" gorm:"column:id;primaryKey;autoIncrement"`
@@ -46,6 +46,13 @@ type Message struct {
 	OriginalQuestion  string `json:"original_question" gorm:"type:text"`
 	RewrittenQuestion string `json:"rewritten_question" gorm:"type:text"`
 	Media             string `json:"media" gorm:"type:text"`
+
+	OpenClawProjectionKey  string `json:"-" gorm:"column:openclaw_projection_key;size:255;default:''"`
+	OpenClawTurnID         string `json:"-" gorm:"column:openclaw_turn_id;size:255;default:''"`
+	OpenClawSeqStart       int64  `json:"-" gorm:"column:openclaw_seq_start;default:0"`
+	OpenClawSeqEnd         int64  `json:"-" gorm:"column:openclaw_seq_end;default:0"`
+	OpenClawStatus         string `json:"-" gorm:"column:openclaw_status;size:32;default:''"`
+	OpenClawProjectionJSON string `json:"-" gorm:"column:openclaw_projection_json;type:text"`
 }
 
 type MessageType string
@@ -80,10 +87,10 @@ const (
 
 func normalizeMessageRequestSource(requestSource string, visitorID string) string {
 	visitorID = strings.TrimSpace(visitorID)
-	if visitorID != "" {
+	requestSource = strings.TrimSpace(requestSource)
+	if visitorID != "" && (requestSource == "" || requestSource == MessageRequestSourceConsole) {
 		return MessageRequestSourceH5
 	}
-	requestSource = strings.TrimSpace(requestSource)
 	if requestSource == "" {
 		return MessageRequestSourceConsole
 	}
@@ -95,7 +102,7 @@ func applyVisitorMessageScope(query *gorm.DB, visitorID string) *gorm.DB {
 	if visitorID == "" || query == nil {
 		return query
 	}
-	return query.Where("visitor_id = ?", visitorID).Where("request_source = ?", MessageRequestSourceH5)
+	return query.Where("visitor_id = ? AND (request_source = ? OR request_source = ?)", visitorID, MessageRequestSourceH5, MessageRequestSourceAPI)
 }
 
 // GORM hook 调用顺序（v2）：
@@ -127,6 +134,9 @@ func (m *Message) BeforeSave(tx *gorm.DB) error {
 func (m *Message) AfterFind(tx *gorm.DB) error {
 	m.VisitorID = strings.TrimSpace(m.VisitorID)
 	m.RequestSource = normalizeMessageRequestSource(m.RequestSource, m.VisitorID)
+	if m.CreatedTime == 0 && m.UpdatedTime > 0 {
+		m.CreatedTime = m.UpdatedTime
+	}
 	return nil
 }
 
@@ -236,6 +246,18 @@ func GetMessagesByUserAndAgentWithVisitor(eid int64, userID int64, agentID int64
 	return count, messages, nil
 }
 
+// GetMessagesByUserAndAgentSince 获取指定用户-智能体对中 id >= sinceID 的消息（按时间升序）
+func GetMessagesByUserAndAgentSince(eid, userID, agentID, sinceID int64) ([]*Message, error) {
+	var messages []*Message
+	err := DB.Where("eid = ? AND user_id = ? AND agent_id = ? AND id >= ?", eid, userID, agentID, sinceID).
+		Order("created_time ASC").
+		Find(&messages).Error
+	if err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
 func UpdateMessage(message *Message) error {
 	return DB.Save(message).Error
 }
@@ -279,11 +301,14 @@ func GetMessagesByConversationID(eid int64, conversationID int64, keyword string
 }
 
 func GetMessagesByConversationIDWithDirection(eid int64, conversationID int64, keyword string, limit, offset int, direction string) (count int64, messages []*Message, err error) {
-	return GetMessagesByConversationIDWithDirectionWithVisitor(eid, conversationID, keyword, "", limit, offset, direction)
+	return GetMessagesByConversationIDWithDirectionWithVisitor(eid, conversationID, 0, keyword, "", limit, offset, direction)
 }
 
-func GetMessagesByConversationIDWithDirectionWithVisitor(eid int64, conversationID int64, keyword string, visitorID string, limit, offset int, direction string) (count int64, messages []*Message, err error) {
+func GetMessagesByConversationIDWithDirectionWithVisitor(eid int64, conversationID int64, userID int64, keyword string, visitorID string, limit, offset int, direction string) (count int64, messages []*Message, err error) {
 	query := DB.Model(&Message{}).Where("eid =? AND conversation_id =?", eid, conversationID)
+	if userID > 0 {
+		query = query.Where("user_id = ?", userID)
+	}
 	query = applyVisitorMessageScope(query, visitorID)
 	if keyword != "" {
 		query = query.Where("message LIKE? OR answer LIKE?", "%"+keyword+"%", "%"+keyword+"%")

@@ -172,6 +172,9 @@ func (m *IndexManager) buildFilesIndexMapping() map[string]interface{} {
 				"updated_at": map[string]interface{}{
 					"type": "date",
 				},
+				"file_extension": map[string]interface{}{
+					"type": "keyword",
+				},
 			},
 		},
 		"settings": map[string]interface{}{
@@ -212,6 +215,9 @@ func (m *IndexManager) updateFilesIndexMapping() error {
 				"type": "long",
 			},
 			"origin_source": map[string]interface{}{
+				"type": "keyword",
+			},
+			"file_extension": map[string]interface{}{
 				"type": "keyword",
 			},
 		},
@@ -281,31 +287,6 @@ func (m *IndexManager) DeleteIndex() error {
 	}
 
 	logger.SysLogf("成功删除索引: %s", m.client.GetIndexName())
-	return nil
-}
-
-// ReindexFiles 重建所有文件索引
-func (m *IndexManager) ReindexFiles(eid int64, db interface{}) error {
-	if m.client.IsDisabled() {
-		return nil
-	}
-
-	logger.SysLogf("开始重建文件索引: eid=%d", eid)
-
-	// 删除现有索引
-	if err := m.DeleteIndex(); err != nil {
-		return fmt.Errorf("删除现有索引失败: %v", err)
-	}
-
-	// 创建新索引
-	if err := m.CreateFilesIndex(); err != nil {
-		return fmt.Errorf("创建新索引失败: %v", err)
-	}
-
-	// TODO: 从数据库重新加载所有文件并索引
-	// 这里需要根据实际的数据库访问方式来实现
-
-	logger.SysLogf("文件索引重建完成: eid=%d", eid)
 	return nil
 }
 

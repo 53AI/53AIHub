@@ -35,7 +35,7 @@ const DEFAULT_COMPLETION_PARAMS = {
 export function transformToFormData(data: any): AgentFormData {
   const openClawAgentType = resolveOpenClawCompatibleAgentTypeFromRecord(data)
   const agentType = openClawAgentType || data.custom_config?.agent_type || 'prompt'
-  const agentOptionData = getAgentByAgentType(agentType as string)
+  const agentOptionData = getAgentByAgentType(agentType as AgentType)
 
   // Openclaw 类型：保持接口原始数据，不填充默认值
   const isOpenclaw = Boolean(openClawAgentType) || isOpenClawCompatibleAgentType(agentType)
@@ -151,7 +151,7 @@ function transformToSaveData(formData: AgentFormData): any {
     data.channel_type = getOpenClawCompatibleChannelType(custom_config?.agent_type)
     data.model = 'openclaw-ws'
   } else if (!channel_type) {
-    data.channel_type = CHANNEL_TYPE_VALUE_MAP.get(custom_config?.agent_type) || 0
+    data.channel_type = custom_config?.agent_type ? CHANNEL_TYPE_VALUE_MAP.get(custom_config.agent_type) || 0 : 0
   }
 
   switch (custom_config?.agent_type) {
@@ -261,8 +261,8 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
     return []
   },
 
-  async delete(agentId: number): Promise<void> {
-    await agentApi.delete({ data: { agent_id: agentId } })
+  async delete(agentId: string | number): Promise<void> {
+    await agentApi.delete({ data: { agent_id: String(agentId) } })
   },
 
   // ========== 数据转换 ==========
@@ -274,7 +274,7 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
   // ========== 平台配置 ==========
 
   getAgentConfig(platform: string) {
-    const config = getAgentByAgentType(platform)
+    const config = getAgentByAgentType(platform as AgentType)
     return {
       icon: config?.icon || '',
       name: config?.name || '',
@@ -289,13 +289,36 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
     switch (platform) {
       case AGENT_TYPES.COZE_AGENT_CN:
       case AGENT_TYPES.COZE_WORKFLOW_CN:
+        if (type === 'providers') {
+          const list = await agentApi.providers.list({ provider_type: 1 })
+          return { providers: (list || []).map((item: any) => ({ provider_id: item.provider_id, name: item.name })) }
+        }
+        if (type === 'bots' && workspace_id) {
+          const list = await agentApi.coze.bots_list(workspace_id, { provider_id })
+          return { bots: list || [] }
+        }
         return agentApi.coze.workspaces_list({ provider_id })
+      case AGENT_TYPES.COZE_AGENT_OSV:
+      case AGENT_TYPES.COZE_WORKFLOW_OSV:
+        if (type === 'providers') {
+          const list = await agentApi.providers.list({ provider_type: 5 })
+          return { providers: (list || []).map((item: any) => ({ provider_id: item.provider_id, name: item.name })) }
+        }
+        return null
       case AGENT_TYPES.APP_BUILDER:
+        if (type === 'providers') {
+          const list = await agentApi.providers.list({ provider_type: 3 })
+          return { providers: (list || []).map((item: any) => ({ provider_id: item.provider_id, name: item.name })) }
+        }
         return agentApi.appbuilder.bots_list({ provider_id })
       case AGENT_TYPES['53AI_AGENT']:
       case AGENT_TYPES['53AI_WORKFLOW']: {
+        if (type === 'providers') {
+          const list = await agentApi.providers.list({ provider_type: 4 })
+          return { providers: (list || []).map((item: any) => ({ provider_id: item.provider_id, name: item.name })) }
+        }
         if (type === 'input_fields') {
-          const res = await agentApi.chat53ai.workflow_field_list(agent_id || '', { provider_id })
+          const res = await agentApi.chat53ai.workflow_field_list(String(agent_id || ''), { provider_id })
           const fields = (res?.user_input_form || []).map((item: any) => Object.values(item)[0])
           return { input_fields: fields }
         }
@@ -307,6 +330,10 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
         return { workflows: (list || []).map(transform53aiBotItem) }
       }
       case AGENT_TYPES.TENCENT: {
+        if (type === 'providers') {
+          const list = await agentApi.providers.list({ provider_type: 6 })
+          return { providers: (list || []).map((item: any) => ({ provider_id: item.provider_id, name: item.name })) }
+        }
         const list = await agentApi.tencent.bots_list({ provider_id })
         return { bots: (list || []).map(transformTencentAppItem) }
       }
@@ -319,7 +346,7 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
     const { group_id, keyword, offset, limit } = params
     const result = await agentApi.list({
       params: {
-        group_id: group_id || 0,
+        group_id: String(group_id || 0),
         keyword,
         offset: offset || 0,
         limit: limit || 20,
@@ -331,6 +358,13 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
     }
   },
 
+  async getAgentModels(agentId) {
+    // preview 用：返回后端分配的 agent_models 列表（每条带独立 id），
+    // useAgentPreviewSender 按 value 匹配后取 id 作为 modelId
+    const res = await agentsApi.models.list(String(agentId))
+    return res.agent_models || []
+  },
+
   async loadModels() {
     // front-react 使用公共渠道获取模型列表
     const channels = await channelApi.listv2()
@@ -340,7 +374,7 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
         value: String(channel.channel_id),
         label: transformed.platform_name || '',
         icon: transformed.platform_icon || '',
-        options: (transformed.options || []).map(opt => ({
+        options: (transformed.options || []).map((opt: any) => ({
           value: opt.value,
           model_value: opt.model_value || opt.value,
           label: opt.label,
@@ -418,8 +452,8 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
 
   // ========== Openclaw 密钥重置 ==========
 
-  resetSecret: async (agentId: string) => {
-    const data = await agentsApi.my.resetSecret(agentId)
+  resetSecret: async (agentId: string | number) => {
+    const data = await agentsApi.my.resetSecret(String(agentId))
     return { secret: data.secret }
   },
 
@@ -435,10 +469,10 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
 
   createConversation: async (data) => {
     const res = await conversationApi.create({
-      agent_id: data.agent_id,
+      agent_id: String(data.agent_id),
       title: data.title || '',
-      conversation_type: data.conversation_type,
-    })
+      conversation_type: data.conversation_type as any,
+    }) as any
     return { conversation_id: res.data?.conversation_id || res.conversation_id }
   },
 
@@ -450,16 +484,49 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
       frequency_penalty: 0.5,
     }
 
-    await chatApi.completions({
+    // minimal 模式：普通智能体（agent.json）。不带 enable_process_steps /
+    // knowledge_base_ids / file_ids / search_config 等知识库相关字段。
+    const isMinimal = params.type === 'agent' || params.minimalParams === true
+
+    const model = `agent-${params.agent_id}${params.modelId ? `-${params.modelId}` : ''}`
+    const rerankConfig = params.agentInfo?.settings?.rerank_config || {}
+    const webSearchConfig = params.agentInfo?.settings?.web_search_setting || {}
+
+    const basePayload = {
       conversation_id: String(params.conversation_id),
-      model: `agent-${params.agent_id}`,
+      model,
       messages: params.messages,
       frequency_penalty: completionParams.frequency_penalty || 0,
       presence_penalty: completionParams.presence_penalty || 0,
       stream: true,
       temperature: completionParams.temperature || 0,
       top_p: completionParams.top_p || 0,
-    }, {
+    }
+
+    // full 模式：工作台 AI / AI 搜问（workbench.json / knowledge.json）。
+    // 拼齐 enable_process_steps + 知识库/文件/空间 ID + 搜索/图谱配置。
+    const payload = isMinimal
+      ? basePayload
+      : {
+          ...basePayload,
+          enable_process_steps: true,
+          knowledge_base_ids: params.networkSearch
+            ? []
+            : (params.library?.value ?? []),
+          file_ids: [],
+          space_ids: [],
+          solo_file_mode: false,
+          search_config: {
+            ...rerankConfig,
+            top_k: params.networkSearch
+              ? webSearchConfig.top_k ?? rerankConfig.top_k
+              : rerankConfig.top_k,
+          },
+          web_search_config: params.networkSearch ? webSearchConfig : {},
+          enable_graph_search: !!params.knowledgeGraph,
+        }
+
+    await chatApi.completions(payload, {
       responseType: 'stream',
       isStream: true,
       onDownloadProgress: params.onDownloadProgress,

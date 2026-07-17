@@ -174,7 +174,7 @@ export function ProfilePopover({
           <div className="flex items-center justify-center size-6">
             <UserOutlined style={{ fontSize: 16, color: "#1D1E1F" }} />
           </div>
-          <span className="flex-1 text-sm">{t("profile.info")}</span>
+          <span className="flex-1 text-sm">{t("profile.setting")}</span>
           <div className="text-[#B3ADAD]">
             <RightOutlined style={{ fontSize: 14 }} />
           </div>

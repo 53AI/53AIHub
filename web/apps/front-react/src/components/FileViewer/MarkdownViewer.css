@@ -31,3 +31,63 @@
   color: #9B9B9B;
   margin: 0 0 16px 0;
 }
+
+.markdown-viewer-root {
+  color: #1F2123;
+}
+
+.markdown-viewer-content.vditor-reset {
+  box-sizing: border-box;
+  max-width: 100%;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #1F2123;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-viewer-content.vditor-reset h1 {
+  margin: 0 0 16px;
+  font-size: 24px;
+  line-height: 1.28;
+  font-weight: 700;
+}
+
+.markdown-viewer-content.vditor-reset h2 {
+  margin: 18px 0 12px;
+  font-size: 20px;
+  line-height: 1.35;
+  font-weight: 650;
+}
+
+.markdown-viewer-content.vditor-reset h3,
+.markdown-viewer-content.vditor-reset h4,
+.markdown-viewer-content.vditor-reset h5,
+.markdown-viewer-content.vditor-reset h6 {
+  margin: 16px 0 10px;
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.markdown-viewer-content.vditor-reset p,
+.markdown-viewer-content.vditor-reset li {
+  font-size: 14px;
+  line-height: 1.7;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown-viewer-content.vditor-reset strong {
+  font-weight: 600;
+}
+
+.markdown-viewer-content.vditor-reset p {
+  margin: 0 0 12px;
+}
+
+.markdown-viewer-content.vditor-reset ul,
+.markdown-viewer-content.vditor-reset ol {
+  padding-left: 1.35em;
+}

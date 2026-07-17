@@ -156,6 +156,11 @@ func GetUploadFileByID(id int64) (uploadFile *UploadFile, err error) {
 	return uploadFile, err
 }
 
+func GetUploadFileByIDAndEid(id, eid int64) (uploadFile *UploadFile, err error) {
+	err = DB.Model(&UploadFile{}).Where("id = ? AND eid = ?", id, eid).First(&uploadFile).Error
+	return uploadFile, err
+}
+
 // Status constants for UploadFile
 const (
 	// 不用处理

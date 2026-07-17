@@ -509,31 +509,33 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
           }
         </div>
         <Spin spinning={tableLoading}>
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={tableData}
-            total={tableTotal}
-            style={{ width: "100%" }}
-            rowClassName="group cursor-pointer"
-            onRow={(record) => ({
-              onClick: () => onRowClick(record),
-            })}
-            pagination={{
-              total: tableTotal,
-              pageSize: detailedForm.limit,
-              current: Math.floor(detailedForm.offset / detailedForm.limit) + 1,
-              showSizeChanger: true,
-              showTotal: (total) => t("table_footer_text", { total }),
-              onChange: (page, pageSize) => {
-                if (pageSize !== detailedForm.limit) {
-                  handleSizeChange(pageSize);
-                } else {
-                  handleCurrentChange(page);
-                }
-              },
-            }}
-          />
+          <div className="flex-1 overflow-y-auto bg-white rounded-lg mt-4">
+            <Table
+              rowKey="id"
+              columns={columns}
+              dataSource={tableData}
+              total={tableTotal}
+              style={{ width: "100%" }}
+              rowClassName="group cursor-pointer"
+              onRow={(record) => ({
+                onClick: () => onRowClick(record),
+              })}
+              pagination={{
+                total: tableTotal,
+                pageSize: detailedForm.limit,
+                current: Math.floor(detailedForm.offset / detailedForm.limit) + 1,
+                showSizeChanger: true,
+                showTotal: (total) => t("table_footer_text", { total }),
+                onChange: (page, pageSize) => {
+                  if (pageSize !== detailedForm.limit) {
+                    handleSizeChange(pageSize);
+                  } else {
+                    handleCurrentChange(page);
+                  }
+                },
+              }}
+            />
+          </div>
         </Spin>
       </div>
       <Detail ref={detailRef} />

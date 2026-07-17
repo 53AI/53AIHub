@@ -175,7 +175,7 @@ func (s *ContentGeneratorService) GenerateChunkEnrichmentBatch(ctx context.Conte
 	prompt := buildChunkEnrichmentPrompt(req)
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
-		MaxTokens: 4096,
+		MaxTokens: 0, // 不限制输出，由模型自由生成
 		Messages: []relaymodel.Message{
 			{Role: "system", Content: prompt},
 		},

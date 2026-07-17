@@ -30,7 +30,7 @@ export const departmentApi = {
   ) {
     let {
       data: { tree: treeData = [] },
-    } = await request.get('/api/departments/tree', { params }).catch(handleError)
+    } = await request.get('/api/departments/tree', { params, requiresAuth: true }).catch(handleError)
     const findData = (data: any = {}) => {
       data = {
         ...data,
@@ -78,7 +78,7 @@ export const departmentApi = {
     return await request.delete(`/api/departments/${did}`).catch(handleError)
   },
   tree(from: EnterpriseSyncFrom) {
-    return request.get('/api/departments/tree', { params: { from } }).catch(handleError)
+    return request.get('/api/departments/tree', { params: { from }, requiresAuth: true }).catch(handleError)
   },
   sync(from: EnterpriseSyncFrom, data = { suite_id: suite_id }) {
     return request.post(`/api/departments/sync/${from}`, data).catch(handleError)

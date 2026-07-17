@@ -5,14 +5,14 @@ import { transformFeedbackList, formatRagStats, formtMessage } from './transform
 import { JSONParse } from '@/utils'
 
 export const feedbackApi = {
-  getConfig(params: { eid: string; type?: 'message' | 'knowledge_map' | 'work_ai' }) {
+  getConfig(params: { eid: string; type?: 'message' | 'knowledge_map' | 'work_ai' | 'chat' | 'workflow' }) {
     return service
       .get('/api/feedback/config', { params })
       .then((res: any) => res.data)
       .catch(handleError)
   },
   updateConfig(body: {
-    type?: 'message' | 'knowledge_map' | 'work_ai'
+    type?: 'message' | 'knowledge_map' | 'work_ai' | 'chat' | 'workflow'
     satisfied: string[]
     unsatisfied: string[]
   }) {

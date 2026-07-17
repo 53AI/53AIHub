@@ -40,13 +40,13 @@ var (
 	ErrSkillPermissionGroupsInvalid = errors.New("invalid skill permission groups")
 	ErrSkillNameInvalid             = errors.New("invalid skill name")
 	ErrSkillNameDuplicated          = errors.New("skill name already exists")
+	ErrAgentSkillAccessDenied       = errors.New("access denied to agent or skill")
+	ErrSkillPermissionDenied        = errors.New("user has no permission for this skill")
+	ErrSkillAlreadyBuiltin          = errors.New("skill already exists as builtin in this agent")
 )
 
 type SkillExploreItem struct {
 	*model.SkillLibrary
-	BindingID     int64  `json:"binding_id"`
-	Added         bool   `json:"added"`
-	BindingStatus string `json:"binding_status"`
 }
 
 type SkillExploreListResult struct {
@@ -56,15 +56,7 @@ type SkillExploreListResult struct {
 
 type SkillDetailResult struct {
 	*model.SkillLibrary
-	BindingID     int64                     `json:"binding_id"`
-	Added         bool                      `json:"added"`
-	BindingStatus string                    `json:"binding_status"`
-	EnvVars       []model.SkillEnvVarRecord `json:"env_vars"`
-}
-
-type SkillMyListResult struct {
-	Count int64                              `json:"count"`
-	Items []*model.UserSkillBindingWithSkill `json:"items"`
+	EnvVars []model.SkillEnvVarRecord `json:"env_vars"`
 }
 
 // UpdateSkillMetaRequest 更新技能元数据请求参数
@@ -77,26 +69,6 @@ type UpdateSkillMetaRequest struct {
 	AdminStatus        *string // 管理状态：enabled/disabled
 	Logo               *string // 技能 logo URL
 	PermissionGroupIDs []int64 // 权限分组ID列表
-}
-
-func (s *SkillLibraryService) GetUserRunnableSkillPathSet(ctx context.Context, eid, userID int64) (map[string]struct{}, error) {
-	paths, err := model.ListRunnableSkillInstallPathsForUser(eid, userID)
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]struct{}, len(paths))
-	for _, p := range paths {
-		cp := filepath.Clean(strings.TrimSpace(p))
-		if cp == "" || cp == "." {
-			continue
-		}
-		if runnablePath, ok := resolveRunnableSkillInstallPath(cp); ok {
-			result[runnablePath] = struct{}{}
-			continue
-		}
-		logger.Debugf(ctx, "【技能运行】跳过不可运行技能路径: eid=%d user_id=%d path=%s", eid, userID, cp)
-	}
-	return result, nil
 }
 
 func resolveRunnableSkillInstallPath(installPath string) (string, bool) {
@@ -197,30 +169,13 @@ func (s *SkillLibraryService) ListExploreSkills(ctx context.Context, eid, userID
 		return nil, err
 	}
 
-	skillIDs := make([]int64, 0, len(skills))
-	for _, item := range skills {
-		if item != nil {
-			skillIDs = append(skillIDs, item.ID)
-		}
-	}
-	bindingInfoMap, err := model.ListUserSkillBindingInfoMap(eid, userID, skillIDs)
-	if err != nil {
-		return nil, err
-	}
-
 	items := make([]*SkillExploreItem, 0, len(skills))
 	for _, item := range skills {
 		if item == nil {
 			continue
 		}
 		_ = item.LoadSkillGroups() // 加载技能所属分组
-		exploreItem := &SkillExploreItem{SkillLibrary: item}
-		if bindingInfo, ok := bindingInfoMap[item.ID]; ok {
-			exploreItem.BindingID = bindingInfo.BindingID
-			exploreItem.Added = true
-			exploreItem.BindingStatus = bindingInfo.Status
-		}
-		items = append(items, exploreItem)
+		items = append(items, &SkillExploreItem{SkillLibrary: item})
 	}
 
 	return &SkillExploreListResult{Count: count, Items: items}, nil
@@ -286,15 +241,6 @@ func (s *SkillLibraryService) GetSkillDetailForUser(ctx context.Context, eid, us
 
 	result := &SkillDetailResult{SkillLibrary: skillInfo}
 	_ = skillInfo.LoadSkillGroups() // 加载技能所属分组
-	bindingInfoMap, err := model.ListUserSkillBindingInfoMap(eid, userID, []int64{skillID})
-	if err != nil {
-		return nil, err
-	}
-	if bindingInfo, ok := bindingInfoMap[skillID]; ok {
-		result.BindingID = bindingInfo.BindingID
-		result.Added = true
-		result.BindingStatus = bindingInfo.Status
-	}
 
 	envVars, err := model.GetSkillEnvVarsBySkillID(eid, skillID)
 	if err != nil {
@@ -303,42 +249,6 @@ func (s *SkillLibraryService) GetSkillDetailForUser(ctx context.Context, eid, us
 	result.EnvVars = envVars
 
 	return result, nil
-}
-
-func (s *SkillLibraryService) AddSkillToMy(ctx context.Context, eid, userID, userGroupID, skillID int64) error {
-	skillInfo, err := s.canUserSeeSkill(ctx, eid, userID, userGroupID, skillID)
-	if err != nil {
-		return err
-	}
-	if skillInfo.PublishStatus != model.SkillPublishStatusPublished {
-		return ErrSkillNotPublished
-	}
-	if skillInfo.AdminStatus != model.SkillAdminStatusEnabled {
-		return ErrSkillDisabled
-	}
-	return model.AddUserSkillBinding(eid, userID, skillID)
-}
-
-func (s *SkillLibraryService) ListMySkills(ctx context.Context, eid, userID int64, offset, limit int) (*SkillMyListResult, error) {
-	_ = ctx
-	items, count, err := model.ListUserSkillBindingsWithSkills(eid, userID, offset, limit)
-	if err != nil {
-		return nil, err
-	}
-	return &SkillMyListResult{Count: count, Items: items}, nil
-}
-
-func (s *SkillLibraryService) UpdateMySkillStatus(ctx context.Context, eid, userID, bindingID int64, status string) error {
-	_ = ctx
-	if status != model.UserSkillBindingStatusEnabled && status != model.UserSkillBindingStatusDisabled {
-		return ErrSkillStatusInvalid
-	}
-	return model.UpdateUserSkillBindingStatus(eid, userID, bindingID, status)
-}
-
-func (s *SkillLibraryService) DeleteMySkill(ctx context.Context, eid, userID, bindingID int64) error {
-	_ = ctx
-	return model.DeleteUserSkillBinding(eid, userID, bindingID)
 }
 
 func (s *SkillLibraryService) getSkillDownloadInfoForUser(ctx context.Context, eid, userID, userGroupID, skillID int64) (*model.SkillLibrary, error) {
@@ -552,9 +462,6 @@ func (s *SkillLibraryService) DeleteSkill(ctx context.Context, eid, skillID int6
 		originZipKey = skillInfo.OriginZipKey
 		installPath = skillInfo.InstallPath
 
-		if err := model.BatchDeleteUserSkillBindingsBySkillLibraryID(tx, eid, skillID); err != nil {
-			return err
-		}
 		if err := tx.Where("resource_id = ? AND resource_type = ?", skillID, model.ResourceTypeSkillLibrary).
 			Delete(&model.ResourcePermission{}).Error; err != nil {
 			return err
@@ -756,12 +663,27 @@ func (s *SkillLibraryService) UpdateSkillStatusDirect(ctx context.Context, eid, 
 	if err := model.UpdateSkillLibraryByIDAndEID(eid, skillID, updates); err != nil {
 		return err
 	}
-	if adminStatus == model.SkillAdminStatusDisabled {
-		if err := model.BatchDisableUserSkillBindingsBySkillLibraryID(nil, eid, skillID); err != nil {
-			return fmt.Errorf("disable user bindings failed: %w", err)
-		}
-	}
 	return nil
+}
+
+func (s *SkillLibraryService) PublishSkill(ctx context.Context, eid, skillID int64) error {
+	_ = ctx
+	skillInfo, err := getSkillLibraryByIDAndEIDWithDB(model.DB, eid, skillID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(skillInfo.InstallPath) == "" || strings.TrimSpace(skillInfo.OriginZipKey) == "" {
+		return ErrSkillPublishPrecheckFailed
+	}
+
+	job, err := model.GetLatestSkillScanJobBySkillLibraryID(eid, skillID)
+	if err != nil {
+		return ErrSkillPublishPrecheckFailed
+	}
+	if job.Status != model.SkillScanJobStatusSuccess || job.RiskLevel == model.SkillRiskLevelHigh {
+		return ErrSkillPublishPrecheckFailed
+	}
+	return s.UpdateSkillStatusDirect(ctx, eid, skillID, model.SkillPublishStatusPublished, model.SkillAdminStatusEnabled)
 }
 
 func getSkillLibraryByIDAndEIDWithDB(db *gorm.DB, eid, id int64) (*model.SkillLibrary, error) {
@@ -1827,4 +1749,195 @@ func (s *SkillLibraryService) BatchUpdateSkillUserEnvVars(ctx context.Context, e
 
 	invalidateSkillUserEnvVarCache(eid, userID, skillID)
 	return model.GetSkillUserEnvVarsBySkillID(eid, userID, skillID)
+}
+
+func (s *SkillLibraryService) checkUserSkillPermission(userID, skillLibraryID int64) (bool, error) {
+	userGroupIDs, err := s.resolveVisibleSkillGroupIDs(userID)
+	if err != nil {
+		return false, err
+	}
+	if len(userGroupIDs) == 0 {
+		return false, nil
+	}
+	skillGroupIDs, err := model.GetResourcePermissionGroupIDs(skillLibraryID, model.ResourceTypeSkillLibrary)
+	if err != nil {
+		return false, err
+	}
+	skillGroupSet := make(map[int64]struct{}, len(skillGroupIDs))
+	for _, gid := range skillGroupIDs {
+		skillGroupSet[gid] = struct{}{}
+	}
+	for _, ugid := range userGroupIDs {
+		if _, ok := skillGroupSet[ugid]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *SkillLibraryService) ListAgentSkills(ctx context.Context, eid, agentID, userID int64) ([]*model.AgentSkillBindingWithSkill, error) {
+	if _, _, err := model.CanUserAccessAgent(eid, userID, agentID); err != nil {
+		return nil, ErrAgentSkillAccessDenied
+	}
+
+	items, err := model.ListAgentSkillBindingsWithSkills(eid, agentID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, item := range items {
+		if item == nil || item.BindType != model.AgentSkillBindTypeUser {
+			continue
+		}
+		if item.Status != model.AgentSkillBindingStatusEnabled {
+			continue
+		}
+		hasPermission, err := s.checkUserSkillPermission(userID, item.SkillLibraryID)
+		if err != nil {
+			return nil, err
+		}
+		if !hasPermission {
+			item.Status = model.AgentSkillBindingStatusDisabled
+		}
+	}
+
+	return items, nil
+}
+
+func (s *SkillLibraryService) AddAgentSkill(ctx context.Context, eid, agentID, userID, skillLibraryID int64) error {
+	if _, _, err := model.CanUserAccessAgent(eid, userID, agentID); err != nil {
+		return ErrAgentSkillAccessDenied
+	}
+
+	skillInfo, err := model.GetSkillLibraryByIDForTenant(eid, skillLibraryID)
+	if err != nil {
+		return err
+	}
+	if skillInfo.PublishStatus != model.SkillPublishStatusPublished {
+		return ErrSkillNotPublished
+	}
+	if skillInfo.AdminStatus != model.SkillAdminStatusEnabled {
+		return ErrSkillDisabled
+	}
+
+	isBuiltin, err := model.HasAgentBuiltinSkillBinding(eid, agentID, skillLibraryID)
+	if err != nil {
+		return err
+	}
+	if isBuiltin {
+		return ErrSkillAlreadyBuiltin
+	}
+
+	hasPermission, err := s.checkUserSkillPermission(userID, skillLibraryID)
+	if err != nil {
+		return err
+	}
+	if !hasPermission {
+		return ErrSkillPermissionDenied
+	}
+
+	return model.AddAgentSkillBinding(eid, agentID, skillLibraryID, model.AgentSkillBindTypeUser, userID)
+}
+
+func (s *SkillLibraryService) DeleteAgentSkill(ctx context.Context, eid, agentID, userID, bindingID int64) error {
+	if _, _, err := model.CanUserAccessAgent(eid, userID, agentID); err != nil {
+		return ErrAgentSkillAccessDenied
+	}
+
+	return model.DeleteAgentSkillBinding(eid, agentID, bindingID, model.AgentSkillBindTypeUser, userID)
+}
+
+func (s *SkillLibraryService) ListAgentBuiltinSkills(ctx context.Context, eid, agentID int64) ([]*model.AgentSkillBindingWithSkill, error) {
+	return model.ListAgentSkillBuiltinBindings(eid, agentID)
+}
+
+func (s *SkillLibraryService) AddAgentBuiltinSkill(ctx context.Context, eid, agentID, skillLibraryID int64) error {
+	skillInfo, err := model.GetSkillLibraryByIDForTenant(eid, skillLibraryID)
+	if err != nil {
+		return err
+	}
+	if skillInfo.PublishStatus != model.SkillPublishStatusPublished {
+		return ErrSkillNotPublished
+	}
+	if skillInfo.AdminStatus != model.SkillAdminStatusEnabled {
+		return ErrSkillDisabled
+	}
+
+	if err := model.DeleteAgentSkillUserBindingsBySkill(eid, agentID, skillLibraryID); err != nil {
+		return err
+	}
+
+	return model.AddAgentSkillBinding(eid, agentID, skillLibraryID, model.AgentSkillBindTypeBuiltin, 0)
+}
+
+func (s *SkillLibraryService) DeleteAgentBuiltinSkill(ctx context.Context, eid, agentID, bindingID int64) error {
+	return model.DeleteAgentSkillBinding(eid, agentID, bindingID, model.AgentSkillBindTypeBuiltin, 0)
+}
+
+func (s *SkillLibraryService) GetAgentRunnableSkillPathSet(ctx context.Context, eid, agentID, userID int64) (map[string]struct{}, error) {
+	builtinPaths, err := model.ListAgentSkillBuiltinInstallPaths(eid, agentID)
+	if err != nil {
+		return nil, err
+	}
+
+	userSkillIDs, err := model.ListAgentSkillUserLibraryIDs(eid, agentID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	userGroupIDs, err := s.resolveVisibleSkillGroupIDs(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	permittedSkillIDs := make([]int64, 0, len(userSkillIDs))
+	if len(userSkillIDs) > 0 {
+		for _, skillID := range userSkillIDs {
+			if len(userGroupIDs) == 0 {
+				continue
+			}
+			skillGroupIDs, gErr := model.GetResourcePermissionGroupIDs(skillID, model.ResourceTypeSkillLibrary)
+			if gErr != nil {
+				continue
+			}
+			skillSet := make(map[int64]struct{}, len(skillGroupIDs))
+			for _, gid := range skillGroupIDs {
+				skillSet[gid] = struct{}{}
+			}
+			for _, ugid := range userGroupIDs {
+				if _, ok := skillSet[ugid]; ok {
+					permittedSkillIDs = append(permittedSkillIDs, skillID)
+					break
+				}
+			}
+		}
+	}
+
+	allPaths := builtinPaths
+	if len(permittedSkillIDs) > 0 {
+		for _, skillID := range permittedSkillIDs {
+			skillInfo, sErr := model.GetSkillLibraryByID(skillID)
+			if sErr != nil || skillInfo == nil {
+				continue
+			}
+			if skillInfo.PublishStatus != model.SkillPublishStatusPublished || skillInfo.AdminStatus != model.SkillAdminStatusEnabled {
+				continue
+			}
+			allPaths = append(allPaths, skillInfo.InstallPath)
+		}
+	}
+
+	result := make(map[string]struct{}, len(allPaths))
+	for _, p := range allPaths {
+		cp := filepath.Clean(strings.TrimSpace(p))
+		if cp == "" || cp == "." {
+			continue
+		}
+		if runnablePath, ok := resolveRunnableSkillInstallPath(cp); ok {
+			result[runnablePath] = struct{}{}
+			continue
+		}
+		logger.Debugf(ctx, "【技能运行】跳过不可运行Agent技能路径: eid=%d agent_id=%d user_id=%d path=%s", eid, agentID, userID, cp)
+	}
+	return result, nil
 }

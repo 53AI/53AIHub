@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MoreOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Button, Switch, Tag, Tooltip, message, Modal } from 'antd'
@@ -7,11 +7,11 @@ import type { MenuProps } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import { StarRating } from '@/components/StarRating'
 import { useSkillsStore } from '@/stores/modules/skills'
-import { useIsSoftStyle } from '@/stores/modules/enterprise'
 import { skillApi } from '@/api/modules/skill'
 import { calculateAverageScore } from '@/api/modules/skill/transform'
 import type { Skill } from '@/api/modules/skill/types'
 import { t } from '@/locales'
+import AddSkillModal from './AddSkillModal'
 import { checkPermission } from "@/utils/permission"
 
 interface SkillCardProps {
@@ -20,12 +20,18 @@ interface SkillCardProps {
   groupId?: number
   onAdd?: (id: string) => void
   onOpenEnvSettings?: () => void
+  /** 直接添加到指定 agentId，不弹出选择小助理弹窗 */
+  addedAgentId?: number | string
+  /** 已添加的技能 ID 列表，用于判断按钮显示"使用"还是"添加" */
+  addedSkillIds?: string[]
+  /** 使用技能回调（将技能添加到对话框） */
+  onUseSkill?: (skill: { id: string; display_name: string; skill_name: string; icon?: string }) => void
 }
 
-const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOpenEnvSettings }) => {
+const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOpenEnvSettings, addedAgentId, addedSkillIds, onUseSkill }) => {
   const navigate = useNavigate()
   const skillsStore = useSkillsStore()
-  const isSoftStyle = useIsSoftStyle()
+  const [addModalOpen, setAddModalOpen] = useState(false)
 
   const isEnabled = skill.binding_status === 'enabled'
 
@@ -63,7 +69,6 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
 
     try {
       await skillApi.updateMySkillStatus(bindingId, { status: newStatus })
-      await skillsStore.loadMySkillList(true, true)
       await skillsStore.loadSkillList({ isRefresh: true })
     } catch (error) {
       skill.binding_status = checked ? 'disabled' : 'enabled'
@@ -71,38 +76,26 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
     }
   }
 
-  const handleAdd = async () => {
-    if (skill.added) return
+  const handleAddClick = () => {
     checkPermission({
       groupIds: skill?.group_ids || [],
       onClick: async () => {
-        try {
-          await skillApi.addToMy(skill.id)
-          await skillsStore.loadSkillList({ isRefresh: true, group_id: groupId || undefined })
-          await skillsStore.loadMySkillList(true)
-          message.success(t('action.add_success'))
-          onAdd?.(skill.id)
-        } catch (error) {
-          message.error(`${t('action.operation_failed')}，${t('common.try_again')}`)
-        }
+        setAddModalOpen(true)
       }
     })
   }
 
   const handleUse = () => {
-    if (!isSoftStyle) {
-      message.warning(t('skill.soft_mode_only'))
+    // 如果有 onUseSkill 回调，使用它将技能添加到对话框
+    if (onUseSkill) {
+      onUseSkill({
+        id: String(skill.id),
+        display_name: skill.display_name,
+        skill_name: skill.skill_name || skill.display_name,
+        icon: skill.logo,
+      })
       return
     }
-    if (!isEnabled) {
-      message.warning(t('skill.enable_first'))
-      return
-    }
-
-    navigate({
-      pathname: '/index/chat',
-      search: `?skill_id=${skill.id}&type=${type}`
-    })
   }
 
   const handleOpenEnvSettings = (e: React.MouseEvent) => {
@@ -119,7 +112,6 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
         onOk: async () => {
           await skillApi.deleteMySkill(skill.binding_id)
           message.success(t('status.delete_success'))
-          await skillsStore.loadMySkillList(true)
           await skillsStore.loadSkillList({ isRefresh: true })
         }
       })
@@ -140,14 +132,17 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
 
   const isDisabled = skill.admin_status === 'disabled'
   const isGrayscale = type === 'my' && !isEnabled
+  // 判断是否已添加
+  const isAlreadyAdded = addedSkillIds && addedSkillIds.includes(String(skill.id))
 
   return (
-    <Tooltip title={isDisabled ? t('skill.disabled_by_admin') : ''} placement="top">
-      <div
-        className={`bg-white border border-[#E6E6E6] rounded-lg p-5 hover:shadow-lg transition-all duration-300 group cursor-pointer flex flex-col h-full relative ${isDisabled ? 'cursor-not-allowed' : ''}`}
+    <>
+      <Tooltip title={isDisabled ? t('skill.disabled_by_admin') : ''} placement="top">
+        <div
+        className={`h-[186px] bg-white border border-[#E6E6E6] rounded-lg p-5 hover:shadow-lg transition-all duration-300 group cursor-pointer flex flex-col relative ${isDisabled ? 'cursor-not-allowed' : ''}`}
         onClick={handleClick}
       >
-        <div className="flex items-start gap-3">
+        <div className="flex flex-1 items-start gap-3">
           <img
             className="flex-none size-12 rounded-lg object-cover"
             src={skill.logo}
@@ -194,27 +189,26 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
 
         {type === 'explore' && (
           <div
-            className={`flex items-center justify-between transition-all ${isGrayscale ? 'grayscale opacity-60' : ''}`}
+            className={`flex-1 flex items-center justify-between transition-all ${isGrayscale ? 'grayscale opacity-60' : ''}`}
           >
             <div className="flex items-center">
               <StarRating value={rating} gap="sm" />
             </div>
 
             <Button
-              disabled={skill.added}
-              className={`${skill.added ? 'opacity-60' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
-                handleAdd()
+                // 未添加时点击"添加"，弹出添加弹窗
+                handleAddClick()
               }}
             >
-              {skill.added ? t('action.add_success') : t('action.add')}
+              {t('action.add')}
             </Button>
           </div>
         )}
 
         {type === 'my' && (
-          <div className="flex items-center gap-2 border-t border-gray-50 mt-auto">
+          <div className="flex-1 flex items-center gap-2 border-t border-gray-50 mt-auto">
             <Button
               disabled={isDisabled}
               onClick={(e) => {
@@ -253,9 +247,22 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
             </div>
           </div>
         )}
-
       </div>
     </Tooltip>
+
+      {/* 添加技能弹窗 - 放在 Tooltip 外面避免层级问题 */}
+      <AddSkillModal
+        open={addModalOpen}
+        skillId={skill.id}
+        groupIds={skill.group_ids}
+        directAddAgentId={addedAgentId}
+        onClose={() => setAddModalOpen(false)}
+        onSuccess={() => {
+          setAddModalOpen(false)
+          onAdd?.(skill.id)
+        }}
+      />
+    </>
   )
 }
 

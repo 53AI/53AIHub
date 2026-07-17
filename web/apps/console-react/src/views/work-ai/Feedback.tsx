@@ -15,9 +15,10 @@ import { useEnterpriseStore } from "@/stores";
 
 interface FeedbackProps {
   agentId?: string | number;
+  type?: 'work_ai' | 'chat' | 'workflow';
 }
 
-const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId }) => {
+const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) => {
   const enterpriseStore = useEnterpriseStore();
   const detailRef = useRef<DetailRef>(null);
   const feedbackConfigRef = useRef<any>(null);
@@ -138,7 +139,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId }) => {
     loadingRef.current.config = true;
     try {
       const configData = await feedbackApi.getConfig({
-        type: "work_ai",
+        type,
         eid: enterpriseStore.info.eid,
       });
       const parsedConfig = JSON.parse(configData.value);
@@ -561,7 +562,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId }) => {
           </div>
         </Spin>
       </div>
-      <FeedbackConfigDialog ref={feedbackConfigRef} type="work_ai" />
+      <FeedbackConfigDialog ref={feedbackConfigRef} type={type} />
       <Detail ref={detailRef} />
     </div>
   );

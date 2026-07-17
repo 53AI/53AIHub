@@ -29,7 +29,7 @@ export function ToolkitView() {
           </div>
         </div>
 
-        <GroupList />
+        <GroupList enableUrlSync />
       </div>
       <Footer />
     </>

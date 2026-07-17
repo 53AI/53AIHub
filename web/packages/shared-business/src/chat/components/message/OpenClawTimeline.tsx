@@ -139,7 +139,6 @@ function TimelineAnswerBubble({
   content,
   active,
   avatar,
-  name,
   message,
   onSourceReferenceClick,
   renderSource,
@@ -148,7 +147,6 @@ function TimelineAnswerBubble({
   content: string;
   active: boolean;
   avatar?: string;
-  name?: string;
   message: Message;
   onSourceReferenceClick?: (data: any, message: Message) => void;
   renderSource?: (type: string, number: number, message: Message) => string;
@@ -162,9 +160,8 @@ function TimelineAnswerBubble({
       streaming={active}
       alwaysShowMenu={Boolean(menu)}
       avatar={avatar}
-      name={name}
       sourceEnabled
-      renderSource={(type, number) => renderSource?.(type, number, message) || `${type}-${number}`}
+      renderSource={(type: string, number: number) => renderSource?.(type, number, message) || `${type}-${number}`}
       onSourceReferenceClick={(data) => onSourceReferenceClick?.(data, message)}
       menu={menu}
     />
@@ -418,7 +415,7 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
   items = [],
   agentInfo,
   isStreaming = false,
-  features,
+  features: _features,
   onSourceReferenceClick,
   renderSource,
   onOutputFilePreview,
@@ -653,7 +650,6 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
               content={item.content || ""}
               active={Boolean(isStreaming && item.key === lastVisibleAnswerKey)}
               avatar={agentInfo?.logo}
-              name={agentInfo?.name}
               message={message}
               renderSource={renderSource}
               onSourceReferenceClick={onSourceReferenceClick}
@@ -679,9 +675,8 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
           content=""
           streaming
           avatar={agentInfo?.logo}
-          name={agentInfo?.name}
           sourceEnabled
-          renderSource={(type, number) => renderSource?.(type, number, message) || `${type}-${number}`}
+          renderSource={(type: string, number: number) => renderSource?.(type, number, message) || `${type}-${number}`}
           onSourceReferenceClick={(data) => onSourceReferenceClick?.(data, message)}
         />
       )}
@@ -689,7 +684,7 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
       {effectiveTailFiles.length > 0 && (
         <OutputFiles
           files={effectiveTailFiles}
-          className="flex flex-wrap gap-3"
+          className="flex flex-wrap gap-3 mt-3 pb-6"
           onPreview={(file) => onOutputFilePreview?.(file)}
           onFavorite={onOutputFileFavorite ? (file) => onOutputFileFavorite(file, message) : undefined}
           onCheckFavorite={onOutputFileCheckFavorite}

@@ -4,7 +4,7 @@ import { Modal, Form, Input } from 'antd'
 import { useAgentForm } from '../../hooks'
 import { useAgentCreateAdapter } from '../../adapters'
 import { SvgIcon } from "@km/shared-components-react"
-import { CollapsibleSection } from "./CollapsibleSection"
+import { CollapsibleSection } from "../shared/CollapsibleSection"
 
 interface UseCase {
   id: string

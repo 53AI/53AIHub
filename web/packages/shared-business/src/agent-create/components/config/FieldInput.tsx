@@ -5,7 +5,7 @@ import { useAgentCreateAdapter } from "../../adapters";
 import { inputTypeList, outputTypeList } from "../../constants";
 import { FieldInputSetting, FieldInputSettingRef } from "./FieldInputSetting";
 import { SvgIcon } from "@km/shared-components-react";
-import { CollapsibleSection } from "./CollapsibleSection";
+import { CollapsibleSection } from "../shared/CollapsibleSection";
 import type { FieldItem } from "../../adapters/types";
 
 interface FieldInputProps {

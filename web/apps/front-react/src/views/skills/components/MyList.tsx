@@ -1,19 +1,27 @@
-import { useState, useMemo, useEffect } from "react";
 import { SearchOutlined } from "@ant-design/icons";
-import { Input, Select } from "antd";
 import { Search } from "@km/shared-components-react";
-import { useSkillsStore } from "@/stores/modules/skills";
-import { useIsSoftStyle } from "@/stores/modules/enterprise";
-import SkillList from "./SkillList";
+import { Input, Pagination, Select } from "antd";
+import { useEffect, useMemo, useState } from "react";
 import { t } from "@/locales";
+import { useIsSoftStyle } from "@/stores/modules/enterprise";
+import { useSkillsStore } from "@/stores/modules/skills";
+import SkillList from "./SkillList";
 
-export function MyList() {
+const PAGINATED_PAGE_SIZE = 9;
+
+interface MyListProps {
+  /** 启用分页：固定 9 条/页，仅显示上一页/下一页按钮（无页码） */
+  paginated?: boolean;
+}
+
+export function MyList({ paginated = false }: MyListProps = {}) {
   const skillsStore = useSkillsStore();
   const isSoftStyle = useIsSoftStyle();
   const [keyword, setKeyword] = useState("");
   const [sort, setSort] = useState<"created_time" | "updated_time">(
     "created_time",
   );
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     skillsStore.loadMySkillList(true);
@@ -37,12 +45,39 @@ export function MyList() {
     return skillsStore.mySkillList;
   }, [skillsStore.mySkillList]);
 
+  // 分页模式：与 SkillList 内部 keyword 过滤保持一致（sort 仅排序，不影响条数）
+  const filteredCount = useMemo(() => {
+    if (!paginated) return 0;
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return showAgentList.length;
+    return showAgentList.filter(
+      (item) =>
+        item.display_name.toLowerCase().includes(kw) ||
+        item.skill_name.toLowerCase().includes(kw) ||
+        item.description.toLowerCase().includes(kw),
+    ).length;
+  }, [paginated, showAgentList, keyword]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredCount / PAGINATED_PAGE_SIZE),
+  );
+
+  // 切换排序或关键词时回到第 1 页
+  // biome-ignore lint/correctness/useExhaustiveDependencies: 切换 sort/keyword 时需重置 page
+  useEffect(() => {
+    setPage(1);
+  }, [sort, keyword]);
+
+  // 当前页越界时回到第 1 页
+  useEffect(() => {
+    if (page > totalPages) setPage(1);
+  }, [page, totalPages]);
+
   return (
     <div>
       {/* Header with sticky position */}
-      <div
-        className="bg-white"
-      >
+      <div className="bg-white">
         <div className="flex md:flex-row flex-col-reverse gap-5 items-stretch md:items-center justify-between bg-white py-1 mb-4">
           <div className="flex items-center gap-2 w-[200px]">
             <Select
@@ -82,8 +117,22 @@ export function MyList() {
         list={showAgentList}
         sort={sort}
         type="my"
-        className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 ${isSoftStyle ? "mt-2 mb-16" : "my-3"}`}
+        page={paginated ? page : undefined}
+        pageSize={paginated ? PAGINATED_PAGE_SIZE : undefined}
+        className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 ${isSoftStyle ? "mt-2 " : "my-3"}`}
       />
+      {paginated && (
+        <div className="flex justify-end py-4">
+          <Pagination
+            current={page}
+            pageSize={PAGINATED_PAGE_SIZE}
+            total={filteredCount}
+            onChange={(p) => setPage(p)}
+            showSizeChanger={false}
+            showTotal={(total) => t("el.pagination.total", { total })}
+          />
+        </div>
+      )}
     </div>
   );
 }

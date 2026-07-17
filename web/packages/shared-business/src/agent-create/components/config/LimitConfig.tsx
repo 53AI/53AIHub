@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Switch, InputNumber, Input } from 'antd'
 import { useAgentCreateAdapter } from '../../adapters'
-import { CollapsibleSection } from './CollapsibleSection'
+import { CollapsibleSection } from '../shared/CollapsibleSection'
 
 interface RequestLimit {
   frequency: {

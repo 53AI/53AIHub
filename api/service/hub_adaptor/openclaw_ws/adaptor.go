@@ -354,6 +354,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, res *http.Response, meta *meta.Meta
 	}
 
 	c.Set("openclaw_ws_response_content", fullText)
+	c.Set("openclaw_ws_reasoning_content", "")
 
 	jsonResponse, _ := json.Marshal(resp)
 	c.Writer.Header().Set("Content-Type", "application/json")
@@ -546,9 +547,12 @@ func (a *Adaptor) streamingHandler(c *gin.Context, reader io.Reader, modelName s
 
 	render.Done(c)
 
-	// 将 reasoning_content 存储到上下文中，以便后续保存到数据库
+	// 将 reasoning_content 和 response_content 存储到上下文中，以便后续保存到数据库
 	if reasoningText != "" {
 		c.Set("openclaw_ws_reasoning_content", reasoningText)
+	}
+	if responseText != "" {
+		c.Set("openclaw_ws_response_content", responseText)
 	}
 
 	usage := &relay_model.Usage{

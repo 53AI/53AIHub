@@ -1,3 +1,5 @@
+import type { ScopeItem } from '@km/shared-business/agent-create'
+
 declare namespace Agent {
   interface State {
     agent_id: string
@@ -22,5 +24,9 @@ declare namespace Agent {
     settings: string
     settings_obj: any
     conversation_count: number
+    /** 智能体用途类型 */
+    agent_usage?: number
+    /** 权限范围 */
+    scopes?: ScopeItem[]
   }
 }

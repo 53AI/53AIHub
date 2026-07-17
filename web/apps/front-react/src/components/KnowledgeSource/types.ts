@@ -43,7 +43,7 @@ export interface KnowledgeSourceState {
 export interface KnowledgeSourceSelectorProps {
   value: KnowledgeSourceState
   onChange: (state: KnowledgeSourceState) => void
-  library?: { name: string; value: string[]; isSpace?: boolean }
+  library?: { name: string; icon?: string; value: string[]; isSpace?: boolean }
   disabled?: boolean
   allowSelectLibrary?: boolean
   allowSelectSpace?: boolean

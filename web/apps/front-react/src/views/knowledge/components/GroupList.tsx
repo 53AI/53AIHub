@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { Button, Input, Spin } from "antd";
+import { Button, Input, Spin, Skeleton } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { Search, Tabs, Dropdown, SvgIcon } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
+import { useUserStore } from "@/stores/modules/user";
 import { useSpaceStore } from "@/stores/modules/space";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "./InfoSaveDialog";
@@ -15,6 +16,11 @@ import { getFormatTimeStamp } from "@km/shared-utils";
 import { t } from "@/locales";
 import List from "./List";
 import "./GroupList.css";
+
+
+const FileSearch = lazy(() =>
+  import("@/components/FileSearch").then((m) => ({ default: m.FileSearch })),
+);
 
 interface GroupListProps {
   stickyOffset?: number;
@@ -29,6 +35,8 @@ export function GroupList({
 }: GroupListProps) {
   const isSoftStyle = useIsSoftStyle();
   const navigate = useNavigate();
+  
+  const userStore = useUserStore();
   const params = useParams<{ space_id: string }>();
   const [searchParams] = useSearchParams();
   const infoSaveDialogRef = useRef<InfoSaveDialogRef>(null);
@@ -181,6 +189,15 @@ export function GroupList({
           <div className="h-9 px-5 flex items-center">
             <div className="flex-1 text-sm text-[#1D1E1F]">{t('module.space')}</div>
           </div>
+          {
+            userStore.info.is_internal && (<Suspense
+            fallback={<Skeleton.Input active size="small" block />}
+          >
+            <div className="px-2 mt-2">
+              <FileSearch />
+            </div>
+          </Suspense>)
+          }
           
           <nav className="p-2 space-y-1 flex-1 overflow-y-auto">
             {spaceList.map((item) => (
@@ -217,7 +234,6 @@ export function GroupList({
             ))}
           </nav>
         </div>
-
         {/* 右侧：知识库列表 */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Header */}

@@ -1,5 +1,21 @@
-import type { Message, OpenClawActivityItem, OpenClawTimelineItem, OutputFile } from "../types/message";
+import type {
+  Message,
+  OpenClawActivityItem,
+  OpenClawTimelineItem,
+  OpenClawTurnProjection,
+  OutputFile,
+} from "../types/message";
 import { mergeOpenClawActivities } from "./openclaw-activities";
+
+type OpenClawMutableMessage = Message & {
+  openclawProjection?: OpenClawTurnProjection;
+  openclawActivities?: OpenClawActivityItem[];
+  openclawTimelineItems?: OpenClawTimelineItem[];
+  answer?: string;
+  outputFiles?: OutputFile[];
+  reasoning_content?: string;
+  _openclawLastAnswerItemKey?: string;
+};
 
 const TIMELINE_TYPE_PRIORITY: Record<OpenClawTimelineItem["type"], number> = {
   thinking: 1,
@@ -33,8 +49,11 @@ function getUrlBasename(value: string) {
 }
 
 export function getOutputFileKey(file: OutputFile): string {
-  const id = normalizeOutputFileId(file);
-  const url = file.signed_download_url || file.download_url || file.url || "";
+  const id =
+    normalizeOutputFileId(file) ||
+    (file.artifact_id != null ? String(file.artifact_id) : "") ||
+    (file.upload_file_id != null ? String(file.upload_file_id) : "");
+  const url = file.preview_url || file.signed_download_url || file.download_url || file.url || "";
   const fileName = file.file_name || "";
   return id || `${url}|${fileName}`;
 }
@@ -55,6 +74,7 @@ export function getOutputFileKeys(
   const messageId = file.message_id != null ? String(file.message_id) : "";
   const sourceKind = normalizeOutputFileName(file.source_kind);
   const urls = [
+    normalizeOutputFileUrl(file.preview_url),
     normalizeOutputFileUrl(file.signed_download_url),
     normalizeOutputFileUrl(file.download_url),
     normalizeOutputFileUrl(file.url),
@@ -62,6 +82,8 @@ export function getOutputFileKeys(
   ].filter(Boolean);
 
   if (messageId && fileName) keys.add(`message:${messageId}:${fileName}`);
+  if (file.artifact_id != null && fileName) keys.add(`artifact:${String(file.artifact_id)}:${fileName}`);
+  if (file.upload_file_id != null && fileName) keys.add(`upload:${String(file.upload_file_id)}:${fileName}`);
   if (sourceKind && fileName) keys.add(`source:${sourceKind}:${fileName}`);
   for (const url of urls) {
     const basename = getUrlBasename(url);
@@ -74,12 +96,16 @@ export function getOutputFileKeys(
 }
 
 function mergeOutputFile(existing: OutputFile, incoming: OutputFile): OutputFile {
-  return {
+  const merged = {
     ...existing,
     ...incoming,
-    url: incoming.url || existing.url,
+    url: incoming.preview_url || existing.preview_url || incoming.url || existing.url,
+    preview_key: incoming.preview_key || existing.preview_key,
+    preview_url: incoming.preview_url || existing.preview_url,
     download_url: incoming.download_url || existing.download_url,
     signed_download_url: incoming.signed_download_url || existing.signed_download_url,
+    artifact_id: incoming.artifact_id || existing.artifact_id,
+    upload_file_id: incoming.upload_file_id || existing.upload_file_id,
     mime_type: incoming.mime_type || existing.mime_type,
     size: incoming.size ?? existing.size,
     kind: incoming.kind || existing.kind,
@@ -89,6 +115,12 @@ function mergeOutputFile(existing: OutputFile, incoming: OutputFile): OutputFile
     content: incoming.content ?? existing.content,
     file_path: incoming.file_path || existing.file_path,
   };
+  for (const key of ["artifact_id", "upload_file_id", "source_kind", "base64", "content", "file_path"] as const) {
+    if (merged[key] === undefined) {
+      delete merged[key];
+    }
+  }
+  return merged;
 }
 
 export function mergeOutputFiles(
@@ -344,7 +376,7 @@ function rebaseTimelineItemConversation(
 }
 
 export function rebaseOpenClawMessageConversation<
-  TMessage extends Message & { _openclawLastAnswerItemKey?: string }
+  TMessage extends OpenClawMutableMessage
 >(
   message: TMessage,
   nextConversationId: string,
@@ -453,7 +485,7 @@ function findAnswerTimelineItemIndex(
 }
 
 export function upsertOpenClawAnswerTimelineItemInMessage<
-  TMessage extends Message & { _openclawLastAnswerItemKey?: string }
+  TMessage extends OpenClawMutableMessage
 >(
   message: TMessage,
   input: {
@@ -493,7 +525,7 @@ export function getOpenClawTimelineMaxSeq(items: OpenClawTimelineItem[] = []) {
   }, 0);
 }
 
-export function syncOpenClawMessageDerivedState(message: Message) {
+export function syncOpenClawMessageDerivedState(message: OpenClawMutableMessage) {
   if (message.openclawProjection) {
     message.openclawActivities = message.openclawProjection.activities;
     message.answer = message.openclawProjection.visibleAnswer;

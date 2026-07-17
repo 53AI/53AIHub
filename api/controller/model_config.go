@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/embedding"
 	"github.com/53AI/53AIHub/service/rag"
+	"github.com/53AI/53AIHub/common/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -123,6 +125,24 @@ func UpdateSiteModelConfig(c *gin.Context) {
 		triggerSiteEmbeddingReindex(eid, oldModelConfig, updatedModelConfig)
 	}
 	triggerSiteThresholdCalibration(eid, chunkConfig.EmbeddingChannelID, chunkConfig.EmbeddingModelName)
+
+	logContent := fmt.Sprintf("修改站点模型配置，逻辑推理: %s → %s，向量嵌入: %s → %s，快速推理: %s → %s",
+		safeModelChannelName(oldModelConfig, func(c *model.ModelConfigData) model.ModelChannelConfig { return c.LogicReasoning }),
+		safeModelChannelName(updatedModelConfig, func(c *model.ModelConfigData) model.ModelChannelConfig { return c.LogicReasoning }),
+		safeModelChannelName(oldModelConfig, func(c *model.ModelConfigData) model.ModelChannelConfig { return c.VectorEmbedding }),
+		safeModelChannelName(updatedModelConfig, func(c *model.ModelConfigData) model.ModelChannelConfig { return c.VectorEmbedding }),
+		safeModelChannelName(oldModelConfig, func(c *model.ModelConfigData) model.ModelChannelConfig { return c.FastReasoning }),
+		safeModelChannelName(updatedModelConfig, func(c *model.ModelConfigData) model.ModelChannelConfig { return c.FastReasoning }),
+	)
+	model.CreateSystemLog(&model.SystemLog{
+		Eid:      eid,
+		UserID:   config.GetUserId(c),
+		Nickname: config.GetUserNickname(c),
+		Module:   model.SystemLogModuleModelConfig,
+		Action:   model.SystemLogActionUpdate,
+		Content:  logContent,
+		IP:       utils.GetClientIP(c),
+	})
 
 	response := &ModelConfigJSONResponse{
 		ID:          chunkConfig.ID,
@@ -389,4 +409,15 @@ func ValidateEmbeddingModelForConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse("模型验证成功"))
+}
+
+func safeModelChannelName(cfg *model.ModelConfigData, getter func(*model.ModelConfigData) model.ModelChannelConfig) string {
+	if cfg == nil {
+		return "-"
+	}
+	ch := getter(cfg)
+	if ch.ModelName != nil {
+		return *ch.ModelName
+	}
+	return "-"
 }

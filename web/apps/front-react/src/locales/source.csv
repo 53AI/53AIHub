@@ -4,7 +4,7 @@ action.pin,置顶,置頂,Pin,ピン留め
 action.unpin,取消置顶,取消置頂,Unpin,ピン留め解除
 action.pin_success,置顶成功,置頂成功,Pinned,ピン留めしました
 action.unpin_success,取消置顶成功,取消置頂成功,Unpinned,ピン留めを解除しました
-action.add_as_file,添加到,添加到,add to,～に追加する
+action.add_as_file,添加到,添加到,Add to,～に追加する
 action.add_success,已添加,已新增,Added,追加されました
 action.added,已添加,已新增,Added,追加済み
 action.allow,允许,允許,Allow,許可する
@@ -52,14 +52,22 @@ action.find,发现,發現,Find,発見
 action.fixed,固定,固定,Pin,固定
 action.forget_password,忘记密码？,忘記密碼？,Forgot password?,パスワードを忘れましたか？
 action.generate_failed,生成失败,生成失敗,Generation failed,生成に失敗しました
+action.import,导入,導入,Import,インポート
 action.login,登录,登入,Login,ログイン
 action.login_directly,直接登录,直接登入,Login directly,直接ログイン
 action.logout,退出登录,退出登入,Logout,ログアウト
 action.manage,管理,管理,Manage,管理
 action.merge_slice,合并切片,合併切片,Merge Slices,スライスを結合
 action.more,更多,更多,More,もっと見る
+action.move_to,移动到,移動到,Move to,移動
+move_to.root_dir,根目录,根目錄,Root,ルート
+move_to.folder_load_failed,文件夹加载失败,文件夾載入失敗,Failed to load folders,フォルダーの読み込みに失敗しました
+move_to.retry,重试,重試,Retry,再試行
+move_to.empty,暂无子项,暫無子項,No items,子項目なし
+move_to.no_match,无匹配目录,無匹配目錄,No matching folders,一致するフォルダーはありません
+move_to.cannot_move_to_file,不支持移动到当前类型下,不支持移動到當前類型下,Cannot move to this type,このタイプには移動できません
 action.next_step,下一步,下一步,Next step,次のステップ
-action.not_update,暂不更新,暫不更新,Not Update,更新しない
+action.not_update,暂不更新,暫不更新,Not now,更新しない
 action.ok,确定,確定,OK,OK
 action.ok_v2,好的,好的,OK,OK
 action.open,打开,打開,Open,開く
@@ -92,7 +100,7 @@ action.share,分享,分享,Share,共有
 action.shrink,缩小,縮小,Zoom out,縮小
 action.sort,排序,排序,Sort,並び替え
 action.sort_success,已更新排序,已更新排序,Sort updated,並び替えが更新されました
-action.source_edit,源文件编辑,,,
+action.source_edit,源文件编辑,,Edit source file,
 action.split_slice,拆分切片,拆分切片,Split Slices,スライスを分割
 action.stop,停止,停止,Stop,停止
 action.stop_generation,停止生成,停止生成,Stop generation,生成を停止
@@ -107,7 +115,7 @@ action.update_success,已更新,已更新,Updated,更新されました
 action.upgrade,升级,升級,Upgrade,アップグレード
 action.upload,上传,上傳,Upload,アップロード
 action.use,使用,使用,Use,使用
-action.go_use,去使用,去使用,Go Use,使用する
+action.go_use,去使用,去使用,Use now,使用する
 action.add_to_workbench,添加到工作台,添加到工作台,Add to Workbench,ワークベンチに追加
 action.user_register,用户注册,用戶註冊,User registration,ユーザー登録
 action.view,查看,查看,View,表示
@@ -127,7 +135,7 @@ agent.type,类型,類型,Type,タイプ
 agent.platform,平台,平台,Platform,プラットフォーム
 agent.basic_info,基本信息,基本信息,Basic Information,基本情報
 agent.change_avatar,更换头像,更換頭像,Change Avatar,アバターを変更
-agent.bot_name_placeholder,请输入你应用的名称,請輸入你應用的名稱,"Please enter the name of your application",アプリケーションの名前を入力してください
+agent.bot_name_placeholder,请输入你应用的名称,請輸入你應用的名稱,Please enter the name of your application,アプリケーションの名前を入力してください
 agent.bot_desc_placeholder,请描述你的应用，该描述将在应用发布后固定展示,請描述你的應用，該描述將在應用發布後固定展示,"Please describe your application, this description will be displayed after the application is published",アプリケーションを説明してください。この説明はアプリケーションが公開された後、固定で表示されます。
 agent.no_desc,暂无描述,暫無描述,No description,説明がありません
 agent.sort_by_created_time,创建时间排序,創建時間排序,Sort by created time,作成日時で並べ替え
@@ -168,14 +176,14 @@ agent.please_fill_usage_guide,请填写使用说明,請填寫使用說明,Please
 agent.bot_type_openclaw,Bot型（OpenClaw）,Bot型（OpenClaw）,Bot Type (OpenClaw),Bot型（OpenClaw）
 agent.app_type_workflow,应用型（工作流）,應用型（工作流）,App Type (Workflow),アプリ型（ワークフロー）
 agent.chat_type_agent,对话型（智能体）,對話型（智能體）,Chat Type (Agent),対話型（エージェント）
-agent.bot_type_desc,安装专属Skill的OpenClaw，可在多场景下自动响应用户请求，完成特定任务,安裝專屬Skill的OpenClaw，可在多場景下自動響應用戶請求，完成特定任務,OpenClaw with exclusive Skill can automatically respond to user requests in multiple scenarios,専用SkillをインストールしたOpenClawは、複数のシーンでユーザーリクエストに自動応答し、特定のタスクを完了できます
+agent.bot_type_desc,安装专属Skill的OpenClaw，可在多场景下自动响应用户请求，完成特定任务,安裝專屬Skill的OpenClaw，可在多場景下自動響應用戶請求，完成特定任務,An OpenClaw agent with dedicated skills can automatically respond to user requests across scenarios and complete specific tasks.,専用SkillをインストールしたOpenClawは、複数のシーンでユーザーリクエストに自動応答し、特定のタスクを完了できます
 agent.app_type_desc,工作流是一系列可执行指令的集合，用于实现业务逻辑或完成特定任务。,工作流是一系列可執行指令的集合，用於實現業務邏輯或完成特定任務。,Workflow is a collection of executable instructions for implementing business logic or completing specific tasks.,ワークフローは、ビジネスロジックを実装したり、特定のタスクを完了したりするための一連の実行可能命令です。
 agent.chat_type_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,Users have conversations with large models, which think and make decisions autonomously, suitable for relatively simple business logic.,ユーザーは大規模モデルと対話し、モデルが自律的に思考・決定を行います。比較的単純なビジネスロジックに適しています。
 agent.tip,提示,提示,Tip,ヒント
 agent.bot_id,Bot ID,Bot ID,Bot ID,Bot ID
 agent.secret,Secret,Secret,Secret,Secret
-agent.ws_url,WS Url,WS Url,WS Url,WS Url
-agent_app.openclaw,Openclaw,Openclaw,Openclaw,Openclaw
+agent.ws_url,WebSocket URL,WS Url,WebSocket URL,WS Url
+agent_app.openclaw,OpenClaw,Openclaw,OpenClaw,Openclaw
 agent.step1_install_plugin,1. 安装插件：复制以下指令到命令行执行,1. 安裝插件：複製以下指令到命令行執行,1. Install plugin: Copy the following command and run it in the command line,1. プラグインをインストール：以下のコマンドをコマンドラインで実行
 agent.step2_config_secret,2.配置密钥：复制以下配置信息供插件连接使用,2.配置密鑰：複製以下配置信息供插件連接使用,2. Configure secret: Copy the following configuration for the plugin connection,2. シークレットを設定：以下の設定情報をプラグイン接続に使用します
 agent.step3_restart_service,2. 重启本地OpenClaw服务,2. 重啟本地OpenClaw服務,2. Restart local OpenClaw service,2. ローカルOpenClawサービスを再起動
@@ -185,7 +193,32 @@ agent.ws_url_tooltip,WebSocket 服务端地址，用于客户端与 OpenClaw 平
 agent_app.qclaw,QClaw,QClaw,QClaw,QClaw
 agent_app.codex,Codex,Codex,Codex,Codex
 agent_app.manus,Manus,Manus,Manus,Manus
+agent_app.53ai_agent,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+agent_app.53ai_workflow,53AI Studio,53AI Studio,53AI Studio,53AI Studio
+agent_app.app_builder,百度千帆Appbuilder,千帆Appbuilder,Qianfan Appbuilder,千帆Appbuilder
+agent_app.bailian,阿里百炼,阿里百煉,Alibaba Bailian,Alibaba Bailian
+agent_app.coze_agent,Coze智能体,Coze智能體,Coze Agent,Cozeインテリジェントエージェント
+agent_app.coze_agent_cn,扣子编程,扣子编程,Coze,Coze
+agent_app.coze_agent_osv,coze studio 开源版,coze studio 开源版,Coze Studio Open Source Version,Coze Studio Open Source Version
+agent_app.coze_workflow,Coze工作流,Coze工作流,Coze Workflow,Cozeアプリケーションインテリジェント
+agent_app.coze_workflow_cn,扣子编程,扣子编程,Coze,Coze
+agent_app.coze_workflow_osv,coze studio 开源版,coze studio 开源版,Coze Studio Open Source Version,Coze Studio Open Source Version
+agent_app.dify_agent,Dify,Dify,Dify,Dify
+agent_app.dify_workflow,Dify,Dify,Dify,Dify
+agent_app.fastgpt_agent,FastGPT,FastGPT,FastGPT,FastGPT
+agent_app.fastgpt_workflow,FastGPT,FastGPT,FastGPT,FastGPT
+agent_app.maxkb_agent,MaxKB,MaxKB,MaxKB,MaxKB
+agent_app.n8n_workflow,n8n,n8n,n8n,n8n
+agent_app.prompt,Prompt,Prompt,Prompt,Prompt
+agent_app.tencent,腾讯云智能体开发平台,腾讯云智能体开发平台,Tencent Cloud,Tencent Cloud
+agent_app.volcengine,火山方舟,火山方舟,Volcengine,Volcengine
+agent_app.yuanqi,腾讯元器,腾讯元器,Tencent Yuanqi,Tencent Yuanqi
+agent.coze.agent_link,"扣子智能体""编辑状态""的链接",,Coze agent edit link,
+agent.coze.workflow_link,"扣子工作流""编辑状态""的链接","Coze工作流""編輯狀態""的鏈接","Coze workflow ""edit state"" link","Cozeワークフロー""編集状態""のリンク"
 agent.ai_generated_tip,内容由AI生成，无法确保真实准确，仅供参考,內容由AI生成，無法確保真實準確，僅供參考,Content generated by AI, accuracy not guaranteed, for reference only,コンテンツはAIによって生成されており、正確性を保証することはできません。参考用です。
+api_host,后端服务API,後端服務API,Backend Service API,後端サービスAPI
+ap_host_fastgpt,API 根地址,API 根地址,API Root Address,APIルートアドレス
+module.platform_model_base_url_maxkb,Base URL,Base URL,Base URL,Base URL
 authority.agent_not_permission,无权限使用此功能，请联系管理员,無權限使用此功能，請聯繫管理員,"You do not have permission to use this function, please contact the administrator directly",このエージェントを使用する権限がありません、管理者に直接連絡してください
 authority.group_not_permission,您所在的分组无权限,您所在的分組無權限,You do not have permission to access this group,あなたが所属するグループにはアクセス権限がありません
 authority.internal_not_permission,您不是内部用户，请联系管理员,您不是內部用戶，請聯繫管理員,"You are not an internal user, please contact the administrator directly",あなたは内部ユーザーではありません、管理者に直接連絡してください
@@ -275,7 +308,7 @@ clean.knowledge,知识整理,知識整理,Knowledge Organization,ナレッジ整
 clean.rule,清洗规则,清洗規則,Cleaning Rule,クリーニングルール
 clean.summarize,知识萃取,知識萃取,Knowledge Extraction,ナレッジ抽出
 common.active,动态,動態,Activity,動的
-common.ai_generated,内容由AI生成，仅供参考,內容由AI生成，僅供參考,"Content generated by AI,仅供参考",内容由AI生成，仅供参考
+common.ai_generated,内容由AI生成，仅供参考,內容由AI生成，僅供參考,"AI-generated content, for reference only.",内容由AI生成，仅供参考
 common.all,全部,全部,All,すべて
 common.allow_to,"已复制提示词内容，访问""{name}""站点","已複製提示詞內容，訪問""{name}""站點","Copied prompt content. Visit ""{name}"" site","プロンプトをコピーしました。""{name}""サイトにアクセスしますか"
 common.attach,附件,附件,Attachment,添付ファイル
@@ -322,7 +355,7 @@ common.outline,目录,目錄,Outline,目次
 common.person,共{count}位成员,共{count}位成員,{count} members in total,合計{count}人のメンバー
 common.preview,预览,預覽,Preview,プレビュー
 common.recently_edit,最近编辑,最近編輯,Recently Edited,最近の編集
-common.recently_file,最近文档,,,
+common.recently_file,最近文档,,Recent documents,
 common.recently_updated,最近更新,最近更新,Recently Updated,最近の更新
 common.recently_visit,最近访问,最近訪問,Recently Visited,最近のアクセス
 common.related_agent,相关智能体,相關智能體,Related Agents,関連エージェント
@@ -399,7 +432,7 @@ el.datepicker.selectedDate,已选日期,已選日期,Selected date,
 el.datepicker.startDate,开始日期,開始日期,Start Date,開始日
 el.datepicker.startTime,开始时间,開始時間,Start Time,開始時間
 el.datepicker.today,今天,今天,Today,今日
-el.datepicker.week,,,week,
+el.datepicker.week,周,,Week,
 el.datepicker.weeks.fri,五,五,Fri,金
 el.datepicker.weeks.mon,一,一,Mon,月
 el.datepicker.weeks.sat,六,六,Sat,土
@@ -414,7 +447,7 @@ el.datepicker.weeksFull.sun,星期日,星期日,Sunday,
 el.datepicker.weeksFull.thu,星期四,星期四,Thursday,
 el.datepicker.weeksFull.tue,星期二,星期二,Tuesday,
 el.datepicker.weeksFull.wed,星期三,星期三,Wednesday,
-el.datepicker.year,年,年,,年
+el.datepicker.year,年,年,year,年
 el.datepicker.yearTablePrompt,使用方向键与 Enter 键可选择年份,使用方向鍵與 Enter 鍵以選擇年份,Use the arrow keys and enter to select the year,
 el.dialog.close,关闭此对话框,關閉此對話框,Close this dialog,
 el.drawer.close,关闭此对话框,關閉此對話框,Close this dialog,
@@ -437,7 +470,7 @@ el.pagination.goto,前往,前往,Go to,
 el.pagination.next,下一页,下一頁,Go to next page,Go to next page
 el.pagination.nextPages,向后 {pager} 页,向後 {pager} 頁,Next {pager} pages,Next {pager} pages
 el.pagination.page,页,頁,Page,Page
-el.pagination.pageClassifier,页,頁,,ページ目へ
+el.pagination.pageClassifier,页,頁,page,ページ目へ
 el.pagination.pagesize,条/页,項/頁,/page,件/ページ
 el.pagination.prev,上一页,上一頁,Go to previous page,Go to previous page
 el.pagination.prevPages,向前 {pager} 页,向前 {pager} 頁,Previous {pager} pages,Previous {pager} pages
@@ -477,7 +510,7 @@ file.size_limit,图片大小不能超过{size}MB,圖片大小不能超過{size}M
 file.file_exceed_limit,最多上传{limit}个文件,最多上傳{limit}個文件,Upload up to {limit} files,最大{limit}個のファイルをアップロードできます
 file.file_format,支持格式：{format},支持格式：{format},Supported formats: {format},サポートされる形式：{format}
 file.file_size,单个文件大小不超过{size}MB,單個文件大小不超過{size}MB,File size must be less than {size}MB,ファイルサイズは{size}MB以下でなければなりません
-file.support_format,目前仅支持{format}格式文件,,,
+file.support_format,目前仅支持{format}格式文件,,Only {format} files are supported.,
 filter.date_range.all_time,所有时间,所有時間,All Time,すべての時間
 filter.date_range.last_12_months,过去12月,過去12月,Last 12 Months,過去12月
 filter.date_range.last_3_months,过去3月,過去3月,Last 3 Months,過去3月
@@ -507,6 +540,7 @@ form.icon,图标,圖標,Icon,アイコン
 form.icon_placeholder,为保证显示效果，请上传宽高比 1:1 的图片,為保證顯示效果，請上傳寬高比 1:1 的圖片,"For best display, please upload an image with a 1:1 aspect ratio",表示効果を確保するため、縦横比1:1の画像をアップロードしてください
 form.image_validator,请上传图片,請上傳圖片,Please upload the image,画像をアップロードしてください
 form.input_placeholder,请输入,請輸入,Please enter,入力してください
+form.input_validator,请输入内容,請輸入內容,Please enter content,内容を入力してください
 form.library_desc_placeholder,请输入知识库的简介,請輸入知識庫的簡介，如：產品設計與研發,"Please enter the knowledge base description, such as: product design and development",ナレッジベースの説明を入力してください。例：製品設計と開発
 form.library_view_member,知识库成员可访问,知識庫成員可訪問,Knowledge Base Members Access,ナレッジベースメンバーがアクセス可能
 form.library_view_public,公开访问,公開訪問,Public Access,公開アクセス
@@ -527,8 +561,9 @@ form.new_password,新密码,新密碼,New Password,新しいパスワード
 form.new_password_confirm,重复新密码,確認新密碼,Confirm New Password,パスワードの確認
 form.new_password_confirm_placeholder,请再次输入新密码,請再次輸入新密碼,Please re-enter new password,新しいパスワードを再入力してください
 form.new_password_placeholder,请输入新密码,請輸入新密碼,Please enter new password,新しいパスワードを入力してください
+form.department,部门,部門,Department,部門
 form.nickname,昵称,暱稱,Nickname,ニックネーム
-form.old_mobile,旧手机号,,,
+form.old_mobile,旧手机号,,Previous mobile number,
 form.optional,选填项,選填項,Optional,任意項目
 form.password,密码,密碼,Password,パスワード
 form.password_format,密码必须包含大小写字母和数字,密碼必須包含大小寫字母和數字,"Password must contain uppercase, lowercase letters and numbers",パスワードは大文字、小文字、数字を含む必要があります
@@ -547,10 +582,10 @@ form.select_verify,请选择验证方式,請選擇驗證方式,Please select ver
 form.text_validator,请输入文本,請輸入文本,Please enter the text,テキストを入力してください
 form.textarea_validator,请输入文本,請輸入文本,Please enter the text,テキストを入力してください
 form.url_validator,请输入正确的URL,請輸入正確的URL,Please enter the correct URL,正しいURLを入力してください
-form.username_length,账号长度必须在 5-20 个字符之间,,,アカウント名の長さは 5~20 文字でなければなりません
+form.username_length,账号长度必须在 5-20 个字符之间,,Account name must be 5-20 characters.,アカウント名の長さは 5~20 文字でなければなりません
 form.verify_code,验证码,驗證碼,Verification Code,認証コード
 form.verify_code_format,请输入正确的验证码,請輸入正確的驗證碼,Please enter a valid verification code,正しい認証コードを入力してください
-form.verify_code_placeholder,请输入验证码,,,
+form.verify_code_placeholder,请输入验证码,,Enter verification code,
 form.verify_old_mobile,验证你的旧手机号码,驗證你的舊手機號碼,Verify your old phone number,古い携帯電話番号を確認してください
 guide.confirm_password,确认密码,確認密碼,Confirm Password,パスワードの確認
 guide.confirm_password_placeholder,请再次确认密码,請再次確認密碼,Please confirm your password again,再度パスワードを確認してください
@@ -622,8 +657,8 @@ work_ai.suggested_questions,你可以问：,你可以問：,You can ask:,あな�
 work_ai.more,更多,更多,More,もっと見る
 work_ai.view_document,查看文档,查看文檔,View Document,ドキュメントを表示
 work_ai.new_chat,新会话,新會話,New Chat,新しいチャット
-internal_user.organization.user_search_placeholder,搜索成员,,,
-internal_user.scope.selected_title,已选成员,,,
+internal_user.organization.user_search_placeholder,搜索成员,,Search members,
+internal_user.scope.selected_title,已选成员,,Selected members,
 language_option_label.en,英文-EN,英文-EN,English-EN,英文-EN
 language_option_label.jp,日文-JP,日文-JP,日本語-JP,日本語-JP
 language_option_label.zh-cn,中文-CN,中文-CN,中文-CN,中文-CN
@@ -681,42 +716,43 @@ library.team_space,团队空间,團隊空間,Team Space,チームスペース
 library.tmpl_create,模板创建,模板創建,Template Creation,テンプレートから作成
 library.upload_file,上传文件,上傳文件,Upload File,ファイルをアップロード
 library.upload_folder,上传文件夹,上傳文件夾,Upload Folder,フォルダをアップロード
+library.current_library,当前知识库,當前知識庫,Current Library,現在のナレッジベース
 library.this_library_content,本知识库内容,本知識庫內容,This library content,このナレッジベースの内容
 library.apply_permission_unlock,申请权限，即可解锁,申請權限，即可解鎖,Apply for permission to unlock,権限を申請してロック解除
 library.docs_count,{count}文档,{count}文檔,{count} docs,{count}ドキュメント
 library.open_auto_select,开启自动选择,開啟自動選擇,Enable Auto Select,自動選択を有効化
 library.close_auto_select,关闭自动选择,關閉自動選擇,Disable Auto Select,自動選択を無効化
 login.agree,登录即视您同意,登入即視您同意,"By logging in, you agree to",ログインすると、以下に同意したことになります
-login.bind_mobile,绑定手机号,綁定手機號,Bind Mobile Number,携帯電話番号をバインド
-login.immediate_login,立即登录,立即登入,Immediate Login,すぐにログイン
+login.bind_mobile,绑定手机号,綁定手機號,Bind mobile number,携帯電話番号をバインド
+login.immediate_login,立即登录,立即登入,Log in now,すぐにログイン
 login.local_ai_privacy_policy,AI隐私协议,AI隱私政策,AI Privacy Policy,AIプライバシーポリシー
 login.local_privacy_policy,隐私协议,隱私政策,Privacy Policy,プライバシーポリシー
 login.local_terms_of_service,服务协议,服務條款,Terms and Conditions,利用規約
-login.login_by_mobile,使用手机登录,使用手機登入,Use Mobile Login,携帯電話でログイン
-login.login_by_password,使用密码登录,使用密碼登入,Use Password Login,パスワードでログイン
-login.login_by_wechat,请使用微信扫码登录,請使用微信登入,Use WeChat Login,WeChatでログイン
-login.login_by_wecom,请使用企业微信扫码登录,請使用企業微信登入,Use WeCom Login,WeComでログイン
-login.message_login,短信登录,簡訊登入,Message Login,SMSログイン
-login.message_login_title,短信登录,簡訊登入,Message Login,SMSログイン
-login.other_login_way,其他登录方式,其他登入方式,Other Login Way,他のログイン方式
-login.password_login,账号密码,密碼登入,Password Login,パスワードでログイン
-login.password_login_title,密码登录,密碼登入,Password Login,パスワードでログイン
+login.login_by_mobile,使用手机登录,使用手機登入,Log in with mobile,携帯電話でログイン
+login.login_by_password,使用密码登录,使用密碼登入,Log in with password,パスワードでログイン
+login.login_by_wechat,请使用微信扫码登录,請使用微信登入,Scan with WeChat to log in,WeChatでログイン
+login.login_by_wecom,请使用企业微信扫码登录,請使用企業微信登入,Scan with WeCom to log in,WeComでログイン
+login.message_login,短信登录,簡訊登入,SMS login,SMSログイン
+login.message_login_title,短信登录,簡訊登入,SMS login,SMSログイン
+login.other_login_way,其他登录方式,其他登入方式,Other sign-in methods,他のログイン方式
+login.password_login,账号密码,密碼登入,Password login,パスワードでログイン
+login.password_login_title,密码登录,密碼登入,Password login,パスワードでログイン
 login.privacy_policy,隐私政策,隱私政策,Privacy Policy,プライバシーポリシー
 login.quit,退出,退出,Quit,終了
 login.terms_of_service,条款和条件,條款和條件,Terms and Conditions,利用規約
-login.unbind_wechat_confirm_desc,,,"After unbinding, you will not be able to log in with WeChat. Continue?",
-login.unbind_wechat_confirm_title,,,Unbind WeChat Account Binding,
-login.unregistered_account_confirm,未注册手机号验证后自动登录，,未註冊手機號驗證後自動登錄,Automatically log in after verifying the unregistered mobile phone number,未登録の携帯電話番号を認証した後、自動的にログインします
-login.unregistered_account_desc,未注册的账号，请先注册后再登录,未註冊的賬號，請先註冊後再自動登入,"Unregistered accounts, please register first and then automatically login",未登録のアカウントは、登録後に自動的にログインします
-login.wechat_login,微信登录,微信登入,WeChat Login,WeChatログイン
-login.wechat_login_title,微信登录,微信登入,WeChat Login,WeChatログイン
-login.wecom_login,企业微信,企業微信,WeCom Login,WeComログイン
+login.unbind_wechat_confirm_desc,解绑后将无法使用微信登录，是否继续？,,"After unbinding, you will not be able to log in with WeChat. Continue?",
+login.unbind_wechat_confirm_title,解绑微信账号,,Unbind WeChat account,
+login.unregistered_account_confirm,未注册手机号验证后自动登录，,未註冊手機號驗證後自動登錄,"After verifying this unregistered mobile number, you will be logged in automatically.",未登録の携帯電話番号を認証した後、自動的にログインします
+login.unregistered_account_desc,未注册的账号，请先注册后再登录,未註冊的賬號，請先註冊後再自動登入,This account is not registered. Please register before logging in.,未登録のアカウントは、登録後に自動的にログインします
+login.wechat_login,微信登录,微信登入,WeChat login,WeChatログイン
+login.wechat_login_title,微信登录,微信登入,WeChat login,WeChatログイン
+login.wecom_login,企业微信,企業微信,WeCom login,WeComログイン
 login.wecom_login_error,"站点绑定的企业微信并非当前登录的企业微信!
 请用正确的企微登录。","站點綁定的企業微信並非當前登錄的企業微信!
-請用正確的企微登入。","The enterprise wechat bound to the site is not the enterprise wechat currently logged in!
-Please use the correct enterprise wechat to log in.","サイトにバインドされた企業微信は、現在のログインしている企業微信ではありません!
+請用正確的企微登入。","The WeCom account bound to this site is not the one currently logged in.
+Please log in with the correct WeCom account.","サイトにバインドされた企業微信は、現在のログインしている企業微信ではありません!
 正しい企業微信を使用してログインしてください。"
-login.wecom_login_title,企业微信登录,企業微信登入,WeCom Login,WeComログイン
+login.wecom_login_title,企业微信登录,企業微信登入,WeCom login,WeComログイン
 mine.from,来自,來自,From,取得元
 mine.knowledge,知识,知識,Knowledge,ナレッジ
 mine.my_favorites,我收藏的,我收藏的,My Favorites,お気に入り
@@ -769,26 +805,40 @@ profile.bind_accounts,账户信息,賬戶信息,Account Information,アカウン
 profile.bind_email,电子邮箱,電子郵箱,Email,メールアドレス
 profile.bind_google,谷歌账号,谷歌賬號,Google,Googleアカウント
 profile.bind_mobile,手机号,手機號,Mobile Number,電話番号
-profile.bind_success,已绑定,,,
+profile.bind_success,已绑定,,Bound,
 profile.bind_wechat,微信OpenId,微信OpenId,WeChat,WeChatOpenId
-profile.bind_wechat_title,微信扫码完成绑定,,,
+profile.bind_wechat_title,微信扫码完成绑定,,Scan with WeChat to finish binding,
 profile.change,更换,更換,Change,さしかえる
 profile.change_password,修改密码,修改密碼,Change Password,パスワード変更
-profile.change_success,已更换,,,
+profile.change_success,已更换,,Changed,
 profile.current_device,当前设备,當前設備,Current Device,現在のデバイス
-profile.expire_time_desc,,{group_name}將於{day}天後({expire_time})到期，馬上續費延續會員權益,"{group_name} will expire in {day} days ({expire_time}), please renew to continue membership rights",{group_name}は{day}日後({expire_time})に期限切れになります、会員権利を継続するには更新してください
-profile.expired_time_desc,,{group_name}已於{expire_time}到期，馬上續費延續會員權益,"{group_name} has expired on {expire_time}, please renew to continue membership rights",{group_name}は{expire_time}に期限切れになりました、会員権利を継続するには更新してください
+profile.expire_time_desc,{group_name} 将于 {day} 天后（{expire_time}）到期，请及时续费以继续使用会员权益,{group_name}將於{day}天後({expire_time})到期，馬上續費延續會員權益,{group_name} expires in {day} days ({expire_time}). Renew to keep your membership benefits.,{group_name}は{day}日後({expire_time})に期限切れになります、会員権利を継続するには更新してください
+profile.expired_time_desc,{group_name} 已于 {expire_time} 到期，请续费以继续使用会员权益,{group_name}已於{expire_time}到期，馬上續費延續會員權益,{group_name} expired on {expire_time}. Renew to keep your membership benefits.,{group_name}は{expire_time}に期限切れになりました、会員権利を継続するには更新してください
 profile.info,个人信息,個人信息,Personal Information,個人情報
+profile.setting,个人设置,個人設置,Personal Setting,個人設定
+profile.user_info,用户信息,用戶信息,User Info,ユーザー情報
+profile.user_memory,用户记忆,用戶記憶,User Memory,ユーザーメモリ
+profile.user_memory_desc,记忆让 53AI 记住你的偏好和习惯，对话越多，它就越懂你。记忆内容仅你本人可见。,記憶讓 53AI 記住你的偏好和習慣，對話越多，它就越懂你。記憶內容僅你本人可見。,Memory makes 53AI remember your preferences and habits. The more you chat, the better it understands you. Memory content is only visible to you.,記憶が53AIにあなたの好みと習慣を記憶させます。チャットをすればなるほど、それはあなたをよりよく理解します。記憶内容はあなただけが見ることができます。
+profile.smart_memory,智能记忆信息,智能記憶信息,Smart Memory Information,スマートメモリ情報
+profile.smart_memory_placeholder,请输入更多关于自己的信息，如：我是一名位于纽约市的分析师，主要从事 React 和 SQL。,請輸入更多關於自己的信息，如：我是一名位於紐約市的分析師，主要從事 React 和 SQL。,Please enter more information about yourself, such as: I am an analyst located in New York City, mainly working with React and SQL。,自分についてもっと情報を入力してください、例えば：私はニューヨークシティに住むアナリストで、主にReactとSQLを扱っています。
+profile.custom_memory,自定义记忆信息,自定義記憶信息,Custom Memory Information,カスタムメモリ情報
+profile.custom_memory_placeholder,请输入自定义指令，如：简洁直接。除非我另行说明，默认使用 Python。编写文档时，以专业语气书写并引用来源。,請輸入自定義指令，如：簡潔直接。除非我另行說明，否則默認使用 Python。編寫文檔時，以專業語氣書寫並引用來源。,Please enter custom instructions, such as: concise and direct. Unless otherwise specified, Python is used by default. When writing documents, use a professional tone and cite sources.,自定義指令を入力してください。例えば：簡潔直接。特に指定がない場合は、Pythonを使用します。ドキュメントを書く際には、専門的な口調で書くことと、ソースを引用することです。
+profile.save_success,设置已保存,設置已保存,Settings saved,設定が保存されました
+profile.import_memory_title,导入记忆,導入記憶,Import Memory,メモリのインポート
+profile.import_memory_desc,一键同步你在豆包、ChatGPT、Gemini等常用的AI工具的使用习惯,一鍵同步你在豆包、ChatGPT、Gemini等常用的AI工具的使用習慣,One-click synchronization of your usage habits of commonly used AI tools such as Doupa, ChatGPT, Gemini, etc.,豆包、ChatGPT、Geminiなどの常用AIツールの使用習慣を一键で同期します
+profile.import_memory_modal_title,记忆导入,記憶導入,Import Memory,メモリインポート
+profile.import_step1_title,复制以下提示词到你的豆包、ChatGPT、Gemini等常用的AI工具中,複製以下提示詞到你的豆包、ChatGPT、Gemini等常用的AI工具中,Copy the following prompt to your AI tools such as Doupa, ChatGPT, Gemini, etc.,以下のプロンプトを豆包、ChatGPT、GeminiなどのAIツールにコピーしてください
+profile.import_step2_title,将结果粘贴到下方，将自动导入到你的个人记忆,将結果粘貼到下方，將自動導入到你的個人記憶,Paste the result below, and it will be automatically imported to your personal memory,結果を以下に貼り付け、自動的に個人記憶にインポートされます
 profile.login_password,登录密码,登入密碼,Login Password,ログインパスワード
 profile.logined_devices,已登录的设备,已登入的設備,Logged-in Devices,ログイン済みデバイス
 profile.order_info,订单记录,訂單記錄,Order Information,注文情報
 profile.permanent_valid,永久有效,永久有效,Permanent,無期限
 profile.profile,个人资料,個人資料,Profile,プロフィール
-profile.renew,,續費,Renew,更新
+profile.renew,续费,續費,Renew,更新
 profile.subscription_info,订阅信息,訂閱信息,Subscription Information,サブスクリプション情報
 profile.unbind,解绑,解綁,Unbind,連携解除
 profile.unbind_account,未绑定,未綁定,Not Bound,未連携
-profile.unbind_success,已解绑,,,
+profile.unbind_success,已解绑,,Unbound,
 profile.unbind_wechat_confirm_cancel,暂不解绑,暫不解綁,Cancel,暫時解綁しない
 profile.unbind_wechat_confirm_desc,解绑后将无法使用该微信账号登录此账号，请谨慎操作！,解綁後，將無法使用微信登入，是否繼續？,"After unbinding, you will not be able to log in with WeChat. Continue?",解綁後、WeChatでログインできなくなります。続行しますか？
 profile.unbind_wechat_confirm_ok,确认解绑,確認解綁,Confirm,確認解綁
@@ -798,7 +848,7 @@ prompt.auth_tip,你所在的分组无权限,您所在的分组无权限,You do n
 prompt.content,提示词,提示詞Prompt Content,プロンプト
 prompt.default_sort,默认排序,默認排序,Default Sort,デフォルト順
 prompt.explore,探索,探索,Explore,探索
-prompt.let_use_prompt,去使用这个提示词,去使用这个提示词,去使用这个提示词,去使用这个提示词
+prompt.let_use_prompt,去使用这个提示词,去使用这个提示词,Use this prompt,去使用这个提示词
 prompt.not_found,提示词不存在,提示詞不存在,Prompt not found,プロンプトが見つかりません
 prompt.likes_sort,按最多点赞排序,按最多點讚排序,Likes Sort,いいね順
 prompt.views_sort,按最多浏览排序,按最多瀏覽排序,Views Sort,閲覧順
@@ -839,7 +889,7 @@ register.agree,注册即视您同意,註冊即視您同意,"By registering, you 
 register.privacy_policy,隐私政策,隱私政策,Privacy Policy,プライバシーポリシー
 register.terms_of_service,条款和条件,條款和條件,Terms of Service,利用規約
 register.unregister,,,Unregister,未登録
-register.unregistered,未注册,未註冊,,
+register.unregistered,未注册,未註冊,Unregistered,
 response_code.agent_error,智能体错误,智能體錯誤,Agent error,エージェントエラー
 response_code.auth_error,认证错误,認證錯誤,Authentication error,認証エラー
 response_code.database_error,数据库错误,數據庫錯誤,Database error,データベースエラー
@@ -856,14 +906,14 @@ response_code.verification_code_error,验证码错误,驗證碼錯誤,Verificati
 response_data.apply_already_submitted,您已提交过申请，请勿重复提交,您已提交過申請，請勿重複提交,"You have already submitted an application, please do not submit again",既に申請を提出しています。重複して提出しないでください
 response_data.domain_already_bound,该域名已被绑定,該域名已被綁定,This domain is already bound,このドメインは既にバインドされています
 response_message.auth_failed,无权限查看,無權限查看,No permission to view,無権限表示
-response_message.code_expired_or_invalid,验证码已过期或无效，请重新获取,,,
+response_message.code_expired_or_invalid,验证码已过期或无效，请重新获取,驗證碼已過期或無效，請重新獲取,The verification code has expired or is invalid, please obtain it again,確認コードが期限切れか無効です。再取得してください
 response_message.email_already_bind,邮箱已被其他用户绑定,郵箱已被其他用戶綁定,The email address is already bound to another user,メールアドレスは他のユーザーに登録済みです
 response_message.mobile_already_bind,手机号已被其他用户绑定,手機號已被其他用戶綁定,The phone number has already been bound to another user,携帯電話番号はすでに他のユーザーに登録されています
 response_message.model_changed,管理员已修改模型，请新建对话,管理員已修改模型，請新建對話,"The administrator has changed the model, please create a new conversation",管理者がモデルを変更しました、新しい会話を作成してください
 response_message.operate_too_fast,操作过快，请稍后再试,操作過快，請稍後再試,"Operating too fast, please try again later",操作が速すぎます。しばらくしてからお試しください
 response_message.unknown_error,未知错误,未知錯誤,Unknown error,不明なエラー
 response_message.user_not_found,用户不存在,用戶不存在,User does not exist,ユーザーが存在しません
-response_message.wechat_user_not_found,微信账号未绑定，请先绑定手机号,微信賬號未綁定，請先綁定手機號,WeChat account not bound，please bind your mobile number first,WeChatアカウントがバインドされていません。先に携帯番号をバインドしてください
+response_message.wechat_user_not_found,微信账号未绑定，请先绑定手机号,微信賬號未綁定，請先綁定手機號,WeChat account is not bound. Please bind your mobile number first.,WeChatアカウントがバインドされていません。先に携帯番号をバインドしてください
 response_message.username_already_exists,用户名已存在,用戶名已存在,Username already exists,ユーザー名が既に存在します
 response_message.username_or_password_is_incorrect,用户名或密码错误,用戶名或密碼錯誤,Username or password is incorrect,ユーザー名またはパスワードが間違っています
 response_message.wechat_already_bind,微信号已被其他用户绑定,微信號已被其他用戶綁定,WeChat account has been bound to another user,WeChatアカウントはすでに他のユーザーに登録されています
@@ -917,6 +967,7 @@ status.not_support_source_edit,当前文件类型暂不支持源文件编辑,當
 status.register_success,注册成功,註冊成功,Registration successful,登録成功
 status.retried,已重试,已重試,Retried,再試行済み
 status.save_fail,保存失败,保存失败,Save failed,保存に失敗しました
+status.import_success,导入成功,導入成功,Import Success,インポート成功
 status.save_success,已保存,已保存,Saved Successfully,保存しました
 status.sent,已发送,已發送,Sent,送信済み
 status.submitted,已提交,已提交,Submitted,送信済み
@@ -932,8 +983,8 @@ subscription.aside_desc,为以下用户购买,為以下用戶購買,Purchase for
 subscription.aside_title,新订单购买详情,新訂單購買詳情,New Order Purchase Details,新しい注文購入詳細
 subscription.credit_month_amount,每月{amount}积分,每月{amount}積分,Monthly {amount} credits,毎月{amount}積分
 subscription.expire_time,到期时间,到期時間,Expire Time,有効期限
-subscription.expire_time_desc,{group_name}将于{day}天后({expire_time})到期，马上续费延续会员权益,,,
-subscription.expired_time_desc,{group_name}已于{expire_time}到期，马上续费延续会员权益,,,
+subscription.expire_time_desc,{group_name}将于{day}天后({expire_time})到期，马上续费延续会员权益,,{group_name} expires in {day} days ({expire_time}). Renew now to keep your membership benefits.,
+subscription.expired_time_desc,{group_name}已于{expire_time}到期，马上续费延续会员权益,,{group_name} expired on {expire_time}. Renew now to keep your membership benefits.,
 subscription.free,免费版,免費版,Free,無料版
 subscription.manual_pay,手动转账,手動轉賬,Manual Transfer,手動支払い
 subscription.manual_pay_success_desc,请等待或联系管理员确认支付信息,請等待或聯繫管理員確認支付信息,Please wait or contact the administrator to confirm the payment information,支払い情報を確認するか、管理者に連絡してください
@@ -948,7 +999,7 @@ subscription.pay_success,支付成功,支付成功,Payment Successful,支払い�
 subscription.payed,已支付,已支付,Paid,支払い済み
 subscription.payment,支付方式,支付方式,Payment Method,支払方法
 subscription.paypal,PayPal,PayPal,PayPal,PayPal
-subscription.renew,续费,,,
+subscription.renew,续费,,Renew,
 subscription.time_title,选择购买时长,選擇購買時長,Select Purchase Duration,購入期間を選択
 subscription.time_unit_month,1个月,1個月,One Month,1ヶ月
 subscription.time_unit_year,1年,1年,One Year,1年
@@ -1002,6 +1053,7 @@ skill.id_empty,技能ID不能为空,技能ID不能為空,Skill ID cannot be empt
 skill.fetch_detail_failed,获取技能详情失败,獲取技能詳情失敗,Failed to get skill details,スキルの詳細の取得に失敗しました
 skill.soft_mode_only,当前为网站模式，工作台功能仅支持软件模式，请联系管理员切换,當前為網站模式，工作台功能僅支持軟件模式，請聯繫管理員切換,Workbench is only available in software mode, please contact admin to switch,現在はWebモードです。ワークベンチはソフトウェアモードでのみ利用可能です。管理者に連絡して切り替えてください
 skill.download_success,下载成功,下載成功,Download successful,ダウンロード成功
+skill.install,安装,安裝,Install,インストール
 skill.download_failed,下载失败，请重试,下載失敗，請重試,Download failed, please try again,ダウンロードに失敗しました、もう一度お試しください
 workbench.title,工作台,工作台,Workbench,ワークベンチ
 workbench.add_from_portal,从AI门户添加,從AI門戶添加,Add from AI Portal,AIポータルから追加
@@ -1010,6 +1062,8 @@ workbench.add_from_my_agent,从我的智能体添加,從我的智能體添加,Ad
 workbench.add_from_my_agent_desc,从我的智能体中添加一个智能体，对话仅本人可见,從我的智能體中添加一個智能體，對話僅本人可見,Add an agent from My Agents, conversations visible only to you,マイエージェントから追加、会話は自分のみ閲覧可能
 skill.detail_title,技能详情,技能詳情,Skill Details,スキル詳細
 skill.add_skill,添加技能,添加技能,Add Skill,スキルを追加
+skill.add_to_agent,将此技能添加至,將此技能添加至,Add this skill to,このスキルを追加先
+skill.select_agent,请选择小助理,請選擇小助理,Select an agent,エージェントを選択してください
 skill.quality_score,质量评分,質量評分,Quality Score,品質スコア
 skill.capabilities,能做什么,能做什麼,Capabilities,機能
 skill.usage_example,使用示例,使用示例,Usage Examples,使用例
@@ -1051,3 +1105,97 @@ mine.upload_empty,暂无文档，你可以上传或新建文档,暫無文檔，�
 mine.edit_btn,编辑,編輯,Edit,編集
 mine.add_lock_failed,添加文件锁失败,添加文件鎖失敗,Failed to add file lock,ファイルロックの追加に失敗しました
 common.system,系统,系統,System,システム
+openclaw.status.connected,{gatewayName} 已连接,,{gatewayName} connected,
+openclaw.status.disconnected,{gatewayName} 未连接,,{gatewayName} disconnected,
+openclaw.status.checking,{gatewayName} 检测中,,Checking {gatewayName},
+openclaw.status.unavailable,{gatewayName} 当前不可用,,{gatewayName} is currently unavailable,
+openclaw.status.status_checking,{gatewayName} 状态检测中,,Checking {gatewayName} status,
+openclaw.input.checking,正在检测 {gatewayName} 连接...,,Checking {gatewayName} connection...,
+openclaw.input.disconnected,{gatewayName} 插件未连接，正在重连...,,{gatewayName} plugin is not connected. Reconnecting...,
+openclaw.history.preview_debug,预览与调试,,Preview & Debug,
+openclaw.history.no_title,无标题会话,,Untitled conversation,
+openclaw.history.loading,正在加载...,,Loading...,
+openclaw.history.load_more_on_scroll,向下滚动加载更多,,Scroll down to load more,
+openclaw.history.empty,暂无历史会话,,No conversation history yet,
+openclaw.history.server_cache_empty_suffix,暂无服务器缓存会话。,,No cached server conversations yet.,
+openclaw.history.current,当前会话,,Current conversation,
+openclaw.history.new,新对话,,New conversation,
+openclaw.history.connect_plugin_first,连接插件后可加载此会话,,Connect the plugin to load this conversation,
+openclaw.output_file.fallback,文件 {id},,File {id},
+openclaw.knowledge.answer_fallback,OpenClaw 回答,,OpenClaw answer,
+openclaw.preview.close_file,关闭文件预览,,Close file preview,
+openclaw.panel.settings,Gateway 设置,,Gateway settings,
+openclaw.panel.close_settings,关闭 Gateway 设置,,Close Gateway settings,
+openclaw.panel.yes,是,,Yes,
+openclaw.panel.no,否,,No,
+openclaw.panel.info_load_failed,OpenClaw 信息加载失败,,Failed to load OpenClaw information,
+openclaw.panel.connected,已连接,,Connected,
+openclaw.panel.checking,检测中,,Checking,
+openclaw.panel.disconnected,未连接,,Disconnected,
+openclaw.panel.executed,已执行,,Executed,
+openclaw.panel.disabled,未开启,,Disabled,
+openclaw.panel.pending,待执行,,Pending,
+openclaw.panel.auto,自动,,Auto,
+openclaw.panel.codex_decides,由 Codex 决定,,Determined by Codex,
+openclaw.panel.workbuddy_decides,由 WorkBuddy 决定,,Determined by WorkBuddy,
+openclaw.panel.overview,概览,,Overview,
+openclaw.panel.snapshot,快照,,Snapshot,
+openclaw.panel.status,状态,,Status,
+openclaw.panel.normal,正常,,Normal,
+openclaw.panel.abnormal,异常,,Abnormal,
+openclaw.panel.activated,已激活,,Active,
+openclaw.panel.inactive,未激活,,Inactive,
+openclaw.panel.session,会话,,Session,
+openclaw.panel.endpoint,端点,,Endpoint,
+openclaw.panel.uptime,运行时间,,Uptime,
+openclaw.panel.workspace_root,Workspace 根目录,,Workspace root,
+openclaw.panel.last_heartbeat,最后通知点,,Last heartbeat,
+openclaw.panel.tick_interval,刻度间隔,,Tick interval,
+openclaw.panel.worker_count,{count} 个,,{count},
+openclaw.panel.workbuddy_api,WorkBuddy API：{value},,WorkBuddy API: {value},
+openclaw.panel.codex_app_server,Codex App Server：{value},,Codex App Server: {value},
+openclaw.panel.channel_connection_desc,使用频道连接 WhatsApp、Telegram、Discord、Signal 或 iMessage。,,"Use channels to connect WhatsApp, Telegram, Discord, Signal, or iMessage.",
+openclaw.panel.version,版本,,Version,
+openclaw.panel.current_version,当前版本,,Current version,
+openclaw.panel.model,模型,,Model,
+openclaw.panel.model_name,模型名称,,Model name,
+openclaw.panel.max_context,最大上下文,,Max context,
+openclaw.panel.permission_mode,权限模式,,Permission mode,
+openclaw.panel.cron_tasks,定时任务,,Scheduled tasks,
+openclaw.panel.task_overview,任务总览,,Task overview,
+openclaw.panel.total_tasks,任务总数,,Total tasks,
+openclaw.panel.enabled,已开启,,Enabled,
+openclaw.panel.enabled_section,已启用,,Enabled,
+openclaw.panel.task_fallback,任务 {index},,Task {index},
+openclaw.panel.frequency,频率：{value},,Frequency: {value},
+openclaw.panel.last_run,上次：{value},,Last run: {value},
+openclaw.panel.every_day,每天,,Every day,
+openclaw.panel.no_record,暂无记录,,No record yet,
+openclaw.panel.no_cron_tasks,暂无定时任务,,No scheduled tasks yet,
+openclaw.panel.skills,技能,,Skills,
+openclaw.panel.skill_icon,{title} 图标,,{title} icon,
+openclaw.panel.no_skills,暂无技能信息,,No skill information yet,
+setting.title,设置,設置,Settings,設定
+setting.basic_info,基本信息,基本資訊,Basic Info,基本情報
+setting.model_setting,模型设置,模型設置,Model Settings,モデル設定
+setting.current_model,当前模型,當前模型,Current Model,現在のモデル
+setting.planning_reasoning,规划推理,規劃推理,Planning & Reasoning,計画と推論
+setting.skill_execution,技能执行,技能執行,Skill Execution,スキル実行
+setting.quick_response,快速回答,快速回答,Quick Response,迅速な応答
+setting.deep_thinking,深度思考,深度思考,Deep Thinking,深い思考
+setting.memory,记忆,記憶,Memory,記憶
+setting.memory_desc,记忆让AI记住你的偏好和习惯,記憶讓AI記住你的偏好和習慣,Memory helps AI remember your preferences,記憶はAIにあなたの好みと習慣を覚えさせます
+setting.skill,技能,技能,Skills,スキル
+setting.skill_desc,管理智能体可使用的技能,管理智能體可使用的技能,Manage skills available to the agent,エージェントが使用できるスキルを管理
+setting.generate_setting,生成设置,生成設置,Generation Settings,生成設定
+setting.generate_setting_desc,配置AI搜问的生成参数,配置AI搜問的生成参數,Configure AI search generation parameters,AI検索の生成パラメータを設定
+setting.default_range,默认范围,預設範圍,Default Range,デフォルト範囲
+setting.all_knowledge_base,全部知识库,全部知識庫,All Knowledge Bases,すべてのナレッジベース
+setting.enabled,已启用,已啟用,Enabled,有効
+setting.disabled,未启用,未啟用,Disabled,無効
+setting.use_scope,使用范围,使用範圍,Use Scope,使用範囲
+setting.current_config,当前配置,當前配置,Current Config,現在の構成
+setting.info,设置信息,設置資訊,Setting Info,設定情報
+setting.platform_access,平台接入,平台接入,Platform Access,プラットフォームアクセス
+setting.platform_auth_info,当前 Agent 的平台授权信息,當前 Agent 的平台授權信息,Current Agent platform authorization info,現在のエージェントのプラットフォーム認証情報
+status.account_disabled_desc,账号已被禁用，请联系管理员开启~,帳號已被停用，請聯繫管理員開啟~,Your account has been disabled, please contact administrator to enable,アカウントは無効になっています。管理者に連絡して有効化してください

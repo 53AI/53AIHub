@@ -3,7 +3,18 @@ import { Tooltip } from 'antd'
 import { CloseCircleFilled } from '@ant-design/icons'
 import { RUN_STATUS } from '@/constants/chunk'
 import { SvgIcon } from '@km/shared-components-react'
-import { STEP_KEY_TO_NAME } from '@/views/library/main/file/data-pipeline/constants'
+import { STEP_KEY_TO_NAME_I18N_KEY } from '@km/shared-business/knowledge-pipeline'
+import { t } from '@/locales'
+
+// 获取步骤名称（运行时翻译）
+const STEP_KEY_TO_NAME: Record<string, string> = {
+  document_parsing: t('data_pipeline.node_document_parsing'),
+  content_cleaning: t('data_pipeline.node_content_cleaning'),
+  summary_generation: t('data_pipeline.node_summary_generation'),
+  document_chunking: t('data_pipeline.node_document_chunking'),
+  vector_indexing: t('data_pipeline.node_vector_indexing'),
+  graph_generation: t('data_pipeline.node_graph_generation'),
+}
 import './file.css'
 
 interface FileStatusProps {

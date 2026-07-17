@@ -200,9 +200,9 @@ func loadRunnableSkillPathSet(ctx context.Context, agent *model.Agent, userID in
 		return map[string]struct{}{}
 	}
 	skillService := service.NewSkillLibraryService()
-	pathSet, err := skillService.GetUserRunnableSkillPathSet(ctx, agent.Eid, userID)
+	pathSet, err := skillService.GetAgentRunnableSkillPathSet(ctx, agent.Eid, agent.AgentID, userID)
 	if err != nil {
-		logger.Warnf(ctx, "【技能运行】加载用户可用技能集合失败，按空集合处理: eid=%d user_id=%d err=%v", agent.Eid, userID, err)
+		logger.Warnf(ctx, "【技能运行】加载Agent可用技能集合失败，按空集合处理: eid=%d agent_id=%d user_id=%d err=%v", agent.Eid, agent.AgentID, userID, err)
 		return map[string]struct{}{}
 	}
 	return pathSet
@@ -427,6 +427,44 @@ func countUserMessages(messages []relay_model.Message) int {
 		}
 	}
 	return count
+}
+
+var memoryPrefixes = []string{"请记住", "帮我记住", "帮我记", "记住"}
+var toolBehaviorKeywords = []string{"工具", "tool", "使用.*时"}
+
+func isToolBehaviorMemory(item *model.MemoryItem) bool {
+	if item == nil || item.Fact == "" {
+		return false
+	}
+	lower := strings.ToLower(item.Fact)
+	for _, kw := range toolBehaviorKeywords {
+		if strings.Contains(lower, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractMemoryFromUserMessage(text string) *model.MemoryItem {
+	text = strings.TrimSpace(text)
+	for _, prefix := range memoryPrefixes {
+		if strings.HasPrefix(text, prefix) {
+			fact := strings.TrimSpace(strings.TrimPrefix(text, prefix))
+			if fact == "" {
+				continue
+			}
+			fact = strings.TrimPrefix(fact, "：")
+			fact = strings.TrimPrefix(fact, ":")
+			fact = strings.TrimSpace(fact)
+			return &model.MemoryItem{
+				Fact:       fact,
+				Source:     "user_input",
+				Category:   model.CategoryFact,
+				MemoryType: model.MemoryTypeKnowledge,
+			}
+		}
+	}
+	return nil
 }
 
 func getLastUserMessageText(messages []relay_model.Message) string {
@@ -743,10 +781,34 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	// 检查是否启用问题改写功能
 	var originalQuestion, rewrittenQuestion string
 
-	// 获取最后一个用户消息作为当前问题
 	originalQuestion = getLastUserMessageText(chatRequest.Messages)
 
 	currentUserID := config.GetUserId(c)
+	if currentUserID > 0 && originalQuestion != "" {
+		if item := extractMemoryFromUserMessage(originalQuestion); item != nil {
+			item.Time = time.Now().UnixMilli()
+			if isToolBehaviorMemory(item) {
+				lesson := model.ToolLessonItem{
+					ToolName: "all",
+					Lesson:   item.Fact,
+					Success:  true,
+					Time:     item.Time,
+				}
+				if err := model.AppendToolLesson(agent.Eid, agent.AgentID, currentUserID, lesson); err != nil {
+					logger.Warnf(c, "【记忆录入】工具教训写入失败: eid=%d, agent_id=%d, user_id=%d, err=%v", agent.Eid, agent.AgentID, currentUserID, err)
+				} else {
+					logger.Infof(c, "【记忆录入】已写入工具教训: eid=%d, agent_id=%d, user_id=%d, lesson=%s", agent.Eid, agent.AgentID, currentUserID, item.Fact)
+				}
+			} else {
+				if err := model.MergeSmartMemory(agent.Eid, currentUserID, []model.MemoryItem{*item}); err != nil {
+					logger.Warnf(c, "【记忆录入】记忆写入失败: eid=%d, user_id=%d, err=%v", agent.Eid, currentUserID, err)
+				} else {
+					service.InvalidateUserMemoryCache(agent.Eid)
+					logger.Infof(c, "【记忆录入】已写入记忆: eid=%d, user_id=%d, fact=%s", agent.Eid, currentUserID, item.Fact)
+				}
+			}
+		}
+	}
 	var currentUser *model.User
 	if currentUserID > 0 {
 		var userErr error
@@ -1665,6 +1727,78 @@ func processChatRequestV2(c *gin.Context, chatRequest *ChatRequest, ctx context.
 	}
 }
 
+func createOpenClawWSMessage(c *gin.Context, agent *model.Agent, body []byte, meta *relay_meta.Meta, originalQuestion string) *model.Message {
+	msg := &model.Message{
+		Eid:               agent.Eid,
+		UserID:            config.GetUserId(c),
+		ConversationID:    0,
+		AgentID:           agent.AgentID,
+		Message:           originalQuestion, // 参考现在的 openclaw 逻辑
+		Answer:            "",
+		ReasoningContent:  "",
+		OriginalQuestion:  originalQuestion,
+		ModelName:         meta.OriginModelName,
+		IsStream:          meta.IsStream,
+		RequestSource:     model.MessageRequestSourceConsole,
+		RequestId:         helper.GetRequestID(c.Request.Context()),
+		AgentCustomConfig: agent.CustomConfig,
+	}
+	applyVisitorIdentityToMessage(c, msg)
+	// FIXME: projection 全量同步会创建消息，relay 再 CreateMessage 会导致重复。
+	//        处理好与 projection 的去重后需取消注释。
+	// if err := model.CreateMessage(msg); err != nil {
+	// 	logger.Errorf(c.Request.Context(), "[openclaw-ws] createMessage failed: agent_id=%d err=%v", agent.AgentID, err)
+	// }
+	return msg
+}
+
+func updateOpenClawWSMessage(c *gin.Context, msg *model.Message) {
+	if msg == nil || msg.ID <= 0 {
+		return
+	}
+	content, reasoningContent := GetResponseContent(c, false, nil)
+	msg.Answer = content
+	msg.ReasoningContent = reasoningContent
+	// FIXME: projection 全量同步会更新消息，relay 再 UpdateMessage 会导致重复。
+	//        处理好与 projection 的去重后需取消注释。
+	// if err := model.UpdateMessage(msg); err != nil {
+	// 	logger.Errorf(c.Request.Context(), "[openclaw-ws] updateMessage failed: msg_id=%d err=%v", msg.ID, err)
+	// }
+}
+
+const openClawWSProjectionSource = "openclaw_projection"
+
+func ensureOpenClawWSProjectionConversation(c *gin.Context, agent *model.Agent, channelConvID string) *model.Conversation {
+	var conv model.Conversation
+	model.DB.Where(
+		"eid = ? AND user_id = ? AND agent_id = ? AND source = ? AND channel_conversation_id = ?",
+		agent.Eid,
+		config.GetUserId(c),
+		agent.AgentID,
+		openClawWSProjectionSource,
+		channelConvID,
+	).Find(&conv)
+	if conv.ConversationID > 0 {
+		return &conv
+	}
+
+	conv = model.Conversation{
+		Eid:                   agent.Eid,
+		UserID:                config.GetUserId(c),
+		AgentID:               agent.AgentID,
+		Source:                openClawWSProjectionSource,
+		Title:                 channelConvID,
+		Status:                model.ConversationStatusActive,
+		ConversationType:      model.ConversationTypeDebug,
+		ChannelConversationID: channelConvID,
+	}
+	if err := model.CreateConversation(&conv); err != nil {
+		logger.Warnf(c.Request.Context(), "[openclaw-ws] createProjectionConversation failed: agent_id=%d channel=%s err=%v", agent.AgentID, channelConvID, err)
+		return nil
+	}
+	return &conv
+}
+
 func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Agent, relayMode int) {
 	ctx := c.Request.Context()
 
@@ -1734,6 +1868,21 @@ func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Age
 		return
 	}
 
+	originalQuestion := getLastUserMessageText(textRequest.Messages)
+
+	openClawMsg := createOpenClawWSMessage(c, agent, body, meta, originalQuestion)
+
+	var projConv *model.Conversation
+	var channelConvID string
+	if cid, ok := rawRequest["conversation_id"].(string); ok && cid != "" {
+		channelConvID = cid
+		projConv = ensureOpenClawWSProjectionConversation(c, agent, channelConvID)
+		if projConv != nil && openClawMsg.ID > 0 {
+			openClawMsg.ConversationID = projConv.ConversationID
+			openClawMsg.OpenClawProjectionKey = fmt.Sprintf("ws-%d", openClawMsg.ID)
+		}
+	}
+
 	resp, err := adaptor.DoRequest(c, meta, bytes.NewBuffer(requestBytes))
 	if err != nil {
 		logger.Warnf(ctx, "OpenClawWS stateless chat request failed: agent_id=%d err=%v", agent.AgentID, err)
@@ -1757,6 +1906,23 @@ func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Age
 		writeOpenClawStatelessError(c, respErr.StatusCode, errResp, meta.IsStream)
 		return
 	}
+
+	updateOpenClawWSMessage(c, openClawMsg)
+
+	if projConv != nil && openClawMsg.Answer != "" {
+		projConv.LastMessage = openClawMsg.Answer
+		if err := model.UpdateConversation(projConv); err != nil {
+			logger.Warnf(ctx, "[openclaw-ws] update conversation last_message failed: conv_id=%d err=%v", projConv.ConversationID, err)
+		}
+	}
+
+	// 重置空闲记忆压缩定时器（OpenClawWS 无本地 messageID，传 0 回退 48h 窗口）
+	go func() {
+		userID := config.GetUserId(c)
+		if userID > 0 {
+			service.DefaultIdleTrigger.Reset(agent.Eid, agent.AgentID, userID, 0)
+		}
+	}()
 }
 
 func writeOpenClawStatelessError(c *gin.Context, statusCode int, errResp model.OpenAIErrorResponse, stream bool) {
@@ -2005,9 +2171,12 @@ func CreateInitialMessage(c *gin.Context, agent *model.Agent, user_id int64, con
 	// 立即同步 MessageID 到 AgentRun
 	if msg.ID > 0 && requestId != "" {
 		runSvc := service.NewAgentRunService()
-		if _, _, err := runSvc.EnsureRunForRequest(ctx, agent.Eid, conversationId, msg.ID, requestId); err != nil {
+		run, _, err := runSvc.EnsureRunForRequest(ctx, agent.Eid, conversationId, msg.ID, requestId)
+		if err != nil {
 			logger.Warnf(ctx, "sync message_id to agent_run failed: eid=%d, conversation_id=%d, message_id=%d, request_id=%s, err=%v",
 				agent.Eid, conversationId, msg.ID, requestId, err)
+		} else if run != nil && run.RunID != "" {
+			c.Set(session.SESSION_AGENT_RUN_ID, run.RunID)
 		}
 	}
 
@@ -2115,6 +2284,22 @@ func sendSaveMessageEvent(c *gin.Context, requestId, modelName string, messageID
 		"model":      modelName,
 		"message_id": messageIDHash,
 		"choices":    []interface{}{},
+	}
+
+	// Include conversation_id and run_id in first chunk for API access
+	if source, exists := c.Get(session.SESSION_REQUEST_SOURCE); exists && source == model.MessageRequestSourceAPI {
+		if convID, exists := c.Get(session.SESSION_CONVERSATION_ID); exists {
+			if id, ok := convID.(int64); ok && id > 0 {
+				if encoded, err := hashids.Encode(id); err == nil {
+					payload["conversation_id"] = encoded
+				}
+			}
+		}
+		if runIDVal, exists := c.Get(session.SESSION_AGENT_RUN_ID); exists {
+			if runID, ok := runIDVal.(string); ok && runID != "" {
+				payload["run_id"] = runID
+			}
+		}
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -2302,14 +2487,54 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		return openai.ErrorWrapper(err, "invalid_text_request", http.StatusBadRequest)
 	}
 
+	// Agent 记忆注入：将用户全局记忆 + Agent 记忆 + 工具教训注入 System Prompt
+	// 即使 agent.Prompt 为空，也执行注入——让有记忆数据的 Agent 依然能获得上下文增强
+	// 注意：部分渠道（如腾讯元器）不支持 system 角色，跳过整条记忆链路
 	systemPromptReset := false
-	if agent.Prompt != "" {
-		systemPromptReset = addAgentPrompt(ctx, textRequest, agent.Prompt, agent.ChannelType)
-		modifiedBody, err := json.Marshal(textRequest)
-		if err != nil {
-			return openai.ErrorWrapper(err, "marshal_request_failed", http.StatusInternalServerError)
+	var enrichedPrompt string
+	if supportsSystemRole(agent.ChannelType) {
+		memSvc := service.NewAgentMemoryService()
+
+		// 从用户最新消息中提取 Query，用于筛选相关的 Agent 记忆
+		userQuery := getLastUserMessage(textRequest.Messages)
+
+		// 提取当前请求的工具名列表，用于筛选相关的工具教训
+		var toolNames []string
+		for _, t := range textRequest.Tools {
+			if t.Function.Name != "" {
+				toolNames = append(toolNames, t.Function.Name)
+			}
 		}
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(modifiedBody))
+		enrichedPrompt = memSvc.BuildMemoryEnrichedPrompt(ctx, agent.Eid, agent.AgentID, user_id, agent.Prompt, userQuery, toolNames)
+		if enrichedPrompt != agent.Prompt {
+			logger.Infof(ctx, "【记忆注入】已注入记忆到 System Prompt: eid=%d, agent_id=%d, user_id=%d", agent.Eid, agent.AgentID, user_id)
+			// 记录各记忆模块的具体内容
+			userMem := memSvc.FormatUserMemoryForPrompt(ctx, agent.Eid, user_id)
+			agentMem := memSvc.FormatAgentMemoryForPrompt(agent.Eid, agent.AgentID, user_id, userQuery)
+			toolLessons := memSvc.FormatToolLessonsForPrompt(agent.Eid, agent.AgentID, user_id, toolNames)
+			if userMem != "" {
+				logger.Infof(ctx, "【记忆注入】用户全局记忆内容: eid=%d, user_id=%d, 长度=%d, 内容:\n%s",
+					agent.Eid, user_id, len(userMem), truncateForLog(userMem, 500))
+			}
+			if agentMem != "" {
+				logger.Infof(ctx, "【记忆注入】Agent记忆内容: eid=%d, agent_id=%d, user_id=%d, 长度=%d, 内容:\n%s",
+					agent.Eid, agent.AgentID, user_id, len(agentMem), truncateForLog(agentMem, 500))
+			}
+			if toolLessons != "" {
+				logger.Infof(ctx, "【记忆注入】工具教训内容: eid=%d, agent_id=%d, user_id=%d, 长度=%d, 内容:\n%s",
+					agent.Eid, agent.AgentID, user_id, len(toolLessons), truncateForLog(toolLessons, 500))
+			}
+		}
+		systemPromptReset = addAgentPrompt(ctx, textRequest, enrichedPrompt, agent.ChannelType)
+		if enrichedPrompt != "" {
+			modifiedBody, err := json.Marshal(textRequest)
+			if err != nil {
+				return openai.ErrorWrapper(err, "marshal_request_failed", http.StatusInternalServerError)
+			}
+			c.Request.Body = io.NopCloser(bytes.NewBuffer(modifiedBody))
+		}
+	} else {
+		logger.Infof(ctx, "【记忆注入】渠道不支持 system 角色，跳过记忆注入: channelType=%d", agent.ChannelType)
 	}
 
 	promptTokens := getPromptTokens(textRequest, meta.Mode)
@@ -2568,11 +2793,41 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		if conversation, convErr := GetSessionConversation(c); convErr == nil && conversation != nil {
 			if agentForFinal, agentErr := GetSessionAgent(c); agentErr == nil && agentForFinal != nil {
 				finalizeAgentRunForMessage(ctx, agentForFinal, conversation.ConversationID, messageID, requestID, model.AgentRunStatusCompleted, "", "")
+
+				// 从本次消息中提取工具教训（异步执行，不阻塞主流程）
+				// 注意：仅对支持 system 角色的渠道执行，因为记忆注入的前提是能注入 system prompt
+				if supportsSystemRole(agentForFinal.ChannelType) {
+					go func() {
+						memSvc := service.NewAgentMemoryService()
+						if err := memSvc.ExtractToolLessonsFromRun(context.Background(), agentForFinal.Eid, agentForFinal.AgentID, user_id, messageID); err != nil {
+							logger.Warnf(ctx, "【记忆注入】提取工具教训失败: eid=%d, agent_id=%d, user_id=%d, message_id=%d, err=%v",
+								agentForFinal.Eid, agentForFinal.AgentID, user_id, messageID, err)
+						}
+					}()
+
+					// 重置空闲记忆压缩定时器，记录当前 messageID（异步执行，不阻塞主流程）
+					go func() {
+						service.DefaultIdleTrigger.Reset(agentForFinal.Eid, agentForFinal.AgentID, user_id, messageID)
+					}()
+				}
 			}
 		}
 	}
 
 	return nil
+}
+
+func supportsSystemRole(channelType int) bool {
+	switch channelType {
+	case model.ChannelApiDify,
+		model.ChannelApi53AI,
+		model.ChannelApiBailian,
+		model.ChannelApiAppBuilder,
+		model.ChannelApiYuanqi:
+		return false
+	default:
+		return true
+	}
 }
 
 func shouldEmitAnswerGenerationStep(c *gin.Context) bool {
@@ -2984,4 +3239,12 @@ func loadSkillEnvVars(ctx context.Context, skillPath string, eid, userID int64) 
 	}
 
 	return envVars
+}
+
+// truncateForLog 截断长字符串用于日志输出
+func truncateForLog(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "...(truncated)"
 }

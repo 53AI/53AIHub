@@ -13,11 +13,11 @@ export type { AgentBasicInfoProps, AgentBasicInfoValue } from './shared/AgentBas
 export { AgentInfo } from './shared/AgentInfo'
 export { AgentTypeSelector } from './shared/AgentType'
 export { UseScope } from './shared/UseScope'
+export { CollapsibleSection } from './shared/CollapsibleSection'
+export type { CollapsibleSectionProps } from './shared/CollapsibleSection'
 
 // Config 组件
 export { BaseConfig } from './config/BaseConfig'
-export { CollapsibleSection } from './config/CollapsibleSection'
-export type { CollapsibleSectionProps } from './config/CollapsibleSection'
 export { ExpandConfig } from './config/ExpandConfig'
 export { FieldInput } from './config/FieldInput'
 export { FieldInputSetting } from './config/FieldInputSetting'
@@ -34,7 +34,11 @@ export { Chat } from './preview/Chat'
 export type { ChatRef } from './preview/Chat'
 export { Completion } from './preview/Completion'
 export type { CompletionRef } from './preview/Completion'
+export { PreviewModelSelector } from './preview/PreviewModelSelector'
+export type { PreviewModelSelectorProps } from './preview/PreviewModelSelector'
+export { PreviewKnowledgeSourceSelector } from './preview/PreviewKnowledgeSourceSelector'
+export type { PreviewKnowledgeSourceSelectorProps, PreviewSourceMode } from './preview/PreviewKnowledgeSourceSelector'
 
 // Context
-export { default as ChannelConfigContext, useChannelConfig } from '../context/ChannelConfigContext'
-export type { ChannelConfig } from '../context/ChannelConfigContext'
+export { default as ChannelConfigContext, useChannelConfig } from '../hooks/useChannelConfig'
+export type { ChannelConfig } from '../hooks/useChannelConfig'

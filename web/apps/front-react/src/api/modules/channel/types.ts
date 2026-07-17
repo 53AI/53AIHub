@@ -13,3 +13,9 @@ export interface ChannelRequestData {
   type: number
   weight: number
 }
+
+export interface ChannelTestResponse {
+  success: boolean
+  message: string
+  time?: number
+}

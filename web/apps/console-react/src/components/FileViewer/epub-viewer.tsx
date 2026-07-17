@@ -9,7 +9,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
-import { loadLib } from '@/utils/loadLib'
+import loadLib from '@/utils/loadLib'
 
 interface EpubViewerProps {
   url: string

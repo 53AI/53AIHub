@@ -3,6 +3,18 @@ import { Form } from 'antd';
 import { useAgentCreateAdapter } from '../../adapters';
 import { useAgentForm } from '../../hooks';
 import { useAgentFormStore } from '../../store';
+import type { ScopeItem } from '../../adapters/types';
+
+type GroupSelectValue = number | number[] | ScopeItem[];
+
+function isScopeItem(value: unknown): value is ScopeItem {
+  return Boolean(
+    value &&
+    typeof value === 'object' &&
+    'scope_type' in value &&
+    'target_id' in value
+  );
+}
 
 export function UseScope() {
   // 使用 adapter 获取翻译函数和组件
@@ -13,60 +25,76 @@ export function UseScope() {
   // 使用 hook 获取状态和方法
   const { formData, updateField, isNew } = useAgentForm()
   const subscriptionGroupIds = formData.subscription_group_ids
-  const userGroupIds = formData.user_group_ids
+  const scopes = formData.scopes
 
   // 使用 adapter 获取企业信息
   const isIndependent = adapter.isIndependent || false
   const isIndustry = adapter.isIndustry || false
   const isEnterprise = adapter.isEnterprise || false
 
-  // 从 store 获取 loading 状态
-  const loading = useAgentFormStore((state) => state.loading)
-
-  // 缓存分组选项
+  // 缓存注册用户分组选项
   const subscriptionOptionsRef = useRef<any[]>([])
-  const userGroupOptionsRef = useRef<any[]>([])
 
-  // 记录是否已应用默认值，使用 isNew 作为 key 来重置
-  const appliedDefaultKeyRef = useRef<string>('')
+  // 记录是否已应用默认值
   const didApplySubscriptionDefaultRef = useRef(false)
-  const didApplyUserDefaultRef = useRef(false)
+  const didApplyScopesDefaultRef = useRef(false)
 
   // 当 isNew 变化时，重置已应用标记
-  const currentKey = isNew ? 'new' : 'edit'
-  if (appliedDefaultKeyRef.current !== currentKey) {
-    appliedDefaultKeyRef.current = currentKey
-    didApplySubscriptionDefaultRef.current = false
-    didApplyUserDefaultRef.current = false
-  }
-
-  // 当 loading 从 true 变为 false（详情加载完成），检查是否需要设置默认值
-  const prevLoadingRef = useRef(loading)
+  const prevIsNewRef = useRef(isNew)
   useEffect(() => {
-    // loading 从 true 变为 false，说明详情加载完成
-    if (prevLoadingRef.current === true && loading === false && isNew) {
-      // 检查是否需要设置默认值
-      if (!didApplySubscriptionDefaultRef.current && subscriptionOptionsRef.current.length > 0) {
-        const currentValue = useAgentFormStore.getState().form_data.subscription_group_ids
-        if (!currentValue || currentValue.length === 0) {
-          didApplySubscriptionDefaultRef.current = true
-          updateField('subscription_group_ids', subscriptionOptionsRef.current.map(opt => opt.group_id))
-        }
-      }
-      if (!didApplyUserDefaultRef.current && userGroupOptionsRef.current.length > 0) {
-        const currentValue = useAgentFormStore.getState().form_data.user_group_ids
-        if (!currentValue || currentValue.length === 0) {
-          didApplyUserDefaultRef.current = true
-          updateField('user_group_ids', userGroupOptionsRef.current.map(opt => opt.group_id))
-        }
+    if (prevIsNewRef.current !== isNew) {
+      prevIsNewRef.current = isNew
+      didApplySubscriptionDefaultRef.current = false
+      didApplyScopesDefaultRef.current = false
+    }
+  }, [isNew])
+
+  // 新建模式下应用默认值；编辑模式不做任何处理，按接口返回值显示
+  useEffect(() => {
+    if (!isNew) {
+      return
+    }
+
+    // 注册用户分组默认值
+    if (!didApplySubscriptionDefaultRef.current && subscriptionOptionsRef.current.length > 0) {
+      const currentValue = useAgentFormStore.getState().form_data.subscription_group_ids
+      if (!currentValue || currentValue.length === 0) {
+        didApplySubscriptionDefaultRef.current = true
+        updateField('subscription_group_ids', subscriptionOptionsRef.current.map(opt => opt.group_id))
       }
     }
-    prevLoadingRef.current = loading
-  }, [loading, isNew, updateField])
+
+    // 内部用户（scopes）默认值：新建模式下默认选中"全部成员"
+    if (!didApplyScopesDefaultRef.current && (isEnterprise || isIndustry)) {
+      const currentValue = useAgentFormStore.getState().form_data.scopes
+      if (!currentValue || currentValue.length === 0) {
+        didApplyScopesDefaultRef.current = true
+        updateField('scopes', [{ scope_type: 'company', target_id: 0 }])
+      }
+    }
+  }, [isNew, updateField, isEnterprise, isIndustry])
 
   // 如果没有 GroupSelect 组件，则不渲染
   if (!GroupSelect) {
     return null
+  }
+
+  const handleSubscriptionGroupChange = (value: GroupSelectValue) => {
+    if (!Array.isArray(value)) {
+      updateField('subscription_group_ids', [value])
+      return
+    }
+    const items: Array<number | ScopeItem> = value
+    updateField('subscription_group_ids', items.filter((item): item is number => typeof item === 'number'))
+  }
+
+  const handleScopesChange = (value: GroupSelectValue) => {
+    if (!Array.isArray(value)) {
+      updateField('scopes', [])
+      return
+    }
+    const items: Array<number | ScopeItem> = value
+    updateField('scopes', items.filter(isScopeItem))
   }
 
   return (
@@ -80,7 +108,7 @@ export function UseScope() {
       >
         <GroupSelect
           value={subscriptionGroupIds || []}
-          onChange={(value: number | number[]) => updateField('subscription_group_ids', Array.isArray(value) ? value : [value])}
+          onChange={handleSubscriptionGroupChange}
           type="checkbox"
           groupType={adapter.GROUP_TYPE?.USER || 'user'}
           multiple
@@ -96,15 +124,11 @@ export function UseScope() {
         layout="vertical"
       >
         <GroupSelect
-          value={userGroupIds || []}
-          onChange={(value: number | number[]) => updateField('user_group_ids', Array.isArray(value) ? value : [value])}
-          type="picker"
-          groupType={adapter.GROUP_TYPE?.INTERNAL_USER || 'internal_user'}
-          multiple
-          onOptionsLoad={(options: any[]) => {
-            // 缓存选项
-            userGroupOptionsRef.current = options
-          }}
+          value={scopes}
+          onChange={handleScopesChange}
+          type="scope"
+          defaultFirstValue={isNew}
+          simpleValue
         />
       </Form.Item>
     </>

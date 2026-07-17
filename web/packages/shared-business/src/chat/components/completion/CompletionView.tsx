@@ -3,14 +3,21 @@ import { Button, Form, Input, InputNumber, Select, Upload, message, Empty } from
 import { PlusOutlined, CloseOutlined, WarningOutlined, CopyOutlined, DownloadOutlined, LoadingOutlined } from '@ant-design/icons';
 import { BubbleAssistant } from '@km/hub-ui-x-react';
 import { isUrl, copyToClip, downloadFile } from '@km/shared-utils';
-import { useTranslation } from '../../i18n';
+import { useTranslation, useChatAdapters, type IChatAdapters } from '../../i18n';
 import { useConversationStore } from '../../stores';
-import { usePluginAdapters } from '../../context';
 import { useEmbedMode } from '../../hooks';
 import { UsageGuide, LoadingState } from '../index';
 import { RelatedScene } from '../related-scene';
 import ChatHeader from '../ChatView/ChatHeader';
 import type { IAgentInfo } from '../../adapters/types';
+import type {
+  HeaderSlotProps,
+  LanguageSwitcherFeature,
+  GuideFeature,
+  PermissionFeature,
+  CompletionFeature,
+} from '../ChatView/types';
+import type { AgentRecommendFeature } from '../../types/features';
 
 interface FormItem {
   id: string;
@@ -36,58 +43,65 @@ interface ResultItem {
   id: string;
   type: string;
   value: any;
-  label?: string;
-  variable?: string;
-}
-
-export interface CompletionViewFeatures {
-  languageSwitcher?: boolean;
-  guide?: boolean;
-  /** 是否显示相关场景面板 */
-  showRelatedScene?: boolean;
+  label: string;
+  variable: string;
 }
 
 export interface CompletionViewProps {
+  // === 核心 ===
   /** Agent ID - 内部通过 API 获取 agentInfo */
   agentId?: string;
   /** Agent 信息 - 可直接传入，或通过 agentId 加载 */
   agentInfo?: IAgentInfo;
+
+  // === UI 插槽 ===
+  slots?: {
+    /** 自定义 Header */
+    header?: (props: HeaderSlotProps) => React.ReactNode;
+  };
+
+  // === 功能分组 ===
+  /** 语言切换 */
+  languageSwitcher?: LanguageSwitcherFeature;
+  /** 使用指引 */
+  guide?: GuideFeature;
+  /** 智能体推荐与跳转 */
+  agentRecommend?: AgentRecommendFeature;
+  /** 权限检查 */
+  permission?: PermissionFeature;
   /** 完成回调 */
-  onComplete?: () => void;
-  /** Header features */
-  features?: CompletionViewFeatures;
-  /** 自定义 Header 渲染函数 */
-  renderHeader?: (props: {
-    agentInfo: IAgentInfo;
-    lang: string;
-    setLang: (lang: string) => void;
-    showGuide: boolean;
-    onGuideChange: (show: boolean) => void;
-  }) => React.ReactNode;
-  /** 权限检查回调 - 返回 true 表示有权限，false 表示无权限 */
-  checkPermission?: (userGroupIds?: number[]) => boolean | Promise<boolean>;
-  /** 下一个智能体回调 - 用于 RelatedScene */
-  onNextAgent?: (item: any, parameters: Record<string, string>) => void;
-  /** 重新初始化当前智能体回调 - 当跳转到同一智能体时触发 */
-  onInitAgent?: () => void;
+  completion?: CompletionFeature;
 }
 
 export interface CompletionViewRef {
   restart: () => void;
 }
 
-const DEFAULT_FEATURES: CompletionViewFeatures = {
-  languageSwitcher: true,
-  guide: true,
-  showRelatedScene: true,
-};
+const DEFAULTS = {
+  languageSwitcher: { enabled: true },
+  guide: { enabled: true },
+  agentRecommend: { showRelatedScene: true },
+} as const;
 
 export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>(
-  ({ agentId, agentInfo: agentInfoProp, onComplete, features: userFeatures, renderHeader, checkPermission, onNextAgent, onInitAgent }, ref) => {
-    const features = { ...DEFAULT_FEATURES, ...userFeatures };
+  (props, ref) => {
+    const {
+      agentId,
+      agentInfo: agentInfoProp,
+      slots,
+      languageSwitcher,
+      guide,
+      agentRecommend,
+      permission,
+      completion,
+    } = props;
+
+    const languageSwitcherEnabled = languageSwitcher?.enabled ?? DEFAULTS.languageSwitcher.enabled;
+    const guideEnabled = guide?.enabled ?? DEFAULTS.guide.enabled;
+    const showRelatedScene = agentRecommend?.showRelatedScene ?? DEFAULTS.agentRecommend.showRelatedScene;
     const { t, lang, setLang } = useTranslation();
     const [form] = Form.useForm();
-    const adapters = usePluginAdapters();
+    const adapters = useChatAdapters() as IChatAdapters & Required<Pick<IChatAdapters, 'agentApi' | 'conversationApi' | 'workflowApi'>>;
     const workflowApi = adapters.workflowApi;
     const embedMode = useEmbedMode();
     const createConversation = useConversationStore((state) => state.createConversation);
@@ -257,9 +271,9 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
                 .filter((item: any) => outputData[item.variable])
                 .map((item: any) => ({
                   id: item.id,
-                  label: item.label,
+                  label: item.label || '',
                   type: item.type,
-                  variable: item.variable,
+                  variable: item.variable || '',
                   value: outputData[item.variable] || '',
                 }));
 
@@ -431,8 +445,8 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
       }
 
       // 权限校验
-      if (checkPermission) {
-        const hasPermission = await checkPermission(agentInfo?.user_group_ids);
+      if (permission?.checkAccess) {
+        const hasPermission = await permission.checkAccess(agentId);
         if (!hasPermission) {
           return;
         }
@@ -483,9 +497,9 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
           .filter((item: any) => workflowOutputData[item.variable])
           .map((item: any) => ({
             id: item.id,
-            label: item.label,
+            label: item.label || '',
             type: item.type,
-            variable: item.variable,
+            variable: item.variable || '',
             value: workflowOutputData[item.variable] || '',
           }));
         setResult(output);
@@ -495,7 +509,7 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
         setResultString(resultStr || JSON.stringify(workflowOutputData, null, 2));
 
         setShowResult(true);
-        onComplete?.();
+        completion?.onComplete?.();
       } catch (error: any) {
         console.error('Run error:', error);
         // 显示错误消息，不切换界面
@@ -747,12 +761,12 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
                 <div className="flex items-center gap-1 mt-2">
                   <WarningOutlined style={{ color: '#182B50', fontSize: 14 }} />
                   <span className="text-xs text-[#182B50]/80">
-                    {t('file.file_size', { size: item.file_size }) || `Max file size: ${item.file_size}MB`}
+                    {t('file.file_size', { size: item.file_size ?? '' }) || `Max file size: ${item.file_size}MB`}
                   </span>
                 </div>
                 <div>
                   <span className="text-xs text-[#182B50]/80">
-                    {t('file.file_format', { format: item.file_accept?.join('、') }) || `Format: ${item.file_accept?.join(', ')}`}
+                    {t('file.file_format', { format: item.file_accept?.join('、') ?? '' }) || `Format: ${item.file_accept?.join(', ')}`}
                   </span>
                 </div>
               </div>
@@ -881,7 +895,7 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
     };
 
     // Usage Guide Panel - 右侧固定宽度面板
-    const guidePanel = showGuide && features.guide && (
+    const guidePanel = showGuide && guideEnabled && (
       <div className="flex-none w-[450px] h-full flex flex-col bg-white overflow-hidden">
         <div className="h-15 flex items-center justify-between px-5 border-b">
           <h4 className="text-lg text-[#1F2123]">{t('chat.usage_guide')}</h4>
@@ -903,8 +917,8 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
 
     // No Agent State
     if (!agentInfo) {
-      const noAgentHeader = renderHeader
-        ? renderHeader({
+      const noAgentHeader = slots?.header
+        ? slots.header({
             agentInfo: {} as IAgentInfo,
             lang,
             setLang,
@@ -919,7 +933,11 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
             showGuide={showGuide}
             onGuideChange={setShowGuide}
             isEmbedMode={embedMode.isEmbedMode}
-            features={features}
+            features={{
+              languageSwitcher: languageSwitcherEnabled,
+              guide: guideEnabled,
+              share: false,
+            }}
           />
         );
       return (
@@ -995,15 +1013,15 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
                 )}
               </div>
               {/* RelatedScene - 显示关联智能体 */}
-              {features.showRelatedScene && agentInfo?.settings_obj?.relate_agents?.length > 0 && showResult && !loading && (
+              {showRelatedScene && Boolean(agentInfo?.settings_obj?.relate_agents?.length) && showResult && !loading && (
                 <div className="sticky bottom-0 px-4 pb-2">
                   <RelatedScene
                     isWorkflow={true}
                     output={result}
-                    relateAgents={agentInfo.settings_obj.relate_agents}
+                    relateAgents={agentInfo.settings_obj?.relate_agents || []}
                     currentAgentId={agentInfo.agent_id}
-                    onNextAgent={onNextAgent}
-                    onInitAgent={onInitAgent}
+                    onNextAgent={agentRecommend?.onNavigateNext}
+                    onInitAgent={agentRecommend?.onRefresh}
                   />
                 </div>
               )}
@@ -1060,8 +1078,8 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
     );
 
     // 渲染 header
-    const header = renderHeader
-      ? renderHeader({
+    const header = slots?.header
+      ? slots.header({
           agentInfo,
           lang,
           setLang,
@@ -1077,7 +1095,11 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
           onGuideChange={setShowGuide}
           isEmbedMode={embedMode.isEmbedMode}
           onClose={embedMode.requestClose}
-          features={features}
+          features={{
+            languageSwitcher: languageSwitcherEnabled,
+            guide: guideEnabled,
+            share: false,
+          }}
         />
       );
 

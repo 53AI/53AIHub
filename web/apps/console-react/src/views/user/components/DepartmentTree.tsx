@@ -323,7 +323,7 @@ export const DepartmentTree = forwardRef<
       switch (command) {
         case "add_children":
           setAddDialogData({
-            parentDid: data.did,
+            pdid: data.did,
             parentChildren: data.children,
           });
           setAddDialogOpen(true);

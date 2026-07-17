@@ -120,6 +120,7 @@ func SetupLogger() {
 		gin.DefaultErrorWriter = errorWriter
 		log.SetOutput(gin.DefaultErrorWriter)
 		InitRAGJobLogConfig(config.LogDir, config.OnlyOneLogFile)
+		InitSlowLogger(config.LogDir)
 
 		setZapLogger(buildZapLogger(mainWriter))
 	})

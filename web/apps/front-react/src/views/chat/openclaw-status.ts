@@ -5,6 +5,8 @@ export const OPENCLAW_STATUS_CONNECTED_POLL_INTERVAL = 15_000;
 export const OPENCLAW_STATUS_CHECKING_MESSAGE = "正在检测 OpenClaw 连接...";
 export const OPENCLAW_STATUS_OFFLINE_MESSAGE = "OpenClaw 插件未连接，正在重连...";
 
+export type OpenClawTranslate = (key: string, params?: Record<string, unknown>) => string;
+
 export const DISCONNECTED_OPENCLAW_STATUS = {
   healthy: false,
   connectionHealthy: false,
@@ -25,10 +27,6 @@ function readConnectedStatus(payload: any) {
   return String(payload?.hub53ai?.connectionStatus || payload?.connectionStatus || "").toLowerCase();
 }
 
-export function readOpenClawResponsePayload(response: any) {
-  return response?.data || response || {};
-}
-
 export function isOpenClawStatusConnected(payload: any) {
   return Boolean(
     payload?.connectionHealthy === true ||
@@ -40,10 +38,63 @@ export function getOpenClawConnectionState(payload: any): OpenClawConnectionStat
   return isOpenClawStatusConnected(payload) ? "connected" : "disconnected";
 }
 
-export function getOpenClawInputDisabledReason(connectionState: OpenClawConnectionState, gatewayName = "OpenClaw") {
+function translateOpenClaw(
+  translate: OpenClawTranslate | undefined,
+  key: string,
+  fallback: string,
+  params?: Record<string, unknown>
+) {
+  const text = translate?.(key, params);
+  return text && text !== key ? text : fallback;
+}
+
+export function getOpenClawInputDisabledReason(
+  connectionState: OpenClawConnectionState,
+  gatewayName = "OpenClaw",
+  translate?: OpenClawTranslate
+) {
   return connectionState === "checking"
-    ? `正在检测 ${gatewayName} 连接...`
-    : `${gatewayName} 插件未连接，正在重连...`;
+    ? translateOpenClaw(
+        translate,
+        "openclaw.input.checking",
+        `正在检测 ${gatewayName} 连接...`,
+        { gatewayName }
+      )
+    : translateOpenClaw(
+        translate,
+        "openclaw.input.disconnected",
+        `${gatewayName} 插件未连接，正在重连...`,
+        { gatewayName }
+      );
+}
+
+export function getOpenClawStatusText(
+  connectionState: OpenClawConnectionState,
+  gatewayName = "OpenClaw",
+  translate?: OpenClawTranslate
+) {
+  if (connectionState === "connected") {
+    return translateOpenClaw(
+      translate,
+      "openclaw.status.connected",
+      `${gatewayName} 已连接`,
+      { gatewayName }
+    );
+  }
+  if (connectionState === "checking") {
+    return translateOpenClaw(
+      translate,
+      "openclaw.status.checking",
+      `${gatewayName} 检测中`,
+      { gatewayName }
+    );
+  }
+  return translateOpenClaw(
+    translate,
+    "openclaw.status.disconnected",
+    `${gatewayName} 未连接`,
+    { gatewayName }
+  );
 }
 
 export function getOpenClawErrorStatus(error: unknown) {

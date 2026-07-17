@@ -2,21 +2,37 @@ import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 're
 import { Button, message } from 'antd'
 import { useAgentCreateAdapter } from '../../adapters'
 import { useAgentFormStore } from '../../store'
+import { useAgentPreviewSender } from '../../hooks/useAgentPreviewSender'
+import { PreviewModelSelector } from './PreviewModelSelector'
+import { PreviewKnowledgeSourceSelector } from './PreviewKnowledgeSourceSelector'
 import { copyToClip } from '@km/shared-utils'
+// 通过相对路径引用 shared-business/chat 内的 hooks，避免 tsup 自引用 dist 子路径未构建的问题
+import { useChatStream, useRagStats } from '../../../chat/hooks'
+import { ProcessFlowHeader } from '../../../chat/components/process-flow'
 
+/**
+ * 简化的本地消息形态，对齐 useChatSend.ts 的 Message 语义：
+ * - `answer` 是字符串（useChatStream.processStreamData/processStreamDataItem 直接写入这里）
+ * - `loading` / `reasoning_content` 等与 Message 同名
+ * - UI 渲染字段（content={message.answer}, streaming={message.loading}）保持 Message 直读习惯
+ */
 interface ChatMessage {
   question: {
     role: string
     content: string
     user_files: any[]
   }
-  answer: {
-    loading: boolean
-    role: string
-    content: string
-    reasoning_expanded: boolean
-    reasoning_content: string
-  }
+  /** 助手消息字段（Message 语义） */
+  answer: string
+  loading: boolean
+  role: string
+  reasoning_expanded: boolean
+  reasoning_content: string
+  process_records?: any[]
+  rag_stats?: any
+  rag_temp?: any
+  skill?: { skill_name: string; display_name: string }
+  knowledge_graph?: boolean
 }
 
 const ConversationType = {
@@ -42,13 +58,26 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
 
   const agentFormStore = useAgentFormStore()
 
+  const previewSender = useAgentPreviewSender({
+    agent_id: agentFormStore.agent_id,
+    agent_type: agentFormStore.agent_type,
+    agent_data: agentFormStore.agent_data,
+    form_data: agentFormStore.form_data,
+  })
+
+  // 流式解析：复用 shared-business/chat 的标准实现，自动累积 process_records / rag_stats
+  // 注：useChatStream 内部依赖 useChatAdapters()（无 ChatConfigProvider 时返回 undefined），
+  // 主流程 processStreamData 不依赖 adapters，可安全使用。
+  const { processStreamData, processStreamDataItem, clearBuffer } = useChatStream()
+  const { formatRagStats } = useRagStats()
+
   const scrollRef = useRef<any>(null)
   const [chatList, setChatList] = useState<ChatMessage[]>([])
   const [conversationCreating, setConversationCreating] = useState(false)
   const [isConfigChanged, setIsConfigChanged] = useState(false)
 
   const abortControllerRef = useRef<AbortController | null>(null)
-  const conversationIdRef = useRef(0)
+  const conversationIdRef = useRef<string | number>(0)
   const activeChatIndexRef = useRef(-1)
   const renderTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const activeChatDataRef = useRef<ChatMessage>({
@@ -57,16 +86,20 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       content: '',
       user_files: [],
     },
-    answer: {
-      loading: false,
-      role: '',
-      content: '',
-      reasoning_expanded: false,
-      reasoning_content: '',
-    },
+    answer: '',
+    loading: false,
+    role: '',
+    reasoning_expanded: false,
+    reasoning_content: '',
+    // useChatStream.processStreamData 写入的字段，初值给空，避免首次写入 undefined 报错
+    process_records: [],
+    rag_stats: null,
+    rag_temp: { type: 'rag_search' },
+    skill: { skill_name: '', display_name: '' },
+    knowledge_graph: false,
   })
 
-  const chatLoading = conversationCreating || chatList.some(item => item.answer.loading)
+  const chatLoading = conversationCreating || chatList.some(item => item.loading)
 
   const enableUpload = Boolean(
     agentFormStore.form_data.settings?.file_parse?.enable ||
@@ -118,9 +151,23 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
     }
   }
 
-  const onSendConfirm = async (question: string, userFiles?: any[], type = '') => {
+  // Sender 的 onSend 回调入参（hub-ui-x-react Sender.tsx 行 384-394）
+  interface SenderSendData {
+    textContent: string
+    pureTextContent: string
+    atList: any[]
+    skillList: string[]
+    selectedSkills: Array<{ display_name: string; skill_name?: string }>
+    files: any[]
+  }
+
+  const onSendConfirm = async (data: SenderSendData, options?: { isRegenerate?: boolean }) => {
     if (chatLoading) return
-    userFiles = userFiles || []
+
+    const textContent = data.textContent || ''
+    let userFiles: any[] = data.files || []
+    const selectedSkills = data.selectedSkills || []
+    const isRegenerate = !!options?.isRegenerate
 
     const agentId = agentFormStore.agent_id
     if (!agentId) {
@@ -143,7 +190,8 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       try {
         const data = await adapter.createConversation({
           agent_id: agentId,
-          title: question,
+          // title 用纯文本（去掉 mention 富文本与技能前缀），避免 "[object Object]"
+          title: textContent,
           conversation_type: ConversationType.TEST,
         })
         conversationIdRef.current = data.conversation_id
@@ -152,7 +200,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       }
     }
 
-    if (type !== 'regenerate') {
+    if (!isRegenerate) {
       userFiles = userFiles?.map(item => ({
         type: 'image',
         content: `file_id:${item.id}`,
@@ -163,19 +211,74 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       })) || []
     }
 
+    // ============ 按 agentKind 派生发送参数（三个场景规整）============
+    // 三种场景的最终 payload 差异（参考同目录 *.json）：
+    //   workbench 工作台 AI：type='work-ai' + skill + selected_skills + agentInfo
+    //                      messages.content 形如 "/<skill_name> <question>"
+    //   knowledge AI 搜问：  modelId（拼到 model 后缀）+ networkSearch/knowledgeGraph
+    //                      + agentInfo + library.value=[-1]
+    //                      启用 enable_process_steps / knowledge_base_ids / file_ids /
+    //                      space_ids / search_config / web_search_config / enable_graph_search
+    //   agent 普通智能体：   minimal 模式，只传通用字段，不加 enable_process_steps /
+    //                      knowledge_base_ids / 等知识库相关字段
+    const isWorkbench = previewSender.agentKind === 'workbench'
+    const isKnowledge = previewSender.agentKind === 'knowledge'
+    const isAgent = previewSender.agentKind === 'none'
+
+    let sendType: 'work-ai' | '' = ''
+    let sendSkill: { display_name?: string; skill_name?: string } | undefined
+    let sendModelId: string | undefined
+    let sendNetworkSearch: boolean | undefined
+    let sendKnowledgeGraph: boolean | undefined
+    let sendAgentInfo: any
+    let sendLibrary: { value: string[] | number[] } | undefined
+
+    if (isWorkbench) {
+      sendType = 'work-ai'
+      // 仅取 Sender 实际选中的技能，不兜底 previewSender.skill.list[0]，
+      // 否则未交互状态下 list 是全部技能，会被当作默认选中第一个。
+      // 与 apps/front-react/src/views/index/IndexChat.tsx 行 527 对齐。
+      const s = selectedSkills[0]
+      sendSkill = s
+        ? { display_name: s.display_name, skill_name: s.skill_name }
+        : undefined
+      sendAgentInfo = agentFormStore.agent_data
+    } else if (isKnowledge) {
+      // modelId 取 API 真实 id（对齐 apps/front-react/src/views/knowledge/chat.tsx 行 435
+      // `modelId = currentModel?.id`）。useAgentPreviewSender 通过 adapter.getAgentModels
+      // 拉取后按 value 匹配，已知后端独立分配的 id。未加载完成时为 undefined。
+      sendModelId = previewSender.model?.modelId?.toString()
+      sendNetworkSearch = previewSender.source?.value.mode === 'networkSearch' || undefined
+      sendKnowledgeGraph = previewSender.source?.value.mode === 'knowledgeGraph' || undefined
+      sendAgentInfo = agentFormStore.agent_data
+      // knowledge 场景无 library 配置入口时，默认回退为 ['all']，
+      // 与 useChatSend.ts 行 370 `library?.value || ['all']` 对齐
+      sendLibrary = { value: ['all'] }
+    } else {
+      // isAgent (普通智能体)：走 minimal 模式，对应后端 agent.json payload 形态。
+      // adapter 收到 type='agent' 后不发 enable_process_steps / knowledge_base_ids 等知识库字段。
+      sendType = 'agent'
+    }
+    void isAgent // 占位，明确三种场景都被覆盖
+
     const newChat: ChatMessage = {
       question: {
         role: 'user',
-        content: question,
+        content: textContent,
         user_files: userFiles as any[],
       },
-      answer: {
-        loading: true,
-        role: 'assistant',
-        content: '',
-        reasoning_expanded: true,
-        reasoning_content: '',
-      },
+      answer: '',
+      loading: true,
+      role: 'assistant',
+      reasoning_expanded: true,
+      reasoning_content: '',
+      process_records: [],
+      rag_stats: null,
+      rag_temp: { type: 'rag_search' },
+      skill: sendSkill
+        ? { skill_name: sendSkill.skill_name || '', display_name: sendSkill.display_name || '' }
+        : { skill_name: '', display_name: '' },
+      knowledge_graph: !!sendKnowledgeGraph,
     }
 
     setChatList(prev => {
@@ -185,18 +288,45 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       return newList
     })
 
-    let messages = [{ role: 'user', content: question }]
+    let messages: any[] = [{ role: 'user', content: textContent }]
     if (userFiles && userFiles.length) {
+      // work-ai: 参考 useChatSend.ts 行 235-249，files 序列化为 file_id 加入 user 消息
+      if (previewSender.agentKind === 'workbench') {
+        // Sender 已经把 mention 渲染成 `/skill_name ` 文本注入 textContent，
+        // 避免重复追加前缀（只有 textContent 不含前缀时才补）
+        const hasSkillPrefix = sendSkill?.skill_name
+          ? textContent.startsWith(`/${sendSkill.skill_name} `)
+          : false
+        const formattedQuestion = !hasSkillPrefix && sendSkill?.skill_name
+          ? `/${sendSkill.skill_name} ${textContent}`
+          : textContent
+        messages = [
+          {
+            role: 'user',
+            content: JSON.stringify([
+              { type: 'text', content: formattedQuestion },
+              ...userFiles,
+            ]),
+          },
+        ]
+      } else {
+        messages = [
+          {
+            role: 'user',
+            content: JSON.stringify([
+              { type: 'text', content: textContent },
+              ...userFiles,
+            ]),
+          },
+        ]
+      }
+    } else if (previewSender.agentKind === 'workbench' && sendSkill?.skill_name) {
+      // 同上：避免与 Sender mention 渲染的前缀重复
+      const hasSkillPrefix = textContent.startsWith(`/${sendSkill.skill_name} `)
       messages = [
         {
           role: 'user',
-          content: JSON.stringify([
-            {
-              type: 'text',
-              content: question,
-            },
-            ...userFiles,
-          ]),
+          content: hasSkillPrefix ? textContent : `/${sendSkill.skill_name} ${textContent}`,
         },
       ]
     }
@@ -208,31 +338,70 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       return
     }
 
-    let receivedContent = ''
+    // 流式处理进度：复用 shared-business/chat 的 processStreamData
+    // 自动累积 process_records / rag_stats / reasoning_content / content
+    let processedLength = 0
 
     await adapter.sendChatMessage({
+      // ============ 通用字段（三个场景都传）============
       conversation_id: conversationIdRef.current,
       messages,
       agent_id: agentId,
       agent_configs: agentFormStore.agent_data.configs,
       signal: abortControllerRef.current.signal,
-      onDownloadProgress: async ({ chunks = [], intact_content, intact_reasoning_content }: any = {}) => {
-        receivedContent = intact_content || ''
-        if (activeChatDataRef.current && activeChatDataRef.current.answer) {
-          activeChatDataRef.current.answer.content = intact_content || activeChatDataRef.current.answer.content || ''
-          activeChatDataRef.current.answer.reasoning_content =
-            intact_reasoning_content || activeChatDataRef.current.answer.reasoning_content || ''
-          if (chunks[0] && chunks[0].role) {
-            activeChatDataRef.current.answer.role = chunks[0].role || activeChatDataRef.current.answer.role || ''
+      // preview 无 @ 文件/知识库/空间选择器，但接口契约里有 links 字段，
+      // 显式传空数组让 adapter 能消费（apps/front-react/src/useChatSend.ts 行 244-249 对齐）
+      links: [],
+      // files 单独传递（同时保留在 messages 中以便老 adapter 仍能解析内容），
+      // 新 adapter 可基于此字段构建 file_ids / 上传语义
+      files: userFiles || [],
+
+      // ============ 场景特定字段（按 agentKind 透传）============
+      // workbench: type + skill; knowledge: modelId + network/graph + library;
+      // agent: 全部省略（minimal 模式）
+      ...(sendType ? { type: sendType } : {}),
+      ...(sendSkill ? { skill: sendSkill } : {}),
+      ...(sendModelId ? { modelId: sendModelId } : {}),
+      ...(sendNetworkSearch !== undefined ? { networkSearch: sendNetworkSearch } : {}),
+      ...(sendKnowledgeGraph !== undefined ? { knowledgeGraph: sendKnowledgeGraph } : {}),
+      ...(sendAgentInfo ? { agentInfo: sendAgentInfo } : {}),
+      ...(sendLibrary ? { library: sendLibrary } : {}),
+
+      onDownloadProgress: (e: any) => {
+        // 双路径兼容：
+        //   1. console-react 路径：axios service 拦截器（apps/console-react/src/api/config.ts）
+        //      会包装 onDownloadProgress，回调参数是
+        //      `{ progressEvent, chunks, intact_content, intact_reasoning_content }`。
+        //      chunks 已经是解析好的 JSON 数组，遍历调 processStreamDataItem 即可。
+        //   2. front-react / 原始 progressEvent 路径：回调参数是 AxiosProgressEvent
+        //      （e.event.target.response），委托 processStreamData 自行解析。
+        if (!activeChatDataRef.current) return
+
+        const message = activeChatDataRef.current as any
+        const chunks = Array.isArray(e?.chunks) ? e.chunks : null
+
+        if (chunks) {
+          // console-react 路径：chunks 是已解析的 SSE data 数组
+          // 关键：parseStreamResponse 每次回调都会基于累积的 responseText 重新解析，
+          // 所以 chunks 数组每次都包含所有历史 chunks。如果直接 for-of 处理会重复累加 content。
+          // 解决：用 __chunksProcessedLen 跟踪已处理数量，只处理增量。
+          const prevProcessed = message.__chunksProcessedLen || 0
+          for (let i = prevProcessed; i < chunks.length; i++) {
+            processStreamDataItem(chunks[i], message, formatRagStats)
           }
-          if (
-            activeChatDataRef.current.answer.content?.trim() &&
-            activeChatDataRef.current.answer.reasoning_content?.trim() &&
-            activeChatDataRef.current.answer.reasoning_expanded
-          ) {
-            activeChatDataRef.current.answer.reasoning_expanded = false
-          }
+          message.__chunksProcessedLen = chunks.length
+        } else {
+          // front-react / 原始 progressEvent 路径：按 SSE 文本流解析
+          processedLength = processStreamData(
+            e,
+            processedLength,
+            message,
+            !!sendNetworkSearch,
+            formatRagStats,
+          )
         }
+
+        // 节流触发 React 重渲染（参考 front-react/src/useChatSend.ts 行 408-413）
         if (renderTimerRef.current) {
           clearTimeout(renderTimerRef.current)
         }
@@ -246,23 +415,28 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
         clearTimeout(renderTimerRef.current)
         renderTimerRef.current = null
       }
-      const lastIntactContent = receivedContent || activeChatDataRef.current?.answer?.content || ''
+      const lastContent = activeChatDataRef.current?.answer || ''
       if (
-        lastIntactContent?.startsWith('Upstream Error') ||
-        lastIntactContent?.startsWith('Error: 当前应用模型余额不足') ||
-        !lastIntactContent
+        lastContent?.startsWith('Upstream Error') ||
+        lastContent?.startsWith('Error: 当前应用模型余额不足') ||
+        !lastContent
       ) {
-        if (activeChatDataRef.current?.answer) {
-          activeChatDataRef.current.answer.content = t('app.failed_tip')
+        if (activeChatDataRef.current) {
+          activeChatDataRef.current.answer = t('app.failed_tip')
         }
         message.warning(t('app.failed_tip'))
       }
-      if (activeChatDataRef.current?.answer?.loading) {
-        activeChatDataRef.current.answer.loading = false
+      if (activeChatDataRef.current?.loading) {
+        activeChatDataRef.current.loading = false
       }
       setChatList(prev => [...prev])
       abortControllerRef.current = null
+      // 清理 useChatStream 内部的 jsonBuffer（与 useChatSend.ts 行 698 一致）
+      clearBuffer()
     })
+
+    // Reset preview sender selections: workbench skills clear, knowledge model preserved.
+    previewSender.reset()
 
     setTimeout(() => {
       if (scrollRef.current) {
@@ -276,14 +450,26 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       abortControllerRef.current.abort()
       abortControllerRef.current = null
     }
-    if (activeChatDataRef.current && activeChatDataRef.current.answer) {
-      activeChatDataRef.current.answer.loading = false
+    // 中断时也清理 stream buffer，避免下一轮请求残留
+    clearBuffer()
+    if (activeChatDataRef.current) {
+      activeChatDataRef.current.loading = false
       setChatList(prev => [...prev])
     }
   }
 
   const onRestartGeneration = (data: ChatMessage) => {
-    onSendConfirm(data.question.content, data.question.user_files, 'regenerate')
+    onSendConfirm(
+      {
+        textContent: data.question.content,
+        pureTextContent: data.question.content,
+        atList: [],
+        skillList: [],
+        selectedSkills: [],
+        files: data.question.user_files || [],
+      },
+      { isRegenerate: true },
+    )
   }
 
   const onRestart = ({ saveAction: _saveAction = false } = {}) => {
@@ -298,7 +484,14 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
   }
 
   const handleSuggestion = (question: string) => {
-    onSendConfirm(question)
+    onSendConfirm({
+      textContent: question,
+      pureTextContent: question,
+      atList: [],
+      skillList: [],
+      selectedSkills: [],
+      files: [],
+    })
   }
 
   useEffect(() => {
@@ -386,24 +579,45 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
 
         {chatList.map((message, messageIndex) => (
           <div key={messageIndex}>
-            <XBubbleUser content={message.question.content} files={message.question.user_files}>
-              {!message.answer.loading && (
+            <XBubbleUser 
+              content={message.question.content} 
+              files={message.question.user_files}
+                contentBefore={
+                  message.skill?.display_name ? (
+                    <span className="bg-[#e6e9f2] rounded py-1 px-2 text-sm mr-2">
+                      {message.skill.display_name}
+                    </span>
+                  ) : null
+                }>
+              {!message.loading && (
                 <span slot="menu">
                   <XIcon size={16} className="cursor-pointer" name="copy" onClick={() => onCopy(message.question.content)} />
                 </span>
               )}
             </XBubbleUser>
             <XBubbleAssistant
-              content={message.answer.content}
-              reasoning={message.answer.reasoning_content}
-              reasoningExpanded={message.answer.reasoning_expanded}
-              streaming={message.answer.loading}
+              content={message.answer}
+              reasoning={message.reasoning_content}
+              reasoningExpanded={message.reasoning_expanded}
+              streaming={message.loading}
               alwaysShowMenu={messageIndex === chatList.length - 1}
+              header={
+                message.process_records && message.process_records.length > 0
+                  ? (
+                    <ProcessFlowHeader
+                      processRecords={message.process_records}
+                      streaming={message.loading}
+                      hasContent={Boolean(message.answer)}
+                      t={t}
+                    />
+                  )
+                  : undefined
+              }
             >
-              {!message.answer.loading && (
+              {!message.loading && (
                 <>
                   <span slot="menu">
-                    <XIcon size={16} className="cursor-pointer" name="copy" onClick={() => onCopy(message.answer.content)} />
+                    <XIcon size={16} className="cursor-pointer" name="copy" onClick={() => onCopy(message.answer)} />
                   </span>
                   <span slot="menu">
                     <XIcon size={16} className="cursor-pointer" name="refresh" onClick={() => onRestartGeneration(message)} />
@@ -417,16 +631,46 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
 
       {/* 发送区域 */}
       <div className="px-6 py-3">
+        {/* workbench: actionPosition=extras puts default skill button on the left; knowledge suppresses it via extrasLeft */}
         <XSender
-          enableUpload={enableUpload}
-          acceptTypes={uploadAccept}
-          httpRequest={httpRequest}
           loading={chatLoading}
-          allowMultiple={true}
-          enableDragUpload={true}
-          allowSendWithFiles={allowSendWithFiles}
           onSend={onSendConfirm}
           onStop={onStopGeneration}
+          fileUpload={{
+            enabled: enableUpload,
+            acceptTypes: uploadAccept,
+            request: httpRequest,
+            allowMultiple: true,
+            enableDrag: true,
+            allowSendWithFiles,
+          }}
+          {...(previewSender.skill ? { skill: previewSender.skill } : {})}
+          {...(previewSender.skill && !previewSender.model ? { ui: { actionPosition: 'extras' as const } } : {})}
+          slots={{
+            extrasLeft: (previewSender.model || previewSender.source)
+              ? (
+                  <div className="flex items-center gap-2">
+                    {previewSender.model && (
+                      <PreviewModelSelector
+                        options={previewSender.model.options}
+                        selectedId={previewSender.model.selectedId}
+                        onChange={previewSender.model.onChange}
+                        t={t}
+                      />
+                    )}
+                    {previewSender.source && (
+                      <PreviewKnowledgeSourceSelector
+                        value={previewSender.source.value}
+                        onChange={previewSender.source.onChange}
+                        graphEnabled={previewSender.source.graphEnabled}
+                        webSearchEnabled={previewSender.source.webSearchEnabled}
+                        t={t}
+                      />
+                    )}
+                  </div>
+                )
+              : undefined,
+          }}
         />
         {/* AI generated tip */}
         <div className="text-center mt-2">

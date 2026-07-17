@@ -226,6 +226,9 @@ export default function ChunkView({
           ref={virtualListRef}
           items={finalChunks}
           itemHeight={100}
+          buffer={8}
+          visibleDelay={150}
+          sequential={false}
           className="flex-1 vditor-reset"
           wrapperClass={`p-16 bg-white mx-auto ${displayMode === PREVIEW_MODE.pdf ? "max-w-4xl" : ""}`}
           onItemVisible={handleItemVisible}

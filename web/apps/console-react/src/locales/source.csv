@@ -4,9 +4,9 @@ key,zh-cn,zh-tw,en,ja
  第一步：选择要接入的智能体，点击""接入使用""
 第二步：在复制""API Endpoint"" 、 ""Bot-Id"" 和 ""SECRET_KEY""，填入下列表单。","前往53AI并登录（{url}）
  第一步：选择要接入的智能体，点击""接入使用""
-第二步：在复制""API Endpoint"" 、 ""Bot-Id"" 和 ""SECRET_KEY""，填入下列表单。","Go to 53AI and login ({url})
- Step 1: Select the agent to be accessed, click ""Access API""
- Step 2: Copy ""API Endpoint"" 、 ""Bot-Id"" 和 ""SECRET_KEY"", and fill in the form below.","53AIにログイン（{url}）
+第二步：在复制""API Endpoint"" 、 ""Bot-Id"" 和 ""SECRET_KEY""，填入下列表单。","Go to 53AI and log in ({url})
+Step 1: Select the agent to connect, then click ""Access API""
+Step 2: Copy ""API Endpoint"", ""Bot-Id"", and ""SECRET_KEY"", then enter them in the form below.","53AIにログイン（{url}）
  ステップ1：アクセスするインテリジェントエージェントを選択し、""APIアクセス""をクリック
  ステップ2：""APIエンドポイント"" 、 ""Bot-Id"" と ""SECRET_KEY""をコピーし、以下のフォームに入力してください。"
 53ai_api_endpoint,API Endpoint,API Endpoint,API Endpoint,API Endpoint
@@ -24,10 +24,11 @@ action.delete,删除,刪除,Delete,削除
 action.edit,编辑,編輯,Edit,編集
 action.manage,管理,管理,Manage,管理
 action.more,更多,更多,More,もっと
+action.next,下一步,下一步,Next,次へ
 action.operation,操作,操作,Operation,操作
 action.save,保存,保存,Save,保存
 action.copy_success,已复制,已複製,Copied,コピーしました
-action.reset,重置,重置,Reset,リセット
+action.prev,上一步,上一步,Previous,前へ
 action.preview,预览,預覽,Preview,プレビュー
 action.reupload,重新上传,重新上傳,Re-upload,再アップロード
 action.reset_success,重置成功,重置成功,Reset successful,リセット成功
@@ -93,12 +94,12 @@ action_select_file,+ 选择文件,+ 選擇文件,+ Select File,+ ファイルを
 action_send,发送,發送,Send,送信
 action_send_success,已发送,已發送,Sent,送信しました
 action_setting,设置,設置,Settings,設定
-action_shrink,缩小,縮小,reduce,縮小
+action_shrink,缩小,縮小,Zoom out,縮小
 action_sort,排序,排序,Sort,並べ替え
 action_sort_success,已更新排序,已更新排序,Sort Updated,並べ替えが更新されました
 action_stop_generation,停止生成,停止生成,Stop Generation,生成停止
-action_sync_failed,同步失败,同步失敗,Start Sync,同期失敗
-action_sync_start,开始同步,開始同步,Sync Failed,同期開始
+action_sync_failed,同步失败,同步失敗,Sync failed,同期失敗
+action_sync_start,开始同步,開始同步,Start sync,同期開始
 action_test,测试,測試,Test,テスト
 action_test_failed,不可用,不可用,Unavailable,不可用
 action_test_success,可用,可用,Available,可用
@@ -141,6 +142,7 @@ skills.quality.security,安全性,安全性,Security,安全性
 skills.quality.code_quality,代码质量,代碼質量,Code Quality,コード品質
 skills.quality.documentation,文档质量,文檔質量,Documentation Quality,ドキュメント品質
 skills.load_failed,加载技能数据失败,載入技能數據失敗,Failed to load skill data,スキルデータの読み込みに失敗しました
+skills.display_name,中文名称,中文名稱,Display Name,表示名
 skills.display_name_length_limit,显示名称已达到最大长度限制(50字符),顯示名稱已達到最大長度限制(50字符),Display name has reached max length limit (50 chars),表示名が最大長さ制限(50文字)に達しました
 skills.description_length_limit,描述已达到最大长度限制(500字符),描述已達到最大長度限制(500字符),Description has reached max length limit (500 chars),説明が最大長さ制限(500文字)に達しました
 skills.usage_guide_required,请完善使用说明,請完善使用說明,Please complete the usage guide,使用ガイドを完成してください
@@ -229,7 +231,7 @@ agent.app_feedback,用户反馈,用戶反饋,User Feedback,ユーザーフィー
 agent.app_setting,应用设置,應用設置,Application Setting,アプリケーション設定
 agent.app_statistic,运营数据,運營數據,Operation Data,運営データ
 agent.base_info,基础信息,基礎信息,Base Info,基礎情報
-agent.coze.agent_link,"扣子智能体""编辑状态""的链接",,,
+agent.coze.agent_link,"扣子智能体""编辑状态""的链接",,Coze agent edit link,
 agent.coze.agent_type_chat,对话型（智能体）,對話型應用,Conversational (Agent),会話型アプリケーション
 agent.coze.agent_type_chat_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,"User interacts with a large model, which is autonomous and decision-making, suitable for simple business logic.",ユーザーが大模型と対話し、大模型が自主的に判断決定する。シンプルな業務ロジックに適しています。
 agent.coze.agent_type_workflow,应用型（工作流）,工作流編排對話型應用,Application Type (Workflow),ワークフロー編排会話型アプリケーション
@@ -272,10 +274,11 @@ agent.usage_guide_title,使用说明,使用說明,Usage Guide,使用ガイド
 agent.usage_help,使用帮助,使用幫助,Usage Help,使用ヘルプ
 agent.save_success,保存成功,保存成功,Saved successfully,保存されました
 agent.id_not_exist,智能体ID不存在,智能體ID不存在,Agent ID does not exist,エージェントIDが存在しません
-agent_app.qclaw,Qlaw,Qlaw,Qlaw,Qlaw
+agent_app.workbench,小助理,小助理,小助理,小助理
+agent_app.knowledge,AI搜问,AI搜问,AI搜问,AI搜问
 agent_app.53ai_agent,53AI Studio,53AI Studio,53AI Studio,53AI Studio
 agent_app.53ai_workflow,53AI Studio,53AI Studio,53AI Studio,53AI Studio
-agent_app.openclaw,Openclaw,Openclaw,Openclaw,Openclaw
+agent_app.openclaw,OpenClaw,Openclaw,OpenClaw,Openclaw
 agent_app.qclaw,QClaw,QClaw,QClaw,QClaw
 agent_app.codex,Codex,Codex,Codex,Codex
 agent_app.manus,Manus,Manus,Manus,Manus
@@ -305,7 +308,7 @@ agent.bot_id,Bot ID,Bot ID,Bot ID,Bot ID
 agent.bot_id_tooltip,智能体唯一标识符，由平台分配。在连接 WebSocket 或调用 API 时需携带此 ID 以识别身份,智能體唯一標識符，由平台分配。在連接 WebSocket 或調用 API 時需攜帶此 ID 以識別身份,Unique identifier for the agent, assigned by the platform. Required when connecting to WebSocket or calling API,エージェントの一意識別子。プラットフォームによって割り当てられます。WebSocket接続やAPI呼び出し時にこのIDを携帯して身元を識別する必要があります
 agent.secret,Secret,Secret,Secret,Secret
 agent.secret_tooltip,与 Bot ID 配对的密钥，用于签名验证和身份认证,與 Bot ID 配對的密鑰，用於簽名驗證和身份認證,Secret key paired with Bot ID for signature verification and authentication,Bot IDとペアになるシークレットキー。署名検証と認証に使用
-agent.ws_url,WS Url,WS Url,WS Url,WS Url
+agent.ws_url,WebSocket URL,WS Url,WebSocket URL,WS Url
 agent.ws_url_tooltip,WebSocket 服务端地址，用于客户端与 OpenClaw 平台建立实时通信通道,WebSocket 服務端地址，用於客戶端與 OpenClaw 平台建立實時通信通道,WebSocket server address for establishing real-time communication channel between client and OpenClaw platform,WebSocketサーバーアドレス。クライアントとOpenClawプラットフォーム間のリアルタイム通信チャンネルを確立するために使用
 agent.step1_install_plugin,1.安装插件：复制以下指令到命令行执行,1.安裝插件：複製以下指令到命令行執行,1. Install plugin: Copy the following command and run it in the command line,1. プラグインをインストール：以下のコマンドをコマンドラインで実行
 agent.step2_config_secret,2.配置密钥：复制以下配置信息供插件连接使用,2.配置密鑰：複製以下配置信息供插件連接使用,2. Configure secret: Copy the following configuration for the plugin connection,2. シークレットを設定：以下の設定情報をプラグイン接続に使用します
@@ -392,14 +395,15 @@ bind_account,已绑定的账户,已綁定的賬戶,Bound Account,バインドア
 chat.empty_desc,在输入框中填写内容调试吧~,在輸入框中填寫內容調試吧~,Fill in the content in the input box to debug,入力ボックスに内容を入力してデバッグしてください
 chat_glm,智谱AI,智譜AI,ChatGLM,ChatGLM
 cleaning_policy.add_condition,添加,添加,Add,追加
-cleaning_policy.add_rule,添加规则,添加規則,Add Rule,ルールを追加
+cleaning_policy.add_rule,添加管线,添加管线,Add Pipeline,ルールを追加
+cleaning_policy.custom_rules,自定义,自定義,Custom,カスタム
 cleaning_policy.and,且,且,And,かつ
 cleaning_policy.condition_required,请输入条件,請輸入條件,Enter condition,条件を入力してください
 cleaning_policy.delete_confirm,确定要删除清洗策略「{name}」吗？,確定要刪除清洗策略「{name}」嗎？,"Delete cleaning rule ""{name}""?",クリーニングルール「{name}」を削除しますか？
 cleaning_policy.description,文档将按以下顺序进行清洗，可以拖动以调整优先级,文檔將按以下順序進行清洗，可拖動以調整優先級,Documents will be cleaned in the following order; drag to adjust priority,ドキュメントは以下の順序でクリーニングされます。ドラッグで優先度を変更できます
 cleaning_policy.edit_fallback_rule,编辑兜底规则,編輯兜底規則,Edit Fallback Rule,フォールバックルールを編集
 cleaning_policy.fallback_execute,兜底执行,兜底執行,Fallback,フォールバック実行
-cleaning_policy.fallback_strategy,兜底策略,兜底策略,Fallback Strategy,フォールバック戦略
+cleaning_policy.fallback_strategy,默认,默认,Default,Default
 cleaning_policy.field_extension,后缀名,後綴名,Extension,拡張子
 cleaning_policy.field_filename,文件名,文件名,Filename,ファイル名
 cleaning_policy.field_foldername,文件夹名,文件夾名,Folder name,フォルダ名
@@ -412,7 +416,7 @@ cleaning_policy.operator_eq,等于,等於,Equals,等しい
 cleaning_policy.operator_in,属于,屬於,In,に含まれる
 cleaning_policy.operator_starts_with,开头是,開頭是,Starts with,で始まる
 cleaning_policy.or,或,或,Or,または
-cleaning_policy.other_all_files,其它所有文件,其它所有文件,All other files,その他すべてのファイル
+cleaning_policy.other_all_files,"未命中"自定义管线"的文件，兜底执行默认的"通用管线"","未命中"自定義管線"的檔案，兜底執行預設的"通用管線"",All other files,その他すべてのファイル
 cleaning_policy.pipeline_required,请选择执行的数据管线,請選擇執行的數據管線,Select a data pipeline,データパイプラインを選択してください
 cleaning_policy.placeholder_extension,请输入后缀名，例如：pdf,請輸入後綴名，例如：pdf,e.g. pdf,例：pdf
 cleaning_policy.placeholder_filename,请输入文件名，例如：知识库,請輸入文件名，例如：知識庫,e.g. Knowledge,例：知識庫
@@ -806,6 +810,7 @@ internal_user.organization.department_search_placeholder,部门,部門,Departmen
 internal_user.organization.title,组织,組織,Organization,組織
 internal_user.organization.user_search_placeholder,成员,成員,Member,メンバー
 internal_user.scope.selected_title,已选择项,已選擇項,Selected Items,選択済み項目
+internal_user.scope.search_placeholder,搜索公司/部门/成员/分组,搜索公司/部門/成員/分組,Search company/department/member/group,会社/部門/メンバー/グループを検索
 internal_user.scope.title,可见范围,可見範圍,Visible Range,可見範圍
 internal_user.status.all,全部成员,全部成員,All Members,全てのメンバー
 internal_user.status.disabled,被禁用,被禁用,Disabled,被禁用
@@ -837,10 +842,10 @@ limit_every_dialogue,限制每个用户总对话数,限制每個用戶總對話�
 local_config_limited_desc,由于当前系统访问为内网地址({url})，无法添加/配置Coze 智能体、微信支付、支付宝支持，需要部署到外网能访问的地址访问再配置。,由於當前系統訪問為內網地址({url})，無法添加/配置Coze 智能體、微信支付、支付寶支持，需要部署到外網能訪問的地址訪問再配置。,"Due to the current system access being an intranet address ({url}), adding/configuring Coze agents, WeChat Pay, and Alipay is not possible. It needs to be deployed to an address accessible from the external network before configuration.",現在のシステムアクセスが内部ネットワークアドレス({url})であるため、Coze インテリジェントエージェント、WeChat支払い、Alipay支払いを追加/設定できません。外部からアクセスできるアドレスにデプロイして設定する必要があります。
 local_config_limited_tip,配置受限提示,配置受限提示,Configuration Limited Tip,設定受限提示
 login.I_remember,我记住了,我記住了,I got it,覚えています
-login.account_exists,,,"The phone number has been registered, use the account to login.",
+login.account_exists,该手机号已注册，请使用该账号登录,,This phone number is already registered. Use this account to log in.,
 login.account_format,账号必须以字母开头，只能包含字母、数字和下划线,賬號必須以字母開頭，只能包含字母、數字和下劃線,"Account must start with a letter, and can only contain letters, numbers, and underscores",アカウントは英字で始まり、英字、数字、および下線のみを含める必要があります
 login.account_length,账号长度必须在 4-20 个字符之间,賬號長度必須在 4-20 個字符之間,Account length must be between 4 and 20 characters,アカウント長さは4から20文字の間である必要があります
-login.account_no_exists,,,"The phone number has not been registered, please register first.",
+login.account_no_exists,该手机号尚未注册，请先注册,,This phone number is not registered. Please register first.,
 login.account_placeholder,请输入您的手机号/邮箱,請輸入您的手機號/郵箱,Please enter your phone number/email,ユーザー名を入力してください
 login.agree,条款和条件,條款和條件,Terms and Conditions,条项和条件
 login.agree_and_policy,登录即视您同意{agree}和{policy},登錄即視您同意{agree}和{policy},Login means you agree to {agree} and {policy},ログイン即視您同意{agree}和{policy}
@@ -994,7 +999,7 @@ module.app_management,应用管理,應用管理,Application Management,アプリ
 module.banner_diagram,Banner,Banner,Banner,バナー
 module.bot,智能体,智能體,AI Agent,インテリジェントエージェント
 module.chunk_setting,拆分策略,拆分策略,Splitting Strategy,分割戦略
-module.cleaning-policy,清洗策略,清洗策略,Cleaning Policy,クリーニングポリシー
+module.cleaning_pipeline,清洗管线,清洗管線,Cleaning Pipeline,クリーニングパイプライン
 module.combinat,单点登录,單點登錄,Single Sign-On,シングルサインオン
 module.custom,自定义,自定義,Custom,カスタム
 module.data-pipeline,数据管线,數據管線,Data Pipeline,データパイプライン
@@ -1008,7 +1013,7 @@ module.document_assistant,文档助手,文檔助手,Document Assistant,文書助
 module.search_desc,通过智能问答与文档交互，快速获取信息、处理文档，让知识检索与内容交互更高效。,通過智能問答與文件交互，快速獲取信息、處理文件，讓知識檢索與內容交互更高效。,"Through intelligent Q\&A and document interaction, quickly acquire information and process documents, making knowledge retrieval and content interaction more efficient.",スマートQAとドキュメントとのインタラクションを通じて、迅速に情報を取得し、ドキュメントを処理し、知識検索とコンテンツのインタラクションをより効率的に行います。
 module.document_assistant_desc,文档互动与提问，支持将高频使用场景配置为快捷指令，大幅提升文档处理与信息查询效率,文檔互動與提問，支持將高頻使用場景配置為快捷指令，大幅提升文檔處理與信息查詢效率,"Document interaction and question, support configuring high-frequency usage scenarios as shortcut commands, greatly improving document processing and information query efficiency",文書互動と質問、高頻使用シーンをショートカットコマンドに設定して、文書処理と情報検索効率を大幅に向上させます
 module.document_map,知识地图,知識地圖,Knowledge Map,知識地図
-module.document_map_desc,智能提炼文档核心内容，生成结构化层级知识地图，点击知识点触发深度解读，助力快速梳理知识脉络,智能提煉文檔核心內容，生成結構化層級知識地圖，點擊知識點觸發深度解讀，助力快速梳理知識脈絡,"Smart extraction of document core content, generating structured hierarchical knowledge maps, clicking knowledge points to trigger deep interpretation, helping quickly梳理知识脉络",智能提炼文書核心內容，生成結構化層級知識地図，點擊知識点觸發深度解讀，助力快速梳理知識脈絡
+module.document_map_desc,智能提炼文档核心内容，生成结构化层级知识地图，点击知识点触发深度解读，助力快速梳理知识脉络,智能提煉文檔核心內容，生成結構化層級知識地圖，點擊知識點觸發深度解讀，助力快速梳理知識脈絡,"Extracts core document content, generates a structured knowledge map, and helps users quickly understand the knowledge structure.",智能提炼文書核心內容，生成結構化層級知識地図，點擊知識点觸發深度解讀，助力快速梳理知識脈絡
 module.document_parse,解析能力,解析能力,Parsing Capabilities,解析能力
 module.document_view_and_edit,文档能力,文檔能力,Document Capabilities,文書能力
 module.domain,站点域名,站點域名,Site Domain,サイトドメイン
@@ -1156,15 +1161,15 @@ module.platform_model_vector_dimension_placeholder,输入您的向量维度,輸�
 module.platform_model_version,API 版本,API 版本,API Version,API バージョン
 module.platform_model_version_placeholder,输入您的API 版本,輸入您的API 版本,Enter your API version,API バージョンを入力してください
 module.platform_model_vision_support,Vision 支持,Vision支持,Vision Support,Vision サポート
-module.platform_model_webhook_url,Webhook URL,,,
+module.platform_model_webhook_url,Webhook URL,,Webhook URL,
 module.platform_search_online,联网搜索,聯網搜索,Search online,ネットワーク検索
 module.platform_search_online_delete_confirm,确定删除该拓展工具吗？,確定刪除該拓展工具嗎？,Are you sure you want to delete this search online tool?,このネットワーク検索ツールを削除してもよろしいですか？
 module.platform_search_online_desc,通过博查搜索网络内容，可总结摘要,通過博查搜索網絡內容，可總結摘要,"Search the website content via bochaai, and summarize the results.",ウェブコンテンツを検索し、結果を要約します。
-module.platform_tool_api_endpoint,API Endpoint,,,
+module.platform_tool_api_endpoint,API Endpoint,,API Endpoint,
 module.platform_tool_api_key,API Key,API Key,API Key,APIキー
 module.platform_tool_api_key_placeholder,输入您的API Key,輸入您的API Key,Enter your API Key,APIキーを入力してください
-module.platform_tool_token,令牌,,,
-module.platform_tool_token_placeholder,输入您的令牌,,,
+module.platform_tool_token,令牌,,Token,
+module.platform_tool_token_placeholder,输入您的令牌,,Enter your token,
 module.platform_tools,拓展工具,拓展工具,Extended Tools,拡張ツール
 module.platform_v2,平台,平台,Platform,プラットフォーム
 module.prompt,提示词,提示詞,Prompts,
@@ -1273,7 +1278,7 @@ module.knowledge_graph,知识图谱,知識圖谱,KKnowledge Graph,知識グラ�
 month,月,月,Month,月
 monthly,月,月,Month,月間
 more,更多,更多,More,もっと
-n8n,n8n,,,
+n8n,n8n,,n8n,
 name,名称,名稱,Name,名前
 navigation.delete_confirm,确定删除该导航吗？,確定刪除該導航嗎？,Are you sure to delete this navigation?,このデータを削除してもよろしいですか？
 navigation.search_placeholder,搜索栏目,請輸入想搜索的導航,Search Navigation,ナビゲーションを検索
@@ -1395,12 +1400,12 @@ platform.standard_parse,标准解析,標準解析,Standard Parse,標準解析
 platform.web_search_not_connected,还未接入联网搜索，来添加联网搜索吧~,還未接入聯網搜索，來添加聯網搜索吧~,"Not connected to online search, add online search now~",未接続のオンライン検索、オンライン検索を追加してください~
 platform_auth.53ai.tip,"前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
 第二步：在""企业信息""下点击生成Secret Key
-第三步：生成后，复制Sercet Key填入下列表单。","前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
+第三步：生成后，复制Secret Key填入下列表单。","前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
 第二步：在""企业信息""下点击生成Secret Key
-第三步：生成后，复制Sercet Key填入下列表单。","Go to 53AI（{url}）
-Step 1: Login and click ""Settings"" on the left navigation bar
+第三步：生成后，复制Sercet Key填入下列表单。","Go to 53AI ({url})
+Step 1: Log in, then click ""Settings"" in the left navigation bar
 Step 2: Click ""Generate Secret Key"" under ""Enterprise Information""
-Step 3: After generation, copy the Sercet Key and fill it in the form below.","前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
+Step 3: After generation, copy the Secret Key and enter it in the form below.","前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
 第二步：在""企业信息""下点击生成Secret Key
 第三步：生成后，复制Sercet Key填入下列表单。"
 platform_auth.app_builder.tip,"前往 百度智能云千帆（{url}）
@@ -1433,16 +1438,22 @@ platform_auth.coze_cn.tip_1,务必先在扣子端点击保存后再点确定,务
 platform_auth.coze_osv.tip,"前往 设置-API授权-个人访问令牌
 第一步：点击添加新令牌
 第二步：填写令牌名称，设置过期时间，权限全部勾选，选择所有工作空间并确定
-第三步：复制令牌填入下列表单",,,
-platform_auth.n8n.tip,前往n8n官网并登录（{url}）,,,
-platform_auth.n8n.tip_1,第一步：在「Personal」下，点击创建一个工作流，再点击添加节点「On webhook call」；,,,
-platform_auth.n8n.tip_2,第二步：在Webhook节点的编辑弹窗内，复制Webhook URLs 填入表单，Authentication选择「{headerAuth}」，然后在点击「Creat new credential」;,,,
+第三步：复制令牌填入下列表单",,"Go to Settings - API Authorization - Personal Access Tokens
+Step 1: Click Add new token
+Step 2: Enter a token name, set an expiration time, select all permissions, select all workspaces, and confirm
+Step 3: Copy the token and enter it in the form below",
+platform_auth.n8n.tip,前往n8n官网并登录（{url}）,,Go to the n8n website and log in ({url}),
+platform_auth.n8n.tip_1,第一步：在「Personal」下，点击创建一个工作流，再点击添加节点「On webhook call」；,,"Step 1: Under ""Personal"", create a workflow, then add an ""On webhook call"" node;",
+platform_auth.n8n.tip_2,第二步：在Webhook节点的编辑弹窗内，复制Webhook URLs 填入表单，Authentication选择「{headerAuth}」，然后点击「Create new credential」;,,"Step 2: In the Webhook node editor, copy the Webhook URLs into the form, set Authentication to ""{headerAuth}"", then click ""Create new credential"";",
 platform_auth.n8n.tip_3,"第三步：“Name”固定填入： {authorization}
-“Value”对应的是渠道的 key 字段，可以是随机字符串，字符数请控制在64位内；",,,
-platform_auth.n8n.tip_4,第四步：“Respond”选择：{select},,,
+“Value”对应的是渠道的 key 字段，可以是随机字符串，字符数请控制在64位内；",,"Step 3: Set ""Name"" to: {authorization}
+""Value"" should match the channel key field. It can be a random string, up to 64 characters.",
+platform_auth.n8n.tip_4,第四步：“Respond”选择：{select},,"Step 4: Set ""Respond"" to: {select}",
 platform_auth.tencent.tip,"前往 腾讯云控制台（ {url} ）
 第一步：登录后，点击左侧导航栏的 ""API 密钥管理""
-第二步：点击新建密钥，复制 SecretId 和 SecretKey 填入下列表单。",,,
+第二步：点击新建密钥，复制 SecretId 和 SecretKey 填入下列表单。",,"Go to Tencent Cloud Console ({url})
+Step 1: Log in, then click ""API Key Management"" in the left navigation bar
+Step 2: Click ""Create Key"", then copy the SecretId and SecretKey into the form below.",
 platform_model.text_generation,文本生成,文本生成,Text Generation,テキスト生成
 platform_model.vision,视觉理解,視覺理解,Vision,ビジョン理解
 product_mastery,吃透产品,吃透產品,Product Mastery,吃透産品
@@ -1580,13 +1591,13 @@ search-feedback.other,其它,,Other,其它
 search-feedback.prev,上一条,上一條,Previous,上一條
 search-feedback.question_type,问题类型,問題類型,Question Type,問題類型
 search-feedback.satisfied,满意,滿意,Satisfied,滿意
-search-feedback.satisfied_count,截止到统计日期，对AI搜索的点赞次数,截止到統計日期，對AI搜索的點贊次數,截止到统计日期，对AI搜索的点赞次数,截止到統計日期，對AI搜索的點贊次數
+search-feedback.satisfied_count,截止到统计日期，对AI搜索的点赞次数,截止到統計日期，對AI搜索的點贊次數,Number of AI Search likes up to the selected statistics date,截止到統計日期，對AI搜索的點贊次數
 search-feedback.search-detail,问答详情,,Question and Answer Detail,問答詳情
 search-feedback.statisfied_type,满意类型,滿意類型,Statisfied Type,滿意類型
 search-feedback.statistics,反馈统计,反饋統計,Feedback Statistics,反饋統計
 search-feedback.time,反馈时间,反饋時間,Time,反饋時間
 search-feedback.unsatisfied,不满意,不滿意,Unsatisfied,不滿意
-search-feedback.unsatisfied_count,截止到统计日期，对AI搜索的点踩次数,截止到統計日期，對AI搜索的點踩次數,截止到统计日期，对AI搜索的点踩次数,截止到統計日期，對AI搜索的點踩次數
+search-feedback.unsatisfied_count,截止到统计日期，对AI搜索的点踩次数,截止到統計日期，對AI搜索的點踩次數,Number of AI Search dislikes up to the selected statistics date,截止到統計日期，對AI搜索的點踩次數
 search-feedback.unstatisfied_type,不满意类型,,Unstatisfied Type,不滿意類型
 search-feedback.user,反馈人,反饋人,User,反饋人
 search-record.all,全部,全部,All,全部
@@ -1594,31 +1605,31 @@ search-record.all_knowledge_base,全部知识库,全部知識庫,All Knowledge B
 search-record.answer,回答,回答,Answer,回答
 search-record.answer_status,回答状态,回答狀態,Answer Status,回答状態
 search-record.status,状态,狀態,Status,状態
-search-record.data_summary,数据概括,數據概括,Data Summary,データ概要
+search-record.data_summary,数据概况,數據概括,Data Summary,データ概要
 search-record.deep_think,深度思考,深度思考,Deep Think,深度思考
-search-record.deep_think_tip,"截止到统计日期，AI搜索时思考方式为""深度思考""的次数","截止到統計日期，AI搜索時思考方式為""深度思考""的次數","截止到统计日期，AI搜索时思考方式为""深度思考""的次数","截止到統計日期，AI搜索時思考方式為""深度思考""的次數"
+search-record.deep_think_tip,"截止到统计日期，AI搜索时思考方式为""深度思考""的次数","截止到統計日期，AI搜索時思考方式為""深度思考""的次數","Number of AI Search sessions using ""Deep Thinking"" up to the selected statistics date","截止到統計日期，AI搜索時思考方式為""深度思考""的次數"
 search-record.detail,问答明细,問答詳情,Question and Answer Detail,問答詳情
 search-record.detail_list,数据列表,數據列表,Data List,データリスト
 search-record.document,文档,文檔,Document,文檔
 search-record.generate_count,生成梳理,生成梳理,Generate Summary,生成梳理
-search-record.generate_count_tip,截止到统计日期，AI搜索的生成梳理次数（1次对话计为1次使用）,截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）,截止到统计日期，AI搜索的生成梳理次数（1次对话计为1次使用）,截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）
+search-record.generate_count_tip,截止到统计日期，AI搜索的生成梳理次数（1次对话计为1次使用）,截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）,Number of AI Search summary generations up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）
 search-record.generate_model,生成模型,生成模型,Generate Model,生成模型
 search-record.knowledge_scope,知识范围,知識範圍,Knowledge Scope,知識範圍
 search-record.model,调用模型,調用模型,Model,調用模型
 search-record.no_content,未搜索到内容,未搜索到內容,No content found,未搜索到內容
-search-record.no_content_tip,截止到统计日期，AI搜索拒答的次数,截止到統計日期，AI搜索拒答的次數,截止到统计日期，AI搜索拒答的次数,截止到統計日期，AI搜索拒答的次數
+search-record.no_content_tip,截止到统计日期，AI搜索拒答的次数,截止到統計日期，AI搜索拒答的次數,Number of AI Search refusals up to the selected statistics date,截止到統計日期，AI搜索拒答的次數
 search-record.normal,正常,正常,Normal,正常
 search-record.online_search,联网搜索,聯網搜索,Online Search,聯網搜索
 search-record.operation,操作,操作,Operation,操作
 search-record.query_count,查询次数,查詢次數,Query Count,查詢次數
-search-record.query_count_tip,截止到统计日期，AI搜索的查询次数（1次对话计为1次使用）,截止到統計日期，AI搜索的查詢次數（1次對話計為1次使用）,截止到统计日期，AI搜索的查询次数（1次对话计为1次使用）,截止到統計日期，AI搜索的查詢次數（1次對話計為1次使用）
+search-record.query_count_tip,截止到统计日期，AI搜索的查询次数（1次对话计为1次使用）,截止到統計日期，AI搜索的查詢次數（1次對話計為1次使用）,Number of AI Search queries up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的查詢次數（1次對話計為1次使用）
 search-record.question,提问,提問,Question,提問
 search-record.quick_answer,快速回答,快速回答,Quick Answer,快速回答
-search-record.quick_answer_tip,"截止到统计日期，AI搜索时思考方式为""快速回答""的次数","截止到統計日期，AI搜索時思考方式為""快速回答""的次數","截止到统计日期，AI搜索时思考方式为""快速回答""的次数","截止到統計日期，AI搜索時思考方式為""快速回答""的次數"
+search-record.quick_answer_tip,"截止到统计日期，AI搜索时思考方式为""快速回答""的次数","截止到統計日期，AI搜索時思考方式為""快速回答""的次數","Number of AI Search sessions using ""Quick Answer"" up to the selected statistics date","截止到統計日期，AI搜索時思考方式為""快速回答""的次數"
 search-record.quoted_count,引用数量,引用數量,Quoted Count,引用數量
 search-record.refused,拒答,拒答,Refused,拒答
 search-record.rewrite,问题改写,問題改寫,Question Rewrite,問題改寫
-search-record.search_count_tip,截止到统计日期，AI搜索的使用次数（1次对话计为1次使用）,截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）,截止到统计日期，AI搜索的使用次数（1次对话计为1次使用）,截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）
+search-record.search_count_tip,截止到统计日期，AI搜索的使用次数（1次对话计为1次使用）,截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）,Number of AI Search uses up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）
 search-record.search_document,搜索文档名称,搜索文档名称,Search Document Name,搜索文档名称
 search-record.search_question,搜索提问内容,搜索提問內容,Search Question Content,搜索提問內容
 search-record.specified_knowledge_base,指定知识库,指定知識庫,Specified Knowledge Base,指定知識庫
@@ -1626,7 +1637,7 @@ search-record.statistics,问答统计,問答統計,Question and Answer Statistic
 search-record.statistics_time,数据统计时间：,數據統計時間：,Data Statistics Time: ,數據統計時間：
 search-record.thinking_way,思考方式,思考方式,Thinking Way,思考方式
 search-record.time,提问时间,提問時間,Time,提問時間
-search-record.total_count,AI搜索总数,AI搜索總數,Total AI Search Count,AI搜索總數
+search-record.total_count,问答总数,搜索總數,Search Count,搜索總數
 search-record.total_count_unit,次,次,times,次
 search-record.user,提问人,提問人,User,提問人
 search-record.message_count,消息数量,消息數量,Message Count,メッセージ数
@@ -1939,7 +1950,10 @@ file_label,文件,文件,File,ファイル
 agent.tab_config,配置,配置,Configuration,設定
 agent.tab_data,数据,數據,Data,データ
 agent.tab_integrate,接入,接入,Integration,連携
+agent.tab_feedback,反馈,反饋,Feedback,フィードバック
 agent.last_saved,最近保存,最近保存,Last saved,最終保存
+agent.builtin,内置,內置,Built-in,内蔵
+agent.builtin_no_delete,内置智能体不可删除,內置智能體不可刪除,Built-in agent cannot be deleted,内蔵エージェントは削除できません
 integrate.direct_use,直接使用,直接使用,Direct Use,直接使用
 integrate.web_h5_embed,Web/H5嵌入,Web/H5嵌入,Web/H5 Embed,Web/H5埋め込み
 integrate.web_h5_embed_desc,在网站的任何位置添加聊天问答的智能体,在網站的任何位置添加聊天問答的智能體,Add a chat agent anywhere on your website,ウェブサイトの任意の場所にチャットエージェントを追加
@@ -1966,6 +1980,8 @@ integrate.embed_step1,1、网站的任何位置添加聊天问答,1、網站的�
 integrate.embed_step2,2、网站的右下角添加聊天气泡,2、網站的右下角添加聊天气泡,2. Add a chat bubble at the bottom right of your website,2. ウェブサイトの右下にチャットバブルを追加
 integrate.copy_embed_html,复制接入代码嵌入到对应网站页面<html>中,複製接入代碼嵌入到對應網站頁面<html>中,Copy and embed the code into the <html> of your website page,<html>タグ内に埋め込みコードをコピー
 integrate.copy_embed_body,复制接入代码嵌入到对应网站页面<body>中,複製接入代碼嵌入到對應網站頁面<body>中,Copy and embed the code into the <body> of your website page,<body>タグ内に埋め込みコードをコピー
+integrate.api_access,API接入,API接入,API Access,APIアクセス
+integrate.api_access_desc,调用API接口，实现诸多自定义聊天场景,調用API接口，實現許多自定義聊天場景,Call API interface to achieve various custom chat scenarios,APIインターフェースを呼び出して様々なカスタムチャットシナリオを実現
 recording.parse_mode,解析方式,解析方式,Parse Mode,解析モード
 recording.parse_app,应用解析,應用解析,App Parse,アプリ解析
 recording.parse_model,解析模型,解析模型,Parse Model,解析モデル

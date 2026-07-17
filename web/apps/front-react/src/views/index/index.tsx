@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Input, Button, Image } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { useNavigationStore } from "@/stores/modules/navigation";
 import { useAgentStore } from "@/stores/modules/agent";
 import { usePromptStore } from "@/stores/modules/prompt";
 import { useLinksStore } from "@/stores/modules/links";
-import { useShortcutsStore } from "@/stores/modules/shortcuts";
+import { useShortcutsStore, navigateAgentShortcut } from "@/stores/modules/shortcuts";
 import { useUserStore } from "@/stores/modules/user";
+import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { getPublicPath } from "@/utils/config";
 import AgentList from "@/views/agent/components/AgentList";
 import ToolkitList from "@/views/toolkit/components/List";
@@ -21,6 +22,7 @@ const MAX_SHOW_COUNT = 6;
 
 export function IndexView() {
   const [searchValue, setSearchValue] = useState("");
+  const navigate = useNavigate();
 
   const navigationStore = useNavigationStore();
   const agentStore = useAgentStore();
@@ -28,6 +30,7 @@ export function IndexView() {
   const linksStore = useLinksStore();
   const shortcutsStore = useShortcutsStore();
   const userStore = useUserStore();
+  const isSoftStyle = useIsSoftStyle();
 
   const [loadMap, setLoadMap] = useState({
     agentLoading: true,
@@ -100,9 +103,20 @@ export function IndexView() {
     setSearchValue(keyword);
   };
 
-  const handleShortcutsClick = (item: any) => {
-    const route = shortcutsStore.getShortcutRoute(item);
-    window.open(route, "_blank");
+  const handleShortcutsClick = async (item: any) => {
+    // 非 agent 类型使用原有路由逻辑
+    if (item.type !== "agent") {
+      const route = shortcutsStore.getShortcutRoute(item);
+      window.open(route, "_blank");
+      return;
+    }
+
+    // agent 类型使用统一的跳转逻辑
+    await navigateAgentShortcut({
+      agentId: item.related_id,
+      isSoftStyle,
+      navigate,
+    });
   };
 
   // 加载数据
@@ -290,7 +304,7 @@ export function IndexView() {
             )}
 
             <AgentList
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 mt-5 md:mt-8"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-5 md:mt-8"
               loading={loadMap.agentLoading}
               list={showAgentList}
               keyword={searchValue}
@@ -341,7 +355,7 @@ export function IndexView() {
               )}
 
               <PromptList
-                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 mt-7"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-7"
                 keyword={searchValue}
                 list={showPromptList}
                 loading={loadMap.promptLoading}
@@ -381,7 +395,7 @@ export function IndexView() {
             )}
 
             <ToolkitList
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 mt-7"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-7"
               list={showToolkitList}
               onlyAll
               loading={loadMap.toolkitLoading}

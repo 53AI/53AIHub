@@ -19,7 +19,7 @@ type User struct {
 	Avatar         string          `json:"avatar" gorm:"not null" example:"http://avatar.cc/a.jpg"`
 	Mobile         string          `json:"mobile" gorm:"size:20" example:"13800138000"`
 	Email          string          `json:"email" gorm:"size:100" example:"john@example.com"`
-	Eid            int64           `json:"eid" gorm:"not null;index" example:"123"`
+	Eid            int64           `json:"eid" gorm:"not null;index:idx_users_eid_type,priority:1" example:"123"`
 	Role           int64           `json:"role" gorm:"type:int;default:1;not null" example:"1"`
 	GroupId        int64           `json:"group_id" gorm:"type:int;default:0;not null" example:"0"`
 	Status         int             `json:"status" gorm:"type:int;default:1;not null;comment:'User status: 0-Not joined, 1-Joined, 2-Disabled'" example:"1"`
@@ -29,7 +29,7 @@ type User struct {
 	LastLoginTime  int64           `json:"last_login_time" gorm:"not null" example:"1672502400"`
 	AccessToken    string          `json:"access_token" gorm:"type:varchar(512);column:access_token"`
 	RelatedId      int64           `json:"related_id" gorm:"type:int;default:0;not null;index:idx_users_related_id" example:"0"`
-	Type           int             `json:"type" gorm:"type:int;default:1;not null;comment:'User type: 1-Registered user, 2-Internal user'" example:"1"`
+	Type           int             `json:"type" gorm:"type:int;default:1;not null;index:idx_users_eid_type,priority:2;comment:'User type: 1-Registered user, 2-Internal user'" example:"1"`
 	AddAdminTime   int64           `json:"add_admin_time" gorm:"type:bigint;default:0;not null;comment:'Time when user was added as admin'" example:"1672502400"`
 	OpenID         string          `json:"openid" gorm:"type:varchar(512);column:openid"`
 	UnionID        string          `json:"unionid" gorm:"type:varchar(512);column:unionid"`
@@ -556,6 +556,162 @@ func (u *User) LoadGroupIds() error {
 	u.GroupIds = groupIDs
 	if u.Type == UserTypeInternal && u.GroupId > 0 {
 		u.GroupIds = append(u.GroupIds, u.GroupId)
+	}
+	return nil
+}
+
+func BatchLoadUserInfo(users []*User, from int) {
+	if len(users) == 0 {
+		return
+	}
+	_ = batchLoadDepartments(users, from)
+	_ = batchLoadMemberBindings(users, from)
+	_ = batchLoadGroupIds(users)
+}
+
+func batchLoadDepartments(users []*User, from int) error {
+	userIDs := make([]int64, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+	}
+	eid := users[0].Eid
+
+	qFrom := DB.Statement.Quote("from")
+	joinBindings := fmt.Sprintf(
+		"JOIN member_bindings ON member_department_relations.bid = member_bindings.id AND member_bindings.eid = departments.eid AND member_bindings.%s = member_department_relations.%s",
+		qFrom, qFrom,
+	)
+
+	type deptWithMid struct {
+		Department
+		MID int64 `gorm:"column:mid"`
+	}
+
+	var results []deptWithMid
+	err := DB.Table("departments").
+		Select("departments.*, member_bindings.mid").
+		Joins("JOIN member_department_relations ON departments.did = member_department_relations.did AND member_department_relations.eid = departments.eid").
+		Joins(joinBindings).
+		Where("member_bindings.mid IN ? AND departments.eid = ?", userIDs, eid).
+		Where(fmt.Sprintf("member_department_relations.%s = ?", qFrom), from).
+		Find(&results).Error
+	if err != nil {
+		return err
+	}
+
+	deptMap := make(map[int64][]Department)
+	for _, r := range results {
+		deptMap[r.MID] = append(deptMap[r.MID], r.Department)
+	}
+
+	for _, u := range users {
+		if depts, ok := deptMap[u.UserID]; ok {
+			u.Departments = depts
+		}
+	}
+	return nil
+}
+
+func batchLoadMemberBindings(users []*User, from int) error {
+	userIDs := make([]int64, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+	}
+	eid := users[0].Eid
+
+	var bindings []MemberBinding
+	qFrom := DB.Statement.Quote("from")
+	err := DB.Where(fmt.Sprintf("mid IN ? AND eid = ? AND %s = ?", qFrom), userIDs, eid, from).
+		Find(&bindings).Error
+	if err != nil {
+		return err
+	}
+
+	bindingMap := make(map[int64][]MemberBinding)
+	for _, b := range bindings {
+		bindingMap[b.MID] = append(bindingMap[b.MID], b)
+	}
+
+	for _, u := range users {
+		if bindings, ok := bindingMap[u.UserID]; ok {
+			u.MemberBindings = bindings
+		}
+	}
+	return nil
+}
+
+func batchLoadGroupIds(users []*User) error {
+	userIDs := make([]int64, len(users))
+	userIDStrs := make([]string, len(users))
+	for i, u := range users {
+		userIDs[i] = u.UserID
+		userIDStrs[i] = fmt.Sprintf("%d", u.UserID)
+	}
+	eid := users[0].Eid
+
+	type permResult struct {
+		ResourceID int64 `gorm:"column:resource_id"`
+		GroupID    int64 `gorm:"column:group_id"`
+	}
+	var userGroupPerms []permResult
+	DB.Model(&ResourcePermission{}).
+		Where("resource_type = ? AND resource_id IN ?", ResourceTypeUser, userIDs).
+		Find(&userGroupPerms)
+
+	userGroupMap := make(map[int64][]int64)
+	for _, p := range userGroupPerms {
+		userGroupMap[p.ResourceID] = append(userGroupMap[p.ResourceID], p.GroupID)
+	}
+
+	var allBindings []MemberBinding
+	DB.Model(&MemberBinding{}).
+		Where("eid = ? AND bindvalue IN ?", eid, userIDStrs).
+		Find(&allBindings)
+
+	bidToMID := make(map[int64]int64)
+	allBids := make([]int64, 0, len(allBindings))
+	for _, b := range allBindings {
+		allBids = append(allBids, b.ID)
+		bidToMID[b.ID] = b.MID
+	}
+
+	bidToDids := make(map[int64][]int64)
+	allDids := make([]int64, 0)
+	if len(allBids) > 0 {
+		var relations []MemberDepartmentRelation
+		DB.Model(&MemberDepartmentRelation{}).
+			Where("eid = ? AND bid IN ?", eid, allBids).
+			Find(&relations)
+		for _, r := range relations {
+			allDids = append(allDids, r.DID)
+			bidToDids[r.BID] = append(bidToDids[r.BID], r.DID)
+		}
+	}
+
+	deptGroupMap := make(map[int64][]int64)
+	if len(allDids) > 0 {
+		var deptPerms []permResult
+		DB.Model(&ResourcePermission{}).
+			Where("resource_type = ? AND resource_id IN ?", ResourceTypeDepartment, allDids).
+			Find(&deptPerms)
+		for _, p := range deptPerms {
+			deptGroupMap[p.ResourceID] = append(deptGroupMap[p.ResourceID], p.GroupID)
+		}
+	}
+
+	for _, u := range users {
+		groupIDs := userGroupMap[u.UserID]
+		for _, b := range allBindings {
+			if b.MID == u.UserID {
+				for _, did := range bidToDids[b.ID] {
+					groupIDs = append(groupIDs, deptGroupMap[did]...)
+				}
+			}
+		}
+		if u.Type == UserTypeInternal && u.GroupId > 0 {
+			groupIDs = append(groupIDs, u.GroupId)
+		}
+		u.GroupIds = groupIDs
 	}
 	return nil
 }

@@ -16,6 +16,7 @@ interface UserInternalStatusProps {
   value?: InternalUserStatus;
   onChange?: (value: InternalUserStatus) => void;
   actionDisabled?: boolean;
+  buttonDisabled?: boolean;
   userData?: any;
   buttonClass?: string;
   size?: "small" | "middle" | "large";
@@ -31,6 +32,7 @@ const UserInternalStatus: React.FC<UserInternalStatusProps> = ({
   value = INTERNAL_USER_STATUS_UNDEFINED,
   onChange,
   actionDisabled = false,
+  buttonDisabled = false,
   userData = {},
   buttonClass = "",
   size = "middle",
@@ -93,12 +95,13 @@ const UserInternalStatus: React.FC<UserInternalStatusProps> = ({
       ) && (
         <Dropdown
           menu={{ items, onClick: (info) => handleStatusChange(info.key) }}
-          trigger={["click"]}
+          trigger={buttonDisabled ? [] : ["click"]}
         >
           <Button
             size={size === "middle" ? "small" : size}
             icon={<DownOutlined />}
             className={`!px-2 ml-2 ${buttonClass}`}
+            disabled={buttonDisabled}
           />
         </Dropdown>
       )}

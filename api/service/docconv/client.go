@@ -155,35 +155,61 @@ type JobParams struct {
 	TingWuConfig       *TingWuConfig       `json:"tingwu_config,omitempty"`
 }
 
-// TextinConfig represents the configuration for Textin API
+// TextinConfig represents the configuration for Textin XParse v1.3 API
 type TextinConfig struct {
-	// Required parameters
-	AppID      string `json:"app_id"`
-	SecretCode string `json:"secret_code"`
+	AppID      string       `json:"app_id"`
+	SecretCode string       `json:"secret_code"`
+	Parse      *TextinXParse `json:"parse,omitempty"`
+}
 
-	// Optional parameters with sensible defaults
-	PDFPwd             string `json:"pdf_pwd,omitempty"`
-	PageStart          int    `json:"page_start,omitempty"`
-	PageCount          int    `json:"page_count,omitempty"`
-	ParseMode          string `json:"parse_mode,omitempty"`
-	DPI                int    `json:"dpi,omitempty"`
-	ApplyDocumentTree  int    `json:"apply_document_tree,omitempty"`
-	TableFlavor        string `json:"table_flavor,omitempty"`
-	GetImage           string `json:"get_image,omitempty"`
-	ImageOutputType    string `json:"image_output_type,omitempty"`
-	ParatextMode       string `json:"paratext_mode,omitempty"`
-	FormulaLevel       int    `json:"formula_level,omitempty"`
-	ApplyMerge         int    `json:"apply_merge,omitempty"`
-	ApplyImageAnalysis int    `json:"apply_image_analysis,omitempty"`
-	MarkdownDetails    int    `json:"markdown_details,omitempty"`
-	PageDetails        int    `json:"page_details,omitempty"`
-	RawOCR             int    `json:"raw_ocr,omitempty"`
-	CharDetails        int    `json:"char_details,omitempty"`
-	CatalogDetails     int    `json:"catalog_details,omitempty"`
-	GetExcel           int    `json:"get_excel,omitempty"`
-	CropDewarp         int    `json:"crop_dewarp,omitempty"`
-	RemoveWatermark    int    `json:"remove_watermark,omitempty"`
-	ApplyChart         int    `json:"apply_chart,omitempty"`
+// TextinXParse wraps the parse block for Textin XParse v1.3
+type TextinXParse struct {
+	Document     *TextinDocument     `json:"document,omitempty"`
+	Capabilities *TextinCapabilities `json:"capabilities,omitempty"`
+	Scope        *TextinScope        `json:"scope,omitempty"`
+	Config       *TextinConfigBlock  `json:"config,omitempty"`
+}
+
+type TextinDocument struct {
+	Password string `json:"password,omitempty"`
+}
+
+type TextinCapabilities struct {
+	TableView             string `json:"table_view,omitempty"`
+	IncludeImageData      *bool  `json:"include_image_data,omitempty"`
+	IncludeTableStructure *bool  `json:"include_table_structure,omitempty"`
+	Pages                 *bool  `json:"pages,omitempty"`
+	CropDewarp            *bool  `json:"crop_dewarp,omitempty"`
+	RemoveWatermark       *bool  `json:"remove_watermark,omitempty"`
+	TitleTree             *bool  `json:"title_tree,omitempty"`
+	IncludeCharDetails    *bool  `json:"include_char_details,omitempty"`
+	IncludeHierarchy      *bool  `json:"include_hierarchy,omitempty"`
+	IncludeInlineObjects  *bool  `json:"include_inline_objects,omitempty"`
+}
+
+type TextinScope struct {
+	PageRange string `json:"page_range,omitempty"`
+}
+
+type TextinConfigBlock struct {
+	ForceEngine  string              `json:"force_engine,omitempty"`
+	EngineParams *TextinEngineParams `json:"engine_params,omitempty"`
+}
+
+type TextinEngineParams struct {
+	FormulaLevel      int    `json:"formula_level,omitempty"`
+	ImageOutputType   string `json:"image_output_type,omitempty"`
+	ParseMode         string `json:"parse_mode,omitempty"`
+	RecognizeChemical *bool  `json:"recognize_chemical,omitempty"`
+}
+
+// buildPageRange converts old flat page_start/page_count to XParse page_range string.
+// page_start is 0-based, page_range is 1-based.
+func buildPageRange(pageStart, pageCount int) string {
+	if pageCount <= 0 {
+		pageCount = 1000
+	}
+	return strconv.Itoa(pageStart+1) + "-" + strconv.Itoa(pageStart+pageCount)
 }
 
 // MinerUConfig represents the configuration for MinerU API
@@ -454,39 +480,12 @@ func (c *Client) SubmitJob(ctx context.Context, req *ConvertRequest) (*JobRespon
 		if req.JobParams.TextinConfig != nil {
 			config := req.JobParams.TextinConfig
 
-			// Check required parameters for textin
 			if config.AppID == "" || config.SecretCode == "" {
 				return nil, &ConvertError{
 					Op:      "submit",
 					Code:    "invalid_request",
 					Message: "textin_config requires both app_id and secret_code",
 				}
-			}
-
-			// Apply sensible defaults based on API documentation
-			if config.ParseMode == "" {
-				config.ParseMode = "auto"
-			}
-			if config.DPI == 0 {
-				config.DPI = 144
-			}
-			if config.ApplyDocumentTree == 0 {
-				config.ApplyDocumentTree = 1
-			}
-			if config.TableFlavor == "" {
-				config.TableFlavor = "md"
-			}
-			if config.GetImage == "" {
-				config.GetImage = "objects" // Per user requirement
-			}
-			if config.ImageOutputType == "" {
-				config.ImageOutputType = "base64str" // Per user requirement
-			}
-			if config.PageStart == 0 {
-				config.PageStart = 0
-			}
-			if config.PageCount == 0 {
-				config.PageCount = 1000
 			}
 		}
 

@@ -135,12 +135,13 @@ func (s *SkillLibraryService) executeImportJob(ctx context.Context, job *model.S
 	}
 
 	req := &SkillImportRequest{
-		Eid:          job.Eid,
-		SourceType:   strings.TrimSpace(payload.SourceType),
-		UploadFileID: strings.TrimSpace(payload.UploadFileID),
-		GithubURL:    strings.TrimSpace(payload.GithubURL),
-		Ref:          strings.TrimSpace(payload.Ref),
-		SkillPath:    strings.TrimSpace(payload.SkillPath),
+		Eid:           job.Eid,
+		SourceType:    strings.TrimSpace(payload.SourceType),
+		UploadFileID:  strings.TrimSpace(payload.UploadFileID),
+		GithubURL:     strings.TrimSpace(payload.GithubURL),
+		Ref:           strings.TrimSpace(payload.Ref),
+		SkillPath:     strings.TrimSpace(payload.SkillPath),
+		MockRiskLevel: strings.TrimSpace(payload.MockRiskLevel),
 	}
 	if err := normalizeSkillImportRequest(req); err != nil {
 		return s.finalizeScanFailure(job.ID, "", fmt.Sprintf("导入参数无效: %v", err), "", false)
@@ -179,9 +180,15 @@ func (s *SkillLibraryService) importSkillAtomic(
 		return nil, fmt.Errorf("%w: request", ErrSkillImportRequestInvalid)
 	}
 
-	runtime, err := s.resolveWorkAIScanRuntime(ctx, req.Eid)
-	if err != nil {
-		return nil, err
+	scanModel := "mock"
+	var scanChannel *model.Channel
+	if strings.TrimSpace(req.MockRiskLevel) == "" {
+		runtime, err := s.resolveWorkAIScanRuntime(ctx, req.Eid)
+		if err != nil {
+			return nil, err
+		}
+		scanModel = runtime.Model
+		scanChannel = runtime.Channel
 	}
 
 	stagingPath, err := createSkillExtractionStagingPath(s.buildSkillTenantRootPath(req.Eid))
@@ -283,8 +290,8 @@ func (s *SkillLibraryService) importSkillAtomic(
 	} else {
 		output, err = s.scanner.Scan(ctx, &SkillScanInput{
 			Skill:          skillRecord,
-			ScanModel:      runtime.Model,
-			ScanChannel:    runtime.Channel,
+			ScanModel:      scanModel,
+			ScanChannel:    scanChannel,
 			LLMInvoker:     s.resolveLLMInvoker(),
 			SkillMD:        inspection.SkillMarkdown,
 			FileEntries:    inspection.Entries,
@@ -321,7 +328,7 @@ func (s *SkillLibraryService) importSkillAtomic(
 	if output.RiskLevel == model.SkillRiskLevelHigh {
 		earlyStatus = model.SkillScanJobStatusFailed
 	}
-	if err := s.updateSkillScanJobResult(jobID, 0, earlyStatus, runtime.Model, output, now); err != nil {
+	if err := s.updateSkillScanJobResult(jobID, 0, earlyStatus, scanModel, output, now); err != nil {
 		return nil, err
 	}
 
@@ -331,7 +338,7 @@ func (s *SkillLibraryService) importSkillAtomic(
 		if message == "" {
 			message = "当前技能危险性过高，禁止使用。"
 		}
-		if err := s.finalizeScanFailure(jobID, runtime.Model, message, output.ScanPayload, false); err != nil {
+		if err := s.finalizeScanFailure(jobID, scanModel, message, output.ScanPayload, false); err != nil {
 			return nil, err
 		}
 		if jobID > 0 {
@@ -352,7 +359,7 @@ func (s *SkillLibraryService) importSkillAtomic(
 	}
 
 	if backupPath, err := s.promoteSkillExtractionStaging(stagingPath, installPath); err != nil {
-		if updateErr := s.finalizeScanFailure(jobID, runtime.Model, fmt.Sprintf("导入临时目录切换失败: %v", err), output.ScanPayload, false); updateErr != nil {
+		if updateErr := s.finalizeScanFailure(jobID, scanModel, fmt.Sprintf("导入临时目录切换失败: %v", err), output.ScanPayload, false); updateErr != nil {
 			return nil, updateErr
 		}
 		return nil, err
@@ -375,7 +382,7 @@ func (s *SkillLibraryService) importSkillAtomic(
 		return nil
 	})
 	if err != nil {
-		if updateErr := s.finalizeScanFailure(jobID, runtime.Model, fmt.Sprintf("导入失败: %v", err), output.ScanPayload, false); updateErr != nil {
+		if updateErr := s.finalizeScanFailure(jobID, scanModel, fmt.Sprintf("导入失败: %v", err), output.ScanPayload, false); updateErr != nil {
 			return nil, updateErr
 		}
 		return nil, err
@@ -388,7 +395,7 @@ func (s *SkillLibraryService) importSkillAtomic(
 	scanJobID := jobID
 	scanJobStatus := model.SkillScanJobStatusSuccess
 	if scanJobID > 0 {
-		if err := s.updateSkillScanJobResult(scanJobID, createdSkillID, scanJobStatus, runtime.Model, output, now); err != nil {
+		if err := s.updateSkillScanJobResult(scanJobID, createdSkillID, scanJobStatus, scanModel, output, now); err != nil {
 			logger.Warnf(ctx, "【技能运行】更新导入扫描记录关联技能失败: job_id=%d skill_id=%d err=%v", scanJobID, createdSkillID, err)
 		}
 	} else {
@@ -404,7 +411,7 @@ func (s *SkillLibraryService) importSkillAtomic(
 			ScoreDocQuality:   clampScore(output.ScoreDocQuality),
 			Message:           output.Message,
 			ScanPayload:       output.ScanPayload,
-			ScanModel:         runtime.Model,
+			ScanModel:         scanModel,
 			RetryCount:        0,
 			StartedTime:       now,
 			FinishedTime:      now,
@@ -696,28 +703,28 @@ func (s *SkillLibraryService) ForceImportSkill(ctx context.Context, eid, jobID i
 
 	zipSHA := sha256.Sum256(zipContent)
 	skillRecord := &model.SkillLibrary{
-		Eid:             eid,
-		SourceType:      req.SourceType,
-		SourceRef:       payload.Ref,
-		SkillName:       skillName,
-		DisplayName:     skillName,
-		Description:     truncateByRunes(strings.TrimSpace(parsedSkill.Description), skillDescriptionMaxChars),
-		Version:         normalizeSkillVersion(parsedSkill.Version),
-		OriginZipKey:    payload.OriginZipKey,
-		OriginZipName:   skillName + ".zip",
-		OriginZipSize:   int64(len(zipContent)),
-		OriginZipSHA256: hex.EncodeToString(zipSHA[:]),
-		ExtractFolder:   skillName,
-		InstallPath:     installPath,
-		PublishStatus:   model.SkillPublishStatusDraft,
-		AdminStatus:     model.SkillAdminStatusDisabled,
-		RiskLevel:       job.RiskLevel,
-		ScoreIntegrity:  job.ScoreIntegrity,
+		Eid:               eid,
+		SourceType:        req.SourceType,
+		SourceRef:         payload.Ref,
+		SkillName:         skillName,
+		DisplayName:       skillName,
+		Description:       truncateByRunes(strings.TrimSpace(parsedSkill.Description), skillDescriptionMaxChars),
+		Version:           normalizeSkillVersion(parsedSkill.Version),
+		OriginZipKey:      payload.OriginZipKey,
+		OriginZipName:     skillName + ".zip",
+		OriginZipSize:     int64(len(zipContent)),
+		OriginZipSHA256:   hex.EncodeToString(zipSHA[:]),
+		ExtractFolder:     skillName,
+		InstallPath:       installPath,
+		PublishStatus:     model.SkillPublishStatusDraft,
+		AdminStatus:       model.SkillAdminStatusDisabled,
+		RiskLevel:         job.RiskLevel,
+		ScoreIntegrity:    job.ScoreIntegrity,
 		ScorePracticality: job.ScorePracticality,
-		ScoreSafety:     job.ScoreSafety,
-		ScoreCodeQuality: job.ScoreCodeQuality,
-		ScoreDocQuality: job.ScoreDocQuality,
-		ScanMessage:     job.Message,
+		ScoreSafety:       job.ScoreSafety,
+		ScoreCodeQuality:  job.ScoreCodeQuality,
+		ScoreDocQuality:   job.ScoreDocQuality,
+		ScanMessage:       job.Message,
 	}
 
 	if backupPath, err := s.promoteSkillExtractionStaging(stagingPath, installPath); err != nil {

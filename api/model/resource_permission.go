@@ -20,8 +20,8 @@ const (
 type ResourcePermission struct {
 	ID           int64       `json:"id" gorm:"primaryKey;autoIncrement"`
 	GroupID      int64       `json:"group_id" gorm:"not null;index:idx_group_resource"`
-	ResourceID   int64       `json:"resource_id" gorm:"not null;index:idx_group_resource"`
-	ResourceType string      `json:"resource_type" gorm:"not null;index:idx_group_resource;type:varchar(100)"` // agent, user, department
+	ResourceID   int64       `json:"resource_id" gorm:"not null;index:idx_group_resource;index:idx_type_resource,priority:2"`
+	ResourceType string      `json:"resource_type" gorm:"not null;index:idx_group_resource;index:idx_type_resource,priority:1;type:varchar(100)"` // agent, user, department
 	Permission   string      `json:"permission" gorm:"not null;type:varchar(50)"`
 	User         *User       `json:"user,omitempty" gorm:"-"`
 	Department   *Department `json:"department,omitempty" gorm:"-"`

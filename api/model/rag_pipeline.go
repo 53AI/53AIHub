@@ -67,6 +67,12 @@ type RoutingStrategyDetail struct {
 	PipelineName string `json:"pipeline_name" gorm:"->"`
 }
 
+// StrategyWithPipelineResponse 包含完整 Pipeline 信息的策略响应
+type StrategyWithPipelineResponse struct {
+	RagRoutingStrategy
+	Pipeline *RagPipelineProfile `json:"pipeline"`
+}
+
 // FindHighestPriorityRagRoutingStrategyAndPipelineByFile 根据文件扩展名查找最高优先级的 RAG 路由策略和流水线
 func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *File) (*RagRoutingStrategy, *RagPipelineProfile, error) {
 	if db == nil {

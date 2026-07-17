@@ -268,6 +268,20 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			db.Save(&jobStep)
 		}
 
+		// 生成文件级摘要和常见问法（强制执行）
+		summaryText, _, sumErr := generateFileSummaryAndFAQ(ctx, db, eid, fileID, content, chunkConfig)
+		if sumErr != nil {
+			updateParsingStatus(model.FileParsingStatusFail)
+			return fmt.Errorf("生成文件摘要和问法失败: %v", sumErr)
+		}
+		_ = summaryText
+
+		// 实体抽取（强制执行）
+		if extErr := extractEntities(ctx, db, eid, fileID, content); extErr != nil {
+			updateParsingStatus(model.FileParsingStatusFail)
+			return fmt.Errorf("实体抽取失败: %v", extErr)
+		}
+
 		// 记录结果日志
 		logger.Info(ctx, fmt.Sprintf("DocumentChunking 完成: 分块数=%d, 平均字符数=%.2f", count, avgChars))
 		updateParsingStatus(model.FileParsingStatusNormal)
@@ -352,11 +366,15 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	}
 
 	// 映射 ParentChunk -> KnowledgeChunk
-	config.KnowledgeChunk.SplitRule = v2.ParentChunk.IdentifierLevel
-	if v2.ParentChunk.Strategy == "identifier" {
-		config.KnowledgeChunk.ChunkMode = rag.ChunkModelIdentifierFirst
+	if v2.ParentChunk.Mode == "whole" {
+		config.KnowledgeChunk.SplitRule = "none"
 	} else {
-		config.KnowledgeChunk.ChunkMode = rag.ChunkModelLengthFirst
+		config.KnowledgeChunk.SplitRule = v2.ParentChunk.IdentifierLevel
+		if v2.ParentChunk.Strategy == "identifier" {
+			config.KnowledgeChunk.ChunkMode = rag.ChunkModelIdentifierFirst
+		} else {
+			config.KnowledgeChunk.ChunkMode = rag.ChunkModelLengthFirst
+		}
 	}
 	config.KnowledgeMaxLength = v2.ParentChunk.MaxLength
 	// config.KnowledgeChunk.MaxLength is also used in some places, so set both
@@ -370,11 +388,15 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	config.KnowledgeChunk.AppendSubtitle = v2.ParentChunk.AppendSubtitle
 
 	// 映射 ChildChunk -> IndexChunk
-	config.IndexChunk.SplitRule = v2.ChildChunk.IdentifierLevel
-	if v2.ChildChunk.Strategy == "identifier" {
-		config.IndexChunk.ChunkMode = rag.ChunkModelIdentifierFirst
+	if v2.ChildChunk.Mode == "whole" {
+		config.IndexChunk.SplitRule = "none"
 	} else {
-		config.IndexChunk.ChunkMode = rag.ChunkModelLengthFirst
+		config.IndexChunk.SplitRule = v2.ChildChunk.IdentifierLevel
+		if v2.ChildChunk.Strategy == "identifier" {
+			config.IndexChunk.ChunkMode = rag.ChunkModelIdentifierFirst
+		} else {
+			config.IndexChunk.ChunkMode = rag.ChunkModelLengthFirst
+		}
 	}
 	config.IndexMaxLength = v2.ChildChunk.MaxLength
 	config.IndexChunk.MaxLength = v2.ChildChunk.MaxLength

@@ -1,0 +1,22 @@
+.api-table-horizontal .ant-table-thead > tr > th,
+.api-table-vertical .ant-table-tbody > tr > td:first-child {
+  background: #F6F6F9 !important;
+  color: #999;
+  font-weight: 500;
+}
+
+.api-table-horizontal .ant-table-wrapper,
+.api-table-vertical .ant-table-wrapper, 
+.ant-table-container {
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ant-collapse-header {
+  padding: 24px !important;
+  height: 68px !important;
+}
+
+.ant-collapse-body {
+  padding: 0 24px 16px !important;
+}

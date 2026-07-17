@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Table,
   Button,
@@ -14,6 +14,7 @@ import { useUserStore, useEnterpriseStore } from "@/stores";
 import { useEnv } from "@/hooks/useEnv";
 import { GROUP_TYPE } from "@/constants/group";
 import UserAddDialog from "../components/UserAddDialog";
+import UserStatus from "../components/UserInternalStatus";
 import { DialogueRecordDrawer } from "@/components/DialogueRecord/drawer";
 import type { DialogueRecordDrawerRef } from "@/components/DialogueRecord/drawer";
 import { DateRangeFilter } from "@/components/Filter/date-range";
@@ -29,6 +30,7 @@ interface RegisterUser {
   subscription_name: string;
   expired_time: string;
   register_time: string;
+  status: number;
 }
 
 export function UserRegisterList() {
@@ -94,7 +96,7 @@ export function UserRegisterList() {
   };
 
   // Load user list
-  const loadUserList = async (params?: { page?: number }) => {
+  const loadUserList = useCallback(async (params?: { page?: number }) => {
     const currentPage = params?.page ?? page;
     setLoading(true);
     try {
@@ -127,7 +129,7 @@ export function UserRegisterList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, groupId, rangeBy, dateRange, subscriptionOptions]);
 
   // Refresh
   const refresh = () => {
@@ -232,6 +234,22 @@ export function UserRegisterList() {
         ),
       },
       {
+        title: t("internal_user.account.status"),
+        dataIndex: "status",
+        key: "status",
+        width: 160,
+        render: (value: number, record: RegisterUser) => (
+          <UserStatus
+            value={value}
+            userData={record}
+            buttonDisabled={
+              record.user_id === userInfo?.user_id || record.is_creator
+            }
+            onChange={() => loadUserList()}
+          />
+        ),
+      },
+      {
         title: t("register_time"),
         dataIndex: "register_time",
         key: "register_time",
@@ -302,7 +320,7 @@ export function UserRegisterList() {
         ),
       },
     ],
-    [t, userInfo.user_id, isWorkEnv],
+    [t, userInfo.user_id, isWorkEnv, loadUserList],
   );
 
   // Initial load

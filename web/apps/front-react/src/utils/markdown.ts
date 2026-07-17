@@ -17,6 +17,22 @@ const isCodeBlockEnd = (line: string): boolean => {
 }
 
 /**
+ * 检测 HTML 注释开始 - 行内任一位置出现 `<!--`
+ */
+const isHtmlCommentStart = (line: string): boolean => {
+  return line.includes('<!--')
+}
+
+/**
+ * 检测 HTML 注释结束 - 行内任一位置出现 `-->`
+ * 注意：当注释只是单行 `<!---->` 的退化形态时，
+ * 同一行内 start 和 end 会同时成立，需要在同一行内一并处理。
+ */
+const isHtmlCommentEnd = (line: string): boolean => {
+  return line.includes('-->')
+}
+
+/**
  * 检测markdown表格 - 判断行是否为表格行或表格分隔符
  */
 const isMarkdownTable = (line: string): boolean => {
@@ -79,11 +95,13 @@ const isHtmlBlock = (line: string): boolean => {
  * 智能分割markdown内容
  */
 export const smartSplitMarkdown = (content: string): string[] => {
-  const lines = content.split(/\n+/)
+  const lines = content.split('\n')
   const results: string[] = []
   let currentBlock: string[] = []
   let inCodeBlock = false
   let inMathBlock = false
+  let inHtmlComment = false
+  let inHtmlBlock = false
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
@@ -102,6 +120,34 @@ export const smartSplitMarkdown = (content: string): string[] => {
       results.push(currentBlock.join('\n'))
       currentBlock = []
       inCodeBlock = false
+      continue
+    }
+
+    // HTML 注释块: 必须把跨行的 <!-- ... --> 整体识别为一个 block,
+    // 否则会被按行拆开, 落到 chunk 切分逻辑时可能被截断到不同 chunk,
+    // 渲染器(vditor) 见不到配对的 <!-- ... -->, 把注释里的标签当可见内容渲染
+    if (isHtmlCommentStart(line) && !inHtmlComment && !inCodeBlock && !inMathBlock) {
+      if (currentBlock.length > 0) {
+        results.push(currentBlock.join('\n'))
+        currentBlock = []
+      }
+      inHtmlComment = true
+      currentBlock.push(line)
+      if (isHtmlCommentEnd(line)) {
+        // 单行注释 <!-- foo -->: 直接关闭, 落盘
+        results.push(currentBlock.join('\n'))
+        currentBlock = []
+        inHtmlComment = false
+      }
+      continue
+    }
+    if (inHtmlComment) {
+      currentBlock.push(line)
+      if (isHtmlCommentEnd(line)) {
+        results.push(currentBlock.join('\n'))
+        currentBlock = []
+        inHtmlComment = false
+      }
       continue
     }
 
@@ -188,12 +234,27 @@ export const smartSplitMarkdown = (content: string): string[] => {
       continue
     }
 
-    if (isHtmlBlock(line)) {
+    // 多行 HTML 元素块 (CommonMark type-6 风格):
+    // 进入 on a line that starts with a tag, 退出 on a blank line.
+    // 这是为了避免 <details>...<summary>...</summary>\n...</details> 这种块被按行切碎,
+    // 否则落到 splitMarkdownIntoChunks 时若被 splitLongText 横切,
+    // 渲染器见不到闭合标签, 把中间内容暴露到界面上 (跟 HTML 注释同一个 bug 类).
+    if (isHtmlBlock(line) && !inHtmlBlock && !inCodeBlock && !inMathBlock && !inHtmlComment) {
       if (currentBlock.length > 0) {
         results.push(currentBlock.join('\n'))
         currentBlock = []
       }
-      results.push(line)
+      inHtmlBlock = true
+      currentBlock.push(line)
+      continue
+    }
+    if (inHtmlBlock) {
+      currentBlock.push(line)
+      if (line.trim() === '') {
+        results.push(currentBlock.join('\n'))
+        currentBlock = []
+        inHtmlBlock = false
+      }
       continue
     }
 
@@ -218,6 +279,7 @@ const isBlockElement = (block: string): boolean => {
   const trimmed = block.trim()
   return (
     trimmed.startsWith('```') ||
+    trimmed.startsWith('<!--') ||
     trimmed === '$$' ||
     isMarkdownTable(trimmed.split('\n')[0]) ||
     isMarkdownHeading(trimmed.split('\n')[0]) ||

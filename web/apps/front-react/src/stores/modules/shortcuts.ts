@@ -5,6 +5,63 @@ import { message } from 'antd'
 import { t } from '@/locales'
 import type { ShortcutItem, ShortcutType } from '@/api/modules/shortcuts/types'
 
+/** Agent 快捷方式跳转配置 */
+interface AgentShortcutNavigateOptions {
+  agentId: string
+  isSoftStyle: boolean
+  /** 软件模式下的导航函数，用于页面内跳转而非新开窗口 */
+  navigate?: (path: string) => void
+}
+
+/**
+ * 处理 Agent 快捷方式跳转
+ * - 网站模式：新开窗口跳转到 /chat?agent_id=xxx
+ * - 软件模式：检查是否已添加到工作台，未添加则先添加，然后在当前页面导航到 /agent/agent?agent_id=xxx
+ */
+export async function navigateAgentShortcut(options: AgentShortcutNavigateOptions): Promise<void> {
+  const { agentId, isSoftStyle, navigate } = options
+
+  // 网站模式：新开窗口跳转到 /chat?agent_id=xxx
+  if (!isSoftStyle) {
+    window.open(`/chat?agent_id=${agentId}`, '_blank')
+    return
+  }
+
+  // 软件模式：检查是否已添加到工作台
+  try {
+    // 动态导入避免循环依赖
+    const { useAgentStore } = await import('@/stores/modules/agent')
+    const agentStore = useAgentStore.getState()
+
+    // 先确保加载了快捷方式ID列表
+    await agentStore.loadShortcutIds()
+
+    const isAdded = agentStore.isShortcutAdded(agentId)
+    if (!isAdded) {
+      // 没有添加则先添加到工作台
+      await agentStore.addShortcut(agentId)
+    }
+
+    // 跳转到工作台智能体页
+    const targetPath = `/agent/agent?agent_id=${agentId}`
+    if (navigate) {
+      navigate(targetPath)
+    } else {
+      // 降级处理：如果没有传入 navigate，则使用 hash 导航
+      window.location.hash = targetPath
+    }
+  } catch (error) {
+    console.error('快捷方式跳转失败:', error)
+    // 失败时仍然尝试跳转
+    const targetPath = `/agent/agent?agent_id=${agentId}`
+    if (navigate) {
+      navigate(targetPath)
+    } else {
+      window.location.hash = targetPath
+    }
+  }
+}
+
 interface ShortcutsState {
   shortcuts: ShortcutItem[]
   loading: boolean

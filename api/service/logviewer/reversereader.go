@@ -11,10 +11,12 @@ const reverseBufSize = 8 * 1024
 // ReverseLineReader 从文件末尾向前逐行读取，返回的行按文件中的逆序排列。
 // 适用于需要从最新日志开始匹配的场景，避免扫描整文件。
 type ReverseLineReader struct {
-	f      *os.File
-	pos    int64
-	buf    []byte
-	remain string
+	f           *os.File
+	pos         int64
+	buf         []byte
+	remain      string
+	MaxBytes    int64 // lazy: 最大扫描字节数，0=无限制；超100MB日志且未匹配到关键字时防止长时间阻塞
+	scannedBytes int64
 }
 
 // NewReverseLineReader 创建一个从文件末尾向前读取的 reader。
@@ -60,11 +62,26 @@ func (r *ReverseLineReader) ReadLine() (string, error) {
 		n, err := r.f.Read(r.buf[:readSize])
 		if n > 0 {
 			r.pos = newPos
+			r.scannedBytes += int64(n)
 			r.remain = string(r.buf[:n]) + r.remain
 		}
 		if err != nil && err != io.EOF {
 			return "", err
 		}
+		if r.MaxBytes > 0 && r.scannedBytes >= r.MaxBytes {
+		  // 到达扫描上限时提取一行，设置 pos=0 防止后续继续读文件
+		  line := r.extractLine()
+		  r.pos = 0
+		  if line != "" {
+		   return line, nil
+		  }
+		  if r.remain != "" {
+		   line := r.remain
+		   r.remain = ""
+		   return line, nil
+		  }
+		  return "", io.EOF
+		 }
 	}
 }
 

@@ -372,21 +372,42 @@ func (s *DocumentConfigService) ConvertToTingWuConfig(platformConfig *TingWuPlat
 	}
 }
 
-// ConvertToTextinConfig 转换平台配置为 TextinConfig
+// ConvertToTextinConfig 转换平台配置为 TextinConfig (XParse v1.3)
 func (s *DocumentConfigService) ConvertToTextinConfig(platformConfig *TextinPlatformConfig) *TextinConfig {
+	includeTableStructure := true
+	pages := true
+	recognizeChemical := true
+	includeHierarchy := true
+	includeCharDetails := true
+	titleTree := true
+	removeWatermark := true
+	includeInlineObjects := true
+	includeImageData := true
+	cropDewarp := true
 	return &TextinConfig{
 		AppID:      platformConfig.XtiAppID,
 		SecretCode: platformConfig.XtiSecretCode,
-		// 其他参数使用默认值
-		ParseMode:         "auto",
-		DPI:               144,
-		ApplyDocumentTree: 1,
-		TableFlavor:       "md",
-		GetImage:          "objects",
-		ImageOutputType:   "base64str",
-		PageStart:         0,
-		PageCount:         1000,
-		ParatextMode:      "none",
+		Parse: &TextinXParse{
+			Capabilities: &TextinCapabilities{
+				TableView:             "markdown",
+				IncludeImageData:      &includeImageData,
+				IncludeTableStructure: &includeTableStructure,
+				Pages:                 &pages,
+				CropDewarp:            &cropDewarp,
+				RemoveWatermark:       &removeWatermark,
+				TitleTree:             &titleTree,
+				IncludeCharDetails:    &includeCharDetails,
+				IncludeHierarchy:      &includeHierarchy,
+				IncludeInlineObjects:  &includeInlineObjects,
+			},
+			Config: &TextinConfigBlock{
+				EngineParams: &TextinEngineParams{
+					ParseMode:         "auto",
+					FormulaLevel:      0,
+					RecognizeChemical: &recognizeChemical,
+				},
+			},
+		},
 	}
 }
 

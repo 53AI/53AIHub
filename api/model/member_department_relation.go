@@ -16,10 +16,10 @@ const (
 // MemberDepartmentRelation represents the relationship between members and departments
 type MemberDepartmentRelation struct {
 	ID   int64 `json:"id" gorm:"column:id;primaryKey;autoIncrement;comment:'Relation ID'"`
-	DID  int64 `json:"did" gorm:"column:did;not null;default:0;comment:'Department ID'"`
-	EID  int64 `json:"eid" gorm:"column:eid;not null;default:0;comment:'Enterprise ID'"`
-	BID  int64 `json:"bid" gorm:"column:bid;not null;default:0;comment:'Member Binding ID'"`
-	From int   `json:"from" gorm:"column:from;not null;default:0;comment:'Source: 0-Backend, 1-Enterprise WeChat'"`
+	DID  int64 `json:"did" gorm:"column:did;not null;default:0;index:idx_did_eid_from,priority:1;comment:'Department ID'"`
+	EID  int64 `json:"eid" gorm:"column:eid;not null;default:0;index:idx_bid_eid,priority:2;index:idx_did_eid_from,priority:2;comment:'Enterprise ID'"`
+	BID  int64 `json:"bid" gorm:"column:bid;not null;default:0;index:idx_bid_eid,priority:1;comment:'Member Binding ID'"`
+	From int   `json:"from" gorm:"column:from;not null;default:0;index:idx_did_eid_from,priority:3;comment:'Source: 0-Backend, 1-Enterprise WeChat'"`
 	BaseModel
 }
 

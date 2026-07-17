@@ -98,13 +98,6 @@ func (s *RerankService) PerformRerank(
 	logger.Debugf(ctx, "【重排】去重完成: before=%d, after=%d, sample=%v",
 		len(initialResults), len(deduplicatedResults), previewSearchResultsForDebug(deduplicatedResults, 5))
 
-	// 如果去重后的候选数已经不超过最终返回数量，就没有必要再做重排了
-	if config.TopK > 0 && len(deduplicatedResults) <= config.TopK {
-		logger.Debugf(ctx, "【重排】候选数已不超过 top_k，跳过重排: deduplicated=%d, top_k=%d",
-			len(deduplicatedResults), config.TopK)
-		return s.applyTopKLimit(deduplicatedResults, config), nil
-	}
-
 	// 2. 根据RerankModel选择重排方式 (参考流程图 3.1)
 	var rerankedResults []SearchResultItem
 	var err error

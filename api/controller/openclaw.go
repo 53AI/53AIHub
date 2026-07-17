@@ -33,8 +33,34 @@ func buildOpenClawRequestContext(c *gin.Context) (service.OpenClawRequestContext
 		GroupID:        config.GetUserGroupID(c),
 		AgentID:        agentID,
 		ConversationID: c.Param("openclaw_session_id"),
+		APIBaseURL:     resolveOpenClawRequestAPIBaseURL(c),
 		Query:          query,
 	}, true
+}
+
+func resolveOpenClawRequestAPIBaseURL(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	host := strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(c.Request.Host)
+	}
+	if host == "" {
+		return ""
+	}
+	scheme := strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Proto"))
+	if scheme == "" {
+		scheme = strings.TrimSpace(c.Request.Header.Get("X-Forwarded-Scheme"))
+	}
+	if scheme == "" {
+		if c.Request.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	return strings.TrimRight(scheme+"://"+host, "/") + "/"
 }
 
 func respondOpenClawServiceError(c *gin.Context, svcErr *service.OpenClawServiceError) {
@@ -54,7 +80,7 @@ func respondOpenClawServiceError(c *gin.Context, svcErr *service.OpenClawService
 
 // GetOpenClawConversations godoc
 // @Summary 获取 OpenClaw 会话列表
-// @Description 获取指定 OpenClawWS 智能体的会话列表，数据来自插件/OpenClaw，不在 53AIHub 本地镜像存储。
+// @Description 获取指定 OpenClawWS 智能体的会话列表；默认优先返回 53AIHub mirror，fresh=1 时从插件/OpenClaw 拉取最新数据。
 // @Tags OpenClaw
 // @Accept json
 // @Produce json
@@ -62,6 +88,7 @@ func respondOpenClawServiceError(c *gin.Context, svcErr *service.OpenClawService
 // @Param agent_id path int true "智能体ID"
 // @Param limit query int false "分页大小"
 // @Param offset query int false "分页偏移"
+// @Param fresh query bool false "是否跳过 mirror，强制从插件/OpenClaw 拉取"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/openclaw/agents/{agent_id}/conversations [get]
 func GetOpenClawConversations(c *gin.Context) {
@@ -79,12 +106,13 @@ func GetOpenClawConversations(c *gin.Context) {
 
 // GetOpenClawCurrentConversation godoc
 // @Summary 获取当前 53AIHub 用户对应的 OpenClaw 会话
-// @Description 获取当前 53AIHub 用户与指定 OpenClawWS 智能体的稳定 OpenClaw 会话；不存在时返回 null，且不会创建新会话。
+// @Description 获取当前 53AIHub 用户与指定 OpenClawWS 智能体的稳定 OpenClaw 会话；默认优先返回 mirror，fresh=1 时从插件/OpenClaw 拉取最新数据。
 // @Tags OpenClaw
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param agent_id path int true "智能体ID"
+// @Param fresh query bool false "是否跳过 mirror，强制从插件/OpenClaw 拉取"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/openclaw/agents/{agent_id}/conversations/current [get]
 func GetOpenClawCurrentConversation(c *gin.Context) {
@@ -102,7 +130,7 @@ func GetOpenClawCurrentConversation(c *gin.Context) {
 
 // GetOpenClawConversationMessages godoc
 // @Summary 获取 OpenClaw 会话消息列表
-// @Description 获取指定 OpenClaw 会话的消息列表，conversation_id 按 OpenClaw 原始会话 ID 透传。
+// @Description 获取指定 OpenClaw 会话的消息列表；默认优先返回 53AIHub mirror，fresh=1 时从插件/OpenClaw 拉取最新数据。
 // @Tags OpenClaw
 // @Accept json
 // @Produce json
@@ -111,6 +139,7 @@ func GetOpenClawCurrentConversation(c *gin.Context) {
 // @Param conversation_id path string true "OpenClaw 会话ID"
 // @Param limit query int false "分页大小"
 // @Param offset query int false "分页偏移"
+// @Param fresh query bool false "是否跳过 mirror，强制从插件/OpenClaw 拉取"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/openclaw/agents/{agent_id}/conversations/{conversation_id}/messages [get]
 func GetOpenClawConversationMessages(c *gin.Context) {
@@ -128,7 +157,7 @@ func GetOpenClawConversationMessages(c *gin.Context) {
 
 // GetOpenClawConversationEvents godoc
 // @Summary 获取 OpenClaw 会话事件列表
-// @Description 获取指定 OpenClaw 会话的 timeline events，用于恢复思考、中断和运行状态。
+// @Description 获取指定 OpenClaw 会话的 timeline events；默认优先返回 53AIHub mirror，fresh=1 时从插件/OpenClaw 拉取最新数据。
 // @Tags OpenClaw
 // @Accept json
 // @Produce json
@@ -138,6 +167,7 @@ func GetOpenClawConversationMessages(c *gin.Context) {
 // @Param limit query int false "分页大小"
 // @Param offset query int false "分页偏移"
 // @Param after_seq query int false "只返回该 seq 之后的事件"
+// @Param fresh query bool false "是否跳过 mirror，强制从插件/OpenClaw 拉取"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/openclaw/agents/{agent_id}/conversations/{conversation_id}/events [get]
 func GetOpenClawConversationEvents(c *gin.Context) {
@@ -155,7 +185,7 @@ func GetOpenClawConversationEvents(c *gin.Context) {
 
 // GetOpenClawConversationSnapshot godoc
 // @Summary 获取 OpenClaw 会话实时快照
-// @Description 获取指定 OpenClaw 会话的 canonical ledger 快照，用于刷新、切换智能体和断线恢复。
+// @Description 获取指定 OpenClaw 会话的 canonical ledger 快照；默认优先返回 53AIHub mirror，fresh=1 时从插件/OpenClaw 拉取最新数据。
 // @Tags OpenClaw
 // @Accept json
 // @Produce json
@@ -163,6 +193,7 @@ func GetOpenClawConversationEvents(c *gin.Context) {
 // @Param agent_id path int true "智能体ID"
 // @Param conversation_id path string true "OpenClaw 会话ID"
 // @Param after_seq query int false "只返回该 seq 之后的 recent events"
+// @Param fresh query bool false "是否跳过 mirror，强制从插件/OpenClaw 拉取"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/openclaw/agents/{agent_id}/conversations/{conversation_id}/snapshot [get]
 func GetOpenClawConversationSnapshot(c *gin.Context) {

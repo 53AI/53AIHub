@@ -11,7 +11,6 @@ import (
 
 // DeleteVectorFromDB 从向量数据库删除向量
 func (s *ChunkerService) DeleteVectorFromDB(eid int64, libraryID int64, vectorID string) error {
-	// 获取全局向量存储实例
 	store, err := vectorstore.GetGlobalVectorStore()
 	if err != nil {
 		return fmt.Errorf("获取全局向量存储失败: %v", err)
@@ -19,19 +18,24 @@ func (s *ChunkerService) DeleteVectorFromDB(eid int64, libraryID int64, vectorID
 
 	ctx := context.Background()
 
-	// 获取知识库信息以获取 UUID
 	library, err := model.GetLibraryByID(eid, libraryID)
 	if err != nil {
 		return fmt.Errorf("获取知识库信息失败: %v", err)
 	}
 
-	// 使用统一的集合名称方法
-	collection := model.GetVectorCollectionName(library.UUID)
+	// 根据模式确定需要清理的集合
+	collections := s.resolveDeleteCollections(eid, library)
 
-	// 删除向量
-	return store.Delete(ctx, collection, []interface{}{vectorID})
+	// 从每个集合中删除
+	var lastErr error
+	for _, collection := range collections {
+		if err := store.Delete(ctx, collection, []interface{}{vectorID}); err != nil {
+			lastErr = fmt.Errorf("从集合 %s 删除向量失败: %v", collection, err)
+			logger.Warn(ctx, lastErr.Error())
+		}
+	}
+	return lastErr
 }
-
 // cleanupVectorsAsync 异步清理向量数据
 func (s *ChunkerService) cleanupVectorsAsync(eid int64, libraryID int64, vectorIDs []string) {
 	if len(vectorIDs) == 0 {
@@ -63,7 +67,6 @@ func (s *ChunkerService) DeleteVectorsFromDB(eid int64, libraryID int64, vectorI
 		return nil
 	}
 
-	// 获取全局向量存储实例
 	store, err := vectorstore.GetGlobalVectorStore()
 	if err != nil {
 		return fmt.Errorf("获取全局向量存储失败: %v", err)
@@ -71,14 +74,13 @@ func (s *ChunkerService) DeleteVectorsFromDB(eid int64, libraryID int64, vectorI
 
 	ctx := context.Background()
 
-	// 获取知识库信息以获取 UUID
 	library, err := model.GetLibraryByID(eid, libraryID)
 	if err != nil {
 		return fmt.Errorf("获取知识库信息失败: %v", err)
 	}
 
-	// 使用统一的集合名称方法
-	collection := model.GetVectorCollectionName(library.UUID)
+	// 根据模式确定需要清理的集合
+	collections := s.resolveDeleteCollections(eid, library)
 
 	// 转换为interface{}切片
 	ids := make([]interface{}, len(vectorIDs))
@@ -86,10 +88,16 @@ func (s *ChunkerService) DeleteVectorsFromDB(eid int64, libraryID int64, vectorI
 		ids[i] = id
 	}
 
-	// 批量删除向量
-	return store.Delete(ctx, collection, ids)
+	// 从每个集合中删除
+	var lastErr error
+	for _, collection := range collections {
+		if err := store.Delete(ctx, collection, ids); err != nil {
+			lastErr = fmt.Errorf("从集合 %s 批量删除向量失败: %v", collection, err)
+			logger.Warn(ctx, lastErr.Error())
+		}
+	}
+	return lastErr
 }
-
 // cleanupInvalidVectors 清理无效的向量数据
 func (s *ChunkerService) cleanupInvalidVectors(vectorIDsToDelete []string) {
 	if len(vectorIDsToDelete) == 0 {
@@ -107,4 +115,13 @@ func (s *ChunkerService) cleanupInvalidVectors(vectorIDsToDelete []string) {
 	}
 
 	logger.Info(context.TODO(), fmt.Sprintf("[vectorInvalidCleanupMarked][count=%d]", len(vectorIDsToDelete)))
+}
+// resolveDeleteCollections 根据当前模式解析需要删除向量的集合列表
+func (s *ChunkerService) resolveDeleteCollections(eid int64, library *model.Library) []string {
+	mode := GetVectorCollectionMode()
+	collections := []string{model.GetVectorCollectionName(library.UUID)}
+	if mode == VectorCollectionModeEnterprise || mode == VectorCollectionModeDual {
+		collections = append(collections, model.GetDocumentVectorCollectionName(eid))
+	}
+	return collections
 }

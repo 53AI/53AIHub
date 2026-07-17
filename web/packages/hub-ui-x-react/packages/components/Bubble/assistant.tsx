@@ -382,25 +382,11 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
 };
 
 // 自定义比较函数：只比较动态变化的 props
-const arePropsEqual = (
-  prevProps: BubbleAssistantProps,
-  nextProps: BubbleAssistantProps,
-): boolean => {
-  return (
-    prevProps.content === nextProps.content &&
-    prevProps.streaming === nextProps.streaming &&
-    prevProps.reasoning === nextProps.reasoning &&
-    prevProps.showError === nextProps.showError &&
-    prevProps.menu === nextProps.menu &&
-    prevProps.error === nextProps.error &&
-    prevProps.header === nextProps.header &&
-    prevProps.footer === nextProps.footer &&
-    // suggestions 数组浅比较
-    prevProps.suggestions === nextProps.suggestions &&
-    // 静态 props 不需要比较（type, avatar, className 等）
-    prevProps.alwaysShowMenu === nextProps.alwaysShowMenu
-  );
-};
+// 详见 ./assistant-memo.ts：父组件每次渲染都会创建新的 React 元素
+// (menu / header / footer / error)，引用永远不等会让 memo 完全失效。
+// 这里只比较标量 + suggestions，避免 React 元素引用变化导致整棵子树重渲染。
+import { shouldBubbleAssistantSkipRender } from "./assistant-memo";
+const arePropsEqual = shouldBubbleAssistantSkipRender;
 
 const BubbleAssistantMemo = memo(BubbleAssistant, arePropsEqual);
 

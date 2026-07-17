@@ -5,11 +5,16 @@ import FileIcon from "../FileIcon/index";
 import "./user.css";
 
 interface FileItem {
-  id: string;
-  filename: string;
-  url: string;
-  size: number;
-  mime_type: string;
+  id: string | number;
+  filename?: string;
+  name?: string;
+  file_name?: string;
+  url?: string;
+  file_url?: string;
+  size?: number;
+  file_size?: number;
+  mime_type?: string;
+  file_mime?: string;
 }
 
 export interface BubbleUserProps {
@@ -23,6 +28,7 @@ export interface BubbleUserProps {
   contentAfter?: React.ReactNode;
   footer?: React.ReactNode;
   menu?: React.ReactNode;
+  onFileClick?: (file: FileItem) => void;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -38,6 +44,7 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
   contentAfter,
   footer,
   menu,
+  onFileClick,
   className,
   style,
 }) => {
@@ -54,8 +61,20 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
   };
 
   const handleFileClick = (file: FileItem) => {
-    window.open(file.url, "_blank");
+    if (onFileClick) {
+      onFileClick(file);
+      return;
+    }
+    const url = file.url || file.file_url;
+    if (url) {
+      window.open(url, "_blank");
+    }
   };
+
+  const getFileName = (file: FileItem) => file.filename || file.file_name || file.name || "";
+  const getFileUrl = (file: FileItem) => file.url || file.file_url || "";
+  const getFileMimeType = (file: FileItem) => file.mime_type || file.file_mime || "";
+  const getFileSize = (file: FileItem) => file.size ?? file.file_size ?? 0;
 
   return (
     <div className={`x-bubble ${className || ""}`} style={style}>
@@ -66,12 +85,12 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
           (files.length > 0 && (
             <div className="x-bubble__file">
               {files.map((file) =>
-                file.mime_type.startsWith("image") ? (
+                getFileMimeType(file).startsWith("image") ? (
                   <div key={file.id} className="x-bubble__image">
                     <img
                       className="x-bubble__image-preview"
-                      onClick={() => openImageViewer(file.url)}
-                      src={file.url}
+                      onClick={() => openImageViewer(getFileUrl(file))}
+                      src={getFileUrl(file)}
                       loading="lazy"
                       alt=""
                     />
@@ -84,14 +103,14 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
                   >
                     <div className="x-bubble__file-icon">
                       <FileIcon
-                        name={file.filename}
-                        mimeType={file.mime_type}
+                        name={getFileName(file)}
+                        mimeType={getFileMimeType(file)}
                       />
                     </div>
                     <div className="x-bubble__file-info">
-                      <div className="x-bubble__file-name">{file.filename}</div>
+                      <div className="x-bubble__file-name">{getFileName(file)}</div>
                       <div className="x-bubble__file-size">
-                        {formatFileSize(file.size)}
+                        {formatFileSize(getFileSize(file))}
                       </div>
                     </div>
                   </div>

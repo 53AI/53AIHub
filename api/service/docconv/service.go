@@ -93,8 +93,12 @@ func (s *Service) ConvertSyncWithConfig(ctx context.Context, sourceURL string, e
 				TextinConfig: config,
 			},
 		}
-		logger.Infof(ctx, "📋 [DOC_SERVICE] 构建 textin 请求 - app_id: %s, parse_mode: %s, dpi: %d, get_image: %s",
-			config.AppID, config.ParseMode, config.DPI, config.GetImage)
+		parseMode := ""
+		if config.Parse != nil && config.Parse.Config != nil && config.Parse.Config.EngineParams != nil {
+			parseMode = config.Parse.Config.EngineParams.ParseMode
+		}
+		logger.Infof(ctx, "📋 [DOC_SERVICE] 构建 textin 请求 - app_id: %s, parse_mode: %s",
+			config.AppID, parseMode)
 	} else if parserType == model.PLATFORM_KEY_MINERU_NET && mineruConfig != nil {
 		// 使用 mineru 配置
 		config := s.configService.ConvertToMinerUConfig(mineruConfig)

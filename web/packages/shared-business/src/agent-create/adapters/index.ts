@@ -24,6 +24,8 @@ export type {
   CreateAgentDialogProps,
   CreateAgentDialogResult,
   AvatarSlotProps,
+  // Scope types
+  ScopeItem,
 } from './types'
 
 export {
