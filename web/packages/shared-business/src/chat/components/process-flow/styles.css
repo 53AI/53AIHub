@@ -117,7 +117,7 @@
   flex: 1;
   font-size: 14px;
   font-weight: 500;
-  color: #111827;
+  color: #1D1E1F;
 }
 
 .x-skill-step-action {
@@ -336,6 +336,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.x-task-relation-icon--wiki {
+  background-color: #EDF3FF;
+  border-radius: 4px;
+  color: #2563EB;
 }
 
 .x-task-relation-name {

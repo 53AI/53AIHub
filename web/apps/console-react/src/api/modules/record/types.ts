@@ -25,6 +25,9 @@ export const KNOWLEDGE_TYPE = {
   KNOWLEDGE_BASE: 1,
   WEB: 2,
   SPECIFIED_KNOWLEDGE_BASE: 3,
+  HYBRID_WIKI: 5,
+  ALL_WIKI: 6,
+  SPECIFIED_WIKI: 7,
 } as const
 
 export type KNOWLEDGE_TYPE_VALUE = (typeof KNOWLEDGE_TYPE)[keyof typeof KNOWLEDGE_TYPE]

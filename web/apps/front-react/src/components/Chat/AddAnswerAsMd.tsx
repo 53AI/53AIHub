@@ -38,7 +38,7 @@ import {
   cacheManager,
 } from "@km/shared-utils";
 import { useLibraryStore } from "@/stores";
-import { buildUrl } from "@/utils/router";
+import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
 
@@ -635,7 +635,7 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
     };
 
     const handleOpenFile = (libraryId: string, fileId: string) => {
-      const url = buildUrl(`/library/${libraryId}/file/${fileId}`);
+      const url = buildKnowledgeFileUrl(libraryId, fileId);
       window.open(url, "_blank");
     };
 

@@ -190,7 +190,8 @@ export function ChunksPipeline({
         [];
 
       const profileStep = getProfileStep(job);
-      const stepConfig = profileStep?.config || {};
+      // 本地已保存的设置优先，其次才是任务运行时配置（避免轮询刷新后回退成旧配置）
+      const stepConfig = savedConfigs[job.type] || profileStep?.config || {};
 
       // Extract results from job steps
       let stepResults: Record<string, any> = {};
@@ -263,19 +264,22 @@ export function ChunksPipeline({
             value: stepConfig.knowledge_map?.enabled ? "开启" : "关闭",
           });
           break;
-        case "document_chunking":
-          if (stepResults.chunk_type) {
+        case "document_chunking": {
+          // 配置优先（反映用户最新设置），无配置时才用运行结果兜底
+          const chunkType = stepConfig.chunk_type || stepResults.chunk_type;
+          if (chunkType) {
+            const CHUNK_TYPE_LABEL: Record<string, string> = {
+              default: "通用文档",
+              data_table: "数据表格",
+              qa: "百问百答",
+            };
             config.push({
               label: "拆分规则",
-              value:
-                stepResults.chunk_type === "default"
-                  ? "通用文档"
-                  : stepResults.chunk_type === "data_table"
-                    ? "数据表格"
-                    : "百问百答",
+              value: CHUNK_TYPE_LABEL[chunkType] || chunkType,
             });
           }
           break;
+        }
         case "vector_indexing":
           if (stepConfig.embedding_model) {
             config.push({
@@ -312,7 +316,7 @@ export function ChunksPipeline({
 
       return config.length > 0 ? { config } : undefined;
     },
-    [],
+    [savedConfigs],
   );
 
   // Get profile step from job
@@ -355,7 +359,9 @@ export function ChunksPipeline({
   const steps = useMemo<PipelineStep[]>(() => {
     if (!jobData?.length) return [];
 
-    return jobData.filter((job) => job.type !== "content_cleaning").map((job) => {
+    return jobData
+      .filter((job) => job.type !== "content_cleaning")
+      .filter(item => item.type !== 'wiki_page_generation').map((job) => {
       const stepInfo = STEP_TYPE_MAP[job.type] || {
         name: job.type,
         description: "",
@@ -453,7 +459,7 @@ export function ChunksPipeline({
       try {
         setLoading(true);
         const response = await ragJobApi.getByRelatedId(fileId);
-        let jobs = response.jobs || [];
+        let jobs = (response.jobs || []);
         // Filter by pipeline_id if provided
         if (filterPipelineId) {
           jobs = jobs.filter(
@@ -638,6 +644,10 @@ export function ChunksPipeline({
 
   // Handle rerun
   const handleRerun = async () => {
+    if (!selectedStrategy) {
+      message.warning("请先选择策略");
+      return;
+    }
     if (!jobData?.length) {
       message.warning("没有可执行的任务");
       return;
@@ -670,6 +680,10 @@ export function ChunksPipeline({
 
   // Step execute handler
   const handleStepExecute = (index: number) => {
+    if (!selectedStrategy) {
+      message.warning("请先选择策略");
+      return;
+    }
     const step = steps[index];
     if (!step?.jobId) {
       message.warning("请点击下方开始运行");
@@ -869,7 +883,7 @@ export function ChunksPipeline({
       case "success":
         return (
           <div className="w-4 h-4 rounded-full border border-[#07C160] bg-[#EDFFF6] flex items-center justify-center text-[#07C160]">
-            <SvgIcon name="check" size={12} />
+            <SvgIcon name="check-one" size={12} />
           </div>
         );
       case "failed":
@@ -974,7 +988,7 @@ export function ChunksPipeline({
                     />
                   </div>
                 ) : (
-                  <span className="text-base text-[#000000] font-semibold">
+                  <span className="text-base text-[#1D1E1F] font-semibold">
                     {selectedStrategy?.name || "请选择策略"}
                   </span>
                 )}
@@ -1057,7 +1071,7 @@ export function ChunksPipeline({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                        <h4 className="text-sm font-medium text-[#111827]">
+                        <h4 className="text-sm font-medium text-[#1D1E1F]">
                           {step.name}
                         </h4>
                         {renderRunMode(step.runMode)}

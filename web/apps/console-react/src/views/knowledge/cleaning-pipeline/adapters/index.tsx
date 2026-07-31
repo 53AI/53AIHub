@@ -24,6 +24,7 @@ import { chunkSettingApi } from '@/api/modules/chunk-setting'
 import { graphTemplatesApi } from '@/api/modules/graph-templates'
 import channelApi from '@/api/modules/channel'
 import { ModelView } from '@/components/Model/view'
+import { getVoiceParserInfo } from '../utils/voiceParser'
 
 /**
  * 将 API Pipeline 转换为前端 Pipeline
@@ -124,6 +125,9 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
     async getParseMethods(): Promise<ParseMethod[]> {
       const parserConfigs = getSimpleParserConfigs()
 
+      // 检查安心录是否启用，以及语音识别模型是否仍有效
+      const { showVoice, voiceName, voiceIcon } = await getVoiceParserInfo()
+
       // 获取平台设置
       const res = await platformSettingsApi.find()
       const settingsMap: Record<string, any> = {}
@@ -133,15 +137,23 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
         }
       })
 
-      return parserConfigs
-        .filter((pc: any) => pc.key === 'markitdown' || settingsMap[pc.key])
-        .map((pc: any) => ({
-          key: pc.key === 'markitdown' ? 'markitdown' : pc.key,
-          name: pc.name,
-          desc: pc.desc || '由系统提供的解析服务',
-          icon: pc.icon,
-          detailedDesc: pc.detailedDesc,
-        }))
+      return [
+        ...parserConfigs
+          .filter((pc: any) => {
+            // markitdown 始终展示
+            if (pc.key === 'markitdown') return true
+            if (pc.key === 'voice_model') return showVoice
+            // 其他解析方法：需要平台设置
+            return pc.isSystem || settingsMap[pc.key]
+          })
+          .map((pc: any) => ({
+            key: pc.key === 'markitdown' ? 'markitdown' : pc.key,
+            name: pc.key === 'voice_model' && voiceName ? voiceName : pc.name,
+            desc: pc.desc || t('cleaning_policy.system_provided_desc'),
+            icon: pc.key === 'voice_model' && voiceIcon ? voiceIcon : pc.icon,
+            detailedDesc: pc.detailedDesc,
+          })),
+      ]
     },
 
     async getVectorEmbedding(): Promise<VectorEmbeddingConfig | null> {

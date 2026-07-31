@@ -18,35 +18,6 @@ function readOpenClawVisibleAssistantContent(message: Message): string {
   return String(message.openclawProjection?.visibleAnswer || "").trim();
 }
 
-function isOpenClawUiDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function hashOpenClawText(value?: string | null): string {
-  const text = String(value || "");
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function traceOpenClawMessageRender(label: string, payload: Record<string, unknown>) {
-  if (!isOpenClawUiDebugEnabled()) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
-}
-
 // === Main Props ===
 
 export interface MessageItemProps {
@@ -129,23 +100,6 @@ function MessageItemInner({
           message.process_records?.length
       );
   const shouldRenderAssistant = !openclawEnabled || hasAssistantSurface;
-
-  if (openclawEnabled) {
-    traceOpenClawMessageRender("message-item.render", {
-      id: message.id,
-      questionLen: String(message.question || "").length,
-      questionHash: hashOpenClawText(message.question),
-      answerLen: String(message.answer || "").length,
-      answerHash: hashOpenClawText(message.answer),
-      visibleAssistantLen: visibleAssistantContent.length,
-      timelineCount: message.openclawTimelineItems?.length || 0,
-      projectionTimelineCount: message.openclawProjection?.timelineItems?.length || 0,
-      projectionAnswerLen: String(message.openclawProjection?.visibleAnswer || "").length,
-      status: message.openclawTurn?.status,
-      loading: Boolean(message.loading),
-      shouldRenderAssistant,
-    });
-  }
 
   return (
     <div key={message.id}>

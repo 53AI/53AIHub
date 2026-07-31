@@ -18,3 +18,21 @@ export interface PlatformSettingStatus {
   platform_key: string
 }
 
+export type ParserHealthStatus =
+  | 'available'
+  | 'unavailable'
+  | 'unauthorized'
+  | 'unsupported'
+  | string
+
+export interface ParserHealth {
+  checked_at: string
+  display_name: string
+  engine: string
+  latency_ms: number
+  message?: string
+  platform_key: string
+  status: ParserHealthStatus
+  usable: boolean
+}
+

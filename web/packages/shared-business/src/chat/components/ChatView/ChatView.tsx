@@ -45,7 +45,7 @@ import {
 //  故未从该模块导入: collectOpenClawMessageIdentityCandidates,
 // getOpenClawLedgerActiveRequestIdFromTimelineEvent, getOpenClawLedgerRunIdFromTimelineEvent,
 // getOpenClawOptionKey, getOpenClawOptionValue, getOpenClawSnapshotTurnId,
-// hasOpenClawRenderableFinalContent, isOpenClawChatViewDebugEnabled, readOpenClawString)
+// hasOpenClawRenderableFinalContent, readOpenClawString)
 import {
 	buildOpenClawInteractionControlPayload,
 	buildOpenClawOptimisticConversationTitle,
@@ -64,15 +64,13 @@ import {
 	isOpenClawRunningActiveTurn,
 	isOpenClawTerminalTimelineEvent,
 	isOptimisticResolvedOpenClawConversation,
-	markOpenClawInteractionResolved,
-	openClawSnapshotActiveTurnBelongsToMessage,
-	openClawTimelineEventBelongsToMessage,
+	markOpenClawInteractionResolved, openClawTimelineEventBelongsToMessage,
 	openClawUserFileToOutputFile,
 	readOpenClawTimelineEventSeq,
+	summarizeOpenClawSnapshotPayload,
 	syncConversationIdToUrl,
-	traceOpenClawChatView,
 	withOpenClawEventsAfterSeq,
-	withOpenClawTimelineEvents,
+	withOpenClawTimelineEvents
 } from "../../utils/openclaw-chatview-helpers";
 import { rebaseOpenClawMessageConversation } from "../../utils/openclaw-timeline";
 import {
@@ -121,7 +119,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			userAvatar,
 			slots,
 			renderHeader,
-			features,
 			history,
 			newConversation,
 			languageSwitcher,
@@ -130,17 +127,9 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			fileUpload,
 			agentRecommend,
 			message,
-			onMessageSent,
-			onOutputFilePreview,
-			onOutputFileFavorite,
-			onOutputFileCheckFavorite,
-			onAddAsMd,
-			onFileClick,
-			onSourceClick,
-			onOpenKnowledgePanel,
-			onOpenClawConversationResolved,
 			share,
 			permission,
+			feedback,
 			openclaw,
 			sendContext,
 			timeout,
@@ -150,68 +139,28 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 	) => {
 		// Chunk 弹窗适配器（通过 ChatConfigProvider 注入）
 		const chunkPopup = useChatAdapters()?.chunkPopup;
-		// 合并默认值
-		const legacyFeatures = features || {};
-		const historyEnabled =
-			history?.enabled ??
-			legacyFeatures.history ??
-			CHAT_VIEW_DEFAULTS.history.enabled;
+		const historyEnabled = history?.enabled ?? CHAT_VIEW_DEFAULTS.history.enabled;
 		const newConversationEnabled =
-			newConversation?.enabled ??
-			legacyFeatures.newConversation ??
-			CHAT_VIEW_DEFAULTS.newConversation.enabled;
+			newConversation?.enabled ?? CHAT_VIEW_DEFAULTS.newConversation.enabled;
 		const languageSwitcherEnabled =
-			languageSwitcher?.enabled ??
-			legacyFeatures.languageSwitcher ??
-			CHAT_VIEW_DEFAULTS.languageSwitcher.enabled;
-		const guideEnabled =
-			guide?.enabled ??
-			legacyFeatures.guide ??
-			CHAT_VIEW_DEFAULTS.guide.enabled;
+			languageSwitcher?.enabled ?? CHAT_VIEW_DEFAULTS.languageSwitcher.enabled;
+		const guideEnabled = guide?.enabled ?? CHAT_VIEW_DEFAULTS.guide.enabled;
 		const messageShowMenu =
-			message?.showMenu ??
-			legacyFeatures.messageMenu ??
-			CHAT_VIEW_DEFAULTS.message.showMenu;
-		const welcomeShow =
-			welcome?.show ??
-			legacyFeatures.showWelcome ??
-			legacyFeatures.welcome ??
-			CHAT_VIEW_DEFAULTS.welcome.show;
-		const welcomeIndexLayout =
-			welcome?.indexLayout ?? legacyFeatures.indexWelcomeLayout ?? false;
-		const fileUploadEnabled =
-			fileUpload?.enabled ?? legacyFeatures.fileUpload ?? false;
-		const shareEnabled = share?.enabled ?? legacyFeatures.share ?? false;
-		const openclawEnabled =
-			openclaw?.enabled ?? legacyFeatures.openclaw ?? false;
-		const openclawInputDisabled =
-			openclaw?.inputDisabled ?? legacyFeatures.openclawInputDisabled ?? false;
-		const openclawInputDisabledReason =
-			openclaw?.inputDisabledReason ??
-			legacyFeatures.openclawInputDisabledReason;
+			message?.showMenu ?? CHAT_VIEW_DEFAULTS.message.showMenu;
+		const welcomeShow = welcome?.show ?? CHAT_VIEW_DEFAULTS.welcome.show;
+		const welcomeIndexLayout = welcome?.indexLayout ?? false;
+		const fileUploadEnabled = fileUpload?.enabled ?? false;
+		const shareEnabled = share?.enabled ?? false;
+		const openclawEnabled = openclaw?.enabled ?? false;
+		const openclawInputDisabled = openclaw?.inputDisabled ?? false;
+		const openclawInputDisabledReason = openclaw?.inputDisabledReason;
 		const openclawInitialConversationResolving =
-			openclaw?.initialConversationResolving ??
-			legacyFeatures.initialConversationResolving ??
-			false;
-		const openclawSkipInitialLoad =
-			openclaw?.skipInitialLoad ?? legacyFeatures.skipInitialLoad ?? false;
+			openclaw?.initialConversationResolving ?? false;
+		const openclawSkipInitialLoad = openclaw?.skipInitialLoad ?? false;
 		const agentRecommendShowRelatedScene =
-			agentRecommend?.showRelatedScene ??
-			legacyFeatures.showRelatedScene ??
-			false;
+			agentRecommend?.showRelatedScene ?? false;
 		const resolvedMessage = {
 			...(message ?? {}),
-			onSent: message?.onSent ?? onMessageSent,
-			onPreviewOutputFile: message?.onPreviewOutputFile ?? onOutputFilePreview,
-			onOutputFileFavorite:
-				message?.onOutputFileFavorite ?? onOutputFileFavorite,
-			onOutputFileCheckFavorite:
-				message?.onOutputFileCheckFavorite ?? onOutputFileCheckFavorite,
-			onSaveToKnowledge: message?.onSaveToKnowledge ?? onAddAsMd,
-			onFileClick: message?.onFileClick ?? onFileClick,
-			onSourceClick: message?.onSourceClick ?? onSourceClick,
-			onOpenKnowledgePanel:
-				message?.onOpenKnowledgePanel ?? onOpenKnowledgePanel,
 		};
 
 		const chatAdapters = useChatAdapters();
@@ -236,6 +185,11 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			openClawStreamingConversationId,
 			setOpenClawStreamingConversationId,
 		] = useState<string | null>(null);
+		// 通过 snapshot 轮询发现的"仍在运行"会话:刷新页面后远端 turn 还在跑、
+		// 本地 SSE 早已断开,只有 snapshot 的 active_turns.status=running 能告诉我们。
+		// 用于驱动 visibleIsStreaming / sendBlockedRef,让 Sender 切到 loading、Stop 按钮可点。
+		const [openClawSnapshotRunning, setOpenClawSnapshotRunning] =
+			useState(false);
 		const agentMode = agentInfo?.custom_config_obj?.agent_mode;
 
 		// Feedback 功能判断:
@@ -244,7 +198,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 		//     (0=对话 / 1=工作流 / 2=助理(含 openclaw / qclaw))
 		//   - 与 openclaw 模式解耦:openclaw / qclaw 智能体也启用反馈,调 work_ai 的 config
 		//   - 仅要求 feedback adapter 已注入
-		//   - 上层 features.menu.feedback 透传优先(例如 ChatContainer 禁用 openclaw 类型反馈),
+		//   - 上层 feedback.enabled 透传优先(例如 ChatContainer 禁用 openclaw 类型反馈),
 		//     未传时回退到上述 agent_type 判断
 		const isAssistantUsage =
 			agentInfo?.agent_usage === 1 || agentInfo?.agent_usage === 4;
@@ -254,9 +208,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 		const feedbackFromAgentType =
 			(isAssistantUsage || isAssistantBackend || isChatOrWorkflowBackend) &&
 			Boolean(chatAdapters?.feedback);
-		const menuFeedbackOverride =
-			(legacyFeatures.menu as { feedback?: boolean } | undefined)?.feedback;
-		const feedbackEnabled = menuFeedbackOverride ?? feedbackFromAgentType;
+		const feedbackEnabled = feedback?.enabled ?? feedbackFromAgentType;
 
 		const currentConversationId = useConversationStore(
 			(state) => state.current_conversationid,
@@ -407,7 +359,8 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			? openClawStopPending ||
 				(isStreaming &&
 					String(currentConversationId || "") ===
-						String(openClawStreamingConversationId || ""))
+						String(openClawStreamingConversationId || "")) ||
+				openClawSnapshotRunning
 			: isStreaming || isRecoveredRunning;
 		// work-ai 入口空态:把 welcome 元素统一放进同一 flex-none 容器居中堆叠
 		const isWelcomeLayout =
@@ -511,10 +464,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				} catch {
 					// ignore browsers without CustomEvent construction support
 				}
-				traceOpenClawChatView("conversation.invalidated", {
-					conversationId: targetConversationId,
-					reason,
-				});
 			},
 			[agentId, clearMessageList, openclawEnabled, setCurrentState, syncToUrl],
 		);
@@ -632,6 +581,11 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			hasInitialLoadedRef.current = false;
 		}, [agentId]);
 
+		// 切换会话时清掉上一会话残留的"snapshot 仍在运行"标记,避免跨会话脏标记
+		useEffect(() => {
+			setOpenClawSnapshotRunning(false);
+		}, [currentConversationId]);
+
 		useEffect(() => {
 			messageListRef.current = messageList as Message[];
 		}, [messageList]);
@@ -641,12 +595,14 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				isStreaming ||
 				isRecoveredRunning ||
 				openClawStopPending ||
+				openClawSnapshotRunning ||
 				isInputConversationBlocked ||
 				openClawAuthBlocked;
 		}, [
 			isStreaming,
 			isRecoveredRunning,
 			openClawStopPending,
+			openClawSnapshotRunning,
 			isInputConversationBlocked,
 			openClawAuthBlocked,
 		]);
@@ -849,21 +805,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				const activeTurnId = String(
 					activeTurn?.turn_id || activeTurn?.turnId || "",
 				);
-				traceOpenClawChatView("snapshot.active-turn.inspect", {
-					conversationId: targetConversationId,
-					activeTurnCount: snapshotActiveTurns.length,
-					runningActiveTurnCount: runningActiveTurns.length,
-					activeTurnId,
-					activeTurnStatus: activeTurn
-						? String(
-								activeTurn?.status ||
-									activeTurn?.terminal_status ||
-									activeTurn?.terminalStatus ||
-									"",
-							)
-						: "",
-					lastSeq: Number(activeTurn?.last_seq || 0) || 0,
-				});
 				if (!activeTurn || !activeTurnId) return false;
 
 				const activeRequestId = String(
@@ -885,13 +826,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 							useConversationStore.getState().current_conversationid || "",
 						) !== targetConversationId
 					) {
-						traceOpenClawChatView("snapshot.active-turn.skip-current", {
-							conversationId: targetConversationId,
-							currentConversationId: String(
-								useConversationStore.getState().current_conversationid || "",
-							),
-							activeTurnId,
-						});
 						return list;
 					}
 					const targetIndex = [...list]
@@ -901,11 +835,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 								String(item.conversation_id || "") === targetConversationId,
 						);
 					if (targetIndex < 0) {
-						traceOpenClawChatView("snapshot.active-turn.no-target", {
-							conversationId: targetConversationId,
-							activeTurnId,
-							messageCount: list.length,
-						});
 						return list;
 					}
 
@@ -923,31 +852,23 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 						targetIdentity !== activeRequestId &&
 						!activeTurnId.includes(targetIdentity)
 					) {
-						traceOpenClawChatView("snapshot.active-turn.identity-mismatch", {
-							conversationId: targetConversationId,
-							activeTurnId,
-							activeRequestId,
-							targetIdentity,
-						});
 						return list;
 					}
 					if (isOpenClawCompletedRenderableMessage(target)) {
-						traceOpenClawChatView(
-							"snapshot.active-turn.skip-completed-target",
-							{
-								conversationId: targetConversationId,
-								activeTurnId,
-								activeRequestId,
-								targetMessageId: String(target.id || ""),
-								targetTurnKey: String(target.openclawTurn?.turnKey || ""),
-								targetMatchesActiveTurn:
-									openClawSnapshotActiveTurnBelongsToMessage(
-										activeTurn,
-										target,
-									),
-							},
-						);
-						return list;
+						// 已"completed"但 snapshot 显示同一 activeRequestId 仍在跑——
+						// 通常是刷新页面后,本地消息保留了上一轮终态,但服务器为同 id 起了新一轮。
+						// 此时以服务器为准:不跳过,把 loading 拉回 true,让 UI 重新进入 streaming。
+						// 但仅在伴随增量事件时才清空老内容;否则空清空会让消息卡在 loading 空态。
+						if (
+							targetIdentity &&
+							activeRequestId &&
+							targetIdentity === activeRequestId &&
+							turnEvents.length > 0
+						) {
+							// fallthrough: force-reopen with new events
+						} else {
+							return list;
+						}
 					}
 					target.loading = true;
 					target.error = false;
@@ -956,6 +877,24 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					target._openclawClientMessageId =
 						target._openclawClientMessageId || activeRequestId;
 					const targetTurnKey = String(target.openclawTurn?.turnKey || "");
+					// 检测是否属于"force-reopen"路径:目标消息本地已 completed,但服务器用同一
+					// activeRequestId 又起了一轮。如果是,清掉上一轮的 answer / reasoning / 过程记录,
+					// 否则新流开始后这些字段会和 projection 一起渲染,显示成"老内容 + 新 loading"。
+					const isForceReopenCompleted =
+						!target.loading &&
+						targetIdentity !== "" &&
+						activeRequestId !== "" &&
+						targetIdentity === activeRequestId;
+					if (isForceReopenCompleted) {
+						target.answer = "";
+						target.reasoning_content = "";
+						target.process_records = [];
+						target.skillRunItems = [];
+						target.outputFiles = [];
+						target.rag_temp = {};
+						target.rag_stats = undefined;
+						target.rag_search_text = "";
+					}
 					const shouldBindSnapshotTurn =
 						!target.openclawTurn ||
 						(targetTurnKey &&
@@ -999,16 +938,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					cacheOpenClawActiveMessage(target, targetConversationId);
 					messageListRef.current = next as Message[];
 					merged = true;
-					traceOpenClawChatView("snapshot.active-turn.merged", {
-						conversationId: targetConversationId,
-						activeTurnId,
-						activeRequestId,
-						turnEventCount: turnEvents.length,
-						targetMessageId: String(target.id || ""),
-						previousTurnKey: targetTurnKey,
-						reboundTurn: shouldBindSnapshotTurn,
-						targetLoading: Boolean(target.loading),
-					});
 					return next;
 				});
 				return merged;
@@ -1344,6 +1273,39 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				}
 				updateOpenClawEventSeqFromMessages(conversationId, list as Message[]);
 				mergeOpenClawActiveMessageForConversation(latestConversationId);
+				// openclaw 模式:初始消息列表加载完后,额外打一发 snapshot 探测 running 状态。
+				// 解决"刷新页面后远端 turn 仍在跑,但 isStreaming=false、openClawActiveMessageRef 空,
+				// 轮询 effect 早退不跑"导致 visibleIsStreaming 永远是 false 的问题。
+				if (openclawEnabled && adapters.conversationApi.snapshot) {
+					void adapters.conversationApi
+						.snapshot(String(latestConversationId), { fresh: true })
+						.then((response: any) => {
+							const rawPayload = response?.data ?? response;
+							const summary = summarizeOpenClawSnapshotPayload(rawPayload);
+							if (
+								String(
+									useConversationStore.getState().current_conversationid || "",
+								) !== String(latestConversationId)
+							) {
+								return;
+							}
+							if (summary.runningActiveTurns > 0) {
+								setOpenClawSnapshotRunning(true);
+								// 让轮询 effect 的 hasLocalActivity 在下一轮也保持 true,
+								// 持续 catch up 增量事件。
+								mergeOpenClawActiveTurnsFromSnapshot(
+									String(latestConversationId),
+									rawPayload,
+								);
+							} else {
+								setOpenClawSnapshotRunning(false);
+							}
+						})
+						.catch((err: any) => {
+							const reason = getOpenClawAuthBlockedReason(err);
+							if (reason) setOpenClawAuthBlockedReason(reason);
+						});
+				}
 				// 初始加载（刷新进入）：用历史消息最后一条时间检查是否超时
 				// 切换历史会话：不计时
 				if (isInitialLoadRef.current && list && list.length > 0) {
@@ -1471,10 +1433,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					openClawFreshRevalidatedRef.current[conversationId] = false;
 					const reason = getOpenClawAuthBlockedReason(err);
 					if (reason) setOpenClawAuthBlockedReason(reason);
-					traceOpenClawChatView("history.fresh.error", {
-						conversationId,
-						message: String(err?.message || err || ""),
-					});
 				});
 
 			return () => {
@@ -1501,6 +1459,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			// 跨端同步交给 effect4(/messages?fresh=1 拉轮询)负责。
 			// 本 effect 仅在"本地有需要 listen 的流/turn"时跑:
 			// - isStreaming:本地 SSE 流推中,需要 catch up 事件
+			// - openClawSnapshotRunning:snapshot 显示远端 turn 仍在跑(刷新页面后常见)
 			// - openClawActiveMessageRef:该 conversation 有未消费的 active/running turn
 			// idle(没活跃)期间早退,不再 idle 期间空跑 snapshot/events。
 			const conversationIdForGuard = hasConversationId(currentConversationId)
@@ -1508,6 +1467,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				: "";
 			const hasLocalActivity =
 				isStreaming ||
+				openClawSnapshotRunning ||
 				(conversationIdForGuard !== "" &&
 					openClawActiveMessageRef.current[conversationIdForGuard] != null);
 			if (
@@ -1547,28 +1507,17 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				conversationId,
 				messageListRef.current,
 			);
-			traceOpenClawChatView("snapshot.poll.start", {
-				conversationId,
-				afterSeq: openClawEventSeqRef.current[conversationId] || 0,
-				messageCount: messageListRef.current.length,
-			});
 
 			const poll = async () => {
 				if (stopped || inFlight) return;
 				inFlight = true;
 				let nextDelay = OPENCLAW_EVENT_FAST_POLL_INTERVAL;
 				let shouldContinue = true;
-				let afterSeqForTrace = openClawEventSeqRef.current[conversationId] || 0;
 				try {
 					if (openClawMessagesLoadingRef.current[conversationId]) {
-						traceOpenClawChatView("snapshot.poll.defer-message-load", {
-							conversationId,
-							nextDelay,
-						});
 						return;
 					}
 					const afterSeq = openClawEventSeqRef.current[conversationId] || 0;
-					afterSeqForTrace = afterSeq;
 					const response = adapters.conversationApi.snapshot
 						? await adapters.conversationApi.snapshot(conversationId, {
 								fresh: true,
@@ -1681,42 +1630,29 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 						nextDelay = resetFastDelay();
 					}
 
-					traceOpenClawChatView("snapshot.poll.result", {
-						conversationId,
-						afterSeq,
-						eventCount: events.length,
-						newEventCount: newEvents.length,
-						nextSeq,
-						activeTurnCount: snapshotActiveTurns.length,
-						runningActiveTurnCount,
-						runningActiveTurnIds: [...runningActiveTurnIds],
-						runningActiveLastSeqMax,
-						terminalEventCount: terminalEvents.length,
-						terminalEventTurnIds,
-						hasTerminalForRunningActiveTurn,
-						hasUnscopedTerminalAtOrAfterRunningTurn,
-						hasTerminalForActiveRecoveryMessage,
-						isSnapshotRecoveryPayload,
-						activeRecoveryMessageId: String(activeRecoveryMessage?.id || ""),
-						shouldStopForTerminal,
-						restoredActiveTurn,
-						hasTerminalEvent,
-						hasEvents,
-						hasNewEvents,
-						nextDelay,
-					});
+					// 同步"通过 snapshot 发现的 running 会话":运行中则置位,出现终态则清掉。
+					// 必须在 visibleIsStreaming 计算所在 render 之前更新,否则刷新后第一帧
+					// Sender / Stop 按钮无法进入 loading。
+					if (
+						adapters.conversationApi.snapshot &&
+						String(
+							useConversationStore.getState().current_conversationid || "",
+						) === conversationId
+					) {
+						if (runningActiveTurnCount > 0 && !shouldStopForTerminal) {
+							setOpenClawSnapshotRunning(true);
+						} else if (shouldStopForTerminal || runningActiveTurnCount === 0) {
+							setOpenClawSnapshotRunning(false);
+						}
+					}
 
+					// result trace removed
 					if (
 						shouldStopForTerminal &&
 						String(
 							useConversationStore.getState().current_conversationid || "",
 						) === conversationId
 					) {
-						traceOpenClawChatView("snapshot.poll.terminal-refresh", {
-							conversationId,
-							newEventCount: newEvents.length,
-							nextSeq,
-						});
 						const loaded = await loadMessageListRef.current(
 							String(conversationId),
 							(id, params) =>
@@ -1756,38 +1692,15 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					}
 				} catch (err: any) {
 					// OpenClaw 运行态同步是展示增强；失败时不影响主聊天流程。
-					traceOpenClawChatView("snapshot.poll.error", {
-						conversationId,
-						afterSeq: afterSeqForTrace,
-						message: String(err?.message || err || ""),
-					});
 					nextDelay = nextBackoffDelay();
 				} finally {
 					inFlight = false;
 					if (!stopped && shouldContinue) {
-						traceOpenClawChatView("snapshot.poll.schedule", {
-							conversationId,
-							nextDelay,
-							stopped,
-							shouldContinue,
-						});
 						timer = setTimeout(poll, nextDelay);
-					} else {
-						traceOpenClawChatView("snapshot.poll.stop", {
-							conversationId,
-							stopped,
-							shouldContinue,
-						});
 					}
 				}
 			};
 
-			traceOpenClawChatView("snapshot.poll.schedule", {
-				conversationId,
-				nextDelay: OPENCLAW_EVENT_INITIAL_POLL_INTERVAL,
-				stopped,
-				shouldContinue: true,
-			});
 			timer = setTimeout(poll, OPENCLAW_EVENT_INITIAL_POLL_INTERVAL);
 
 			return () => {
@@ -1795,9 +1708,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				if (timer) {
 					clearTimeout(timer);
 				}
-				traceOpenClawChatView("snapshot.poll.cleanup", {
-					conversationId,
-				});
 			};
 		}, [
 			adapters.conversationApi,
@@ -1807,6 +1717,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			isInitialConversationResolving,
 			isOpenClawRuntimeUnavailable,
 			isStreaming,
+			openClawSnapshotRunning,
 			mergeOpenClawActiveTurnsFromSnapshot,
 			resolvedMessage.onSent,
 		]);
@@ -1831,8 +1742,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			let timer: ReturnType<typeof setTimeout> | null = null;
 			let inFlight = false;
 
-			traceOpenClawChatView("messages.poll.start", { conversationId });
-
 			const poll = async () => {
 				if (stopped || inFlight) return;
 				inFlight = true;
@@ -1841,13 +1750,8 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					// 当 openClawMessagesLoadingRef 已被该路径置 true 时本轮不再发,
 					// 等下一拍再补。`finally` 仍排下一拍,保证不停摆。
 					if (openClawMessagesLoadingRef.current[conversationId]) {
-						traceOpenClawChatView("messages.poll.defer-message-load", {
-							conversationId,
-							nextDelay: OPENCLAW_MESSAGES_SYNC_POLL_INTERVAL,
-						});
 						return;
 					}
-					traceOpenClawChatView("messages.poll.tick", { conversationId });
 					await loadMessageListRef.current(
 						conversationId,
 						(id, params) =>
@@ -1857,17 +1761,12 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 							}),
 						{ silent: true },
 					);
-				} catch (err: any) {
-					traceOpenClawChatView("messages.poll.error", {
-						conversationId,
-						message: String(err?.message || err || ""),
-					});
+				} catch {
+					// poll error 已沿 store 暴露给 UI；这里保持空以保持轮询节奏。
 				} finally {
 					inFlight = false;
 					if (!stopped) {
 						timer = setTimeout(poll, OPENCLAW_MESSAGES_SYNC_POLL_INTERVAL);
-					} else {
-						traceOpenClawChatView("messages.poll.stop", { conversationId });
 					}
 				}
 			};
@@ -1878,7 +1777,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 			return () => {
 				stopped = true;
 				if (timer) clearTimeout(timer);
-				traceOpenClawChatView("messages.poll.cleanup", { conversationId });
 			};
 		}, [
 			adapters.conversationApi,
@@ -2067,10 +1965,9 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 						completion_params: completionParams,
 						messageList: baselineMessageList,
 						links, // @ 提及列表(由 Sender atList 或 sendContext.links 合并)
+						wikis: sendContext?.wikis,
 						files: formatFiles(files),
-						networkSearch: sendContext?.networkSearch ?? false,
-						knowledgeGraph: sendContext?.knowledgeGraph ?? false,
-						allKnowledge: sendContext?.allKnowledge ?? false,
+						knowledgeSource: sendContext?.knowledgeSource,
 						library: sendContext?.library,
 						options: sendContext?.options, // specified_content / system prompt 注入
 						skill: skillPayload, // / 技能(由 Sender 透传)
@@ -2230,7 +2127,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				loadConversations,
 				cacheOpenClawActiveMessage,
 				resolvedMessage.onSent,
-				onOpenClawConversationResolved,
+				openclaw?.onConversationResolved,
 			],
 		);
 
@@ -2272,14 +2169,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 
 					const terminalEvents = events.filter(isOpenClawTerminalTimelineEvent);
 					if (terminalEvents.length) {
-						traceOpenClawChatView("stop.reconcile.terminal-refresh", {
-							conversationId,
-							afterSeq,
-							eventCount: events.length,
-							terminalEventCount: terminalEvents.length,
-							nextSeq,
-						});
-
 						if (
 							String(
 								useConversationStore.getState().current_conversationid || "",
@@ -2388,6 +2277,9 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					messageListRef.current,
 				);
 				setOpenClawStopReconcilePending(true);
+				// 显式 stop 后,snapshot 轮询应当让出"仍在运行"标记,避免
+				// reconcile 完成前 visibleIsStreaming 被反复回写为 true。
+				setOpenClawSnapshotRunning(false);
 			}
 			sendTurnRef.current += 1;
 			sendBlockedRef.current = true;
@@ -2789,10 +2681,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 											openclawEnabled &&
 											Boolean(resolvedMessage.onSaveToKnowledge),
 									},
-									outputFiles: true,
-									sourceRef: true,
-									processFlow: true,
-									skillTag: openclawEnabled,
 								}}
 								selection={{
 									selectedMessageIds: selectMessageIds,
@@ -2845,7 +2733,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 									onClick:
 										openclawEnabled && resolvedMessage.onPreviewOutputFile
 											? handleOpenClawUserFilePreview
-											: resolvedMessage.onFileClick,
+											: () => {},
 									onPreview: resolvedMessage.onPreviewOutputFile,
 									onFavorite: resolvedMessage.onOutputFileFavorite,
 									onCheckFavorite: resolvedMessage.onOutputFileCheckFavorite,
@@ -2940,6 +2828,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 					<SourceReferenceManager
 						ref={sourceRefManagerRef}
 						fetchChunkDetail={chunkPopup?.fetchChunkDetail}
+						fetchWikiPageDetail={chunkPopup?.fetchWikiPageDetail}
 						renderMarkdown={chunkPopup?.renderMarkdown}
 						onOpenLibrary={chunkPopup?.onOpenLibrary}
 					/>
@@ -2992,20 +2881,14 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 													},
 												})
 										: undefined,
-									renderLeftExtras: slots?.senderLeftExtras,
 									// NEW: 透传 Sender 内部 slot(merge senderSlots 与 extrasLeft)
+									renderLeftExtras: slots?.senderLeftExtras,
 									senderSlots: slots?.senderSlots,
 									senderPlaceholder: slots?.senderPlaceholder,
 								}}
 								// NEW: 透传 mention / skill / actionPosition
 								mention={slots?.senderMention}
 								skill={openClawSenderSkill}
-								showSkill={openclawEnabled}
-								skillOptions={openClawSkillOptions}
-								selectedSkill={selectedOpenClawSkill}
-								onSelectSkill={setSelectedOpenClawSkill}
-								onRemoveSkill={() => setSelectedOpenClawSkill(null)}
-								onOpenSkillLibrary={chatAdapters?.skillApi?.openSkillLibrary}
 								actionPosition={slots?.senderActionPosition}
 								history={{
 									enabled: historyEnabled,
@@ -3017,22 +2900,13 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 								}}
 								fileUpload={{
 									enabled: fileUploadEnabled,
-									enableDrag:
-										fileUpload?.enableDrag ??
-										legacyFeatures.enableDragUpload ??
-										false,
+									enableDrag: fileUpload?.enableDrag ?? false,
 									allowMultiple:
 										fileUpload?.allowMultiple ??
-										legacyFeatures.allowMultiple ??
 										CHAT_VIEW_DEFAULTS.fileUpload.allowMultiple,
 									allowSendWithFiles:
-										fileUpload?.allowSendWithFiles ??
-										legacyFeatures.allowSendWithFiles ??
-										false,
-									enablePaste:
-										fileUpload?.enablePaste ??
-										legacyFeatures.enablePasteUpload ??
-										false,
+										fileUpload?.allowSendWithFiles ?? false,
+									enablePaste: fileUpload?.enablePaste ?? false,
 									acceptTypes: fileUpload?.acceptTypes,
 									maxFileSize: fileUpload?.maxFileSize,
 									request: fileUpload?.request,
@@ -3050,20 +2924,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 											? conversationLoadingReason
 											: openclawInputDisabledReason,
 								}}
-								disabled={
-									isInputConversationBlocked ||
-									openClawStopPending ||
-									openClawAuthBlocked ||
-									Boolean(openclawEnabled && openclawInputDisabled)
-								}
-								stopDisabled={isConversationLoading || openClawStopPending}
-								disabledReason={
-									openClawAuthBlocked
-										? openClawAuthBlockedReason
-										: isInputConversationBlocked
-											? conversationLoadingReason
-											: openclawInputDisabledReason
-								}
 								placeholder={
 									openClawAuthBlocked
 										? openClawAuthBlockedReason

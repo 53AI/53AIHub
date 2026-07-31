@@ -20,7 +20,9 @@ import {
 import { handleChunkLoadError } from "@km/shared-utils";
 import { InitGuard } from "@/components/InitGuard";
 import { checkVersion } from "@/utils/version";
+import { isOpLocalEnv, isPrivatePrem } from '@/utils/config';
 import { VERSION_MODULE } from "@/constants/enterprise";
+import { useRecordingStore } from "@/stores/modules/recording";
 
 // Loading fallback component
 function LoadingFallback() {
@@ -107,9 +109,13 @@ const SkillDetailView = lazyWithSuspense(() =>
 const KnowledgeView = lazyWithSuspense(() =>
   import("@/views/knowledge").then((m) => ({ default: m.KnowledgeView })),
 );
+const WikiView = lazyWithSuspense(() =>
+  import("@/views/knowledge/wiki/WikiView").then((m) => ({ default: m.WikiView })),
+);
 const MineView = lazyWithSuspense(() =>
   import("@/views/mine").then((m) => ({ default: m.MineView })),
 );
+
 const ProfileView = lazyWithSuspense(() =>
   import("@/views/profile/userInfo").then((m) => ({ default: m.ProfileView })),
 );
@@ -302,6 +308,20 @@ function PermissionGuard({
   return <>{children}</>;
 }
 
+
+/** 录音路由守卫：recordingConfig.enabled 为 false 时重定向到首页 */
+function RecordingGuard({ children }: { children: React.ReactNode }) {
+  const recordingConfig = useRecordingStore((s) => s.recordingConfig)
+
+  // 配置尚未加载完成，先不渲染
+  if (recordingConfig === null) return null
+
+  if (recordingConfig.enabled === false) {
+    return <Navigate to="/" replace />
+  }
+
+  return <>{children}</>
+}
 
 function useVisibleNavigations() {
   const isSoftStyle = useIsSoftStyle();
@@ -501,6 +521,15 @@ const buildRoutes = () => {
                       },
                     ],
                   },
+                  {
+                    path: "knowledge/wiki",
+                    element: (
+                      <PermissionGuard auth>
+                        <WikiView />
+                      </PermissionGuard>
+                    ),
+                    handle: { banner: true },
+                  },
                 ]
               : []),
             {
@@ -631,10 +660,7 @@ const buildRoutes = () => {
   return routes;
 };
 
-// Determine router type based on environment
-const isOpLocalEnv = import.meta.env.VITE_PLATFORM === "op-local";
-const isPrivatePremEnv = import.meta.env.VITE_PRIVATE_PREM === "true";
-const useHashRouter = isOpLocalEnv || isPrivatePremEnv;
+const useHashRouter = isOpLocalEnv || isPrivatePrem;
 
 export const isHashRouter = useHashRouter;
 export const isHistoryRouter = !useHashRouter;

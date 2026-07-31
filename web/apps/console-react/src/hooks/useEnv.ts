@@ -80,6 +80,12 @@ export function useEnv() {
     return isOpLocalEnv || isPrivatePremEnv ? `${baseUrl}/#${path}` : `${baseUrl}${path}`
   }, [getFrontBaseUrl, isOpLocalEnv, isPrivatePremEnv])
 
+  const buildFrontWikiUrl = useCallback((space_id: string, slug: string) => {
+    const baseUrl = getFrontBaseUrl()
+    const path = `/knowledge/wiki?space_id=${space_id}&selected=${slug}`
+    return isOpLocalEnv || isPrivatePremEnv ? `${baseUrl}/#${path}` : `${baseUrl}${path}`
+  }, [getFrontBaseUrl, isOpLocalEnv, isPrivatePremEnv])
+
   return {
     isWorkEnv,
     isRcEnv,
@@ -90,6 +96,7 @@ export function useEnv() {
     getFrontHomeUrl,
     buildFrontLibraryFileUrl,
     buildFrontLibraryUrl,
+    buildFrontWikiUrl
   }
 }
 

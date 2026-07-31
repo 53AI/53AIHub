@@ -12,9 +12,9 @@ import { CacheMode, cacheManager as cache } from "@km/shared-utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import agentsApi from "@/api/modules/agents/index";
 import { filesApi } from "@/api/modules/files";
-import { formatFile } from "@/api/modules/files/transform";
-import type { KnowledgeSourceState } from "@/components/KnowledgeSource";
-import type { SpaceDialogRef } from "@/components/Space/dialog";
+import type { FileSearchResponse } from "@/api/modules/files/types";
+import { formatFile, formatFileSearchResults } from "@/api/modules/files/transform";
+import type { KnowledgeSourceState, KnowledgeSourceSelectorRef } from "@/components/KnowledgeSource";
 import { t } from "@/locales";
 import { useLibraryStore } from "@/stores/modules/library";
 import { useNavigationStore } from "@/stores/modules/navigation";
@@ -60,19 +60,131 @@ interface UseKnowledgeSenderConfigParams {
 	enabled: boolean;
 	isInLibrary: boolean;
 	/**
-	 * 可选:外部渲染的 SpaceDialog ref。
-	 * 提供后,@ 弹窗底部的「@ 从知识库里选择」入口将打开此 Dialog。
-	 * 对齐原版 Sender 的 handleOpenLibrary 行为(apps/front-react/src/components/Chat/Sender.tsx line 1866)。
+	 * 可选:KnowledgeSourceSelector 的 ref。
+	 * 提供后,@ 弹窗底部的「@ 从知识库里选择」入口将调用 selector.open(),
+	 * 复用知识源选择器内部的同一个 SpaceDialog(基于当前 knowledgeSource 预填已选项),
+	 * 而不是再挂一个重复的对话框。对齐原版 Sender 的 handleOpenLibrary 行为。
 	 */
-	spaceDialogRef?: React.RefObject<SpaceDialogRef | null>;
+	knowledgeSelectorRef?: React.RefObject<KnowledgeSourceSelectorRef | null>;
 }
 
 const KNOWLEDGE_SENDER_DEBOUNCE_MS = 300;
 
+// 默认:动态知识(wiki)与知识图谱(knowledgeGraph)由智能体 settings 决定是否默认开启,
+// 前台AI搜问(networkSearch)始终保持关闭。
+// 实际取值由 deriveInitialKnowledgeSource 从 currentAgent.settings_obj 解析:
+//   - enable=true && default_enable=true:开启
+//   - 其他所有缺省/关闭情形:关闭(缺省一律返回 false,不擅自打开)
+const INITIAL_KNOWLEDGE_SOURCE: KnowledgeSourceState = {
+	mode: "all",
+	allKnowledge: true,
+	knowledgeGraph: false,
+	networkSearch: false,
+	wiki: false,
+	selectedFiles: [],
+	selectedLibraries: [],
+	selectedSpaces: [],
+	selectedWikiSpaces: [],
+	selectedWikiPages: [],
+};
+
+/** 单个 setting 子对象的默认开启判断:enable=true 且 default_enable=true 才开启 */
+function shouldDefaultEnable(setting: any): boolean {
+	if (!setting) return false;
+	if (setting.enable !== true) return false;
+	return Boolean(setting.default_enable);
+}
+
+/** 从 currentAgent.settings_obj 解析默认知识源。 */
+function deriveInitialKnowledgeSource(currentAgent: any): KnowledgeSourceState {
+	const settings = currentAgent?.settings_obj ?? {};
+	const nextState = {
+		...INITIAL_KNOWLEDGE_SOURCE,
+		knowledgeGraph: shouldDefaultEnable(settings.graph_search_setting),
+		wiki: shouldDefaultEnable(settings.wiki_search_setting),
+		networkSearch: false,
+	};
+	return nextState;
+}
+
+type KnowledgeLinkType = "file" | "library" | "space";
+
+/**
+ * 构造一条 selectedMentionLinks / mention.list 中使用的链接对象。
+ * 收敛三处原地拼装的字段(对齐 knowledge/chat.tsx 原版 Sender 写入形态),
+ * 字段命名变更只需改这里。
+ *
+ * @param extra 站点差异字段;最后一次展开,允许覆盖默认字段。
+ *   - mention 入口强制 upload_file_id/file_size/file_mime=null、isfolder=false(对齐原版 handleSelectMention)
+ *   - onChangeKnowledgeSource 在 library 上额外带 library_id: l.id(对齐原版)
+ */
+function makeKnowledgeLink(
+	type: KnowledgeLinkType,
+	item: { id: any; name: any; icon?: any; [k: string]: any },
+	extra: Record<string, any> = {},
+) {
+	if (type === "file") {
+		return {
+			id: String(item.id),
+			name: item.name,
+			icon: item.icon,
+			library_id: item.library_id,
+			upload_file_id: item.upload_file_id ?? null,
+			file_size: item.file_size ?? null,
+			file_mime: item.file_mime ?? null,
+			isfolder: item.isfolder ?? false,
+			islibrary: false,
+			isspace: false,
+			ui: { active: true },
+			source: "knowledge" as const,
+			...extra,
+		};
+	}
+	if (type === "library") {
+		return {
+			id: String(item.id),
+			name: item.name,
+			icon: item.icon,
+			isfolder: false,
+			islibrary: true,
+			isspace: false,
+			ui: { active: true },
+			source: "knowledge" as const,
+			...extra,
+		};
+	}
+	// space
+	return {
+		id: String(item.id),
+		name: item.name,
+		icon: item.icon,
+		isfolder: false,
+		islibrary: false,
+		isspace: true,
+		ui: { active: true },
+		source: "knowledge" as const,
+		...extra,
+	};
+}
+
+/**
+ * mention 入口(file-from-recentList / file-from-suggestions)专用:对齐原版
+ * handleSelectMention 的"未知字段强制 null"语义,避免把 recentList/suggestions
+ * 里不存在的 upload_file_id/file_size/file_mime 错误地当成有值。
+ */
+function makeMentionFileLink(item: any) {
+	return makeKnowledgeLink("file", item, {
+		upload_file_id: null,
+		file_size: null,
+		file_mime: null,
+		isfolder: false,
+	});
+}
+
 export function useKnowledgeSenderConfig(
 	params: UseKnowledgeSenderConfigParams,
 ): KnowledgeSenderConfig | null {
-	const { currentAgent, enabled, isInLibrary, spaceDialogRef } = params;
+	const { currentAgent, enabled, isInLibrary, knowledgeSelectorRef } = params;
 	const userStore = useUserStore();
 	const navigationStore = useNavigationStore();
 	// selector 订阅,避免 store 任意字段更新都触发下游 effect 重跑(finding #4)
@@ -98,15 +210,9 @@ export function useKnowledgeSenderConfig(
 		value: ["all"] as string[],
 		isSpace: false,
 	});
-	const [knowledgeSource, setKnowledgeSource] = useState<KnowledgeSourceState>({
-		mode: "all",
-		allKnowledge: true,
-		knowledgeGraph: false,
-		networkSearch: false,
-		selectedFiles: [],
-		selectedLibraries: [],
-		selectedSpaces: [],
-	});
+	const [knowledgeSource, setKnowledgeSource] = useState<KnowledgeSourceState>(
+		() => deriveInitialKnowledgeSource(currentAgent),
+	);
 	const [searchKeyword, setSearchKeyword] = useState("");
 	const [searchLoading, setSearchLoading] = useState(false);
 	const [suggestions, setSuggestions] = useState<Array<any>>([]);
@@ -121,6 +227,18 @@ export function useKnowledgeSenderConfig(
 	// currentAgent 通过 ref 暴露给 effect,避免依赖 nested settings 子对象(finding #5)
 	const currentAgentRef = useRef(currentAgent);
 	currentAgentRef.current = currentAgent;
+
+	const lastInitializedAgentIdRef = useRef<string | null>(
+		currentAgent?.agent_id ?? null,
+	);
+	useEffect(() => {
+		const newId = currentAgent?.agent_id ?? null;
+		if (!enabled) return;
+		if (!newId) return;
+		if (lastInitializedAgentIdRef.current === newId) return;
+		lastInitializedAgentIdRef.current = newId;
+		setKnowledgeSource(deriveInitialKnowledgeSource(currentAgent));
+	}, [enabled, currentAgent?.agent_id]);
 
 	// ============ 同步 currentAgent -> agentInfo ============
 	useEffect(() => {
@@ -139,28 +257,28 @@ export function useKnowledgeSenderConfig(
 			.then((res: any) => {
 				if (cancelled) return;
 				const agent = currentAgentRef.current;
-				const deepConfig = agent?.settings?.deep_thinking_config || {
+				const deepConfig = agent?.settings_obj?.deep_thinking_config || {
 					temperature: 0.5,
 				};
-				const fastConfig = agent?.settings?.fast_reasoning_config || {
+				const fastConfig = agent?.settings_obj?.fast_reasoning_config || {
 					temperature: 0.5,
 				};
 				const deepValue = `${deepConfig.channel_id}_${deepConfig.channel_type}_${deepConfig.model_name}`;
 				const models = (res.agent_models || []).map((item: any) => {
 					const value = `${item.channel_id}_${item.channel_type}_${item.model}`;
 					const isDeepThinking = value === deepValue;
-					return {
-						...item,
-						type: isDeepThinking ? "deep_reasoning" : "fast_reasoning",
-						icon: isDeepThinking ? "star-link" : "lightning",
-						name: isDeepThinking
-							? t("chat.deep_thinking")
-							: t("chat.fast_response"),
-						temperature: isDeepThinking
-							? deepConfig.temperature
-							: fastConfig.temperature,
+						return {
+							...item,
+							type: isDeepThinking ? "deep_reasoning" : "fast_reasoning",
+							icon: isDeepThinking ? "star-link" : "lightning",
+							name: isDeepThinking
+								? t("chat.deep_thinking")
+								: t("chat.fast_response"),
+							temperature: isDeepThinking
+								? deepConfig.temperature
+								: fastConfig.temperature,
 						value,
-					};
+						};
 				});
 				setAgentModels(models);
 				// 保留用户已选 model;仅当当前值不在新列表中或为空时回退到第一项(finding #2)
@@ -214,11 +332,16 @@ export function useKnowledgeSenderConfig(
 				ui: { active: true },
 				source: "knowledge",
 			};
+			// isInLibrary 分支:依然默认勾选当前 library,但 wiki / knowledgeGraph
+			// 必须遵循 agent settings_obj 的 default_enable,不能因为在 /library/ 路由下
+			// 就强行关闭(原先硬写 false 会让 /library/:id/chat 永远关掉动态知识)。
+			const agentSettings = currentAgentRef.current?.settings_obj ?? {};
 			setKnowledgeSource({
 				mode: "libraries",
 				allKnowledge: false,
 				knowledgeGraph: false,
 				networkSearch: false,
+				wiki: shouldDefaultEnable(agentSettings.wiki_search_setting),
 				selectedFiles: [],
 				selectedLibraries: [{ id: libId, name: libName, icon: libraryIcon }],
 				selectedSpaces: [],
@@ -263,21 +386,20 @@ export function useKnowledgeSenderConfig(
 		searchTimerRef.current = setTimeout(() => {
 			filesApi
 				.search({ query: keyword, top_k: 10 })
-				.then((res: any) => {
+				.then((res: FileSearchResponse) => {
 					if (mySeq !== searchSeqRef.current) return;
-					// res 形如 { results: [{ file_id, highlight, library_name, ... }] }
-					const raw = (res && res.results) || [];
+					const formatted = formatFileSearchResults(res.results || []);
 					setSuggestions(
-						raw.map((item: any) => ({
+						formatted.map((item) => ({
 							id: String(item.file_id),
-							name: item.highlight || item.path || "未命名",
-							icon: undefined,
+							name: item.name,
+							icon: item.icon,
 							library_id: String(item.library_id || ""),
-							library_name: item.library_name || "",
+							library_name: item.library_name,
 							score: item.score,
 							ui: { active: false },
 							source: "knowledge",
-							isfolder: false,
+							isfolder: item.isfolder,
 							islibrary: false,
 							isspace: false,
 						})),
@@ -303,23 +425,7 @@ export function useKnowledgeSenderConfig(
 	const handleSelectMention = useCallback((item: any) => {
 		setSelectedMentionLinks((prev) => {
 			if (prev.some((p) => String(p.id) === String(item.id))) return prev;
-			return [
-				...prev,
-				{
-					id: String(item.id),
-					name: item.name,
-					icon: item.icon,
-					library_id: item.library_id,
-					upload_file_id: null,
-					file_size: null,
-					file_mime: null,
-					isfolder: false,
-					islibrary: false,
-					isspace: false,
-					ui: { active: true },
-					source: "knowledge",
-				},
-			];
+			return [...prev, makeMentionFileLink(item)];
 		});
 
 		// 联动更新 knowledgeSource,让 KnowledgeSourceSelector 同步勾选该文件
@@ -389,16 +495,23 @@ export function useKnowledgeSenderConfig(
 			}
 
 			// 如果删除了所有受控资源,切回 allKnowledge 模式
+			// 修复:把 wiki 也加入判定,避免「删空文件后 wiki 仍开启但 knowledge_base_ids = ["all"]」
+			// 与 wiki_search_config 同时发送造成前后矛盾。
 			if (
 				changed &&
 				next.selectedFiles?.length === 0 &&
 				(next.selectedLibraries?.length || 0) === 0 &&
-				(next.selectedSpaces?.length || 0) === 0
+				(next.selectedSpaces?.length || 0) === 0 &&
+				(next.selectedWikiSpaces?.length || 0) === 0 &&
+				(next.selectedWikiPages?.length || 0) === 0
 			) {
 				next = {
 					...next,
 					mode: "all" as const,
 					allKnowledge: true,
+					wiki: false,
+					selectedWikiSpaces: [],
+					selectedWikiPages: [],
 				};
 			}
 
@@ -407,36 +520,17 @@ export function useKnowledgeSenderConfig(
 	}, []);
 
 	// ============ 打开知识库 Dialog ============
-	// 对齐原版 Sender 的 handleOpenLibrary (apps/front-react/src/components/Chat/Sender.tsx line 1866)
-	// 行为:把当前受控 list 中 source='knowledge' 的链接作为已选项传入 SpaceDialog
+	// 复用 KnowledgeSourceSelector 内部的 SpaceDialog(通过 selector.open())。
+	// selector 基于当前 knowledgeSource 预填已选项;由于 knowledgeSource 与
+	// selectedMentionLinks 双向同步,这里无需再手动构造 files/libraries/spaces。
+	// 相比之前在 ChatContainer 单独挂一个 SpaceDialog,这样只保留单一对话框,
+	// 且能正确带上「动态知识」选项(对齐 selector 的 allowSelectDynamicKnowledge)。
 	const handleOpenLibrary = useCallback(() => {
-		if (!spaceDialogRef?.current) return;
-		const knowledgeLinks = selectedMentionLinks.filter(
-			(l: any) => l.source === "knowledge",
-		);
-		const files = knowledgeLinks
-			.filter((l: any) => !l.islibrary && !l.isspace)
-			.map((l: any) => ({
-				id: l.id,
-				name: l.name,
-				icon: l.icon,
-				library_id: l.library_id,
-				isfolder: l.isfolder,
-				upload_file_id: l.upload_file_id,
-				file_size: l.file_size,
-				file_mime: l.file_mime,
-			})) as any;
-		const libraries = knowledgeLinks
-			.filter((l: any) => l.islibrary)
-			.map((l: any) => ({ id: l.id, name: l.name, icon: l.icon })) as any;
-		const spaces = knowledgeLinks
-			.filter((l: any) => l.isspace)
-			.map((l: any) => ({ id: l.id, name: l.name, icon: l.icon })) as any;
-		spaceDialogRef.current.open(files, libraries, undefined, spaces);
-	}, [spaceDialogRef, selectedMentionLinks]);
+		knowledgeSelectorRef?.current?.open();
+	}, [knowledgeSelectorRef]);
 
 	const handleSelectFilesFromLibrary = useCallback(
-		(files: any[], _libraries?: any[], spaces?: any[]) => {
+		(files: any[], _libraries?: any[], spaces?: any[], wikis?: any[]) => {
 			const newFiles = (files || []).map((f: any) => ({
 				id: String(f.id),
 				name: f.name,
@@ -457,61 +551,53 @@ export function useKnowledgeSenderConfig(
 				name: s.name,
 				icon: s.icon,
 			}));
+			const newWikiSpaces = (wikis || [])
+					.filter((w: any) => w.wikiType === 'space')
+					.map((s: any) => ({
+				id: String(s.id),
+				name: s.name,
+				icon: s.icon,
+				wikiType: 'space' as const,
+			}));
+			const newWikiPages = (wikis || [])
+					.filter((w: any) => w.wikiType === 'page')
+					.map((p: any) => ({
+				id: p.id,
+				title: p.title,
+				slug: p.slug,
+				summary: p.summary,
+				space_id: p.space_id,
+				wikiType: 'page' as const,
+			}));
+			// 如果有选中的动态知识，设置 wiki: true
+			const hasWikiSelection = newWikiSpaces.length > 0 || newWikiPages.length > 0;
 			setKnowledgeSource((prev) => ({
 				...prev,
-				mode: "files" as const,
+				mode: hasWikiSelection ? "wiki" as const : "files" as const,
 				allKnowledge: false,
+				wiki: hasWikiSelection,
 				selectedFiles: newFiles,
 				selectedLibraries: newLibraries,
 				selectedSpaces: newSpaces,
+				selectedWikiSpaces: newWikiSpaces,
+				selectedWikiPages: newWikiPages,
 			}));
 			// 同步把这些文件/知识库/空间加入 selectedMentionLinks
 			setSelectedMentionLinks((prev) => {
 				const next = [...prev];
 				newFiles.forEach((f) => {
 					if (!next.some((p) => String(p.id) === String(f.id))) {
-						next.push({
-							id: f.id,
-							name: f.name,
-							icon: f.icon,
-							library_id: f.library_id,
-							upload_file_id: f.upload_file_id,
-							file_size: f.file_size,
-							file_mime: f.file_mime,
-							isfolder: f.isfolder,
-							islibrary: false,
-							isspace: false,
-							ui: { active: true },
-							source: "knowledge",
-						});
+						next.push(makeKnowledgeLink("file", f));
 					}
 				});
 				newLibraries.forEach((l) => {
 					if (!next.some((p) => String(p.id) === String(l.id))) {
-						next.push({
-							id: l.id,
-							name: l.name,
-							icon: l.icon,
-							isfolder: false,
-							islibrary: true,
-							isspace: false,
-							ui: { active: true },
-							source: "knowledge",
-						});
+						next.push(makeKnowledgeLink("library", l));
 					}
 				});
 				newSpaces.forEach((s) => {
 					if (!next.some((p) => String(p.id) === String(s.id))) {
-						next.push({
-							id: s.id,
-							name: s.name,
-							icon: s.icon,
-							isfolder: false,
-							islibrary: false,
-							isspace: true,
-							ui: { active: true },
-							source: "knowledge",
-						});
+						next.push(makeKnowledgeLink("space", s));
 					}
 				});
 				return next;
@@ -540,8 +626,8 @@ export function useKnowledgeSenderConfig(
 			onSearch: setSearchKeyword,
 			onSelect: handleSelectMention,
 			onRemove: handleRemoveMention,
-			// 触发外部 SpaceDialog 打开(对齐原版 Sender 的 handleOpenLibrary)
-			onOpenLibrary: spaceDialogRef ? handleOpenLibrary : undefined,
+			// 触发 KnowledgeSourceSelector 内部 SpaceDialog(对齐原版 Sender 的 handleOpenLibrary)
+			onOpenLibrary: knowledgeSelectorRef ? handleOpenLibrary : undefined,
 			onSelectFiles: handleSelectFilesFromLibrary,
 		}),
 		[
@@ -555,7 +641,7 @@ export function useKnowledgeSenderConfig(
 			handleSelectMention,
 			handleRemoveMention,
 			handleSelectFilesFromLibrary,
-			spaceDialogRef,
+			knowledgeSelectorRef,
 			handleOpenLibrary,
 		],
 	);
@@ -583,45 +669,13 @@ export function useKnowledgeSenderConfig(
 		} else {
 			const newLinks: any[] = [];
 			(next.selectedFiles || []).forEach((f) =>
-				newLinks.push({
-					id: f.id,
-					name: f.name,
-					icon: f.icon,
-					library_id: f.library_id,
-					upload_file_id: f.upload_file_id,
-					file_size: f.file_size,
-					file_mime: f.file_mime,
-					isfolder: f.isfolder,
-					islibrary: false,
-					isspace: false,
-					ui: { active: true },
-					source: "knowledge",
-				}),
+				newLinks.push(makeKnowledgeLink("file", f)),
 			);
 			(next.selectedLibraries || []).forEach((l) =>
-				newLinks.push({
-					id: l.id,
-					name: l.name,
-					icon: l.icon,
-					library_id: l.id,
-					isfolder: false,
-					islibrary: true,
-					isspace: false,
-					ui: { active: true },
-					source: "knowledge",
-				}),
+				newLinks.push(makeKnowledgeLink("library", l, { library_id: l.id })),
 			);
 			(next.selectedSpaces || []).forEach((s) =>
-				newLinks.push({
-					id: s.id,
-					name: s.name,
-					icon: s.icon,
-					isfolder: false,
-					islibrary: false,
-					isspace: true,
-					ui: { active: true },
-					source: "knowledge",
-				}),
+				newLinks.push(makeKnowledgeLink("space", s)),
 			);
 			setSelectedMentionLinks(newLinks);
 		}
@@ -638,18 +692,44 @@ export function useKnowledgeSenderConfig(
 	// 注意:必须放在 `if (!enabled) return null` 之前,否则 enabled 翻转时
 	// 这一个 hook 的位置会变化,导致 React 内部 hook list 错位(规则:Hooks
 	// 必须在每次渲染以相同顺序调用)。
+	//
+	// /library/:id/chat 路由(指定知识库问答):send 后不应回退到「全部知识」,
+	// 仍以当前知识库为默认知识源,只清掉用户在本次输入中临时勾选的文件 / 空间 /
+	// 动态知识,避免每次发送都被重置回 allKnowledge=true。
 	const reset = useCallback(() => {
+		if (isInLibrary) {
+			const agentSettings = currentAgentRef.current?.settings_obj ?? {};
+			const libId = String(libraryId ?? "");
+			const libName = libraryName || t("library.this_library_content");
+			const libraryLink = {
+				id: libId,
+				name: libName,
+				icon: libraryIcon,
+				isfolder: false,
+				islibrary: true,
+				isspace: false,
+				ui: { active: true },
+				source: "knowledge",
+			};
+			setKnowledgeSource({
+				...INITIAL_KNOWLEDGE_SOURCE,
+				mode: "libraries",
+				allKnowledge: false,
+				knowledgeGraph: false,
+				networkSearch: false,
+				wiki: shouldDefaultEnable(agentSettings.wiki_search_setting),
+				selectedFiles: [],
+				selectedLibraries: [
+					{ id: libId, name: libName, icon: libraryIcon },
+				],
+				selectedSpaces: [],
+			});
+			setSelectedMentionLinks([libraryLink]);
+			return;
+		}
 		setSelectedMentionLinks([]);
-		setKnowledgeSource({
-			mode: "all",
-			allKnowledge: true,
-			knowledgeGraph: false,
-			networkSearch: false,
-			selectedFiles: [],
-			selectedLibraries: [],
-			selectedSpaces: [],
-		});
-	}, []);
+		setKnowledgeSource(deriveInitialKnowledgeSource(currentAgentRef.current));
+	}, [isInLibrary, libraryId, libraryName, libraryIcon]);
 
 	if (!enabled) return null;
 

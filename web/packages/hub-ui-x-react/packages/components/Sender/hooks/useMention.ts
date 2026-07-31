@@ -26,7 +26,7 @@ export interface UseMentionOptions {
    * 从外部 Dialog 选中文件后调用(用于 SpaceDialog/MyFilesDialog 等)。
    * Hook 收到此回调后会清理编辑器中的 mention-input(对齐原版 Sender 行为)。
    */
-  onSelectFiles?: (files: MentionDocItem[], libraries?: any[], spaces?: any[]) => void;
+  onSelectFiles?: (files: MentionDocItem[], libraries?: any[], spaces?: any[], wikis?: any[]) => void;
   onInput?: () => void;
   /** 点击编辑器外部时的回调（可选） */
   onClickOutside?: () => void;

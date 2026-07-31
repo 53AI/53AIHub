@@ -143,6 +143,13 @@ export interface ChannelTestResponse {
   time: number
 }
 
+export interface VoiceTestResponse {
+  success: boolean
+  message: string
+  model: string
+  time: number
+}
+
 export const getModelIcon = (value: string) => {
   let icon = ''
   if (/deepseek/i.test(value)) icon = 'deepseek'
@@ -169,6 +176,8 @@ const getModelTypeName = (model_type: ModelUseType) => {
       return window.$t('model.embedding')
     case MODEL_USE_TYPE.RERANKER:
       return window.$t('model.rerank')
+    case MODEL_USE_TYPE.VOICE:
+      return window.$t('model.voice')
     default:
       return ''
   }
@@ -218,7 +227,7 @@ export const transformChannelData = (data: RawChannelItem): ChannelItem => {
     if (found) found.options.push(item)
     else acc.push({ modelType: item.modelType, modelTypeName: item.modelTypeName, options: [item] })
     return acc
-  }, [])
+  }, []).sort((a, b) => Number(a.modelType) - Number(b.modelType))
 
   return {
     ...data,
@@ -340,6 +349,13 @@ export const channelApi = {
   test(channel_id: number, params?: { model?: string; model_type?: number | string }): Promise<ChannelTestResponse> {
     return service
       .get(`/api/channels/test/${channel_id}`, { params })
+      .then((res: any) => res.data ?? res)
+      .catch(handleError)
+  },
+  /** 测试语音渠道连通性 */
+  testVoice(channel_id: number, model_name: string): Promise<VoiceTestResponse> {
+    return service
+      .post(`/api/channels/test/voice/${channel_id}`, null, { params: { model_name } })
       .then((res: any) => res.data ?? res)
       .catch(handleError)
   },

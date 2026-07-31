@@ -53,6 +53,7 @@ export interface RecordingJob {
   recovery_error: string | null
   uploaded_recorded_ms: number
   upload_interval_ms: number
+  group_id?: number             // 录音文件分组 ID
 
 }
 
@@ -117,6 +118,7 @@ export interface CreateRecordingRequest {
   source_mime_type?: string   // 默认 'audio/webm'
   upload_interval_ms?: number // 默认 3000
   max_duration_ms?: number    // 默认 28800000 (8小时)
+  group_id?: number           // 分组 ID，用于分类
 }
 
 /** 状态切换请求 */
@@ -148,6 +150,11 @@ export interface RecordingFileItem {
   created_time: number
   updated_time: number
   is_favorite: boolean
+  group_id?: number
+  insight_summary?: string
+  insight_page?: {
+    page_json?: string
+  } 
 }
 
 /** 录音列表响应 */
@@ -163,6 +170,8 @@ export interface GetRecordingsParams {
   keyword?: string
   offset?: number
   limit?: number
+  sort_by?: 'updated_time' | 'created_time'
+  group_id?: number
 }
 
 /** 创建文件夹请求 */
@@ -214,6 +223,7 @@ export interface ImportAudioRequest {
   origin_type?: RecordingOriginType
   origin_source?: RecordingOriginSource
   origin_ref_id?: number
+  group_id?: number           // 分组 ID，用于分类
 }
 
 /** 导入音频响应 */
@@ -230,9 +240,10 @@ export interface ImportAudioResponse {
 export interface RecordingConfig {
   enabled: boolean
   parser_platform: string
+  voice_model_name?: string
 }
 
-// ============= 错误码 =============
+// ============= 录音错误码 =============
 
 /** 录音相关错误码 */
 export const RECORDING_ERROR_CODES = {
@@ -247,3 +258,144 @@ export const RECORDING_ERROR_CODES = {
   SIZE_EXCEEDED: 100409,       // 文件大小超出限制
   DURATION_EXCEEDED: 100410,   // 录音时长超出限制
 } as const
+
+// ============= 总结模板 =============
+
+/** 录音总结模板（前台接口返回格式） */
+export interface RecordingSummaryTemplate {
+  id: string
+  name: string
+  description: string
+  prompt: string
+  group_id: number
+  created_time: number
+  updated_time: number
+}
+
+// ============= 文件总结 =============
+
+/** 总结生成状态（异步生成模式下使用） */
+export type SummaryStatus = 'processing' | 'completed' | 'failed'
+
+/** 录音文件总结 */
+export interface RecordingFileSummary {
+  id: string
+  file_id: string
+  template_id: number
+  template_name: string
+  inference_model_id: number
+  /**
+   * 生成状态：processing=生成中、completed=已完成、failed=生成失败
+   * 旧版本接口可能不返回该字段，UI 层默认视为 completed
+   */
+  status?: SummaryStatus
+  summary_content: string
+  created_time: number
+  updated_time: number
+}
+
+// ============= 解析状态 =============
+
+/** 解析阶段状态 */
+export interface StageStatus {
+  status: string // normal/pending/parsing/processing/completed/failed/skipped/inactive
+  pipeline?: 'active' | 'failed' | 'inactive' // 管线可达性
+  /** 待执行原因（如 waiting_for_manual_trigger = 等用户手动触发） */
+  pending_reason?: string
+  updated_at: number
+}
+
+/** 文件解析状态 */
+export interface FileParseStatus {
+  transcription: StageStatus
+  meeting_minutes: StageStatus
+  insights: StageStatus
+  insight_page: StageStatus
+}
+
+// ============= 决策页面编排 =============
+
+/** 决策页面编排结果 */
+export interface RecordingFileInsightPage {
+  id: number
+  file_id: number
+  /** Markdown 字符串（新）或 JSON Block 字符串（旧），前端需兼容判断 */
+  page_json: string
+  created_time: number
+  updated_time: number
+}
+
+/** 页面编排 Block 类型 */
+export interface DecisionPageBlock {
+  id: string
+  type: 'page_header' | 'decision_banner' | 'hero_judgment' | 'section' | 'paragraph' | 'quote'
+       | 'callout' | 'risk_list' | 'comparison' | 'flow_diagram' | 'assumption_chain' | 'timeline'
+       | 'ordered_list' | 'unordered_list' | 'action_list' | 'rule_list'
+       | 'red_line' | 'verification_list' | 'closing'
+       | 'key_points' | 'long_analysis' | 'insight_stack' | 'breakthrough'
+  importance: number
+  source_unit_ids: string[]
+  variant: 'neutral' | 'info' | 'positive' | 'warning' | 'danger' | 'critical' | 'dark'
+  data: Record<string, any>
+}
+
+/** mermaid-flow.v1 图数据（由后端 parse_mermaid_flow 产出） */
+export interface MermaidFlowNode {
+  id: string
+  title: string
+  content: string
+  tone: 'neutral' | 'positive' | 'info' | 'warning' | 'danger' | 'critical' | 'pending'
+  rank: number
+}
+
+export interface MermaidFlowEdge {
+  from: string
+  to: string
+  label: string
+}
+
+export interface MermaidFlowDiagram {
+  syntax: 'mermaid-flow.v1'
+  direction: 'TB' | 'LR'
+  routing: 'orthogonal'
+  source: string
+  nodes: MermaidFlowNode[]
+  edges: MermaidFlowEdge[]
+}
+
+/** 编排后的决策页面 */
+export interface DecisionPage {
+  schema_version: string
+  document_type: string
+  title: string
+  subtitle: string
+  theme: 'blue' | 'purple' | 'orange' | 'red' | 'dark' | 'neutral'
+  blocks: DecisionPageBlock[]
+  closing: { content: string }
+}
+
+// ============= 排队文件数 =============
+
+/** 排队文件数响应 */
+export interface QueuedCountResponse {
+  queued_count: number
+}
+
+// ============= 转写原文 🆕 =============
+
+/** 转写原文响应 */
+export interface FileTranscriptionResponse {
+  file_id: number
+  /** 转写纯文本 */
+  content: string
+}
+
+// ============= 继续生成管线 🆕 =============
+
+/** 继续生成管线响应 */
+export interface PipelineResult {
+  file_id: string
+  meeting_minutes: 'skipped' | 'processing'
+  insights: 'skipped' | 'processing'
+  insight_page: 'skipped' | 'processing'
+}

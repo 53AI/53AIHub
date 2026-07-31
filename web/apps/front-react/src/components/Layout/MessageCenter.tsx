@@ -137,7 +137,7 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
     if (!resource) return;
 
     if (resourceType === RESOURCE_TYPE.space) {
-      navigate(`/knowledge/${resource.id}`);
+      navigate(`/knowledge?space_id=${resource.id}`);
     } else if (resourceType === RESOURCE_TYPE.library) {
       navigate(`/library/${resource.id}`);
     } else if (resourceType === RESOURCE_TYPE.file) {
@@ -389,12 +389,20 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
             className="flex items-center gap-2 cursor-pointer"
             onClick={() => handleResourceClick(notification)}
           >
-            <Image
+            { 
+            notification.content_parsed.resource_type === RESOURCE_TYPE.wiki_page ? (<div className="flex-none size-6 rounded flex items-center justify-center bg-[#E6EEFF] text-[#4798F5]">
+                <SvgIcon
+                  name="doc-detail"
+                  className="flex-none"
+                />
+              </div>) : (<Image
               src={notification.content_parsed.resource.icon}
               width={16}
               height={16}
               preview={false}
-            />
+            />)
+            }
+            
             <span className="text-xs text-[#4F5052]">
               {notification.content_parsed.resource.name}
             </span>

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { pathIncludes } from '@/router'
 import { RUNNING_STATUSES } from '@/api/modules/agentRun/types'
+import type { DocumentType } from '@/api/modules/conversation'
 
 interface RouterOptions {
   agent_id?: string | null
@@ -13,12 +14,21 @@ export function isRunRunning(latestRun: any): boolean {
   return RUNNING_STATUSES.includes(latestRun.status)
 }
 
+/**
+ * 文档引用（v0.4.2 §3.2）：仅使用 document_type + document_id。
+ */
+interface ConversationDocumentRef {
+  documentType?: DocumentType
+  documentId?: string
+}
+
 interface IndexConversationState {
   conversations: any[]
   current_conversationid: string
   base_path: string
   agent_id: string
-  file_id: string | null
+  /** 当前激活的文档引用（v0.4.2 §3.2） */
+  currentDocumentRef: ConversationDocumentRef
   // Pagination state
   offset: number
   hasMore: boolean
@@ -30,10 +40,14 @@ interface IndexConversationState {
   // Actions
   setBasePath: (path: string) => void
   setAgentId: (agent_id: string) => void
-  setFileId: (file_id: string | null) => void
+  setDocumentRef: (ref: ConversationDocumentRef | null) => void
   loadConversations: (signal?: AbortSignal) => Promise<any[]>
   loadMoreConversations: () => Promise<void>
-  createConversation: (agent_id: string, file_id: string | undefined, title?: string) => Promise<Conversation.Info>
+  createConversation: (
+    agent_id: string,
+    documentRef?: ConversationDocumentRef,
+    title?: string,
+  ) => Promise<Conversation.Info>
   addConversation: (conversation: Conversation.Info) => void
   updateConversation: (conversation: Partial<Conversation.Info>) => void
   updateConversationLatestRun: (conversationId: string, latestRun: any | null) => void
@@ -49,7 +63,7 @@ export const useConversationStore = create<IndexConversationState>((set, get) =>
   current_conversationid: '',
   base_path: '/index',
   agent_id: '',
-  file_id: null,
+  currentDocumentRef: {},
   // Pagination state
   offset: 0,
   hasMore: true,
@@ -80,12 +94,12 @@ export const useConversationStore = create<IndexConversationState>((set, get) =>
     set({ agent_id })
   },
 
-  setFileId: (file_id) => {
-    set({ file_id })
+  setDocumentRef: (ref) => {
+    set({ currentDocumentRef: ref ?? {} })
   },
 
   loadConversations: async (signal?: AbortSignal) => {
-    const { agent_id, file_id } = get()
+    const { agent_id, currentDocumentRef } = get()
     if (!agent_id) return []
 
     // Generate unique request ID for this call
@@ -93,7 +107,13 @@ export const useConversationStore = create<IndexConversationState>((set, get) =>
     set({ loadConversationsRequestId: requestId })
 
     const conversationApi = (await import('@/api/modules/conversation/index')).default
-    const res = await conversationApi.agentList(agent_id, { file_id, offset: 0, limit: 30 })
+    // 文档引用统一（v0.4.2 §3.2）：仅 document_type + document_id
+    const res = await conversationApi.agentList(agent_id, {
+      document_type: currentDocumentRef?.documentType,
+      document_id: currentDocumentRef?.documentId,
+      offset: 0,
+      limit: 30,
+    })
 
     // ✅ Race condition check: discard response if stale
     const currentRequestId = get().loadConversationsRequestId
@@ -129,14 +149,20 @@ export const useConversationStore = create<IndexConversationState>((set, get) =>
   },
 
   loadMoreConversations: async () => {
-    const { agent_id, file_id, offset, hasMore, loadingMore } = get()
+    const { agent_id, currentDocumentRef, offset, hasMore, loadingMore } = get()
     if (!agent_id || !hasMore || loadingMore) return
 
     set({ loadingMore: true })
 
     try {
       const conversationApi = (await import('@/api/modules/conversation/index')).default
-      const res = await conversationApi.agentList(agent_id, { file_id, offset, limit: 30 })
+      // 文档引用统一（v0.4.2 §3.2）：仅 document_type + document_id
+      const res = await conversationApi.agentList(agent_id, {
+        document_type: currentDocumentRef?.documentType,
+        document_id: currentDocumentRef?.documentId,
+        offset,
+        limit: 30,
+      })
 
       const newConversations = res.data.items.map((item: any) => ({
         ...item,
@@ -167,13 +193,20 @@ export const useConversationStore = create<IndexConversationState>((set, get) =>
     }
   },
 
-  createConversation: async (agent_id, file_id, title = '') => {
+  createConversation: async (agent_id, documentRef, title = '') => {
     const conversationApi = (await import('@/api/modules/conversation/index')).default
-    const res = await conversationApi.create({
-      agent_id,
-      title,
-      file_id
-    })
+    // 文档引用统一（v0.4.2 §3.2）：仅 document_type + document_id
+    const data: {
+      agent_id: string
+      title: string
+      document_type?: DocumentType
+      document_id?: string
+    } = { agent_id, title }
+    if (documentRef?.documentType && documentRef?.documentId) {
+      data.document_type = documentRef.documentType
+      data.document_id = documentRef.documentId
+    }
+    const res = await conversationApi.create(data)
     return res.data
   },
 
@@ -224,7 +257,8 @@ export const useConversationStore = create<IndexConversationState>((set, get) =>
 
   editConversation: async (conversation) => {
     const conversationApi = (await import('@/api/modules/conversation/index')).default
-    const data = { title: conversation.title, file_id: '' }
+    // 文档引用统一（v0.4.2 §3.2）：不再发送 file_id
+    const data = { title: conversation.title }
     await conversationApi.edit(conversation.id as number, data)
     get().updateConversation(conversation)
   },

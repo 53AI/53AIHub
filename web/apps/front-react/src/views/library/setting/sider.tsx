@@ -7,7 +7,7 @@ import { VirtualLogo } from "@/components/VirtualLogo";
 import { SvgIcon } from "@km/shared-components-react";
 
 const menuItems = [
-  { key: "info", label: "基础信息", icon: "clean" },
+  { key: "info", label: "基础信息", icon: "book-one" },
   { key: "permission", label: "成员与权限", icon: "peoples" },
   { key: "api", label: "开放接口", icon: "api" },
   { type: "divider" },

@@ -26,13 +26,39 @@ const codeMirrorSyntaxHighlight = syntaxHighlighting(HighlightStyle.define([
 
 interface ApiContentProps {
   agentId?: string | number;
+  agentType?: string;
 }
 
-export const ApiContent = ({ agentId }: ApiContentProps) => {
+// 仅小助理（workbench）展示技能列表接口板块
+const SHOW_SKILLS_PANEL_TYPES = ['workbench'];
+
+// 技能列表接口的"响应示例"，保持与其它接口一致的展示风格
+const skillsResponseExample = {
+  agent_id: "ZTRMUP",
+  skills: [
+    {
+      binding_id: 39,
+      skill_library_id: 134,
+      skill_name: "12306",
+      display_name: "12306",
+      description: "通过 12306 技能查询火车票",
+      bind_type: "builtin",
+      status: "enabled",
+      version: "v1.0.0",
+      source_type: "github",
+      publish_status: "published",
+      admin_status: "enabled",
+    },
+  ],
+};
+
+export const ApiContent = ({ agentId, agentType }: ApiContentProps) => {
   const [apiKeys, setApiKeys] = useState<AgentAPIKeyItem[]>([]);
   const [docsTemplate, setDocsTemplate] = useState<AgentOpenAPIDocsTemplate | null>(null);
   const formData = useAgentFormStore((state) => state.form_data);
   const currentAgentId = agentId || formData.agent_id;
+  const resolvedAgentType = agentType || formData.agent_type || '';
+  const showSkillsPanel = SHOW_SKILLS_PANEL_TYPES.includes(resolvedAgentType);
 
   const apiHost = `${api_host}/openapi/v1`;
 
@@ -121,7 +147,7 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
 
     // 检查是否超过 10 个
     if (apiKeys.length >= 10) {
-      message.warning('SECRET_KEY 数量已达上限，最多只能创建 10 个');
+      message.warning(t("integrate.secret_key_limit"));
       return;
     }
 
@@ -142,7 +168,7 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
     if (!currentAgentId) return;
     Modal.confirm({
       title: t("tip"),
-      content: "删除后外部系统将无法继续调用该Agent，确定要删除吗？",
+      content: t("integrate.delete_api_key_confirm"),
       onOk: async () => {
         try {
           await agentApiKeyApi.revoke(item.id);
@@ -156,30 +182,30 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
 
   // 表格列定义
   const paramColumns = [
-    { title: "变量KEY", dataIndex: "key", width: 160 },
-    { title: "是否必须", dataIndex: "required", width: 120 },
-    { title: "说明", dataIndex: "desc" },
+    { title: t("integrate.var_key"), dataIndex: "key", width: 160 },
+    { title: t("integrate.required"), dataIndex: "required", width: 120 },
+    { title: t("integrate.desc"), dataIndex: "desc" },
   ];
 
   const authColumns = [
-    { title: "参数", dataIndex: "key", width: 160 },
-    { title: "取值", dataIndex: "desc" },
+    { title: t("integrate.param"), dataIndex: "key", width: 160 },
+    { title: t("integrate.value"), dataIndex: "desc" },
   ];
 
   // 渲染接口文档内容
   const renderInterfaceContent = (endpoint: any) => {
     // 构建基础信息表格数据
     const baseInfoData = [
-      { key: "请求方式", value: endpoint.method.toUpperCase() },
-      { key: "请求地址", value: `${apiHost}${endpoint.path}` },
-      ...(endpoint.description ? [{ key: "请求说明", value: endpoint.description }] : []),
+      { key: t("integrate.method"), value: endpoint.method.toUpperCase() },
+      { key: t("integrate.endpoint"), value: `${apiHost}${endpoint.path}` },
+      ...(endpoint.description ? [{ key: t("integrate.request_desc"), value: endpoint.description }] : []),
     ];
 
     // 构建参数表格数据
     const buildParamsTableData = (params: any[]) => {
       return params.map((p) => ({
         key: p.name,
-        required: p.required ? "是" : "否",
+        required: p.required ? t("common.yes") : t("common.no"),
         desc: p.description,
       }));
     };
@@ -247,13 +273,13 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
     return (
       <div>
         {/* 基础信息 */}
-        <div className="text-sm text-primary mb-2">基础信息</div>
+        <div className="text-sm text-primary mb-2">{t("integrate.base_info")}</div>
         <div className="mb-6">
           <Table
             className="api-table-vertical"
             dataSource={baseInfoData}
             columns={[
-              { title: "参数", dataIndex: "key", width: 160 },
+              { title: t("integrate.param"), dataIndex: "key", width: 160 },
               { title: "", dataIndex: "value" },
             ]}
             pagination={false}
@@ -264,34 +290,14 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
           />
         </div>
 
-        {/* Header - /health 接口不需要认证 */}
-        {endpoint.path !== '/health' && (
-          <>
-            <div className="text-sm text-primary mb-2">Header</div>
-            <div className="text-sm text-secondary mb-6">使用上面的全局Header参数</div>
-          </>
-        )}
-
-        {/* 路径参数 */}
-        {endpoint.parameters && endpoint.parameters.filter((p: any) => p.in === 'path').length > 0 && (
-          <div className="mb-6">
-            <div className="text-sm text-primary mb-2">请求路径：</div>
-            <Table
-              className="api-table-horizontal"
-              dataSource={buildParamsTableData(endpoint.parameters.filter((p: any) => p.in === 'path'))}
-              columns={paramColumns}
-              pagination={false}
-              size="small"
-              rowKey="key"
-              bordered
-            />
-          </div>
-        )}
+        {/* Header */}
+        <div className="text-sm text-primary mb-2">Header</div>
+        <div className="text-sm text-secondary mb-6">{t("integrate.header_desc")}</div>
 
         {/* 参数说明 */}
         {endpoint.parameters && endpoint.parameters.filter((p: any) => ['query', 'body', 'formData'].includes(p.in)).length > 0 && (
           <div className="mb-6">
-            <div className="text-sm text-primary mb-2">参数说明</div>
+            <div className="text-sm text-primary mb-2">{t("integrate.param_desc")}</div>
             <Table
               className="api-table-horizontal"
               dataSource={buildParamsTableData(endpoint.parameters.filter((p: any) => ['query', 'body', 'formData'].includes(p.in)))}
@@ -307,7 +313,7 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
         {/* 请求示例 */}
         {endpoint.request_example && (
           <div className="mb-6">
-            <div className="text-sm text-primary mb-2">请求示例</div>
+            <div className="text-sm text-primary mb-2">{t("integrate.request_example")}</div>
             {renderCodeBlock(JSON.stringify(endpoint.request_example, null, 2))}
           </div>
         )}
@@ -315,32 +321,31 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
         {/* 返回示例 */}
         {endpoint.response_example && (
           <div>
-            <div className="text-sm text-primary mb-2">返回示例</div>
+            <div className="text-sm text-primary mb-2">{t("integrate.response_example")}</div>
             {renderCodeBlock(JSON.stringify(endpoint.response_example, null, 2))}
-          </div>
-        )}
-
-        {/* 流式响应示例 */}
-        {endpoint.stream_response && endpoint.stream_response.events && (
-          <div className="mt-6">
-            <div className="text-sm text-primary mb-2">流式响应示例</div>
-            {renderCodeBlock(
-              endpoint.stream_response.events
-                .map((event: any) => {
-                  if (event.example) {
-                    // SSE 格式：data: {example内容}
-                    return `data: ${JSON.stringify(event.example)}`;
-                  }
-                  return '';
-                })
-                .filter(Boolean)
-                .join('\n')
-            )}
           </div>
         )}
       </div>
     );
   };
+
+  // 小助理专属：技能列表接口（与其它接口同一展示风格）
+  const skillsEndpoint = showSkillsPanel
+    ? {
+        title: t('integrate.skills_list'),
+        method: 'get',
+        path: '/agent/skills',
+        description: t('integrate.skills_list_desc'),
+        parameters: [],
+        response_example: skillsResponseExample,
+      }
+    : null;
+
+  // 拼接最终展示的接口列表（小助理额外追加技能列表）
+  const visibleEndpoints = [
+    ...(docsTemplate?.endpoints?.filter(item => item.path !== '/health') ?? []),
+    ...(skillsEndpoint ? [skillsEndpoint] : []),
+  ];
 
   // Collapse 展开图标（实心箭头）
   const expandIcon = ({ isActive }: { isActive?: boolean }) => (
@@ -371,7 +376,7 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
           <div className="flex justify-between items-center">
             <div className="text-sm text-secondary mb-2">SECRET_KEY</div>
               <Button type="link" className="!p-0" onClick={handleAddKey}>
-                + 添加
+                + {t("action.add")}
               </Button>
           </div>
           <div className="w-full">
@@ -410,7 +415,7 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
         items={[
           {
             key: "auth",
-            label: <span className="text-base text-primary">鉴权</span>,
+            label: <span className="text-base text-primary">{t("integrate.auth")}</span>,
             children: (
               <div>
                 <div className="text-sm text-secondary mb-4">
@@ -436,10 +441,10 @@ export const ApiContent = ({ agentId }: ApiContentProps) => {
         ]}
       />
 
-      {/* 接口文档列表 */}
-      {docsTemplate?.endpoints?.filter(item => item.path !== '/health')?.map((endpoint, index) => (
+      {/* 接口文档列表（含小助理专属的技能列表接口） */}
+      {visibleEndpoints.map((endpoint, index) => (
         <Collapse
-          key={index}
+          key={`${endpoint.path}-${index}`}
           className="bg-white rounded-xl border border-gray-200 mb-4"
           bordered={false}
           expandIconPosition="start"

@@ -1,4 +1,5 @@
 import type { ReactNode, ComponentType } from 'react'
+import type { KnowledgeSourceConfig } from '../hooks/useAgentPreviewSender'
 
 // ==================== 添加弹框类型 ====================
 
@@ -430,6 +431,13 @@ export interface IAgentCreateAdapter {
   /** 是否为企业版 */
   isEnterprise?: boolean
 
+  /**
+   * 是否隐藏知识图谱入口（设置面板中的开关 + 预览下拉项）
+   * 本地版（VITE_PLATFORM=op-local）与私有化版（VITE_PRIVATE_PREM=true）需要隐藏。
+   * 由消费方根据环境变量在 adapter 中设置。
+   */
+  hideKnowledgeGraph?: boolean
+
   // ========== 分组类型常量 ==========
 
   /** 分组类型常量 */
@@ -552,10 +560,8 @@ export interface IAgentCreateAdapter {
     skill?: { display_name?: string; skill_name?: string }
     /** knowledge 模型 id，格式：channel_id_channel_type_model，拼到 model 后缀 */
     modelId?: string
-    /** 启用联网搜索 */
-    networkSearch?: boolean
-    /** 启用知识图谱 */
-    knowledgeGraph?: boolean
+    /** 知识源配置（直通模式） */
+    knowledgeSource?: KnowledgeSourceConfig
     /** 知识库 ID 列表 */
     library?: { value: string[] | number[] }
     /** @文件选择（知识库/空间） */

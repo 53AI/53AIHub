@@ -12,7 +12,6 @@ import { API_HOST } from "@/api/index";
 import { Header } from "@/components/Header";
 import { getPublicPath } from "@/utils/config";
 import { copyToClip } from "@km/shared-utils";
-import "./api.css";
 
 const injectConfig = {
   dify: {
@@ -114,9 +113,9 @@ export function LibraryApiSettingsView() {
   }, [libraryStore.library?.id]);
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden px-[60px] bg-[#F8F9FA]">
+    <div className="h-screen flex flex-col overflow-hidden px-[78px]">
       <Header className="pt-8 pb-5" title="开放接口" />
-      <div className="bg-[#ffffff] flex-1 gap-6 px-10 py-8 overflow-y-auto mb-5">
+      <div className="flex-1 gap-6 overflow-y-auto mb-5">
         <div className="max-w-[700px]">
           <div className="flex flex-col gap-6">
             <div className="flex items-center">

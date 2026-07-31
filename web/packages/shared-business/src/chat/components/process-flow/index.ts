@@ -27,6 +27,7 @@ export {
   formatLlmContent,
   getFlowType,
   getFileIcon,
+  dedupeWikiPages,
 } from "./utils";
 
 export type { FormatFileInfoResult } from "./utils";

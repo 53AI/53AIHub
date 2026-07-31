@@ -206,7 +206,7 @@ export function ChunksV2View() {
               <FileStatus
                 status={currentFile?.cleaning_info?.status}
                 stepKey={currentFile?.cleaning_info?.step_key}
-                successCount={currentFile?.cleaning_info?.success_count}
+                stepMode={currentFile?.cleaning_info?.step_mode}
                 afterSlot={
                   <Button
                     type="link"

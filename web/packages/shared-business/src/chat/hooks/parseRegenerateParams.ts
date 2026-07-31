@@ -44,5 +44,20 @@ export function parseRegenerateParams(
     knowledgeGraph: Boolean((message as any).knowledge_graph),
     specifiedContent: (message as any).specified_content,
     sourceMessage: message,
+    // 从 specifiedFiles 中提取动态知识（type === 'wiki'）
+    // 修复:不要从 isspace 推断 wikiType。isspace 同时被普通知识库空间使用,
+    // 改用 iswiki 标记区分「动态知识页面」,其它归为「动态知识空间」。
+    wikis: ((message as any).specified_files || [])
+      .filter((f: any) => f.type === 'wiki')
+      .map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        icon: f.icon,
+        wikiType: f.iswiki ? 'page' as const : 'space' as const,
+        title: f.title,
+        slug: f.slug,
+        summary: f.summary,
+        type: 'wiki'
+      })),
   };
 }

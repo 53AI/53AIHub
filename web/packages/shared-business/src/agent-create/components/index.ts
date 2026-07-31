@@ -37,7 +37,7 @@ export type { CompletionRef } from './preview/Completion'
 export { PreviewModelSelector } from './preview/PreviewModelSelector'
 export type { PreviewModelSelectorProps } from './preview/PreviewModelSelector'
 export { PreviewKnowledgeSourceSelector } from './preview/PreviewKnowledgeSourceSelector'
-export type { PreviewKnowledgeSourceSelectorProps, PreviewSourceMode } from './preview/PreviewKnowledgeSourceSelector'
+export type { PreviewKnowledgeSourceSelectorProps } from './preview/PreviewKnowledgeSourceSelector'
 
 // Context
 export { default as ChannelConfigContext, useChannelConfig } from '../hooks/useChannelConfig'

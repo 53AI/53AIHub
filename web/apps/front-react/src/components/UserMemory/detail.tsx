@@ -9,6 +9,7 @@ import { Button, message, Modal, Skeleton } from 'antd';
 import { SvgIcon } from "@km/shared-components-react";
 import { copyToClip } from "@km/shared-utils";
 import FileViewer from '@/components/FileViewer';
+import { FullscreenToggle } from '@/components/FullscreenToggle';
 import ChunkEditor, { ChunkEditorRef } from '@/components/Markdown/ChunkEditor';
 import { t } from '@/locales';
 import memoryApi from '@/api/modules/memory';
@@ -100,8 +101,13 @@ export function UserMemoryDetail({ agentId, file, onBack, onClose, onToggleFulls
     if (justSavedRef.current) return false;
     // 直接从编辑器获取当前值，避免快速点击时状态还未更新的问题
     const currentEditContent = chunkEditorRef.current?.getValue() || editContent;
-    // 规范化比较：只比较非空白行
-    const normalize = (str: string) => str?.split('\n').filter(line => line.trim()).join('\n') ?? '';
+    // 规范化比较：去除 Vditor 自动转义 + 只比较非空白行
+    const normalize = (str: string) => {
+      if (!str) return '';
+      // 还原 Vditor 自动转义的下划线、星号等 Markdown 特殊字符
+      const unescaped = str.replace(/\\_/g, '_').replace(/\\\*/g, '*');
+      return unescaped.split('\n').filter(line => line.trim()).join('\n');
+    };
     const normalizedEdit = normalize(currentEditContent);
     const normalizedSaved = normalize(savedContent);
     // 有变更：正在编辑 且 内容不同于保存值
@@ -255,12 +261,11 @@ export function UserMemoryDetail({ agentId, file, onBack, onClose, onToggleFulls
               </div>
             </>
           )}
-          <div
-            className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
-            onClick={onToggleFullscreen}
-          >
-            <SvgIcon name={isFullscreen ? "right-bar-bottom-collapse" : "right-bar-bottom-expand"} size={16} />
-          </div>
+          <FullscreenToggle
+            fullscreen={isFullscreen}
+            onToggle={onToggleFullscreen}
+            size="compact"
+          />
           <div
             className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
             onClick={handleUnsavedCheck(() => onClose?.())}

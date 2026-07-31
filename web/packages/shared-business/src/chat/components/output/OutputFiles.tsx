@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, FileIcon } from "@km/shared-components-react";
 import { formatFileInfo } from "@km/shared-utils";
 import { useTranslation } from "../../i18n";
 import type { OutputFile } from "../../types/message";
@@ -44,15 +44,15 @@ export function OutputFiles({ files, onPreview, onFavorite, onCheckFavorite, cla
     return () => observer.disconnect();
   }, [files, onCheckFavorite, hasChecked]);
 
-  const defaultIcon = "/images/default_agent.png";
-
   if (!files?.length) return null;
 
   return (
     <div ref={containerRef} className={className || "flex flex-wrap gap-3 mt-3 pb-6"}>
       {files.map((file) => {
         const fileName = file.file_name?.split("/").pop() || file.file_name || "";
-        const { icon: displayIcon, fname: displayName } = formatFileInfo(fileName);
+        // displayName 处理双重扩展名（如 foo.pdf.md → foo.pdf），与 icon 保持一致。
+        const { fname: displayName } = formatFileInfo(fileName);
+
         return (
           <div
             key={file.id}
@@ -60,13 +60,9 @@ export function OutputFiles({ files, onPreview, onFavorite, onCheckFavorite, cla
             onClick={() => onPreview(file)}
           >
             <div className="flex flex-col gap-1 flex-1 min-w-0">
-              <img
+              <FileIcon
+                fileName={fileName}
                 className="flex-none size-5"
-                src={displayIcon || defaultIcon}
-                alt=""
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = defaultIcon;
-                }}
               />
               <span className="text-sm text-[#555454] truncate">
                 {displayName || fileName}

@@ -125,11 +125,10 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
           settingsMap[item.platform_key] = transformPlatformSetting(item)
         }
       })
-
       return parserConfigs
-        .filter((pc: any) => pc.key === 'markitdown' || settingsMap[pc.key])
+        .filter((pc: any) => pc.isSystem || settingsMap[pc.key])
         .map((pc: any) => ({
-          key: pc.key === 'markitdown' ? 'markitdown' : pc.key,
+          key: pc.key,
           name: pc.name,
           desc: pc.desc || '由系统提供的解析服务',
           icon: pc.icon,

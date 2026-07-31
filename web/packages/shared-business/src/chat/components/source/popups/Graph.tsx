@@ -193,7 +193,7 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
         placement="bottomLeft"
         trigger="click"
         content={content}
-        classNames={{ root: "!p-0" }}
+        classNames={{ container: "!p-4" }}
       >
         <span style={triggerStyle} />
       </Popover>

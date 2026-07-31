@@ -11,6 +11,7 @@ import {
 import { getPublicPath } from "@/utils/config";
 import KnowledgeViewDrawer from "@/components/Knowledge/view-drawer";
 import KnowledgeGraphDrawer from "@/components/Knowledge/graph-drawer";
+import KnowledgeWikiDrawer from "@/components/Knowledge/wiki-view-drawer";
 
 // 重导出类型
 export type { ThinkKnowledgeRef, SearchResultItem };
@@ -24,6 +25,7 @@ export const ThinkKnowledge = forwardRef<ThinkKnowledgeRef, Omit<ThinkKnowledgeP
         slots={{
           KnowledgeViewDrawer,
           KnowledgeGraphDrawer,
+          KnowledgeWikiDrawer,
         }}
         getPublicPath={getPublicPath}
       />

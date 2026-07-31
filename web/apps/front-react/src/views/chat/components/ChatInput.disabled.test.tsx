@@ -21,9 +21,11 @@ describe("ChatInput disabled state", () => {
         onSend={onSend}
         onStop={() => undefined}
         isStreaming={false}
-        disabled
-        disabledReason="OpenClaw 插件未连接，正在重连..."
-        enableUpload
+        inputState={{
+          disabled: true,
+          disabledReason: "OpenClaw 插件未连接，正在重连...",
+        }}
+        fileUpload={{ enabled: true }}
         placeholder="请输入你的需求"
       />
     );
@@ -122,28 +124,30 @@ describe("ChatInput disabled state", () => {
         onStop={() => undefined}
         isStreaming={false}
         placeholder="请输入你的需求"
-        showSkill
-        onSelectSkill={onSelectSkill}
-        skillOptions={[
-          {
-            skill_id: "skill-1",
-            skill_name: "openclaw_pdf_probe",
-            display_name: "PDF Probe",
-            binding_status: "enabled",
-          },
-          {
-            skill_id: "skill-2",
-            skill_name: "markdown_reader",
-            display_name: "Markdown Reader",
-            binding_status: "enabled",
-          },
-          {
-            skill_id: "skill-3",
-            skill_name: "disabled_skill",
-            display_name: "Disabled Skill",
-            binding_status: "disabled",
-          },
-        ]}
+        skill={{
+          enabled: true,
+          onSelect: onSelectSkill,
+          suggestions: [
+            {
+              id: "skill-1",
+              skill_name: "openclaw_pdf_probe",
+              display_name: "PDF Probe",
+              label: "PDF Probe",
+            },
+            {
+              id: "skill-2",
+              skill_name: "markdown_reader",
+              display_name: "Markdown Reader",
+              label: "Markdown Reader",
+            },
+            {
+              id: "skill-3",
+              skill_name: "disabled_skill",
+              display_name: "Disabled Skill",
+              label: "Disabled Skill",
+            },
+          ],
+        }}
       />
     );
 
@@ -194,22 +198,24 @@ describe("ChatInput disabled state", () => {
         onStop={() => undefined}
         isStreaming={false}
         placeholder="请输入你的需求"
-        showSkill
-        onSelectSkill={onSelectSkill}
-        skillOptions={[
-          {
-            skill_id: "skill-1",
-            skill_name: "openclaw_pdf_probe",
-            display_name: "PDF Probe",
-            binding_status: "enabled",
-          },
-          {
-            skill_id: "skill-2",
-            skill_name: "markdown_reader",
-            display_name: "Markdown Reader",
-            binding_status: "enabled",
-          },
-        ]}
+        skill={{
+          enabled: true,
+          onSelect: onSelectSkill,
+          suggestions: [
+            {
+              id: "skill-1",
+              skill_name: "openclaw_pdf_probe",
+              display_name: "PDF Probe",
+              label: "PDF Probe",
+            },
+            {
+              id: "skill-2",
+              skill_name: "markdown_reader",
+              display_name: "Markdown Reader",
+              label: "Markdown Reader",
+            },
+          ],
+        }}
       />
     );
 
@@ -250,15 +256,17 @@ describe("ChatInput disabled state", () => {
           onStop={() => undefined}
           isStreaming={false}
           placeholder="请输入你的需求"
-          showSkill
-          skillOptions={[
-            {
-              skill_id: "skill-1",
-              skill_name: "openclaw_pdf_probe",
-              display_name: "PDF Probe",
-              binding_status: "enabled",
-            },
-          ]}
+          skill={{
+            enabled: true,
+            suggestions: [
+              {
+                id: "skill-1",
+                skill_name: "openclaw_pdf_probe",
+                display_name: "PDF Probe",
+                label: "PDF Probe",
+              },
+            ],
+          }}
         />
       </div>
     );
@@ -291,13 +299,18 @@ describe("ChatInput disabled state", () => {
         onStop={() => undefined}
         isStreaming={false}
         placeholder="请输入你的需求"
-        showSkill
-        selectedSkill={{
-          skill_id: "skill-1",
-          skill_name: "openclaw_pdf_probe",
-          display_name: "PDF Probe",
+        skill={{
+          enabled: true,
+          onRemove: onRemoveSkill,
+          list: [
+            {
+              id: "skill-1",
+              skill_name: "openclaw_pdf_probe",
+              display_name: "PDF Probe",
+              label: "PDF Probe",
+            },
+          ],
         }}
-        onRemoveSkill={onRemoveSkill}
       />
     );
 

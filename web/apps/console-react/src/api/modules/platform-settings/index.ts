@@ -1,6 +1,11 @@
 import service from '../../config'
 import { handleError } from '../../error-handler'
-import type { PlatformSetting, RawPlatformSetting, PlatformSettingStatus } from './types'
+import type {
+  PlatformSetting,
+  RawPlatformSetting,
+  PlatformSettingStatus,
+  ParserHealth,
+} from './types'
 
 const platformSettingsApi = {
   find(params: { platform_key?: string } = {}): Promise<RawPlatformSetting[]> {
@@ -50,6 +55,12 @@ const platformSettingsApi = {
   status(platform_key: string): Promise<PlatformSettingStatus> {
     return service
       .get(`/api/platform-settings/${platform_key}/status`)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+  health(): Promise<ParserHealth[]> {
+    return service
+      .get('/api/platform-settings/health')
       .then((res: any) => res.data)
       .catch(handleError)
   },

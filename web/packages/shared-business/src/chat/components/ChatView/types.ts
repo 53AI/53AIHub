@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import type { IAgentInfo } from "../../adapters/types";
-import type { Message, OutputFile, FileItem, ChunkItem, Skill } from "../../types";
+import type { Message, OutputFile, ChunkItem } from "../../types";
 import type { Lang } from "../../i18n";
 import type { AgentRecommendFeature, AuthTagsSlotProps } from "../../types/features";
+import type { OpenClawFeature } from "../ChatMessages/types";
 import type {
   MentionFeature,
   SkillFeature,
@@ -85,8 +86,6 @@ export interface MessageFeature {
   onOutputFileCheckFavorite?: (fileIds: string[], message: Message) => void;
   /** 添加回答到知识库回调 */
   onSaveToKnowledge?: (message: Message) => void;
-  /** 用户文件点击回调（指定文件、上传文件等） */
-  onFileClick?: (file: FileItem) => void;
   /** 源文件点击回调（知识库引用片段） */
   onSourceClick?: (source: ChunkItem, message: Message) => void;
   /** 打开知识库侧边栏回调 */
@@ -105,22 +104,21 @@ export interface PermissionFeature {
   checkAccess?: (resourceId?: string | number) => boolean | Promise<boolean>;
 }
 
+/**
+ * 反馈功能总开关。
+ *
+ * 上游 override：ChatContainer 显式传入 `enabled` 时优先（用于 OpenClaw / QClaw 等
+ * 智能体类型禁用 feedback 按钮的场景）；未传时回退到 ChatView 内部的 agent_type
+ * 检测（见 `feedbackFromAgentType`）。
+ */
+export interface FeedbackFeature {
+  /** 是否启用反馈；未传时由 ChatView 根据 agent_type 推断 */
+  enabled?: boolean;
+}
+
 export interface CompletionFeature {
   /** 完成回调 */
   onComplete?: () => void;
-}
-
-export interface OpenClawFeature {
-  /** 是否启用 OpenClaw 模式 */
-  enabled?: boolean;
-  /** 是否禁用输入 */
-  inputDisabled?: boolean;
-  /** 输入禁用原因 */
-  inputDisabledReason?: string;
-  /** 初始会话解析中 */
-  initialConversationResolving?: boolean;
-  /** 跳过初始加载 */
-  skipInitialLoad?: boolean;
 }
 
 // === Send Context (透传给 useChatSend.sendMessage) ===
@@ -136,19 +134,27 @@ export interface OpenClawFeature {
 export interface SendContext {
   /** 业务类型标识,如 "work-ai" / "km-ai-search" / "agent" */
   type?: string;
-  /** 是否启用联网搜索(影响 completions.search_config / web_search_config) */
-  networkSearch?: boolean;
-  /** 是否启用知识图谱(影响 completions.enable_graph_search) */
-  knowledgeGraph?: boolean;
+  /**
+   * 知识源配置（直通模式）
+   * 与 agent-create/useAgentPreviewSender 的 KnowledgeSourceConfig 对齐
+   */
+  knowledgeSource?: {
+    state: {
+      allKnowledge: boolean
+      networkSearch: boolean
+      knowledgeGraph: boolean
+      wiki: boolean
+    }
+    graphEnabled: boolean
+    webSearchEnabled: boolean
+    wikiEnabled: boolean
+    /** 选中的动态知识空间 */
+    wikiSpaces?: Array<{ id: string; name: string; icon?: string }>
+    /** 选中的动态知识页面 */
+    wikiPages?: Array<{ id: string; title: string; slug?: string; summary?: string }>
+  }
   /** 当前生效的 library(决定 knowledge_base_ids) */
   library?: { name: string; value: string[]; isSpace: boolean };
-  /**
-   * 是否选中"全部知识"(km-ai-search KnowledgeSourceSelector 默认状态)。
-   * 为 true 时 useChatSend.sendMessage 会显式发送 `knowledge_base_ids: ["all"]`,
-   * 避免在没有 fallback 的情况下被识别成"无知识库"。
-   * 联网搜索与具体 library 选择优先级高于此字段。
-   */
-  allKnowledge?: boolean;
   /** 当前选中的模型 id(用于 modelId 拼接 model 字段) */
   modelId?: number | string;
   /** 完整 agentInfo(用于 search_config / web_search_config / rerank_config) */
@@ -166,6 +172,16 @@ export interface SendContext {
    * - 如果未传,ChatView 会优先使用 Sender 透传的 atList
    */
   links?: any[];
+  /** 选中的动态知识（空间和页面混合数组，通过 wikiType 字段区分：'space' | 'page'） */
+  wikis?: Array<{
+    id: string
+    name: string
+    wikiType?: 'space' | 'page'
+    icon?: string
+    title?: string
+    slug?: string
+    summary?: string
+  }>;
   /**
    * 消息增强选项(注入 messages 数组)
    * - prompt: 插入为 system message
@@ -189,17 +205,17 @@ export interface ChatViewSlots {
   /** 版权信息 */
   copyright?: () => ReactNode;
   /**
-   * @deprecated 推荐使用 senderBelowExtras。
-   * 输入框下方扩展区域 - 通过 Sender 内部 extrasLeft slot 实现。
-   * 注意:此 slot 会覆盖 Sender 内部 toolbar(@ / 技能 / 附件 三个 icon)。
-   */
-  senderLeftExtras?: ReactNode;
-  /**
    * Sender 下方独立扩展区域 - 渲染在 ChatInput 之外,与 Sender 内部 toolbar 解耦。
    * 用于在工作台入口(work-ai 模式)显示技能 chips / 我的技能弹窗 等与 Sender 内部 toolbar 平级的内容。
    * 仅在 welcomeIndexLayout 且 messageList 为空时渲染(对齐原版 IndexChat.tsx line 1828 的空态条件)。
    */
   senderBelowExtras?: ReactNode;
+  /**
+   * Sender 内部左侧扩展区域 - 用于知识库入口(knowledge 模式)显示模型选择器 + 知识源选择器
+   * (KnowledgeSenderExtras)。透传给 ChatInput 内部的 `renderLeftExtras`，最终注入 Sender 的
+   * `extrasLeft` slot。与 `senderBelowExtras` 解耦：knowledge 走左侧,work-ai 走下方。
+   */
+  senderLeftExtras?: ReactNode;
   // === Sender 透传（与 agent_usage 分支配合使用） ===
   /** @ 提及 feature,透传给底层 Sender */
   senderMention?: MentionFeature;
@@ -278,28 +294,10 @@ export interface ChatInputProps {
   fileUpload?: FileUploadFeature;
   /** 输入状态 */
   inputState?: InputStateFeature;
-  /** @deprecated 请使用 inputState.disabled */
-  disabled?: boolean;
-  /** @deprecated 请使用 inputState.stopDisabled */
-  stopDisabled?: boolean;
-  /** @deprecated 请使用 inputState.disabledReason */
-  disabledReason?: string;
   /** @ 提及 feature(透传到 Sender) */
   mention?: MentionFeature;
   /** / 技能 feature(透传到 Sender) */
   skill?: SkillFeature;
-  /** @deprecated 兼容旧 ChatInput OpenClaw 技能 props */
-  showSkill?: boolean;
-  /** @deprecated 兼容旧 ChatInput OpenClaw 技能 props */
-  skillOptions?: Skill[];
-  /** @deprecated 兼容旧 ChatInput OpenClaw 技能 props */
-  selectedSkill?: Skill | null;
-  /** @deprecated 兼容旧 ChatInput OpenClaw 技能 props */
-  onSelectSkill?: (skill: Skill) => void;
-  /** @deprecated 兼容旧 ChatInput OpenClaw 技能 props */
-  onRemoveSkill?: () => void;
-  /** @deprecated 兼容旧 ChatInput OpenClaw 技能 props */
-  onOpenSkillLibrary?: () => void;
   /** 操作按钮位置(actions | extras) */
   actionPosition?: "actions" | "extras";
 
@@ -348,30 +346,6 @@ export interface ChatViewProps {
   }) => ReactNode;
 
   // === 功能分组 ===
-  /** @deprecated 请使用 history/newConversation/fileUpload/openclaw 等分组 prop */
-  features?: {
-    history?: boolean;
-    newConversation?: boolean;
-    languageSwitcher?: boolean;
-    guide?: boolean;
-    welcome?: boolean;
-    fileUpload?: boolean;
-    share?: boolean;
-    openclaw?: boolean;
-    messageMenu?: boolean;
-    showWelcome?: boolean;
-    indexWelcomeLayout?: boolean;
-    showRelatedScene?: boolean;
-    enableDragUpload?: boolean;
-    allowMultiple?: boolean;
-    allowSendWithFiles?: boolean;
-    enablePasteUpload?: boolean;
-    openclawInputDisabled?: boolean;
-    openclawInputDisabledReason?: string;
-    initialConversationResolving?: boolean;
-    skipInitialLoad?: boolean;
-    timeout?: number;
-  };
   /** 历史侧边栏 */
   history?: HistoryFeature;
   /** 新会话按钮 */
@@ -388,35 +362,12 @@ export interface ChatViewProps {
   agentRecommend?: AgentRecommendFeature;
   /** 消息操作 */
   message?: MessageFeature;
-  /** @deprecated 请使用 message.onSent */
-  onMessageSent?: () => void;
-  /** @deprecated 请使用 message.onPreviewOutputFile */
-  onOutputFilePreview?: (file: OutputFile, message: Message) => void;
-  /** @deprecated 请使用 message.onOutputFileFavorite */
-  onOutputFileFavorite?: (file: OutputFile, message: Message) => void;
-  /** @deprecated 请使用 message.onOutputFileCheckFavorite */
-  onOutputFileCheckFavorite?: (fileIds: string[], message: Message) => void;
-  /** @deprecated 请使用 message.onSaveToKnowledge */
-  onAddAsMd?: (message: Message) => void;
-  /** @deprecated 请使用 message.onFileClick */
-  onFileClick?: (file: FileItem) => void;
-  /** @deprecated 请使用 message.onSourceClick */
-  onSourceClick?: (source: ChunkItem, message: Message) => void;
-  /** @deprecated 请使用 message.onOpenKnowledgePanel */
-  onOpenKnowledgePanel?: (message: Message) => void;
-  /** @deprecated OpenClaw 首次会话解析完成回调 */
-  onOpenClawConversationResolved?: (conversation: {
-    conversation_id: string;
-    agent_id?: string | number;
-    title?: string;
-    question?: string;
-    created_time?: number;
-    updated_time?: number;
-  }) => void;
   /** 分享功能 */
   share?: ShareFeature;
   /** 权限检查 */
   permission?: PermissionFeature;
+  /** 反馈功能总开关（用于上游 override agent_type 检测） */
+  feedback?: FeedbackFeature;
   /** OpenClaw 模式 */
   openclaw?: OpenClawFeature;
 

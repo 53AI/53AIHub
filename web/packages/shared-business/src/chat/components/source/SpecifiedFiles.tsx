@@ -72,12 +72,40 @@ function SpecifiedFilesInner({
       <>
         <SvgIcon className="flex-none" name="corner-down-right" />
         {file.icon && <img src={file.icon} className="size-3" alt="" />}
-        <p className="text-sm truncate">{file.name || file.file_name || file.filename}</p>
+        <p className="text-sm truncate">{file.name || file.title || file.file_name || file.filename}</p>
       </>
     );
 
+    // 动态知识页面
+    if (file.type === 'wiki') {
+      const wikiInner = (
+        <>
+          <SvgIcon className="flex-none" name="corner-down-right" />
+          <SvgIcon className="flex-none" name={file.isspace ? 'data' : 'doc-detail'} />
+          <p className="text-sm truncate">{file.title || file.name}</p>
+        </>
+      );
+      if (fileLinkApi) {
+        return (
+          <a
+            key={file.id}
+            href={fileLinkApi.getFileLink(file)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="max-w-40 h-7 px-2 rounded-lg cursor-pointer text-[#4F5052] bg-[#F8F9FA] hover:bg-[#E1E2E3] inline-flex items-center gap-1"
+            onClick={(e) => {
+              e.stopPropagation();
+              onFileClick?.(file);
+            }}
+          >
+            {wikiInner}
+          </a>
+        );
+      }
+    }
     // 空间/知识库：优先使用跳转链接，无适配器时回退到 onFileClick
     if (file.isspace || file.islibrary) {
+      
       if (renderLink) {
         return renderLink(file, inner);
       }
@@ -97,6 +125,7 @@ function SpecifiedFilesInner({
       }
       // 无适配器时回退到 no_jump 模式（调用 onFileClick）
     }
+
 
     // 文件：如果提供了自定义链接渲染且 resolvedType=jump，使用自定义渲染
     if (renderLink && resolvedType === "jump") {

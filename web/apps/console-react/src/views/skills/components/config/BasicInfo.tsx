@@ -49,7 +49,7 @@ const BasicInfo = forwardRef<BasicInfoRef, BasicInfoProps>(
       initialSkill || {
         id: "",
         name: "New Skill",
-        display_name: "新技能",
+        display_name: t("skills.new_skill"),
         description: "",
         groups: [],
         admin_status: "",

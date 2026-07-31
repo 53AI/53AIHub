@@ -19,13 +19,6 @@ export interface MineHeaderProps {
     importMenuItems: MenuProps["items"];
     createMenuItems: MenuProps["items"];
   };
-  audioActions?: {
-    onImportFile: () => void;
-    importing: boolean;
-    hasActiveRecording: boolean;
-    onCreateFolder?: () => void;
-    onStartRecording?: () => void;
-  };
 }
 
 /**
@@ -39,7 +32,6 @@ export function MineHeader({
   onKeywordChange,
   onTabChange,
   uploadActions,
-  audioActions,
 }: MineHeaderProps) {
   return (
     <div className="flex items-center justify-between">
@@ -64,7 +56,7 @@ export function MineHeader({
       <Space>
         <Search
           mode="expanded"
-          placeholder={activeTab === "audio" ? t("mine.search_recording") : t("mine.search_document")}
+          placeholder={t("mine.search_document")}
           value={keyword}
           onDebouncedChange={onKeywordChange}
           className="max-w-[200px] rounded-lg"
@@ -95,37 +87,6 @@ export function MineHeader({
             </Dropdown>
           </>
         )}
-
-        {/* 音频 Tab 操作 - 有活跃录音时隐藏，无活跃录音时显示 */}
-        {activeTab === "audio" &&
-          audioActions &&
-          !audioActions.hasActiveRecording && (
-            <>
-              <Button
-                color="primary"
-                variant="filled"
-                icon={<SvgIcon name="download" size={16} />}
-                loading={audioActions.importing}
-                onClick={audioActions.onImportFile}
-              >
-                {t("mine.import")}
-              </Button>
-              <Button
-                color="primary"
-                variant="filled"
-                onClick={audioActions.onCreateFolder}
-                icon={<SvgIcon name="folder-plus" size={16} />}
-              >
-                {t("library.create_folder")}
-              </Button>
-              {audioActions.onStartRecording && (
-                <Button type="primary" onClick={audioActions.onStartRecording}>
-                  <SvgIcon name="voice" size={16} />
-                  {t("mine.record_btn")}
-                </Button>
-              )}
-            </>
-          )}
       </Space>
     </div>
   );

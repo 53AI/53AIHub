@@ -218,11 +218,12 @@ export { validateModelConfig } from './useModelValidation'
 export type { ModelConfig, ValidateModelOptions } from './useModelValidation'
 
 // Preview sender capability hook (workbench skills + knowledge models)
-export { useAgentPreviewSender } from './useAgentPreviewSender'
+export { useAgentPreviewSender, buildKnowledgeSourcePayload } from './useAgentPreviewSender'
 export type {
   AgentPreviewSenderConfig,
   AgentPreviewModelOption,
   PreviewKnowledgeSourceState,
+  KnowledgeSourceConfig,
 } from './useAgentPreviewSender'
 
 export default useAgentForm

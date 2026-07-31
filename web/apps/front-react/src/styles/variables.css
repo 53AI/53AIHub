@@ -22,6 +22,9 @@
   --border-color: #e5e7eb;
   --border-hover: #d1d5db;
 
+  /* Scrollbar */
+  --scrollbar-thumb-color: #e8e9eb;
+
   /* Navigation colors (can be overridden by theme) */
   --nav-bg-color: #ffffff;
   --nav-text-color: #333333;
@@ -53,22 +56,79 @@
 }
 
 /* Scrollbar styles */
-::-webkit-scrollbar {
+/* 6px 细滚动条、两端无箭头、默认隐藏 hover 才显示。
+ *
+ * 三个坑，改之前务必先读：
+ *
+ * 1. 无箭头只能走 ::-webkit-scrollbar 这条"自定义滚动条"路径 —— 该路径下
+ *    ::-webkit-scrollbar-button 默认不占尺寸。标准属性 scrollbar-width 走的是
+ *    系统原生滚动条，Windows 上必带两端箭头，且没有任何办法关掉。
+ * 2. 因此绝对不要在 Chrome 能命中的地方写 scrollbar-width / scrollbar-color：
+ *    Chrome 121 起只要这两个属性不是 auto，整套 ::-webkit-scrollbar 规则就被
+ *    直接忽略，滚动条退回带箭头的原生样式。这里用
+ *    `@supports not selector(::-webkit-scrollbar)` 把标准属性关进 Firefox 分支。
+ * 3. 不要用 `:hover::-webkit-scrollbar-thumb { background: ... }` 切颜色 ——
+ *    纯颜色变化只是 paint 级变更，Chromium 对自定义滚动条伪元素经常不做失效
+ *    处理，表现为"时灵时不灵"。这里滑块颜色恒定，改用透明 border 把可绘制区
+ *    收成 0 宽度来隐藏，hover 时 border-width 归零露出来 —— border-width 是
+ *    布局属性，会强制滚动条部件重新布局+重绘，实测稳定。
+ */
+.scroll-y-auto::-webkit-scrollbar,
+.overflow-y-auto::-webkit-scrollbar {
   width: 6px;
   height: 6px;
-}
-
-::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
+/* 两端箭头：自定义滚动条下默认已不占尺寸，显式关掉更保险 */
+.scroll-y-auto::-webkit-scrollbar-button,
+.overflow-y-auto::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+.scroll-y-auto::-webkit-scrollbar-track,
+.overflow-y-auto::-webkit-scrollbar-track,
+.scroll-y-auto::-webkit-scrollbar-corner,
+.overflow-y-auto::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* content-box 宽度为 0 → 不可见 */
+.scroll-y-auto::-webkit-scrollbar-thumb,
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 3px;
+  background-color: var(--scrollbar-thumb-color);
+  background-clip: content-box;
+}
+
+/* border 归零 → 露出完整 6px */
+.scroll-y-auto:hover::-webkit-scrollbar-thumb,
+.overflow-y-auto:hover::-webkit-scrollbar-thumb {
+  border-width: 0;
+}
+
+/* Safari 对滚动条伪元素的样式失效同样不可靠，改一个自定义属性强制重算 */
+.scroll-y-auto:hover,
+.overflow-y-auto:hover {
+  --scrollbar-hover-fix: ;
+}
+
+/* Firefox：不认 webkit 伪元素，只能用标准属性；它的 thin 没有箭头，
+   hover 重算也正常。这里必须隔离，否则会把 Chrome 的规则顶掉（见上文 2）。 */
+@supports not selector(::-webkit-scrollbar) {
+  .scroll-y-auto,
+  .overflow-y-auto {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scroll-y-auto:hover,
+  .overflow-y-auto:hover {
+    scrollbar-color: var(--scrollbar-thumb-color) transparent;
+  }
 }
 
 

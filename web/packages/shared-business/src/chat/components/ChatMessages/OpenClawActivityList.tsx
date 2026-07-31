@@ -62,7 +62,7 @@ function OpenClawActivityCard({
       open={defaultOpen}
     >
       <summary className="flex min-w-0 cursor-pointer list-none items-start gap-3 text-sm font-medium marker:hidden">
-        <span className="flex size-6 flex-none items-center justify-center rounded-full border border-current/10 bg-white text-xs text-[#111827]">
+        <span className="flex size-6 flex-none items-center justify-center rounded-full border border-current/10 bg-white text-xs text-[#1D1E1F]">
           {iconForKind(item.kind)}
         </span>
         <span className="min-w-0 flex-1">

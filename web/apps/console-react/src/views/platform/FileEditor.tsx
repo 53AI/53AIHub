@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Button, Drawer, Modal, Form, Input, Empty, message } from "antd";
+import { SvgIcon } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
@@ -76,7 +77,7 @@ export function PlatformFileEditor() {
           external_id: values.app_id,
         });
       }
-      message.success("保存成功");
+      message.success(t("action_save_success"));
       setShowHighPrecisionDialog(false);
       loadWpsSetting();
     } catch (error) {
@@ -88,14 +89,14 @@ export function PlatformFileEditor() {
 
   const handleDelete = async () => {
     Modal.confirm({
-      title: "确定删除WPS WebOffice配置吗？",
+      title: t("platform.delete_wps_config_confirm"),
       okText: t("action_confirm"),
       cancelText: t("action_cancel"),
       onOk: async () => {
         if (wpsSetting?.id) {
           await platformSettingsApi.delete(wpsSetting.id);
           setWpsSetting(null);
-          message.success("删除成功");
+          message.success(t("action_delete_success"));
         }
       },
     });
@@ -103,7 +104,7 @@ export function PlatformFileEditor() {
 
   const handleCopy = () => {
     copyToClip(`${api_host}/api/wps`);
-    message.success("复制成功");
+    message.success(t("action.copy_success"));
   };
 
   useEffect(() => {
@@ -121,7 +122,7 @@ export function PlatformFileEditor() {
         <>
           <div className="space-y-4">
             {/* WPS WebOffice配置项 */}
-            <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
+            <div className="group flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
               {/* 左侧：图标和名称 */}
               <div className="flex-none w-[170px] flex items-center gap-3">
                 <img
@@ -151,17 +152,21 @@ export function PlatformFileEditor() {
                 </div>
               </div>
 
-              {/* 右侧：开关和操作按钮 */}
-              <div className="flex items-center gap-4 ml-2">
-                <div className="border-r h-3 w-px"></div>
-                <div className="flex items-center">
-                  <Button type="link" onClick={handleEdit}>
-                    {t("action_edit")}
-                  </Button>
-                  <Button type="link" onClick={handleDelete}>
-                    {t("action_delete")}
-                  </Button>
-                </div>
+              {/* 右侧：操作按钮 */}
+              <div className="flex items-center gap-2 ml-2">
+                <Button
+                  type="text"
+                  icon={<SvgIcon name="edit" />}
+                  className="invisible group-hover:visible hover:!text-brand"
+                  onClick={handleEdit}
+                />
+                <Button
+                  type="text"
+                  danger
+                  icon={<SvgIcon name="delete" />}
+                  className="invisible group-hover:visible hover:!text-tag-red"
+                  onClick={handleDelete}
+                />
               </div>
             </div>
           </div>

@@ -92,7 +92,12 @@ export function useWorkflowSend() {
       inputs = getInputs(inputData)
     }
 
-    const conversation = await platform.createConversation(agent_id, getQuestion(inputs), file_id)
+    const conversation = await platform.createConversation(
+      agent_id,
+      getQuestion(inputs),
+      // 统一文档引用（v0.4.2 §3.2）：workflow 场景下走 document_type=file + document_id=file_id
+      file_id ? { documentType: "file", documentId: file_id } : undefined,
+    )
     const data = {
       conversation_id: conversation.conversation_id,
       model: `agent-${agent_id}`,
@@ -110,9 +115,6 @@ export function useWorkflowSend() {
 
     try {
       const response: any = await workflowRunApi(data, {
-        onDownloadProgress: (e: any) => {
-          console.log(e)
-        },
         responseType: 'stream',
         signal: abortControllerRef.current?.signal
       })

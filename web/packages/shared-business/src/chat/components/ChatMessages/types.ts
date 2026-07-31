@@ -49,6 +49,14 @@ export interface WelcomeFeature {
   show?: boolean;
 }
 
+export interface OpenClawConversationResolvedInfo {
+  conversation_id?: string | number;
+  title?: string;
+  question?: string;
+  created_time?: number;
+  updated_time?: number;
+}
+
 export interface OpenClawFeature {
   /** 是否启用 OpenClaw 模式 */
   enabled?: boolean;
@@ -58,6 +66,19 @@ export interface OpenClawFeature {
     option: OpenClawInteractionOption,
     msg: Message
   ) => Promise<void> | void;
+  /** 是否禁用输入 */
+  inputDisabled?: boolean;
+  /** 输入禁用原因 */
+  inputDisabledReason?: string;
+  /** 初始会话解析中 */
+  initialConversationResolving?: boolean;
+  /** 跳过初始加载 */
+  skipInitialLoad?: boolean;
+  /**
+   * OpenClaw 首次会话解析完成回调。
+   * 替代顶层 `ChatViewProps.onOpenClawConversationResolved`。
+   */
+  onConversationResolved?: (info: OpenClawConversationResolvedInfo) => void;
 }
 
 export interface LoadMoreFeature {

@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react'
+import { message } from 'antd'
 import { useLibraryStore } from '@/stores/modules/library'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
 import { api_host } from "@/utils/config";
@@ -222,7 +223,18 @@ export function useInlineEdit() {
     }
 
     const uniqueName = generateUniqueName(newName, options, libraryStore)
-    await doRename(uniqueName, options, libraryStore)
+    try {
+      await doRename(uniqueName, options, libraryStore)
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || ''
+      const displayMsg = msg.includes('目标路径已存在')
+        ? `${options.isFile ? '文件' : '文件夹'}名已存在`
+        : msg || '重命名失败'
+      message.error(displayMsg)
+      target.textContent = original
+      exitEditMode(target)
+      return
+    }
 
     exitEditMode(target)
   }, [exitEditMode, libraryStore])

@@ -35,7 +35,7 @@ export function LibrarySettingLayout() {
         <PermissionEmpty className="flex-1" />
       )}
       {!loading && hasManagePermission && libraryStore.library?.id && (
-        <div className="flex-1">
+        <div className="flex-1 bg-white">
           <Outlet />
         </div>
       )}

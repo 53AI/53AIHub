@@ -175,7 +175,9 @@ export interface MentionFeature {
   /** 打开知识库弹窗 */
   onOpenLibrary?: () => void
   /** 选择文件回调（从外部弹窗选择时） */
-  onSelectFiles?: (files: MentionDocItem[], libraries?: any[], spaces?: any[]) => void
+  // 扩展第四个参数 wikis:支持动态知识(空间/页面)选中回调,
+  // 由 apps/front-react/src/components/Space/dialog.tsx onConfirm 透传。
+  onSelectFiles?: (files: MentionDocItem[], libraries?: any[], spaces?: any[], wikis?: any[]) => void
   /**
    * 点击 @ 按钮时,chip 插入前调用的回调。
    * 对齐原版 Sender.tsx line 1791 的 afterCalloutMentionInput,
@@ -296,6 +298,8 @@ export interface SenderSlots {
   fileList?: (props: FileListSlotProps) => ReactNode
   /** 自定义链接列表 */
   linkList?: (props: LinkListSlotProps) => ReactNode
+  /** 链接列表下方区域（不受 links 是否为空限制） */
+  linkListBelow?: ReactNode
 
   // === 操作栏区域 ===
   /** 左侧扩展区（@ 按钮、技能按钮等） */

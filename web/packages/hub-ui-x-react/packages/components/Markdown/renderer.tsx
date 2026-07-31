@@ -176,7 +176,7 @@ const renderSourceMarkup = (
         : sourceType;
       const content = display == null ? sourceType : String(display);
 
-      return `<span class="source-reference" data-source-type="${sourceType}" data-source-number="${sourceNumberRaw}">${content}</span>`;
+      return content ? `<span class="source-reference" data-source-type="${sourceType}" data-source-number="${sourceNumberRaw}">${content}</span>` : '';
     });
   };
 

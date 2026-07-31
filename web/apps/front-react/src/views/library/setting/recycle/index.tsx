@@ -242,9 +242,9 @@ export function LibraryRecycleSettingsView() {
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden px-[60px] bg-[#F8F9FA]">
+    <div className="h-screen flex flex-col overflow-hidden px-[78px]">
       <Header className="pt-8 pb-5" title="回收站" />
-      <div className="bg-[#ffffff] flex-1 gap-6 px-10 py-8 overflow-y-auto mb-5">
+      <div className="flex-1 gap-6 overflow-y-auto mb-5">
         <div className="flex items-center justify-between gap-4">
           <div>
             <Search

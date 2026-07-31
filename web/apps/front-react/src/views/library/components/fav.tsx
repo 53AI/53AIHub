@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Tooltip, message } from 'antd'
-import { StarFilled, StarOutlined } from '@ant-design/icons'
+import { message } from 'antd'
 import { useNavigate } from 'react-router-dom'
+import { FavoriteToggle } from '@/components/FavoriteToggle'
 import favoritesApi from '@/api/modules/favorites'
 import './fav.css'
 
@@ -47,18 +47,7 @@ export function LibraryFav({ is_favorite, resource_type, resource_id, onChange }
   }
 
   return (
-    <Tooltip title={is_favorite ? '取消收藏' : '收藏'}>
-      <div
-        className="size-[34px] rounded hover:bg-[#F0F0F0] flex items-center justify-center cursor-pointer"
-        onClick={handleFavorite}
-      >
-        {is_favorite ? (
-          <StarFilled className="text-[#FFB300] text-base cursor-pointer" />
-        ) : (
-          <StarOutlined className="text-[#1D1E1F] text-base cursor-pointer" />
-        )}
-      </div>
-    </Tooltip>
+    <FavoriteToggle favorite={is_favorite} onToggle={handleFavorite} />
   )
 }
 

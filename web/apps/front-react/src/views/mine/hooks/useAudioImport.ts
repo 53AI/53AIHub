@@ -10,6 +10,7 @@ export interface AudioImportConfig {
   ensureLibraryId: () => Promise<string>
   currentPath: string
   onSuccess: () => void
+  groupId?: number
 }
 
 export interface UseAudioImportReturn {
@@ -24,7 +25,7 @@ export interface UseAudioImportReturn {
  * 封装音频文件导入逻辑
  */
 export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn {
-  const { ensureLibraryId, currentPath, onSuccess } = config
+  const { ensureLibraryId, currentPath, onSuccess, groupId } = config
 
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -92,6 +93,7 @@ export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn 
           file_structure: fileStructure,
           origin_type: 'recording_imported',
           origin_source: 'recording_import',
+          group_id: groupId,
         })
 
         // Upload files using batch upload API

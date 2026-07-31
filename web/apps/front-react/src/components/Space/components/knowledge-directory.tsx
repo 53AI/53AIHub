@@ -33,6 +33,7 @@ interface KnowledgeDirectoryProps {
   // 开关
   allowSelectLibrary: boolean;
   allowSelectSpace: boolean;
+  singleSelect?: boolean;
 
   // 回调
   onSelectSpace: (item: SpaceItem) => void;
@@ -58,6 +59,7 @@ export function KnowledgeDirectory({
   fileLoading,
   allowSelectLibrary,
   allowSelectSpace,
+  singleSelect = false,
   onSelectSpace,
   onSelectLibrary,
   onToggleSpace,
@@ -138,11 +140,6 @@ export function KnowledgeDirectory({
     return selectedCount > 0 && selectedCount < visibleFiles.length;
   }, [getVisibleFiles, isSelectedFile]);
 
-  // 处理文件/文件夹点击
-  const handleFileClick = useCallback((record: FileItem) => {
-    onToggleFile(record);
-  }, [onToggleFile]);
-
   // 处理文件夹展开/折叠
   const handleFolderToggle = useCallback((record: FileItem) => {
     const isExpanded = expandedRowKeys.includes(record.id);
@@ -158,12 +155,22 @@ export function KnowledgeDirectory({
     }
   }, [expandedRowKeys, libraryId, onLoadFiles]);
 
+  // 处理文件/文件夹点击
+  const handleFileClick = useCallback((record: FileItem) => {
+    // 单选模式下，文件夹不参与选择，只做展开/折叠
+    if (singleSelect && record.isfolder) {
+      handleFolderToggle(record);
+      return;
+    }
+    onToggleFile(record);
+  }, [onToggleFile, singleSelect, handleFolderToggle]);
+
   return (
     <div className="h-[500px] flex overflow-hidden border rounded-xl">
       {/* 空间列 */}
       <div className="flex-none w-[216px] py-1 border-r flex flex-col overflow-hidden">
         <div className="h-9 px-4 flex items-center text-sm text-secondary">
-          空间
+          {t("space.label")}
         </div>
         <div className="flex-1 px-2 space-y-1 overflow-y-auto">
           {spaceLoading ? (
@@ -207,7 +214,7 @@ export function KnowledgeDirectory({
       {/* 知识库列 */}
       <div className="flex-none w-[216px] py-1 border-r flex flex-col overflow-hidden">
         <div className="h-9 px-4 flex items-center text-sm text-secondary">
-          知识库
+          {t("library.name")}
         </div>
         <div className="flex-1 px-2 space-y-1 overflow-y-auto">
           {libraryLoading ? (
@@ -253,17 +260,19 @@ export function KnowledgeDirectory({
       {/* 文件列 */}
       <div className="flex-1 overflow-y-auto">
         <div className="h-9 px-4 flex items-center justify-between">
-          <span className="text-sm text-secondary">知识</span>
-          <Checkbox
-            checked={isAllFilesSelected}
-            indeterminate={isIndeterminateFiles}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleSelectAllFiles();
-            }}
-          >
-            {isAllFilesSelected ? "取消全选" : "全选"}
-          </Checkbox>
+          <span className="text-sm text-secondary">{t("space.column_knowledge")}</span>
+          {!singleSelect && (
+            <Checkbox
+              checked={isAllFilesSelected}
+              indeterminate={isIndeterminateFiles}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleSelectAllFiles();
+              }}
+            >
+              {isAllFilesSelected ? t("action.unselect_all") : t("action.select_all")}
+            </Checkbox>
+          )}
         </div>
         {fileLoading ? (
           <div className="flex justify-center py-8">
@@ -324,8 +333,7 @@ export function KnowledgeDirectory({
                       ) : (
                         <span className="inline-block w-6 h-6 -ml-1" />
                       )}
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={isSelectedFile(record)}
                         onChange={() => {}}
                         className="pointer-events-none"

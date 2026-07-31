@@ -87,7 +87,7 @@ export const ApplyDialog = forwardRef<
     open: async (data) => {
       const hasPending = await loadLatestPending(data);
       if (hasPending) {
-        message.success("已提交申请，请耐心等待");
+        message.success(t("permission.request_sent_tip"));
         return;
       }
       setResource(data.resource);
@@ -134,25 +134,27 @@ export const ApplyDialog = forwardRef<
   return (
     <Modal
       open={visible}
-      title="权限申请"
+      title={t("apply.title")}
       width={500}
       mask={{ closable: false }}
       onCancel={handleClose}
       footer={
         <>
-          <Button onClick={handleClose}>取消</Button>
+          <Button onClick={handleClose}>{t("action.cancel")}</Button>
           <Button type="primary" onClick={handleSubmit}>
-            提交申请
+            {t("apply.submit")}
           </Button>
         </>
       }
     >
       <Form form={form} layout="vertical">
-        <Form.Item label="申请访问">
+        <Form.Item label={t("apply.access_label")}>
           <div className="w-full h-10 bg-[#FCFFFE] px-4 flex items-center gap-2 border rounded">
-            <div className="size-6 flex items-center justify-center">
-              <img src={resource.icon} className="size-full" alt="" />
-            </div>
+            {resource.icon && (
+              <div className="size-6 flex items-center justify-center">
+                <img src={resource.icon} className="size-full" alt="" />
+              </div>
+            )}
             <span className="flex-1 text-sm text-[#4F5052] truncate">
               {resource.name}
             </span>
@@ -160,18 +162,18 @@ export const ApplyDialog = forwardRef<
         </Form.Item>
 
         <Form.Item
-          label="申请权限"
+          label={t("apply.permission_label")}
           name="permission"
-          rules={[{ required: true, message: "请选择申请权限" }]}
+          rules={[{ required: true, message: t("apply.permission_required") }]}
         >
           <RolePopover resourceType={resourceType} />
         </Form.Item>
 
-        <Form.Item label="申请原因" name="reason">
-          <Input.TextArea rows={4} placeholder="请填写权限申请原因" />
+        <Form.Item label={t("apply.reason_label")} name="reason">
+          <Input.TextArea rows={4} placeholder={t("apply.reason_placeholder")} />
         </Form.Item>
 
-        <Form.Item label="审批人">
+        <Form.Item label={t("apply.approver_label")}>
           <div className="text-sm text-gray-600">
             {approvers.map((approver, index) => (
               <span key={approver}>

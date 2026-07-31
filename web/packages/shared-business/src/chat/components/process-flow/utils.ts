@@ -59,3 +59,24 @@ export function getFlowType(
 export function getFileIcon(mime: string): string {
   return getFileIconPath(mime);
 }
+
+/**
+ * 从 sources 中提取并去重 wiki 类型来源
+ * - 仅保留 chunk_type === "wiki" 且 wiki_page_id 非空的项
+ * - 按 wiki_page_id 去重，保留首次出现的 source
+ */
+export function dedupeWikiPages(
+  sources: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const seen = new Set<string>();
+  const result: Array<Record<string, unknown>> = [];
+  for (const source of sources) {
+    if (source.chunk_type !== "wiki") continue;
+    const pageId = source.wiki_page_id;
+    if (typeof pageId !== "string" || pageId === "") continue;
+    if (seen.has(pageId)) continue;
+    seen.add(pageId);
+    result.push(source);
+  }
+  return result;
+}

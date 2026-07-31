@@ -1,14 +1,15 @@
-import { useMemo } from 'react'
+import { useMemo } from 'react';
+import { isOpLocalEnv, isPrivatePrem } from '@/utils/config';
 
 export function useEnv() {
   const hostname = typeof window !== 'undefined' ? window.location.hostname : ''
 
-  const isOpLocalEnv = useMemo(() => {
-    return true
+  const isOpLocalEnvVal = useMemo(() => {
+    return isOpLocalEnv
   }, [])
-
+  
   const isPrivatePremEnv = useMemo(() => {
-    return import.meta.env.VITE_PRIVATE_PREM === 'true'
+    return isPrivatePrem
   }, [])
 
   // Check for RC environment (ends with km.53ai.com)
@@ -42,7 +43,7 @@ export function useEnv() {
     isWorkEnv,
     isRcEnv,
     isDevEnv,
-    isOpLocalEnv,
+    isOpLocalEnv: isOpLocalEnvVal,
     isPrivatePremEnv
   }
 }

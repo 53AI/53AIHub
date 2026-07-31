@@ -29,9 +29,6 @@ function lazyWithCatch<T extends React.ComponentType<any>>(
 }
 
 // 懒加载页面组件 - 减少首屏 JS 体积
-const LoginPage = lazyWithCatch(() =>
-  import("@/views/login/index").then((m) => ({ default: m.LoginPage })),
-);
 const RegisterForm = lazyWithCatch(() =>
   import("@/views/login/components/RegisterForm").then((m) => ({
     default: m.RegisterForm,
@@ -143,7 +140,43 @@ const AgentCreateV2Page = lazyWithCatch(() =>
     default: m.AgentCreatePageV2,
   })),
 );
-const AssistantPage = lazyWithCatch(() =>
+// 空间设置 (全屏)
+const SpaceSettingLayout = lazy(() =>
+  import("@/views/space/setting").then((m) => ({
+    default: m.SpaceSettingLayout,
+  })),
+);
+const SpaceSettingBasicInfo = lazy(() =>
+  import("@/views/space/setting/pages/basic-info").then((m) => ({
+    default: m.BasicInfoPage,
+  })),
+);
+const SpaceSettingMembers = lazy(() =>
+  import("@/views/space/setting/pages/members").then((m) => ({
+    default: m.MembersPage,
+  })),
+);
+const SpaceSettingKnowledge = lazy(() =>
+  import("@/views/space/setting/pages/knowledge").then((m) => ({
+    default: m.KnowledgePage,
+  })),
+);
+const SpaceSettingKnowledgeGraph = lazy(() =>
+  import("@/views/space/setting/pages/knowledge-graph").then((m) => ({
+    default: m.KnowledgeGraphPage,
+  })),
+);
+const SpaceSettingDynamic = lazy(() =>
+  import("@/views/space/setting/pages/dynamic").then((m) => ({
+    default: m.DynamicPage,
+  })),
+);
+const SpaceSettingRecycle = lazy(() =>
+  import("@/views/space/setting/pages/recycle").then((m) => ({
+    default: m.RecyclePage,
+  })),
+);
+const AssistantPage = lazy(() =>
   import("@/views/assistant/index").then((m) => ({ default: m.AssistantPage })),
 );
 const AssistantMapPage = lazyWithCatch(() =>
@@ -159,9 +192,7 @@ const AppSettingPage = lazyWithCatch(() =>
 const ChatPage = lazyWithCatch(() =>
   import("@/views/assistant/chat/index").then((m) => ({ default: m.ChatPage })),
 );
-const RecordingPage = lazyWithCatch(() =>
-  import("@/views/recording/index").then((m) => ({ default: m.RecordingPage })),
-);
+
 const SkillsPage = lazyWithCatch(() => import("@/views/skills/index"));
 const SkillDetailPage = lazyWithCatch(() => import("@/views/skills/Detail"));
 const TemplateStylePage = lazyWithCatch(() =>
@@ -194,14 +225,6 @@ export function AppRouter() {
       <Suspense fallback={<PageLoading />}>
         <Routes>
           {/* Login routes */}
-          <Route
-            path="/login"
-            element={
-              <RequireAuth>
-                <LoginPage />
-              </RequireAuth>
-            }
-          />
           <Route
             path="/register"
             element={
@@ -244,6 +267,33 @@ export function AppRouter() {
               </RequireAuth>
             }
           />
+
+          {/* Full-screen Space Setting routes (outside LayoutShell) */}
+          <Route
+            path="space/:id/setting"
+            element={
+              <RequireAuth>
+                <SpaceSettingLayout />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<Navigate to="basic-info" replace />} />
+            <Route
+              path="basic-info"
+              element={<SpaceSettingBasicInfo />}
+            />
+            <Route path="members" element={<SpaceSettingMembers />} />
+            <Route
+              path="knowledge"
+              element={<SpaceSettingKnowledge />}
+            />
+            <Route
+              path="knowledge-graph"
+              element={<SpaceSettingKnowledgeGraph />}
+            />
+            <Route path="dynamic" element={<SpaceSettingDynamic />} />
+            <Route path="recycle" element={<SpaceSettingRecycle />} />
+          </Route>
 
           {/* Main layout routes */}
           <Route
@@ -324,8 +374,6 @@ export function AppRouter() {
             <Route path="assistant/map" element={<AssistantMapPage />} />
             <Route path="assistant/app-setting" element={<AppSettingPage />} />
 
-            {/* Recording */}
-            <Route path="recording" element={<RecordingPage />} />
           </Route>
 
           {/* SvgPage */}

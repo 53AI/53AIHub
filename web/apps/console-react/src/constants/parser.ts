@@ -6,27 +6,42 @@ export type ParserConfig = {
   name: string // 显示名称
   icon: string // 图标路径
   category: 'document' | 'audio' // 分类：文档解析 或 语音解析
+  isSystem?: boolean // 是否系统的
   isDefault?: boolean // 是否是默认解析
   description?: string // 配置说明（HTML格式）
   desc?: string // 描述
   detailedDesc?: string // 详细描述
   formFields: Array<{ key: string; label: string; defaultValue?: string }> // 表单字段
   displayFields: Array<{ key: string; label: string; isSecret?: boolean }> // 显示字段
-  supportedExts?: string[] // 支持的文件类型扩展名，如果不设置则支持所有类型
+  supportedExts: string[] // 支持的文件类型扩展名，如果不设置则支持所有类型
 }
 
 // 解析工具配置列表
 const PARSER_CONFIGS: ParserConfig[] = [
   {
     key: 'markitdown',
-    name: '标准解析',
-    desc: '快速提取数字原生文档',
+    name: '基础解析',
+    desc: '微软官方文档转换工具',
     detailedDesc: '支持 PDF、Word、Excel、PPT 等快速转化成 Markdown，本地运行无数据隐私风险。',
     icon: getPublicPath('/images/tools/markitdown.png'),
     category: 'document',
     formFields: [],
     displayFields: [],
+    isSystem: true,
     isDefault: true,
+    supportedExts: ['csv', 'doc', 'docx', 'md', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx'],
+  },
+  {
+    key: 'builtin',
+    name: 'DocReader',
+    desc: '支持复杂格式docx/pdf/xlsx，需单独容器',
+    detailedDesc: '',
+    icon: getPublicPath('/images/tools/builtin.png'),
+    category: 'document',
+    formFields: [],
+    displayFields: [],
+    isSystem: true,
+    supportedExts: ['csv', 'doc', 'docx', 'md', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx'],
   },
   {
     key: 'mineru.net',
@@ -47,7 +62,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
       { key: 'base_url', label: '服务器地址' },
       { key: 'api_key', label: 'Token', isSecret: true },
     ],
-    supportedExts: ['doc', 'ppt', 'pdf'], // 不支持 xls、md、html
+    supportedExts: ['pdf', 'jpg', 'jpeg', 'png', 'bmp', 'tiff', 'doc', 'docx', 'ppt', 'pptx'], // 不支持 xls、md、html
   },
   {
     key: 'mineru.local',
@@ -91,6 +106,7 @@ export const getSimpleParserConfigs = (): SimpleParserConfig[] => {
     desc: config.desc,
     detailedDesc: config.detailedDesc,
     icon: config.icon,
+    isSystem: config.isSystem,
     platform_key: config.key, // platform_key 与 key 保持一致
     supportedExts: config.supportedExts,
   }))

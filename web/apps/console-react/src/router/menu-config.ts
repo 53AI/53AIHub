@@ -51,8 +51,7 @@ export const menuTree: MenuItemConfig[] = [
         name: 'Agent',
         title: 'module.agent',
         icon: 'agent_v2',
-        visible: (ctx: VisibilityContext) =>
-          !['aibtNv'].includes(ctx.eid) && checkVersion(VERSION_MODULE.AGENT),
+        visible: (ctx: VisibilityContext) =>checkVersion(VERSION_MODULE.AGENT),
       },
       ...(includeKm
         ? [
@@ -61,8 +60,7 @@ export const menuTree: MenuItemConfig[] = [
               name: 'Knowledge',
               title: 'module.knowledge_space',
               icon: 'knowledge',
-              visible: (ctx: VisibilityContext) =>
-                !['5bmQZn'].includes(ctx.eid) && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE),
+              visible: (ctx: VisibilityContext) =>checkVersion(VERSION_MODULE.KNOWLEDGE_BASE),
             },
           ]
         : []),
@@ -78,16 +76,14 @@ export const menuTree: MenuItemConfig[] = [
         name: 'Prompt',
         title: 'prompt.title',
         icon: 'prompt_v2',
-        visible: (ctx: VisibilityContext) =>
-          !['aibtNv'].includes(ctx.eid) && checkVersion(VERSION_MODULE.PROMPT),
+        visible: (ctx: VisibilityContext) =>checkVersion(VERSION_MODULE.PROMPT),
       },
       {
         path: '/toolbox',
         name: 'Toolbox',
         title: 'module.ai_toolbox',
         icon: 'toolkit_v2',
-        visible: (ctx: VisibilityContext) =>
-          !['aibtNv'].includes(ctx.eid) && checkVersion(VERSION_MODULE.AILINK),
+        visible: (ctx: VisibilityContext) =>checkVersion(VERSION_MODULE.AILINK),
       }
     ],
   },

@@ -6,13 +6,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { SvgIcon } from "@km/shared-components-react";
 import { getRealPath } from "@/utils/config";
 import {
-    menuTree,
-    type MenuItemConfig,
-    type VisibilityContext,
-    getVisibleChildren,
-    isMenuVisible,
+  menuTree,
+  type MenuItemConfig,
+  type VisibilityContext,
+  getVisibleChildren,
+  isMenuVisible,
 } from "../router/menu-config";
-import { useChannelStore, useEnterpriseStore, useUserStore } from "@/stores";
+import { useEnterpriseStore, useUserStore } from "@/stores";
 import { useEnv } from "@/hooks/useEnv";
 import { t } from "@/locales";
 import "./sider.css";
@@ -29,7 +29,6 @@ export function SiderMenu(props: SiderProps) {
   const { isOpLocalEnv, isWorkEnv } = useEnv();
   const enterpriseStore = useEnterpriseStore();
   const userStore = useUserStore();
-  const loadModelConfig = useChannelStore((state) => state.loadModelConfig);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [openKeys, setOpenKeys] = useState<string[]>(["/agent"]);
@@ -74,10 +73,6 @@ export function SiderMenu(props: SiderProps) {
       return Array.from(next);
     });
   }, [location.pathname]);
-
-  useEffect(() => {
-    void loadModelConfig();
-  }, []);
 
   if (siderHidden) return null;
 

@@ -10,6 +10,7 @@ export interface LibraryItem {
   description: string
   sort: number
   status: number
+  file_count: number
   created_time: number
   updated_time: number
   permission: PermissionType

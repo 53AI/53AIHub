@@ -18,6 +18,7 @@ import React, {
 	useState,
 } from "react";
 import type { AgentInfo } from "@/api/modules/agents/index";
+import { t } from "@/locales";
 import agentsApi from "@/api/modules/agents/index";
 import { transformAgentInfo } from "@/api/modules/agents/transform";
 import chunksApi from "@/api/modules/chunks";
@@ -485,7 +486,7 @@ const WorkAISetting: React.FC<SettingProps> = ({
 					...item,
 					type: isDeepThinking ? "deep_reasoning" : "fast_reasoning",
 					icon: isDeepThinking ? "star-link" : "lightning",
-					name: isDeepThinking ? "深度思考" : "快速回答",
+					name: isDeepThinking ? t("work_ai.deep_thinking") : t("work_ai.quick_answer"),
 					temperature: isDeepThinking
 						? deepThinkingConfig.temperature
 						: fastReasoningConfig.temperature,
@@ -1060,7 +1061,7 @@ const WorkAISetting: React.FC<SettingProps> = ({
 																							a.href = blobUrl;
 																							a.download =
 																								file.file_name ||
-																								`文件 ${file.id}`;
+																								t("work_ai.file_id_label", { id: file.id });
 																							document.body.appendChild(a);
 																							a.click();
 																							document.body.removeChild(a);
@@ -1080,7 +1081,7 @@ const WorkAISetting: React.FC<SettingProps> = ({
 																					className="text-tertiary"
 																				/>
 																				<span className="text-sm text-[#555454] truncate">
-																					{file.file_name || `文件 ${file.id}`}
+																					{file.file_name || t("work_ai.file_id_label", { id: file.id })}
 																				</span>
 																			</div>
 																			<div className="w-20 relative">
@@ -1143,8 +1144,8 @@ const WorkAISetting: React.FC<SettingProps> = ({
 										showAt={is_internal && canUseKnowledgeBase}
 										showSkill={false}
 										disabledAt={state.networkSearch}
-										atToolTip="指定知识问答"
-										placeholder="分配一项任务或基于企业知识提任何问题"
+										atToolTip={t("work_ai.tool_kb_qa")}
+										placeholder={t("work_ai.tool_kb_qa_placeholder")}
 										loading={state.isStreaming}
 										library={undefined}
 										enhancedMention={true}

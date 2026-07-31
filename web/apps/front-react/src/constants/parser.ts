@@ -5,6 +5,7 @@ export type ParserConfig = {
   key: string // 用于保存和识别的key（与 platform_key 保持一致）
   name: string // 显示名称
   icon: string // 图标路径
+  isSystem?: boolean // 是否是系统
   isDefault?: boolean // 是否是默认解析
   description?: string // 配置说明（HTML格式）
   desc?: string // 描述
@@ -24,6 +25,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
     icon: getPublicPath('/images/tools/markitdown.png'),
     formFields: [],
     displayFields: [],
+    isSystem: true,
     isDefault: true,
   },
   {
@@ -35,10 +37,22 @@ const PARSER_CONFIGS: ParserConfig[] = [
     formFields: [],
     displayFields: [],
     isDefault: true,
+    supportedExts: ['csv', 'doc', 'docx', 'md', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx'],
+  },
+  {
+    key: 'builtin',
+    name: 'DocReader',
+    desc: '支持复杂格式docx/pdf/xlsx，需单独容器',
+    detailedDesc: '',
+    icon: getPublicPath('/images/tools/builtin.png'),
+    formFields: [],
+    displayFields: [],
+    isSystem: true,
+    supportedExts: ['csv', 'doc', 'docx', 'md', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx'],
   },
   {
     key: 'textin',
-    name: '高精解析',
+    name: 'Textin',
     icon: getPublicPath('/images/tools/textin.png'),
     desc: '支持复杂版面与扫描件',
     detailedDesc: '企业级 OCR 引擎，在扫描件识别、复杂表格还原以及手写体识别方面表现优异。',
@@ -202,12 +216,14 @@ export type SimpleParserConfig = {
 }
 
 export const getSimpleParserConfigs = (): SimpleParserConfig[] => {
+  console.log(PARSER_CONFIGS)
   return PARSER_CONFIGS.map(config => ({
     key: config.key,
     name: config.name,
     desc: config.desc,
     detailedDesc: config.detailedDesc,
     icon: config.icon,
+    isSystem: config.isSystem,
     platform_key: config.key, // platform_key 与 key 保持一致
     supportedExts: config.supportedExts,
   }))

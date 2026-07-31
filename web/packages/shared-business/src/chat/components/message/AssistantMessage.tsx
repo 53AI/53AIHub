@@ -10,6 +10,7 @@ import { OutputFiles } from "../output";
 import OpenClawTimeline from "./OpenClawTimeline";
 import { Quotation } from "../source";
 import { useTranslation, useKnowledgePanel } from "../../i18n";
+import { useRagStats } from "../../hooks/useRagStats";
 import type { Message, ChatMessagesFeatures } from "../../types/message";
 import type {
   MessageActionFeature,
@@ -93,25 +94,6 @@ function getOpenClawAssistantContent(message: Message) {
   return "";
 }
 
-function isOpenClawUiDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function traceOpenClawAssistantRender(label: string, payload: Record<string, unknown>) {
-  if (!isOpenClawUiDebugEnabled()) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
-}
-
 function AssistantMessageInner({
   message,
   agentInfo,
@@ -134,6 +116,27 @@ function AssistantMessageInner({
   const t = externalT || internalT;
   const onOpenKnowledgePanel = useKnowledgePanel();
   const openclawEnabled = openclaw?.enabled ?? false;
+  const { formatRagStats } = useRagStats();
+
+  // 从 process_records 兜底计算 rag_stats（不依赖流式处理器是否调用 formatRagStats）
+  const computedRagStats = useMemo(() => {
+    if (message.rag_stats && message.rag_stats.files_search?.length) {
+      return message.rag_stats;
+    }
+    if (!message.process_records || message.process_records.length === 0) {
+      return message.rag_stats;
+    }
+    const hasKnowledgeSearch = message.process_records.some(
+      (r: any) => r.step_code === "knowledge_search"
+    );
+    if (!hasKnowledgeSearch) return message.rag_stats;
+    const ragTemp = (message as any).rag_temp || {};
+    const computed = formatRagStats(ragTemp, message.process_records);
+    if (computed) return computed;
+    return message.rag_stats;
+  }, [message.rag_stats, message.process_records, (message as any).rag_temp, formatRagStats]);
+
+  const ragStats = computedRagStats || message.rag_stats;
 
   // 反馈状态 - 支持外部控制或内部状态
   const feedbackVisible = message.feedbackVisible ?? false;
@@ -336,7 +339,7 @@ function AssistantMessageInner({
   const handleOpenKnow = useCallback(() => {
     // 优先使用 context 中的回调
     if (onOpenKnowledgePanel) {
-      const files = message.rag_stats?.files_search || [];
+      const files = ragStats?.files_search || [];
       const handled = onOpenKnowledgePanel({ type: 'knowledge_search', files });
       if (handled !== false) return;
     }
@@ -380,7 +383,7 @@ function AssistantMessageInner({
   // 数据驱动：有 outputFiles 数据就显示输出文件
   const showOutputFiles = !openclawEnabled && message.outputFiles && message.outputFiles.length > 0;
   // 数据驱动：有 file_quotations 数据就显示引用
-  const showQuotation = message.rag_stats?.file_quotations && message.rag_stats.file_quotations.length > 0;
+  const showQuotation = ragStats?.file_quotations && ragStats.file_quotations.length > 0;
   const showAnswerRemarks = agentInfo?.settings?.answer_remarks_config?.enable && !message.loading;
 
   // 稳定 BubbleAssistant 的 React 元素 prop 引用：
@@ -391,8 +394,8 @@ function AssistantMessageInner({
   // rag_stats?.files_search 在 useChatStream 内会被整体替换为新数组对象，
   // 这里通过 JSON 序列化捕获其内容变化，避免引用漂移导致漏渲染。
   const knowledgeSearchFilesSnapshot = useMemo(
-    () => JSON.stringify(message.rag_stats?.files_search ?? []),
-    [message.rag_stats?.files_search],
+    () => JSON.stringify(ragStats?.files_search ?? []),
+    [ragStats?.files_search],
   );
 
   const headerNode = useMemo(() => {
@@ -403,7 +406,7 @@ function AssistantMessageInner({
         processRecords={message.process_records}
         streaming={message.loading || (isStreaming && isLastMessage)}
         hasContent={!!(message.answer || message.content)}
-        getKnowledgeSearchFiles={() => message.rag_stats?.files_search || []}
+        getKnowledgeSearchFiles={() => ragStats?.files_search || []}
         onOpenKnow={handleOpenKnow}
         onSourceClick={handleSourceClick}
       />
@@ -440,9 +443,8 @@ function AssistantMessageInner({
         )}
         {showQuotation && (
           <Quotation
-            type={message.rag_stats?.type}
-            files={message.rag_stats?.file_quotations}
-            onFileClick={fileAction?.onClick}
+            type={ragStats?.type}
+            files={ragStats?.file_quotations}
           />
         )}
       </>
@@ -450,8 +452,8 @@ function AssistantMessageInner({
   }, [
     showOutputFiles,
     message.outputFiles,
-    message.rag_stats?.type,
-    message.rag_stats?.file_quotations,
+    ragStats?.type,
+    ragStats?.file_quotations,
     showAnswerRemarks,
     agentInfo?.settings?.answer_remarks_config?.content,
     showQuotation,
@@ -527,15 +529,6 @@ function AssistantMessageInner({
     message.openclawProjection &&
     (message.openclawProjection.timelineItems.length > 0 || message.openclawProjection.outputFiles.length > 0)
   ) {
-    traceOpenClawAssistantRender("assistant.render.timeline", {
-      id: message.id,
-      answerLen: String(message.answer || "").length,
-      projectionAnswerLen: String(message.openclawProjection?.visibleAnswer || "").length,
-      timelineCount: message.openclawTimelineItems?.length || 0,
-      projectionTimelineCount: message.openclawProjection?.timelineItems?.length || 0,
-      loading: Boolean(message.loading),
-      isStreaming: Boolean(isStreaming && isLastMessage),
-    });
     return (
       <div
         className={`flex items-center gap-5 rounded-xl ${isShareMode ? "mb-4 px-3 py-4 bg-[#F5F5F5]" : ""}`}
@@ -584,9 +577,8 @@ function AssistantMessageInner({
 
           {showQuotation && (
             <Quotation
-              type={message.rag_stats?.type}
-              files={message.rag_stats?.file_quotations}
-              onFileClick={fileAction?.onClick}
+              type={ragStats?.type}
+              files={ragStats?.file_quotations}
             />
           )}
 

@@ -13,7 +13,7 @@ import { FileItem } from "@/api/modules/files/types";
 import filesApi from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
 import chunksApi from "@/api/modules/chunks";
-import { buildUrl } from "@/utils/router";
+import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
 
 interface ViewDrawerProps {
   onClose?: () => void;
@@ -52,9 +52,7 @@ export const KnowledgeViewDrawer = forwardRef<ViewDrawerRef, ViewDrawerProps>(
     };
 
     const handleView = () => {
-      const url = buildUrl(
-        `/library/${currentFile.library_id}/file/${currentFile.id}`,
-      );
+      const url = buildKnowledgeFileUrl(currentFile.library_id, currentFile.id);
       window.open(url);
     };
 

@@ -133,7 +133,7 @@ const MentionDropdown: React.FC<MentionDropdownProps> = ({
       {/* 知识库入口 */}
       {hasKnowledgeBase && onOpenLibrary && (
         <div className="x-sender__dropdown-footer" onClick={onOpenLibrary}>
-          <span className="x-sender__dropdown-footer-text">@ 从知识库里选择</span>
+          <span className="x-sender__dropdown-footer-text">@ 选择指定内容</span>
           <Icon name="right" />
         </div>
       )}

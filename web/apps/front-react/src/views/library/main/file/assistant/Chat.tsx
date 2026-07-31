@@ -15,9 +15,7 @@ import { SvgIcon } from "@km/shared-components-react";
 import { Sender, MessageMenu } from "@/components/Chat";
 import {
   FeedbackPanel,
-  RagHeader,
-  Quotation,
-  SpecifiedFiles,
+  RagHeader, SpecifiedFiles,
   ShareHeader,
   Chunk,
   ThinkKnowledge
@@ -255,10 +253,19 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
       const currentConversation = convStore.currentConversation();
       if (currentConversation?.conversation_id) return currentConversation;
 
+      // 文档引用统一（v0.4.2 §3.2 / §3.4）：始终走 document_type + document_id，
+      // 不再使用旧 file_id 字段。wiki/file 由 fileInfo.document_type 决定。
+      const documentType = fileInfo?.document_type === "wiki" ? "wiki" : "file";
+      const documentId = fileInfo?.id;
+      const documentRef =
+        typeof documentId === "string" && documentId.length > 0
+          ? { documentType: documentType as "file" | "wiki", documentId }
+          : undefined;
+      
       const conversation = await convStore.createConversation(
         agentInfo?.agent_id,
         question,
-        fileInfo?.id,
+        documentRef,
       );
 
       convStore.addConversation({
@@ -283,16 +290,31 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
     ) => {
       if (isStreaming || !question.trim()) return;
 
-      const fileLinks = fileInfo?.id
-        ? [
-            {
-              id: fileInfo.id,
-              name: fileInfo.name,
-              icon: fileInfo.icon,
-              library_id: fileInfo.library_id,
-            },
-          ]
-        : links;
+      // 文档引用统一（v0.4.2 §3.4 / §5.4）：
+      // - wiki 单文档：调用方显式选择 wikis 通道，不把 wiki 页面作为 file link 发送；
+      //   同时用 completion_params 覆盖 message_file_id（wiki hashid 不应作为 message_file_id）。
+      // - file / 其它：保持原 fileLinks 行为。
+      const isWikiDoc = fileInfo?.document_type === "wiki";
+      const fileLinks =
+        fileInfo?.id && !isWikiDoc
+          ? [
+              {
+                id: fileInfo.id,
+                name: fileInfo.name,
+                icon: fileInfo.icon,
+                library_id: fileInfo.library_id,
+              },
+            ]
+          : links;
+      console.log(fileInfo)
+      const wikis = isWikiDoc && fileInfo?.id
+        ? [{ id: fileInfo.id, wikiType: "page" as const, title: fileInfo.name, name: fileInfo.name, slug: fileInfo.slug, space_id: fileInfo.space_id  }]
+        : undefined;
+      // Wiki 单文档模式（§5.4）：通过 knowledgeSource.state.wiki 触发 buildKnowledgeSourcePayload
+      // 生成 wiki_search_config（enabled + wiki_page_ids），与 wikis 数组保持一致。
+      const knowledgeSource = isWikiDoc
+        ? { state: { wiki: true } }
+        : undefined;
 
       setShowHistory(false);
       setSlideContent("");
@@ -316,12 +338,25 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
           completion_params: {
             ...completion_params,
             temperature: currentModel?.temperature,
+            // Wiki 单文档模式：message_file_id 仅对 file 单文档模式有意义；
+            // wiki 由 wiki_search_config.wiki_page_ids 携带（§5.4 要求不传 file_ids）。
+            ...(isWikiDoc ? { message_file_id: undefined } : {}),
           },
           messageList: messageState.messageList,
           links: fileLinks,
+          wikis,
+          knowledgeSource,
           networkSearch,
           library: undefined,
-          agentInfo,
+          agentInfo: {
+            ...agentInfo,
+            settings: {
+              ...agentInfo.settings,
+              wiki_search_setting: {
+                enable: true
+              },
+            }
+          },
           fileInfo,
           options: {
             prompt: options.prompt,
@@ -422,10 +457,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
 
     // 来源编号渲染
     const renderSource = (type: string, number: number, msg: any) => {
-      if (msg.rag_stats?.type === "web_search") {
-        return number;
-      }
-      return number;
+      return '';
     };
 
     const handleAddAsMd = (msg: any) => {
@@ -467,7 +499,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
               channelId={item.channel_id}
               model={item.model}
             />
-            {item.value === model && <SvgIcon name="check" />}
+            {item.value === model && <SvgIcon name="check-one" />}
           </div>
         ),
         onClick: () => handleChangeModel(item.value),
@@ -499,6 +531,13 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
     const { start: startPoll, stop: stopPoll } = usePoll(async () => {
       setSummaryLoading(true);
       const currentFileInfo = fileInfo || { summary: "", questions: [] };
+
+      // Wiki 单文档模式：跳过 summary/questions 生成（v0.4.2 §3.4）
+      if (currentFileInfo.document_type === "wiki") {
+        stopPoll();
+        setSummaryLoading(false);
+        return;
+      }
 
       if (currentFileInfo.summary && currentFileInfo.questions?.length > 0) {
         stopPoll();
@@ -549,9 +588,13 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
       window.addEventListener("quick-command", onQuickCommand as any);
       window.addEventListener("resize", handleResize);
 
+      // Wiki 单文档模式（v0.4.2 §3.4 / §5.4）：Wiki 页面是结构化知识，
+      // 不需要走"摘要 + 推荐问题"生成流程；summary/questions 由 Wiki 自身维护。
+      const isWikiDoc = fileInfo?.document_type === "wiki";
       if (
-        agentInfo?.settings?.generate_summary?.enable ||
-        agentInfo?.settings?.generate_suggested_questions?.enable
+        !isWikiDoc &&
+        (agentInfo?.settings?.generate_summary?.enable ||
+          agentInfo?.settings?.generate_suggested_questions?.enable)
       ) {
         startPoll();
       }
@@ -725,14 +768,6 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
                           specifiedContent={msg.specified_content}
                           showLibraryCount={false}
                           onOpenKnow={() => handleOpenKnowWrapper(msg)}
-                        />
-                      ) : undefined
-                    }
-                    footer={
-                      msg.rag_stats?.file_quotations?.length ? (
-                        <Quotation
-                          type={msg.rag_stats.type}
-                          files={msg.rag_stats.file_quotations}
                         />
                       ) : undefined
                     }
@@ -921,7 +956,9 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
                         className="flex-none text-[#999999]"
                         name="corner-down-right"
                       />
-                      <img src={fileInfo.icon} className="size-4" alt="" />
+                      { fileInfo?.document_type === 'wiki' ? <div className="size-5 flex-shrink-0 rounded bg-[#EDF3FF] flex items-center justify-center text-[#2563EB]">
+              <SvgIcon name="doc-detail" size={16} />
+            </div> :<img src={fileInfo.icon} className="size-4" alt="" /> }
                       <p className="text-sm truncate">{fileInfo.name}</p>
                     </div>
                   )}
@@ -997,7 +1034,15 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
           <ChatHistoryDrawer
             open={showHistory}
             agentId={agentInfo?.agent_id}
-            fileId={fileInfo?.id}
+            documentRef={
+              fileInfo?.id
+                ? {
+                    documentType:
+                      fileInfo?.document_type === "wiki" ? "wiki" : "file",
+                    documentId: fileInfo.id,
+                  }
+                : null
+            }
             onClose={() => setShowHistory(false)}
             onConversation={onSelectConversation}
           />

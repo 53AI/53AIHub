@@ -27,6 +27,8 @@ export interface RegenerateParams {
   specifiedContent?: string;
   /** 原始消息（兜底） */
   sourceMessage: Message;
+  /** 动态知识（从 specifiedFiles 中提取 type === 'wiki' 的项） */
+  wikis?: SpecifiedFile[];
 }
 
 /** handleRegenerate 的 hook 选项 */

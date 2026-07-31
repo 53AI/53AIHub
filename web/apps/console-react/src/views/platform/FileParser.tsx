@@ -1,18 +1,54 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Button, Drawer, Modal, Form, Input, message } from "antd";
+import { Button, Drawer, Modal, Form, Input, message, Tag, Tooltip } from "antd";
+import { SvgIcon } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
-import type { PlatformSetting } from "@/api/modules/platform-settings/types";
+import type {
+  PlatformSetting,
+  ParserHealth,
+} from "@/api/modules/platform-settings/types";
 import {
   PARSER_CONFIGS, getAvailableKeys
 } from "@/constants/parser";
 import { useEnv } from "@/hooks/useEnv";
+import { useModelTest, getTestKey } from "./hooks/useModelTest";
 
 const formatSecret = (value: string) => {
   if (!value) return "";
   if (value.length <= 8) return "****";
   return `${value.slice(0, 4)}****${value.slice(-4)}`;
+};
+
+const formatLatency = (ms: number) => {
+  if (ms === undefined || ms === null) return "";
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toFixed(2)} s`;
+};
+
+const HealthTag = ({ health }: { health: ParserHealth | undefined }) => {
+  if (!health) {
+    return (
+      <Tag color="default" className="mr-0">
+        {t("platform.parser_health_unchecked")}
+      </Tag>
+    );
+  }
+  const usable = health.usable;
+  const label = t(
+    usable ? "platform.parser_health_available" : "platform.parser_health_unavailable",
+  );
+  const color = usable ? "success" : "error";
+  const tipParts = [label];
+  if (health.message) tipParts.push(health.message);
+  if (health.latency_ms !== undefined) tipParts.push(formatLatency(health.latency_ms));
+  return (
+    <Tooltip title={tipParts.join(" · ")}>
+      <Tag color={color} className="mr-0">
+        {label}
+      </Tag>
+    </Tooltip>
+  );
 };
 
 export function PlatformFileParser() {
@@ -40,13 +76,13 @@ export function PlatformFileParser() {
   const [form] = Form.useForm();
   const formRef = useRef<any>(null);
   const availableKeys = getAvailableKeys();
+  const { voiceModels, loadVoiceModels } = useVoiceModels();
+  const [addedVoiceIds, setAddedVoiceIds] = useState<Set<string>>(new Set());
+  const { testMap, handleModelTest } = useModelTest();
+  const [healthMap, setHealthMap] = useState<Record<string, ParserHealth>>({});
 
   const documentConfigs = useMemo(
     () => PARSER_CONFIGS.filter((config) => config.category === "document"),
-    [],
-  );
-  const audioConfigs = useMemo(
-    () => PARSER_CONFIGS.filter((config) => config.category === "audio"),
     [],
   );
 
@@ -54,24 +90,73 @@ export function PlatformFileParser() {
     return PARSER_CONFIGS.find((config) => config.key === currentEditKey);
   }, [currentEditKey]);
 
+  
   const loadAllSettings = async () => {
     const res = await platformSettingsApi.find();
-    const map: Record<string, PlatformSetting | null> = {
-      markitdown: {
-        id: "0",
-        platform_key: "markitdown",
-        setting: {},
-        created_time: 0,
-        updated_time: 0,
-        eid: "0",
-      },
-    };
+    const map: Record<string, PlatformSetting | null> = documentConfigs.filter(item => item.isSystem).reduce((result, item) => {
+    result[item.key] = {
+      id: "0",
+      platform_key: item.key,
+      setting: {},
+      created_time: 0,
+      updated_time: 0,
+      eid: "0",
+    }
+    return result
+  }, {} as any);
     res.forEach((item) => {
       if (availableKeys.includes(item.platform_key)) {
         map[item.platform_key] = transformPlatformSetting(item);
       }
     });
     setSettingsMap(map);
+  };
+
+  const loadHealth = async () => {
+    try {
+      const list = await platformSettingsApi.health();
+      const next: Record<string, ParserHealth> = {};
+      list.forEach((item) => {
+        next[item.platform_key] = item;
+        if (item.engine) {
+          next[item.engine] = item;
+        }
+      });
+      // 所有 paddlepaddle 开头的解析器共用同一条健康检查记录
+      const paddleBase = "paddlepaddle";
+      if (next[paddleBase]) {
+        PARSER_CONFIGS
+          .filter((c) => c.key.startsWith(`${paddleBase}_`))
+          .forEach((c) => {
+            if (!next[c.key]) next[c.key] = next[paddleBase];
+          });
+      }
+      setHealthMap(next);
+    } catch (error) {
+      console.error("Load health error:", error);
+    }
+  };
+
+  // 合并所有渠道已添加的语音模型（model_type=4），按 model_id 去重
+  const openAudioDrawer = async () => {
+    await loadVoiceModels();
+    setShowAudioDrawer(true);
+  };
+
+  const handleVoiceModelAdd = async (model: VoiceModelItem) => {
+    // TODO: 保存接口暂未提供，待后端支持后接入；已添加列表初始也应从后端拉取
+    setAddedVoiceIds((prev) => new Set(prev).add(model.model_id));
+    message.success(t("action_add_success"));
+  };
+
+  const handleVoiceModelDelete = (model: VoiceModelItem) => {
+    // TODO: 删除接口暂未提供，临时只做本地状态更新
+    setAddedVoiceIds((prev) => {
+      const next = new Set(prev);
+      next.delete(model.model_id);
+      return next;
+    });
+    message.success(t("action_delete_success"));
   };
 
   const openConfigDialog = (key: string) => {
@@ -136,7 +221,7 @@ export function PlatformFileParser() {
           setting: JSON.stringify(setting),
         });
       }
-      message.success("保存成功");
+      message.success(t("action_save_success"));
       setShowConfigDialog(false);
       await loadAllSettings();
     } catch (error) {
@@ -151,7 +236,7 @@ export function PlatformFileParser() {
     if (!config) return;
 
     Modal.confirm({
-      title: `确定删除${config.name}配置吗？`,
+      title: t("platform.delete_config_confirm", { name: config.name }),
       okText: t("action_confirm"),
       cancelText: t("action_cancel"),
       onOk: async () => {
@@ -159,7 +244,7 @@ export function PlatformFileParser() {
         if (currentSetting?.id) {
           await platformSettingsApi.delete(currentSetting.id);
           setSettingsMap((prev) => ({ ...prev, [key]: null }));
-          message.success("删除成功");
+          message.success(t("action_delete_success"));
         }
       },
     });
@@ -168,7 +253,7 @@ export function PlatformFileParser() {
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await loadAllSettings();
+      await Promise.all([loadAllSettings(), loadVoiceModels(), loadHealth()]);
       setLoading(false);
     };
     init();
@@ -192,62 +277,57 @@ export function PlatformFileParser() {
             settingsMap[config.key]?.id ? (
               <div
                 key={config.key}
-                className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
+                className="group flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
               >
                 {/* 左侧：图标和名称 */}
-                <div className="flex-none w-[170px] flex items-center gap-3">
+                <div className="flex-shrink-0 w-[300px] flex items-center gap-3">
                   <img
                     src={config.icon}
                     alt={config.name}
                     className="w-8 h-8"
                   />
-                  <h4 className="flex-1 text-sm font-medium text-gray-900">
-                    {config.name}
-                  </h4>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-medium text-primary">
+                        {config.name}
+                      </h4>
+                      <HealthTag health={healthMap[config.key]} />
+                    </div>
+                    <p className="text-xs text-placeholder">
+                      {config.desc}
+                    </p>
+                  </div>
+                  <div className="flex-1"></div>
                   <div className="border-r h-3 w-px"></div>
                 </div>
 
                 {/* 中间：配置信息 */}
-                {config.key !== "markitdown" && (
-                  <div className="flex-1 px-6 flex items-center gap-2 overflow-hidden">
-                    {config.displayFields.map((field) => (
-                      <div
-                        key={field.key}
-                        className="flex items-center gap-1"
-                      >
-                        <span className="text-sm text-placeholder">
-                          {field.label}：
-                        </span>
-                        <span className="flex-1 text-sm text-primary truncate">
-                          {field.isSecret
-                            ? formatSecret(
-                                settingsMap[config.key]?.setting[field.key],
-                              )
-                            : settingsMap[config.key]?.setting[field.key]}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                <div className="flex-1 px-6 flex items-center gap-2 overflow-hidden text-secondary truncate">
+                  支持格式： { config.supportedExts.join('、') }
+                </div>
 
-                {/* 右侧：操作按钮 */}
-                {config.key !== "markitdown" && (
-                  <div className="flex items-center gap-4 ml-2">
-                    <div className="border-r h-3 w-px"></div>
-                    <div className="flex items-center">
-                      <Button
-                        type="link"
-                        onClick={() => handleEdit(config.key)}
-                      >
-                        {t("action_edit")}
-                      </Button>
-                      <Button
-                        type="link"
-                        onClick={() => handleDelete(config.key)}
-                      >
-                        {t("action_delete")}
-                      </Button>
-                    </div>
+                {/* 右侧：操作按钮 / 内置标签 */}
+                {config.isSystem ? (
+                  <div className="flex items-center gap-2 ml-2">
+                    <span className="px-2 py-0.5 bg-[#F0F2F5] text-secondary text-xs rounded">
+                      {t("agent.builtin")}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 ml-2">
+                    <Button
+                      type="text"
+                      icon={<SvgIcon name="edit" />}
+                      className="invisible group-hover:visible hover:!text-brand"
+                      onClick={() => handleEdit(config.key)}
+                    />
+                    <Button
+                      type="text"
+                      danger
+                      icon={<SvgIcon name="delete" />}
+                      className="invisible group-hover:visible hover:!text-tag-red"
+                      onClick={() => handleDelete(config.key)}
+                    />
                   </div>
                 )}
               </div>
@@ -268,84 +348,98 @@ export function PlatformFileParser() {
       </div>
 
       {/* 语音解析模块 */}
-      <div>
+      <div className="hidden">
         <div className="flex items-center gap-2.5 mb-4">
           <h3 className="text-base font-medium text-primary">语音解析</h3>
           <p className="text-xs text-placeholder">
-            设置音视频文件的转写和解析方法
+            设置音视频文件的解析模型
           </p>
         </div>
 
-          <div className="space-y-3">
-            {audioConfigs.map((config) =>
-              settingsMap[config.key]?.id ? (
-                <div
-                  key={config.key}
-                  className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow"
-                >
-                  {/* 左侧：图标和名称 */}
-                  <div className="flex-none w-[170px] flex items-center gap-3">
-                    <img
-                      src={config.icon}
-                      alt={config.name}
-                      className="w-8 h-8"
-                    />
-                    <h4 className="flex-1 text-sm font-medium text-gray-900">
-                      {config.name}
-                    </h4>
-                    <div className="border-r h-3 w-px"></div>
-                  </div>
-
-                  {/* 中间：配置信息 */}
-                  <div className="flex-1 px-6 flex items-center gap-2 overflow-hidden">
-                    {config.displayFields.map((field) => (
-                      <div
-                        key={field.key}
-                        className="flex items-center gap-1"
-                      >
-                        <span className="text-sm text-placeholder">
-                          {field.label}：
+          {/* 已添加的语音模型列表-抽屉中已添加的模型 */}
+          {voiceModels.length > 0 && (
+            <div className="w-full border border-gray-200 rounded-lg overflow-hidden">
+              {voiceModels.map((model) => {
+                const testKey = getTestKey(model.channel_id, model.model_id);
+                const testResult = testMap[testKey];
+                return (
+                  <div
+                    key={model.model_id}
+                    className="flex items-center justify-between px-5 py-4 bg-white border-b border-gray-100 last:border-b-0 hover:bg-[#FAFBFC] transition-colors"
+                  >
+                    {/* 左侧：图标 + 名称 + model_id */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      {model.icon && (
+                        <img
+                          src={model.icon}
+                          alt={model.model_name}
+                          className="w-8 h-8 object-contain flex-none"
+                        />
+                      )}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-medium text-primary">
+                          {model.model_name}
                         </span>
-                        <span className="flex-1 text-sm text-primary truncate">
-                          {field.isSecret
-                            ? formatSecret(
-                                settingsMap[config.key]?.setting[field.key],
-                              )
-                            : settingsMap[config.key]?.setting[field.key]}
-                        </span>
+                        {model.model_name !== model.model_id && (
+                          <>
+                            <span className="text-placeholder text-xs">|</span>
+                            <span className="text-placeholder text-xs truncate">
+                              {model.model_id}
+                            </span>
+                          </>
+                        )}
                       </div>
-                    ))}
-                  </div>
+                    </div>
 
-                  {/* 右侧：操作按钮 */}
-                  <div className="flex items-center gap-4 ml-2">
-                    <div className="border-r h-3 w-px"></div>
-                    <div className="flex items-center">
-                      <Button
-                        type="link"
-                        onClick={() => handleEdit(config.key)}
-                      >
-                        {t("action_edit")}
-                      </Button>
-                      <Button
-                        type="link"
-                        onClick={() => handleDelete(config.key)}
-                      >
-                        {t("action_delete")}
-                      </Button>
+                    {/* 右侧：操作按钮 */}
+                    <div className="flex items-center gap-3 ml-4">
+                      {/* 测试结果标签 */}
+                      {testResult && !testResult.loading && (
+                        <>
+                          { testResult.success ? (
+                            <Tag color="success" className="!ml-2">
+                              {t("action_test_success")}
+                            </Tag>
+                          ) : (
+                            <Tag color="error" className="!ml-2">
+                              {t("action_test_failed")}
+                            </Tag>
+                          )}
+                          <div className="h-4 w-px border-r border-[#E1E2E6]" />
+                        </>
+                      )}
+                      <Tooltip title={t("action_test")}>
+                        <Button
+                          type="link"
+                          className="!px-0 text-placeholder"
+                          loading={testResult?.loading}
+                          onClick={() => handleModelTest(model)}
+                        >
+                          <SvgIcon name="tool" width="14" />
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title={t("action_delete")}>
+                        <Button
+                          type="link"
+                          className="!px-0 text-placeholder"
+                          onClick={() => handleVoiceModelDelete(model)}
+                        >
+                          <SvgIcon name="delete" width="14" />
+                        </Button>
+                      </Tooltip>
                     </div>
                   </div>
-                </div>
-              ) : null,
-            )}
-          </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="mt-4">
             <Button
               className="border-none"
               color="primary"
               variant="filled"
-              onClick={() => setShowAudioDrawer(true)}
+              onClick={openAudioDrawer}
             >
               +{t("action_add")}
             </Button>
@@ -393,46 +487,6 @@ export function PlatformFileParser() {
         </div>
       </Drawer>
 
-      {/* 语音解析工具抽屉 */}
-      <Drawer
-        open={showAudioDrawer}
-        title={t("platform.select_access")}
-        onClose={() => setShowAudioDrawer(false)}
-        styles={{ wrapper: { width: 700 } }}
-      >
-        <div className="p-4">
-          <div className="space-y-3">
-            {audioConfigs.map((config) => (
-              <div
-                key={config.key}
-                className="flex items-center justify-between px-5 py-4 rounded-md bg-[#F8F9FA]"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10">
-                    <img
-                      src={config.icon}
-                      alt={config.name}
-                      className="w-10 h-10"
-                    />
-                  </div>
-                  <span className="text-base font-medium text-primary">
-                    {config.name}
-                  </span>
-                </div>
-                <Button
-                  disabled={Boolean(settingsMap[config.key]?.id)}
-                  color="primary"
-                  className="!border-none"
-                  variant="filled"
-                  onClick={() => openConfigDialog(config.key)}
-                >
-                  {t("action_add")}
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
-      </Drawer>
 
       {/* 配置对话框 */}
       <Modal

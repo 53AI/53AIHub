@@ -51,7 +51,7 @@ export const externalUseItems = [
   //   id: "douyin",
   //   title: "抖音",
   //   desc: "调用API接口，实现更多自定义聊天场景",
-  //   icon: <VideoCameraOutlined className="text-black" />,
+  //   icon: <VideoCameraOutlined className="text-primary" />,
   // },
   // {
   //   id: "messenger",

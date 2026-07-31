@@ -1,11 +1,22 @@
 import { create } from 'zustand'
 import { useMemo } from 'react'
-import conversationApi, { Conversation_Type } from '@/api/modules/conversation/index'
+import conversationApi, {
+  Conversation_Type,
+  type DocumentType,
+} from '@/api/modules/conversation/index'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { setRouterQuery } from '@/utils/router'
 import { isHashRouter, pathIncludes } from '@/router'
 import { AGENT_USAGES } from '@/constants/agent'
 import { isOpenClawConversationId } from '@km/shared-business/chat'
+
+/**
+ * 文档引用（v0.4.2 §3.2）：仅使用 document_type + document_id。
+ */
+export interface ConversationDocumentRef {
+  documentType?: DocumentType
+  documentId?: string
+}
 
 interface RouterOptions {
   agent_id?: string | null
@@ -46,13 +57,24 @@ interface ConversationState {
   base_path: string
   next_agent_prepare: Partial<Conversation.NextAgentPrepare>
   currentVirtualId: string
+  /** 当前激活的文档引用（v0.4.2 §3.2），用于创建会话时附带 */
+  currentDocumentRef: ConversationDocumentRef
   // Computed getters
   currentConversation: () => Conversation.Info | { conversation_id: number; title: string; create_time: number; update_time: number; top: number; is_valid: number; virtual_id: string }
   // Actions
   setNextAgentPrepare: (data: Partial<Conversation.NextAgentPrepare>) => void
   setBasePath: (path: string) => void
+  setDocumentRef: (ref: ConversationDocumentRef | null) => void
   loadConversations: (agent_id?: string) => Promise<Conversation.Info[]>
-  createConversation: (agent_id: string, title?: string, file_id?: string, conversation_type?: Conversation_Type) => Promise<Conversation.Info>
+  /**
+   * 创建会话（v0.4.2 §3.2）：仅使用 document_type + document_id。
+   */
+  createConversation: (
+    agent_id: string,
+    title?: string,
+    documentRef?: ConversationDocumentRef,
+    conversation_type?: Conversation_Type,
+  ) => Promise<Conversation.Info>
   addConversation: (conversation: Conversation.Info) => void
   updateConversation: (conversation: Partial<Conversation.Info>) => void
   editConversation: (conversation: Pick<Conversation.Info, 'conversation_id' | 'title'>) => Promise<void>
@@ -69,6 +91,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   base_path: '/chat',
   next_agent_prepare: {},
   currentVirtualId: '',
+  currentDocumentRef: {},
 
   // Getters
   currentConversation: () => {
@@ -106,6 +129,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
   setBasePath: (path) => {
     set({ base_path: path || '/chat' })
+  },
+
+  setDocumentRef: (ref) => {
+    set({ currentDocumentRef: ref ?? {} })
   },
 
   loadConversations: async (agent_id) => {
@@ -149,14 +176,18 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     return conversations
   },
 
-  createConversation: (agent_id, title = '', file_id = '', conversation_type) => {
-    const data: { agent_id: string, title: string, file_id?: string, conversation_type?: Conversation_Type } = {
-      agent_id,
-      title,
-      file_id
-    }
-    if (!file_id) {
-      delete data.file_id
+  createConversation: (agent_id, title = '', documentRef, conversation_type) => {
+    // 文档引用统一（v0.4.2 §3.2）：仅 document_type + document_id，移除旧 file_id
+    const data: {
+      agent_id: string
+      title: string
+      document_type?: DocumentType
+      document_id?: string
+      conversation_type?: Conversation_Type
+    } = { agent_id, title }
+    if (documentRef?.documentType && documentRef?.documentId) {
+      data.document_type = documentRef.documentType
+      data.document_id = documentRef.documentId
     }
     if (conversation_type !== undefined) {
       data.conversation_type = conversation_type

@@ -237,7 +237,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave }, ref) 
         const lastIntactContent = receivedContent || activeChatDataRef.current?.answer?.content || ''
         if (
           lastIntactContent?.startsWith('Upstream Error') ||
-          lastIntactContent?.startsWith('Error: 当前应用模型余额不足') ||
+          lastIntactContent?.startsWith('Error: ' + t('agent_app.insufficient_balance')) ||
           !lastIntactContent
         ) {
           if (activeChatDataRef.current?.answer) {

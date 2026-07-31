@@ -1,11 +1,11 @@
 import React, {
-  useRef,
-  useState,
-  useEffect,
-  useCallback,
-  useImperativeHandle,
-  forwardRef,
-  memo,
+    useRef,
+    useState,
+    useEffect,
+    useCallback,
+    useImperativeHandle,
+    forwardRef,
+    memo,
 } from "react";
 import "./list.css";
 
@@ -237,7 +237,7 @@ const BubbleListInner = forwardRef<BubbleListRef, BubbleListProps>(
     return (
       <div
         ref={wrapperRef}
-        className={`bubble-wrapper ${className}`}
+        className={`bubble-wrapper scroll-y-auto ${className}`}
         onScroll={handleScroll}
       >
         {isLoadingMore && (

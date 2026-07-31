@@ -29,6 +29,7 @@ import {
 } from "@/stores/modules/enterprise";
 import { useUserStore } from "@/stores/modules/user";
 import agentsApi from "@/api/modules/agents";
+import { parseAgentParsedFields } from "@/api/modules/agents/transform";
 import { eventBus } from "@km/shared-utils";
 import { EVENT_NAMES } from "@/constants/events";
 import { t } from "@/locales";
@@ -104,15 +105,7 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
         try {
           const res = await agentsApi.my.detail(agent_id);
           if (res?.data) {
-            agent = {
-              ...res.data,
-              custom_config_obj: res.data.custom_config
-                ? JSON.parse(res.data.custom_config)
-                : {},
-              settings_obj: res.data.settings
-                ? JSON.parse(res.data.settings)
-                : {},
-            } as Agent.State;
+            agent = parseAgentParsedFields(res.data) as Agent.State;
             useAgentStore.setState((state) => ({
               myAgentList: [
                 agent!,

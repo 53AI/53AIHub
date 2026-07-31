@@ -3,8 +3,8 @@ import { Tooltip } from 'antd'
 import { CloseCircleFilled } from '@ant-design/icons'
 import { RUN_STATUS } from '@/constants/chunk'
 import { SvgIcon } from '@km/shared-components-react'
-import { STEP_KEY_TO_NAME_I18N_KEY } from '@km/shared-business/knowledge-pipeline'
 import { t } from '@/locales'
+import './file.css'
 
 // 获取步骤名称（运行时翻译）
 const STEP_KEY_TO_NAME: Record<string, string> = {
@@ -14,15 +14,15 @@ const STEP_KEY_TO_NAME: Record<string, string> = {
   document_chunking: t('data_pipeline.node_document_chunking'),
   vector_indexing: t('data_pipeline.node_vector_indexing'),
   graph_generation: t('data_pipeline.node_graph_generation'),
+  wiki_page_generation: t('data_pipeline.node_wiki_page_generation'),
 }
-import './file.css'
 
 interface FileStatusProps {
   status?: string
   stepKey?: string
+  stepMode?: string
   plain?: boolean
   disabled?: boolean
-  successCount?: number
   children?: React.ReactNode
   afterSlot?: React.ReactNode
 }
@@ -30,9 +30,9 @@ interface FileStatusProps {
 export function FileStatus({
   status = '',
   stepKey = '',
+  stepMode = '',
   plain = false,
   disabled = false,
-  successCount = 1,
   children,
   afterSlot
 }: FileStatusProps) {
@@ -42,6 +42,11 @@ export function FileStatus({
 
   if (disabled) {
     return <>{children}</>
+  }
+
+  
+  if (stepMode === 'auto' && status === RUN_STATUS.WAITING) {
+    status = RUN_STATUS.PENDING
   }
 
   // Pending status

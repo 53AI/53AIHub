@@ -216,7 +216,7 @@ export const RelateAgentsSetting = forwardRef<
             >
               <div className="size-4 flex items-center justify-center">
                 {agent.execution_rule === "auto" ? (
-                  <SvgIcon name="check" />
+                  <SvgIcon name="check-one" />
                 ) : (
                   <SvgIcon name="circle" />
                 )}
@@ -233,7 +233,7 @@ export const RelateAgentsSetting = forwardRef<
             >
               <div className="size-4 flex items-center justify-center">
                 {agent.execution_rule === "manual" ? (
-                  <SvgIcon name="check" />
+                  <SvgIcon name="check-one" />
                 ) : (
                   <SvgIcon name="circle" />
                 )}

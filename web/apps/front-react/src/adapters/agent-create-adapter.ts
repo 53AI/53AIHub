@@ -1,5 +1,5 @@
 import type { IAgentCreateAdapter, AgentFormData, GroupOption, AgentFormRef } from '@km/shared-business/agent-create'
-import { AgentForm, Chat as SharedChat } from '@km/shared-business/agent-create'
+import { AgentForm, Chat as SharedChat, buildKnowledgeSourcePayload } from '@km/shared-business/agent-create'
 import {
   getOpenClawCompatibleChannelType,
   isOpenClawCompatibleAgentType,
@@ -21,6 +21,7 @@ import chatApi from '@/api/modules/chat'
 import uploadApi from '@/api/modules/upload'
 import { XBubbleList, XBubbleUser, XBubbleAssistant, XIcon, XSender } from '@km/hub-ui-x-react'
 import { api_host, lib_host } from '@/utils/config'
+import { isOpLocalEnv, isPrivatePrem } from '@/utils/config'
 
 // ==================== 数据转换 ====================
 
@@ -420,6 +421,9 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
   isIndustry: false,
   isEnterprise: false,
 
+  // 本地版（op-local）与私有化版（VITE_PRIVATE_PREM=true）隐藏知识图谱入口
+  get hideKnowledgeGraph() { return isOpLocalEnv || isPrivatePrem },
+
   // ========== 分组类型常量 ==========
 
   GROUP_TYPE: {
@@ -505,25 +509,27 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
 
     // full 模式：工作台 AI / AI 搜问（workbench.json / knowledge.json）。
     // 拼齐 enable_process_steps + 知识库/文件/空间 ID + 搜索/图谱配置。
+
     const payload = isMinimal
       ? basePayload
       : {
           ...basePayload,
           enable_process_steps: true,
-          knowledge_base_ids: params.networkSearch
+          knowledge_base_ids: params.knowledgeSource?.state?.networkSearch
             ? []
-            : (params.library?.value ?? []),
+            : params.knowledgeSource?.state?.allKnowledge
+              ? ['all']
+              : (params.library?.value ?? ['']),
           file_ids: [],
           space_ids: [],
           solo_file_mode: false,
           search_config: {
             ...rerankConfig,
-            top_k: params.networkSearch
+            top_k: params.knowledgeSource?.state?.networkSearch
               ? webSearchConfig.top_k ?? rerankConfig.top_k
               : rerankConfig.top_k,
           },
-          web_search_config: params.networkSearch ? webSearchConfig : {},
-          enable_graph_search: !!params.knowledgeGraph,
+          ...(params.knowledgeSource ? buildKnowledgeSourcePayload(params.knowledgeSource) : {}),
         }
 
     await chatApi.completions(payload, {

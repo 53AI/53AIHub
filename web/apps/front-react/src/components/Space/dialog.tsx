@@ -1,6 +1,6 @@
-import { useState, forwardRef, useImperativeHandle, useRef, useCallback, useEffect } from "react";
-import { Modal, Button, Popover, message, Input } from "antd";
-import { DownOutlined, CloseOutlined, CloseCircleFilled, SearchOutlined } from "@ant-design/icons";
+import { useState, forwardRef, useCallback, useImperativeHandle } from "react";
+import { Modal, Button, Popover, message } from "antd";
+import { DownOutlined, CloseOutlined, CloseCircleFilled } from "@ant-design/icons";
 import { spacesApi, type SpaceItem } from "@/api/modules/spaces";
 import { librariesApi, type LibraryItem } from "@/api/modules/libraries";
 import { filesApi } from "@/api/modules/files";
@@ -14,44 +14,37 @@ import {
 import { cacheManager as cache } from "@km/shared-utils";
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
+import { Search } from "@km/shared-components-react/Search";
+import { SvgIcon } from "@km/shared-components-react";
 import { RecentAccess } from "./components/recent-access";
 import { KnowledgeDirectory } from "./components/knowledge-directory";
 import { SearchResult, type FileSearchResultItem } from "./components/search-result";
+import { KnowledgeList } from "./components/knowledge-list";
+import { KnowledgeSearch } from "./components/knowledge-search";
+import type { WikiPageItem } from "@/api/modules/wiki";
+import type { WikiItem } from "@/components/KnowledgeSource/types";
 import "./dialog.css";
 
-// 防抖 hook
-function useDebounceFn<T extends (...args: any[]) => any>(
-  fn: T,
-  ms: number,
-): T {
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const fnRef = useRef(fn)
-  fnRef.current = fn
-
-  return useCallback(
-    (...args: Parameters<T>) => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-      }
-      timeoutRef.current = setTimeout(() => fnRef.current(...args), ms)
-    },
-    [ms],
-  ) as T
-}
+// 重新导出 WikiItem,保持向后兼容(knowledge-list / knowledge-search 仍从 dialog 导入)
+export type { WikiItem } from "@/components/KnowledgeSource/types";
 
 export interface SpaceDialogRef {
-  open: (files?: FileItem[], libraries?: LibraryItem[], library?: LibraryItem, spaces?: SpaceItem[]) => void;
+  open: (files?: FileItem[], libraries?: LibraryItem[], library?: LibraryItem, spaces?: SpaceItem[], wikis?: WikiItem[]) => void;
 }
 
 export interface SpaceDialogProps {
-  onConfirm?: (files: FileItem[], libraries?: LibraryItem[], spaces?: SpaceItem[]) => void;
+  onConfirm?: (files: FileItem[], libraries?: LibraryItem[], spaces?: SpaceItem[], wikis?: WikiItem[]) => void;
   /** 是否允许选择知识库（在知识库列表项右边显示 checkbox） */
   allowSelectLibrary?: boolean;
   allowSelectSpace?: boolean;
+  /** 是否单选文件（选择后自动确认） */
+  singleSelect?: boolean;
+  /** 是否允许选择动态知识 */
+  allowSelectDynamicKnowledge?: boolean;
 }
 
 export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
-  ({ onConfirm, allowSelectLibrary = true, allowSelectSpace = true }, ref) => {
+  ({ onConfirm, allowSelectLibrary = true, allowSelectSpace = true, singleSelect = false, allowSelectDynamicKnowledge = false }, ref) => {
     const [visible, setVisible] = useState(false);
     const [spaceList, setSpaceList] = useState<SpaceItem[]>([]);
     const [libraryList, setLibraryList] = useState<LibraryItem[]>([]);
@@ -75,10 +68,40 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
     const [searchFiles, setSearchFiles] = useState<FileSearchResultItem[]>([])
 
     // Tab 状态
-    const [activeTab, setActiveTab] = useState<'recent' | 'directory'>('directory')
+    const [activeTab, setActiveTab] = useState<'recent' | 'directory' | 'dynamicKnowledge'>('directory')
 
     // 最近访问刷新 key，每次打开弹窗时更新以触发数据刷新
     const [recentRefreshKey, setRecentRefreshKey] = useState(0)
+
+    // 动态知识相关状态
+    const [selectedWikis, setSelectedWikis] = useState<WikiItem[]>([]);
+
+    // 动态知识搜索状态（独立搜索词）
+    const [wikiSearchText, setWikiSearchText] = useState('');
+
+    // 切换单个动态知识页面
+    const handleToggleWikiPage = useCallback((page: WikiPageItem) => {
+      setSelectedWikis((prev) => {
+        const currentPage = { ...page, wikiType: 'page' as const, type: 'wiki' as const }
+        const exists = prev.some((w) => w.wikiType === 'page' && w.id === currentPage.id);
+        if (exists) {
+          return prev.filter((w) => !(w.wikiType === 'page' && w.id === currentPage.id));
+        }
+        return [...prev, currentPage];
+      });
+    }, []);
+
+    // 切换动态知识空间选择
+    const handleToggleWikiSpace = useCallback((space: SpaceItem) => {
+      setSelectedWikis((prev) => {
+        const currentSpace = { ...space, wikiType: 'space' as const, type: 'wiki' as const }
+        const exists = prev.some((w) => w.wikiType === 'space' && w.id === currentSpace.id);
+        if (exists) {
+          return prev.filter((w) => !(w.wikiType === 'space' && w.id === currentSpace.id));
+        }
+        return [...prev, currentSpace];
+      });
+    }, []);
 
     const loadSpaceList = async () => {
       setSpaceLoading(true);
@@ -113,8 +136,9 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
         });
     };
 
-    // 执行搜索 - 只有知识目录 tab 才请求接口
-    const handleSearch = useDebounceFn(async (query: string) => {
+    // 执行搜索
+    const handleSearch = useCallback(async (query: string) => {
+      setSearchQuery(query)
       if (!query.trim()) {
         setSearchSpaces([])
         setSearchLibraries([])
@@ -122,15 +146,6 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
         return
       }
 
-      // 最近访问 tab 下不搜索（由 RecentAccess 组件内部过滤）
-      if (activeTab === 'recent') {
-        setSearchSpaces([])
-        setSearchLibraries([])
-        setSearchFiles([])
-        return
-      }
-
-      // 知识目录 tab 下请求接口搜索
       setSearchLoading(true)
       try {
         const [spaces, libraries, files] = await Promise.all([
@@ -157,12 +172,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
       } finally {
         setSearchLoading(false)
       }
-    }, 300)
-
-    // 监听搜索词变化
-    useEffect(() => {
-      handleSearch(searchQuery)
-    }, [searchQuery, spaceList, activeTab])
+    }, [spaceList, allowSelectLibrary])
 
     const loadLibraryList = (spaceId: string) => {
       setLibraryLoading(true);
@@ -297,16 +307,22 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
     };
 
     const handleSelectFile = (item: FileItem) => {
-      const hasSelected = selectedFiles.some((file) => file.id === item.id);
-      if (hasSelected) {
-        setSelectedFiles(selectedFiles.filter((file) => file.id !== item.id));
+      if (singleSelect) {
+        // 单选模式：替换选中项，等待用户点击确定
+        setSelectedFiles([item]);
       } else {
-        setSelectedFiles([...selectedFiles, item]);
+        const hasSelected = selectedFiles.some((file) => file.id === item.id);
+        if (hasSelected) {
+          setSelectedFiles(selectedFiles.filter((file) => file.id !== item.id));
+        } else {
+          setSelectedFiles([...selectedFiles, item]);
+        }
       }
     };
 
-    // 批量选择文件
+    // 批量选择文件（单选模式下禁用）
     const handleSelectAllFiles = (files: FileItem[], selected: boolean) => {
+      if (singleSelect) return;
       if (selected) {
         // 全选：合并去重
         setSelectedFiles((prev) => {
@@ -370,20 +386,28 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
       setVisible(false);
     };
 
+    const totalSelectedCount =
+      selectedFiles.length +
+      selectedLibraries.length +
+      selectedSpaces.length +
+      selectedWikis.length;
+
     const handleConfirm = () => {
-      const hasSelection = selectedFiles.length > 0 || selectedLibraries.length > 0 || selectedSpaces.length > 0;
+      const hasSelection = totalSelectedCount > 0;
 
       if (!hasSelection) {
         message.error(t("common.please_select_file"));
         return;
       }
       setVisible(false);
-      onConfirm?.(selectedFiles, selectedLibraries, selectedSpaces);
+      onConfirm?.(selectedFiles, selectedLibraries, selectedSpaces, selectedWikis);
     };
 
     useImperativeHandle(ref, () => ({
-      open: (files, libraries, library, spaces) => {
+      open: (files, libraries, library, spaces, wikis) => {
         setSearchQuery('')
+        setWikiSearchText('')
+        setSelectedWikis(wikis?.concat([]) || [])
         setSelectedSpaces(spaces?.concat([]) || [])
         setSelectedFiles(files?.concat([]) || []);
         setSelectedLibraries(libraries?.concat([]) || []); // 保留已选知识库
@@ -409,7 +433,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
     const selectedFilesPopoverContent = (
       <div>
         <div className="h-8 px-2 flex items-center gap-1 justify-between">
-          <span className="text-sm text-secondary">全部已选（{selectedFiles.length + selectedLibraries.length + selectedSpaces.length}）</span>
+          <span className="text-sm text-secondary">{t("space.all_selected_count", { count: totalSelectedCount })}</span>
           <div
             className="size-3 text-secondary flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]"
             onClick={() => setPopoverVisible(false)}
@@ -469,6 +493,27 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               />
             </div>
           ))}
+          {selectedWikis.map((item) => (
+            <div
+              key={`wiki-${item.id}`}
+              className="h-8 px-2 rounded flex items-center gap-2 text-secondary hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className={`size-4 rounded flex items-center justify-center ${item.wikiType === 'space' ? 'bg-[#E6EEFF] text-[#4798F5]' : 'bg-[#4798F5] text-white'}`}>
+                <SvgIcon name={item.wikiType === 'space' ? 'data' : 'doc-detail'} size={12} />
+              </div>
+              <span className="flex-1 text-sm text-[#1D1E1F] truncate">
+                {'title' in item ? item.title : item.name}
+              </span>
+              <CloseCircleFilled
+                className="group-hover:block hidden"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedWikis(selectedWikis.filter(w => w.id !== item.id));
+                }}
+              />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -476,13 +521,13 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
     return (
       <Modal
         open={visible}
-        title="选择更多"
+        title={t("space.select_more")}
         width={1006}
         onCancel={handleClose}
         footer={
           <div className="flex items-center justify-between gap-2">
             <div>
-              {(selectedFiles.length > 0 || selectedLibraries.length > 0 || selectedSpaces.length > 0) && (
+              {(totalSelectedCount > 0) && (
                 <Popover
                   open={popoverVisible}
                   onOpenChange={setPopoverVisible}
@@ -494,7 +539,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
                 >
                   <div className={`h-8 px-2 rounded flex items-center gap-1 cursor-pointer ${popoverVisible ? 'bg-[#F2F3F5]' : 'hover:bg-[#F2F3F5]'}`}>
                     <span className="text-sm">
-                      已选{selectedSpaces.length + selectedFiles.length + selectedLibraries.length}个
+                      {t("space.selected_count", { count: totalSelectedCount })}
                     </span>
                     <DownOutlined
                       className={`${popoverVisible ? "rotate-180" : ""} text-xs`}
@@ -504,54 +549,42 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               )}
             </div>
             <div>
-              <Button onClick={handleClose}>取消</Button>
+              <Button onClick={handleClose}>{t("action.cancel")}</Button>
               <Button type="primary" onClick={handleConfirm} className="ml-2">
-                确定
+                {t("action.confirm")}
               </Button>
             </div>
           </div>
         }
       >
         <>
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2 pt-2 flex items-center justify-between gap-2">
             <div className="inline-flex items-center gap-1 bg-[#F5F5F5] p-1 rounded-xl">
               {[
-                { key: 'recent', label: '最近使用' },
-                { key: 'directory', label: '知识目录' },
+                { key: 'recent', label: t("dynamic_knowledge.tab_recent") },
+                { key: 'directory', label: t("knowledge.document_file") },
+                ...(allowSelectDynamicKnowledge ? [{ key: 'dynamicKnowledge', label: t("module.dynamic_knowledge") }] : []),
               ].map((tab) => (
                 <div
                   key={tab.key}
                   className={`px-4 h-[30px] flex-center text-sm cursor-pointer transition-colors ${activeTab === tab.key ? 'text-[#1D1E1F] font-medium bg-white rounded-md' : 'text-[#9A9A9A] hover:text-[#666]'}`}
-                  onClick={() => setActiveTab(tab.key as 'recent' | 'directory')}
+                  onClick={() => setActiveTab(tab.key as 'recent' | 'directory' | 'dynamicKnowledge')}
                 >
                   {tab.label}
                 </div>
               ))}
             </div>
+     
             <div>
-              <Input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={allowSelectLibrary ? "搜索空间、知识库、知识" : "搜索知识"}
-                prefix={<SearchOutlined />}
-                allowClear
+              <Search
+                value={activeTab === 'dynamicKnowledge' ? wikiSearchText : searchQuery}
+                onDebouncedChange={activeTab === 'dynamicKnowledge' ? setWikiSearchText : handleSearch}
+                placeholder={activeTab === 'dynamicKnowledge' ? t("dynamic_knowledge.search_placeholder") : (allowSelectLibrary ? t("space.search_placeholder_with_library") : t("space.search_knowledge_placeholder"))}
+                mode="expanded"
               />
             </div>
           </div>
-          {activeTab === 'recent' ? (
-            <RecentAccess
-              selectedSpaces={selectedSpaces}
-              selectedLibraries={selectedLibraries}
-              selectedFiles={selectedFiles}
-              allowSelectLibrary={allowSelectLibrary}
-              allowSelectSpace={allowSelectSpace}
-              searchQuery={searchQuery}
-              refreshTrigger={recentRefreshKey}
-              onToggleSpace={handleToggleSpace}
-              onToggleLibrary={handleToggleLibrary}
-              onToggleFile={handleSelectFile}
-            />
-          ) : searchQuery.trim() ? (
+          {searchQuery.trim() ? (
             <SearchResult
               searchSpaces={searchSpaces}
               searchLibraries={searchLibraries}
@@ -567,6 +600,33 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               onToggleLibrary={handleToggleLibrary}
               onToggleSearchFile={handleToggleSearchFile}
             />
+          ) : activeTab === 'recent' ? (
+            <RecentAccess
+              selectedSpaces={selectedSpaces}
+              selectedLibraries={selectedLibraries}
+              selectedFiles={selectedFiles}
+              allowSelectLibrary={allowSelectLibrary}
+              allowSelectSpace={allowSelectSpace}
+              refreshTrigger={recentRefreshKey}
+              onToggleSpace={handleToggleSpace}
+              onToggleLibrary={handleToggleLibrary}
+              onToggleFile={handleSelectFile}
+            />
+          ) : activeTab === 'dynamicKnowledge' ? (
+            wikiSearchText.trim() ? (
+              <KnowledgeSearch
+                searchText={wikiSearchText}
+                selectedWikis={selectedWikis}
+                onTogglePage={handleToggleWikiPage}
+              />
+            ) : (
+              <KnowledgeList
+                selectedWikis={selectedWikis}
+                allowSelectSpace={allowSelectSpace}
+                onToggleSpace={handleToggleWikiSpace}
+                onTogglePage={handleToggleWikiPage}
+              />
+            )
           ) : (
             <KnowledgeDirectory
               spaceList={spaceList}
@@ -582,6 +642,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               fileLoading={fileLoading}
               allowSelectLibrary={allowSelectLibrary}
               allowSelectSpace={allowSelectSpace}
+              singleSelect={singleSelect}
               onSelectSpace={handleSelectSpace}
               onSelectLibrary={handleSelectLibrary}
               onToggleSpace={handleToggleSpace}
