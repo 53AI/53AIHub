@@ -68,6 +68,17 @@ func (s *ChunkerService) chunkBySentences(parsed *ParsedContent, maxLength int, 
 
 // splitLargeContent 分割大内容，优先按语义边界拆分
 func (s *ChunkerService) splitLargeContent(content string, maxLength int, chunkType string, basePos int) []DocumentChunk {
+	if s.containsTable(content) {
+		tokenCount, _ := s.tokenizer.CountTokens(content)
+		return []DocumentChunk{{
+			Type:       chunkType,
+			Content:    content,
+			StartPos:   basePos,
+			EndPos:     basePos + len(content),
+			TokenCount: tokenCount,
+		}}
+	}
+
 	// 首先尝试按语义边界（句子）拆分
 	chunks := s.splitBySemanticBoundaries(content, maxLength, chunkType, basePos)
 	if len(chunks) > 1 {
@@ -106,6 +117,10 @@ func (s *ChunkerService) splitLargeContent(content string, maxLength int, chunkT
 	return result
 }
 
+func (s *ChunkerService) containsTable(content string) bool {
+	return !s.disableTableProtection && len(s.extractTableBlocks(content)) > 0
+}
+
 // findSeparatorIndices 找到所有分隔符的位置（返回分隔符起始索引，升序）
 func (s *ChunkerService) findSeparatorIndices(content string, separator string) []int {
 	if separator == "" || content == "" {
@@ -127,6 +142,64 @@ func (s *ChunkerService) findSeparatorIndices(content string, separator string) 
 		}
 	}
 	return indices
+}
+
+// findSeparatorIndicesOutsideTables 找到不在 Markdown/HTML table 内部的分隔符位置。
+func (s *ChunkerService) findSeparatorIndicesOutsideTables(content string, separator string) []int {
+	indices := s.findSeparatorIndices(content, separator)
+	if s.disableTableProtection {
+		return indices
+	}
+	blocks := s.extractTableBlocks(content)
+	if len(indices) == 0 || len(blocks) == 0 {
+		return indices
+	}
+
+	filtered := make([]int, 0, len(indices))
+	for _, index := range indices {
+		insideTable := false
+		for _, block := range blocks {
+			if index >= block.Position && index < block.EndPos {
+				insideTable = true
+				break
+			}
+		}
+		if !insideTable {
+			filtered = append(filtered, index)
+		}
+	}
+	return filtered
+}
+
+// nextSeparatorOutsideTables 返回从 start 开始、且不在 table 内部的分隔符相对位置。
+func (s *ChunkerService) nextSeparatorOutsideTables(content string, start int, separator string) int {
+	if start >= len(content) {
+		return -1
+	}
+	if s.disableTableProtection {
+		return strings.Index(content[start:], separator)
+	}
+	blocks := s.extractTableBlocks(content)
+	searchFrom := start
+	for searchFrom < len(content) {
+		relative := strings.Index(content[searchFrom:], separator)
+		if relative == -1 {
+			return -1
+		}
+		position := searchFrom + relative
+		insideTable := false
+		for _, block := range blocks {
+			if position >= block.Position && position < block.EndPos {
+				insideTable = true
+				searchFrom = block.EndPos
+				break
+			}
+		}
+		if !insideTable {
+			return position - start
+		}
+	}
+	return -1
 }
 
 // splitBySemanticBoundaries 按语义边界拆分大内容
@@ -169,6 +242,23 @@ func (s *ChunkerService) splitByPattern(content string, pattern string, maxLengt
 	// 使用FindAllStringIndex找到所有分隔符位置，保留分隔符
 	regex := regexp.MustCompile(pattern)
 	matches := regex.FindAllStringIndex(content, -1)
+	blocks := s.extractTableBlocks(content)
+	if !s.disableTableProtection && len(blocks) > 0 {
+		filteredMatches := matches[:0]
+		for _, match := range matches {
+			insideTable := false
+			for _, block := range blocks {
+				if match[0] >= block.Position && match[0] < block.EndPos {
+					insideTable = true
+					break
+				}
+			}
+			if !insideTable {
+				filteredMatches = append(filteredMatches, match)
+			}
+		}
+		matches = filteredMatches
+	}
 
 	if len(matches) == 0 {
 		// 没有找到分隔符，无法拆分
@@ -315,7 +405,7 @@ func (s *ChunkerService) splitBySeparatorWithLength(content string, separator st
 
 	for currentPos < contentLen {
 		// 找到下一个分隔符的位置
-		nextSep := strings.Index(content[currentPos:], separator)
+		nextSep := s.nextSeparatorOutsideTables(content, currentPos, separator)
 		if nextSep == -1 {
 			// 没有更多分隔符，处理剩余内容
 			remaining := content[currentPos:]
@@ -514,6 +604,17 @@ func (s *ChunkerService) getTextTail(text string, maxTokens int) string {
 
 // splitLargeContentBySystemSeparators 使用系统自定义分隔符分割超长内容
 func (s *ChunkerService) splitLargeContentBySystemSeparators(content string, maxLength int, chunkType string, basePos int) []DocumentChunk {
+	if s.containsTable(content) {
+		tokenCount, _ := s.tokenizer.CountTokens(content)
+		return []DocumentChunk{{
+			Type:       chunkType,
+			Content:    content,
+			StartPos:   basePos,
+			EndPos:     basePos + len(content),
+			TokenCount: tokenCount,
+		}}
+	}
+
 	// 系统预定义的分隔符，按优先级排序（从高到低）
 	systemSeparators := []string{
 		"\n\n", // 段落分隔符

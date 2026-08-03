@@ -18,8 +18,8 @@ func RequestDecoder() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// 只处理JSON请求体
 		// if c.GetHeader("Content-Type") != "application/json" {
-			// c.Next()
-			// return
+		// c.Next()
+		// return
 		// }
 
 		// 只处理POST、PUT、PATCH请求

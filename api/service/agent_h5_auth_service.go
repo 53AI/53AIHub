@@ -32,10 +32,10 @@ func (s *AgentH5AuthService) CreateAccessKey(ctx context.Context, eid, agentID i
 }
 
 type ExchangeAccessKeyResult struct {
-	User              *model.User
-	AgentAccessKey    *model.AgentAccessKey
-	UserChannel       *model.UserChannel
-	UserChannelToken  *model.UserChannelToken
+	User             *model.User
+	AgentAccessKey   *model.AgentAccessKey
+	UserChannel      *model.UserChannel
+	UserChannelToken *model.UserChannelToken
 }
 
 func (s *AgentH5AuthService) ExchangeAccessKey(ctx context.Context, fixedToken string, ttl time.Duration, fingerprintCode string) (*ExchangeAccessKeyResult, error) {
@@ -68,10 +68,10 @@ func (s *AgentH5AuthService) ExchangeAccessKey(ctx context.Context, fixedToken s
 	}
 
 	return &ExchangeAccessKeyResult{
-		User:              visitorUser,
-		AgentAccessKey:    fixedRecord,
-		UserChannel:       channel,
-		UserChannelToken:  sessionToken,
+		User:             visitorUser,
+		AgentAccessKey:   fixedRecord,
+		UserChannel:      channel,
+		UserChannelToken: sessionToken,
 	}, nil
 }
 

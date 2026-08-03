@@ -186,7 +186,7 @@ func EnsureEnterprisePostInit(tx *gorm.DB, enterprise *model.Enterprise, adminUs
 		return err
 	}
 
-	if err := ensureDefaultAgentsFromInitializedChannels(tx, enterprise.Eid, adminUser.UserID); err != nil {
+	if err := EnsureDefaultAgentsFromInitializedChannels(tx, enterprise.Eid, adminUser.UserID); err != nil {
 		return err
 	}
 
@@ -456,7 +456,7 @@ func buildDefaultSiteModelConfigFromChannels(channels []model.Channel, selection
 	return modelConfig, nil
 }
 
-func ensureDefaultAgentsFromInitializedChannels(tx *gorm.DB, eid int64, createdBy int64) error {
+func EnsureDefaultAgentsFromInitializedChannels(tx *gorm.DB, eid int64, createdBy int64) error {
 	if tx == nil {
 		return errors.New("db is nil")
 	}
@@ -488,6 +488,42 @@ func ensureDefaultAgentsFromInitializedChannels(tx *gorm.DB, eid int64, createdB
 	}
 
 	return nil
+}
+
+// EnsureRecordingAgentForEnterprise 确保企业存在录音应用智能体，不存在则创建。
+// 幂等，可重复调用。createdBy=0 表示迁移工具创建。
+func EnsureRecordingAgentForEnterprise(tx *gorm.DB, eid int64, createdBy int64) (created bool, err error) {
+	var count int64
+	if err := tx.Model(&model.Agent{}).
+		Where("eid = ? AND owner_id = ? AND agent_usage = ?", eid, model.AgentOwnerEnterprise, model.AgentUsageRecording).
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return false, nil
+	}
+
+	recordingAgent := buildDocumentAppAgent(nil, nil, createdBy)
+	recordingAgent.AgentUsage = model.AgentUsageRecording
+	recordingAgent.Name = "录音应用"
+	recordingAgent.Eid = eid
+	recordingAgent.OwnerID = model.AgentOwnerEnterprise
+	if err := tx.Create(&recordingAgent).Error; err != nil {
+		return false, err
+	}
+
+	scope := model.ResourceScope{
+		ResourceID:   recordingAgent.AgentID,
+		ResourceType: model.ResourceTypeAgent,
+		ScopeType:    model.ScopeTypeCompany,
+		TargetID:     0,
+		Eid:          eid,
+	}
+	if err := tx.Create(&scope).Error; err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func assignDefaultAgentsToGroup(tx *gorm.DB, eid int64) error {
@@ -624,8 +660,18 @@ func buildDefaultAgents(selection *defaultModelSelection, createdBy int64) []mod
 		buildWorkAIAgent(logic, createdBy),
 		buildAISearchAgent(logic, rerank, createdBy),
 		buildDocumentAppAgent(logic, rerank, createdBy),
-		buildKnowledgeMapAgent(logic, createdBy),
 	}
+	if config.IS_SAAS {
+		agents = append(agents, buildKnowledgeMapAgent(logic, createdBy))
+	}
+
+	// 录音应用当前与文档应用行为一致，复用 buildDocumentAppAgent，
+	// 仅区分 agent_usage 和名称。后续如有差异化需求，再拆分为独立的 buildRecordingAgent()。
+	recordingAgent := buildDocumentAppAgent(logic, rerank, createdBy)
+	recordingAgent.AgentUsage = model.AgentUsageRecording
+	recordingAgent.Name = "录音应用"
+	agents = append(agents, recordingAgent)
+
 	return agents
 }
 
@@ -1253,13 +1299,16 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 	const defaultStrategyName = "默认策略"
 	const defaultStrategyPriority = 9999
 
-	defaultGraphTemplate, err := ensureDefaultGraphTemplate(tx, eid)
-	if err != nil {
-		return err
-	}
-	defaultGraphTemplateHashID, err := hashids.Encode(defaultGraphTemplate.ID)
-	if err != nil {
-		return err
+	defaultGraphTemplateHashID := ""
+	if config.IS_SAAS {
+		defaultGraphTemplate, err := ensureDefaultGraphTemplate(tx, eid)
+		if err != nil {
+			return err
+		}
+		defaultGraphTemplateHashID, err = hashids.Encode(defaultGraphTemplate.ID)
+		if err != nil {
+			return err
+		}
 	}
 
 	var pipeline model.RagPipelineProfile
@@ -1268,67 +1317,71 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 			return err
 		}
 
-		profile := map[string]interface{}{
-			"steps": []map[string]interface{}{
-				{
-					"run_mode": "auto",
-					"step_key": "document_parsing",
-					"config": map[string]interface{}{
-						"engine":                  "markitdown",
-						"enable_smart_match":      false,
-						"match_preference_prompt": "",
+		steps := []map[string]interface{}{
+			{
+				"run_mode": "auto",
+				"step_key": "document_parsing",
+				"config": map[string]interface{}{
+					"engine":                  "markitdown",
+					"enable_smart_match":      false,
+					"match_preference_prompt": "",
+				},
+			},
+			{
+				"run_mode": "auto",
+				"step_key": "document_chunking",
+				"config": map[string]interface{}{
+					"chunk_type":              "default",
+					"enable_smart_match":      true,
+					"match_preference_prompt": "",
+					"parent_chunk": map[string]interface{}{
+						"mode":             "custom",
+						"strategy":         "identifier",
+						"identifier_level": "h2",
+						"max_length":       2048,
+						"append_filename":  true,
+						"append_title":     true,
+						"append_subtitle":  true,
 					},
-				},
-				{
-					"run_mode": "auto",
-					"step_key": "document_chunking",
-					"config": map[string]interface{}{
-						"chunk_type":              "default",
-						"enable_smart_match":      true,
-						"match_preference_prompt": "",
-						"parent_chunk": map[string]interface{}{
-							"mode":             "custom",
-							"strategy":         "identifier",
-							"identifier_level": "h2",
-							"max_length":       2048,
-							"append_filename":  true,
-							"append_title":     true,
-							"append_subtitle":  true,
-						},
-						"child_chunk": map[string]interface{}{
-							"mode":             "custom",
-							"strategy":         "length",
-							"identifier_level": "h3",
-							"max_length":       512,
-						},
-						"index_enhancement": map[string]interface{}{
-							"metadata_injection": map[string]interface{}{
-								"append_filename": true,
-								"append_title":    true,
-								"append_subtitle": true,
-							},
-							"generative_enhancement": map[string]interface{}{
-								"generate_summary": true,
-								"generate_faq":     true,
-							},
-						},
+					"child_chunk": map[string]interface{}{
+						"mode":             "custom",
+						"strategy":         "length",
+						"identifier_level": "h3",
+						"max_length":       512,
 					},
-				},
-				{
-					"run_mode": "auto",
-					"step_key": "vector_indexing",
-					"config":   map[string]interface{}{},
-				},
-				{
-					"run_mode": "auto",
-					"step_key": "graph_generation",
-					"config": map[string]interface{}{
-						"graph_template_id":       defaultGraphTemplateHashID,
-						"enable_smart_match":      false,
-						"enable_smart_generation": false,
+					"index_enhancement": map[string]interface{}{
+						"metadata_injection": map[string]interface{}{
+							"append_filename": true,
+							"append_title":    true,
+							"append_subtitle": true,
+						},
+						"generative_enhancement": map[string]interface{}{
+							"generate_summary": true,
+							"generate_faq":     true,
+						},
 					},
 				},
 			},
+			{
+				"run_mode": "auto",
+				"step_key": "vector_indexing",
+				"config":   map[string]interface{}{},
+			},
+		}
+		if config.IS_SAAS {
+			steps = append(steps, map[string]interface{}{
+				"run_mode": "auto",
+				"step_key": "graph_generation",
+				"config": map[string]interface{}{
+					"graph_template_id":       defaultGraphTemplateHashID,
+					"enable_smart_match":      false,
+					"enable_smart_generation": false,
+				},
+			})
+		}
+
+		profile := map[string]interface{}{
+			"steps": steps,
 		}
 
 		profileBytes, err := json.Marshal(profile)
@@ -1347,6 +1400,7 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 			return err
 		}
 	}
+
 
 	var strategy model.RagRoutingStrategy
 	if err := tx.Where("eid = ? AND name = ?", eid, defaultStrategyName).First(&strategy).Error; err != nil {
@@ -1369,6 +1423,7 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 			return err
 		}
 	}
+
 
 	return nil
 }

@@ -370,12 +370,22 @@ func (b *VectorInsertBuffer) flushCollection(collection string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	start := time.Now()
 	err := b.store.doBatchInsert(ctx, collection, vectors)
+	elapsed := time.Since(start).Milliseconds()
 
-	if err != nil {
-		logger.SysLogf("❌ 批量插入向量失败，数量: %d, 集合: %s, 错误: %v", len(vectors), collection, err)
-	} else {
-		logger.SysLogf("✅ 批量插入向量成功，数量: %d, 集合: %s", len(vectors), collection)
+	// 可观测：记录向量存储写入
+	if observer := GetBatchFlushObserver(); observer != nil && len(vectors) > 0 {
+		if eidVal, ok := vectors[0].Metadata["eid"]; ok {
+			switch v := eidVal.(type) {
+			case int64:
+				observer(v, len(vectors), elapsed)
+			case float64:
+				observer(int64(v), len(vectors), elapsed)
+			case int:
+				observer(int64(v), len(vectors), elapsed)
+			}
+		}
 	}
 
 	// 通知所有等待的调用方（使用安全的 Done 方法）
@@ -430,6 +440,7 @@ func (b *VectorInsertBuffer) IsEnabled() bool {
 
 // Insert 通过缓冲器插入向量
 // 优化：使用单个 batchSignal 处理整个批次，减少大量 channel 创建的开销
+// lazy: 不等待 Qdrant flush 完成，推送即返回。如果 Qdrant 写入失败，向量丢失但 chunk 状态显示 normal
 func (b *VectorInsertBuffer) Insert(ctx context.Context, collection string, vectors []VectorRecord) error {
 	if len(vectors) == 0 {
 		return nil
@@ -439,7 +450,7 @@ func (b *VectorInsertBuffer) Insert(ctx context.Context, collection string, vect
 	signal := newBatchSignal()
 	batchErrHolder := &batchErrorHolder{}
 
-	// 发送所有向量到缓冲 channel
+	// 发送所有向量到缓冲 channel，推完即返回，不等待 flush
 	for _, v := range vectors {
 		insert := &BufferedInsert{
 			Collection: collection,
@@ -457,16 +468,7 @@ func (b *VectorInsertBuffer) Insert(ctx context.Context, collection string, vect
 		}
 	}
 
-	// 等待批次完成
-	select {
-	case <-signal.Done():
-		// 批次处理完成
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	// 返回批量错误（如果有）
-	return batchErrHolder.Get()
+	return nil
 }
 
 // Type 返回存储类型

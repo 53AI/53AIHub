@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/storage"
 	db_model "github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/hub_adaptor/coze/constant/event"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
@@ -261,30 +261,30 @@ func StreamHandler(c *gin.Context, resp *http.Response) (*model.ErrorWithStatusC
 	var modelName string
 	errored := false
 
-		eventStr := ""
-		eventCount := 0
-		for scanner.Scan() {
-			data := scanner.Text()
-			eventCount++
+	eventStr := ""
+	eventCount := 0
+	for scanner.Scan() {
+		data := scanner.Text()
+		eventCount++
 
-			if data == "" || data == "\n" {
-				eventStr = ""
-				continue
-			}
-			if strings.HasPrefix(data, "event:") {
-				eventStr = strings.TrimPrefix(data, "event:")
-				continue
-			}
+		if data == "" || data == "\n" {
+			eventStr = ""
+			continue
+		}
+		if strings.HasPrefix(data, "event:") {
+			eventStr = strings.TrimPrefix(data, "event:")
+			continue
+		}
 
-			if !strings.HasPrefix(data, "data:") {
-				continue
-			}
+		if !strings.HasPrefix(data, "data:") {
+			continue
+		}
 
-			if eventStr == "" {
-				continue
-			}
+		if eventStr == "" {
+			continue
+		}
 
-			if eventStr == event.ChatFailed {
+		if eventStr == event.ChatFailed {
 			if len(data) >= 5 && strings.HasPrefix(data, "data:") {
 				payload := strings.TrimPrefix(data, "data:")
 				payload = strings.TrimSuffix(payload, "\r")

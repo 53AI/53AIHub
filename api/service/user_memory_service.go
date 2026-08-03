@@ -13,8 +13,8 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
-	"gorm.io/gorm"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
+	"gorm.io/gorm"
 )
 
 // UserMemoryService 用户全局记忆服务
@@ -134,8 +134,8 @@ func (s *UserMemoryService) FormatUserMemoryForPrompt(ctx context.Context, eid, 
 
 // StandardizeImportResult LLM 标准化导入结果
 type StandardizeImportResult struct {
-	SmartItems    []model.MemoryItem // 路由到智能记忆（profile/knowledge）
-	CustomItems   []model.MemoryItem // 路由到自定义记忆（preference/failure）
+	SmartItems    []model.MemoryItem     // 路由到智能记忆（profile/knowledge）
+	CustomItems   []model.MemoryItem     // 路由到自定义记忆（preference/failure）
 	MemoryActions []existingMemoryAction // 对已有记忆的处理动作（archive/replace）
 }
 
@@ -240,17 +240,17 @@ type importMemoryPayload struct {
 }
 
 type importMemoryItemWithAction struct {
-	Fact         string   `json:"fact"`
-	Category     string   `json:"category"`
-	MemoryType   string   `json:"memory_type"`
-	Tags         []string `json:"tags"`
-	Topic        string   `json:"topic"`
-	Keywords     []string `json:"keywords"`
-	Evidence     string   `json:"evidence"`
-	ExpireAt     int64    `json:"expire_at"`
-	Weight       int      `json:"weight"`
-	Action       string   `json:"action,omitempty"`
-	ReplaceFact  string   `json:"replace_fact,omitempty"`
+	Fact        string   `json:"fact"`
+	Category    string   `json:"category"`
+	MemoryType  string   `json:"memory_type"`
+	Tags        []string `json:"tags"`
+	Topic       string   `json:"topic"`
+	Keywords    []string `json:"keywords"`
+	Evidence    string   `json:"evidence"`
+	ExpireAt    int64    `json:"expire_at"`
+	Weight      int      `json:"weight"`
+	Action      string   `json:"action,omitempty"`
+	ReplaceFact string   `json:"replace_fact,omitempty"`
 }
 
 // parseImportResponseToItems 解析 LLM 返回的 JSON 记忆数据，支持 conflict resolution

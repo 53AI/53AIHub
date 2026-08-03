@@ -237,7 +237,7 @@ func SubscribeAgentRunEvents(c *gin.Context) {
 		runID,
 		query.AfterSeq,
 		query.Limit,
-		500*time.Millisecond,
+		5*time.Second,
 	)
 	if err != nil {
 		writeAgentRunError(c, err)
@@ -255,6 +255,11 @@ func SubscribeAgentRunEvents(c *gin.Context) {
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
+	if _, err := c.Writer.Write([]byte(": connected\n\n")); err != nil {
+		logger.Warnf(c.Request.Context(), "agent run stream initial flush failed: eid=%d, run_id=%s, err=%v", config.GetEID(c), runID, err)
+		return
+	}
+	flusher.Flush()
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()

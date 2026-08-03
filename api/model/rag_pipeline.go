@@ -83,24 +83,48 @@ func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *F
 	}
 
 	fileName := ""
+	uploadExtension := ""
 	if file.UploadFile != nil && strings.TrimSpace(file.UploadFile.FileName) != "" {
 		fileName = file.UploadFile.FileName
+		uploadExtension = file.UploadFile.Extension
 	} else if file.UploadFileID > 0 {
 		var uploadFile UploadFile
-		if err := db.Select("file_name").Where("id = ?", file.UploadFileID).First(&uploadFile).Error; err == nil {
+		if err := db.Select("file_name, extension").Where("id = ?", file.UploadFileID).First(&uploadFile).Error; err == nil {
 			if strings.TrimSpace(uploadFile.FileName) != "" {
 				fileName = uploadFile.FileName
 			}
+			uploadExtension = uploadFile.Extension
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, err
 		}
 	}
+
+	// 路由文件名必须使用当前文件在知识库中的名称。UploadFile.FileName
+	// 可能来自历史上传记录（尤其是秒传复用场景），不能代表当前目标文件名。
+	currentFileName := ExtractSimpleFileName(strings.TrimPrefix(file.GetPath(), "/"))
+	if currentFileName != "" {
+		fileName = currentFileName
+		// 系统可能给文件路径统一追加 .md；真实扩展名仍以原始上传记录为准。
+		if strings.EqualFold(uploadExtension, "md") == false && strings.HasSuffix(strings.ToLower(fileName), ".md") {
+			fileName = fileName[:len(fileName)-len(".md")]
+		}
+	}
 	if fileName == "" {
-		filePath := strings.TrimPrefix(file.GetPath(), "/")
-		fileName = ExtractSimpleFileName(filePath)
+		fileName = ExtractSimpleFileName(strings.TrimPrefix(fileName, "/"))
 	}
 
-	ext := strings.TrimPrefix(strings.ToLower(path.Ext(fileName)), ".")
+	ext := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(uploadExtension)), ".")
+	if ext == "" {
+		ext = strings.TrimPrefix(strings.ToLower(path.Ext(fileName)), ".")
+	}
+	libraryKind := ""
+	if file.LibraryID > 0 {
+		if library, err := GetLibraryByID(file.Eid, file.LibraryID); err == nil && library != nil {
+			libraryKind = strings.TrimSpace(library.LibraryKind)
+		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, err
+		}
+	}
 
 	var strategies []RagRoutingStrategy
 	// 直接查询 rag_routing_strategies
@@ -198,6 +222,31 @@ func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *F
 				}
 				for _, v := range values {
 					if strings.ToLower(strings.TrimSpace(v)) == targetName {
+						return true, nil
+					}
+				}
+				return false, nil
+			default:
+				return false, nil
+			}
+		case "library_kind":
+			op := strings.ToLower(strings.TrimSpace(m.Operator))
+			targetKind := strings.ToLower(strings.TrimSpace(libraryKind))
+			switch op {
+			case "eq", "equals":
+				var value string
+				if err := json.Unmarshal(m.Value, &value); err != nil {
+					return false, err
+				}
+				matchValue := strings.ToLower(strings.TrimSpace(value))
+				return targetKind == matchValue, nil
+			case "in", "belongs":
+				values, err := parseStringList(m.Value)
+				if err != nil {
+					return false, err
+				}
+				for _, candidate := range values {
+					if strings.ToLower(strings.TrimSpace(candidate)) == targetKind {
 						return true, nil
 					}
 				}

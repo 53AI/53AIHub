@@ -10,15 +10,14 @@ import (
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/helper"
+	"github.com/songquanpeng/one-api/relay/channeltype"
 	"github.com/songquanpeng/one-api/relay/meta"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
 )
 
 const (
-	SiliconFlowBaseURL = "https://api.siliconflow.cn"
-	SiliconFlowEndpoint = "/v1/rerank"
-	
-	BaiduQianfanBaseURL = "https://qianfan.baidubce.com"
+
+	BaiduQianfanBaseURL  = "https://qianfan.baidubce.com"
 	BaiduQianfanEndpoint = "/v2/rerank"
 )
 
@@ -89,16 +88,14 @@ type OpenAIService struct{}
 // BailianRerankService 处理百炼 rerank API 调用的服务
 type BailianRerankService struct{}
 
-// SiliconFlowRerankService 处理硅基流动 rerank API 调用的服务
-type SiliconFlowRerankService struct{}
 
 // BaiduQianfanRerankService 处理百度千帆 rerank API 调用的服务
 type BaiduQianfanRerankService struct{}
 
 // commonAPICall 是通用的 API 调用函数
-func commonAPICall(ctx context.Context, req *RerankRequest, meta *meta.Meta, 
-    baseURL, endpoint, platformName string) (*RerankResponse, *relay_model.Usage, error) {
-	
+func commonAPICall(ctx context.Context, req *RerankRequest, meta *meta.Meta,
+	baseURL, endpoint, platformName string) (*RerankResponse, *relay_model.Usage, error) {
+
 	// 构建请求体
 	requestData := map[string]interface{}{
 		"model":     req.Model,
@@ -183,91 +180,9 @@ func commonAPICall(ctx context.Context, req *RerankRequest, meta *meta.Meta,
 	}
 
 	// 根据平台类型解析响应
+
 	switch platformName {
-	case "硅基流动":
-		var siliconFlowResp struct {
-			Id      string `json:"id"`
-			Object  string `json:"object"`
-			Created int64  `json:"created"`
-			Model   string `json:"model"`
-			Results []struct {
-				Document       *struct {
-					Text string `json:"text"`
-				} `json:"document"`
-				Index          int     `json:"index"`
-				RelevanceScore float64 `json:"relevance_score"`
-			} `json:"results"`
-			Meta interface{} `json:"meta"`
-		}
 
-		if err := json.Unmarshal(respBody, &siliconFlowResp); err != nil {
-			logger.SysErrorf("❌ 解析硅基流动Rerank响应失败: %v", err)
-			return nil, nil, fmt.Errorf("解析响应失败: %v", err)
-		}
-
-		openaiResp.Data = make([]RerankResult, len(siliconFlowResp.Results))
-		for i, result := range siliconFlowResp.Results {
-			openaiResult := RerankResult{
-				Object:         "rerank_result",
-				Index:          result.Index,
-				RelevanceScore: result.RelevanceScore,
-			}
-
-			if req.ReturnDocuments != nil && *req.ReturnDocuments {
-				if result.Document != nil {
-					openaiResult.Document = &RerankDocument{
-						Text: result.Document.Text,
-					}
-				}
-			} else if req.ReturnDocuments == nil {
-				if result.Document != nil {
-					openaiResult.Document = &RerankDocument{
-						Text: result.Document.Text,
-					}
-				}
-			}
-
-			openaiResp.Data[i] = openaiResult
-		}
-
-		// 从 meta 中提取 token 信息
-		totalTokens := 0
-		if metaMap, ok := siliconFlowResp.Meta.(map[string]interface{}); ok {
-			if tokens, exists := metaMap["tokens"]; exists {
-				if tokenMap, ok := tokens.(map[string]interface{}); ok {
-					if inputTokens, exists := tokenMap["input_tokens"]; exists {
-						if val, ok := inputTokens.(float64); ok {
-							totalTokens += int(val)
-						}
-					}
-					if outputTokens, exists := tokenMap["output_tokens"]; exists {
-						if val, ok := outputTokens.(float64); ok {
-							totalTokens += int(val)
-						}
-					}
-				}
-			}
-		} else if metaSlice, ok := siliconFlowResp.Meta.([]interface{}); ok {
-			for _, item := range metaSlice {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					if tokens, exists := itemMap["tokens"]; exists {
-						if tokenMap, ok := tokens.(map[string]interface{}); ok {
-							if inputTokens, exists := tokenMap["input_tokens"]; exists {
-								if val, ok := inputTokens.(float64); ok {
-									totalTokens += int(val)
-								}
-							}
-							if outputTokens, exists := tokenMap["output_tokens"]; exists {
-								if val, ok := outputTokens.(float64); ok {
-									totalTokens += int(val)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-		openaiResp.Usage.TotalTokens = totalTokens
 
 	case "百度千帆":
 		var qianfanResp struct {
@@ -325,18 +240,13 @@ func commonAPICall(ctx context.Context, req *RerankRequest, meta *meta.Meta,
 
 		logger.SysLogf("✅ %s Rerank API请求完成，返回 %d 个结果", platformName, len(openaiResp.Data))
 		return openaiResp, usage, nil
-	}
-
-	// 百度千帆使用单独的 usage 结构
-	if platformName == "百度千帆" {
-		usage := &relay_model.Usage{
-			TotalTokens: openaiResp.Usage.TotalTokens,
+	default:
+		// 通用 OpenAI 兼容格式解析 — 兼容 Cohere 格式（results）及变体
+		if err := parseGenericRerankResponse(openaiResp, respBody, req); err != nil {
+			return nil, nil, err
 		}
-		logger.SysLogf("✅ %s Rerank API请求完成，返回 %d 个结果", platformName, len(openaiResp.Data))
-		return openaiResp, usage, nil
 	}
-
-	// 对于硅基流动等其他平台，构建通用 usage
+	// 对于 OpenAI 兼容等平台，构建通用 usage
 	usage := &relay_model.Usage{
 		TotalTokens: openaiResp.Usage.TotalTokens,
 	}
@@ -344,10 +254,76 @@ func commonAPICall(ctx context.Context, req *RerankRequest, meta *meta.Meta,
 	return openaiResp, usage, nil
 }
 
-// CallSiliconFlowRerankAPI 调用硅基流动 rerank API
-func (s *SiliconFlowRerankService) CallSiliconFlowRerankAPI(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
-	return commonAPICall(ctx, req, meta, SiliconFlowBaseURL, SiliconFlowEndpoint, "硅基流动")
+// parseGenericRerankResponse 解析通用 OpenAI 兼容格式的 rerank 响应
+// 兼容 Cohere 格式（results[]）及常见变体（data[] 兜底）
+func parseGenericRerankResponse(openaiResp *RerankResponse, respBody []byte, req *RerankRequest) error {
+	var rawResp map[string]interface{}
+	if err := json.Unmarshal(respBody, &rawResp); err != nil {
+		logger.SysErrorf("❌ 解析通用Rerank响应失败: %v", err)
+		return fmt.Errorf("解析通用Rerank响应失败: %v", err)
+	}
+
+	// 尝试 results，兜底 data
+	var items []interface{}
+	if results, ok := rawResp["results"].([]interface{}); ok {
+		items = results
+	} else if data, ok := rawResp["data"].([]interface{}); ok {
+		items = data
+	}
+
+	if len(items) == 0 {
+		logger.SysErrorf("❌ 通用Rerank响应中未找到 results/data 字段")
+		return fmt.Errorf("通用Rerank响应格式错误：缺少 results/data 字段")
+	}
+
+	openaiResp.Data = make([]RerankResult, 0, len(items))
+	for _, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		index, _ := itemMap["index"].(float64)
+		relevanceScore, _ := itemMap["relevance_score"].(float64)
+
+		result := RerankResult{
+			Object:         "rerank_result",
+			Index:          int(index),
+			RelevanceScore: relevanceScore,
+		}
+
+		if doc, exists := itemMap["document"].(map[string]interface{}); exists {
+			if req.ReturnDocuments == nil || *req.ReturnDocuments {
+				if text, ok := doc["text"].(string); ok {
+					result.Document = &RerankDocument{Text: text}
+				}
+			}
+		}
+
+		openaiResp.Data = append(openaiResp.Data, result)
+	}
+
+	// 尝试从 usage/meta 提取 token 信息
+	if usage, ok := rawResp["usage"].(map[string]interface{}); ok {
+		if total, ok := usage["total_tokens"].(float64); ok {
+			openaiResp.Usage.TotalTokens = int(total)
+		}
+	} else if meta, ok := rawResp["meta"].(map[string]interface{}); ok {
+		if billedUnits, ok := meta["billed_units"].(map[string]interface{}); ok {
+			total := 0
+			if input, ok := billedUnits["input_tokens"].(float64); ok {
+				total += int(input)
+			}
+			if output, ok := billedUnits["output_tokens"].(float64); ok {
+				total += int(output)
+			}
+			openaiResp.Usage.TotalTokens = total
+		}
+	}
+
+	return nil
 }
+
 
 // CallBaiduQianfanRerankAPI 调用百度千帆 rerank API
 func (s *BaiduQianfanRerankService) CallBaiduQianfanRerankAPI(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
@@ -356,10 +332,14 @@ func (s *BaiduQianfanRerankService) CallBaiduQianfanRerankAPI(ctx context.Contex
 
 // CallOpenAIRerankAPI 调用 OpenAI rerank API
 func (s *OpenAIService) CallOpenAIRerankAPI(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
-	// 使用默认的 OpenAI 基础 URL，如果没有提供的话
+	// 使用渠道类型对应的默认 BaseURL，兜底 OpenAI
 	baseURL := meta.BaseURL
 	if baseURL == "" {
-		baseURL = "https://api.openai.com"
+		if meta.ChannelType >= 0 && meta.ChannelType < len(channeltype.ChannelBaseURLs) && channeltype.ChannelBaseURLs[meta.ChannelType] != "" {
+			baseURL = channeltype.ChannelBaseURLs[meta.ChannelType]
+		} else {
+			baseURL = "https://api.openai.com"
+		}
 	}
 	return commonAPICall(ctx, req, meta, baseURL, "/v1/rerank", "OpenAI")
 }

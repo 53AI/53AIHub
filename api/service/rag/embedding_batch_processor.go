@@ -169,7 +169,7 @@ func (p *EmbeddingBatchProcessor) ProcessChunksByIDs(eid int64, chunkIDs []int64
 	return p.ProcessChunkBatch(eid, chunks, opts)
 }
 
- // ProcessSingleChunk 处理单个分块
+// ProcessSingleChunk 处理单个分块
 func (p *EmbeddingBatchProcessor) ProcessSingleChunk(chunk *model.RetrievalChunk) error {
 	// 改为入队，由队列消费者异步处理
 	EnqueueRetrievalChunk(chunk.Eid, chunk.FileID, chunk.LibraryID, chunk.ID)

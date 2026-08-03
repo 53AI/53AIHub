@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/vectorstore"
@@ -150,6 +151,7 @@ func (s *RetrievalChunkService) splitContentForRetrieval(content string, config 
 	config.KnowledgeMaxLength = config.KnowledgeChunk.MaxLength
 	config.IndexMaxLength = config.IndexChunk.MaxLength
 	maxLength := config.IndexMaxLength
+	maxLength = minRetrievalEmbeddingLength(maxLength, config.EmbeddingModelName)
 	splitRules := config.IndexChunk.GetSplitRules()
 	subtitle := ""
 	if config.IndexIncludeSubtitle {
@@ -164,8 +166,8 @@ func (s *RetrievalChunkService) splitContentForRetrieval(content string, config 
 		prefixTokens, _ = s.tokenizer.CountTokens(prefix)
 		// 调整最大长度，为前缀预留空间
 		maxLength = maxLength - prefixTokens
-		if maxLength < 100 { // 确保至少有100个token用于内容
-			maxLength = 100
+		if maxLength < 1 {
+			maxLength = 1
 		}
 	}
 
@@ -192,6 +194,19 @@ func (s *RetrievalChunkService) splitContentForRetrieval(content string, config 
 	}
 
 	return chunks
+}
+
+func minRetrievalEmbeddingLength(indexMaxLength int, modelName *string) int {
+	embeddingMaxLength := 4096
+	if modelName != nil && *modelName != "" {
+		if meta, err := common.GetModelCatalogLoader().GetEmbeddingMeta(*modelName); err == nil && meta.MaxTokens > 0 {
+			embeddingMaxLength = meta.MaxTokens
+		}
+	}
+	if indexMaxLength <= 0 || indexMaxLength > embeddingMaxLength {
+		return embeddingMaxLength
+	}
+	return indexMaxLength
 }
 
 // splitByRules 根据多个规则拆分内容，递归模式
@@ -574,23 +589,24 @@ func (s *RetrievalChunkService) processEmbeddingForRetrievalChunks(eid int64, ch
 	// 收集需要更新状态的DocumentChunk ID，用于后续批量更新
 	docChunkUpdateMap := make(map[int64]int64) // knowledgeChunkID -> fileID
 
-	// 如果没有提供配置，则获取第一个块的配置
-	if config == nil {
-		configService := NewChunkConfigService(s.db)
-		chunkConfig, err := configService.GetConfigWithFileID(eid, &chunks[0].LibraryID, &chunks[0].FileID)
-		if err != nil {
-			// 当获取配置失败时，更新所有相关块为失败状态
-			var failedChunkIDs []int64
-			for _, chunk := range chunks {
-				s.UpdateRetrievalChunkEmbeddingStatus(chunk.ID, model.RetrievalChunkEmbeddingStatusFailed, "", err.Error())
-				docChunkUpdateMap[chunk.KnowledgeChunkID] = chunk.FileID
-				failedChunkIDs = append(failedChunkIDs, chunk.ID)
-			}
-			// 批量更新DocumentChunk状态
-			s.batchUpdateDocumentChunkEmbeddingStatus(docChunkUpdateMap)
-			return fmt.Errorf("获取分块配置失败: %v", err)
+	// Embedding always comes from the enterprise/site configuration. A caller may
+	// still provide chunk settings for non-vector behavior, but its embedding
+	// fields are never trusted.
+	enterpriseConfig, err := NewChunkConfigService(s.db).GetEnterpriseEmbeddingConfig(eid)
+	if err != nil {
+		for _, chunk := range chunks {
+			s.UpdateRetrievalChunkEmbeddingStatus(chunk.ID, model.RetrievalChunkEmbeddingStatusFailed, "", err.Error())
+			docChunkUpdateMap[chunk.KnowledgeChunkID] = chunk.FileID
 		}
-		config = chunkConfig
+		s.batchUpdateDocumentChunkEmbeddingStatus(docChunkUpdateMap)
+		return fmt.Errorf("获取企业 embedding 配置失败: %v", err)
+	}
+	if config == nil {
+		config = enterpriseConfig
+	} else {
+		config.EmbeddingChannelID = enterpriseConfig.EmbeddingChannelID
+		config.EmbeddingModelName = enterpriseConfig.EmbeddingModelName
+		config.EmbeddingChannel = enterpriseConfig.EmbeddingChannel
 	}
 
 	// 在进入循环前检查向量化渠道配置，提前失败避免逐块报错
@@ -763,7 +779,7 @@ func (s *RetrievalChunkService) generateEmbeddingForChunk(eid int64, content str
 // CheckGenerateEmbeddingForChunk 检查生成 embedding 是否成功
 func (s *RetrievalChunkService) CheckGenerateEmbeddingForChunk(eid int64, libraryID *int64, fileID *int64, content string) error {
 	configService := NewChunkConfigService(s.db)
-	chunkConfig, err := configService.GetConfigWithFileID(eid, libraryID, fileID)
+	chunkConfig, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		// 当获取配置失败时，更新所有相关块为失败状态
 		return fmt.Errorf("获取分块配置失败: %v", err)

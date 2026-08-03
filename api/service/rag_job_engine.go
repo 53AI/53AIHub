@@ -36,6 +36,19 @@ func GetRagJobFactoryV2() *v2factory.JobFactory {
 
 // InitRAGJobEngine 初始化RAG任务引擎
 func InitRAGJobEngine() {
+	// 注册纪要生成回调，不依赖 Redis
+	v2steps.GenerateMeetingMinutesFn = GenerateMeetingMinutes
+
+	// 注册洞察生成回调（在 document_chunking 步骤中实体抽取完成后触发）
+	v2steps.GenerateInsightsFn = GenerateInsights
+
+	// 注册纪要 JSON→Markdown 转换回调（在 document_chunking 步骤中文件摘要/实体抽取前使用）
+	v2steps.BuildMinutesMarkdownFn = BuildMinutesMarkdown
+	logger.SysLog("【诊断-内容转换】BuildMinutesMarkdownFn 已注册")
+
+	// 注册录音管线 context provider，供异步 goroutine 派生可被服务停止优雅取消的子 context
+	v2steps.PipelineCtxFn = func() context.Context { return recordingPipelineCtx }
+
 	initOnce.Do(func() {
 		if !common.IsRedisEnabled() {
 			logger.SysLog("Redis not enabled, skipping RAG job engine initialization")
@@ -46,24 +59,28 @@ func InitRAGJobEngine() {
 		ragJobFactoryV2 = v2factory.NewJobFactory(model.DB, common.RDB)
 		ragJobEngineV2 = v2engines.NewRagJobEngineV2(common.RDB, model.DB, ragJobFactoryV2)
 
+		ragJobEngineV2.SetPostFinalizeHook(func(ctx context.Context, job model.RagJob, currentIndex int, profile v2model.RuntimeProfile) error {
+			// 独立 Wiki 向量化 Job 不属于 RAG Pipeline，不能在完成后再次触发 Wiki 生成。
+			if job.PipelineID <= 0 || !shouldAutoTriggerWikiAfterStep(profile, currentIndex) {
+				return nil
+			}
+			return NewWikiAutoTriggerService(model.DB).MaybeEnqueueWikiGeneration(ctx, WikiAutoTriggerInput{
+				Eid:           job.Eid,
+				FileID:        model.ExtractFileIDFromJob(&job),
+				SourceRunID:   job.RunID,
+				TriggerSource: "auto_after_pipeline",
+			})
+		})
+
 		// 注册 V2 Handler
 		ragJobEngineV2.RegisterHandler("document_parsing", v2steps.NewDocumentParsingHandler(model.DB))
+
 		ragJobEngineV2.RegisterHandler("content_cleaning", func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
 			logger.Info(ctx, "V2 Handler: content_cleaning executed")
 			return nil
 		})
-		ragJobEngineV2.RegisterHandler("summary_generation", v2steps.NewSummaryGenerationHandler(model.DB))
-		ragJobEngineV2.RegisterHandler("document_chunking", v2steps.NewDocumentChunkingHandler(model.DB))
-		ragJobEngineV2.RegisterHandler("vector_indexing", v2steps.NewVectorIndexingHandler(model.DB))
-		ragJobEngineV2.RegisterHandler("graph_generation", v2steps.NewGraphGenerationHandler(model.DB))
 
-		// 注册 V2 Recovery Handler
-		ragJobEngineV2.RegisterRecoveryHandler("document_parsing", v2steps.RecoverDocumentParsing(model.DB))
-		ragJobEngineV2.RegisterRecoveryHandler("content_cleaning", v2steps.RecoverContentCleaning())
-		ragJobEngineV2.RegisterRecoveryHandler("summary_generation", v2steps.RecoverSummaryGeneration(model.DB))
-		ragJobEngineV2.RegisterRecoveryHandler("document_chunking", v2steps.RecoverDocumentChunking(model.DB))
-		ragJobEngineV2.RegisterRecoveryHandler("vector_indexing", v2steps.RecoverVectorIndexing(model.DB))
-		ragJobEngineV2.RegisterRecoveryHandler("graph_generation", v2steps.RecoverGraphGeneration(model.DB))
+		registerRagJobEngineV2Handlers(ragJobEngineV2)
 
 		// 在后台执行恢复+启动 Worker，不阻塞主流程启动
 		go func() {
@@ -77,6 +94,62 @@ func InitRAGJobEngine() {
 
 		logger.SysLog("RAG job engine initialized (recovery running in background)")
 	})
+}
+
+func shouldAutoTriggerWikiAfterStep(profile v2model.RuntimeProfile, currentIndex int) bool {
+	if currentIndex < 0 || currentIndex >= len(profile.Steps) {
+		return false
+	}
+
+	for _, step := range profile.Steps {
+		if step.StepKey == "wiki_page_generation" {
+			return false
+		}
+	}
+
+	for _, step := range profile.Steps[currentIndex+1:] {
+		runMode := step.RunMode
+		if runMode == "" {
+			if step.Enabled {
+				runMode = v2model.RunModeAuto
+			} else {
+				runMode = v2model.RunModeManual
+			}
+		}
+		if runMode != v2model.RunModeSkip {
+			return false
+		}
+	}
+	return true
+}
+
+func registerRagJobEngineV2Handlers(engine *v2engines.RagJobEngineV2) {
+	if engine == nil {
+		return
+	}
+
+	// 注册 V2 Handler
+	engine.RegisterHandler("document_parsing", v2steps.NewDocumentParsingHandler(model.DB))
+	engine.RegisterHandler("content_cleaning", func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
+		logger.Info(ctx, "V2 Handler: content_cleaning executed")
+		return nil
+	})
+	engine.RegisterHandler("summary_generation", v2steps.NewSummaryGenerationHandler(model.DB))
+	engine.RegisterHandler("document_chunking", v2steps.NewDocumentChunkingHandler(model.DB))
+	engine.RegisterHandler("vector_indexing", v2steps.NewVectorIndexingHandler(model.DB))
+	engine.RegisterHandler("graph_generation", v2steps.NewGraphGenerationHandler(model.DB))
+	engine.RegisterHandler("wiki_page_generation", v2steps.NewWikiPageGenerationHandler(NewWikiPageGenerationProcessor(model.DB)))
+	engine.RegisterHandler(wikiPageVectorizationJobType, NewWikiPageVectorizationHandler(NewWikiPageVectorizationProcessor(model.DB)))
+
+	// 注册 V2 Recovery Handler
+	engine.RegisterRecoveryHandler("document_parsing", v2steps.RecoverDocumentParsing(model.DB))
+	engine.RegisterRecoveryHandler("content_cleaning", v2steps.RecoverContentCleaning())
+	engine.RegisterRecoveryHandler("summary_generation", v2steps.RecoverSummaryGeneration(model.DB))
+	engine.RegisterRecoveryHandler("document_chunking", v2steps.RecoverDocumentChunking(model.DB))
+	engine.RegisterRecoveryHandler("vector_indexing", v2steps.RecoverVectorIndexing(model.DB))
+	engine.RegisterRecoveryHandler("graph_generation", v2steps.RecoverGraphGeneration(model.DB))
+	engine.RegisterRecoveryHandler("wiki_page_generation", v2steps.RecoverWikiPageGeneration(model.DB, NewWikiPageGenerationProcessor(model.DB)))
+	engine.RegisterRecoveryHandler(wikiPageVectorizationJobType, RecoverWikiPageVectorization(model.DB, NewWikiPageVectorizationProcessor(model.DB)))
 }
 
 type RetryJobStepOptionsV2 struct {
@@ -501,7 +574,11 @@ func BatchRunJobStepsV2(ctx context.Context, eid int64, run BatchRunContextV2, i
 	}
 	if initBytes, err := json.Marshal(initInfo); err == nil {
 		_ = db.Model(&model.File{}).Where("id = ? AND eid = ?", run.RelatedID, eid).
-			Updates(map[string]interface{}{"cleaning_rule_info": string(initBytes), "run_status": "pending"}).Error
+			Updates(map[string]interface{}{
+				"cleaning_rule_info": string(initBytes),
+				"run_status":         "pending",
+				"parsing_status":     "pending",
+			}).Error
 	}
 	_ = model.UpdateFileCleaningRuleInfoHelper(db, run.RelatedID, runID, "")
 
@@ -807,13 +884,19 @@ func GetLatestRunJobsWithStepsByRelatedID(ctx context.Context, eid int64, relate
 		return "", nil, nil, err
 	}
 
-	runID := latestJob.RunID
+	runID := latestRunIDForJob(latestJob)
 	jobQuery := model.DB.WithContext(ctx).Model(&model.RagJob{})
 	if eid > 0 {
 		jobQuery = jobQuery.Where("eid = ?", eid)
 	}
 	if runID != "" {
-		jobQuery = jobQuery.Where("run_id = ?", runID)
+		if strings.TrimSpace(latestJob.RunID) == "" {
+			// 兼容旧版自动触发的 Wiki Job：这些记录可能只有 source_run_id，
+			// 需要把自身并入源流水线批次，避免接口只返回 Wiki 这一条记录。
+			jobQuery = jobQuery.Where("run_id = ? OR job_id = ?", runID, latestJob.JobID)
+		} else {
+			jobQuery = jobQuery.Where("run_id = ?", runID)
+		}
 	} else {
 		jobQuery = jobQuery.Where("job_id = ?", latestJob.JobID)
 	}
@@ -847,6 +930,21 @@ func GetLatestRunJobsWithStepsByRelatedID(ctx context.Context, eid int64, relate
 	}
 
 	return runID, jobs, stepMap, nil
+}
+
+func latestRunIDForJob(job model.RagJob) string {
+	if runID := strings.TrimSpace(job.RunID); runID != "" {
+		return runID
+	}
+
+	var params map[string]interface{}
+	if err := json.Unmarshal([]byte(job.StartParameters), &params); err != nil {
+		return ""
+	}
+	if sourceRunID, ok := params["source_run_id"].(string); ok {
+		return strings.TrimSpace(sourceRunID)
+	}
+	return ""
 }
 
 func extractProfileStepIndex(startParameters string) (int, bool) {

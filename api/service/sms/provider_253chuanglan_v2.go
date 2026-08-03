@@ -163,9 +163,9 @@ func (c *ChuanglanV2Provider) generateNonce() string {
 
 // ChuanglanV2Response v2版本API响应结构
 type ChuanglanV2Response struct {
-	Code       string `json:"code"`        // 提交响应状态码，返回"000000"表示成功
-	MsgID      string `json:"msgId"`       // 消息ID (32位纯数字)
-	Time       string `json:"time"`        // 响应时间
+	Code       string `json:"code"`       // 提交响应状态码，返回"000000"表示成功
+	MsgID      string `json:"msgId"`      // 消息ID (32位纯数字)
+	Time       string `json:"time"`       // 响应时间
 	SuccessNum string `json:"successNum"` // 提交成功数量
 	FailNum    string `json:"failNum"`    // 提交失败数量
 	ErrorMsg   string `json:"errorMsg"`   // 状态码中文说明

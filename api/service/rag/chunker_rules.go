@@ -1,6 +1,7 @@
 package rag
 
 import (
+	"sort"
 	"strings"
 )
 
@@ -54,19 +55,12 @@ func (s *ChunkerService) chunkByRulesWithContext(parsed *ParsedContent, chunkMod
 
 // ChunkByRulesForRetrieval 为检索场景提供的公开分块方法
 func (s *ChunkerService) ChunkByRulesForRetrieval(content string, chunkMode string, rules []string, maxLength int) []string {
-	// 创建模拟的 ParsedContent
-	paragraphs := make([]ParagraphInfo, 0)
-	paragraphs = append(paragraphs, ParagraphInfo{
-		Content:  content,
-		Position: 0,
-		EndPos:   0,
-	})
-	parsed := &ParsedContent{
-		Content:    content,
-		Paragraphs: paragraphs,
-	}
+	// 索引块允许按最大长度拆分 table；knowledge chunk 仍保持 table 完整。
+	retrievalService := *s
+	retrievalService.disableTableProtection = true
+	parsed := retrievalService.parseMarkdown(content)
 	// 复用现有的分块逻辑
-	documentChunks := s.chunkByRulesWithContext(parsed, chunkMode, rules, maxLength, "retrieval")
+	documentChunks := retrievalService.chunkByRulesWithContext(parsed, chunkMode, rules, maxLength, "retrieval")
 
 	// 提取纯文本内容
 	chunks := make([]string, len(documentChunks))
@@ -625,12 +619,16 @@ func (s *ChunkerService) applySeparatorToChunks(chunks []DocumentChunk, separato
 
 // mergeChunksPreservingOrder 合并标题分块和分割分块，保持原始顺序
 func (s *ChunkerService) mergeChunksPreservingOrder(headerChunks, splitChunks []DocumentChunk) []DocumentChunk {
-	var result []DocumentChunk
-
-	// 简化处理：先添加所有标题分块，再添加分割后的分块
-	// 这样可以避免复杂的顺序计算，且在实际使用中效果更好
+	result := make([]DocumentChunk, 0, len(headerChunks)+len(splitChunks))
 	result = append(result, headerChunks...)
 	result = append(result, splitChunks...)
+
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].EndPos == result[j].EndPos {
+			return result[i].StartPos < result[j].StartPos
+		}
+		return result[i].EndPos < result[j].EndPos
+	})
 
 	return result
 }
@@ -730,7 +728,7 @@ func (s *ChunkerService) chunkBySeparator(parsed *ParsedContent, separator strin
 	}
 
 	// 使用正则表达式找到所有分隔符的位置
-	separatorIndices := s.findSeparatorIndices(content, separator)
+	separatorIndices := s.findSeparatorIndicesOutsideTables(content, separator)
 
 	if len(separatorIndices) == 0 {
 		// 没有找到分隔符，整个内容作为一块

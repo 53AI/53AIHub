@@ -16,6 +16,7 @@ type recentAccessItem struct {
 	resourceID   int64
 	file         *RecentAccessFileSummary
 	library      *RecentAccessLibrarySummary
+	wikiPage     *RecentAccessWikiPageDetail
 	libraryID    int64
 	spaceID      int64
 	space        *RecentAccessSpaceSummary
@@ -52,15 +53,39 @@ type RecentAccessSpaceSummary struct {
 	SpaceKind string `json:"space_kind"`
 }
 
+type RecentAccessWikiPageDetail struct {
+	ID               string   `json:"id"`
+	Eid              string   `json:"eid"`
+	SpaceID          string   `json:"space_id"`
+	LibraryID        string   `json:"library_id"`
+	FolderID         string   `json:"folder_id"`
+	CurrentVersionID string   `json:"current_version_id"`
+	Title            string   `json:"title"`
+	Slug             string   `json:"slug"`
+	PageType         string   `json:"page_type"`
+	Body             string   `json:"body"`
+	BodyFormat       string   `json:"body_format"`
+	Summary          string   `json:"summary"`
+	Aliases          []string `json:"aliases,omitempty"`
+	Status           string   `json:"status"`
+	Visibility       string   `json:"visibility"`
+	CreatorID        string   `json:"creator_id"`
+	UpdaterID        string   `json:"updater_id"`
+	Sort             int64    `json:"sort"`
+	CreatedTime      int64    `json:"created_time"`
+	UpdatedTime      int64    `json:"updated_time"`
+}
+
 type RecentAccessItem struct {
-	ResourceType int                      `json:"resource_type"`
-	ResourceID   string                   `json:"resource_id"`
-	File         *RecentAccessFileSummary `json:"file,omitempty"`
-	LibraryID    string                   `json:"library_id,omitempty"`
-	SpaceID      string                   `json:"space_id,omitempty"`
-	CreatorID    string                   `json:"creator_id,omitempty"`
-	RecentTime   int64                    `json:"recent_time"`
-	IsFavorite   bool                     `json:"is_favorite"`
+	ResourceType int                         `json:"resource_type"`
+	ResourceID   string                      `json:"resource_id"`
+	File         *RecentAccessFileSummary    `json:"file,omitempty"`
+	WikiPage     *RecentAccessWikiPageDetail `json:"wiki_page,omitempty"`
+	LibraryID    string                      `json:"library_id,omitempty"`
+	SpaceID      string                      `json:"space_id,omitempty"`
+	CreatorID    string                      `json:"creator_id,omitempty"`
+	RecentTime   int64                       `json:"recent_time"`
+	IsFavorite   bool                        `json:"is_favorite"`
 }
 
 type RecentAccessIncludes struct {
@@ -78,7 +103,7 @@ func parseTabResourceType(raw int) (*int, error) {
 	if raw == 0 {
 		return nil, nil
 	}
-	if raw != model.RESOURCE_TYPE_LIBRARY && raw != model.RESOURCE_TYPE_FILE {
+	if raw != model.RESOURCE_TYPE_LIBRARY && raw != model.RESOURCE_TYPE_FILE && raw != model.RESOURCE_TYPE_WIKI_PAGE {
 		return nil, errors.New("资源类型无效")
 	}
 	return &raw, nil
@@ -237,6 +262,34 @@ func encodeRecentAccessID(id int64) string {
 		return ""
 	}
 	return encoded
+}
+
+func toRecentAccessWikiPageDetail(page *model.WikiPage) *RecentAccessWikiPageDetail {
+	if page == nil {
+		return nil
+	}
+	return &RecentAccessWikiPageDetail{
+		ID:               encodeRecentAccessID(page.ID),
+		Eid:              encodeRecentAccessID(page.Eid),
+		SpaceID:          encodeRecentAccessID(page.SpaceID),
+		LibraryID:        encodeRecentAccessID(page.LibraryID),
+		FolderID:         encodeRecentAccessID(page.FolderID),
+		CurrentVersionID: encodeRecentAccessID(page.CurrentVersionID),
+		Title:            page.Title,
+		Slug:             page.Slug,
+		PageType:         page.PageType,
+		Body:             page.Body,
+		BodyFormat:       page.BodyFormat,
+		Summary:          page.Summary,
+		Aliases:          page.Aliases,
+		Status:           page.Status,
+		Visibility:       page.Visibility,
+		CreatorID:        encodeRecentAccessID(page.CreatorID),
+		UpdaterID:        encodeRecentAccessID(page.UpdaterID),
+		Sort:             page.Sort,
+		CreatedTime:      page.CreatedTime,
+		UpdatedTime:      page.UpdatedTime,
+	}
 }
 
 func buildRecentAccessItemsFromHistories(eid int64, histories []model.UserBrowseHistory, keyword string) ([]recentAccessItem, error) {
@@ -767,6 +820,7 @@ func toRecentAccessResponse(items []recentAccessItem) RecentAccessListResponse {
 			ResourceType: item.resourceType,
 			ResourceID:   encodeRecentAccessID(item.resourceID),
 			File:         item.file,
+			WikiPage:     item.wikiPage,
 			LibraryID:    encodeRecentAccessID(item.libraryID),
 			SpaceID:      encodeRecentAccessID(item.spaceID),
 			CreatorID:    encodeRecentAccessID(item.creatorID),

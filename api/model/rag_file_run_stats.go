@@ -153,7 +153,11 @@ func GetRagFileRunStatsSummary(eid int64, libraryID *int64) (*RagFileRunStatsSum
 
 // UpdateFileCleaningRuleInfoHelper 更新文件中的 CleaningRuleInfo
 // statusUpdate: 可选，如果不为空，则强制更新为该状态；否则根据统计结果计算
+//
+// 两阶段执行：Phase 1 无锁读取+计算统计值，Phase 2 用 SELECT FOR UPDATE 做原子 read-modify-write。
+// 这样 job 查询不持有行锁，仅 writing 阶段持锁，缩小锁范围。
 func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, statusUpdate string) error {
+	// Phase 1: 读取文件 + 查询 jobs + 计算统计值（无锁）
 	var file File
 	if err := db.Select("cleaning_rule_info", "eid", "library_id", "id", "upload_file_id").First(&file, fileID).Error; err != nil {
 		return err
@@ -162,39 +166,27 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	var info FileCleaningRuleInfo
 	if file.CleaningRuleInfo != "" {
 		if err := json.Unmarshal([]byte(file.CleaningRuleInfo), &info); err != nil {
-			// 如果解析失败，可能是旧数据或格式错误，重新初始化部分字段
 			info = FileCleaningRuleInfo{RunID: runID}
 		}
 	} else {
-		// 如果为空，初始化
 		info = FileCleaningRuleInfo{RunID: runID}
 	}
 
-	// 如果 RunID 不匹配，说明可能是新一轮任务覆盖，或者并发问题
-	// 这里假设调用者传入的 RunID 是权威的，如果不同则更新
 	if info.RunID != runID && runID != "" {
 		info.RunID = runID
-		// 重置计数
 		info.SuccessCount = 0
 		info.FailureCount = 0
 		info.Progress = 0
 		info.TotalSteps = 0
-		info.StartTime = 0 // 重置开始时间，等待后续逻辑或重新初始化
+		info.StartTime = 0
 		info.EndTime = 0
 		info.Status = ""
 		info.CurrentJobType = ""
-		// Status 由下面逻辑决定
 	}
 
 	prevStatus := strings.ToLower(strings.TrimSpace(info.Status))
 
-	// 统计该 RunID 下的所有 Job 状态
-	// 注意：这里需要查询 rag_jobs 表
 	var jobs []RagJob
-	// 需要根据 Eid 和 FileID 关联查询 Job，以提高效率和准确性
-	// 由于 RagJob 中没有直接存储 FileID，而是通过 RelatedId 存储
-	// 且 RunID 已经是唯一索引，所以直接通过 RunID 查询即可
-	// 但为了确保准确性，我们验证一下 RelatedId
 	if err := db.Select("status, created_time, related_id, type, pipeline_id, runtime_profile_json").Where("run_id = ?", info.RunID).Order("job_id ASC").Find(&jobs).Error; err != nil {
 		return err
 	}
@@ -208,15 +200,10 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	var earliestStart int64 = 0
 	pipelineID := int64(0)
 
-	// 如果没有找到 Job，但 RunID 存在，可能是刚刚创建还没入库，或者全部在队列中
-	// 这种情况下，保持现有状态或设为 pending
-
 	for _, job := range jobs {
-		// 简单的关联检查：如果 job.RelatedId > 0 且 != fileID，可能是异常数据，记录日志但不中断
 		if job.RelatedId > 0 && job.RelatedId != fileID {
 			logger.Warn(context.Background(), fmt.Sprintf("Job %d has RelatedId %d, expected %d (RunID: %s)", job.JobID, job.RelatedId, fileID, info.RunID))
 		}
-
 		if job.Status == RagJobStatusSuccess {
 			successCount++
 		} else if job.Status == RagJobStatusFailed {
@@ -233,7 +220,6 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 		if pipelineID == 0 && job.PipelineID > 0 {
 			pipelineID = job.PipelineID
 		}
-		// 记录最早的创建时间作为开始时间
 		jobStart := job.CreatedTime
 		if earliestStart == 0 || jobStart < earliestStart {
 			earliestStart = jobStart
@@ -244,12 +230,9 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 		info.StartTime = earliestStart
 	}
 	totalJobs := len(jobs)
-
-	// 如果 info.TotalSteps 为 0（可能初始化时未设置），尝试用当前 job 数量兜底，或者保持 0
 	if info.TotalSteps == 0 && totalJobs > 0 {
 		info.TotalSteps = totalJobs
 	}
-
 	if pipelineID == 0 && strings.TrimSpace(info.PipelineID) != "" {
 		if decodedID, err := hashids.TryParseID(strings.TrimSpace(info.PipelineID)); err == nil && decodedID > 0 {
 			pipelineID = decodedID
@@ -258,11 +241,7 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 
 	info.SuccessCount = successCount
 	info.FailureCount = failureCount
-
-	// 计算进度
 	if info.TotalSteps > 0 {
-		// 简单的进度计算：完成的步骤（成功或失败）/ 总步骤
-		// 或者根据业务需求，只计算成功的
 		completed := successCount + failureCount
 		info.Progress = int(math.Min(100, float64(completed)/float64(info.TotalSteps)*100))
 	}
@@ -277,7 +256,6 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 			break
 		}
 	}
-
 	if currentJob != nil {
 		info.StepKey = currentJob.Type
 		info.StepName = getStepDisplayName(currentJob.Type)
@@ -298,7 +276,6 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 			}
 		}
 	}
-
 	if nextJob != nil && nextJob.RuntimeProfile != "" {
 		info.NextStepKey = nextJob.Type
 		info.NextStepName = getStepDisplayName(nextJob.Type)
@@ -309,8 +286,6 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 		info.NextStepMode = ""
 	}
 
-	// 决定最终状态
-	// 优先级：传入的状态 > 失败 > 完成 > 进行中
 	if statusUpdate != "" {
 		info.Status = statusUpdate
 	} else {
@@ -330,70 +305,83 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 		}
 	}
 	newStatus := strings.ToLower(strings.TrimSpace(info.Status))
-
-	// 设置结束时间
 	if (info.Status == "success" || info.Status == "failed") && info.EndTime == 0 {
 		info.EndTime = time.Now().UnixMilli()
 	}
 
-	// 序列化并保存
-	newInfoBytes, err := json.Marshal(info)
-	if err != nil {
-		return err
-	}
+	// Phase 2: 原子 read-modify-write（持锁）
+	return db.Transaction(func(tx *gorm.DB) error {
+		var lockedFile File
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("cleaning_rule_info").First(&lockedFile, fileID).Error; err != nil {
+			return err
+		}
 
-	if err := db.Model(&File{}).Where("id = ?", fileID).Updates(map[string]interface{}{
-		"cleaning_rule_info": string(newInfoBytes),
-		"run_status":         info.Status,
-	}).Error; err != nil {
-		return err
-	}
+		var latestInfo FileCleaningRuleInfo
+		if lockedFile.CleaningRuleInfo != "" {
+			json.Unmarshal([]byte(lockedFile.CleaningRuleInfo), &latestInfo)
+		}
+		info.MeetingMinutesStatus = latestInfo.MeetingMinutesStatus
+		info.InsightsStatus = latestInfo.InsightsStatus
+		info.InsightPageStatus = latestInfo.InsightPageStatus
+		info.TranscriptionStatus = latestInfo.TranscriptionStatus
 
-	if pipelineID > 0 && prevStatus != newStatus && prevStatus != "success" && prevStatus != "failed" {
-		if newStatus == "success" || newStatus == "failed" {
-			updates := map[string]interface{}{
-				"last_run_time": time.Now().UnixMilli(),
-			}
-			if newStatus == "success" {
-				updates["success_count"] = gorm.Expr("success_count + ?", 1)
-			} else {
-				updates["failure_count"] = gorm.Expr("failure_count + ?", 1)
-			}
-			if err := db.Model(&RagPipelineProfile{}).Where("id = ? AND eid = ?", pipelineID, file.Eid).Updates(updates).Error; err != nil {
-				logger.Error(db.Statement.Context, fmt.Sprintf("Failed to update pipeline stats (PipelineID: %d, RunID: %s, Status: %s): %v", pipelineID, info.RunID, newStatus, err))
+		newInfoBytes, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&File{}).Where("id = ?", fileID).Updates(map[string]interface{}{
+			"cleaning_rule_info": string(newInfoBytes),
+			"run_status":         info.Status,
+		}).Error; err != nil {
+			return err
+		}
+
+		if pipelineID > 0 && prevStatus != newStatus && prevStatus != "success" && prevStatus != "failed" {
+			if newStatus == "success" || newStatus == "failed" {
+				updates := map[string]interface{}{
+					"last_run_time": time.Now().UnixMilli(),
+				}
+				if newStatus == "success" {
+					updates["success_count"] = gorm.Expr("success_count + ?", 1)
+				} else {
+					updates["failure_count"] = gorm.Expr("failure_count + ?", 1)
+				}
+				if err := tx.Model(&RagPipelineProfile{}).Where("id = ? AND eid = ?", pipelineID, file.Eid).Updates(updates).Error; err != nil {
+					logger.Error(tx.Statement.Context, fmt.Sprintf("Failed to update pipeline stats (PipelineID: %d, RunID: %s, Status: %s): %v", pipelineID, info.RunID, newStatus, err))
+				}
 			}
 		}
-	}
 
-	runStatsStatus := info.Status
-	if hasInterrupted {
-		runStatsStatus = "interrupted"
-	}
-	completionTime := int64(0)
-	if info.StartTime > 0 && info.EndTime > 0 && info.EndTime >= info.StartTime {
-		completionTime = (info.EndTime - info.StartTime) / 1000
-	}
-	stats := &RagFileRunStats{
-		Eid:            file.Eid,
-		LibraryID:      file.LibraryID,
-		FileID:         file.ID,
-		RunID:          info.RunID,
-		Status:         runStatsStatus,
-		Progress:       info.Progress,
-		SuccessCount:   info.SuccessCount,
-		FailureCount:   info.FailureCount,
-		TotalSteps:     info.TotalSteps,
-		StartTime:      info.StartTime,
-		EndTime:        info.EndTime,
-		CompletionTime: completionTime,
-	}
-	if err := UpsertRagFileRunStats(db, stats); err != nil {
-		// 添加详细日志，方便诊断为什么没有新增数据
-		logger.Error(db.Statement.Context, fmt.Sprintf("Failed to upsert rag_file_run_stats (FileID: %d, RunID: %s): %v", fileID, info.RunID, err))
-		return err
-	}
+		runStatsStatus := info.Status
+		if hasInterrupted {
+			runStatsStatus = "interrupted"
+		}
+		completionTime := int64(0)
+		if info.StartTime > 0 && info.EndTime > 0 && info.EndTime >= info.StartTime {
+			completionTime = (info.EndTime - info.StartTime) / 1000
+		}
+		stats := &RagFileRunStats{
+			Eid:            file.Eid,
+			LibraryID:      file.LibraryID,
+			FileID:         file.ID,
+			RunID:          info.RunID,
+			Status:         runStatsStatus,
+			Progress:       info.Progress,
+			SuccessCount:   info.SuccessCount,
+			FailureCount:   info.FailureCount,
+			TotalSteps:     info.TotalSteps,
+			StartTime:      info.StartTime,
+			EndTime:        info.EndTime,
+			CompletionTime: completionTime,
+		}
+		if err := UpsertRagFileRunStats(tx, stats); err != nil {
+			logger.Error(tx.Statement.Context, fmt.Sprintf("Failed to upsert rag_file_run_stats (FileID: %d, RunID: %s): %v", fileID, info.RunID, err))
+			return err
+		}
 
-	return nil
+		return nil
+	})
 }
 
 // ExtractFileIDFromJob 从 Job 中提取 FileID

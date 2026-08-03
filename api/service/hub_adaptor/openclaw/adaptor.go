@@ -60,7 +60,6 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *relay_m
 	return openClawRequest, nil
 }
 
-
 func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Reader) (*http.Response, error) {
 	// 从meta中获取配置
 	var gatewayConfig *model.OpenClawGatewayConfig
@@ -183,7 +182,7 @@ func (a *Adaptor) doStreamRequest(client *openclaw.HTTPClient, req *openclaw.Cha
 		chunkCh, errCh := client.SendChatRequestStream(ctx, req)
 
 		// 发送初始事件
-		pw.Write([]byte("data: " + fmt.Sprintf(`{"id":"chatcmpl-%d","object":"chat.completion.chunk","created":%d,"model":"%s","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`, 
+		pw.Write([]byte("data: " + fmt.Sprintf(`{"id":"chatcmpl-%d","object":"chat.completion.chunk","created":%d,"model":"%s","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}`,
 			time.Now().Unix(), time.Now().Unix(), req.Model) + "\n\n"))
 
 		fullContent := ""
@@ -248,7 +247,7 @@ func (a *Adaptor) chatHandler(reader io.Reader) (*relay_model.Usage, *relay_mode
 	if err != nil {
 		return nil, openai.ErrorWrapper(err, "read_response_body_failed", http.StatusInternalServerError)
 	}
-	
+
 	var openClawResp openclaw.ChatCompletionResponse
 	err = json.Unmarshal(respBody, &openClawResp)
 	if err != nil {
@@ -265,7 +264,7 @@ func (a *Adaptor) chatHandler(reader io.Reader) (*relay_model.Usage, *relay_mode
 		CompletionTokens: openClawResp.Usage.CompletionTokens,
 		TotalTokens:      openClawResp.Usage.TotalTokens,
 	}
-	
+
 	return usage, nil
 }
 
@@ -302,7 +301,7 @@ func (a *Adaptor) streamingHandler(c *gin.Context, reader io.Reader) (*relay_mod
 				},
 				Index: streamResponse.Choices[0].Index,
 			}
-			
+
 			if streamResponse.Choices[0].FinishReason != "" {
 				choice.FinishReason = &streamResponse.Choices[0].FinishReason
 			}
@@ -319,7 +318,7 @@ func (a *Adaptor) streamingHandler(c *gin.Context, reader io.Reader) (*relay_mod
 			if err != nil {
 				return nil, openai.ErrorWrapper(err, "render_response_failed", http.StatusInternalServerError)
 			}
-			
+
 			// 累积响应文本以计算使用量
 			if streamResponse.Choices[0].Delta.Content != "" {
 				responseText += streamResponse.Choices[0].Delta.Content
@@ -328,13 +327,13 @@ func (a *Adaptor) streamingHandler(c *gin.Context, reader io.Reader) (*relay_mod
 	}
 
 	render.Done(c)
-	
+
 	// 对于流式响应，我们只能估算使用量
 	usage := &relay_model.Usage{
-		PromptTokens:     0, // 无法准确估计
+		PromptTokens:     0,                                       // 无法准确估计
 		CompletionTokens: openai.CountTokenText(responseText, ""), // 使用one-api提供的计数函数
-		TotalTokens:      0, // 会在调用方重新计算
+		TotalTokens:      0,                                       // 会在调用方重新计算
 	}
-	
+
 	return usage, nil
 }

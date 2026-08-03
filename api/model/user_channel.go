@@ -12,24 +12,24 @@ import (
 )
 
 var (
-	ErrUserChannelNotFound    = errors.New("user channel not found")
-	ErrUserChannelDuplicated  = errors.New("user channel already exists")
+	ErrUserChannelNotFound   = errors.New("user channel not found")
+	ErrUserChannelDuplicated = errors.New("user channel already exists")
 )
 
 type UserChannel struct {
-	ID            int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Eid           int64  `json:"eid" gorm:"not null;index:idx_user_channels_lookup,priority:1;index:idx_user_channels_eid_openid,priority:1"`
-	UserID        int64  `json:"user_id" gorm:"not null;index:idx_user_channels_lookup,priority:2"`
-	ChannelType   string `json:"channel_type" gorm:"size:32;not null;index:idx_user_channels_lookup,priority:3"`
-	OpenID        string `json:"openid" gorm:"column:openid;size:128;not null;index:idx_user_channels_eid_openid,priority:2"`
-	Nickname      string `json:"nickname" gorm:"size:128"`
-	Avatar        string `json:"avatar" gorm:"size:512"`
-	AccessToken   string `json:"access_token" gorm:"size:512"`
-	RefreshToken  string `json:"refresh_token" gorm:"size:512"`
-	ExpiresAt     int64  `json:"expires_at" gorm:"default:0"`
-	ExtraData     string `json:"extra_data" gorm:"type:text"`
-	Status        int    `json:"status" gorm:"type:int;default:1;not null"`
-	LastUsedAt    int64  `json:"last_used_at" gorm:"default:0"`
+	ID           int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Eid          int64  `json:"eid" gorm:"not null;index:idx_user_channels_lookup,priority:1;index:idx_user_channels_eid_openid,priority:1"`
+	UserID       int64  `json:"user_id" gorm:"not null;index:idx_user_channels_lookup,priority:2"`
+	ChannelType  string `json:"channel_type" gorm:"size:32;not null;index:idx_user_channels_lookup,priority:3"`
+	OpenID       string `json:"openid" gorm:"column:openid;size:128;not null;index:idx_user_channels_eid_openid,priority:2"`
+	Nickname     string `json:"nickname" gorm:"size:128"`
+	Avatar       string `json:"avatar" gorm:"size:512"`
+	AccessToken  string `json:"access_token" gorm:"size:512"`
+	RefreshToken string `json:"refresh_token" gorm:"size:512"`
+	ExpiresAt    int64  `json:"expires_at" gorm:"default:0"`
+	ExtraData    string `json:"extra_data" gorm:"type:text"`
+	Status       int    `json:"status" gorm:"type:int;default:1;not null"`
+	LastUsedAt   int64  `json:"last_used_at" gorm:"default:0"`
 	BaseModel
 }
 

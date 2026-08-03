@@ -46,7 +46,7 @@ func (s *EntityVectorService) IndexEntity(eid int64, entity *model.Entity) error
 		return nil
 	}
 	configService := NewChunkConfigService(s.db)
-	config, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	config, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (s *EntityVectorService) SearchEntities(eid int64, keyword string, topK int
 		topK = 20
 	}
 	configService := NewChunkConfigService(s.db)
-	config, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	config, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func (s *EntityVectorService) SearchEntityFiles(eid int64, name string, topK int
 
 	// 1. 生成搜索向量
 	configService := NewChunkConfigService(s.db)
-	config, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	config, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +333,7 @@ func (s *EntityVectorService) BatchIndexEntities(eid int64, entities []model.Ent
 	if config == nil {
 		configService := NewChunkConfigService(s.db)
 		var err error
-		config, err = configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+		config, err = configService.GetEnterpriseEmbeddingConfig(eid)
 		if err != nil {
 			return 0, err
 		}

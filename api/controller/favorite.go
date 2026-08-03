@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
@@ -90,6 +91,17 @@ func ToggleFavorite(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 				return
 			}
+		case model.RESOURCE_TYPE_WIKI_PAGE:
+			_, err := model.GetWikiPageByID(eid, req.ResourceID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("Wiki 页面不存在")))
+					return
+				}
+				logger.Errorf(c, "GetWikiPageByID error: %v", err)
+				c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+				return
+			}
 		case RESOURCE_TYPE_UPLOAD_FILE:
 			files, err := model.GetFilesByUploadFileID(req.ResourceID)
 			if err != nil {
@@ -134,15 +146,24 @@ type FavoriteLibraryItem struct {
 	FavoriteTime int64         `json:"favorite_time"`
 }
 
+type FavoriteWikiPageItem struct {
+	WikiPage     *model.WikiPage `json:"wiki_page,omitempty"`
+	Library      *model.Library  `json:"library,omitempty"`
+	Space        *model.Space    `json:"space,omitempty"`
+	FavoriteTime int64           `json:"favorite_time"`
+}
+
 type FavoritesListResponse struct {
-	Files     []FavoriteFileItem    `json:"files"`
-	Libraries []FavoriteLibraryItem `json:"libraries"`
+	Files     []FavoriteFileItem     `json:"files"`
+	Libraries []FavoriteLibraryItem  `json:"libraries"`
+	WikiPages []FavoriteWikiPageItem `json:"wiki_pages"`
 }
 
 type favoriteListItem struct {
 	resourceType int
 	resourceID   int64
 	file         *model.File
+	wikiPage     *model.WikiPage
 	library      *model.Library
 	space        *model.Space
 	favoriteTime int64
@@ -169,7 +190,7 @@ func loadFavoriteListItems(eid, userID int64, resourceTypeFilter *int, keyword s
 		if queryErr != nil {
 			return nil, queryErr
 		}
-		return buildFavoriteItemsFromFavorites(eid, favs, "")
+		return buildFavoriteItemsFromFavorites(eid, userID, favs, "")
 	}
 
 	if resourceTypeFilter != nil && *resourceTypeFilter == model.RESOURCE_TYPE_LIBRARY {
@@ -177,7 +198,7 @@ func loadFavoriteListItems(eid, userID int64, resourceTypeFilter *int, keyword s
 		if queryErr != nil {
 			return nil, queryErr
 		}
-		return buildFavoriteItemsFromFavorites(eid, favs, "")
+		return buildFavoriteItemsFromFavorites(eid, userID, favs, "")
 	}
 
 	if resourceTypeFilter != nil && *resourceTypeFilter == model.RESOURCE_TYPE_FILE {
@@ -185,7 +206,15 @@ func loadFavoriteListItems(eid, userID int64, resourceTypeFilter *int, keyword s
 		if queryErr != nil {
 			return nil, queryErr
 		}
-		return buildFavoriteItemsFromFavorites(eid, favs, "")
+		return buildFavoriteItemsFromFavorites(eid, userID, favs, "")
+	}
+
+	if resourceTypeFilter != nil && *resourceTypeFilter == model.RESOURCE_TYPE_WIKI_PAGE {
+		favs, queryErr := model.GetUserFavoriteWikiPagesByKeyword(userID, eid, keyword, offset, limit)
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		return buildFavoriteItemsFromFavorites(eid, userID, favs, "")
 	}
 
 	if resourceTypeFilter == nil {
@@ -219,7 +248,7 @@ func loadFavoriteListItemsByKeywordAll(eid, userID int64, keyword string, offset
 				return model.GetUserFavoriteFilesByKeyword(userID, eid, keyword, sourceOffset, sourceLimit)
 			},
 			func(batch []model.Favorite) ([]favoriteListItem, error) {
-				return buildFavoriteItemsFromFavorites(eid, batch, "")
+				return buildFavoriteItemsFromFavorites(eid, userID, batch, "")
 			},
 		),
 		newFavoriteAllSource(
@@ -227,7 +256,15 @@ func loadFavoriteListItemsByKeywordAll(eid, userID int64, keyword string, offset
 				return model.GetUserFavoriteLibrariesByKeyword(userID, eid, keyword, sourceOffset, sourceLimit)
 			},
 			func(batch []model.Favorite) ([]favoriteListItem, error) {
-				return buildFavoriteItemsFromFavorites(eid, batch, "")
+				return buildFavoriteItemsFromFavorites(eid, userID, batch, "")
+			},
+		),
+		newFavoriteAllSource(
+			func(sourceOffset, sourceLimit int) ([]model.Favorite, error) {
+				return model.GetUserFavoriteWikiPagesByKeyword(userID, eid, keyword, sourceOffset, sourceLimit)
+			},
+			func(batch []model.Favorite) ([]favoriteListItem, error) {
+				return buildFavoriteItemsFromFavorites(eid, userID, batch, "")
 			},
 		),
 	}
@@ -361,7 +398,7 @@ func loadFavoriteListItemsByKeywordPaged(eid, userID int64, resourceTypeFilter *
 			break
 		}
 
-		items, buildErr := buildFavoriteItemsFromFavorites(eid, favs, keyword)
+		items, buildErr := buildFavoriteItemsFromFavorites(eid, userID, favs, keyword)
 		if buildErr != nil {
 			return nil, buildErr
 		}
@@ -470,6 +507,49 @@ func convertFavoriteItemsToRecentAccessItems(items []favoriteListItem) []recentA
 				recentTime: item.favoriteTime,
 				isFavorite: true,
 			})
+		case model.RESOURCE_TYPE_WIKI_PAGE:
+			if item.wikiPage == nil {
+				continue
+			}
+			var librarySummary *RecentAccessLibrarySummary
+			if item.library != nil {
+				librarySummary = &RecentAccessLibrarySummary{
+					ID:          encodeRecentAccessID(item.library.ID),
+					Name:        item.library.Name,
+					LibraryKind: item.library.LibraryKind,
+					SpaceID:     encodeRecentAccessID(item.library.SpaceID),
+				}
+			}
+			var spaceSummary *RecentAccessSpaceSummary
+			if item.space != nil {
+				spaceSummary = &RecentAccessSpaceSummary{
+					ID:        encodeRecentAccessID(item.space.ID),
+					Name:      item.space.Name,
+					SpaceKind: item.space.SpaceKind,
+				}
+			}
+			recentItems = append(recentItems, recentAccessItem{
+				resourceType: model.RESOURCE_TYPE_WIKI_PAGE,
+				resourceID:   item.wikiPage.ID,
+				wikiPage:     toRecentAccessWikiPageDetail(item.wikiPage),
+				libraryID: func() int64 {
+					if item.library != nil {
+						return item.library.ID
+					}
+					return 0
+				}(),
+				spaceID: func() int64 {
+					if item.space != nil {
+						return item.space.ID
+					}
+					return 0
+				}(),
+				creatorID:  item.wikiPage.CreatorID,
+				library:    librarySummary,
+				space:      spaceSummary,
+				recentTime: item.favoriteTime,
+				isFavorite: true,
+			})
 		}
 	}
 
@@ -500,6 +580,7 @@ func ListFavorites(c *gin.Context) {
 	resp := FavoritesListResponse{
 		Files:     []FavoriteFileItem{},
 		Libraries: []FavoriteLibraryItem{},
+		WikiPages: []FavoriteWikiPageItem{},
 	}
 
 	domain := config.GetProtocol(c) + "://" + config.GetDomain(c)
@@ -537,6 +618,22 @@ func ListFavorites(c *gin.Context) {
 				Space:        space,
 				FavoriteTime: f.UpdatedTime,
 			})
+		case model.RESOURCE_TYPE_WIKI_PAGE:
+			page, err := model.GetWikiPageByID(eid, f.ResourceID)
+			if err != nil || page == nil {
+				continue
+			}
+			lib, _ := model.GetLibraryByID(eid, page.LibraryID)
+			var space *model.Space
+			if lib != nil {
+				space, _ = model.GetSpaceByID(eid, lib.SpaceID)
+			}
+			resp.WikiPages = append(resp.WikiPages, FavoriteWikiPageItem{
+				WikiPage:     page,
+				Library:      lib,
+				Space:        space,
+				FavoriteTime: f.UpdatedTime,
+			})
 		default:
 			// 其他类型暂不处理
 			continue
@@ -548,12 +645,12 @@ func ListFavorites(c *gin.Context) {
 
 // GetMySpaceFavorites godoc
 // @Summary 获取我的收藏（统一结构）
-// @Description 返回当前用户收藏的文件/知识库单列表，结构与最近访问保持一致；新路由优先用于前端新迭代。
+// @Description 返回当前用户收藏的文件/知识库/Wiki 页面单列表，结构与最近访问保持一致；新路由优先用于前端新迭代。
 // @Tags 我的空间
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type query int false "资源类型筛选，仅支持 1（知识库）或 2（文件）"
+// @Param resource_type query int false "资源类型筛选，支持 1（知识库）、2（文件）、3（Wiki 页面）"
 // @Param offset query int false "偏移量" default(0)
 // @Param limit query int false "每页数量" default(30)
 // @Param keyword query string false "当前 Tab 内关键词搜索"
@@ -597,19 +694,22 @@ func GetMySpaceFavorites(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(resp))
 }
 
-func buildFavoriteItemsFromFavorites(eid int64, favs []model.Favorite, keyword string) ([]favoriteListItem, error) {
+func buildFavoriteItemsFromFavorites(eid, userID int64, favs []model.Favorite, keyword string) ([]favoriteListItem, error) {
 	if len(favs) == 0 {
 		return []favoriteListItem{}, nil
 	}
 
 	fileIDs := make([]int64, 0, len(favs))
 	libraryIDs := make([]int64, 0, len(favs))
+	wikiPageIDs := make([]int64, 0, len(favs))
 	for _, fav := range favs {
 		switch fav.ResourceType {
 		case model.RESOURCE_TYPE_FILE:
 			fileIDs = append(fileIDs, fav.ResourceID)
 		case model.RESOURCE_TYPE_LIBRARY:
 			libraryIDs = append(libraryIDs, fav.ResourceID)
+		case model.RESOURCE_TYPE_WIKI_PAGE:
+			wikiPageIDs = append(wikiPageIDs, fav.ResourceID)
 		}
 	}
 
@@ -664,6 +764,26 @@ func buildFavoriteItemsFromFavorites(eid int64, favs []model.Favorite, keyword s
 		}
 	}
 
+	pagesByID := map[int64]*model.WikiPage{}
+	if len(wikiPageIDs) > 0 {
+		pages, err := model.GetWikiPagesByIDs(eid, wikiPageIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range pages {
+			page := pages[i]
+			pagesByID[page.ID] = &page
+		}
+	}
+	wikiPagePermissions := map[int64]int{}
+	if len(wikiPageIDs) > 0 {
+		permissions, permissionErr := common.BatchGetUserPermissions(eid, model.RESOURCE_TYPE_WIKI_PAGE, wikiPageIDs, userID)
+		if permissionErr != nil {
+			return nil, permissionErr
+		}
+		wikiPagePermissions = permissions
+	}
+
 	spaceIDs := make([]int64, 0, len(librariesByID))
 	spaceSeen := make(map[int64]struct{}, len(librariesByID))
 	for _, library := range librariesByID {
@@ -675,6 +795,38 @@ func buildFavoriteItemsFromFavorites(eid int64, favs []model.Favorite, keyword s
 		}
 		spaceSeen[library.SpaceID] = struct{}{}
 		spaceIDs = append(spaceIDs, library.SpaceID)
+	}
+
+	wikiLibIDs := make([]int64, 0, len(pagesByID))
+	wikiLibSeen := make(map[int64]struct{}, len(pagesByID))
+	for _, page := range pagesByID {
+		if page == nil || page.LibraryID <= 0 {
+			continue
+		}
+		if _, ok := librariesByID[page.LibraryID]; ok {
+			continue
+		}
+		if _, ok := wikiLibSeen[page.LibraryID]; ok {
+			continue
+		}
+		wikiLibSeen[page.LibraryID] = struct{}{}
+		wikiLibIDs = append(wikiLibIDs, page.LibraryID)
+	}
+	if len(wikiLibIDs) > 0 {
+		libs, err := model.GetLibrariesByIDs(eid, wikiLibIDs)
+		if err != nil {
+			return nil, err
+		}
+		for i := range libs {
+			lib := libs[i]
+			librariesByID[lib.ID] = &lib
+			if lib.SpaceID > 0 {
+				if _, ok := spaceSeen[lib.SpaceID]; !ok {
+					spaceSeen[lib.SpaceID] = struct{}{}
+					spaceIDs = append(spaceIDs, lib.SpaceID)
+				}
+			}
+		}
 	}
 
 	spacesByID := map[int64]*model.Space{}
@@ -735,6 +887,27 @@ func buildFavoriteItemsFromFavorites(eid int64, favs []model.Favorite, keyword s
 				space:        space,
 				favoriteTime: fav.UpdatedTime,
 			})
+		case model.RESOURCE_TYPE_WIKI_PAGE:
+			page, ok := pagesByID[fav.ResourceID]
+			if !ok || page == nil {
+				continue
+			}
+			if wikiPagePermissions[page.ID] < model.PERMISSION_VIEW_ONLY {
+				continue
+			}
+			lib := librariesByID[page.LibraryID]
+			var space *model.Space
+			if lib != nil {
+				space = spacesByID[lib.SpaceID]
+			}
+			items = append(items, favoriteListItem{
+				resourceType: model.RESOURCE_TYPE_WIKI_PAGE,
+				resourceID:   page.ID,
+				wikiPage:     page,
+				library:      lib,
+				space:        space,
+				favoriteTime: fav.UpdatedTime,
+			})
 		}
 	}
 
@@ -770,8 +943,8 @@ func CheckFavorites(c *gin.Context) {
 		return
 	}
 
-	if req.ResourceType != model.RESOURCE_TYPE_FILE && req.ResourceType != model.RESOURCE_TYPE_LIBRARY && req.ResourceType != RESOURCE_TYPE_UPLOAD_FILE {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("resource_type 无效，必须为 1（知识库）、2（文件）或 9999（上传文件）")))
+	if req.ResourceType != model.RESOURCE_TYPE_FILE && req.ResourceType != model.RESOURCE_TYPE_LIBRARY && req.ResourceType != model.RESOURCE_TYPE_WIKI_PAGE && req.ResourceType != RESOURCE_TYPE_UPLOAD_FILE {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("resource_type 无效，必须为 1（知识库）、2（文件）、3（Wiki 页面）或 9999（上传文件）")))
 		return
 	}
 

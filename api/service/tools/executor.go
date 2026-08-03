@@ -40,6 +40,7 @@ const (
 	ToolEIDKey               contextKey = "tool_eid"
 	ToolUserIDKey            contextKey = "tool_user_id"
 	ToolAgentIDKey           contextKey = "tool_agent_id"
+	ToolMessageIDKey         contextKey = "tool_message_id"
 	SandboxConversationIDKey contextKey = "sandbox_conversation_id"
 	SandboxSessionIDKey      contextKey = "sandbox_session_id"
 	SandboxCWDKey            contextKey = "sandbox_cwd"
@@ -102,7 +103,7 @@ func ExecuteTool(ctx context.Context, name string, args map[string]interface{}) 
 
 // ExecuteToolWithResult executes a tool and returns full result including output files
 func ExecuteToolWithResult(ctx context.Context, name string, args map[string]interface{}) (*ToolResult, error) {
-	logger.Infof(ctx, "Executing tool: %s with args: %+v", name, args)
+	logger.Infof(ctx, "【工具执行】开始: tool=%s %s", name, logger.SummarizeToolArguments(args))
 	if err := ensureSandboxRuntimeEnabledForTool(name); err != nil {
 		return nil, err
 	}
@@ -642,7 +643,7 @@ func ensureUploadedFilesSeeded(ctx context.Context, sessionID string, cwd string
 	logger.Infof(ctx, "【沙盒】准备注入上传文件: session=%s cwd=%s count=%d", sessionID, cwd, len(downloads))
 	for _, download := range downloads {
 		logger.Infof(ctx, "【沙盒】download_files 请求项: session=%s file_name=%s url=%s mime=%s size=%d",
-			sessionID, download.FileName, download.URL, download.MimeType, download.Size)
+			sessionID, download.FileName, logger.SanitizeURL(download.URL), download.MimeType, download.Size)
 	}
 	if len(downloads) == 0 {
 		seededSessionResources.Store(cacheKey, struct{}{})
@@ -1721,13 +1722,6 @@ func isSandboxRuntimeTool(toolName string) bool {
 	}
 }
 
-func truncateForDebug(value string, max int) string {
-	if max <= 0 || len(value) <= max {
-		return value
-	}
-	return value[:max] + "...(truncated)"
-}
-
 func collectOutputFileNames(files []OutputFile) []string {
 	if len(files) == 0 {
 		return nil
@@ -1742,17 +1736,17 @@ func collectOutputFileNames(files []OutputFile) []string {
 }
 
 func logSandboxRequestDebug(ctx context.Context, mode string, url string, reqPayload SandboxRequest, jsonData []byte) {
-	logger.Debugf(ctx, "【沙盒】%s请求: url=%s, session_id=%s, cwd=%s, language=%s, timeout=%d, code_chars=%d, injected_files=%d, payload_chars=%d, payload_preview=%s",
+	logger.Debugf(ctx, "【沙盒】%s请求: url=%s, session_id=%s, cwd=%s, language=%s, timeout=%d, code_chars=%d, env_vars=%d, injected_files=%d, payload_bytes=%d",
 		mode,
-		url,
+		logger.SanitizeURL(url),
 		reqPayload.SessionID,
 		reqPayload.Cwd,
 		reqPayload.Language,
 		reqPayload.Timeout,
 		len(reqPayload.Code),
+		len(reqPayload.EnvVars),
 		len(reqPayload.Files),
 		len(jsonData),
-		truncateForDebug(string(jsonData), 3000),
 	)
 }
 
@@ -1880,7 +1874,7 @@ func filterSandboxOutputFilesBySnapshot(prev *SandboxOutputSnapshot, outputFiles
 // ExecuteToolStream executes a tool and streams events via callback
 // Returns final result after streaming completes
 func ExecuteToolStream(ctx context.Context, name string, args map[string]interface{}, handler SandboxStreamHandler) (*ToolResult, error) {
-	logger.Infof(ctx, "Executing tool (streaming): %s with args: %+v", name, args)
+	logger.Infof(ctx, "【工具执行】开始流式执行: tool=%s %s", name, logger.SummarizeToolArguments(args))
 	if err := ensureSandboxRuntimeEnabledForTool(name); err != nil {
 		return nil, err
 	}
@@ -1902,14 +1896,7 @@ func ExecuteToolStream(ctx context.Context, name string, args map[string]interfa
 
 	case "run_shell":
 		if config.IsSandboxRuntimeProviderEnabled() {
-			result, err := executeSandboxRuntimeRunShell(ctx, args)
-			if err != nil {
-				return nil, err
-			}
-			if handler != nil {
-				handler(SandboxStreamEvent{EventType: "tool.completed", Data: map[string]interface{}{"stdout": result.Output, "stderr": result.Stderr, "exit_code": result.ExitCode}})
-			}
-			return result, nil
+			return executeSandboxRuntimeRunShellStream(ctx, args, handler)
 		}
 		return executeSyncToolStream(ctx, "run_shell", func() (*ToolResult, error) {
 			return executeRunShell(ctx, args)

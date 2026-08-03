@@ -158,3 +158,13 @@ func (cr *ChatRequest) DatasetIsKnowledgeBase() bool {
 func (cr *ChatRequest) DatasetIsSoloFile() bool {
 	return cr.SoloFileMode && len(cr.FileIDs) == 1
 }
+
+func (cr *ChatRequest) DatasetIsSoloWiki() bool {
+	return cr != nil && cr.SoloFileMode && cr.WikiSearchConfig != nil &&
+		cr.WikiSearchConfig.Enabled != nil && *cr.WikiSearchConfig.Enabled &&
+		len(cr.WikiSearchConfig.WikiPageIDs) == 1 && len(cr.FileIDs) == 0
+}
+
+func (cr *ChatRequest) DatasetIsSoloDocument() bool {
+	return cr.DatasetIsSoloFile() || cr.DatasetIsSoloWiki()
+}

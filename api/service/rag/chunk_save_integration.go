@@ -45,7 +45,7 @@ func (csi *ChunkSaveIntegration) SaveChunksOptimized(eid int64, fileID int64, ch
 	forceEmbeddingFailed := false
 	{
 		cfgSvc := NewChunkConfigService(csi.db)
-		if cfg, cerr := cfgSvc.GetConfigWithFileID(eid, &file.LibraryID, &fileID); cerr != nil {
+		if cfg, cerr := cfgSvc.GetEnterpriseEmbeddingConfig(eid); cerr != nil {
 			if cfg == nil || cfg.EmbeddingChannelID == nil {
 				forceEmbeddingFailed = true
 				logger.Warn(context.TODO(), fmt.Sprintf("[optEmbeddingConfigMissing][eid=%d][fileID=%d] 未配置向量化渠道，本次创建的分块 embedding_status=failed", eid, fileID))
@@ -124,7 +124,7 @@ func OptimizedSaveChunks(eid int64, file model.File, fileID int64, chunks []Docu
 		{
 			// 使用全局数据库句柄
 			cfgSvc := NewChunkConfigService(model.DB)
-			if cfg, cerr := cfgSvc.GetConfigWithFileID(eid, &file.LibraryID, &fileID); cerr != nil {
+			if cfg, cerr := cfgSvc.GetEnterpriseEmbeddingConfig(eid); cerr != nil {
 				if cfg == nil || cfg.EmbeddingChannelID == nil {
 					forceEmbeddingFailed = true
 					logger.Warn(context.TODO(), fmt.Sprintf("[fallbackEmbeddingConfigMissing][eid=%d][fileID=%d] 未配置向量化渠道，降级路径 embedding_status=failed", eid, fileID))

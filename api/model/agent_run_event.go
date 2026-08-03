@@ -35,6 +35,12 @@ type AgentRunEvent struct {
 	BaseModel
 }
 
+type AgentRunEventInput struct {
+	EventType string
+	MessageID int64
+	Payload   map[string]interface{}
+}
+
 func (AgentRunEvent) TableName() string {
 	return "agent_run_events"
 }
@@ -51,6 +57,51 @@ func CreateAgentRunEvent(event *AgentRunEvent) error {
 
 func AppendAgentRunEventWithAutoSeq(eid int64, runID string, event *AgentRunEvent) (*AgentRunEvent, error) {
 	return AppendAgentRunEventWithAutoSeqTx(DB, eid, runID, event)
+}
+
+// AppendAgentRunEventsWithAutoSeq atomically appends an ordered batch of events.
+// The caller must serialize batches for the same run; this avoids one MAX(seq)
+// query and one agent_runs update per streamed token.
+func AppendAgentRunEventsWithAutoSeq(eid int64, runID string, events []*AgentRunEvent) ([]*AgentRunEvent, error) {
+	if len(events) == 0 {
+		return events, nil
+	}
+	if runID == "" {
+		return nil, fmt.Errorf("run_id is required")
+	}
+
+	for attempt := 0; attempt < 8; attempt++ {
+		err := DB.Transaction(func(tx *gorm.DB) error {
+			var maxSeq int64
+			if err := tx.Model(&AgentRunEvent{}).
+				Where("eid = ? AND run_id = ?", eid, runID).
+				Select("COALESCE(MAX(seq), 0)").
+				Scan(&maxSeq).Error; err != nil {
+				return err
+			}
+
+			for i, event := range events {
+				if event == nil {
+					return fmt.Errorf("agent run event at index %d is nil", i)
+				}
+				event.Eid = eid
+				event.RunID = runID
+				event.Seq = maxSeq + int64(i) + 1
+				if event.CreatedAt == 0 {
+					event.CreatedAt = time.Now().UTC().UnixMilli()
+				}
+			}
+			return tx.CreateInBatches(events, len(events)).Error
+		})
+		if err == nil {
+			return events, nil
+		}
+		if !isAgentRunEventRetryable(err) {
+			return nil, err
+		}
+		time.Sleep(time.Duration(attempt+1) * time.Millisecond)
+	}
+	return nil, fmt.Errorf("append agent run events failed after retries: run_id=%s", runID)
 }
 
 func AppendAgentRunEventWithAutoSeqTx(db *gorm.DB, eid int64, runID string, event *AgentRunEvent) (*AgentRunEvent, error) {

@@ -9,7 +9,7 @@ import (
 
 const (
 	recordingLockKeyPrefix = "recording"
-	recordingLockTTL        = 5 * time.Minute
+	recordingLockTTL       = 5 * time.Minute
 )
 
 type RecordingLockType string

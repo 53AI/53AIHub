@@ -66,10 +66,10 @@ func (RetrievalChunk) TableName() string {
 }
 
 const (
-	RetrievalChunkEmbeddingStatusPending  = FileParsingStatusPending  // 排队中
-	RetrievalChunkEmbeddingStatusIndexing = FileParsingStatusParsing  // 索引中
-	RetrievalChunkEmbeddingStatusNormal   = FileParsingStatusNormal   // 索引完成
-	RetrievalChunkEmbeddingStatusFailed   = FileParsingStatusFail     // 索引失败
+	RetrievalChunkEmbeddingStatusPending  = FileParsingStatusPending // 排队中
+	RetrievalChunkEmbeddingStatusIndexing = FileParsingStatusParsing // 索引中
+	RetrievalChunkEmbeddingStatusNormal   = FileParsingStatusNormal  // 索引完成
+	RetrievalChunkEmbeddingStatusFailed   = FileParsingStatusFail    // 索引失败
 
 	// Deprecated: 兼容历史数据中的 completed 成功状态
 	RetrievalChunkEmbeddingStatusCompleted = "completed"
@@ -99,6 +99,15 @@ func RetrievalChunkEmbeddingInProgressStatuses() []string {
 		RetrievalChunkEmbeddingStatusPending,
 		RetrievalChunkEmbeddingStatusIndexing,
 	}
+}
+
+// IsFileEmbeddingComplete 检查文件下所有 retrieval_chunks 是否已完成向量化
+func IsFileEmbeddingComplete(eid, fileID int64) bool {
+	var count int64
+	DB.Model(&RetrievalChunk{}).
+		Where("eid = ? AND file_id = ? AND embedding_status IN ?", eid, fileID, RetrievalChunkEmbeddingInProgressStatuses()).
+		Count(&count)
+	return count == 0
 }
 
 // Save 创建检索块

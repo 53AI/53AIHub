@@ -3,11 +3,14 @@ package openai
 import (
 	"encoding/base64"
 	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"github.com/53AI/53AIHub/common/ctxkey"
+	"github.com/53AI/53AIHub/common/thinkingpolicy"
 
 	"github.com/53AI/53AIHub/common/storage"
 	Hub_model "github.com/53AI/53AIHub/model"
@@ -144,6 +147,32 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 
 	a.HandlerUploadFileMessages(request)
 	ApplyTokenLimitForModel(request)
+
+	disableThinking := a.CustomConfig != nil && a.CustomConfig.DisableThinking != nil && *a.CustomConfig.DisableThinking
+	if disableThinking {
+		jsonBytes, err := json.Marshal(request)
+		if err != nil {
+			return request, nil
+		}
+		ctx := context.Background()
+		channelID := 0
+		if c != nil && c.Request != nil {
+			ctx = c.Request.Context()
+			channelID = int(c.GetInt64(ctxkey.ChannelId))
+		}
+		modifiedJSON, applied, err := thinkingpolicy.ApplyDisableThinking(ctx, a.ChannelConfig, jsonBytes, request.Model, request.Model, a.CustomConfig.DisableThinking, channelID)
+		if err != nil {
+			return request, nil
+		}
+		if applied {
+			var resultMap map[string]interface{}
+			if err := json.Unmarshal(modifiedJSON, &resultMap); err != nil {
+				return request, nil
+			}
+			return resultMap, nil
+		}
+	}
+
 	return request, nil
 }
 

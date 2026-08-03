@@ -340,6 +340,12 @@ const KmModelsJSON = `{
                     "model_type": 2,
                     "models": [
                         {
+                            "model_id": "qwen3.7-text-embedding",
+                            "model_name": "Qwen3.7-text-embedding",
+                            "dimensions": 1024,
+                            "max_tokens": 131072
+                        },
+                        {
                             "model_id": "text-embedding-v4",
                             "model_name": "Qwen-text-embedding-v4",
                             "dimensions": 1024,

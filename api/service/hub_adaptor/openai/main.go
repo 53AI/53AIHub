@@ -116,10 +116,18 @@ func StreamHandler(c *gin.Context, resp *http.Response, relayMode int) (*model.E
 
 	// logger.SysLogf("========== stream data end =======")
 	if err := scanner.Err(); err != nil {
-		logger.SysError("error reading stream: " + err.Error())
+		logger.Errorf(ctx, "【技能运行】读取流式响应失败: turn=%d, skill=%s, model=%s, done_rendered=%v, lines=%d, events=%d, response_chars=%d, err=%v",
+			turnCount, skillName, modelName, doneRendered, lineCount, dataEventCount, len(responseText), err)
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.Errorf(ctx, "【技能运行】读取流式响应失败后关闭响应体失败: turn=%d, skill=%s, model=%s, err=%v",
+				turnCount, skillName, modelName, closeErr)
+		}
+		return ErrorWrapper(err, "read_stream_failed", http.StatusBadGateway), responseText, usage
 	}
 	logger.Debugf(ctx, "【技能运行】结束处理流式响应: turn=%d, skill=%s, model=%s, done_rendered=%v, lines=%d, events=%d, response_chars=%d",
 		turnCount, skillName, modelName, doneRendered, lineCount, dataEventCount, len(responseText))
+	logger.Debugf(ctx, "【LLM真实响应】stage=upstream_assembled, turn=%d, skill=%s, model=%s, stream=true, content_chars=%d, content=%q",
+		turnCount, skillName, modelName, len(responseText), responseText)
 
 	if !doneRendered {
 		render.Done(c)
@@ -177,6 +185,17 @@ func Handler(c *gin.Context, resp *http.Response, promptTokens int, modelName st
 	if err != nil {
 		return ErrorWrapper(err, "unmarshal_response_body_failed", http.StatusInternalServerError), nil
 	}
+	ctx := c.Request.Context()
+	turnValue, _ := c.Get("agent_loop_turn")
+	turnCount, _ := turnValue.(int)
+	skillValue, _ := c.Get("agent_loop_skill_name")
+	skillName, _ := skillValue.(string)
+	responseText := ""
+	for _, choice := range textResponse.Choices {
+		responseText += choice.Message.StringContent()
+	}
+	logger.Debugf(ctx, "【LLM真实响应】stage=upstream_assembled, turn=%d, skill=%s, model=%s, stream=false, content_chars=%d, content=%q",
+		turnCount, skillName, modelName, len(responseText), responseText)
 	if textResponse.Error.Type != "" {
 		return &model.ErrorWithStatusCode{
 			Error:      textResponse.Error,

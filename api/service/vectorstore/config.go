@@ -61,8 +61,8 @@ type VectorDBConfig struct {
 	VerboseLogging bool `json:"verbose_logging"`
 
 	// 缓冲配置
-	EnableBuffer   bool          `json:"enable_buffer"`   // 是否启用向量插入缓冲
-	FlushWindow   time.Duration `json:"flush_window"`   // 缓冲刷新时间窗口
+	EnableBuffer  bool          `json:"enable_buffer"`   // 是否启用向量插入缓冲
+	FlushWindow   time.Duration `json:"flush_window"`    // 缓冲刷新时间窗口
 	MaxBufferSize int           `json:"max_buffer_size"` // 单 Collection 最大缓冲数
 }
 

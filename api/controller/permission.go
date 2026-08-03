@@ -303,7 +303,7 @@ type BatchMyPermissionResponse struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档)"
+// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档, 3=Wiki页面)"
 // @Param resource_id query int true "资源ID"
 // @Success 200 {object} model.CommonResponse{data=DetailPermissionResponse} "详细权限信息"
 // @Failure 400 {object} model.CommonResponse "参数错误"
@@ -364,6 +364,12 @@ func GetDetailPermissions(c *gin.Context) {
 			return
 		}
 
+	case model.RESOURCE_TYPE_WIKI_PAGE:
+		if err := handleWikiPageDetailPermissions(eid, resourceID, &response); err != nil {
+			c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+			return
+		}
+
 	default:
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("unsupported resource_type"))
 		return
@@ -379,7 +385,7 @@ func GetDetailPermissions(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档)"
+// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档, 3=Wiki页面)"
 // @Param resource_id query int true "资源ID"
 // @Success 200 {object} model.CommonResponse{data=MyPermissionResponse} "我的权限信息"
 // @Failure 400 {object} model.CommonResponse "参数错误"
@@ -609,6 +615,53 @@ func handleFileDetailPermissions(eid int64, fileID int64, response *DetailPermis
 	}
 
 	response.TeamAdmin = adminPermissions
+	response.TeamMember = memberPermissions
+
+	return nil
+}
+
+// handleWikiPageDetailPermissions 处理 Wiki 页面的详细权限
+func handleWikiPageDetailPermissions(eid int64, pageID int64, response *DetailPermissionResponse) error {
+	// 1. 获取 Wiki 页面直接权限
+	resourceType := model.RESOURCE_TYPE_WIKI_PAGE
+	directPermissions, err := model.GetPermissionsByFilter(eid, &resourceType, &pageID, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	response.Direct = directPermissions
+
+	// 2. 获取 Wiki 页面信息，找到所属知识库
+	page, err := model.GetWikiPageByID(eid, pageID)
+	if err != nil || page == nil {
+		return err
+	}
+
+	// 3. 获取所属知识库的直接权限（作为继承权限）
+	libResourceType := model.RESOURCE_TYPE_LIBRARY
+	inheritedPermissions, err := model.GetPermissionsByFilter(eid, &libResourceType, &page.LibraryID, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	response.Inherited = inheritedPermissions
+
+	// 4. 获取所属空间的团队管理员和成员权限
+	spacePermissionService := service.NewSpacePermissionService(eid)
+
+	library, err := model.GetLibraryByID(eid, page.LibraryID)
+	if err != nil || library == nil {
+		return err
+	}
+
+	adminPermissions, err := spacePermissionService.GetSpaceAdminPermissions(library.SpaceID)
+	if err != nil {
+		return err
+	}
+	response.TeamAdmin = adminPermissions
+
+	memberPermissions, err := spacePermissionService.GetSpaceUserPermissions(library.SpaceID)
+	if err != nil {
+		return err
+	}
 	response.TeamMember = memberPermissions
 
 	return nil

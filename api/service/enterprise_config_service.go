@@ -83,7 +83,7 @@ func getStringValue(value interface{}) string {
 	if value == nil {
 		return ""
 	}
-	
+
 	switch v := value.(type) {
 	case string:
 		return v
@@ -101,7 +101,7 @@ func getBoolValue(value interface{}) bool {
 	if value == nil {
 		return false
 	}
-	
+
 	switch v := value.(type) {
 	case bool:
 		return v

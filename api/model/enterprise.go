@@ -207,7 +207,8 @@ func InitializeSystem() error {
 	// 1. Create default enterprise
 	enterprise := Enterprise{
 		DisplayName:  "53AI Hub",
-		Logo:         "https://img.ibos.cn/common/agenthub/agent/53ai.png",
+		Logo:         config.GetApiHost() + "api/images/enterprise/logo.png",
+		Ico:          config.GetApiHost() + "api/images/enterprise/ico.png",
 		Language:     "zh-cn",
 		Description:  "Default enterprise created during system initialization",
 		Type:         EnterpriseTypeIndustry,

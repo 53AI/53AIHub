@@ -323,7 +323,7 @@ func (c *RagPipelineController) ListStrategies(ctx *gin.Context) {
 		// detail 模式：返回完整 pipeline 信息
 		var strategies []model.RagRoutingStrategy
 		if err := c.DB.Where("eid = ?", eid).
-			Order("priority ASC").
+			Order("priority ASC, id ASC").
 			Find(&strategies).Error; err != nil {
 			logger.Errorf(ctx, "获取策略列表失败: %v", err)
 			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
@@ -374,7 +374,7 @@ func (c *RagPipelineController) ListStrategies(ctx *gin.Context) {
 		Select("rag_routing_strategies.*, rag_pipeline_profiles.name as pipeline_name").
 		Joins("JOIN rag_pipeline_profiles ON rag_pipeline_profiles.id = rag_routing_strategies.pipeline_id").
 		Where("rag_routing_strategies.eid = ?", eid).
-		Order("rag_routing_strategies.priority ASC").
+		Order("rag_routing_strategies.priority ASC, rag_routing_strategies.id ASC").
 		Scan(&strategies).Error
 
 	if err != nil {

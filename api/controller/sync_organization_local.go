@@ -24,4 +24,3 @@ func GetAllSyncProgress(c *gin.Context) {
 func GetSyncProgressByFrom(c *gin.Context) {
 	c.JSON(http.StatusNotFound, model.FeatureNotAvailableError.ToNewErrorResponse(model.FeatureNotAvailable))
 }
-

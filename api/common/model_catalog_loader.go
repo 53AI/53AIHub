@@ -21,20 +21,20 @@ type EmbeddingModelMeta struct {
 
 // ChatModelMeta 聊天模型元数据
 type ChatModelMeta struct {
-	ModelID     string `json:"model_id"`
-	ModelName   string `json:"model_name"`
-	CategoryID  string `json:"category_id"`
-	PlatformID  string `json:"platform_id"`
-	Enabled     bool   `json:"enabled"`
+	ModelID    string `json:"model_id"`
+	ModelName  string `json:"model_name"`
+	CategoryID string `json:"category_id"`
+	PlatformID string `json:"platform_id"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // RerankModelMeta rerank模型元数据
 type RerankModelMeta struct {
-	ModelID     string `json:"model_id"`
-	ModelName   string `json:"model_name"`
-	CategoryID  string `json:"category_id"`
-	PlatformID  string `json:"platform_id"`
-	Enabled     bool   `json:"enabled"`
+	ModelID    string `json:"model_id"`
+	ModelName  string `json:"model_name"`
+	CategoryID string `json:"category_id"`
+	PlatformID string `json:"platform_id"`
+	Enabled    bool   `json:"enabled"`
 }
 
 // ModelCatalog 模型目录结构
@@ -52,7 +52,7 @@ type Platform struct {
 
 type Category struct {
 	ModelType  int     `json:"model_type"`
-	CategoryID string  `json:"category_id"`  // 添加 CategoryID 字段
+	CategoryID string  `json:"category_id"` // 添加 CategoryID 字段
 	Models     []Model `json:"models"`
 }
 
@@ -69,10 +69,10 @@ type Model struct {
 type ModelCatalogLoader struct {
 	catalog          *ModelCatalog
 	embeddingModels  map[string]*EmbeddingModelMeta
-	channelModels    map[int][]string                    // 模型按渠道类型索引
-	rerankModels     map[string]*RerankModelMeta         // rerank模型索引（按模型ID）
-	chatModels       map[string]*ChatModelMeta           // 对话模型索引（按模型ID）
-	unknownModelType map[int]bool                        // 记录遇到的未知模型类型
+	channelModels    map[int][]string            // 模型按渠道类型索引
+	rerankModels     map[string]*RerankModelMeta // rerank模型索引（按模型ID）
+	chatModels       map[string]*ChatModelMeta   // 对话模型索引（按模型ID）
+	unknownModelType map[int]bool                // 记录遇到的未知模型类型
 	once             sync.Once
 	loadErr          error
 }
@@ -96,7 +96,7 @@ func (l *ModelCatalogLoader) load() error {
 
 	l.catalog = &catalog
 	l.embeddingModels = make(map[string]*EmbeddingModelMeta)
-	l.channelModels = make(map[int][]string)  // 初始化 channelModels
+	l.channelModels = make(map[int][]string) // 初始化 channelModels
 	l.rerankModels = make(map[string]*RerankModelMeta)
 	l.chatModels = make(map[string]*ChatModelMeta)
 	l.unknownModelType = make(map[int]bool)
@@ -108,11 +108,11 @@ func (l *ModelCatalogLoader) load() error {
 			case 1: // chat模型
 				for _, model := range category.Models {
 					meta := &ChatModelMeta{
-						ModelID:     model.ModelID,
-						ModelName:   model.ModelName,
-						CategoryID:  category.CategoryID,
-						PlatformID:  platform.PlatformID,
-						Enabled:     true, // 默认启用
+						ModelID:    model.ModelID,
+						ModelName:  model.ModelName,
+						CategoryID: category.CategoryID,
+						PlatformID: platform.PlatformID,
+						Enabled:    true, // 默认启用
 					}
 					l.chatModels[model.ModelID] = meta
 				}
@@ -144,11 +144,11 @@ func (l *ModelCatalogLoader) load() error {
 			case 3: // rerank模型
 				for _, model := range category.Models {
 					meta := &RerankModelMeta{
-						ModelID:     model.ModelID,
-						ModelName:   model.ModelName,
-						CategoryID:  category.CategoryID,
-						PlatformID:  platform.PlatformID,
-						Enabled:     true, // 默认启用
+						ModelID:    model.ModelID,
+						ModelName:  model.ModelName,
+						CategoryID: category.CategoryID,
+						PlatformID: platform.PlatformID,
+						Enabled:    true, // 默认启用
 					}
 					l.rerankModels[model.ModelID] = meta
 				}
@@ -404,7 +404,7 @@ func (l *ModelCatalogLoader) GetModelMeta(channelType int, modelName string) (in
 		if platform.ChannelType != channelType {
 			continue
 		}
-		
+
 		for _, category := range platform.Categories {
 			for _, model := range category.Models {
 				if model.ModelID == modelName {
@@ -417,11 +417,11 @@ func (l *ModelCatalogLoader) GetModelMeta(channelType int, modelName string) (in
 						}
 						// 如果缓存中不存在，创建一个新的
 						return &ChatModelMeta{
-							ModelID:     model.ModelID,
-							ModelName:   model.ModelName,
-							CategoryID:  category.CategoryID,
-							PlatformID:  platform.PlatformID,
-							Enabled:     true,
+							ModelID:    model.ModelID,
+							ModelName:  model.ModelName,
+							CategoryID: category.CategoryID,
+							PlatformID: platform.PlatformID,
+							Enabled:    true,
 						}, nil
 					case 2: // embedding 模型
 						embeddingMeta, exists := l.embeddingModels[modelName]
@@ -445,17 +445,17 @@ func (l *ModelCatalogLoader) GetModelMeta(channelType int, modelName string) (in
 						}
 						// 如果缓存中不存在，创建一个新的
 						return &RerankModelMeta{
-							ModelID:     model.ModelID,
-							ModelName:   model.ModelName,
-							CategoryID:  category.CategoryID,
-							PlatformID:  platform.PlatformID,
-							Enabled:     true,
+							ModelID:    model.ModelID,
+							ModelName:  model.ModelName,
+							CategoryID: category.CategoryID,
+							PlatformID: platform.PlatformID,
+							Enabled:    true,
 						}, nil
 					default:
 						// 对于未知类型，返回基本模型信息
 						return map[string]interface{}{
-							"model_id":   model.ModelID,
-							"model_name": model.ModelName,
+							"model_id":    model.ModelID,
+							"model_name":  model.ModelName,
 							"category_id": category.CategoryID,
 							"platform_id": platform.PlatformID,
 							"model_type":  category.ModelType,

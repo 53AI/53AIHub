@@ -40,3 +40,39 @@ func requireFilePermission(c *gin.Context, eid int64, userID int64, fileID int64
 
 	return file, true
 }
+
+func requireWikiPageSlugPermission(c *gin.Context, eid int64, userID int64, libraryID int64, slug string, minPermission int, deniedMessage string) (*model.WikiPage, bool) {
+	page, err := model.GetWikiPageBySlug(eid, libraryID, slug)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("wiki 页面不存在")))
+		return nil, false
+	}
+
+	permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_WIKI_PAGE, page.ID, userID)
+	if err != nil || permission < minPermission {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New(deniedMessage)))
+		return nil, false
+	}
+
+	return page, true
+}
+
+func resolveWikiPageByID(c *gin.Context, eid int64, userID int64, minPermission int, deniedMessage string) (*model.WikiPage, bool) {
+	pageID, err := parseWikiPageID(c.Param("page_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的页面ID")))
+		return nil, false
+	}
+	page, err := model.GetWikiPageByID(eid, pageID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("wiki 页面不存在")))
+		return nil, false
+	}
+
+	permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageID, userID)
+	if err != nil || permission < minPermission {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New(deniedMessage)))
+		return nil, false
+	}
+	return page, true
+}

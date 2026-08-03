@@ -39,8 +39,8 @@ type ToolCallFunction struct {
 
 // 工具调用结构体
 type ToolCall struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
 	Function ToolCallFunction `json:"function"`
 }
 
@@ -53,12 +53,12 @@ type Usage struct {
 
 // 步骤结构体
 type Step struct {
-	Role       string    `json:"role"`
-	Content    string    `json:"content"`
-	ToolCallID string    `json:"tool_call_id"`
+	Role       string     `json:"role"`
+	Content    string     `json:"content"`
+	ToolCallID string     `json:"tool_call_id"`
 	ToolCalls  []ToolCall `json:"tool_calls"`
-	Usage      Usage     `json:"usage"`
-	TimeCost   int64     `json:"time_cost"`
+	Usage      Usage      `json:"usage"`
+	TimeCost   int64      `json:"time_cost"`
 }
 
 // 消息结构体
@@ -78,11 +78,11 @@ type Delta struct {
 
 // 选择项结构体
 type Choice struct {
-	Index           int    `json:"index"`
-	FinishReason    string `json:"finish_reason"`
+	Index           int     `json:"index"`
+	FinishReason    string  `json:"finish_reason"`
 	Message         Message `json:"message"`
-	Delta           Delta  `json:"delta"`
-	ModerationLevel string `json:"moderation_level"`
+	Delta           Delta   `json:"delta"`
+	ModerationLevel string  `json:"moderation_level"`
 }
 
 // 响应结构体

@@ -27,15 +27,15 @@ func searchMySpaceFilesByKeyword(ctx context.Context, eid, libraryID int64, orig
 	return searchMySpaceFilesByKeywordWithFilters(ctx, eid, libraryID, nil, nil, keyword, fileType, offset, limit)
 }
 
-func searchMySpaceFilesByKeywordWithOriginTypes(ctx context.Context, eid, libraryID int64, originTypes []string, keyword string, fileType *int, offset, limit int) ([]model.File, int64, error) {
-	return searchMySpaceFilesByKeywordWithFilters(ctx, eid, libraryID, originTypes, nil, keyword, fileType, offset, limit)
+func searchMySpaceFilesByKeywordWithOriginTypes(ctx context.Context, eid, libraryID int64, originTypes []string, keyword string, fileType *int, offset, limit int, groupID ...int64) ([]model.File, int64, error) {
+	return searchMySpaceFilesByKeywordWithFilters(ctx, eid, libraryID, originTypes, nil, keyword, fileType, offset, limit, groupID...)
 }
 
 func searchMySpaceFilesByKeywordExcludingOriginTypes(ctx context.Context, eid, libraryID int64, excludedOriginTypes []string, keyword string, fileType *int, offset, limit int) ([]model.File, int64, error) {
 	return searchMySpaceFilesByKeywordWithFilters(ctx, eid, libraryID, nil, excludedOriginTypes, keyword, fileType, offset, limit)
 }
 
-func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID int64, originTypes []string, excludedOriginTypes []string, keyword string, fileType *int, offset, limit int) ([]model.File, int64, error) {
+func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID int64, originTypes []string, excludedOriginTypes []string, keyword string, fileType *int, offset, limit int, groupID ...int64) ([]model.File, int64, error) {
 	keyword = strings.TrimSpace(keyword)
 	if keyword == "" {
 		return []model.File{}, 0, nil
@@ -45,9 +45,12 @@ func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID 
 		limit = 20
 	}
 
+	var gid int64
+	if len(groupID) > 0 {
+		gid = groupID[0]
+	}
+
 	if searchService := newMySpaceFileSearchService(); searchService != nil {
-		// 我的上传 / 我的录音的来源口径以 docs/对接文档/知识库文件列表优化.md 为准。
-		// 后续如果这里的筛选条件变化，先同步文档再调整 ES / DB 回退逻辑，避免合并时出现口径分叉。
 		request := &elasticsearch.FileNameSearchRequest{
 			Query:              keyword,
 			TopK:               offset + limit,
@@ -61,7 +64,7 @@ func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID 
 
 		response, err := searchService.Search(eid, request)
 		if err == nil {
-			files, materializeErr := materializeMySpaceFilesFromSearchResults(eid, response.Results, offset, limit)
+			files, materializeErr := materializeMySpaceFilesFromSearchResults(eid, response.Results, offset, limit, gid)
 			if materializeErr == nil {
 				return files, response.Total, nil
 			}
@@ -69,7 +72,20 @@ func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID 
 	}
 
 	if len(originTypes) > 0 {
-		return model.SearchFilesByLibraryOriginTypesKeyword(eid, libraryID, originTypes, keyword, fileType, offset, limit)
+		files, total, err := model.SearchFilesByLibraryOriginTypesKeyword(eid, libraryID, originTypes, keyword, fileType, offset, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		if gid > 0 {
+			filtered := make([]model.File, 0)
+			for _, f := range files {
+				if f.GroupID == gid {
+					filtered = append(filtered, f)
+				}
+			}
+			return filtered, int64(len(filtered)), nil
+		}
+		return files, total, nil
 	}
 	if len(excludedOriginTypes) > 0 {
 		return model.SearchFilesByLibraryExcludeOriginTypesKeyword(eid, libraryID, excludedOriginTypes, keyword, fileType, offset, limit)
@@ -77,10 +93,7 @@ func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID 
 	return model.SearchFilesByLibraryKeyword(eid, libraryID, keyword, fileType, originTypes, offset, limit)
 }
 
-func materializeMySpaceFilesFromSearchResults(eid int64, results []elasticsearch.FileNameSearchResult, offset, limit int) ([]model.File, error) {
-	if len(results) == 0 {
-		return []model.File{}, nil
-	}
+func materializeMySpaceFilesFromSearchResults(eid int64, results []elasticsearch.FileNameSearchResult, offset, limit int, groupID ...int64) ([]model.File, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -97,6 +110,11 @@ func materializeMySpaceFilesFromSearchResults(eid int64, results []elasticsearch
 	selected := results[offset:end]
 	if len(selected) == 0 {
 		return []model.File{}, nil
+	}
+
+	var gid int64
+	if len(groupID) > 0 {
+		gid = groupID[0]
 	}
 
 	fileIDs := make([]int64, 0, len(selected))
@@ -120,8 +138,14 @@ func materializeMySpaceFilesFromSearchResults(eid int64, results []elasticsearch
 		fileMap[file.ID] = file
 	}
 
-	ordered := make([]model.File, 0, len(fileIDs))
+	ordered := make([]model.File, 0, len(selected))
 	for _, result := range selected {
+		if gid > 0 {
+			if file, ok := fileMap[result.FileID]; ok && file.GroupID == gid {
+				ordered = append(ordered, file)
+			}
+			continue
+		}
 		if file, ok := fileMap[result.FileID]; ok {
 			ordered = append(ordered, file)
 		}

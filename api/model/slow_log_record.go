@@ -100,15 +100,15 @@ func upsertSlowLogRecord(entry dbgormlogger.SlowLogEntry) {
 	if err != nil {
 		// 不存在，创建新记录
 		newRecord := SlowLogRecord{
-		 Type:          entry.Type,
-		 Feature:       entry.Feature,
-		 SampleData:    entry.SampleData,
-		 SlowestMs:     entry.CostMs,
-		 FileLine:      entry.FileLine,
-		 ResolveStatus: SlowLogUnresolved,
-		 TriggerCount:  1,
-		 CreatedAt:     now,
-		 UpdatedAt:     now,
+			Type:          entry.Type,
+			Feature:       entry.Feature,
+			SampleData:    entry.SampleData,
+			SlowestMs:     entry.CostMs,
+			FileLine:      entry.FileLine,
+			ResolveStatus: SlowLogUnresolved,
+			TriggerCount:  1,
+			CreatedAt:     now,
+			UpdatedAt:     now,
 		}
 		if err := DB.Create(&newRecord).Error; err != nil {
 			logger.Errorf(ctx, "【慢日志】创建记录失败 feature=%s err=%v", entry.Feature, err)

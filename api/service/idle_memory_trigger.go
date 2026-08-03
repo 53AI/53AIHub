@@ -30,11 +30,11 @@ func NewIdleMemoryTrigger(interval time.Duration) *IdleMemoryTrigger {
 		interval = 5 * time.Minute
 	}
 	return &IdleMemoryTrigger{
-		timers:      make(map[string]*time.Timer),
-		failures:    make(map[string]int),
-		interval:    interval,
-		maxBackoff:  2 * time.Hour,
-		onTrigger:   defaultTriggerFn,
+		timers:     make(map[string]*time.Timer),
+		failures:   make(map[string]int),
+		interval:   interval,
+		maxBackoff: 2 * time.Hour,
+		onTrigger:  defaultTriggerFn,
 	}
 }
 

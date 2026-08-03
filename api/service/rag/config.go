@@ -145,10 +145,40 @@ func NewChunkConfigService(db *gorm.DB) *ChunkConfigService {
 	}
 }
 
+// GetEnterpriseEmbeddingConfig returns the embedding configuration explicitly
+// configured at enterprise/site scope. It never falls back to a library or
+// system configuration because vector dimensions and models are enterprise-wide.
+func (s *ChunkConfigService) GetEnterpriseEmbeddingConfig(eid int64) (*ChunkConfig, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("chunk config database is nil")
+	}
+	if eid <= 0 {
+		return nil, errors.New("eid is required")
+	}
+	config, err := s.getDefaultConfig(eid, model.ChunkTypeDefault)
+	if err != nil {
+		return nil, fmt.Errorf("enterprise embedding config is not configured: %w", err)
+	}
+	if config.EmbeddingChannelID == nil || *config.EmbeddingChannelID <= 0 {
+		return nil, errors.New("enterprise embedding channel is not configured")
+	}
+	if config.EmbeddingModelName == nil || strings.TrimSpace(*config.EmbeddingModelName) == "" {
+		return nil, errors.New("enterprise embedding model is not configured")
+	}
+	return config, nil
+}
+
 // GetConfig 获取分块配置（支持4层级联：默认 → 站点 → 知识库 → 文档）GetConfig
 func (s *ChunkConfigService) GetConfig(eid int64, libraryID *int64, chunkType string) (*ChunkConfig, error) {
 	if libraryID != nil {
 		if libraryConfig, err := s.getConfigByLibrary(eid, *libraryID); err == nil && libraryConfig != nil {
+			enterpriseConfig, configErr := s.GetEnterpriseEmbeddingConfig(eid)
+			if configErr != nil {
+				return nil, configErr
+			}
+			libraryConfig.EmbeddingChannelID = enterpriseConfig.EmbeddingChannelID
+			libraryConfig.EmbeddingModelName = enterpriseConfig.EmbeddingModelName
+			libraryConfig.EmbeddingChannel = enterpriseConfig.EmbeddingChannel
 			return libraryConfig, nil
 		} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -193,7 +223,10 @@ func (s *ChunkConfigService) GetConfigWithFileID(eid int64, libraryID, fileID *i
 		// }
 	}
 	if fileConfig != nil {
-		config, _ := s.GetConfig(eid, nil, model.ChunkTypeDefault)
+		config, configErr := s.GetEnterpriseEmbeddingConfig(eid)
+		if configErr != nil {
+			return nil, configErr
+		}
 		fileConfig.EmbeddingModelName = config.EmbeddingModelName
 		fileConfig.EmbeddingChannel = config.EmbeddingChannel
 		fileConfig.EmbeddingChannelID = config.EmbeddingChannelID

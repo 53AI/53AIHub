@@ -1,13 +1,13 @@
 package custom
 
 import (
-	"bytes"
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/helper"
@@ -27,23 +27,16 @@ func SetupCommonRequestHeader(c *gin.Context, req *http.Request, meta *meta.Meta
 }
 
 func DoRequestHelper(a adaptor.Adaptor, c *gin.Context, meta *meta.Meta, requestBody io.Reader) (*http.Response, error) {
-	// 先读取并保存请求体内容
-	var bodyBytes []byte
-	var err error
-	if requestBody != nil {
-		bodyBytes, err = io.ReadAll(requestBody)
-		if err != nil {
-			return nil, fmt.Errorf("read request body failed: %w", err)
-		}
-		// 重新创建requestBody供后续使用
-		requestBody = bytes.NewReader(bodyBytes)
+	requestBodySize := -1
+	if sized, ok := requestBody.(interface{ Len() int }); ok {
+		requestBodySize = sized.Len()
 	}
 
 	fullRequestURL, err := a.GetRequestURL(meta)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
-	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
+	req, err := newUpstreamRequest(c, c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
 	}
@@ -51,43 +44,64 @@ func DoRequestHelper(a adaptor.Adaptor, c *gin.Context, meta *meta.Meta, request
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
-	resp, err := DoRequest(c, req)
+	requestStartedAt := time.Now()
+	resp, err := doRequest(c, req, meta.IsStream)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
 
 	if config.DebugEnabled {
-		var bodyStr string
-		if len(bodyBytes) > 0 {
-			bodyStr = string(bodyBytes)
-			// 尝试将bodyStr格式化为更易读的JSON
-			var jsonBody interface{}
-			if json.Unmarshal(bodyBytes, &jsonBody) == nil {
-				if prettyJSON, err := json.MarshalIndent(jsonBody, "", "  "); err == nil {
-					bodyStr = string(prettyJSON)
-				}
-			}
-		} else {
-			bodyStr = "<empty>"
-		}
-
-		logger.SysDebugf("\n=== DEBUG REQUEST ===\n"+
-			"URL: %s\n"+
-			"Method: %s\n"+
-			"Headers: %v\n"+
-			"Body: \n%s\n"+
-			"====================",
-			fullRequestURL,
+		logger.Debugf(c.Request.Context(), "LLM upstream request: url=%s method=%s status=%d duration_ms=%d model=%s stream=%t request_bytes=%d headers={%s}",
+			logger.SanitizeURL(fullRequestURL),
 			c.Request.Method,
-			req.Header,
-			bodyStr,
+			resp.StatusCode,
+			time.Since(requestStartedAt).Milliseconds(),
+			meta.ActualModelName,
+			meta.IsStream,
+			requestBodySize,
+			logger.SanitizeHeaders(req.Header),
 		)
 	}
 	return resp, nil
 }
 
+func newUpstreamRequest(c *gin.Context, method string, requestURL string, body io.Reader) (*http.Request, error) {
+	return http.NewRequestWithContext(c.Request.Context(), method, requestURL, body)
+}
+
+func httpClientForRequest(requestCtx context.Context, isStream bool) (*http.Client, error) {
+	httpClient := client.HTTPClient
+	if httpClient == nil {
+		return nil, errors.New("HTTP client is nil")
+	}
+	if !isStream {
+		return httpClient, nil
+	}
+	if requestCtx == nil {
+		return httpClient, nil
+	}
+	if _, hasDeadline := requestCtx.Deadline(); !hasDeadline {
+		return httpClient, nil
+	}
+
+	// http.Client.Timeout covers the entire exchange, including reading a
+	// streaming response body. Use a request-scoped copy so long-running streams
+	// are governed by the execution context without mutating the shared client.
+	streamClient := *httpClient
+	streamClient.Timeout = 0
+	return &streamClient, nil
+}
+
 func DoRequest(c *gin.Context, req *http.Request) (*http.Response, error) {
-	resp, err := client.HTTPClient.Do(req)
+	return doRequest(c, req, false)
+}
+
+func doRequest(c *gin.Context, req *http.Request, isStream bool) (*http.Response, error) {
+	httpClient, err := httpClientForRequest(req.Context(), isStream)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

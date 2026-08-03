@@ -84,6 +84,8 @@ func (s *TingwuDocumentStrategy) ProcessWithUploadFile(fileID int64, content []b
 					fileID, len(resp.Summary), len(resp.InsightSummary))
 			}
 		}
+		// 设置转写状态（独立于 parsing_status，避免被后续 RAG 管线失败覆盖）
+		model.SetFileTranscriptionStatus(fileID, "completed")
 	}
 
 	return &DocumentProcessResult{

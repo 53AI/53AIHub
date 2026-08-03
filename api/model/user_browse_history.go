@@ -306,3 +306,17 @@ func GetUserRecentFileIDs(eid int64, userID int64, limit int) ([]int64, error) {
 		Pluck("file_id", &fileIDs).Error
 	return fileIDs, err
 }
+
+// GetRecentlyUpdatedLibraries 获取最近有文件更新的知识库（按文件更新时间倒序）
+func GetRecentlyUpdatedLibraries(eid int64, limit int) ([]Library, error) {
+	var libraries []Library
+	err := DB.Table("libraries").
+		Select("libraries.*").
+		Joins("JOIN files ON files.library_id = libraries.id AND files.is_deleted = ?", false).
+		Where("libraries.eid = ? AND libraries.status = ?", eid, LIBRARY_STATUS_ACTIVE).
+		Group("libraries.id").
+		Order("MAX(files.updated_time) DESC").
+		Limit(limit).
+		Find(&libraries).Error
+	return libraries, err
+}

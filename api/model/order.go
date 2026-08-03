@@ -41,8 +41,8 @@ const (
 
 	// alipay trade_state constants
 	TradeStateWaitBuyerPay = "WAIT_BUYER_PAY" // Waiting for buyer to pay
-	TradeStateTradeClosed  = "TRADE_CLOSED"  // Trade closed
-	TradeStateTradeSuccess = "TRADE_SUCCESS" // Trade succeeded
+	TradeStateTradeClosed  = "TRADE_CLOSED"   // Trade closed
+	TradeStateTradeSuccess = "TRADE_SUCCESS"  // Trade succeeded
 	TradeStateTradeFinish  = "TRADE_FINISHED" // Trade finished
 )
 

@@ -28,9 +28,10 @@ func (Permission) TableName() string {
 
 // 资源类型常量
 const (
-	RESOURCE_TYPE_SPACE   = 0 // 空间
-	RESOURCE_TYPE_LIBRARY = 1 // 知识库
-	RESOURCE_TYPE_FILE    = 2 // 文件/文档
+	RESOURCE_TYPE_SPACE     = 0 // 空间
+	RESOURCE_TYPE_LIBRARY   = 1 // 知识库
+	RESOURCE_TYPE_FILE      = 2 // 文件/文档
+	RESOURCE_TYPE_WIKI_PAGE = 3 // Wiki 页面
 )
 
 // 权限主体类型常量

@@ -337,6 +337,11 @@ func hasKnowledgeScope(body []byte) bool {
 			}
 		}
 	}
+	if wikiConfig, ok := raw["wiki_search_config"].(map[string]interface{}); ok {
+		if enabled, ok := wikiConfig["enabled"].(bool); ok && enabled {
+			return true
+		}
+	}
 	return false
 }
 

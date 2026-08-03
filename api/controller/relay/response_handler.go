@@ -9,11 +9,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/53AI/53AIHub/common/ctxkey"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
@@ -21,8 +23,6 @@ import (
 
 const compactChatDeltaFlushChars = 64
 const compactChatDeltaFlushWindow = 100 * time.Millisecond
-const repeatedContentDeltaMaxPasses = 4
-const repeatedContentDeltaMaxChars = 32
 
 // GetResponseContent 获取响应内容
 func GetResponseContent(c *gin.Context, isStream bool, resp *http.Response) (string, string) {
@@ -115,7 +115,6 @@ type StreamResponseCollector struct {
 	content          strings.Builder
 	reasoningContent strings.Builder
 	c                *gin.Context
-	contentDeltas    []string
 }
 
 func NewStreamResponseCollector(c *gin.Context) *StreamResponseCollector {
@@ -151,7 +150,6 @@ func (c *StreamResponseCollector) Collect(chunk []byte) {
 					delta := streamResp.Choices[0].Delta
 					if delta.Content != nil && *delta.Content != "" {
 						c.content.WriteString(*delta.Content)
-						c.contentDeltas = append(c.contentDeltas, *delta.Content)
 					}
 					if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
 						c.reasoningContent.WriteString(*delta.ReasoningContent)
@@ -163,42 +161,18 @@ func (c *StreamResponseCollector) Collect(chunk []byte) {
 }
 
 func (c *StreamResponseCollector) GetContent() (string, string) {
-	if len(c.contentDeltas) > 0 {
-		return collapseRepeatedContentDeltas(c.contentDeltas), c.reasoningContent.String()
-	}
 	return c.content.String(), c.reasoningContent.String()
-}
-
-func collapseRepeatedContentDeltas(deltas []string) string {
-	if len(deltas) == 0 {
-		return ""
-	}
-	var out strings.Builder
-	for i := 0; i < len(deltas); {
-		current := deltas[i]
-		run := 1
-		for i+run < len(deltas) && deltas[i+run] == current {
-			run++
-		}
-		if run >= repeatedContentDeltaMaxPasses && len([]rune(current)) <= repeatedContentDeltaMaxChars {
-			out.WriteString(current)
-		} else {
-			for j := 0; j < run; j++ {
-				out.WriteString(current)
-			}
-		}
-		i += run
-	}
-	return out.String()
 }
 
 // StreamResponseInterceptor 用于拦截和收集流式响应
 type StreamResponseInterceptor struct {
 	gin.ResponseWriter
-	collector *StreamResponseCollector
-	c         *gin.Context
-	sseBuffer strings.Builder
-	deltaBuf  compactDeltaBuffer
+	collector  *StreamResponseCollector
+	c          *gin.Context
+	sseBuffer  strings.Builder
+	deltaBuf   compactDeltaBuffer
+	mu         sync.Mutex
+	flushTimer *time.Timer
 }
 
 type compactDeltaBuffer struct {
@@ -209,6 +183,8 @@ type compactDeltaBuffer struct {
 
 // Write 实现 ResponseWriter 接口
 func (w *StreamResponseInterceptor) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if config.IsSSECompactMode() {
 		return w.writeCompactSSE(b)
 	}
@@ -534,6 +510,43 @@ func (w *StreamResponseInterceptor) appendCompactDelta(content string, reasoning
 	if w.deltaBuf.lastFlush.IsZero() {
 		w.deltaBuf.lastFlush = time.Now()
 	}
+	w.scheduleCompactDeltaFlushLocked()
+}
+
+func (w *StreamResponseInterceptor) scheduleCompactDeltaFlushLocked() {
+	if w.flushTimer != nil {
+		return
+	}
+	w.flushTimer = time.AfterFunc(compactChatDeltaFlushWindow, w.flushCompactDeltaOnTimer)
+}
+
+func (w *StreamResponseInterceptor) stopCompactDeltaFlushTimerLocked() {
+	if w.flushTimer == nil {
+		return
+	}
+	w.flushTimer.Stop()
+	w.flushTimer = nil
+}
+
+func (w *StreamResponseInterceptor) flushCompactDeltaOnTimer() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	// The timer owns this firing. Clear it before flushing so a later append can
+	// arm a fresh bounded window.
+	w.flushTimer = nil
+	flushed := w.flushCompactDeltaBuffer(true)
+	if len(flushed) == 0 {
+		return
+	}
+	w.collector.Collect(flushed)
+	logOpenClawSSEInterceptorTrace(w.c, "relay.interceptor.compact_timer_flush", flushed)
+	if _, err := w.ResponseWriter.Write(flushed); err != nil {
+		return
+	}
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func (w *StreamResponseInterceptor) flushCompactDeltaBuffer(force bool) []byte {
@@ -582,6 +595,7 @@ func (w *StreamResponseInterceptor) flushCompactDeltaBuffer(force bool) []byte {
 	w.deltaBuf.content.Reset()
 	w.deltaBuf.reasoning.Reset()
 	w.deltaBuf.lastFlush = time.Now()
+	w.stopCompactDeltaFlushTimerLocked()
 	return []byte("data: " + string(raw) + "\n\n")
 }
 
@@ -699,6 +713,26 @@ func shouldDeferStreamDone(c *gin.Context) bool {
 	return false
 }
 
+func installDeferredStreamDone(c *gin.Context) func() {
+	if c == nil || !config.IsSSECompactMode() {
+		return func() {}
+	}
+	logger.Infof(c, "【诊断-流结束】安装 deferred DONE: request_id=%s writer=%T", helper.GetRequestID(c.Request.Context()), c.Writer)
+	c.Set("defer_stream_done", true)
+	return func() {
+		logger.Infof(c, "【诊断-流结束】开始执行 deferred DONE cleanup: request_id=%s", helper.GetRequestID(c.Request.Context()))
+		flushDeferredStreamDone(c)
+		logger.Infof(c, "【诊断-流结束】完成执行 deferred DONE cleanup: request_id=%s done=%v deferred=%v", helper.GetRequestID(c.Request.Context()), c.GetBool("stream_response_done"), c.GetBool("stream_response_done_deferred"))
+	}
+}
+
+func markDeferredStreamDone(c *gin.Context) {
+	if c == nil || !config.IsSSECompactMode() || isInternalAgentStreamTurn(c) {
+		return
+	}
+	c.Set("stream_response_done_deferred", true)
+}
+
 func markStreamDone(c *gin.Context) {
 	if c == nil {
 		return
@@ -712,18 +746,29 @@ func flushDeferredStreamDone(c *gin.Context) {
 	}
 	value, exists := c.Get("stream_response_done_deferred")
 	if !exists {
-		return
-	}
-	deferred, ok := value.(bool)
-	if !ok || !deferred {
-		return
+		logger.Infof(c, "【诊断-流结束】未发现 deferred DONE 标记: request_id=%s", helper.GetRequestID(c.Request.Context()))
+	} else if deferred, ok := value.(bool); !ok || !deferred {
+		logger.Infof(c, "【诊断-流结束】deferred DONE 标记无效: request_id=%s value=%v", helper.GetRequestID(c.Request.Context()), value)
 	}
 	if doneVal, doneExists := c.Get("stream_response_done"); doneExists {
 		if done, ok := doneVal.(bool); ok && done {
+			logger.Infof(c, "【诊断-流结束】DONE 已标记完成，跳过重复发送: request_id=%s", helper.GetRequestID(c.Request.Context()))
 			return
 		}
 	}
+	deferred := false
+	if value, exists := c.Get("stream_response_done_deferred"); exists {
+		deferred, _ = value.(bool)
+	}
+	// In compact mode the final response may be assembled by the agent runtime
+	// after all upstream streams have completed. In that path no outer upstream
+	// [DONE] reaches the interceptor, so the request-level defer must still
+	// guarantee one terminal frame.
+	if !deferred && !shouldDeferStreamDone(c) {
+		return
+	}
 	writer := unwrapStreamResponseWriter(c.Writer)
+	logger.Infof(c, "【诊断-流结束】写入 deferred DONE: request_id=%s writer=%T", helper.GetRequestID(c.Request.Context()), writer)
 	if _, err := writer.Write([]byte("data: [DONE]\n\n")); err != nil {
 		logger.Warnf(c, "flush deferred [DONE] failed: %v", err)
 		return
@@ -833,10 +878,13 @@ func compactSanitizeChoices(choices []interface{}) []interface{} {
 			if role := strings.TrimSpace(toString(cleanDelta["role"])); role == "assistant" {
 				delete(cleanDelta, "role")
 			}
-			if strings.TrimSpace(toString(cleanDelta["reasoning_content"])) == "" {
+			// Whitespace-only deltas are meaningful in streamed Markdown. Models often
+			// emit spaces and newlines in separate chunks, so only remove truly empty
+			// values instead of trimming them before the check.
+			if toString(cleanDelta["reasoning_content"]) == "" {
 				delete(cleanDelta, "reasoning_content")
 			}
-			if strings.TrimSpace(toString(cleanDelta["content"])) == "" {
+			if toString(cleanDelta["content"]) == "" {
 				delete(cleanDelta, "content")
 			}
 			if len(cleanDelta) == 0 {
@@ -944,11 +992,22 @@ func toString(v interface{}) string {
 
 // WriteHeader 实现 ResponseWriter 接口
 func (w *StreamResponseInterceptor) WriteHeader(statusCode int) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.ResponseWriter.WriteHeader(statusCode)
 }
 
 // Flush 实现 Flusher 接口
 func (w *StreamResponseInterceptor) Flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if config.IsSSECompactMode() {
+		if flushed := w.flushCompactDeltaBuffer(true); len(flushed) > 0 {
+			w.collector.Collect(flushed)
+			logOpenClawSSEInterceptorTrace(w.c, "relay.interceptor.compact_forced_flush", flushed)
+			_, _ = w.ResponseWriter.Write(flushed)
+		}
+	}
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -956,6 +1015,10 @@ func (w *StreamResponseInterceptor) Flush() {
 
 // SetupStreamInterceptor 设置流式响应拦截器
 func SetupStreamInterceptor(c *gin.Context) *StreamResponseCollector {
+	if existing, ok := c.Writer.(*StreamResponseInterceptor); ok && existing != nil {
+		c.Set("stream_response_collector", existing.collector)
+		return existing.collector
+	}
 	collector := NewStreamResponseCollector(c)
 	c.Set("stream_response_collector", collector)
 

@@ -73,8 +73,17 @@ type ChatRequest struct {
 	EnableGraphSearch    *bool                   `json:"enable_graph_search,omitempty"`     // 启用图谱聚合检索，默认开启，显式传 false 才关闭
 	EnableSkillAutoMatch *bool                   `json:"enable_skill_auto_match,omitempty"` // 启用技能自动匹配；工作AI默认开启，其它入口默认关闭
 	WebSearchConfig      *model.WebSearchConfig  `json:"web_search_config,omitempty"`       // AI在线搜索配置（可选）
+	WikiSearchConfig     *WikiSearchConfig       `json:"wiki_search_config,omitempty"`      // Wiki 动态知识搜索配置（可选）
 	Tools                []relay_model.Tool      `json:"tools,omitempty"`
 	Source               string                  `json:"source,omitempty"` // 请求来源：console/api/h5等，前端传递
+}
+
+// WikiSearchConfig 描述本次请求的 Wiki 搜索开关和独立范围。
+type WikiSearchConfig struct {
+	Enabled          *bool    `json:"enabled,omitempty"`
+	SpaceIDs         []string `json:"space_ids,omitempty"`
+	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty"`
+	WikiPageIDs      []string `json:"wiki_page_ids,omitempty"`
 }
 
 type MessageStatsInfo struct {
@@ -83,6 +92,8 @@ type MessageStatsInfo struct {
 	KnowledgeScope string `json:"knowledge_scope"` // 知识范围
 	// CitationCount  int    `json:"citation_count"`  // 引用数量
 	KnowledgeType      int                  `json:"knowledge_type"`
+	DocumentType       string               `json:"document_type"`
+	DocumentID         int64                `json:"document_id"`
 	SaveFileID         int64                `json:"save_file_id"`       // 需要保存的文件ID（用于单文件模式）
 	MessageFileID      int64                `json:"message_file_id"`    // 消息文件ID（优先级更高）、
 	OriginalQuestion   string               `json:"original_question"`  // 原始问题（未改写）
@@ -212,6 +223,10 @@ func clearKnowledgeSearchScope(chatRequest *ChatRequest) {
 	chatRequest.FileIDs = nil
 	chatRequest.MessageFileID = 0
 	chatRequest.SoloFileMode = false
+	if chatRequest.WikiSearchConfig != nil {
+		disabled := false
+		chatRequest.WikiSearchConfig.Enabled = &disabled
+	}
 }
 
 // ParseAgentDecision parses the decision tag from LLM response content
@@ -600,6 +615,18 @@ func mergeComplexQueryExpansionResult(result *rag.IntentClassificationResult, ex
 	}
 	if len(expansion.ExpandedQueries) > 0 {
 		result.ExpandedQueries = append([]string(nil), expansion.ExpandedQueries...)
+	}
+}
+
+func queryExpansionResultFromIntent(result *rag.IntentClassificationResult) *rag.QueryExpansionResult {
+	if result == nil {
+		return &rag.QueryExpansionResult{}
+	}
+	return &rag.QueryExpansionResult{
+		NormalizedQuery: strings.TrimSpace(result.NormalizedQuery),
+		Keywords:        append([]string(nil), result.Keywords...),
+		DocumentType:    strings.TrimSpace(result.DocumentType),
+		ExpandedQueries: append([]string(nil), result.ExpandedQueries...),
 	}
 }
 

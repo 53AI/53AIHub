@@ -1,11 +1,11 @@
 package logviewer
 
 import (
-  "io"
-  "os"
-  "path/filepath"
-  "strings"
- )
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+)
 
 // ArchiveResult 归档操作结果
 type ArchiveResult struct {
@@ -42,14 +42,14 @@ func ArchiveOldLogs(logDir string) (*ArchiveResult, error) {
 	}
 
 	for _, fpath := range allFiles {
-	  base := filepath.Base(fpath)
+		base := filepath.Base(fpath)
 
-	  // 跳过 slow.log（独立慢日志文件，不应被归档清空）
-	  if strings.HasPrefix(base, "slow") {
-	   continue
-	  }
+		// 跳过 slow.log（独立慢日志文件，不应被归档清空）
+		if strings.HasPrefix(base, "slow") {
+			continue
+		}
 
-	  // 打开原文件
+		// 打开原文件
 		src, err := os.Open(fpath)
 		if err != nil {
 			continue

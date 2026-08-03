@@ -21,13 +21,18 @@ func NewMySpaceRecordingService(eid int64) *MySpaceRecordingService {
 	}
 }
 
-func (s *MySpaceRecordingService) ListEntries(ctx context.Context, userID int64, path string, fileType *int, keyword string, offset, limit int) ([]model.File, int64, error) {
+func (s *MySpaceRecordingService) ListEntries(ctx context.Context, userID int64, path string, fileType *int, keyword string, offset, limit int, groupID int64, sortBy, order string, startTime, endTime int64) ([]model.File, int64, error) {
 	query := &RecordingFileListQuery{
-		Path:    path,
-		Keyword: keyword,
-		Type:    fileType,
-		Offset:  offset,
-		Limit:   limit,
+		Path:      path,
+		Keyword:   keyword,
+		Type:      fileType,
+		Offset:    offset,
+		Limit:     limit,
+		GroupID:   groupID,
+		SortBy:    sortBy,
+		Order:     order,
+		StartTime: startTime,
+		EndTime:   endTime,
 	}
 	return s.recordingSvc.ListMyRecordingFiles(ctx, userID, query)
 }

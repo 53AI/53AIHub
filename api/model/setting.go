@@ -23,7 +23,7 @@ type SettingKey string
 const (
 	ThirdPartyStatisticHeader SettingKey = "third_party_statistic_header"
 	ThirdPartyStatisticCss    SettingKey = "third_party_statistic_css"
-	EnterpriseInfo            SettingKey = "enterprise_info"                // 企业信息（包含服务协议、隐私政策和AI隐私政策URL）
+	EnterpriseInfo            SettingKey = "enterprise_info" // 企业信息（包含服务协议、隐私政策和AI隐私政策URL）
 )
 
 const (
@@ -41,6 +41,7 @@ const (
 	SETTING_WORKFLOW_FEEDBACK_CONFIG = "workflow_feedback_config" // 工作流型反馈配置
 	SETTING_DOCUMENT_APPLICATION     = "document_application"     // 文档应用设置
 	SETTING_RECORDING_CONFIG         = "recording_config"         // 录音配置
+	SETTING_RECORDING_APPLICATION    = "recording_application"    // 录音应用设置
 )
 
 const (

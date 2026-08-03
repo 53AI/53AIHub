@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/53AI/53AIHub/model"
 	core "github.com/53AI/53AIHub/service"
@@ -39,7 +40,7 @@ func (s *LibraryService) GetVisibleLibraryDetail(ctx context.Context, eid, userI
 	return library, nil
 }
 
-func (s *LibraryService) CreateLibrary(ctx context.Context, eid, userID int64, name, description, icon string, spaceID int64, visibility *int, permissions []*model.PermissionData) (*model.Library, error) {
+func (s *LibraryService) CreateLibrary(ctx context.Context, eid, userID int64, name, description, icon string, spaceID int64, visibility *int, libraryKind string, permissions []*model.PermissionData) (*model.Library, error) {
 	permission, err := core.GetUserPermission(eid, model.RESOURCE_TYPE_SPACE, spaceID, userID)
 	if err != nil || permission < model.PERMISSION_EDIT_KNOWLEDGE {
 		if err != nil {
@@ -56,6 +57,16 @@ func (s *LibraryService) CreateLibrary(ctx context.Context, eid, userID int64, n
 		libraryVisibility = *visibility
 	}
 
+	libraryKind = strings.ToLower(strings.TrimSpace(libraryKind))
+	switch libraryKind {
+	case "", model.LIBRARY_KIND_REGULAR:
+		libraryKind = model.LIBRARY_KIND_REGULAR
+	case model.LIBRARY_KIND_WIKI:
+		libraryKind = model.LIBRARY_KIND_WIKI
+	default:
+		return nil, errors.New("无效的知识库类型")
+	}
+
 	library := &model.Library{
 		Name:        name,
 		Description: description,
@@ -63,6 +74,7 @@ func (s *LibraryService) CreateLibrary(ctx context.Context, eid, userID int64, n
 		SpaceID:     spaceID,
 		Eid:         eid,
 		CreatorID:   userID,
+		LibraryKind: libraryKind,
 		Status:      model.LIBRARY_STATUS_ACTIVE,
 		Sort:        0,
 		Visibility:  libraryVisibility,
@@ -77,7 +89,7 @@ func (s *LibraryService) CreateLibrary(ctx context.Context, eid, userID int64, n
 	return library, nil
 }
 
-func (s *LibraryService) UpdateLibrary(ctx context.Context, eid, userID int64, libraryID int64, name, description, icon string, visibility *int) (*model.Library, error) {
+func (s *LibraryService) UpdateLibrary(ctx context.Context, eid, userID int64, libraryID int64, name, description, icon string, visibility *int, libraryKind string) (*model.Library, error) {
 	permission, err := core.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, libraryID, userID)
 	if err != nil || permission < model.PERMISSION_EDIT_KNOWLEDGE {
 		if err != nil {
@@ -102,6 +114,16 @@ func (s *LibraryService) UpdateLibrary(ctx context.Context, eid, userID int64, l
 			return nil, errors.New("无效的可见性设置")
 		}
 		library.Visibility = *visibility
+	}
+
+	libraryKind = strings.ToLower(strings.TrimSpace(libraryKind))
+	switch libraryKind {
+	case "":
+		// keep existing value
+	case model.LIBRARY_KIND_REGULAR, model.LIBRARY_KIND_WIKI:
+		library.LibraryKind = libraryKind
+	default:
+		return nil, errors.New("无效的知识库类型")
 	}
 
 	if err := library.Update(); err != nil {

@@ -33,25 +33,25 @@ type AgentsResponse struct {
 }
 
 type AgentRequest struct {
-	Name                 string  `json:"name" example:"OpenAI-ChatGPT"`
-	Logo                 string  `json:"logo" example:"http://URL_ADDRESS.com/logo.png"`
-	Sort                 int     `json:"sort" example:"0"`
-	Description          string  `json:"description" example:"A ChatGPT based agent for general conversation"`
-	Configs              string  `json:"configs" example:"{\"model\":\"gpt-3.5-turbo\",\"temperature\":0.7}"`
-	Prompt               string  `json:"prompt" example:"You are a helpful AI assistant"`
-	ChannelType          int     `json:"channel_type"`
-	Model                string  `json:"model" example:"gpt-3.5-turbo"`
-	GroupId              int64   `json:"group_id" example:"0"`
-	UseCases             string  `json:"use_cases" example:"[]"`
-	Tools                string  `json:"tools"  example:"[]"`
-	CustomConfig         string  `json:"custom_config" example:"{}"`
-	UserGroupIds         []int64               `json:"user_group_ids"`
+	Name                 string                    `json:"name" example:"OpenAI-ChatGPT"`
+	Logo                 string                    `json:"logo" example:"http://URL_ADDRESS.com/logo.png"`
+	Sort                 int                       `json:"sort" example:"0"`
+	Description          string                    `json:"description" example:"A ChatGPT based agent for general conversation"`
+	Configs              string                    `json:"configs" example:"{\"model\":\"gpt-3.5-turbo\",\"temperature\":0.7}"`
+	Prompt               string                    `json:"prompt" example:"You are a helpful AI assistant"`
+	ChannelType          int                       `json:"channel_type"`
+	Model                string                    `json:"model" example:"gpt-3.5-turbo"`
+	GroupId              int64                     `json:"group_id" example:"0"`
+	UseCases             string                    `json:"use_cases" example:"[]"`
+	Tools                string                    `json:"tools"  example:"[]"`
+	CustomConfig         string                    `json:"custom_config" example:"{}"`
+	UserGroupIds         []int64                   `json:"user_group_ids"`
 	Scopes               []model.ResourceScopeItem `json:"scopes"`
-	Enable               bool                  `json:"enable" example:"true"`
-	SubscriptionGroupIds []int64 `json:"subscription_group_ids"` // 订阅分组IDs
-	Settings             string  `json:"settings" example:"{}"`
-	AgentType            int     `json:"agent_type" example:"0"`  // Agent type (0=App, 1=Workflow, 2=Assistant), default is 0
-	AgentUsage           int     `json:"agent_usage" example:"0"` // Agent usage (0=hub, 1=KM_AI_search, 2=KM_file_chat), default is 0
+	Enable               bool                      `json:"enable" example:"true"`
+	SubscriptionGroupIds []int64                   `json:"subscription_group_ids"` // 订阅分组IDs
+	Settings             string                    `json:"settings" example:"{}"`
+	AgentType            int                       `json:"agent_type" example:"0"`  // Agent type (0=App, 1=Workflow, 2=Assistant), default is 0
+	AgentUsage           int                       `json:"agent_usage" example:"0"` // Agent usage (0=hub, 1=KM_AI_search, 2=KM_file_chat), default is 0
 }
 
 type UpdateAgentEnableRequest struct {

@@ -68,6 +68,7 @@ type RecordingJob struct {
 	LastRecoveredAt          int64  `json:"last_recovered_at" gorm:"not null;default:0"`
 	OutputFileID             int64  `json:"output_file_id" gorm:"not null;default:0;index"`
 	LastError                string `json:"last_error" gorm:"type:text"`
+	GroupID                  int64  `json:"group_id" gorm:"not null;default:0;index"`
 	BaseModel
 }
 
@@ -206,6 +207,7 @@ func (j *RecordingJob) PublicView() *RecordingJobPublicView {
 		LastRecoveredAt:          j.LastRecoveredAt,
 		OutputFileID:             j.OutputFileID,
 		LastError:                j.LastError,
+		GroupID:                  j.GroupID,
 		CreatedTime:              j.CreatedTime,
 		UpdatedTime:              j.UpdatedTime,
 	}
@@ -236,6 +238,7 @@ type RecordingJobPublicView struct {
 	LastRecoveredAt          int64  `json:"last_recovered_at"`
 	OutputFileID             int64  `json:"output_file_id"`
 	LastError                string `json:"last_error"`
+	GroupID                  int64  `json:"group_id"`
 	CreatedTime              int64  `json:"created_time"`
 	UpdatedTime              int64  `json:"updated_time"`
 }
@@ -374,6 +377,15 @@ func (j *RecordingJobSegment) PublicView() *RecordingJobSegmentPublicView {
 func GetRecordingJobByID(eid, jobID int64) (*RecordingJob, error) {
 	var job RecordingJob
 	if err := DB.Where("eid = ? AND id = ? AND owner_instance = ?", eid, jobID, recordingCurrentInstanceID()).First(&job).Error; err != nil {
+		return nil, err
+	}
+	return &job, nil
+}
+
+// GetRecordingJobByOutputFileID 通过输出文件 ID 查询关联的录音任务。
+func GetRecordingJobByOutputFileID(eid, outputFileID int64) (*RecordingJob, error) {
+	var job RecordingJob
+	if err := DB.Where("eid = ? AND output_file_id = ?", eid, outputFileID).First(&job).Error; err != nil {
 		return nil, err
 	}
 	return &job, nil

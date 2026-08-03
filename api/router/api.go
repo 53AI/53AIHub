@@ -90,6 +90,7 @@ func SetApiRouter(router *gin.Engine) {
 		commonRoute.POST("/sms_login", controller.SmsLogin)
 		commonRoute.POST("/check_account", controller.CheckAccountExists)
 		commonRoute.POST("/upload", middleware.UserTokenAuth(model.RoleGuestUser), controller.Upload)
+		commonRoute.GET("/upload/check", middleware.UserTokenAuth(model.RoleGuestUser), controller.CheckUploadHash)
 		commonRoute.GET("/is_init", controller.IsInit)
 		commonRoute.GET("/preview/*key", controller.PreviewFile)
 		commonRoute.GET("/response_codes", controller.GetAllResponseCodes)
@@ -193,6 +194,18 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.GET("/:job_id/segments", controller.GetRecordingSegmentManifest)
 		recordingRoute.GET("/:job_id/segments/missing", controller.GetRecordingMissingSegments)
 		recordingRoute.POST("/:job_id/finalize", controller.FinalizeRecordingJob)
+		recordingRoute.GET("/templates", controller.GetAvailableTemplates)
+		recordingRoute.POST("/files/:file_id/templates", controller.UserAddFileTemplate)
+		recordingRoute.GET("/files/:file_id/templates", controller.UserGetFileTemplates)
+		recordingRoute.GET("/files/:file_id/parse-status", controller.GetFileParseStatus)
+		recordingRoute.POST("/files/:file_id/pipeline", controller.RunRecordingPipeline)
+		recordingRoute.GET("/files/:file_id/insight-page", controller.GetFileInsightPage)
+		recordingRoute.GET("/files/:file_id/transcription", controller.GetFileTranscription)
+		recordingRoute.GET("/my-queued-count", controller.GetMyQueuedCount)
+		recordingRoute.POST("/files/:file_id/summarize", controller.UserFileSummarize)
+		recordingRoute.GET("/files/:file_id/summaries", controller.UserGetFileSummaries)
+		recordingRoute.GET("/summaries/:summary_id", controller.UserGetFileSummaryDetail)
+		recordingRoute.DELETE("/summaries/:summary_id", controller.UserDeleteFileSummary)
 	}
 
 	// 录音管理接口（管理员权限）— 独立前缀避免与用户路由冲突
@@ -201,9 +214,29 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		recordingAdmin.GET("/config", controller.GetRecordingConfig)
 		recordingAdmin.PUT("/config", controller.UpdateRecordingConfig)
-		recordingAdmin.GET("/parser-platforms", controller.ListParserPlatforms)
 		recordingAdmin.GET("/stats", controller.GetRecordingStats)
 		recordingAdmin.GET("", controller.ListAllRecordings)
+		recordingAdmin.GET("/templates", controller.ListSummaryTemplates)
+		recordingAdmin.POST("/templates", controller.CreateSummaryTemplate)
+		recordingAdmin.PUT("/templates/:template_id", controller.UpdateSummaryTemplate)
+		recordingAdmin.DELETE("/templates/:template_id", controller.DeleteSummaryTemplate)
+		recordingAdmin.POST("/files/:file_id/summarize", controller.AdminCreateFileSummary)
+		recordingAdmin.GET("/files/:file_id/summaries", controller.AdminListFileSummaries)
+		recordingAdmin.DELETE("/summaries/:summary_id", controller.AdminDeleteFileSummary)
+		recordingAdmin.GET("/parsing-count", controller.GetParsingCount)
+		recordingAdmin.GET("/queue-depth", controller.GetQueueDepth)
+	}
+
+	// 用户级分组接口（普通用户，可扩展至多种 group_type）
+	userGroupRoute := apiRouter.Group("/user/groups")
+	userGroupRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		userGroupRoute.GET("type/:group_type", controller.ListUserGroups)
+		userGroupRoute.POST("type/:group_type", controller.BatchSubmitUserGroups)
+		userGroupRoute.GET("/:group_id", controller.GetUserGroup)
+		userGroupRoute.POST("", controller.CreateUserGroup)
+		userGroupRoute.PUT("/:group_id", controller.UpdateUserGroup)
+		userGroupRoute.DELETE("/:group_id", controller.DeleteUserGroup)
 	}
 
 	emailRoute := apiRouter.Group("/email")
@@ -363,6 +396,7 @@ func SetApiRouter(router *gin.Engine) {
 		platformSettingRoute.DELETE("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.DeletePlatformSetting)
 		platformSettingRoute.POST("/:id/test-bochaai-search", middleware.UserTokenAuth(model.RoleAdminUser), controller.TestBochaAISearch) // 添加测试博查AI搜索功能接口
 		platformSettingRoute.POST("/:id/toggle", middleware.UserTokenAuth(model.RoleAdminUser), controller.TogglePlatformSettingStatus)    // 添加切换状态接口
+		platformSettingRoute.GET("/health", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetPlatformSettingsHealth)           // 企业解析器健康检查
 	}
 
 	// WPS状态检查接口（所有登录用户可访问）
@@ -379,6 +413,7 @@ func SetApiRouter(router *gin.Engine) {
 		channelGroup.PUT("/:channel_id", controller.UpdateChannel)
 		channelGroup.DELETE("/:channel_id", controller.DeleteChannel)
 		channelGroup.GET("/test/:channel_id", controller.TestChannel)
+		channelGroup.POST("/test/voice/:channel_id", controller.TestVoiceChannel)
 		channelGroup.GET("/models", controller.ListAllModels)
 		channelGroup.GET("/km/models", controller.GetKmModels)
 	}
@@ -730,6 +765,8 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.GET("/system_logs/slow_logs", middleware.FileLogViewerAuth(), controller.GetSlowLogs)
 	apiRouter.POST("/system_logs/slow_logs/:id/resolve", middleware.FileLogViewerAuth(), controller.ResolveSlowLog)
 	apiRouter.POST("/system_logs/slow_logs/:id/ignore", middleware.FileLogViewerAuth(), controller.IgnoreSlowLog)
+	apiRouter.GET("/system_logs/vectorize/ui", controller.GetVectorizeUI)
+	apiRouter.GET("/system_logs/vectorize/stats", controller.GetVectorizeStats)
 	systemLogRouter.Use(middleware.UserTokenAuth(model.RoleAdminUser))
 	{
 		systemLogRouter.GET("/modules", controller.GetModules)
@@ -770,6 +807,19 @@ func SetApiRouter(router *gin.Engine) {
 		spaceRoute.DELETE("/:space_id", controller.DeleteSpace)
 		spaceRoute.POST("/sort", controller.BatchUpdateSpaceSort)
 	}
+	spaceWikiController := controller.NewWikiSpaceController(model.DB)
+	spaceWikiRoute := spaceRoute.Group("/:space_id/wiki")
+	{
+		spaceWikiRoute.GET("/pages", spaceWikiController.ListPages)
+		spaceWikiRoute.GET("/pages/*slug", spaceWikiController.GetPage)
+		spaceWikiRoute.GET("/index", spaceWikiController.GetIndex)
+		spaceWikiRoute.GET("/graph", spaceWikiController.GetGraph)
+		spaceWikiRoute.GET("/logs", spaceWikiController.ListLogs)
+		spaceWikiRoute.GET("/health", spaceWikiController.GetHealth)
+		spaceWikiRoute.GET("/stats", spaceWikiController.GetStats)
+		spaceWikiRoute.GET("/progress", spaceWikiController.ListProgress)
+		spaceWikiRoute.GET("/progress/:file_id", spaceWikiController.GetProgress)
+	}
 
 	// 通用权限管理路由
 	permissionRoute := apiRouter.Group("/permissions")
@@ -801,6 +851,51 @@ func SetApiRouter(router *gin.Engine) {
 
 		// 知识库搜索接口
 		libraryRoute.POST("/:library_id/search", controller.LibrarySearch) // 在指定知识库中进行搜索
+	}
+
+	wikiController := controller.NewWikiPageController(model.DB)
+	wikiRoute := libraryRoute.Group("/:library_id/wiki")
+	{
+		wikiRoute.GET("/pages", wikiController.ListPages)
+		wikiRoute.GET("/versions/*slug", wikiController.ListVersionsOrGetVersion)
+		wikiRoute.GET("/pages/*slug", wikiController.GetPage)
+		wikiRoute.GET("/index", wikiController.GetIndex)
+		wikiRoute.GET("/graph", wikiController.GetGraph)
+		wikiRoute.GET("/logs", wikiController.ListLogs)
+		wikiRoute.GET("/health", wikiController.GetHealth)
+		wikiRoute.GET("/progress", wikiController.ListProgress)
+		wikiRoute.GET("/progress/:file_id", wikiController.GetProgress)
+		wikiRoute.POST("/rebuild", wikiController.Rebuild)
+		wikiRoute.POST("/pages", wikiController.CreatePage)
+		wikiRoute.PUT("/pages/*slug", wikiController.UpdatePage)
+		wikiRoute.POST("/pages/rename", wikiController.RenamePage)
+		wikiRoute.POST("/pages/move", wikiController.MovePage)
+		wikiRoute.POST("/pages/archive", wikiController.ArchivePage)
+		wikiRoute.DELETE("/pages/*slug", wikiController.DeletePage)
+	}
+
+	// 独立 Wiki 页面路由（无需知识库路径层级）
+	wikiStandaloneRoute := apiRouter.Group("/wiki/pages")
+	wikiStandaloneRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		wikiStandaloneRoute.GET("", wikiController.ListPagesStandalone)   // ?library_id=xxx 可选
+		wikiStandaloneRoute.POST("", wikiController.CreatePageStandalone) // library_id 在 body
+		wikiStandaloneRoute.GET("/:page_id", wikiController.GetPageByID)
+		wikiStandaloneRoute.GET("/:page_id/versions", wikiController.ListVersionsByID)
+		wikiStandaloneRoute.GET("/:page_id/versions/:version_no", wikiController.GetVersionByID)
+		wikiStandaloneRoute.POST("/:page_id/versions/:version_no/publish", wikiController.PublishVersion)
+		wikiStandaloneRoute.POST("/:page_id/vectorize", wikiController.VectorizePage)
+		wikiStandaloneRoute.PUT("/:page_id/versions/:version_no/version-tag", wikiController.UpdateVersionTag)
+		wikiStandaloneRoute.PUT("/:page_id", wikiController.UpdatePageByID)
+		wikiStandaloneRoute.POST("/:page_id/rename", wikiController.RenamePageByID)
+		wikiStandaloneRoute.POST("/:page_id/move", wikiController.MovePageByID)
+		wikiStandaloneRoute.POST("/:page_id/archive", wikiController.ArchivePageByID)
+		wikiStandaloneRoute.DELETE("/:page_id", wikiController.DeletePageByID)
+	}
+	vectorizationTaskRoute := apiRouter.Group("/wiki/vectorization-tasks")
+	vectorizationTaskRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		vectorizationTaskRoute.GET("/:task_id", wikiController.GetVectorizationTask)
 	}
 
 	// 数据清理相关接口
@@ -931,9 +1026,6 @@ func SetApiRouter(router *gin.Engine) {
 			modelConfigRoute.GET("/site", controller.GetSiteModelConfig)
 			modelConfigRoute.PUT("/site", controller.UpdateSiteModelConfig)
 
-			// 知识库级模型配置
-			modelConfigRoute.GET("/library/:library_id", controller.GetLibraryModelConfig)
-			modelConfigRoute.PUT("/library/:library_id", controller.UpdateLibraryModelConfig)
 		}
 
 		// 资料拆分配置JSON专用接口

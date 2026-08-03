@@ -291,6 +291,23 @@ func NewGraphGenerationHandler(db *gorm.DB) func(ctx context.Context, job *model
 			}
 		}
 
+		if isWikiPageGenerationActive(job) {
+			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 graph_generation 的图谱生成: file_id=%d", fileID)
+			if db != nil {
+				if err := saveStepResults(db, job.JobID, map[string]interface{}{
+					"entity_count":             0,
+					"relation_count":           0,
+					"chunk_count":              0,
+					"error_count":              0,
+					"skipped_count":            0,
+					"graph_generation_skipped": true,
+				}); err != nil {
+					logger.Errorf(ctx, "保存跳过结果失败: %v", err)
+				}
+			}
+			return nil
+		}
+
 		logger.Info(ctx, fmt.Sprintf("GraphGenerationStepHandler: processing job %d for file %d", job.JobID, fileID))
 
 		// 解析步骤配置

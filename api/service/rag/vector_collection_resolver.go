@@ -17,12 +17,7 @@ type VectorCollectionResolver struct {
 }
 
 func (r VectorCollectionResolver) normalizedMode() string {
-	switch r.Mode {
-	case VectorCollectionModeEnterprise, VectorCollectionModeDual:
-		return r.Mode
-	default:
-		return VectorCollectionModeLibrary
-	}
+	return VectorCollectionModeEnterprise
 }
 
 // ResolveDocumentReadCollections 解析读路径的文档向量集合名称列表

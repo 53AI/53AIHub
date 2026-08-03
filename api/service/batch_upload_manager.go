@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -47,6 +48,7 @@ type BatchUpload struct {
 	OriginType    string                 `json:"origin_type"`
 	OriginSource  string                 `json:"origin_source"`
 	OriginRefID   int64                  `json:"origin_ref_id"`
+	GroupID       int64                  `json:"group_id"`
 	CreatedAt     time.Time              `json:"created_at"`
 	UpdatedAt     time.Time              `json:"updated_at"`
 	mu            sync.RWMutex           `json:"-"` // Add a mutex to protect all mutable fields of BatchUpload
@@ -107,6 +109,7 @@ type UploadTask struct {
 	OriginType    string
 	OriginSource  string
 	OriginRefID   int64
+	GroupID       int64
 	Nickname      string
 	IP            string
 	DuplicateMode DuplicateMode
@@ -146,6 +149,7 @@ type BatchInitRequest struct {
 	OriginType    string              `json:"origin_type"`
 	OriginSource  string              `json:"origin_source"`
 	OriginRefID   int64               `json:"origin_ref_id"`
+	GroupID       int64               `json:"group_id"`
 }
 
 // BatchInitResponse 批量上传初始化响应
@@ -247,6 +251,7 @@ func (m *BatchUploadManager) CreateBatch(eid, userID int64, req *BatchInitReques
 		OriginType:    strings.TrimSpace(req.OriginType),
 		OriginSource:  strings.TrimSpace(req.OriginSource),
 		OriginRefID:   req.OriginRefID,
+		GroupID:       req.GroupID,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -535,6 +540,60 @@ func (m *BatchUploadManager) CompleteBatch(batchID string) error {
 	batch.UpdatedAt = time.Now()
 
 	m.progressStorage.SaveBatch(batch)
+	return nil
+}
+
+// HandleInstantUpload 秒传处理：使用已存在的 UploadFile 记录直接完成上传，跳过实际上传和存储
+func (m *BatchUploadManager) HandleInstantUpload(task *UploadTask, existingUploadFile *model.UploadFile) error {
+	batch, err := m.GetBatch(task.BatchID)
+	if err != nil {
+		return fmt.Errorf("批次不存在: %v", err)
+	}
+
+	task.DatabaseID = existingUploadFile.ID
+
+	dirManager := NewDirectoryManager()
+	library, err := model.GetLibraryByID(task.EID, task.LibraryID)
+	if err != nil {
+		return fmt.Errorf("获取知识库信息失败: %v", err)
+	}
+
+	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, existingUploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID, task.GroupID)
+	if err != nil {
+		return fmt.Errorf("创建文件记录失败: %v", err)
+	}
+
+	fileUpload, exists := batch.GetFileUpload(task.FileID)
+	if exists && fileUpload != nil {
+		updated := *fileUpload
+		updated.Status = "completed"
+		updated.Progress = 100
+		updated.DatabaseID = existingUploadFile.ID
+		updated.FileID = fileID
+		updated.UpdateTime = time.Now()
+		m.updateFileProgress(task.BatchID, task.FileID, &updated)
+	}
+
+	batch.UploadedFiles++
+	m.updateBatchStatus(batch)
+
+	space, _ := model.GetSpaceByID(task.EID, library.SpaceID)
+	fileName := filepath.Base(task.RelativePath)
+	log := model.SystemLog{
+		Eid:      task.EID,
+		UserID:   task.UserID,
+		Nickname: task.Nickname,
+		Module:   model.SystemLogModuleFile,
+		Action:   model.SystemLogActionCreate,
+		Content:  fmt.Sprintf("在【%s】知识库【%s】新建了《%s》", space.Name, library.Name, fileName),
+		IP:       task.IP,
+	}
+	model.CreateSystemLog(&log)
+
+	if !library.IsPersonalLibrary() {
+		enqueueRagJobsForUploadedFile(context.Background(), task.EID, fileID, task.UserID, task.LibraryID, existingUploadFile.ID, "")
+	}
+
 	return nil
 }
 

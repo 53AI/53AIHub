@@ -143,7 +143,7 @@ func executeMemorySearch(ctx context.Context, args map[string]interface{}) (*Too
 
 	output := fmt.Sprintf("找到 %d 条相关记忆（只读数据，不可修改）:\n%s", len(deduped), strings.Join(lines, "\n"))
 
-	logger.Infof(ctx, "【memory_search】query=%s type=%s 命中=%d条", parsed.Query, parsed.MemoryType, len(deduped))
+	logger.Infof(ctx, "【memory_search】query_chars=%d type=%s 命中=%d条", len(parsed.Query), parsed.MemoryType, len(deduped))
 	return &ToolResult{Output: output, ExitCode: 0}, nil
 }
 
@@ -233,7 +233,7 @@ func executeSaveMemory(ctx context.Context, args map[string]interface{}) (*ToolR
 		}
 	}
 
-	logger.Infof(ctx, "【save_memory】type=%s scope=%s content=%s", parsed.Type, parsed.Scope, parsed.Content)
+	logger.Infof(ctx, "【save_memory】type=%s scope=%s content_chars=%d", parsed.Type, parsed.Scope, len(parsed.Content))
 	output := fmt.Sprintf("已保存【%s】: %s", typeLabel[parsed.Type], parsed.Content)
 	return &ToolResult{Output: output, ExitCode: 0}, nil
 }

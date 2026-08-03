@@ -32,20 +32,22 @@ func (s *SpaceService) GetVisibleSpaceDetail(ctx context.Context, eid, userID in
 	return space, nil
 }
 
-func (s *SpaceService) CreateSpace(ctx context.Context, eid, userID int64, name, description, icon string, visibility int, permissions []*model.PermissionData) (*model.Space, error) {
+func (s *SpaceService) CreateSpace(ctx context.Context, eid, userID int64, name, description, icon string, visibility int, permissions []*model.PermissionData, enableWikiKnowledgeGraph, enableWikiDynamicKnowledge bool) (*model.Space, error) {
 	if visibility != model.SPACE_VISIBILITY_PRIVATE {
 		visibility = model.SPACE_VISIBILITY_PUBLIC
 	}
 
 	space := &model.Space{
-		Eid:         eid,
-		Name:        name,
-		Description: description,
-		Icon:        icon,
-		OwnerID:     userID,
-		Status:      model.SPACE_STATUS_ACTIVE,
-		Visibility:  visibility,
-		Sort:        0,
+		Eid:                        eid,
+		Name:                       name,
+		Description:                description,
+		Icon:                       icon,
+		OwnerID:                    userID,
+		Status:                     model.SPACE_STATUS_ACTIVE,
+		Visibility:                 visibility,
+		Sort:                       0,
+		EnableWikiKnowledgeGraph:   enableWikiKnowledgeGraph,
+		EnableWikiDynamicKnowledge: enableWikiDynamicKnowledge,
 	}
 	if err := space.Save(); err != nil {
 		return nil, err
@@ -61,7 +63,7 @@ func (s *SpaceService) CreateSpace(ctx context.Context, eid, userID int64, name,
 func (s *SpaceService) GetSpaces(ctx context.Context, eid, userID int64, status int, name string, offset, limit int, view string, admin bool) (int64, []model.Space, error) {
 	spacePermissionService := core.NewSpacePermissionService(eid)
 	if view == "user" {
-		return spacePermissionService.GetUserSpaces(userID, status, name, offset, limit)
+		return spacePermissionService.GetUserSpaces(userID, status, name, nil, 0, 0, 0, 0, offset, limit)
 	}
 	if !admin {
 		return 0, nil, errors.New("无权限查看后台空间列表")
@@ -96,52 +98,6 @@ func (s *SpaceService) GetSpace(ctx context.Context, eid, userID int64, spaceID 
 		space.Permission = model.PERMISSION_MANAGE
 	}
 
-	return space, nil
-}
-
-func (s *SpaceService) UpdateSpace(ctx context.Context, eid, userID int64, spaceID int64, name, description, icon string, visibility int, permissions []*model.PermissionData, admin bool) (*model.Space, error) {
-	space, err := model.GetSpaceByID(eid, spaceID)
-	if err != nil {
-		return nil, err
-	}
-	if space == nil {
-		return nil, errors.New("空间不存在")
-	}
-
-	if !admin {
-		spacePermissionService := core.NewSpacePermissionService(eid)
-		canEdit, permErr := spacePermissionService.CheckSpacePermission(userID, spaceID, model.PERMISSION_MANAGE)
-		if permErr != nil {
-			return nil, permErr
-		}
-		if !canEdit {
-			return nil, errors.New("无权限修改此空间")
-		}
-	}
-
-	oldVisibility := space.Visibility
-	space.Name = name
-	space.Description = description
-	space.Icon = icon
-	space.Visibility = visibility
-
-	spacePermissionService := core.NewSpacePermissionService(eid)
-	if len(permissions) > 0 {
-		if err := spacePermissionService.UpdateSpacePermissions(spaceID, userID, permissions); err != nil {
-			return nil, err
-		}
-	}
-	if err := spacePermissionService.UpdateSpaceVisibilityPermission(space, visibility); err != nil {
-		return nil, err
-	}
-
-	if err := space.Update(); err != nil {
-		return nil, err
-	}
-
-	if oldVisibility != space.Visibility {
-		// Keep the returned entity aligned with persisted state.
-	}
 	return space, nil
 }
 

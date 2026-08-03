@@ -191,7 +191,9 @@ func applyRelayRequestPassthrough(c *gin.Context, convertedRequest any) (any, er
 	}
 
 	for key, value := range requestFields {
-		requestMap[key] = value
+		if _, exists := requestMap[key]; !exists {
+			requestMap[key] = value
+		}
 	}
 
 	if len(assistantExtras) > 0 {

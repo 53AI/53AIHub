@@ -251,3 +251,19 @@ func IsExistsError(err error) bool {
 	}
 	return false
 }
+
+// BatchFlushObserver 向量存储批量写入观测回调
+// eid: 企业ID, batchSize: 本批次向量数, elapsedMs: API 耗时(毫秒)
+type BatchFlushObserver func(eid int64, batchSize int, elapsedMs int64)
+
+var batchFlushObserver BatchFlushObserver
+
+// SetBatchFlushObserver 注册向量存储批量写入观测回调
+func SetBatchFlushObserver(obs BatchFlushObserver) {
+	batchFlushObserver = obs
+}
+
+// GetBatchFlushObserver 获取当前注册的观测回调
+func GetBatchFlushObserver() BatchFlushObserver {
+	return batchFlushObserver
+}

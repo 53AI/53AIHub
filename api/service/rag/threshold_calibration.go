@@ -32,14 +32,14 @@ type ThresholdCalibrationValues struct {
 }
 
 type ThresholdCalibrationService struct {
-	db              *gorm.DB
+	db               *gorm.DB
 	chunkConfigSvc   *ChunkConfigService
 	embeddingService *EmbeddingService
 }
 
 func NewThresholdCalibrationService(db *gorm.DB) *ThresholdCalibrationService {
 	return &ThresholdCalibrationService{
-		db:              db,
+		db:               db,
 		chunkConfigSvc:   NewChunkConfigService(db),
 		embeddingService: NewEmbeddingService(db),
 	}
@@ -77,7 +77,7 @@ func (s *ThresholdCalibrationService) RecalculateSiteThreshold(ctx context.Conte
 
 	logger.Infof(ctx, "【阈值校准】开始站点阈值计算: eid=%d, channelID=%d, model=%s", eid, channelID, modelName)
 
-	siteConfig, err := s.chunkConfigSvc.GetConfig(eid, nil, model.ChunkTypeDefault)
+	siteConfig, err := s.chunkConfigSvc.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return fmt.Errorf("获取站点模型配置失败: %w", err)
 	}

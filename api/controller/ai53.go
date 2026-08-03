@@ -110,7 +110,7 @@ func Update53AIChannel(provider model.Provider, apps []ai53.AppResponse) error {
 		// Update existing record with incremental botIds
 		channel.ChannelID = existingChannel.ChannelID
 		channel.CreatedTime = existingChannel.CreatedTime
-		
+
 		// Get existing botIds
 		existingBotIds := strings.Split(existingChannel.Models, ",")
 		botIdMap := make(map[string]bool)
@@ -119,18 +119,18 @@ func Update53AIChannel(provider model.Provider, apps []ai53.AppResponse) error {
 				botIdMap[id] = true
 			}
 		}
-		
+
 		// Add new botIds
 		for _, id := range botIds {
 			botIdMap[id] = true
 		}
-		
+
 		// Convert map back to slice
 		var updatedBotIds []string
 		for id := range botIdMap {
 			updatedBotIds = append(updatedBotIds, id)
 		}
-		
+
 		channel.Models = strings.Join(updatedBotIds, ",")
 		return model.UpdateChannel(channel)
 	}
@@ -165,7 +165,7 @@ func Update53AIWorkflowChannel(provider model.Provider, apps []ai53.AppResponse)
 		// Update existing record with incremental workflowIds
 		channel.ChannelID = existingChannel.ChannelID
 		channel.CreatedTime = existingChannel.CreatedTime
-		
+
 		// Get existing workflowIds
 		existingWorkflowIds := strings.Split(existingChannel.Models, ",")
 		workflowIdMap := make(map[string]bool)
@@ -174,18 +174,18 @@ func Update53AIWorkflowChannel(provider model.Provider, apps []ai53.AppResponse)
 				workflowIdMap[id] = true
 			}
 		}
-		
+
 		// Add new workflowIds
 		for _, id := range workflowIds {
 			workflowIdMap[id] = true
 		}
-		
+
 		// Convert map back to slice
 		var updatedWorkflowIds []string
 		for id := range workflowIdMap {
 			updatedWorkflowIds = append(updatedWorkflowIds, id)
 		}
-		
+
 		channel.Models = strings.Join(updatedWorkflowIds, ",")
 		return model.UpdateChannel(channel)
 	}

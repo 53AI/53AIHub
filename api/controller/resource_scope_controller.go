@@ -16,7 +16,6 @@ type ResourceScopeQuery struct {
 	ResourceType string `form:"resource_type" json:"resource_type" binding:"required"`
 }
 
-
 // @Summary 获取指定资源的 scope 列表
 // @Description 查询指定 resource_type + resource_id 的资源范围配置
 // @Tags ResourceScope
@@ -136,4 +135,3 @@ func CheckResourceScopeAccess(c *gin.Context) {
 	logger.SysDebugf("resource-scopes/check result: user_id=%d eid=%d resource_id=%d resource_type=%s accessible=%v", userID, eid, q.ResourceID, q.ResourceType, accessible)
 	c.JSON(http.StatusOK, model.Success.ToResponse(accessible))
 }
-

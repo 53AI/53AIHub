@@ -12,12 +12,40 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
+	env_util "github.com/53AI/53AIHub/common/utils/env"
 	"gorm.io/gorm"
 )
+
+// GenerateInsightsFn 由 service 包注册，实体抽取完成后同步触发洞察生成。
+// 使用函数变量避免 package 循环依赖。
+var GenerateInsightsFn func(ctx context.Context, eid, fileID, userID int64)
+
+// BuildMinutesMarkdownFn 由 service 包注册，将纪要 JSON 渲染为 Markdown。
+// 用于文件摘要/实体抽取前对语音文件内容做转换，提升 LLM 理解质量。
+var BuildMinutesMarkdownFn func(raw string) string
+
+// PipelineCtxFn 由 service 包注册，返回录音管线生命周期 context（recordingPipelineCtx）。
+// 用于异步 goroutine 派生可被服务停止优雅取消的子 context。
+// 返回 nil 时调用方需 fallback 到 context.Background()。
+var PipelineCtxFn func() context.Context
+
+func pipelineCtx() context.Context {
+	if PipelineCtxFn != nil {
+		if c := PipelineCtxFn(); c != nil {
+			return c
+		}
+	}
+	return context.Background()
+}
 
 // NewDocumentChunkingHandler 创建 document_chunking 步骤处理函数
 func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
 	return func(ctx context.Context, job *model.RagJob, stepConfig json.RawMessage) error {
+		if isWikiPageGenerationActive(job) {
+			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 document_chunking 的分块处理")
+			return nil
+		}
+
 		// 1. 解析任务参数
 		var params map[string]interface{}
 		if err := json.Unmarshal([]byte(job.StartParameters), &params); err != nil {
@@ -32,11 +60,10 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		if v, ok := params["file_id"]; ok {
 			fileID = int64(v.(float64))
 		}
-		// userID may be needed for some operations
-		// userID := int64(0)
-		// if v, ok := params["user_id"]; ok {
-		// 	userID = int64(v.(float64))
-		// }
+		userID := int64(0)
+		if v, ok := params["user_id"]; ok {
+			userID = int64(v.(float64))
+		}
 
 		logger.Info(ctx, fmt.Sprintf("DocumentChunkingStepHandler: processing job %d for file %d", job.JobID, fileID))
 
@@ -107,6 +134,18 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		if err != nil {
 			updateParsingStatus(model.FileParsingStatusFail)
 			return fmt.Errorf("读取文件内容失败: %v", err)
+		}
+
+		// 对语音文件：将会议纪要 JSON 转为 Markdown，提升 LLM 理解质量
+		// 只在文件摘要/实体抽取时使用，不影响分块等其他流程
+		contentForLLM := content
+		if file.IsRecordingOriginType() && BuildMinutesMarkdownFn != nil {
+			contentForLLM = BuildMinutesMarkdownFn(content)
+			logger.Infof(ctx, "【诊断-内容转换】纪要 JSON→Markdown 完成: file_id=%d, 原始长度=%d, 转换后长度=%d, 是否发生变化=%v",
+				fileID, len(content), len(contentForLLM), content != contentForLLM)
+		} else {
+			logger.Infof(ctx, "【诊断-内容转换】跳过 Markdown 转换: file_id=%d, origin_type=%s, fn_registered=%v",
+				fileID, file.OriginType, BuildMinutesMarkdownFn != nil)
 		}
 
 		var smartMatchResult *SmartMatchResult
@@ -268,18 +307,43 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			db.Save(&jobStep)
 		}
 
-		// 生成文件级摘要和常见问法（强制执行）
-		summaryText, _, sumErr := generateFileSummaryAndFAQ(ctx, db, eid, fileID, content, chunkConfig)
-		if sumErr != nil {
-			updateParsingStatus(model.FileParsingStatusFail)
-			return fmt.Errorf("生成文件摘要和问法失败: %v", sumErr)
+		// 异步执行文件摘要和实体抽取（不阻塞后续向量化步骤，错误仅记录日志）
+		// 生成文件级摘要和常见问法（通过环境变量 RAG_GENERATE_SUMMARY 控制，默认开启）
+		if env_util.Bool("RAG_GENERATE_SUMMARY", true) {
+			go func() {
+				summaryCtx, summaryCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
+				defer summaryCancel()
+				if _, _, err := maybeGenerateFileSummaryAndFAQ(summaryCtx, db, job, eid, fileID, contentForLLM, chunkConfig); err != nil {
+					logger.Error(summaryCtx, fmt.Sprintf("生成文件摘要和问法失败(非致命): file_id=%d, err=%v", fileID, err))
+					updateParsingStatus(model.FileParsingStatusFail)
+				}
+			}()
 		}
-		_ = summaryText
+		// 实体抽取/文档标签（通过环境变量 RAG_EXTRACT_ENTITIES 控制，默认开启）
+		if env_util.Bool("RAG_EXTRACT_ENTITIES", true) && !isWikiPageGenerationActive(job) {
+			go func() {
+				entityCtx, entityCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
+				defer entityCancel()
+				if err := extractEntities(entityCtx, db, eid, fileID, contentForLLM); err != nil {
+					logger.Error(entityCtx, fmt.Sprintf("实体抽取失败(非致命): file_id=%d, err=%v", fileID, err))
+					updateParsingStatus(model.FileParsingStatusFail)
+				}
+			}()
+		} else if isWikiPageGenerationActive(job) {
+			logger.Info(ctx, fmt.Sprintf("DocumentChunking 跳过旧实体抽取: file_id=%d", fileID))
+		}
 
-		// 实体抽取（强制执行）
-		if extErr := extractEntities(ctx, db, eid, fileID, content); extErr != nil {
-			updateParsingStatus(model.FileParsingStatusFail)
-			return fmt.Errorf("实体抽取失败: %v", extErr)
+		// 实体抽取完成后，异步触发洞察生成
+		// 实体从纪要中抽取（而非转写原文），因纪要是处理过的价值高、格式稳定的内容。
+		// 洞察生成不阻塞管线，异步执行。
+		if GenerateInsightsFn != nil {
+			go func() {
+				insightsCtx, insightsCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
+				defer insightsCancel()
+				GenerateInsightsFn(insightsCtx, eid, fileID, userID)
+			}()
+		} else {
+			logger.Infof(ctx, "【洞察】GenerateInsightsFn 未注册，跳过: fileID=%d", fileID)
 		}
 
 		// 记录结果日志

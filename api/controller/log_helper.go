@@ -12,7 +12,7 @@ import (
 func LogSpaceOperation(c *gin.Context, action uint8, spaceName, content string) {
 	userID := config.GetUserId(c)
 	eid := config.GetEID(c)
-	
+
 	systemLog := &model.SystemLog{
 		Module:   model.SystemLogModuleSpace,
 		Action:   action,
@@ -29,7 +29,7 @@ func LogSpaceOperation(c *gin.Context, action uint8, spaceName, content string) 
 func LogLibraryOperation(c *gin.Context, action uint8, libraryName, content string) {
 	userID := config.GetUserId(c)
 	eid := config.GetEID(c)
-	
+
 	systemLog := &model.SystemLog{
 		Module:   model.SystemLogModuleLibrary,
 		Action:   action,
@@ -94,7 +94,7 @@ func LogSpaceMemberAdd(c *gin.Context, spaceName, userNickname string, role int)
 
 // LogSpaceMemberRoleUpdate 记录空间成员角色更新日志
 func LogSpaceMemberRoleUpdate(c *gin.Context, spaceName, userNickname string, oldRole, newRole int) {
-	content := fmt.Sprintf("修改空间【%s】成员【%s】的角色：从【%s】改为【%s】", 
+	content := fmt.Sprintf("修改空间【%s】成员【%s】的角色：从【%s】改为【%s】",
 		spaceName, userNickname, GetSpaceRoleText(oldRole), GetSpaceRoleText(newRole))
 	LogSpaceOperation(c, model.SystemLogActionUpdate, spaceName, content)
 }
@@ -136,7 +136,7 @@ func LogLibraryMemberAdd(c *gin.Context, libraryName, userNickname string, permi
 
 // LogLibraryMemberPermissionUpdate 记录知识库成员权限更新日志
 func LogLibraryMemberPermissionUpdate(c *gin.Context, libraryName, userNickname string, oldPermission, newPermission int) {
-	content := fmt.Sprintf("修改知识库【%s】成员【%s】的权限：从【%s】改为【%s】", 
+	content := fmt.Sprintf("修改知识库【%s】成员【%s】的权限：从【%s】改为【%s】",
 		libraryName, userNickname, GetLibraryPermissionText(oldPermission), GetLibraryPermissionText(newPermission))
 	LogLibraryOperation(c, model.SystemLogActionUpdate, libraryName, content)
 }

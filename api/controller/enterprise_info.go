@@ -17,15 +17,15 @@ type EnterpriseInfoItem struct {
 
 // EnterpriseInfoRequest 企业信息请求结构体
 type EnterpriseInfoRequest struct {
-	TermsOfService EnterpriseInfoItem `json:"terms_of_service"`
-	PrivacyPolicy  EnterpriseInfoItem `json:"privacy_policy"`
+	TermsOfService  EnterpriseInfoItem `json:"terms_of_service"`
+	PrivacyPolicy   EnterpriseInfoItem `json:"privacy_policy"`
 	AIPrivacyPolicy EnterpriseInfoItem `json:"ai_privacy_policy"`
 }
 
 // EnterpriseInfoResponse 企业信息响应结构体
 type EnterpriseInfoResponse struct {
-	TermsOfService EnterpriseInfoItem `json:"terms_of_service"`
-	PrivacyPolicy  EnterpriseInfoItem `json:"privacy_policy"`
+	TermsOfService  EnterpriseInfoItem `json:"terms_of_service"`
+	PrivacyPolicy   EnterpriseInfoItem `json:"privacy_policy"`
 	AIPrivacyPolicy EnterpriseInfoItem `json:"ai_privacy_policy"`
 }
 
@@ -41,8 +41,8 @@ func internalGetEnterpriseInfo(c *gin.Context) {
 	}
 
 	response := EnterpriseInfoResponse{
-		TermsOfService: EnterpriseInfoItem{URL: "", Enabled: false},
-		PrivacyPolicy:  EnterpriseInfoItem{URL: "", Enabled: false},
+		TermsOfService:  EnterpriseInfoItem{URL: "", Enabled: false},
+		PrivacyPolicy:   EnterpriseInfoItem{URL: "", Enabled: false},
 		AIPrivacyPolicy: EnterpriseInfoItem{URL: "", Enabled: false},
 	}
 

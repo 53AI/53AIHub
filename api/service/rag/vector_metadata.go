@@ -24,16 +24,16 @@ func buildDocumentVectorMetadata(input DocumentVectorMetadataInput) map[string]i
 		status = "enabled"
 	}
 	metadata := map[string]interface{}{
-		"eid":                input.Eid,
-		"space_id":           input.SpaceID,
-		"library_id":         input.LibraryID,
-		"file_id":            input.FileID,
-		"chunk_id":           input.ChunkID,
-		"chunk_type":         input.ChunkType,
-		"content":            input.Content,
-		"token_count":        input.TokenCount,
-		"status":             status,
-		"embedding_model":    input.EmbeddingModel,
+		"eid":                  input.Eid,
+		"space_id":             input.SpaceID,
+		"library_id":           input.LibraryID,
+		"file_id":              input.FileID,
+		"chunk_id":             input.ChunkID,
+		"chunk_type":           input.ChunkType,
+		"content":              input.Content,
+		"token_count":          input.TokenCount,
+		"status":               status,
+		"embedding_model":      input.EmbeddingModel,
 		"embedding_channel_id": input.EmbeddingChannelID,
 	}
 	if input.KnowledgeChunkID > 0 {

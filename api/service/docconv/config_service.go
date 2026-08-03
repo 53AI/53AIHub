@@ -120,7 +120,8 @@ func (s *DocumentConfigService) GetParserForFile(ctx context.Context, eid int64,
 			logger.Errorf(ctx, "❌ [DOC_CONFIG] textin 配置错误 - eid: %d, error: %v", eid, err)
 			return "", nil, nil, nil, nil, nil, fmt.Errorf("textin config error: %w", err)
 		}
-		logger.Infof(ctx, "✅ [DOC_CONFIG] 成功获取 textin 配置 - eid: %d, app_id: %s", eid, config.XtiAppID)
+		logger.Infof(ctx, "✅ [DOC_CONFIG] 成功获取 textin 配置 - eid: %d, app_id: %s, app_id_len: %d, secret_code_set: %t, secret_code_len: %d",
+			eid, maskTextinAppID(config.XtiAppID), len(config.XtiAppID), config.XtiSecretCode != "", len(config.XtiSecretCode))
 		return model.PLATFORM_KEY_TEXTIN, config, nil, nil, nil, nil, nil
 	}
 
@@ -184,7 +185,22 @@ func (s *DocumentConfigService) GetParserForFile(ctx context.Context, eid int64,
 		return model.PLATFORM_KEY_TINGWU, nil, nil, nil, nil, config, nil
 	}
 
-	// 7. 其他情况使用默认
+	// 7. 识别本地引擎：builtin（通用办公文档/PDF）和 opendataloader（仅PDF）
+	if matchedFunc == model.PLATFORM_KEY_BUILTIN {
+		logger.Infof(ctx, "🏗️ [DOC_CONFIG] 选择 builtin 本地引擎 - eid: %d, file: %s", eid, filename)
+		return model.PLATFORM_KEY_BUILTIN, nil, nil, nil, nil, nil, nil
+	}
+
+	if matchedFunc == model.PLATFORM_KEY_OPENDATALOADER {
+		if ext != "pdf" {
+			logger.Errorf(ctx, "❌ [DOC_CONFIG] opendataloader 仅支持 PDF，收到 .%s 文件 - eid: %d, filename: %s", ext, eid, filename)
+			return "", nil, nil, nil, nil, nil, fmt.Errorf("opendataloader only supports PDF files, got .%s", ext)
+		}
+		logger.Infof(ctx, "🏗️ [DOC_CONFIG] 选择 opendataloader 本地引擎 - eid: %d, file: %s", eid, filename)
+		return model.PLATFORM_KEY_OPENDATALOADER, nil, nil, nil, nil, nil, nil
+	}
+
+	// 8. 其他情况使用默认
 	logger.Infof(ctx, "📄 [DOC_CONFIG] 使用默认 markitdown 解析器 - matched_func: %s", matchedFunc)
 	return "markitdown", nil, nil, nil, nil, nil, nil
 }
@@ -218,18 +234,8 @@ func (s *DocumentConfigService) matchRule(ext string, rules []DocumentSettingRul
 		}
 	}
 
-	// 没有匹配到规则时，根据文件扩展名选择默认解析器
-	lowerExt := strings.ToLower(ext)
-	switch lowerExt {
-	case "mp3", "wav", "m4a", "aac", "flac", "opus":
-		fallthrough
-	case "mp4", "avi", "mov", "wmv", "flv", "webm", "m4v":
-		// 音频/视频文件使用通义听悟解析器
-		return model.PLATFORM_KEY_TINGWU
-	default:
-		// 其他情况使用默认
-		return "default" // 没有匹配到规则，使用 default
-	}
+	// 没有匹配到规则时，使用默认解析器
+	return "default"
 }
 
 // extractExtension 提取文件扩展名（不带点）
@@ -389,7 +395,7 @@ func (s *DocumentConfigService) ConvertToTextinConfig(platformConfig *TextinPlat
 		SecretCode: platformConfig.XtiSecretCode,
 		Parse: &TextinXParse{
 			Capabilities: &TextinCapabilities{
-				TableView:             "markdown",
+				TableView:             "html",
 				IncludeImageData:      &includeImageData,
 				IncludeTableStructure: &includeTableStructure,
 				Pages:                 &pages,

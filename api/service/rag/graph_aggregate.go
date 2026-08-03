@@ -427,6 +427,7 @@ func buildGraphAggregateSource(result *GraphAggregateResult) *SourceReference {
 	}
 
 	return &SourceReference{
+		SourceType:                   "graph",
 		ReferenceID:                  GraphAggregateReferenceID,
 		ChunkID:                      graphAggregateSyntheticChunkID,
 		FileID:                       0,

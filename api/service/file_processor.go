@@ -23,12 +23,44 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
+// RecordingAudioFormats 录音功能支持的音频格式（浏览器/移动端上传录音文件）
+var RecordingAudioFormats = []string{".m4a", ".mp3", ".wav", ".aac", ".flac", ".opus"}
+
 var createRagJobsForFile = func(ctx context.Context, eid, fileID int64, paramsJSON string) ([]*model.RagJob, error) {
 	factory := GetRagJobFactoryV2()
 	if factory == nil {
 		return nil, nil
 	}
 	return factory.CreateJobsForFile(ctx, eid, fileID, paramsJSON)
+}
+
+func enqueueRagJobsForUploadedFile(ctx context.Context, eid, fileID, userID, libraryID, uploadID int64, parseType string) {
+	params := map[string]interface{}{
+		"eid":           eid,
+		"file_id":       fileID,
+		"user_id":       userID,
+		"library_id":    libraryID,
+		"upload_id":     uploadID,
+		"origin_status": model.FileConversiontatusInactive,
+	}
+	if parseType != "" {
+		params["parse_type"] = parseType
+	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		logger.SysErrorf("序列化文档转换任务参数失败: %v", err)
+		return
+	}
+
+	jobs, err := createRagJobsForFile(ctx, eid, fileID, string(paramsJSON))
+	if err != nil {
+		logger.SysErrorf("创建文档转换任务(V2)失败: %v", err)
+		return
+	}
+	if len(jobs) > 0 {
+		model.UpdateFileConversionStatus(fileID, model.FileConversionStatusPending)
+		logger.Infof(ctx, "文档转换任务(V2)已创建 - 文件ID: %d, 首个任务ID: %d", fileID, jobs[0].JobID)
+	}
 }
 
 // FileProcessor 文件处理器
@@ -243,7 +275,7 @@ func (fp *FileProcessor) processWithTransactionProtection(task *UploadTask, save
 
 	// 创建文件记录，使用 base_path
 	dirManager := NewDirectoryManager()
-	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, uploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID)
+	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, uploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID, task.GroupID)
 
 	if err != nil {
 		uploadFile.MarkAsFailed(fmt.Sprintf("创建文件记录失败: %v", err))
@@ -302,9 +334,8 @@ func (fp *FileProcessor) processWithTransactionProtection(task *UploadTask, save
 
 	if library.IsPersonalLibrary() {
 		ext := strings.ToLower(filepath.Ext(task.FileHeader.Filename))
-		recordingFormats := []string{".m4a", ".mp3", ".wav", ".aac", ".flac", ".opus"}
 		isRecordingFile := false
-		for _, format := range recordingFormats {
+		for _, format := range RecordingAudioFormats {
 			if ext == format {
 				isRecordingFile = true
 				break
@@ -320,6 +351,11 @@ func (fp *FileProcessor) processWithTransactionProtection(task *UploadTask, save
 			logger.Infof(context.Background(), "【录音】个人知识库录音文件需要解析 - 文件ID: %d, 扩展名: %s, 平台: %s", fileID, ext, recordingConfig.ParserPlatform)
 			// 将解析平台写入任务参数，供 RAG 管线使用
 			task.ParseType = recordingConfig.ParserPlatform
+			// 持久化到 File 表，与 recording_config.parser_platform 一致（如 voice:17:fun-asr），确保秒解析缓存按模型隔离
+			// 旧数据保留 "voice_model" 不影响；重新解析时由 document_parsing 回写为新值，自动迁移
+			if err := model.DB.Model(&model.File{}).Where("id = ?", fileID).Update("parse_type", recordingConfig.ParserPlatform).Error; err != nil {
+				logger.SysWarnf("【录音】保存 parse_type 失败: fileID=%d err=%v", fileID, err)
+			}
 		} else {
 			logger.Debugf(context.Background(), "【录音】个人知识库非录音文件跳过解析 - 文件ID: %d", fileID)
 			return nil
@@ -328,36 +364,7 @@ func (fp *FileProcessor) processWithTransactionProtection(task *UploadTask, save
 
 	// 创建文档转换任务
 	fmt.Printf("创建文档转换任务 - 文件ID: %d, 上传ID: %d\n", fileID, uploadFile.ID)
-
-	params := map[string]interface{}{
-		"eid":           task.EID,
-		"file_id":       fileID,
-		"user_id":       task.UserID,
-		"library_id":    task.LibraryID,
-		"upload_id":     uploadFile.ID,
-		"origin_status": model.FileConversiontatusInactive,
-	}
-	if task.ParseType != "" {
-		params["parse_type"] = task.ParseType
-	}
-	paramsJSON, err := json.Marshal(params)
-	if err != nil {
-		logger.SysErrorf("序列化文档转换任务参数失败: %v", err)
-		// 不阻塞主流程，继续执行
-	} else {
-		// 创建文档转换任务 (V2 迁移测试)
-		ctx := context.Background()
-
-		// 使用 V2 工厂根据策略自动创建任务
-		jobs, err := createRagJobsForFile(ctx, task.EID, fileID, string(paramsJSON))
-		if err != nil {
-			logger.SysErrorf("创建文档转换任务(V2)失败: %v", err)
-			// 不阻塞主流程，继续执行
-		} else if len(jobs) > 0 {
-			model.UpdateFileConversionStatus(fileID, model.FileConversionStatusPending)
-			fmt.Printf("文档转换任务(V2)已创建 - 首个任务ID: %d\n", jobs[0].JobID)
-		}
-	}
+	enqueueRagJobsForUploadedFile(context.Background(), task.EID, fileID, task.UserID, task.LibraryID, uploadFile.ID, task.ParseType)
 
 	return nil
 }
@@ -448,6 +455,12 @@ func (fp *FileProcessor) createLightweightUploadRecord(task *UploadTask) (*model
 	hashStr, err := storage.GetFileHash(file)
 	if err != nil {
 		return nil, fmt.Errorf("计算文件哈希失败: %v", err)
+	}
+
+	// 秒传：同企业跨用户查重，命中则跳过存储写入
+	if existingUploadFile, err := model.GetUploadFileByEidHashAndSourceType(task.EID, hashStr, model.UploadFileSourceUserUpload); err == nil && existingUploadFile != nil {
+		logger.Infof(context.Background(), "秒传命中：eid=%d, hash=%s, upload_file_id=%d", task.EID, hashStr, existingUploadFile.ID)
+		return existingUploadFile, nil
 	}
 
 	extension := filepath.Ext(task.FileHeader.Filename)
@@ -643,6 +656,12 @@ func (fp *FileProcessor) createUploadFileRecordFromTask(task *UploadTask) (*mode
 	hashStr, err := storage.GetFileHash(tempFile)
 	if err != nil {
 		return nil, fmt.Errorf("计算文件哈希失败: %v", err)
+	}
+
+	// 秒传：同企业跨用户查重，命中则跳过存储写入
+	if existingUploadFile, err := model.GetUploadFileByEidHashAndSourceType(task.EID, hashStr, model.UploadFileSourceUserUpload); err == nil && existingUploadFile != nil {
+		logger.Infof(context.Background(), "秒传命中：eid=%d, hash=%s, upload_file_id=%d", task.EID, hashStr, existingUploadFile.ID)
+		return existingUploadFile, nil
 	}
 
 	// 重置临时文件指针到开头准备读取内容

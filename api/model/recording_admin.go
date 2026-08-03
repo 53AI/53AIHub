@@ -11,7 +11,7 @@ type RecordingStats struct {
 	TotalDuration int64 `json:"total_duration"`
 }
 
-func getPersonalLibraryIDsByEid(eid int64) []int64 {
+func GetPersonalLibraryIDsByEid(eid int64) []int64 {
 	var ids []int64
 	DB.Model(&Library{}).
 		Where("eid = ? AND library_kind = ?", eid, LIBRARY_KIND_PERSONAL_USER).
@@ -19,13 +19,13 @@ func getPersonalLibraryIDsByEid(eid int64) []int64 {
 	return ids
 }
 
-func SearchRecordingFilesByEid(eid int64, userIDs []int64, keyword string, startTime, endTime int64, offset, limit int) ([]File, int64, error) {
+func SearchRecordingFilesByEid(eid int64, userIDs []int64, keyword string, startTime, endTime int64, offset, limit int, groupID int64, sortBy, order string) ([]File, int64, error) {
 	var files []File
 	var total int64
 
 	keyword = strings.TrimSpace(keyword)
 
-	libraryIDs := getPersonalLibraryIDsByEid(eid)
+	libraryIDs := GetPersonalLibraryIDsByEid(eid)
 	if len(libraryIDs) == 0 {
 		return files, 0, nil
 	}
@@ -35,6 +35,10 @@ func SearchRecordingFilesByEid(eid int64, userIDs []int64, keyword string, start
 
 	if len(userIDs) > 0 {
 		query = query.Where("user_id IN ?", userIDs)
+	}
+
+	if groupID > 0 {
+		query = query.Where("group_id = ?", groupID)
 	}
 
 	if keyword != "" {
@@ -53,7 +57,8 @@ func SearchRecordingFilesByEid(eid int64, userIDs []int64, keyword string, start
 		return nil, 0, fmt.Errorf("failed to count recording files: %w", err)
 	}
 
-	if err := query.Order("created_time DESC").
+	orderClause := BuildRecordingSortOrder(sortBy, order)
+	if err := query.Order(orderClause).
 		Offset(offset).Limit(limit).
 		Find(&files).Error; err != nil {
 		return nil, 0, fmt.Errorf("failed to query recording files: %w", err)
@@ -64,6 +69,20 @@ func SearchRecordingFilesByEid(eid int64, userIDs []int64, keyword string, start
 	}
 
 	return files, total, nil
+}
+
+func BuildRecordingSortOrder(sortBy, order string) string {
+	validSortFields := map[string]bool{
+		"created_time": true,
+		"updated_time": true,
+	}
+	if !validSortFields[sortBy] {
+		sortBy = "created_time"
+	}
+	if order != "asc" {
+		order = "desc"
+	}
+	return fmt.Sprintf("%s %s", sortBy, order)
 }
 
 func GetRecordingDurationsByFileIDs(fileIDs []int64) (map[int64]int64, error) {
@@ -90,7 +109,7 @@ func GetRecordingDurationsByFileIDs(fileIDs []int64) (map[int64]int64, error) {
 }
 
 func GetRecordingFileStats(eid int64, userIDs []int64, startTime, endTime int64) (*RecordingStats, error) {
-	libraryIDs := getPersonalLibraryIDsByEid(eid)
+	libraryIDs := GetPersonalLibraryIDsByEid(eid)
 	if len(libraryIDs) == 0 {
 		return &RecordingStats{}, nil
 	}

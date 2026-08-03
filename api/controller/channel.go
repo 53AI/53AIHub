@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/53AI/53AIHub/common/thinkingpolicy"
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
@@ -38,7 +40,7 @@ type FrontChannel struct {
 
 // 将 Channel 转换为 FrontChannel，移除敏感字段
 func convertToFrontChannel(channel *model.Channel) *FrontChannel {
-	return &FrontChannel{
+	fc := &FrontChannel{
 		ChannelID:          channel.ChannelID,
 		Eid:                channel.Eid,
 		Type:               channel.Type,
@@ -60,6 +62,36 @@ func convertToFrontChannel(channel *model.Channel) *FrontChannel {
 		CreatedAt:          channel.CreatedTime,
 		UpdatedAt:          channel.UpdatedTime,
 	}
+
+	if model.IsVoiceModelChannel(channel) {
+		fc.CustomConfig = maskVoiceModelCustomConfig(channel.CustomConfig)
+	}
+
+	return fc
+}
+
+func maskVoiceModelCustomConfig(customConfig string) string {
+	if customConfig == "" {
+		return customConfig
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal([]byte(customConfig), &cfg); err != nil {
+		return customConfig
+	}
+
+	if apiKey, ok := cfg["api_key"]; ok {
+		if keyStr, ok := apiKey.(string); ok && len(keyStr) > 8 {
+			cfg["api_key"] = keyStr[:4] + "..." + keyStr[len(keyStr)-4:]
+		} else if ok && len(keyStr) > 0 {
+			cfg["api_key"] = "***"
+		}
+	}
+
+	masked, err := json.Marshal(cfg)
+	if err != nil {
+		return customConfig
+	}
+	return string(masked)
 }
 
 // 将 Channel 列表转换为 FrontChannel 列表
@@ -165,6 +197,11 @@ func CreateChannel(c *gin.Context) {
 		return
 	}
 
+	if err := thinkingpolicy.ValidateThinkingConfig(req.Config); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
 	// 特殊处理自定义模型类型 (1012)
 	if req.Type == model.ChannelApiTypeCustomOpenAI {
 		// 验证 CustomConfig 并提取必要信息
@@ -198,7 +235,12 @@ func CreateChannel(c *gin.Context) {
 		channel.ProviderID = *req.ProviderID
 	}
 
-	channel.Models = model.ProcessModelNames(req.Models, channel.Type)
+	// 语音模型 channel 不经过 StandardizationBotId，直接使用原始模型名
+	if model.IsVoiceModelChannel(&channel) {
+		channel.Models = req.Models
+	} else {
+		channel.Models = model.ProcessModelNames(req.Models, channel.Type)
+	}
 	if channel.Models == "" {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(strings.NewReader("models is required")))
 		return
@@ -207,6 +249,11 @@ func CreateChannel(c *gin.Context) {
 	// Auto assign ProviderID for CozeStudio channels if needed
 	if err := autoAssignCozeStudioProvider(&channel); err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	if err := validateVoiceModelChannel(&channel); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
 
@@ -264,6 +311,11 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 
+	if err := thinkingpolicy.ValidateThinkingConfig(req.Config); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
 	// 对于自定义模型类型，同样需要验证CustomConfig
 	// if req.Type == model.ChannelApiTypeCustomOpenAI {
 	// 验证 CustomConfig 并提取必要信息
@@ -277,15 +329,24 @@ func UpdateChannel(c *gin.Context) {
 	// 	req.Models = strings.Join(modelsList, ",")
 	// }
 
-	channel.Models = model.ProcessModelNames(req.Models, channel.Type)
+	// 语音模型 channel 不经过 StandardizationBotId，直接使用原始模型名
+	if model.IsVoiceModelChannel(channel) {
+		channel.Models = req.Models
+	} else {
+		channel.Models = model.ProcessModelNames(req.Models, channel.Type)
+	}
 
 	if channel.Models == "" {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(strings.NewReader("models is required")))
 		return
 	}
 
-	channel.Type = req.Type
-	channel.Key = req.Key
+	if req.Type > 0 {
+		channel.Type = req.Type
+	}
+	if req.Key != "" {
+		channel.Key = req.Key
+	}
 	channel.Name = req.Name
 
 	channel.Config = req.Config
@@ -304,6 +365,11 @@ func UpdateChannel(c *gin.Context) {
 	// Auto assign ProviderID for CozeStudio channels if needed
 	if err := autoAssignCozeStudioProvider(channel); err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	if err := validateVoiceModelChannel(channel); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
 
@@ -330,6 +396,9 @@ func DeleteChannel(c *gin.Context) {
 
 	if err == nil && channel.Eid == config.GetEID(c) {
 		err = model.DeleteChannelByID(id)
+		if err == nil && model.IsVoiceModelChannel(channel) {
+			resetRecordingConfigForDeletedChannel(channel.ChannelID, channel.Eid)
+		}
 	}
 
 	if err != nil {
@@ -338,6 +407,31 @@ func DeleteChannel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+func resetRecordingConfigForDeletedChannel(channelID int64, eid int64) {
+	config, err := model.ValidateOrCreateRecordingConfig(eid)
+	if err != nil {
+		logger.SysErrorf("【录音配置】删除语音渠道后重置配置失败: eid=%d err=%v", eid, err)
+		return
+	}
+
+	needsUpdate := false
+	if config.VoiceModelID == channelID {
+		config.VoiceModelID = 0
+		needsUpdate = true
+	}
+	if config.InferenceModelID == channelID {
+		config.InferenceModelID = 0
+		config.InferenceModelName = ""
+		needsUpdate = true
+	}
+
+	if needsUpdate {
+		if err := model.UpdateRecordingConfig(eid, config.Enabled, config.ParserPlatform, config.VoiceModelID, config.VoiceModelName, config.InferenceModelID, config.InferenceModelName, config.RecordingAgentEnabled); err != nil {
+			logger.SysErrorf("【录音配置】删除语音渠道后重置配置失败: eid=%d channel_id=%d err=%v", eid, channelID, err)
+		}
+	}
 }
 
 // @Summary Get all channels
@@ -409,6 +503,39 @@ func GetChannelsForFrontend(c *gin.Context) {
 	frontChannels := convertToFrontChannels(channelPtrs)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(frontChannels))
+}
+
+// validateVoiceModelChannel validates that voice model channels have required config.
+func validateVoiceModelChannel(channel *model.Channel) error {
+	if !model.IsVoiceModelChannel(channel) {
+		return nil
+	}
+
+	if channel.Key == "" {
+		return fmt.Errorf("语音模型必须配置 key（API Key）")
+	}
+
+	var customConfig map[string]interface{}
+	if err := json.Unmarshal([]byte(channel.CustomConfig), &customConfig); err != nil {
+		return fmt.Errorf("语音模型 CustomConfig 解析失败: %v", err)
+	}
+
+	voiceModels, ok := customConfig["voice_models"].(map[string]interface{})
+	if !ok || len(voiceModels) == 0 {
+		return fmt.Errorf("语音模型 CustomConfig 必须包含 voice_models")
+	}
+
+	for modelName, modelCfg := range voiceModels {
+		mc, ok := modelCfg.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("voice_models.%s 配置格式错误", modelName)
+		}
+		if _, hasWS := mc["workspace_id"]; !hasWS || mc["workspace_id"].(string) == "" {
+			return fmt.Errorf("模型 %s 必须配置 workspace_id", modelName)
+		}
+	}
+
+	return nil
 }
 
 // validateAndExtractCustomModelConfig 验证CustomConfig并提取必要信息

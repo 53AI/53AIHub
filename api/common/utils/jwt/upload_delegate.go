@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	UploadDelegateTokenType = "upload_delegate"
+	UploadDelegateTokenType  = "upload_delegate"
 	UploadDelegateScopeBatch = "batch_upload"
 )
 

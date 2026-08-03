@@ -160,7 +160,7 @@ func SuggestTemplateParams(ctx context.Context, db *gorm.DB, eid int64, content 
 
 func newGraphTemplateSuggestionExecutor(db *gorm.DB, eid int64) (graphTemplateSuggestionExecutor, error) {
 	chunkCfgService := rag.NewChunkConfigService(db)
-	config, err := chunkCfgService.GetConfig(eid, nil, "default")
+	config, err := chunkCfgService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		logger.SysError(fmt.Sprintf("Failed to get graph template suggestion LLM config: %v", err))
 		return nil, fmt.Errorf("获取模型配置失败: %v", err)

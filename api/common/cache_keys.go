@@ -112,3 +112,10 @@ func GetOpenClawProjectionSyncedCacheKey(eid int64, agentID int64, userID int64,
 	return fmt.Sprintf("Cache:openclaw:projection:synced:eid:%d:agent:%d:user:%d:conv:%s:key:%s",
 		eid, agentID, userID, conversationID, projectionKey)
 }
+
+// GetParserHealthCacheKey 生成企业解析器健康检查缓存 Key。
+// Key 格式: Cache:docconv:health:eid:{eid}:fp:{fingerprint}
+// fingerprint 为配置内容的 SHA-256 摘要，不包含明文凭证。
+func GetParserHealthCacheKey(eid int64, fingerprint string) string {
+	return fmt.Sprintf("Cache:docconv:health:eid:%d:fp:%s", eid, fingerprint)
+}

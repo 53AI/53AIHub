@@ -360,7 +360,7 @@ func (s *EntityVectorRepairService) RepairEntityVectorIndex(ctx context.Context,
 
 	// 预先获取配置和渠道信息，避免批次间重复查询
 	configService := rag.NewChunkConfigService(s.db)
-	chunkConfig, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	chunkConfig, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return result, fmt.Errorf("获取分块配置失败: %v", err)
 	}

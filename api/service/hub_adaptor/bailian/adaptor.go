@@ -68,7 +68,7 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
-	
+
 	// 检查是否为 rerank 请求
 	if a.IsRerankRequest(c, request) {
 		// 解析 rerank 请求
@@ -76,17 +76,17 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse rerank request: %v", err)
 		}
-		
+
 		// 直接处理 rerank 请求
 		err = a.HandleRerankRequest(c, rerankRequest)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// 返回空值，因为响应已经在 HandleRerankRequest 中处理
 		return nil, nil
 	}
-	
+
 	// 原有的 chat 转换逻辑
 	request.User = a.meta.Config.UserID
 	bailianRequest := ConvertRequest(*request, a.meta, a.CustomConfig)
@@ -102,12 +102,12 @@ func (a *Adaptor) IsRerankRequest(c *gin.Context, request *model.GeneralOpenAIRe
 	if strings.Contains(c.Request.URL.Path, "rerank") {
 		return true
 	}
-	
+
 	// 通过模型名称检测
 	if a.IsRerankModel(request.Model) {
 		return true
 	}
-	
+
 	return false
 }
 

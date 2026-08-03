@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -14,6 +15,7 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
+	"golang.org/x/net/html"
 )
 
 // Orchestrator 编排器
@@ -95,6 +97,12 @@ func (o *Orchestrator) StartImageReplacementAsync(eid, fileID, userID, fileBodyI
 func (o *Orchestrator) parseMarkdownStaticPaths(content string) []string {
 	var paths []string
 	pathSet := make(map[string]bool) // 去重
+	addPath := func(staticPath string) {
+		if isSupportedStaticImagePath(staticPath) && !pathSet[staticPath] {
+			paths = append(paths, staticPath)
+			pathSet[staticPath] = true
+		}
+	}
 
 	// 匹配 Markdown 图片格式: ![alt](/static/path/image.ext)
 	imgRegex := regexp.MustCompile(`!\[[^\]]*\]\((/static/[^\)]+\.(png|jpg|jpeg|gif))\)`)
@@ -102,11 +110,7 @@ func (o *Orchestrator) parseMarkdownStaticPaths(content string) []string {
 
 	for _, match := range matches {
 		if len(match) > 1 {
-			staticPath := match[1]
-			if !pathSet[staticPath] {
-				paths = append(paths, staticPath)
-				pathSet[staticPath] = true
-			}
+			addPath(match[1])
 		}
 	}
 
@@ -116,15 +120,48 @@ func (o *Orchestrator) parseMarkdownStaticPaths(content string) []string {
 
 	for _, match := range linkMatches {
 		if len(match) > 1 {
-			staticPath := match[1]
-			if !pathSet[staticPath] {
-				paths = append(paths, staticPath)
-				pathSet[staticPath] = true
+			addPath(match[1])
+		}
+	}
+
+	// 解析 HTML 中的图片节点，兼容 table 内的 <img src="/static/...">。
+	tokenizer := html.NewTokenizer(strings.NewReader(content))
+	for {
+		tokenType := tokenizer.Next()
+		if tokenType == html.ErrorToken {
+			if tokenizer.Err() == io.EOF {
+				break
+			}
+			break
+		}
+		if tokenType != html.StartTagToken && tokenType != html.SelfClosingTagToken {
+			continue
+		}
+
+		token := tokenizer.Token()
+		if strings.EqualFold(token.Data, "img") {
+			for _, attr := range token.Attr {
+				if strings.EqualFold(attr.Key, "src") {
+					addPath(attr.Val)
+					break
+				}
 			}
 		}
 	}
 
 	return paths
+}
+
+func isSupportedStaticImagePath(staticPath string) bool {
+	if !strings.HasPrefix(staticPath, "/static/") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(staticPath)) {
+	case ".png", ".jpg", ".jpeg", ".gif":
+		return true
+	default:
+		return false
+	}
 }
 
 // buildPreviewMapping 构建预览映射和上传文件元数据
@@ -274,7 +311,72 @@ func (o *Orchestrator) replaceMarkdownImages(content string, mapping map[string]
 		return match
 	})
 
-	return result
+	return o.replaceHTMLImageSources(result, mapping)
+}
+
+// replaceHTMLImageSources 替换 HTML <img> 标签中的 src，保留标签的其他内容。
+func (o *Orchestrator) replaceHTMLImageSources(content string, mapping map[string]string) string {
+	type replacement struct {
+		start int
+		end   int
+		value string
+	}
+
+	// 只捕获 src 属性的值，支持双引号、单引号和无引号写法。
+	srcRegex := regexp.MustCompile(`(?i)(\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s>]+))`)
+	tokenizer := html.NewTokenizer(strings.NewReader(content))
+	replacements := make([]replacement, 0)
+	searchFrom := 0
+
+	for {
+		tokenType := tokenizer.Next()
+		if tokenType == html.ErrorToken {
+			break
+		}
+		raw := string(tokenizer.Raw())
+		tagStart := strings.Index(content[searchFrom:], raw)
+		if tagStart < 0 {
+			continue
+		}
+		tagStart += searchFrom
+		searchFrom = tagStart + len(raw)
+
+		if tokenType != html.StartTagToken && tokenType != html.SelfClosingTagToken {
+			continue
+		}
+		token := tokenizer.Token()
+		if !strings.EqualFold(token.Data, "img") {
+			continue
+		}
+
+		match := srcRegex.FindStringSubmatchIndex(raw)
+		if len(match) == 0 {
+			continue
+		}
+		valueStart, valueEnd := -1, -1
+		for group := 2; group <= 4; group++ {
+			if match[group*2] >= 0 {
+				valueStart, valueEnd = match[group*2], match[group*2+1]
+				break
+			}
+		}
+		if valueStart < 0 {
+			continue
+		}
+		if previewURL, exists := mapping[raw[valueStart:valueEnd]]; exists {
+			replacements = append(replacements, replacement{
+				start: tagStart + valueStart,
+				end:   tagStart + valueEnd,
+				value: previewURL,
+			})
+		}
+	}
+
+	for i := len(replacements) - 1; i >= 0; i-- {
+		r := replacements[i]
+		content = content[:r.start] + r.value + content[r.end:]
+	}
+	return content
 }
 
 // guessMimeType 根据扩展名推测MIME类型

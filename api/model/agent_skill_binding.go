@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	AgentSkillBindTypeBuiltin  = "builtin"
-	AgentSkillBindTypeUser     = "user"
+	AgentSkillBindTypeBuiltin       = "builtin"
+	AgentSkillBindTypeUser          = "user"
 	AgentSkillBindingStatusEnabled  = "enabled"
 	AgentSkillBindingStatusDisabled = "disabled"
 )

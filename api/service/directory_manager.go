@@ -266,7 +266,7 @@ func (dm *DirectoryManager) createDirectoryRecord(eid, libraryID int64, item Fil
 }
 
 // CreateFileRecord 在数据库中创建文件记录
-func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath string, uploadFileID int64, basePath string, userID int64, duplicateMode DuplicateMode, isPersonalLibrary bool, originType string, originSource string, originRefID int64) (int64, error) {
+func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath string, uploadFileID int64, basePath string, userID int64, duplicateMode DuplicateMode, isPersonalLibrary bool, originType string, originSource string, originRefID int64, groupID int64) (int64, error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -296,6 +296,7 @@ func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath 
 			return 0, fmt.Errorf("更新文件记录失败: %v", err)
 		}
 		elasticsearch.SyncFileToES(existingFile, "update")
+		model.UpdateLibraryUpdatedTimeByID(eid, libraryID)
 		return existingFile.ID, nil
 	}
 
@@ -314,6 +315,7 @@ func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath 
 		ConversionStatus: model.FileConversionStatusNormal,
 		ParsingStatus:    fileParsingStatusByLibrary(isPersonalLibrary),
 		UserID:           userID,
+		GroupID:          groupID,
 	}
 	applyFileOriginMeta(file, originType, originSource, originRefID)
 	if !file.IsRecordingOriginType() {
@@ -328,6 +330,7 @@ func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath 
 
 	fps := NewFilePermissionService(eid)
 	fps.AddFileCreatorPermission(file.ID, userID)
+	model.UpdateLibraryUpdatedTimeByID(eid, libraryID)
 
 	return file.ID, nil
 }

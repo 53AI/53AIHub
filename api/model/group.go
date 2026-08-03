@@ -100,6 +100,8 @@ const (
 	SYSTEM_PROMPT_TYPE         = 5
 	PERSONAL_PROMPT_TYPE       = 6
 	GROUP_TYPE_SKILL           = 7
+	RECORDING_FILE_GROUP_TYPE  = 8
+	RECORDING_TEMPLATE_GROUP_TYPE = 9
 	KM_FILE_CHAT_QUICK_COMMAND = 101 // KM AI搜索组
 	KM_FILE_CHAT_SLIDE_COMMAND = 102 // KM 文件聊天组
 )
@@ -169,15 +171,20 @@ func BatchSubmitGroups(groupType int64, eid int64, groups []Group) error {
 	return nil
 }
 
-func GetGroupsByEid(eid int64, groupType int64) ([]Group, error) {
+func GetGroupsByEid(eid int64, groupType int64, createdBy ...int64) ([]Group, error) {
 	var groups []Group
 	if err := DB.Where("eid =? AND group_type =?", eid, groupType).Order("sort DESC").Find(&groups).Error; err != nil {
 		return nil, err
 	}
 
 	if len(groups) == 0 {
+		cb := int64(0)
+		if len(createdBy) > 0 {
+			cb = createdBy[0]
+		}
 		defaultGroup := Group{
 			Eid:       eid,
+			CreatedBy: cb,
 			GroupType: groupType,
 			GroupName: "默认",
 			Sort:      0,

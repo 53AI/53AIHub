@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/session"
 	"github.com/53AI/53AIHub/config"
@@ -12,11 +14,33 @@ import (
 
 // ConversationRequest 会话创建请求参数
 type ConversationRequest struct {
-	Title   string `json:"title" example:"我的会话"`
-	AgentID int64  `json:"agent_id" binding:"required" example:"1"`
-	FileID  int64  `json:"file_id" example:"0"`
+	Title        string `json:"title" example:"我的会话"`
+	AgentID      int64  `json:"agent_id" binding:"required" example:"1"`
+	FileID       int64  `json:"file_id" example:"0"`
+	DocumentType string `json:"document_type" example:"file" enums:"file,wiki"`
+	DocumentID   int64  `json:"document_id" example:"0"`
 	// ConversationType 会话类型：0=正式会话（默认），1=调试会话
 	ConversationType *int `json:"conversation_type" example:"0"`
+}
+
+func resolveConversationDocumentReference(documentType string, documentID, fileID int64) (string, int64, error) {
+	documentType = strings.ToLower(strings.TrimSpace(documentType))
+	if documentType == "" && fileID > 0 {
+		documentType = model.DocumentTypeFile
+		documentID = fileID
+	}
+	if documentType == "" {
+		return model.DocumentTypeNone, 0, nil
+	}
+	if documentID <= 0 {
+		return "", 0, errors.New("document_id must be positive")
+	}
+	switch documentType {
+	case model.DocumentTypeFile, model.DocumentTypeWiki:
+		return documentType, documentID, nil
+	default:
+		return "", 0, errors.New("unsupported document_type")
+	}
 }
 
 // ConversationUpdateRequest 会话更新请求参数
@@ -58,7 +82,7 @@ func normalizeConversationTitle(title string) string {
 }
 
 // @Summary 创建会话
-// @Description 创建新的对话会话。可指定会话类型：0=正式会话（默认），1=调试会话。
+// @Description 创建新的对话会话。可指定会话类型：0=正式会话（默认），1=调试会话。单文档会话通过 document_type=file/wiki 和 document_id 指定；file_id 仅兼容旧请求。
 // @Tags Conversation
 // @Accept json
 // @Produce json
@@ -89,14 +113,27 @@ func CreateConversation(c *gin.Context) {
 		convType = *req.ConversationType
 	}
 
+	documentType, documentID, err := resolveConversationDocumentReference(req.DocumentType, req.DocumentID, req.FileID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
 	conversation := &model.Conversation{
-		Eid:              eid,
-		UserID:           config.GetUserId(c),
-		AgentID:          req.AgentID,
-		VisitorID:        session.GetVisitorID(c),
-		Source:           model.MessageRequestSourceConsole,
-		Title:            normalizeConversationTitle(req.Title),
-		FileID:           req.FileID,
+		Eid:       eid,
+		UserID:    config.GetUserId(c),
+		AgentID:   req.AgentID,
+		VisitorID: session.GetVisitorID(c),
+		Source:    model.MessageRequestSourceConsole,
+		Title:     normalizeConversationTitle(req.Title),
+		FileID: func() int64 {
+			if documentType == model.DocumentTypeFile {
+				return documentID
+			}
+			return 0
+		}(),
+		DocumentType:     documentType,
+		DocumentID:       documentID,
 		Status:           model.ConversationStatusActive,
 		Model:            agent.Model,
 		ConversationType: convType,
@@ -252,6 +289,8 @@ type UserConversationListRequest struct {
 	CreatedAtEnd   int64  `form:"created_at_end" example:"1735689600000"`
 	AgentID        int64  `form:"agent_id" example:"1"`
 	FileID         int64  `form:"file_id" example:"1"`
+	DocumentType   string `form:"document_type" example:"file" enums:"file,wiki"`
+	DocumentID     int64  `form:"document_id" example:"0"`
 	View           string `form:"view" example:"user"`
 }
 
@@ -428,6 +467,13 @@ func GetAgentConversations(c *gin.Context) {
 		userID = config.GetUserId(c)
 	}
 
+	documentType := req.DocumentType
+	documentID := req.DocumentID
+	if documentType == "" && req.FileID > 0 {
+		documentType = model.DocumentTypeFile
+		documentID = req.FileID
+	}
+
 	conversations, total, err := model.GetAgentConversationsWithFilterWithVisitor(
 		config.GetEID(c),
 		agentID,
@@ -435,7 +481,8 @@ func GetAgentConversations(c *gin.Context) {
 		req.Keyword,
 		req.CreatedAtStart,
 		req.CreatedAtEnd,
-		req.FileID,
+		documentType,
+		documentID,
 		session.GetVisitorID(c),
 		req.Offset,
 		req.Limit,

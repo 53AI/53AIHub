@@ -12,12 +12,12 @@ import (
 )
 
 type RecordingFinalizeWorker struct {
-	eid int64
-	svc *RecordingService
+	eid         int64
+	finalizeSvc *RecordingFinalizeService
 }
 
-var recordingFinalizeWorkerCompleteFinalize = func(svc *RecordingService, ctx context.Context, userID, jobID int64) (*model.File, error) {
-	return svc.CompleteFinalize(ctx, userID, jobID)
+var recordingFinalizeWorkerCompleteFinalize = func(finalizeSvc *RecordingFinalizeService, ctx context.Context, userID, jobID int64) (*model.File, error) {
+	return finalizeSvc.CompleteFinalize(ctx, userID, jobID)
 }
 
 // finalizeNotify 用于 RequestFinalize 通知 Worker 立即处理
@@ -32,9 +32,10 @@ func NotifyFinalizeWorker() {
 }
 
 func NewRecordingFinalizeWorker(eid int64) *RecordingFinalizeWorker {
+	svc := NewRecordingService(eid)
 	return &RecordingFinalizeWorker{
-		eid: eid,
-		svc: NewRecordingService(eid),
+		eid:         eid,
+		finalizeSvc: svc.finalizeSvc,
 	}
 }
 
@@ -59,7 +60,7 @@ func (w *RecordingFinalizeWorker) ProcessOnce(ctx context.Context) error {
 			continue
 		}
 
-		claimed, err := w.svc.claimRecoveringFinalizingJob(job.ID, time.Now().UTC().UnixMilli())
+		claimed, err := w.finalizeSvc.claimRecoveringFinalizingJob(job.ID, time.Now().UTC().UnixMilli())
 		if err != nil {
 			lockSvc.UnlockFinalize(job.ID)
 			errs = append(errs, fmt.Errorf("claim job_id=%d failed: %w", job.ID, err))
@@ -70,7 +71,7 @@ func (w *RecordingFinalizeWorker) ProcessOnce(ctx context.Context) error {
 			continue
 		}
 
-		_, err = recordingFinalizeWorkerCompleteFinalize(w.svc, ctx, job.UserID, job.ID)
+		_, err = recordingFinalizeWorkerCompleteFinalize(w.finalizeSvc, ctx, job.UserID, job.ID)
 		lockSvc.UnlockFinalize(job.ID)
 
 		if err != nil {

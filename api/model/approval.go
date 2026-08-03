@@ -19,9 +19,9 @@ const (
 type Approval struct {
 	ID             int64  `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
 	Eid            int64  `gorm:"column:eid;not null;index:idx_approval_user_resource"          json:"eid"`
-	UserID         int64  `gorm:"column:user_id;not null;index:idx_approval_user_resource"      json:"user_id"`          // 申请人
+	UserID         int64  `gorm:"column:user_id;not null;index:idx_approval_user_resource"      json:"user_id"`                    // 申请人
 	ApproverUserID int64  `gorm:"column:approver_user_id;index;default:0"                                 json:"approver_user_id"` // 审批人，未执行前为0
-	ResourceType   int    `gorm:"column:resource_type;not null;index:idx_approval_user_resource" json:"resource_type"`   // 对应 Permission 的 ResourceType
+	ResourceType   int    `gorm:"column:resource_type;not null;index:idx_approval_user_resource" json:"resource_type"`             // 对应 Permission 的 ResourceType
 	ResourceID     int64  `gorm:"column:resource_id;not null;index:idx_approval_user_resource"  json:"resource_id"`
 	Permission     int    `gorm:"column:permission;not null"         json:"permission"`
 	Status         int    `gorm:"column:status;not null;default:0"   json:"status"` // 0待审批 1同意 2拒绝

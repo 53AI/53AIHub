@@ -49,6 +49,7 @@ type EnhancedMessage struct {
 	ParsedAnswer   interface{}                 `json:"parsed_answer"`               // 解析后的 answer 内容
 	RAGStats       map[string]interface{}      `json:"rag_stats"`                   // RAG检索统计数据，包含知识库搜索、文档检索(含完整分片信息)、性能等统计信息
 	FileName       string                      `json:"file_name,omitempty"`         // 关联文件名
+	DocumentName   string                      `json:"document_name,omitempty"`     // 关联文档名称（文件或 Wiki）
 	ProcessRecords []*model.MessageProcessStep `json:"process_records"`             // 过程记录（技能运行步骤）
 }
 
@@ -73,7 +74,7 @@ type MessageListAllRequest struct {
 }
 
 // convertToEnhancedMessages 将普通消息转换为增强消息
-func convertToEnhancedMessages(messages []*model.Message, fileMap map[int64]string) []*EnhancedMessage {
+func convertToEnhancedMessages(messages []*model.Message, fileMap, wikiMap map[int64]string) []*EnhancedMessage {
 	enhancedMessages := make([]*EnhancedMessage, len(messages))
 
 	for i, msg := range messages {
@@ -86,6 +87,13 @@ func convertToEnhancedMessages(messages []*model.Message, fileMap map[int64]stri
 		// 填充文件名
 		if msg.FileID > 0 && fileMap != nil {
 			enhanced.FileName = fileMap[msg.FileID]
+		}
+		if msg.DocumentType == model.DocumentTypeFile && msg.DocumentID > 0 && fileMap != nil {
+			enhanced.FileName = fileMap[msg.DocumentID]
+			enhanced.DocumentName = fileMap[msg.DocumentID]
+		}
+		if msg.DocumentType == model.DocumentTypeWiki && msg.DocumentID > 0 && wikiMap != nil {
+			enhanced.DocumentName = wikiMap[msg.DocumentID]
 		}
 
 		// 根据消息类型解析内容
@@ -142,8 +150,8 @@ func attachProcessRecords(enhancedMessages []*EnhancedMessage, processRecordMap 
 	}
 }
 
-func buildEnhancedMessages(messages []*model.Message, fileMap map[int64]string, processRecordMap map[int64][]*model.MessageProcessStep) []*EnhancedMessage {
-	enhancedMessages := convertToEnhancedMessages(messages, fileMap)
+func buildEnhancedMessages(messages []*model.Message, fileMap, wikiMap map[int64]string, processRecordMap map[int64][]*model.MessageProcessStep) []*EnhancedMessage {
+	enhancedMessages := convertToEnhancedMessages(messages, fileMap, wikiMap)
 	attachProcessRecords(enhancedMessages, processRecordMap)
 	return enhancedMessages
 }
@@ -309,7 +317,7 @@ func GetMessagesByUserAndAgent(c *gin.Context) {
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(&MessagesResponse{
 		Count:    count,
-		Messages: convertToEnhancedMessages(messages, fileMap),
+		Messages: convertToEnhancedMessages(messages, fileMap, nil),
 	}))
 }
 
@@ -384,7 +392,7 @@ func GetUserMessages(c *gin.Context) {
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(&MessagesResponse{
 		Count:    count,
-		Messages: convertToEnhancedMessages(messages, fileMap),
+		Messages: convertToEnhancedMessages(messages, fileMap, nil),
 	}))
 }
 
@@ -503,7 +511,7 @@ func GetMessagesByConversation(c *gin.Context) {
 	}
 	processRecordMap = mergeProcessRecordsWithToolCalls(processRecordMap, toolCallMap)
 
-	enhancedMessages := buildEnhancedMessages(messages, fileMap, processRecordMap)
+	enhancedMessages := buildEnhancedMessages(messages, fileMap, nil, processRecordMap)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(&MessagesResponse{
 		Count:    count,
@@ -611,7 +619,7 @@ func GetMessageStatsSum(c *gin.Context) {
 // @Param direction query string false "排序方向" Enums(desc,asc) default("desc") "desc=从新到旧，asc=从旧到新"
 // @Param thinking_mode query int false "思考方式" Enums(1,2) "1=快速回答，2=深度思考"
 // @Param response_status query int false "回答状态" Enums(1,2) "1=正常回答，2=拒答/超纲回复"
-// @Param knowledge_type query int false "知识类型" Enums(1,2,3) "1=知识库搜索，2=Web搜索，3=指定知识库"
+// @Param knowledge_type query int false "知识类型" Enums(1,2,3,4,5,6,7) "1=知识库搜索，2=Web搜索，3=指定知识库，4=单文件，5=站内知识组合，6=全部Wiki，7=指定Wiki"
 // @Param start_date query int64 false "开始日期时间戳（秒或毫秒）"
 // @Param end_date query int64 false "结束日期时间戳（秒或毫秒）"
 // @Param agent_id query int64 false "Agent ID 筛选"
@@ -719,8 +727,8 @@ func GetMessagesList(c *gin.Context) {
 	fileMap := make(map[int64]string)
 	var targetFileIDs []int64
 	for _, msg := range messages {
-		if msg.FileID > 0 {
-			targetFileIDs = append(targetFileIDs, msg.FileID)
+		if msg.DocumentType == model.DocumentTypeFile && msg.DocumentID > 0 {
+			targetFileIDs = append(targetFileIDs, msg.DocumentID)
 		}
 	}
 	if len(targetFileIDs) > 0 {
@@ -728,6 +736,21 @@ func GetMessagesList(c *gin.Context) {
 		if err := model.DB.Select("id, path").Where("id IN ?", targetFileIDs).Find(&files).Error; err == nil {
 			for _, f := range files {
 				fileMap[f.ID] = model.ExtractSimpleFileName(f.Path)
+			}
+		}
+	}
+	wikiMap := make(map[int64]string)
+	var targetWikiPageIDs []int64
+	for _, msg := range messages {
+		if msg.DocumentType == model.DocumentTypeWiki && msg.DocumentID > 0 {
+			targetWikiPageIDs = append(targetWikiPageIDs, msg.DocumentID)
+		}
+	}
+	if len(targetWikiPageIDs) > 0 {
+		var pages []model.WikiPage
+		if err := model.DB.Select("id, title").Where("eid = ? AND id IN ?", eid, targetWikiPageIDs).Find(&pages).Error; err == nil {
+			for _, page := range pages {
+				wikiMap[page.ID] = page.Title
 			}
 		}
 	}
@@ -756,9 +779,11 @@ func GetMessagesList(c *gin.Context) {
 	}
 	processRecordMap = mergeProcessRecordsWithToolCalls(processRecordMap, toolCallMap)
 
+	enhancedMessages := buildEnhancedMessages(messages, fileMap, wikiMap, processRecordMap)
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(&MessagesResponse{
 		Count:    count,
-		Messages: buildEnhancedMessages(messages, fileMap, processRecordMap),
+		Messages: enhancedMessages,
 	}))
 }
 

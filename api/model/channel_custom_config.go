@@ -4,9 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"github.com/songquanpeng/one-api/relay/channeltype"
 )
 
 const vectorModelConfidenceKey = "vector_model_confidence"
+
+// CustomConfig 中 model_type 字段的值
+const (
+	ModelTypeText      = 1 // 推理（文本生成）
+	ModelTypeEmbedding = 2 // 向量（Embedding）
+	ModelTypeRerank    = 3 // 重排（Rerank）
+	ModelTypeVoice     = 4 // 语音（ASR/STT）
+)
 
 const (
 	ThresholdLevelHigh     = "high"
@@ -125,6 +134,42 @@ func UpsertChannelVectorModelThreshold(existing string, modelName string, thresh
 	}
 	cfg[vectorModelConfidenceKey] = thresholds
 	return cfg, nil
+}
+
+// IsVoiceModelChannel 判断渠道是否为语音模型渠道。
+//
+// 当前仅支持阿里百炼模型类型（channeltype.Ali = 17），通过 custom_config 中的
+// voice_models 字段标识语音模型。新增其他供应商（如 Azure STT、Google STT）时：
+//   - 在 model/channel.go 中新增 ChannelApi 常量（如 ChannelApiAzureSTT = 1018）
+//   - 在此处添加 || channel.Type == ChannelApiAzureSTT
+//   - 确保该供应商的 channel 创建时 custom_config 包含 voice_models 字段
+func IsVoiceModelChannel(channel *Channel) bool {
+	if channel.Type != channeltype.Ali {
+		return false
+	}
+	cfg, err := ParseChannelCustomConfig(channel.CustomConfig)
+	if err != nil {
+		return false
+	}
+	vms, ok := cfg["voice_models"]
+	if !ok {
+		return false
+	}
+	vmMap, ok := vms.(map[string]interface{})
+	return ok && len(vmMap) > 0
+}
+
+// IsModelInChannelModels 校验 modelName 是否在 channel.Models（逗号分隔）中
+func IsModelInChannelModels(modelName, channelModels string) bool {
+	if channelModels == "" {
+		return false
+	}
+	for _, m := range strings.Split(channelModels, ",") {
+		if strings.TrimSpace(m) == modelName {
+			return true
+		}
+	}
+	return false
 }
 
 // MarshalChannelCustomConfig 序列化渠道 custom_config 对象

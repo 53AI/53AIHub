@@ -244,11 +244,11 @@ func (sm *ServiceManager) executeReindexPipeline(eid, fileID, userID int64) erro
 
 	// 将参数序列化为JSON字符串
 	params := map[string]interface{}{
-		"eid":              eid,
-		"file_id":          fileID,
-		"user_id":          userID,
+		"eid":               eid,
+		"file_id":           fileID,
+		"user_id":           userID,
 		"run_ai_index_task": false,
-		"origin_status":    file.ConversionStatus,
+		"origin_status":     file.ConversionStatus,
 	}
 	paramsJSON, err := json.Marshal(params)
 	if err != nil {

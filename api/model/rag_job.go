@@ -2,7 +2,9 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -37,9 +39,18 @@ type RagCleaningRule struct {
 
 // RagJobMetadata 元数据主结构体，所有任务类型共用
 type RagJobMetadata struct {
-	FileInfo     *RagJobFileInfo  `json:"file_info,omitempty"`
-	TokenCount   int64            `json:"token_count,omitempty"`   // 总Token数
-	CleaningRule *RagCleaningRule `json:"cleaning_rule,omitempty"` // 命中的清洗规则详情
+	FileInfo     *RagJobFileInfo     `json:"file_info,omitempty"`
+	TokenCount   int64               `json:"token_count,omitempty"`   // 总Token数
+	CleaningRule *RagCleaningRule    `json:"cleaning_rule,omitempty"` // 命中的清洗规则详情
+	WikiUsage    *RagJobUsageSummary `json:"wiki_usage,omitempty"`    // wiki 生成 token 统计
+}
+
+// RagJobUsageSummary wiki 生成使用量摘要
+type RagJobUsageSummary struct {
+	PromptTokens     int64 `json:"prompt_tokens,omitempty"`
+	CompletionTokens int64 `json:"completion_tokens,omitempty"`
+	TotalTokens      int64 `json:"total_tokens,omitempty"`
+	CallCount        int64 `json:"call_count,omitempty"`
 }
 
 // RagJobFileInfo 文件信息结构体（来源于 model/file）
@@ -152,4 +163,34 @@ func (job *RagJob) UpdateJobStatusToFailed(db *gorm.DB, reason string) error {
 	}
 
 	return nil
+}
+
+// UpdateRagJobWikiUsage 更新 wiki 生成任务的 token 使用信息
+func UpdateRagJobWikiUsage(db *gorm.DB, jobID int64, usage RagJobUsageSummary) error {
+	if db == nil {
+		return fmt.Errorf("db is nil")
+	}
+	if jobID <= 0 {
+		return fmt.Errorf("job_id is required")
+	}
+
+	var job RagJob
+	if err := db.Select("job_id, metadata").Where("job_id = ?", jobID).First(&job).Error; err != nil {
+		return err
+	}
+
+	var metadata RagJobMetadata
+	if strings.TrimSpace(job.Metadata) != "" {
+		_ = json.Unmarshal([]byte(job.Metadata), &metadata)
+	}
+	metadata.WikiUsage = &usage
+
+	metadataBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	return db.Model(&RagJob{}).
+		Where("job_id = ?", jobID).
+		Update("metadata", string(metadataBytes)).Error
 }

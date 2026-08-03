@@ -28,7 +28,7 @@ func BuildFileDownloadsFromUploadFiles(ctx context.Context, uploadFiles []*model
 			Size:     file.Size,
 		})
 
-		logger.Infof(ctx, "【沙盒】download_files 项: file_id=%d file_name=%s url=%s mime=%s size=%d", file.ID, file.FileName, url, file.MimeType, file.Size)
+		logger.Infof(ctx, "【沙盒】download_files 项: file_id=%d file_name=%s url=%s mime=%s size=%d", file.ID, file.FileName, logger.SanitizeURL(url), file.MimeType, file.Size)
 	}
 
 	return downloads

@@ -47,8 +47,6 @@ func (s *ChunkerService) processBatchOperationsWithoutTransaction(eid int64, fil
 
 	// 记录已创建的chunk IDs，用于补偿操作
 	var createdChunks []int64
-	// 记录已删除的chunk IDs，用于补偿操作
-	var deletedChunks []restoreChunkInfo
 
 	originPositionCounter := make(map[string]int) // 记录每个原始段落已添加的段落数
 
@@ -58,7 +56,7 @@ func (s *ChunkerService) processBatchOperationsWithoutTransaction(eid int64, fil
 		case "merge":
 			// 合并操作：除了主段落外，其他都要删除
 			for _, mergeID := range operation.MergeIdentifiers {
-				if mergeID != operation.Identifier {
+				if mergeID != operation.Identifier && !strings.HasPrefix(mergeID, "temp_") {
 					deleteChunkIDs = append(deleteChunkIDs, mergeID)
 				}
 			}
@@ -82,25 +80,12 @@ func (s *ChunkerService) processBatchOperationsWithoutTransaction(eid int64, fil
 		return splitInfos[i].Index < splitInfos[j].Index
 	})
 
-	// 第二阶段：删除段落（merge操作）- 提前执行删除操作以减少锁竞争
-	if len(deleteChunkIDs) > 0 {
-		deletedResult, err := s.processDeletionOperations(eid, fileID, req, deleteChunkIDs)
-		if err != nil {
-			// 执行补偿操作
-			s.compensateDeletionOperations(eid, deletedResult.deletedChunks)
-			return nil, fmt.Errorf("删除段落失败: %v", err)
-		}
-		deletedChunks = deletedResult.deletedChunks
-	}
-
-	// 第三阶段：创建新段落（split操作）
+	// 第二阶段：创建新段落（split操作）- 先创建，确保原始段落未被删除
 	if len(splitInfos) > 0 {
 		createResult, err := s.processCreationOperations(eid, fileID, libraryID, req, splitInfos, originPositionCounter)
 		if err != nil {
 			// 执行补偿操作
 			s.compensateCreationOperations(eid, createResult.createdChunks)
-			// 删除操作已经成功执行，需要补偿
-			s.compensateDeletionOperations(eid, deletedChunks)
 			return nil, fmt.Errorf("创建段落失败: %v", err)
 		}
 		createdChunks = createResult.createdChunks
@@ -108,18 +93,35 @@ func (s *ChunkerService) processBatchOperationsWithoutTransaction(eid int64, fil
 		needReindexChunkIDs = append(needReindexChunkIDs, createResult.needReindexChunkIDs...)
 	}
 
-	// 第四阶段：更新现有段落
-	updateResult, err := s.processUpdateOperations(eid, fileID, libraryID, req, addChunkIDs)
-	if err != nil {
-		// 执行补偿操作
-		s.compensateUpdateOperations(eid, updateResult.updatedChunks, updateResult.originalChunks)
-		// 创建操作已经成功执行，需要补偿
-		s.compensateCreationOperations(eid, createdChunks)
-		// 删除操作已经成功执行，需要补偿
-		s.compensateDeletionOperations(eid, deletedChunks)
-		return nil, fmt.Errorf("更新段落失败: %v", err)
+	// 第三阶段：更新现有段落
+	var updateResult *updateOperationResult
+	if len(req.ContentUpdates) > 0 {
+		var err error
+		updateResult, err = s.processUpdateOperations(eid, fileID, libraryID, req, addChunkIDs)
+		if err != nil {
+			// 执行补偿操作
+			s.compensateUpdateOperations(eid, updateResult.updatedChunks, updateResult.originalChunks)
+			// 创建操作已经成功执行，需要补偿
+			s.compensateCreationOperations(eid, createdChunks)
+			return nil, fmt.Errorf("更新段落失败: %v", err)
+		}
+		needReindexChunkIDs = append(needReindexChunkIDs, updateResult.needReindexChunkIDs...)
 	}
-	needReindexChunkIDs = append(needReindexChunkIDs, updateResult.needReindexChunkIDs...)
+
+	// 第四阶段：删除段落（merge操作）- 后执行删除，确保不影响split和update
+	if len(deleteChunkIDs) > 0 {
+		deletedResult, err := s.processDeletionOperations(eid, fileID, req, deleteChunkIDs)
+		if err != nil {
+			// 执行补偿操作
+			s.compensateDeletionOperations(eid, deletedResult.deletedChunks)
+			// 创建和更新操作已经成功执行，需要补偿
+			if updateResult != nil {
+				s.compensateUpdateOperations(eid, updateResult.updatedChunks, updateResult.originalChunks)
+			}
+			s.compensateCreationOperations(eid, createdChunks)
+			return nil, fmt.Errorf("删除段落失败: %v", err)
+		}
+	}
 
 	return &BatchSegmentResult{
 		CreatedChunks: addChunkIDs,

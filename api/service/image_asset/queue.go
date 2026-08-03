@@ -89,10 +89,12 @@ func (qm *QueueManager) Dequeue(ctx context.Context) (*ImageDownloadTask, error)
 	// 取第一个任务
 	taskJSON := tasks[0]
 
-	// 从队列中移除
-	_, err = common.RedisZRem(QueueKey, taskJSON)
+	removed, err := common.RedisZRem(QueueKey, taskJSON)
 	if err != nil {
 		return nil, fmt.Errorf("redis remove error: %w", err)
+	}
+	if removed == 0 {
+		return nil, nil // 已被其他 worker 消费，返回 nil 让 worker 重试下一个
 	}
 
 	var task ImageDownloadTask

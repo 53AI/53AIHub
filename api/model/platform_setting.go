@@ -16,7 +16,10 @@ const (
 	PLATFORM_KEY_PADDLEPADDLE_PP_OCR_V5       = "paddlepaddle_pp-ocrv5"       // PaddleOCR 通用文字识别模型配置
 	PLATFORM_KEY_PADDLEPADDLE_PP_STRUCTURE_V3 = "paddlepaddle_pp-structurev3" // 版面分析与结构化识别模型配置
 	PLATFORM_KEY_PADDLEPADDLE_PADDLEOCR_VL    = "paddlepaddle_paddleocr-vl"   // 视觉语言模型配置
-	PLATFORM_KEY_TINGWU                       = "tingwu"                      // 通义听悟平台
+	PLATFORM_KEY_TINGWU                       = "tingwu"
+	PLATFORM_KEY_VOICE_MODEL_PREFIX           = "voice:"                            // 语音模型渠道前缀
+	PLATFORM_KEY_BUILTIN                      = "builtin"                           // file-service builtin 本地引擎
+	PLATFORM_KEY_OPENDATALOADER               = "opendataloader"                    // file-service OpenDataLoader 引擎（仅PDF）
 )
 
 const (
@@ -91,9 +94,9 @@ type PlatformSetting struct {
 	ID                 int64  `json:"id" gorm:"primaryKey;autoIncrement"`
 	Eid                int64  `json:"eid" gorm:"not null;index" example:"1"`
 	Setting            string `json:"setting" gorm:"type:text;not null" example:"{\"key\":\"value\"}"`
-	PlatformKey        string `json:"platform_key" gorm:"not null;index" example:"platform_key"`
+	PlatformKey        string `json:"platform_key" gorm:"size:191;not null;index" example:"platform_key"`
 	ExternalID         string `json:"external_id" gorm:"default:null" example:"wps_external_id"`
-	Status             string `json:"status" gorm:"size:20;default:'enabled';index" example:"enabled"` // 添加状态字段，默认为enabled(正常)
+	Status             string `json:"status" gorm:"size:20;default:'enabled';index" example:"enabled"`
 	DisplayName        string `json:"display_name,omitempty" gorm:"-"`
 	DisplayDescription string `json:"display_description,omitempty" gorm:"-"`
 	BaseModel

@@ -6,8 +6,10 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
@@ -21,7 +23,18 @@ var (
 	sandboxRuntimeKey string
 	sandboxRuntime    sandboxruntime.Runtime
 	sandboxRuntimeErr error
+
+	sandboxRuntimeSeedStates sync.Map
+	sandboxSeedCleanupMu     sync.Mutex
+	sandboxSeedLastCleanup   time.Time
 )
+
+type sandboxRuntimeSeedState struct {
+	mu                    sync.Mutex
+	fingerprints          map[string]string
+	skillScopeFingerprint string
+	lastUsedAt            time.Time
+}
 
 func registerSandboxRuntimeProviders() {
 	providers.RegisterDefaults()
@@ -94,31 +107,23 @@ func buildRuntimeSessionSpec(ctx context.Context) sandboxruntime.SessionSpec {
 }
 
 func resolveSandboxEID(ctx context.Context) int64 {
-	if value := ctx.Value("eid"); value != nil {
-		switch v := value.(type) {
-		case int64:
-			return v
-		case int:
-			return int64(v)
-		}
-	}
-	return 0
+	return resolveSandboxInt64ContextValue(ctx, ToolEIDKey, "eid")
 }
 
 func resolveSandboxUserID(ctx context.Context) int64 {
-	if value := ctx.Value("user_id"); value != nil {
-		switch v := value.(type) {
-		case int64:
-			return v
-		case int:
-			return int64(v)
-		}
-	}
-	return 0
+	return resolveSandboxInt64ContextValue(ctx, ToolUserIDKey, "user_id")
 }
 
 func resolveSandboxMessageID(ctx context.Context) int64 {
-	if value := ctx.Value("message_id"); value != nil {
+	return resolveSandboxInt64ContextValue(ctx, ToolMessageIDKey, "message_id")
+}
+
+func resolveSandboxInt64ContextValue(ctx context.Context, typedKey contextKey, legacyKey string) int64 {
+	for _, key := range []interface{}{typedKey, legacyKey} {
+		value := ctx.Value(key)
+		if value == nil {
+			continue
+		}
 		switch v := value.(type) {
 		case int64:
 			return v
@@ -130,28 +135,49 @@ func resolveSandboxMessageID(ctx context.Context) int64 {
 }
 
 func ensureSandboxRuntimeSessionSeeded(ctx context.Context, session *sandboxruntime.Session) error {
+	return ensureSandboxRuntimeSessionSeededWithFetcher(ctx, session, fetchUploadFileContent)
+}
+
+func ensureSandboxRuntimeSessionSeededWithFetcher(ctx context.Context, session *sandboxruntime.Session, fetchUpload func(context.Context, *model.UploadFile) ([]byte, error)) error {
 	if session == nil {
 		return sandboxruntime.ErrSessionRequired
 	}
-	files := make([]sandboxruntime.FileObject, 0)
-	if skillFiles, err := buildSkillFilesForSandbox(ctx); err != nil {
-		return err
-	} else {
-		for path, content := range skillFiles {
-			files = append(files, sandboxruntime.FileObject{
-				Path: path,
-				Data: []byte(content),
-			})
+	if fetchUpload == nil {
+		fetchUpload = fetchUploadFileContent
+	}
+
+	maybeCleanupSandboxRuntimeSeedStates(time.Now())
+	stateKey := session.ID + "|" + session.Mounts.WorkspaceRoot
+	stateAny, _ := sandboxRuntimeSeedStates.LoadOrStore(stateKey, &sandboxRuntimeSeedState{
+		fingerprints: make(map[string]string),
+	})
+	state := stateAny.(*sandboxRuntimeSeedState)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.lastUsedAt = time.Now()
+
+	desiredFiles := make(map[string]sandboxruntime.FileObject)
+	desiredFingerprints := make(map[string]string)
+	skillScopeFingerprint := sandboxRuntimeSkillScopeFingerprint(ctx)
+	skillScopeChanged := state.skillScopeFingerprint != skillScopeFingerprint
+	if skillScopeChanged {
+		if skillFiles, err := buildSkillFilesForSandbox(ctx); err != nil {
+			return err
+		} else {
+			for path, content := range skillFiles {
+				data := []byte(content)
+				desiredFiles[path] = sandboxruntime.FileObject{
+					Path: path,
+					Data: data,
+				}
+				desiredFingerprints[path] = "seed:" + sandboxruntime.HashBytes(data)
+			}
 		}
 	}
+
 	if uploadFiles, ok := ctx.Value(UploadedFilesKey).([]*model.UploadFile); ok && len(uploadFiles) > 0 {
 		for _, uploadFile := range uploadFiles {
 			if uploadFile == nil {
-				continue
-			}
-			data, err := fetchUploadFileContent(ctx, uploadFile)
-			if err != nil {
-				logger.Warnf(ctx, "Failed to fetch upload file for sandbox runtime: file_id=%d, err=%v", uploadFile.ID, err)
 				continue
 			}
 			path := uploadFile.FileName
@@ -160,16 +186,118 @@ func ensureSandboxRuntimeSessionSeeded(ctx context.Context, session *sandboxrunt
 			} else {
 				path = filepath.ToSlash(filepath.Base(path))
 			}
-			files = append(files, sandboxruntime.FileObject{
+			fingerprint := sandboxRuntimeUploadFingerprint(uploadFile)
+			desiredFingerprints[path] = fingerprint
+			if previous, exists := state.fingerprints[path]; exists && previous == fingerprint {
+				delete(desiredFiles, path)
+				continue
+			}
+			data, err := fetchUpload(ctx, uploadFile)
+			if err != nil {
+				logger.Warnf(ctx, "Failed to fetch upload file for sandbox runtime: file_id=%d, err=%v", uploadFile.ID, err)
+				delete(desiredFingerprints, path)
+				delete(desiredFiles, path)
+				continue
+			}
+			desiredFiles[path] = sandboxruntime.FileObject{
 				Path: path,
 				Data: data,
-			})
+			}
 		}
 	}
-	if len(files) == 0 {
+
+	paths := make([]string, 0, len(desiredFiles))
+	for path := range desiredFiles {
+		if previous, exists := state.fingerprints[path]; exists && previous == desiredFingerprints[path] {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	if len(paths) == 0 {
+		if skillScopeChanged {
+			state.skillScopeFingerprint = skillScopeFingerprint
+		}
 		return nil
 	}
-	return runtimeWriteFiles(ctx, session, files)
+	sort.Strings(paths)
+	files := make([]sandboxruntime.FileObject, 0, len(paths))
+	for _, path := range paths {
+		files = append(files, desiredFiles[path])
+	}
+	if err := runtimeWriteFiles(ctx, session, files); err != nil {
+		return err
+	}
+	for _, path := range paths {
+		state.fingerprints[path] = desiredFingerprints[path]
+	}
+	if skillScopeChanged {
+		state.skillScopeFingerprint = skillScopeFingerprint
+	}
+	return nil
+}
+
+func maybeCleanupSandboxRuntimeSeedStates(now time.Time) {
+	sandboxSeedCleanupMu.Lock()
+	if !sandboxSeedLastCleanup.IsZero() && now.Sub(sandboxSeedLastCleanup) < time.Minute {
+		sandboxSeedCleanupMu.Unlock()
+		return
+	}
+	sandboxSeedLastCleanup = now
+	sandboxSeedCleanupMu.Unlock()
+
+	ttl := time.Duration(config.SandboxRuntimeIdleCleanupSeconds) * 2 * time.Second
+	if ttl < 30*time.Minute {
+		ttl = 30 * time.Minute
+	}
+	cleanupSandboxRuntimeSeedStates(now, ttl)
+}
+
+func cleanupSandboxRuntimeSeedStates(now time.Time, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	sandboxRuntimeSeedStates.Range(func(key, value interface{}) bool {
+		state, ok := value.(*sandboxRuntimeSeedState)
+		if !ok || state == nil {
+			sandboxRuntimeSeedStates.Delete(key)
+			return true
+		}
+		state.mu.Lock()
+		lastUsedAt := state.lastUsedAt
+		state.mu.Unlock()
+		if !lastUsedAt.IsZero() && now.Sub(lastUsedAt) > ttl {
+			sandboxRuntimeSeedStates.Delete(key)
+		}
+		return true
+	})
+}
+
+func sandboxRuntimeSkillScopeFingerprint(ctx context.Context) string {
+	root, _ := ctx.Value(SkillRootPathKey).(string)
+	resources, _ := ctx.Value(SkillResourcesKey).([]string)
+	resources = append([]string(nil), resources...)
+	sort.Strings(resources)
+
+	parts := []string{filepath.Clean(strings.TrimSpace(root)), strings.Join(resources, "\x00")}
+	if runtimeSeedFiles := loadRuntimeSeedFilesFromContext(ctx); len(runtimeSeedFiles) > 0 {
+		paths := make([]string, 0, len(runtimeSeedFiles))
+		for path := range runtimeSeedFiles {
+			paths = append(paths, path)
+		}
+		sort.Strings(paths)
+		for _, path := range paths {
+			parts = append(parts, path, sandboxruntime.HashBytes([]byte(runtimeSeedFiles[path])))
+		}
+	}
+	return sandboxruntime.HashBytes([]byte(strings.Join(parts, "\x00")))
+}
+
+func sandboxRuntimeUploadFingerprint(uploadFile *model.UploadFile) string {
+	if uploadFile == nil {
+		return ""
+	}
+	identity := fmt.Sprintf("%d|%s|%s|%s|%d|%d", uploadFile.ID, uploadFile.FileName, uploadFile.Key, uploadFile.Hash, uploadFile.Size, uploadFile.UpdatedTime)
+	return "upload:" + sandboxruntime.HashBytes([]byte(identity))
 }
 
 func fetchUploadFileContent(ctx context.Context, uploadFile *model.UploadFile) ([]byte, error) {
@@ -278,13 +406,71 @@ func executeSandboxRuntimeCodeWithResult(ctx context.Context, language, code str
 }
 
 func executeSandboxRuntimeRunShell(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
+	session, req, err := buildSandboxRuntimeRunShellRequest(ctx, args)
+	if err != nil {
+		return nil, err
+	}
+	return getSandboxRuntimeResult(ctx, session, req)
+}
+
+// executeSandboxRuntimeRunShellStream is the provider-runtime counterpart of
+// run_shell streaming. ExecuteToolStream should call this function when the
+// Docker runtime provider is enabled.
+func executeSandboxRuntimeRunShellStream(ctx context.Context, args map[string]interface{}, handler SandboxStreamHandler) (*ToolResult, error) {
+	if handler != nil {
+		handler(SandboxStreamEvent{EventType: "tool.started", Data: map[string]interface{}{"tool_name": "run_shell"}})
+	}
+	session, req, err := buildSandboxRuntimeRunShellRequest(ctx, args)
+	if err != nil {
+		emitSandboxRuntimeStreamError(handler, err)
+		return nil, err
+	}
+	result, err := getSandboxRuntimeResultWithStream(ctx, session, req, func(event sandboxruntime.StreamEvent) {
+		if handler == nil || event.Type == "tool.completed" {
+			return
+		}
+		data := make(map[string]interface{}, len(event.Data)+1)
+		for key, value := range event.Data {
+			data[key] = value
+		}
+		if event.Content != "" {
+			data["content"] = event.Content
+		}
+		handler(SandboxStreamEvent{EventType: event.Type, Data: data})
+	})
+	if err != nil {
+		emitSandboxRuntimeStreamError(handler, err)
+		return result, err
+	}
+	if handler != nil {
+		handler(SandboxStreamEvent{EventType: "tool.completed", Data: map[string]interface{}{
+			"stdout":       result.Output,
+			"stderr":       result.Stderr,
+			"exit_code":    result.ExitCode,
+			"output_files": result.OutputFiles,
+		}})
+	}
+	return result, nil
+}
+
+func emitSandboxRuntimeStreamError(handler SandboxStreamHandler, err error) {
+	if handler == nil || err == nil {
+		return
+	}
+	handler(SandboxStreamEvent{EventType: "error", Data: map[string]interface{}{
+		"message":   err.Error(),
+		"tool_name": "run_shell",
+	}})
+}
+
+func buildSandboxRuntimeRunShellRequest(ctx context.Context, args map[string]interface{}) (*sandboxruntime.Session, sandboxruntime.CommandRequest, error) {
 	command, ok := args["command"].(string)
 	if !ok || strings.TrimSpace(command) == "" {
-		return nil, fmt.Errorf("missing command argument")
+		return nil, sandboxruntime.CommandRequest{}, fmt.Errorf("missing command argument")
 	}
 	session, err := runtimeSessionForContext(ctx)
 	if err != nil {
-		return nil, err
+		return nil, sandboxruntime.CommandRequest{}, err
 	}
 	timeout := 30
 	if v, exists := args["timeout"]; exists {
@@ -294,16 +480,12 @@ func executeSandboxRuntimeRunShell(ctx context.Context, args map[string]interfac
 	if strings.TrimSpace(cwd) == "" {
 		cwd = config.SandboxRuntimeContainerWorkdir
 	}
-	result, err := getSandboxRuntimeResult(ctx, session, sandboxruntime.CommandRequest{
+	return session, sandboxruntime.CommandRequest{
 		Command:        command,
 		Cwd:            cwd,
 		Env:            resolveSandboxEnvVars(ctx, args),
 		TimeoutSeconds: timeout,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	}, nil
 }
 
 func executeSandboxRuntimeReadFile(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
@@ -504,26 +686,38 @@ func runtimeCodeCommand(language, code string) string {
 }
 
 func getSandboxRuntimeResult(ctx context.Context, session *sandboxruntime.Session, req sandboxruntime.CommandRequest) (*ToolResult, error) {
+	return getSandboxRuntimeResultWithStream(ctx, session, req, nil)
+}
+
+func getSandboxRuntimeResultWithStream(ctx context.Context, session *sandboxruntime.Session, req sandboxruntime.CommandRequest, stream func(sandboxruntime.StreamEvent)) (*ToolResult, error) {
 	rt, err := getSandboxRuntime()
 	if err != nil {
 		return nil, err
 	}
 	prevSnapshot := loadSandboxOutputSnapshot(ctx)
-	res, err := rt.RunCommand(ctx, session, req, nil)
-	if err != nil {
-		return nil, err
+	res, runErr := rt.RunCommand(ctx, session, req, stream)
+	if res == nil {
+		if runErr == nil {
+			runErr = fmt.Errorf("sandbox runtime returned an empty command result")
+		}
+		return nil, runErr
+	}
+	result := &ToolResult{
+		Output:   formatCommandResult(res.Stdout, res.Stderr, res.ExitCode),
+		Stderr:   res.Stderr,
+		ExitCode: res.ExitCode,
+	}
+	if runErr != nil {
+		return result, runErr
 	}
 	outputFiles, currentSnapshot, collectErr := collectRuntimeOutputFiles(ctx, session, prevSnapshot)
 	if collectErr != nil {
 		logger.Warnf(ctx, "Failed to collect sandbox output files: %v", collectErr)
+	} else {
+		result.OutputFiles = outputFiles
+		rememberSandboxOutputSnapshot(ctx, currentSnapshot)
 	}
-	rememberSandboxOutputSnapshot(ctx, currentSnapshot)
-	return &ToolResult{
-		Output:      formatCommandResult(res.Stdout, res.Stderr, res.ExitCode),
-		Stderr:      res.Stderr,
-		ExitCode:    res.ExitCode,
-		OutputFiles: outputFiles,
-	}, nil
+	return result, nil
 }
 
 func collectRuntimeOutputFiles(ctx context.Context, session *sandboxruntime.Session, prevSnapshot *SandboxOutputSnapshot) ([]OutputFile, *SandboxOutputSnapshot, error) {

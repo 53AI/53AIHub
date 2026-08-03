@@ -9,27 +9,27 @@ import (
 )
 
 type EmbeddingReindexRun struct {
-	ID               int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Eid              int64  `json:"eid" gorm:"not null;index:idx_embedding_reindex_runs_eid_status,priority:1;index:idx_embedding_reindex_runs_eid_run_id,priority:1"`
-	RunID            string `json:"run_id" gorm:"size:36;not null;uniqueIndex:uniq_embedding_reindex_runs_run_id;index:idx_embedding_reindex_runs_eid_run_id,priority:2"`
-	Status           string `json:"status" gorm:"size:20;not null;index:idx_embedding_reindex_runs_status;index:idx_embedding_reindex_runs_eid_status,priority:2"`
-	OldChannelID     int64  `json:"old_channel_id" gorm:"not null;default:0"`
-	OldModelName     string `json:"old_model_name" gorm:"size:100;not null;default:''"`
-	NewChannelID     int64  `json:"new_channel_id" gorm:"not null;default:0"`
-	NewModelName     string `json:"new_model_name" gorm:"size:100;not null;default:''"`
-	OldDimension     int    `json:"old_dimension" gorm:"not null;default:0"`
-	NewDimension     int    `json:"new_dimension" gorm:"not null;default:0"`
-	DimensionChanged bool   `json:"dimension_changed" gorm:"not null;default:false"`
-	TotalFiles       int64  `json:"total_files" gorm:"not null;default:0"`
-	QueuedFiles      int64  `json:"queued_files" gorm:"not null;default:0"`
-	SucceededFiles   int64  `json:"succeeded_files" gorm:"not null;default:0"`
-	FailedFiles      int64  `json:"failed_files" gorm:"not null;default:0"`
-	CursorFileID     int64  `json:"cursor_file_id" gorm:"not null;default:0"`
-	CursorLibraryID  int64  `json:"cursor_library_id" gorm:"not null;default:0"`
+	ID                int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Eid               int64  `json:"eid" gorm:"not null;index:idx_embedding_reindex_runs_eid_status,priority:1;index:idx_embedding_reindex_runs_eid_run_id,priority:1"`
+	RunID             string `json:"run_id" gorm:"size:36;not null;uniqueIndex:uniq_embedding_reindex_runs_run_id;index:idx_embedding_reindex_runs_eid_run_id,priority:2"`
+	Status            string `json:"status" gorm:"size:20;not null;index:idx_embedding_reindex_runs_status;index:idx_embedding_reindex_runs_eid_status,priority:2"`
+	OldChannelID      int64  `json:"old_channel_id" gorm:"not null;default:0"`
+	OldModelName      string `json:"old_model_name" gorm:"size:100;not null;default:''"`
+	NewChannelID      int64  `json:"new_channel_id" gorm:"not null;default:0"`
+	NewModelName      string `json:"new_model_name" gorm:"size:100;not null;default:''"`
+	OldDimension      int    `json:"old_dimension" gorm:"not null;default:0"`
+	NewDimension      int    `json:"new_dimension" gorm:"not null;default:0"`
+	DimensionChanged  bool   `json:"dimension_changed" gorm:"not null;default:false"`
+	TotalFiles        int64  `json:"total_files" gorm:"not null;default:0"`
+	QueuedFiles       int64  `json:"queued_files" gorm:"not null;default:0"`
+	SucceededFiles    int64  `json:"succeeded_files" gorm:"not null;default:0"`
+	FailedFiles       int64  `json:"failed_files" gorm:"not null;default:0"`
+	CursorFileID      int64  `json:"cursor_file_id" gorm:"not null;default:0"`
+	CursorLibraryID   int64  `json:"cursor_library_id" gorm:"not null;default:0"`
 	RebuiltLibraryIDs string `json:"rebuilt_library_ids" gorm:"type:text"`
-	StartedTime      int64  `json:"started_time" gorm:"not null;default:0"`
-	EndedTime        int64  `json:"ended_time" gorm:"not null;default:0"`
-	FailureReason    string `json:"failure_reason" gorm:"type:text"`
+	StartedTime       int64  `json:"started_time" gorm:"not null;default:0"`
+	EndedTime         int64  `json:"ended_time" gorm:"not null;default:0"`
+	FailureReason     string `json:"failure_reason" gorm:"type:text"`
 	BaseModel
 }
 

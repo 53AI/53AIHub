@@ -14,6 +14,7 @@ type UserRecentUsed struct {
 	UserID       int64 `json:"user_id" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:2"`
 	ResourceType int   `json:"resource_type" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:3"` // 0=space, 1=knowledge_base, 2=file
 	ResourceID   int64 `json:"resource_id" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:4"`
+	SpaceID      int64 `json:"space_id" gorm:"not null;index"`
 	UpdatedTime  int64 `json:"updated_time" gorm:"not null"`
 }
 
@@ -31,7 +32,7 @@ func (h *UserRecentUsed) BeforeCreate(tx *gorm.DB) (err error) {
 }
 
 // SaveUserRecentUsed 保存最近使用记录（upsert + 超限删除）
-func SaveUserRecentUsed(eid, userID int64, resourceType int, resourceID int64) error {
+func SaveUserRecentUsed(eid, userID int64, resourceType int, resourceID int64, spaceID int64) error {
 	if resourceID <= 0 {
 		return nil
 	}
@@ -43,6 +44,7 @@ func SaveUserRecentUsed(eid, userID int64, resourceType int, resourceID int64) e
 		UserID:       userID,
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
+		SpaceID:      spaceID,
 	}
 	err := DB.Where("eid = ? AND user_id = ? AND resource_type = ? AND resource_id = ?",
 		eid, userID, resourceType, resourceID).
@@ -54,15 +56,18 @@ func SaveUserRecentUsed(eid, userID int64, resourceType int, resourceID int64) e
 		return err
 	}
 
-	// 超限清理：保留最近 20 条
-	return trimUserRecentUsed(eid, userID, resourceType)
+	// 超限清理：Wiki 页面按 resource_type + space_id 分组 trim，其他类型仍按 resource_type trim
+	if resourceType == RESOURCE_TYPE_WIKI_PAGE && spaceID > 0 {
+		return trimUserRecentUsed(eid, userID, resourceType, spaceID)
+	}
+	return trimUserRecentUsed(eid, userID, resourceType, 0)
 }
 
-// trimUserRecentUsed 清理超限记录，只保留最近 RECENT_USED_MAX_PER_TYPE 条
-func trimUserRecentUsed(eid, userID int64, resourceType int) error {
+// trimUserRecentUsed 清理超限记录，按 resource_type + space_id 分组，每组保留最近 RECENT_USED_MAX_PER_TYPE 条
+func trimUserRecentUsed(eid, userID int64, resourceType int, spaceID int64) error {
 	var count int64
 	if err := DB.Model(&UserRecentUsed{}).
-		Where("eid = ? AND user_id = ? AND resource_type = ?", eid, userID, resourceType).
+		Where("eid = ? AND user_id = ? AND resource_type = ? AND space_id = ?", eid, userID, resourceType, spaceID).
 		Count(&count).Error; err != nil {
 		return err
 	}
@@ -70,9 +75,8 @@ func trimUserRecentUsed(eid, userID int64, resourceType int) error {
 		return nil
 	}
 
-	// 找到第 RECENT_USED_MAX_PER_TYPE 条的最新时间戳，删除更早的
 	var threshold UserRecentUsed
-	if err := DB.Where("eid = ? AND user_id = ? AND resource_type = ?", eid, userID, resourceType).
+	if err := DB.Where("eid = ? AND user_id = ? AND resource_type = ? AND space_id = ?", eid, userID, resourceType, spaceID).
 		Order("updated_time DESC").
 		Offset(RECENT_USED_MAX_PER_TYPE - 1).
 		Limit(1).
@@ -83,17 +87,22 @@ func trimUserRecentUsed(eid, userID int64, resourceType int) error {
 		return nil
 	}
 
-	return DB.Where("eid = ? AND user_id = ? AND resource_type = ? AND updated_time < ?",
-		eid, userID, resourceType, threshold.UpdatedTime).
+	return DB.Where("eid = ? AND user_id = ? AND resource_type = ? AND space_id = ? AND updated_time < ?",
+		eid, userID, resourceType, spaceID, threshold.UpdatedTime).
 		Delete(&UserRecentUsed{}).Error
 }
 
 // ListUserRecentUsed 获取用户所有最近使用记录，按更新时间降序
-func ListUserRecentUsed(eid, userID int64) ([]UserRecentUsed, error) {
+func ListUserRecentUsed(eid, userID int64, resourceType *int, spaceID *int64) ([]UserRecentUsed, error) {
 	var histories []UserRecentUsed
-	if err := DB.Where("eid = ? AND user_id = ?", eid, userID).
-		Order("updated_time DESC").
-		Find(&histories).Error; err != nil {
+	query := DB.Where("eid = ? AND user_id = ?", eid, userID)
+	if resourceType != nil {
+		query = query.Where("resource_type = ?", *resourceType)
+	}
+	if spaceID != nil {
+		query = query.Where("space_id = ?", *spaceID)
+	}
+	if err := query.Order("updated_time DESC").Find(&histories).Error; err != nil {
 		return nil, err
 	}
 	return histories, nil
