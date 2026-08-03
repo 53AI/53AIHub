@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { RightOutlined } from "@ant-design/icons";
 import { t } from "@/locales";
 
 import {
   directUseItems,
-  externalUseItems,
 } from "./components/integrate/config";
 import { LinkAndQrContent } from "./components/integrate/LinkAndQrContent";
 import { WebEmbedContent } from "./components/integrate/WebEmbedContent";
@@ -14,15 +13,24 @@ import agentsApi from "@/api/modules/agents";
 
 interface AgentIntegrateTabProps {
   agentId?: string | number;
+  agentType?: string;
 }
 
-export function AgentIntegrateTab({ agentId }: AgentIntegrateTabProps) {
-  const [activeTab, setActiveTab] = useState("web");
-  const [fixedToken, setFixedToken] = useState<string>("");
+// 仅小助理（workbench）和 AI搜问（knowledge）开放"接入"入口
+// web、链接隐藏，只显示 api接入
+const ASSISTANT_LIKE_TYPES = ['workbench', 'knowledge'];
+
+export function AgentIntegrateTab({ agentId, agentType }: AgentIntegrateTabProps) {
   const formData = useAgentFormStore((state) => state.form_data);
   const currentAgentId = agentId || formData.agent_id;
   const agentName = formData.name;
   const agentLogo = formData.logo;
+  const resolvedAgentType = agentType || formData.agent_type || '';
+  const isAssistantLike = ASSISTANT_LIKE_TYPES.includes(resolvedAgentType);
+
+  // 默认激活项：助理型直接落到 API；其他维持原状
+  const [activeTab, setActiveTab] = useState(isAssistantLike ? "api" : "web");
+  const [fixedToken, setFixedToken] = useState<string>("");
 
   // Fetch or create fixed token at tab level to avoid duplicate requests
   useEffect(() => {
@@ -44,6 +52,12 @@ export function AgentIntegrateTab({ agentId }: AgentIntegrateTabProps) {
 
     fetchOrGenerateToken();
   }, [currentAgentId]);
+
+  // 助理型（workbench/knowledge）侧栏只展示 API 接入；其他类型全部展示
+  const visibleItems = useMemo(() => {
+    if (!isAssistantLike) return directUseItems;
+    return directUseItems.filter(item => item.id === 'api');
+  }, [isAssistantLike]);
 
   const renderSidebarItem = (item: any) => {
     const isActive = activeTab === item.id;
@@ -69,51 +83,48 @@ export function AgentIntegrateTab({ agentId }: AgentIntegrateTabProps) {
     );
   };
 
-
   return (
     <div className="h-full flex gap-5 bg-[#f8f9fa] px-6 py-5">
       {/* Sidebar */}
       <div className="w-[400px] flex-shrink-0 bg-white rounded-xl border border-gray-200 p-5 overflow-y-auto">
         <div className="mb-6">
           <div className="text-base text-primary mb-3 px-1">{t('integrate.direct_use')}</div>
-          {directUseItems.map(renderSidebarItem)}
+          {visibleItems.map(renderSidebarItem)}
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 overflow-y-auto">
-          {activeTab === "web" && (
-            <>
+        {!isAssistantLike && activeTab === "web" && (
+          <>
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <WebEmbedContent agentId={currentAgentId} agentName={agentName} agentLogo={agentLogo} title={t('integrate.standard_embed')} fixedToken={fixedToken} />
             </div>
             <div className="bg-white rounded-xl border border-gray-200 p-6 mt-5">
               <WebEmbedContent agentId={currentAgentId} agentName={agentName} agentLogo={agentLogo} title={t('integrate.sso_embed')} sso fixedToken={fixedToken} />
             </div>
-            </>
-          )}
-          {activeTab === "api" && <ApiContent agentId={currentAgentId} />}
-          {activeTab === "link" && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <LinkAndQrContent agentId={currentAgentId} fixedToken={fixedToken} />
-            </div>
-          )}
-          {activeTab !== "link" && activeTab !== "web" && activeTab !== "api" && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                <div className="text-4xl mb-4 text-gray-200">
-                  {directUseItems.find((i) => i.id === activeTab)?.icon ||
-                    externalUseItems.find((i) => i.id === activeTab)?.icon}
-                </div>
-                <div>
-                  [
-                  {directUseItems.find((i) => i.id === activeTab)?.title ||
-                    externalUseItems.find((i) => i.id === activeTab)?.title}
-                  ] {t('integrate.developing')}
-                </div>
+          </>
+        )}
+        {!isAssistantLike && activeTab === "link" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <LinkAndQrContent agentId={currentAgentId} fixedToken={fixedToken} />
+          </div>
+        )}
+        {activeTab === "api" && (
+          <ApiContent agentId={currentAgentId} agentType={resolvedAgentType} />
+        )}
+        {!isAssistantLike && activeTab !== "link" && activeTab !== "web" && activeTab !== "api" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="h-full flex flex-col items-center justify-center text-gray-400">
+              <div className="text-4xl mb-4 text-gray-200">
+                {directUseItems.find((i) => i.id === activeTab)?.icon}
+              </div>
+              <div>
+                [{directUseItems.find((i) => i.id === activeTab)?.title}] {t('integrate.developing')}
               </div>
             </div>
-          )}
+          </div>
+        )}
       </div>
     </div>
   );

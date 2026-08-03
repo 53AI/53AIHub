@@ -1,5 +1,9 @@
 import request from '../../index'
-import type { RecentUsedSaveItem, RecentUsedItem } from './types'
+import type {
+  RecentUsedListParams,
+  RecentUsedSaveItem,
+  RecentUsedItem,
+} from './types'
 
 const recentUsedApi = {
   /**
@@ -12,9 +16,10 @@ const recentUsedApi = {
   /**
    * 获取最近使用列表
    * 按 updated_time 降序，已删除的资源自动跳过
+   * 支持按 resource_type / space_id 在服务端过滤
    */
-  list(): Promise<RecentUsedItem[]> {
-    return request.get('/api/recent-used').then((res) => res.data)
+  list(params?: RecentUsedListParams): Promise<RecentUsedItem[]> {
+    return request.get('/api/recent-used', { params }).then((res) => res.data)
   }
 }
 

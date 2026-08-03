@@ -32,9 +32,12 @@ export interface KnowledgeSource {
   reference_id?: string;
   score?: number;
   source_key?: string;
+  source_id?: string;
+  source_type?: string;   // 'wiki'
   space_id?: string;
   space_name?: string;
   url?: string;
+  wiki_page_id?: string;
 }
 
 /** 翻译函数类型 */

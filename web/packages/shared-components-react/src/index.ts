@@ -55,3 +55,7 @@ export type { OverflowTooltipProps } from './OverflowTooltip/index'
 // CropperDialog
 export { default as CropperDialog } from './CropperDialog/index'
 export type { CropperDialogProps, CropperDialogRef } from './CropperDialog/index'
+
+// FileIcon
+export { default as FileIcon } from './FileIcon/index'
+export type { FileIconProps } from './FileIcon/index'

@@ -1,8 +1,8 @@
 import { lazy, Suspense } from 'react'
-import { Spin, Tooltip } from 'antd'
-import { StarFilled, StarOutlined } from '@ant-design/icons'
+import { Spin } from 'antd'
 import { LibraryHeader } from '@/views/library/components/header'
 import { MoreDropdown } from '@/components/MoreDropdown'
+import { FavoriteToggle } from '@/components/FavoriteToggle'
 import { t } from '@/locales'
 import { useInlineEditLite, getDisplayName, buildNewPath } from '../useInlineEditLite'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
@@ -110,18 +110,10 @@ export function PreviewPanel({ file, content, loading, onBack, onCommand, onEdit
         />
       )}
       {showFavBtn && (
-        <Tooltip title={file.isFavorite ? t('action.unfavorite') : t('action.favorite')}>
-          <div
-            className="size-[34px] rounded hover:bg-[#F0F0F0] flex items-center justify-center cursor-pointer"
-            onClick={() => onCommand?.(file.isFavorite ? 'favorite-removed' : 'favorite-added')}
-          >
-            {file.isFavorite ? (
-              <StarFilled className="text-[#FFB300] text-base" />
-            ) : (
-              <StarOutlined className="text-[#1D1E1F] text-base" />
-            )}
-          </div>
-        </Tooltip>
+        <FavoriteToggle
+          favorite={file.isFavorite}
+          onToggle={() => onCommand?.(file.isFavorite ? 'favorite-removed' : 'favorite-added')}
+        />
       )}
       <MoreDropdown
         size="32px"

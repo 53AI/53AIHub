@@ -1,7 +1,5 @@
 .virtual-list-container {
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
   position: relative;
 }
 

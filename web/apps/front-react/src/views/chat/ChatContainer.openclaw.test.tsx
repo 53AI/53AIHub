@@ -475,9 +475,9 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     });
 
     const latestProps = mocks.chatViewProps.at(-1);
-    expect(latestProps?.features?.agentTooltip).toBe(false);
-    expect(latestProps?.features?.showRecommend).toBe(false);
-    expect(latestProps?.features?.showRelatedScene).toBe(false);
+    expect(latestProps?.features?.agentTooltip).toBeUndefined();
+    expect(latestProps?.features?.showRecommend).toBeUndefined();
+    expect(latestProps?.agentRecommend?.showRelatedScene).toBe(false);
     expect(latestProps?.slots?.agentSelector).toBeUndefined();
     expect(latestProps?.slots?.authTags).toBeUndefined();
   });
@@ -620,7 +620,7 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     });
 
     const latestProps = mocks.chatViewProps.at(-1);
-    expect(latestProps?.features?.initialConversationResolving).toBe(true);
+    expect(latestProps?.openclaw?.initialConversationResolving).toBe(true);
     expect(mocks.sharedStore.setCurrentState).not.toHaveBeenCalledWith(2, 0);
     expect(mocks.frontStore.setCurrentState).not.toHaveBeenCalledWith("2", 0, false);
 
@@ -769,7 +769,7 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     });
 
     const latestProps = mocks.chatViewProps.at(-1);
-    expect(latestProps?.features?.initialConversationResolving).toBe(false);
+    expect(latestProps?.openclaw?.initialConversationResolving).toBe(false);
     expect(latestProps?.initialConversationId).toBe("agent:main:dashboard:stale");
   });
 
@@ -863,9 +863,9 @@ describe("ChatContainer OpenClaw bootstrap", () => {
 
     const latestProps = mocks.chatViewProps.at(-1);
     expect(latestProps?.initialConversationId).toBe("agent:main:dashboard:cached-checking");
-    expect(latestProps?.features?.initialConversationResolving).toBe(false);
-    expect(latestProps?.features?.openclawInputDisabled).toBe(true);
-    expect(latestProps?.features?.openclawInputDisabledReason).toBe("正在检测 QClaw 连接...");
+    expect(latestProps?.openclaw?.initialConversationResolving).toBe(false);
+    expect(latestProps?.openclaw?.inputDisabled).toBe(true);
+    expect(latestProps?.openclaw?.inputDisabledReason).toBe("正在检测 QClaw 连接...");
 
     await act(async () => {
       status.resolve({ data: { connectionHealthy: false, hub53ai: { connectionStatus: "disconnected" } } });
@@ -905,7 +905,7 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     });
 
     const latestProps = mocks.chatViewProps.at(-1);
-    expect(latestProps?.features?.initialConversationResolving).toBe(false);
+    expect(latestProps?.openclaw?.initialConversationResolving).toBe(false);
   });
 
   it("updates the OpenClaw selector title immediately after a blank conversation is resolved", async () => {
@@ -919,7 +919,7 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     });
 
     await act(async () => {
-      mocks.chatViewProps.at(-1)?.onOpenClawConversationResolved?.({
+      mocks.chatViewProps.at(-1)?.openclaw?.onConversationResolved?.({
         conversation_id: "agent:main:dashboard:new-title",
         title: "开始对话",
         question: "开始对话",
@@ -1075,10 +1075,10 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     expect(mocks.frontStore.setCurrentState).toHaveBeenCalledWith("2", "agent:main:dashboard:cached-offline", false);
     const latestProps = mocks.chatViewProps.at(-1);
     expect(latestProps?.initialConversationId).toBe("agent:main:dashboard:cached-offline");
-    expect(latestProps?.features).toMatchObject({
-      openclaw: true,
-      openclawInputDisabled: true,
-      openclawInputDisabledReason: "QClaw 插件未连接，正在重连...",
+    expect(latestProps?.openclaw).toMatchObject({
+      enabled: true,
+      inputDisabled: true,
+      inputDisabledReason: "QClaw 插件未连接，正在重连...",
     });
   });
 
@@ -1433,7 +1433,7 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     });
 
     const latestProps = mocks.chatViewProps.at(-1);
-    expect(latestProps?.features?.openclawInputDisabled).toBe(false);
+    expect(latestProps?.openclaw?.inputDisabled).toBe(false);
     expect(mocks.sharedStore.setCurrentState).not.toHaveBeenCalledWith(2, "agent:main:dashboard:agent-2-stale");
     expect(mocks.frontStore.setCurrentState).not.toHaveBeenCalledWith("2", "agent:main:dashboard:agent-2-stale", false);
   });
@@ -1492,11 +1492,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     expect(await screen.findByTestId("openclaw-side-panel")).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "file-1",
           file_name: "report.md",
@@ -1525,11 +1525,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "file-1",
           file_name: "live-report.md",
@@ -1556,11 +1556,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "file-1",
           file_name: "report.md",
@@ -1598,13 +1598,6 @@ describe("ChatContainer OpenClaw bootstrap", () => {
             enableDrag: true,
             enablePaste: true,
           }),
-          features: expect.objectContaining({
-            fileUpload: true,
-            allowMultiple: true,
-            allowSendWithFiles: true,
-            enableDragUpload: true,
-            enablePasteUpload: true,
-          }),
         })
       );
     });
@@ -1627,11 +1620,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "file-1",
           file_name: "report.md",
@@ -1659,11 +1652,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     const { rerender } = render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "file-1",
           file_name: "report.md",
@@ -1694,11 +1687,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     const { rerender } = render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "file-1",
           file_name: "report.md",
@@ -1728,11 +1721,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "local:/Users/y65ng/.qclaw/workspace/test_document.txt",
           file_name: "test_document.txt",
@@ -1758,11 +1751,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onOutputFilePreview).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onPreviewOutputFile).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onOutputFilePreview(
+      mocks.chatViewProps.at(-1).message.onPreviewOutputFile(
         {
           id: "output-test-12",
           file_name: "test_12words_v3.txt",
@@ -1789,11 +1782,11 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     render(createElement(ChatContainer, { agentId: 2 }));
 
     await waitFor(() => {
-      expect(mocks.chatViewProps.at(-1)?.onAddAsMd).toEqual(expect.any(Function));
+      expect(mocks.chatViewProps.at(-1)?.message?.onSaveToKnowledge).toEqual(expect.any(Function));
     });
 
     act(() => {
-      mocks.chatViewProps.at(-1).onAddAsMd({
+      mocks.chatViewProps.at(-1).message.onSaveToKnowledge({
         id: "assistant-1",
         question: "生成一份迁移报告",
         answer: "",

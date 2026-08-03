@@ -2,6 +2,7 @@ export const RESOURCE_TYPE = {
   space: 0,
   library: 1,
   file: 2,
+  wiki_page: 3,
 } as const
 
 export const SUBJECT_TYPE = {

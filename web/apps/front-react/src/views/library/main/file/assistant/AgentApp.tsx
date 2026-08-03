@@ -157,8 +157,12 @@ const AgentApp = forwardRef<AgentAppRef, AgentAppProps>(
       setWorkflowResultStr("");
 
       try {
+        // 文档引用统一（v0.4.2 §3.2）：AgentApp 当前上下文始终是文件单文档会话
+        const documentType =
+          fileInfo?.document_type === "wiki" ? "wiki" : "file";
         const res = await conversationApi.agentList(agentInfo.agent_id, {
-          file_id: fileInfo.id,
+          document_type: documentType,
+          document_id: fileInfo.id,
           limit: 1,
         });
         const items = res?.items || res || [];
@@ -282,10 +286,17 @@ const AgentApp = forwardRef<AgentAppRef, AgentAppProps>(
       const currentConversation = convStore.currentConversation();
       if (currentConversation?.conversation_id) return currentConversation;
 
+      // 文档引用统一（v0.4.2 §3.2）：仅使用 document_type + document_id。
+      // AgentApp 当前上下文始终是文件单文档会话。
+      const documentRef =
+        typeof fileInfo?.id === "string" && fileInfo.id.length > 0
+          ? { documentType: "file" as const, documentId: fileInfo.id }
+          : undefined;
+
       const conversation = await convStore.createConversation(
         agentInfo?.agent_id,
         question,
-        fileInfo?.id,
+        documentRef,
       );
 
       convStore.addConversation({

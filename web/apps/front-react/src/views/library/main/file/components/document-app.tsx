@@ -6,10 +6,10 @@ import { transformAgentInfo } from "@/api/modules/agents/transform";
 import { AGENT_USAGES } from "@/constants/agent";
 import { settingApi } from "@/api/modules/setting";
 import { useLibraryStore } from "@/stores/modules/library";
-import { getPublicPath } from "@/utils/config";
 import { SvgIcon } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { eventBus } from "@km/shared-utils";
+import SidebarAppItem, { AI_ICON_URL, MAP_ICON_URL } from "./sidebar-app-item";
 interface CustomAppItem {
   setting_id: string;
   logo: string;
@@ -316,61 +316,30 @@ function DocumentApp({ onHide }: DocumentAppProps) {
           </Tooltip>
           <div className="border-t w-[38px] mt-px"></div>
           {chatAgent?.enable && (
-            <Tooltip placement="left" title={t("library.document_chat")}>
-              <div
-                className={`size-[38px] flex-center rounded-md cursor-pointer hover:shadow-[0_2px_8px_#0b1b403d] relative ${activeMenu === "chat" ? "bg-[#E6EEFF]" : ""}`}
-                onClick={() => handleClickMenu("chat")}
-              >
-                <img
-                  className="size-6"
-                  style={
-                    activeMenu !== "chat"
-                      ? { filter: "grayscale(100%) opacity(0.5)" }
-                      : {}
-                  }
-                  src={getPublicPath("/images/library/ai.png")}
-                  alt=""
-                />
-              </div>
-            </Tooltip>
+            <SidebarAppItem
+              icon={AI_ICON_URL}
+              title={t("library.document_chat")}
+              active={activeMenu === "chat"}
+              onClick={() => handleClickMenu("chat")}
+            />
           )}
           {mapAgent?.enable && (
-            <Tooltip placement="left" title={t("library.knowledge_map")}>
-              <div
-                className={`size-[38px] flex-center rounded-md cursor-pointer hover:shadow-[0_2px_8px_#0b1b403d] ${activeMenu === "map" ? "bg-[#E6EEFF]" : ""}`}
-                onClick={() => handleClickMenu("map")}
-              >
-                <img
-                  className="size-6"
-                  style={
-                    activeMenu !== "map"
-                      ? { filter: "grayscale(100%) opacity(0.5)" }
-                      : {}
-                  }
-                  src={getPublicPath("/images/library/map.png")}
-                  alt=""
-                />
-              </div>
-            </Tooltip>
+            <SidebarAppItem
+              icon={MAP_ICON_URL}
+              title={t("library.knowledge_map")}
+              active={activeMenu === "map"}
+              onClick={() => handleClickMenu("map")}
+            />
           )}
           {customApps.map((item) => (
-            <Tooltip key={item.setting_id} placement="left" title={item.name}>
-              <div
-                className={`size-[38px] flex-center rounded-md cursor-pointer hover:shadow-[0_2px_8px_#0b1b403d] ${activeMenu === item.setting_id ? "bg-[#E6EEFF]" : ""}`}
-                onClick={() => handleClickMenu(item.setting_id, item)}
-              >
-                <img
-                  className="size-5"
-                  style={
-                    activeMenu !== item.setting_id
-                      ? { filter: "grayscale(100%) opacity(0.5)" }
-                      : {}
-                  }
-                  src={item.logo}
-                  alt=""
-                />
-              </div>
-            </Tooltip>
+            <SidebarAppItem
+              key={item.setting_id}
+              icon={item.logo}
+              title={item.name}
+              active={activeMenu === item.setting_id}
+              iconSize="small"
+              onClick={() => handleClickMenu(item.setting_id, item)}
+            />
           ))}
         </div>
         {visible && (

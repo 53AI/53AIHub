@@ -24,6 +24,8 @@ export const FILE_SIZE_LIMITS = {
   MIN_CHUNK_SIZE: 1 * 1024 * 1024,
   // 单文件最大大小 (2GB)
   MAX_SINGLE_FILE_SIZE: 2 * 1024 * 1024 * 1024,
+  // 超出此大小的文件跳过前端 hash 预检（避免一次性读取占用过多内存）
+  MAX_HASH_FILE_SIZE: 500 * 1024 * 1024,
   // 批量上传最大文件数
   MAX_BATCH_FILES: 1000,
   // 批量上传最大总大小 (10GB)

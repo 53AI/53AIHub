@@ -448,7 +448,7 @@ export function LibraryMainView() {
                         className="h-7 px-1 flex items-center gap-1.5 rounded cursor-pointer overflow-hidden hover:bg-[#EDEEF0]"
                         onClick={(e) => {
                           e.preventDefault();
-                          navigate(`/knowledge/${libraryStore.space?.id}`, {
+                          navigate(`/knowledge?space_id=${libraryStore.space?.id}`, {
                             replace: true,
                           });
                         }}
@@ -519,7 +519,7 @@ export function LibraryMainView() {
                       className="text-[#999999] hover:text-[#2563EB]"
                       onClick={(e) => {
                         e.preventDefault();
-                        navigate(`/knowledge/${libraryStore.space?.id}`, {
+                        navigate(`/knowledge?space_id=${libraryStore.space?.id}`, {
                           replace: true,
                         });
                       }}

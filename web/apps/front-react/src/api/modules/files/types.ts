@@ -142,9 +142,12 @@ export type BatchUploadInitResponse = {
 }
 
 export type BatchUploadFileParams = {
-  file: File
+  // 秒传命中时可省略 file 二进制，仅传 hash 由后端复用已有 UploadFile
+  file?: File
   upload_token: string
   file_upload_id: string
+  // 秒传命中时携带 hash，让后端按 hash 命中跳过存储写入
+  hash?: string
   duplicate_mode?: 'sequence' | 'replace'
 }
 
@@ -178,6 +181,29 @@ export type FileSearchResponse = {
     latest_file_body_update_time: number
   }[]
   total: number
+}
+
+// 秒传预检响应
+export type CheckUploadResponse =
+  | { exists: true; file: UploadFileRecord }
+  | { exists: false }
+
+export type UploadFileRecord = {
+  id: string
+  file_name: string
+  key: string
+  eid: number
+  user_id: number
+  size: number
+  extension: string
+  mime_type: string
+  hash: string
+  preview_key: string
+  status: string
+  error: string
+  processed_time: number
+  created_time: number
+  updated_time: number
 }
 
 export type BatchUploadProgressResponse = {

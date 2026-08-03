@@ -19,6 +19,9 @@
       ],
       "knowledge-pipeline": [
         "dist/knowledge-pipeline/index.d.ts"
+      ],
+      "recording-template": [
+        "dist/recording-template/index.d.ts"
       ]
     }
   },
@@ -42,6 +45,10 @@
     "./knowledge-pipeline": {
       "import": "./dist/knowledge-pipeline/index.js",
       "types": "./dist/knowledge-pipeline/index.d.ts"
+    },
+    "./recording-template": {
+      "import": "./dist/recording-template/index.js",
+      "types": "./dist/recording-template/index.d.ts"
     }
   },
   "scripts": {

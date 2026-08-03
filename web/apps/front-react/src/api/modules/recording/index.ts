@@ -25,6 +25,13 @@ import type {
   ImportAudioRequest,
   ImportAudioResponse,
   RecordingConfig,
+  RecordingSummaryTemplate,
+  RecordingFileSummary,
+  FileParseStatus,
+  QueuedCountResponse,
+  RecordingFileInsightPage,
+  FileTranscriptionResponse,
+  PipelineResult,
 } from './types'
 
 // ============= FFmpeg 健康检查 =============
@@ -209,6 +216,112 @@ export async function importAudio(data: ImportAudioRequest): Promise<ImportAudio
   return res.data
 }
 
+// ============= 总结模板 =============
+
+/**
+ * 获取总结模板列表
+ * GET /api/recordings/templates
+ */
+export async function getTemplates(params?: { group_id?: number }): Promise<RecordingSummaryTemplate[]> {
+  const res = await request.get<ApiResponse<RecordingSummaryTemplate[]>>('/api/recordings/templates', { params })
+  return res.data
+}
+
+/**
+ * 对文件生成总结
+ * POST /api/recordings/files/{file_id}/summarize?template_id={template_id}
+ */
+export async function createFileSummary(fileId: string, templateId: string): Promise<RecordingFileSummary> {
+  const res = await request.post<ApiResponse<RecordingFileSummary>>(
+    `/api/recordings/files/${fileId}/summarize`,
+    null,
+    { params: { template_id: templateId } },
+  )
+  return res.data
+}
+
+/**
+ * 获取文件总结列表
+ * GET /api/recordings/files/{file_id}/summaries
+ */
+export async function getFileSummaries(fileId: string): Promise<RecordingFileSummary[]> {
+  const res = await request.get<ApiResponse<RecordingFileSummary[]>>(`/api/recordings/files/${fileId}/summaries`)
+  return res.data
+}
+
+/**
+ * 获取单条总结详情
+ * GET /api/recordings/summaries/{summary_id}
+ */
+export async function getSummaryDetail(summaryId: string): Promise<RecordingFileSummary> {
+  const res = await request.get<ApiResponse<RecordingFileSummary>>(`/api/recordings/summaries/${summaryId}`)
+  return res.data
+}
+
+/**
+ * 删除总结
+ * DELETE /api/recordings/summaries/{summary_id}
+ */
+export async function deleteSummary(summaryId: string): Promise<void> {
+  await request.delete<ApiResponse<void>>(`/api/recordings/summaries/${summaryId}`)
+}
+
+// ============= 解析状态 =============
+
+/**
+ * 获取文件解析状态
+ * GET /api/recordings/files/{file_id}/parse-status
+ */
+export async function getParseStatus(fileId: string): Promise<FileParseStatus> {
+  const res = await request.get<ApiResponse<FileParseStatus>>(`/api/recordings/files/${fileId}/parse-status`)
+  return res.data
+}
+
+// ============= 排队文件数 =============
+
+/**
+ * 获取当前用户排队中的文件数
+ * GET /api/recordings/my-queued-count
+ */
+export async function getMyQueuedCount(): Promise<QueuedCountResponse> {
+  const res = await request.get<ApiResponse<QueuedCountResponse>>('/api/recordings/my-queued-count')
+  return res.data
+}
+
+// ============= 决策页面编排 =============
+
+/**
+ * 获取编排后的决策页面数据
+ * GET /api/recordings/files/{file_id}/insight-page
+ */
+export async function getInsightPage(fileId: string): Promise<RecordingFileInsightPage | null> {
+  const res = await request.get<ApiResponse<RecordingFileInsightPage | null>>(`/api/recordings/files/${fileId}/insight-page`)
+  return res.data
+}
+
+// ============= 转写原文 =============
+
+/**
+ * 获取录音文件转写原文
+ * GET /api/recordings/files/{file_id}/transcription
+ */
+export async function getTranscription(fileId: string): Promise<FileTranscriptionResponse | null> {
+  const res = await request.get<ApiResponse<FileTranscriptionResponse | null>>(`/api/recordings/files/${fileId}/transcription`)
+  return res.data
+}
+
+// ============= 继续生成管线 🆕 =============
+
+/**
+ * 继续生成管线（补跑纪要/洞察/页面编排，不重新转写）
+ * POST /api/recordings/files/{file_id}/pipeline
+ * 返回 200 表示全跳过，202 表示有步骤正在处理
+ */
+export async function pipeline(fileId: string): Promise<PipelineResult> {
+  const res = await request.post<ApiResponse<PipelineResult>>(`/api/recordings/files/${fileId}/pipeline`)
+  return res.data
+}
+
 // ============= 默认导出 =============
 
 export const recordingApi = {
@@ -236,6 +349,26 @@ export const recordingApi = {
   createFolder: createRecordingFolder,
   renameFolder: renameRecordingFolder,
   importAudio,
+
+  // 总结模板
+  getTemplates,
+  createFileSummary,
+  getFileSummaries,
+  getSummaryDetail,
+  deleteSummary,
+
+  // 解析状态
+  getParseStatus,
+
+  // 排队文件数
+  getMyQueuedCount,
+
+  // 决策页面编排
+  getInsightPage,
+  getTranscription,
+
+  // 继续生成管线
+  pipeline,
 }
 
 export default recordingApi

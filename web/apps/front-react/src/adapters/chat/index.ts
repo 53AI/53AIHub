@@ -43,9 +43,9 @@ export const conversationApiAdapter: IConversationApi = {
   },
 
   edit: async (conversationId: string , data: { title: string }) => {
+    // 文档引用统一（v0.4.2 §3.2）：不再发送 file_id
     return conversationApi.edit(conversationId, {
       title: data.title,
-      file_id: "",
     });
   },
 

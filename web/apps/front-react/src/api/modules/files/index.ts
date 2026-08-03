@@ -5,6 +5,7 @@ import {
   BatchUploadInitParams,
   BatchUploadInitResponse,
   BatchUploadProgressResponse,
+  CheckUploadResponse,
   FileListParams,
   FileLockParams,
   FileLockResponse,
@@ -96,12 +97,31 @@ export const filesApi = {
     return request.post('/api/files/upload/batch/init', data).then((res) => res.data)
   },
 
+  /**
+   * 秒传预检：按文件 SHA-256 查询同企业内是否已有 UploadFile。
+   * 命中则跳过 multipart 上传，直接使用返回的 file.id 作为 upload_file_id。
+   */
+  checkUpload(hash: string): Promise<CheckUploadResponse> {
+    return request
+      .get('/api/upload/check', { params: { hash } })
+      .then((res) => res.data)
+      .catch((err: any) => {
+        // 接口不存在或后端未升级时降级为未命中，让前端走原 batch 上传
+        const status = err?.response?.status
+        if (status === 404 || status === 501) {
+          return { exists: false } as const
+        }
+        throw err
+      })
+  },
+
   batchUploadFile(batchId: string, data: BatchUploadFileParams): Promise<BatchUploadFileResponse> {
     const formData = new FormData()
     Object.entries(data).forEach(([key, value]) => {
-      formData.append(key, value)
+      // 秒传命中时 file 与 hash 二选一：未传则跳过 append
+      if (value === undefined) return
+      formData.append(key, value as string | Blob)
     })
-
 
     return request
       .post(`/api/files/upload/batch/${batchId}/file`, formData, {

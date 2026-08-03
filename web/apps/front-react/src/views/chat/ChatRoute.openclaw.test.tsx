@@ -71,17 +71,27 @@ vi.mock("@/stores/modules/agent", () => {
   };
 });
 
-vi.mock("@/stores/modules/conversation", () => ({
-  useConversationStore: () => mocks.conversationStore,
-}));
+vi.mock("@/stores/modules/conversation", () => {
+  const useConversationStore = Object.assign(
+    vi.fn(() => mocks.conversationStore),
+    {
+      getState: () => mocks.conversationStore,
+    }
+  );
+  return { useConversationStore };
+});
 
 vi.mock("@/stores/modules/enterprise", () => ({
   useIsSoftStyle: () => false,
 }));
 
-vi.mock("@/stores/modules/user", () => ({
-  useUserStore: () => ({ is_login: true }),
-}));
+vi.mock("@/stores/modules/user", () => {
+  const userState = { is_login: true };
+  const useUserStore = Object.assign(vi.fn(() => userState), {
+    getState: () => userState,
+  });
+  return { useUserStore };
+});
 
 vi.mock("@/api/modules/agents", () => ({
   default: {

@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MentionFeature, SkillFeature, SenderSlots } from "@km/hub-ui-x-react";
 import { filesApi } from "@/api/modules/files";
-import { formatFile } from "@/api/modules/files/transform";
+import type { FileSearchResponse } from "@/api/modules/files/types";
+import { formatFile, formatFileSearchResults } from "@/api/modules/files/transform";
 import { useUserStore } from "@/stores/modules/user";
 import { useNavigationStore } from "@/stores/modules/navigation";
 import { useSkillsStore } from "@/stores/modules/skills";
@@ -173,20 +174,20 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
     searchTimerRef.current = setTimeout(() => {
       filesApi
         .search({ query: keyword, top_k: 10 })
-        .then((res: any) => {
+        .then((res: FileSearchResponse) => {
           if (mySeq !== searchSeqRef.current) return;
-          const raw = (res && res.results) || [];
+          const formatted = formatFileSearchResults(res.results || []);
           setSuggestions(
-            raw.map((item: any) => ({
+            formatted.map((item) => ({
               id: String(item.file_id),
-              name: item.highlight || item.path || "未命名",
-              icon: undefined,
+              name: item.name,
+              icon: item.icon,
               library_id: String(item.library_id || ""),
-              library_name: item.library_name || "",
+              library_name: item.library_name,
               score: item.score,
               ui: { active: false },
               source: "knowledge",
-              isfolder: false,
+              isfolder: item.isfolder,
               islibrary: false,
               isspace: false,
             })),

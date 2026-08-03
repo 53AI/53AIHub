@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { Radio, Checkbox, Select, InputNumber, Switch } from "antd";
+import { Radio, Checkbox, Select, InputNumber, Switch, Tooltip } from "antd";
 import { Dropdown } from "@km/shared-components-react";
 import { CheckOutlined, DownOutlined } from "@ant-design/icons";
 import { usePipelineTranslation } from "../../context";
@@ -757,6 +757,7 @@ export function ChunkConfig({
                         internalState.knowledge_chunking_type ===
                         CHUNK_TYPE.DEFAULT
                       }
+                      className="flex-1 flex items-center"
                     >
                       <Checkbox value={SPLIT_TYPE.HEADING} className="!mr-0" />
                       <Dropdown
@@ -776,7 +777,7 @@ export function ChunkConfig({
                         </div>
                       </Dropdown>
                       <Checkbox value={SPLIT_TYPE.CUSTOM} />
-                      <div className="flex items-center gap-2 ml-2">
+                      <div className="flex-1 flex items-center gap-2 ml-2">
                         <span className="text-sm text-secondary whitespace-nowrap">
                           {t(tKey("chunk_specified_identifier"))}
                         </span>
@@ -785,11 +786,27 @@ export function ChunkConfig({
                           onChange={(values) =>
                             setInternalState((prev) => ({
                               ...prev,
-                              knowledge_chunking_input: values as string[],
+                              knowledge_chunking_input: (
+                                values as string[]
+                              ).map((v) => v.trim()),
                             }))
                           }
-                          className="w-48"
-                          mode="multiple"
+                          className="flex-1"
+                          mode="tags"
+                          showSearch
+                          tokenSeparators={[" ", ","]}
+                          maxTagCount="responsive"
+                          maxTagPlaceholder={(omittedValues) => (
+                            <Tooltip
+                              styles={{ root: { pointerEvents: "none" } }}
+                              title={omittedValues
+                                .map(({ label }) => label)
+                                .join(", ")}
+                            >
+                              <span>+{omittedValues.length}</span>
+                            </Tooltip>
+                          )}
+                          placeholder={t(tKey("chunk_specified_identifier_tip"))}
                           options={knowledgeCommonList.map((item) => ({
                             label: item.label,
                             value: item.value,
@@ -1031,6 +1048,7 @@ export function ChunkConfig({
                           internalState.index_chunking_type ===
                           CHUNK_TYPE.DEFAULT
                         }
+                        className="flex-1 flex items-center"
                       >
                         <Checkbox
                           value={SPLIT_TYPE.HEADING}
@@ -1052,7 +1070,7 @@ export function ChunkConfig({
                           </div>
                         </Dropdown>
                         <Checkbox value={SPLIT_TYPE.CUSTOM} />
-                        <div className="flex items-center gap-2 ml-2">
+                        <div className="flex-1 flex items-center gap-2 ml-2">
                           <span className="text-sm text-secondary whitespace-nowrap">
                             {t(tKey("chunk_specified_identifier"))}
                           </span>
@@ -1061,11 +1079,27 @@ export function ChunkConfig({
                             onChange={(values) =>
                               setInternalState((prev) => ({
                                 ...prev,
-                                index_chunking_input: values as string[],
+                                index_chunking_input: (
+                                  values as string[]
+                                ).map((v) => v.trim()),
                               }))
                             }
-                            className="w-48"
-                            mode="multiple"
+                            className="flex-1"
+                            mode="tags"
+                            showSearch
+                            tokenSeparators={[" ", ","]}
+                            maxTagCount="responsive"
+                            maxTagPlaceholder={(omittedValues) => (
+                              <Tooltip
+                                styles={{ root: { pointerEvents: "none" } }}
+                                title={omittedValues
+                                  .map(({ label }) => label)
+                                  .join(", ")}
+                              >
+                                <span>+{omittedValues.length}</span>
+                              </Tooltip>
+                            )}
+                            placeholder={t(tKey("chunk_specified_identifier_tip"))}
                             options={indexCommonList.map((item) => ({
                               label: item.label,
                               value: item.value,

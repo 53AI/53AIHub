@@ -1,5 +1,5 @@
 import type { IAgentCreateAdapter, AgentFormData, GroupOption, AgentFormRef, ChannelOption, ScopeItem } from '@km/shared-business/agent-create'
-import { AgentForm, Chat as SharedChat } from '@km/shared-business/agent-create'
+import { AgentForm, Chat as SharedChat, buildKnowledgeSourcePayload } from '@km/shared-business/agent-create'
 import {
   getOpenClawCompatibleChannelType,
   isOpenClawCompatibleAgentType,
@@ -24,7 +24,7 @@ import { UseScope } from '@/views/agent/create/components/shared/UseScope'
 import { t } from '@/locales'
 import { generateRandomId } from '@/utils'
 import { copyToClip } from '@km/shared-utils'
-import { lib_host, api_host, img_host } from '@/utils/config'
+import { lib_host, api_host, img_host, isOpLocal, isPrivatePrem } from '@/utils/config'
 import { ImageUpload } from '@/components/Upload/image'
 import { GroupSelect } from '@/components/GroupSelect'
 import { GroupTabs } from '@/components/GroupTabs'
@@ -657,6 +657,9 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
   get isIndustry() { return useEnterpriseStore.getState().info.is_industry },
   get isEnterprise() { return useEnterpriseStore.getState().info.is_enterprise },
 
+  // 本地版（op-local）与私有化版（VITE_PRIVATE_PREM=true）隐藏知识图谱入口
+  get hideKnowledgeGraph() { return isOpLocal || isPrivatePrem },
+
   // ========== 分组类型常量 ==========
 
   GROUP_TYPE: {
@@ -716,8 +719,7 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
         type: params.type,
         minimalParams: params.minimalParams,
         modelId: params.modelId,
-        networkSearch: params.networkSearch,
-        knowledgeGraph: params.knowledgeGraph,
+        knowledgeSource: params.knowledgeSource,
         library: params.library,
         agentInfo: params.agentInfo,
       } as any,

@@ -1,10 +1,10 @@
 import { forwardRef, useImperativeHandle, useEffect, useState } from "react";
-import { Form, Switch, Slider, Input, Tooltip, Radio, Checkbox } from "antd";
+import { Form, Switch, Slider, InputNumber, Input, Tooltip, Radio, Checkbox } from "antd";
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import { useAgentForm, parseModelValue, encodeModelValue, validateModelConfig } from "../hooks";
 import { useAgentCreateAdapter, ChannelOption } from "../adapters";
 import { BaseConfig, RelateAgents } from "../components";
-import { ModelSelect, OverflowTooltip } from "@km/shared-components-react";
+import { ModelSelect, OverflowTooltip, SvgIcon } from "@km/shared-components-react";
 import {
   MODEL_VALUE_SEPARATOR,
   OUT_REPLY_TYPE,
@@ -45,6 +45,10 @@ const DEFAULT_SETTINGS = {
       platform_key: "",
       top_k: 20,
     },
+    wiki_search_setting: {
+      enable: false,
+      default_enable: false,
+    },
     graph_search_setting: {
       enable: false,
       default_enable: false,
@@ -64,6 +68,7 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
     const form = useAgentForm();
     const adapter = useAgentCreateAdapter();
     const t = adapter.t || ((key: string) => key);
+    const hideKnowledgeGraph = adapter.hideKnowledgeGraph ?? false;
     const [modelOptions, setModelOptions] = useState<ChannelOption[]>([]);
     const [rerankOptions, setRerankOptions] = useState<ChannelOption[]>([]);
     const [modelLoading, setModelLoading] = useState(false);
@@ -287,7 +292,6 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                           modelName={form.formData.settings?.fast_reasoning_config?.model_name}
                           temperature={form.formData.settings?.fast_reasoning_config?.temperature}
                           type="1"
-                          mode="fast"
                           onChange={setFastReasoningValue}
                           onTemperatureChange={(value: number) => form.updateFields({
                             settings: {
@@ -334,7 +338,6 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                           modelName={form.formData.settings?.deep_thinking_config?.model_name}
                           temperature={form.formData.settings?.deep_thinking_config?.temperature}
                           type="1"
-                          mode="deep"
                           onChange={setDeepThinkingValue}
                           onTemperatureChange={(value: number) => form.updateFields({
                             settings: {
@@ -357,6 +360,177 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
               <div className="text-sm  text-[#373A3D] mb-3">{t('module.generation_config')}</div>
               <div className="p-4 border rounded-xl bg-white mb-4">
                 <div className="flex flex-col gap-4">
+
+                  {/* 知识范围 */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
+                      {t('module.knowledge_scope')}
+                      <Tooltip title={t('module.knowledge_scope_desc')} placement="top">
+                        <QuestionCircleOutlined className="text-hint cursor-help" />
+                      </Tooltip>
+                    </span>
+                    <span className="text-sm text-primary flex items-center gap-1"><SvgIcon name="documents" size={14} />{t('setting.all_knowledge_base')}</span>
+                  </div>
+
+                  {/* 动态知识 */}
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
+                      {t('module.dynamic_knowledge')}
+                      <Tooltip title={t('knowledge.wiki_search_tip')} placement="top">
+                        <QuestionCircleOutlined className="text-hint cursor-help" />
+                      </Tooltip>
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          size="small"
+                          checked={form.formData.settings?.wiki_search_setting?.enable}
+                          onChange={(checked) => form.updateFields({
+                            settings: {
+                              ...form.formData.settings,
+                              wiki_search_setting: {
+                                ...form.formData.settings?.wiki_search_setting,
+                                enable: checked,
+                              },
+                            },
+                          })}
+                        />
+                        <span className={`text-xs ${form.formData.settings?.wiki_search_setting?.enable ? 'text-primary' : 'text-placeholder'}`}>
+                          {form.formData.settings?.wiki_search_setting?.enable ? t('setting1.enabled') : t('setting1.disabled')}
+                        </span>
+                      </div>
+                    </div>
+                    {form.formData.settings?.wiki_search_setting?.enable && (
+                      <Checkbox
+                        checked={form.formData.settings?.wiki_search_setting?.default_enable}
+                        onChange={(e) => form.updateFields({
+                          settings: {
+                            ...form.formData.settings,
+                            wiki_search_setting: {
+                              ...form.formData.settings?.wiki_search_setting,
+                              default_enable: e.target.checked,
+                            },
+                          },
+                        })}
+                      >
+                        {t('module.default_enable')}
+                      </Checkbox>
+                    )}
+                  </div>
+
+                  {/* 知识图谱 */}
+                  {!hideKnowledgeGraph && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
+                        {t('module.knowledge_graph')}
+                        <Tooltip title={t('knowledge.graph_search_tip')} placement="top">
+                          <QuestionCircleOutlined className="text-hint cursor-help" />
+                        </Tooltip>
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            size="small"
+                            checked={form.formData.settings?.graph_search_setting?.enable}
+                            onChange={(checked) => form.updateFields({
+                              settings: {
+                                ...form.formData.settings,
+                                graph_search_setting: {
+                                  ...form.formData.settings?.graph_search_setting,
+                                  enable: checked,
+                                },
+                              },
+                            })}
+                          />
+                          <span className={`text-xs ${form.formData.settings?.graph_search_setting?.enable ? 'text-primary' : 'text-placeholder'}`}>
+                            {form.formData.settings?.graph_search_setting?.enable ? t('setting1.enabled') : t('setting1.disabled')}
+                          </span>
+                        </div>
+                      </div>
+                      {form.formData.settings?.graph_search_setting?.enable && (
+                        <Checkbox
+                          checked={form.formData.settings?.graph_search_setting?.default_enable}
+                          onChange={(e) => form.updateFields({
+                            settings: {
+                              ...form.formData.settings,
+                              graph_search_setting: {
+                                ...form.formData.settings?.graph_search_setting,
+                                default_enable: e.target.checked,
+                              },
+                            },
+                          })}
+                        >
+                          {t('module.default_enable')}
+                        </Checkbox>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 联网搜索 */}
+                  <div className="flex items-start gap-2">
+                    <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
+                      {t('module.web_search')}
+                      <Tooltip title={t('module.web_search_desc')} placement="top">
+                        <QuestionCircleOutlined className="text-hint cursor-help" />
+                      </Tooltip>
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <Switch
+                          size="small"
+                          checked={form.formData.settings?.web_search_setting?.enable}
+                          onChange={(checked) => form.updateFields({
+                            settings: {
+                              ...form.formData.settings,
+                              web_search_setting: {
+                                ...form.formData.settings?.web_search_setting,
+                                enable: checked,
+                              },
+                            },
+                          })}
+                        />
+                        <span className={`text-xs ${form.formData.settings?.web_search_setting?.enable ? 'text-primary' : 'text-placeholder'}`}>
+                          {form.formData.settings?.web_search_setting?.enable ? t('setting1.enabled') : t('setting1.disabled')}
+                        </span>
+                        
+                        {form.formData.settings?.web_search_setting?.enable && (
+                          <>
+                            {adapter.OtherComponents?.SelectPlus ? (
+                              <adapter.OtherComponents.SelectPlus
+                                className="flex-1 overflow-hidden"
+                                value={searchValue}
+                                onChange={setSearchValue}
+                                options={searchOptions}
+                                useI18n={false}
+                              />
+                            ) : null}
+                            <div className="flex-1 flex items-center gap-2">
+                              <span className="text-sm text-secondary shrink-0">{t('module.max_result')}</span>
+                              <InputNumber
+                                value={form.formData.settings?.web_search_setting?.top_k || 20}
+                                min={1}
+                                max={20}
+                                controls={false}
+                                className="w-20"
+                                onChange={(value) => form.updateFields({
+                                  settings: {
+                                    ...form.formData.settings,
+                                    web_search_setting: {
+                                      ...form.formData.settings?.web_search_setting,
+                                      top_k: value,
+                                    },
+                                  },
+                                })}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-full border-t border-dashed my-3"></div>
+
                   {/* 重排序模型 */}
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-secondary w-[100px] flex items-center gap-1">
@@ -482,39 +656,23 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
 
                       {form.formData.settings?.out_of_range_reply?.mode === OUT_REPLY_TYPE.FIXED_REPLY && (
                         <div className="mt-2.5 w-full">
-                          {adapter.OtherComponents?.MarkdownEditor ? (
-                            <adapter.OtherComponents.MarkdownEditor
-                              value={form.formData.settings?.out_of_range_reply?.reply}
-                              onChange={(val: string) => form.updateFields({
-                                settings: {
-                                  ...form.formData.settings,
-                                  out_of_range_reply: {
-                                    ...form.formData.settings?.out_of_range_reply,
-                                    reply: val,
-                                  },
+                          <Input.TextArea
+                            rows={4}
+                            maxLength={500}
+                            showCount
+                            value={form.formData.settings?.out_of_range_reply?.reply}
+                            onChange={(e) => form.updateFields({
+                              settings: {
+                                ...form.formData.settings,
+                                out_of_range_reply: {
+                                  ...form.formData.settings?.out_of_range_reply,
+                                  reply: e.target.value,
                                 },
-                              })}
-                              type="simple"
-                              height="200px"
-                            />
-                          ) : (
-                            <Input.TextArea
-                              rows={4}
-                              maxLength={200}
-                              value={form.formData.settings?.out_of_range_reply?.reply}
-                              onChange={(e) => form.updateFields({
-                                settings: {
-                                  ...form.formData.settings,
-                                  out_of_range_reply: {
-                                    ...form.formData.settings?.out_of_range_reply,
-                                    reply: e.target.value,
-                                  },
-                                },
-                              })}
-                              placeholder={t('module.out_of_range_reply_placeholder')}
-                              style={{ resize: "none" }}
-                            />
-                          )}
+                              },
+                            })}
+                            placeholder={t('module.out_of_range_reply_placeholder')}
+                            style={{ resize: "none" }}
+                          />
                         </div>
                       )}
 
@@ -568,112 +726,6 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                     </div>
                   </div>
 
-                  <div className="w-full border-t border-dashed my-3"></div>
-
-                  {/* 知识图谱 */}
-                  <div className="flex items-start gap-2">
-                    <span className="text-sm text-secondary w-[100px] flex-none">{t('module.knowledge_graph')}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          size="small"
-                          checked={form.formData.settings?.graph_search_setting?.enable}
-                          onChange={(checked) => form.updateFields({
-                            settings: {
-                              ...form.formData.settings,
-                              graph_search_setting: {
-                                ...form.formData.settings?.graph_search_setting,
-                                enable: checked,
-                              },
-                            },
-                          })}
-                        />
-                        <OverflowTooltip>
-                          <span className="text-xs text-placeholder truncate">{t('knowledge.graph_search_tip')}</span>
-                        </OverflowTooltip>
-                      </div>
-                    </div>
-                    {form.formData.settings?.graph_search_setting?.enable && (
-                      <Checkbox
-                        checked={form.formData.settings?.graph_search_setting?.default_enable}
-                        onChange={(e) => form.updateFields({
-                          settings: {
-                            ...form.formData.settings,
-                            graph_search_setting: {
-                              ...form.formData.settings?.graph_search_setting,
-                              default_enable: e.target.checked,
-                            },
-                          },
-                        })}
-                      >
-                        {t('module.default_enable')}
-                      </Checkbox>
-                    )}
-                  </div>
-
-                  {/* 联网搜索 */}
-                  <div className="flex items-start gap-2">
-                    <span className="text-sm text-secondary w-[100px] flex-none">{t('module.web_search')}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <Switch
-                          size="small"
-                          checked={form.formData.settings?.web_search_setting?.enable}
-                          onChange={(checked) => form.updateFields({
-                            settings: {
-                              ...form.formData.settings,
-                              web_search_setting: {
-                                ...form.formData.settings?.web_search_setting,
-                                enable: checked,
-                              },
-                            },
-                          })}
-                        />
-                        <OverflowTooltip>
-                          <span className="flex-1 text-xs text-placeholder truncate">{t('module.web_search_desc')}</span>
-                        </OverflowTooltip>
-                      </div>
-                      {form.formData.settings?.web_search_setting?.enable && (
-                        <div className="border rounded p-4 space-y-3 mt-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-secondary w-[60px] flex-none">{t('module.online_search_source')}</span>
-                            {adapter.OtherComponents?.SelectPlus ? (
-                              <adapter.OtherComponents.SelectPlus
-                                className="flex-1 overflow-hidden"
-                                value={searchValue}
-                                onChange={setSearchValue}
-                                options={searchOptions}
-                                useI18n={false}
-                              />
-                            ) : null}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-secondary w-[60px] flex-none">{t('module.online_search_recall_count')}</span>
-                            <div className="flex-1 flex items-center gap-2">
-                              <Slider
-                                value={form.formData.settings?.web_search_setting?.top_k || 20}
-                                min={1}
-                                max={20}
-                                className="flex-1"
-                                onChange={(value) => form.updateFields({
-                                  settings: {
-                                    ...form.formData.settings,
-                                    web_search_setting: {
-                                      ...form.formData.settings?.web_search_setting,
-                                      top_k: value,
-                                    },
-                                  },
-                                })}
-                              />
-                              <span className="w-8 text-sm text-secondary text-right">
-                                {form.formData.settings?.web_search_setting?.top_k || 20}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
               </div>
             </>

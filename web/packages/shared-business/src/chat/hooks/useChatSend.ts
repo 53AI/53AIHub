@@ -17,6 +17,7 @@ import { getOpenClawTimelineEventsFromLedgerPayload } from "../utils/openclaw-le
 import { buildOpenClawTurnKey, createOpenClawTurnState } from "../utils/openclaw-turn";
 import { useChatAdapters } from "../i18n";
 import { useConversationStore } from "../stores/conversation";
+import { buildKnowledgeSourcePayload } from "../utils/buildKnowledgeSourcePayload";
 
 /**
  * 格式化问题：添加技能前缀
@@ -109,9 +110,13 @@ function buildSpecifiedFilesInfo(links: SpecifiedFile[]): { content: string; rol
         name: item.name,
         icon: item.icon,
         library_id: item.library_id,
+        space_id: item.space_id,
         ...(item.isfolder !== undefined && { isfolder: item.isfolder }),
         ...(item.islibrary && { islibrary: item.islibrary }),
-        ...(item.isspace && { isspace: item.isspace })
+        ...(item.isspace && { isspace: item.isspace }),
+        ...(item.ispage && { ispage: item.ispage }),
+        ...(item.slug && { slug: item.slug }),
+        ...(item.type && { type: item.type }),
       }))
     }),
     role: "info",
@@ -303,10 +308,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
         completion_params = {},
         messageList = [],
         links = [],
-        networkSearch = false,
-        knowledgeGraph = false,
-        allKnowledge = false,
-        library,
+        wikis = [],
         agentInfo,
         files = [],
         fileInfo,
@@ -320,6 +322,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
         onMessageListChange,
         onOpenClawConversationResolved,
         onOpenClawEventSeqChange,
+        knowledgeSource,
       } = options;
 
       if (openclaw && openClawStopPromiseRef.current) {
@@ -350,6 +353,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
       const hasLinkFiles = links.filter(link => !link.islibrary && !link.isspace).length > 0
       const hasLinkLibraries = linkLibraries.length > 0
       const hasLinkSpaces = linkSpaces.length > 0
+      const networkSearch = knowledgeSource?.state?.networkSearch ?? false
 
 
       // ========== 1. 构建用户消息内容 ==========
@@ -395,6 +399,24 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
         );
       }
 
+      // UI 展示用的 specified_files（动态知识）
+  
+      if (wikis.length > 0) {
+        specifiedFiles.push(
+          ...wikis.map((item) => ({
+            id: item.id,
+            name: item.title,
+            icon: item.icon,
+            type: 'wiki',
+            space_id: item.space_id,
+            ...(item.wikiType === 'space' && { isspace: true }),
+            ...(item.wikiType === 'page' && { ispage: true }),
+            ...(item.title && { title: item.title }),
+            ...(item.slug && { slug: item.slug }),
+          }))
+        );
+      }
+
       // ========== 2. 构建 API messages ==========
       const messages: any[] = [];
 
@@ -409,8 +431,8 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
       }
 
       // specified_files（非 work-ai 场景）
-    if (hasLinkFiles || hasLinkLibraries || hasLinkSpaces) {
-        messages.push(buildSpecifiedFilesInfo(links as SpecifiedFile[]));
+    if (specifiedFiles.length) {
+        messages.push(buildSpecifiedFilesInfo(specifiedFiles));
       }
 
       // user 消息
@@ -461,7 +483,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
         rag_stats: null,
         rag_search_text: "",
         rag_temp: { type: "rag_search" },
-        knowledge_graph: knowledgeGraph,
+        knowledge_graph: knowledgeSource?.state?.knowledgeGraph ?? false,
         ...(openclaw ? { _openclawTurnStartSeq: effectiveOpenClawStartSeq } : {}),
         ...(openclaw
           ? {
@@ -490,8 +512,9 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
 
       // ========== 4. 构建请求参数 ==========
       const model = `agent-${agent_id}${modelId ? `-${modelId}` : ""}`;
-      const rerankConfig = agentInfo?.settings?.rerank_config || {};
-      const webSearchConfig = agentInfo?.settings?.web_search_setting || {};
+      const agentSettings = agentInfo?.settings_obj || agentInfo?.settings ||  {}
+      const rerankConfig = agentSettings.rerank_config || {};
+      const webSearchConfig = agentSettings.web_search_setting || {};
 
       const completionsPayload: ChatCompletionParams = minimalParams
         ? {
@@ -517,25 +540,47 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
             top_p: 1,
             presence_penalty: 0,
             stream: true,
-            knowledge_base_ids: networkSearch
+            // knowledgeSource.state 推导逻辑:
+            // - networkSearch: 不使用知识库 (空数组)
+            // - allKnowledge: 使用 ["all"]
+            // - knowledgeGraph/wiki: 由 buildKnowledgeSourcePayload 处理，不影响 knowledge_base_ids
+            knowledge_base_ids: (networkSearch)
               ? []
               : hasLinkLibraries
                 ? linkLibraries.map(lib => String(lib.id))
-                : allKnowledge
-                  ? ["all"]
-                  : fileInfo
-                    ? []
-                    : library?.value || [],
+                : (knowledgeSource?.state?.allKnowledge)
+                  ? ["all"] : [],
             file_ids: hasLinkFiles ? linkFiles.map((item) => item.id) : [],
             space_ids: hasLinkSpaces ? linkSpaces.map(item => String(item.id)) : [],
             message_file_id: fileInfo?.id,
             solo_file_mode: !!fileInfo,
             search_config: {
               ...rerankConfig,
-              top_k: networkSearch ? webSearchConfig.top_k || rerankConfig.top_k : rerankConfig.top_k,
+              top_k: (networkSearch)
+                ? webSearchConfig.top_k || rerankConfig.top_k
+                : rerankConfig.top_k,
             },
-            web_search_config: networkSearch ? webSearchConfig : {},
-            enable_graph_search: knowledgeGraph,
+            // graph_search / web_search / wiki_search 统一走构建器,确保与 preview 行为一致
+            // (graph/wiki 需要对应 agent 设置开关守卫;wikis 非空时附带 space_ids / wiki_page_ids)
+            ...buildKnowledgeSourcePayload(
+              {
+                state: {
+                  allKnowledge: Boolean(knowledgeSource?.state?.allKnowledge),
+                  networkSearch,
+                  knowledgeGraph: Boolean(knowledgeSource?.state?.knowledgeGraph),
+                  wiki: Boolean(knowledgeSource?.state?.wiki),
+                },
+                graphEnabled: Boolean(agentSettings.graph_search_setting?.enable),
+                webSearchEnabled: Boolean(agentSettings.web_search_setting?.enable),
+                wikiEnabled: Boolean(agentSettings.wiki_search_setting?.enable),
+                wikis: (wikis || []).map((w) => ({
+                  id: String(w.id),
+                  wikiType: w.wikiType,
+                  ...(w.space_id != null && { space_id: String(w.space_id) }),
+                })),
+              },
+              { webSearchConfig: webSearchConfig as Record<string, unknown> },
+            ),
             ...completion_params,
           };
 

@@ -124,7 +124,7 @@ export const Editor = forwardRef<EditorRef, EditorProps>(
       const templateId = graphStep?.config?.graph_template_id
       const isSmartMatchEnabled = Boolean(graphStep?.config?.enable_smart_match)
 
-      if (runMode !== 'skip' && !isSmartMatchEnabled && !templateId) {
+      if (graphStep && runMode !== 'skip' && !isSmartMatchEnabled && !templateId) {
         message.warning(t('data_pipeline.graph_template_required'))
         return false
       }

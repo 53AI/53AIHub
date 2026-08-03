@@ -6,12 +6,29 @@
 export interface RecordingConfig {
   enabled: boolean;
   parser_platform: string;
+  voice_model_id: number;
+  voice_model_name: string;
+  inference_model_id: number;
+  inference_model_name: string;
 }
 
 /** 更新录音配置请求体 */
 export interface UpdateRecordingConfigRequest {
-  enabled: boolean;
+  enabled?: boolean;
   parser_platform?: string;
+  voice_model_id?: number;
+  voice_model_name?: string;
+  inference_model_id?: number;
+  inference_model_name?: string;
+}
+
+/** 模板项 */
+export interface TemplateItem {
+  id?: string;
+  name: string;
+  category: string;
+  description: string;
+  instruction?: string;
 }
 
 /** 解析平台 */
@@ -34,8 +51,9 @@ export interface RecordingItem {
   creator_id: number;
   creator_name: string;
   file_size: number;
-  duration: number; // 时长（毫秒）
+  duration: number;
   created_time: number;
+  updated_time: number;
   status: string;
 }
 
@@ -54,6 +72,9 @@ export interface RecordingListRequest {
   keyword?: string;
   start_time?: number;
   end_time?: number;
+  group_id?: number;
+  sort_by?: 'created_time' | 'updated_time';
+  order?: 'asc' | 'desc';
   offset?: number;
   limit?: number;
 }
@@ -84,12 +105,12 @@ export interface RecordingStats {
 export interface RecordingStatsDisplay {
   total_count: number;
   total_file_size: {
-    value: string; // 格式化后的值，一位小数
-    unit: string;  // 单位：B、KB、MB、GB
+    value: string;
+    unit: string;
   };
   total_duration: {
-    value: string; // 格式化后的值，一位小数
-    unit: string;  // 单位：秒、分钟、小时
+    value: string;
+    unit: string;
   };
 }
 
@@ -98,12 +119,12 @@ export interface RecordingItemDisplay {
   id: number;
   name: string;
   file_size: {
-    value: string; // 格式化后的值，一位小数
-    unit: string;  // 单位：B、KB、MB、GB
+    value: string;
+    unit: string;
   };
-  duration: string; // 格式化后的时长，如 "01:23:45"
+  duration: string;
   creator_name: string;
-  created_time: string; // 格式化后的时间
+  created_time: string;
   status: string;
 }
 
@@ -113,4 +134,60 @@ export interface RecordingListDataDisplay {
   total: number;
   offset: number;
   limit: number;
+}
+
+// ============== 解析进度统计 ==============
+
+export interface ParsingCountItem {
+  user_id: number;
+  parsing_count: number;
+}
+
+export interface ParsingCountData {
+  user_counts: ParsingCountItem[];
+}
+
+// ============== 总结模板 ==============
+
+export interface RecordingSummaryTemplate {
+  id: string;
+  name: string;
+  description: string;
+  prompt: string;
+  group_id: number;
+  created_time: number;
+  updated_time: number;
+}
+
+export interface SummaryTemplateRequest {
+  name: string;
+  description: string;
+  prompt: string;
+  group_id?: number;
+}
+
+// ============== 文件总结 ==============
+
+export interface RecordingFileSummary {
+  id: string;
+  file_id: string;
+  template_id: string;
+  template_name: string;
+  inference_model_id: number;
+  summary_content: string;
+  created_time: number;
+  updated_time: number;
+}
+
+// ============== 录音文件分组 ==============
+
+export interface RecordingFileGroup {
+  group_id: number;
+  group_name: string;
+  created_time: number;
+  updated_time: number;
+}
+
+export interface CreateRecordingFileGroupRequest {
+  group_name: string;
 }

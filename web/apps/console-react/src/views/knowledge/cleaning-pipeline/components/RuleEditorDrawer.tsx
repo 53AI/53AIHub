@@ -158,11 +158,11 @@ export function RuleEditorDrawer({
               </div>
             </IconPopover>
 
-            <Form.Item className="flex-1" label="名称" required>
+            <Form.Item className="flex-1" label={t("common.name")} required>
               <Input
                 value={editingRule.name}
                 onChange={(e) => onRuleChange((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="请输入名称"
+                placeholder={t("form.input_placeholder")}
                 maxLength={20}
                 showCount
               />

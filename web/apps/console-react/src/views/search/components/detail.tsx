@@ -4,9 +4,11 @@ import {
 	createSourceClickHandler,
 	createSourceReferenceHandler,
 	type KnowledgePanelData,
+	loadMessages,
 	type SourceReferenceData,
 	SourceReferenceManager,
 	type SourceReferenceManagerRef,
+	useRagStats,
 } from "@km/shared-business";
 import { Button, Drawer, message, Tooltip } from "antd";
 import {
@@ -18,7 +20,6 @@ import {
 	useState,
 } from "react";
 import chunksApi from "@/api/modules/chunks";
-import { getMessageList } from "@/api/modules/feedback/transform";
 import { SEARCH_TYPE } from "@/api/modules/feedback/types";
 import { markdownPreview } from "@/components/Markdown/helper";
 import { useEnv } from "@/hooks/useEnv";
@@ -36,7 +37,8 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 	const [curType, setCurType] = useState<string>("");
 	const [list, setList] = useState<any[]>([]);
 	const locale = useLocaleStore((state) => state.locale);
-	const { buildFrontLibraryFileUrl, buildFrontLibraryUrl } = useEnv();
+	const { buildFrontLibraryFileUrl, buildFrontLibraryUrl, buildFrontWikiUrl, getFrontBaseUrl } = useEnv();
+	const { formatRagStats } = useRagStats();
 
 	// 源引用管理器 ref
 	const sourceRefManagerRef = useRef<SourceReferenceManagerRef>(null);
@@ -61,28 +63,28 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 
 	// 未找到 chunk 时的回调
 	const handleChunkNotFound = useCallback((data: SourceReferenceData) => {
-		message.info(`查看引用: ${data.sourceType}-${data.sourceNumber}`);
+		message.info(t("search.view_reference", { sourceType: data.sourceType, sourceNumber: data.sourceNumber }));
 	}, []);
 
 	// 后台场景：知识面板点击跳转前台
 	const handleOpenKnowledgePanel = useCallback(
 		(data: KnowledgePanelData) => {
+				let sourceUrl = ''
 			// scope_narrowing: 点击知识库名称跳转知识库首页
 			if (data.type === "scope_narrowing" && data.source?.library_id) {
-				const url = buildFrontLibraryUrl(data.source.library_id);
-				window.open(url, "_blank", "noopener,noreferrer");
-				return true;
+				sourceUrl = buildFrontLibraryUrl(data.source.library_id);
 			}
 			// source_click: 点击单个源文件
 			if (data.type === "source_click" && data.source) {
 				const source = data.source;
+				if (source.chunk_type === 'wiki') {
+					sourceUrl = buildFrontWikiUrl(source.space_id, source.slug)
+				}
 				if (source.library_id && source.file_id) {
-					const url = buildFrontLibraryFileUrl(
+					sourceUrl = buildFrontLibraryFileUrl(
 						source.library_id,
 						source.file_id,
 					);
-					window.open(url, "_blank", "noopener,noreferrer");
-					return true;
 				}
 			}
 			// knowledge_search: 点击知识检索结果
@@ -93,17 +95,19 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 			) {
 				const firstFile = data.files[0];
 				if (firstFile.library_id && firstFile.file_id) {
-					const url = buildFrontLibraryFileUrl(
+					sourceUrl = buildFrontLibraryFileUrl(
 						firstFile.library_id,
 						firstFile.file_id,
 					);
-					window.open(url, "_blank", "noopener,noreferrer");
-					return true;
 				}
+			}
+			if (sourceUrl) {
+				window.open(sourceUrl, "_blank", "noopener,noreferrer");
+				return true;
 			}
 			return false;
 		},
-		[buildFrontLibraryFileUrl, buildFrontLibraryUrl],
+		[buildFrontLibraryFileUrl, buildFrontLibraryUrl, buildFrontWikiUrl],
 	);
 
 	const [feedbackInfo, setFeedbackInfo] = useState([
@@ -126,7 +130,7 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 		return curType === SEARCH_TYPE.FEEDBACK ? feedbackInfo : recordInfo;
 	}, [curType, feedbackInfo, recordInfo]);
 
-	const loadMessage = (index: number, type: string, tableData: any[]) => {
+	const loadMessage = async (index: number, type: string, tableData: any[]) => {
 		const row = tableData[index];
 		if (!row) return;
 
@@ -153,7 +157,10 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 					value: row.description || "---",
 				},
 			]);
-			setMessageList(getMessageList(row.message_info, row.original_question));
+			const { messages } = await loadMessages([row.message_info], 1, {
+				formatRagStats,
+			});
+			setMessageList(messages);
 		} else if (type === SEARCH_TYPE.RECORD) {
 			setTitle(row.original_question || "");
 			setRecordInfo([
@@ -164,7 +171,10 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 					value: row.rewritten_question || "---",
 				},
 			]);
-			setMessageList(getMessageList(row, row.original_question));
+			const { messages } = await loadMessages([row], 1, {
+				formatRagStats,
+			});
+			setMessageList(messages);
 		}
 	};
 
@@ -250,6 +260,7 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 			<div className="border border-gray-200 rounded-xl py-4 flex flex-col h-[calc(100%-150px)]">
 				<ChatConfigProvider
 					lang={locale}
+					frontUrl={getFrontBaseUrl()}
 					buildLibraryUrl={buildFrontLibraryFileUrl}
 					onOpenKnowledgePanel={handleOpenKnowledgePanel}
 				>
@@ -265,9 +276,6 @@ const Detail = forwardRef<DetailRef>((props, ref) => {
 								share: false,
 								addAsMd: false,
 							},
-							outputFiles: true,
-							sourceRef: true,
-							processFlow: true,
 						}}
 						slots={{
 							source: ({ type, number }: { type: string; number: number }) => {

@@ -15,15 +15,16 @@ import { SvgIcon } from "@km/shared-components-react";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
-import { buildUrl } from "@/utils/router";
+import { buildUrl, buildKnowledgeFileUrl, buildWikiPageUrl } from "@/utils/router";
 import { getFormatTimeStamp } from "@km/shared-utils";
 import { useFolderNavigation } from "../useFolderNavigation";
 import { FolderBrowser } from "../FolderBrowser";
 import type { FilterType } from "../types";
 import "../mine.css";
+import { RESOURCE_TYPE } from '@/components/KMPermission/constant';
 
 interface FavItem {
-  type: "library" | "file";
+  type: "library" | "file" | "wiki";
   id: string;
   name: string;
   icon: string;
@@ -34,6 +35,8 @@ interface FavItem {
   isfolder?: boolean;
   libraryId?: string;
   rawData: any;
+  space_id?: string; // For wiki pages
+  isRecording?: boolean; // 录音/录音导入文件
 }
 
 interface FavViewProps {
@@ -42,11 +45,6 @@ interface FavViewProps {
   refreshKey?: number;
 }
 
-interface InternalUser {
-  user_id: number;
-  nickname: string;
-  username: string;
-}
 
 const PAGE_SIZE = 30;
 
@@ -58,7 +56,6 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [userMap, setUserMap] = useState<Map<string, string>>(new Map());
 
   const prevKeywordRef = useRef(keyword);
   const loadingRef = useRef(false);
@@ -86,7 +83,8 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     const usersMapFromIncludes: Record<string, any> = includes.users || {};
 
     return (data.items || []).map((item: any) => {
-      const isFile = item.resource_type === 2;
+      const isFile = item.resource_type === RESOURCE_TYPE.file;
+      const isWikiPage = item.resource_type === RESOURCE_TYPE.wiki_page;
       const library = item.library_id ? librariesMap[item.library_id] : null;
       const space = item.space_id ? spacesMap[item.space_id] : null;
       const creatorFromIncludes = item.creator_id
@@ -99,17 +97,21 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
         const formattedFile = formatFile(item.file || {});
         const position =
           space && library ? `${space.name}/${library.name}` : "--";
+        const isRecording =
+          item.file?.origin_source === "recording" ||
+          item.file?.origin_source === "recording_import";
         return {
           type: "file" as const,
           id: item.resource_id,
           name: formattedFile.name,
-          icon: item.file.origin_source === 'recording' || item.file.origin_source === 'recording_import' ? getPublicPath("/images/file/recrod.png"):  formattedFile.icon,
+          icon: isRecording ? getPublicPath("/images/file/recrod.png") : formattedFile.icon,
           position,
           owner,
           favoriteTime: getFormatTimeStamp(item.recent_time),
           isFavorite: item.is_favorite ?? true,
           isfolder: formattedFile.isfolder,
           libraryId: item.library_id,
+          isRecording,
           rawData: {
             file: item.file,
             library,
@@ -117,6 +119,19 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
             recent_time: item.recent_time,
           },
         };
+      } else if (isWikiPage) {
+        return {
+          type: 'wiki',
+          id: item.resource_id,
+          icon: '',
+          name: item.wiki_page.title,
+          rawData: item.wiki_page,
+          position: '--',
+          owner: owner  || '--',
+          space_id: item.space_id,
+          favoriteTime: getFormatTimeStamp(item.recent_time),
+          isFavorite: item.is_favorite ?? true,
+        }
       } else {
         const formattedLib = formatLibrary(library || {});
         const position = space ? space.name : "--";
@@ -150,7 +165,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
           keyword: kw || undefined,
         };
         if (filterType !== "all") {
-          params.resource_type = filterType === "library" ? 1 : 2;
+          params.resource_type = filterType === "library" ? 1 : filterType === 'wiki' ? 3 : 2;
         }
 
         const res = await mySpaceApi.getFavorites(params);
@@ -237,6 +252,10 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
   const handleRowClick = async (item: FavItem) => {
     if (item.type === "library") {
       navigate(`/library/${item.id}`);
+    } else if(item.type === 'wiki') {
+      navigate(buildWikiPageUrl(item.space_id, item.rawData.slug));
+    } else if (item.isRecording) {
+      navigate(`/recording?preview=${item.id}`);
     } else {
       if (item.position === "--") {
         try {
@@ -294,6 +313,14 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
         e.domEvent.stopPropagation();
         setFilterType("library");
       },
+    },,
+    {
+      key: "wiki",
+      label: "动态知识",
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+        setFilterType("wiki");
+      },
     },
     {
       key: "file",
@@ -311,6 +338,8 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
         return "知识库";
       case "file":
         return "知识";
+      case "wiki":
+        return "动态知识";
       default:
         return "全部";
     }
@@ -407,11 +436,11 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
               const url =
                 item.type === "library"
                   ? buildUrl(`/library/${item.id}`)
-                  : item.position === "--"
-                    ? buildUrl(`/mine?tab=fav&preview=${item.id}`)
-                    : item.isfolder
-                      ? buildUrl(`/library/${item.libraryId}/folder/${item.id}`)
-                      : buildUrl(`/library/${item.libraryId}/file/${item.id}`);
+                  : item.isRecording
+                    ? buildUrl(`/recording?preview=${item.id}`)
+                    : item.position === "--"
+                      ? buildUrl(`/mine?tab=fav&preview=${item.id}`)
+                      : buildKnowledgeFileUrl(item.libraryId, item.id, '', item.isfolder);
 
               return (
                 <div
@@ -426,12 +455,20 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                         src={getPublicPath("/images/default_popover_img.png")}
                         size={26}
                       />
-                    ) : (
+                    ) : ( item.icon ? (
                       <img
                         className="flex-none w-6 h-6"
                         src={item.icon}
                         alt=""
                       />
+                      ) : (
+                        <div className="flex-none size-6 rounded flex items-center justify-center bg-[#E6EEFF] text-[#4798F5]">
+                          <SvgIcon
+                            name="doc-detail"
+                            className="flex-none"
+                          />
+                        </div>
+                      )
                     )}
                     <span className="text-sm text-primary truncate">
                       {item.name}

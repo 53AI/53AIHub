@@ -10,7 +10,7 @@ import { transformAgentInfo } from "@/api/modules/agents/transform";
 import type { AgentInfo } from "@/api/modules/agents/index";
 import { getPublicPath } from "@/utils/config";
 import RelateAgentsDialog, {
-  RelateAgentsDialogRef,
+    RelateAgentsDialogRef,
 } from "@/views/agent/create/components/config/RelateAgentsDialog";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -149,7 +149,7 @@ export function AssistantPage() {
       }}
     >
       <div className="h-full bg-white py-5 px-2 overflow-auto">
-        <div className="text-base text-black">{t("module.system")}</div>
+        <div className="text-base text-primary">{t("module.system")}</div>
         <div className="grid grid-cols-3 gap-6 mt-3">
           {/* {!["5bmQZn"].includes(enterpriseStore.info?.eid) &&
             canUseKnowledgeBase && (
@@ -226,7 +226,7 @@ export function AssistantPage() {
           </Link>
         </div>
 
-        <div className="mt-6 text-base text-black">{t("module.custom")}</div>
+        <div className="mt-6 text-base text-primary">{t("module.custom")}</div>
         <div className="grid grid-cols-3 gap-6 mt-3">
           <div
             className="min-h-[126px] border border-[#E8EEFA] bg-[#F7FAFF] rounded-lg px-4 py-6 flex items-center justify-center cursor-pointer hover:shadow"

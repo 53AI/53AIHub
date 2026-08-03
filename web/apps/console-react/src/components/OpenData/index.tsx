@@ -28,7 +28,7 @@ export function OpenData({
 
   // Default: render text
   return (
-    <span ref={containerRef}>
+    <span >
       {prefix}
       {text}
       {suffix}

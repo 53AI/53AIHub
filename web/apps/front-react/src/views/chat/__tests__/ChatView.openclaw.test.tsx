@@ -102,6 +102,50 @@ function renderOpenClawChatView(
     ...conversationApiOverrides,
   };
 
+  const features = (viewOverrides.features as Record<string, any> | undefined) ?? {};
+  const {
+    openclaw: openclawEnabled,
+    skipInitialLoad,
+    openclawInputDisabled,
+    openclawInputDisabledReason,
+    initialConversationResolving,
+    messageMenu,
+    share: shareEnabled,
+    ...legacyFeatureRest
+  } = features;
+  if (Object.keys(legacyFeatureRest).length > 0) {
+    throw new Error(
+      `renderOpenClawChatView: deprecated features.${Object.keys(legacyFeatureRest).join(", ")} not supported`
+    );
+  }
+  const mergedOpenclaw = {
+    enabled: openclawEnabled ?? true,
+    ...(skipInitialLoad !== undefined ? { skipInitialLoad } : {}),
+    ...(openclawInputDisabled !== undefined ? { inputDisabled: openclawInputDisabled } : {}),
+    ...(openclawInputDisabledReason !== undefined
+      ? { inputDisabledReason: openclawInputDisabledReason }
+      : {}),
+    ...(initialConversationResolving !== undefined
+      ? { initialConversationResolving }
+      : {}),
+    ...(viewOverrides.openclaw ?? {}),
+  };
+  const mergedMessage = {
+    ...(messageMenu !== undefined ? { showMenu: messageMenu } : {}),
+    ...(viewOverrides.onMessageSent !== undefined ? { onSent: viewOverrides.onMessageSent } : {}),
+    ...(viewOverrides.onOutputFilePreview !== undefined
+      ? { onPreviewOutputFile: viewOverrides.onOutputFilePreview }
+      : {}),
+    ...(viewOverrides.onAddAsMd !== undefined
+      ? { onSaveToKnowledge: viewOverrides.onAddAsMd }
+      : {}),
+    ...(viewOverrides.message ?? {}),
+  };
+  const mergedShare =
+    shareEnabled !== undefined
+      ? { enabled: shareEnabled, ...(viewOverrides.share ?? {}) }
+      : viewOverrides.share;
+
   const view = render(
     <ChatConfigProvider
       adapters={{
@@ -118,7 +162,9 @@ function renderOpenClawChatView(
       <ChatView
         agentId="2"
         initialConversationId="agent:main:main"
-        features={{ openclaw: true, skipInitialLoad: true, ...(viewOverrides.features || {}) } as any}
+        openclaw={mergedOpenclaw}
+        message={mergedMessage}
+        share={mergedShare}
         agentInfo={{
           agent_id: 2,
           name: "OpenClaw",
@@ -179,7 +225,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
     vi.useRealTimers();
   });
 
-  it("enables OpenClaw skill tags and routes uploaded file clicks to the preview callback", async () => {
+  it("enables OpenClaw and routes uploaded file clicks to the preview callback", async () => {
     const onOutputFilePreview = vi.fn();
     renderOpenClawChatView({}, { onOutputFilePreview });
 
@@ -187,7 +233,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
       expect(mocks.chatMessagesProps).toBeTruthy();
     });
 
-    expect(mocks.chatMessagesProps.features.skillTag).toBe(true);
+    expect(mocks.chatMessagesProps.openclaw?.enabled).toBe(true);
     expect(mocks.chatMessagesProps.onFileClick).toEqual(expect.any(Function));
 
     act(() => {
@@ -250,15 +296,15 @@ describe("ChatView OpenClaw stop/send flow", () => {
     });
 
     await waitFor(() => {
-      expect(mocks.chatInputProps?.skillOptions).toEqual([
+      expect(mocks.chatInputProps?.skill?.suggestions).toEqual([
         expect.objectContaining({
           skill_name: "openclaw_pdf_probe",
           display_name: "PDF Probe",
         }),
       ]);
     });
-    expect(mocks.chatInputProps?.showSkill).toBe(true);
-    expect(mocks.chatInputProps?.onOpenSkillLibrary).toBe(openSkillLibrary);
+    expect(mocks.chatInputProps?.skill?.enabled).toBe(true);
+    expect(mocks.chatInputProps?.skill?.onOpenLibrary).toBe(openSkillLibrary);
   });
 
   it("refreshes OpenClaw skills when the window regains focus", async () => {
@@ -292,7 +338,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
     );
 
     await waitFor(() => {
-      expect(mocks.chatInputProps?.skillOptions?.[0]?.skill_name).toBe("first_skill");
+      expect(mocks.chatInputProps?.skill?.suggestions?.[0]?.skill_name).toBe("first_skill");
     });
 
     act(() => {
@@ -301,7 +347,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
 
     await waitFor(() => {
       expect(listMySkills).toHaveBeenCalledTimes(2);
-      expect(mocks.chatInputProps?.skillOptions?.[0]?.skill_name).toBe("second_skill");
+      expect(mocks.chatInputProps?.skill?.suggestions?.[0]?.skill_name).toBe("second_skill");
     });
   });
 
@@ -330,7 +376,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
       >
         <ChatView
           agentId="2"
-          features={{ openclaw: true, skipInitialLoad: true }}
+          openclaw={{ enabled: true, skipInitialLoad: true }}
           agentInfo={{
             agent_id: 2,
             name: "OpenClaw",
@@ -342,8 +388,8 @@ describe("ChatView OpenClaw stop/send flow", () => {
     );
 
     expect(mocks.chatInputProps.isStreaming).toBe(true);
-    expect(mocks.chatInputProps.disabled).toBe(true);
-    expect(mocks.chatInputProps.stopDisabled).toBe(true);
+    expect(mocks.chatInputProps.inputState?.disabled).toBe(true);
+    expect(mocks.chatInputProps.inputState?.stopDisabled).toBe(true);
 
     act(() => {
       mocks.chatInputProps.onStop();
@@ -576,7 +622,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
       limit: 30,
     });
     expect((conversationApi as any).snapshot).not.toHaveBeenCalled();
-    expect(mocks.chatInputProps.disabled).toBe(true);
+    expect(mocks.chatInputProps.inputState?.disabled).toBe(true);
   });
 
   it("clears the current OpenClaw conversation when fresh message validation returns not found", async () => {
@@ -795,8 +841,8 @@ describe("ChatView OpenClaw stop/send flow", () => {
     await act(async () => {});
 
     expect(mocks.chatMessagesProps.isConversationLoading).toBe(true);
-    expect(mocks.chatInputProps.disabled).toBe(true);
-    expect(mocks.chatInputProps.disabledReason).toBe("加载消息...");
+    expect(mocks.chatInputProps.inputState?.disabled).toBe(true);
+    expect(mocks.chatInputProps.inputState?.disabledReason).toBe("加载消息...");
   });
 
   it("keeps the loading overlay visible after an initial OpenClaw conversation id resolves and before messages load", async () => {
@@ -818,7 +864,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
     expect(useConversationStore.getState().current_conversationid).toBe("agent:main:dashboard:resolved");
     expect(mocks.loadMessageList).toHaveBeenCalledWith("agent:main:dashboard:resolved", expect.any(Function));
     expect(mocks.chatMessagesProps.isConversationLoading).toBe(true);
-    expect(mocks.chatInputProps.disabled).toBe(true);
+    expect(mocks.chatInputProps.inputState?.disabled).toBe(true);
 
     await act(async () => {
       messages.resolve([]);
@@ -826,7 +872,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
     });
 
     expect(mocks.chatMessagesProps.isConversationLoading).toBe(false);
-    expect(mocks.chatInputProps.disabled).toBe(false);
+    expect(mocks.chatInputProps.inputState?.disabled).toBe(false);
   });
 
   it("exposes only copy, add-to-knowledge, and regenerate actions for OpenClaw assistant messages", async () => {
@@ -854,10 +900,10 @@ describe("ChatView OpenClaw stop/send flow", () => {
       feedback: false,
       addAsMd: true,
     });
-    expect(mocks.chatMessagesProps.onAddAsMd).toBe(onAddAsMd);
+    expect(mocks.chatMessagesProps.messageAction?.onAddAsMd).toBe(onAddAsMd);
 
     await act(async () => {
-      mocks.chatMessagesProps.onRegenerate({
+      mocks.chatMessagesProps.messageAction?.onRegenerate?.({
         id: "assistant-1",
         original_question: "重新查询 OpenClaw 状态",
         question: "旧问题",
@@ -887,7 +933,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
     await act(async () => {});
 
     expect(mocks.chatMessagesProps.isConversationLoading).toBe(false);
-    expect(mocks.chatInputProps.disabled).toBe(true);
+    expect(mocks.chatInputProps.inputState?.disabled).toBe(true);
     expect(mocks.clearMessageList).not.toHaveBeenCalled();
     expect(mocks.loadMessageList).not.toHaveBeenCalled();
     expect(conversationApi.list).not.toHaveBeenCalled();
@@ -953,7 +999,7 @@ describe("ChatView OpenClaw stop/send flow", () => {
         <ChatView
           agentId="2"
           initialConversationId="agent:main:dashboard:first"
-          features={{ openclaw: true, skipInitialLoad: true } as any}
+          openclaw={{ enabled: true, skipInitialLoad: true }}
           agentInfo={{
             agent_id: 2,
             name: "OpenClaw",

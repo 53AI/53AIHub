@@ -195,7 +195,7 @@ export const RelateAgentsDialog = forwardRef<RelateAgentsDialogRef, Props>(
                       className="bg-white rounded border p-4 flex items-center gap-2 relative group"
                     >
                       <img
-                        alt="AI 搜索"
+                        alt={t("agent.ai_search")}
                         src={
                           item.logo ||
                           getPublicPath("/images/agent/default-logo.png")

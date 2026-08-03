@@ -69,9 +69,9 @@ export const SlideDialog = forwardRef<SlideDialogRef, SlideDialogProps>(
         : 0;
 
     const getNewName = (currentList: any[]) => {
-      const baseName = "新建划词指令";
+      const baseName = t("slide_dialog.new_command");
       if (currentList.length === 0) return baseName;
-      const reg = /^新建划词指令(\d+)$/;
+      const reg = new RegExp(`^${baseName}(\\d+)$`);
       const maxN = Math.max(
         0,
         ...currentList.map((item) => {
@@ -255,15 +255,15 @@ export const SlideDialog = forwardRef<SlideDialogRef, SlideDialogProps>(
     return (
       <Modal
         open={visible}
-        title="划词指令"
+        title={t("slide_dialog.slide_command")}
         width={800}
         onCancel={handleClose}
         footer={[
           <Button key="cancel" onClick={handleClose}>
-            取消
+            {t("action.cancel")}
           </Button>,
           <Button key="save" type="primary" onClick={handleSave}>
-            保存
+            {t("action.save")}
           </Button>,
         ]}
         destroyOnHidden
@@ -326,7 +326,7 @@ export const SlideDialog = forwardRef<SlideDialogRef, SlideDialogProps>(
           </div>
           <div className="flex-1 pr-1 overflow-hidden">
             <Form form={form} layout="vertical" requiredMark="optional">
-              <Form.Item label="图标和名称" required>
+              <Form.Item label={t("slide_dialog.icon_and_name")} required>
                 <div className="w-full flex items-center gap-2">
                   <Popover
                     content={iconContent}

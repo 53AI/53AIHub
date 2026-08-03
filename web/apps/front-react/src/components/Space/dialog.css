@@ -14,13 +14,3 @@
 .file-table .ant-table-row-expand-icon {
   margin-right: 8px;
 }
-
-.file-table input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: #2563EB;
-}
-
-.ant-popover-container {
-  padding: 6px 8px 14px !important;
-}

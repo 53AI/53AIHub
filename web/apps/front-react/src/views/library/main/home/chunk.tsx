@@ -60,12 +60,19 @@ export function ChunkHomeView() {
     }
   };
 
-  // Filter files by tab
+  // Filter files by tab, sorted by updated_at descending
   const filteredFiles = useMemo(() => {
     let filteredFiles = files.filter((item) => item.isfile);
     if (activeTab !== "all") {
       filteredFiles = filteredFiles.filter((file) => file.cleaning_info?.status === activeTab);
     }
+    // 按 updated_at 倒序排列
+    filteredFiles = filteredFiles.sort((a, b) => {
+      if (!a.updated_at && !b.updated_at) return 0;
+      if (!a.updated_at) return 1;
+      if (!b.updated_at) return -1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
     return filteredFiles.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   }, [files, activeTab, currentPage, pageSize]);
 
@@ -187,6 +194,7 @@ export function ChunkHomeView() {
       dataIndex: "name",
       key: "name",
       minWidth: 200,
+      ellipsis: true,
       render: (name: string, record: FileItem) => (
         <div className="flex items-center gap-3">
           <img
@@ -213,9 +221,9 @@ export function ChunkHomeView() {
       width: 130,
       render: (cleaning_info: FileItem["cleaning_info"]) =>
         cleaning_info?.strategy_name ? (
-          <div className="bg-[#F3F4F6] py-2 h-6 rounded text-[#4F5052] text-sm flex items-center justify-center gap-1 w-fit px-2">
+          <div className="bg-[#F3F4F6] py-2 h-6 rounded text-[#4F5052] text-sm inline-flex items-center justify-center gap-1 max-w-[130px] px-2">
             <SvgIcon name="strategy" size={14} />
-            {cleaning_info.strategy_name}
+            <p className="flex-1 truncate">{cleaning_info.strategy_name}</p>
           </div>
         ) : (
           <span className="text-sm text-[#999999]">--</span>

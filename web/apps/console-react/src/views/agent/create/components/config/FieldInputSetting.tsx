@@ -261,11 +261,11 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
                 placeholder="请选择"
                 onChange={(v) => setWidgetForm({ ...widgetForm, date_format: v })}
                 options={[
-                  { label: '年', value: 'y' },
-                  { label: '年/月', value: 'y-m' },
-                  { label: '年/月/日', value: 'y-m-d' },
-                  { label: '时/分', value: 'h-m' },
-                  { label: '时间范围', value: 'daterange' },
+                  { label: t('agent.date_format.y'), value: 'y' },
+                  { label: t('agent.date_format.ym'), value: 'y-m' },
+                  { label: t('agent.date_format.ymd'), value: 'y-m-d' },
+                  { label: t('agent.date_format.hm'), value: 'h-m' },
+                  { label: t('agent.date_format.daterange'), value: 'daterange' },
                 ]}
               />
             </Form.Item>
@@ -348,13 +348,13 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
           )}
 
           {widgetForm.type === 'select' && (
-            <Form.Item label="模式">
+            <Form.Item label={t('agent.field_input.mode')}>
               <Radio.Group
                 value={widgetForm.multiple}
                 onChange={(e) => setWidgetForm({ ...widgetForm, multiple: e.target.value })}
               >
-                <Radio value={false}>单选</Radio>
-                <Radio value={true}>多选</Radio>
+                <Radio value={false}>{t('agent.field_input.single')}</Radio>
+                <Radio value={true}>{t('agent.field_input.multiple')}</Radio>
               </Radio.Group>
             </Form.Item>
           )}
@@ -363,15 +363,15 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
             type === 'input' && (
               <>
                 {!['array_image', 'array_audio', 'array_video'].includes(widgetForm.type) && (
-                  <Form.Item label="上传文件类型">
+                  <Form.Item label={t('agent.field_input.file_type')}>
                     <Select
                       value={widgetForm.file_type}
                       className="w-full"
-                      placeholder="请选择"
+                      placeholder={t('form.select_placeholder')}
                       onChange={(v) => handleFileTypeChange(v, widgetForm)}
                       options={[
-                        { label: '不限格式', value: 'all' },
-                        { label: '自定义', value: 'custom' },
+                        { label: t('agent.field_input.all_format'), value: 'all' },
+                        { label: t('agent.field_input.custom'), value: 'custom' },
                       ]}
                     />
                   </Form.Item>
@@ -379,7 +379,7 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
 
                 {widgetForm.file_type === 'custom' && (
                   <Form.Item
-                    label="支持文件格式"
+                    label={t('agent.field_input.supported_format')}
                     name="file_accept"
                     rules={generateInputRules({ message: 'form.select_placeholder' })}
                     required
@@ -388,7 +388,7 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
                       mode="multiple"
                       value={widgetForm.file_accept}
                       className="w-full"
-                      placeholder="请选择"
+                      placeholder={t('form.select_placeholder')}
                       onChange={(v) => setWidgetForm({ ...widgetForm, file_accept: v })}
                       options={fileAcceptOptions.map((item) => ({
                         label: item === 'md' ? 'markdown' : item,
@@ -398,7 +398,7 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
                   </Form.Item>
                 )}
 
-                <Form.Item label="单个文件上限">
+                <Form.Item label={t('agent.field_input.file_size_limit')}>
                   <div className="w-full flex items-center gap-5 overflow-hidden">
                     <div className="flex-1">
                       <Slider
@@ -413,17 +413,17 @@ export const FieldInputSetting = forwardRef<FieldInputSettingRef, FieldInputSett
                 </Form.Item>
 
                 {showFileLimit && (
-                  <Form.Item label="上传最大数量">
+                  <Form.Item label={t('agent.field_input.file_max_count')}>
                     <div className="flex items-center gap-2">
                       <InputNumber
                         value={widgetForm.file_limit}
                         precision={0}
                         min={1}
                         max={6}
-                        placeholder="请输入"
+                        placeholder={t('form.input_placeholder')}
                         onChange={(v) => setWidgetForm({ ...widgetForm, file_limit: v || 1 })}
                       />
-                      <span className="text-sm text-dark">个</span>
+                      <span className="text-sm text-dark">{t('agent.field_input.count_unit')}</span>
                     </div>
                   </Form.Item>
                 )}

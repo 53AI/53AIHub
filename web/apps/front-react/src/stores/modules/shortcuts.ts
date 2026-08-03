@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import shortcutsApi from '@/api/modules/shortcuts'
 import { checkPermission } from '@/utils/permission'
+import { buildWikiPageUrl } from '@/utils/router'
 import { message } from 'antd'
 import { t } from '@/locales'
 import type { ShortcutItem, ShortcutType } from '@/api/modules/shortcuts/types'
@@ -72,12 +73,20 @@ interface ShortcutsState {
     type: ShortcutType
     related_id: string
     url?: string
-    related_info?: { library_id?: string }
+    related_info?: { library_id?: string; space_id?: string; slug?: string }
   }) => string
   loadShortcuts: () => Promise<void>
-  addShortcut: (type: ShortcutType, related_id: string) => Promise<ShortcutItem>
+  addShortcut: (
+    type: ShortcutType,
+    related_id: string,
+    related_info?: { library_id?: string; space_id?: string; slug?: string },
+  ) => Promise<ShortcutItem>
   removeShortcut: (type: ShortcutType, related_id: string) => Promise<void>
-  toggleShortcut: (type: ShortcutType, related_id: string) => Promise<boolean>
+  toggleShortcut: (
+    type: ShortcutType,
+    related_id: string,
+    related_info?: { library_id?: string; space_id?: string; slug?: string },
+  ) => Promise<boolean>
 }
 
 export const useShortcutsStore = create<ShortcutsState>((set, get) => ({
@@ -121,6 +130,11 @@ export const useShortcutsStore = create<ShortcutsState>((set, get) => ({
         return `/library/${related_id}`
       case "file":
         return `/library/${related_info?.library_id || ""}/file/${related_id}`
+      case "wiki_page":
+        return buildWikiPageUrl(
+          related_info?.space_id || "",
+          related_info?.slug || related_id,
+        )
       case "ai_link":
         return url || ""
       default:
@@ -147,12 +161,12 @@ export const useShortcutsStore = create<ShortcutsState>((set, get) => ({
   /**
    * 添加快捷方式
    */
-  addShortcut: async (type, related_id) => {
+  addShortcut: async (type, related_id, related_info) => {
     try {
       if (!checkPermission()) {
         throw new Error(t('authority.login_not_permission'))
       }
-      const shortcut = await shortcutsApi.create({ type, related_id })
+      const shortcut = await shortcutsApi.create({ type, related_id, related_info })
       // 如果列表中不存在，则添加
       const shortcuts = get().shortcuts
       if (!shortcuts.find(item => item.id === shortcut.id)) {
@@ -187,13 +201,13 @@ export const useShortcutsStore = create<ShortcutsState>((set, get) => ({
   /**
    * 切换快捷方式（如果存在则移除，不存在则添加）
    */
-  toggleShortcut: async (type, related_id) => {
+  toggleShortcut: async (type, related_id, related_info) => {
     const existing = get().getShortcut(type, related_id)
     if (existing) {
       await get().removeShortcut(type, related_id)
       return false
     } else {
-      await get().addShortcut(type, related_id)
+      await get().addShortcut(type, related_id, related_info)
       return true
     }
   },

@@ -2,7 +2,6 @@ import { useState, useEffect, lazy, Suspense, useRef, useCallback, useMemo } fro
 import { useSearchParams } from "react-router-dom";
 import { Spin, Modal, Input, message } from "antd";
 import { useBasicLayout } from "@/hooks/useBasicLayout";
-import { useEnv } from "@/hooks/useEnv";
 import {
   FileUpload,
   type FileUploadRef,
@@ -12,19 +11,14 @@ import { filesApi } from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
 import { buildUrl } from "@/utils/router";
 import Header from "@/components/Layout/Header";
-import { useRecordingStore } from "@/stores/modules/recording";
 import { useNavigationStore } from "@/stores/modules/navigation";
 import { t } from "@/locales";
 import { getFormatTimeStamp } from "@km/shared-utils";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
-import recordingApi from "@/api/modules/recording";
-import type { RecordingConfig } from "@/api/modules/recording/types";
 import type { PreviewFile, MineTabKey } from "./types";
-import type { MineAudioViewRef } from "./views/audio";
-import { MINE_TAB_LIST, AUDIO_ACCEPT, createCreateMenuItems, createImportMenuItems, AUDIO_EXT_REGEX, AUDIO_DOUBLE_EXT_REGEX } from "./constants";
+import { MINE_TAB_LIST, createCreateMenuItems, createImportMenuItems, AUDIO_EXT_REGEX, AUDIO_DOUBLE_EXT_REGEX } from "./constants";
 import { useMySpaceContext } from "./hooks/useMySpaceContext";
-import { useAudioImport } from "./hooks/useAudioImport";
 import { MineHeader } from "./components/MineHeader";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { CreateFolderModal } from "./components/CreateFolderModal";
@@ -36,19 +30,16 @@ const FavView = lazy(() => import("./views/fav"));
 const VisitView = lazy(() => import("./views/visit"));
 const AIGeneratedView = lazy(() => import("./views/ai-generated"));
 const UploadedView = lazy(() => import("./views/uploaded"));
-const MineAudioView = lazy(() => import("./views/audio"));
 const ChunksEditView = lazy(() => import("./components/chunks-edit"));
 const SourceEditView = lazy(() => import("./components/source-edit"));
 
 export function MineView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isMdScreen } = useBasicLayout();
-  const { isOpLocalEnv, isPrivatePremEnv } = useEnv();
   const navigationStore = useNavigationStore();
 
   // 版本权限判断
   const hasKnowledgeBase = navigationStore.hasKnowledge && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE);
-  const hasRecording = checkVersion(VERSION_MODULE.RECORDING);
 
   // Filter tab list based on version modules, navigation state and environment
   const filteredTabList = useMemo(() => {
@@ -59,18 +50,8 @@ export function MineView() {
       tabs = tabs.filter((tab) => !["fav", "visit"].includes(tab.value));
     }
 
-    // 我的录音：RECORDING
-    if (!hasRecording) {
-      tabs = tabs.filter((tab) => tab.value !== "audio");
-    }
-
-    // 环境判断（op-local 和 private-prem 不显示录音）
-    if (isOpLocalEnv || isPrivatePremEnv) {
-      tabs = tabs.filter((tab) => tab.value !== "audio");
-    }
-
     return tabs;
-  }, [isOpLocalEnv, isPrivatePremEnv, hasKnowledgeBase, hasRecording]);
+  }, [hasKnowledgeBase]);
 
   // 默认 tab 为过滤后的第一个
   const defaultTab = filteredTabList[0]?.value || "fav";
@@ -78,25 +59,6 @@ export function MineView() {
   // Tab state
   const [activeTab, setActiveTab] = useState<MineTabKey>(defaultTab);
   const [keyword, setKeyword] = useState("");
-
-  // Recording status
-  const recordingStatus = useRecordingStore((s) => s.status);
-  const hasActiveRecording = recordingStatus !== "idle";
-  const prevRecordingStatusRef = useRef(recordingStatus);
-  const [recordingConfig, setRecordingConfig] = useState<RecordingConfig | null>(null);
-
-  // Refresh list when recording stops (status changes to idle)
-  useEffect(() => {
-    if (prevRecordingStatusRef.current !== "idle" && recordingStatus === "idle") {
-      setRefreshKey((prev) => prev + 1);
-    }
-    prevRecordingStatusRef.current = recordingStatus;
-  }, [recordingStatus]);
-
-  // 判断是否显示录音按钮
-  const showRecordingButton = useMemo(() => {
-    return !isOpLocalEnv && !isPrivatePremEnv && hasRecording && !!recordingConfig?.enabled;
-  }, [isOpLocalEnv, isPrivatePremEnv, hasRecording, recordingConfig]);
 
   // Personal space context
   const {
@@ -130,9 +92,6 @@ export function MineView() {
   const existingFileNamesRef = useRef<string[]>([]);
   const existingFolderNamesRef = useRef<string[]>([]);
 
-  // Audio view ref
-  const audioViewRef = useRef<MineAudioViewRef>(null);
-
   // Rename modal state
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [renamingFile, setRenamingFile] = useState<PreviewFile | null>(null);
@@ -141,28 +100,6 @@ export function MineView() {
   // Create folder modal state
   const [createFolderModalVisible, setCreateFolderModalVisible] = useState(false);
   const [createFolderValue, setCreateFolderValue] = useState("");
-
-  // Audio import hook
-  const audioImport = useAudioImport({
-    ensureLibraryId,
-    currentPath,
-    onSuccess: () => setRefreshKey((prev) => prev + 1),
-  });
-
-  // 加载录音配置
-  const loadRecordingConfig = useCallback(async () => {
-    try {
-      const config = await recordingApi.getConfig();
-      setRecordingConfig(config);
-    } catch (e) {
-      console.error("Failed to load recording config:", e);
-    }
-  }, []);
-
-  // 初始化加载录音配置
-  useEffect(() => {
-    loadRecordingConfig();
-  }, [loadRecordingConfig]);
 
   // URL tab sync
   useEffect(() => {
@@ -399,11 +336,6 @@ export function MineView() {
     }
   }, [ensureLibraryId, currentPath, createFolderValue]);
 
-  // Create recording folder - delegate to audio view
-  const handleCreateRecordingFolder = useCallback(() => {
-    audioViewRef.current?.createFolder();
-  }, []);
-
   // 打开编辑器 - 通过 URL 参数跳转
   const handleOpenEditor = useCallback(() => {
     if (!previewFile) return;
@@ -513,7 +445,7 @@ export function MineView() {
           /\.(mp3|m4a|wav|flac|ogg|aac|webm)$/i.test(fullPath);
 
         if (isAudioFile) {
-          // 录音文件：使用 audio.tsx 的逻辑，保留原后缀
+          // 录音文件：保留原后缀
           const doubleExtMatch = fullPath.match(AUDIO_DOUBLE_EXT_REGEX);
           let ext: string;
 
@@ -612,18 +544,6 @@ export function MineView() {
             enableFavorite={hasKnowledgeBase}
           />
         );
-      case "audio":
-        return (
-          <MineAudioView
-            ref={audioViewRef}
-            keyword={keyword}
-            refreshKey={refreshKey}
-            fileRefreshKey={fileRefreshKey}
-            dirRefreshKey={dirRefreshKey}
-            onPreview={handleOpenPreview}
-            enableFavorite={hasKnowledgeBase}
-          />
-        );
       default:
         return <FavView keyword={keyword} onPreview={handleOpenPreview} refreshKey={refreshKey} />;
     }
@@ -654,13 +574,6 @@ export function MineView() {
                 uploadActions={activeTab === "upload" ? {
                   importMenuItems,
                   createMenuItems,
-                } : undefined}
-                audioActions={activeTab === "audio" ? {
-                  onImportFile: audioImport.handleImportFile,
-                  importing: audioImport.importing,
-                  hasActiveRecording,
-                  onCreateFolder: handleCreateRecordingFolder,
-                  onStartRecording: showRecordingButton ? () => useRecordingStore.getState().start(false) : undefined,
                 } : undefined}
               />
 
@@ -753,16 +666,6 @@ export function MineView() {
         onChange={setCreateFolderValue}
         onConfirm={handleCreateFolderConfirm}
         onCancel={() => setCreateFolderModalVisible(false)}
-      />
-
-      {/* Hidden file input for audio import */}
-      <input
-        type="file"
-        ref={audioImport.fileInputRef}
-        accept={AUDIO_ACCEPT}
-        multiple
-        onChange={audioImport.handleFileChange}
-        style={{ display: "none" }}
       />
     </div>
   );

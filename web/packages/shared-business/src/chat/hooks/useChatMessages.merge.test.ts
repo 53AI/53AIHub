@@ -30,8 +30,12 @@ function makeOpenClawMessage(overrides: Partial<Message> = {}): Message {
   } as Message;
 }
 
-describe("mergeOpenClawMessages — same-seq dedup", () => {
-  it("merges two messages with same _openclawTurnStartSeq but different ids, keeping incoming", () => {
+describe("mergeOpenClawMessages — fresh=true append semantics", () => {
+  it("preserves both messages when same seq but different ids and no optimistic/runtime identity on either side", () => {
+    // 旧实现里有 seq 兜底：当 stableKey / logicalKey 都失败时，会按 seq 配对，
+    // 导致 fresh=true 拉到的 "nihao" (seq=1) 把历史里同样 seq=1 的 row 吞掉。
+    // 新行为：fresh=true 是追加，不是替换。stableKey / logicalKey 两层都不匹配时
+    // （尤其是双方都缺 optimistic/runtime identity、logicalKey 不该被合并），两条独立保留。
     // Mirror-source: stale snapshot, different id format
     const mirrorMessage = makeOpenClawMessage({
       id: "turn:agent:main:main:legacy:1:assistant",
@@ -45,13 +49,17 @@ describe("mergeOpenClawMessages — same-seq dedup", () => {
       },
     } as Partial<Message>);
 
-    // Openclaw-source: fresh revalidation, same logical turn
+    // Openclaw-source: fresh revalidation, same logical turn but completed (no optimistic)
     const openclawMessage = makeOpenClawMessage();
 
     const result = mergeOpenClawMessages([mirrorMessage], [openclawMessage]);
 
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("agent:main:main:assistant:2");
+    // 两条独立保留：mirror 的 stale 快照不会因为 fresh 来了就被吞
+    expect(result).toHaveLength(2);
+    expect(result.map((m) => String(m.id))).toEqual([
+      "turn:agent:main:main:legacy:1:assistant",
+      "agent:main:main:assistant:2",
+    ]);
   });
 
   it("preserves both messages when their seqs differ", () => {

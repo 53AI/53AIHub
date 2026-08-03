@@ -192,6 +192,7 @@ export const CUSTOM_OPENAI_FORM_CONFIG: FormConfig[] = [
       { label: window.$t('model.reasoning'), value: '1' },
       { label: window.$t('model.embedding'), value: '2' },
       { label: window.$t('model.rerank'), value: '3' },
+      { label: window.$t('model.voice'), value: '4' },
     ],
   },
   {
@@ -231,6 +232,7 @@ export const CUSTOM_OPENAI_FORM_CONFIG: FormConfig[] = [
     default: DEFAULT_CONTEXT_LENGTH,
     min: 1,
     max: CONTEXT_LENGTH_LIMIT,
+    showWhen: (form: any) => form.model_type !== '4',
   },
   // // 最大token上限
   // {

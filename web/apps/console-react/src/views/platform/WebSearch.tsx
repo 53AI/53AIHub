@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Button, Drawer, Modal, Form, Input, Empty, message } from "antd";
+import { Button, Drawer, Modal, Form, Input, Empty, message, Tooltip } from "antd";
+import { SvgIcon } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
@@ -18,6 +19,7 @@ const formatSecret = (value: string) => {
 export function PlatformWebSearch() {
   const [isLoading, setIsLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [showAccessDrawer, setShowAccessDrawer] = useState(false);
   const [showBochaDialog, setShowBochaDialog] = useState(false);
   const [bochaSetting, setBochaSetting] = useState<PlatformSetting | null>(
@@ -36,11 +38,18 @@ export function PlatformWebSearch() {
     }
   };
 
-  const handleTest = () => {
-    if (bochaSetting?.id) {
-      platformSettingsApi.test(bochaSetting.id, BOCHA_PLATFORM_KEY).then(() => {
-        message.success(`测试成功，「${BOCHA_PLATFORM_NAME}」当前可正常使用`);
-      });
+  const handleTest = async () => {
+    if (!bochaSetting?.id || testing) return;
+    setTesting(true);
+    try {
+      await platformSettingsApi.test(bochaSetting.id, BOCHA_PLATFORM_KEY);
+      message.success(
+        t("platform.model_test_success", { platform: BOCHA_PLATFORM_NAME }),
+      );
+    } catch (error) {
+      console.error("Test error:", error);
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -55,14 +64,14 @@ export function PlatformWebSearch() {
 
   const handleDelete = async () => {
     Modal.confirm({
-      title: `确定删除「${BOCHA_PLATFORM_NAME}」配置吗？`,
+      title: t("platform.delete_config_confirm", { name: BOCHA_PLATFORM_NAME }),
       okText: t("action_confirm"),
       cancelText: t("action_cancel"),
       onOk: async () => {
         if (bochaSetting?.id) {
           await platformSettingsApi.delete(bochaSetting.id);
           setBochaSetting(null);
-          message.success("已删除");
+          message.success(t("action_delete_success"));
         }
       },
     });
@@ -90,7 +99,7 @@ export function PlatformWebSearch() {
           status: "enabled",
         });
       }
-      message.success("保存成功");
+      message.success(t("action_save_success"));
       setShowBochaDialog(false);
       loadBochaSetting();
     } catch (error) {
@@ -113,7 +122,7 @@ export function PlatformWebSearch() {
     <div className="h-full flex flex-col bg-white py-6 px-2">
       <div className="space-y-4">
         {isLoading ? null : bochaSetting && bochaSetting.id ? (
-          <div className="flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
+          <div className="group flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
             {/* 左侧：图标和名称 */}
             <div className="flex-none w-[170px] flex items-center gap-3">
               <img
@@ -137,20 +146,30 @@ export function PlatformWebSearch() {
               </div>
             </div>
 
-            {/* 右侧：开关和操作按钮 */}
-            <div className="flex items-center gap-4 ml-2">
-              <div className="border-r h-3 w-px"></div>
-              <div className="flex items-center">
-                <Button type="link" onClick={handleTest}>
-                  {t("action_test")}
-                </Button>
-                <Button type="link" onClick={handleEdit}>
-                  {t("action_edit")}
-                </Button>
-                <Button type="link" onClick={handleDelete}>
-                  {t("action_delete")}
-                </Button>
-              </div>
+            {/* 右侧：操作按钮 */}
+            <div className="flex items-center gap-2 ml-2">
+              <Tooltip title={t("action_test")}>
+                <Button
+                  type="text"
+                  icon={<SvgIcon name="tool" />}
+                  className="invisible group-hover:visible hover:!text-brand"
+                  loading={testing}
+                  onClick={handleTest}
+                />
+              </Tooltip>
+              <Button
+                type="text"
+                icon={<SvgIcon name="edit" />}
+                className="invisible group-hover:visible hover:!text-brand"
+                onClick={handleEdit}
+              />
+              <Button
+                type="text"
+                danger
+                icon={<SvgIcon name="delete" />}
+                className="invisible group-hover:visible hover:!text-tag-red"
+                onClick={handleDelete}
+              />
             </div>
           </div>
         ) : (

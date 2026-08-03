@@ -6,6 +6,7 @@ import type {
   OutputFile,
 } from "../types/message";
 import { buildOpenClawActivity, mergeOpenClawActivities } from "./openclaw-activities";
+import { decodeOutputFile } from "./openclaw-transport";
 import {
   buildOpenClawAnswerTimelineItem,
   buildOpenClawOutputFilesTimelineItem,
@@ -456,7 +457,8 @@ function normalizeLedgerOutputFile(value: unknown): OutputFile | null {
   const signedDownloadUrl = readString(file.signed_download_url) || readString(file.signedDownloadUrl);
   const rawUrl = readString(file.url) || readString(file.href);
   const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : "") || signedDownloadUrl || downloadUrl;
-  const id = (file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url) || fileName;
+  const decoded = decodeOutputFile(value);
+  const id = decoded?.id ?? url ?? fileName;
   if (id == null && !url && !fileName) return null;
 
   return {

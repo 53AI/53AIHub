@@ -35,6 +35,7 @@ const DATA_PIPELINE_KEYS: readonly KeyRow[] = [
   ['data_pipeline.section_title', '数据管线', '數據管線', 'Data Pipeline', 'データパイプライン'],
   ['data_pipeline.graph_template_required', '请先选择图谱模板', '請先選擇圖譜模板', 'Please select a graph template first', 'グラフテンプレートを選択してください'],
   ['data_pipeline.no_config_available', '暂无配置', '暫無配置', 'No config available', '設定なし'],
+  ['data_pipeline.chunk_specified_identifier_tip', '可输入自定义标识符，回车添加,可輸入自訂標識符', 'Enter 添加,Type and press Enter to add a custom identifier', 'カスタム識別子を入力し Enter で追加'],
 
   // Node 节点
   ['data_pipeline.node_config', '节点配置', '節點配置', 'Node Config', 'ノード設定'],
@@ -44,6 +45,7 @@ const DATA_PIPELINE_KEYS: readonly KeyRow[] = [
   ['data_pipeline.node_graph_generation', '图谱生成', '圖譜生成', 'Graph Generation', 'グラフ生成'],
   ['data_pipeline.node_summary_generation', '生成摘要', '生成摘要', 'Summary Generation', '要約生成'],
   ['data_pipeline.node_vector_indexing', '向量索引', '向量索引', 'Vector Indexing', 'ベクトル索引'],
+  ['data_pipeline.node_wiki_page_generation', 'Wiki 生成', 'Wiki 生成', 'Wiki Generation', 'Wiki 生成'],
 
   // Node 描述
   ['data_pipeline.node_desc_content_cleaning', '规整文本，去冗余、修格式', '規整文本，去冗餘、修格式', 'Normalize text, remove redundancy, fix format', 'テキストを正規化し、冗長を除去、フォーマットを修正'],

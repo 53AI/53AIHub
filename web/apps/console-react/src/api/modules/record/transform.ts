@@ -21,6 +21,9 @@ export const KnowledgeTypeContent = {
   [KNOWLEDGE_TYPE.KNOWLEDGE_BASE]: window.$t('search-record.all_knowledge_base'),
   [KNOWLEDGE_TYPE.WEB]: window.$t('search-record.online_search'),
   [KNOWLEDGE_TYPE.SPECIFIED_KNOWLEDGE_BASE]: window.$t('search-record.specified_knowledge_base'),
+  [KNOWLEDGE_TYPE.HYBRID_WIKI]: window.$t('search-record.hybrid_wiki'),
+  [KNOWLEDGE_TYPE.ALL_WIKI]: window.$t('search-record.all_wiki'),
+  [KNOWLEDGE_TYPE.SPECIFIED_WIKI]: window.$t('search-record.specified_wiki'),
 }
 
 export const transformRecordItem = (item: RecordItem): RecordDisplayItem => {

@@ -76,6 +76,7 @@ export interface RagJobWithSteps extends RagJobItem {
   completion_time: number
   steps: RagJobStep[]
   runtime_profile_json?: string
+  type: string
 }
 
 /**

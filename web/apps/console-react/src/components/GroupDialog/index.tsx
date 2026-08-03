@@ -1,4 +1,4 @@
-import { Modal, Button, Input, message } from "antd";
+import { Modal, Button, Input, message, Tooltip } from "antd";
 import { DeleteOutlined, HolderOutlined } from "@ant-design/icons";
 import {
   useState,
@@ -34,6 +34,7 @@ interface SortableItemProps {
   index: number;
   onRemove: (index: number) => void;
   onChange: (index: number, value: string) => void;
+  beforeRemove?: GroupDialogProps["beforeRemove"];
 }
 
 function SortableItem({
@@ -42,6 +43,7 @@ function SortableItem({
   index,
   onRemove,
   onChange,
+  beforeRemove,
 }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition } =
     useSortable({ id });
@@ -50,6 +52,32 @@ function SortableItem({
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  // 删除拦截原因（来自 beforeRemove，同步判断）
+  const [blockedMsg, setBlockedMsg] = useState<string | null>(() => {
+    // 初始化时同步判断，如果被拦截直接记录消息
+    return null;
+  });
+
+  // 渲染后检查 beforeRemove 同步结果
+  useEffect(() => {
+    if (beforeRemove) {
+      const result = beforeRemove(item);
+      if (typeof result === "object" && result && "blocked" in result && (result as any).blocked) {
+        setBlockedMsg((result as any).message || "无法删除");
+      }
+    }
+  }, [item, beforeRemove]);
+
+  const handleClickRemove = async () => {
+    const result = await onRemove(index);
+    // onRemove 返回拦截原因时，记录消息（用 Tooltip 展示）
+    if (typeof result === "string" && result) {
+      setBlockedMsg(result);
+    }
+  };
+
+  const isBlocked = !!blockedMsg;
 
   return (
     <div ref={setNodeRef} style={style} className="flex items-center">
@@ -65,18 +93,35 @@ function SortableItem({
           showCount
         />
       </div>
-      <DeleteOutlined
-        className="ml-4 cursor-pointer"
-        style={{ color: "rgba(24, 43, 80, 0.4)" }}
-        onClick={() => onRemove(index)}
-      />
+      <Tooltip title={blockedMsg || ""} open={isBlocked ? undefined : false}>
+        <span className="ml-4 inline-flex">
+          <DeleteOutlined
+            className={isBlocked ? "cursor-not-allowed" : "cursor-pointer"}
+            style={{ color: isBlocked ? "rgba(24, 43, 80, 0.25)" : "rgba(24, 43, 80, 0.4)" }}
+            onClick={isBlocked ? undefined : handleClickRemove}
+          />
+        </span>
+      </Tooltip>
     </div>
   );
 }
 
 export interface GroupDialogProps {
   groupType: GroupType;
-  beforeRemove?: (data: Group) => boolean | Promise<boolean>;
+  /**
+   * 删除前的拦截回调
+   * - 返回 `true` / `void`：允许删除
+   * - 返回 `false`：阻止删除，不显示气泡（兼容旧用法）
+   * - 返回 `{ blocked: true, message: string }`：阻止删除，并在删除按钮旁显示气泡提示
+   */
+  beforeRemove?: (
+    data: Group,
+  ) =>
+    | boolean
+    | void
+    | Promise<boolean | void>
+    | { blocked: true; message: string }
+    | Promise<{ blocked: true; message: string }>;
   onChange?: (result: { value: Group[] }) => void;
   /** 外部传入的分组数据，如果传入则不会自动加载 */
   options?: Group[];
@@ -157,18 +202,26 @@ export const GroupDialog = forwardRef<GroupDialogRef, GroupDialogProps>(
       ]);
     };
 
-    const handleRemove = async (index: number) => {
+    const handleRemove = async (index: number): Promise<string | void> => {
       const data = options[index];
       if (options.filter((item) => item.group_id).length === 1) {
         message.warning(t("group_min_one"));
-        return;
+        return t("group_min_one");
       }
 
-      let intercept = beforeRemove ? beforeRemove(data) : true;
-      if (intercept === false) return;
-      if (intercept instanceof Promise) {
-        const res = await intercept;
-        if (res === false) return;
+      if (beforeRemove) {
+        const intercept = await beforeRemove(data);
+        // beforeRemove 返回 { blocked: true, message } → 阻止删除并返回气泡消息
+        if (
+          intercept &&
+          typeof intercept === "object" &&
+          (intercept as any).blocked &&
+          typeof (intercept as any).message === "string"
+        ) {
+          return (intercept as any).message as string;
+        }
+        // 兼容旧的 boolean 返回
+        if (intercept === false) return;
       }
 
       deletedGroupList.current.push(data);
@@ -283,6 +336,7 @@ export const GroupDialog = forwardRef<GroupDialogRef, GroupDialogProps>(
                   index={index}
                   onRemove={handleRemove}
                   onChange={handleChange}
+                  beforeRemove={beforeRemove}
                 />
               ))}
             </SortableContext>

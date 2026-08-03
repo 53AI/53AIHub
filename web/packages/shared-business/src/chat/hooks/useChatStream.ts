@@ -37,6 +37,7 @@ import {
   rebaseOpenClawTurnStateConversation,
   syncOpenClawProjectionToMessage,
 } from "../utils/openclaw-turn";
+import { decodeOutputFile } from "../utils/openclaw-transport";
 
 // ============ 工具函数 ============
 
@@ -64,100 +65,6 @@ export function getIntentData(raw: unknown): IntentData | undefined {
     keywords: Array.isArray(r.keywords) ? r.keywords.map(String) : undefined,
     answer: r.answer != null ? String(r.answer) : undefined,
     expanded_queries: r.expanded_queries,
-  };
-}
-
-function isOpenClawStreamDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function hashOpenClawStreamText(value?: string | null): string {
-  const text = String(value || "");
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function traceOpenClawStream(label: string, payload: Record<string, unknown>) {
-  if (!isOpenClawStreamDebugEnabled()) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
-}
-
-function countOpenClawValues<T extends string>(values: T[]): Record<string, number> {
-  return values.reduce<Record<string, number>>((counts, value) => {
-    const key = value || "unknown";
-    counts[key] = (counts[key] || 0) + 1;
-    return counts;
-  }, {});
-}
-
-function summarizeOpenClawStreamChunk(data: any, streamPayload: any): Record<string, unknown> {
-  const payload = getOpenClawEventPayload(data);
-  const ledger = readOpenClawLedgerRecord(payload);
-  const delta = streamPayload?.choices?.[0]?.delta || {};
-  const content = cleanStreamText(delta.content);
-  const reasoning = cleanStreamText(delta.reasoning_content);
-  return {
-    id: String(streamPayload?.id || data?.id || data?.data?.id || ""),
-    status: String(data?.status || data?.data?.status || streamPayload?.status || ""),
-    object: String(data?.object || data?.data?.object || streamPayload?.object || ""),
-    event_kind: getOpenClawEventKind(data),
-    finish_reason: String(streamPayload?.choices?.[0]?.finish_reason || ""),
-    session_id_hash: hashOpenClawStreamText(readOpenClawResolvedConversationId(data, streamPayload)),
-    ledger_event_type: String(ledger.event_type || ""),
-    ledger_part_type: String(ledger.part_type || ""),
-    ledger_operation: String(ledger.operation || ""),
-    ledger_visibility: String(ledger.visibility || ""),
-    ledger_seq: Number(ledger.seq || 0),
-    content_length: content.length,
-    content_hash: hashOpenClawStreamText(content),
-    reasoning_length: reasoning.length,
-    reasoning_hash: hashOpenClawStreamText(reasoning),
-    has_payload: Object.keys(payload).length > 0,
-  };
-}
-
-function summarizeOpenClawMessageProjectionTrace(message: Message): Record<string, unknown> {
-  const activities = message.openclawActivities || [];
-  const timelineItems = message.openclawTimelineItems || [];
-  const projection = message.openclawProjection;
-  const answer = message.answer || "";
-  const reasoning = message.reasoning_content || "";
-  return {
-    message_id: String(message.id || ""),
-    conversation_id_hash: hashOpenClawStreamText(String(message.conversation_id || "")),
-    active_request_id_hash: hashOpenClawStreamText(String(message._openclawActiveRequestId || "")),
-    client_message_id_hash: hashOpenClawStreamText(String(message._openclawClientMessageId || "")),
-    loading: Boolean(message.loading),
-    error: Boolean(message.error),
-    answer_length: answer.length,
-    answer_hash: hashOpenClawStreamText(answer),
-    reasoning_length: reasoning.length,
-    reasoning_hash: hashOpenClawStreamText(reasoning),
-    activity_count: activities.length,
-    activity_kind_counts: countOpenClawValues(activities.map((item) => String(item.kind || ""))),
-    timeline_count: timelineItems.length,
-    timeline_type_counts: countOpenClawValues(timelineItems.map((item) => String(item.type || ""))),
-    projection_activity_count: projection?.activities?.length || 0,
-    projection_timeline_count: projection?.timelineItems?.length || 0,
-    projection_answer_length: projection?.visibleAnswer?.length || 0,
-    projection_answer_hash: hashOpenClawStreamText(projection?.visibleAnswer || ""),
-    turn_status: String(message.openclawTurn?.status || ""),
-    turn_event_count: message.openclawTurn?.events?.length || 0,
-    turn_max_seq: Number(message.openclawTurn?.maxSeq || 0),
   };
 }
 
@@ -570,7 +477,7 @@ function normalizeOutputFiles(value: unknown): OutputFile[] {
       const signedDownloadUrl = typeof file.signed_download_url === "string" ? file.signed_download_url : typeof file.signedDownloadUrl === "string" ? file.signedDownloadUrl : "";
       const rawUrl = typeof file.url === "string" ? file.url : typeof file.href === "string" ? file.href : "";
       const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : signedDownloadUrl || downloadUrl || undefined);
-      const id = file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url ?? fileName;
+      const id = decodeOutputFile(file)?.id ?? url ?? fileName;
       if (id == null && !url && !fileName) return null;
       return {
         id: id ?? `${url || ""}|${fileName || ""}`,
@@ -1317,15 +1224,6 @@ function findOpenClawActiveMessageIndex(messages: Message[], activeMessage: Mess
 
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       if (isOpenClawUnhydratedSameQuestionCandidate(messages[index], activeMessage)) {
-        traceOpenClawStream("active-message.merge-unhydrated-user", {
-          existingId: String(messages[index].id || ""),
-          activeId: String(activeMessage.id || ""),
-          conversationId: String(activeMessage.conversation_id || messages[index].conversation_id || ""),
-          activeClientId,
-          questionHash: hashOpenClawStreamText(getOpenClawMessageQuestion(activeMessage)),
-          existingStatus: String(messages[index].openclawTurn?.status || ""),
-          existingMaxSeq: readOpenClawMessageMaxSeq(messages[index]),
-        });
         return index;
       }
     }
@@ -1345,15 +1243,6 @@ function findOpenClawActiveMessageIndex(messages: Message[], activeMessage: Mess
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (isOpenClawUnhydratedSameQuestionCandidate(messages[index], activeMessage)) {
-      traceOpenClawStream("active-message.merge-unhydrated-user", {
-        existingId: String(messages[index].id || ""),
-        activeId: String(activeMessage.id || ""),
-        conversationId: String(activeMessage.conversation_id || messages[index].conversation_id || ""),
-        activeClientId,
-        questionHash: hashOpenClawStreamText(getOpenClawMessageQuestion(activeMessage)),
-        existingStatus: String(messages[index].openclawTurn?.status || ""),
-        existingMaxSeq: readOpenClawMessageMaxSeq(messages[index]),
-      });
       return index;
     }
   }
@@ -1641,15 +1530,6 @@ function mergeOpenClawTimelineEventsIntoMessageWithOptions(
       status: hasTerminalEvent ? "completed" : "streaming",
     });
     message.loading = !hasTerminalEvent;
-    traceOpenClawStream("ledger.bind-unhydrated-user", {
-      messageId: String(message.id || ""),
-      conversationId: targetConversationId,
-      turnId: firstLedgerTurnId,
-      activeRequestId: activeRequestId || "",
-      eventCount: events.length,
-      hasTerminalEvent,
-      questionHash: hashOpenClawStreamText(getOpenClawMessageQuestion(message)),
-    });
   }
 
   const previousAnswer = message.answer || "";
@@ -2035,32 +1915,6 @@ export function processStreamDataItem(
   }
   const { message_id } = data;
   const streamPayload = getStreamPayload(data);
-  const openClawTraceEnabled = Boolean(options?.openclaw && isOpenClawStreamDebugEnabled());
-  const openClawTraceBefore = openClawTraceEnabled
-    ? summarizeOpenClawMessageProjectionTrace(message)
-    : undefined;
-  const traceOpenClawProjection = (outcome: string) => {
-    if (!openClawTraceEnabled) return;
-    traceOpenClawStream("stream.chunk.projected", {
-      outcome,
-      chunk: summarizeOpenClawStreamChunk(data, streamPayload),
-      before: openClawTraceBefore,
-      after: summarizeOpenClawMessageProjectionTrace(message),
-      options: {
-        canonicalOnly: Boolean(options?.canonicalOnly),
-      },
-    });
-  };
-
-  if (openClawTraceEnabled) {
-    traceOpenClawStream("stream.chunk.in", {
-      chunk: summarizeOpenClawStreamChunk(data, streamPayload),
-      before: openClawTraceBefore,
-      options: {
-        canonicalOnly: Boolean(options?.canonicalOnly),
-      },
-    });
-  }
 
   if (options?.openclaw) {
     const resolvedConversationId = readOpenClawResolvedConversationId(data, streamPayload);
@@ -2095,7 +1949,6 @@ export function processStreamDataItem(
     if (message_id) {
       message.id = message_id;
     }
-    traceOpenClawProjection("structured-event");
     return;
   }
 
@@ -2109,21 +1962,18 @@ export function processStreamDataItem(
     if (options?.openclaw) {
       syncProjectedOpenClawMessage(message as MessageWithStreamState);
     }
-    traceOpenClawProjection("error");
     return;
   }
 
   if (options?.openclaw) {
     const eventKind = getOpenClawEventKind(data);
     if (options.canonicalOnly && eventKind && !isOpenClawRealtimeSupportEventKind(eventKind)) {
-      traceOpenClawProjection("canonical-skip-unsupported-event");
       return;
     }
     if (eventKind === "run.interrupted") {
       appendOpenClawActivity(message, eventKind, "本次运行已中断", data);
       markOpenClawInterrupted(message);
       syncProjectedOpenClawMessage(message as MessageWithStreamState);
-      traceOpenClawProjection("run-interrupted");
       return;
     }
     if (eventKind === "run.failed") {
@@ -2134,7 +1984,6 @@ export function processStreamDataItem(
       message.loading = false;
       message.answer = failureText;
       syncProjectedOpenClawMessage(message as MessageWithStreamState);
-      traceOpenClawProjection("run-failed");
       return;
     }
     if (isOpenClawToolEventKind(eventKind)) {
@@ -2143,7 +1992,6 @@ export function processStreamDataItem(
       if (!deltaText || isOpenClawToolPlaceholderThinkingText(deltaText)) {
         const payload = getOpenClawEventPayload(data);
         appendOpenClawActivity(message, eventKind, String(payload.summary || payload.content || ""), data);
-        traceOpenClawProjection("tool-placeholder");
         return;
       }
     }
@@ -2185,8 +2033,22 @@ export function processStreamDataItem(
     if (process_data.file_quotations) {
       message.rag_temp.file_quotations = process_data.file_quotations;
     }
-    if (message.rag_temp.document_search) {
+    if (process_data.wiki_page_quotations) {
+      message.rag_temp.wiki_page_quotations = process_data.wiki_page_quotations;
+    }
+    if (
+      message.rag_temp.document_search ||
+      message.rag_temp.document_quotations ||
+      message.rag_temp.file_quotations ||
+      message.rag_temp.wiki_page_quotations ||
+      (message.process_records || []).some(
+        (r: any) => r.step_code === "knowledge_search"
+      )
+    ) {
+      // DEBUG
       message.rag_stats = formatRagStats(message.rag_temp, message.process_records || []);
+    } else {
+      // DEBUG
     }
     message.rag_search_text = ps.message;
 
@@ -2241,7 +2103,6 @@ export function processStreamDataItem(
     ) {
       markOpenClawInterrupted(message);
       syncProjectedOpenClawMessage(message as MessageWithStreamState);
-      traceOpenClawProjection("finish-interrupted");
       return;
     }
     if (options?.openclaw && (finishReason === "error" || streamError)) {
@@ -2249,7 +2110,6 @@ export function processStreamDataItem(
       message.loading = false;
       message.answer = String(streamError?.message || rawContent || "OpenClaw 运行失败");
       syncProjectedOpenClawMessage(message as MessageWithStreamState);
-      traceOpenClawProjection("finish-error");
       return;
     }
 
@@ -2319,7 +2179,6 @@ export function processStreamDataItem(
           )
         ) {
           syncProjectedOpenClawMessage(message as MessageWithStreamState);
-          traceOpenClawProjection("answer-hidden-by-visibility");
           return;
         }
         appendOpenClawTurnEventsToMessage(message as MessageWithStreamState, [
@@ -2365,7 +2224,6 @@ export function processStreamDataItem(
   if (message_id) {
     message.id = message_id;
   }
-  traceOpenClawProjection("completed");
 }
 
 // ============ 文件下载 ============

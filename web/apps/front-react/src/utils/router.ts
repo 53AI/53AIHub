@@ -86,3 +86,45 @@ export function navigate(url: string, replace: boolean = false): void {
   // Dispatch popstate event for router to pick up
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
+
+/**
+ * 构造 Wiki 页面跳转 URL（统一在所有调用点使用，避免参数漂移）
+ *
+ * 输出形如：`{origin}/knowledge/wiki?space_id=xxx&sub=list&selected=yyy&vd-type=dynamicKnowledge`
+ *
+ * @param spaceId 空间 ID（必填；空字符串会被丢弃以保持 URL 干净）
+ * @param slug 页面 slug（必填）
+ */
+export function buildWikiPageUrl(spaceId: string, slug: string): string {
+  const search = new URLSearchParams()
+  if (spaceId) search.set('space_id', spaceId)
+  search.set('sub', 'list')
+  search.set('selected', slug)
+  search.set('vd-type', 'dynamicKnowledge')
+  return buildUrl(`/knowledge/wiki?${search.toString()}`)
+}
+
+/**
+ * 构造知识库文件跳转 URL（统一在所有调用点使用，避免参数漂移）
+ *
+ * 输出形如：`{origin}/library/{libraryId}/file/{fileId}?vd-type=knowledge[&chunk={chunkId}]`
+ *
+ * 返回带 origin 的完整 URL，与 `buildWikiPageUrl` 保持一致，方便直接用于
+ * `<a href>`、`navigate`、`window.open` 等。
+ *
+ * @param libraryId 知识库 ID（必填）
+ * @param fileId 文件 ID（必填）
+ * @param chunkId 可选的 chunk ID
+ */
+export function buildKnowledgeFileUrl(
+  libraryId: string,
+  fileId: string,
+  chunkId?: string,
+  isFolder?: boolean
+): string {
+  const search = new URLSearchParams()
+  search.set('vd-type', 'knowledge')
+  if (chunkId) search.set('chunk', chunkId)
+  const query = search.toString()
+  return buildUrl(`/library/${encodeURIComponent(libraryId)}/${isFolder ? 'folder' : 'file'}/${encodeURIComponent(fileId)}${query ? `?${query}` : ''}`)
+}

@@ -300,7 +300,7 @@ export function useRuleEditor({ rules, onSuccess }: UseRuleEditorOptions) {
       if (isCreating || !pipeline.id) {
         // 创建新管线
         const newPipeline = await ragPipelineApi.create({
-          name: editingRule.name?.trim() || "未命名管线",
+          name: editingRule.name?.trim() || t("cleaning_policy.untitled_pipeline"),
           icon: uploadedIcon,
           profile_json: pipeline.profile_json || { steps: [] },
         });

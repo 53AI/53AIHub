@@ -140,7 +140,7 @@ service.interceptors.response.use(
     if ([RESPONSE_CODE.FORBIDDEN_ERROR as number].includes(Number(data.code))) {
       return Promise.reject(data)
     }
-    if ([200, 201, 204].includes(response.status)) return response.data
+    if ([200, 201, 202, 204].includes(response.status)) return response.data
     throw new Error(response.status.toString())
   },
   async (error) => {

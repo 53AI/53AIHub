@@ -22,7 +22,7 @@ interface MapSettingProps {
 const SETTING_KEY = "km_knowledge_map_setting";
 
 const DEFAULT_SETTINGS = {
-  name: "知识地图",
+  name: t("knowledge_map.default_name"),
   logo: "",
   description: "",
   model: "",
@@ -121,7 +121,7 @@ export const MapSetting = forwardRef<MapSettingRef, MapSettingProps>(
       const data = deepCopy(currentForm);
       if (!noverify) {
         if (!getLogicValue()) {
-          message.error("请选择生成模型");
+          message.error(t("knowledge_map.select_model_tip"));
           return;
         }
       } else {

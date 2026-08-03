@@ -149,7 +149,7 @@ export function ModelSelect({
   return (
     <Select
       className={className}
-      value={value}
+      value={value || undefined}
       onChange={handleChange}
       options={selectOptions}
       placeholder={placeholder}

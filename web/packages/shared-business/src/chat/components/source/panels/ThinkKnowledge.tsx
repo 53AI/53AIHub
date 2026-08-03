@@ -22,14 +22,20 @@ export interface SearchResultItem {
   library_id?: string;
   library_name?: string;
   library_icon?: string;
+  space_id?: string;
+  slug?: string
+  title?: string
   space_name?: string;
   created_at?: string;
-  chunk_type?: string;
+  chunk_type?: ChunkType;
   graph?: {
     entities?: any[];
     relations?: any[];
   };
   chunk_id?: string;
+  url?: string;
+  wiki_page_id?: string;
+  source_type?: string;
 }
 
 interface DrawerComponentProps {
@@ -46,6 +52,11 @@ interface KnowledgeGraphDrawerRef {
   close?: () => void;
 }
 
+interface KnowledgeWikiDrawerRef {
+  open: (params: { space_id: string; slug: string }) => void;
+  close?: () => void;
+}
+
 export interface ThinkKnowledgeProps {
   onClose?: () => void;
   onItemClick?: (item: SearchResultItem, index: number) => void;
@@ -53,6 +64,7 @@ export interface ThinkKnowledgeProps {
   slots?: {
     KnowledgeViewDrawer?: React.ComponentType<DrawerComponentProps & { ref?: React.Ref<KnowledgeViewDrawerRef> }>;
     KnowledgeGraphDrawer?: React.ComponentType<DrawerComponentProps & { ref?: React.Ref<KnowledgeGraphDrawerRef> }>;
+    KnowledgeWikiDrawer?: React.ComponentType<DrawerComponentProps & { ref?: React.Ref<KnowledgeWikiDrawerRef> }>;
   };
   /** adapter - 获取静态资源路径 */
   getPublicPath?: (path: string) => string;
@@ -63,9 +75,12 @@ export interface ThinkKnowledgeRef {
   selectItem: (libraryInfo: SearchResultItem) => void;
 }
 
-const isGraphSearch = (chunkType?: string) => chunkType === "graph_result";
-const isRagSearch = (chunkType?: string) =>
-  !["web_search", "web_page"].includes(chunkType || "");
+import type { ChunkType } from "../../../types/message";
+
+const isGraphSearch = (chunkType?: ChunkType) => chunkType === "graph_result";
+const isWikiSearch = (chunkType?: ChunkType) => chunkType === "wiki";
+const isRagSearch = (chunkType?: ChunkType) =>
+  !(["web_search", "web_page", "wiki"] as ChunkType[]).includes(chunkType as ChunkType);
 
 export const ThinkKnowledge = forwardRef<
   ThinkKnowledgeRef,
@@ -84,9 +99,11 @@ export const ThinkKnowledge = forwardRef<
   // Drawer refs - 使用 slot 组件
   const knowledgeViewDrawerRef = useRef<KnowledgeViewDrawerRef>(null);
   const knowledgeGraphDrawerRef = useRef<KnowledgeGraphDrawerRef>(null);
+  const knowledgeWikiDrawerRef = useRef<KnowledgeWikiDrawerRef>(null);
 
   const KnowledgeViewDrawer = slots?.KnowledgeViewDrawer;
   const KnowledgeGraphDrawer = slots?.KnowledgeGraphDrawer;
+  const KnowledgeWikiDrawer = slots?.KnowledgeWikiDrawer;
 
   const handleClose = useCallback(() => {
     setSelectedIndex(-1);
@@ -102,6 +119,18 @@ export const ThinkKnowledge = forwardRef<
       if (isGraphSearch(item.chunk_type)) {
         knowledgeViewDrawerRef.current?.close?.();
         knowledgeGraphDrawerRef.current?.open({ graph: item.graph });
+      } else if (isWikiSearch(item.chunk_type)) {
+        knowledgeViewDrawerRef.current?.close?.();
+        knowledgeGraphDrawerRef.current?.close?.();
+        // 动态知识：打开 wiki 详情 drawer，按需回退到 URL
+        if (KnowledgeWikiDrawer && item.space_id && item.slug) {
+          knowledgeWikiDrawerRef.current?.open({
+            space_id: item.space_id,
+            slug: item.slug,
+          });
+        } else if (item.url) {
+          window.open(item.url, "_blank", "noopener,noreferrer");
+        }
       } else if (isRagSearch(item.chunk_type)) {
         knowledgeGraphDrawerRef.current?.close?.();
         knowledgeViewDrawerRef.current?.open({ file_id: item.file_id! });
@@ -111,14 +140,25 @@ export const ThinkKnowledge = forwardRef<
       setSelectedIndex(index);
       onItemClick?.(item, index);
     },
-    [onItemClick],
+    [onItemClick, KnowledgeWikiDrawer],
   );
 
   useImperativeHandle(
     ref,
     () => ({
       updateResults: (results: SearchResultItem[]) => {
-        setSearchResults(results);
+        // 仅对 chunk_type === 'wiki' 的条目按 wiki_page_id 去重（保留首次），其他类型原样保留
+        const list = (results || []) as SearchResultItem[];
+        const seenWiki = new Set<string>();
+        const deduped = list.filter((item) => {
+          if (!isWikiSearch(item.chunk_type)) return true;
+          const id = item.wiki_page_id;
+          if (!id) return true;
+          if (seenWiki.has(id)) return false;
+          seenWiki.add(id);
+          return true;
+        });
+        setSearchResults(deduped);
         setSelectedIndex(-1);
       },
       selectItem: (libraryInfo: SearchResultItem) => {
@@ -129,7 +169,7 @@ export const ThinkKnowledge = forwardRef<
         // 先检查是否是 graph_result 类型
         const graphIndex = latestResults.findIndex(
           (item: SearchResultItem) =>
-            item.chunk_type === "graph_result" &&
+            isGraphSearch(item.chunk_type) &&
             item.graph &&
             libraryInfo.graph &&
             (item.chunk_id === libraryInfo.chunk_id ||
@@ -139,6 +179,19 @@ export const ThinkKnowledge = forwardRef<
         if (graphIndex !== -1) {
           setSelectedIndex(graphIndex);
           handleItemClick(latestResults[graphIndex], graphIndex);
+          return;
+        }
+        // 动态知识（wiki）：通过 wiki_page_id 查找
+        const wikiIndex = latestResults.findIndex(
+          (item: SearchResultItem) =>
+            isWikiSearch(item.chunk_type) &&
+            isWikiSearch(libraryInfo.chunk_type) &&
+            !!item.wiki_page_id &&
+            item.wiki_page_id === libraryInfo.wiki_page_id
+        );
+        if (wikiIndex !== -1) {
+          setSelectedIndex(wikiIndex);
+          handleItemClick(latestResults[wikiIndex], wikiIndex);
           return;
         }
         // 对于普通 source，通过 chunk_id 或 file_id 查找
@@ -158,8 +211,9 @@ export const ThinkKnowledge = forwardRef<
 
   // 提取图谱结果
   const graphResults = useMemo(() => {
-    return searchResults.filter((item) => item.chunk_type === "graph_result");
+    return searchResults.filter((item) => isGraphSearch(item.chunk_type));
   }, [searchResults]);
+  
 
   // 计算图谱统计
   const graphStats = useMemo(() => {
@@ -290,7 +344,33 @@ export const ThinkKnowledge = forwardRef<
                     className={` rounded-lg p-3 hover:bg-[#DCE6FF] cursor-pointer group ${originalIndex === selectedIndex ? "bg-[#DCE6FF]" : "bg-[#F8F8F8]"}`}
                     onClick={() => handleItemClick(item, originalIndex)}
                   >
-                    {isRagSearch(item.chunk_type) ? (
+                    {isWikiSearch(item.chunk_type) ? (
+                      <>
+                        <div className="flex items-start gap-2">
+                          <div className="flex-shrink-0 size-5 rounded bg-[#EDF3FF] flex items-center justify-center text-[#2563EB]">
+                            <SvgIcon name="doc-detail" size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3
+                              className={`text-sm font-medium truncate ${originalIndex === selectedIndex ? "text-[#2563EB]" : "text-[#1D1E1F]"}`}
+                            >
+                              {item.title}
+                            </h3>
+                          </div>
+                        </div>
+                        {item.content && (
+                          <p className="text-sm text-[#4F5052] mt-2 line-clamp-2">
+                            {item.content}
+                          </p>
+                        )}
+                        <div className="flex items-center justify-between text-xs text-[#999999] mt-2">
+                          <span>
+                            {item.space_name && `${item.space_name}`}
+                          </span>
+                          {item.created_at && <span>{item.created_at}</span>}
+                        </div>
+                      </>
+                    ) : isRagSearch(item.chunk_type) ? (
                       <>
                         <div className="flex items-start gap-2">
                           <div className="flex-shrink-0">
@@ -364,6 +444,12 @@ export const ThinkKnowledge = forwardRef<
       {KnowledgeGraphDrawer && (
         <KnowledgeGraphDrawer
           ref={knowledgeGraphDrawerRef as any}
+          onClose={onViewDrawer}
+        />
+      )}
+      {KnowledgeWikiDrawer && (
+        <KnowledgeWikiDrawer
+          ref={knowledgeWikiDrawerRef as any}
           onClose={onViewDrawer}
         />
       )}

@@ -6,7 +6,7 @@ import { getSimpleDateFormatString } from "@km/shared-utils";
 import { BubbleUser } from "@km/hub-ui-x-react";
 import { MessageMenu } from "../MessageMenu";
 import { SpecifiedFiles } from "../source";
-import type { Message, ChatMessagesFeatures, FileItem } from "../../types/message";
+import type { Message, ChatMessagesFeatures } from "../../types/message";
 import type { FileActionFeature, ChatMessagesSlots } from "../ChatMessages/types";
 
 // === Main Props ===
@@ -91,21 +91,25 @@ function UserMessageInner({
     }
   }, [isShareMode, fileAction]);
 
-  const handleFileClick = useCallback((file: FileItem) => {
-    fileAction?.onClick?.(file);
-  }, [fileAction]);
-
   // 解析后的内容
   const parsedContent = useMemo(() => parseMessageContent(message), [message]);
 
   // 合并 specified_files 和 uploaded_files
   const specifiedFiles = useMemo(() => {
-    const files = [
-      ...(message.specified_files || []),
-      ...(message.uploaded_files || []),
-    ];
-    return files;
-  }, [message.specified_files, message.uploaded_files]);
+    const specified_files = (message.specified_files  || [])
+
+
+    return specified_files;
+  }, [message.specified_files]);
+
+  const uploadedFiles = useMemo(() => {
+    const specified_files = (message.specified_files  || [])
+    const uploaded_files = (message.uploaded_files || []).filter(item => {
+      return !(specified_files.find(file => file.id === item.id))
+    })
+    return uploaded_files;
+  }, [message.specified_files, message.uploaded_files])
+
 
   // 渲染技能标签（数据驱动：有 skill 数据就显示）
   const renderSkillTag = () => {
@@ -125,7 +129,6 @@ function UserMessageInner({
     return (
       <SpecifiedFiles
         files={specifiedFiles}
-        onFileClick={handleFileClick}
         renderLink={slots?.fileLink ? (file, children) => slots.fileLink!({ file, children }) : undefined}
       />
     );
@@ -157,7 +160,7 @@ function UserMessageInner({
 
         <BubbleUser
           content={parsedContent}
-          files={message.uploaded_files}
+          files={uploadedFiles}
           avatar={userAvatar}
           className={className}
           style={{

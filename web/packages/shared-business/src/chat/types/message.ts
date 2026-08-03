@@ -215,6 +215,17 @@ export interface OpenClawTurnProjection {
   isStreaming?: boolean;
 }
 
+/** RAG 来源的 chunk 类型（FileItem.chunk_type / ChunkItem.chunk_type 字段） */
+export type ChunkType =
+  | 'web_search'
+  | 'web_page'
+  | 'knowledge'
+  | 'knowledge_search'
+  | 'summary'
+  | 'knowledge_map'
+  | 'graph_result'
+  | 'wiki';
+
 // ============================================================================
 // 文件类型
 // ============================================================================
@@ -240,10 +251,14 @@ export interface FileItem {
   isfolder?: boolean;
   isspace?: boolean;
   islibrary?: boolean;
+  iswiki?: boolean;
+  title?: string;
+  slug?: string;
   is_favorite?: boolean;
-  chunk_type?: string;
+  chunk_type?: ChunkType;
   source_key?: string;
   source?: string;
+  type?: 'wiki' | null
 }
 
 /** 输出文件 */
@@ -302,7 +317,7 @@ export interface GraphData {
 /** 知识库引用片段 */
 export interface ChunkItem {
   chunk_id?: string;
-  chunk_type?: string;
+  chunk_type?: ChunkType;
   content?: string;
   file_id?: string | number;
   file_name?: string;
@@ -310,10 +325,15 @@ export interface ChunkItem {
   file_icon?: string;
   library_id?: string | number;
   library_name?: string;
+  library_icon?: string;
   source_key?: string;
   source?: string;
+  source_type?: string;
+  space_id?: string;
+  space_name?: string;
   score?: number;
   url?: string;
+  wiki_page_id?: string;
   graph?: GraphData;
 }
 
@@ -498,41 +518,6 @@ export interface AssistantMessageOpenClaw extends BaseMessage, FeedbackState, Me
  */
 export type Message = UserMessage | AssistantMessageNormal | AssistantMessageOpenClaw;
 
-/**
- * 兼容性消息类型
- * 用于向后兼容现有代码，包含所有可能的字段
- * @deprecated 请使用 Message 联合类型
- */
-export interface LegacyMessage extends BaseMessage, FeedbackState, MessageUIState {
-  // 用户消息字段
-  question?: string;
-  original_question?: string;
-  uploaded_files?: FileItem[];
-  specified_files?: FileItem[];
-  user_files?: FileItem[];
-  skill?: SkillInfo;
-  raw_user_message?: any;
-
-  // 助手消息字段
-  answer?: string;
-  content?: string;
-  reasoning_content?: string;
-  outputFiles?: OutputFile[];
-  rag_stats?: RagStats;
-  process_records?: ProcessRecord[];
-  skillRunItems?: SkillRunItem[];
-  raw_assistant_message?: any;
-
-  // OpenClaw 字段
-  openclawActivities?: OpenClawActivityItem[];
-  openclawTimelineItems?: OpenClawTimelineItem[];
-  openclawTurn?: OpenClawTurnState;
-  openclawProjection?: OpenClawTurnProjection;
-  _openclawTurnStartSeq?: number;
-  _openclawClientMessageId?: string | number;
-  _openclawActiveRequestId?: string | number;
-}
-
 // ============================================================================
 // 其他类型
 // ============================================================================
@@ -546,13 +531,39 @@ export interface SendMessageOptions {
   completion_params?: Record<string, any>;
   messageList?: Message[];
   links?: SpecifiedFile[];
-  networkSearch?: boolean;
-  knowledgeGraph?: boolean;
+  /**
+   * 选中的动态知识（空间和页面混合数组，与 links 同级，用于 UI 展示和 wiki_search_config 构建）
+   */
+  wikis?: Array<{
+    id: string
+    name: string
+    wikiType?: 'space' | 'page'
+    icon?: string
+    title?: string
+    slug?: string
+    summary?: string
+    space_id?: string
+  }>;
+  /**
+   * 知识源配置（直通模式）
+   * 与 agent-create/useAgentPreviewSender 的 KnowledgeSourceConfig 对齐
+   * 包含 state + 三个启用标志
+   */
+  knowledgeSource?: {
+    state: {
+      allKnowledge: boolean
+      networkSearch: boolean
+      knowledgeGraph: boolean
+      wiki: boolean
+    }
+    graphEnabled: boolean
+    webSearchEnabled: boolean
+    wikiEnabled: boolean
+  }
   library?: { value?: Array<string | number> };
   agentInfo?: any;
   files?: any[];
   fileInfo?: any;
-  allKnowledge?: boolean;
   options?: {
     prompt?: string;
     text?: string;
@@ -582,20 +593,6 @@ export interface ChatMessagesFeatures {
     addAsMd?: boolean;
     feedback?: boolean;
   };
-  /** @deprecated 数据驱动渲染 */
-  outputFiles?: boolean;
-  /** @deprecated 数据驱动渲染 */
-  fileFavorite?: boolean;
-  /** @deprecated 数据驱动渲染 */
-  sourceRef?: boolean;
-  /** @deprecated 数据驱动渲染 */
-  processFlow?: boolean;
-  /** @deprecated 数据驱动渲染 */
-  specifiedFiles?: boolean;
-  /** @deprecated 不再需要类型配置 */
-  specifiedFilesType?: 'no_jump' | 'jump';
-  /** @deprecated 数据驱动渲染 */
-  skillTag?: boolean;
 }
 
 /** Source 引用数据 */
@@ -627,86 +624,4 @@ export function isOpenClawAssistantMessage(message: Message): message is Assista
 /** 判断是否为普通模式的助手消息 */
 export function isNormalAssistantMessage(message: Message): message is AssistantMessageNormal {
   return message.role === 'assistant' && !message.openclawTurn && !message.openclawProjection;
-}
-
-// ============================================================================
-// 类型转换函数
-// ============================================================================
-
-/**
- * 将 LegacyMessage 转换为 Message
- * 根据 openclawTurn/openclawProjection 判断消息类型
- */
-export function convertLegacyMessage(msg: LegacyMessage): Message {
-  // 判断是否有 OpenClaw 数据
-  if (msg.openclawTurn || msg.openclawProjection) {
-    return {
-      id: msg.id,
-      conversation_id: msg.conversation_id,
-      time: msg.time,
-      role: 'assistant',
-      loading: msg.loading,
-      error: msg.error,
-      showErrorDetails: msg.showErrorDetails,
-      reasoning_expanded: msg.reasoning_expanded,
-      feedback_type: msg.feedback_type,
-      feedbackVisible: msg.feedbackVisible,
-      feedbackTypeOptions: msg.feedbackTypeOptions,
-      submitBtnDisabled: msg.submitBtnDisabled,
-      feedbackSuccessful: msg.feedbackSuccessful,
-      description: msg.description,
-      feedbackId: msg.feedbackId,
-      openclawActivities: msg.openclawActivities,
-      openclawTimelineItems: msg.openclawTimelineItems,
-      openclawTurn: msg.openclawTurn,
-      openclawProjection: msg.openclawProjection,
-      _openclawTurnStartSeq: msg._openclawTurnStartSeq,
-      _openclawClientMessageId: msg._openclawClientMessageId,
-      _openclawActiveRequestId: msg._openclawActiveRequestId,
-    } as AssistantMessageOpenClaw;
-  }
-
-  // 判断是否有用户消息字段（question 且没有 answer）
-  if (msg.question && !msg.answer && !msg.content) {
-    return {
-      id: msg.id,
-      conversation_id: msg.conversation_id,
-      time: msg.time,
-      role: 'user',
-      question: msg.question,
-      original_question: msg.original_question,
-      uploaded_files: msg.uploaded_files,
-      specified_files: msg.specified_files,
-      user_files: msg.user_files,
-      skill: msg.skill,
-      raw_user_message: msg.raw_user_message,
-    } as UserMessage;
-  }
-
-  // 默认为普通助手消息
-  return {
-    id: msg.id,
-    conversation_id: msg.conversation_id,
-    time: msg.time,
-    role: 'assistant',
-    answer: msg.answer,
-    content: msg.content,
-    reasoning_content: msg.reasoning_content,
-    loading: msg.loading,
-    error: msg.error,
-    showErrorDetails: msg.showErrorDetails,
-    reasoning_expanded: msg.reasoning_expanded,
-    outputFiles: msg.outputFiles,
-    rag_stats: msg.rag_stats,
-    process_records: msg.process_records,
-    skillRunItems: msg.skillRunItems,
-    raw_assistant_message: msg.raw_assistant_message,
-    feedback_type: msg.feedback_type,
-    feedbackVisible: msg.feedbackVisible,
-    feedbackTypeOptions: msg.feedbackTypeOptions,
-    submitBtnDisabled: msg.submitBtnDisabled,
-    feedbackSuccessful: msg.feedbackSuccessful,
-    description: msg.description,
-    feedbackId: msg.feedbackId,
-  } as AssistantMessageNormal;
 }

@@ -84,6 +84,8 @@ export interface IMessagesApi {
 export interface IChunkPopupApi {
   /** 获取 chunk 详情 */
   fetchChunkDetail(chunkId: string | number): Promise<{ content: string; token_count?: number; chunk_index?: number }>;
+  /** 获取动态知识 wiki 页面详情（/api/spaces/{space_id}/wiki/pages/{slug}） */
+  fetchWikiPageDetail?(chunk: any): Promise<{ content: string; token_count?: number; chunk_index?: number }>;
   /** Markdown 渲染 */
   renderMarkdown(element: HTMLDivElement, content: string): Promise<void>;
   /** 打开 chunk 所属知识库 */
@@ -110,8 +112,15 @@ export interface IFileDownloadApi {
 
 /** 平台工具方法（跨包通用，无具体业务语义） */
 export interface IPlatformContext {
-  /** 创建一个新会话（来自 useConversationStore） */
-  createConversation(agentId: string, title?: string, fileId?: string): Promise<{ conversation_id: string | number }>;
+  /**
+   * 创建一个新会话（v0.4.2 §3.2）：
+   * 通过 documentRef 传递 document_type + document_id，不再使用旧 fileId。
+   */
+  createConversation(
+    agentId: string,
+    title?: string,
+    documentRef?: { documentType?: 'file' | 'wiki'; documentId?: string }
+  ): Promise<{ conversation_id: string | number }>;
   /** i18n 翻译 */
   t(key: string, ...args: any[]): string;
   /** 顶部轻量提示（warn 级别） */
@@ -313,8 +322,12 @@ export function useKnowledgePanel(): OnOpenKnowledgePanel | undefined {
 export function buildLibraryUrl(
   config: ChatUrlConfig,
   libraryId: string | number | undefined | null,
-  fileId: string | number | undefined | null
+  fileId: string | number | undefined | null,
+  item: any
 ): string | null {
+  if (item && item.chunk_type === ('wiki' as const)) {
+    return `${config.frontUrl || ''}/knowledge/wiki?space_id=${ item.space_id }&selected=${ item.slug }`
+  }
   if (!libraryId || !fileId) return null;
 
   // 优先使用自定义函数
@@ -322,13 +335,8 @@ export function buildLibraryUrl(
     return config.buildLibraryUrl(libraryId, fileId);
   }
 
-  // 使用 frontUrl 前缀
-  if (config.frontUrl) {
-    return `${config.frontUrl}/library/${libraryId}/file/${fileId}`;
-  }
-
   // 默认相对路径（前台应用）
-  return `/library/${libraryId}/file/${fileId}`;
+  return `${config.frontUrl || ''}/library/${libraryId}/file/${fileId}`;
 }
 
 /** 获取适配器配置（可选：缺 provider 时返回 undefined） */

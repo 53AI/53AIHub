@@ -33,7 +33,6 @@ describe("output file preview callbacks", () => {
         messageList={[message]}
         agentInfo={agentInfo}
         isStreaming={false}
-        features={{ outputFiles: true }}
         fileAction={{ onPreview: onOutputFilePreview }}
       />
     );
@@ -67,7 +66,6 @@ describe("output file preview callbacks", () => {
         messageList={[message]}
         agentInfo={agentInfo}
         isStreaming={false}
-        features={{ outputFiles: true }}
       />
     );
 
@@ -123,7 +121,6 @@ describe("output file preview callbacks", () => {
         messageList={[message]}
         agentInfo={agentInfo}
         isStreaming={false}
-        features={{ outputFiles: true }}
         openclaw
         fileAction={{ onPreview: onOutputFilePreview }}
       />

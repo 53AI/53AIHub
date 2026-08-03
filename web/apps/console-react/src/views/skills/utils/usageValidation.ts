@@ -1,3 +1,5 @@
+import { t } from '@/locales'
+
 /** 质量评分项 */
 export interface QualityScore {
   key: string
@@ -15,11 +17,11 @@ export interface UsageItem {
 /** 验证规则 */
 export const validationRules = {
   usageSectionNames: {
-    quality_scores: '质量评分',
-    capabilities: '能做什么',
-    usage_example: '使用示例',
-    best_practice: '最佳实践',
-    faq: '常见问题',
+    quality_scores: 'skills.usage.quality_scores',
+    capabilities: 'skills.usage.capabilities',
+    usage_example: 'skills.usage.usage_example',
+    best_practice: 'skills.usage.best_practice',
+    faq: 'skills.usage.faq',
   } as Record<string, string>,
 }
 
@@ -56,6 +58,7 @@ export function validateUsageGuide(
   for (const [key, enabled] of Object.entries(usageSwitches)) {
     if (!enabled) continue
 
+    const sectionName = t(validationRules.usageSectionNames[key] || key)
     let hasContent = false
 
     if (key === 'quality_scores') {
@@ -63,7 +66,7 @@ export function validateUsageGuide(
       if (!hasContent) {
         return {
           valid: false,
-          message: `使用说明-${validationRules.usageSectionNames[key]}已启用，请填写评分`,
+          message: t('skills.usage.score_required', { section: sectionName }),
         }
       }
     } else if (key === 'best_practice') {
@@ -74,7 +77,7 @@ export function validateUsageGuide(
       if (!hasPositive && !hasNegative) {
         return {
           valid: false,
-          message: `使用说明-${validationRules.usageSectionNames[key]}已启用，请至少填写正面案例或反面案例`,
+          message: t('skills.usage.best_practice_required', { section: sectionName }),
         }
       }
     } else {
@@ -84,7 +87,7 @@ export function validateUsageGuide(
       if (!hasContent) {
         return {
           valid: false,
-          message: `使用说明-${validationRules.usageSectionNames[key]}已启用，请填写内容`,
+          message: t('skills.usage.content_required', { section: sectionName }),
         }
       }
     }

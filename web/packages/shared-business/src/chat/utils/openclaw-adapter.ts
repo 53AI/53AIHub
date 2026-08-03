@@ -1,5 +1,5 @@
 import type { ChatCompletionParams, ConversationControlParams, IConversationApi } from "../adapters/types";
-import type { OpenClawTurnEvent } from "../types";
+import type { OpenClawTurnEvent, OutputFile } from "../types";
 import {
   getOpenClawEventReasoningText,
   isOpenClawActivityEvent,
@@ -24,22 +24,9 @@ import {
   syncOpenClawProjectionToMessage,
 } from "./openclaw-turn";
 import { getOpenClawTimelineEventsFromLedgerPayload } from "./openclaw-ledger";
+import { decodeOutputFiles } from "./openclaw-transport";
 
 export const OPENCLAW_CONVERSATION_LIST_LIMIT = 10;
-
-function isOpenClawUiDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
 
 function hashOpenClawText(value?: string | null): string {
   const text = String(value || "");
@@ -49,11 +36,6 @@ function hashOpenClawText(value?: string | null): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function traceOpenClawUi(label: string, payload: Record<string, unknown>) {
-  if (!isOpenClawUiDebugEnabled()) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
 }
 
 export interface OpenClawPaginationParams {
@@ -213,6 +195,50 @@ function getMessageSeq(message?: OpenClawMessage | null): number {
   return match ? Number(match[1]) : 0;
 }
 
+/**
+ * 从消息 id 提取它所属的 turn 标识。
+ *
+ * 用途：消息流不保证按 createdAt 排序，orphan assistant（如
+ * `turn:agent:main:main:turn:1783499340404:assistant`）可能出现在其 user 之前。
+ * 仅靠 seq / 时间判定（assistantMessageBelongsToUserTurn）会把 orphan 错挂到上一个
+ * turn 的 user 上。一旦能可靠提取 turn key，就在合并前先用它匹配，seq/时间仅作为
+ * turn key 无法解析时的兜底。
+ *
+ * 解析规则（按消息 id 命名空间）：
+ * - `turn:<session>:<kind>:<id>:<role>` → `turn:<session>:<kind>:<id>`
+ * - `ws-<seq>:<role>` → `ws:<seq>`
+ * - 其它（恢复 / 派生消息）：返回 ""，回退到现有 seq/时间判定
+ */
+export function getOpenClawMessageTurnKey(message?: OpenClawMessage | null): string {
+  if (!message) return "";
+  const id = String(message.id || "");
+  if (!id) return "";
+
+  // turn:<session>:<kind>:<id>:<role> —— session 内部用 ":" 分段，kind 也可能含 ":"
+  // （如 ws kind 或 history kind），所以这里不强行限定 ":" 段数，用贪婪匹配。
+  const turnMatch = id.match(/^turn:(.+):(?:user|assistant)$/);
+  if (turnMatch) return `turn:${turnMatch[1]}`;
+
+  // ws-<seq>:<role>
+  const wsMatch = id.match(/^(ws-\d+):(?:user|assistant)$/);
+  if (wsMatch) return `ws:${wsMatch[1]}`;
+
+  return "";
+}
+
+/**
+ * 把任意输入归一化成"用于文本匹配的小写、空白折叠串"。
+ *
+ * 用在跨数据源的合并/挂载里：当 ws-* 原始帧的 user content 是整段 JSON 字符串、
+ * 而 ledger 事件里的 content 是解出来后的纯文本时，先各自归一化再比较，
+ * 才能让"内容相同"的判定不被尾随空格/换行干扰。
+ *
+ * 不做大小写转换（区分中英文大小写敏感场景），只折叠空白。
+ */
+export function normalizeOpenClawMergeText(value: unknown): string {
+  return String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+}
+
 function getEventSeq(event?: OpenClawTimelineEvent | null): number {
   return typeof event?.seq === "number" ? event.seq : 0;
 }
@@ -358,6 +384,39 @@ function isOpenClawInternalControlUserContent(content?: string | null): boolean 
   return normalized.startsWith(
     "an async command you ran earlier has completed. the result is shown in the system messages above. handle the result internally."
   );
+}
+
+/**
+ * 识别 ws-* 原始帧里的 user content：整段是 OpenAI ChatCompletionRequest body 的 JSON。
+ * 命中则把 `messages[0].content`（role 必须是 "user"）作为真正的 user 文本返回；
+ * 不命中返回 null，由上层原样保留 content。
+ *
+ * 守卫很严：必须有 `model` 字符串 + `messages[0].role === "user"`，避免误伤真实用户发的 JSON。
+ */
+function tryParseOpenClawRawChatCompletionFrame(content: string | null | undefined): string | null {
+  if (!content) return null;
+  const trimmed = String(content).trim();
+  if (!trimmed || trimmed[0] !== "{") return null;
+  if (trimmed.length > 32 * 1024) return null;
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  if (typeof parsed.model !== "string" || !parsed.model.trim()) return null;
+
+  const messages = Array.isArray(parsed.messages) ? parsed.messages : null;
+  if (!messages || messages.length !== 1) return null;
+
+  const firstMessage = messages[0];
+  if (!firstMessage || typeof firstMessage !== "object") return null;
+  if (firstMessage.role !== "user") return null;
+
+  const userText = typeof firstMessage.content === "string" ? firstMessage.content.trim() : "";
+  return userText || null;
 }
 
 function extractOpenClawSenderMetadataPrompt(content?: string | null): string {
@@ -548,10 +607,17 @@ function enrichOpenClawUserMessageFromEvents(
   userMessage: OpenClawMessage,
   events: OpenClawTimelineEvent[]
 ): OpenClawMessage {
-  return applyOpenClawUserEventSeqToMessage(
+  const seqEnriched = applyOpenClawUserEventSeqToMessage(
     userMessage,
     findOpenClawUserEventForMessage(events, userMessage)
   );
+
+  // ws-* 原始帧：把整段 ChatCompletionRequest JSON 还原成 user 文本
+  const parsedText = tryParseOpenClawRawChatCompletionFrame(seqEnriched.content);
+  if (parsedText !== null && parsedText !== seqEnriched.content) {
+    return { ...seqEnriched, content: parsedText };
+  }
+  return seqEnriched;
 }
 
 function findOpenClawUserEventForAssistant(
@@ -973,6 +1039,27 @@ function scoreCanonicalLedgerGroupForMessageTurn(
     score += 120;
   }
 
+  // 内容匹配 boost：ledger group 里有 user.message 事件，其 content 与 turn 的 user
+  // 内容一致时，给一个很重的加分（500）。这条规则用来压过时间启发式导致的错挂
+  // （例如 ws-17150 的内容 "✅ emoji 就是这个" 与 legacy:1 "✅ emoji 就是这个" 同时段，
+  // 仅靠时间会挂错；内容一致能让正确 group 胜出）。
+  //
+  // ws-* 原始帧里 turn.userMessage.content 是整段 ChatCompletionRequest JSON，需要先
+  // 解出 messages[0].content 再比对，否则 ledger user.message 的纯文本永远对不上。
+  const rawUserContent = String(turn.userMessage.content || "");
+  const unwrappedUserContent = tryParseOpenClawRawChatCompletionFrame(rawUserContent) || rawUserContent;
+  const userQuestion = normalizeOpenClawMergeText(unwrappedUserContent);
+  if (userQuestion) {
+    for (const event of group.events) {
+      if (!isOpenClawUserMessageEvent(event)) continue;
+      const eventContent = normalizeOpenClawMergeText(getOpenClawUserEventContent(event));
+      if (eventContent && eventContent === userQuestion) {
+        score += 500;
+        break;
+      }
+    }
+  }
+
   return Math.max(0, score);
 }
 
@@ -982,25 +1069,24 @@ function findCanonicalLedgerGroupForMessageTurn(
   messageTurns: OpenClawVisibleMessageTurn[],
   groups: CanonicalLedgerTurnGroup[],
   consumedGroups: Set<string>
-): CanonicalLedgerTurnGroup | null {
+): { group: CanonicalLedgerTurnGroup } | null {
   const scored = groups
-    .filter((group) => !consumedGroups.has(group.key))
-    .map((group) => ({
-      group,
-      score: scoreCanonicalLedgerGroupForMessageTurn(group, turn, messageTurns[index + 1]),
-    }))
-    .filter((candidate) => candidate.score > 0)
+    .map((group) => {
+      const score = scoreCanonicalLedgerGroupForMessageTurn(group, turn, messageTurns[index + 1]);
+      return { group, score };
+    })
+    .filter((candidate) => !consumedGroups.has(candidate.group.key) && candidate.score > 0)
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.group.firstSeq - right.group.firstSeq;
     });
 
   if (scored.length > 0) {
-    return scored[0]!.group;
+    return { group: scored[0]!.group };
   }
 
   if (messageTurns.length === 1 && groups.length === 1 && !consumedGroups.has(groups[0]!.key)) {
-    return groups[0]!;
+    return { group: groups[0]! };
   }
 
   return null;
@@ -1013,6 +1099,11 @@ function collectOpenClawVisibleMessageTurns(
   const turns: OpenClawVisibleMessageTurn[] = [];
   let pendingUserMessage: OpenClawMessage | null = null;
   let pendingAssistantMessage: OpenClawMessage | null = null;
+  // Orphan assistant 缓冲：消息流不保证 createdAt 顺序时，assistant 可能先于其 user
+  // 到达。挂到错误 turn 的 assistant 会在 flush 时污染上一个 user。先按 turnKey 收着，
+  // 等匹配的 user 出现再挂回去；同一 turn 内仍出现多个 assistant 时，沿用
+  // shouldReplaceOpenClawPendingAssistant 的"取更完整内容"语义。
+  const orphanAssistantByTurnKey = new Map<string, OpenClawMessage>();
 
   const flush = () => {
     if (!pendingUserMessage) return;
@@ -1038,6 +1129,16 @@ function collectOpenClawVisibleMessageTurns(
       flush();
       pendingUserMessage = enrichOpenClawUserMessageFromEvents(item, scopedEvents);
       pendingAssistantMessage = null;
+
+      // 之前到达的 orphan assistant 现在能挂回对应 turn 了。
+      const userTurnKey = getOpenClawMessageTurnKey(pendingUserMessage);
+      if (userTurnKey) {
+        const buffered = orphanAssistantByTurnKey.get(userTurnKey);
+        if (buffered && shouldReplaceOpenClawPendingAssistant(pendingAssistantMessage, buffered)) {
+          pendingAssistantMessage = buffered;
+          orphanAssistantByTurnKey.delete(userTurnKey);
+        }
+      }
       continue;
     }
 
@@ -1046,8 +1147,23 @@ function collectOpenClawVisibleMessageTurns(
         continue;
       }
 
+      const assistantTurnKey = getOpenClawMessageTurnKey(item);
+
       if (!pendingUserMessage) {
+        // 真孤儿（当前没有 pending user）：缓冲给可能稍后到达的 user。
+        if (assistantTurnKey) orphanAssistantByTurnKey.set(assistantTurnKey, item);
         continue;
+      }
+
+      // 关键判定：两条消息都解出了 turnKey 时，必须 turnKey 一致才挂载，
+      // 否则这是 orphan assistant（其 user 还在流后面），不能污染上一个 turn。
+      // 仅在 turnKey 无法解析时回退到原有的 seq/时间检查，避免破坏旧数据路径。
+      if (assistantTurnKey) {
+        const userTurnKey = getOpenClawMessageTurnKey(pendingUserMessage);
+        if (userTurnKey && userTurnKey !== assistantTurnKey) {
+          orphanAssistantByTurnKey.set(assistantTurnKey, item);
+          continue;
+        }
       }
 
       if (!assistantMessageBelongsToUserTurn(pendingUserMessage, item)) {
@@ -1078,31 +1194,20 @@ function buildOpenClawMessagesFromCanonicalLedger(
   }
 
   const consumedGroups = new Set<string>();
-  const matchTrace: Array<Record<string, unknown>> = [];
   const rows = messageTurns
     .map((turn, index) => {
-      const matchedGroup = findCanonicalLedgerGroupForMessageTurn(
+      const matchResult = findCanonicalLedgerGroupForMessageTurn(
         turn,
         index,
         messageTurns,
         ledgerGroups,
         consumedGroups
       );
+      const matchedGroup = matchResult?.group || null;
       const turnEvents = matchedGroup?.events || [];
       if (matchedGroup) {
         consumedGroups.add(matchedGroup.key);
       }
-      matchTrace.push({
-        index,
-        questionHash: hashOpenClawText(turn.userMessage.content),
-        questionLength: String(turn.userMessage.content || "").length,
-        assistantHash: hashOpenClawText(turn.assistantMessage?.content),
-        assistantLength: String(turn.assistantMessage?.content || "").length,
-        matched: Boolean(matchedGroup),
-        groupKeyHash: hashOpenClawText(matchedGroup?.key),
-        activeRequestHash: hashOpenClawText(matchedGroup?.activeRequestId),
-        groupEventCount: matchedGroup?.events.length || 0,
-      });
       const reasoning = collectReasoningFromEvents(turnEvents);
       const interrupted = turnEvents.some((event) => event.kind === "run.interrupted");
       return buildOpenClawMessageRow(
@@ -1116,15 +1221,6 @@ function buildOpenClawMessagesFromCanonicalLedger(
         options
       );
     });
-
-  traceOpenClawUi("canonical.match", {
-    conversationId,
-    messageTurnCount: messageTurns.length,
-    ledgerGroupCount: ledgerGroups.length,
-    matchedCount: consumedGroups.size,
-    unmatchedLedgerGroupCount: ledgerGroups.length - consumedGroups.size,
-    rows: matchTrace,
-  });
 
   return rows.filter(shouldKeepOpenClawMessageRow);
 }
@@ -1243,39 +1339,8 @@ function isOpenClawOutputFilesEvent(event?: OpenClawTimelineEvent | null): boole
   return step?.step_code === "output_files" && step?.status === "completed";
 }
 
-function normalizeOpenClawOutputFiles(value: unknown): any[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((file: any) => {
-      if (!file || typeof file !== "object") return null;
-      const fileName = file.file_name ?? file.fileName ?? file.filename ?? file.name;
-      const mimeType = file.mime_type ?? file.mimeType ?? file.mime;
-      const base64 = typeof file.base64 === "string" && file.base64.trim() ? file.base64.trim() : "";
-      const previewUrl = typeof file.preview_url === "string" ? file.preview_url : typeof file.previewUrl === "string" ? file.previewUrl : "";
-      const downloadUrl = typeof file.download_url === "string" ? file.download_url : typeof file.downloadUrl === "string" ? file.downloadUrl : "";
-      const signedDownloadUrl = typeof file.signed_download_url === "string" ? file.signed_download_url : typeof file.signedDownloadUrl === "string" ? file.signedDownloadUrl : "";
-      const rawUrl = typeof file.url === "string" ? file.url : typeof file.href === "string" ? file.href : "";
-      const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : signedDownloadUrl || downloadUrl || undefined);
-      const id = file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url ?? fileName;
-      if (id == null && !url && !fileName) return null;
-      return {
-        id: String(id ?? `${url || ""}|${fileName || ""}`),
-        file_name: fileName != null ? String(fileName) : "",
-        url: url != null ? String(url) : "",
-        preview_key: typeof file.preview_key === "string" ? file.preview_key : typeof file.previewKey === "string" ? file.previewKey : undefined,
-        preview_url: previewUrl || undefined,
-        download_url: downloadUrl || undefined,
-        signed_download_url: signedDownloadUrl || undefined,
-        artifact_id: file.artifact_id ?? file.artifactId,
-        upload_file_id: file.upload_file_id ?? file.uploadFileId,
-        mime_type: mimeType,
-        size: typeof file.size === "number" ? file.size : Number.isFinite(Number(file.size)) ? Number(file.size) : undefined,
-        kind: file.kind,
-        message_id: file.message_id ?? file.messageId,
-        source_kind: file.source_kind ?? file.sourceKind,
-      };
-    })
-    .filter(Boolean);
+function normalizeOpenClawOutputFiles(value: unknown): OutputFile[] {
+  return decodeOutputFiles(value);
 }
 
 function buildOpenClawOutputProcessRecords(events: OpenClawTimelineEvent[]): any[] {
@@ -1810,6 +1875,28 @@ function shouldKeepOpenClawMessageRow(row: any): boolean {
   if (isOpenClawInternalControlUserContent(question) && !hasRenderableOpenClawAssistantSurface(row)) {
     return false;
   }
+  // legacy in-progress running 快照（messages.txt legacy:4 形态）：
+  // 原 assistantMessage.payload.openclawProjection.status="running" 且没有可渲染表面 → 丢弃。
+  // 投影本身（row.openclawProjection）只在 isStreaming/interrupted/failed 上有信号，
+  // status 字段在 rebuild 时被丢掉；这里直接回查 raw_assistant_message 上的原 status。
+  // 实时流式 row 通常带 `row.loading=true`，hasRenderable 已覆盖 loading 分支，
+  // 这里只命中「cached + running + 空回答」这条具体死路径。
+  const cachedAssistantStatus = row?.raw_assistant_message?.payload?.openclawProjection?.status;
+  if (cachedAssistantStatus === "running" && !hasRenderableOpenClawAssistantSurface(row)) {
+    return false;
+  }
+  // messages.txt 实际返回里 legacy:4 的 assistant 帧没有 payload（status 字段缺失），
+  // 投影时只能拿到 question 没 assistant；原 ws-* 流里它就是「问了同一句但没回答」的孤儿
+  // user 帧。这种"问题有 / 回答完全空 / 不是实时流"的 row 也直接丢，靠后续的
+  // collapseDuplicateIntermediate 反向窗口兜底同 question 的更完整 row。
+  const isLiveStreamingRow = Boolean(row?.loading);
+  if (
+    !isLiveStreamingRow &&
+    !hasRenderableOpenClawAssistantSurface(row) &&
+    !row?.raw_assistant_message?.content?.trim?.()
+  ) {
+    return false;
+  }
   return Boolean(question || hasRenderableOpenClawAssistantSurface(row));
 }
 
@@ -1921,8 +2008,8 @@ function isStrongerOpenClawFinalAnswer(answer: string): boolean {
 }
 
 function areOpenClawRowsNearInTime(left: any, right: any): boolean {
-  const leftTime = readNumberValue(left?.updated_time, left?.created_time);
-  const rightTime = readNumberValue(right?.created_time, right?.updated_time);
+  const leftTime = toOpenClawOptionalTimestampMs(left?.updated_time ?? left?.created_time);
+  const rightTime = toOpenClawOptionalTimestampMs(right?.created_time ?? right?.updated_time);
   if (!leftTime || !rightTime) return true;
   return Math.abs(rightTime - leftTime) <= 5 * 60 * 1000;
 }
@@ -1949,20 +2036,67 @@ export function collapseDuplicateOpenClawIntermediateRows(rows: any[]): any[] {
       .find((candidate) => shouldDropDuplicateOpenClawIntermediateRow(row, candidate));
 
     if (duplicateFinalRow) {
-      traceOpenClawUi("duplicate-intermediate.drop", {
-        id: row?.id,
-        nextId: duplicateFinalRow?.id,
-        questionHash: hashOpenClawText(row?.question || row?.raw_user_message?.content),
-        answerLength: String(row?.answer || row?.openclawProjection?.visibleAnswer || "").length,
-        nextAnswerLength: String(duplicateFinalRow?.answer || duplicateFinalRow?.openclawProjection?.visibleAnswer || "").length,
-      });
       continue;
     }
 
     collapsed.push(row);
   }
 
-  return collapsed;
+  // 反向再过一遍：messages.txt 里出现 legacy:2 (有回答) 之后才是 legacy:4 (空回答)，
+  // 都是 user "你可以叫我政哥"。前向窗口只会找"早于自身"的更强 row，反向窗口才能捕获
+  // "自身是空快照、同 turn 已经有更完整的旧 row" 这条路径。
+  const backward: any[] = [];
+  for (let index = 0; index < collapsed.length; index += 1) {
+    const row = collapsed[index];
+    const earlierStrongerRow = collapsed
+      .slice(Math.max(0, index - 4), index)
+      .reverse()
+      .find((candidate) => shouldDropDuplicateOpenClawIntermediateRow(candidate, row));
+
+    if (earlierStrongerRow) {
+      continue;
+    }
+
+    backward.push(row);
+  }
+
+  return backward;
+}
+
+/**
+ * 按用户视角时间排序 row 列表。
+ *
+ * assistantCreatedAt 是 mirror 入库时间、不可信（多个 assistant 的 timestamp 会落在同
+ * 一个 mirror batch 上，相差毫秒但实际回答相隔几天）。row 的 UI 顺序必须用
+ * raw_user_message.createdAt（用户发消息的时间）。相同 user time 时退到 id 字典序保证
+ * 稳定输出。
+ *
+ * 注意：Hub 后端 / 测试数据返回的是 ISO 字符串而不是 epoch ms，必须用
+ * `toOpenClawOptionalTimestampMs`（支持两种格式）而不是 `readNumberValue`（仅支持数字）。
+ */
+function getOpenClawRowUserTimeMs(row: any): number {
+  const userMessage = row?.raw_user_message;
+  const candidates = [
+    userMessage?.createdAt,
+    userMessage?.created_at,
+    userMessage?.created_time,
+    row?.created_time,
+    row?.created_at,
+  ];
+  for (const candidate of candidates) {
+    const parsed = toOpenClawOptionalTimestampMs(candidate);
+    if (parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+export function sortOpenClawRowsByUserTime(rows: any[]): any[] {
+  return [...rows].sort((left, right) => {
+    const leftTime = getOpenClawRowUserTimeMs(left);
+    const rightTime = getOpenClawRowUserTimeMs(right);
+    if (leftTime !== rightTime) return leftTime - rightTime;
+    return String(left?.id || "").localeCompare(String(right?.id || ""));
+  });
 }
 
 function extractOpenClawAnswerFileRefs(answer: string): string[] {
@@ -2036,12 +2170,17 @@ export function buildOpenClawMessages(
   const rows: any[] = [];
   let pendingUserMessage: OpenClawMessage | null = null;
   let pendingAssistantMessage: OpenClawMessage | null = null;
+  // Orphan assistant 缓冲：消息流不保证 createdAt 顺序时，assistant 可能先于其 user
+  // 到达。挂到错误 turn 的 assistant 会在 flush 时污染上一个 user。先按 turnKey 收着，
+  // 等匹配的 user 出现再挂回去。
+  const orphanAssistantByTurnKey = new Map<string, OpenClawMessage>();
   const consumedEventIds = new Set<string>();
   const scopedEvents = filterSupersededHistoryThinkingEvents(events.filter((event) => event.sessionId === conversationId));
-  if (options?.canonicalOnly && scopedEvents.some(hasOpenClawLedgerEvent)) {
+  const hasLedger = scopedEvents.some(hasOpenClawLedgerEvent);
+  if (options?.canonicalOnly && hasLedger) {
     const canonicalRows = buildOpenClawMessagesFromCanonicalLedger(messages, conversationId, agentId, scopedEvents, options);
     if (canonicalRows) {
-      return collapseDuplicateOpenClawIntermediateRows(canonicalRows);
+      return sortOpenClawRowsByUserTime(collapseDuplicateOpenClawIntermediateRows(canonicalRows));
     }
   }
 
@@ -2102,6 +2241,16 @@ export function buildOpenClawMessages(
       flushPendingTurn(userMessage);
       pendingUserMessage = userMessage;
       pendingAssistantMessage = null;
+
+      // 之前到达的 orphan assistant 现在能挂回对应 turn 了。
+      const userTurnKey = getOpenClawMessageTurnKey(pendingUserMessage);
+      if (userTurnKey) {
+        const buffered = orphanAssistantByTurnKey.get(userTurnKey);
+        if (buffered && shouldReplaceOpenClawPendingAssistant(pendingAssistantMessage, buffered)) {
+          pendingAssistantMessage = buffered;
+          orphanAssistantByTurnKey.delete(userTurnKey);
+        }
+      }
       continue;
     }
 
@@ -2110,7 +2259,20 @@ export function buildOpenClawMessages(
         continue;
       }
 
+      const assistantTurnKey = getOpenClawMessageTurnKey(item);
+
       if (pendingUserMessage) {
+        // 关键判定：两条消息都解出了 turnKey 时，必须 turnKey 一致才挂载，
+        // 否则这是 orphan assistant（其 user 还在流后面），不能污染上一个 turn。
+        // 仅在 turnKey 无法解析时回退到原有的 seq/时间检查，避免破坏旧数据路径。
+        if (assistantTurnKey) {
+          const userTurnKey = getOpenClawMessageTurnKey(pendingUserMessage);
+          if (userTurnKey && userTurnKey !== assistantTurnKey) {
+            orphanAssistantByTurnKey.set(assistantTurnKey, item);
+            continue;
+          }
+        }
+
         if (!assistantMessageBelongsToUserTurn(pendingUserMessage, item)) {
           continue;
         }
@@ -2138,6 +2300,12 @@ export function buildOpenClawMessages(
         continue;
       }
 
+      // 没有 pending user —— orphan assistant，按 turnKey 缓冲，等匹配的 user 出现。
+      if (assistantTurnKey) {
+        orphanAssistantByTurnKey.set(assistantTurnKey, item);
+        continue;
+      }
+
       const recoveredUserMessage = buildRecoveredOpenClawUserMessageFromEvent(
         findOpenClawUserEventForAssistant(scopedEvents, item),
         item
@@ -2155,8 +2323,10 @@ export function buildOpenClawMessages(
 
   flushPendingTurn();
 
-  return collapseDuplicateOpenClawIntermediateRows(
-    mergeAdjacentOpenClawAssistantRows(rows).filter(shouldKeepOpenClawMessageRow)
+  return sortOpenClawRowsByUserTime(
+    collapseDuplicateOpenClawIntermediateRows(
+      mergeAdjacentOpenClawAssistantRows(rows).filter(shouldKeepOpenClawMessageRow)
+    )
   );
 }
 
@@ -2255,24 +2425,6 @@ export function createOpenClawConversationApiAdapter({
           }
         }
       }
-      traceOpenClawUi("messages.projected", {
-        conversationId,
-        rawMessageCount: messages.length,
-        rawEventCount: events.length,
-        ledgerEventCount: ledgerEvents.length,
-        projectedCount: projectedMessages.length,
-        projected: projectedMessages.map((message: any) => ({
-          id: message.id,
-          questionLen: String(message.question || "").length,
-          questionHash: hashOpenClawText(message.question),
-          answerLen: String(message.answer || "").length,
-          answerHash: hashOpenClawText(message.answer),
-          timelineCount: message.openclawTimelineItems?.length || 0,
-          eventCount: message.openclawTurn?.events?.length || 0,
-          status: message.openclawTurn?.status,
-          loading: Boolean(message.loading),
-        })),
-      });
 
       return {
         data: {

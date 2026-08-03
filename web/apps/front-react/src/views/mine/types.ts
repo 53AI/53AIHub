@@ -71,9 +71,9 @@ export interface PreviewFile {
 /**
  * 筛选类型 - 收藏和最近访问共用
  */
-export type FilterType = 'all' | 'library' | 'file'
+export type FilterType = 'all' | 'library' | 'file' | 'wiki'
 
 /**
  * Tab 键类型
  */
-export type MineTabKey = 'fav' | 'visit' | 'ai' | 'upload' | 'audio'
+export type MineTabKey = 'fav' | 'visit' | 'ai' | 'upload'

@@ -69,7 +69,7 @@ export function AppSettingPage() {
   }, []);
 
   const handleBack = () => {
-    navigate("/knowledge?tab=assistant");
+    navigate(-1);
   };
 
   const handleSelectVariable = (index: number) => {
@@ -101,7 +101,7 @@ export function AppSettingPage() {
         {
           id: "input",
           type: "text",
-          label: "输入",
+          label: t("agent.input_variable"),
           variable: "input",
           required: true,
         },
@@ -110,7 +110,7 @@ export function AppSettingPage() {
         {
           id: "output",
           type: "text",
-          label: "输出",
+          label: t("agent.output_variable"),
           variable: "input",
         },
       ];

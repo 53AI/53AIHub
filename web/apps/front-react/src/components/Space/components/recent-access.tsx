@@ -15,7 +15,6 @@ interface RecentAccessProps {
   selectedFiles: FileItem[];
   allowSelectLibrary: boolean;
   allowSelectSpace: boolean;
-  searchQuery?: string;
   /** 刷新触发器，改变此值会重新加载数据 */
   refreshTrigger?: number;
   onToggleSpace: (item: SpaceItem, e?: React.MouseEvent) => void;
@@ -29,7 +28,6 @@ export function RecentAccess({
   selectedFiles,
   allowSelectLibrary,
   allowSelectSpace,
-  searchQuery = "",
   refreshTrigger = 0,
   onToggleSpace,
   onToggleLibrary,
@@ -48,31 +46,11 @@ export function RecentAccess({
 
   // 按 resource_type 分组：0=空间, 1=知识库, 2=文件
   const { recentSpaces, recentLibraries, recentFiles } = useMemo(() => {
-    const query = searchQuery.toLowerCase().trim();
-
-    // 基础分组
-    let spaces = recentItems.filter((item) => item.resource_type === 0);
-    let libraries = recentItems.filter((item) => item.resource_type === 1);
-    let files = recentItems.filter((item) => item.resource_type === 2);
-
-    // 根据搜索词过滤
-    if (query) {
-      spaces = spaces.filter((item) =>
-        item.name.toLowerCase().includes(query)
-      );
-      libraries = libraries.filter((item) =>
-        item.name.toLowerCase().includes(query) ||
-        item.space_name?.toLowerCase().includes(query)
-      );
-      files = files.filter((item) =>
-        item.name.toLowerCase().includes(query) ||
-        item.path?.toLowerCase().includes(query) ||
-        item.space_name?.toLowerCase().includes(query)
-      );
-    }
-
+    const spaces = recentItems.filter((item) => item.resource_type === 0);
+    const libraries = recentItems.filter((item) => item.resource_type === 1);
+    const files = recentItems.filter((item) => item.resource_type === 2);
     return { recentSpaces: spaces, recentLibraries: libraries, recentFiles: files };
-  }, [recentItems, searchQuery]);
+  }, [recentItems]);
 
   // 转换为选择项格式
   const spaceItems = recentSpaces.map((item) => ({
@@ -89,7 +67,7 @@ export function RecentAccess({
   }));
 
   const fileItems = recentFiles.map((item) => {
-    const { icon, fname } = formatFileInfo(item.is_dir ? item.name : item.path, item.is_dir || false);
+    const { icon, fname } = formatFileInfo(item.path, false);
     return {
       id: item.resource_id,
       name: fname,
@@ -133,20 +111,12 @@ export function RecentAccess({
         />
 
         {/* 空状态 */}
-        {!loading && (
-          recentItems.length === 0 ? (
-            <Empty
-              image={getPublicPath("/images/empty.png")}
-              description="暂无最近访问记录"
-              className="py-20"
-            />
-          ) : searchQuery.trim() && recentSpaces.length === 0 && recentLibraries.length === 0 && recentFiles.length === 0 ? (
-            <Empty
-              image={getPublicPath("/images/empty.png")}
-              description="无匹配结果"
-              className="py-20"
-            />
-          ) : null
+        {!loading && recentItems.length === 0 && (
+          <Empty
+            image={getPublicPath("/images/empty.png")}
+            description="暂无最近访问记录"
+            className="py-20"
+          />
         )}
       </div>
     </Spin>

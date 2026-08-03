@@ -1,6 +1,7 @@
 import { Button, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { copyToClip } from '@km/shared-utils'
+import { t } from '@/locales'
 
 export function MobileTip() {
   const [url, setUrl] = useState('')
@@ -12,7 +13,7 @@ export function MobileTip() {
   const handleCopy = () => {
     if (!url) return
     copyToClip(url).then(() => {
-      message.success('已复制')
+      message.success(t('action.copy_success'))
     })
   }
 

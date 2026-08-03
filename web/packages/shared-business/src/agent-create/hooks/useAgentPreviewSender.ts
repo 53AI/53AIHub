@@ -1,6 +1,11 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { SkillFeature } from '@km/hub-ui-x-react'
 import { AdapterContext } from '../adapters'
+import {
+  buildKnowledgeSourcePayload as buildPayload,
+  type KnowledgeSourcePayloadConfig,
+  type KnowledgeSourcePayload,
+} from '../../chat/utils/buildKnowledgeSourcePayload'
 
 export interface AgentPreviewModelOption {
   id: string
@@ -34,28 +39,63 @@ export interface AgentPreviewSenderConfig {
     onChange: (id: string) => void
   }
   /**
-   * 知识源选择（仅 knowledge 类型）。
-   *
-   * 默认 mode 取自 `graph_search_setting.default_enable`：
-   * - true  → 'knowledgeGraph'
-   * - false → 'all'
-   *
-   * `networkSearch` 启用后才显示联网搜索项；`graphEnabled` 启用后才显示知识图谱项。
+   * 知识源选择配置（仅 knowledge 类型）
    */
-  source?: {
-    graphEnabled: boolean
-    webSearchEnabled: boolean
-    value: PreviewKnowledgeSourceState
-    onChange: (state: PreviewKnowledgeSourceState) => void
-  }
+  knowledgeSource?: KnowledgeSourceConfig
+  /** 切换知识源状态回调 */
+  onKnowledgeSourceChange?: (state: PreviewKnowledgeSourceState) => void
   reset: () => void
 }
 
-/** 预览态知识源：与 agent_data.settings.graph_search_setting/web_search_setting 关联 */
+/**
+ * 预览态知识源状态
+ * - 联网搜索(networkSearch)与其他三个互斥
+ * - 知识图谱(knowledgeGraph)和动态知识(wiki)可同时开启
+ * - 全部知识(all) = !networkSearch && !knowledgeGraph && !wiki
+ */
 export interface PreviewKnowledgeSourceState {
-  /** 'all' = 全部知识, 'knowledgeGraph' = 知识图谱, 'networkSearch' = 联网搜索 */
-  mode: 'all' | 'knowledgeGraph' | 'networkSearch'
+  // 全部知识库 （可与wiki、knowledgeGraph 同时开启）
+  allKnowledge: boolean
+  /** 联网搜索（与其他互斥） */
+  networkSearch: boolean
+  /** 知识图谱（可与 wiki、全部知识库 同时开启，） */
+  knowledgeGraph: boolean
+  /** 动态知识（可与 knowledgeGraph、全部知识库 同时开启） */
+  wiki: boolean
 }
+
+/**
+ * 知识源配置（直通模式）
+ * 从设置中读取启用状态，从 UI 状态读取当前选中模式
+ * 末端统一转换为 payload
+ *
+ * 与 chat/utils/buildKnowledgeSourcePayload.ts 的 KnowledgeSourcePayloadConfig 兼容。
+ */
+export type KnowledgeSourceConfig = KnowledgeSourcePayloadConfig & {
+  /** 选中的动态知识（空间和页面混合数组，通过 wikiType 字段区分：'space' | 'page'） */
+  wikis?: Array<{
+    id: string
+    name: string
+    wikiType?: 'space' | 'page'
+    icon?: string
+    title?: string
+    slug?: string
+    summary?: string
+    type?: 'wiki'
+  }>
+}
+
+/** 将 KnowledgeSourceConfig 转换为 API payload */
+export function buildKnowledgeSourcePayload(
+  config: KnowledgeSourceConfig,
+): KnowledgeSourcePayload {
+  return buildPayload(config)
+}
+
+export {
+  buildKnowledgeSourcePayload as buildKnowledgeSourcePayloadShared,
+  type BuildKnowledgeSourcePayloadOptions,
+} from '../../chat/utils/buildKnowledgeSourcePayload'
 
 interface AgentPreviewSenderParams {
   /** 智能体 ID，用于拉 agent_models（仅 knowledge 场景） */
@@ -69,6 +109,7 @@ interface AgentPreviewSenderParams {
       deep_thinking_config?: { enable?: boolean; channel_id?: number; channel_type?: number; model_name?: string }
       web_search_setting?: { enable?: boolean }
       graph_search_setting?: { enable?: boolean; default_enable?: boolean }
+      wiki_search_setting?: { enable?: boolean; default_enable?: boolean }
     }
   }
   /** @deprecated 使用 form_data 代替，保留用于向后兼容 */
@@ -79,6 +120,7 @@ interface AgentPreviewSenderParams {
       deep_thinking_config?: { enable?: boolean; channel_id?: number; channel_type?: number; model_name?: string }
       web_search_setting?: { enable?: boolean }
       graph_search_setting?: { enable?: boolean; default_enable?: boolean }
+      wiki_search_setting?: { enable?: boolean; default_enable?: boolean }
     }
   }
 }
@@ -222,21 +264,29 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
   }, [])
 
   // ============ knowledge: 知识源选择 ============
-  // 状态机：'all' / 'knowledgeGraph' / 'networkSearch'（三选一互斥）
-  const [sourceMode, setSourceMode] = useState<PreviewKnowledgeSourceState['mode']>(() => {
-    if (agent_type !== 'knowledge') return 'all'
-    return settings?.graph_search_setting?.default_enable ? 'knowledgeGraph' : 'all'
+  // 联网搜索与其他互斥；知识图谱和动态知识可同时开启；全部知识为独立状态
+  const [sourceState, setSourceState] = useState<PreviewKnowledgeSourceState>(() => {
+    if (agent_type !== 'knowledge') return { networkSearch: false, knowledgeGraph: false, wiki: false, allKnowledge: true }
+    return {
+      networkSearch: false,
+      knowledgeGraph: Boolean(settings?.graph_search_setting?.default_enable),
+      wiki: Boolean(settings?.wiki_search_setting?.default_enable),
+      allKnowledge: true,
+    }
   })
 
-  const sourceConfig = useMemo(() => {
+  const knowledgeSource = useMemo<KnowledgeSourceConfig | undefined>(() => {
     if (agent_type !== 'knowledge') return undefined
+    const graphEnabled = Boolean(settings?.graph_search_setting?.enable)
+    const webSearchEnabled = Boolean(settings?.web_search_setting?.enable)
+    const wikiEnabled = Boolean(settings?.wiki_search_setting?.enable)
     return {
-      graphEnabled: Boolean(settings?.graph_search_setting?.enable),
-      webSearchEnabled: Boolean(settings?.web_search_setting?.enable),
-      value: { mode: sourceMode } as PreviewKnowledgeSourceState,
-      onChange: (state: PreviewKnowledgeSourceState) => setSourceMode(state.mode),
+      state: sourceState,
+      graphEnabled,
+      webSearchEnabled,
+      wikiEnabled,
     }
-  }, [agent_type, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, sourceMode])
+  }, [agent_type, sourceState, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.wiki_search_setting?.enable])
 
   // 监听配置变化，自动重置无效选择
   useEffect(() => {
@@ -244,14 +294,18 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
 
     const graphEnabled = Boolean(settings?.graph_search_setting?.enable)
     const webSearchEnabled = Boolean(settings?.web_search_setting?.enable)
+    const wikiEnabled = Boolean(settings?.wiki_search_setting?.enable)
     const deepThinkingEnabled = Boolean(settings?.deep_thinking_config?.enable)
 
-    // 知识源联动
-    if (sourceMode === 'knowledgeGraph' && !graphEnabled) {
-      setSourceMode('all')
+    // 知识源联动：禁用的选项自动关闭
+    if (!graphEnabled && sourceState.knowledgeGraph) {
+      setSourceState((prev) => ({ ...prev, knowledgeGraph: false }))
     }
-    if (sourceMode === 'networkSearch' && !webSearchEnabled) {
-      setSourceMode('all')
+    if (!webSearchEnabled && sourceState.networkSearch) {
+      setSourceState((prev) => ({ ...prev, networkSearch: false }))
+    }
+    if (!wikiEnabled && sourceState.wiki) {
+      setSourceState((prev) => ({ ...prev, wiki: false }))
     }
 
     // 模型联动：深度思考被关闭时，如果当前选中的是深度思考，切换回快速回答
@@ -264,7 +318,7 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
         }
       }
     }
-  }, [agent_type, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.deep_thinking_config?.enable, settings?.fast_reasoning_config, sourceMode, selectedModelId])
+  }, [agent_type, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.deep_thinking_config?.enable, settings?.fast_reasoning_config, sourceState, selectedModelId])
 
   if (agent_type === 'workbench') {
     return {
@@ -279,7 +333,8 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
       enabled: true,
       agentKind: 'knowledge',
       model: modelConfig,
-      source: sourceConfig,
+      knowledgeSource,
+      onKnowledgeSourceChange: (state: PreviewKnowledgeSourceState) => setSourceState(state),
       reset,
     }
   }

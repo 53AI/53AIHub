@@ -16,6 +16,7 @@ declare global {
 interface MarkdownViewerProps {
   url?: string
   content?: string
+  containerClass?: string
 }
 
 interface ViewerEventDetail {
@@ -34,7 +35,7 @@ const copyItem = {
   }
 }
 
-export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
+export default function MarkdownViewer({ url, content, containerClass }: MarkdownViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [markdownContent, setMarkdownContent] = useState('')
@@ -219,11 +220,11 @@ export default function MarkdownViewer({ url, content }: MarkdownViewerProps) {
 
   return (
     <div className="markdown-viewer-root h-full w-full overflow-hidden bg-white">
-      <div className="h-full flex flex-col">
-        <div className="flex-1 overflow-auto">
+      <div className='h-full overflow-y-auto'>
+        <div className={containerClass}>
           <div ref={previewRef} className="markdown-viewer-content vditor-reset p-6" />
         </div>
-      </div>
+    </div>
     </div>
   )
 }

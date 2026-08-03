@@ -29,6 +29,9 @@ export function MemberSelector({ trigger, onConfirm }: MemberSelectorProps) {
   const [visible, setVisible] = useState(false)
 
   const handleUserAddConfirm = (selectedItems: any[]) => {
+    if (!selectedItems || selectedItems.length === 0) {
+      return
+    }
     const items = selectedItems.map((item) => {
       const isCompany = item.value === 0
       return {

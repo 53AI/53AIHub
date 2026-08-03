@@ -18,7 +18,7 @@ export function AgentDataTab({ agentId, agentType }: AgentDataTabProps) {
   if (agentType === 'knowledge') {
     return (
       <div className="h-full p-6 bg-white overflow-hidden">
-        <Record agentId={agentId} />
+        <Record agentId={agentId} agentType={agentType} />
       </div>
     )
   }

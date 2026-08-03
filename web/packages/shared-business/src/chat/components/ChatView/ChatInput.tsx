@@ -30,9 +30,6 @@ function ChatInputInner({
   newConversation,
   fileUpload,
   inputState,
-  disabled: legacyDisabled,
-  stopDisabled: legacyStopDisabled,
-  disabledReason: legacyDisabledReason,
   mention,
   skill,
   actionPosition,
@@ -47,9 +44,9 @@ function ChatInputInner({
   const newConversationEnabled = newConversation?.enabled ?? DEFAULTS.newConversation.enabled;
   const fileUploadEnabled = fileUpload?.enabled ?? DEFAULTS.fileUpload.enabled;
   const {
-    disabled = legacyDisabled ?? DEFAULTS.inputState.disabled,
-    stopDisabled = legacyStopDisabled ?? DEFAULTS.inputState.stopDisabled,
-    disabledReason = legacyDisabledReason,
+    disabled = DEFAULTS.inputState.disabled,
+    stopDisabled = DEFAULTS.inputState.stopDisabled,
+    disabledReason,
   } = inputState ?? {};
 
   // 回调

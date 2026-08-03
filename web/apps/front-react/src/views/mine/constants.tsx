@@ -10,7 +10,6 @@ export const MINE_TAB_LIST: { label: string; value: MineTabKey }[] = [
   { label: t("mine.recent_visit"), value: "visit" },
   { label: t("mine.ai_generated"), value: "ai" },
   { label: t("mine.uploaded"), value: "upload" },
-  { label: t("mine.recording"), value: "audio" },
 ];
 
 /**

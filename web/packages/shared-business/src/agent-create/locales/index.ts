@@ -141,6 +141,10 @@ const MODULE_KEYS = [
   ['module.question_rewrite', '问题改写', '問題改寫', 'Question Rewrite', '質問書き換え'],
   ['module.reranking_desc', '重排序模型将根据候选文档列表与用户问题语义匹配度进行重新排序，从而改进语义排序的结果', '重排序模型將根據候選文檔列表與用戶問題語義匹配度進行重新排序，從而改進語義排序的結果', 'Reranking model reranks candidate documents based on semantic matching with user question, improving semantic sorting results', '再順序付けモデルは候補文書とユーザー問題の語義マッチング度に基づいて再順序付けを行い、語義順序の結果を改善'],
   ['module.web_search', '联网搜索', '聯網搜索', 'Web Search', 'Web検索'],
+  ['module.knowledge_scope', '知识范围', '知識範圍', 'Knowledge Scope', 'ナレッジ範囲'],
+  ['module.knowledge_scope_desc', '选择知识库范围', '選擇知識庫範圍', 'Select knowledge base scope', 'ナレッジベース範囲を選択'],
+  ['module.dynamic_knowledge', '动态知识', '動態知識', 'Dynamic Knowledge', 'ダイナミックナレッジ'],
+  ['setting.all_knowledge_base', '全部知识库', '全部知識庫', 'All Knowledge Bases', 'すべてのナレッジベース'],
   ['module.knowledge_graph', '知识图谱', '知識圖譜', 'Knowledge Graph', 'ナレッジグラフ'],
   // 模型名称
   ['model.fast_reasoning', '快速推理', '快速推理', 'Fast Reasoning', '高速推論'],
@@ -159,9 +163,10 @@ const MODULE_KEYS = [
   ['module.reject_strategy_fixed_reply', '固定回复', '固定回覆', 'Fixed Reply', '固定返信'],
   ['module.reject_strategy_continue', '继续对话', '繼續對話', 'Continue', '続行'],
   ['module.default_enable', '默认启用', '默認啟用', 'Default Enable', 'デフォルト有効'],
-  ['module.online_search_source', '联网搜索源', '聯網搜索源', 'Online Search Source', 'オンライン検索ソース'],
-  ['module.online_search_recall_count', '召回数量', '召回數量', 'Recall Count', 'リコール数'],
+  ['module.max_result', '最大结果', '最大結果', 'Max Result', '最大結果'],
   ['module.web_search_desc', '启用后将进行联网搜索获取实时信息', '啟用後將進行聯網搜索獲取實時信息', 'Enable web search for real-time information', 'Web検索を有効にしてリアルタイム情報を取得'],
+  ['setting1.enabled', '已启用', '已啟用', 'Enabled', '有効'],
+  ['setting1.disabled', '未启用', '未啟用', 'Disabled', '無効'],
   // Workbench 模块
   ['work_ai.planning_reasoning_model', '规划推理模型', '規劃推理模型', 'Planning & Reasoning Model', '計画・推論モデル'],
   ['work_ai.skill_execution_model', '技能执行模型', '技能執行模型', 'Skill Execution Model', 'スキル実行モデル'],
@@ -175,6 +180,7 @@ const MODULE_KEYS = [
   ['knowledge.deep_thinking_tip', '先思考后回答，复杂问题破解', '先思考後回答，複雜問題破解', 'Think before answering for complex problems', '複雑な問題に対して思考してから回答'],
   ['knowledge.question_rewrite_tip', '开启后，在多轮对话中，会根据上下文内容对问题进行改写，提升对话连续性', '開啟後，在多輪對話中，會根據上下文內容對問題進行改寫，提升對話連續性', 'Enable to rewrite questions based on context for better dialogue continuity', '有効にすると、マルチターン対話でコンテキストに基づいて質問を書き換え'],
   ['knowledge.answer_preference_tip', '开启后，支持自定义回答输出的要求', '開啟後，支持自定義回答輸出的要求', 'Enable to customize answer output requirements', '有効にすると回答出力の要件をカスタマイズ可能'],
+  ['knowledge.wiki_search_tip', '启用后将进行动态知识检索', '啟用後將進行動態知識檢索', 'Enable to search dynamic knowledge for relevant information', '有効にするとダイナミックナレッジから関連情報を検索'],
   ['knowledge.graph_search_tip', '启用后将从知识图谱查找相关知识', '啟用後將從知識圖譜查找相關知識', 'Enable to search knowledge graph for relevant information', '有効にするとナレッジグラフから関連情報を検索'],
   ['knowledge.bocha_api', '博查（API）', '博查（API）', 'Bocha (API)', '博查（API）'],
 ] as const

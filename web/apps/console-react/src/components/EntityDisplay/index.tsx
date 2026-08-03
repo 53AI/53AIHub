@@ -113,7 +113,11 @@ function EntityDisplayInner(
     if (mode === 'avatar') {
       return <Skeleton.Avatar active size={parsedAvatarSize} shape={avatarShape === 'circle' ? 'circle' : 'square'} />
     }
-    return <Skeleton.Input active size="small" style={{ width: 80 }} />
+    return (
+      <span
+        style={{ display: 'inline-block', width: 80, height: 14, borderRadius: 2, background: '#f0f0f0' }}
+      />
+    )
   }
 
   // Avatar mode

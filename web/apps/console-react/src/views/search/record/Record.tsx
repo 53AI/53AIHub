@@ -17,9 +17,10 @@ import { getLastTimeAsDay } from "@km/shared-utils";
 
 interface RecordProps {
   agentId?: string | number;
+  agentType?: string;
 }
 
-export function Record({ agentId }: RecordProps) {
+export function Record({ agentId, agentType }: RecordProps) {
   // 获取默认日期范围的辅助函数
   const getDefaultDateRange = (): [number, number] => {
     const endDate = new Date();
@@ -459,15 +460,28 @@ export function Record({ agentId }: RecordProps) {
             placeholder={`${t("search-record.knowledge_scope")}:`}
           >
             <Select.Option value={0}>{t("search-record.all")}</Select.Option>
-            <Select.Option value={KNOWLEDGE_TYPE.KNOWLEDGE_BASE}>
-              {t("search-record.all_knowledge_base")}
-            </Select.Option>
             <Select.Option value={KNOWLEDGE_TYPE.WEB}>
               {t("search-record.online_search")}
             </Select.Option>
             <Select.Option value={KNOWLEDGE_TYPE.SPECIFIED_KNOWLEDGE_BASE}>
               {t("search-record.specified_knowledge_base")}
             </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE.KNOWLEDGE_BASE}>
+              {t("search-record.all_knowledge_base")}
+            </Select.Option>
+            {agentType === 'knowledge' && (
+              <>
+                <Select.Option value={KNOWLEDGE_TYPE.HYBRID_WIKI}>
+                  {t("search-record.hybrid_wiki")}
+                </Select.Option>
+                <Select.Option value={KNOWLEDGE_TYPE.SPECIFIED_WIKI}>
+                  {t("search-record.specified_wiki")}
+                </Select.Option>
+                <Select.Option value={KNOWLEDGE_TYPE.ALL_WIKI}>
+                  {t("search-record.all_wiki")}
+                </Select.Option>
+              </>
+            )}
           </Select>
           <Button
             className="border-none px-3"

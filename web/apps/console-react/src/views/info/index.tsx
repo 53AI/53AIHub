@@ -48,10 +48,10 @@ interface InfoForm {
 }
 
 const LANGUAGE_OPTIONS = [
-  { value: "zh-cn", label: "中文-CN" },
-  { value: "zh-tw", label: "中文-TW" },
-  { value: "en", label: "英文-EN" },
-  { value: "jp", label: "日文-JP" },
+  { value: "zh-cn" },
+  { value: "zh-tw" },
+  { value: "en" },
+  { value: "jp" },
 ];
 
 const WEBSITE_TYPE_OPTIONS = [

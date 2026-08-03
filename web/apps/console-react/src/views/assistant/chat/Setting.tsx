@@ -68,11 +68,11 @@ const getDefaultSettings = (enterpriseName: string) => ({
     agent_mode: "chat",
   },
   settings: {
-    opening_statement: `你好，我是${enterpriseName}助手。无论你有什么问题，我都会尽我所能为你提供帮助和支持。`,
+    opening_statement: t("search.botchat_greeting", { name: enterpriseName }),
     suggested_questions: [],
     out_of_range_reply: {
       enable: false,
-      reply: "当前问题可能因内容未收录、解析中或权限限制无法解答。",
+      reply: t("search.out_of_scope"),
     },
     rerank_config: {
       fulltext: false,
@@ -318,7 +318,7 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
         setBochaSetting(setting);
         setSearchOptions([
           {
-            label: "博查（API）",
+            label: t("search.bocha"),
             value: `${result[0].id}_53aikm_bochaai`,
             icon: window.$getRealPath?.({ url: "/images/tools/bocha.png" }),
           },
@@ -394,7 +394,7 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
         }
 
         if (!getSearchValue() && data.settings.web_search_setting?.enable) {
-          message.error("请选择联网搜索");
+          message.error(t("search.select_web_search"));
           return;
         }
       }

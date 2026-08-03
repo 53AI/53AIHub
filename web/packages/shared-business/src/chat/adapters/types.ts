@@ -23,6 +23,7 @@ export interface ChatCompletionParams {
   search_config?: any;
   web_search_config?: any;
   enable_graph_search?: boolean;
+  wiki_search_config?: { enabled: boolean; space_ids?: string[]; wiki_page_ids?: string[] }
   completion_params?: any;
   metadata?: Record<string, any>;
 }
@@ -32,8 +33,24 @@ export interface ConversationControlParams {
   [key: string]: any;
 }
 
+/**
+ * 创建会话时的文档引用上下文（v0.4.2 §3.2 统一字段，不再保留旧 fileId 兼容字段）。
+ * - documentType: 文档类型（file / wiki）
+ * - documentId: 对应的文件或 Wiki 页面 Hashid（前端原样回传）
+ */
+export interface ConversationCreateDocumentRef {
+  documentType?: "file" | "wiki";
+  documentId?: string;
+}
+
 export interface IConversationApi {
-  create(agentId: string, question: string, title?: string, type?: string): Promise<any>;
+  create(
+    agentId: string,
+    question: string,
+    title?: string,
+    type?: string,
+    documentRef?: ConversationCreateDocumentRef
+  ): Promise<any>;
   list(agentId: string, params?: { conversation_type?: string; offset?: number; limit?: number }): Promise<any>;
   messages(conversationId: string, params?: { offset?: number; limit?: number; fresh?: boolean }): Promise<any>;
   events?(conversationId: string, params?: { offset?: number; limit?: number; after_seq?: number; fresh?: boolean }): Promise<any>;

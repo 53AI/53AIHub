@@ -2,7 +2,8 @@
 
 import { forwardRef, useImperativeHandle, useState, useRef, useEffect, useCallback } from 'react';
 import { Popover, Button, Spin } from 'antd';
-import { CloseOutlined, ShareAltOutlined } from '@ant-design/icons';
+import { CloseOutlined } from '@ant-design/icons';
+import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation, useChatConfig, buildLibraryUrl } from '../../../i18n';
 import type { ChunkItem } from '../../../types/message';
 
@@ -18,9 +19,11 @@ export interface ChunkProps {
   onOpenLibrary?: (chunk: ChunkItem) => void;
   /** 获取 chunk 详情回调（用于从 API 获取完整内容） */
   fetchChunkDetail?: (chunkId: string) => Promise<{ content: string; token_count?: number; chunk_index?: number }>;
+  /** 获取 wiki 页面详情回调（用于动态知识：/api/spaces/{space_id}/wiki/pages/{slug}） */
+  fetchWikiPageDetail?: (chunk: ChunkItem) => Promise<{ content: string; token_count?: number; chunk_index?: number }>;
   /** Markdown 渲染回调 */
   renderMarkdown?: (element: HTMLDivElement, content: string) => Promise<void>;
-}
+} 
 
 const DEFAULT_WIDTH = 600;
 
@@ -38,10 +41,13 @@ interface ChunkInfo extends ChunkItem {
   chunk_index?: number;
   library_icon?: string;
   space_name?: string;
+  title?: string
+  page_type?: string
+  version_no?: number
 }
 
 const Chunk = forwardRef<ChunkRef, ChunkProps>(
-  ({ virtualRef, onOpenLibrary, fetchChunkDetail, renderMarkdown }, ref) => {
+  ({ virtualRef, onOpenLibrary, fetchChunkDetail, fetchWikiPageDetail, renderMarkdown }, ref) => {
     const { t } = useTranslation();
     const config = useChatConfig();
     const [visible, setVisible] = useState(false);
@@ -84,7 +90,36 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
           return;
         }
 
-        // 如果有 fetchChunkDetail 回调，尝试获取详情
+        const isWiki = newChunk.chunk_type === ('wiki' as const);
+
+        // 动态知识（wiki）：通过 /api/spaces/{space_id}/wiki/pages/{slug} 拿正文
+        if (isWiki && fetchWikiPageDetail) {
+          const cacheKey = `wiki:${newChunk.wiki_page_id || newChunk.chunk_id}`;
+          if (cacheKey) {
+            const cached = cacheRef.current.get(cacheKey);
+            if (cached) {
+              setChunk(prev => prev ? { ...prev, ...cached } : null);
+              setVisible(true);
+            } else {
+              setLoading(true);
+              fetchWikiPageDetail(newChunk)
+                .then(detail => {
+                  cacheRef.current.set(cacheKey, detail);
+                  setChunk(prev => prev ? { ...prev, ...detail } : null);
+                })
+                .catch(() => {
+                  // 获取失败时使用已有数据
+                })
+                .finally(() => {
+                  setLoading(false);
+                });
+              setVisible(true);
+            }
+            return;
+          }
+        }
+
+        // 普通 RAG：有 fetchChunkDetail 回调且有 chunk_id 时，从 API 获取详情
         if (fetchChunkDetail && newChunk.chunk_id) {
           const cached = cacheRef.current.get(newChunk.chunk_id);
           if (cached) {
@@ -155,29 +190,51 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
           return;
         }
         // 使用配置构建 URL
-        const url = buildLibraryUrl(config, chunk.library_id, chunk.file_id);
+        const url = buildLibraryUrl(config, chunk.library_id, chunk.file_id, chunk);
         if (url) {
           window.open(url, '_blank', 'noopener,noreferrer');
         }
       }
     }, [chunk, onOpenLibrary, config]);
 
+    const isWikiSearch = chunk?.chunk_type === ('wiki' as const)
+
     const content = chunk ? (
       <div className="overflow-hidden" style={{ width: DEFAULT_WIDTH }}>
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 overflow-hidden">
-            <img
-              className="size-5"
-              src={isRagSearch ? chunk.file_icon : chunk.library_icon}
-              alt=""
-            />
-            <h3 className="flex-1 text-base text-[#1D1E1F] truncate">
-              {isRagSearch ? chunk.file_name : chunk.library_name}
-            </h3>
-            {isRagSearch && (
+            { isWikiSearch ?  (
               <>
+                <div className="flex-shrink-0 size-5 rounded bg-[#EDF3FF] flex items-center justify-center text-[#2563EB]">
+                  <SvgIcon name="doc-detail" size={16} />
+                </div>
+                <h3 className="flex-1 text-base text-[#1D1E1F] truncate">
+                  {chunk.title}
+                </h3>
+              </>
+            ) : (
+              <>
+                <img className="size-5" src={isRagSearch ? chunk.file_icon : chunk.library_icon} alt="" />
+                <h3 className="flex-1 text-base text-[#1D1E1F] truncate">
+                  {isRagSearch ? chunk.file_name : chunk.library_name}
+                </h3>
+              </>
+            )
+            }
+            
+            {isWikiSearch ? (
+              <>
+                <div className="h-5 bg-[#F0F5FF] px-2 rounded flex items-center text-sm text-[#2563EB]">
+                  {chunk.page_type}
+                </div>
                 <span className="text-sm text-[#999999]">
+                  V{chunk.version_no || 0}
+                </span>
+              </>
+            ) : isRagSearch && (
+              <>
+                <span className=" text-sm text-[#999999]">
                   #{chunk.chunk_index || 0}
                 </span>
                 <div className="h-2.5 w-px bg-[#dbdbdb]"></div>
@@ -222,18 +279,20 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
         {isRagSearch && (
           <div className="flex items-center justify-between mt-4">
             <div className="flex-1 flex items-center gap-1.5 overflow-hidden">
-              <span className="flex-1 text-sm text-[#1D1E1F] truncate">
+              { isWikiSearch ? <span className="flex-1 text-sm text-[#1D1E1F] truncate">
+                {chunk.space_name && `${chunk.space_name}`}
+              </span> : <span className="flex-1 text-sm text-[#1D1E1F] truncate">
                 {chunk.space_name && `${chunk.space_name}/`}
                 {chunk.library_name}
-              </span>
+              </span> }
             </div>
             <Button
               color="primary"
               variant="filled"
               onClick={handleOpenLibrary}
             >
-              {t("source.view_document") || "查看文档"}
-              <ShareAltOutlined style={{ marginLeft: 4 }} />
+              { isWikiSearch ? '查看动态知识' : t("source.view_document") }
+              <SvgIcon name="share"></SvgIcon>
             </Button>
           </div>
         )}
@@ -265,7 +324,7 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
         placement="bottomLeft"
         trigger="click"
         content={content}
-        classNames={{ root: "!p-0" }}
+        classNames={{ container: "!p-4" }}
       >
         <span style={triggerStyle} />
       </Popover>

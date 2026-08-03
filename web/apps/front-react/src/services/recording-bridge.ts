@@ -4,10 +4,15 @@
  * 对接真实后端 API
  */
 
-import { recordingApi } from '@/api/modules/recording'
+import { message } from 'antd'
 import mySpaceApi from '@/api/modules/my-space'
-import { recordingIdbService } from './recording-idb'
+import { recordingApi } from '@/api/modules/recording'
 import { MAX_RECORDING_DURATION_SEC } from '@/constants/recording'
+import { t } from '@/locales'
+import { recordingIdbService } from './recording-idb'
+
+// Sentinel: 用户在 getDisplayMedia picker 中取消
+export const USER_CANCELLED_PICKER = 'USER_CANCELLED_PICKER'
 
 // ============= Type Definitions =============
 
@@ -54,7 +59,7 @@ const HTTP_STATUS = {
   SERVICE_UNAVAILABLE: 503,
   CONFLICT: 409,
   INTERNAL_ERROR: 500,
-  BAD_GATEWAY: 502,
+  BAD_GATEWAY: 502
 } as const
 
 // API Error Codes
@@ -62,7 +67,7 @@ const API_ERROR_CODE = {
   FFMPEG_UNAVAILABLE: 100407,
   SEGMENT_PROCESSING: 100401,
   MISSING_SEGMENT: 100406,
-  SEGMENT_EXISTS: 14,
+  SEGMENT_EXISTS: 14
 } as const
 
 // ============= Internal Types =============
@@ -81,13 +86,17 @@ interface PendingSegment {
 export class RecordingBridge {
   private mediaRecorder: MediaRecorder | null = null
   private mediaStream: MediaStream | null = null
+  private audioContext: AudioContext | null = null
+  private sysMediaStream: MediaStream | null = null
+
+  private enableSystemAudio = false
 
   private recordingInfo: RecordingInfo | null = null
   private duration = 0
   private durationTimer: ReturnType<typeof setInterval> | null = null
   private currentSegmentIndex = 0
   private segmentStartTime = 0
-  private baseOffsetMs = 0  // 已上传时长基准值（恢复时使用）
+  private baseOffsetMs = 0 // 已上传时长基准值（恢复时使用）
   private mimeType = ''
   private destroyed = false
 
@@ -107,15 +116,17 @@ export class RecordingBridge {
 
   /**
    * Start recording
-   * Requests microphone, creates API record, saves draft to IDB, starts MediaRecorder
+   * Requests microphone (and optionally system audio via getDisplayMedia), creates API record,
+   * saves draft to IDB, starts MediaRecorder
    * @returns jobId
    */
-  async start(): Promise<string> {
+  async start(groupId?: number, options?: { enableSystemAudio?: boolean }): Promise<string> {
     if (this.recordingInfo) {
       throw new Error('Recording already in progress')
     }
 
     this.destroyed = false
+    this.enableSystemAudio = options?.enableSystemAudio ?? false
 
     // 清理 IndexedDB 中所有旧草稿（非当前录音的数据）
     await recordingIdbService.clearAllDrafts().catch((err) => {
@@ -126,7 +137,9 @@ export class RecordingBridge {
     await this.checkFFmpegHealth()
 
     // Setup media stream and recorder
-    const recorder = await this.setupMediaStream()
+    const recorder = await this.setupMediaStream({
+      enableSystemAudio: this.enableSystemAudio
+    })
 
     // Generate title: 会议_YYYYMMDD_HHmmss
     const now = new Date()
@@ -159,9 +172,11 @@ export class RecordingBridge {
         title,
         target_format: 'm4a',
         source_mime_type: this.mimeType,
+        group_id: groupId
       })
     } catch (error: any) {
-      const errorMsg = error?.response?.data?.message || error?.data?.message || error?.message || ''
+      const errorMsg =
+        error?.response?.data?.message || error?.data?.message || error?.message || ''
       if (errorMsg === 'forbidden: recording feature is disabled') {
         throw new Error('功能已被停用，请刷新页面后重试')
       }
@@ -174,11 +189,11 @@ export class RecordingBridge {
       title,
       format,
       startTime: Date.now(),
-      libraryId,
+      libraryId
     }
     this.segmentStartTime = this.recordingInfo.startTime
     this.currentSegmentIndex = 0
-    this.baseOffsetMs = 0  // 新录音从 0 开始
+    this.baseOffsetMs = 0 // 新录音从 0 开始
 
     // Save draft to IDB
     await recordingIdbService.saveDraft({
@@ -262,14 +277,16 @@ export class RecordingBridge {
   /**
    * Recover from an interrupted recording
    * @param jobId The interrupted job ID to recover
+   * @param options.enableSystemAudio Whether to re-request system audio (default false)
    * @returns Promise<string> The jobId
    */
-  async recover(jobId: string): Promise<string> {
+  async recover(jobId: string, options?: { enableSystemAudio?: boolean }): Promise<string> {
     if (this.recordingInfo) {
       throw new Error('Recording already in progress')
     }
 
-    this.destroyed = false  // Reset destroyed flag for recovery
+    this.destroyed = false // Reset destroyed flag for recovery
+    this.enableSystemAudio = options?.enableSystemAudio ?? false
 
     // 1. Get job details and validate status
     const job = await recordingApi.getById(jobId)
@@ -297,20 +314,24 @@ export class RecordingBridge {
 
     // 3. 先上传 IDB 中所有 chunks（只上传服务器已上传之后的）
     const draft = await recordingIdbService.getDraft(jobId)
-    const uploadedCount = job.uploaded_segment_count || 0  // 已上传数量
-    const uploadedRecordedMs = job.uploaded_recorded_ms || 0  // 已上传时长
+    const uploadedCount = job.uploaded_segment_count || 0 // 已上传数量
+    const uploadedRecordedMs = job.uploaded_recorded_ms || 0 // 已上传时长
     const uploadIntervalMs = job.upload_interval_ms || 3000
 
-    console.log(`服务器状态: uploaded_segment_count=${uploadedCount}, uploaded_recorded_ms=${uploadedRecordedMs}`)
+    console.log(
+      `服务器状态: uploaded_segment_count=${uploadedCount}, uploaded_recorded_ms=${uploadedRecordedMs}`
+    )
     if (draft) {
-      console.log(`IDB 状态: ${draft.chunks.length} chunks, indices: ${draft.chunks.map(c => c.index).join(', ')}`)
+      console.log(
+        `IDB 状态: ${draft.chunks.length} chunks, indices: ${draft.chunks.map((c) => c.index).join(', ')}`
+      )
     } else {
       console.log('IDB 状态: 无缓存数据')
     }
 
     // 只上传 >= uploadedCount 的 chunks（index 从 0 开始，uploadedCount=8 表示 0-7 已上传）
     if (draft && draft.chunks.length > 0) {
-      const chunksToUpload = draft.chunks.filter(c => c.index >= uploadedCount)
+      const chunksToUpload = draft.chunks.filter((c) => c.index >= uploadedCount)
 
       if (chunksToUpload.length > 0) {
         console.log(`准备上传 ${chunksToUpload.length} 个分段（index >= ${uploadedCount}）...`)
@@ -320,7 +341,9 @@ export class RecordingBridge {
           const blob = new Blob([chunk.data], { type: 'audio/webm' })
           // 使用 IDB 中保存的元数据，如果没有则使用服务器数据计算
           const durationMs = chunk.durationMs ?? uploadIntervalMs
-          const startOffsetMs = chunk.startOffsetMs ?? (uploadedRecordedMs + (chunk.index - uploadedCount) * uploadIntervalMs)
+          const startOffsetMs =
+            chunk.startOffsetMs ??
+            uploadedRecordedMs + (chunk.index - uploadedCount) * uploadIntervalMs
           const endOffsetMs = chunk.endOffsetMs ?? startOffsetMs + durationMs
 
           try {
@@ -330,7 +353,7 @@ export class RecordingBridge {
               segment_index: chunk.index,
               duration_ms: durationMs,
               start_offset_ms: startOffsetMs,
-              end_offset_ms: endOffsetMs,
+              end_offset_ms: endOffsetMs
             })
             console.log(`分段 ${chunk.index} 上传成功`)
           } catch (err: any) {
@@ -367,7 +390,9 @@ export class RecordingBridge {
     }
 
     // 6. Setup media stream and recorder
-    const recorder = await this.setupMediaStream()
+    const recorder = await this.setupMediaStream({
+      enableSystemAudio: this.enableSystemAudio
+    })
 
     // 6. Initialize recording info from recovered job
     const format = job.target_format || 'm4a'
@@ -376,10 +401,10 @@ export class RecordingBridge {
       title: job.title,
       format,
       startTime: job.started_at || Date.now(),
-      libraryId: job.library_id || '',
+      libraryId: job.library_id || ''
     }
-    this.segmentStartTime = Date.now()  // 当前时间作为新 segment 开始时间
-    this.baseOffsetMs = uploadedRecordedMs  // 已上传时长作为 offset 基准
+    this.segmentStartTime = Date.now() // 当前时间作为新 segment 开始时间
+    this.baseOffsetMs = uploadedRecordedMs // 已上传时长作为 offset 基准
 
     // 7. Restore duration from interrupted job
     this.duration = Math.floor(job.total_recorded_ms / 1000)
@@ -424,16 +449,16 @@ export class RecordingBridge {
     })
 
     // Stop all tracks
-    stream.getTracks().forEach(track => track.stop())
+    stream.getTracks().forEach((track) => track.stop())
 
     // Wait for ondataavailable async operations to complete
     while (this.isProcessingData) {
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 50))
     }
 
     // Wait for upload queue to complete (all segments uploaded)
     while (this.uploadQueue.length > 0 || this.isUploading) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
     }
 
     // Finalize recording via API
@@ -474,10 +499,12 @@ export class RecordingBridge {
       }
 
       // 处理中错误（分段还在处理）不抛出，让 store 轮询
-      if (httpStatus === HTTP_STATUS.CONFLICT ||
-          errorCode === API_ERROR_CODE.SEGMENT_PROCESSING ||
-          errorMsg.includes('处理中') ||
-          errorMsg.includes('finalizing')) {
+      if (
+        httpStatus === HTTP_STATUS.CONFLICT ||
+        errorCode === API_ERROR_CODE.SEGMENT_PROCESSING ||
+        errorMsg.includes('处理中') ||
+        errorMsg.includes('finalizing')
+      ) {
         return
       }
 
@@ -530,8 +557,9 @@ export class RecordingBridge {
 
     // Stop all tracks
     if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach(track => track.stop())
+      this.mediaStream.getTracks().forEach((track) => track.stop())
     }
+    this.releaseAudioResources()
 
     this.eventHandlers.clear()
     this.recordingInfo = null
@@ -565,16 +593,16 @@ export class RecordingBridge {
     })
 
     // Stop all tracks
-    stream.getTracks().forEach(track => track.stop())
+    stream.getTracks().forEach((track) => track.stop())
 
     // Wait for ondataavailable async operations to complete
     while (this.isProcessingData) {
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 50))
     }
 
     // Wait for upload queue to complete
     while (this.uploadQueue.length > 0 || this.isUploading) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
     }
 
     // Mark as interrupted via API
@@ -606,8 +634,10 @@ export class RecordingBridge {
    * Check if error indicates FFmpeg is unavailable
    */
   private isFFmpegUnavailableError(error: any): boolean {
-    return error?.response?.status === HTTP_STATUS.SERVICE_UNAVAILABLE ||
-           error?.response?.data?.code === API_ERROR_CODE.FFMPEG_UNAVAILABLE
+    return (
+      error?.response?.status === HTTP_STATUS.SERVICE_UNAVAILABLE ||
+      error?.response?.data?.code === API_ERROR_CODE.FFMPEG_UNAVAILABLE
+    )
   }
 
   /**
@@ -641,7 +671,7 @@ export class RecordingBridge {
     }
 
     for (const missingIndex of missing.missing_segments) {
-      const chunk = draft.chunks.find(c => c.index === missingIndex)
+      const chunk = draft.chunks.find((c) => c.index === missingIndex)
       if (!chunk) {
         throw new Error(`分段 ${missingIndex} 数据丢失，无法恢复录音`)
       }
@@ -650,7 +680,7 @@ export class RecordingBridge {
       await recordingApi.uploadSegment({
         job_id: jobId,
         segment: blob,
-        segment_index: missingIndex,
+        segment_index: missingIndex
       })
       await recordingIdbService.removeChunk(jobId, missingIndex)
     }
@@ -686,15 +716,17 @@ export class RecordingBridge {
           const endOffsetMs = startOffsetMs + durationMs
 
           if (this.recordingInfo) {
-            await recordingIdbService.addChunk(this.recordingInfo.jobId, {
-              index: segmentIndex,
-              data: arrayBuffer,
-              durationMs,
-              startOffsetMs,
-              endOffsetMs,
-            }).catch((err) => {
-              console.warn('Failed to save chunk to IDB:', err)
-            })
+            await recordingIdbService
+              .addChunk(this.recordingInfo.jobId, {
+                index: segmentIndex,
+                data: arrayBuffer,
+                durationMs,
+                startOffsetMs,
+                endOffsetMs
+              })
+              .catch((err) => {
+                console.warn('Failed to save chunk to IDB:', err)
+              })
           }
 
           this.uploadQueue.push({
@@ -703,9 +735,9 @@ export class RecordingBridge {
             mimeType: this.mimeType,
             durationMs,
             startOffsetMs,
-            endOffsetMs,
+            endOffsetMs
           })
-          this.baseOffsetMs = endOffsetMs  // 更新基准值，下一个 segment 从这里开始
+          this.baseOffsetMs = endOffsetMs // 更新基准值，下一个 segment 从这里开始
           this.processUploadQueue()
         } finally {
           this.isProcessingData = false
@@ -720,10 +752,10 @@ export class RecordingBridge {
 
   /**
    * Setup media stream and media recorder
-   * Handles HTTPS check, microphone permission, device disconnect listener, and MediaRecorder creation
+   * Handles HTTPS check, microphone permission, optional system audio capture, device disconnect listener, and MediaRecorder creation
    * @returns The created MediaRecorder instance
    */
-  private async setupMediaStream(): Promise<MediaRecorder> {
+  private async setupMediaStream(opts: { enableSystemAudio: boolean }): Promise<MediaRecorder> {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error('录音需要 HTTPS 环境。请使用 https:// 访问或在 localhost 下开发。')
     }
@@ -747,13 +779,79 @@ export class RecordingBridge {
 
     this.mimeType = this.getSupportedMimeType()
 
-    const recorder = new MediaRecorder(this.mediaStream, {
+    const outputStream = await this.buildOutputStream(opts.enableSystemAudio)
+
+    const recorder = new MediaRecorder(outputStream, {
       mimeType: this.mimeType,
       audioBitsPerSecond: 128000
     })
     this.mediaRecorder = recorder
     this.setupMediaRecorderHandlers(recorder)
     return recorder
+  }
+
+  /**
+   * Build the MediaStream fed to MediaRecorder.
+   * When enableSystemAudio is false, returns the mic stream as-is.
+   * When true, also requests getDisplayMedia and mixes mic + system audio via Web Audio.
+   * Falls back to mic-only if user cancels the picker or didn't share audio.
+   * @throws Error with message USER_CANCELLED_PICKER if user dismissed the screen picker.
+   */
+  private async buildOutputStream(enableSystemAudio: boolean): Promise<MediaStream> {
+    if (!enableSystemAudio) {
+      return this.mediaStream!
+    }
+
+    let sysStream: MediaStream
+    try {
+      sysStream = await navigator.mediaDevices.getDisplayMedia({
+        video: true, // required by spec even when only audio is needed
+        audio: true
+      })
+    } catch (err: any) {
+      if (err?.name === 'NotAllowedError') {
+        throw new Error(USER_CANCELLED_PICKER)
+      }
+      throw err
+    }
+
+    // Drop video tracks immediately — we only want audio
+    sysStream.getVideoTracks().forEach((t) => {
+      t.stop()
+    })
+
+    const sysAudioTracks = sysStream.getAudioTracks()
+    if (sysAudioTracks.length === 0) {
+      sysStream.getTracks().forEach((t) => {
+        t.stop()
+      })
+      message.warning(t('recording.system_audio_missing'))
+      return this.mediaStream!
+    }
+
+    // Listen for system audio stream ending (user clicks "Stop sharing")
+    const sysAudioTrack = sysAudioTracks[0]
+    sysAudioTrack.onended = () => {
+      this.emit('deviceDisconnected', sysAudioTrack.label)
+      this.interrupt().catch((error) => {
+        this.emit('error', `Failed to interrupt after system audio disconnect: ${error}`)
+      })
+    }
+
+    this.sysMediaStream = sysStream
+
+    const audioCtx = new AudioContext()
+    await audioCtx.resume()
+    this.audioContext = audioCtx
+
+    const destination = audioCtx.createMediaStreamDestination()
+    const micSource = audioCtx.createMediaStreamSource(this.mediaStream!)
+    micSource.connect(destination)
+
+    const sysSource = audioCtx.createMediaStreamSource(sysStream)
+    sysSource.connect(destination)
+
+    return destination.stream
   }
 
   /**
@@ -821,11 +919,11 @@ export class RecordingBridge {
    * Start heartbeat timer
    */
   private startHeartbeat(): void {
-    this.stopHeartbeat()  // Ensure previous timer is stopped
+    this.stopHeartbeat() // Ensure previous timer is stopped
     this.heartbeatActive = true
 
     this.heartbeatTimer = setInterval(async () => {
-      if (!this.heartbeatActive || this.destroyed) return  // Stop if deactivated or destroyed
+      if (!this.heartbeatActive || this.destroyed) return // Stop if deactivated or destroyed
 
       if (this.recordingInfo?.jobId) {
         try {
@@ -839,10 +937,13 @@ export class RecordingBridge {
             this.emit('heartbeatError', 0)
           }
         } catch (err) {
-          if (!this.heartbeatActive) return  // Don't emit if stopped
+          if (!this.heartbeatActive) return // Don't emit if stopped
 
           this.heartbeatFailCount++
-          console.warn(`Heartbeat failed (${this.heartbeatFailCount}/${RecordingBridge.HEARTBEAT_FAIL_THRESHOLD}):`, err)
+          console.warn(
+            `Heartbeat failed (${this.heartbeatFailCount}/${RecordingBridge.HEARTBEAT_FAIL_THRESHOLD}):`,
+            err
+          )
           this.emit('heartbeatError', this.heartbeatFailCount)
         }
       }
@@ -853,7 +954,7 @@ export class RecordingBridge {
    * Stop heartbeat timer
    */
   private stopHeartbeat(): void {
-    this.heartbeatActive = false  // Prevent async callback from executing
+    this.heartbeatActive = false // Prevent async callback from executing
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer)
       this.heartbeatTimer = null
@@ -876,9 +977,27 @@ export class RecordingBridge {
   }
 
   /**
+   * Release AudioContext and system audio MediaStream resources.
+   * Safe to call multiple times; nulls refs after release.
+   */
+  private releaseAudioResources(): void {
+    if (this.sysMediaStream) {
+      this.sysMediaStream.getTracks().forEach((t) => {
+        t.stop()
+      })
+      this.sysMediaStream = null
+    }
+    if (this.audioContext) {
+      this.audioContext.close().catch(() => {})
+      this.audioContext = null
+    }
+  }
+
+  /**
    * Reset all state variables
    */
   private resetState(): void {
+    this.releaseAudioResources()
     this.mediaRecorder = null
     this.mediaStream = null
     this.recordingInfo = null
@@ -892,6 +1011,7 @@ export class RecordingBridge {
     this.isUploading = false
     this.isProcessingData = false
     this.heartbeatFailCount = 0
+    this.enableSystemAudio = false
   }
 
   // ============= Upload Queue =============
@@ -905,7 +1025,9 @@ export class RecordingBridge {
     if (import.meta.env.DEV) {
       for (let i = 1; i < this.uploadQueue.length; i++) {
         if (this.uploadQueue[i].index < this.uploadQueue[i - 1].index) {
-          console.warn(`[RecordingBridge] Upload queue out of order: ${this.uploadQueue[i - 1].index} -> ${this.uploadQueue[i].index}`)
+          console.warn(
+            `[RecordingBridge] Upload queue out of order: ${this.uploadQueue[i - 1].index} -> ${this.uploadQueue[i].index}`
+          )
         }
       }
     }
@@ -923,7 +1045,7 @@ export class RecordingBridge {
   }
 
   private async uploadSegment(segment: PendingSegment): Promise<void> {
-    if (this.destroyed) return  // Don't upload if destroyed
+    if (this.destroyed) return // Don't upload if destroyed
 
     const retryCount = this.uploadRetryCount.get(segment.index) ?? 0
 
@@ -934,12 +1056,14 @@ export class RecordingBridge {
         segment_index: segment.index,
         duration_ms: segment.durationMs,
         start_offset_ms: segment.startOffsetMs,
-        end_offset_ms: segment.endOffsetMs,
+        end_offset_ms: segment.endOffsetMs
       })
       // 上传成功，删除 IDB chunk（数据已安全上传）
       this.uploadRetryCount.delete(segment.index)
       if (this.recordingInfo) {
-        await recordingIdbService.removeChunk(this.recordingInfo.jobId, segment.index).catch(() => {})
+        await recordingIdbService
+          .removeChunk(this.recordingInfo.jobId, segment.index)
+          .catch(() => {})
       }
     } catch (error: any) {
       if (this.destroyed) return
@@ -955,28 +1079,37 @@ export class RecordingBridge {
       }
 
       if (httpStatus === HTTP_STATUS.CONFLICT) {
-        if (errorMsg.includes('already exists') || errorMsg.includes('已存在') || errorMsg.includes('segment already')) {
+        if (
+          errorMsg.includes('already exists') ||
+          errorMsg.includes('已存在') ||
+          errorMsg.includes('segment already')
+        ) {
           this.uploadRetryCount.delete(segment.index)
           // 409：服务器已有此 segment，删除 IDB chunk
           if (this.recordingInfo) {
-            await recordingIdbService.removeChunk(this.recordingInfo.jobId, segment.index).catch(() => {})
+            await recordingIdbService
+              .removeChunk(this.recordingInfo.jobId, segment.index)
+              .catch(() => {})
           }
           return
         }
         if (retryCount < MAX_RETRIES) {
           this.uploadRetryCount.set(segment.index, retryCount + 1)
-          await new Promise(resolve => setTimeout(resolve, 2000))
+          await new Promise((resolve) => setTimeout(resolve, 2000))
           if (!this.destroyed) {
             this.uploadQueue.unshift(segment)
           }
           return
         }
         this.uploadRetryCount.delete(segment.index)
-        console.warn(`Segment ${segment.index} upload retry exhausted, finalize will handle missing check`)
+        console.warn(
+          `Segment ${segment.index} upload retry exhausted, finalize will handle missing check`
+        )
         return
       }
 
-      const isServerError = httpStatus === HTTP_STATUS.INTERNAL_ERROR || httpStatus === HTTP_STATUS.BAD_GATEWAY
+      const isServerError =
+        httpStatus === HTTP_STATUS.INTERNAL_ERROR || httpStatus === HTTP_STATUS.BAD_GATEWAY
 
       if (retryCount < MAX_RETRIES) {
         // Use longer delay for server errors
@@ -986,7 +1119,7 @@ export class RecordingBridge {
           delay = Math.min(3000 + retryCount * 2000, 10000) // 3s, 5s, 7s, max 10s
         } else {
           // Exponential backoff for other errors
-          delay = Math.pow(2, retryCount) * 1000
+          delay = 2 ** retryCount * 1000
         }
 
         this.uploadRetryCount.set(segment.index, retryCount + 1)

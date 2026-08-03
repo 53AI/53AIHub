@@ -1,10 +1,37 @@
-import { RawFileItem, FileItem, RecycleListItem, RawRecycleListItem, TreeBuildNode, TreeNode } from './types'
+import { RawFileItem, FileItem, RecycleListItem, RawRecycleListItem, TreeBuildNode, TreeNode, FileSearchResponse } from './types'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { api_host } from '@/utils/config'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
 import { AI_GENERATE_CHUNK_STATUS } from '@/constants/chunk'
 import { formatFileSize } from '@km/shared-utils'
 import { getPublicPath } from '@/utils/config'
+
+const MAX_ENCODED_FILENAME_LENGTH = 100
+
+const truncateEncodedFileName = (name: string, maxLength: number = MAX_ENCODED_FILENAME_LENGTH): string => {
+  if (!name) return name
+
+  const encoded = encodeURIComponent(name)
+  if (encoded.length <= maxLength) return encoded
+
+  const dotIndex = name.lastIndexOf('.')
+  const hasExtension = dotIndex > 0 && dotIndex < name.length - 1
+  const ext = hasExtension ? name.slice(dotIndex) : ''
+  const baseName = hasExtension ? name.slice(0, dotIndex) : name
+  const encodedExtLen = encodeURIComponent(ext).length
+  const budgetForBase = maxLength - encodedExtLen
+
+  let truncatedBase = ''
+  let currentLength = 0
+  for (const char of baseName) {
+    const charEncoded = encodeURIComponent(char)
+    if (currentLength + charEncoded.length > budgetForBase) break
+    truncatedBase += char
+    currentLength += charEncoded.length
+  }
+
+  return truncatedBase + ext
+}
 
 export const formatFileInfo = (fileName: string, isfolder: boolean = false) : { ext: string, mime: string, fname: string, icon: string } => {
   let file_ext = ''
@@ -108,7 +135,7 @@ export const formatFile = (file: RawFileItem): FileItem => {
     permission: PERMISSION_TYPE.loading,
     file_type: isfolder ? 'folder' : 'file',
     icon: file_icon,
-    file_url: isfolder ? '' : `${api_host}/api/files/${file.id}/preview/knowledge_file_${file.id}_${encodeURIComponent(urlFileName)}`,
+    file_url: isfolder ? '' : `${api_host}/api/files/${file.id}/preview/knowledge_file_${file.id}_${truncateEncodedFileName(urlFileName)}`,
     file_size: isfolder ? '' : formatFileSize(file.upload_file?.size || 0) ,
     parse_type: file.parse_type || '',
     last_body_time: file.last_body_time || 0,
@@ -269,3 +296,39 @@ export const defaultCheckedFile = {
   checked: false,
   isEditing: false,
 }
+
+/**
+ * FileSearchResponse 单条结果的展示态派生。
+ *
+ * 与 `formatFile` 的区别:
+ * - `formatFile` 处理 `RawFileItem`(树形文件列表来源),返回完整的 `FileItem`(含 file_url / file_size / created_at 等)
+ * - `formatFileSearchResult` 处理 `FileSearchResponse['results'][number]`(搜索结果来源),只派生展示需要的 name / icon / location / lastUpdated
+ *
+ * 搜索响应字段名与 `RawFileItem` 不一致(如 `file_id` vs `id`、缺 `upload_file` / `created_time` 等),不可混用。
+ */
+export type FileSearchResultItem = FileSearchResponse['results'][number] & {
+  name: string
+  isfolder: boolean
+  icon: string
+  location: string
+  lastUpdated: string
+}
+
+export const formatFileSearchResult = (
+  item: FileSearchResponse['results'][number]
+): FileSearchResultItem => {
+  const isfolder = item.type === 0
+  const { fname, icon } = formatFileInfo(item.path, isfolder)
+  return {
+    ...item,
+    name: fname,
+    isfolder,
+    icon,
+    location: `${item.space_name}/${item.library_name}`,
+    lastUpdated: getSimpleDateFormatString({ date: item.latest_file_body_update_time }),
+  }
+}
+
+export const formatFileSearchResults = (
+  items: FileSearchResponse['results']
+): FileSearchResultItem[] => items.map(formatFileSearchResult)

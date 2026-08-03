@@ -2,7 +2,18 @@
  * 上传相关工具函数
  */
 
+import { sha256 } from 'js-sha256'
+
 import type { FileStructureItem } from '@/api/modules/files/types'
+
+/**
+ * 是否支持 Web Crypto API 的 SHA-256 digest。
+ * 浏览器在 HTTPS / localhost 安全上下文中可用；HTTP 站点或极旧浏览器返回 false。
+ */
+const hasWebCryptoDigest = (): boolean =>
+  typeof crypto !== 'undefined' &&
+  !!crypto.subtle &&
+  typeof crypto.subtle.digest === 'function'
 
 /**
  * 文件大小格式化
@@ -123,13 +134,40 @@ export const calculateChunkCount = (fileSize: number, chunkSize: number): number
 }
 
 /**
+ * 把 ArrayBuffer 算成 SHA-256 hex 字符串。
+ * 优先走 Web Crypto（性能更好），不可用时回退到 js-sha256 纯 JS 实现。
+ */
+export const sha256Hex = async (data: ArrayBuffer): Promise<string> => {
+  if (hasWebCryptoDigest()) {
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+    const hashArray = Array.from(new Uint8Array(hashBuffer))
+    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  return sha256(new Uint8Array(data))
+}
+
+/**
  * 生成分片哈希
  */
 export const generateChunkHash = async (chunk: Blob): Promise<string> => {
   const arrayBuffer = await chunk.arrayBuffer()
-  const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  return sha256Hex(arrayBuffer)
+}
+
+/**
+ * 计算文件 SHA-256（十六进制小写）。
+ * 用于秒传预检：选完文件后前端先算 hash，调用 /api/upload/check 命中后跳过文件传输。
+ *
+ * 优先 Web Crypto API；不可用（HTTP 非安全上下文 / 旧浏览器）时降级到 js-sha256 纯 JS 实现。
+ * 仅在极端环境下（两者皆不可用）抛出错误，调用方负责降级到无 hash 的原上传链路。
+ */
+export const calculateFileHash = async (file: File): Promise<string> => {
+  if (!hasWebCryptoDigest() && typeof sha256 !== 'function') {
+    throw new Error('当前环境不支持 SHA-256（缺少 Web Crypto 与 js-sha256）')
+  }
+
+  const arrayBuffer = await file.arrayBuffer()
+  return sha256Hex(arrayBuffer)
 }
 
 /**

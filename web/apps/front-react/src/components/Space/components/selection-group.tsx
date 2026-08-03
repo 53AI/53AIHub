@@ -3,6 +3,7 @@ import type { SpaceItem } from "@/api/modules/spaces";
 import type { LibraryItem } from "@/api/modules/libraries";
 import type { FileItem } from "@/api/modules/files/types";
 import { getPublicPath, api_host } from "@/utils/config";
+import React from "react";
 
 // ==================== 类型定义 ====================
 const DEFAULT_ICON = getPublicPath("/images/file-default.png");
@@ -27,6 +28,7 @@ export interface SelectionListItemProps {
   title: string;
   selected: boolean;
   subtitle?: string;
+  icon?: React.ReactNode
   onClick?: (e?: React.MouseEvent) => void;
 }
 
@@ -34,6 +36,7 @@ export interface SelectionListItemProps {
 export interface SelectionGroupProps<T extends SelectionItemBase> {
   title: string;
   items: T[];
+  icon?: React.ReactNode
   selectedIds: (string | number)[];
   allowSelect?: boolean;
   getSubtitle?: (item: T) => string | undefined;
@@ -56,6 +59,7 @@ export interface CommonSelectionProps {
 export function SelectionListItem({
   item,
   title,
+  icon,
   selected,
   subtitle,
   onClick,
@@ -71,7 +75,7 @@ export function SelectionListItem({
       onClick={onClick}
     >
       <Checkbox checked={selected} />
-      <img src={iconSrc} className="size-5" alt="" />
+      { icon ? icon : (iconSrc && <img src={iconSrc} className="size-5" alt="" />) }
       <span className="flex-1 text-sm truncate">{item.name}</span>
       {subtitle && <span className="text-xs text-[#999] truncate w-1/2">{subtitle}</span>}
     </div>
@@ -86,6 +90,7 @@ export function SelectionGroup<T extends SelectionItemBase>({
   allowSelect = true,
   getSubtitle,
   onToggle,
+  icon
 }: SelectionGroupProps<T>) {
   if (!allowSelect || items.length === 0) return null;
 
@@ -97,6 +102,7 @@ export function SelectionGroup<T extends SelectionItemBase>({
           key={item.id}
           item={item}
           title={title}
+          icon={icon}
           selected={selectedIds.includes(item.id)}
           subtitle={getSubtitle?.(item)}
           onClick={(e) => onToggle?.(item, e)}

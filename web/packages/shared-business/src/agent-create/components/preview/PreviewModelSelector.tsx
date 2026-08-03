@@ -44,7 +44,7 @@ export function PreviewModelSelector({ options, selectedId, onChange, t }: Previ
               >
                 <SvgIcon name={o.icon} />
                 <span className="text-sm whitespace-nowrap">{translate(o.label)}</span>
-                {o.id === selectedId && <SvgIcon name="check" />}
+                {o.id === selectedId && <SvgIcon name="check-one" />}
               </div>
             ),
           })),

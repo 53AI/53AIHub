@@ -1,3 +1,4 @@
+import { img_host } from '@/utils/config'
 export const NAVIGATION_TYPE = {
   SYSTEM: 1,
   EXTERNAL: 2,
@@ -14,15 +15,25 @@ export type NavigationTarget = (typeof NAVIGATION_TARGET)[keyof typeof NAVIGATIO
 /** 是否包含 KM 功能，与 .env 中 VITE_INCLUDE_KM 一致 */
 export const includeKm = import.meta.env.VITE_INCLUDE_KM === 'true'
 
-// Image host will be configured via environment
-const img_host = import.meta.env.VITE_GLOB_API_HOST || ''
-
 export const INIT_DATA_LIST = [
   {
     jump_path: '/index',
     name: '首页',
     sort: 9999,
     icon: `${img_host}/navigation/icon34.png`,
+    config: JSON.stringify({
+      target: NAVIGATION_TARGET.SELF,
+      seo_title: '',
+      seo_keywords: '',
+      seo_description: '',
+    }),
+    status: 1,
+  },
+  {
+    jump_path: '/agent',
+    name: '智能体',
+    sort: 9997,
+    icon: `${img_host}/navigation/icon33.png`,
     config: JSON.stringify({
       target: NAVIGATION_TARGET.SELF,
       seo_title: '',
@@ -48,19 +59,6 @@ export const INIT_DATA_LIST = [
         },
       ]
     : []),
-  {
-    jump_path: '/agent',
-    name: '智能体',
-    sort: 9997,
-    icon: `${img_host}/navigation/icon33.png`,
-    config: JSON.stringify({
-      target: NAVIGATION_TARGET.SELF,
-      seo_title: '',
-      seo_keywords: '',
-      seo_description: '',
-    }),
-    status: 1,
-  },
   {
     jump_path: '/prompt',
     name: '提示词',

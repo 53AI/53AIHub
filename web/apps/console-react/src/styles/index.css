@@ -60,6 +60,11 @@
   --color-tag-orange: #eb9e10;  /* 橙-标签 */
   --color-tag-red: #fa5151;     /* 红-标签 */
   --color-tag-green: #10b981;   /* 绿-标签 */
+
+  /* 滚动条 (Scrollbar) */
+  /* 6px 而非 5px：滑块靠 3px 透明 border 收成 0 宽度来隐藏，尺寸必须是 border 的 2 倍才刚好归零 */
+  --scrollbar-size: 6px;
+  --scrollbar-thumb-color: rgb(0 0 0 / 25%);
 }
 
 /* ========================================
@@ -133,21 +138,66 @@ body {
 
 
 
-/* 针对WebKit内核浏览器（Chrome, Safari等） */
+/* 滚动条：细滚动条、两端无箭头、默认隐藏 hover 才显示
+ *
+ * 三个坑，改之前务必先读：
+ *
+ * 1. 无箭头只能走 ::-webkit-scrollbar 这条"自定义滚动条"路径 —— 该路径下
+ *    ::-webkit-scrollbar-button 默认不占尺寸。标准属性 scrollbar-width 走的是
+ *    系统原生滚动条，Windows 上必带两端箭头，且没有任何办法关掉。
+ * 2. 因此绝对不要在 Chrome 能命中的地方写 scrollbar-width / scrollbar-color：
+ *    Chrome 121 起只要这两个属性不是 auto，整套 ::-webkit-scrollbar 规则就被
+ *    直接忽略，滚动条退回带箭头的原生样式。下面用
+ *    `@supports not selector(::-webkit-scrollbar)` 把标准属性关进 Firefox 分支。
+ * 3. 不要用 `:hover::-webkit-scrollbar-thumb { background: ... }` 切颜色 ——
+ *    纯颜色变化只是 paint 级变更，Chromium 对自定义滚动条伪元素经常不做失效
+ *    处理，表现为 hover 显隐"时灵时不灵"。这里滑块颜色恒定，改用透明 border
+ *    把可绘制区收成 0 宽度来隐藏，hover 时 border-width 归零露出来 ——
+ *    border-width 是布局属性，会强制滚动条部件重新布局+重绘，实测稳定。
+ */
 ::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-  background: transparent; /* 设置滚动条背景透明 */
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+  background: transparent;
 }
 
+/* 两端箭头：自定义滚动条下默认已不占尺寸，显式关掉更保险 */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* content-box 宽度为 0 → 不可见 */
 ::-webkit-scrollbar-thumb {
-  background: transparent; /* 滑块透明 */
+  border: 3px solid transparent;
+  border-radius: 4px;
+  background-color: var(--scrollbar-thumb-color);
+  background-clip: content-box;
+  cursor: pointer;
 }
 
+/* border 归零 → 露出完整宽度 */
 :hover::-webkit-scrollbar-thumb {
-  cursor: pointer;
-  border-radius: 4px;
-  background-color: rgb(0 0 0 / 25%);
+  border-width: 0;
+}
+
+/* Firefox：不认 webkit 伪元素，只能用标准属性；它的 thin 没有箭头，
+   hover 重算也正常。必须隔离，否则会把 Chrome 的规则顶掉（见上文 2）。 */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  *:hover {
+    scrollbar-color: var(--scrollbar-thumb-color) transparent;
+  }
 }
 
 

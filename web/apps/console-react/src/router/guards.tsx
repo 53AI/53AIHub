@@ -3,16 +3,10 @@ import { useEffect, useState } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { Spin } from 'antd'
 import { useEnterpriseStore, useUserStore } from '@/stores'
+import { isOpLocal, isPrivatePrem } from '@/utils/config'
 
 const AUTH_FREE_PATHS = new Set(['/login', '/register'])
 
-function isOpLocalEnv(): boolean {
-  return (import.meta.env.VITE_PLATFORM as string | undefined) === 'op-local'
-}
-
-function isPrivatePremEnv(): boolean {
-  return (import.meta.env.VITE_PRIVATE_PREM as string | undefined) === 'true'
-}
 
 export function gotoLogin(): void {
   // 复用 /console 的登录重定向逻辑
@@ -24,9 +18,8 @@ export function gotoLogin(): void {
       loginUrl = `//${window.location.host}/console/saas-login/index.html${window.location.search}`
     }
   }
-
-  if (isOpLocalEnv() || isPrivatePremEnv()) {
-    loginUrl = `${window.location.origin}/#/index`
+  if (isOpLocal || isPrivatePrem) {
+    loginUrl = `${window.location.origin}/`
   }
 
   window.location.replace(loginUrl)

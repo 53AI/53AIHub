@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
-import { Modal, Button, message, Image } from 'antd'
+import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
+import { Modal, Button, Image } from 'antd'
 import { CheckCircleFilled } from '@ant-design/icons'
 import { QRCodeSVG } from 'qrcode.react'
 import { subscriptionApi, setOrderCache } from '@/api/modules/subscription'
@@ -248,7 +248,7 @@ const PaymentQrcode = forwardRef<PaymentQrcodeRef, PaymentQrcodeProps>((props, r
       >
         <div className="mt-8 flex flex-col items-center justify-center gap-4">
           <CheckCircleFilled style={{ fontSize: 58, color: '#3ABA52' }} />
-          <span className="text-2xl text-black">
+          <span className="text-2xl text-primary">
             {t(
               PAYMENT_TYPE.WECHAT === paymentType
                 ? 'subscription.pay_success'
