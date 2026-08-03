@@ -100,16 +100,17 @@ func (ctrl *BatchUploadController) InitBatchUpload(c *gin.Context) {
 
 // UploadFile 上传单个文件
 // @Summary 上传单个文件
-// @Description 上传批量上传中的单个文件，支持同名文件处理模式：sequence(默认)自动添加序号，replace删除原文件
+// @Description 上传批量上传中的单个文件，支持同名文件处理模式：sequence(默认)自动添加序号，replace删除原文件。可选传 hash 参数实现秒传（命中已有文件则跳过实际上传）
 // @Tags 批量上传
 // @Accept multipart/form-data
 // @Produce json
 // @Security BearerAuth
 // @Param batch_id path string true "批次ID"
-// @Param file formData file true "上传文件"
+// @Param file formData file false "上传文件（秒传时可不传）"
 // @Param upload_token formData string true "上传令牌"
 // @Param file_upload_id formData string true "文件ID"
 // @Param duplicate_mode formData string false "同名文件处理模式: sequence(默认,自动添加序号), replace(删除原文件)"
+// @Param hash formData string false "文件哈希值，命中已有文件时跳过实际上传实现秒传"
 // @Success 200 {object} model.CommonResponse "上传成功"
 // @Failure 400 {object} model.CommonResponse "请求参数错误"
 // @Failure 401 {object} model.CommonResponse "上传令牌无效"
@@ -134,7 +135,7 @@ func (ctrl *BatchUploadController) UploadFile(c *gin.Context) {
 		duplicateMode = service.DuplicateModeSequence
 	}
 
-	// 添加验证file_id是否存在于批次中
+	// 验证file_id是否存在于批次中
 	fileUpload, exists := batch.GetFileUpload(fileID)
 	if !exists {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的文件ID")))
@@ -146,6 +147,43 @@ func (ctrl *BatchUploadController) UploadFile(c *gin.Context) {
 	if !ctrl.manager.ValidateUploadToken(batchID, uploadToken) {
 		c.JSON(http.StatusUnauthorized, model.AuthFailed.ToResponse(errors.New("无效的上传令牌")))
 		return
+	}
+
+	// 秒传：按 hash 查找已存在的上传文件记录
+	hash := c.PostForm("hash")
+	if hash != "" {
+		existingUploadFile, err := model.GetUploadFileByEidHashAndSourceType(batch.EID, hash, model.UploadFileSourceUserUpload)
+		if err == nil && existingUploadFile != nil {
+			relativePath := existingUploadFile.FileName
+			if fileUpload, exists := batch.GetFileUpload(fileID); exists {
+				relativePath = fileUpload.RelativePath
+			}
+
+			task := &service.UploadTask{
+				BatchID:       batchID,
+				FileID:        fileID,
+				RelativePath:  relativePath,
+				UserID:        batch.UserID,
+				EID:           batch.EID,
+				LibraryID:     batch.LibraryID,
+				BasePath:      batch.BasePath,
+				OriginType:    batch.OriginType,
+				OriginSource:  batch.OriginSource,
+				OriginRefID:   batch.OriginRefID,
+				Nickname:      config.GetUserNickname(c),
+				IP:            utils.GetClientIP(c),
+				DuplicateMode: duplicateMode,
+			}
+			if err := ctrl.manager.HandleInstantUpload(task, existingUploadFile); err != nil {
+				c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+				return
+			}
+			c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
+				"file_upload_id": fileID,
+				"status":         "completed",
+			}))
+			return
+		}
 	}
 
 	if config.DOCUMENT_SINGLE_FILE_MAX_SIZE > 0 {
@@ -181,6 +219,7 @@ func (ctrl *BatchUploadController) UploadFile(c *gin.Context) {
 		OriginType:    batch.OriginType,
 		OriginSource:  batch.OriginSource,
 		OriginRefID:   batch.OriginRefID,
+		GroupID:       batch.GroupID,
 		Nickname:      config.GetUserNickname(c),
 		IP:            utils.GetClientIP(c),
 		DuplicateMode: duplicateMode,

@@ -100,6 +100,7 @@ func repairLLMJSONStringLiterals(content string) (string, bool) {
 		return content, false
 	}
 
+	runes := []rune(content)
 	var builder strings.Builder
 	builder.Grow(len(content) + 16)
 
@@ -107,7 +108,7 @@ func repairLLMJSONStringLiterals(content string) (string, bool) {
 	escaped := false
 	changed := false
 
-	for _, r := range content {
+	for index, r := range runes {
 		if inString {
 			if escaped {
 				escaped = false
@@ -119,6 +120,14 @@ func repairLLMJSONStringLiterals(content string) (string, bool) {
 			case '\\':
 				escaped = true
 				builder.WriteRune(r)
+			case '”':
+				if nextJSONDelimiter(runes, index+1) {
+					builder.WriteRune('"')
+					inString = false
+					changed = true
+				} else {
+					builder.WriteRune(r)
+				}
 			case '"':
 				inString = false
 				builder.WriteRune(r)
@@ -149,6 +158,20 @@ func repairLLMJSONStringLiterals(content string) (string, bool) {
 	}
 
 	return builder.String(), changed
+}
+
+func nextJSONDelimiter(runes []rune, start int) bool {
+	for _, r := range runes[start:] {
+		switch r {
+		case ' ', '\t', '\r', '\n':
+			continue
+		case ',', ']', '}':
+			return true
+		default:
+			return false
+		}
+	}
+	return false
 }
 
 func extractLLMJSONCandidates(content string) []string {

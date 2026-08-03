@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
@@ -47,17 +49,17 @@ type FileNameSearchRequest struct {
 	CaseSensitive      *bool    `json:"case_sensitive"`       // 大小写敏感，nil表示不敏感
 	FuzzyThreshold     *int     `json:"fuzzy_threshold"`      // 模糊匹配阈值，1-2，nil表示自动
 	// 全局检索专用扩展字段
-	SpaceIDs         []int64  `json:"space_ids"`           // 空间 ID 列表（多选）
-	CreatorIDs       []int64  `json:"creator_ids"`          // 创建人 ID 列表（多选）
-	FileExtensions   []string `json:"file_extensions"`     // 文件扩展名列表（如 [".pdf", ".docx"]）
-	CreatedTimeFrom  *int64   `json:"created_time_from"`   // 创建时间范围起始（Unix 毫秒）
-	CreatedTimeTo    *int64   `json:"created_time_to"`     // 创建时间范围结束（Unix 毫秒）
-	UpdatedTimeFrom  *int64   `json:"updated_time_from"`   // 更新时间范围起始（Unix 毫秒）
-	UpdatedTimeTo    *int64   `json:"updated_time_to"`     // 更新时间范围结束（Unix 毫秒）
-	SortBy           string   `json:"sort_by"`              // "recent_update" | "recent_access"（默认 recent_update）
-	Page             int      `json:"page"`                 // 页码（从 1 开始）
-	Size             int      `json:"size"`                 // 每页条数（默认 20，最大 100）
-	From             int      `json:"from"`                 // ES from 参数（替代 Page/Size 计算）
+	SpaceIDs        []int64  `json:"space_ids"`         // 空间 ID 列表（多选）
+	CreatorIDs      []int64  `json:"creator_ids"`       // 创建人 ID 列表（多选）
+	FileExtensions  []string `json:"file_extensions"`   // 文件扩展名列表（如 [".pdf", ".docx"]）
+	CreatedTimeFrom *int64   `json:"created_time_from"` // 创建时间范围起始（Unix 毫秒）
+	CreatedTimeTo   *int64   `json:"created_time_to"`   // 创建时间范围结束（Unix 毫秒）
+	UpdatedTimeFrom *int64   `json:"updated_time_from"` // 更新时间范围起始（Unix 毫秒）
+	UpdatedTimeTo   *int64   `json:"updated_time_to"`   // 更新时间范围结束（Unix 毫秒）
+	SortBy          string   `json:"sort_by"`           // "recent_update" | "recent_access"（默认 recent_update）
+	Page            int      `json:"page"`              // 页码（从 1 开始）
+	Size            int      `json:"size"`              // 每页条数（默认 20，最大 100）
+	From            int      `json:"from"`              // ES from 参数（替代 Page/Size 计算）
 }
 
 // FileNameSearchResult 文件名搜索结果
@@ -95,6 +97,16 @@ type FileNameSearchService struct {
 	db     *gorm.DB
 }
 
+const maxFileNameSearchQueryLength = 256
+
+// ValidateFileNameSearchQuery validates the maximum query length supported by the keyword search fields.
+func ValidateFileNameSearchQuery(query string) error {
+	if utf8.RuneCountInString(query) > maxFileNameSearchQueryLength {
+		return fmt.Errorf("搜索关键词长度不能超过%d个字符", maxFileNameSearchQueryLength)
+	}
+	return nil
+}
+
 // NewFileNameSearchService 创建文件名搜索服务
 func NewFileNameSearchService(client *Client, db *gorm.DB) *FileNameSearchService {
 	return &FileNameSearchService{
@@ -106,6 +118,9 @@ func NewFileNameSearchService(client *Client, db *gorm.DB) *FileNameSearchServic
 // Search 执行文件名搜索
 func (s *FileNameSearchService) Search(eid int64, req *FileNameSearchRequest) (*FileNameSearchResponse, error) {
 	startTime := time.Now()
+	if err := ValidateFileNameSearchQuery(req.Query); err != nil {
+		return nil, err
+	}
 
 	if s.client == nil || s.client.IsDisabled() {
 		return &FileNameSearchResponse{
@@ -331,6 +346,10 @@ func (s *FileNameSearchService) executeSearch(query map[string]interface{}, from
 		if res.Status() == "404 Not Found" {
 			return make([]FileNameSearchResult, 0), 0, nil
 		}
+		body, readErr := io.ReadAll(res.Body)
+		if readErr == nil && len(body) > 0 {
+			return nil, 0, fmt.Errorf("搜索响应错误: %s: %s", res.Status(), strings.TrimSpace(string(body)))
+		}
 		return nil, 0, fmt.Errorf("搜索响应错误: %s", res.Status())
 	}
 
@@ -407,15 +426,42 @@ func (s *FileNameSearchService) enrichWithLibraryInfo(results []FileNameSearchRe
 	}
 
 	// 构建知识库映射
-	libraryMap := make(map[int64]string)
+	libraryMap := make(map[int64]model.Library)
 	for _, lib := range libraries {
-		libraryMap[lib.ID] = lib.Name
+		libraryMap[lib.ID] = lib
 	}
 
-	// 更新结果中的知识库名称
+	// 更新结果中的知识库名称和空间信息
 	for i := range results {
-		if libName, exists := libraryMap[results[i].LibraryID]; exists {
-			results[i].LibraryName = libName
+		if lib, exists := libraryMap[results[i].LibraryID]; exists {
+			results[i].LibraryName = lib.Name
+			results[i].SpaceID = lib.SpaceID
+		}
+	}
+
+	// 批量查询空间信息
+	spaceIDs := make([]int64, 0, len(results))
+	spaceIDSet := make(map[int64]bool)
+	for _, result := range results {
+		if result.SpaceID > 0 && !spaceIDSet[result.SpaceID] {
+			spaceIDs = append(spaceIDs, result.SpaceID)
+			spaceIDSet[result.SpaceID] = true
+		}
+	}
+	if len(spaceIDs) > 0 {
+		var spaces []model.Space
+		if err := s.db.Where("id IN ?", spaceIDs).Find(&spaces).Error; err == nil {
+			spaceMap := make(map[int64]string)
+			for _, sp := range spaces {
+				spaceMap[sp.ID] = sp.Name
+			}
+			for i := range results {
+				if name, exists := spaceMap[results[i].SpaceID]; exists {
+					results[i].SpaceName = name
+				}
+			}
+		} else {
+			logger.SysLogf("批量查询空间信息失败: %v", err)
 		}
 	}
 }
@@ -943,16 +989,42 @@ func (s *FileNameSearchService) SearchWithRecentAccessSort(eid int64, userID int
 		{"_score": map[string]interface{}{"order": "desc"}},
 	}
 
-	from := 0
 	size := req.Size
 	if size <= 0 {
 		size = 20
 	}
-	results, total, err := s.executeSearch(query, from, size)
+	if size > 100 {
+		size = 100
+	}
+	page := req.Page
+	if page <= 0 {
+		page = 1
+	}
+	querySize := len(recentFileIDs)
+	results, total, err := s.executeSearch(query, 0, querySize)
 	if err != nil {
 		return nil, err
 	}
 
+	results = sortRecentAccessResults(results, recentFileIDs)
+	results = paginateRecentAccessResults(results, page, size)
+
+	s.enrichWithLibraryInfo(results)
+	s.enrichWithCreatorInfo(results)
+	s.enrichWithLatestFileBodyUpdateTime(results)
+
+	searchTime := time.Since(startTime).Milliseconds()
+
+	return &FileNameSearchResponse{
+		Results: results,
+		Total:   total,
+		Time:    searchTime,
+		Query:   req.Query,
+		Source:  "es",
+	}, nil
+}
+
+func sortRecentAccessResults(results []FileNameSearchResult, recentFileIDs []int64) []FileNameSearchResult {
 	rankMap := make(map[int64]int, len(recentFileIDs))
 	for i, fid := range recentFileIDs {
 		rankMap[fid] = i
@@ -968,18 +1040,23 @@ func (s *FileNameSearchService) SearchWithRecentAccessSort(eid int64, userID int
 		}
 		return ri < rj
 	})
+	return results
+}
 
-	s.enrichWithLibraryInfo(results)
-	s.enrichWithCreatorInfo(results)
-	s.enrichWithLatestFileBodyUpdateTime(results)
-
-	searchTime := time.Since(startTime).Milliseconds()
-
-	return &FileNameSearchResponse{
-		Results: results,
-		Total:   total,
-		Time:    searchTime,
-		Query:   req.Query,
-		Source:  "es",
-	}, nil
+func paginateRecentAccessResults(results []FileNameSearchResult, page, size int) []FileNameSearchResult {
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 20
+	}
+	start := (page - 1) * size
+	if start >= len(results) {
+		return []FileNameSearchResult{}
+	}
+	end := start + size
+	if end > len(results) {
+		end = len(results)
+	}
+	return results[start:end]
 }

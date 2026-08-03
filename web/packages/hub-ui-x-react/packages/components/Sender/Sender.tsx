@@ -1011,20 +1011,21 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     );
 
     // 根据 actionPosition 决定按钮位置
+    // extras 模式:技能 + 附件 放左侧 toolbar,@ 放右侧 toolbar(挨着发送按钮),
+    // 对齐「小助理」的产品视觉规范——左侧留给技能/附件,右侧留给 @ 与发送。
     if (actionPosition === 'extras') {
       return (
         <div className="x-sender__action-bar">
           <div className="x-sender__action-buttons">
             {slots?.extrasLeft || (
               <>
-                {mentionButton}
                 {skillButton}
                 {uploadButton}
               </>
             )}
           </div>
           <div className="x-sender__action-buttons">
-            {slots?.extrasRight}
+            {slots?.extrasRight || mentionButton}
             {sendButton}
           </div>
         </div>
@@ -1056,6 +1057,7 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
 
       {renderFileList()}
       {renderLinkList()}
+      {slots?.linkListBelow}
 
       {isDragging && enableDrag && !disabled && (
         <div className="x-sender__drag-overlay">

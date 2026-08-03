@@ -38,11 +38,11 @@
 }
 
 .text-primary {
-  color: var(--el-text-color-primary, #121519);
+  color: var(--el-text-color-primary, #1D1E1F);
 }
 
 .text-primary-important {
-  color: var(--el-text-color-primary, #121519) !important;
+  color: var(--el-text-color-primary, #1D1E1F) !important;
 }
 
 .text-regular {

@@ -3,6 +3,7 @@ import type {
   IConversationApi,
   IAgentApi,
   ChatCompletionParams,
+  ConversationCreateDocumentRef,
 } from '@km/shared-business/chat'
 import {
   buildOpenClawConversation as buildSharedOpenClawConversation,
@@ -18,27 +19,41 @@ import chunksApi from '@/api/modules/chunks'
 import filesApi from '@/api/modules/files'
 import recentUsedApi from '@/api/modules/recent-used'
 import openclawApi, { type OpenClawSession } from '@/api/modules/openclaw'
+import { wikiApi } from '@/api/modules/wiki'
 import { createAgentRunAdapter } from './agent-run-adapter'
 import { useUserStore } from '@/stores/modules/user'
 import { useConversationStore } from '@/stores/modules/conversation'
 import { checkPermission } from '@/utils/permission'
-import { buildUrl } from '@/utils/router'
+import { buildUrl, buildWikiPageUrl } from '@/utils/router'
 import { t } from '@/locales'
 import { copyToClip, encodeShortId } from '@km/shared-utils'
 import { message } from 'antd'
 import { markdownPreview } from '@/components/Markdown/helper'
+import {
+  transformWikiInlineMarkup,
+  buildFileIdToSourceMetaResolver,
+} from '@/views/knowledge/wiki/utils/wiki-markup'
 
 /**
  * front-react Conversation API Adapter
  * 桥接 shared-business 的 IConversationApi 和 front-react 的 API
  */
 export const conversationApiAdapter: IConversationApi = {
-  create: async (agentId: string, question: string, title?: string, type?: string) => {
+  create: async (
+    agentId: string,
+    question: string,
+    title?: string,
+    type?: string,
+    documentRef?: ConversationCreateDocumentRef,
+  ) => {
     const conversationType = type ? Number(type) : undefined
     return conversationApi.create({
       agent_id: agentId,
       title: title || question.slice(0, 20),
       conversation_type: conversationType as any,
+      // 统一文档引用（v0.4.2 §3.2）：仅 document_type + document_id，移除旧 file_id 字段
+      document_type: documentRef?.documentType,
+      document_id: documentRef?.documentId,
     })
   },
 
@@ -60,9 +75,9 @@ export const conversationApiAdapter: IConversationApi = {
   },
 
   edit: async (conversationId: string, data: { title: string }) => {
+    // 文档引用统一（v0.4.2 §3.2）：不再发送 file_id
     return conversationApi.edit(conversationId, {
       title: data.title,
-      file_id: '',
     })
   },
 
@@ -216,6 +231,29 @@ export const chatAdapters: IChatAdapters = {
         chunk_index: chunk.chunk_index,
       }
     },
+    fetchWikiPageDetail: async (chunk) => {
+      // 动态知识：通过 /api/spaces/{space_id}/wiki/pages/{slug} 拉取完整正文
+      const spaceId = chunk?.space_id
+      const slug = chunk?.slug
+      if (!spaceId || !slug) {
+        return { content: chunk?.content || '' }
+      }
+      const detail = await wikiApi.page(String(spaceId), String(slug))
+      const body = detail?.page?.body ?? ''
+      const sources = detail?.page?.sources ?? []
+      // 把 wiki 内链 [[slug|label]] / 来源引用 转成标准 markdown 链接，
+      // 与 WikiPagePreview 行为一致；sources 用于解析 [source: file:xxx#c000] 跳转到具体文档片段
+      const hrefBuilder = (s: string) => buildWikiPageUrl(String(spaceId), s)
+      const fileIdResolver = buildFileIdToSourceMetaResolver(sources)
+      const content = transformWikiInlineMarkup(body, hrefBuilder, fileIdResolver)
+      return {
+        content,
+        page_type: detail?.page?.page_type,
+        version_no: detail?.current_version?.version_no,
+        token_count: chunk.token_count,
+        chunk_index: chunk.chunk_index,
+      }
+    },
     renderMarkdown: async (element, content) => {
       await markdownPreview(element, content)
     },
@@ -224,20 +262,27 @@ export const chatAdapters: IChatAdapters = {
   // ========== File Link 适配器 ==========
   fileLink: {
     getFileLink: (file) => {
+      if (file.type === 'wiki') {
+        if (file.isspace) {
+          return buildUrl(`/knowledge?space_id=${file.id}`)
+        } else if(file.ispage) {
+          return buildWikiPageUrl(file.space_id, file.slug)
+        }
+      }
       // 空间：跳转到知识首页，并选中对应空间的 tab
       if (file.isspace) {
-        return `/knowledge/${file.id}`
+        return buildUrl(`/knowledge?space_id=${file.id}`)
       }
       // 知识库：跳转到知识库详情
       if (file.islibrary) {
-        return `/library/${file.id}`
+        return buildUrl(`/library/${file.id}`)
       }
       // 文件夹：跳转到文件夹详情
       if (file.isfolder) {
-        return `/library/${file.library_id}/folder/${file.id}`
+        return buildUrl(`/library/${file.library_id}/folder/${file.id}`)
       }
       // 文件：跳转到文件详情
-      return `/library/${file.library_id}/file/${file.id}`
+      return buildUrl(`/library/${file.library_id}/file/${file.id}`)
     },
   },
 
@@ -265,8 +310,8 @@ export const chatAdapters: IChatAdapters = {
   // 给 useWorkflowSend 等 hook 注入 createConversation / t / showWarning。
   // 原 chatAdapters.workflow 中的同名字段迁到这里。
   platform: {
-    createConversation: (agentId, title, fileId) =>
-      useConversationStore.getState().createConversation(agentId, title, fileId),
+    createConversation: (agentId, title, documentRef) =>
+      useConversationStore.getState().createConversation(agentId, title, documentRef),
     t,
     showWarning: (msg) => message.warning(msg),
   },

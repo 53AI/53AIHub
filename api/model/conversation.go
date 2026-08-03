@@ -24,6 +24,8 @@ type Conversation struct {
 	ChannelConversationExpirationTime int64  `json:"channel_conversation_expiration_time" gorm:"column:channel_conversation_expiration_time;default:0"`
 	Model                             string `json:"model" gorm:"column:model;size:255"`
 	FileID                            int64  `json:"file_id" gorm:"column:file_id;default:0"`
+	DocumentType                      string `json:"document_type" gorm:"column:document_type;size:32;not null;default:'none';index"`
+	DocumentID                        int64  `json:"document_id" gorm:"column:document_id;default:0;index"`
 	Agent                             *Agent `json:"agent" gorm:"-"`
 	User                              *User  `json:"user" gorm:"-"`
 	BaseModel
@@ -375,11 +377,11 @@ func GetConversationsByAgentID(eid int64, agentID int64) ([]*Conversation, error
 	return conversations, nil
 }
 
-func GetAgentConversationsWithFilter(eid, agentID, userID int64, keyword string, createdAtStart, createdAtEnd, fileID int64, offset, limit int) ([]*Conversation, int64, error) {
-	return GetAgentConversationsWithFilterWithVisitor(eid, agentID, userID, keyword, createdAtStart, createdAtEnd, fileID, "", offset, limit)
+func GetAgentConversationsWithFilter(eid, agentID, userID int64, keyword string, createdAtStart, createdAtEnd int64, documentType string, documentID int64, offset, limit int) ([]*Conversation, int64, error) {
+	return GetAgentConversationsWithFilterWithVisitor(eid, agentID, userID, keyword, createdAtStart, createdAtEnd, documentType, documentID, "", offset, limit)
 }
 
-func GetAgentConversationsWithFilterWithVisitor(eid, agentID, userID int64, keyword string, createdAtStart, createdAtEnd, fileID int64, visitorID string, offset, limit int) ([]*Conversation, int64, error) {
+func GetAgentConversationsWithFilterWithVisitor(eid, agentID, userID int64, keyword string, createdAtStart, createdAtEnd int64, documentType string, documentID int64, visitorID string, offset, limit int) ([]*Conversation, int64, error) {
 	query := DB.Where("eid = ? AND agent_id = ?", eid, agentID)
 	query = applyVisitorConversationScope(query, visitorID)
 
@@ -394,8 +396,8 @@ func GetAgentConversationsWithFilterWithVisitor(eid, agentID, userID int64, keyw
 		query = query.Where("created_time <= ?", createdAtEnd)
 	}
 
-	if fileID > 0 {
-		query = query.Where("file_id = ?", fileID)
+	if documentID > 0 {
+		query = query.Where("document_type = ? AND document_id = ?", documentType, documentID)
 	}
 
 	if keyword != "" {

@@ -20,7 +20,7 @@ func (cs *ConverterService) ConvertHTMLToMarkdown(html string) (string, error) {
 	if strings.TrimSpace(html) == "" {
 		return "", fmt.Errorf("HTML内容不能为空")
 	}
-	
+
 	// 直接使用包提供的ConvertString函数
 	markdown, err := htmltomarkdown.ConvertString(html)
 	if err != nil {
@@ -34,12 +34,12 @@ func (cs *ConverterService) ConvertTextToMarkdown(text string) (string, error) {
 	if strings.TrimSpace(text) == "" {
 		return "", fmt.Errorf("文本内容不能为空")
 	}
-	
+
 	// 简单的文本到Markdown转换
 	// 保留换行，但不做其他特殊处理
 	// 可以根据需要增加更复杂的转换逻辑
 	markdown := text
-	
+
 	return markdown, nil
 }
 

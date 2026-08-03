@@ -194,7 +194,7 @@ func GetShare(c *gin.Context) {
 		}
 	}
 
-	resp.Messages = convertToEnhancedMessages(msgs, fileMap)
+	resp.Messages = convertToEnhancedMessages(msgs, fileMap, nil)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(resp))
 }

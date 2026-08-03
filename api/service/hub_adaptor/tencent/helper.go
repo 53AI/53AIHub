@@ -107,9 +107,9 @@ func ConvertStreamResponse(data string, modelName string, previousContent string
 	if tencentResp.Type == "error" {
 		// 解析错误响应结构
 		var errorResp struct {
-			Type      string `json:"type"`
-			Payload   struct {
-				Error    struct {
+			Type    string `json:"type"`
+			Payload struct {
+				Error struct {
 					Code    uint32 `json:"code"`
 					Message string `json:"message"`
 				} `json:"error"`

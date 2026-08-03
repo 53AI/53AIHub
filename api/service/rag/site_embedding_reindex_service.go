@@ -29,11 +29,12 @@ type SiteEmbeddingReindexService struct {
 }
 
 type SiteEmbeddingReindexStartRequest struct {
-	Eid          int64
-	OldChannelID int64
-	OldModelName string
-	NewChannelID int64
-	NewModelName string
+	Eid            int64
+	OldChannelID   int64
+	OldModelName   string
+	NewChannelID   int64
+	NewModelName   string
+	ActualVectorDim int // 实际 API 返回的向量维度，0 表示使用 catalog 维度
 }
 
 type siteEmbeddingReindexHooks struct {
@@ -95,9 +96,15 @@ func (s *SiteEmbeddingReindexService) Start(ctx context.Context, req SiteEmbeddi
 
 	// 旧模型维度不可解析时（如模型已从 catalog 移除），保守假设维度已变
 	oldDimension, _ := resolveEmbeddingModelDimension(req.OldModelName)
-	newDimension, err := resolveEmbeddingModelDimension(req.NewModelName)
-	if err != nil {
-		return nil, err
+	var newDimension int
+	var err error
+	if req.ActualVectorDim > 0 {
+		newDimension = req.ActualVectorDim
+	} else {
+		newDimension, err = resolveEmbeddingModelDimension(req.NewModelName)
+		if err != nil {
+			return nil, err
+		}
 	}
 	dimensionChanged := newDimension > 0 && (oldDimension == 0 || oldDimension != newDimension)
 
@@ -612,10 +619,6 @@ func enqueueSiteEmbeddingReindexJob(ctx context.Context, job *model.RagJob) erro
 }
 
 func rebuildSiteEmbeddingReindexCollection(ctx context.Context, eid, libraryID int64, newDimension int) error {
-	library, err := model.GetLibraryByID(eid, libraryID)
-	if err != nil {
-		return err
-	}
 	cfg := vectorstore.LoadFromEnv()
 	store, err := vectorstore.NewVectorStore(cfg)
 	if err != nil {
@@ -627,20 +630,7 @@ func rebuildSiteEmbeddingReindexCollection(ctx context.Context, eid, libraryID i
 	defer store.Disconnect(ctx)
 
 	mode := GetVectorCollectionMode()
-	logger.SysLogf("【诊断-重建删除集合】eid=%d, library_id=%d, mode=%s", eid, libraryID, mode)
-
-	// 1. 对于 library-level 集合：删除整个集合（因为每个库独立）
-	libCollection := model.GetVectorCollectionName(library.UUID)
-	if err := store.DeleteCollection(ctx, libCollection); err != nil {
-		if !vectorstore.IsNotFoundError(err) {
-			return fmt.Errorf("删除库级集合 %s 失败: %v", libCollection, err)
-		}
-		logger.SysLogf("【诊断-重建删除集合】库级集合不存在跳过: %s", libCollection)
-	} else {
-		logger.SysLogf("【诊断-重建删除集合】已删除库级集合: %s", libCollection)
-	}
-
-	// 2. 对于 enterprise-level 集合：维度变化时整个集合必须重建（Qdrant 集合维度固定不可变）
+	// 对于 enterprise-level 集合：维度变化时整个集合必须重建（Qdrant 集合维度固定不可变）
 	if mode == VectorCollectionModeEnterprise || mode == VectorCollectionModeDual {
 		entCollection := model.GetDocumentVectorCollectionName(eid)
 		logger.SysLogf("【诊断-重建删除集合-enterprise】eid=%d, library_id=%d, dimension=%d, collection=%s", eid, libraryID, newDimension, entCollection)
@@ -652,9 +642,23 @@ func rebuildSiteEmbeddingReindexCollection(ctx context.Context, eid, libraryID i
 		} else {
 			logger.SysLogf("【诊断-重建删除集合-enterprise】已删除企业级集合: %s", entCollection)
 		}
+
+		// 重建集合（用实际 API 维度，而非 catalog 维度）
+		if newDimension > 0 {
+			logger.SysLogf("【诊断-重建集合-enterprise】创建新集合: %s, dimension=%d", entCollection, newDimension)
+			if err := store.CreateCollection(ctx, vectorstore.CollectionConfig{
+				Name:      entCollection,
+				Dimension: newDimension,
+				Metric:    cfg.DistanceMetric,
+			}); err != nil {
+				return fmt.Errorf("重建企业级集合 %s 失败: %v", entCollection, err)
+			}
+			logger.SysLogf("【诊断-重建集合-enterprise】新集合创建成功: %s, dimension=%d", entCollection, newDimension)
+		}
 	}
 
 	logger.SysLogf("【诊断-重建删除集合完成】eid=%d, library_id=%d, mode=%s, new_dimension=%d", eid, libraryID, mode, newDimension)
+
 
 	return nil
 }

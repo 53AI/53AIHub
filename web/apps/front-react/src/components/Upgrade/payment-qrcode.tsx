@@ -200,7 +200,7 @@ export const PaymentQrcode = forwardRef<PaymentQrcodeRef, PaymentQrcodeProps>(
         >
           <div className="mt-8 flex flex-col items-center justify-center gap-4">
             <CheckCircleFilled style={{ fontSize: 58, color: '#3ABA52' }} />
-            <span className="text-2xl text-black">
+            <span className="text-2xl text-primary">
               {activePayment === PAYMENT_TYPE.WECHAT ? '支付成功' : '申请已提交'}
             </span>
           </div>

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,18 +15,23 @@ import (
 )
 
 type FileNameSearchRequest struct {
-	Query          string
-	TopK           int
-	LibraryIDs     []int64
-	CaseSensitive  *bool
-	FuzzyThreshold *int
-	CreatorIDs     []int64
-	FileExtensions []string
-	TimeFrom       *int64
-	TimeTo         *int64
-	TimeField      string // "created_time" or "updated_time"
-	Page           int
-	Size           int
+	Query           string
+	TopK            int
+	LibraryIDs      []int64
+	CaseSensitive   *bool
+	FuzzyThreshold  *int
+	CreatorIDs      []int64
+	FileExtensions  []string
+	CreatedTimeFrom *int64
+	CreatedTimeTo   *int64
+	UpdatedTimeFrom *int64
+	UpdatedTimeTo   *int64
+	SortBy          string
+	TimeFrom        *int64
+	TimeTo          *int64
+	TimeField       string // "created_time" or "updated_time"
+	Page            int
+	Size            int
 }
 
 type SearchService struct {
@@ -37,6 +43,9 @@ type fileNameSearcher interface {
 }
 
 var getGlobalFileNameSearchClient = es.GetGlobalClient
+var isGlobalFileNameSearchClientEnabled = func(client *es.Client) bool {
+	return client != nil && !client.IsDisabled()
+}
 var newFileNameSearchExecutor = func(client *es.Client, db *gorm.DB) fileNameSearcher {
 	return es.NewFileNameSearchService(client, db)
 }
@@ -59,7 +68,7 @@ func (s *SearchService) SearchFileNames(ctx context.Context, eid int64, args ...
 	}
 
 	client := getGlobalFileNameSearchClient()
-	if client == nil || client.IsDisabled() {
+	if !isGlobalFileNameSearchClientEnabled(client) {
 		resp, err := s.searchFileNameByDatabase(eid, userID, req, startTime)
 		if err != nil {
 			return nil, err
@@ -70,26 +79,44 @@ func (s *SearchService) SearchFileNames(ctx context.Context, eid int64, args ...
 
 	searchExecutor := newFileNameSearchExecutor(client, s.db)
 	response, err := searchExecutor.Search(eid, &es.FileNameSearchRequest{
-		Query:          req.Query,
-		TopK:           req.TopK,
-		LibraryIDs:     req.LibraryIDs,
-		CaseSensitive:  req.CaseSensitive,
-		FuzzyThreshold: req.FuzzyThreshold,
+		Query:           req.Query,
+		TopK:            req.TopK,
+		LibraryIDs:      req.LibraryIDs,
+		CaseSensitive:   req.CaseSensitive,
+		FuzzyThreshold:  req.FuzzyThreshold,
+		CreatorIDs:      req.CreatorIDs,
+		FileExtensions:  req.FileExtensions,
+		CreatedTimeFrom: firstTimePointer(req.CreatedTimeFrom, timePointerForField(req.TimeFrom, req.TimeField, "created_time")),
+		CreatedTimeTo:   firstTimePointer(req.CreatedTimeTo, timePointerForField(req.TimeTo, req.TimeField, "created_time")),
+		UpdatedTimeFrom: firstTimePointer(req.UpdatedTimeFrom, timePointerForField(req.TimeFrom, req.TimeField, "updated_time")),
+		UpdatedTimeTo:   firstTimePointer(req.UpdatedTimeTo, timePointerForField(req.TimeTo, req.TimeField, "updated_time")),
+		SortBy:          req.SortBy,
+		Page:            req.Page,
+		Size:            req.Size,
 	})
 	if err != nil {
-		logger.SysLogf("Elasticsearch 搜索失败，降级到数据库搜索: eid=%d, query=%s, err=%v", eid, req.Query, err)
-		resp, dbErr := s.searchFileNameByDatabase(eid, userID, req, startTime)
-		if dbErr != nil {
-			return nil, fmt.Errorf("ES搜索失败(%v)，数据库降级也失败: %v", err, dbErr)
-		}
-		resp.Source = "sql"
-		return resp, nil
+		logger.SysLogf("Elasticsearch 搜索失败，不回退 SQL: eid=%d, query=%s, err=%v", eid, req.Query, err)
+		return nil, fmt.Errorf("Elasticsearch 搜索失败: %v", err)
 	}
 	response.Source = "es"
 	if userID > 0 {
 		return s.filterSearchResponseByPermission(eid, userID, response)
 	}
 	return response, nil
+}
+
+func timePointerForField(value *int64, field, wanted string) *int64 {
+	if value == nil || field != wanted {
+		return nil
+	}
+	return value
+}
+
+func firstTimePointer(primary, fallback *int64) *int64 {
+	if primary != nil {
+		return primary
+	}
+	return fallback
 }
 
 func parseFileNameSearchRequest(args []interface{}) (int64, *FileNameSearchRequest) {
@@ -130,16 +157,45 @@ func (s *SearchService) searchFileNameByDatabase(eid, userID int64, req *FileNam
 	}
 	if len(req.FileExtensions) > 0 {
 		var extConditions []string
+		var extValues []interface{}
 		for _, ext := range req.FileExtensions {
-			extConditions = append(extConditions, "path LIKE '%"+ext+"'")
+			extConditions = append(extConditions, "path LIKE ?")
+			extValues = append(extValues, "%"+ext)
 		}
-		query = query.Where(strings.Join(extConditions, " OR "))
+		query = query.Where(strings.Join(extConditions, " OR "), extValues...)
 	}
-	if req.TimeFrom != nil && req.TimeField != "" {
-		query = query.Where(req.TimeField+" >= ?", *req.TimeFrom)
+	if req.CreatedTimeFrom != nil {
+		query = query.Where("created_time >= ?", *req.CreatedTimeFrom)
 	}
-	if req.TimeTo != nil && req.TimeField != "" {
-		query = query.Where(req.TimeField+" <= ?", *req.TimeTo)
+	if req.CreatedTimeTo != nil {
+		query = query.Where("created_time <= ?", *req.CreatedTimeTo)
+	}
+	if req.UpdatedTimeFrom != nil {
+		query = query.Where("updated_time >= ?", *req.UpdatedTimeFrom)
+	}
+	if req.UpdatedTimeTo != nil {
+		query = query.Where("updated_time <= ?", *req.UpdatedTimeTo)
+	}
+	if req.CreatedTimeFrom == nil && req.CreatedTimeTo == nil && req.UpdatedTimeFrom == nil && req.UpdatedTimeTo == nil && req.TimeField != "" {
+		if req.TimeFrom != nil {
+			query = query.Where(req.TimeField+" >= ?", *req.TimeFrom)
+		}
+		if req.TimeTo != nil {
+			query = query.Where(req.TimeField+" <= ?", *req.TimeTo)
+		}
+	}
+
+	var recentFileIDs []int64
+	if req.SortBy == "recent_access" {
+		var err error
+		recentFileIDs, err = model.GetUserRecentFileIDs(eid, userID, 1000)
+		if err != nil {
+			return nil, fmt.Errorf("获取最近访问文件失败: %v", err)
+		}
+		if len(recentFileIDs) == 0 {
+			return &es.FileNameSearchResponse{Results: []es.FileNameSearchResult{}, Total: 0, Time: time.Since(startTime).Milliseconds(), Query: req.Query, Source: "sql"}, nil
+		}
+		query = query.Where("id IN ?", recentFileIDs)
 	}
 
 	size := req.TopK
@@ -159,10 +215,28 @@ func (s *SearchService) searchFileNameByDatabase(eid, userID int64, req *FileNam
 		return nil, fmt.Errorf("数据库搜索统计失败: %v", err)
 	}
 
-	query = query.Order("updated_time DESC").Offset(offset).Limit(size)
-
 	var files []model.File
-	if err := query.Find(&files).Error; err != nil {
+	if req.SortBy == "recent_access" {
+		if err := query.Find(&files).Error; err != nil {
+			return nil, fmt.Errorf("数据库搜索失败: %v", err)
+		}
+		rankMap := make(map[int64]int, len(recentFileIDs))
+		for i, fileID := range recentFileIDs {
+			rankMap[fileID] = i
+		}
+		sort.SliceStable(files, func(i, j int) bool {
+			return rankMap[files[i].ID] < rankMap[files[j].ID]
+		})
+		if offset >= len(files) {
+			files = []model.File{}
+		} else {
+			end := offset + size
+			if end > len(files) {
+				end = len(files)
+			}
+			files = files[offset:end]
+		}
+	} else if err := query.Order("updated_time DESC").Offset(offset).Limit(size).Find(&files).Error; err != nil {
 		return nil, fmt.Errorf("数据库搜索失败: %v", err)
 	}
 
@@ -243,7 +317,6 @@ func (s *SearchService) filterSearchResponseByPermission(eid, userID int64, resp
 		filtered = append(filtered, result)
 	}
 	response.Results = filtered
-	response.Total = int64(len(filtered))
 	return response, nil
 }
 

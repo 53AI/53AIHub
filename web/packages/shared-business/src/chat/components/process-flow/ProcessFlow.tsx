@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { message } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { formatFileInfo } from "@km/shared-utils";
-import { safeParseJson, formatLlmContent } from "./utils";
+import { safeParseJson, formatLlmContent, dedupeWikiPages } from "./utils";
 import { copyToClip } from "@km/shared-utils";
 import { useTranslation, useKnowledgePanel } from "../../i18n";
 import type { ProcessFlowHeaderProps, ProcessRecord, StepStatus, TranslateFn } from "./types";
@@ -742,11 +742,14 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
     if (step.type === "knowledge_search") {
       const data = step.data as any;
       const allSources = Array.isArray(data?.sources) ? data.sources : [];
-      const graphResults = allSources.filter((s: any) => s.chunk_type === "graph_result");
+      const graphResults = allSources.filter((s: any) => s.chunk_type === ("graph_result" as const));
       // 联网搜索结果的 chunk_type 为 "web_page"
-      const webPageResults = allSources.filter((s: any) => s.chunk_type === "web_page");
+      const webPageResults = allSources.filter((s: any) => s.chunk_type === ("web_page" as const));
       // 知识库检索结果
-      const knowledgeSources = allSources.filter((s: any) => s.chunk_type === "knowledge");
+      const knowledgeSources = allSources.filter((s: any) => s.chunk_type === ("knowledge" as const));
+      // 动态知识检索结果
+      const wikiSources = allSources.filter((s: any) => s.chunk_type === ("wiki" as const));
+      const wikiPages = dedupeWikiPages(wikiSources as any);
 
       return isExpanded ? (
         <div className="x-task-step-body">
@@ -790,8 +793,8 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                 </>
               )}
 
-              {/* 知识库检索结果 */}
-              {knowledgeSources.length > 0 && (
+              {/* 知识库/动态知识检索结果 */}
+              {(knowledgeSources.length > 0 || wikiPages.length > 0) && (
                 <div style={{ marginTop: graphResults.length > 0 ? "16px" : 0 }}>
                   {(() => {
                     const uniqueFiles = new Map<string, any>();
@@ -808,7 +811,20 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                       <>
                         <div className={`x-task-tag ${isInteractive ? "" : "x-task-tag--normal"}`} onClick={isInteractive ? handleKnowledgeTagClick : undefined}>
                           <div className="x-task-tag-icon"><SvgIcon name="search" size={16} /></div>
-                          {t("process.knowledge_found")}{uniqueLibraries.size}{t("process.knowledge_libraries")}、{dedupedSources.length}{t("process.knowledge_documents")}
+                          {(() => {
+                            const segments: string[] = [];
+                            if (knowledgeSources.length > 0) {
+                              segments.push(`${uniqueLibraries.size}${t("process.knowledge_libraries")}`);
+                              segments.push(`${dedupedSources.length}${t("process.knowledge_documents")}`);
+                            }
+                            if (wikiPages.length > 0) {
+                              segments.push(`${wikiPages.length}${t("process.wiki_documents")}`);
+                            }
+                            const prefix = knowledgeSources.length > 0
+                              ? t("process.knowledge_found")
+                              : t("process.wiki_found");
+                            return segments.length > 0 ? `${prefix}${segments.join("、")}` : null;
+                          })()}
                           {isInteractive && <div className="x-task-tag-icon"><SvgIcon name="arrow-right" size={16} /></div>}
                         </div>
                         <div className="x-task-relation-list">
@@ -827,6 +843,19 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                               </span>
                             );
                           })}
+                          {wikiPages.map((source: any) => (
+                            <span
+                              key={source.wiki_page_id as string}
+                              className="x-task-relation-item"
+                              style={{ cursor: isInteractive ? "pointer" : "default" }}
+                              onClick={() => handleSourceItemClick(source)}
+                            >
+                              <span className="x-task-relation-icon x-task-relation-icon--wiki">
+                                <SvgIcon name="doc-detail" size={12} />
+                              </span>
+                              <span className="x-task-relation-name">{(source.title as string) || "--"}</span>
+                            </span>
+                          ))}
                         </div>
                       </>
                     );
@@ -854,7 +883,7 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
               )}
 
               {/* 无数据时显示消息 */}
-              {graphResults.length === 0 && knowledgeSources.length === 0 && webPageResults.length === 0 &&
+              {graphResults.length === 0 && knowledgeSources.length === 0 && webPageResults.length === 0 && wikiPages.length === 0 &&
                 (!data?.error_count || data.error_count === 0) && step.message && <div>{step.message}</div>}
             </>
           )}

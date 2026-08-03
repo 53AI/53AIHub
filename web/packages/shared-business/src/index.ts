@@ -10,3 +10,6 @@ export { useTranslation as useAuthTranslation } from './auth'
 
 // Knowledge Pipeline Module (includes dataPipelineMessages)
 export * from './knowledge-pipeline'
+
+// Recording Template Module
+export * from './recording-template'

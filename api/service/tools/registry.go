@@ -148,7 +148,7 @@ var registry = map[string]ToolDefinition{
 		Type: "function",
 		Function: Function{
 			Name:        "write_file",
-			Description: "Write text content to a file in the workspace. For larger outputs, prefer writing via a script or generating the file inside the sandbox.",
+			Description: "Write text content to a file in the workspace. Keep each content payload at or below 6000 characters. For larger content, write the first chunk normally, then append later chunks with append=true.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -158,7 +158,7 @@ var registry = map[string]ToolDefinition{
 					},
 					"content": map[string]interface{}{
 						"type":        "string",
-						"description": "Text content to write",
+						"description": "Text content to write, at most 6000 characters per call; split larger content into append chunks",
 					},
 					"append": map[string]interface{}{
 						"type":        "boolean",
@@ -181,7 +181,7 @@ var registry = map[string]ToolDefinition{
 		Type: "function",
 		Function: Function{
 			Name:        "prepare_input_file",
-			Description: "Prepare an input file in the workspace. Prefer this semantic tool for large or structured content that will be consumed by scripts or shell commands.",
+			Description: "Prepare an input file in the workspace for scripts or shell commands. Keep each content payload at or below 6000 characters. For larger content, write the first chunk normally, then append later chunks with append=true.",
 			Parameters: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -191,7 +191,7 @@ var registry = map[string]ToolDefinition{
 					},
 					"content": map[string]interface{}{
 						"type":        "string",
-						"description": "Text content to write",
+						"description": "Text content to write, at most 6000 characters per call; split larger content into append chunks",
 					},
 					"append": map[string]interface{}{
 						"type":        "boolean",

@@ -223,7 +223,7 @@ var errInvalidShortcutType = errors.New("快捷方式类型无效")
 
 func validateShortcutType(shortcutType string) error {
 	switch shortcutType {
-	case model.ShortcutTypeAgent, model.ShortcutTypeLibrary, model.ShortcutTypeAILink:
+	case model.ShortcutTypeAgent, model.ShortcutTypeLibrary, model.ShortcutTypeAILink, model.ShortcutTypeWikiPage:
 		return nil
 	default:
 		return errInvalidShortcutType
@@ -248,6 +248,12 @@ func validateShortcutRelatedObjectExists(eid int64, shortcutType string, related
 		link, err := model.GetAILinkByID(relatedID)
 		if err != nil || link == nil || link.Eid != eid {
 			return errors.New("AI工具不存在")
+		}
+		return nil
+	case model.ShortcutTypeWikiPage:
+		page, err := model.GetWikiPageByID(eid, relatedID)
+		if err != nil || page == nil {
+			return errors.New("Wiki页面不存在")
 		}
 		return nil
 	default:
@@ -293,6 +299,12 @@ func buildShortcutItem(eid int64, s model.Shortcut) (ShortcutItem, error) {
 		item.Name = link.Name
 		item.Logo = link.Logo
 		item.Url = link.URL
+	case model.ShortcutTypeWikiPage:
+		page, err := model.GetWikiPageByID(eid, s.RelatedID)
+		if err != nil || page == nil {
+			return ShortcutItem{}, errors.New("Wiki页面不存在")
+		}
+		item.Name = page.Title
 	default:
 		return ShortcutItem{}, errInvalidShortcutType
 	}
@@ -308,6 +320,7 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 	agentIDs := make([]int64, 0)
 	libraryIDs := make([]int64, 0)
 	aiLinkIDs := make([]int64, 0)
+	wikiPageIDs := make([]int64, 0)
 
 	for _, s := range shortcuts {
 		switch s.Type {
@@ -317,6 +330,8 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 			libraryIDs = append(libraryIDs, s.RelatedID)
 		case model.ShortcutTypeAILink:
 			aiLinkIDs = append(aiLinkIDs, s.RelatedID)
+		case model.ShortcutTypeWikiPage:
+			wikiPageIDs = append(wikiPageIDs, s.RelatedID)
 		}
 	}
 
@@ -336,6 +351,10 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 		Name string `gorm:"column:name"`
 		Logo string `gorm:"column:logo"`
 		Url  string `gorm:"column:url"`
+	}
+	type wikiPageMeta struct {
+		ID    int64  `gorm:"column:id"`
+		Title string `gorm:"column:title"`
 	}
 
 	agentMap := map[int64]agentMeta{}
@@ -380,6 +399,20 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 		}
 	}
 
+	wikiPageMap := map[int64]wikiPageMeta{}
+	if len(wikiPageIDs) > 0 {
+		var pages []wikiPageMeta
+		if err := model.DB.Model(&model.WikiPage{}).
+			Select("id, title").
+			Where("eid = ? AND id IN ?", eid, wikiPageIDs).
+			Find(&pages).Error; err != nil {
+			return nil, err
+		}
+		for _, p := range pages {
+			wikiPageMap[p.ID] = p
+		}
+	}
+
 	out := make([]ShortcutItem, 0, len(shortcuts))
 	for _, s := range shortcuts {
 		encodedRelatedID, err := hashids.Encode(s.RelatedID)
@@ -415,6 +448,11 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 				item.Name = l.Name
 				item.Logo = l.Logo
 				item.Url = l.Url
+				out = append(out, item)
+			}
+		case model.ShortcutTypeWikiPage:
+			if p, ok := wikiPageMap[s.RelatedID]; ok {
+				item.Name = p.Title
 				out = append(out, item)
 			}
 		}

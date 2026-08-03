@@ -19,6 +19,7 @@ import { enableBeforeUnloadProtection } from '@/utils/before-unload-guard'
 import type { UploadStatus } from './constants'
 import { FILE_SIZE_LIMITS, UPLOAD_CONFIG, UPLOAD_STATUS } from './constants'
 import {
+  calculateFileHash,
   formatFileSize,
   generateFileId,
   scanDirectoryStructure,
@@ -587,9 +588,14 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
 
       try {
         const params: BatchUploadFileParams = {
-          file: item.file,
           upload_token: item.uploadToken,
           file_upload_id: item.fileUploadId
+        }
+        // 秒传命中：不传 file 二进制，仅传 hash 让后端复用已有 UploadFile
+        if (item.instantUploaded && item.hash) {
+          params.hash = item.hash
+        } else {
+          params.file = item.file
         }
         // Add duplicate_mode if specified
         if (item.duplicateMode) {
@@ -694,11 +700,16 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   // ==================== 队列管理 ====================
   /**
    * 添加到上传队列（优化版本）
+   * @param fileHashes 秒传预检结果：key = file 对象引用，value = { hash, existingFileId? }
+   *                   existingFileId 存在时视为秒传命中，fileUploadId 直接复用，不再走 multipart 传 file
+   *                   注意：不能用 generateFileId 作为 key，因为它基于 Date.now + random，
+   *                   每次调用返回值不同，跨函数查 Map 会查不到。这里改用 file 对象引用做 key。
    */
   const addFilesToQueue = useCallback(
     (
       files: File[],
       batchResponse: BatchUploadInitResponse,
+      fileHashes?: Map<File, { hash: string; existingFileId?: string }>,
       duplicateMode?: 'replace' | 'sequence'
     ) => {
       const newItems: UploadItem[] = files.map(file => {
@@ -706,6 +717,10 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         const id = generateFileId(file)
         // 新文件入队时清理取消标记，防止 id 复用导致误拦
         cancelledIdsRef.current.delete(id)
+        const hashInfo = fileHashes?.get(file)
+        const mappedFileUploadId = batchResponse.file_mappings[
+          (file as any).webkitRelativePath ? `/${(file as any).webkitRelativePath}` : file.name
+        ]
         return {
           id,
           file,
@@ -716,7 +731,10 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
           batchId: batchResponse.batch_id,
           uploadToken: batchResponse.upload_token,
           fileUploadId: batchResponse.file_mappings[(file as any).webkitRelativePath ? `/${(file as any).webkitRelativePath}` : file.name],
-          fileId: '',
+          // 秒传命中时复用已有 UploadFile id 作为 fileUploadId；未命中走 batch/init 返回的 mapping
+          fileId: "",
+          hash: hashInfo?.hash,
+          instantUploaded: Boolean(hashInfo?.existingFileId),
           duplicateMode
         }
       })
@@ -729,6 +747,12 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
 
   /**
    * 添加到上传队列（异步版本）
+   * 秒传预检策略：
+   * 1. 先调用 batch/init 创建 batch 并获取 file_mappings
+   * 2. 再对每个文件计算 SHA-256 并调用 /api/upload/check 预检（仅产出元数据，不阻断）
+   * 3. 所有文件仍然走 batch/upload 完整链路；命中项在 batchUploadFile 时不传 file 二进制，
+   *    仅传 hash + upload_token + file_upload_id，由后端按 hash 复用已有 UploadFile
+   * - 大文件 / hash 失败 / check 失败：走原 multipart 上传链路
    */
   const addToQueue = useCallback(
     async (files: File[]) => {
@@ -741,6 +765,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         }
       }
 
+      // 1) 先 init：创建 batch 并获取 file_mappings（命中项后续用 check 返回的 file.id 覆盖）
       const batchTask = await createBatchTask(files)
 
       // Check if duplicates were found
@@ -759,13 +784,40 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         return
       }
 
-      // No duplicates, proceed normally
-      addFilesToQueue(files, {
-        batch_id: batchTask.batchId,
-        upload_token: batchTask.uploadToken,
-        file_mappings: batchTask.fileMappings,
-        duplicate_files: []
-      })
+      // 2) 再 check：init 之后对每个文件做秒传预检，命中仅记录元数据，不影响 init 已创建的 batch
+      // 用 file 对象引用作为 key（不能用 generateFileId，它是 Date.now + random 生成的不稳定 id）
+      const fileHashes = new Map<File, { hash: string; existingFileId?: string }>()
+
+      for (const file of files) {
+        // 超大文件跳过 hash 计算（避免一次性读取占用过多内存，由服务端兜底去重）
+        if (file.size > FILE_SIZE_LIMITS.MAX_HASH_FILE_SIZE) {
+          continue
+        }
+
+        try {
+          const hash = await calculateFileHash(file)
+          const checkResult = await filesApi.checkUpload(hash)
+          fileHashes.set(file, {
+            hash,
+            existingFileId: checkResult.exists ? checkResult.file.id : undefined
+          })
+        } catch (error) {
+          // 降级到原 multipart 上传链路（Web Crypto 不可用 / 接口异常等场景）
+          console.warn('秒传预检失败，降级到原上传链路:', error)
+        }
+      }
+
+      // 3) 所有文件都进 batch 链路；命中项在 batchUploadFile 处不传 file，仅传 hash
+      addFilesToQueue(
+        files,
+        {
+          batch_id: batchTask.batchId,
+          upload_token: batchTask.uploadToken,
+          file_mappings: batchTask.fileMappings,
+          duplicate_files: []
+        },
+        fileHashes
+      )
     },
     [uploadQueue, cleanupCompletedItems, createBatchTask, addFilesToQueue]
   )
@@ -779,7 +831,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
     const { files, batchResponse } = pendingBatchData
     setShowDuplicateModal(false)
 
-    addFilesToQueue(files, batchResponse, 'replace')
+    addFilesToQueue(files, batchResponse, undefined, 'replace')
     setPendingBatchData(null)
   }, [pendingBatchData, addFilesToQueue])
 
@@ -792,7 +844,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
     const { files, batchResponse } = pendingBatchData
     setShowDuplicateModal(false)
 
-    addFilesToQueue(files, batchResponse, 'sequence')
+    addFilesToQueue(files, batchResponse, undefined, 'sequence')
     setPendingBatchData(null)
   }, [pendingBatchData, addFilesToQueue])
 

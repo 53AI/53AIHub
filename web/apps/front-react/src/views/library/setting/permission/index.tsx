@@ -243,6 +243,7 @@ export function LibraryPermissionSettingsView() {
       title: "权限",
       dataIndex: "permission",
       key: "permission",
+      align: "center",
       render: (permission, record) => (
         <RolePopover
           value={permission}
@@ -272,9 +273,9 @@ export function LibraryPermissionSettingsView() {
   ];
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden px-[60px] bg-[#F8F9FA]">
+    <div className="h-screen flex flex-col overflow-hidden px-[78px]">
       <Header className="pt-8 pb-5" title="成员与权限" />
-      <div className="bg-[#ffffff] flex-1 gap-6 px-10 py-8 overflow-y-auto mb-5">
+      <div className="flex-1 gap-6 overflow-y-auto mb-5">
         <Table
           className="mt-6"
           columns={columns}

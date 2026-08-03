@@ -12,8 +12,8 @@ import { SearchOutlined, CloseCircleFilled } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { filesApi } from "@/api/modules/files";
 import type { FileSearchParams } from "@/api/modules/files/types";
-import { formatFileInfo } from "@/api/modules/files/transform";
-import { debounce, getSimpleDateFormatString } from "@km/shared-utils";
+import { formatFileSearchResults } from "@/api/modules/files/transform";
+import { debounce } from "@km/shared-utils";
 import { checkPermission } from "@/utils/permission";
 
 interface FileSearchItem {
@@ -135,20 +135,7 @@ export const FileSearch = forwardRef<FileSearchRef, FileSearchProps>(
 
           const response = await filesApi.search(params);
 
-          const results = (response.results || []).map((item) => {
-            const isfolder = item.type === 0;
-            const data = formatFileInfo(item.path, isfolder);
-            return {
-              ...item,
-              name: data.fname,
-              icon: data.icon,
-              isfolder,
-              location: `${item.space_name}/${item.library_name}`,
-              lastUpdated: getSimpleDateFormatString({
-                date: item.latest_file_body_update_time,
-              }),
-            };
-          });
+          const results = formatFileSearchResults(response.results || []);
 
           setSearchResults(results);
           setShowPanel(true);

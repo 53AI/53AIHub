@@ -581,6 +581,8 @@ func (s *OpenClawService) callWithOptions(ctx context.Context, req OpenClawReque
 		return nil, newOpenClawServiceError(http.StatusServiceUnavailable, model.NetworkError, "OpenClaw 插件未连接", nil)
 	}
 
+	logger.Infof(ctx, "[openclaw-diag] CallRPC START action=%s conversation_id=%s", action, req.ConversationID)
+	startTime := time.Now()
 	result, err := client.CallRPC(ctx, action, payload)
 	if err != nil {
 		mappedErr := mapOpenClawRPCError(err)
@@ -622,6 +624,7 @@ func (s *OpenClawService) callWithOptions(ctx context.Context, req OpenClawReque
 		"status":     result.Status,
 		"data_bytes": len(result.Data),
 	})
+	logger.Infof(ctx, "[openclaw-diag] CallRPC DONE action=%s elapsed=%v bytes=%d", action, time.Since(startTime), len(result.Data))
 	return result.Data, nil
 }
 

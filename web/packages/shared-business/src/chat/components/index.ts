@@ -16,7 +16,7 @@ export type {
   MessageMenuSlotProps,
   MessageSelectionFeature,
   WelcomeFeature as ChatMessagesWelcomeFeature,
-  OpenClawFeature as ChatMessagesOpenClawFeature,
+  OpenClawFeature,
   LoadMoreFeature,
   MessageActionFeature,
   FileActionFeature,

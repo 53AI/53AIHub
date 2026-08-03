@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -14,16 +15,25 @@ import (
 	"github.com/53AI/53AIHub/service/sandboxruntime"
 )
 
-// SandboxOutputSnapshot stores the content hash of files under output/ and outputs/.
+// SandboxOutputSnapshot stores content hashes plus cheap file metadata for
+// output/ and outputs/. Metadata lets subsequent turns avoid reading and
+// hashing files that have not changed.
 type SandboxOutputSnapshot struct {
-	Files map[string]string
+	Files    map[string]string
+	Metadata map[string]SandboxOutputFileMetadata
+}
+
+type SandboxOutputFileMetadata struct {
+	Size               int64
+	ModTimeUnixNano    int64
+	ChangeTimeUnixNano int64
+	Mode               uint32
 }
 
 type sandboxOutputFileRecord struct {
 	FileName string
-	Content  []byte
-	Hash     string
-	MimeType string
+	AbsPath  string
+	Metadata SandboxOutputFileMetadata
 }
 
 type sandboxOutputSnapshotHistory struct {
@@ -97,28 +107,55 @@ func primeSandboxOutputSnapshot(ctx context.Context, root string) error {
 }
 
 func captureSandboxOutputFiles(prev *SandboxOutputSnapshot, root string) (*SandboxOutputSnapshot, []OutputFile, error) {
+	return captureSandboxOutputFilesWithReader(prev, root, os.ReadFile)
+}
+
+func captureSandboxOutputFilesWithReader(prev *SandboxOutputSnapshot, root string, readFile func(string) ([]byte, error)) (*SandboxOutputSnapshot, []OutputFile, error) {
 	records, err := scanSandboxOutputFiles(root)
 	if err != nil {
 		return nil, nil, err
 	}
+	if readFile == nil {
+		readFile = os.ReadFile
+	}
 
-	snapshot := &SandboxOutputSnapshot{Files: make(map[string]string, len(records))}
+	snapshot := &SandboxOutputSnapshot{
+		Files:    make(map[string]string, len(records)),
+		Metadata: make(map[string]SandboxOutputFileMetadata, len(records)),
+	}
 	prevFiles := map[string]string{}
+	prevMetadata := map[string]SandboxOutputFileMetadata{}
 	if prev != nil && len(prev.Files) > 0 {
 		prevFiles = prev.Files
+	}
+	if prev != nil && len(prev.Metadata) > 0 {
+		prevMetadata = prev.Metadata
 	}
 
 	changed := make([]OutputFile, 0, len(records))
 	for _, record := range records {
-		snapshot.Files[record.FileName] = record.Hash
-		if prevHash, exists := prevFiles[record.FileName]; exists && prevHash == record.Hash {
+		snapshot.Metadata[record.FileName] = record.Metadata
+		if previous, exists := prevMetadata[record.FileName]; exists && previous == record.Metadata {
+			if prevHash, hasHash := prevFiles[record.FileName]; hasHash {
+				snapshot.Files[record.FileName] = prevHash
+				continue
+			}
+		}
+
+		content, readErr := readFile(record.AbsPath)
+		if readErr != nil {
+			return nil, nil, readErr
+		}
+		hash := sandboxruntime.HashBytes(content)
+		snapshot.Files[record.FileName] = hash
+		if prevHash, exists := prevFiles[record.FileName]; exists && prevHash == hash {
 			continue
 		}
 		changed = append(changed, OutputFile{
 			FileName: record.FileName,
-			Content:  base64.StdEncoding.EncodeToString(record.Content),
-			MimeType: record.MimeType,
-			Size:     len(record.Content),
+			Content:  base64.StdEncoding.EncodeToString(content),
+			MimeType: sandboxruntime.DetectMimeType(record.AbsPath),
+			Size:     len(content),
 		})
 	}
 
@@ -156,10 +193,6 @@ func scanSandboxOutputFiles(root string) ([]sandboxOutputFileRecord, error) {
 				return nil
 			}
 
-			content, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return readErr
-			}
 			rel, relErr := filepath.Rel(root, path)
 			if relErr != nil {
 				return relErr
@@ -169,11 +202,19 @@ func scanSandboxOutputFiles(root string) ([]sandboxOutputFileRecord, error) {
 				return nil
 			}
 
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				return infoErr
+			}
 			records = append(records, sandboxOutputFileRecord{
 				FileName: rel,
-				Content:  content,
-				Hash:     sandboxruntime.HashBytes(content),
-				MimeType: sandboxruntime.DetectMimeType(path),
+				AbsPath:  path,
+				Metadata: SandboxOutputFileMetadata{
+					Size:               info.Size(),
+					ModTimeUnixNano:    info.ModTime().UnixNano(),
+					ChangeTimeUnixNano: fileChangeTimeUnixNano(info),
+					Mode:               uint32(info.Mode()),
+				},
 			})
 			return nil
 		})
@@ -186,6 +227,34 @@ func scanSandboxOutputFiles(root string) ([]sandboxOutputFileRecord, error) {
 		return records[i].FileName < records[j].FileName
 	})
 	return records, nil
+}
+
+func fileChangeTimeUnixNano(info fs.FileInfo) int64 {
+	if info == nil || info.Sys() == nil {
+		return 0
+	}
+	value := reflect.ValueOf(info.Sys())
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return 0
+		}
+		value = value.Elem()
+	}
+	if value.Kind() != reflect.Struct {
+		return 0
+	}
+	for _, fieldName := range []string{"Ctim", "Ctimespec"} {
+		field := value.FieldByName(fieldName)
+		if field.Kind() != reflect.Struct {
+			continue
+		}
+		sec := field.FieldByName("Sec")
+		nsec := field.FieldByName("Nsec")
+		if sec.IsValid() && nsec.IsValid() && sec.CanInt() && nsec.CanInt() {
+			return sec.Int()*int64(1e9) + nsec.Int()
+		}
+	}
+	return 0
 }
 
 func loadSandboxOutputSnapshot(ctx context.Context) *SandboxOutputSnapshot {
@@ -256,9 +325,15 @@ func cloneSandboxOutputSnapshot(snapshot *SandboxOutputSnapshot) *SandboxOutputS
 	if snapshot == nil {
 		return nil
 	}
-	cloned := &SandboxOutputSnapshot{Files: make(map[string]string, len(snapshot.Files))}
+	cloned := &SandboxOutputSnapshot{
+		Files:    make(map[string]string, len(snapshot.Files)),
+		Metadata: make(map[string]SandboxOutputFileMetadata, len(snapshot.Metadata)),
+	}
 	for fileName, hash := range snapshot.Files {
 		cloned.Files[fileName] = hash
+	}
+	for fileName, metadata := range snapshot.Metadata {
+		cloned.Metadata[fileName] = metadata
 	}
 	return cloned
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,11 +17,13 @@ import (
 
 // ListUserRecentUsed
 // @Summary 获取最近使用列表
-// @Description 获取当前用户的最近使用记录（空间/知识库/文件），按更新时间降序，已删除资源自动过滤
+// @Description 获取当前用户的最近使用记录（空间/知识库/文件/Wiki页面），支持按资源类型和空间筛选，按更新时间降序，已删除资源自动过滤
 // @Tags 最近使用
 // @Accept json
 // @Produce json
 // @Security BearerAuth
+// @Param resource_type query int false "资源类型筛选：0=空间，1=知识库，2=文件，3=Wiki页面"
+// @Param space_id query string false "空间ID（支持 Hashids 或原始数字ID）"
 // @Success 200 {object} model.CommonResponse{data=[]service.UserRecentUsedItem} "成功"
 // @Failure 500 {object} model.CommonResponse "系统错误"
 // @Router /api/recent-used [get]
@@ -28,7 +31,18 @@ func ListUserRecentUsed(c *gin.Context) {
 	eid := config.GetEID(c)
 	userID := config.GetUserId(c)
 
-	items, err := service.ListUserRecentUsed(eid, userID)
+	resourceType, err := parseRecentUsedResourceType(c.Query("resource_type"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
+	spaceID, err := parseRecentUsedSpaceID(c.Query("space_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
+
+	items, err := service.ListUserRecentUsed(eid, userID, resourceType, spaceID)
 	if err != nil {
 		logger.Errorf(c.Request.Context(), "获取最近使用记录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("获取最近使用记录失败"))
@@ -38,6 +52,32 @@ func ListUserRecentUsed(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(items))
 }
 
+func parseRecentUsedResourceType(raw string) (*int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	resourceType, err := strconv.Atoi(raw)
+	if err != nil || resourceType < model.RESOURCE_TYPE_SPACE || resourceType > model.RESOURCE_TYPE_WIKI_PAGE {
+		return nil, fmt.Errorf("资源类型无效")
+	}
+	return &resourceType, nil
+}
+
+func parseRecentUsedSpaceID(raw string) (*int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	spaceID, err := hashids.TryParseID(raw)
+	if err != nil || spaceID <= 0 {
+		return nil, fmt.Errorf("空间ID无效")
+	}
+	return &spaceID, nil
+}
+
 // SaveUserRecentUsed
 // @Summary 保存最近使用记录
 // @Description 保存用户对空间/知识库/文件的使用记录（upsert），每类型最多保留20条。支持单条对象或数组批量。
@@ -45,7 +85,7 @@ func ListUserRecentUsed(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body service.RecentUsedSaveItem true "单条: {\"resource_type\":0,\"resource_id\":474} 或批量: [{\"resource_type\":0,\"resource_id\":474},...]"
+// @Param request body service.RecentUsedSaveItem true "单条: {\"resource_type\":0,\"resource_id\":474,\"space_id\":1} 或批量: [{\"resource_type\":0,\"resource_id\":474,\"space_id\":1},...]"
 // @Success 200 {object} model.CommonResponse "成功"
 // @Failure 400 {object} model.CommonResponse "参数错误"
 // @Failure 500 {object} model.CommonResponse "系统错误"
@@ -73,12 +113,16 @@ func SaveUserRecentUsed(c *gin.Context) {
 			return
 		}
 		for _, r := range records {
-			if r.ResourceType == nil || *r.ResourceType < model.RESOURCE_TYPE_SPACE || *r.ResourceType > model.RESOURCE_TYPE_FILE {
+			if r.ResourceType == nil || *r.ResourceType < model.RESOURCE_TYPE_SPACE || *r.ResourceType > model.RESOURCE_TYPE_WIKI_PAGE {
 				c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("资源类型无效"))
 				return
 			}
 			if r.ResourceID <= 0 {
 				c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("资源ID无效"))
+				return
+			}
+			if *r.ResourceType == model.RESOURCE_TYPE_WIKI_PAGE && r.SpaceID <= 0 {
+				c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("Wiki 页面必须传 space_id"))
 				return
 			}
 		}
@@ -93,11 +137,19 @@ func SaveUserRecentUsed(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("参数错误: "+err.Error()))
 			return
 		}
-		if req.ResourceType == nil || *req.ResourceType < model.RESOURCE_TYPE_SPACE || *req.ResourceType > model.RESOURCE_TYPE_FILE {
+		if req.ResourceType == nil || *req.ResourceType < model.RESOURCE_TYPE_SPACE || *req.ResourceType > model.RESOURCE_TYPE_WIKI_PAGE {
 			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("资源类型无效"))
 			return
 		}
-		if err := service.SaveUserRecentUsed(eid, userID, *req.ResourceType, req.ResourceID); err != nil {
+		if *req.ResourceType == model.RESOURCE_TYPE_WIKI_PAGE && req.SpaceID <= 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("Wiki 页面必须传 space_id"))
+			return
+		}
+		if req.ResourceID <= 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("资源ID无效"))
+			return
+		}
+		if err := service.SaveUserRecentUsed(eid, userID, *req.ResourceType, req.ResourceID, req.SpaceID); err != nil {
 			logger.Errorf(c.Request.Context(), "保存最近使用记录失败: %v", err)
 			c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("保存失败"))
 			return

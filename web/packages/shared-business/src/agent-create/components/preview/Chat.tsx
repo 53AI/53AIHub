@@ -10,6 +10,13 @@ import { copyToClip } from '@km/shared-utils'
 import { useChatStream, useRagStats } from '../../../chat/hooks'
 import { ProcessFlowHeader } from '../../../chat/components/process-flow'
 
+/** 条件字段展开：只包含有值（非 undefined/null/false）的字段 */
+function buildOptionalFields(fields: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, v]) => v !== undefined && v !== null && v !== false)
+  )
+}
+
 /**
  * 简化的本地消息形态，对齐 useChatSend.ts 的 Message 语义：
  * - `answer` 是字符串（useChatStream.processStreamData/processStreamDataItem 直接写入这里）
@@ -163,7 +170,6 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
 
   const onSendConfirm = async (data: SenderSendData, options?: { isRegenerate?: boolean }) => {
     if (chatLoading) return
-
     const textContent = data.textContent || ''
     let userFiles: any[] = data.files || []
     const selectedSkills = data.selectedSkills || []
@@ -228,10 +234,9 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
     let sendType: 'work-ai' | '' = ''
     let sendSkill: { display_name?: string; skill_name?: string } | undefined
     let sendModelId: string | undefined
-    let sendNetworkSearch: boolean | undefined
-    let sendKnowledgeGraph: boolean | undefined
     let sendAgentInfo: any
     let sendLibrary: { value: string[] | number[] } | undefined
+    let sendKnowledgeSource: typeof previewSender.knowledgeSource | undefined
 
     if (isWorkbench) {
       sendType = 'work-ai'
@@ -248,19 +253,16 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       // `modelId = currentModel?.id`）。useAgentPreviewSender 通过 adapter.getAgentModels
       // 拉取后按 value 匹配，已知后端独立分配的 id。未加载完成时为 undefined。
       sendModelId = previewSender.model?.modelId?.toString()
-      sendNetworkSearch = previewSender.source?.value.mode === 'networkSearch' || undefined
-      sendKnowledgeGraph = previewSender.source?.value.mode === 'knowledgeGraph' || undefined
+      sendKnowledgeSource = previewSender.knowledgeSource
       sendAgentInfo = agentFormStore.agent_data
       // knowledge 场景无 library 配置入口时，默认回退为 ['all']，
       // 与 useChatSend.ts 行 370 `library?.value || ['all']` 对齐
-      sendLibrary = { value: ['all'] }
     } else {
       // isAgent (普通智能体)：走 minimal 模式，对应后端 agent.json payload 形态。
       // adapter 收到 type='agent' 后不发 enable_process_steps / knowledge_base_ids 等知识库字段。
       sendType = 'agent'
     }
     void isAgent // 占位，明确三种场景都被覆盖
-
     const newChat: ChatMessage = {
       question: {
         role: 'user',
@@ -278,7 +280,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       skill: sendSkill
         ? { skill_name: sendSkill.skill_name || '', display_name: sendSkill.display_name || '' }
         : { skill_name: '', display_name: '' },
-      knowledge_graph: !!sendKnowledgeGraph,
+      knowledge_graph: sendKnowledgeSource?.state?.knowledgeGraph ?? false,
     }
 
     setChatList(prev => {
@@ -357,15 +359,16 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       files: userFiles || [],
 
       // ============ 场景特定字段（按 agentKind 透传）============
-      // workbench: type + skill; knowledge: modelId + network/graph + library;
+      // workbench: type + skill; knowledge: modelId + network/graph/wiki + library;
       // agent: 全部省略（minimal 模式）
-      ...(sendType ? { type: sendType } : {}),
-      ...(sendSkill ? { skill: sendSkill } : {}),
-      ...(sendModelId ? { modelId: sendModelId } : {}),
-      ...(sendNetworkSearch !== undefined ? { networkSearch: sendNetworkSearch } : {}),
-      ...(sendKnowledgeGraph !== undefined ? { knowledgeGraph: sendKnowledgeGraph } : {}),
-      ...(sendAgentInfo ? { agentInfo: sendAgentInfo } : {}),
-      ...(sendLibrary ? { library: sendLibrary } : {}),
+      ...buildOptionalFields({
+        type: sendType,
+        skill: sendSkill,
+        modelId: sendModelId,
+        knowledgeSource: sendKnowledgeSource,
+        agentInfo: sendAgentInfo,
+        library: sendLibrary,
+      }),
 
       onDownloadProgress: (e: any) => {
         // 双路径兼容：
@@ -396,7 +399,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
             e,
             processedLength,
             message,
-            !!sendNetworkSearch,
+            sendKnowledgeSource?.state?.networkSearch ?? false,
             formatRagStats,
           )
         }
@@ -658,12 +661,10 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
                         t={t}
                       />
                     )}
-                    {previewSender.source && (
+                    {previewSender.knowledgeSource && (
                       <PreviewKnowledgeSourceSelector
-                        value={previewSender.source.value}
-                        onChange={previewSender.source.onChange}
-                        graphEnabled={previewSender.source.graphEnabled}
-                        webSearchEnabled={previewSender.source.webSearchEnabled}
+                        knowledgeSource={previewSender.knowledgeSource}
+                        onKnowledgeSourceChange={previewSender.onKnowledgeSourceChange}
                         t={t}
                       />
                     )}

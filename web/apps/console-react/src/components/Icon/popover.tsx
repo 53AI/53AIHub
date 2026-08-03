@@ -187,7 +187,7 @@ export function IconPopover({
         <div>图标</div>
         <div className="flex flex-wrap gap-[10px] mt-2 mb-4">
           {showUpload && (
-            <div className="rounded-lg p-3">
+            <div className="rounded-lg size-10 flex items-center justify-center">
               <Button
                 shape="circle"
                 className="!w-[18px] !h-[18px] !min-w-[18px] !p-0"

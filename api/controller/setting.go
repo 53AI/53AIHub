@@ -11,7 +11,7 @@ import (
 )
 
 type SettingRequest struct {
-	// 设置键名，支持的类型: third_party_statistic_header, third_party_statistic_css, default_prompt_links, document_application, document_setting, document_js_sdk_setting, km_agents_setting, message_feedback_config
+	// 设置键名，支持的类型: third_party_statistic_header, third_party_statistic_css, default_prompt_links, document_application, document_setting, document_js_sdk_setting, km_agents_setting, message_feedback_config, recording_config, recording_application
 	Key string `json:"key" example:"setting_key"`
 	// 设置值
 	Value string `json:"value" example:"setting_value"`

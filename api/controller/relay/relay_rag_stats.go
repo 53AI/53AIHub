@@ -40,7 +40,7 @@ func SaveRAGStats(
 	ragStats := generateRAGStats(ctx, eid, sources, responseContent, message.KnowledgeType)
 
 	// 3. 更新消息记录
-	message.CitationCount = len(ragStats.FileQuotations)
+	message.CitationCount = len(ragStats.FileQuotations) + len(ragStats.WikiPageQuotations)
 
 	ragStatsJSON, err := json.Marshal(ragStats)
 	if err != nil {
@@ -58,8 +58,9 @@ type RAGStatsData struct {
 	DocumentSearch     *DocumentSearchData `json:"document_search"`     // 文档搜索数据
 	DocumentQuotations []string            `json:"document_quotations"` // 实际引用的分片ID列表（hash后）
 	FileQuotations     []string            `json:"file_quotations"`     // 实际引用的文件ID列表（hash后）
-	Performance        *PerformanceData    `json:"performance"`         // 性能数据
-	Type               string              `json:"type"`                // 统计类型标识
+	WikiPageQuotations []string            `json:"wiki_page_quotations,omitempty"`
+	Performance        *PerformanceData    `json:"performance"` // 性能数据
+	Type               string              `json:"type"`        // 统计类型标识
 }
 
 // DocumentSearchData 文档搜索数据
@@ -69,6 +70,8 @@ type DocumentSearchData struct {
 
 // ChunkData 分片数据
 type ChunkData struct {
+	SourceType                   string  `json:"source_type,omitempty"`
+	WikiPageID                   string  `json:"wiki_page_id,omitempty"`
 	ChunkID                      string  `json:"chunk_id"`                                  // 分片ID（hash后）
 	ChunkType                    string  `json:"chunk_type"`                                // 分片类型
 	Content                      string  `json:"content"`                                   // 内容预览
@@ -112,6 +115,8 @@ func generateRAGStats(
 		contentPreview := truncateContent(source.Content, MAX_DESC_WORD)
 
 		chunk := ChunkData{
+			SourceType:  source.SourceType,
+			WikiPageID:  hashInt64(source.WikiPageID),
 			ChunkID:     hashInt64(source.ChunkID),
 			ChunkType:   source.ChunkType,
 			Content:     contentPreview,
@@ -137,6 +142,7 @@ func generateRAGStats(
 
 	// 3. 生成实际引用的分片ID和文件ID列表
 	documentQuotations, fileQuotations := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
+	wikiPageQuotations := getQuotedWikiPageIDs(quotedSourceIDs, sources)
 
 	logger.Debugf(ctx, "实际引用统计: 分片数=%d, 文件数=%d",
 		len(documentQuotations), len(fileQuotations))
@@ -151,6 +157,7 @@ func generateRAGStats(
 		},
 		DocumentQuotations: documentQuotations,
 		FileQuotations:     fileQuotations,
+		WikiPageQuotations: wikiPageQuotations,
 		Performance: &PerformanceData{
 			ProcessingTimeMs: 0, // 可选：需要时记录实际处理时间
 		},
@@ -168,6 +175,7 @@ func determineRAGType(knowledgeType int, sources []rag.SourceReference) string {
 
 	hasKB := false
 	hasWeb := false
+	hasWiki := false
 
 	for _, s := range sources {
 		if s.KnowledgeBaseID > 0 {
@@ -176,6 +184,12 @@ func determineRAGType(knowledgeType int, sources []rag.SourceReference) string {
 		if strings.HasPrefix(s.ReferenceID, "B-") {
 			hasWeb = true
 		}
+		if s.SourceType == "wiki" {
+			hasWiki = true
+		}
+	}
+	if hasWiki && !hasKB && !hasWeb {
+		return "wiki_search"
 	}
 
 	if hasKB && hasWeb {
@@ -219,7 +233,7 @@ func sendReferenceAnalysisStep(
 
 	// 3. 生成引用数据
 	quotationsData := createQuotationsData(ctx, sources, responseContent)
-	quotedCount := len(quotationsData["document_quotations"].([]string))
+	quotedCount := len(quotationsData["document_quotations"].([]string)) + len(quotationsData["wiki_page_quotations"].([]string))
 	logger.Debugf(ctx, "【引用分析】生成后引用数据: request_id=%s, document_quotations=%v, file_quotations=%v",
 		helper.GetRequestID(ctx), quotationsData["document_quotations"], quotationsData["file_quotations"])
 

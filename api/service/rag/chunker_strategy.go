@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/53AI/53AIHub/model"
+	"golang.org/x/net/html"
 )
 
 // ChunkStrategy 定义分块策略接口
@@ -44,24 +45,40 @@ func (s *DefaultChunkStrategy) GetType() string {
 }
 
 func (s *DefaultChunkStrategy) ProcessChunking(service *ChunkerService, eid int64, fileID int64, content string, config *ChunkConfig) (*ChunkResult, error) {
-	// 解析文档结构
 	parsed := service.parseMarkdown(content)
 
-	// 执行分块
 	result := &ChunkResult{
 		Chunks:   []DocumentChunk{},
 		Warnings: []string{},
 		Errors:   []string{},
 	}
 
-	// 移除触发条件检查，直接执行分块逻辑
 	knowledgeChunks := service.chunkByRules(parsed, config.KnowledgeChunk.ChunkMode, config.KnowledgeChunk.GetSplitRules(), config.KnowledgeMaxLength, "knowledge")
 
-	result.Chunks = append(result.Chunks, knowledgeChunks...)
+	// 将表格类型的分块按行拆分为多个分块
+	var expandedChunks []DocumentChunk
+	for _, chunk := range knowledgeChunks {
+		trimmed := strings.TrimSpace(chunk.Content)
+		if strings.HasPrefix(strings.ToLower(trimmed), "<table") || strings.Contains(trimmed, "|") {
+			tableRows := service.parseMarkdownTable(trimmed)
+			if len(tableRows) > 1 {
+				for _, row := range tableRows {
+					expandedChunks = append(expandedChunks, DocumentChunk{
+						Type:       chunk.Type,
+						Content:    row.Content,
+						StartPos:   chunk.StartPos,
+						EndPos:     chunk.EndPos,
+						TokenCount: 0,
+					})
+				}
+				continue
+			}
+		}
+		expandedChunks = append(expandedChunks, chunk)
+	}
+	result.Chunks = append(result.Chunks, expandedChunks...)
 
-	// 处理重叠（对所有分块，包括单个分块）
 	service.addOverlaps(result.Chunks, config)
-
 	return result, nil
 }
 
@@ -198,25 +215,25 @@ func (s *ChunkerService) parseQAContentFromText(content string) []QA_pair {
 		patterns := []string{
 			`^问题\s*[:：]\s*`,
 			`^问题\s+\d+\s*[:：]\s*`, // 问题 1：、问题 2: 等带编号的格式（有空格）
-			`^问题\d+\s*[:：]\s*`,   // 问题1：、问题2: 等带编号的格式（无空格）
+			`^问题\d+\s*[:：]\s*`,    // 问题1：、问题2: 等带编号的格式（无空格）
 			`^问\s*[:：]\s*`,
 			`^问\s+\d+\s*[:：]\s*`, // 问 1：、问 3: 等带编号的格式（有空格）
-			`^问\d+\s*[:：]\s*`,   // 问1：、问2: 等带编号的格式（无空格）
+			`^问\d+\s*[:：]\s*`,    // 问1：、问2: 等带编号的格式（无空格）
 			`^Question\s*[:：]\s*`,
 			`^[Qq]\s*[:：]\s*`,
 			// Markdown 标题格式
-			`^#{1,6}\s*[Qq]\s*[:：]\s*`,      // ### Q: 问题
-			`^#{1,6}\s*问题\s*[:：]\s*`,     // ### 问题：xxx
+			`^#{1,6}\s*[Qq]\s*[:：]\s*`,     // ### Q: 问题
+			`^#{1,6}\s*问题\s*[:：]\s*`,       // ### 问题：xxx
 			`^#{1,6}\s*问题\s+\d+\s*[:：]\s*`, // ### 问题 1：xxx（有空格）
-			`^#{1,6}\s*问题\d+\s*[:：]\s*`,   // ### 问题1：xxx（无空格）
-			`^#{1,6}\s*问\s*[:：]\s*`,       // ### 问：xxx
-			`^#{1,6}\s*问\s+\d+\s*[:：]\s*`, // ### 问 1：xxx（有空格）
-			`^#{1,6}\s*问\d+\s*[:：]\s*`,   // ### 问1：xxx（无空格）
+			`^#{1,6}\s*问题\d+\s*[:：]\s*`,    // ### 问题1：xxx（无空格）
+			`^#{1,6}\s*问\s*[:：]\s*`,        // ### 问：xxx
+			`^#{1,6}\s*问\s+\d+\s*[:：]\s*`,  // ### 问 1：xxx（有空格）
+			`^#{1,6}\s*问\d+\s*[:：]\s*`,     // ### 问1：xxx（无空格）
 			// 中文方括号格式
-			`^【问题】\s*`,                    // 【问题】xxx
-			`^【问】\s*`,                      // 【问】xxx
-			`^【Q】\s*`,                       // 【Q】xxx
-			`^【q】\s*`,                       // 【q】xxx
+			`^【问题】\s*`, // 【问题】xxx
+			`^【问】\s*`,  // 【问】xxx
+			`^【Q】\s*`,  // 【Q】xxx
+			`^【q】\s*`,  // 【q】xxx
 		}
 		for _, p := range patterns {
 			re := regexp.MustCompile(p)
@@ -237,32 +254,32 @@ func (s *ChunkerService) parseQAContentFromText(content string) []QA_pair {
 			`^Answer\s*[:：]\s*`,
 			`^[Aa]\s*[:：]\s*`,
 			// 专家答复/回答/回复格式
-			`^专家答复\s*[:：]\s*`,       // 专家答复：xxx
-		`^专家回答\s*[:：]\s*`,       // 专家回答：xxx
-		`^专家回复\s*[:：]\s*`,       // 专家回复：xxx
-		`^答复\s*[:：]\s*`,            // 答复：xxx
-		`^解答\s*[:：]\s*`,            // 解答：xxx
+			`^专家答复\s*[:：]\s*`, // 专家答复：xxx
+			`^专家回答\s*[:：]\s*`, // 专家回答：xxx
+			`^专家回复\s*[:：]\s*`, // 专家回复：xxx
+			`^答复\s*[:：]\s*`,   // 答复：xxx
+			`^解答\s*[:：]\s*`,   // 解答：xxx
 			// Markdown 加粗格式
-			`^\*\*[Aa]\s*[:：]\*\*\s*`,                     // **A:** 回答
-			`^\*\*回答话术\s*[:：]\*\*\s*`,                // **回答话术:** 回答
-			`^\*\*回答\s*[:：]\*\*\s*`,                    // **回答:** 回答
-			`^\*\*答案\s*[:：]\*\*\s*`,                    // **答案:** 回答
-			`^\*\*答\s*[:：]\*\*\s*`,                      // **答:** 回答
-			`^\*\*专家答复\s*[:：]\*\*\s*`,                // **专家答复:** 回答
-			`^\*\*专家回答\s*[:：]\*\*\s*`,                // **专家回答:** 回答
-			`^\*\*答复\s*[:：]\*\*\s*`,                     // **答复:** 回答
-			`^\*\*解答\s*[:：]\*\*\s*`,                     // **解答:** 回答
+			`^\*\*[Aa]\s*[:：]\*\*\s*`, // **A:** 回答
+			`^\*\*回答话术\s*[:：]\*\*\s*`, // **回答话术:** 回答
+			`^\*\*回答\s*[:：]\*\*\s*`,   // **回答:** 回答
+			`^\*\*答案\s*[:：]\*\*\s*`,   // **答案:** 回答
+			`^\*\*答\s*[:：]\*\*\s*`,    // **答:** 回答
+			`^\*\*专家答复\s*[:：]\*\*\s*`, // **专家答复:** 回答
+			`^\*\*专家回答\s*[:：]\*\*\s*`, // **专家回答:** 回答
+			`^\*\*答复\s*[:：]\*\*\s*`,   // **答复:** 回答
+			`^\*\*解答\s*[:：]\*\*\s*`,   // **解答:** 回答
 			// 中文方括号格式
-			`^【回答】\s*`,                                  // 【回答】xxx
-			`^【答案】\s*`,                                  // 【答案】xxx
-			`^【答】\s*`,                                    // 【答】xxx
-			`^【A】\s*`,                                     // 【A】xxx
-			`^【a】\s*`,                                     // 【a】xxx
-			`^【专家答复】\s*`,                              // 【专家答复】xxx
-			`^【专家回答】\s*`,                              // 【专家回答】xxx
-			`^【专家回复】\s*`,                              // 【专家回复】xxx
-			`^【答复】\s*`,                                  // 【答复】xxx
-			`^【解答】\s*`,                                  // 【解答】xxx
+			`^【回答】\s*`,   // 【回答】xxx
+			`^【答案】\s*`,   // 【答案】xxx
+			`^【答】\s*`,    // 【答】xxx
+			`^【A】\s*`,    // 【A】xxx
+			`^【a】\s*`,    // 【a】xxx
+			`^【专家答复】\s*`, // 【专家答复】xxx
+			`^【专家回答】\s*`, // 【专家回答】xxx
+			`^【专家回复】\s*`, // 【专家回复】xxx
+			`^【答复】\s*`,   // 【答复】xxx
+			`^【解答】\s*`,   // 【解答】xxx
 		}
 		for _, p := range patterns {
 			re := regexp.MustCompile(p)
@@ -523,14 +540,21 @@ type TableRow struct {
 func (s *ChunkerService) parseMarkdownTable(content string) []TableRow {
 	var rows []TableRow
 
-	// 使用已有的extractTables方法提取表格
-	tables := s.extractTables(content)
+	// 使用已有的extractTableBlocks方法提取表格（支持Markdown和HTML格式）
+	tables := s.extractTableBlocks(content)
 
 	// 处理每个表格
 	for _, table := range tables {
-		// 分割表格内容为行
-		lines := strings.Split(strings.TrimSpace(table.Content), "\n")
+		trimmed := strings.TrimSpace(table.Content)
+		if strings.HasPrefix(strings.ToLower(trimmed), "<table") {
+			// HTML 表格 → 走 HTML 解析器
+			htmlRows := s.parseHTMLTable(trimmed)
+			rows = append(rows, htmlRows...)
+			continue
+		}
 
+		// Markdown 表格（| 管道符格式）
+		lines := strings.Split(trimmed, "\n")
 		if len(lines) < 2 {
 			continue // 至少需要表头和一行数据
 		}
@@ -574,12 +598,10 @@ func (s *ChunkerService) parseMarkdownTable(content string) []TableRow {
 				} else {
 					header = "列" + fmt.Sprintf("%d", j+1)
 				}
-
 				// 处理空值
 				if value == "" {
 					value = "无"
 				}
-
 				contentBuilder.WriteString(fmt.Sprintf("%s: %s\n", header, value))
 			}
 
@@ -594,6 +616,129 @@ func (s *ChunkerService) parseMarkdownTable(content string) []TableRow {
 	}
 
 	return rows
+}
+
+// parseHTMLTable 解析 HTML 表格内容
+func (s *ChunkerService) parseHTMLTable(tableHTML string) []TableRow {
+	doc, err := html.Parse(strings.NewReader(tableHTML))
+	if err != nil {
+		return nil
+	}
+
+	// 找到第一个 <table> 节点
+	var findTable func(*html.Node) *html.Node
+	findTable = func(n *html.Node) *html.Node {
+		if n.Type == html.ElementNode && n.Data == "table" {
+			return n
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if found := findTable(c); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+	tableNode := findTable(doc)
+	if tableNode == nil {
+		return nil
+	}
+
+	// 收集所有 <tr> 节点
+	var trNodes []*html.Node
+	var collectTR func(*html.Node)
+	collectTR = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "tr" {
+			trNodes = append(trNodes, n)
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			collectTR(c)
+		}
+	}
+	collectTR(tableNode)
+
+	if len(trNodes) < 1 {
+		return nil
+	}
+
+	// 第一个 <tr>：提取表头（优先 <th>，回退到 <td>）
+	headers := extractCellTexts(trNodes[0], "th")
+	if len(headers) == 0 {
+		headers = extractCellTexts(trNodes[0], "td")
+	}
+	// 兜底以防空表头
+	for i := range headers {
+		if headers[i] == "" {
+			headers[i] = "列" + fmt.Sprintf("%d", i+1)
+		}
+	}
+	if len(headers) == 0 {
+		headers = []string{"列1"}
+	}
+
+	// 剩余 <tr>：数据行
+	var rows []TableRow
+	rowIdx := 0
+	for i := 1; i < len(trNodes); i++ {
+		values := extractCellTexts(trNodes[i], "td")
+		if len(values) == 0 {
+			values = extractCellTexts(trNodes[i], "th")
+		}
+		if len(values) == 0 {
+			continue // 跳过空行
+		}
+
+		var contentBuilder strings.Builder
+		for j, value := range values {
+			var header string
+			if j < len(headers) {
+				header = headers[j]
+			} else {
+				header = "列" + fmt.Sprintf("%d", j+1)
+			}
+			if value == "" {
+				value = "无"
+			}
+			contentBuilder.WriteString(fmt.Sprintf("%s: %s\n", header, value))
+		}
+
+		rows = append(rows, TableRow{
+			Content: contentBuilder.String(),
+			Metadata: map[string]interface{}{
+				"row": rowIdx,
+			},
+		})
+		rowIdx++
+	}
+
+	return rows
+}
+
+// extractCellTexts 从 <tr> 节点中提取指定标签（th/td）的文本内容
+func extractCellTexts(tr *html.Node, tagName string) []string {
+	var texts []string
+	for c := tr.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && c.Data == tagName {
+			texts = append(texts, getTextContent(c))
+		}
+	}
+	return texts
+}
+
+// getTextContent 递归提取节点内的纯文本
+func getTextContent(n *html.Node) string {
+	var buf strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.TextNode {
+			buf.WriteString(strings.TrimSpace(n.Data))
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return buf.String()
 }
 
 // isSeparatorLine 检查是否是表格分隔符行（如 | --- | --- |）

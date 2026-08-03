@@ -1,6 +1,6 @@
 import { useState, lazy, Suspense, useEffect, useContext } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
-import { Spin, Tooltip } from "antd";
+import { Spin } from "antd";
 import { createPortal } from "react-dom";
 import { useLibraryStore } from "@/stores/modules/library";
 import { LibraryHeader } from "../../components/header";
@@ -10,6 +10,7 @@ import FileMore from "./components/more";
 import FileFav from "./components/fav";
 import EditBtn from "./components/edit-btn";
 import DocumentApp from "./components/document-app";
+import AssistantBtn from "./components/assistant-btn";
 import {
   canEdit,
   getDisplayName,
@@ -17,8 +18,6 @@ import {
 } from "../../composables/useInlineEdit";
 import { t } from "@/locales";
 import { CatalogRefContext } from "../index";
-import { eventBus } from "@km/shared-utils";
-import { getPublicPath } from "@/utils/config";
 import agentsApi from "@/api/modules/agents";
 import { AGENT_USAGES } from "@/constants/agent";
 
@@ -56,7 +55,6 @@ export function LibraryFileView() {
   const files = useLibraryStore((state) => state.files);
   const currentFileId = useLibraryStore((state) => state.currentFileId);
   const currentFile = files.find((item) => item.id === currentFileId);
-  const assistantInstall = useLibraryStore((state) => state.assistantInstall);
   const assistantVisible = useLibraryStore((state) => state.assistantVisible);
   const setAssistantVisible = useLibraryStore((state) => state.setAssistantVisible);
 
@@ -120,16 +118,6 @@ export function LibraryFileView() {
     );
   };
 
-  const handleAssistantToggle = () => {
-    // 如果面板没有显示，先显示面板（DocumentApp 初始化时会自动打开第一项）
-    if (!assistantVisible) {
-      setAssistantVisible(true);
-      return;
-    }
-    // 面板已经显示，触发 DocumentApp 内部的 toggle 逻辑
-    eventBus.emit("assistant-toggle");
-  };
-
   // Inline edit handlers
   const handleClickTitle = (e: React.MouseEvent<HTMLElement>) => {
     if (!currentFile) return;
@@ -183,20 +171,7 @@ export function LibraryFileView() {
                   fileName={currentFile.name}
                 />
                 <FileFav />
-                {assistantInstall && (
-                  <Tooltip title={t("library.document_chat")}>
-                    <div
-                      className={`size-8 flex-center rounded cursor-pointer hover:bg-[#F0F2F5] ${assistantVisible ? "bg-[#F0F2F5]" : ""}`}
-                      onClick={handleAssistantToggle}
-                    >
-                      <img
-                        className="size-5"
-                        src={getPublicPath("/images/library/ai.png")}
-                        alt=""
-                      />
-                    </div>
-                  </Tooltip>
-                )}
+                <AssistantBtn />
                 <FileMore
                   catalogRef={catalogRef?.current}
                   onPermission={() =>

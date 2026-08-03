@@ -93,6 +93,22 @@ func GetUploadFileByEidUserHashAndSourceType(eid, userID int64, hash, sourceType
 	return &file, nil
 }
 
+// GetUploadFileByEidHashAndSourceType 根据 EID、Hash 和来源类型获取上传文件（跨用户）。
+// 用于秒传场景：同企业内任意用户上传过相同文件即可命中。
+func GetUploadFileByEidHashAndSourceType(eid int64, hash, sourceType string) (*UploadFile, error) {
+	var file UploadFile
+	query := DB.Where("eid = ? AND hash = ?", eid, hash)
+	if strings.TrimSpace(sourceType) == UploadFileSourceUserUpload {
+		query = query.Where("(source_type = ? OR source_type = '' OR source_type IS NULL)", UploadFileSourceUserUpload)
+	} else {
+		query = query.Where("source_type = ?", sourceType)
+	}
+	if err := query.First(&file).Error; err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 // GetUploadFilesByMessageID 根据消息 ID 获取上传文件
 func GetUploadFilesByMessageID(messageID int64) ([]*UploadFile, error) {
 	var files []*UploadFile

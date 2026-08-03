@@ -50,12 +50,12 @@ type RedisPoolStats struct {
 // @Router /api/system/redis-stats [get]
 func GetRedisPoolStatus(c *gin.Context) {
 	stats := common.GetRedisPoolStats()
-	
+
 	// 转换为结构化响应
 	response := RedisPoolStats{
 		Enabled: stats["enabled"].(bool),
 	}
-	
+
 	if response.Enabled {
 		response.Hits = uint32(stats["hits"].(int64))
 		response.Misses = uint32(stats["misses"].(int64))
@@ -64,7 +64,7 @@ func GetRedisPoolStatus(c *gin.Context) {
 		response.IdleConns = uint32(stats["idle_conns"].(int64))
 		response.StaleConns = uint32(stats["stale_conns"].(int64))
 	}
-	
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(response))
 }
 

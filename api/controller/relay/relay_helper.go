@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -19,6 +20,82 @@ import (
 	"github.com/gin-gonic/gin"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
 )
+
+const agentRunEventSinkGinKey = "agent_run_event_sink"
+
+type agentRunEventSinkContextKey struct{}
+
+func installAgentRunEventSink(c *gin.Context, eid int64, requestID, runID string) *service.AgentRunEventSink {
+	if c == nil || eid <= 0 || strings.TrimSpace(requestID) == "" {
+		return nil
+	}
+	sink := service.NewAgentRunEventSink(service.AgentRunEventSinkConfig{
+		EID:       eid,
+		RequestID: requestID,
+		RunID:     runID,
+	})
+	c.Set(agentRunEventSinkGinKey, sink)
+	if c.Request != nil {
+		ctx := context.WithValue(c.Request.Context(), agentRunEventSinkContextKey{}, sink)
+		c.Request = c.Request.WithContext(ctx)
+	}
+	return sink
+}
+
+func agentRunEventSinkFromContext(ctx context.Context) *service.AgentRunEventSink {
+	if ctx == nil {
+		return nil
+	}
+	sink, _ := ctx.Value(agentRunEventSinkContextKey{}).(*service.AgentRunEventSink)
+	return sink
+}
+
+func agentRunEventSinkFromGin(c *gin.Context) *service.AgentRunEventSink {
+	if c == nil {
+		return nil
+	}
+	if value, exists := c.Get(agentRunEventSinkGinKey); exists {
+		if sink, ok := value.(*service.AgentRunEventSink); ok {
+			return sink
+		}
+	}
+	if c.Request != nil {
+		return agentRunEventSinkFromContext(c.Request.Context())
+	}
+	return nil
+}
+
+func drainAgentRunEventSink(ctx context.Context, sink *service.AgentRunEventSink, requestID string) {
+	if sink == nil {
+		return
+	}
+	drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	drainErr := sink.CloseAndDrain(drainCtx)
+	stats, shouldReport := sink.StatsForReport()
+	if !shouldReport {
+		return
+	}
+	if drainErr != nil {
+		logger.Warnf(ctx, "【技能运行】AgentRun事件队列排空失败: request_id=%s, error_count=%d, err=%v",
+			requestID, sink.ErrorCount(), drainErr)
+	}
+	logger.Infof(ctx, "【Agent事件性能】request_id=%s enqueued=%d persisted=%d coalesced=%d failed=%d max_queue_depth=%d persist_ms=%d elapsed_ms=%d",
+		requestID, stats.Enqueued, stats.Persisted, stats.Coalesced, stats.Failed,
+		stats.MaxQueueDepth, stats.PersistMillis, stats.ElapsedMillis)
+}
+
+func enqueueAgentRunAsyncWrite(ctx context.Context, name string, write func(context.Context) error) bool {
+	sink := agentRunEventSinkFromContext(ctx)
+	if sink == nil {
+		return false
+	}
+	if err := sink.EnqueueWrite(name, write); err != nil {
+		logger.Warnf(ctx, "【技能运行】异步兼容投影入队失败: name=%s, err=%v", name, err)
+		return false
+	}
+	return true
+}
 
 // filterInfoMessages 过滤掉 role 为 "info" 的消息，用于 AI API 调用
 // 前端发送的 messages 中可能包含 role: "info" 类型的消息（用于前端展示/后端保存）
@@ -100,24 +177,137 @@ func sendProcessStepEndRaw(c *gin.Context, requestId string, createdAt int64) er
 }
 
 func mirrorAgentRunTimelineEvent(c *gin.Context, requestID string, eventType string, payload map[string]interface{}) {
-	if c == nil {
+	_, messageID, ok := getAgentRunMirrorContext(c, requestID)
+	if !ok {
 		return
+	}
+	mirrorAgentRunTimelineEventWithMessageID(c, requestID, eventType, messageID, payload)
+}
+
+type agentRunTimelineQueue struct {
+	mu     sync.Mutex
+	items  []agentRunTimelineQueueItem
+	notify chan struct{}
+}
+
+type agentRunTimelineQueueItem struct {
+	input    model.AgentRunEventInput
+	terminal bool
+}
+
+var agentRunTimelineQueues sync.Map
+
+func mirrorAgentRunTimelineEventAsync(c *gin.Context, requestID string, eventType string, payload map[string]interface{}) {
+	eid, messageID, ok := getAgentRunMirrorContext(c, requestID)
+	if !ok {
+		return
+	}
+	key := fmt.Sprintf("%d:%s", eid, strings.TrimSpace(requestID))
+	queueValue, loaded := agentRunTimelineQueues.LoadOrStore(key, &agentRunTimelineQueue{notify: make(chan struct{}, 1)})
+	queue := queueValue.(*agentRunTimelineQueue)
+	queue.mu.Lock()
+	queue.items = append(queue.items, agentRunTimelineQueueItem{input: model.AgentRunEventInput{
+		EventType: eventType,
+		MessageID: messageID,
+		Payload:   cloneAgentRunEventPayload(payload),
+	}})
+	queue.mu.Unlock()
+	if !loaded {
+		go drainAgentRunTimelineQueue(eid, strings.TrimSpace(requestID), key, queue)
+	}
+	select {
+	case queue.notify <- struct{}{}:
+	default:
+	}
+}
+
+func drainAgentRunTimelineQueue(eid int64, requestID, key string, queue *agentRunTimelineQueue) {
+	const maxBatchSize = 100
+	const batchWait = 20 * time.Millisecond
+	ctx := context.Background()
+	for {
+		select {
+		case <-queue.notify:
+		case <-time.After(batchWait):
+		}
+
+		queue.mu.Lock()
+		if len(queue.items) == 0 {
+			queue.mu.Unlock()
+			continue
+		}
+		batchSize := len(queue.items)
+		if batchSize > maxBatchSize {
+			batchSize = maxBatchSize
+		}
+		items := append([]agentRunTimelineQueueItem(nil), queue.items[:batchSize]...)
+		queue.items = queue.items[batchSize:]
+		queue.mu.Unlock()
+		batch := make([]model.AgentRunEventInput, 0, len(items))
+		terminal := false
+		for _, item := range items {
+			batch = append(batch, item.input)
+			terminal = terminal || item.terminal
+		}
+
+		logger.Infof(ctx, "【诊断-AgentRun】批量写入事件: request_id=%s count=%d", requestID, len(batch))
+		if err := service.NewAgentRunService().AppendEventsForRequestBatch(ctx, eid, requestID, batch); err != nil {
+			logger.Warnf(ctx, "【技能运行】批量镜像过程事件失败: eid=%d, request_id=%s, count=%d, err=%v", eid, requestID, len(batch), err)
+		}
+		if terminal {
+			agentRunTimelineQueues.Delete(key)
+			return
+		}
+	}
+}
+
+func enqueueAgentRunFinalResponse(c *gin.Context, requestID string, messageID int64, answer, reasoningContent string) {
+	payload := map[string]interface{}{"answer": answer}
+	if strings.TrimSpace(reasoningContent) != "" {
+		payload["reasoning_content"] = reasoningContent
+	}
+	eid, resolvedMessageID, ok := getAgentRunMirrorContext(c, requestID)
+	if !ok {
+		return
+	}
+	if messageID > 0 {
+		resolvedMessageID = messageID
+	}
+	key := fmt.Sprintf("%d:%s", eid, strings.TrimSpace(requestID))
+	queueValue, loaded := agentRunTimelineQueues.LoadOrStore(key, &agentRunTimelineQueue{notify: make(chan struct{}, 1)})
+	queue := queueValue.(*agentRunTimelineQueue)
+	queue.mu.Lock()
+	queue.items = append(queue.items, agentRunTimelineQueueItem{input: model.AgentRunEventInput{
+		EventType: model.AgentRunEventMessageDone,
+		MessageID: resolvedMessageID,
+		Payload:   payload,
+	}, terminal: true})
+	queue.mu.Unlock()
+	if !loaded {
+		go drainAgentRunTimelineQueue(eid, strings.TrimSpace(requestID), key, queue)
+	}
+	select {
+	case queue.notify <- struct{}{}:
+	default:
+	}
+}
+
+func getAgentRunMirrorContext(c *gin.Context, requestID string) (int64, int64, bool) {
+	if c == nil {
+		return 0, 0, false
 	}
 	requestID = strings.TrimSpace(requestID)
 	if requestID == "" {
-		return
+		return 0, 0, false
 	}
 
 	eid := config.GetEID(c)
 	if eid <= 0 {
-		return
+		return 0, 0, false
 	}
 	if model.DB == nil {
-		return
+		return 0, 0, false
 	}
-
-	// 客户端断开后 c.Request.Context() 已取消，DB 操作必须使用独立 context
-	ctx := context.Background()
 
 	messageID := int64(0)
 	if masterMsgID, exists := c.Get("agent_master_message_id"); exists {
@@ -125,11 +315,39 @@ func mirrorAgentRunTimelineEvent(c *gin.Context, requestID string, eventType str
 			messageID = id
 		}
 	}
+	return eid, messageID, true
+}
 
+func mirrorAgentRunTimelineEventWithMessageID(c *gin.Context, requestID string, eventType string, messageID int64, payload map[string]interface{}) {
+	if sink := agentRunEventSinkFromGin(c); sink != nil {
+		if err := sink.Enqueue(eventType, messageID, payload); err != nil {
+			logger.Warnf(context.Background(), "【技能运行】AgentRun事件入队失败: request_id=%s, event_type=%s, err=%v", requestID, eventType, err)
+		}
+		return
+	}
+
+	eid := config.GetEID(c)
+	if eid <= 0 || model.DB == nil {
+		return
+	}
+	// 非标准入口没有 request sink 时保留同步兼容路径，但为写入增加上限。
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
 	runSvc := service.NewAgentRunService()
 	if _, err := runSvc.AppendEventForRequest(ctx, eid, requestID, eventType, messageID, payload); err != nil {
 		logger.Warnf(ctx, "【技能运行】镜像过程事件失败: eid=%d, request_id=%s, event_type=%s, err=%v", eid, requestID, eventType, err)
 	}
+}
+
+func cloneAgentRunEventPayload(payload map[string]interface{}) map[string]interface{} {
+	if payload == nil {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func mirrorOutOfRangeReplyForSubscribe(c *gin.Context, requestID string, messageID int64, answer string) {
@@ -161,9 +379,6 @@ func mirrorAgentRunFinalResponse(c *gin.Context, requestID string, messageID int
 		return
 	}
 
-	// 客户端断开后 c.Request.Context() 已取消，DB 操作必须使用独立 context
-	ctx := context.Background()
-
 	// 即便 answer 为空也写入 message.completed，让 subscribe 端能感知到本轮已结束。
 	// 否则页面刷新后订阅会一直空等，看不到任何收尾事件。
 	payload := map[string]interface{}{
@@ -173,17 +388,24 @@ func mirrorAgentRunFinalResponse(c *gin.Context, requestID string, messageID int
 		payload["reasoning_content"] = reasoningContent
 	}
 
-	runSvc := service.NewAgentRunService()
-	if _, err := runSvc.AppendEventForRequest(ctx, eid, requestID, model.AgentRunEventMessageDone, messageID, payload); err != nil {
-		logger.Warnf(ctx, "【技能运行】镜像最终回答失败: eid=%d, request_id=%s, message_id=%d, err=%v", eid, requestID, messageID, err)
-	}
+	ctx := c.Request.Context()
+	logger.Infof(ctx, "【诊断-AgentRun】开始写入最终事件: request_id=%s message_id=%d", requestID, messageID)
+	mirrorAgentRunTimelineEventWithMessageID(c, requestID, model.AgentRunEventMessageDone, messageID, payload)
+	logger.Infof(ctx, "【诊断-AgentRun】完成写入最终事件: request_id=%s message_id=%d", requestID, messageID)
+}
+
+var mirrorAgentRunFinalResponsePersist = mirrorAgentRunFinalResponse
+
+func mirrorAgentRunFinalResponseAsync(c *gin.Context, requestID string, messageID int64, answer string, reasoningContent string) {
+	logger.Infof(c, "【诊断-AgentRun】异步提交最终事件: request_id=%s message_id=%d", requestID, messageID)
+	enqueueAgentRunFinalResponse(c, requestID, messageID, answer, reasoningContent)
 }
 
 // handleOutOfRangeReply 处理超纲回复
 func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *model.Agent, replyContent string, requestId string, relayMode int, messageStatus *MessageStatsInfo) {
 	ctx := c.Request.Context()
 
-	logger.Infof(ctx, "发送超纲回复: %s", replyContent)
+	logger.Infof(ctx, "发送超纲回复: reply_chars=%d", len(replyContent))
 
 	// 增加未搜索到内容统计
 	go func() {
@@ -203,6 +425,14 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 
 	existingMsgID := getPreparedMasterMessageID(c, messageStatus)
 	replyMessageID := int64(0)
+
+	if messageStatus != nil && messageStatus.DocumentType == model.DocumentTypeWiki && messageStatus.DocumentID == 0 {
+		if rawSources, ok := c.Get("rag_sources"); ok {
+			if sources, ok := rawSources.([]rag.SourceReference); ok {
+				messageStatus.DocumentID = firstWikiPageID(sources)
+			}
+		}
+	}
 
 	// 保存超纲回复到聊天记录
 	if existingMsgID > 0 {
@@ -225,7 +455,13 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 			msg.ThinkingMode = messageStatus.ThinkingMode
 			msg.KnowledgeScope = messageStatus.KnowledgeScope
 			msg.KnowledgeType = messageStatus.KnowledgeType
-			msg.FileID = messageStatus.SaveFileID
+			msg.DocumentType = messageStatus.DocumentType
+			msg.DocumentID = messageStatus.DocumentID
+			if messageStatus.DocumentType == model.DocumentTypeFile {
+				msg.FileID = messageStatus.DocumentID
+			} else {
+				msg.FileID = 0
+			}
 			msg.OriginalQuestion = messageStatus.OriginalQuestion
 			msg.RewrittenQuestion = messageStatus.RewrittenQuestion
 
@@ -276,7 +512,14 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 			ThinkingMode:      messageStatus.ThinkingMode,
 			KnowledgeScope:    messageStatus.KnowledgeScope,
 			KnowledgeType:     messageStatus.KnowledgeType,
-			FileID:            messageStatus.SaveFileID,
+			DocumentType:      messageStatus.DocumentType,
+			DocumentID:        messageStatus.DocumentID,
+			FileID: func() int64 {
+				if messageStatus.DocumentType == model.DocumentTypeFile {
+					return messageStatus.DocumentID
+				}
+				return 0
+			}(),
 			OriginalQuestion:  messageStatus.OriginalQuestion,
 			RewrittenQuestion: messageStatus.RewrittenQuestion,
 			RequestSource:     messageStatus.RequestSource,
@@ -387,8 +630,9 @@ func createRAGStatsData(eid int64, typeStr string, searchResponse *rag.SearchRes
 		"document_search": map[string]interface{}{
 			"chunks": []interface{}{}, // 搜索到的所有分片列表
 		},
-		"document_quotations": []string{}, // 实际被引用的分片ID列表
-		"file_quotations":     []string{}, // 实际被引用的去重file_id列表
+		"document_quotations":  []string{}, // 实际被引用的分片ID列表
+		"file_quotations":      []string{}, // 实际被引用的去重file_id列表
+		"wiki_page_quotations": []string{},
 		"performance": map[string]interface{}{
 			"processing_time_ms": processingTimeMs,
 		},
@@ -454,12 +698,16 @@ func createRAGStatsData(eid int64, typeStr string, searchResponse *rag.SearchRes
 			quotedChunkIDs, quotedFileIDs := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 			stats["document_quotations"] = quotedChunkIDs
 			stats["file_quotations"] = quotedFileIDs
+			stats["wiki_page_quotations"] = getQuotedWikiPageIDs(quotedSourceIDs, sources)
 		} else {
 			// 如果还没有回答内容，暂时使用所有搜索到的分片和文件
 			var chunkQuotations []string
 			var fileQuotationsMap = make(map[int64]bool) // 使用map去重
 
 			for _, source := range sources {
+				if source.SourceType == "wiki" {
+					continue
+				}
 				chunkQuotations = append(chunkQuotations, hashInt64(source.ChunkID))
 				fileQuotationsMap[source.FileID] = true
 			}
@@ -472,6 +720,7 @@ func createRAGStatsData(eid int64, typeStr string, searchResponse *rag.SearchRes
 
 			stats["document_quotations"] = chunkQuotations
 			stats["file_quotations"] = fileQuotations
+			stats["wiki_page_quotations"] = getQuotedWikiPageIDs(nil, sources)
 		}
 	}
 
@@ -1063,6 +1312,8 @@ func hashSourcesArray(sources []rag.SourceReference) []map[string]interface{} {
 	hashedSources := make([]map[string]interface{}, len(sources))
 	for i, source := range sources {
 		hashedSource := map[string]interface{}{
+			"source_type":         source.SourceType,
+			"wiki_page_id":        hashInt64(source.WikiPageID),
 			"reference_id":        source.ReferenceID,
 			"chunk_id":            hashInt64(source.ChunkID),
 			"file_id":             hashInt64(source.FileID),
@@ -1082,6 +1333,8 @@ func hashSourcesArray(sources []rag.SourceReference) []map[string]interface{} {
 			"library_icon":        source.LibraryIcon,
 			"space_id":            source.SpaceID,
 			"space_name":          source.SpaceName,
+			"slug":                source.Slug,
+			"title":               source.Title,
 			"file_created_at":     source.FileCreatedAt,
 			"source_key":          source.SourceKey,
 		}
@@ -1258,11 +1511,11 @@ func performWebSearch(agent *model.Agent, webSearchConfig *model.WebSearchConfig
 
 // createQuotationsData 创建引用数据
 func createQuotationsData(ctx context.Context, sources []rag.SourceReference, answer string) map[string]interface{} {
-	var quotedChunkIDs []string
-	var quotedFileIDs []string
+	quotedChunkIDs := make([]string, 0)
+	quotedFileIDs := make([]string, 0)
+	quotedWikiPageIDs := make([]string, 0)
 
 	logger.Debugf(ctx, "【引用分析】开始生成引用数据: sources=%d, answer_len=%d", len(sources), len(answer))
-	logger.Debugf(ctx, "【引用分析】answer 内容: %s", answer)
 	for i, source := range sources {
 		logger.Debugf(ctx, "【引用分析】source[%d]: reference_id=%s, chunk_id=%d, file_id=%d, source_key=%s",
 			i, source.ReferenceID, source.ChunkID, source.FileID, source.SourceKey)
@@ -1296,14 +1549,22 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 			// 对于知识库搜索，使用hash值
 			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 		}
+		lookup := buildQuotedSourceLookup(sources)
+		for _, sourceID := range quotedSourceIDs {
+			info, ok := lookupQuotedSourceInfo(lookup, sourceID)
+			if ok && info.SourceType == "wiki" && info.WikiPageID > 0 {
+				quotedWikiPageIDs = append(quotedWikiPageIDs, hashInt64(info.WikiPageID))
+			}
+		}
 	}
 
 	logger.Debugf(ctx, "【引用分析】引用数据生成完成: document_quotations=%v, file_quotations=%v",
 		quotedChunkIDs, quotedFileIDs)
 
 	return map[string]interface{}{
-		"document_quotations": quotedChunkIDs,
-		"file_quotations":     quotedFileIDs,
+		"document_quotations":  quotedChunkIDs,
+		"file_quotations":      quotedFileIDs,
+		"wiki_page_quotations": quotedWikiPageIDs,
 		"performance": map[string]interface{}{
 			"processing_time_ms": 0, // 引用分析的时间可以单独计算，这里先设为0
 		},
@@ -1330,7 +1591,7 @@ func extractQuotedSourceIDs(answer string) []string {
 	// 1. Source:A-数字 (知识库搜索)
 	// 2. Source:B-数字 (网页搜索)
 	// 3. Source:数字-数字 (单文件搜索，fileID-chunkIndex)
-	re := `Source:(A|B|\d+)-(\d+)`
+	re := `Source:(A|B|W|\d+)-(\d+)`
 	matches := regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 	uniqueIDs := make(map[string]bool)
@@ -1376,6 +1637,22 @@ func extractQuotedSourceIDs(answer string) []string {
 
 	// 如果仍然没有匹配到，尝试匹配简单的数字引用格式，如 [1]、[2] 等
 	if len(quotedIDs) == 0 {
+		// Wiki/知识库答案也可能只保留数字-数字形式，如 [1-1]。
+		re = `\[(\d+-\d+)\]`
+		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
+
+		for _, match := range matches {
+			if len(match) >= 2 {
+				id := match[1]
+				if !uniqueIDs[id] {
+					uniqueIDs[id] = true
+					quotedIDs = append(quotedIDs, id)
+				}
+			}
+		}
+	}
+
+	if len(quotedIDs) == 0 {
 		// 匹配 [数字] 格式的引用
 		re = `\[(\d+)\]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
@@ -1392,15 +1669,15 @@ func extractQuotedSourceIDs(answer string) []string {
 	}
 
 	if len(quotedIDs) == 0 {
-		re = `\[(Source:(A|B)-(\d+))\]`
+		re = `\[(Source:(A|B|W)-(\d+))\]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 		for _, match := range matches {
 			if len(match) >= 4 {
-				sourceType := match[2] // A 或 B
+				sourceType := match[2] // A、B 或 W
 				id := match[3]
 
-				if sourceType == "A" || sourceType == "B" {
+				if sourceType == "A" || sourceType == "B" || sourceType == "W" {
 					refID := fmt.Sprintf("%s-%s", sourceType, id)
 					if !uniqueIDs[refID] {
 						uniqueIDs[refID] = true
@@ -1426,18 +1703,49 @@ func getQuotedFileIDs(quotedSourceIDs []string, sources []rag.SourceReference) [
 	return quotedFileIDs
 }
 
+func getQuotedWikiPageIDs(quotedSourceIDs []string, sources []rag.SourceReference) []string {
+	lookup := buildQuotedSourceLookup(sources)
+	ids := make([]string, 0)
+	seen := make(map[int64]struct{})
+	if len(quotedSourceIDs) == 0 {
+		for _, source := range sources {
+			if source.SourceType == "wiki" && source.WikiPageID > 0 {
+				if _, ok := seen[source.WikiPageID]; !ok {
+					seen[source.WikiPageID] = struct{}{}
+					ids = append(ids, hashInt64(source.WikiPageID))
+				}
+			}
+		}
+		return ids
+	}
+	for _, sourceID := range quotedSourceIDs {
+		info, ok := lookupQuotedSourceInfo(lookup, sourceID)
+		if ok && info.SourceType == "wiki" && info.WikiPageID > 0 {
+			if _, exists := seen[info.WikiPageID]; !exists {
+				seen[info.WikiPageID] = struct{}{}
+				ids = append(ids, hashInt64(info.WikiPageID))
+			}
+		}
+	}
+	return ids
+}
+
 type quotedSourceLookup struct {
-	ChunkID int64
-	FileID  int64
+	ChunkID    int64
+	FileID     int64
+	WikiPageID int64
+	SourceType string
 }
 
 func buildQuotedSourceLookup(sources []rag.SourceReference) map[string]quotedSourceLookup {
 	lookup := make(map[string]quotedSourceLookup, len(sources))
-	for _, source := range sources {
-		lookup[source.ReferenceID] = quotedSourceLookup{
-			ChunkID: source.ChunkID,
-			FileID:  source.FileID,
+	for index, source := range sources {
+		info := quotedSourceLookup{
+			ChunkID: source.ChunkID, FileID: source.FileID,
+			WikiPageID: source.WikiPageID, SourceType: source.SourceType,
 		}
+		lookup[source.ReferenceID] = info
+		lookup[strconv.Itoa(index+1)] = info
 	}
 	return lookup
 }
@@ -1460,6 +1768,9 @@ func resolveQuotedSourceIDs(
 	for _, sourceID := range quotedSourceIDs {
 		info, ok := lookupQuotedSourceInfo(lookup, sourceID)
 		if !ok {
+			continue
+		}
+		if info.SourceType == "wiki" {
 			continue
 		}
 

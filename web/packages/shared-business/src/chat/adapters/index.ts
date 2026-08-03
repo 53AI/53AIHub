@@ -1,4 +1,11 @@
-export type { IConversationApi, IAgentApi, IUploadApi, ChatCompletionParams, IAgentInfo } from "./types";
+export type {
+  IConversationApi,
+  IAgentApi,
+  IUploadApi,
+  ChatCompletionParams,
+  IAgentInfo,
+  ConversationCreateDocumentRef,
+} from "./types";
 export type {
   IAgentRunApi,
   AgentRunInfo,

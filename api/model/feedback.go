@@ -12,7 +12,7 @@ type Feedback struct {
 	MessageID    int64    `json:"message_id" gorm:"index;not null"`
 	UserID       int64    `json:"user_id" gorm:"index:idx_feedback_search,priority:2;not null"`
 	FeedbackType string   `json:"feedback_type" gorm:"size:20;index:idx_feedback_search,priority:3;not null"` // satisfied, unsatisfied
-	Question     string   `json:"question" gorm:"type:text"`                                                           // 问题内容，用于搜索
+	Question     string   `json:"question" gorm:"type:text"`                                                  // 问题内容，用于搜索
 	Reason       string   `json:"reason" gorm:"size:100"`
 	Description  string   `json:"description" gorm:"type:text"`
 	MessageInfo  *Message `json:"message_info,omitempty" gorm:"-"` // 消息信息

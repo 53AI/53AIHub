@@ -290,7 +290,9 @@ func ProcessEmbedding(c *gin.Context) {
 
 	// 批量入队 Pending 分块（按 batchSize 限制数量）
 	batchSize := req.BatchSize
-	if batchSize <= 0 { batchSize = 10 }
+	if batchSize <= 0 {
+		batchSize = 10
+	}
 	var pending []model.RetrievalChunk
 	if err := model.DB.
 		Where("eid = ? AND embedding_status = ?", eid, model.RetrievalChunkEmbeddingStatusPending).
@@ -310,7 +312,7 @@ func ProcessEmbedding(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "待处理分块已入队，等待异步向量化",
-		"data": gin.H{"count": len(pending)},
+		"data":    gin.H{"count": len(pending)},
 	})
 }
 

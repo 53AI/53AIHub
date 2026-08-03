@@ -1,5 +1,5 @@
 import { useState, forwardRef, useImperativeHandle, useCallback } from "react";
-import { Popover, Empty, Modal, message } from "antd";
+import { Popover, Empty, Modal } from "antd";
 import { useNavigate } from "react-router-dom";
 import { SvgIcon } from "@km/shared-components-react";
 import { useLibraryStore, formatLibrary } from "@/stores/modules/library";
@@ -95,7 +95,7 @@ export const LibrarySelector = forwardRef<
       {libraryStore.space && (
         <div
           className="h-9 px-3 flex items-center gap-2 cursor-pointer hover:bg-[#EEEFF0] rounded"
-          onClick={() => handleNavigate(`/knowledge/${libraryStore.space?.id}`)}
+          onClick={() => handleNavigate(`/knowledge?space_id=${libraryStore.space?.id}`)}
         >
           <SvgIcon name="arrow-right-up" size={16} />
           <p className="flex-1 text-sm text-[#1D1E1F] truncate">

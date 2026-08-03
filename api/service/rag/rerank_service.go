@@ -353,12 +353,11 @@ func callExternalRerankAPI(ctx context.Context, req *RerankRequest, channel *mod
 	switch channel.Type {
 	case model.ChannelApiBailian, relay_channeltype.Ali:
 		return executeBailianRerankRequest(ctx, req, meta)
-	case relay_channeltype.SiliconFlow: // 硅基流动渠道类型
-		return executeSiliconFlowRerankRequest(ctx, req, meta)
-	case model.ChannelApiTypeAppBuilderModel: // 百度千帆渠道类型
+	case model.ChannelApiTypeAppBuilderModel: // 百度千帆 (自定义 API 格式)
 		return executeBaiduQianfanRerankRequest(ctx, req, meta)
 	default:
-		return nil, nil, fmt.Errorf("不支持的渠道类型: %d (channel_id=%d, channel_name=%s)", channel.Type, channel.ChannelID, channel.Name)
+		// 所有其他渠道类型走通用 OpenAI 兼容路径
+		return executeOpenAIRerankRequest(ctx, req, meta)
 	}
 }
 
@@ -387,12 +386,11 @@ func (s *RerankService) callExternalRerankAPIWithoutGinContext(ctx context.Conte
 	switch channel.Type {
 	case model.ChannelApiBailian, relay_channeltype.Ali:
 		return executeBailianRerankRequest(ctx, req, meta)
-	case relay_channeltype.SiliconFlow: // 硅基流动
-		return executeSiliconFlowRerankRequest(ctx, req, meta)
-	case model.ChannelApiTypeAppBuilderModel: // 百度千帆
+	case model.ChannelApiTypeAppBuilderModel: // 百度千帆 (自定义 API 格式)
 		return executeBaiduQianfanRerankRequest(ctx, req, meta)
 	default:
-		return nil, nil, fmt.Errorf("不支持的渠道类型: %d (channel_id=%d, channel_name=%s)", channel.Type, channel.ChannelID, channel.Name)
+		// 所有其他渠道类型走通用 OpenAI 兼容路径
+		return executeOpenAIRerankRequest(ctx, req, meta)
 	}
 }
 
@@ -603,137 +601,6 @@ func executeBailianRerankRequest(ctx context.Context, req *RerankRequest, meta *
 	return convertBailianRerankResponse(bailianResp, req)
 }
 
-// executeSiliconFlowRerankRequest 执行硅基流动rerank请求
-func executeSiliconFlowRerankRequest(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
-	// 构建请求体 - 根据硅基流动API文档格式
-	requestData := map[string]interface{}{
-		"model":     req.Model,
-		"query":     req.Query,
-		"documents": req.Documents,
-	}
-
-	// 添加可选参数
-	if req.TopN != nil {
-		requestData["top_n"] = *req.TopN
-	}
-	if req.ReturnDocuments != nil {
-		requestData["return_documents"] = *req.ReturnDocuments
-	}
-
-	requestBody, err := json.Marshal(requestData)
-	if err != nil {
-		return nil, nil, fmt.Errorf("序列化请求失败: %v", err)
-	}
-	logger.Debugf(ctx, "【重排】硅基流动请求参数: query_first_50=%q, doc_count=%d, doc_first_50=%v",
-		firstNRunesForDebug(req.Query, 50), len(req.Documents), previewDocumentsForDebug(req.Documents, 10, 50))
-
-	// 构建请求 URL
-	baseUrl := meta.BaseURL
-	if baseUrl == "" {
-		baseUrl = "https://api.siliconflow.cn" // 默认硅基流动 API 地址
-	}
-	url := fmt.Sprintf("%s/v1/rerank", baseUrl)
-
-	// 创建HTTP请求
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(requestBody)))
-	if err != nil {
-		logger.SysErrorf("❌ 创建HTTP请求失败: %v", err)
-		return nil, nil, fmt.Errorf("创建请求失败: %v", err)
-	}
-
-	// 设置请求头
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+meta.APIKey)
-
-	// 发送请求
-	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		logger.SysErrorf("❌ 硅基流动Rerank请求失败: %v", err)
-		return nil, nil, fmt.Errorf("发送请求失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// 检查响应状态
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		logger.SysErrorf("❌ 硅基流动Rerank请求失败 - 状态码: %d, 响应: %s", resp.StatusCode, string(body))
-		return nil, nil, fmt.Errorf("请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
-	}
-
-	// 读取响应体
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		logger.SysErrorf("❌ 读取响应体失败: %v", err)
-		return nil, nil, fmt.Errorf("读取响应体失败: %v", err)
-	}
-
-	// 解析硅基流动响应
-	var siliconFlowResp map[string]interface{}
-	if err := json.Unmarshal(respBody, &siliconFlowResp); err != nil {
-		logger.SysErrorf("❌ 解析硅基流动Rerank响应失败: %v", err)
-		return nil, nil, fmt.Errorf("解析响应失败: %v", err)
-	}
-
-	// 转换为标准格式
-	// 硅基流动返回字段存在版本差异：
-	// - 新格式: results
-	// - 旧格式: data
-	// 这里优先兼容 results，并保留 data 兜底。
-	var (
-		data []interface{}
-		ok   bool
-	)
-	if data, ok = siliconFlowResp["results"].([]interface{}); !ok {
-		data, ok = siliconFlowResp["data"].([]interface{})
-	}
-	if !ok {
-		return nil, nil, fmt.Errorf("响应格式错误：缺少 results/data 字段或格式不正确")
-	}
-
-	openaiResp := &RerankResponse{
-		Object: "list",
-		Model:  req.Model,
-		Data:   make([]RerankResult, len(data)),
-		Usage: RerankUsage{
-			TotalTokens: 0, // 硅基流动API可能不返回token使用情况
-		},
-	}
-
-	for i, item := range data {
-		itemMap, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		index, _ := itemMap["index"].(float64)
-		relevanceScore, _ := itemMap["relevance_score"].(float64)
-
-		openaiResult := RerankResult{
-			Object:         "rerank_result",
-			Index:          int(index),
-			RelevanceScore: relevanceScore,
-		}
-
-		// 如果需要返回文档内容
-		document, exists := itemMap["document"].(map[string]interface{})
-		if exists && req.ReturnDocuments != nil && *req.ReturnDocuments {
-			if text, textExists := document["text"].(string); textExists {
-				openaiResult.Document = &RerankDocument{
-					Text: text,
-				}
-			}
-		}
-
-		openaiResp.Data[i] = openaiResult
-	}
-
-	// 计算 token 使用量
-	usage := calculateRerankUsage(req, len(data))
-
-	return openaiResp, usage, nil
-}
-
 // executeBaiduQianfanRerankRequest 执行百度千帆rerank请求
 func executeBaiduQianfanRerankRequest(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
 	// 构建请求体 - 根据百度千帆API文档格式
@@ -853,5 +720,143 @@ func executeBaiduQianfanRerankRequest(ctx context.Context, req *RerankRequest, m
 	// 计算 token 使用量
 	usage := calculateRerankUsage(req, len(data))
 
+	return openaiResp, usage, nil
+}
+
+// executeOpenAIRerankRequest 执行通用 OpenAI 兼容 rerank 请求
+func executeOpenAIRerankRequest(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
+	// 构建请求体 - Cohere 兼容格式
+	requestData := map[string]interface{}{
+		"model":     req.Model,
+		"query":     req.Query,
+		"documents": req.Documents,
+	}
+
+	if req.TopN != nil {
+		requestData["top_n"] = *req.TopN
+	}
+	if req.ReturnDocuments != nil {
+		requestData["return_documents"] = *req.ReturnDocuments
+	}
+
+	requestBody, err := json.Marshal(requestData)
+	if err != nil {
+		return nil, nil, fmt.Errorf("序列化请求失败: %v", err)
+	}
+	logger.Debugf(ctx, "【重排】通用OpenAI兼容请求参数: query_first_50=%q, doc_count=%d, doc_first_50=%v",
+		firstNRunesForDebug(req.Query, 50), len(req.Documents), previewDocumentsForDebug(req.Documents, 10, 50))
+
+	baseUrl := meta.BaseURL
+	if baseUrl == "" {
+		if meta.ChannelType >= 0 && meta.ChannelType < len(relay_channeltype.ChannelBaseURLs) && relay_channeltype.ChannelBaseURLs[meta.ChannelType] != "" {
+			baseUrl = relay_channeltype.ChannelBaseURLs[meta.ChannelType]
+		} else {
+			baseUrl = "https://api.openai.com"
+		}
+	}
+	url := fmt.Sprintf("%s/v1/rerank", baseUrl)
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(requestBody)))
+	if err != nil {
+		logger.SysErrorf("❌ 创建HTTP请求失败: %v", err)
+		return nil, nil, fmt.Errorf("创建请求失败: %v", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+meta.APIKey)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		logger.SysErrorf("❌ 通用Rerank请求失败: %v", err)
+		return nil, nil, fmt.Errorf("发送请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		logger.SysErrorf("❌ 通用Rerank请求失败 - 状态码: %d, 响应: %s", resp.StatusCode, string(body))
+		return nil, nil, fmt.Errorf("请求失败，状态码: %d, 响应: %s", resp.StatusCode, string(body))
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.SysErrorf("❌ 读取响应体失败: %v", err)
+		return nil, nil, fmt.Errorf("读取响应体失败: %v", err)
+	}
+
+	// 解析标准 Cohere 兼容格式
+	var rawResp map[string]interface{}
+	if err := json.Unmarshal(respBody, &rawResp); err != nil {
+		logger.SysErrorf("❌ 解析通用Rerank响应失败: %v", err)
+		return nil, nil, fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	var items []interface{}
+	if results, ok := rawResp["results"].([]interface{}); ok {
+		items = results
+	} else if data, ok := rawResp["data"].([]interface{}); ok {
+		items = data
+	}
+
+	if len(items) == 0 {
+		return nil, nil, fmt.Errorf("响应格式错误：缺少 results/data 字段")
+	}
+
+	openaiResp := &RerankResponse{
+		Object: "list",
+		Model:  req.Model,
+		Data:   make([]RerankResult, 0, len(items)),
+		Usage:  RerankUsage{TotalTokens: 0},
+	}
+
+	for _, item := range items {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		index, _ := itemMap["index"].(float64)
+		relevanceScore, _ := itemMap["relevance_score"].(float64)
+
+		result := RerankResult{
+			Object:         "rerank_result",
+			Index:          int(index),
+			RelevanceScore: relevanceScore,
+		}
+
+		if doc, exists := itemMap["document"].(map[string]interface{}); exists {
+			if req.ReturnDocuments == nil || *req.ReturnDocuments {
+				if text, ok := doc["text"].(string); ok {
+					result.Document = &RerankDocument{Text: text}
+				}
+			}
+		}
+
+		openaiResp.Data = append(openaiResp.Data, result)
+	}
+
+	// 尝试从 usage/meta 提取 token 信息
+	if usage, ok := rawResp["usage"].(map[string]interface{}); ok {
+		if total, ok := usage["total_tokens"].(float64); ok {
+			openaiResp.Usage.TotalTokens = int(total)
+		}
+	} else if meta, ok := rawResp["meta"].(map[string]interface{}); ok {
+		if billedUnits, ok := meta["billed_units"].(map[string]interface{}); ok {
+			total := 0
+			if input, ok := billedUnits["input_tokens"].(float64); ok {
+				total += int(input)
+			}
+			if output, ok := billedUnits["output_tokens"].(float64); ok {
+				total += int(output)
+			}
+			openaiResp.Usage.TotalTokens = total
+		}
+	}
+
+	usage := &relay_model.Usage{
+		TotalTokens: openaiResp.Usage.TotalTokens,
+	}
+	logger.Debugf(ctx, "【重排】通用OpenAI兼容Rerank请求完成: 返回 %d 个结果, 使用 %d tokens", len(openaiResp.Data), usage.TotalTokens)
 	return openaiResp, usage, nil
 }

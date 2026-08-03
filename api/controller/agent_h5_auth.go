@@ -200,8 +200,8 @@ type GetAgentH5FixedTokenListRequest struct {
 }
 
 type GetAgentH5FixedTokenListResponse struct {
-	Count int64                      `json:"count"`
-	List  []*model.AgentAccessKey    `json:"list"`
+	Count int64                   `json:"count"`
+	List  []*model.AgentAccessKey `json:"list"`
 }
 
 // @Summary 获取 agent H5 固定令牌列表

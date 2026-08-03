@@ -189,7 +189,7 @@ func (m *recordingChunkCleanupManager) cleanupJob(ctx context.Context, job *mode
 	}
 
 	svc := NewRecordingService(job.Eid)
-	svc.cleanupRecordingLocalArtifacts(job)
+	svc.finalizeSvc.cleanupRecordingLocalArtifacts(job)
 	return nil
 }
 

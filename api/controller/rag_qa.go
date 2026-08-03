@@ -270,17 +270,9 @@ type SearchKnowledgeResponse struct {
 func (ctrl *RAGQAController) GetRAGConfig(c *gin.Context) {
 	eid := config.GetEID(c)
 
-	// 解析查询参数
-	var libraryID *int64
-	if libraryIDStr := c.Query("library_id"); libraryIDStr != "" {
-		if id, err := strconv.ParseInt(libraryIDStr, 10, 64); err == nil {
-			libraryID = &id
-		}
-	}
-
 	// 获取配置
 	configService := rag.NewChunkConfigService(model.DB)
-	config, err := configService.GetConfig(eid, libraryID, model.ChunkTypeDefault)
+	config, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return

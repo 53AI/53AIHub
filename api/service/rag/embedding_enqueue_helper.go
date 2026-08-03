@@ -22,7 +22,8 @@ func EnqueueRetrievalChunksByFile(eid, fileID, libraryID int64) error {
 	if err != nil {
 		logger.Warn(context.TODO(), fmt.Sprintf("[embEnqueueByFileError][eid=%d][fileID=%d]%v", eid, fileID, err))
 
-		file.ParsingStatus = model.FileParsingStatusFail
+		// 不覆盖 ParsingStatus——文件可能已完成转写/纪要等核心管线，
+		// 嵌入失败不应改变已成功的解析状态。调用方通过返回值感知失败。
 		common.SetFileStop(file.ID)
 		file.Update()
 
@@ -36,7 +37,7 @@ func EnqueueRetrievalChunksByFile(eid, fileID, libraryID int64) error {
 func _enqueueRetrievalChunksByFile(eid, fileID, libraryID int64) error {
 	// 未配置向量化渠道则不入队
 	cfgSvc := NewChunkConfigService(model.DB)
-	cfg, cfgErr := cfgSvc.GetConfig(eid, &libraryID, model.ChunkTypeDefault)
+	cfg, cfgErr := cfgSvc.GetEnterpriseEmbeddingConfig(eid)
 	if cfgErr != nil {
 		CheckEmbeddingStepStatusSave(eid, fileID, fmt.Sprintf("time:%d; 获取向量化配置失败 Err:%v", time.Now().Unix(), cfgErr))
 		logger.Warn(context.TODO(), fmt.Sprintf("[embEnqueueConfigCheckError][eid=%d][fileID=%d] %v", eid, fileID, cfgErr))

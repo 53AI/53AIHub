@@ -167,12 +167,15 @@ func (s *DocumentConversionStep) Execute(parameters any) error {
 
 	// 预处理图片链接（在保存前替换）
 	var imageMetas []image_asset.UploadFileMeta
-	processedContent, imageMetas, err := s.preprocessImagesIfNeeded(params.Eid, params.UserID, result.ProcessedContent)
-	if err != nil {
-		logger.SysErrorf("预处理图片失败: %v", err)
-		// 继续使用原内容，不阻塞主流程
-		processedContent = result.ProcessedContent
-		imageMetas = nil
+	processedContent := result.ProcessedContent
+	if result.FileType != "json" {
+		var imgErr error
+		processedContent, imageMetas, imgErr = s.preprocessImagesIfNeeded(params.Eid, params.UserID, result.ProcessedContent)
+		if imgErr != nil {
+			logger.SysErrorf("预处理图片失败: %v", imgErr)
+			processedContent = result.ProcessedContent
+			imageMetas = nil
+		}
 	}
 
 	// 使用事务保存文件体

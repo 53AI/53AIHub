@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback } from "react";
-import { Button, Collapse, Tag, Tooltip, message } from "antd";
+import { useMemo, useCallback, useState } from "react";
+import { Button, Collapse, Tag, Tooltip } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { t } from "@/locales";
-import channelApi from "@/api/modules/channel/index";
+import { MODEL_USE_TYPE } from "@/constants/platform/config";
 import type { ChannelGroup, ModelTypeEntry } from "../Model";
+import { useModelTest, getTestKey } from "../hooks/useModelTest";
 
 interface ModelGroupProps {
   group: ChannelGroup;
@@ -12,13 +13,6 @@ interface ModelGroupProps {
   onDelete: (data: any, model: any) => void;
   onModelEdit: (data: { data: any; parentData: any }) => void;
 }
-
-interface TestResult {
-  loading: boolean;
-  success: boolean;
-  message: string;
-}
-
 export function ModelGroup({
   group,
   onEdit,
@@ -26,7 +20,7 @@ export function ModelGroup({
   onDelete,
   onModelEdit,
 }: ModelGroupProps) {
-  const [testMap, setTestMap] = useState<Record<string, TestResult>>({});
+  const { testMap, handleModelTest } = useModelTest();
 
   const defaultActiveKey = useMemo(() => {
     if (group.multiple) {
@@ -44,67 +38,6 @@ export function ModelGroup({
       return (model.source ?? entry.source ?? primary) as any;
     },
     [primary],
-  );
-
-  const getTestKey = useCallback((data: any, model: any) => {
-    return `${data.channel_id}-${model.value}`;
-  }, []);
-
-  const getTestResult = useCallback(
-    (data: any, model: any) => {
-      return testMap[getTestKey(data, model)];
-    },
-    [testMap, getTestKey],
-  );
-
-  const handleTest = useCallback(
-    (model: any, data: any) => {
-      const key = getTestKey(data, model);
-      setTestMap((prev) => ({
-        ...prev,
-        [key]: { loading: true, success: false, message: "" },
-      }));
-
-      return channelApi
-        .test(data.channel_id, {
-          model: model.value,
-          model_type: model.modelType,
-        })
-        .then((res) => {
-          const success = res ? res.success : false;
-          const messageText = res ? res.message : "";
-          setTestMap((prev) => ({
-            ...prev,
-            [key]: {
-              loading: false,
-              success,
-              message: messageText,
-            },
-          }));
-          if (success) {
-            message.success(
-              t("platform.model_test_success", {
-                platform: `${data.platform_name} ${model.value}`,
-              }),
-            );
-          } else {
-            message.error(
-              `${t("platform.model_test_failed")}${messageText ? ` (${messageText})` : ""}`,
-            );
-          }
-        })
-        .catch((e) => {
-          const errorMessage = e.message || "";
-          setTestMap((prev) => ({
-            ...prev,
-            [key]: { loading: false, success: false, message: errorMessage },
-          }));
-          message.error(
-            `${t("platform.model_test_failed")}${errorMessage ? ` (${errorMessage})` : ""}`,
-          );
-        });
-    },
-    [getTestKey],
   );
 
   const handleSettingClick = useCallback(
@@ -184,10 +117,9 @@ export function ModelGroup({
                 className={`w-full flex flex-col box-border overflow-auto pl-5 ${group.multiple ? "gap-y-5" : "gap-y-0.5"}`}
               >
                 {entry.options.map((model) => {
-                  const testResult = getTestResult(
-                    channelFor(model, entry),
-                    model,
-                  );
+                  const channel = channelFor(model, entry);
+                  const testKey = getTestKey(channel.channel_id, model.value);
+                  const testResult = testMap[testKey];
                   return (
                     <li
                       key={model.value}
@@ -256,7 +188,14 @@ export function ModelGroup({
                             className="px-0"
                             loading={testResult?.loading}
                             onClick={() =>
-                              handleTest(model, channelFor(model, entry))
+                              handleModelTest({
+                                channel_id: channel.channel_id,
+                                model_id: model.value,
+                                model_name: model.label || model.value,
+                                platform_name: channel.platform_name || "",
+                                model_type: model.modelType,
+                                isVoice: String(model.modelType) === String(MODEL_USE_TYPE.VOICE),
+                              })
                             }
                           >
                             <SvgIcon name="tool" width="14"></SvgIcon>

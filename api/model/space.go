@@ -50,20 +50,22 @@ func SetAutoChunkingCallback(callback AutoChunkingCallback) {
 }
 
 type Space struct {
-	ID           int64          `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name         string         `json:"name" gorm:"not null;size:255" binding:"required"`
-	Description  string         `json:"description" gorm:"type:text"`
-	Icon         string         `json:"icon" gorm:"size:255"`
-	Eid          int64          `json:"eid" gorm:"not null;index"`
-	OwnerID      int64          `json:"owner_id" gorm:"not null;index"`
-	SpaceKind    string         `json:"space_kind" gorm:"size:32;not null;default:regular;index"`
-	Status       int            `json:"status" gorm:"not null;default:0" example:"0"` // 0=active, 1=archived
-	Sort         int64          `json:"sort" gorm:"not null;default:0" example:"0"`
-	IsDefault    bool           `json:"is_default" gorm:"not null;default:0" example:"0"`
-	Visibility   int            `json:"visibility" gorm:"not null;" example:"0"` // 0=private, 1=public
-	OwnerInfo    SpaceOwnerInfo `json:"owner_info" gorm:"-"`
-	LibraryCount int64          `json:"library_count" gorm:"-"`
-	Permission   int            `json:"permission" gorm:"-"`
+	ID                         int64          `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name                       string         `json:"name" gorm:"not null;size:255" binding:"required"`
+	Description                string         `json:"description" gorm:"type:text"`
+	Icon                       string         `json:"icon" gorm:"size:255"`
+	Eid                        int64          `json:"eid" gorm:"not null;index"`
+	OwnerID                    int64          `json:"owner_id" gorm:"not null;index"`
+	SpaceKind                  string         `json:"space_kind" gorm:"size:32;not null;default:regular;index"`
+	Status                     int            `json:"status" gorm:"not null;default:0" example:"0"` // 0=active, 1=archived
+	Sort                       int64          `json:"sort" gorm:"not null;default:0" example:"0"`
+	IsDefault                  bool           `json:"is_default" gorm:"not null;default:0" example:"0"`
+	Visibility                 int            `json:"visibility" gorm:"not null;" example:"0"` // 0=private, 1=public
+	EnableWikiKnowledgeGraph   bool           `json:"enable_wiki_knowledge_graph" gorm:"not null;default:false;comment:开启 Wiki 知识图谱(实体/概念提取)"`
+	EnableWikiDynamicKnowledge bool           `json:"enable_wiki_dynamic_knowledge" gorm:"not null;default:false;comment:开启 Wiki 动态知识(摘要/索引/分类)"`
+	OwnerInfo                  SpaceOwnerInfo `json:"owner_info" gorm:"-"`
+	LibraryCount               int64          `json:"library_count" gorm:"-"`
+	Permission                 int            `json:"permission" gorm:"-"`
 	BaseModel
 }
 
@@ -209,6 +211,24 @@ func GetSpacesByIDs(eid int64, ids []int64) ([]Space, error) {
 	return spaces, nil
 }
 
+// GetEnabledDynamicKnowledgeSpaceIDs 获取开启了知识动态开关的空间 ID 列表。
+// 如果 inputIDs 非空，只返回与 inputIDs 的交集；如果 inputIDs 为空，返回企业下所有开启知识动态的空间 ID。
+func GetEnabledDynamicKnowledgeSpaceIDs(eid int64, inputIDs []int64) ([]int64, error) {
+	query := DB.Where("eid = ? AND enable_wiki_dynamic_knowledge = ?", eid, true)
+	if len(inputIDs) > 0 {
+		query = query.Where("id IN ?", inputIDs)
+	}
+	var spaces []Space
+	if err := query.Select("id").Find(&spaces).Error; err != nil {
+		return nil, err
+	}
+	result := make([]int64, 0, len(spaces))
+	for _, s := range spaces {
+		result = append(result, s.ID)
+	}
+	return result, nil
+}
+
 // GetSpacesByEid 获取企业下的所有空间
 func GetSpacesByEid(eid int64, status *int) ([]Space, error) {
 	var spaces []Space
@@ -342,6 +362,11 @@ func (s *Space) IsPersonalSpace() bool {
 	return s != nil && s.SpaceKind == SPACE_KIND_PERSONAL_COMPANY
 }
 
+// IsWikiSpace 空间是否开启了 wiki 功能（任一 wiki 开关开启即为 wiki 空间）
+func (s *Space) IsWikiSpace() bool {
+	return s != nil && (s.EnableWikiKnowledgeGraph || s.EnableWikiDynamicKnowledge)
+}
+
 func InitializeSpaces(enterprise *Enterprise, adminUser *User, tx *gorm.DB) error {
 	// 创建默认空间
 	defaultSpace := &Space{
@@ -455,7 +480,7 @@ func InitializeSpaces(enterprise *Enterprise, adminUser *User, tx *gorm.DB) erro
 	return nil
 }
 
-func GetSpaceListWithIDs(eid int64, name string, status int, resourceIDs any, offset, limit int) (int64, []Space, error) {
+func GetSpaceListWithIDs(eid int64, name string, status int, creatorIDs []int64, createdTimeFrom, createdTimeTo, updatedTimeFrom, updatedTimeTo int64, resourceIDs any, offset, limit int) (int64, []Space, error) {
 	var spaces []Space
 	var count int64
 
@@ -470,6 +495,21 @@ func GetSpaceListWithIDs(eid int64, name string, status int, resourceIDs any, of
 	}
 	if status >= 0 {
 		query = query.Where("status = ?", status)
+	}
+	if len(creatorIDs) > 0 {
+		query = query.Where("owner_id IN ?", creatorIDs)
+	}
+	if createdTimeFrom > 0 {
+		query = query.Where("created_time >= ?", createdTimeFrom)
+	}
+	if createdTimeTo > 0 {
+		query = query.Where("created_time <= ?", createdTimeTo)
+	}
+	if updatedTimeFrom > 0 {
+		query = query.Where("updated_time >= ?", updatedTimeFrom)
+	}
+	if updatedTimeTo > 0 {
+		query = query.Where("updated_time <= ?", updatedTimeTo)
 	}
 
 	err := query.Count(&count).Error

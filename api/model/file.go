@@ -31,6 +31,7 @@ type File struct {
 	OriginType   string `json:"origin_type" gorm:"size:32;not null;default:manual_create;index"`
 	OriginRefID  int64  `json:"origin_ref_id" gorm:"not null;default:0;index"`
 	OriginSource string `json:"origin_source" gorm:"size:64;not null;default:'';index"`
+	GroupID      int64  `json:"group_id" gorm:"not null;default:0;index"`
 	// 解析类型: default, textin, mineru.net
 	ParseType string `json:"parse_type" gorm:"type:varchar(50);not null;default:''"`
 
@@ -50,9 +51,9 @@ type File struct {
 	AIGenerateSQStatus    string `json:"ai_generate_sq_status" gorm:"type:varchar(20);default:'inactive';comment:'AI 问题和简介生成状态:inactive,pending,normal,parsing,failed'"`
 
 	// AI生成内容
-	Summary        string `json:"summary" gorm:"type:text;comment:'AI生成的简介内容'"`
-	Questions      string `json:"questions" gorm:"type:text;comment:'AI生成的问题JSON数组字符串'"`
-	KnowledgeMap   string `json:"knowledge_map" gorm:"type:text;comment:'知识地图(Mermaid mindmap)'"`
+	Summary        string   `json:"summary" gorm:"type:text;comment:'AI生成的简介内容'"`
+	Questions      string   `json:"questions" gorm:"type:text;comment:'AI生成的问题JSON数组字符串'"`
+	KnowledgeMap   string   `json:"knowledge_map" gorm:"type:text;comment:'知识地图(Mermaid mindmap)'"`
 	InsightSummary LongText `json:"insight_summary" gorm:"comment:'洞察和总结(Markdown格式,用于页面展示)'"`
 
 	// 索引禁用相关字段
@@ -202,6 +203,13 @@ type FileCleaningRuleInfo struct {
 	NextStepKey  string `json:"next_step_key"`
 	NextStepName string `json:"next_step_name"`
 	NextStepMode string `json:"next_step_mode"`
+
+	// 纪要/洞察/转写状态，由 GenerateMeetingMinutes/GenerateInsights/转录策略 写入
+	// 独立于管线状态，避免被 pipeline 的 UpdateFileCleaningRuleInfoHelper 覆盖
+	MeetingMinutesStatus string `json:"meeting_minutes"`
+	InsightsStatus       string `json:"insights"`
+	InsightPageStatus    string `json:"insight_page"`
+	TranscriptionStatus  string `json:"transcription"`
 }
 
 func ResolveFileRunStatus(cleaningRuleInfo string) string {
@@ -638,6 +646,26 @@ func invalidateLibraryFileCountCache(eid int64, libraryID int64) {
 	if libraryID > 0 && fileCountCacheInvalidator != nil {
 		fileCountCacheInvalidator(eid, libraryID)
 	}
+}
+
+type spaceFileCountRow struct {
+	Total    int64
+	MonthNew int64
+}
+
+func CountFilesInLibraries(eid int64, libraryIDs []int64, monthStartMs int64) (total int64, monthNew int64, err error) {
+	if len(libraryIDs) == 0 {
+		return 0, 0, nil
+	}
+	var row spaceFileCountRow
+	err = DB.Model(&File{}).
+		Select("COUNT(*) AS total, SUM(CASE WHEN created_time >= ? THEN 1 ELSE 0 END) AS month_new", monthStartMs).
+		Where("eid = ? AND library_id IN ? AND is_deleted = ? AND type = ?", eid, libraryIDs, false, FILE_TYPE_FILE).
+		Scan(&row).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	return row.Total, row.MonthNew, nil
 }
 
 // CountNotDeletedFilesByLibraryIDs 按知识库批量统计未删除文件数（仅统计文档，不含目录）
@@ -1670,6 +1698,21 @@ func UpdateFileAIGenerateSQStatus(fileID int64, status string) error {
 		return fmt.Errorf("%w: ai_generate_sq_status=%s", ErrInvalidStatusValue, status)
 	}
 	return DB.Model(&File{}).Where("id = ?", fileID).Update("ai_generate_sq_status", status).Error
+}
+
+// SetFileTranscriptionStatus 更新 FileCleaningRuleInfo 中的转写状态（独立于 parsing_status，避免被 RAG 管线的失败覆盖）。
+func SetFileTranscriptionStatus(fileID int64, status string) error {
+	var file File
+	if err := DB.Where("id = ?", fileID).Select("cleaning_rule_info").First(&file).Error; err != nil {
+		return err
+	}
+	var info FileCleaningRuleInfo
+	if file.CleaningRuleInfo != "" {
+		json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+	}
+	info.TranscriptionStatus = status
+	data, _ := json.Marshal(info)
+	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
 }
 
 func IsAllowedAIGenerateChunkStatus(status string) bool {

@@ -35,7 +35,7 @@ type AgentUserMemory struct {
 	UserID  int64 `json:"user_id" gorm:"not null;uniqueIndex:uk_agent_user_memories,priority:3"`
 
 	Items   LongText `json:"items"`
-	Version int    `json:"version" gorm:"default:0"`
+	Version int      `json:"version" gorm:"default:0"`
 
 	// MemoryContent 读取时实时生成的 Markdown，不存库，不返回前端
 	MemoryContent string `json:"-" gorm:"-"`

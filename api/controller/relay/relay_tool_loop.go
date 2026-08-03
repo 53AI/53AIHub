@@ -1,14 +1,53 @@
 package relay
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/model"
+	agentexec "github.com/53AI/53AIHub/service/agent"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
 )
+
+const (
+	agentLoopStopRepeatedToolCall    = agentexec.StopRepeatedToolCall
+	agentLoopStopConsecutiveFailures = agentexec.StopConsecutiveFailures
+	agentLoopStopNoProgress          = agentexec.StopNoProgress
+	agentLoopStopWallClock           = agentexec.StopWallClock
+)
+
+type agentLoopStop = agentexec.LoopStop
+type agentLoopSafetyConfig = agentexec.LoopGuardConfig
+type agentLoopSafety = agentexec.LoopGuard
+
+func effectiveAgentMaxTurns(configured, hardLimit int) int {
+	return agentexec.EffectiveMaxTurns(configured, hardLimit)
+}
+
+func newAgentLoopSafety(config agentLoopSafetyConfig, now func() time.Time) *agentLoopSafety {
+	return agentexec.NewLoopGuard(config, now)
+}
+
+func buildAgentHardStopContent(content, stopDetail string) string {
+	content = strings.TrimSpace(content)
+	stopDetail = strings.TrimSpace(stopDetail)
+	if content == "" {
+		return stopDetail
+	}
+	if stopDetail == "" {
+		return content
+	}
+	return content + "\n\n" + stopDetail
+}
+
+func buildRelayToolCallSignature(functionName, argsString string) string {
+	return agentexec.ToolCallSignature(functionName, argsString)
+}
 
 const (
 	agentStreamPhaseContextKey        = "agent_stream_phase"
@@ -51,11 +90,52 @@ func (o *agentToolTurnOutcome) Observe(signal agentToolExecutionSignal) {
 	}
 }
 
+func (o *agentToolTurnOutcome) ObserveOutputFiles(count int) {
+	if o == nil || count <= 0 {
+		return
+	}
+	o.hasTool = true
+	o.hasLikelyFinalSuccess = true
+}
+
 func (o agentToolTurnOutcome) NextStreamPhase() string {
 	if o.hasTool && !o.hasFailure && o.hasLikelyFinalSuccess {
 		return agentStreamPhaseAnswering
 	}
 	return agentStreamPhasePlanning
+}
+
+func shouldInjectToolUsageHint(count int, alreadyInjected bool) bool {
+	const toolUsageHintThreshold = 5
+	return !alreadyInjected && count >= toolUsageHintThreshold
+}
+
+func classifyAgentLLMContextTermination(ctxErr error) (*agentLoopStop, bool) {
+	if errors.Is(ctxErr, context.DeadlineExceeded) {
+		return &agentLoopStop{
+			Code:    agentLoopStopWallClock,
+			Message: "Agent 执行已达到最长运行时间，已停止继续调用工具并保留当前结果。",
+		}, false
+	}
+	return nil, errors.Is(ctxErr, context.Canceled)
+}
+
+type agentPostOutputToolBudget struct {
+	validationTurnUsed bool
+}
+
+// ShouldStop allows one targeted validation turn after a deliverable file has
+// been produced. Further tool turns are stopped so optional QA cannot hide an
+// already usable result from the user.
+func (b *agentPostOutputToolBudget) ShouldStop(hasOutputFiles bool) bool {
+	if b == nil || !hasOutputFiles {
+		return false
+	}
+	if b.validationTurnUsed {
+		return true
+	}
+	b.validationTurnUsed = true
+	return false
 }
 
 func shouldUseRAGAnsweringInitialPhase(messageStatus *MessageStatsInfo, ragCompleted bool, hadRequestTools bool, toolsList []relay_model.Tool) bool {

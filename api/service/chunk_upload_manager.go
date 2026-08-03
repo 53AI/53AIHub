@@ -83,7 +83,7 @@ func (m *ChunkUploadManager) UploadChunk(fileID string, chunkIndex int, chunkDat
 func (m *ChunkUploadManager) MergeChunks(fileID string, totalChunks int) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	chunks := m.chunks[fileID]
 	if chunks == nil {
 		return "", fmt.Errorf("文件分片不存在: %s", fileID)

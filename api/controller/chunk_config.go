@@ -448,6 +448,9 @@ func UpdateLibraryChunkingConfig(c *gin.Context) {
 		return
 	}
 
+	// 更新知识库的更新时间
+	model.UpdateLibraryUpdatedTimeByID(eid, libraryID)
+
 	// 获取更新后的资料拆分配置
 	updatedChunkingConfig, err := configService.GetChunkingConfigFromChunkConfig(chunkConfig)
 	if err != nil {

@@ -1,13 +1,12 @@
 import { create } from 'zustand'
 import { Modal } from 'antd'
-import { gotoLogin } from '@/router/guards'
 import { deepCopy, eventBus } from '@km/shared-utils'
 import { saasApi } from '@/api'
 import { userApi as consoleUserApi } from '@/api/modules/user/index'
 import { getFormatUserData } from '@/api/modules/user'
 import { systemLogApi } from '@/api/modules/system-log'
 import { SYSTEM_LOG_ACTION } from '@/constants/system-log'
-import { isPrivatePrem } from '@/hooks/useEnv'
+import { isPrivatePrem, isOpLocal } from '@/hooks/useEnv'
 
 export interface UserInfoState {
   access_token: string
@@ -165,7 +164,7 @@ export const useUserStore = create<UserState>((set, get) => ({
           content: '退出',
         })
         await consoleUserApi.logout()
-        if (!isPrivatePrem()) {
+        if (!isPrivatePrem() && !isOpLocal()) {
           await consoleUserApi.saas_logout()
         }
       }
@@ -175,7 +174,6 @@ export const useUserStore = create<UserState>((set, get) => ({
       set({ is_saas_login: false, info: deepCopy(getDefaultUser()) })
       if (options?.back_to_login) {
         eventBus.emit('user-login-expired', get())
-        gotoLogin()
       }
     }
 

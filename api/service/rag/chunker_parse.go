@@ -2,15 +2,16 @@ package rag
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
 // SplitPoint 表示一个分割点
 type SplitPoint struct {
-	Position   int    // 分割点在内容中的位置
-	EndPos     int    // 分割符的结束位置
-	Separator  string // 分割符内容
-	Type       string // 分割符类型 (header, text, etc.)
+	Position  int    // 分割点在内容中的位置
+	EndPos    int    // 分割符的结束位置
+	Separator string // 分割符内容
+	Type      string // 分割符类型 (header, text, etc.)
 }
 
 // parseMarkdown parses the markdown content into structured parts
@@ -69,10 +70,61 @@ func (s *ChunkerService) extractParagraphs(content string) []ParagraphInfo {
 func (s *ChunkerService) extractSpecialBlocks(content string) []SpecialBlock {
 	var blocks []SpecialBlock
 	blocks = append(blocks, s.extractCodeBlocks(content)...)
-	blocks = append(blocks, s.extractTables(content)...)
+	blocks = append(blocks, s.extractTableBlocks(content)...)
 	blocks = append(blocks, s.extractMathBlocks(content)...)
 	blocks = append(blocks, s.extractMermaidBlocks(content)...)
 	blocks = append(blocks, s.extractImageBlocks(content)...)
+	return blocks
+}
+
+// extractTableBlocks 提取 Markdown 和 HTML 表格，并合并重叠区间。
+// 表格在后续切分中必须作为一个不可拆分的整体处理。
+func (s *ChunkerService) extractTableBlocks(content string) []SpecialBlock {
+	blocks := append([]SpecialBlock{}, s.extractTables(content)...)
+	blocks = append(blocks, s.extractHTMLTables(content)...)
+	if len(blocks) <= 1 {
+		return blocks
+	}
+
+	sort.SliceStable(blocks, func(i, j int) bool {
+		if blocks[i].Position == blocks[j].Position {
+			return blocks[i].EndPos > blocks[j].EndPos
+		}
+		return blocks[i].Position < blocks[j].Position
+	})
+
+	merged := make([]SpecialBlock, 0, len(blocks))
+	for _, block := range blocks {
+		if len(merged) == 0 || block.Position > merged[len(merged)-1].EndPos {
+			merged = append(merged, block)
+			continue
+		}
+
+		last := &merged[len(merged)-1]
+		if block.EndPos > last.EndPos {
+			last.EndPos = block.EndPos
+			last.Content = content[last.Position:last.EndPos]
+		}
+		last.Protected = true
+	}
+	return merged
+}
+
+// extractHTMLTables 提取 HTML table，支持属性、大小写差异和跨行内容。
+func (s *ChunkerService) extractHTMLTables(content string) []SpecialBlock {
+	tableRegex := regexp.MustCompile(`(?is)<table\b[^>]*>.*?</table\s*>`)
+	matches := tableRegex.FindAllStringIndex(content, -1)
+
+	blocks := make([]SpecialBlock, 0, len(matches))
+	for _, match := range matches {
+		blocks = append(blocks, SpecialBlock{
+			Type:      "table",
+			Content:   content[match[0]:match[1]],
+			Position:  match[0],
+			EndPos:    match[1],
+			Protected: true,
+		})
+	}
 	return blocks
 }
 

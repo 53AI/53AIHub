@@ -21,6 +21,7 @@ type LibraryRequest struct {
 	Description string                  `json:"description"`
 	Icon        string                  `json:"icon"`
 	SpaceID     int64                   `json:"space_id" binding:"required"`
+	LibraryKind string                  `json:"library_kind"`
 	Permissions []*model.PermissionData `json:"permissions"`
 	// 知识库可见性设置: 0=继承空间设置(默认), 1=公开可见, 2=私有不可见
 	Visibility *int `json:"visibility,omitempty" example:"0"`
@@ -65,7 +66,7 @@ func CreateLibrary(c *gin.Context) {
 	}
 
 	libraryService := mcpsvc.NewLibraryService()
-	library, err := libraryService.CreateLibrary(c.Request.Context(), eid, userID, req.Name, req.Description, req.Icon, req.SpaceID, req.Visibility, req.Permissions)
+	library, err := libraryService.CreateLibrary(c.Request.Context(), eid, userID, req.Name, req.Description, req.Icon, req.SpaceID, req.Visibility, req.LibraryKind, req.Permissions)
 	if err != nil {
 		switch {
 		case isPermissionRelatedError(err):
@@ -100,7 +101,7 @@ func CreateLibrary(c *gin.Context) {
 // @Param offset query int false "偏移量" default(0)
 // @Param limit query int false "限制条数(最大100)" default(20)
 // @Param get_recently query int false "获取最近访问文件数量" default(5)
-// @Param with_file_count query int false "是否返回未删除文件数量(0关闭,1开启；缓存加速，结果为最终一致)" default(0)
+// @Param with_file_count query int false "是否返回未删除文件数量(0关闭,1开启；缓存加速，结果为最终一致)" default(1)
 // @Success 200 {object} model.CommonResponse{data=[]model.Library}
 // @Router /api/libraries [get]
 func GetLibraries(c *gin.Context) {
@@ -135,7 +136,7 @@ func GetLibraries(c *gin.Context) {
 
 	name := c.Query("name")
 	withFileCount := false
-	withFileCountStr := c.DefaultQuery("with_file_count", "0")
+	withFileCountStr := c.DefaultQuery("with_file_count", "1")
 	if v, parseErr := strconv.Atoi(withFileCountStr); parseErr == nil {
 		withFileCount = v == 1
 	} else {
@@ -369,6 +370,15 @@ func UpdateLibrary(c *gin.Context) {
 	library.Name = req.Name
 	library.Description = req.Description
 	library.Icon = req.Icon
+	if kind := strings.ToLower(strings.TrimSpace(req.LibraryKind)); kind != "" {
+		switch kind {
+		case model.LIBRARY_KIND_REGULAR, model.LIBRARY_KIND_WIKI:
+			library.LibraryKind = kind
+		default:
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的知识库类型")))
+			return
+		}
+	}
 
 	// 如果请求中包含可见性设置，则更新可见性
 	if req.Visibility != nil {
@@ -391,6 +401,7 @@ func UpdateLibrary(c *gin.Context) {
 		"Description": "描述",
 		"Icon":        "图标",
 		"SpaceID":     "所属空间",
+		"LibraryKind": "知识库类型",
 	}
 	model.LogEntityChange("知识库", model.SystemLogActionUpdate, eid, userID, config.GetUserNickname(c), model.SystemLogModuleLibrary, &oldLibrary, library, c.ClientIP(), fieldMap)
 
@@ -673,7 +684,7 @@ func LibrarySearch(c *gin.Context) {
 	searchService := rag.NewLibrarySearchService(model.DB)
 
 	// 日志输出当前使用的 embedding 模型
-	if cfg, err := rag.NewChunkConfigService(model.DB).GetConfig(eid, &libraryID, model.ChunkTypeDefault); err == nil && cfg != nil {
+	if cfg, err := rag.NewChunkConfigService(model.DB).GetEnterpriseEmbeddingConfig(eid); err == nil && cfg != nil {
 		modelName := "nil"
 		if cfg.EmbeddingModelName != nil {
 			modelName = *cfg.EmbeddingModelName
@@ -753,7 +764,7 @@ func SearchLibrariesByName(c *gin.Context) {
 
 	// 使用空间权限服务进行搜索
 	sps := service.NewSpacePermissionService(eid)
-	libraries, err := sps.SearchLibrariesByName(userID, name)
+	libraries, _, err := sps.SearchLibrariesByName(userID, name, nil, nil, 0, 0, 0, 0, 0, 0)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return

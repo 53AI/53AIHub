@@ -16,6 +16,8 @@ export type SpaceItem = {
   updated_time: number
   permission: PermissionType
   visibility: number
+  enable_wiki_dynamic_knowledge?: boolean
+  enable_wiki_knowledge_graph?: boolean
 }
 
 export type SpaceListResponse = {

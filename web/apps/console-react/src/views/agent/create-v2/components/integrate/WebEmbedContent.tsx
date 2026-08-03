@@ -212,7 +212,7 @@ window.__AGENT_PLUGIN_SDK_CONFIG__ = ${JSON.stringify(config, null, 2)}
         <div className="flex gap-6">
           <img
             src={getPublicPath("/images/agent/access-iframe.png")}
-            alt="网页链接"
+            alt={t("integrate.web_link")}
             className="w-64 h-80 rounded-lg shadow-md"
           />
 
@@ -259,7 +259,7 @@ window.__AGENT_PLUGIN_SDK_CONFIG__ = ${JSON.stringify(config, null, 2)}
         <div className="flex gap-6">
           <img
             src={getPublicPath("/images/agent/access-bubble.png")}
-            alt="网页链接"
+            alt={t("integrate.web_link")}
             className="w-64 h-80 rounded-lg shadow-md"
           />
 

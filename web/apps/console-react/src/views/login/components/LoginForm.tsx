@@ -105,7 +105,8 @@ export function LoginForm(props: LoginFormProps) {
           onList();
           form.resetFields();
         } catch (err: any) {
-          message.error(err?.message || "绑定手机号失败");
+          const tLocal = (window as any).$t || ((key: string) => key);
+          message.error(err?.message || tLocal("login.bind_phone_failed"));
         }
       }
     } finally {

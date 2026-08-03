@@ -47,12 +47,12 @@ func InitDB() {
 		}
 		logger.SysLog("database migrated")
 	} else {
-	  logger.SysLog("database migration skipped (MIGRATE_DB_ENABLED=false)")
-	 }
-
-	 // 注册 GORM 慢查询回调，输出到独立的 slow.log
-	 dbgormlogger.RegisterSlowQueryCallback(DB)
+		logger.SysLog("database migration skipped (MIGRATE_DB_ENABLED=false)")
 	}
+
+	// 注册 GORM 慢查询回调，输出到独立的 slow.log
+	dbgormlogger.RegisterSlowQueryCallback(DB)
+}
 
 func GetDbConn() (*gorm.DB, error) {
 	dsn := os.Getenv("SQL_DSN")
@@ -331,6 +331,25 @@ func migrateDB() error {
 	if err := DB.AutoMigrate(&UserAgentShortcut{}); err != nil {
 		return err
 	}
+	if err := DB.AutoMigrate(
+		&WikiPage{},
+		&WikiPageSource{},
+		&WikiPageLink{},
+		&WikiFolder{},
+		&WikiLogEntry{},
+		&WikiPendingOp{},
+		&WikiDeadLetter{},
+		&WikiPageRedirect{},
+		&WikiPageChunk{},
+	); err != nil {
+		return err
+	}
+	if err = repairWikiPageVersionNumbers(); err != nil {
+		return err
+	}
+	if err := DB.AutoMigrate(&WikiPageVersion{}); err != nil {
+		return err
+	}
 
 	// 用户记忆系统：全局记忆 + Agent记忆 + 工具教训
 	if err := DB.AutoMigrate(
@@ -351,6 +370,15 @@ func migrateDB() error {
 		return err
 	}
 
+	// 安心录 V2 语音模型
+	if err := DB.AutoMigrate(
+		&RecordingSummaryTemplate{},
+		&RecordingFileSummary{},
+		&RecordingFileInsightPage{},
+	); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -361,4 +389,61 @@ func repairRecordingJobStatusValues() error {
 	return DB.Model(&RecordingJob{}).
 		Where("status = ?", "finalizing_processin").
 		Update("status", RecordingJobStatusFinalizingProcessing).Error
+}
+
+func repairWikiPageVersionNumbers() error {
+	if DB == nil {
+		return nil
+	}
+	if !DB.Migrator().HasTable(&WikiPageVersion{}) {
+		return nil
+	}
+
+	var versions []WikiPageVersion
+	if err := DB.WithContext(context.TODO()).
+		Order("page_id asc, version_no asc, id asc").
+		Find(&versions).Error; err != nil {
+		return err
+	}
+	if len(versions) == 0 {
+		return nil
+	}
+
+	type pageVersionState struct {
+		nextVersionNo   int64
+		latestVersionID int64
+	}
+
+	return DB.Transaction(func(tx *gorm.DB) error {
+		states := make(map[int64]*pageVersionState)
+		for i := range versions {
+			version := &versions[i]
+			state := states[version.PageID]
+			if state == nil {
+				state = &pageVersionState{}
+				states[version.PageID] = state
+			}
+			state.nextVersionNo++
+			if version.VersionNo != state.nextVersionNo {
+				if err := tx.Model(&WikiPageVersion{}).
+					Where("id = ?", version.ID).
+					Update("version_no", state.nextVersionNo).Error; err != nil {
+					return err
+				}
+			}
+			state.latestVersionID = version.ID
+		}
+
+		for pageID, state := range states {
+			if state.latestVersionID == 0 {
+				continue
+			}
+			if err := tx.Model(&WikiPage{}).
+				Where("id = ?", pageID).
+				Update("current_version_id", state.latestVersionID).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }

@@ -26,9 +26,9 @@ const (
 	compactHeadChars  = 3000 // tool_result 保留头字符数
 	compactTailChars  = 3000 // tool_result 保留尾字符数
 
-	minMessagesCompact = 6   // 最少消息数才做对话摘要
-	keepRatio          = 3   // 保留最近 1/keepRatio 的消息
-	minKeepMessages    = 4   // 最少保留消息数
+	minMessagesCompact = 6 // 最少消息数才做对话摘要
+	keepRatio          = 3 // 保留最近 1/keepRatio 的消息
+	minKeepMessages    = 4 // 最少保留消息数
 )
 
 // ModelConfig 模型级别配置项
@@ -42,17 +42,17 @@ type ModelConfig struct {
 
 // Config 从 Channel Config JSON 中解析的 token 配置（兼容新旧格式）
 type Config struct {
-	ContextLength int64  // 压缩水位线，0 不限制
-	MaxTokens     int64  // 输出封顶，0 不限制
-	DeepThinking  *bool  // 深度思考（仅新格式 per-model 有效）
-	Vision        *bool  // 视觉识别（仅新格式 per-model 有效）
+	ContextLength int64 // 压缩水位线，0 不限制
+	MaxTokens     int64 // 输出封顶，0 不限制
+	DeepThinking  *bool // 深度思考（仅新格式 per-model 有效）
+	Vision        *bool // 视觉识别（仅新格式 per-model 有效）
 }
 
 // Result 验证结果
 type Result struct {
 	PromptTokens  int
 	ContextLength int64
-	NeedCompact   bool   // 是否需要压缩
+	NeedCompact   bool // 是否需要压缩
 }
 
 // SummarizeFunc 是外部注入的 LLM 摘要函数

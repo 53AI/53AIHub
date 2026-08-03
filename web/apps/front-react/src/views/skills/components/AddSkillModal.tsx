@@ -105,8 +105,18 @@ export function AddSkillModal({
       message.success(t('action.add_success'));
       onSuccessRef.current?.();
       onCloseRef.current();
-    } catch (error) {
-      message.error(`${t('action.operation_failed')}，${t('common.try_again')}`);
+    } catch (error: any) {
+      const errMsg = error?.response?.data?.message || error?.message || '';
+      if (errMsg.includes('skill already exists as builtin in this agent')) {
+        // 从 workAiAgents 找到对应的 agent 名称
+        const agentId = directAddAgentId || selectedAgentId;
+        const agentName = workAiAgents.find(
+          (a) => String(a.agent_id) === String(agentId),
+        )?.agent_name || '';
+        message.error(`${t('skill.skill_already_added', {name: agentName})}`);
+      } else {
+        message.error(`${t('action.operation_failed')}，${t('common.try_again')}`);
+      }
     } finally {
       setLoading(false);
     }

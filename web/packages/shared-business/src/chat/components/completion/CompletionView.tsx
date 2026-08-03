@@ -224,7 +224,6 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
           // 恢复表单状态 - 使用 inputFields 而不是 formItems
           if (Object.keys(inputParams).length > 0 && inputFields.length > 0) {
             const newItems = inputFields.map((item: any) => {
-              console.log('inputParams', inputParams, item)
               const value = inputParams[item.label] ?? inputParams[item.variable];
               // 根据类型初始化默认值
               let defaultValue: any;

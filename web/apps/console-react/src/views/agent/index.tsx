@@ -1,12 +1,12 @@
 import {
-  Table,
-  Button,
-  Select,
-  Switch,
-  Modal,
-  message,
-  Drawer,
-  Tooltip
+    Table,
+    Button,
+    Select,
+    Switch,
+    Modal,
+    message,
+    Drawer,
+    Tooltip
 } from "antd";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { t } from "@/locales";
@@ -18,9 +18,9 @@ import { subscriptionApi } from "@/api/modules/subscription";
 import { groupApi, Group } from "@/api/modules/group";
 import { channelApi } from "@/api/modules/channel";
 import {
-  channels,
-  getProvidersByAuth,
-  getProviderByAgentId, AgentType, BACKEND_AGENT_TYPE
+    channels,
+    getProvidersByAuth,
+    getProviderByAgentId, AgentType, BACKEND_AGENT_TYPE
 } from "@/constants/platform/config";
 import { AGENT_APP_OPTIONS } from "@/constants/platform/agent";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -31,10 +31,10 @@ import { GroupTabs, type GroupTabsRef } from "@/components/GroupTabs";
 import { useListState, useVersion, useScopeDictionary } from "@/hooks";
 import { eventBus } from "@km/shared-utils";
 import {
-  CreateAgentDialog,
-  AGENT_TYPE_OPTIONS,
-  createPlatformsByType, getOpenClawCompatibleAgentMetadata,
-  isOpenClawCompatibleAgentType
+    CreateAgentDialog,
+    AGENT_TYPE_OPTIONS,
+    createPlatformsByType, getOpenClawCompatibleAgentMetadata,
+    isOpenClawCompatibleAgentType
 } from "@km/shared-business/agent-create";
 import type { AgentPlatformOption, CreateAgentDialogResult } from "@km/shared-business/agent-create";
 import { consoleAgentAdapter } from "@/adapters/agent-create-adapter";
@@ -43,9 +43,9 @@ import { SvgIcon, Search } from "@km/shared-components-react";
 import { img_host, getPublicPath } from "@/utils/config";
 import { buildOpenClawEnterpriseAgentPayload } from "./openclaw-create";
 import {
-  buildAgentListParams,
-  createAgentPlatformFilterOptions,
-  AGENT_USAGE_PLATFORM_VALUES,
+    buildAgentListParams,
+    createAgentPlatformFilterOptions,
+    AGENT_USAGE_PLATFORM_VALUES,
 } from "./platform-filter";
 
 // 获取默认的注册用户和内部用户分组 ID
@@ -710,7 +710,7 @@ export function AgentPage() {
           allowClear
           placeholder={t("all")}
           onChange={(value) => updateState({ type: value || "" })}
-          prefix={<span className="text-black mr-2">{t("type")}:</span>}
+          prefix={<span className="text-primary mr-2">{t("type")}:</span>}
         >
           {filterForm.type && (
             <Select.Option value="">{t("all_type")}</Select.Option>
@@ -728,7 +728,7 @@ export function AgentPage() {
           placeholder={t("all")}
           onChange={(value) => updateState({ platform: value || "" })}
           prefix={
-            <span className="text-black mr-2">
+            <span className="text-primary mr-2">
               {t("module.platform_v2")}:
             </span>
           }

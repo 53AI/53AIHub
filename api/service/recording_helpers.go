@@ -1,9 +1,17 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"path"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
@@ -162,4 +170,144 @@ func resolveRecordingFilePath(job *model.RecordingJob, fileName string) (string,
 		return "/" + fileName, nil
 	}
 	return path.Join(folder.Path, fileName), nil
+}
+
+// ============================================================
+// 工具函数（从 recording_service.go 迁移）
+// ============================================================
+
+func hashBytes(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
+func buildRecordingFilePath(job *model.RecordingJob, fileName string) string {
+	recordingPath, err := resolveRecordingFilePath(job, fileName)
+	if err != nil {
+		return "/" + fileName
+	}
+	return recordingPath
+}
+
+func normalizeRecordingPath(recordingPath string) string {
+	recordingPath = strings.TrimSpace(recordingPath)
+	if recordingPath == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(recordingPath, "/") {
+		recordingPath = "/" + recordingPath
+	}
+	cleaned := path.Clean(recordingPath)
+	if cleaned == "." || cleaned == "" {
+		return "/"
+	}
+	return cleaned
+}
+
+func buildRecordingFileName(startedAt int64, targetFormat string) string {
+	if strings.TrimSpace(targetFormat) == "" {
+		targetFormat = "m4a"
+	}
+	t := time.UnixMilli(startedAt).UTC()
+	return fmt.Sprintf("会议_%04d%02d%02d_%02d%02d%02d.%s",
+		t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), strings.TrimPrefix(targetFormat, "."))
+}
+
+func resolveFFprobeToolchainPath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv("FFPROBE_PATH")); path != "" {
+		if resolved, err := resolveRecordingProbeExecutableCandidate(path); err == nil {
+			return resolved, nil
+		}
+	}
+
+	if ffmpegPath, err := ResolveFFmpegToolchainPath(); err == nil {
+		candidates := []string{
+			filepath.Join(filepath.Dir(ffmpegPath), "ffprobe"),
+			filepath.Join(filepath.Dir(ffmpegPath), "ffprobe.exe"),
+		}
+		for _, candidate := range candidates {
+			if resolved, err := resolveRecordingProbeExecutableCandidate(candidate); err == nil {
+				return resolved, nil
+			}
+		}
+	}
+
+	if path, err := exec.LookPath("ffprobe"); err == nil {
+		if resolved, err := resolveRecordingProbeExecutableCandidate(path); err == nil {
+			return resolved, nil
+		}
+	}
+
+	return "", errors.New("未找到可用的 ffprobe 可执行文件")
+}
+
+func resolveRecordingProbeExecutableCandidate(candidate string) (string, error) {
+	candidate = filepath.Clean(strings.TrimSpace(candidate))
+	if candidate == "" {
+		return "", errors.New("empty candidate")
+	}
+
+	info, err := os.Stat(candidate)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		nested := filepath.Join(candidate, filepath.Base(candidate))
+		nestedInfo, nestedErr := os.Stat(nested)
+		if nestedErr != nil {
+			return "", nestedErr
+		}
+		if nestedInfo.Mode().IsRegular() && nestedInfo.Mode().Perm()&0o111 != 0 {
+			return nested, nil
+		}
+		return "", fmt.Errorf("%s is a directory without executable binary", candidate)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("%s is not a regular file", candidate)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return "", fmt.Errorf("%s is not executable", candidate)
+	}
+	return candidate, nil
+}
+
+func detectRecordingMimeType(targetFormat string) string {
+	switch strings.ToLower(strings.TrimPrefix(targetFormat, ".")) {
+	case "mp3":
+		return "audio/mpeg"
+	case "wav":
+		return "audio/wav"
+	case "aac":
+		return "audio/aac"
+	case "ogg":
+		return "audio/ogg"
+	case "webm":
+		return "audio/webm"
+	default:
+		return "audio/mp4"
+	}
+}
+
+func estimateRecordingSegmentRecordedMs(durationMs, startOffsetMs, endOffsetMs int64) int64 {
+	if durationMs > 0 {
+		return durationMs
+	}
+	if endOffsetMs > startOffsetMs {
+		return endOffsetMs - startOffsetMs
+	}
+	return 0
+}
+
+func hashFile(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("open file error: %w", err)
+	}
+	defer file.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, file); err != nil {
+		return "", fmt.Errorf("hash file error: %w", err)
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }

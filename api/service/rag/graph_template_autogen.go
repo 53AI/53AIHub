@@ -59,7 +59,7 @@ func (e *graphTemplateAutogenLLMExecutor) Generate(ctx context.Context, systemPr
 
 func newGraphTemplateAutogenExecutor(db *gorm.DB, eid int64) (graphTemplateAutogenExecutor, error) {
 	chunkCfgService := NewChunkConfigService(db)
-	config, err := chunkCfgService.GetConfig(eid, nil, "default")
+	config, err := chunkCfgService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		logger.SysError(fmt.Sprintf("Failed to get graph template autogen LLM config: %v", err))
 		return nil, fmt.Errorf("获取模型配置失败: %v", err)

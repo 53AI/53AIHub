@@ -21,7 +21,12 @@ import { type LibraryItem } from "@/api/modules/libraries";
 import { type SpaceItem } from "@/api/modules/spaces";
 
 import filesApi from "@/api/modules/files";
-import { formatFile } from "@/api/modules/files/transform";
+import type { FileSearchResponse } from "@/api/modules/files/types";
+import {
+  formatFile,
+  formatFileSearchResults,
+  type FileSearchResultItem,
+} from "@/api/modules/files/transform";
 import { getPublicPath } from "@/utils/config";
 import SpaceDialog from "@/components/Space/dialog";
 import { MyFilesDialog } from "@/components/MyFilesDialog/dialog";
@@ -349,15 +354,20 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
       );
     }, [enabledMySkills, skillSearchKeyword]);
 
-    // 格式化文件，对录音文件使用 recrod.png 图标
-    const formatFileWithRecordingIcon = useCallback((file: any) => {
+    // 格式化文件，对录音文件使用 recrod.png 图标（仅用于 loadRecentlyFiles 路径，input 为 RawFileItem）
+    const formatFileWithRecordingIcon = useCallback((file: Parameters<typeof formatFile>[0]) => {
       const formattedFile = formatFile(file);
       // 检查是否为录音来源
-      const originSource = file.origin_source || file.file?.origin_source;
+      const originSource = file.origin_source;
       if (originSource === 'recording' || originSource === 'recording_import') {
         formattedFile.icon = getPublicPath("/images/file/recrod.png");
       }
       return formattedFile;
+    }, []);
+
+    // 搜索结果专用:轻量应用录音 icon(当前 FileSearchResponse 无 origin_source,实际为 no-op;为后端补字段时留入口)
+    const applyRecordingIcon = useCallback((item: FileSearchResultItem): FileSearchResultItem => {
+      return item;
     }, []);
 
     // 搜索知识
@@ -368,10 +378,9 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
       }
       setSearchLoading(true);
       try {
-        const res: any = await filesApi.search({ query: keyword, top_k: 10 });
-        const files =
-          res.results?.map((item: any) => item.file || item).flat() || [];
-        setKnowledgeSearchResults(files.map(formatFileWithRecordingIcon));
+        const res: FileSearchResponse = await filesApi.search({ query: keyword, top_k: 10 });
+        const results = formatFileSearchResults(res.results || []);
+        setKnowledgeSearchResults(results.map(applyRecordingIcon));
       } catch (err) {
         console.error("搜索知识失败:", err);
         setKnowledgeSearchResults([]);
@@ -383,7 +392,7 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
 
     // Load recently accessed files
     const loadRecentlyFiles = useCallback(() => {
-      filesApi.recently().then((res: any[]) => {
+      filesApi.recently().then((res: Parameters<typeof formatFileWithRecordingIcon>[0][]) => {
         setKnowledgeList(res.map(formatFileWithRecordingIcon));
       });
     }, []);

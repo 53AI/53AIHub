@@ -5,15 +5,15 @@ import (
 )
 
 type Provider struct {
-	ProviderID   int64   `json:"provider_id" gorm:"primaryKey;autoIncrement"`
-	Eid          int64   `json:"eid" gorm:"not null;index" example:"1"`
-	Name         string  `json:"name" gorm:"size:100;not null;index"`
-	ProviderType int64   `json:"provider_type" gorm:"not null;index"`
-	Configs      string  `json:"configs" gorm:"type:text;not null"`
-	IsAuthorized bool    `json:"is_authorized" gorm:"not null;default:false"`
-	AccessToken  string  `json:"access_token" gorm:"type:text"`
-	RefreshToken string  `json:"refresh_token" gorm:"type:text"`
-	ExpiresIn    int64   `json:"expires_in" gorm:"not null"`
+	ProviderID            int64   `json:"provider_id" gorm:"primaryKey;autoIncrement"`
+	Eid                   int64   `json:"eid" gorm:"not null;index" example:"1"`
+	Name                  string  `json:"name" gorm:"size:100;not null;index"`
+	ProviderType          int64   `json:"provider_type" gorm:"not null;index"`
+	Configs               string  `json:"configs" gorm:"type:text;not null"`
+	IsAuthorized          bool    `json:"is_authorized" gorm:"not null;default:false"`
+	AccessToken           string  `json:"access_token" gorm:"type:text"`
+	RefreshToken          string  `json:"refresh_token" gorm:"type:text"`
+	ExpiresIn             int64   `json:"expires_in" gorm:"not null"`
 	AuthedTime            int64   `json:"authed_time" gorm:"not null"`
 	TokenRefreshFailCount int     `json:"token_refresh_fail_count" gorm:"not null;default:0"`
 	BaseURL               *string `json:"base_url" gorm:"size:512;column:base_url;default:''"`
@@ -68,15 +68,15 @@ func DeleteProviderByID(id, eid int64) error {
 func UpdateProvider(provider *Provider) error {
 	return DB.Model(provider).
 		Updates(map[string]interface{}{
-			"name":              provider.Name,
-			"provider_type":     provider.ProviderType,
-			"configs":           provider.Configs,
-			"is_authorized":     provider.IsAuthorized,
-			"access_token":      provider.AccessToken,
-			"refresh_token":     provider.RefreshToken,
-			"expires_in":        provider.ExpiresIn,
-			"authed_time":       provider.AuthedTime,
-			"base_url":          provider.BaseURL,
+			"name":          provider.Name,
+			"provider_type": provider.ProviderType,
+			"configs":       provider.Configs,
+			"is_authorized": provider.IsAuthorized,
+			"access_token":  provider.AccessToken,
+			"refresh_token": provider.RefreshToken,
+			"expires_in":    provider.ExpiresIn,
+			"authed_time":   provider.AuthedTime,
+			"base_url":      provider.BaseURL,
 		}).Error
 }
 

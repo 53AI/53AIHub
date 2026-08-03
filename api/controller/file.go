@@ -36,6 +36,7 @@ type FileRequst struct {
 	OriginType   string                  `json:"origin_type" form:"origin_type"`
 	OriginSource string                  `json:"origin_source" form:"origin_source"`
 	OriginRefID  int64                   `json:"origin_ref_id" form:"origin_ref_id"`
+	GroupID      int64                   `json:"group_id"`
 	Permissions  []*model.PermissionData `json:"permissions"`
 }
 
@@ -381,6 +382,7 @@ func CreateFile(c *gin.Context) {
 		UserID:      userID, // 设置文件创建人
 		OriginType:  model.FileOriginTypeManualCreate,
 		OriginRefID: 0,
+		GroupID:     req.GroupID,
 	}
 
 	switch strings.TrimSpace(req.OriginType) {
@@ -437,6 +439,9 @@ func CreateFile(c *gin.Context) {
 
 	// 同步到 Elasticsearch
 	elasticsearch.SyncFileToES(&file, "create")
+
+	// 更新知识库的更新时间
+	model.UpdateLibraryUpdatedTimeByID(eid, library.ID)
 
 	// 只为文档类型记录新建日志，目录不记录
 	if file.Type == model.FILE_TYPE_FILE {

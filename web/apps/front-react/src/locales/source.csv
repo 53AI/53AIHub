@@ -44,6 +44,7 @@ action.enable_success,已启用,已啟用,Enabled,有効になりました
 action.exit,退出登录,退出登入,Log out,ログアウト
 action.exit_confirm,确定退出登录吗？,確定退出登入嗎？,Are you sure you want to log out?,ログアウトしてもよろしいですか？
 action.exit_edit,退出编辑,退出編輯,Exit Edit,編集を終了
+action.exit_fullscreen,退出全屏,退出全螢幕,Exit fullscreen,全画面表示を終了
 action.exit_success,已退出,已退出,Logged out,ログアウトしました
 action.expand,展开,展開,Expand,展開
 action.export,导出,導出,Export,エクスポート
@@ -51,6 +52,7 @@ action.favorite,收藏,收藏,Favorite,お気に入り
 action.find,发现,發現,Find,発見
 action.fixed,固定,固定,Pin,固定
 action.forget_password,忘记密码？,忘記密碼？,Forgot password?,パスワードを忘れましたか？
+action.fullscreen,全屏,全螢幕,Fullscreen,全画面表示
 action.generate_failed,生成失败,生成失敗,Generation failed,生成に失敗しました
 action.import,导入,導入,Import,インポート
 action.login,登录,登入,Login,ログイン
@@ -138,8 +140,8 @@ agent.change_avatar,更换头像,更換頭像,Change Avatar,アバターを変�
 agent.bot_name_placeholder,请输入你应用的名称,請輸入你應用的名稱,Please enter the name of your application,アプリケーションの名前を入力してください
 agent.bot_desc_placeholder,请描述你的应用，该描述将在应用发布后固定展示,請描述你的應用，該描述將在應用發布後固定展示,"Please describe your application, this description will be displayed after the application is published",アプリケーションを説明してください。この説明はアプリケーションが公開された後、固定で表示されます。
 agent.no_desc,暂无描述,暫無描述,No description,説明がありません
-agent.sort_by_created_time,创建时间排序,創建時間排序,Sort by created time,作成日時で並べ替え
-agent.sort_by_updated_time,更新时间排序,更新時間排序,Sort by updated time,更新日時で並べ替え
+agent.sort_by_created_time,创建时间,創建時間,Sort by created time,作成日時で並べ替え
+agent.sort_by_updated_time,更新时间,更新時間,Sort by updated time,更新日時で並べ替え
 agent.preview_debug,预览与调试,預覽與調試,Preview & Debug,プレビューとデバッグ
 agent.my_agent,我的智能体,我的智能體,My Agent,マイエージェント
 agent.app_config,应用配置,應用配置,App Config,アプリケーション設定
@@ -269,6 +271,11 @@ chat.not_found_url,无法找到URL，请检查智能体是否设置正确,無法
 chat.online_search,联网搜索,聯網搜索,Online Search,オンライン検索
 chat.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
 chat.select_from_library,从知识库中选择,從知識庫中選擇,Select from Library,ナレッジベースから選択
+chat.select_from_knowledge,选择指定内容,選擇指定內容,Select specific content,指定した内容を選択
+chat.mention.search_placeholder,搜索文件,搜索文件,Search files,ファイルを検索
+chat.mention.search_result,搜索结果,搜索結果,Search results,検索結果
+chat.mention.search_no_result,没有找到相关文件,沒有找到相關文件,No matching files,一致するファイルがありません
+chat.mention.no_recent,暂无最近访问,暫無最近訪問,No recent visits,最近アクセスがありません
 chat.output,输出,輸出,Output,出力
 chat.regenerate,重新生成,重新生成,Regenerate,再生成
 chat.satisfied,满意,滿意,Satisfied,満足
@@ -621,6 +628,10 @@ history.restore_version,恢复此版本,恢復此版本,Restore this Version,こ
 history.save_version,保存为版本,保存為版本,Save as Version,バージョンとして保存
 history.save_version_label,名称,名稱,Name,名前
 history.save_version_title,保存为版本,保存為版本,Save as Version,バージョンとして保存
+history.version_tag_required,版本标签不能为空,版本標籤不能為空,Version tag is required,バージョンのタグは必須です
+history.publish_version,发布版本,發布版本,Publish Version,バージョン公開
+history.publish_version_title,发布版本,發布版本,Publish Version,バージョン公開
+history.publish_version_label,版本标签（可选）,版本標籤（可選）,Version tag (optional),バージョンタグ（オプション）
 history.saved_version_tip,已存为版本：{version},已存為版本：{version},Saved as version: {version},バージョンとして保存：{version}
 history.title,历史版本,歷史版本,Historical Version,歴史バージョン
 history.version,版本,版本,Version,バージョン
@@ -767,6 +778,7 @@ module.find,发现,發現,Discover,発見
 module.index,首页,首頁,Home,ホーム
 module.knowledge,知识库,知識庫,Knowledge Base,ナレッジベース
 module.library,知识库,知識庫,Knowledge Base,ナレッジベース
+module.recording,安心录,安心錄,Recording,録音
 module.mine,我的,我的,Mine,マイページ
 mine.document,我的文档,我的文檔,My Documents,マイドキュメント
 mine.agent,我的智能体,我的智能體,My Agents,マイエージェント
@@ -1064,6 +1076,7 @@ skill.detail_title,技能详情,技能詳情,Skill Details,スキル詳細
 skill.add_skill,添加技能,添加技能,Add Skill,スキルを追加
 skill.add_to_agent,将此技能添加至,將此技能添加至,Add this skill to,このスキルを追加先
 skill.select_agent,请选择小助理,請選擇小助理,Select an agent,エージェントを選択してください
+skill.skill_already_added,{name}已内置该技能,{name}已內置該技能,{name} has already added this skill,{name}はこのスキルを既に追加しています
 skill.quality_score,质量评分,質量評分,Quality Score,品質スコア
 skill.capabilities,能做什么,能做什麼,Capabilities,機能
 skill.usage_example,使用示例,使用示例,Usage Examples,使用例
@@ -1079,6 +1092,10 @@ mine.new_file,新建文件,新建文件,New File,新規ファイル
 mine.search_recording,搜索录音,搜索錄音,Search recordings,録音を検索
 mine.import,导入,導入,Import,インポート
 mine.record_btn,录音,錄音,Record,録音
+recording.system_audio,录制系统声音,錄製系統聲音,Record system audio,システム音声を録音
+recording.system_audio_hint,启用后将录制您选择的标签页或窗口的音频，需在共享时勾选"共享音频",啟用後將錄製您選擇的標籤頁或窗口的音頻，需在共享時勾選"共享音頻",Enable to record audio from the selected tab or window. Check "Share audio" when sharing.,有効化後、選択したタブまたはウィンドウの音声を録音します。共有時に「音声を共有」をチェックしてください
+recording.system_audio_missing,未检测到共享音频，仅录制麦克风,未檢測到共享音頻，僅錄製麥克風,No shared audio detected. Recording microphone only.,共有音声が検出されません。マイクのみ録音中
+recording.user_cancelled_picker,已取消录音启动,已取消錄音啟動,Recording start cancelled.,録音開始がキャンセルされました
 mine.space_init,个人空间正在初始化，请稍候...,個人空間正在初始化，請稍候...,Personal space is initializing, please wait...,個人スペースを初期化中、お待ちください...
 mine.untitled_folder,无标题文件夹,無標題文件夾,Untitled Folder,無題のフォルダ
 mine.untitled_knowledge,无标题知识,無標題知識,Untitled Knowledge,無題のナレッジ
@@ -1198,4 +1215,87 @@ setting.current_config,当前配置,當前配置,Current Config,現在の構成
 setting.info,设置信息,設置資訊,Setting Info,設定情報
 setting.platform_access,平台接入,平台接入,Platform Access,プラットフォームアクセス
 setting.platform_auth_info,当前 Agent 的平台授权信息,當前 Agent 的平台授權信息,Current Agent platform authorization info,現在のエージェントのプラットフォーム認証情報
+display_order,显示顺序,顯示順序,Display Order,表示順
+group_management,分类管理,分類管理,Group Management,グループ管理
+group_min_one,至少保留一个分组,至少保留一個分組,At least one group,少なくとも1つのグループを保持してください
+group_not_empty,分组不能为空,分組不能為空,Group cannot be empty,グループを空にすることはできません
 status.account_disabled_desc,账号已被禁用，请联系管理员开启~,帳號已被停用，請聯繫管理員開啟~,Your account has been disabled, please contact administrator to enable,アカウントは無効になっています。管理者に連絡して有効化してください
+logs.title,日志,日誌,Logs,ログ
+logs.empty,暂无日志记录,暫無日誌,No Logs,ログがありません
+wiki.alias_label,别名,別名,Alias,別名
+wiki.backlinks_label,被链接,被鏈接,Backlinks,被リンク
+wiki.continue_edit,继续编辑,繼續編輯,Continue Editing,編集を続行
+wiki.delete_page,删除页面,刪除頁面,Delete Page,ページを削除
+wiki.delete_page_confirm,确定要删除页面「{title}」吗？删除后无法恢复,確定要刪除頁面「{title}」嗎？刪除後無法恢復,"Are you sure you want to delete the page ""{title}""? This action cannot be undone.",ページ「{title}」を削除してもよろしいですか？削除後は復元できません
+wiki.empty_knowledge,暂无知识,暫無知識,No Knowledge,ナレッジがありません
+wiki.exit_edit_confirm,当前编辑内容未保存，确定退出编辑吗？,當前編輯內容未儲存，確定退出編輯嗎？,Current edit content is unsaved, are you sure you want to exit?,現在の編輯内容は未保存です、編輯を終了してもよろしいですか？
+wiki.last_updated_label,最后更新：,最後更新：,Last updated:,最終更新：
+wiki.link_prompt_label,请输入链接地址：,請輸入連結地址：,Please enter link URL:,リンクアドレスを入力してください：
+wiki.menu.export_download,导出/下载,導出/下載,Export/Download,エクスポート/ダウンロード
+wiki.page_type.concept,概念,概念,Concept,概念
+wiki.page_type.entity,实体,實體,Entity,エンティティ
+wiki.page_type.index,首页,首頁,Home,ホーム
+wiki.page_type.summary,摘要,摘要,Summary,要約
+wiki.related_knowledge,相关知识,相關知識,Related Knowledge,関連ナレッジ
+wiki.select_page_tip,请选择左侧页面查看详情,請選擇左側頁面查看詳情,Please select a page on the left to view details,左側のページを選択して詳細を表示してください
+wiki.source_documents,来源文档,來源文檔,Source Documents,ソース文書
+wiki.sort.alphabetical,字母顺序,字母順序,Alphabetical,アルファベット順
+wiki.sort.updated,更新时间,更新時間,Updated Time,更新時間
+wiki.sort.created,创建时间,創建時間,Created Time,作成時間
+wiki.apply_page_permission,申请页面权限,申請頁面權限,Apply for Page Permission,ページ権限を申請
+dynamic_knowledge.category_label,分类,分類,Category,分類
+dynamic_knowledge.current_space,空间,空間,Space,スペース
+dynamic_knowledge.empty_data,暂无数据,暫無資料,No Data,データなし
+dynamic_knowledge.empty_desc,在空间管理中开启后，空间内知识库将自动生成动态知识,在空間管理中開啟後，空間內知識庫將自動生成動態知識,"Once enabled in space management, the knowledge base within the space will automatically generate dynamic knowledge",スペース管理で有効にすると、スペース内のナレッジベースが自動的に動的ナレッジを生成します
+dynamic_knowledge.empty_graph_desc,在空间设置里启用知识图谱，即可查看知识关系网络,在空間設置裡啟用知識圖譜，即可查看知識關係網絡,"Enable Knowledge Graph in space settings to view the knowledge relationship network",スペース設定でナレッジグラフを有効にすると、ナレッジ関係ネットワークを表示できます
+dynamic_knowledge.empty_graph_title,暂无知识图谱,暫無知識圖譜,No Knowledge Graph,ナレッジグラフがありません
+dynamic_knowledge.empty_title,暂无动态知识,暫無動態知識,No Dynamic Knowledge,動的ナレッジがありません
+dynamic_knowledge.label,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+dynamic_knowledge.no_match_results,无匹配结果,無匹配結果,No matching results,一致する結果がありません
+dynamic_knowledge.no_recent_records,暂无最近使用记录,暫無最近使用記錄,No recent usage records,最近使用記録がありません
+dynamic_knowledge.queue_pending_tip,队列中 {count} 个待处理,佇列中 {count} 個待處理,"{count} pending tasks in queue",キューに{count}件の未処理タスクがあります
+dynamic_knowledge.search_placeholder,搜索动态知识,搜索動態知識,Search dynamic knowledge,動的ナレッジを検索
+dynamic_knowledge.tab_recent,最近使用,最近使用,Recently Used,最近使用
+dynamic_knowledge.select_space_first,请先选择一个空间,请先選擇一個空間,Please select a space first,最初にスペースを選択してください
+dynamic_knowledge.summary,摘要,摘要,Summary,サマリー
+dynamic_knowledge.entity,实体,實體,Entity,エンティティ
+dynamic_knowledge.concept,概念,概念,Concept,概念
+dynamic_knowledge.month_new_docs,本月新增,本月新增,New This Month,今月の新規
+dynamic_knowledge.wiki_compiled_docs,累计编译,累計編譯,Total Compiled,累計コンパイル
+dynamic_knowledge.summary_desc,单文档生成的知识浓缩总结页,單文檔生成的知識濃縮總結頁,AI-generated knowledge summary per document,文書ごとに生成されたナレッジ要約ページ
+dynamic_knowledge.entity_desc,跨文档生成的专有名词聚合页,跨文檔生成的專有名詞聚合頁,Cross-document aggregation of proper nouns,複数文書にまたがる固有名詞の集約ページ
+dynamic_knowledge.concept_desc,跨文档生成的通用理论聚合页,跨文檔生成的通用理論聚合頁,Cross-document aggregation of general concepts,複数文書にまたがる一般理論の集約ページ
+dynamic_knowledge.view,查看,查看,View,表示
+module.dynamic_knowledge,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+knowledge.document_file,知识文档,知識文檔,Knowledge Documents,ナレッジドキュメント
+module.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
+permission.add_member,添加成员,新增成員,Add Member,メンバーを追加
+permission.all_members,所有成员,所有成員,All Members,すべてのメンバー
+permission.last_manage_tip,不能删除最后一个可管理权限，请至少保留一个管理员,不能刪除最後一個可管理權限，請至少保留一個管理員,"Cannot remove the last manageable permission, please keep at least one administrator",最後の管理権限を削除できません。少なくとも1人の管理者を保持してください
+permission.nudge_admin,催一催,催一催,Nudge,Nudge
+permission.request_sent_tip,已提交到管理员，请耐心等待,已提交到管理員，請耐心等待,Submitted to administrator, please wait,管理者に送信しました、しばらくお待ちください
+permission.request_submitted,已提交申请,已提交申請,Application Submitted,申請済み
+permission.team_space_admin,团队空间的管理员({count}),團隊空間的管理員({count}),Team Space Admins ({count}),チームスペースの管理者({count})
+permission.team_space_member,团队空间的成员({count}),團隊空間的成員({count}),Team Space Members ({count}),チームスペースのメンバー({count})
+space.all_selected_count,全部已选（{count}）,全部已選（{count}）,All Selected ({count}),すべて選択済み（{count}）
+space.enable_dynamic_knowledge,启用动态知识,啟用動態知識,Enable Dynamic Knowledge,動的ナレッジを有効化
+space.enable_knowledge_graph,启用知识图谱,啟用知識圖譜,Enable Knowledge Graph,ナレッジグラフを有効化
+space.knowledge_directory,知识目录,知識目錄,Knowledge Directory,ナレッジディレクトリ
+space.knowledge_graph_desc,基于知识图谱实体关系进行知识检索和提取，提升回答的场景贴合度,基於知識圖譜實體關係進行知識檢索和提取，提升回答的場景貼合度,"Based on knowledge graph entity relationships, retrieve and extract knowledge to improve scenario relevance of answers",ナレッジグラフのエンティティ関係に基づくナレッジ検索と抽出により、回答のシナリオ適合性を向上させます
+space.search_knowledge_placeholder,搜索知识,搜索知識,Search Knowledge,ナレッジを検索
+space.search_placeholder_with_library,搜索空间、知识库、知识,搜索空間、知識庫、知識,Search Space, Library, Knowledge,スペース、ライブラリ、ナレッジを検索
+space.select_more,选择更多,選擇更多,Select More,さらに選択
+space.selected_count,已选 {count} 个,已選 {count} 個,{count} selected,{count}件選択済み
+space.label,空间,空間,Space,スペース
+space.column_knowledge,知识,知識,Knowledge,知識
+common.dept,系,系,Dept,部署
+common.system_avatar,系,系,S,S
+permission.member_and_role,成员与权限,成員與權限,Members & Permissions,メンバーと権限
+apply.title,权限申请,權限申請,Apply for Permission,権限申請
+apply.submit,提交申请,提交申請,Submit Application,申請を送信
+apply.access_label,申请访问,申請訪問,Apply for Access,アクセスを申請
+apply.permission_label,申请权限,申請權限,Apply for Permission,権限を申請
+apply.permission_required,请选择申请权限,請選擇申請權限,Please select the permission to apply for,申請する権限を選択してください
+apply.reason_label,申请原因,申請原因,Reason for Application,申請理由
+apply.reason_placeholder,请填写权限申请原因,請填寫權限申請原因,Please fill in the reason for the application,申請理由を入力してください
+apply.approver_label,审批人,審批人,Approver,承認者

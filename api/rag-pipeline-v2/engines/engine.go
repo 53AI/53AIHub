@@ -22,10 +22,10 @@ import (
 
 // Heartbeat constants
 const (
-	heartbeatKeyPrefix  = "rag:job:heartbeat"
-	heartbeatInterval   = 30 * time.Second
-	heartbeatKeyTTL     = 90 * time.Second
-	staleJobCutoff      = 24 * time.Hour
+	heartbeatKeyPrefix = "rag:job:heartbeat"
+	heartbeatInterval  = 30 * time.Second
+	heartbeatKeyTTL    = 90 * time.Second
+	staleJobCutoff     = 24 * time.Hour
 )
 
 // StepHandler 定义每个步骤的处理函数
@@ -61,6 +61,7 @@ type RagJobEngineV2 struct {
 	cancel              context.CancelFunc
 	wg                  sync.WaitGroup
 	processingQueueName string // 统一前缀，实际使用时拼接 step_key
+	postFinalizeHook    func(ctx context.Context, job model.RagJob, currentIndex int, profile v2model.RuntimeProfile) error
 }
 
 // JobWrapper 队列消息包装
@@ -97,6 +98,23 @@ func (e *RagJobEngineV2) RegisterHandler(stepKey string, handler StepHandler) {
 // RegisterRecoveryHandler 注册恢复处理函数
 func (e *RagJobEngineV2) RegisterRecoveryHandler(stepKey string, handler StepHandler) {
 	e.recoveryHandlers[stepKey] = handler
+}
+
+// SetPostFinalizeHook 设置 job 成功后的扩展钩子
+func (e *RagJobEngineV2) SetPostFinalizeHook(hook func(ctx context.Context, job model.RagJob, currentIndex int, profile v2model.RuntimeProfile) error) {
+	e.postFinalizeHook = hook
+}
+
+// HasHandler reports whether a regular step handler is registered.
+func (e *RagJobEngineV2) HasHandler(stepKey string) bool {
+	_, ok := e.handlers[stepKey]
+	return ok
+}
+
+// HasRecoveryHandler reports whether a recovery handler is registered.
+func (e *RagJobEngineV2) HasRecoveryHandler(stepKey string) bool {
+	_, ok := e.recoveryHandlers[stepKey]
+	return ok
 }
 
 // StartWorkers 启动所有注册步骤的 Worker
@@ -472,12 +490,24 @@ func (e *RagJobEngineV2) finalizeJob(ctx context.Context, job model.RagJob, curr
 			}
 		}
 
+		if createdAt := job.CreatedTime; createdAt > 0 {
+			if err := tx.Model(&model.RagJob{}).Where("job_id = ?", job.JobID).Update("completion_time", time.Now().UnixMilli()-createdAt).Error; err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 
 	if err != nil {
 		logger.Errorf(ctx, "finalizeJob 事务失败: job=%d, err=%v", job.JobID, err)
 		return fmt.Errorf("finalizeJob transaction failed: %w", err)
+	}
+
+	if e.postFinalizeHook != nil {
+		if hookErr := e.postFinalizeHook(ctx, job, currentIndex, profile); hookErr != nil {
+			logger.Warnf(ctx, "finalizeJob post hook failed: job=%d type=%s err=%v", job.JobID, job.Type, hookErr)
+		}
 	}
 
 	// 步骤 5: 触发下一步（Redis 操作，在事务外执行）
@@ -488,7 +518,13 @@ func (e *RagJobEngineV2) finalizeJob(ctx context.Context, job model.RagJob, curr
 			isSingleStep = true
 		}
 	}
-	if !profile.Steps[currentIndex].ParallelGroup && !isSingleStep {
+	isAsyncStep := false
+	if val, ok := params["__async_step"]; ok {
+		if b, ok := val.(bool); ok && b {
+			isAsyncStep = true
+		}
+	}
+	if !profile.Steps[currentIndex].ParallelGroup && !isSingleStep && !isAsyncStep {
 		if err := e.factory.EnqueueNextJob(ctx, job.RunID, currentIndex); err != nil {
 			logger.Errorf(ctx, "【重要】触发下一步失败，pipeline 可能断裂: job=%d, run_id=%s, err=%v", job.JobID, job.RunID, err)
 		}

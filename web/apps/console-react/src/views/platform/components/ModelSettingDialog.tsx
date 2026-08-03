@@ -1,8 +1,9 @@
-import { useState, forwardRef, useImperativeHandle } from 'react'
+import { useState, forwardRef, useImperativeHandle, useMemo } from 'react'
 import { Modal, Form, Input, Button, message } from 'antd'
 import { t } from '@/locales'
 import { useChannelStore } from '@/stores'
 import { clearModelCache } from '@/components/Model'
+import { MODEL_USE_TYPE } from '@/constants/platform/config'
 
 interface ModelData {
   id?: string
@@ -19,10 +20,12 @@ interface ModelData {
   name?: string
   organization_id?: string
   channel_type?: number
+  modelType?: string
   custom_config?: {
     alias_map?: Record<string, string>
     deep_thinking?: string[]
     vision?: string[]
+    voice_models?: Record<string, { workspace_id?: string; display_name?: string }>
   }
 }
 
@@ -45,11 +48,19 @@ export const ModelSettingDialog = forwardRef<ModelSettingDialogRef, ModelSetting
 
     const channelStore = useChannelStore()
 
+    const isVoiceModel = useMemo(() => {
+      const modelType = originData.modelType || originData.type
+      return String(modelType) === String(MODEL_USE_TYPE.VOICE)
+    }, [originData])
+
     const open = async (options: { data?: ModelData } = {}) => {
       const { data = {} as ModelData } = options
+      const modelId = data.id || data.value || ''
+      const voiceConfig = data.custom_config?.voice_models?.[modelId]
       form.setFieldsValue({
-        id: data.id || data.value || '',
+        id: modelId,
         name: data.label || data.name || '',
+        workspace_id: voiceConfig?.workspace_id || '',
       })
       setOriginData(data)
       setVisible(true)
@@ -67,13 +78,24 @@ export const ModelSettingDialog = forwardRef<ModelSettingDialogRef, ModelSetting
         const { id = '', name = '' } = values
         const channel_type = originData.channel_type
 
-        const custom_config = originData.custom_config || {}
+        const custom_config: Record<string, any> = { ...(originData.custom_config || {}) }
         custom_config.alias_map = {
           ...(custom_config.alias_map || {}),
           [id]: name.trim(),
         }
         if (!custom_config.alias_map[id]) delete custom_config.alias_map[id]
-        if (!Object.keys(custom_config.alias_map).length) delete (custom_config as any).alias_map
+        if (!Object.keys(custom_config.alias_map).length) delete custom_config.alias_map
+
+        // 语音模型：更新 voice_models 中的 display_name
+        if (isVoiceModel) {
+          custom_config.voice_models = {
+            ...(custom_config.voice_models || {}),
+            [id]: {
+              ...(custom_config.voice_models?.[id] || {}),
+              display_name: name.trim(),
+            },
+          }
+        }
 
         const data = {
           channel_id: originData.channel_id,
@@ -132,6 +154,15 @@ export const ModelSettingDialog = forwardRef<ModelSettingDialogRef, ModelSetting
         }
       >
         <Form form={form} layout="vertical">
+          {isVoiceModel && (
+            <Form.Item
+              label="Workspace ID"
+              name="workspace_id"
+              rules={[{ required: true, message: t('form_input_placeholder') }]}
+            >
+              <Input disabled placeholder={t('form_input_placeholder')} />
+            </Form.Item>
+          )}
           <Form.Item
             label={t('module.platform_model_models_id')}
             name="id"
@@ -140,10 +171,20 @@ export const ModelSettingDialog = forwardRef<ModelSettingDialogRef, ModelSetting
             <Input disabled placeholder={t('form_input_placeholder')} />
           </Form.Item>
           <Form.Item
-            label={t('module.platform_model_models_name')}
+            label={
+              isVoiceModel
+                ? t('module.platform_model_display_name')
+                : t('module.platform_model_models_name')
+            }
             name="name"
           >
-            <Input placeholder={t('form_input_placeholder')} />
+            <Input
+              placeholder={
+                isVoiceModel
+                  ? t('module.platform_model_display_name_placeholder')
+                  : t('form_input_placeholder')
+              }
+            />
           </Form.Item>
         </Form>
       </Modal>

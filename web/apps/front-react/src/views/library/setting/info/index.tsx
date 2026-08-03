@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { Form, Input, Button, Radio, message, Modal } from "antd";
 import { EyeOutlined, EyeInvisibleOutlined } from "@ant-design/icons";
 import { useLibraryStore } from "@/stores/modules/library";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import librariesApi from "@/api/modules/libraries";
-import { SetIcon } from "@/views/knowledge/components/SetIcon";
+import { SetIcon } from "@/views/knowledge/library/SetIcon";
 import { Header } from "@/components/Header";
 import { createIconFileFromStatic } from "@km/shared-utils";
 import UploadService from "@/services/upload";
@@ -110,15 +110,15 @@ export function LibraryInfo() {
         if (!libraryStore.library?.id) return;
         await librariesApi.delete(libraryStore.library.id);
         message.success("删除成功");
-        navigate(`/knowledge/${libraryStore.library?.space_id || ""}`);
+        navigate(`/knowledge?space_id=${libraryStore.library?.space_id || ""}`);
       },
     });
   };
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden px-[60px] bg-[#F8F9FA]">
+    <div className="h-screen flex flex-col overflow-hidden px-[78px] ">
       <Header className="pt-8 pb-5" title="基础信息" />
-      <div className="bg-white flex-1 gap-6 px-10 py-8 overflow-y-auto mb-5">
+      <div className="flex-1 gap-6 py-8 overflow-y-auto mb-5">
         <div className="max-w-[800px]">
           <Form form={form} layout="vertical">
             <div className="flex gap-4 items-center mb-[18px]">

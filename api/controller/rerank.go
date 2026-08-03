@@ -276,12 +276,11 @@ func executeRerankRequest(c *gin.Context, req *RerankRequest, channel *model.Cha
 	switch channel.Type {
 	case model.ChannelApiBailian, channeltype.Ali:
 		return executeAliRerankRequest(c, req, meta)
-	case channeltype.SiliconFlow: // 硅基流动渠道类型
-		return executeSiliconFlowRerankRequest(c, req, meta)
-	case model.ChannelApiTypeAppBuilderModel: // 百度千帆渠道类型
+	case model.ChannelApiTypeAppBuilderModel: // 百度千帆 (自定义 API 格式)
 		return executeBaiduQianfanRerankRequest(c, req, meta)
 	default:
-		return nil, nil, fmt.Errorf("不支持的渠道类型: %d", channel.Type)
+		// 所有其他渠道类型走通用 OpenAI 兼容路径 (POST {baseURL}/v1/rerank + Bearer auth)
+		return executeOpenAIRerankRequest(c, req, meta)
 	}
 }
 
@@ -305,56 +304,6 @@ func executeAliRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta
 
 	// 调用 service 的方法
 	serviceResp, usage, err := rerankService.CallBailianRerankAPI(c.Request.Context(), serviceReq, meta)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// 将 service 中的 RerankResponse 转换为 controller 中的 RerankResponse
-	controllerResp := &RerankResponse{
-		Object: serviceResp.Object,
-		Model:  serviceResp.Model,
-		Usage: RerankUsage{
-			TotalTokens: serviceResp.Usage.TotalTokens,
-		},
-	}
-
-	// 转换 Data 字段
-	controllerResp.Data = make([]RerankResult, len(serviceResp.Data))
-	for i, serviceResult := range serviceResp.Data {
-		controllerResult := RerankResult{
-			Object:         serviceResult.Object,
-			Index:          serviceResult.Index,
-			RelevanceScore: serviceResult.RelevanceScore,
-		}
-
-		if serviceResult.Document != nil {
-			controllerResult.Document = &RerankDocument{
-				Text: serviceResult.Document.Text,
-			}
-		}
-
-		controllerResp.Data[i] = controllerResult
-	}
-
-	return controllerResp, usage, nil
-}
-
-// executeSiliconFlowRerankRequest 执行硅基流动 rerank 请求
-func executeSiliconFlowRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
-	// 创建新的 service 实例
-	rerankService := &service.SiliconFlowRerankService{}
-
-	// 将 controller 中的 RerankRequest 转换为 service 中的 RerankRequest
-	serviceReq := &service.RerankRequest{
-		Model:           req.Model,
-		Query:           req.Query,
-		Documents:       req.Documents,
-		TopN:            req.TopN,
-		ReturnDocuments: req.ReturnDocuments,
-	}
-
-	// 调用 service 的方法
-	serviceResp, usage, err := rerankService.CallSiliconFlowRerankAPI(c.Request.Context(), serviceReq, meta)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -419,6 +368,51 @@ func executeBaiduQianfanRerankRequest(c *gin.Context, req *RerankRequest, meta *
 	}
 
 	// 转换 Data 字段
+	controllerResp.Data = make([]RerankResult, len(serviceResp.Data))
+	for i, serviceResult := range serviceResp.Data {
+		controllerResult := RerankResult{
+			Object:         serviceResult.Object,
+			Index:          serviceResult.Index,
+			RelevanceScore: serviceResult.RelevanceScore,
+		}
+
+		if serviceResult.Document != nil {
+			controllerResult.Document = &RerankDocument{
+				Text: serviceResult.Document.Text,
+			}
+		}
+
+		controllerResp.Data[i] = controllerResult
+	}
+
+	return controllerResp, usage, nil
+}
+
+// executeOpenAIRerankRequest 执行通用 OpenAI 兼容 rerank 请求
+func executeOpenAIRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
+	rerankService := &service.OpenAIService{}
+
+	serviceReq := &service.RerankRequest{
+		Model:           req.Model,
+		Query:           req.Query,
+		Documents:       req.Documents,
+		TopN:            req.TopN,
+		ReturnDocuments: req.ReturnDocuments,
+	}
+
+	serviceResp, usage, err := rerankService.CallOpenAIRerankAPI(c.Request.Context(), serviceReq, meta)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	controllerResp := &RerankResponse{
+		Object: serviceResp.Object,
+		Model:  serviceResp.Model,
+		Usage: RerankUsage{
+			TotalTokens: serviceResp.Usage.TotalTokens,
+		},
+	}
+
 	controllerResp.Data = make([]RerankResult, len(serviceResp.Data))
 	for i, serviceResult := range serviceResp.Data {
 		controllerResult := RerankResult{

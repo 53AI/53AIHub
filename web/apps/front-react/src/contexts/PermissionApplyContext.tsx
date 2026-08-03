@@ -1,4 +1,5 @@
 import { createContext, useContext, useRef, ReactNode, RefObject } from 'react'
+import { eventBus } from '@km/shared-utils'
 import { PERMISSION_TYPE, RESOURCE_TYPE, type PermissionType, type ResourceType } from '@/components/KMPermission/constant'
 import { ApplyDialog, ApplyDialogRef } from '@/views/library/components/apply'
 
@@ -27,10 +28,14 @@ export function PermissionApplyProvider({ children }: { children: ReactNode }) {
     applyRef.current?.open(data)
   }
 
+  const handleApplySubmit = () => {
+    eventBus.emit('apply-submit')
+  }
+
   return (
     <PermissionApplyContext.Provider value={{ openApply, applyRef }}>
       {children}
-      <ApplyDialog ref={applyRef} />
+      <ApplyDialog ref={applyRef} onSubmit={handleApplySubmit} />
     </PermissionApplyContext.Provider>
   )
 }

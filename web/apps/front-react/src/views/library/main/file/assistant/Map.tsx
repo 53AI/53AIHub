@@ -60,15 +60,24 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
 
     const countRef = useRef(count);
 
+    // 文档引用统一（v0.4.2 §3.2）：Map 视图始终是文件单文档场景
+    const documentType =
+      fileInfo?.document_type === "wiki" ? "wiki" : "file";
+    const documentFilterParams = {
+      document_type: documentType as "file" | "wiki",
+      document_id: fileInfo?.id,
+    };
+
     const { start: startPoll, stop: stopPoll } = usePoll(async () => {
       countRef.current += 3;
       setCount(countRef.current);
 
       if (!agentInfo?.agent_id || !fileInfo?.id) return;
 
-      const res = await conversationApi.agentMessages(agentInfo.agent_id, {
-        file_id: fileInfo.id,
-      });
+      const res = await conversationApi.agentMessages(
+        agentInfo.agent_id,
+        documentFilterParams,
+      );
       if (res.messages?.length > 0) {
         const newMessage = res.messages[0];
         if (newMessage.id !== msg.id) {
@@ -84,9 +93,10 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
 
       setLoading(true);
       try {
-        const res = await conversationApi.agentMessages(agentInfo.agent_id, {
-          file_id: fileInfo.id,
-        });
+        const res = await conversationApi.agentMessages(
+          agentInfo.agent_id,
+          documentFilterParams,
+        );
         const messages = res.messages || [];
 
         if (messages.length > 0) {

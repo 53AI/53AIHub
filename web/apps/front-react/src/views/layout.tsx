@@ -89,6 +89,7 @@ export function Layout() {
 	const shortcutsStore = useShortcutsStore();
 	const isSoftStyle = useIsSoftStyle();
 	const { isMobile } = useResponsive();
+	const recordingConfig = useRecordingStore((s) => s.recordingConfig);
 
 	// 紧凑模式判断：软件模式 + 非知识库页面 + 非移动端
 	const isKnowledgePage = location.pathname.startsWith("/library");
@@ -129,6 +130,8 @@ export function Layout() {
 		((hasKnowledge && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE)) ||
 			checkVersion(VERSION_MODULE.RECORDING) ||
 			checkVersion(VERSION_MODULE.AGENT));
+
+	const showRecordingMenu = false
 
 	// Computed: navigations with is_internal filter
 	const navigations = navigationStore.navigations
@@ -209,6 +212,13 @@ export function Layout() {
 		// Delay load message center
 		setTimeout(() => setMessageCenterReady(true), 1000);
 	}, []);
+
+	// Load recording config when user is logged in
+	useEffect(() => {
+		if (userStore.is_login) {
+			useRecordingStore.getState().loadConfig();
+		}
+	}, [userStore.is_login]);
 
 	// Initialize recording channel listeners
 	useEffect(() => {
@@ -733,6 +743,22 @@ export function Layout() {
 										</Link>
 									);
 								})}
+
+								{/* Recording menu */}
+								{showRecordingMenu && (
+									<Link
+										to="/recording"
+										onClick={() => {
+											isMobile && setSiderVisible(false);
+										}}
+										className={`py-2 flex flex-col items-center gap-1 rounded-lg cursor-pointer hover:bg-[#EBF1FF] ${getBlockColor(effectivePath.startsWith("/recording"))}`}
+									>
+										<div className="size-5 flex-center">
+											<SvgIcon name="voice-one" size="20" />
+										</div>
+										<p className="text-[10px] truncate">{t("module.recording")}</p>
+									</Link>
+								)}
 
 								{/* Mine menu */}
 								{showMineMenu && (

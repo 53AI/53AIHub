@@ -59,7 +59,7 @@ func (h *ErrorHandler) cleanupFileRecord(batchID, fileID string) error {
 		// 更新进度（在持有 batch 锁的情况下安全修改）
 		// Fix: Use updateFileProgressNoLock to avoid deadlock since we already hold the lock
 		h.batchManager.updateFileProgressNoLock(batch, fileID, fileUpload)
-		
+
 		log.Printf("已清理文件记录: BatchID=%s, FileID=%s", batchID, fileID)
 	}
 	batch.mu.Unlock()
@@ -129,7 +129,7 @@ func (h *ErrorHandler) resetFileForReupload(batchID, fileID string) error {
 		// 更新进度（在持有 batch 锁的情况下安全修改）
 		// Fix: Use updateFileProgressNoLock to avoid deadlock since we already hold the lock
 		h.batchManager.updateFileProgressNoLock(batch, fileID, fileUpload)
-		
+
 		log.Printf("已重置文件状态为可重新上传: BatchID=%s, FileID=%s", batchID, fileID)
 	}
 	batch.mu.Unlock()

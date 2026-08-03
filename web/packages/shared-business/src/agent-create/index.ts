@@ -61,12 +61,14 @@ export { useAgentFormStore } from './store'
 
 // Hooks
 export { useAgentForm, usePlatformChannel, useAgentPreviewSender } from './hooks'
+export { buildKnowledgeSourcePayload } from './hooks'
 export type {
   UsePlatformChannelOptions,
   UsePlatformChannelReturn,
   AgentPreviewSenderConfig,
   AgentPreviewModelOption,
   PreviewKnowledgeSourceState,
+  KnowledgeSourceConfig,
 } from './hooks'
 
 // Components
@@ -106,7 +108,6 @@ export type {
   CompletionRef,
   PreviewModelSelectorProps,
   PreviewKnowledgeSourceSelectorProps,
-  PreviewSourceMode,
 } from './components'
 
 // Constants

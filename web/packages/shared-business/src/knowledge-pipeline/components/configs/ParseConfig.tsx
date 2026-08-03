@@ -220,7 +220,7 @@ export function ParseConfig({
         <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 space-y-6">
           <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
             <SvgIcon name="settings" className="text-[#2563EB]" />
-            <span>{getMethodName(config.engine)}{t(tKey('parse_config_suffix'))}</span>
+            <span>{config.engine === 'voice_model' ? '语音解析' : getMethodName(config.engine)}{t(tKey('parse_config_suffix'))}</span>
           </div>
 
           {/* Info Box */}

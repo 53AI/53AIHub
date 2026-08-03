@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AgentRunInfo, IConversationApi } from "../adapters/types";
+import type { AgentRunInfo, ConversationCreateDocumentRef, IConversationApi } from "../adapters/types";
 import type { ConversationInfo } from "../types";
 import { AGENT_RUN_RUNNING_STATUSES } from "../adapters/types";
 import { readPaginationHasMore, readPaginationNextOffset, readResponseCount } from "../utils/pagination";
@@ -55,10 +55,13 @@ export interface ConversationActions {
    * 不影响 conversations 列表。一般用于手动重置或测试。
    */
   resetPagination: () => void;
+  /**
+   * 创建会话（v0.4.2 §3.2）：仅使用 document_type + document_id，移除旧 file_id 字段。
+   */
   createConversation: (
     agent_id: string | number,
     title?: string,
-    file_id?: string,
+    documentRef?: ConversationCreateDocumentRef,
     conversation_type?: number
   ) => Promise<ConversationInfo>;
   addConversation: (conversation: ConversationInfo) => void;
@@ -328,20 +331,28 @@ export const useConversationStore = create<ConversationState & ConversationActio
       });
     },
 
-    createConversation: async (agent_id, title = "", file_id = "", conversation_type) => {
+    createConversation: async (agent_id, title = "", documentRef, conversation_type) => {
       if (!conversationApi) {
         throw new Error("conversationApi not set");
       }
 
       const data: any = { agent_id, title };
-      if (file_id) {
-        data.file_id = file_id;
+      // 统一文档引用（v0.4.2 §3.2）：仅 document_type + document_id，移除旧 file_id
+      if (documentRef?.documentType && documentRef?.documentId) {
+        data.document_type = documentRef.documentType;
+        data.document_id = documentRef.documentId;
       }
       if (conversation_type !== undefined) {
         data.conversation_type = conversation_type;
       }
 
-      const res = await conversationApi.create(String(agent_id), title, file_id, String(conversation_type || ""));
+      const res = await conversationApi.create(
+        String(agent_id),
+        title,
+        title,
+        String(conversation_type || ""),
+        documentRef,
+      );
       return res.data || res;
     },
 

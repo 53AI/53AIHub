@@ -13,14 +13,25 @@ import (
 	"gorm.io/gorm"
 )
 
-type AgentRunService struct{}
+type AgentRunService struct {
+	broker AgentRunEventBroker
+}
 
 var (
-	ErrAgentRunNotFound = errors.New("agent run not found")
+	ErrAgentRunNotFound         = errors.New("agent run not found")
+	defaultAgentRunEventBroker  = newAgentRunEventBroker()
+	agentRunSubscriptionMaxIdle = 20 * time.Minute
 )
 
 func NewAgentRunService() *AgentRunService {
-	return &AgentRunService{}
+	return &AgentRunService{broker: defaultAgentRunEventBroker}
+}
+
+func NewAgentRunServiceWithBroker(broker AgentRunEventBroker) *AgentRunService {
+	if broker == nil {
+		broker = defaultAgentRunEventBroker
+	}
+	return &AgentRunService{broker: broker}
 }
 
 func (s *AgentRunService) CreateRun(ctx context.Context, eid, conversationID, messageID int64, requestID string) (*model.AgentRun, error) {
@@ -100,7 +111,13 @@ func (s *AgentRunService) UpdateRunStatus(ctx context.Context, eid int64, runID 
 	if status == model.AgentRunStatusCancelling {
 		updates["cancel_requested_at"] = time.Now().UTC().UnixMilli()
 	}
-	return model.UpdateAgentRunByRunID(eid, runID, updates)
+	if err := model.UpdateAgentRunByRunID(eid, runID, updates); err != nil {
+		return err
+	}
+	s.publishRunNotification(ctx, AgentRunEventNotification{
+		EID: eid, RunID: runID, PublishedAt: time.Now().UnixMilli(),
+	})
+	return nil
 }
 
 func (s *AgentRunService) AppendEvent(ctx context.Context, eid int64, runID string, requestID string, eventType string, messageID int64, payload map[string]interface{}) (*model.AgentRunEvent, error) {
@@ -119,16 +136,46 @@ func (s *AgentRunService) AppendEvent(ctx context.Context, eid int64, runID stri
 		MessageID:   messageID,
 		PayloadJSON: payloadJSON,
 	}
-	createdEvent, err := model.AppendAgentRunEventWithAutoSeq(eid, runID, event)
+	db := model.DB
+	if ctx != nil {
+		db = db.WithContext(ctx)
+	}
+	createdEvent, err := model.AppendAgentRunEventWithAutoSeqTx(db, eid, runID, event)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := model.UpdateAgentRunByRunID(eid, runID, map[string]interface{}{"last_event_id": createdEvent.ID}); err != nil {
+	if err := model.UpdateAgentRunByRunIDWithDB(db, eid, runID, map[string]interface{}{"last_event_id": createdEvent.ID}); err != nil {
 		logger.Warnf(ctx, "update run last_event_id failed: run_id=%s, err=%v", runID, err)
 	}
+	s.publishEventNotification(ctx, createdEvent)
 
 	return createdEvent, nil
+}
+
+func (s *AgentRunService) publishEventNotification(ctx context.Context, event *model.AgentRunEvent) {
+	if event == nil {
+		return
+	}
+	s.publishRunNotification(ctx, AgentRunEventNotification{
+		EID: event.Eid, RunID: event.RunID, Seq: event.Seq, PublishedAt: time.Now().UnixMilli(),
+	})
+}
+
+func (s *AgentRunService) publishRunNotification(ctx context.Context, notification AgentRunEventNotification) {
+	if s == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	broker := s.broker
+	if broker == nil {
+		broker = defaultAgentRunEventBroker
+	}
+	if err := broker.Publish(ctx, notification); err != nil {
+		logger.Warnf(ctx, "agent run event notification failed: eid=%d, run_id=%s, seq=%d, err=%v", notification.EID, notification.RunID, notification.Seq, err)
+	}
 }
 
 func (s *AgentRunService) AppendEventForRequest(ctx context.Context, eid int64, requestID string, eventType string, messageID int64, payload map[string]interface{}) (*model.AgentRunEvent, error) {
@@ -146,6 +193,48 @@ func (s *AgentRunService) AppendEventForRequest(ctx context.Context, eid int64, 
 	}
 
 	return s.AppendEvent(ctx, eid, run.RunID, requestID, eventType, messageID, payload)
+}
+
+// AppendEventsForRequestBatch appends a serialized event batch with one run
+// lookup, one bulk insert and one last_event_id update.
+func (s *AgentRunService) AppendEventsForRequestBatch(ctx context.Context, eid int64, requestID string, inputs []model.AgentRunEventInput) error {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" || len(inputs) == 0 {
+		return nil
+	}
+	run, err := s.GetRunByRequestID(ctx, eid, requestID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	events := make([]*model.AgentRunEvent, 0, len(inputs))
+	for _, input := range inputs {
+		payloadJSON := ""
+		if len(input.Payload) > 0 {
+			b, marshalErr := json.Marshal(input.Payload)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal payload failed: %w", marshalErr)
+			}
+			payloadJSON = string(b)
+		}
+		events = append(events, &model.AgentRunEvent{
+			RequestID:   requestID,
+			EventType:   input.EventType,
+			MessageID:   input.MessageID,
+			PayloadJSON: payloadJSON,
+		})
+	}
+	created, err := model.AppendAgentRunEventsWithAutoSeq(eid, run.RunID, events)
+	if err != nil {
+		return err
+	}
+	if len(created) > 0 {
+		return model.UpdateAgentRunByRunID(eid, run.RunID, map[string]interface{}{"last_event_id": created[len(created)-1].ID})
+	}
+	return nil
 }
 
 func (s *AgentRunService) ListEventsAfterSeq(ctx context.Context, eid int64, runID string, afterSeq int64, limit int) ([]*model.AgentRunEvent, error) {
@@ -206,7 +295,21 @@ func (s *AgentRunService) WatchEventsForUser(ctx context.Context, eid int64, use
 	}
 
 	if pollInterval <= 0 {
-		pollInterval = 500 * time.Millisecond
+		pollInterval = 5 * time.Second
+	}
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 2000 {
+		limit = 2000
+	}
+	broker := s.broker
+	if broker == nil {
+		broker = defaultAgentRunEventBroker
+	}
+	subscription, subscribeErr := broker.Subscribe(ctx, eid, run.RunID)
+	if subscribeErr != nil {
+		logger.Warnf(ctx, "agent run realtime subscription unavailable, using DB reconcile: eid=%d, run_id=%s, err=%v", eid, run.RunID, subscribeErr)
 	}
 
 	eventsCh := make(chan *model.AgentRunEvent)
@@ -215,45 +318,124 @@ func (s *AgentRunService) WatchEventsForUser(ctx context.Context, eid int64, use
 	go func() {
 		defer close(eventsCh)
 		defer close(errCh)
+		watchStartedAt := time.Now()
+		notificationCount := 0
+		reconcileCount := 0
+		emittedCount := 0
+		maxNotificationLag := int64(0)
+		defer func() {
+			logger.Infof(ctx, "agent run subscription summary: eid=%d, run_id=%s, notifications=%d, reconciles=%d, emitted=%d, max_notification_lag_ms=%d, elapsed_ms=%d",
+				eid, runID, notificationCount, reconcileCount, emittedCount, maxNotificationLag, time.Since(watchStartedAt).Milliseconds())
+		}()
+		if subscription != nil {
+			defer subscription.Close()
+		}
 
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
 		lastSeq := afterSeq
 		currentRun := run
-
-		for {
-			events, err := model.GetAgentRunEventsAfterSeq(eid, currentRun.RunID, lastSeq, limit)
-			if err != nil {
-				errCh <- err
-				return
-			}
-
-			if len(events) > 0 {
+		lastObservedStatus := ""
+		lastEventAt := time.Now()
+		reconcile := func() (bool, error) {
+			reconcileCount++
+			for {
+				events, queryErr := model.GetAgentRunEventsAfterSeq(eid, currentRun.RunID, lastSeq, limit)
+				if queryErr != nil {
+					return false, queryErr
+				}
 				for _, event := range events {
 					select {
 					case eventsCh <- event:
 						lastSeq = event.Seq
+						emittedCount++
+						lastEventAt = time.Now()
 					case <-ctx.Done():
-						return
+						return false, ctx.Err()
 					}
 				}
-				continue
+				if len(events) < limit {
+					break
+				}
 			}
-
-			if isAgentRunTerminalStatus(currentRun.Status) {
-				return
+			refreshedRun, queryErr := model.GetAgentRunByRunID(eid, currentRun.RunID)
+			if queryErr != nil {
+				return false, queryErr
 			}
+			currentRun = refreshedRun
+			if currentRun.Status != lastObservedStatus {
+				logger.Infof(ctx, "【诊断-AgentRun】订阅观察到Run状态: eid=%d run_id=%s status=%s last_seq=%d last_event_id=%d",
+					eid, currentRun.RunID, currentRun.Status, lastSeq, currentRun.LastEventID)
+				lastObservedStatus = currentRun.Status
+			}
+			return isAgentRunTerminalStatus(currentRun.Status), nil
+		}
+		checkIdle := func() bool {
+			maxIdle := agentRunSubscriptionMaxIdle
+			if maxIdle <= 0 || time.Since(lastEventAt) < maxIdle {
+				return false
+			}
+			idleErr := fmt.Errorf("agent run subscription idle timeout: eid=%d run_id=%s status=%s last_seq=%d idle=%s",
+				eid, currentRun.RunID, currentRun.Status, lastSeq, time.Since(lastEventAt).Round(time.Millisecond))
+			logger.Warnf(ctx, "【诊断-AgentRun】订阅空闲超时: eid=%d run_id=%s status=%s last_seq=%d idle=%s",
+				eid, currentRun.RunID, currentRun.Status, lastSeq, time.Since(lastEventAt).Round(time.Millisecond))
+			errCh <- idleErr
+			return true
+		}
 
+		terminal, reconcileErr := reconcile()
+		if reconcileErr != nil {
+			if !errors.Is(reconcileErr, context.Canceled) {
+				errCh <- reconcileErr
+			}
+			return
+		}
+		if terminal {
+			logger.Infof(ctx, "【诊断-AgentRun】订阅因终态结束: eid=%d run_id=%s status=%s last_seq=%d", eid, currentRun.RunID, currentRun.Status, lastSeq)
+			return
+		}
+		if checkIdle() {
+			return
+		}
+
+		var notifications <-chan AgentRunEventNotification
+		if subscription != nil {
+			notifications = subscription.Notifications()
+		}
+		for {
 			select {
-			case <-ctx.Done():
-				return
+			case notification, ok := <-notifications:
+				if !ok {
+					notifications = nil
+					continue
+				}
+				notificationCount++
+				if notification.PublishedAt > 0 {
+					lag := time.Now().UnixMilli() - notification.PublishedAt
+					if lag > maxNotificationLag {
+						maxNotificationLag = lag
+					}
+				}
 			case <-ticker.C:
+				// Reconcile durable state at a low frequency for missed/cross-instance notifications.
+			case <-ctx.Done():
+				logger.Infof(ctx, "【诊断-AgentRun】订阅因上下文取消结束: eid=%d run_id=%s last_seq=%d", eid, currentRun.RunID, lastSeq)
+				return
 			}
 
-			currentRun, err = model.GetAgentRunByRunID(eid, currentRun.RunID)
-			if err != nil {
-				errCh <- err
+			terminal, reconcileErr = reconcile()
+			if reconcileErr != nil {
+				if !errors.Is(reconcileErr, context.Canceled) {
+					errCh <- reconcileErr
+				}
+				return
+			}
+			if terminal {
+				logger.Infof(ctx, "【诊断-AgentRun】订阅因终态结束: eid=%d run_id=%s status=%s last_seq=%d", eid, currentRun.RunID, currentRun.Status, lastSeq)
+				return
+			}
+			if checkIdle() {
 				return
 			}
 		}
@@ -273,6 +455,7 @@ func (s *AgentRunService) RequestCancelRun(ctx context.Context, eid int64, userI
 		return run, nil
 	}
 
+	var cancelEvent *model.AgentRunEvent
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC().UnixMilli()
 		result := tx.Model(&model.AgentRun{}).
@@ -310,6 +493,7 @@ func (s *AgentRunService) RequestCancelRun(ctx context.Context, eid int64, userI
 		if appendErr != nil {
 			return appendErr
 		}
+		cancelEvent = event
 
 		return model.UpdateAgentRunByRunIDWithDB(tx, eid, runID, map[string]interface{}{
 			"last_event_id": event.ID,
@@ -318,6 +502,7 @@ func (s *AgentRunService) RequestCancelRun(ctx context.Context, eid int64, userI
 	if err != nil {
 		return nil, err
 	}
+	s.publishEventNotification(ctx, cancelEvent)
 
 	return s.GetRunByRunID(ctx, eid, runID)
 }
@@ -425,6 +610,7 @@ func (s *AgentRunService) finalizeRun(ctx context.Context, eid int64, runID stri
 		eventPayload["error_message"] = errorMessage
 	}
 
+	var terminalEvent *model.AgentRunEvent
 	err = model.DB.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
 			"status":      status,
@@ -468,6 +654,7 @@ func (s *AgentRunService) finalizeRun(ctx context.Context, eid int64, runID stri
 		if appendErr != nil {
 			return appendErr
 		}
+		terminalEvent = event
 
 		return tx.Model(&model.AgentRun{}).
 			Where("eid = ? AND run_id = ?", eid, runID).
@@ -478,6 +665,7 @@ func (s *AgentRunService) finalizeRun(ctx context.Context, eid int64, runID stri
 	if err != nil {
 		return nil, err
 	}
+	s.publishEventNotification(ctx, terminalEvent)
 
 	return s.GetRunByRunID(ctx, eid, runID)
 }

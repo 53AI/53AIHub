@@ -57,14 +57,15 @@ type sessionState struct {
 }
 
 type Runtime struct {
-	cfg        Config
-	runner     dockerCommandRunner
-	mu         sync.Mutex
-	sessions   map[string]*sessionState
-	idleTTL    time.Duration
-	reaperStop chan struct{}
-	reaperOnce sync.Once
-	reaperWG   sync.WaitGroup
+	cfg            Config
+	runner         dockerCommandRunner
+	commandContext func(context.Context, string, ...string) *exec.Cmd
+	mu             sync.Mutex
+	sessions       map[string]*sessionState
+	idleTTL        time.Duration
+	reaperStop     chan struct{}
+	reaperOnce     sync.Once
+	reaperWG       sync.WaitGroup
 }
 
 func NewRuntime(cfg Config) *Runtime {
@@ -90,9 +91,10 @@ func NewRuntime(cfg Config) *Runtime {
 		cfg.IdleCleanupSeconds = defaultSandboxRuntimeIdleCleanupSeconds
 	}
 	rt := &Runtime{
-		cfg:      cfg,
-		runner:   osDockerCommandRunner{},
-		sessions: map[string]*sessionState{},
+		cfg:            cfg,
+		runner:         osDockerCommandRunner{},
+		commandContext: exec.CommandContext,
+		sessions:       map[string]*sessionState{},
 	}
 	rt.idleTTL = time.Duration(cfg.IdleCleanupSeconds) * time.Second
 	rt.reaperStop = make(chan struct{})
@@ -522,11 +524,26 @@ func (r *Runtime) RunCommand(ctx context.Context, session *sandboxruntime.Sessio
 		args = append(args, "-e", k+"="+v)
 	}
 	args = append(args, "-w", cwd, session.ProviderID, "sh", "-lc", req.Command)
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	commandContext := r.commandContext
+	if commandContext == nil {
+		commandContext = exec.CommandContext
+	}
+	cmd := commandContext(ctx, "docker", args...)
+	if stream != nil {
+		return runStreamingCommand(ctx, cmd, stream)
+	}
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
+	result := &sandboxruntime.CommandResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		result.ExitCode = -1
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		}
+		return result, ctxErr
+	}
 	exitCode := 0
 	if runErr != nil {
 		if exitErr, ok := runErr.(*exec.ExitError); ok {
@@ -535,10 +552,88 @@ func (r *Runtime) RunCommand(ctx context.Context, session *sandboxruntime.Sessio
 			return nil, runErr
 		}
 	}
-	if stream != nil {
-		stream(sandboxruntime.StreamEvent{Type: "tool.completed", Data: map[string]interface{}{"exit_code": exitCode}})
+	result.ExitCode = exitCode
+	return result, nil
+}
+
+type commandStreamChunk struct {
+	eventType string
+	content   string
+}
+
+func runStreamingCommand(ctx context.Context, cmd *exec.Cmd, stream func(sandboxruntime.StreamEvent)) (*sandboxruntime.CommandResult, error) {
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
 	}
-	return &sandboxruntime.CommandResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: exitCode}, nil
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	chunks := make(chan commandStreamChunk, 32)
+	var readers sync.WaitGroup
+	readers.Add(2)
+	go readCommandStream(stdoutPipe, "stdout.delta", chunks, &readers)
+	go readCommandStream(stderrPipe, "stderr.delta", chunks, &readers)
+	go func() {
+		readers.Wait()
+		close(chunks)
+	}()
+
+	var stdout, stderr strings.Builder
+	for chunk := range chunks {
+		switch chunk.eventType {
+		case "stdout.delta":
+			stdout.WriteString(chunk.content)
+		case "stderr.delta":
+			stderr.WriteString(chunk.content)
+		}
+		stream(sandboxruntime.StreamEvent{Type: chunk.eventType, Content: chunk.content})
+	}
+
+	// Both pipes have reached EOF, so all output has been consumed before Wait
+	// closes its descriptors. This preserves the complete final result while the
+	// readers still delivered each available chunk in realtime.
+	runErr := cmd.Wait()
+	result := &sandboxruntime.CommandResult{
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: 0,
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		result.ExitCode = -1
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		}
+		return result, ctxErr
+	}
+	if runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok {
+			result.ExitCode = exitErr.ExitCode()
+		} else {
+			return nil, runErr
+		}
+	}
+	stream(sandboxruntime.StreamEvent{Type: "tool.completed", Data: map[string]interface{}{"exit_code": result.ExitCode}})
+	return result, nil
+}
+
+func readCommandStream(reader io.Reader, eventType string, chunks chan<- commandStreamChunk, readers *sync.WaitGroup) {
+	defer readers.Done()
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			chunks <- commandStreamChunk{eventType: eventType, content: string(buf[:n])}
+		}
+		if err != nil {
+			return
+		}
+	}
 }
 
 func (r *Runtime) ExportArtifact(ctx context.Context, session *sandboxruntime.Session, artifact sandboxruntime.Artifact) (io.ReadCloser, error) {

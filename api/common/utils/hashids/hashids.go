@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	instance   *HashidsManager
-	initError  error
-	once       sync.Once
+	instance  *HashidsManager
+	initError error
+	once      sync.Once
 )
 
 // HashidsManager 管理Hashids编解码

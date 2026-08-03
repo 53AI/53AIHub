@@ -49,9 +49,9 @@ export const QuickerDialog = forwardRef<QuickerDialogRef, QuickerDialogProps>(
         : 0;
 
     const getNewName = () => {
-      const baseName = "新建划词指令";
+      const baseName = t("slide_dialog.new_command");
       if (quickCommands.length === 0) return baseName;
-      const reg = /^新建划词指令(\d+)$/;
+      const reg = new RegExp(`^${baseName}(\\d+)$`);
       const maxN = Math.max(
         0,
         ...quickCommands.map((item) => {
@@ -205,12 +205,12 @@ export const QuickerDialog = forwardRef<QuickerDialogRef, QuickerDialogProps>(
     return (
       <Modal
         open={visible}
-        title="快捷指令"
+        title={t("slide_dialog.quick_command")}
         width={800}
         onCancel={handleClose}
         footer={[
           <Button key="cancel" onClick={handleClose}>
-            取消
+            {t("action.cancel")}
           </Button>,
           <Button key="save" type="primary" onClick={handleSave}>
             保存
@@ -277,7 +277,7 @@ export const QuickerDialog = forwardRef<QuickerDialogRef, QuickerDialogProps>(
           <div className="flex-1 pr-1 overflow-hidden">
             <Form form={form} layout="vertical" requiredMark="optional">
               <Form.Item
-                label="名称"
+                label={t("common.name")}
                 name="name"
                 rules={[
                   { required: true, message: t("form_input_placeholder") },

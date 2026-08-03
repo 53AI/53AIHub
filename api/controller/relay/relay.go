@@ -12,6 +12,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +27,9 @@ import (
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	agentexec "github.com/53AI/53AIHub/service/agent"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
+	Custom_openai "github.com/53AI/53AIHub/service/hub_adaptor/custom_openai"
 	Hub_openai "github.com/53AI/53AIHub/service/hub_adaptor/openai"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/53AI/53AIHub/service/skill"
@@ -46,6 +50,11 @@ import (
 	relay_meta "github.com/songquanpeng/one-api/relay/meta"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
 	"github.com/songquanpeng/one-api/relay/relaymode"
+)
+
+const (
+	relayAgentLoopStatsContextKey      = "relay_agent_loop_stats"
+	relayAnswerStatsRecordedContextKey = "relay_answer_stats_recorded"
 )
 
 func GetSessionAgent(c *gin.Context) (agent *model.Agent, err error) {
@@ -72,6 +81,40 @@ func GetSessionConversation(c *gin.Context) (conversation *model.Conversation, e
 	return conversation, nil
 }
 
+func markRelayAnswerStatsRecorded(c *gin.Context) bool {
+	if c == nil || c.GetBool(relayAnswerStatsRecordedContextKey) {
+		return false
+	}
+	c.Set(relayAnswerStatsRecordedContextKey, true)
+	return true
+}
+
+func recordRelayAnswerStatsOnce(c *gin.Context, agent *model.Agent, messageStatus *MessageStatsInfo) {
+	if c == nil || agent == nil || messageStatus == nil || !markRelayAnswerStatsRecorded(c) {
+		return
+	}
+
+	fieldName := "quick_answers"
+	fieldLabel := "快速回答"
+	if messageStatus.ThinkingMode == model.ThinkingModeDeep {
+		fieldName = "deep_thinking"
+		fieldLabel = "深度思考模型"
+	}
+
+	// 两个统计字段共用同一条日统计记录。串行更新可避免 total_questions
+	// 的异步事务与 quick/deep 事务互相抢锁，再由 IncrementField 对跨请求
+	// 的死锁/serialization failure 做有限重试。
+	ctx := c.Request.Context()
+	go func() {
+		if err := model.IncrementField(agent.Eid, agent.AgentID, "total_questions", 1); err != nil {
+			logger.Errorf(ctx, "增加AI回答总数统计失败: %s", err.Error())
+		}
+		if err := model.IncrementField(agent.Eid, agent.AgentID, fieldName, 1); err != nil {
+			logger.Errorf(ctx, "增加%s统计失败: %s", fieldLabel, err.Error())
+		}
+	}()
+}
+
 func resolveChatConversation(c *gin.Context, chatRequest *ChatRequest) (*model.Conversation, error) {
 	if conversation, err := GetSessionConversation(c); err == nil && conversation != nil {
 		return conversation, nil
@@ -89,6 +132,31 @@ func resolveChatConversation(c *gin.Context, chatRequest *ChatRequest) (*model.C
 		c.Set(session.SESSION_CONVERSATION, conversation)
 	}
 	return conversation, nil
+}
+
+// applyConversationDocumentScope 将创建会话时保存的单文档范围带入聊天请求。
+// 请求显式传入知识范围时，以请求为准；历史 file_id 不参与运行时推断。
+func applyConversationDocumentScope(chatRequest *ChatRequest, conversation *model.Conversation) {
+	if chatRequest == nil || conversation == nil || conversation.DocumentID <= 0 {
+		return
+	}
+	if len(chatRequest.FileIDs) > 0 || chatRequest.WikiSearchConfig != nil ||
+		len(chatRequest.KnowledgeBaseIDs) > 0 || len(chatRequest.SpaceIDs) > 0 {
+		return
+	}
+
+	switch conversation.DocumentType {
+	case model.DocumentTypeFile:
+		chatRequest.FileIDs = []string{hashInt64(conversation.DocumentID)}
+		chatRequest.SoloFileMode = true
+	case model.DocumentTypeWiki:
+		enabled := true
+		chatRequest.WikiSearchConfig = &WikiSearchConfig{
+			Enabled:     &enabled,
+			WikiPageIDs: []string{hashInt64(conversation.DocumentID)},
+		}
+		chatRequest.SoloFileMode = true
+	}
 }
 
 // extractUploadedFilesFromMessages 从消息中提取用户上传的文件
@@ -134,7 +202,7 @@ func extractUploadedFilesFromMessages(messages []relay_model.Message) []*model.U
 }
 
 // @Summary Relay
-// @Description AI聊天接口，支持知识库检索和步骤化输出。当enable_process_steps=true时，将返回处理步骤：kbs(知识库搜索), dcs(文档搜索), ang(回答生成)
+// @Description AI聊天接口，支持文件知识库与 Wiki 动态知识组合检索。solo_file_mode=true 且传入单个 file_ids 或 wiki_search_config.wiki_page_ids 时进入单文档模式；Wiki 只有在 Agent 开启能力且请求传入 wiki_search_config.enabled=true 时执行。当enable_process_steps=true时，将返回处理步骤：kbs(知识库搜索), dcs(文档搜索), ang(回答生成)
 // @Tags Relay
 // @Accept json
 // @Produce json
@@ -187,6 +255,46 @@ func pickAutoMatchSkill(matches []*skill.SkillMatchResult, minScore float64) *sk
 }
 
 const skillUnavailableMessage = "当前技能已停用，请重新选择技能"
+
+const runnableSkillPathSetContextKey = "agent_runnable_skill_path_set"
+
+type runnableSkillPathSetCache struct {
+	paths map[string]struct{}
+}
+
+func cacheRunnableSkillPathSet(c *gin.Context, pathSet map[string]struct{}) {
+	if c == nil {
+		return
+	}
+	c.Set(runnableSkillPathSetContextKey, runnableSkillPathSetCache{paths: pathSet})
+}
+
+func getCachedRunnableSkillPathSet(c *gin.Context) (map[string]struct{}, bool) {
+	if c == nil {
+		return nil, false
+	}
+	value, exists := c.Get(runnableSkillPathSetContextKey)
+	if !exists {
+		return nil, false
+	}
+	cached, ok := value.(runnableSkillPathSetCache)
+	if !ok {
+		return nil, false
+	}
+	return cached.paths, true
+}
+
+func runnableSkillPathsFromSet(pathSet map[string]struct{}) []string {
+	if pathSet == nil {
+		return nil
+	}
+	paths := make([]string, 0, len(pathSet))
+	for skillPath := range pathSet {
+		paths = append(paths, skillPath)
+	}
+	sort.Strings(paths)
+	return paths
+}
 
 func shouldApplySkillLibraryFilter(agent *model.Agent) bool {
 	return agent != nil && agent.AgentUsage == model.AgentUsageWorkAI
@@ -737,6 +845,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		handleOpenClawWSStatelessChat(c, body, agent, relayMode)
 		return
 	}
+	requestStartedAt := time.Now()
 
 	var chatRequest ChatRequest
 	if err := json.Unmarshal(body, &chatRequest); err != nil {
@@ -750,27 +859,64 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		storeRequestPassthroughFields(c, requestPassthroughFields)
 	}
 
-	requestCtx, _, requestID := prepareDetachedExecutionContext(c, helper.GetRequestID(c.Request.Context()))
-	runCtx, runCancel := startAgentRunCancelWatcher(c.Request.Context(), agent.Eid, requestID, time.Second)
+	requestCtx, execCtx, requestID := prepareDetachedExecutionContext(c, helper.GetRequestID(c.Request.Context()))
+	executionCtx := execCtx
+	if config.AGENT_MAX_WALL_CLOCK_SECONDS > 0 {
+		var executionDeadlineCancel context.CancelFunc
+		executionCtx, executionDeadlineCancel = context.WithDeadline(
+			execCtx,
+			requestStartedAt.Add(time.Duration(config.AGENT_MAX_WALL_CLOCK_SECONDS)*time.Second),
+		)
+		defer executionDeadlineCancel()
+	}
+	runCtx, runCancel := startAgentRunCancelWatcher(executionCtx, agent.Eid, requestID, time.Second)
 	defer runCancel()
 	if c != nil && c.Request != nil {
 		c.Request = c.Request.WithContext(runCtx)
 	}
 	ctx := c.Request.Context()
+	var runEventSink *service.AgentRunEventSink
+	var requestRunID string
+	var requestConversationID int64
 
 	if conversation, convErr := resolveChatConversation(c, &chatRequest); convErr == nil && conversation != nil {
+		applyConversationDocumentScope(&chatRequest, conversation)
 		runSvc := service.NewAgentRunService()
 		run, created, runErr := runSvc.EnsureRunForRequest(ctx, agent.Eid, conversation.ConversationID, 0, requestID)
 		if runErr != nil {
 			logger.Warnf(ctx, "创建 agent run 失败: conversation_id=%d request_id=%s err=%v", conversation.ConversationID, requestID, runErr)
-		} else if created {
-			if _, err := runSvc.AppendEvent(ctx, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventRunCreated, 0, map[string]interface{}{
-				"conversation_id": conversation.ConversationID,
-				"request_id":      requestID,
-			}); err != nil {
-				logger.Warnf(ctx, "追加 agent run created 事件失败: run_id=%s err=%v", run.RunID, err)
+		} else if run != nil {
+			requestRunID = run.RunID
+			requestConversationID = run.ConversationID
+			c.Set(session.SESSION_AGENT_RUN_ID, run.RunID)
+			runEventSink = installAgentRunEventSink(c, agent.Eid, requestID, run.RunID)
+			ctx = c.Request.Context()
+			if created {
+				if err := runEventSink.Enqueue(model.AgentRunEventRunCreated, 0, map[string]interface{}{
+					"conversation_id": conversation.ConversationID,
+					"request_id":      requestID,
+				}); err != nil {
+					logger.Warnf(ctx, "AgentRun created 事件入队失败: run_id=%s err=%v", run.RunID, err)
+				}
 			}
 		}
+	}
+	if requestRunID != "" {
+		// Request-level safety net: every handler return must leave the Run
+		// terminal. Normal paths finalize successfully before this defer runs;
+		// this only closes a Run left active by an unhandled branch or error.
+		defer func() {
+			finalizeCtx := context.Background()
+			if err := finalizeAgentRunOnRequestExit(finalizeCtx, agent.Eid, requestRunID); err != nil {
+				logger.Warnf(finalizeCtx, "【诊断-AgentRun】请求退出兜底收尾失败: eid=%d run_id=%s request_id=%s err=%v",
+					agent.Eid, requestRunID, requestID, err)
+			}
+		}()
+	}
+	if runEventSink != nil {
+		defer func() {
+			drainAgentRunEventSink(c.Request.Context(), runEventSink, requestID)
+		}()
 	}
 
 	// 设置 EnableProcessSteps 默认值为 true
@@ -784,6 +930,18 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	originalQuestion = getLastUserMessageText(chatRequest.Messages)
 
 	currentUserID := config.GetUserId(c)
+	maxTurns := effectiveAgentMaxTurns(config.AGENT_MAX_TURNS, config.AGENT_MAX_TURNS_HARD_LIMIT)
+	deadline := time.Time{}
+	if config.AGENT_MAX_WALL_CLOCK_SECONDS > 0 {
+		deadline = requestStartedAt.Add(time.Duration(config.AGENT_MAX_WALL_CLOCK_SECONDS) * time.Second)
+	}
+	requestExecutionContext := agentexec.NewExecutionContext(agentexec.Config{
+		RequestID: requestID, EID: agent.Eid, AgentID: agent.AgentID, UserID: currentUserID,
+		ConversationID: requestConversationID, RunID: requestRunID, Model: agent.Model,
+		MaxTurns: maxTurns, Deadline: deadline, StartedAt: requestStartedAt,
+	})
+	c.Set(agentExecutionContextGinKey, requestExecutionContext)
+	defer logAgentExecutionSummary(ctx, requestExecutionContext)
 	if currentUserID > 0 && originalQuestion != "" {
 		if item := extractMemoryFromUserMessage(originalQuestion); item != nil {
 			item.Time = time.Now().UnixMilli()
@@ -845,8 +1003,11 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		}
 		blockedRequestID = ensureRequestID(c, blockedRequestID)
 		scope := buildSkillRunScope(c.Request.Context(), agent, agent.Eid, ".", blockedRequestID)
+		runnableSkillPathSet = loadRunnableSkillPathSet(c.Request.Context(), agent, currentUserID)
+		cacheRunnableSkillPathSet(c, runnableSkillPathSet)
+		requestExecutionContext.UpdateRunnableSkillPaths(runnableSkillPathsFromSet(runnableSkillPathSet))
 		rawSkill := skill.GetManager().GetSkill(agent.Eid, skillName)
-		if rawSkill == nil {
+		if rawSkill == nil || !isSkillAllowedByPathSet(rawSkill, runnableSkillPathSet) {
 			logger.Infof(c.Request.Context(), "【技能运行】手动触发技能不存在: skill=%s, user_id=%d", skillName, currentUserID)
 			sendSkillUnavailableReply(c, &chatRequest, agent, relayMode, originalQuestion)
 			return
@@ -889,6 +1050,8 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	if chatRequest.Stream {
 		SetupStreamInterceptor(c)
 		SetUpStreamResponseHeaders(c)
+		defer installDeferredStreamDone(c)()
+		logger.Infof(ctx, "【诊断-流结束】标准聊天流初始化完成: request_id=%s compact=%v writer=%T", requestId, config.IsSSECompactMode(), c.Writer)
 	}
 	runScope := buildSkillRunScope(ctx, agent, agent.Eid, ".", requestId)
 
@@ -905,6 +1068,8 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			return ensureSkillSnapshot(callCtx, nil, agent.Eid, requestId, runScope)
 		},
 	)
+	cacheRunnableSkillPathSet(c, runnableSkillPathSet)
+	requestExecutionContext.UpdateRunnableSkillPaths(runnableSkillPathsFromSet(runnableSkillPathSet))
 	messageStatus.SkillSnapshot = skillSnapshot
 
 	// 流式请求在进入路由前提前创建 master message，确保 RAG/意图识别步骤可以立即输出首帧
@@ -941,7 +1106,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 
 	// 意图识别与路由 (Intent Classification & Routing)
 	// 如果是 Hub 模式或单文件模式，跳过意图识别，直接走简单 RAG
-	if chatRequest.DatasetIsSoloFile() || agent.AgentUsage == model.AgentUsageHub {
+	if chatRequest.DatasetIsSoloDocument() || agent.AgentUsage == model.AgentUsageHub {
 		// Skip intent classification
 		messageStatus.RouterResult = &RouterResult{
 			IntentClassificationResult: &rag.IntentClassificationResult{
@@ -976,13 +1141,19 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 
 		// 正确获取 Config 的方式：
 		// 我们可以使用 Default Config
-		config, err := chunkConfigService.GetConfig(agent.Eid, nil, model.ChunkTypeDefault)
+		config, err := chunkConfigService.GetEnterpriseEmbeddingConfig(agent.Eid)
 		if err != nil {
 			logger.Warnf(ctx, "Get chunk config failed: %v", err)
 			config, _ = chunkConfigService.GetSystemDefaultConfig(model.ChunkTypeDefault)
 		}
 
-		classificationResult, err := contentGenerator.GenerateFastIntentRoute(ctx, agent.Eid, config, intentReq, autoMatchSkills, agent)
+		// 一次结构化调用同时完成意图、上下文消解和复杂查询拆解，
+		// 避免 COMPLEX_AGENT 固定再串行请求一次 expansion LLM。
+		routingSpan := requestExecutionContext.BeginStage(agentexec.StageRouting, map[string]string{
+			"candidate_count": fmt.Sprintf("%d", len(autoMatchSkills)),
+		})
+		classificationResult, err := contentGenerator.GenerateIntentClassification(ctx, agent.Eid, config, intentReq, autoMatchSkills, agent)
+		routingErr := err
 
 		if err != nil {
 			logger.Warnf(ctx, "意图识别失败: %v", err)
@@ -1001,7 +1172,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			}
 			broadSkillCandidates := buildBroadIntentSkillCandidates(runnableSkills, runnableSkillPathSet)
 			if len(broadSkillCandidates) > 0 {
-				retryResult, retryErr := contentGenerator.GenerateFastIntentRoute(ctx, agent.Eid, config, intentReq, broadSkillCandidates, agent)
+				retryResult, retryErr := contentGenerator.GenerateIntentClassification(ctx, agent.Eid, config, intentReq, broadSkillCandidates, agent)
 				if retryErr != nil {
 					logger.Warnf(ctx, "技能意图二次匹配失败: %v", retryErr)
 				} else if retryResult != nil {
@@ -1016,28 +1187,20 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 				logger.Warnf(ctx, "技能意图需要二次匹配，但没有可用技能候选")
 			}
 		}
+		if routingErr != nil {
+			routingSpan.End(agentexec.StatusFailed, routingErr)
+		} else {
+			routingSpan.End(agentexec.StatusCompleted, nil)
+		}
 
 		messageStatus.StepSender.SendEndStep(STEP_INTENT_CLASSIFICATION, "意图识别完成", buildIntentClassificationStepData(classificationResult))
 
 		if classificationResult.Intent == "COMPLEX_AGENT" {
-			expansionQuery := strings.TrimSpace(classificationResult.NormalizedQuery)
-			if expansionQuery == "" {
-				expansionQuery = query
-			}
-			expansionReq := &rag.IntentClassificationRequest{
-				Query:        expansionQuery,
-				Conversation: intentConversation,
-			}
-
 			messageStatus.StepSender.SendStartStep(STEP_QUERY_EXPANSION, "正在拆解复杂问题...", nil)
-			expansionResult, expansionErr := contentGenerator.GenerateComplexQueryExpansion(ctx, agent.Eid, config, expansionReq, agent)
-			if expansionErr != nil {
-				logger.Warnf(ctx, "复杂问题拆解失败: %v", expansionErr)
-				messageStatus.StepSender.SendEndStep(STEP_QUERY_EXPANSION, "问题拆解失败，已按原问题检索", map[string]interface{}{
-					"error": true,
-				})
+			expansionResult := queryExpansionResultFromIntent(classificationResult)
+			if len(expansionResult.ExpandedQueries) == 0 {
+				messageStatus.StepSender.SendEndStep(STEP_QUERY_EXPANSION, "未生成拆分查询，已按原问题检索", nil)
 			} else {
-				mergeComplexQueryExpansionResult(classificationResult, expansionResult)
 				messageStatus.StepSender.SendEndStep(STEP_QUERY_EXPANSION, "问题拆解完成", buildQueryExpansionStepData(expansionResult))
 			}
 		}
@@ -1167,7 +1330,13 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	ragCompleted := false
 	if agent.AgentUsage != model.AgentUsageHub {
 		logger.Infof(ctx, "【网络搜索】智能体允许进入 RAG：agent_usage=%d，开始判定知识库与网络搜索分支", agent.AgentUsage)
+		retrievalSpan := requestExecutionContext.BeginStage(agentexec.StageRetrieval, nil)
 		sources, err = HandleRAG(c, &chatRequest, ctx, messageStatus)
+		if err != nil {
+			retrievalSpan.End(agentexec.StatusFailed, err)
+		} else {
+			retrievalSpan.End(agentexec.StatusCompleted, nil)
+		}
 		if err != nil {
 			if chatRequest.Stream {
 				writeStreamOpenAIError(c, 500, model.ParamError.ToOpenAIErrorRespone(err))
@@ -1181,21 +1350,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		logger.Infof(ctx, "【网络搜索】智能体类型为 Hub，已跳过 RAG 检索，因此不会进入网络搜索分支：agent_usage=%d", agent.AgentUsage)
 	}
 
-	// 3. 重排序 (Rerank)
-	if len(sources) > 0 && shouldRerank(agent, &chatRequest) {
-		query := messageStatus.RewrittenQuestion
-		if query == "" {
-			query = messageStatus.OriginalQuestion
-		}
-		newSources, err := rerankSources(ctx, agent, query, sources)
-		if err != nil {
-			logger.Warnf(ctx, "重排序失败: %v", err)
-		} else {
-			sources = newSources
-		}
-	}
-
-	// 4. 超纲回复 (OutOfRange Reply)
+	// 3. 超纲回复 (OutOfRange Reply)
 	outOfRangeConfig, _ := agent.GetOutOfRangeReplyConfig()
 	if outOfRangeConfig != nil && outOfRangeConfig.Enable && len(sources) == 0 {
 		if outOfRangeConfig.Mode == "continue" {
@@ -1565,28 +1720,27 @@ func resolveExecutionChannel(ctx context.Context, agent *model.Agent, requestMod
 // ... existing code ...
 
 // rerankSources 对 SourceReference 列表进行重排序
-func rerankSources(ctx context.Context, agent *model.Agent, query string, sources []rag.SourceReference) ([]rag.SourceReference, error) {
+func rerankSources(ctx context.Context, agent *model.Agent, chatRequest *ChatRequest, query string, sources []rag.SourceReference) ([]rag.SourceReference, error) {
+	finalTopK := 20
+	if chatRequest != nil && chatRequest.SearchConfig != nil && chatRequest.SearchConfig.TopK > 0 {
+		finalTopK = chatRequest.SearchConfig.TopK
+	}
 	rerankConfig, err := agent.GetRerankConfig()
 	if err != nil || rerankConfig == nil || !rerankConfig.RerankingEnable {
-		return sources, nil
+		return limitSourceReferencesTopK(sources, finalTopK), err
 	}
+	// 请求级 TopK 是本次检索的最终数量契约；其余模型、渠道和阈值仍沿用 Agent 配置。
+	effectiveRerankConfig := *rerankConfig
+	effectiveRerankConfig.TopK = finalTopK
 
 	graphSources, rerankableSources := splitGraphAggregateSources(sources)
 	if len(rerankableSources) == 0 {
 		return graphSources, nil
 	}
 
-	// 转换为 SearchResultItem
-	ragItems := make([]rag.SearchResultItem, len(rerankableSources))
-	for i, source := range rerankableSources {
-		ragItems[i] = rag.SearchResultItem{
-			ChunkID:   source.ChunkID,
-			FileID:    source.FileID,
-			LibraryID: source.KnowledgeBaseID,
-			Content:   source.Content,
-			Score:     source.Score,
-		}
-	}
+	// 转换为 SearchResultItem。Web 来源可能没有 ChunkID，或和其他来源冲突，
+	// 因此为本次重排分配唯一的内部候选 ID，映射回响应时恢复原始来源字段。
+	ragItems, sourceMap := buildFinalRerankItems(rerankableSources)
 
 	// 执行重排
 	rerankService := rag.NewRerankService(model.DB)
@@ -1595,28 +1749,69 @@ func rerankSources(ctx context.Context, agent *model.Agent, query string, source
 		agent.Eid,
 		query,
 		ragItems,
-		rerankConfig,
+		&effectiveRerankConfig,
 	)
 	if err != nil {
-		return append(graphSources, rerankableSources...), err
+		return limitSourceReferencesTopK(append(graphSources, rerankableSources...), finalTopK), err
 	}
 
-	// 映射回 SourceReference
-	// 注意：这里假设 ChunkID 是唯一的。如果是 Web 搜索结果，可能需要更健壮的映射方式
-	sourceMap := make(map[int64]rag.SourceReference)
-	for _, s := range rerankableSources {
-		sourceMap[s.ChunkID] = s
-	}
-
-	var newSources []rag.SourceReference
-	for _, item := range rerankedItems {
-		if original, ok := sourceMap[item.ChunkID]; ok {
-			original.Score = item.Score
-			newSources = append(newSources, original)
-		}
-	}
+	newSources := restoreFinalRerankSources(rerankedItems, sourceMap)
 
 	return append(graphSources, newSources...), nil
+}
+
+func buildFinalRerankItems(sources []rag.SourceReference) ([]rag.SearchResultItem, map[int64]rag.SourceReference) {
+	items := make([]rag.SearchResultItem, 0, len(sources))
+	originals := make(map[int64]rag.SourceReference, len(sources))
+	usedIDs := make(map[int64]struct{}, len(sources))
+	nextSyntheticID := int64(-1)
+	for _, source := range sources {
+		candidateID := source.ChunkID
+		if _, exists := usedIDs[candidateID]; candidateID <= 0 || exists {
+			for {
+				if _, exists := usedIDs[nextSyntheticID]; !exists {
+					candidateID = nextSyntheticID
+					nextSyntheticID--
+					break
+				}
+				nextSyntheticID--
+			}
+		}
+		usedIDs[candidateID] = struct{}{}
+		originals[candidateID] = source
+		items = append(items, rag.SearchResultItem{
+			ChunkID:   candidateID,
+			FileID:    source.FileID,
+			LibraryID: source.KnowledgeBaseID,
+			Content:   source.Content,
+			Score:     source.Score,
+		})
+	}
+	return items, originals
+}
+
+func restoreFinalRerankSources(items []rag.SearchResultItem, originals map[int64]rag.SourceReference) []rag.SourceReference {
+	restored := make([]rag.SourceReference, 0, len(items))
+	for _, item := range items {
+		original, ok := originals[item.ChunkID]
+		if !ok {
+			continue
+		}
+		original.Score = item.Score
+		restored = append(restored, original)
+	}
+	return restored
+}
+
+func limitSourceReferencesTopK(sources []rag.SourceReference, topK int) []rag.SourceReference {
+	if topK <= 0 {
+		return sources
+	}
+	graphSources, rerankableSources := splitGraphAggregateSources(sources)
+	if len(rerankableSources) > topK {
+		rerankableSources = rerankableSources[:topK]
+	}
+	return append(graphSources, rerankableSources...)
 }
 
 func splitGraphAggregateSources(sources []rag.SourceReference) ([]rag.SourceReference, []rag.SourceReference) {
@@ -1627,7 +1822,7 @@ func splitGraphAggregateSources(sources []rag.SourceReference) ([]rag.SourceRefe
 	graphSources := make([]rag.SourceReference, 0, 1)
 	rerankableSources := make([]rag.SourceReference, 0, len(sources))
 	for _, source := range sources {
-		if shouldPreserveSourceContent(source) {
+		if source.SourceType == "wiki" || shouldPreserveSourceContent(source) {
 			graphSources = append(graphSources, source)
 			continue
 		}
@@ -1669,7 +1864,7 @@ func processChatRequestV2(c *gin.Context, chatRequest *ChatRequest, ctx context.
 		return
 	}
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(modifiedBody))
-	logger.Debugf(ctx, "修改后的请求体: %s", string(modifiedBody))
+	logger.Debugf(ctx, "修改后的请求摘要: %s", logger.SummarizeRequestBody(modifiedBody))
 
 	// bizErr := relayHelper(c, relayMode)
 	// if bizErr == nil {
@@ -1699,10 +1894,24 @@ func processChatRequestV2(c *gin.Context, chatRequest *ChatRequest, ctx context.
 		lastFailedChannelId = channelId
 		requestBody, err := common.GetRequestBody(c)
 		c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+		executionContext := agentExecutionContextFromGin(c)
+		if executionContext != nil {
+			executionContext.UpdateRuntimeIdentity(0, messageStatus.MessageID, "", requestModel, channelId)
+		}
+		llmSpan := executionContext.BeginStage(agentexec.StageLLM, map[string]string{
+			"model":   requestModel,
+			"channel": strconv.FormatInt(channelId, 10),
+			"attempt": strconv.Itoa(int(retryTimes - i + 1)),
+		})
 		bizErr := relayHelper(c, relayMode, messageStatus)
 		if bizErr == nil {
+			llmSpan.End(agentexec.StatusCompleted, nil)
+			if executionContext != nil {
+				executionContext.UpdateMessageID(messageStatus.MessageID)
+			}
 			return
 		}
+		llmSpan.End(agentexec.StatusFailed, errors.New(bizErr.Message))
 		channelName := c.GetString(ctxkey.ChannelName)
 		go processChannelRelayError(ctx, int(config.GetUserId(c)), int(channelId), channelName, *bizErr)
 		// return error message
@@ -1870,6 +2079,12 @@ func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Age
 
 	originalQuestion := getLastUserMessageText(textRequest.Messages)
 
+	if userID := config.GetUserId(c); userID > 0 && originalQuestion != "" {
+		if err := model.AddOrUpdateUserAgentShortcut(agent.Eid, userID, agent.AgentID, originalQuestion); err != nil {
+			logger.Warnf(ctx, "[openclaw-ws] update shortcut (user message) failed: eid=%d user_id=%d agent_id=%d err=%v", agent.Eid, userID, agent.AgentID, err)
+		}
+	}
+
 	openClawMsg := createOpenClawWSMessage(c, agent, body, meta, originalQuestion)
 
 	var projConv *model.Conversation
@@ -1913,6 +2128,15 @@ func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Age
 		projConv.LastMessage = openClawMsg.Answer
 		if err := model.UpdateConversation(projConv); err != nil {
 			logger.Warnf(ctx, "[openclaw-ws] update conversation last_message failed: conv_id=%d err=%v", projConv.ConversationID, err)
+		}
+	}
+
+	if userID := config.GetUserId(c); userID > 0 {
+		responseContent, _ := GetResponseContent(c, false, nil)
+		if responseContent != "" {
+			if err := model.AddOrUpdateUserAgentShortcut(agent.Eid, userID, agent.AgentID, responseContent); err != nil {
+				logger.Warnf(ctx, "[openclaw-ws] update shortcut (agent reply) failed: eid=%d user_id=%d agent_id=%d err=%v", agent.Eid, userID, agent.AgentID, err)
+			}
 		}
 	}
 
@@ -2128,6 +2352,14 @@ func CreateInitialMessage(c *gin.Context, agent *model.Agent, user_id int64, con
 		logger.Errorf(ctx, "marshal messages failed: %s", err.Error())
 		messageJSON = []byte("[]")
 	}
+	documentType := messageStatus.DocumentType
+	if documentType == "" {
+		if messageStatus.MessageFileID > 0 || messageStatus.SaveFileID > 0 {
+			documentType = model.DocumentTypeFile
+		} else {
+			documentType = model.DocumentTypeNone
+		}
+	}
 
 	msg := &model.Message{
 		Eid:              agent.Eid,
@@ -2156,12 +2388,25 @@ func CreateInitialMessage(c *gin.Context, agent *model.Agent, user_id int64, con
 		RewrittenQuestion: messageStatus.RewrittenQuestion,
 		RequestSource:     messageStatus.RequestSource,
 		FileID: func() int64 {
+			if documentType != model.DocumentTypeFile {
+				return 0
+			}
 			// 优先级：message_file_id > SaveFileID
 			if messageStatus.MessageFileID > 0 {
 				return messageStatus.MessageFileID
 			}
 			return messageStatus.SaveFileID
-		}(), // 设置文件ID（优先使用message_file_id）
+		}(), // 兼容保留：仅普通 File 文档写入
+		DocumentType: documentType,
+		DocumentID: func() int64 {
+			if messageStatus.DocumentID > 0 {
+				return messageStatus.DocumentID
+			}
+			if messageStatus.MessageFileID > 0 {
+				return messageStatus.MessageFileID
+			}
+			return messageStatus.SaveFileID
+		}(),
 	}
 	applyVisitorIdentityToMessage(c, msg)
 	if err := model.CreateMessage(msg); err != nil {
@@ -2197,7 +2442,7 @@ func syncAgentRunForMessage(ctx context.Context, agent *model.Agent, conversatio
 	}
 
 	if created {
-		if _, err := runSvc.AppendEvent(ctx, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventRunCreated, messageID, map[string]interface{}{
+		if err := appendAgentRunEventOrdered(ctx, runSvc, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventRunCreated, messageID, map[string]interface{}{
 			"conversation_id": conversationID,
 			"message_id":      messageID,
 			"request_id":      requestID,
@@ -2214,7 +2459,7 @@ func syncAgentRunForMessage(ctx context.Context, agent *model.Agent, conversatio
 		logger.Warnf(ctx, "mark agent run running failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
 		return
 	}
-	if _, err := runSvc.AppendEvent(ctx, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventStatusChanged, messageID, map[string]interface{}{
+	if err := appendAgentRunEventOrdered(ctx, runSvc, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventStatusChanged, messageID, map[string]interface{}{
 		"status":       model.AgentRunStatusRunning,
 		"current_step": currentStep,
 	}); err != nil {
@@ -2222,10 +2467,27 @@ func syncAgentRunForMessage(ctx context.Context, agent *model.Agent, conversatio
 	}
 }
 
+func appendAgentRunEventOrdered(ctx context.Context, runSvc *service.AgentRunService, eid int64, runID, requestID, eventType string, messageID int64, payload map[string]interface{}) error {
+	if sink := agentRunEventSinkFromContext(ctx); sink != nil {
+		return sink.Enqueue(eventType, messageID, payload)
+	}
+	_, err := runSvc.AppendEvent(ctx, eid, runID, requestID, eventType, messageID, payload)
+	return err
+}
+
 func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, conversationID int64, messageID int64, requestID string, status string, errorCode string, errorMessage string) {
 	if agent == nil || conversationID <= 0 || messageID <= 0 || strings.TrimSpace(requestID) == "" {
+		logger.Warnf(ctx, "【诊断-AgentRun】终态持久化参数无效: agent_nil=%v eid=%d conversation_id=%d message_id=%d request_id_empty=%v status=%s",
+			agent == nil, func() int64 {
+				if agent == nil {
+					return 0
+				}
+				return agent.Eid
+			}(), conversationID, messageID, strings.TrimSpace(requestID) == "", status)
 		return
 	}
+	logger.Infof(ctx, "【诊断-AgentRun】开始终态持久化: eid=%d conversation_id=%d message_id=%d request_id=%s status=%s",
+		agent.Eid, conversationID, messageID, requestID, status)
 
 	runSvc := service.NewAgentRunService()
 	run, created, err := runSvc.EnsureRunForRequest(ctx, agent.Eid, conversationID, messageID, requestID)
@@ -2234,9 +2496,11 @@ func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, convers
 			agent.Eid, conversationID, messageID, requestID, err)
 		return
 	}
+	logger.Infof(ctx, "【诊断-AgentRun】已解析待收尾Run: eid=%d run_id=%s run_status=%s created=%v last_event_id=%d request_id=%s",
+		run.Eid, run.RunID, run.Status, created, run.LastEventID, requestID)
 
 	if created {
-		if _, err := runSvc.AppendEvent(ctx, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventRunCreated, messageID, map[string]interface{}{
+		if err := appendAgentRunEventOrdered(ctx, runSvc, agent.Eid, run.RunID, run.RequestID, model.AgentRunEventRunCreated, messageID, map[string]interface{}{
 			"conversation_id": conversationID,
 			"message_id":      messageID,
 			"request_id":      requestID,
@@ -2245,20 +2509,87 @@ func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, convers
 		}
 	}
 
+	// message.delta/process.step/message.completed 必须先按队列顺序落库，
+	// 再由 finalizeRun 在同一 run 上追加终态事件。
+	if sink := agentRunEventSinkFromContext(ctx); sink != nil {
+		logger.Infof(ctx, "【诊断-AgentRun】开始排空事件队列: run_id=%s request_id=%s", run.RunID, requestID)
+		drainAgentRunEventSink(ctx, sink, requestID)
+		logger.Infof(ctx, "【诊断-AgentRun】完成排空事件队列: run_id=%s request_id=%s", run.RunID, requestID)
+	}
+
 	switch status {
 	case model.AgentRunStatusCompleted:
 		if _, err := runSvc.FinalizeCompletedRun(ctx, agent.Eid, run.RunID, errorCode, errorMessage); err != nil {
 			logger.Warnf(ctx, "finalize agent run completed failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
+		} else {
+			logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
 		}
 	case model.AgentRunStatusFailed:
 		if _, err := runSvc.FinalizeFailedRun(ctx, agent.Eid, run.RunID, errorCode, errorMessage); err != nil {
 			logger.Warnf(ctx, "finalize agent run failed failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
+		} else {
+			logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
 		}
 	case model.AgentRunStatusCancelled:
 		if _, err := runSvc.FinalizeCancelledRun(ctx, agent.Eid, run.RunID, errorCode, errorMessage); err != nil {
 			logger.Warnf(ctx, "finalize agent run cancelled failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
+		} else {
+			logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
 		}
+	default:
+		logger.Warnf(ctx, "【诊断-AgentRun】未知终态: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
 	}
+}
+
+func finalizeAgentRunOnRequestExit(ctx context.Context, eid int64, runID string) error {
+	if eid <= 0 || strings.TrimSpace(runID) == "" {
+		return fmt.Errorf("invalid request exit finalization identity: eid=%d run_id=%s", eid, runID)
+	}
+
+	runSvc := service.NewAgentRunService()
+	run, err := runSvc.GetRunByRunID(ctx, eid, runID)
+	if err != nil {
+		return err
+	}
+	if run == nil || isAgentRunTerminalStatusForRelay(run.Status) {
+		return nil
+	}
+
+	logger.Warnf(ctx, "【诊断-AgentRun】请求退出时发现Run仍未终态: eid=%d run_id=%s status=%s last_event_id=%d",
+		eid, run.RunID, run.Status, run.LastEventID)
+	finalizeStatus := model.AgentRunStatusFailed
+	if run.Status == model.AgentRunStatusCancelling {
+		finalizeStatus = model.AgentRunStatusCancelled
+	}
+	finalizeMessage := "request handler exited before AgentRun reached a terminal status"
+	var finalizeErr error
+	if finalizeStatus == model.AgentRunStatusCancelled {
+		_, finalizeErr = runSvc.FinalizeCancelledRun(ctx, eid, run.RunID, "request_exit_without_terminal_status", finalizeMessage)
+	} else {
+		_, finalizeErr = runSvc.FinalizeFailedRun(ctx, eid, run.RunID, "request_exit_without_terminal_status", finalizeMessage)
+	}
+	if finalizeErr != nil {
+		err := finalizeErr
+		return err
+	}
+	logger.Infof(ctx, "【诊断-AgentRun】请求退出兜底收尾完成: eid=%d run_id=%s status=%s", eid, run.RunID, finalizeStatus)
+	return nil
+}
+
+func isAgentRunTerminalStatusForRelay(status string) bool {
+	switch status {
+	case model.AgentRunStatusCompleted, model.AgentRunStatusFailed, model.AgentRunStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+var finalizeAgentRunForMessagePersist = finalizeAgentRunForMessage
+
+func finalizeAgentRunForMessageAsync(ctx context.Context, agent *model.Agent, conversationID int64, messageID int64, requestID string, status string, errorCode string, errorMessage string) {
+	logger.Infof(ctx, "【诊断-AgentRun】异步提交 Run 收尾: request_id=%s message_id=%d status=%s", requestID, messageID, status)
+	go finalizeAgentRunForMessagePersist(ctx, agent, conversationID, messageID, requestID, status, errorCode, errorMessage)
 }
 
 // sendSaveMessageEvent 按OpenAI兼容格式发送首帧，包含 save_message.id 的 HashID
@@ -2364,6 +2695,10 @@ func getRequestBody(c *gin.Context, meta *meta.Meta, textRequest *relay_model.Ge
 		return nil, err
 	}
 
+	if _, isMap := convertedRequest.(map[string]interface{}); isMap {
+		logger.Debugf(c.Request.Context(), "【思考策略】ConvertRequest 返回 map，可能已应用思考策略 api_type=%d model=%s", meta.APIType, textRequest.Model)
+	}
+
 	convertedRequest, err = applyRelayRequestPassthrough(c, convertedRequest)
 	if err != nil {
 		logger.Debugf(c.Request.Context(), "apply relay passthrough failed: %s\n", err.Error())
@@ -2379,7 +2714,7 @@ func getRequestBody(c *gin.Context, meta *meta.Meta, textRequest *relay_model.Ge
 		logger.Debugf(c.Request.Context(), "converted request json_marshal_failed: %s\n", err.Error())
 		return nil, err
 	}
-	logger.SysDebug(string(jsonData))
+	logger.Debugf(c.Request.Context(), "LLM converted request summary: %s", logger.SummarizeRequestBody(jsonData))
 	requestBody = bytes.NewBuffer(jsonData)
 	return requestBody, nil
 }
@@ -2399,14 +2734,12 @@ func getReaderSize(reader io.Reader) int {
 	}
 }
 
-func ensureRelayHTTPTimeout(ctx context.Context) time.Duration {
-	const fallbackTimeout = 120 * time.Second
+func relayHTTPClientTimeout(ctx context.Context) time.Duration {
 	if oneapi_client.HTTPClient == nil {
 		return 0
 	}
 	if oneapi_client.HTTPClient.Timeout == 0 {
-		oneapi_client.HTTPClient.Timeout = fallbackTimeout
-		logger.Warnf(ctx, "【技能运行】检测到Relay HTTP客户端未设置超时，已应用兜底超时: timeout=%s", fallbackTimeout)
+		logger.Debugf(ctx, "【技能运行】Relay HTTP客户端未设置整体超时，使用请求上下文截止时间")
 	}
 	return oneapi_client.HTTPClient.Timeout
 }
@@ -2508,22 +2841,6 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		enrichedPrompt = memSvc.BuildMemoryEnrichedPrompt(ctx, agent.Eid, agent.AgentID, user_id, agent.Prompt, userQuery, toolNames)
 		if enrichedPrompt != agent.Prompt {
 			logger.Infof(ctx, "【记忆注入】已注入记忆到 System Prompt: eid=%d, agent_id=%d, user_id=%d", agent.Eid, agent.AgentID, user_id)
-			// 记录各记忆模块的具体内容
-			userMem := memSvc.FormatUserMemoryForPrompt(ctx, agent.Eid, user_id)
-			agentMem := memSvc.FormatAgentMemoryForPrompt(agent.Eid, agent.AgentID, user_id, userQuery)
-			toolLessons := memSvc.FormatToolLessonsForPrompt(agent.Eid, agent.AgentID, user_id, toolNames)
-			if userMem != "" {
-				logger.Infof(ctx, "【记忆注入】用户全局记忆内容: eid=%d, user_id=%d, 长度=%d, 内容:\n%s",
-					agent.Eid, user_id, len(userMem), truncateForLog(userMem, 500))
-			}
-			if agentMem != "" {
-				logger.Infof(ctx, "【记忆注入】Agent记忆内容: eid=%d, agent_id=%d, user_id=%d, 长度=%d, 内容:\n%s",
-					agent.Eid, agent.AgentID, user_id, len(agentMem), truncateForLog(agentMem, 500))
-			}
-			if toolLessons != "" {
-				logger.Infof(ctx, "【记忆注入】工具教训内容: eid=%d, agent_id=%d, user_id=%d, 长度=%d, 内容:\n%s",
-					agent.Eid, agent.AgentID, user_id, len(toolLessons), truncateForLog(toolLessons, 500))
-			}
 		}
 		systemPromptReset = addAgentPrompt(ctx, textRequest, enrichedPrompt, agent.ChannelType)
 		if enrichedPrompt != "" {
@@ -2602,6 +2919,9 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 			if adapt, ok := adaptor.(*Hub_openai.Adaptor); ok {
 				adapt.ChannelConfig = channel.Config
 			}
+			if adapt, ok := adaptor.(*Custom_openai.Adaptor); ok {
+				adapt.ChannelConfig = channel.Config
+			}
 		}
 	}
 
@@ -2610,6 +2930,18 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		ConversationId:             conversation.ChannelConversationID,
 		ConversationExpirationTime: conversation.ChannelConversationExpirationTime,
 		AIHubConversationId:        conversation.ConversationID,
+	}
+
+	if agent.GetDisableThinkingConfig() {
+		if messageStatus.ThinkingMode == model.ThinkingModeQuick {
+			disableVal := true
+			customConfig.DisableThinking = &disableVal
+			logger.Debugf(ctx, "【思考策略】Agent设置关闭思考 eid=%d agent_id=%d thinking_mode=quick", agent.Eid, agent.AgentID)
+		} else {
+			logger.Debugf(ctx, "【思考策略】Agent设置关闭思考但非快速回答模式 eid=%d agent_id=%d thinking_mode=%d", agent.Eid, agent.AgentID, messageStatus.ThinkingMode)
+		}
+	} else {
+		logger.Debugf(ctx, "【思考策略】Agent未设置关闭思考 eid=%d agent_id=%d", agent.Eid, agent.AgentID)
 	}
 
 	err = service.SetCustomConfig(&adaptor, customConfig)
@@ -2666,15 +2998,19 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		return openai.ErrorWrapper(err, "convert_request_failed", http.StatusInternalServerError)
 	}
 	requestBodySize := getReaderSize(requestBody)
-	httpTimeout := ensureRelayHTTPTimeout(ctx)
+	httpClientTimeout := relayHTTPClientTimeout(ctx)
+	executionDeadlineRemaining := time.Duration(0)
+	if deadline, hasDeadline := ctx.Deadline(); hasDeadline {
+		executionDeadlineRemaining = time.Until(deadline)
+	}
 	turnValue, _ := c.Get("agent_loop_turn")
 	turnCount, _ := turnValue.(int)
 	skillValue, _ := c.Get("agent_loop_skill_name")
 	skillName, _ := skillValue.(string)
 
 	// 执行请求
-	logger.Debugf(ctx, "【技能运行】开始LLM请求: turn=%d, skill=%s, model=%s, stream=%v, api_type=%d, channel_type=%d, request_bytes=%d, http_timeout=%s",
-		turnCount, skillName, meta.ActualModelName, meta.IsStream, meta.APIType, meta.ChannelType, requestBodySize, httpTimeout)
+	logger.Debugf(ctx, "【技能运行】开始LLM请求: turn=%d, skill=%s, model=%s, stream=%v, api_type=%d, channel_type=%d, request_bytes=%d, shared_http_timeout=%s, execution_deadline_remaining=%s",
+		turnCount, skillName, meta.ActualModelName, meta.IsStream, meta.APIType, meta.ChannelType, requestBodySize, httpClientTimeout, executionDeadlineRemaining)
 	doRequestStart := time.Now()
 	resp, err := adaptor.DoRequest(c, meta, requestBody)
 	if err != nil {
@@ -2714,8 +3050,8 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 
 		errBodyBytes, _ := io.ReadAll(resp.Body)
 		resp.Body = io.NopCloser(bytes.NewBuffer(errBodyBytes))
-		logger.Errorf(ctx, "【技能运行】LLM错误响应体: turn=%d, skill=%s, model=%s, status=%d, body=%s",
-			turnCount, skillName, meta.ActualModelName, resp.StatusCode, string(errBodyBytes))
+		logger.Errorf(ctx, "【技能运行】LLM错误响应摘要: turn=%d, skill=%s, model=%s, status=%d, response_bytes=%d",
+			turnCount, skillName, meta.ActualModelName, resp.StatusCode, len(errBodyBytes))
 		failUpdateMessage(c, agent, messageID, startTime, meta, textRequest.Model, requestId, string(errBodyBytes))
 		return controller.RelayErrorHandler(resp)
 	}
@@ -2732,6 +3068,9 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 	logger.Debugf(ctx, "【技能运行】开始处理LLM响应体: turn=%d, skill=%s, model=%s, stream=%v, status=%d",
 		turnCount, skillName, meta.ActualModelName, meta.IsStream, resp.StatusCode)
 	usage, respErr := adaptor.DoResponse(c, resp, meta)
+	if usage != nil {
+		c.Set(agentLLMUsageContextKey, *usage)
+	}
 	doResponseDuration := time.Since(doResponseStart).Milliseconds()
 	logger.Debugf(ctx, "【技能运行】完成处理LLM响应体: turn=%d, skill=%s, model=%s, stream=%v, duration_ms=%d",
 		turnCount, skillName, meta.ActualModelName, meta.IsStream, doResponseDuration)
@@ -2746,25 +3085,15 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		resp.Body = io.NopCloser(bytes.NewBuffer(responseBody))
 	}
 
-	// 统计相关（ThinkingMode 已在 processChatRequestV2 中根据 agent.settings 确定）
-	go func() {
-		if err := model.IncrementField(agent.Eid, agent.AgentID, "total_questions", 1); err != nil {
-			logger.Errorf(ctx, "增加AI回答总数统计失败: %s", err.Error())
-		}
-	}()
-
-	if messageStatus.ThinkingMode == model.ThinkingModeDeep {
-		if err := model.IncrementField(agent.Eid, agent.AgentID, "deep_thinking", 1); err != nil {
-			logger.Errorf(ctx, "增加深度思考模型统计失败: %s", err.Error())
-		}
-	} else {
-		if err := model.IncrementField(agent.Eid, agent.AgentID, "quick_answers", 1); err != nil {
-			logger.Errorf(ctx, "增加快速回答统计失败: %s", err.Error())
-		}
+	// Agent 循环会在一次用户请求内多次调用本函数，统计只在首个成功的
+	// LLM 回合记录一次，避免 total_questions/quick_answers 被按内部轮次放大。
+	if !c.GetBool(relayAgentLoopStatsContextKey) {
+		recordRelayAnswerStatsOnce(c, agent, messageStatus)
 	}
 
 	responseContent, reasoningContent := GetResponseContent(c, meta.IsStream, resp)
-	logger.SysDebug(responseContent)
+	logger.Debugf(ctx, "【LLM收集响应】stage=relay_collected, request_id=%s, turn=%d, model=%s, stream=%v, content_chars=%d, content=%q",
+		requestId, turnCount, meta.ActualModelName, meta.IsStream, len(responseContent), responseContent)
 
 	if emitAnswerGenerationStep {
 		messageStatus.StepSender.SendEndStep(STEP_ANSWER_GENERATION, "回答生成完成", nil)
@@ -2774,6 +3103,7 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 	if originalChatRequest.EnableProcessSteps && textRequest.Stream {
 		sendReferenceAnalysisStep(c, ctx, messageStatus, responseContent)
 	}
+	markDeferredStreamDone(c)
 
 	customConfig = service.GetCustomConfig(&adaptor)
 
@@ -2981,6 +3311,15 @@ func postConsumeQuota(c *gin.Context, agent *model.Agent, user_id int64, startTi
 		message.ThinkingMode = messageStatus.ThinkingMode
 		message.KnowledgeScope = messageStatus.KnowledgeScope
 		message.KnowledgeType = messageStatus.KnowledgeType
+		message.DocumentType = messageStatus.DocumentType
+		message.DocumentID = messageStatus.DocumentID
+		if message.DocumentType == model.DocumentTypeWiki && message.DocumentID == 0 {
+			if rawSources, ok := c.Get("rag_sources"); ok {
+				if sources, ok := rawSources.([]rag.SourceReference); ok {
+					message.DocumentID = firstWikiPageID(sources)
+				}
+			}
+		}
 		message.OriginalQuestion = messageStatus.OriginalQuestion
 		message.RewrittenQuestion = messageStatus.RewrittenQuestion
 

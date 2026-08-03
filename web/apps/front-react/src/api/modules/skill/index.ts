@@ -195,7 +195,7 @@ export const skillApi = {
     return service
       .post(`/api/agent/${agentId}/skills`, { skill_library_id: skillLibraryId })
       .then(() => undefined)
-      .catch(handleError)
+      .catch()
   },
 
   /**

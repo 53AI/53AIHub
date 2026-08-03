@@ -10,11 +10,12 @@ import (
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	"github.com/53AI/53AIHub/service/docconv"
 	"github.com/gin-gonic/gin"
 )
 
 type PlatformSettingRequest struct {
-	PlatformKey string `json:"platform_key" example:"tingwu"` // 当PlatformKey为tingwu时，setting中需要包含app_key、access_key_id、access_key_secret、endpoint
+	PlatformKey string `json:"platform_key" example:"tingwu"`                                                                                                                                             // 当PlatformKey为tingwu时，setting中需要包含app_key、access_key_id、access_key_secret、endpoint
 	Setting     string `json:"setting" example:"{\"app_key\":\"your_app_key\",\"access_key_id\":\"your_access_key_id\",\"access_key_secret\":\"your_access_key_secret\",\"endpoint\":\"your_endpoint\"}"` // 当PlatformKey为tingwu时，必须包含app_key、access_key_id、access_key_secret、endpoint字段
 	ExternalID  string `json:"external_id" example:"wps_external_id"`
 	Status      string `json:"status" example:"enabled"` // 添加status字段
@@ -28,8 +29,8 @@ type WPSIntegrationStatusResponse struct {
 }
 
 type PlatformSettingDefaultMetaResponse struct {
-	PlatformKey        string `json:"platform_key" example:"textin"`           // 平台键
-	DisplayName        string `json:"display_name" example:"TextIn"`           // 默认展示名称
+	PlatformKey        string `json:"platform_key" example:"textin"`        // 平台键
+	DisplayName        string `json:"display_name" example:"TextIn"`        // 默认展示名称
 	DisplayDescription string `json:"display_description" example:"默认展示描述"` // 默认展示描述
 }
 
@@ -77,15 +78,39 @@ func CreatePlatformSetting(c *gin.Context) {
 		return
 	}
 
+	eid := config.GetEID(c)
+
+	existing, err := model.GetPlatformSettingByEidAndPlatformKey(eid, req.PlatformKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	if existing != nil {
+		existing.Setting = req.Setting
+		existing.ExternalID = req.ExternalID
+		existing.Status = req.Status
+		if existing.Status == "" {
+			existing.Status = model.PLATFORM_STATUS_ENABLED
+		}
+
+		if err := model.UpdatePlatformSetting(existing); err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+
+		c.JSON(http.StatusOK, model.Success.ToResponse(existing))
+		return
+	}
+
 	platformSetting := model.PlatformSetting{
-		Eid:         config.GetEID(c),
+		Eid:         eid,
 		Setting:     req.Setting,
 		PlatformKey: req.PlatformKey,
 		ExternalID:  req.ExternalID,
-		Status:      req.Status, // 添加status字段
+		Status:      req.Status,
 	}
 
-	// 如果请求中没有指定状态，则默认为启用
 	if platformSetting.Status == "" {
 		platformSetting.Status = model.PLATFORM_STATUS_ENABLED
 	}
@@ -407,4 +432,33 @@ func TogglePlatformSettingStatus(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(platformSetting))
+}
+
+// @Summary 获取企业解析器健康状态
+// @Description 获取当前企业所有已启用文档解析器的健康状态。使用短时缓存降低重复探测，结果不含原始配置或凭证。
+// @Tags 能力平台设置
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param force query bool false "强制刷新，跳过缓存"
+// @Success 200 {object} model.CommonResponse{data=[]docconv.EnterpriseParserHealthItem} "返回各解析器健康状态"
+// @Failure 500 {object} model.CommonResponse "服务器错误"
+// @Router /api/platform-settings/health [get]
+func GetPlatformSettingsHealth(c *gin.Context) {
+	eid := config.GetEID(c)
+	client := docconv.NewClient()
+	healthSvc := docconv.NewHealthService(client)
+
+	force := c.DefaultQuery("force", "") == "true"
+	results, err := healthSvc.GetEnterpriseParserHealth(c.Request.Context(), eid, force)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	if results == nil {
+		results = []*docconv.EnterpriseParserHealthItem{}
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(results))
 }

@@ -21,7 +21,7 @@ type ShareRecord struct {
 	Eid            int64  `json:"eid" gorm:"column:eid;not null;index:uniq_eid_shareid,unique;index:uniq_eid_convid_hash,unique"`
 	ConversationID int64  `json:"conversation_id" gorm:"column:conversation_id;not null;index:uniq_eid_convid_hash,unique"`
 	// message_ids 形如 "12,34,57"：对 message_ids 去重+升序后拼接，用于可读性与解析
-	MessageIDs     string `json:"message_ids" gorm:"column:message_ids;type:varchar(2048);not null"`
+	MessageIDs string `json:"message_ids" gorm:"column:message_ids;type:varchar(2048);not null"`
 	// normalized_hash: 对规范化后的 message_ids 进行哈希（sha256 hex），用于唯一去重
 	NormalizedHash string `json:"normalized_hash" gorm:"column:normalized_hash;size:64;not null;index:uniq_eid_convid_hash,unique"`
 	BaseModel
@@ -142,13 +142,15 @@ func GetShareRecordByShareID(shareID string) (*ShareRecord, error) {
 	return &rec, nil
 }
 
- // GetMessagesByIDsOrderedAsc 按ID批量加载并基于 CreatedTime 升序排序
- func ListMessageIDsByConversation(eid, conversationID int64) ([]int64, error) {
+// GetMessagesByIDsOrderedAsc 按ID批量加载并基于 CreatedTime 升序排序
+func ListMessageIDsByConversation(eid, conversationID int64) ([]int64, error) {
 	if conversationID <= 0 {
 		return []int64{}, nil
 	}
 	// 仅选择 id 字段，避免加载大字段
-	type row struct{ ID int64 `gorm:"column:id"` }
+	type row struct {
+		ID int64 `gorm:"column:id"`
+	}
 	var rows []row
 	if err := DB.Model(&Message{}).
 		Select("id").

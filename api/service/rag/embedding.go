@@ -148,7 +148,7 @@ func (s *EmbeddingService) ProcessChunkEmbedding(eid int64, chunkID int64) error
 
 	// 获取配置
 	configService := NewChunkConfigService(s.db)
-	config, err := configService.GetConfig(eid, &chunk.LibraryID, model.ChunkTypeDefault)
+	config, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		s.updateEmbeddingStatusWithError(eid, chunkID, "获取配置失败")
 		return fmt.Errorf("获取配置失败: %v", err)
@@ -867,14 +867,14 @@ func (s *EmbeddingService) storeToVectorDB(chunkID int64, vector []float64, chun
 
 	ctx := context.Background()
 
-			// 根据模式向每个目标集合写入向量
-		for _, collection := range collections {
-			if err := s.insertWithAutoCreateCollection(ctx, collection, record, len(vector32)); err != nil {
-				return "", fmt.Errorf("写入集合 %s 失败: %v", collection, err)
-			}
-			logger.SysLogf("成功存储向量: VectorID=%s, Collection=%s", vectorID, collection)
+	// 根据模式向每个目标集合写入向量
+	for _, collection := range collections {
+		if err := s.insertWithAutoCreateCollection(ctx, collection, record, len(vector32)); err != nil {
+			return "", fmt.Errorf("写入集合 %s 失败: %v", collection, err)
 		}
-		return vectorID, nil
+		logger.SysLogf("成功存储向量: VectorID=%s, Collection=%s", vectorID, collection)
+	}
+	return vectorID, nil
 }
 
 // insertWithAutoCreateCollection 插入向量，如果集合不存在则自动创建

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -107,6 +108,7 @@ type CreateRecordingJobRequest struct {
 	SourceMimeType          string `json:"source_mime_type"`
 	UploadIntervalMs        int64  `json:"upload_interval_ms"`
 	MaxDurationMs           int64  `json:"max_duration_ms"`
+	GroupID                 *int64 `json:"group_id"`
 }
 
 type UpdateRecordingJobStateRequest struct {
@@ -120,6 +122,10 @@ type UploadRecordingSegmentRequest struct {
 	EndOffsetMs    int64  `form:"end_offset_ms"`
 	ClientTime     int64  `form:"client_time"`
 	IsFinalSegment bool   `form:"is_final_segment"`
+}
+
+type UserAddFileTemplateRequest struct {
+	TemplateID string `json:"template_id" binding:"required"`
 }
 
 type RecordingJobResponse struct {
@@ -174,6 +180,40 @@ func CreateRecordingJob(c *gin.Context) {
 
 	userID := config.GetUserId(c)
 	svc := service.NewRecordingService(eid)
+
+	groupID := int64(0)
+	if req.GroupID != nil {
+		groupID = *req.GroupID
+		if groupID < 0 {
+			logger.SysErrorf("【录音】分组ID无效: eid=%d group_id=%d", eid, groupID)
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
+			return
+		}
+		if groupID > 0 {
+			g, err := model.GetGroupByID(groupID)
+			if err != nil {
+				logger.SysErrorf("【录音】分组不存在: eid=%d group_id=%d err=%v", eid, groupID, err)
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
+				return
+			}
+			if g.Eid != eid {
+				logger.SysErrorf("【录音】分组不属于当前企业: eid=%d group_id=%d group_eid=%d", eid, groupID, g.Eid)
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
+				return
+			}
+			if g.GroupType != model.RECORDING_FILE_GROUP_TYPE {
+				logger.SysErrorf("【录音】分组类型不匹配: eid=%d group_id=%d group_type=%d want=%d", eid, groupID, g.GroupType, model.RECORDING_FILE_GROUP_TYPE)
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组类型不匹配")))
+				return
+			}
+			if g.CreatedBy != userID {
+				logger.SysErrorf("【录音】分组不属于当前用户: eid=%d user_id=%d group_created_by=%d", eid, userID, g.CreatedBy)
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
+				return
+			}
+		}
+	}
+
 	job, err := svc.CreateJob(c.Request.Context(), userID, &service.CreateRecordingJobRequest{
 		LibraryID:               req.LibraryID,
 		DestinationFolderFileID: req.DestinationFolderFileID,
@@ -182,6 +222,7 @@ func CreateRecordingJob(c *gin.Context) {
 		SourceMimeType:          req.SourceMimeType,
 		UploadIntervalMs:        req.UploadIntervalMs,
 		MaxDurationMs:           req.MaxDurationMs,
+		GroupID:                 groupID,
 	})
 	if err != nil {
 		logger.SysErrorf("【录音】创建录音任务失败: eid=%d user_id=%d library_id=%d err=%v", eid, userID, req.LibraryID, err)
@@ -516,5 +557,360 @@ func respondRecordingError(c *gin.Context, err error) {
 		c.JSON(http.StatusConflict, model.OperateTooFast.ToResponse(err))
 	default:
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+	}
+}
+
+// GetAvailableTemplates godoc
+// @Summary 获取可用总结模板列表
+// @Description 获取当前企业可用于录音总结的模板列表
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse{data=[]model.RecordingSummaryTemplate}
+// @Router /api/recordings/templates [get]
+func GetAvailableTemplates(c *gin.Context) {
+	eid := config.GetEID(c)
+	svc := service.NewRecordingAdminService(eid)
+	templates, err := svc.ListAvailableSummaryTemplates(c)
+	if err != nil {
+		logger.SysErrorf("【录音】获取可用模板列表失败: eid=%d err=%v", eid, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(templates))
+}
+
+// UserFileSummarize godoc
+// @Summary 对已解析文件创建总结
+// @Description 前台用户对已解析文件创建总结
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path int true "文件ID"
+// @Param template_id query int true "模板ID"
+// @Success 200 {object} model.CommonResponse{data=model.RecordingFileSummary}
+// @Router /api/recordings/files/{file_id}/summarize [post]
+func UserFileSummarize(c *gin.Context) {
+	eid := config.GetEID(c)
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	templateID, err := hashids.TryParseID(c.Query("template_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("缺少 template_id 参数")))
+		return
+	}
+
+	svc := service.NewRecordingAdminService(eid)
+	summary, err := svc.CreateFileSummary(c, fileID, templateID)
+	if err != nil {
+		logger.SysErrorf("【录音】创建总结失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(summary))
+}
+
+// UserGetFileSummaries godoc
+// @Summary 获取文件的所有总结
+// @Description 获取文件的所有总结
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path int true "文件ID"
+// @Success 200 {object} model.CommonResponse{data=[]model.RecordingFileSummary}
+// @Router /api/recordings/files/{file_id}/summaries [get]
+func UserGetFileSummaries(c *gin.Context) {
+	eid := config.GetEID(c)
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	svc := service.NewRecordingAdminService(eid)
+	summaries, err := svc.ListFileSummaries(c, fileID)
+	if err != nil {
+		logger.SysErrorf("【录音】获取总结列表失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(summaries))
+}
+
+// UserGetFileSummaryDetail godoc
+// @Summary 获取单条总结详情
+// @Description 获取单条总结详情
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param summary_id path int true "总结ID"
+// @Success 200 {object} model.CommonResponse{data=model.RecordingFileSummary}
+// @Router /api/recordings/summaries/{summary_id} [get]
+func UserGetFileSummaryDetail(c *gin.Context) {
+	eid := config.GetEID(c)
+	summaryID, err := hashids.TryParseID(c.Param("summary_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	summary, err := model.GetRecordingFileSummaryByID(summaryID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+		return
+	}
+
+	if _, err := model.GetFileByID(eid, summary.FileID); err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+		return
+	}
+
+	// 纪要（template_id=0）渲染为 Markdown，兼容旧数据
+	if summary.TemplateID == 0 {
+		summary.SummaryContent = model.LongText(service.BuildMinutesMarkdown(string(summary.SummaryContent)))
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(summary))
+}
+
+// UserDeleteFileSummary godoc
+// @Summary 删除总结
+// @Description 删除总结
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param summary_id path int true "总结ID"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/recordings/summaries/{summary_id} [delete]
+func UserDeleteFileSummary(c *gin.Context) {
+	eid := config.GetEID(c)
+	summaryID, err := hashids.TryParseID(c.Param("summary_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	svc := service.NewRecordingAdminService(eid)
+	if err := svc.DeleteFileSummary(c, summaryID); err != nil {
+		logger.SysErrorf("【录音】删除总结失败: eid=%d summary_id=%d err=%v", eid, summaryID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"ok": true}))
+}
+
+// UserAddFileTemplate godoc
+// @Summary 为用户录音详情页添加模板
+// @Description 为用户录音详情页添加总结模板
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path int true "文件ID"
+// @Param request body controller.UserAddFileTemplateRequest true "模板添加请求"
+// @Success 200 {object} model.CommonResponse{data=model.RecordingFileSummary}
+// @Router /api/recordings/files/{file_id}/templates [post]
+func UserAddFileTemplate(c *gin.Context) {
+	eid := config.GetEID(c)
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	var req struct {
+		TemplateID string `json:"template_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	templateID, err := hashids.TryParseID(req.TemplateID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	svc := service.NewRecordingAdminService(eid)
+	summary, err := svc.CreateFileSummary(c, fileID, templateID)
+	if err != nil {
+		logger.SysErrorf("【录音】添加模板失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(summary))
+}
+
+// UserGetFileTemplates godoc
+// @Summary 获取用户录音详情页已添加的模板列表
+// @Description 获取用户录音详情页已添加的模板列表
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path int true "文件ID"
+// @Success 200 {object} model.CommonResponse{data=[]model.RecordingFileSummary}
+// @Router /api/recordings/files/{file_id}/templates [get]
+func UserGetFileTemplates(c *gin.Context) {
+	eid := config.GetEID(c)
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	svc := service.NewRecordingAdminService(eid)
+	summaries, err := svc.ListFileSummaries(c, fileID)
+	if err != nil {
+		logger.SysErrorf("【录音】获取文件模板列表失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(summaries))
+}
+
+// GetFileParseStatus godoc
+// @Summary 获取文件解析状态（转写/纪要/洞察）
+// @Description 返回文件的三阶段解析状态：转写、纪要、洞察
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=object} "解析状态"
+// @Router /api/recordings/files/{file_id}/parse-status [get]
+func GetFileParseStatus(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+
+	result := service.GetFileParseStatus(eid, fileID)
+	c.JSON(http.StatusOK, model.Success.ToResponse(result))
+}
+
+// GetFileInsightPage godoc
+// @Summary 获取录音文件的决策页面编排结果
+// @Description 返回 Prompt 5 编排后的页面 JSON，没有则返回 404
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=object} "页面数据"
+// @Router /api/recordings/files/{file_id}/insight-page [get]
+func GetFileInsightPage(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+
+	// 校验文件归属，防止跨企业访问
+	if _, err := model.GetFileByID(eid, fileID); err != nil {
+		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		return
+	}
+
+	page, err := model.GetRecordingFileInsightPageByFileID(fileID)
+	if err != nil {
+		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(page))
+}
+
+// GetMyQueuedCount godoc
+// @Summary 获取当前用户排队中的录音文件数
+// @Description 返回当前用户排队等待解析的录音文件数量（parsing_status=pending）
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse{data=object} "排队数量"
+// @Router /api/recordings/my-queued-count [get]
+func GetMyQueuedCount(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+	count := service.CountMyQueuedFiles(eid, userID)
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]int64{
+		"queued_count": count,
+	}))
+}
+
+// GetFileTranscription godoc
+// @Summary 获取录音文件的转写原文
+// @Description 双模式返回转写：已反转读 Summary(-1)，未反转读 FileBody
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Router /api/recordings/files/{file_id}/transcription [get]
+func GetFileTranscription(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+
+	if _, err := model.GetFileByID(eid, fileID); err != nil {
+		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		return
+	}
+
+	text, err := service.LoadTranscriptText(eid, fileID)
+	if err != nil {
+		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
+		"file_id": fileID,
+		"content": text,
+	}))
+}
+
+// RunRecordingPipeline godoc
+// @Summary 继续生成录音管线
+// @Description 检查纪要/洞察/页面状态，缺什么补什么。不重新转写，只填补缺失步骤。异步执行，前端轮询 parse-status 获取进度。
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse "所有步骤已完成，无需处理"
+// @Success 202 {object} model.CommonResponse "已触发继续生成"
+// @Failure 400 {object} model.CommonResponse "参数错误或文件不存在"
+// @Router /api/recordings/files/{file_id}/pipeline [post]
+func RunRecordingPipeline(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
+	result, err := service.RunRecordingPipeline(c.Request.Context(), eid, fileID, userID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
+
+	if result.MeetingMinutes == service.PipelineStepSkipped &&
+		result.Insights == service.PipelineStepSkipped &&
+		result.InsightPage == service.PipelineStepSkipped {
+		c.JSON(http.StatusOK, model.Success.ToResponse(result))
+	} else {
+		c.JSON(http.StatusAccepted, model.Success.ToResponse(result))
 	}
 }

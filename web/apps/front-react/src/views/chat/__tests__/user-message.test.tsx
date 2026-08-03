@@ -82,7 +82,7 @@ describe("UserMessage rendering", () => {
         messageList={[message]}
         agentInfo={agentInfo}
         isStreaming={false}
-        features={{ menu: { copy: true }, skillTag: true }}
+        features={{ menu: { copy: true } }}
       />
     );
 

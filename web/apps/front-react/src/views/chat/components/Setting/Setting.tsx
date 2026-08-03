@@ -135,7 +135,7 @@ function BasicInfoSection({ agent }: { agent: IAgentInfo }) {
  */
 function SettingsSection({ agent }: { agent: IAgentInfo }) {
   const agentUsage = agent.agent_usage ?? 0;
-  const settings = agent.settings_obj || agent.settings || {};
+  const settings = agent.settings_obj || {};
 
   // 工作AI：规划推理模型 + 技能执行模型
   if (agentUsage === AGENT_USAGES.WORK_AI) {
@@ -201,7 +201,7 @@ function MemoryAndSkillSection({ onMemoryClick, onSkillClick }: { onMemoryClick?
  * 生成设置卡片（AI搜问专用）
  */
 function GenerateSettingSection({ agent }: { agent: IAgentInfo }) {
-  const settings = agent.settings_obj || agent.settings || {};
+  const settings = agent.settings_obj || {};
   const webSearch = settings.web_search_setting as any;
   const graphSearch = settings.graph_search_setting as any;
 

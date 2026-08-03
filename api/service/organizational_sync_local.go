@@ -11,4 +11,3 @@ func runWeComSyncOrganization(e *model.Enterprise, params SyncOrganizationParams
 func runDingtalkSyncOrganization(e *model.Enterprise, params SyncOrganizationParams) error {
 	return nil
 }
-

@@ -26,34 +26,6 @@ import {
 } from "../components/ChatView/constants";
 
 // ============================================================================
-// Debug logging (URL/localStorage 开关,默认关)
-// ============================================================================
-
-/**
- * 是否启用 OpenClaw chatview 调试日志。
- * 通过 URL query (`openclaw_debug=1` 或 `OPENCLAW_LEDGER_DEBUG=1`)
- * 或 localStorage (`OPENCLAW_LEDGER_DEBUG=1`) 开启。
- */
-export function isOpenClawChatViewDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search);
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-export function traceOpenClawChatView(label: string, payload: Record<string, unknown>): void {
-  if (!isOpenClawChatViewDebugEnabled()) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
-}
-
-// ============================================================================
 // URL / Conversation sync (ChatView 主体的 URL ↔ store 同步)
 // ============================================================================
 
@@ -491,6 +463,21 @@ export function openClawSnapshotActiveTurnBelongsToMessage(
 /** 返回 active_turns 中所有 running turn 的 turn_id 集合。 */
 export function getOpenClawSnapshotRunningTurnIds(activeTurns: any[]): Set<string> {
   return new Set(activeTurns.filter(isOpenClawRunningActiveTurn).map(getOpenClawSnapshotTurnId).filter(Boolean));
+}
+
+/** snapshot payload 的简要统计(activeTurns 数 + running 数 + running turnId 列表)。 */
+export function summarizeOpenClawSnapshotPayload(payload: unknown): {
+  activeTurns: number;
+  runningActiveTurns: number;
+  runningTurnIds: string[];
+} {
+  const activeTurns = getOpenClawSnapshotActiveTurns(payload as any);
+  const runningActiveTurns = activeTurns.filter(isOpenClawRunningActiveTurn);
+  return {
+    activeTurns: activeTurns.length,
+    runningActiveTurns: runningActiveTurns.length,
+    runningTurnIds: Array.from(getOpenClawSnapshotRunningTurnIds(activeTurns)),
+  };
 }
 
 // ============================================================================

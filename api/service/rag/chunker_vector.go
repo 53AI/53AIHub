@@ -36,6 +36,7 @@ func (s *ChunkerService) DeleteVectorFromDB(eid int64, libraryID int64, vectorID
 	}
 	return lastErr
 }
+
 // cleanupVectorsAsync 异步清理向量数据
 func (s *ChunkerService) cleanupVectorsAsync(eid int64, libraryID int64, vectorIDs []string) {
 	if len(vectorIDs) == 0 {
@@ -98,6 +99,7 @@ func (s *ChunkerService) DeleteVectorsFromDB(eid int64, libraryID int64, vectorI
 	}
 	return lastErr
 }
+
 // cleanupInvalidVectors 清理无效的向量数据
 func (s *ChunkerService) cleanupInvalidVectors(vectorIDsToDelete []string) {
 	if len(vectorIDsToDelete) == 0 {
@@ -116,12 +118,8 @@ func (s *ChunkerService) cleanupInvalidVectors(vectorIDsToDelete []string) {
 
 	logger.Info(context.TODO(), fmt.Sprintf("[vectorInvalidCleanupMarked][count=%d]", len(vectorIDsToDelete)))
 }
+
 // resolveDeleteCollections 根据当前模式解析需要删除向量的集合列表
 func (s *ChunkerService) resolveDeleteCollections(eid int64, library *model.Library) []string {
-	mode := GetVectorCollectionMode()
-	collections := []string{model.GetVectorCollectionName(library.UUID)}
-	if mode == VectorCollectionModeEnterprise || mode == VectorCollectionModeDual {
-		collections = append(collections, model.GetDocumentVectorCollectionName(eid))
-	}
-	return collections
+	return []string{model.GetDocumentVectorCollectionName(eid)}
 }

@@ -13,6 +13,12 @@ export * from "./adapters";
 export * from "./types";
 
 // Utils
+export {
+  buildKnowledgeSourcePayload,
+  type KnowledgeSourcePayloadConfig,
+  type KnowledgeSourcePayload,
+  type WikiItemPayload,
+} from "./utils/buildKnowledgeSourcePayload";
 export * from "./utils/openclaw";
 export * from "./utils/openclaw-activities";
 export * from "./utils/openclaw-adapter";
@@ -20,6 +26,7 @@ export * from "./utils/openclaw-chatview-helpers";
 export * from "./utils/openclaw-ledger";
 export * from "./utils/openclaw-timeline";
 export * from "./utils/openclaw-turn";
+export * from "./utils/openclaw-transport";
 export * from "./utils/output-file-download";
 
 // Components

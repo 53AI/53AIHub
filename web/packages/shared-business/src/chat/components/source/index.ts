@@ -13,9 +13,6 @@ export {
   default as GraphViewerWidget,
   type GraphViewerWidgetRef,
   type GraphViewerWidgetProps,
-  type GraphData,
-  type GraphEntity,
-  type GraphRelation,
 } from './popups/GraphViewerWidget';
 
 // Lists

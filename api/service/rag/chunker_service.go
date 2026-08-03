@@ -17,9 +17,10 @@ import (
 
 // ChunkerService 智能分块服务
 type ChunkerService struct {
-	db        *gorm.DB
-	tokenizer *TokenizerService
-	config    *ChunkConfigService
+	db                     *gorm.DB
+	tokenizer              *TokenizerService
+	config                 *ChunkConfigService
+	disableTableProtection bool
 }
 
 // NewChunkerService 创建智能分块服务

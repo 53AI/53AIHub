@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { useMemo } from 'react'
 import groupApi from '@/api/modules/group'
 import agentApi from '@/api/modules/agents/index'
+import { parseAgentParsedFields } from '@/api/modules/agents/transform'
 import agentShortcutsApi from '@/api/modules/agent-shortcuts'
 import { cacheManager as cache, eventBus } from '@km/shared-utils'
 import { GROUP_TYPE } from '@/constants/group'
@@ -75,9 +76,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       // limit: 1000 用于获取完整的智能体列表（包括 agent_usage 等字段）
       const { data: { agents = [] } = {} } = await agentApi.available({ limit: 1000 })
       const list = agents.map((originalItem: Agent.State) => {
-        const item = { ...originalItem }
-        item.custom_config_obj = item.custom_config ? JSON.parse(item.custom_config) : {}
-        item.settings_obj = item.settings ? JSON.parse(item.settings) : {}
+        const item = parseAgentParsedFields(originalItem)
 
         if (item.agent_usage === AGENT_USAGES.KM_AI_SEARCH) {
           item.name = item.name || 'AI搜问'
@@ -127,12 +126,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const res = await agentApi.my.list({ offset: 0, limit: 100 })
         const data = res.data || res
         const list = data.agents || data || []
-        return list.map((originalItem: Agent.State) => {
-          const item = { ...originalItem }
-          item.custom_config_obj = item.custom_config ? JSON.parse(item.custom_config) : {}
-          item.settings_obj = item.settings ? JSON.parse(item.settings) : {}
-          return item
-        })
+        return list.map((originalItem: Agent.State) => parseAgentParsedFields(originalItem))
       }
       let myAgentList: Agent.State[]
       if (isRefresh) {

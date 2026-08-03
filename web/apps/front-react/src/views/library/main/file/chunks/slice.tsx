@@ -87,6 +87,9 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
   >({});
   const [renderVersion, setRenderVersion] = useState(0);
   const [forcePolling, setForcePolling] = useState(false);
+  // True between a save submit and server-side batch completion. Gates split/merge
+  // buttons so user actions cannot race with the polling refresh.
+  const [isServerProcessing, setIsServerProcessing] = useState(false);
 
   // Refs for filter params - ensures reloadChunks gets latest values
   const filterRef = useRef({ status: "", keyword: "" });
@@ -442,11 +445,19 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
     ((reRender?: boolean) => Promise<void>) | null
   >(null);
 
+  // Mirror of `chunks` state so reloadChunks can read prev synchronously
+  // (needed for hasStaleIds detection and the non-reRender merge below).
+  const chunksRef = useRef<ChunkItem[]>([]);
+  useEffect(() => {
+    chunksRef.current = chunks;
+  }, [chunks]);
+
   // Reload chunks - defined before other callbacks that depend on it
   const reloadChunks = useCallback(
     async (reRender = true) => {
       if (reRender) {
         setChunks([]);
+        chunksRef.current = [];
         setRenderVersion((v) => v + 1);
       }
 
@@ -459,42 +470,63 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
           keyword: currentKeyword,
         });
 
+        const prev = chunksRef.current;
+
         if (reRender) {
           // ReRender mode: initialize all items with empty children
-          setChunks(res.chunks.map((item) => ({ ...item, children: [] })));
+          const fresh = res.chunks.map((item) => ({ ...item, children: [] }));
+          chunksRef.current = fresh;
+          setChunks(fresh);
         } else {
           // Non-reRender mode: keep existing children, new items have no children property
-          setChunks((prev) => {
-            const newChunks = res.chunks.map((item) => {
-              const chunk = prev.find((c) => c.id === item.id);
+          let nextChunks: ChunkItem[] = [];
+          setChunks((latest) => {
+            const merged = res.chunks.map((item) => {
+              const chunk = latest.find((c) => c.id === item.id);
               if (chunk) {
-                // Keep existing item with its children, only update status
                 return { ...chunk, embedding_status: item.embedding_status };
               }
-              // New item: initialize with empty children
               return { ...item, children: [] } as ChunkItem;
             });
 
             // Check if there are new items without children
-            const hasNewItems = newChunks.some(
+            const hasNewItems = merged.some(
               (c) => !c.children || c.children.length === 0,
             );
             if (hasNewItems) {
               setRenderVersion((v) => v + 1);
             }
 
-            return newChunks;
+            nextChunks = merged;
+            return merged;
           });
+          chunksRef.current = nextChunks;
         }
 
-        // Check if all chunks have completed indexing, turn off forcePolling
+        // hasStaleIds: prev held real (non-temp) ids the server no longer knows.
+        // Indicates server has applied the batch and replaced/removed those chunks.
+        const serverIds = new Set<string | number>();
+        for (const item of res.chunks) serverIds.add(item.id);
+        const hasStaleIds = prev.some(
+          (c) =>
+            !serverIds.has(c.id) && !String(c.id).startsWith("temp_"),
+        );
+
+        // Check if all chunks have completed indexing, turn off forcePolling.
+        // Guard against closing forcePolling too early during server's async
+        // batch processing: list may return all-normal before operations apply.
         const hasPending = res.chunks.some(
           (item) =>
             item.embedding_status === EMBEDDING_STATUS.PENDING ||
             item.embedding_status === EMBEDDING_STATUS.PARSING,
         );
-        if (!hasPending) {
-          setForcePolling(false);
+        if (!hasPending && !hasStaleIds) {
+          const startedAt = forcePollingStartedAtRef.current;
+          const elapsed = startedAt ? Date.now() - startedAt : Infinity;
+          if (startedAt === null || elapsed >= MIN_FORCE_POLLING_DURATION) {
+            setForcePolling(false);
+            setIsServerProcessing(false);
+          }
         }
       } catch (error) {
         console.error("加载切片失败:", error);
@@ -511,6 +543,20 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
   // Auto-polling effect - poll while pending chunks exist or forcePolling is true
   // Use setInterval with ref to ensure continuous polling even when pendingChunks.length doesn't change
   const pollingEnabledRef = useRef(false);
+
+  // Track when forcePolling started so we don't close it prematurely while
+  // server is asynchronously processing the batch (list may return normal chunks
+  // before server has actually applied the operations).
+  const forcePollingStartedAtRef = useRef<number | null>(null);
+  const MIN_FORCE_POLLING_DURATION = 30000; // 30s minimum window for async server processing
+
+  useEffect(() => {
+    if (forcePolling && forcePollingStartedAtRef.current === null) {
+      forcePollingStartedAtRef.current = Date.now();
+    } else if (!forcePolling) {
+      forcePollingStartedAtRef.current = null;
+    }
+  }, [forcePolling]);
 
   useEffect(() => {
     const shouldPoll = pendingChunks.length > 0 || forcePolling;
@@ -557,6 +603,11 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
           operations: [],
         });
         message.success(t("status.submitted"));
+        // Force polling to start so status updates are detected even if the
+        // server hasn't yet marked the retried chunks as PENDING/PARSING.
+        // Gate split/merge so retries aren't raced by concurrent user actions.
+        setIsServerProcessing(true);
+        setForcePolling(true);
         reloadChunks(false);
       } catch (error) {
         console.error("重试索引失败:", error);
@@ -859,10 +910,15 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
       setSaveModalVisible(false);
       message.success(t("status.save_success"));
 
-      // Force polling to start immediately after save
-      // This ensures status updates are detected even if server status isn't updated yet
+      // Force polling to start immediately after save.
+      // Use reRender=true to fully reset local chunks to the server's current
+      // state. Server processes batches asynchronously, so without a full reset
+      // the local chunks would still hold stale ids from the previous render,
+      // causing subsequent split/merge operations to send ids the server no
+      // longer recognises.
+      setIsServerProcessing(true);
       setForcePolling(true);
-      reloadChunks(false);
+      reloadChunks();
     } catch (error) {
       console.error("保存操作失败:", error);
       message.error(t("status.save_fail"));
@@ -887,6 +943,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
       setContentUpdates({});
       setSaveModalVisible(false);
       message.success(t("status.save_success"));
+      setIsServerProcessing(true);
       reloadChunks();
     } catch (error) {
       console.error("保存操作失败:", error);
@@ -926,6 +983,14 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
     initChunks();
   }, []);
 
+  // Reset processing state when switching files so a saved file's "server
+  // is processing" gate doesn't bleed into the next file's edit session.
+  useEffect(() => {
+    setIsServerProcessing(false);
+    setForcePolling(false);
+    forcePollingStartedAtRef.current = null;
+  }, [currentFile?.id]);
+
   // Cleanup
   useEffect(() => {
     return () => {
@@ -943,7 +1008,8 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
       pendingChunks.length === 0 &&
       hasEditPermission &&
       !isSearching &&
-      !isDisabled ? (
+      !isDisabled &&
+      !isServerProcessing ? (
         <div
           className="merge-mark -ml-5 w-4 h-4 pl-[2.5px] rounded-sm cursor-pointer hover:bg-[#2563EB] hover:text-white"
           onClick={() => handleMerge(index)}
@@ -1018,6 +1084,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
           {!hasUnsavedOperations &&
             pendingChunks.length === 0 &&
             !isDisabled &&
+            !isServerProcessing &&
             hasEditPermission && (
               <div className="flex items-center gap-2">
                 <ChunkStatus
@@ -1066,7 +1133,8 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
                   pendingChunks.length === 0 &&
                   hasEditPermission &&
                   !isSearching &&
-                  !isDisabled && (
+                  !isDisabled &&
+                  !isServerProcessing && (
                     <div className="relative z-10 w-10 h-1 flex items-center group/split -mr-3 invisible hover:w-auto group-hover/item:visible">
                       <div
                         className="w-4 h-4 rounded-sm flex items-center justify-center cursor-pointer group-hover/split:text-white group-hover/split:bg-[#2563eb]"

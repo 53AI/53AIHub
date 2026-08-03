@@ -31,17 +31,13 @@ type cachedReadMode struct {
 
 const enterpriseReadModeCacheTTL = 30 * time.Second
 
-// GetVectorCollectionMode 获取当前文档向量 collection 模式
-// 默认返回 library 模式
+// GetVectorCollectionMode 获取当前文档向量 collection 模式。
+// 企业级集合是唯一线上模式；保留环境变量读取仅用于兼容旧部署配置，
+// 不再允许 library/dual 影响线上读写路径。
 func GetVectorCollectionMode() string {
 	mode := os.Getenv(EnvDocumentVectorCollectionMode)
 	logger.SysLogf("【诊断-向量集合模式】读取环境变量 RAG_DOCUMENT_VECTOR_COLLECTION_MODE=%q", mode)
-	switch mode {
-	case VectorCollectionModeEnterprise, VectorCollectionModeDual:
-		return mode
-	default:
-		return VectorCollectionModeLibrary
-	}
+	return VectorCollectionModeEnterprise
 }
 
 // GetEnterpriseVectorReadMode 获取企业级向量读模式
@@ -56,9 +52,8 @@ func GetEnterpriseVectorReadMode(eid int64) string {
 		logger.SysLogf("【诊断-企业级读模式】eid=%d, 全局模式=enterprise, 直接返回enterprise", eid)
 		return VectorCollectionModeEnterprise
 	}
-	if global != VectorCollectionModeDual {
-		logger.SysLogf("【诊断-企业级读模式】eid=%d, 全局模式=%s (非dual/enterprise), 返回空", eid, global)
-		return ""
+	if global != VectorCollectionModeEnterprise {
+		return VectorCollectionModeEnterprise
 	}
 
 	enterpriseReadModeCacheLock.RLock()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -46,8 +47,18 @@ const (
 
 const (
 	LIBRARY_KIND_REGULAR       = LibraryKindRegular
+	LIBRARY_KIND_WIKI          = LibraryKindWiki
 	LIBRARY_KIND_PERSONAL_USER = LibraryKindPersonalUser
 )
+
+func isGeneralLibraryKind(kind string) bool {
+	switch kind {
+	case "", LIBRARY_KIND_REGULAR, LIBRARY_KIND_WIKI:
+		return true
+	default:
+		return false
+	}
+}
 
 const (
 	LIBRARY_PERMISSION_READ  = 0
@@ -125,7 +136,7 @@ func (library *Library) Update() error {
 	}
 
 	// 明确指定要更新的字段，确保零值也能被更新，在原来的基础上加上 Visibility
-	result := DB.Model(library).Select("Name", "Description", "Icon", "SpaceID", "Visibility").Updates(library)
+	result := DB.Model(library).Select("Name", "Description", "Icon", "SpaceID", "Visibility", "LibraryKind", "UpdatedTime").Updates(library)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -133,8 +144,28 @@ func (library *Library) Update() error {
 	return nil
 }
 
+// UpdateUpdatedTime 更新知识库的更新时间（用于排序）
+func (library *Library) UpdateUpdatedTime() error {
+	return DB.Model(library).Update("updated_time", time.Now().UTC().UnixMilli()).Error
+}
+
+// UpdateLibraryUpdatedTimeByID 根据ID直接更新知识库的更新时间
+func UpdateLibraryUpdatedTimeByID(eid int64, libraryID int64) error {
+	now := time.Now().UTC().UnixMilli()
+	result := DB.Model(&Library{}).Where("eid = ? AND id = ?", eid, libraryID).Update("updated_time", now)
+	if result.Error != nil {
+		return result.Error
+	}
+	invalidateLibraryCache(eid)
+	return nil
+}
+
 func (library *Library) IsPersonalLibrary() bool {
 	return library != nil && library.LibraryKind == LIBRARY_KIND_PERSONAL_USER
+}
+
+func (library *Library) IsWikiLibrary() bool {
+	return library != nil && library.LibraryKind == LIBRARY_KIND_WIKI
 }
 
 // GetLibraryByID 根据ID获取知识库
@@ -283,7 +314,7 @@ func GetLibrariesByEid(eid int64, status *int) ([]Library, error) {
 
 	filtered := make([]Library, 0, len(libraries))
 	for _, library := range libraries {
-		if library.LibraryKind != LIBRARY_KIND_REGULAR && library.LibraryKind != "" {
+		if !isGeneralLibraryKind(library.LibraryKind) {
 			continue
 		}
 		if status != nil && library.Status != *status {
@@ -319,7 +350,7 @@ func GetLibraryListWithIDs(eid int64, name string, status *int, spaceID *int64, 
 	filtered := make([]Library, 0, len(allLibraries))
 	name = strings.ToLower(strings.TrimSpace(name))
 	for _, library := range allLibraries {
-		if library.LibraryKind != LIBRARY_KIND_REGULAR && library.LibraryKind != "" {
+		if !isGeneralLibraryKind(library.LibraryKind) {
 			continue
 		}
 		if name != "" && !strings.Contains(strings.ToLower(library.Name), name) {
@@ -451,7 +482,7 @@ func GetRecentlyLibraries(eid int64, limit int) ([]Library, error) {
 
 	filtered := make([]Library, 0, len(libraries))
 	for _, library := range libraries {
-		if library.LibraryKind != LIBRARY_KIND_REGULAR && library.LibraryKind != "" {
+		if !isGeneralLibraryKind(library.LibraryKind) {
 			continue
 		}
 		filtered = append(filtered, library)

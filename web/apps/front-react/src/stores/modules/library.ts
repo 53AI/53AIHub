@@ -30,6 +30,10 @@ export interface UploadItem {
   progressTimer?: ReturnType<typeof setInterval>
   pendingProgress?: number
   duplicateMode?: 'replace' | 'sequence'
+  // 秒传命中标记：上传时不传 file 二进制，仅传 hash；由后端复用已有 UploadFile
+  instantUploaded?: boolean
+  // 文件 SHA-256（秒传预检计算，用于传给 batchUploadFile 命中复用）
+  hash?: string
 }
 
 // Helper functions

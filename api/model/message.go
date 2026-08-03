@@ -23,6 +23,8 @@ type Message struct {
 	UpdatedTime       int64  `json:"updated_time" gorm:"not null"`
 	VisitorID         string `json:"visitor_id" gorm:"column:visitor_id;size:64;default:''"`
 	FileID            int64  `json:"file_id" gorm:"column:file_id;default:0"`
+	DocumentType      string `json:"document_type" gorm:"column:document_type;size:32;not null;default:'none';index"`
+	DocumentID        int64  `json:"document_id" gorm:"column:document_id;default:0;index"`
 	Answer            string `json:"answer" gorm:"column:answer;type:text"`
 	ReasoningContent  string `json:"reasoning_content" gorm:"column:reasoning_content;type:text"`
 	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
@@ -73,10 +75,13 @@ const (
 )
 
 const (
-	KnowledgeTypeDatabase   = 1
-	KnowledgeTypeWeb        = 2
-	KnowledgeTypeSpecificKB = 3
-	KnowledgeTypeSingleFile = 4
+	KnowledgeTypeDatabase      = 1
+	KnowledgeTypeWeb           = 2
+	KnowledgeTypeSpecificKB    = 3
+	KnowledgeTypeSingleFile    = 4
+	KnowledgeTypeInternalMixed = 5
+	KnowledgeTypeAllWiki       = 6
+	KnowledgeTypeSpecificWiki  = 7
 )
 
 const (
@@ -221,7 +226,7 @@ func GetMessagesByUserAndAgentWithVisitor(eid int64, userID int64, agentID int64
 	}
 
 	if fileID > 0 {
-		query = query.Where("file_id = ?", fileID)
+		query = query.Where("document_type = ? AND document_id = ?", DocumentTypeFile, fileID)
 	}
 
 	countQuery := query
@@ -351,7 +356,7 @@ func GetMessagesList(eid int64, keyword string, thinkingMode, responseStatus, kn
 	}
 
 	if len(fileIDs) > 0 {
-		query = query.Where("messages.file_id IN ?", fileIDs)
+		query = query.Where("messages.document_type = ? AND messages.document_id IN ?", DocumentTypeFile, fileIDs)
 	}
 
 	if thinkingMode != nil {

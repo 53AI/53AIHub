@@ -61,7 +61,7 @@ export function RelateAgents() {
         {
           id: "input",
           type: "text",
-          label: "输入",
+          label: t("agent.input_variable"),
           variable: "input",
         },
       ];

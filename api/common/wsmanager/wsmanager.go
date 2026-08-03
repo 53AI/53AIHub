@@ -841,8 +841,10 @@ func HandleOpenClawWS(c *gin.Context) {
 	conn.SetPingHandler(func(appData string) error {
 		conn.SetReadDeadline(time.Now().Add(ReadTimeout))
 		client.UpdateLastActive()
-		// 响应 pong frame
-		return conn.WriteMessage(websocket.PongMessage, []byte(appData))
+		client.mu.Lock()
+		err := conn.WriteMessage(websocket.PongMessage, []byte(appData))
+		client.mu.Unlock()
+		return err
 	})
 
 	// 处理 pong frame（响应服务端发送的 ping）

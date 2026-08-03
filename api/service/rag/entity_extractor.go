@@ -451,8 +451,11 @@ func (s *EntityExtractionService) ExtractAndStoreForFileContent(ctx context.Cont
 		},
 	}
 
-	_ = timeoutCtx
-	resp, callErr, openaiErr := s.contentService.testChannel(ctx, selectedChannel, chatReq)
+	callStart := time.Now()
+	resp, callErr, openaiErr := s.contentService.testChannel(timeoutCtx, selectedChannel, chatReq)
+	callElapsed := time.Since(callStart)
+	logger.Infof(ctx, "【诊断-实体抽取LLM】file_id=%d LLM调用耗时=%v input_tokens=%d model=%s",
+		fileID, callElapsed, budget.InputAvailable, selectedModelName)
 	if callErr != nil || openaiErr != nil {
 		if callErr != nil {
 			return fmt.Errorf("entity extraction llm call failed: %v", callErr)

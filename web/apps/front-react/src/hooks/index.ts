@@ -6,6 +6,7 @@ export { useAbortController, setGlobalAbortController, getGlobalAbortSignal } fr
 export { useEditConflict } from './useEditConflict'
 export { useEmail } from './useEmail'
 export { useFileMode } from './useFileMode'
+export { useFullscreen } from './useFullscreen'
 export { usePoll } from './usePoll'
 export { useSso } from './useSso'
 export { useResponsive, useMediaQuery } from './useResponsive'

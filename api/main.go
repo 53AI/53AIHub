@@ -41,6 +41,7 @@ func main() {
 	model.InitDB()
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
+	service.StartAgentRunRecoveryWorker(appCtx)
 	model.StartAIUploadFileCleanupWorker(appCtx)
 	if err := service.InitRecordingStorageLayout(); err != nil {
 		logger.SysWarn(fmt.Sprintf("录音存储目录检查或修复失败: root=%s spool=%s err=%v", config.RecordingLocalRoot(), config.RecordingAssemblySpoolRoot(), err))

@@ -89,22 +89,22 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
         agent_mode: "chat",
       },
       settings: {
-        opening_statement: `你好，我是${enterpriseStore.info?.name || ""}助手。无论你有什么问题，我都会尽我所能为你提供帮助和支持。`,
+        opening_statement: t("search.botchat_greeting", { name: enterpriseStore.info?.name || "" }),
         suggested_questions: [
           {
             id: generateRandomId(10),
-            content: "最近几年哪几个行业的前景不错？",
+            content: t("search.suggestion_industry"),
           },
           {
             id: generateRandomId(10),
-            content: "说说AI行业的发展趋势和重要事件",
+            content: t("search.suggestion_ai"),
           },
         ],
         out_of_range_reply: {
           enable: true,
-          reply: "当前问题可能因内容未收录、解析中或权限限制无法解答。",
+          reply: t("search.out_of_scope"),
           mode: "fixed_reply",
-          prompt: `你是一个专业、友好的AI助手。现在用户提出的问题超出了你的知识库范围，你需要生成一个礼貌且有帮助的回复。\n\n## 回复要求\n- 诚实承认你无法提供准确答案\n- 简洁友好，不要过度道歉\n- 可以提供相关的建议或替代方案\n- 回复控制在50字以内\n- 使用礼貌、专业的语气\n\n## Few-shot示例\n用户问题: 今天杭州西湖的游客数量是多少?\n回复: 抱歉，我无法获取实时的杭州西湖游客数据。您可以通过杭州旅游官网或相关APP查询这一信息。\n`,
+          prompt: t("search.out_of_scope_prompt"),
         },
         rerank_config: {
           fulltext: false,
@@ -305,7 +305,7 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
         setBochaSetting(transformPlatformSetting(result[0]));
         setSearchOptions([
           {
-            label: "博查（API）",
+            label: t("search.bocha"),
             value: `${result[0].id}_53aikm_bochaai`,
             icon:
               (window as any).$getRealPath?.({
@@ -419,7 +419,7 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
     }
 
     if (!searchValue && data.settings.web_search_setting.enable) {
-      message.error("请选择联网搜索");
+      message.error(t("search.select_web_search"));
       return;
     }
 

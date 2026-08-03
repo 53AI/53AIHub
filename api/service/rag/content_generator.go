@@ -101,6 +101,42 @@ func NewContentGeneratorService(db *gorm.DB) *ContentGeneratorService {
 	}
 }
 
+// GenerateRawPrompt sends a single raw prompt to the selected pipeline LLM.
+// This is a lightweight escape hatch for wiki page compilation and other
+// prompt-driven features that do not fit the fixed summary/question helpers.
+func (s *ContentGeneratorService) GenerateRawPrompt(ctx context.Context, channel *model.Channel, modelName string, prompt string) (string, error) {
+	resp, _, err := s.GenerateRawPromptWithUsage(ctx, channel, modelName, prompt)
+	return resp, err
+}
+
+// GenerateRawPromptWithUsage sends a single raw prompt and returns token usage.
+func (s *ContentGeneratorService) GenerateRawPromptWithUsage(ctx context.Context, channel *model.Channel, modelName string, prompt string) (string, *relaymodel.Usage, error) {
+	if channel == nil {
+		return "", nil, fmt.Errorf("没有配置推理渠道，无法生成内容")
+	}
+	if strings.TrimSpace(modelName) == "" {
+		return "", nil, fmt.Errorf("没有配置推理模型，无法生成内容")
+	}
+
+	req := &relaymodel.GeneralOpenAIRequest{
+		Model:     modelName,
+		MaxTokens: 0,
+		Messages: []relaymodel.Message{{
+			Role:    "system",
+			Content: prompt,
+		}},
+	}
+
+	resp, usage, err, openaiErr := s.testChannelInternal(ctx, channel, req)
+	if err != nil || openaiErr != nil {
+		if openaiErr != nil {
+			return "", nil, fmt.Errorf("OpenAI API错误: %v", openaiErr)
+		}
+		return "", nil, fmt.Errorf("AI生成内容失败: %v", err)
+	}
+	return resp, usage, nil
+}
+
 // GenerateSummaryRequest 生成概要请求
 type GenerateSummaryRequest struct {
 	Content      string `json:"content"`       // 原始内容
@@ -160,8 +196,11 @@ func (s *ContentGeneratorService) GenerateSummary(ctx context.Context, eid int64
 		return nil, fmt.Errorf("没有配置推理渠道，无法生成概要: %v", selectErr)
 	}
 
+	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 8192, 6000)
+	content := ComposeSummaryInput(req.Content, budget.InputAvailable)
+
 	// 构建概要生成的提示词
-	prompt := s.buildSummaryPrompt(req.Content, req.MaxSummaries)
+	prompt := s.buildSummaryPrompt(content, req.MaxSummaries)
 
 	// 调用LLM生成概要
 
@@ -203,8 +242,11 @@ func (s *ContentGeneratorService) GenerateQuestions(ctx context.Context, eid int
 		return nil, fmt.Errorf("没有配置推理渠道，无法生成问题: %v", selectErr)
 	}
 
+	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 8192, 6000)
+	content := ComposeSummaryInput(req.Content, budget.InputAvailable)
+
 	// 构建问题生成的提示词
-	prompt := s.buildQuestionsPrompt(req.Content, req.MaxQuestions)
+	prompt := s.buildQuestionsPrompt(content, req.MaxQuestions)
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     selectedModelName,
@@ -600,9 +642,8 @@ func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Contex
 		return nil, fmt.Errorf("没有配置推理渠道，无法生成问题和简介: %v", selectErr)
 	}
 
-	// 处理长文档截断
 	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 8192, 6000)
-	content := tokenlimit.TruncateContent(req.Content, budget.InputAvailable)
+	content := ComposeSummaryInput(req.Content, budget.InputAvailable)
 
 	// 构建问题和简介生成的提示词
 	prompt := s.buildQuestionsAndSummaryPrompt(content)
@@ -619,7 +660,7 @@ func (s *ContentGeneratorService) GenerateQuestionsAndSummary(ctx context.Contex
 	}
 	systemMessage := relaymodel.Message{
 		Role:    "system",
-		Content: "你是一个文档分析助手。根据用户提供的文档内容，生成3个常见问法和1份简介。文件可能被截断，只分析截断后的内容。严格按照JSON格式输出，不要包含其他内容。",
+		Content: "你是一个文档分析助手。根据用户提供的文档内容，生成3个常见问法和1份简介。内容可能是从文档多个位置拼接而成的代表性窗口，请综合整体语义，不要把窗口边界当成章节边界。严格按照JSON格式输出，不要包含其他内容。",
 	}
 
 	userMessage := relaymodel.Message{
@@ -657,7 +698,7 @@ func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx contex
 	}
 
 	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 8192, 6000)
-	content := tokenlimit.TruncateContent(req.Content, budget.InputAvailable)
+	content := ComposeSummaryInput(req.Content, budget.InputAvailable)
 	prompt := s.buildQuestionsSummaryAndEntitiesPrompt(content)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -669,7 +710,7 @@ func (s *ContentGeneratorService) GenerateQuestionsSummaryAndEntities(ctx contex
 	}
 	systemMessage := relaymodel.Message{
 		Role:    "system",
-		Content: "你是一个文档分析与信息抽取助手。根据用户提供的文档内容，生成3个常见问法、1份简介，并抽取实体列表。文件可能被截断，只分析截断后的内容。严格按照JSON格式输出，不要包含其他内容。",
+		Content: "你是一个文档分析与信息抽取助手。根据用户提供的文档内容，生成3个常见问法、1份简介，并抽取实体列表。内容可能是从文档多个位置拼接而成的代表性窗口，请综合整体语义，不要把窗口边界当成章节边界。严格按照JSON格式输出，不要包含其他内容。",
 	}
 	userMessage := relaymodel.Message{
 		Role:    "user",
@@ -704,8 +745,12 @@ func (s *ContentGeneratorService) GenerateSummaryQuestionsKnowledgeMap(ctx conte
 	}
 
 	budget := tokenlimit.ComputeBudget(ctx, selectedChannel.ChannelID, selectedChannel.Config, selectedModelName, 0, 8192, 6000)
-	content := tokenlimit.TruncateContent(req.Content, budget.InputAvailable)
-	prompt := s.buildSummaryQuestionsKnowledgeMapPrompt(req)
+	content := ComposeSummaryInput(req.Content, budget.InputAvailable)
+	promptReq := *req
+	if promptReq.SummaryMaxWords <= 0 {
+		promptReq.SummaryMaxWords = resolveSummaryMaxWords(req.Content)
+	}
+	prompt := s.buildSummaryQuestionsKnowledgeMapPrompt(&promptReq)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -773,6 +818,20 @@ func (s *ContentGeneratorService) GenerateSummaryQuestionsKnowledgeMap(ctx conte
 	return parsed, usage, nil
 }
 
+func resolveSummaryMaxWords(content string) int {
+	length := len([]rune(strings.TrimSpace(content)))
+	switch {
+	case length <= 4000:
+		return 500
+	case length <= 20000:
+		return 800
+	case length <= 50000:
+		return 1200
+	default:
+		return 1500
+	}
+}
+
 func (s *ContentGeneratorService) GenerateKnowledgeMap(ctx context.Context, channel *model.Channel, modelName string, req *GenerateKnowledgeMapRequest) (string, *relaymodel.Usage, error) {
 	if channel == nil {
 		return "", nil, fmt.Errorf("知识地图生成渠道不能为空")
@@ -807,7 +866,7 @@ func (s *ContentGeneratorService) GenerateKnowledgeMap(ctx context.Context, chan
 下面是待分析的文档内容：`, rootTitle, rootTitle)
 
 	budget := tokenlimit.ComputeBudget(ctx, channel.ChannelID, channel.Config, modelName, 0, 8192, 6000)
-	content := tokenlimit.TruncateContent(req.Content, budget.InputAvailable)
+	content := ComposeSummaryInput(req.Content, budget.InputAvailable)
 
 	chatReq := &relaymodel.GeneralOpenAIRequest{
 		Model:     modelName,
@@ -874,6 +933,7 @@ func (s *ContentGeneratorService) normalizeKnowledgeMapMarkdown(content string) 
 // buildQuestionsAndSummaryPrompt 构建问题和简介生成的提示词
 func (s *ContentGeneratorService) buildQuestionsAndSummaryPrompt(content string) string {
 	return fmt.Sprintf(`你是一个文档分析助手。根据用户提供的文档内容，生成3个常见问法和1份简介。
+文档内容可能是从多个窗口拼接而成的代表性片段，请综合全局语义，不要把窗口边界当成章节边界。
 
 ## 要求
 
@@ -905,18 +965,18 @@ func (s *ContentGeneratorService) buildSummaryQuestionsKnowledgeMapPrompt(req *G
 	}
 	summaryMaxWords := req.SummaryMaxWords
 	if summaryMaxWords <= 0 {
-		summaryMaxWords = 200
+		summaryMaxWords = 500
 	}
 	summaryPrompt := strings.TrimSpace(req.SummaryPrompt)
 	if summaryPrompt == "" {
-		summaryPrompt = "请为该文档生成结构化摘要，覆盖背景、要点、结论与适用范围。"
+		summaryPrompt = "请为该文档生成一整篇浓缩摘要，优先使用 2-5 个主题段落而不是分点罗列，覆盖背景、要点、结论与适用范围。"
 	}
 
 	var builder strings.Builder
-	builder.WriteString("你是一个文档分析助手。根据文档内容生成结构化摘要、常见问法和知识地图。文件可能被截断，只分析截断后的内容。\n\n")
+	builder.WriteString("你是一个文档分析助手。根据文档内容生成结构化摘要、常见问法和知识地图。内容可能是从多个窗口拼接而成的代表性片段，请综合全局语义，不要把窗口边界当成章节边界。\n\n")
 	builder.WriteString("生成规则：\n")
 	if req.GenerateSummary {
-		builder.WriteString(fmt.Sprintf("1) summary：%s 字数不超过 %d 字。\n", summaryPrompt, summaryMaxWords))
+		builder.WriteString(fmt.Sprintf("1) summary：%s 字数不超过 %d 字。不要按片段顺序罗列，不要输出目录式大纲，而是写成一个完整、连贯的摘要。\n", summaryPrompt, summaryMaxWords))
 	} else {
 		builder.WriteString("1) summary：未开启，返回空字符串。\n")
 	}
@@ -931,6 +991,8 @@ func (s *ContentGeneratorService) buildSummaryQuestionsKnowledgeMapPrompt(req *G
 		builder.WriteString("3) knowledge_map：未开启，返回空字符串。\n")
 	}
 
+	builder.WriteString("4) image rule：如果文档内容中包含 <images> 标签或可见图片引用，优先在 summary 中保留相关图片，使用 Markdown 语法 ![caption](url) 原样引用，不要改写 url。\n")
+
 	builder.WriteString("\n输出格式为 JSON，不要包含其他内容：\n")
 	builder.WriteString("{\n")
 	builder.WriteString(`  "summary": "简介内容",` + "\n")
@@ -942,6 +1004,7 @@ func (s *ContentGeneratorService) buildSummaryQuestionsKnowledgeMapPrompt(req *G
 
 func (s *ContentGeneratorService) buildQuestionsSummaryAndEntitiesPrompt(content string) string {
 	return fmt.Sprintf(`你是一个文档分析与信息抽取助手。根据用户提供的文档内容，生成3个常见问法、1份简介，并抽取实体列表。
+文档内容可能是从多个窗口拼接而成的代表性片段，请综合全局语义，不要把窗口边界当成章节边界。
 
 ## 要求
 
@@ -1114,7 +1177,7 @@ func (s *ContentGeneratorService) GenerateContentForKnowledgeChunk(ctx context.C
 		if config.SummaryGeneration == "ai" {
 			summaries, err = s.GenerateSummary(ctx, eid, config, &GenerateSummaryRequest{
 				Content:      content,
-				MaxSummaries: 3,   // 默认生成3个概要
+				MaxSummaries: 3, // 默认生成3个概要
 				MaxTokens:    0, // 不限制输出，由模型自由生成
 			})
 		}
@@ -1129,7 +1192,7 @@ func (s *ContentGeneratorService) GenerateContentForKnowledgeChunk(ctx context.C
 		if config.QuestionGeneration == "ai" {
 			questions, err = s.GenerateQuestions(ctx, eid, config, &GenerateQuestionsRequest{
 				Content:      content,
-				MaxQuestions: 5,   // 默认生成5个问题
+				MaxQuestions: 5, // 默认生成5个问题
 				MaxTokens:    0, // 不限制输出，由模型自由生成
 			})
 		}

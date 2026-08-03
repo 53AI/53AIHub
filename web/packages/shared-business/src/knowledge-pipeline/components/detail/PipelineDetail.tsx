@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, type ComponentType, type FC } from 'react'
+import { useState, useMemo, useRef, useEffect, type ComponentType } from 'react'
 import { Drawer, Button, message } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import { CloseOutlined, CaretDownOutlined } from '@ant-design/icons'
@@ -127,7 +127,7 @@ export function PipelineDetail({
     const templateId = graphStep?.config?.graph_template_id
     const isSmartMatchEnabled = Boolean(graphStep?.config?.enable_smart_match)
 
-    if (runMode !== 'skip' && !isSmartMatchEnabled && !templateId) {
+    if (graphStep && runMode !== 'skip' && !isSmartMatchEnabled && !templateId) {
       message.warning(t('data_pipeline.graph_template_required'))
       return
     }

@@ -3,12 +3,12 @@ import { DownOutlined } from "@ant-design/icons";
 import { BubbleAssistant } from "@km/hub-ui-x-react";
 import { OutputFiles } from "../output";
 import type {
-  ChatMessagesFeatures,
-  Message,
-  OpenClawActivityItem,
-  OpenClawInteractionOption,
-  OpenClawTimelineItem,
-  OutputFile,
+    ChatMessagesFeatures,
+    Message,
+    OpenClawActivityItem,
+    OpenClawInteractionOption,
+    OpenClawTimelineItem,
+    OutputFile,
 } from "../../types/message";
 import { mergeOutputFiles } from "../../utils/openclaw-timeline";
 
@@ -196,35 +196,6 @@ function buildActivityFromTimelineItem(item: OpenClawTimelineItem): OpenClawActi
   };
 }
 
-function isOpenClawUiDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function hashOpenClawText(value?: string | null): string {
-  const text = String(value || "");
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function traceOpenClawTimelineRender(label: string, payload: Record<string, unknown>) {
-  if (!isOpenClawUiDebugEnabled()) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify(payload)}`);
-}
-
 function TimelineActivityCard({
   item,
   defaultOpen,
@@ -281,7 +252,7 @@ function TimelineActivityCard({
         onKeyDown={canCollapseThinking ? handleThinkingKeyDown : undefined}
       >
         <div className="flex min-w-0 items-start gap-3 text-sm font-medium">
-          <span className="flex size-6 flex-none items-center justify-center rounded-full border border-current/10 bg-white text-xs text-[#111827]">
+          <span className="flex size-6 flex-none items-center justify-center rounded-full border border-current/10 bg-white text-xs text-[#1D1E1F]">
             {iconForType(item.type)}
           </span>
           <span className="min-w-0 flex-1">
@@ -322,7 +293,7 @@ function TimelineActivityCard({
       open={defaultOpen}
     >
       <summary className="flex min-w-0 cursor-pointer list-none items-start gap-3 text-sm font-medium marker:hidden">
-        <span className="flex size-6 flex-none items-center justify-center rounded-full border border-current/10 bg-white text-xs text-[#111827]">
+        <span className="flex size-6 flex-none items-center justify-center rounded-full border border-current/10 bg-white text-xs text-[#1D1E1F]">
           {iconForType(item.type)}
         </span>
         <span className="min-w-0 flex-1">
@@ -561,25 +532,6 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
     },
     [getThinkingStateKey, isStreaming, preserveScrollDuringToggle]
   );
-  traceOpenClawTimelineRender("timeline.render", {
-    id: message.id,
-    projectedCount: projectedItems.length,
-    visibleBodyCount: visibleBodyItems.length,
-    visibleCount: visibleItems.length,
-    orderedCount: orderedVisibleItems.length,
-    traceCount: traceItems.length,
-    answerCount: orderedVisibleItems.filter((item) => item.type === "answer").length,
-    answerHashes: orderedVisibleItems
-      .filter((item) => item.type === "answer")
-      .map((item) => ({
-        key: item.key,
-        seq: item.seq,
-        contentLen: String(item.content || "").length,
-        contentHash: hashOpenClawText(item.content),
-      })),
-    tailFileCount: effectiveTailFiles.length,
-    isStreaming: Boolean(isStreaming),
-  });
   const handleInteractionSubmit = onInteractionSubmit
     ? async (activity: OpenClawActivityItem, option: OpenClawInteractionOption) => {
         const optionKey = String(option.id ?? option.value ?? "0");
@@ -608,7 +560,7 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
             className="flex w-full min-w-0 cursor-pointer items-start gap-3 border-0 bg-transparent p-0 text-left text-sm font-medium text-[#1F2A44]"
             onClick={toggleTraceGroup}
           >
-            <span className="flex size-6 flex-none items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-xs text-[#111827]">
+            <span className="flex size-6 flex-none items-center justify-center rounded-full border border-[#E5E7EB] bg-white text-xs text-[#1D1E1F]">
               ✣
             </span>
             <span className="min-w-0 flex-1">

@@ -7,7 +7,7 @@ import {
   useMemo,
   useEffect,
 } from "react";
-import { Tree, Modal, Input, Tooltip } from "antd";
+import { Tree, Modal, Input, Tooltip, message } from "antd";
 import { Dropdown } from "@km/shared-components-react";
 import type { TreeProps, TreeDataNode } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
@@ -22,6 +22,15 @@ import { t } from "@/locales";
 import { filesApi } from "@/api/modules/files";
 import { generateUniqueName } from "@/utils/uniqueName";
 import "./catalog.css";
+
+/** 重命名错误提示 — 区分文件/文件夹 */
+function getRenameErrorMessage(e: any, isFile: boolean): string {
+  const msg = e?.response?.data?.message || e?.message || "";
+  if (msg.includes("目标路径已存在")) {
+    return `${isFile ? "文件" : "文件夹"}名已存在`;
+  }
+  return msg || "重命名失败";
+}
 
 interface FileItem {
   id: string;
@@ -181,10 +190,14 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     // biome-ignore lint/correctness/useExhaustiveDependencies: 反应性已通过 folderPathIndex（files 派生）覆盖，setExpandedKeys 是稳定的 zustand 选择器；刻意不直接依赖 files 与 expandedKeys：files 由 folderPathIndex 传递，expandedKeys 展开状态变化时 processedTargetRef 已护身（基于 id+basePath），加进 deps 反而每次 expand/collapse 都触发多余的 find+walk。
     useEffect(() => {
       const targetId = currentFileId;
-      if (!targetId) {
-        processedTargetRef.current = null;
-        return;
-      }
+      // currentFileId 短暂变空时【不清空】已处理记忆。
+      // file/layout.tsx 会在 pathname 变化 / 组件卸载时把 currentFileId 置为 ''，
+      // 随后又设回同一个 id（例如 preview↔chunks 切换、或列表数据刷新引发的重渲）。
+      // 若在此处清空记忆，回到同一文件时会再次滚动，把用户已手动滚动到的位置
+      // 强行拉回目标节点——表现为：滚到下方给最底部文件夹点“上传”时列表跳回最上面，
+      // 且上传下拉菜单所在的虚拟列表节点被滚动卸载，导致“选择文件”弹窗无法触发。
+      // 真正切到不同文件（id 变化）仍会滚动；文件被拖拽移动（base_path 变化）仍会重新定位。
+      if (!targetId) return;
       // 数据未就绪：等待 files 变化后再次触发
       if (!files || files.length === 0) return;
 
@@ -316,9 +329,15 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
         }
 
         const finalPath = `${data.base_path}/${finalName}`;
-        await renameFileAction(data.id, finalPath);
-        loadFilesAll();
-        stopInlineEdit();
+        try {
+          await renameFileAction(data.id, finalPath);
+          loadFilesAll();
+          stopInlineEdit();
+        } catch (e: any) {
+          message.error(getRenameErrorMessage(e, data.isfile));
+          // 关闭内联编辑模式，tree 节点会从 store 中读取原始名称
+          stopInlineEdit();
+        }
       },
       [
         renameFileAction,
@@ -470,10 +489,14 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
         return;
       }
 
-      renameFileAction(renamingFile.id, newPath).then(() => {
-        loadFilesAll();
-        setRenameModalVisible(false);
-      });
+      renameFileAction(renamingFile.id, newPath)
+        .then(() => {
+          loadFilesAll();
+          setRenameModalVisible(false);
+        })
+        .catch((e: any) => {
+          message.error(getRenameErrorMessage(e, renamingFile.isfile));
+        });
     }, [renamingFile, renameValue, renameFileAction, loadFilesAll]);
 
     // Delete file/folder
@@ -1055,6 +1078,11 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
               virtual
               height={treeHeight}
               itemHeight={36}
+              // 关闭 rc-tree 的可聚焦 input：避免在用户操作节点上的 + / 下拉菜单时，
+              // 焦点回落到树隐藏 input 触发 onFocus → onActiveChange(visibleSelectedKey) →
+              // scrollTo(当前选中节点)，把用户已手动滚到的位置强行拉回最上面。
+              // 导航通过 onClick(handleNodeTitleClick) 完成，不需要键盘焦点；拖拽与鼠标交互不受影响。
+              focusable={false}
               treeData={treeData}
               selectedKeys={
                 currentFileId ? [currentFileId] : []

@@ -38,9 +38,10 @@ const (
 )
 
 // LibraryKind 表示知识库的类型。
-// regular 是普通知识库，personal_user 是用户个人知识库。
+// regular 是普通知识库，wiki 是 wiki 知识库，personal_user 是用户个人知识库。
 const (
 	LibraryKindRegular      = "regular"
+	LibraryKindWiki         = "wiki"
 	LibraryKindPersonalUser = "personal_user"
 )
 

@@ -32,7 +32,7 @@ type SearchQuery struct {
 	AnchorLine int
 	Around     int
 	Direction  string
-	NoArchive  bool   // 是否跳过 archive/ 子目录中的日志文件
+	NoArchive  bool // 是否跳过 archive/ 子目录中的日志文件
 }
 
 type LogItem struct {
@@ -118,8 +118,8 @@ func searchSequentialLogs(query SearchQuery) ([]LogItem, bool, error) {
 	need := query.Offset + query.Limit
 	hasTimeRange := query.StartTime > 0 || query.EndTime > 0
 	logs := make([]LogItem, 0, need)
-	hitNeed := false    // 是否因为收集够 need 条而提前终止
-	exhausted := true   // 是否扫描了所有文件
+	hitNeed := false  // 是否因为收集够 need 条而提前终止
+	exhausted := true // 是否扫描了所有文件
 
 fileLoop:
 	for fi, meta := range files {

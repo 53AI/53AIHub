@@ -16,10 +16,10 @@ type EnterpriseConfig struct {
 }
 
 const (
-	EnterpriseConfigTypeSMTP              = "smtp"
-	EnterpriseConfigTypeMobile            = "mobile"
-	EnterpriseConfigTypeSSO               = "auth_sso"
-	EnterpriseConfigTypeVectorReadMode    = "vector_collection_read_mode"
+	EnterpriseConfigTypeSMTP           = "smtp"
+	EnterpriseConfigTypeMobile         = "mobile"
+	EnterpriseConfigTypeSSO            = "auth_sso"
+	EnterpriseConfigTypeVectorReadMode = "vector_collection_read_mode"
 )
 
 var EnterpriseConfigTypes = []string{

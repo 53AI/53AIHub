@@ -426,7 +426,7 @@ function AgentCreatePageContent() {
       case 'feedback':
         return <AgentFeedbackTab agentId={agentId} agentType={agentType} backendAgentType={backendAgentType} />
       case 'integrate':
-        return <AgentIntegrateTab agentId={agentId} />
+        return <AgentIntegrateTab agentId={agentId} agentType={agentType} />
       default:
         return null
     }
@@ -437,12 +437,18 @@ function AgentCreatePageContent() {
   const tabItems = useMemo(() => {
     const baseTabs = [{ key: 'config', label: t('agent.tab_config') }]
 
-    // 助理型（2）：小助理、AI搜问等 → 仅反馈 Tab
+    // 助理型（2）：小助理(workbench)、AI搜问(knowledge) → 接入 Tab + 反馈 Tab
     if (backendAgentType === 2) {
+      const effectiveAgentType = urlTypeParam || agentType
+      const isAssistantLike = effectiveAgentType === 'workbench' || effectiveAgentType === 'knowledge'
       baseTabs.push(
         { key: 'data', label: t('agent.tab_data') },
         { key: 'feedback', label: t('agent.tab_feedback') },
       )
+      // 小助理 / AI搜问 开放"接入"入口
+      if (isAssistantLike) {
+        baseTabs.push({ key: 'integrate', label: t('agent.tab_integrate') })
+      }
     } else if (backendAgentType === 0 || backendAgentType === 1) {
       // 对话型（0）和工作流（1）→ 接入 Tab 与反馈 Tab 并存
       baseTabs.push(

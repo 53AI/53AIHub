@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Spin, Button } from "antd";
-import { api_host, official_id, getRealPath } from "@/utils/config";
+import { api_host, official_id, getRealPath, base_path } from "@/utils/config";
 import { useBasicLayout } from "@/hooks/useBasicLayout";
 
 interface WeChatLoginProps {
@@ -20,10 +20,7 @@ export function WeChatLogin(props: WeChatLoginProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const basePath =
-    (import.meta.env.VITE_BASE_PATH as string | undefined) || "/console-react";
-
-  const WECHAT_LOGIN_URL = `https://work.wescrm.com/wechat_oauth_login.html?plain=1&height=280&appid=wxbe904d4182458106&suiteid=53aihub&api=${encodeURIComponent(`${api_host}/api/saas/wechat/redirect`)}&redirect_url=${encodeURIComponent(`${location.origin}${basePath}/oauth_login.html`)}`;
+  const WECHAT_LOGIN_URL = `https://work.wescrm.com/wechat_oauth_login.html?plain=1&height=280&appid=wxbe904d4182458106&suiteid=53aihub&api=${encodeURIComponent(`${api_host}/api/saas/wechat/redirect`)}&redirect_url=${encodeURIComponent(`${location.origin}${base_path}/oauth_login.html`)}`;
 
   // 移动端微信登录 URL
   const handleMobileLogin = () => {
@@ -68,7 +65,7 @@ export function WeChatLogin(props: WeChatLoginProps) {
     return () => {
       window.clearInterval(timer);
     };
-  }, [onOauthSuccess, basePath, isInMobile]);
+  }, [onOauthSuccess, base_path, isInMobile]);
 
   const handleLoad = () => {
     setLoading(false);

@@ -8,9 +8,10 @@ import (
 
 // ShortcutType* 快捷方式类型枚举（用于区分快捷方式关联的对象类型）
 const (
-	ShortcutTypeAgent   = "agent"   // 智能体
-	ShortcutTypeLibrary = "library" // 知识库
-	ShortcutTypeAILink  = "ai_link" // AI工具
+	ShortcutTypeAgent    = "agent"     // 智能体
+	ShortcutTypeLibrary  = "library"   // 知识库
+	ShortcutTypeAILink   = "ai_link"   // AI工具
+	ShortcutTypeWikiPage = "wiki_page" // Wiki页面
 )
 
 // Shortcut 快捷方式表
@@ -36,7 +37,7 @@ func (s *Shortcut) Validate() error {
 		return errors.New("关联ID无效")
 	}
 	switch s.Type {
-	case ShortcutTypeAgent, ShortcutTypeLibrary, ShortcutTypeAILink:
+	case ShortcutTypeAgent, ShortcutTypeLibrary, ShortcutTypeAILink, ShortcutTypeWikiPage:
 		return nil
 	default:
 		return errors.New("快捷方式类型无效")

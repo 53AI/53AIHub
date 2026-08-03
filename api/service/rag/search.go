@@ -44,7 +44,7 @@ type SearchRequest struct {
 	// Scope 是统一搜索范围模型，替代松散传递 library_ids / file_ids / chunk_types
 	// 当 Scope 不为 nil 时，buildVectorFilter 优先使用 Scope 构建 payload filter
 	Scope *SearchScope `json:"scope,omitempty"`
-	trace                    *searchTimingRecorder
+	trace *searchTimingRecorder
 	// 预计算的向量（用于多库并发搜索时避免重复调用 embedding）
 	precomputedQueryVector []float32
 	// 预计算的配置（用于多库并发搜索时避免重复获取配置）
@@ -906,26 +906,9 @@ func sortAndLimitSearchResults(results []SearchResultItem, topK int) []SearchRes
 
 // getSearchConfig 获取搜索配置
 func (s *SearchService) getSearchConfig(eid int64, req *SearchRequest, configService *ChunkConfigService) (*ChunkConfig, error) {
-	// 根据LibraryIDs数量决定配置获取策略
-	switch len(req.LibraryIDs) {
-	case 0:
-		// 跨库搜索：使用企业默认配置
-		logger.SysLogf("🔍 向量搜索使用企业默认配置 (eid=%d, 跨库搜索)", eid)
-		return configService.GetConfig(eid, nil, model.ChunkTypeDefault)
-	case 1:
-		// 单知识库搜索：使用该知识库的配置
-		libraryID := req.LibraryIDs[0]
-		logger.SysLogf("🔍 向量搜索使用知识库配置 (eid=%d, libraryID=%d)", eid, libraryID)
-		config, err := configService.GetConfig(eid, &libraryID, model.ChunkTypeDefault)
-		if err != nil {
-			return nil, fmt.Errorf("获取知识库%d的配置失败: %v", libraryID, err)
-		}
-		return config, nil
-	default:
-		// 多知识库搜索：使用企业默认配置（后续会重构为分库搜索）
-		logger.SysLogf("🔍 多知识库搜索使用企业默认配置 (eid=%d, libraries=%v) - 注意：后续版本将支持分库搜索", eid, req.LibraryIDs)
-		return configService.GetConfig(eid, nil, model.ChunkTypeDefault)
-	}
+	_ = req
+	logger.SysLogf("🔍 向量搜索使用企业 embedding 配置 (eid=%d)", eid)
+	return configService.GetEnterpriseEmbeddingConfig(eid)
 }
 
 func normalizeSearchRequestForExecution(req *SearchRequest) *SearchRequest {
@@ -1806,7 +1789,7 @@ func (s *SearchService) vectorMatchEntities(eid int64, keywords []string) ([]mod
 	}
 
 	configService := NewChunkConfigService(s.db)
-	config, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	config, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return nil, err
 	}
@@ -2828,7 +2811,7 @@ func (data *vectorEnrichmentData) getChunkConfig(eid int64, libraryID int64) (*C
 	if config, ok := data.chunkConfigCache[libraryID]; ok {
 		return config, data.chunkConfigErr[libraryID]
 	}
-	config, err := data.configService.GetConfig(eid, &libraryID, model.ChunkTypeDefault)
+	config, err := data.configService.GetEnterpriseEmbeddingConfig(eid)
 	data.chunkConfigCache[libraryID] = config
 	if err != nil {
 		data.chunkConfigErr[libraryID] = err
@@ -3426,7 +3409,7 @@ func (s *SearchService) multiLibraryVectorSearch(eid int64, req *SearchRequest, 
 
 	// 预先获取企业全局配置和 embedding（只调用一次，避免多次调用 embedding API）
 	configStart := time.Now()
-	config, configErr := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	config, configErr := configService.GetEnterpriseEmbeddingConfig(eid)
 	if configErr != nil {
 		logger.SysLogf("❌ 获取企业全局配置失败: eid=%d, err=%v", eid, configErr)
 		return nil, fmt.Errorf("获取企业全局配置失败: %v", configErr)

@@ -148,6 +148,8 @@ func invalidatePermissionCacheByResource(eid int64, resourceType int, resourceID
 		return invalidateLibraryPermissionCacheHierarchy(eid, resourceID)
 	case model.RESOURCE_TYPE_FILE:
 		return invalidatePermissionCacheForResources(eid, resourceType, []int64{resourceID})
+	case model.RESOURCE_TYPE_WIKI_PAGE:
+		return invalidatePermissionCacheForResources(eid, resourceType, []int64{resourceID})
 	default:
 		return nil
 	}

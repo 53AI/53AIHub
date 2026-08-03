@@ -107,7 +107,7 @@ func (s *LibrarySearchService) getSearchConfig(eid, libraryID int64, overrideCon
 	if s.configService == nil {
 		s.configService = NewChunkConfigService(s.db)
 	}
-	chunkConfig, err := s.configService.GetConfig(eid, &libraryID, model.ChunkTypeDefault)
+	chunkConfig, err := s.configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
 		return nil, err
 	}

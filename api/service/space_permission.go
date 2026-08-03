@@ -44,7 +44,7 @@ func BuildSubjectsForSpace(eid int64, userID int64, spaceID int64) ([]model.Subj
 }
 
 // 前台用户视角
-func (s *SpacePermissionService) GetUserSpaces(UserId int64, status int, name string, offset int, limit int) (count int64, spaces []model.Space, err error) {
+func (s *SpacePermissionService) GetUserSpaces(UserId int64, status int, name string, creatorIDs []int64, createdTimeFrom, createdTimeTo, updatedTimeFrom, updatedTimeTo int64, offset int, limit int) (count int64, spaces []model.Space, err error) {
 	subjects, err := GetSubjectIdentifierByUser(s.Eid, UserId)
 	if err != nil {
 		return 0, nil, err
@@ -63,7 +63,7 @@ func (s *SpacePermissionService) GetUserSpaces(UserId int64, status int, name st
 		return 0, nil, err
 	}
 
-	count, spaces, err = model.GetSpaceListWithIDs(s.Eid, name, status, resourceIDs, offset, limit)
+	count, spaces, err = model.GetSpaceListWithIDs(s.Eid, name, status, creatorIDs, createdTimeFrom, createdTimeTo, updatedTimeFrom, updatedTimeTo, resourceIDs, offset, limit)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -80,7 +80,7 @@ func (s *SpacePermissionService) GetUserSpaces(UserId int64, status int, name st
 
 // 管理员后台视角
 func (s *SpacePermissionService) GetAdminSpaces(UserId int64, status int, name string, offset int, limit int) (count int64, spaces []model.Space, err error) {
-	count, spaces, err = model.GetSpaceListWithIDs(s.Eid, name, status, nil, offset, limit)
+	count, spaces, err = model.GetSpaceListWithIDs(s.Eid, name, status, nil, 0, 0, 0, 0, nil, offset, limit)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -436,18 +436,41 @@ func GetUserPermission(eid int64, resourceType int, resourceID int64, userID int
 }
 
 // SearchLibrariesByName 根据知识库名搜索企业下有权限的知识库（跨空间）
-func (s *SpacePermissionService) SearchLibrariesByName(userID int64, name string) ([]model.Library, error) {
+func (s *SpacePermissionService) SearchLibrariesByName(userID int64, name string, spaceIDs []int64, creatorIDs []int64, createdTimeFrom, createdTimeTo, updatedTimeFrom, updatedTimeTo int64, offset, limit int) ([]model.Library, int64, error) {
 	// 1. 获取企业下所有知识库
 	var allLibraries []model.Library
 	query := model.DB.Where("eid = ?", s.Eid)
+	if len(spaceIDs) > 0 {
+		query = query.Where("space_id IN ?", spaceIDs)
+	}
 
 	if name != "" {
 		like := "%" + name + "%"
 		query = query.Where("name LIKE ?", like)
 	}
+	if len(creatorIDs) > 0 {
+		query = query.Where("creator_id IN ?", creatorIDs)
+	}
+	if createdTimeFrom > 0 {
+		query = query.Where("created_time >= ?", createdTimeFrom)
+	}
+	if createdTimeTo > 0 {
+		query = query.Where("created_time <= ?", createdTimeTo)
+	}
+	if updatedTimeFrom > 0 {
+		query = query.Where("updated_time >= ?", updatedTimeFrom)
+	}
+	if updatedTimeTo > 0 {
+		query = query.Where("updated_time <= ?", updatedTimeTo)
+	}
 
-	if err := query.Order("sort asc, created_time desc").Find(&allLibraries).Error; err != nil {
-		return nil, err
+	var totalCount int64
+	if err := query.Model(&model.Library{}).Count(&totalCount).Error; err != nil {
+		return nil, 0, err
+	}
+
+	if err := query.Order("sort asc, created_time desc").Offset(offset).Limit(limit).Find(&allLibraries).Error; err != nil {
+		return nil, 0, err
 	}
 
 	// 2. 过滤用户有权限的知识库
@@ -466,5 +489,5 @@ func (s *SpacePermissionService) SearchLibrariesByName(userID int64, name string
 		}
 	}
 
-	return filteredLibraries, nil
+	return filteredLibraries, totalCount, nil
 }

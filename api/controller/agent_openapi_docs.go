@@ -55,8 +55,8 @@ func GetAgentOpenAPIDocsTemplate(c *gin.Context) {
 		Title:   "Agent OpenAPI 对接文档模板",
 		BaseURL: "{{BASE_URL}}/openapi/v1",
 		Auth: map[string]interface{}{
-			"type":   "bearer",
-			"header": "Authorization: Bearer {{API_KEY}}",
+			"type":        "bearer",
+			"header":      "Authorization: Bearer {{API_KEY}}",
 			"description": "所有 /openapi/v1 接口都需要在 Header 中传 Authorization: Bearer {{API_KEY}}，/health 除外。",
 		},
 		Placeholders: map[string]string{
@@ -135,32 +135,32 @@ func GetAgentOpenAPIDocsTemplate(c *gin.Context) {
 				Request: map[string]interface{}{
 					"query": map[string]string{"user": "{{USER}}", "offset": "0", "limit": "50"},
 				},
-			ResponseExample: map[string]interface{}{
-				"count": 1,
-				"conversations": []map[string]interface{}{{"id": "{{CONVERSATION_ID}}", "title": "New conversation", "source": "api"}},
+				ResponseExample: map[string]interface{}{
+					"count":         1,
+					"conversations": []map[string]interface{}{{"id": "{{CONVERSATION_ID}}", "title": "New conversation", "source": "api"}},
+				},
 			},
-		},
-		{
-			Method:      "GET",
-			Path:        "/conversations/{{CONVERSATION_ID}}",
-			Title:       "获取会话详情",
-			Description: "获取会话详情和消息列表。消息评价使用 messages[].id。",
-			Parameters: []AgentOpenAPIDocsParameter{
-				{Name: "conversation_id", In: "path", Type: "string", Required: true, Description: "会话 ID，来自创建会话接口返回的 id。", Example: "{{CONVERSATION_ID}}"},
-				{Name: "user", In: "query", Type: "string", Required: true, Description: "外部用户唯一标识。", Example: "{{USER}}"},
-				{Name: "offset", In: "query", Type: "number", Required: false, Description: "消息分页偏移量，默认 0。", Example: 0},
-				{Name: "limit", In: "query", Type: "number", Required: false, Description: "消息分页数量，默认 50。", Example: 50},
-			},
-			Request: map[string]interface{}{
-				"query": map[string]string{"user": "{{USER}}", "offset": "0", "limit": "50"},
-			},
-			ResponseExample: map[string]interface{}{
-				"id":       "{{CONVERSATION_ID}}",
-				"title":    "New conversation",
-				"source":   "api",
-				"count":    1,
-				"messages": []map[string]interface{}{{"id": "{{MESSAGE_ID}}", "message_type": "chat", "request_source": "api", "content": "消息内容"}},
-			},
+			{
+				Method:      "GET",
+				Path:        "/conversations/{{CONVERSATION_ID}}",
+				Title:       "获取会话详情",
+				Description: "获取会话详情和消息列表。消息评价使用 messages[].id。",
+				Parameters: []AgentOpenAPIDocsParameter{
+					{Name: "conversation_id", In: "path", Type: "string", Required: true, Description: "会话 ID，来自创建会话接口返回的 id。", Example: "{{CONVERSATION_ID}}"},
+					{Name: "user", In: "query", Type: "string", Required: true, Description: "外部用户唯一标识。", Example: "{{USER}}"},
+					{Name: "offset", In: "query", Type: "number", Required: false, Description: "消息分页偏移量，默认 0。", Example: 0},
+					{Name: "limit", In: "query", Type: "number", Required: false, Description: "消息分页数量，默认 50。", Example: 50},
+				},
+				Request: map[string]interface{}{
+					"query": map[string]string{"user": "{{USER}}", "offset": "0", "limit": "50"},
+				},
+				ResponseExample: map[string]interface{}{
+					"id":       "{{CONVERSATION_ID}}",
+					"title":    "New conversation",
+					"source":   "api",
+					"count":    1,
+					"messages": []map[string]interface{}{{"id": "{{MESSAGE_ID}}", "message_type": "chat", "request_source": "api", "content": "消息内容"}},
+				},
 			},
 			{
 				Method:      "PATCH",
@@ -176,7 +176,7 @@ func GetAgentOpenAPIDocsTemplate(c *gin.Context) {
 					"query": map[string]string{"user": "{{USER}}"},
 					"body":  map[string]string{"title": "新的会话标题"},
 				},
-				RequestExample: map[string]interface{}{"title": "新的会话标题"},
+				RequestExample:  map[string]interface{}{"title": "新的会话标题"},
 				ResponseExample: map[string]interface{}{"id": "{{CONVERSATION_ID}}", "title": "新的会话标题"},
 			},
 			{
@@ -203,18 +203,21 @@ func GetAgentOpenAPIDocsTemplate(c *gin.Context) {
 					{Name: "conversation_id", In: "body", Type: "string", Required: true, Description: "会话 ID，必须先调用创建会话接口获取。", Example: "{{CONVERSATION_ID}}"},
 					{Name: "messages", In: "body", Type: "array", Required: true, Description: "OpenAI 格式消息数组，至少包含一条 user 消息。", Example: []map[string]string{{"role": "user", "content": "你好"}}},
 					{Name: "stream", In: "body", Type: "boolean", Required: false, Description: "是否流式返回。默认 true；前端示例一般用 false。", Example: false},
+					{Name: "wiki_search_config", In: "body", Type: "object", Required: false, Description: "Wiki 搜索配置。仅 enabled=true 且 Agent 开启 Wiki 能力时搜索；可传 space_ids、knowledge_base_ids、wiki_page_ids。", Example: map[string]interface{}{"enabled": true}},
 				},
 				Request: map[string]interface{}{
-					"messages": []map[string]string{{"role": "user", "content": "你好"}},
-					"conversation_id": "{{CONVERSATION_ID}}",
-					"user":            "{{USER}}",
-					"stream":          false,
+					"messages":           []map[string]string{{"role": "user", "content": "你好"}},
+					"conversation_id":    "{{CONVERSATION_ID}}",
+					"user":               "{{USER}}",
+					"stream":             false,
+					"wiki_search_config": map[string]interface{}{"enabled": true, "space_ids": []string{}, "knowledge_base_ids": []string{}, "wiki_page_ids": []string{}},
 				},
 				RequestExample: map[string]interface{}{
-					"user":            "{{USER}}",
-					"conversation_id": "{{CONVERSATION_ID}}",
-					"messages":        []map[string]string{{"role": "user", "content": "你好"}},
-					"stream":          false,
+					"user":               "{{USER}}",
+					"conversation_id":    "{{CONVERSATION_ID}}",
+					"messages":           []map[string]string{{"role": "user", "content": "你好"}},
+					"stream":             false,
+					"wiki_search_config": map[string]interface{}{"enabled": true},
 				},
 				ResponseExample: map[string]interface{}{"id": "chatcmpl_xxx", "object": "chat.completion", "choices": []interface{}{}},
 				StreamResponse: map[string]interface{}{
@@ -275,7 +278,7 @@ func GetAgentOpenAPIDocsTemplate(c *gin.Context) {
 						{
 							"type":        "error",
 							"description": "流式错误也使用 SSE data 包裹，随后发送 [DONE]。",
-							"example": map[string]interface{}{"error": map[string]string{"message": "error message", "type": "53aihub_error"}},
+							"example":     map[string]interface{}{"error": map[string]string{"message": "error message", "type": "53aihub_error"}},
 						},
 						{
 							"type":        "done",
@@ -291,35 +294,35 @@ func GetAgentOpenAPIDocsTemplate(c *gin.Context) {
 					"stream=true 时按 SSE 读取，每个事件以 data: 开头，空行分隔。",
 					"前端必须处理 [DONE] 结束标记。",
 				},
-		},
-		{
-			Method:      "POST",
-			Path:        "/files",
-			Title:       "上传文件",
-			Description: "上传 OpenAPI 文件。",
-			Parameters: []AgentOpenAPIDocsParameter{
-				{Name: "user", In: "formData", Type: "string", Required: true, Description: "外部用户唯一标识。", Example: "{{USER}}"},
-				{Name: "file", In: "formData", Type: "file", Required: true, Description: "上传文件。"},
 			},
-			Request: map[string]interface{}{
-				"content_type": "multipart/form-data",
-				"fields": map[string]string{"user": "{{USER}}", "file": "选择的文件"},
+			{
+				Method:      "POST",
+				Path:        "/files",
+				Title:       "上传文件",
+				Description: "上传 OpenAPI 文件。",
+				Parameters: []AgentOpenAPIDocsParameter{
+					{Name: "user", In: "formData", Type: "string", Required: true, Description: "外部用户唯一标识。", Example: "{{USER}}"},
+					{Name: "file", In: "formData", Type: "file", Required: true, Description: "上传文件。"},
+				},
+				Request: map[string]interface{}{
+					"content_type": "multipart/form-data",
+					"fields":       map[string]string{"user": "{{USER}}", "file": "选择的文件"},
+				},
+				ResponseExample: map[string]interface{}{"id": "{{FILE_ID}}", "file_name": "demo.txt", "size": 123, "extension": ".txt", "mime_type": "text/plain", "created_time": "2024-01-01T00:00:00Z"},
 			},
-			ResponseExample: map[string]interface{}{"id": "{{FILE_ID}}", "file_name": "demo.txt", "size": 123, "extension": ".txt", "mime_type": "text/plain", "created_time": "2024-01-01T00:00:00Z"},
-		},
-		{
-			Method:      "GET",
-			Path:        "/files/{{FILE_ID}}",
-			Title:       "获取文件信息",
-			Description: "获取上传文件信息。",
-			Parameters: []AgentOpenAPIDocsParameter{
-				{Name: "file_id", In: "path", Type: "string", Required: true, Description: "文件 ID。", Example: "{{FILE_ID}}"},
-				{Name: "user", In: "query", Type: "string", Required: true, Description: "外部用户唯一标识。", Example: "{{USER}}"},
-			},
-			Request: map[string]interface{}{
-				"query": map[string]string{"user": "{{USER}}"},
-			},
-			ResponseExample: map[string]interface{}{"id": "{{FILE_ID}}", "file_name": "demo.txt", "size": 123, "extension": ".txt", "mime_type": "text/plain", "status": "success", "created_time": "2024-01-01T00:00:00Z"},
+			{
+				Method:      "GET",
+				Path:        "/files/{{FILE_ID}}",
+				Title:       "获取文件信息",
+				Description: "获取上传文件信息。",
+				Parameters: []AgentOpenAPIDocsParameter{
+					{Name: "file_id", In: "path", Type: "string", Required: true, Description: "文件 ID。", Example: "{{FILE_ID}}"},
+					{Name: "user", In: "query", Type: "string", Required: true, Description: "外部用户唯一标识。", Example: "{{USER}}"},
+				},
+				Request: map[string]interface{}{
+					"query": map[string]string{"user": "{{USER}}"},
+				},
+				ResponseExample: map[string]interface{}{"id": "{{FILE_ID}}", "file_name": "demo.txt", "size": 123, "extension": ".txt", "mime_type": "text/plain", "status": "success", "created_time": "2024-01-01T00:00:00Z"},
 			},
 		},
 		Errors: []map[string]string{

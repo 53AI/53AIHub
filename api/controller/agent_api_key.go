@@ -39,7 +39,7 @@ type AgentAPIKeyItem struct {
 }
 
 type ListAgentAPIKeyResponse struct {
-	Count int64             `json:"count"`
+	Count int64              `json:"count"`
 	List  []*AgentAPIKeyItem `json:"list"`
 }
 

@@ -5,7 +5,7 @@ import {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { Modal, Tree, Radio, Empty, Button } from "antd";
+import { Modal, Tree, Radio, Button } from "antd";
 import {
   CheckOutlined,
   CloseOutlined,
@@ -355,7 +355,6 @@ export const DeptMemberPicker = forwardRef<
           footer={null}
           width={650}
           destroyOnHidden
-          styles={{ body: { padding: "16px 24px" } }}
         >
           <div className="picker-content">
             <div className="picker-left">
@@ -395,6 +394,7 @@ export const DeptMemberPicker = forwardRef<
                       style={{
                         "--ant-tree-indent-size": "6px",
                       }}
+                      blockNode
                       onSelect={(keys, info) => {
                         const nodeData = (info.node as any).data || info.node;
                         handleNodeClick(nodeData);

@@ -17,6 +17,7 @@ import (
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/ctxkey"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
@@ -468,4 +469,136 @@ func testImageGenerationChannel(ctx context.Context, channel *model.Channel, mod
 // boolPtr 返回 bool 指针
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// TestVoiceChannel godoc
+// @Summary 测试语音模型渠道
+// @Description 使用 DashScope 原生异步接口验证语音模型配置可达性，需指定 model_name 查询参数
+// @Tags Channel
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param channel_id path int true "Channel ID"
+// @Param model_name query string true "要测试的模型名，如 paraformer-v2"
+// @Success 200 {object} model.CommonResponse{data=ChannelTestResponse}
+// @Router /api/channels/test/voice/{channel_id} [post]
+func TestVoiceChannel(c *gin.Context) {
+	channelID, err := strconv.ParseInt(c.Param("channel_id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(err))
+		return
+	}
+
+	channel, err := model.GetChannelByID(channelID)
+	if err != nil || channel.Eid != config.GetEID(c) {
+		c.JSON(http.StatusOK, model.NotFound.ToResponse(nil))
+		return
+	}
+
+	if !model.IsVoiceModelChannel(channel) {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("渠道类型不是语音模型")))
+		return
+	}
+
+	modelName := c.Query("model_name")
+	if modelName == "" {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("缺少 model_name 查询参数")))
+		return
+	}
+
+	customConfig, err := model.ParseChannelCustomConfig(channel.CustomConfig)
+	if err != nil {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("CustomConfig 解析失败: %v", err)))
+		return
+	}
+
+	voiceModels, ok := customConfig["voice_models"].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("CustomConfig 缺少 voice_models")))
+		return
+	}
+	vm, ok := voiceModels[modelName].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("voice_models 中未找到模型 %s", modelName)))
+		return
+	}
+
+	apiKey := channel.Key
+	if apiKey == "" {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("渠道 Key 为空")))
+		return
+	}
+
+	workspaceID, _ := vm["workspace_id"].(string)
+	if workspaceID == "" {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("模型 %s 缺少 workspace_id", modelName)))
+		return
+	}
+	apiDomain := fmt.Sprintf("https://%s.cn-beijing.maas.aliyuncs.com", workspaceID)
+
+	baseURL := strings.TrimRight(apiDomain, "/")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+
+	startTime := time.Now()
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	testURL := baseURL + "/api/v1/services/audio/asr/transcription"
+	testFileURL := "https://kmapirc.53ai.com/api/files/9QrIFq/preview/knowledge_file_9QrIFq_welcome.mp3"
+
+	requestBody := map[string]interface{}{
+		"model": modelName,
+		"input": map[string]interface{}{
+			"file_urls": []string{testFileURL},
+		},
+		"parameters": map[string]interface{}{
+			"channel_id": []int{0},
+		},
+	}
+	bodyBytes, _ := json.Marshal(requestBody)
+
+	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", testURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		c.JSON(http.StatusOK, model.SystemError.ToErrorResponse(fmt.Errorf("创建请求失败: %v", err)))
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("X-DashScope-Async", "enable")
+	if workspaceID, ok := vm["workspace_id"].(string); ok && workspaceID != "" {
+		req.Header.Set("X-DashScope-WorkSpace", workspaceID)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusOK, model.ParamError.ToErrorResponse(fmt.Errorf("连接失败: %v", err)))
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	consumedTime := float64(time.Now().Sub(startTime).Milliseconds()) / 1000.0
+
+	if resp.StatusCode == 403 {
+		c.JSON(http.StatusOK, model.Success.ToResponse(ChannelTestResponse{
+			Success: true,
+			Message: fmt.Sprintf("响应状态码: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(respBody))),
+			Model:   modelName,
+			Time:    consumedTime,
+		}))
+		return
+	}
+
+	if resp.StatusCode >= 400 {
+		c.JSON(http.StatusOK, model.ParamError.ToErrorResponse(fmt.Errorf("响应状态码: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(ChannelTestResponse{
+		Success: true,
+		Message: fmt.Sprintf("响应状态码: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(respBody))),
+		Model:   modelName,
+		Time:    consumedTime,
+	}))
 }

@@ -98,7 +98,9 @@ func (s *Service) ConvertSyncWithConfig(ctx context.Context, sourceURL string, e
 			parseMode = config.Parse.Config.EngineParams.ParseMode
 		}
 		logger.Infof(ctx, "📋 [DOC_SERVICE] 构建 textin 请求 - app_id: %s, parse_mode: %s",
-			config.AppID, parseMode)
+			maskTextinAppID(config.AppID), parseMode)
+		logger.Debugf(ctx, "【诊断-Textin配置传播】eid=%d filename=%s parser_type=%s %s",
+			eid, filename, parserType, textinConfigDebugSummary(config))
 	} else if parserType == model.PLATFORM_KEY_MINERU_NET && mineruConfig != nil {
 		// 使用 mineru 配置
 		config := s.configService.ConvertToMinerUConfig(mineruConfig)
@@ -150,11 +152,14 @@ func (s *Service) ConvertSyncWithConfig(ctx context.Context, sourceURL string, e
 		}
 		logger.Infof(ctx, "👂 [DOC_SERVICE] 构建 通义听悟 请求 - endpoint: %s", config.Endpoint)
 	} else {
-		// 使用默认解析器
+		// 使用默认解析器（builtin/opendataloader/markitdown/simple 等本地引擎）
 		req = &ConvertRequest{
 			SourceURL:    sourceURL,
 			OutputFormat: "md",
 			ParserType:   parserType,
+			JobParams: &JobParams{
+				ParserType: parserType,
+			},
 		}
 		logger.Infof(ctx, "📄 [DOC_SERVICE] 构建默认请求 - parser_type: %s", parserType)
 	}

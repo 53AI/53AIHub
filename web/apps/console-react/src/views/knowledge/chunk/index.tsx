@@ -30,24 +30,44 @@ const CHUNK_MODE = {
   IDENTIFIER: 'identifier_first',
 } as const
 
+const HEADER_TYPES = ['h1', 'h2', 'h3', 'h4', 'h5'] as const
+
+const getHeaderLabel = (type: string) => {
+  const map: Record<string, string> = {
+    h1: t('knowledge.chunk.header_h1'),
+    h2: t('knowledge.chunk.header_h2'),
+    h3: t('knowledge.chunk.header_h3'),
+    h4: t('knowledge.chunk.header_h4'),
+    h5: t('knowledge.chunk.header_h5'),
+  }
+  return map[type] || type
+}
+
+const getCommonLabel = (value: string) => {
+  const map: Record<string, string> = {
+    '\\n': t('knowledge.chunk.newline_1'),
+    '\\n\\n': t('knowledge.chunk.newline_2'),
+    '。': t('knowledge.chunk.period'),
+    '！': t('knowledge.chunk.exclamation'),
+    '？': t('knowledge.chunk.question'),
+    '；': t('knowledge.chunk.semicolon'),
+    '---': t('knowledge.chunk.divider'),
+  }
+  return map[value] || value
+}
+
 const CONFIG = {
   maxLength: { min: 50, max: 50000 },
-  headerList: [
-    { type: 'h1', label: '一级标题（H1）' },
-    { type: 'h2', label: '二级标题（H2）' },
-    { type: 'h3', label: '三级标题（H3）' },
-    { type: 'h4', label: '四级标题（H4）' },
-    { type: 'h5', label: '五级标题（H5）' },
-  ],
+  headerTypes: HEADER_TYPES,
   commonList: [
-    { label: '1 个换行符（\\n）', value: '\\n' },
-    { label: '2 个换行符（\\n\\n）', value: '\\n\\n' },
-    { label: '句号（。）', value: '。' },
-    { label: '感叹号（！）', value: '！' },
-    { label: '问号（？）', value: '？' },
-    { label: '分号（；）', value: '；' },
-    { label: '分割线（---）', value: '---' },
-  ],
+    { labelKey: 'newline_1', value: '\\n' },
+    { labelKey: 'newline_2', value: '\\n\\n' },
+    { labelKey: 'period', value: '。' },
+    { labelKey: 'exclamation', value: '！' },
+    { labelKey: 'question', value: '？' },
+    { labelKey: 'semicolon', value: '；' },
+    { labelKey: 'divider', value: '---' },
+  ] as { labelKey: string; value: string }[],
 }
 
 // Escape mapping
@@ -100,10 +120,10 @@ interface Setting {
 const extraSetting = {
   knowledge_chunking_type: CHUNK_TYPE.CUSTOM,
   knowledge_chunking_rule: ['heading'],
-  knowledge_chunking_head: CONFIG.headerList[0].type,
+  knowledge_chunking_head: CONFIG.headerTypes[0],
   knowledge_chunking_input: [],
   index_chunking_type: CHUNK_TYPE.CUSTOM,
-  index_chunking_head: CONFIG.headerList[0].type,
+  index_chunking_head: CONFIG.headerTypes[0],
   index_chunking_rule: ['heading'],
   index_chunking_input: [],
 }
@@ -126,21 +146,22 @@ export function KnowledgeChunkPage() {
     const customItems = setting.knowledge_chunking_input.filter(
       item => !CONFIG.commonList.some(common => common.value === item)
     )
-    return CONFIG.commonList.concat(customItems.map(item => ({ label: item, value: item })))
+    return CONFIG.commonList.map(item => ({ label: getCommonLabel(item.value), value: item.value }))
+      .concat(customItems.map(item => ({ label: item, value: item })))
   }, [setting.knowledge_chunking_input])
 
   const indexCommonList = useMemo(() => {
     const customItems = setting.index_chunking_input.filter(
       item => !CONFIG.commonList.some(common => common.value === item)
     )
-    return CONFIG.commonList.concat(customItems.map(item => ({ label: item, value: item })))
+    return CONFIG.commonList.map(item => ({ label: getCommonLabel(item.value), value: item.value }))
+      .concat(customItems.map(item => ({ label: item, value: item })))
   }, [setting.index_chunking_input])
 
   // Get heading label
   const getHeadingLabel = (type: 'knowledge' | 'index') => {
     const chunkHead = type === 'knowledge' ? 'knowledge_chunking_head' : 'index_chunking_head'
-    const label = CONFIG.headerList.find(item => item.type === setting[chunkHead])?.label
-    return label || CONFIG.headerList[0].label
+    return getHeaderLabel(setting[chunkHead])
   }
 
   // Load chunk setting list
@@ -172,8 +193,8 @@ export function KnowledgeChunkPage() {
     const splitRule = config.chunking_config[prefix].split_rule
     if (splitRule) {
       const rules = splitRule.split(',')
-      const headers = CONFIG.headerList.map(item => item.type)
-      if (headers.includes(rules[0])) {
+      const headers = CONFIG.headerTypes
+      if (headers.includes(rules[0] as any)) {
         config[`${prefix}_head` as keyof Setting] = rules[0] as any
         config[`${prefix}_input` as keyof Setting] = rules.slice(1).map(formatDisplayValue) as any
       } else {
@@ -349,13 +370,13 @@ export function KnowledgeChunkPage() {
 
     if (setting.knowledge_chunking_type === CHUNK_TYPE.CUSTOM) {
       if (data.chunking_config.knowledge_chunking.split_rule === '') {
-        message.error('知识点拆分规则不能为空')
+        message.error(t('knowledge.chunk.knowledge_rule_required'))
         return
       }
     }
     if (setting.index_chunking_type === CHUNK_TYPE.CUSTOM) {
       if (data.chunking_config.index_chunking.split_rule === '') {
-        message.error('索引块拆分规则不能为空')
+        message.error(t('knowledge.chunk.index_rule_required'))
         return
       }
     }
@@ -384,7 +405,7 @@ export function KnowledgeChunkPage() {
     return (
       <div className="border rounded">
         <div className="h-12 flex items-center gap-2 px-5 border-b bg-gray-50">
-          <span className="text-sm font-medium">{type === 'knowledge' ? '知识点' : '检索块'}</span>
+          <span className="text-sm font-medium">{type === 'knowledge' ? t('knowledge.chunk.knowledge_label') : t('knowledge.chunk.index_label')}</span>
         </div>
         
         <div className="py-5 px-10 flex flex-col gap-4">
@@ -604,9 +625,9 @@ export function KnowledgeChunkPage() {
                 />
                 <h4 className="text-sm font-medium">{item.chunking_config?.name}</h4>
                 <span className="text-sm text-gray-400">
-                  {item.chunking_config?.type === 'default' && '根据智能算法进行分段计算及数据清洗'}
-                  {item.chunking_config?.type === 'data_table' && '识别表格结构与数据逻辑，自动对表格类文档进行分段计算与数据清洗'}
-                  {item.chunking_config?.type === 'qa' && '聚焦问答类文档的问答结构，清晰拆分问题与答案'}
+                  {item.chunking_config?.type === 'default' && t('knowledge.chunk.desc_default')}
+                  {item.chunking_config?.type === 'data_table' && t('knowledge.chunk.desc_data_table')}
+                  {item.chunking_config?.type === 'qa' && t('knowledge.chunk.desc_qa')}
                 </span>
               </div>
               {item.chunking_config?.type === 'default' && (

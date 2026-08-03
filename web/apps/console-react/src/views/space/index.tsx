@@ -1,10 +1,12 @@
-import { Search, SvgIcon } from "@km/shared-components-react";
-import { Button, Input, Modal, message, Table } from "antd";
+import { Search } from "@km/shared-components-react";
+import { SettingOutlined } from "@ant-design/icons";
+import { Button, Input, Modal, message, Table, Tooltip } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { spacesApi } from "@/api/modules/spaces";
 import { transformSpaceList } from "@/api/modules/spaces/transform";
-import type { SpaceDisplayItem, SpaceItem } from "@/api/modules/spaces/types";
+import type { SpaceDisplayItem } from "@/api/modules/spaces/types";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { useListState, useVersion } from "@/hooks";
 import { t } from "@/locales";
@@ -24,6 +26,7 @@ interface SpaceUrlState {
 }
 
 export function SpacePage() {
+	const navigate = useNavigate();
 	const [loading, setLoading] = useState(false);
 	const [tableData, setTableData] = useState<SpaceDisplayItem[]>([]);
 	const [total, setTotal] = useState(0);
@@ -90,7 +93,9 @@ export function SpacePage() {
 
 	// Handle view
 	const handleView = useCallback((item: SpaceDisplayItem) => {
-		detailRef.current?.open(item as SpaceItem);
+		navigate(
+			`/space/${item.id}/setting/basic-info`,
+		);
 	}, []);
 
 	// Handle delete
@@ -172,7 +177,7 @@ export function SpacePage() {
 						return (
 							<div className="flex items-center gap-2">
 								<div className="size-7 bg-[#E0EEFF] flex items-center justify-center rounded-full">
-									<div className="text-xs text-brand">系</div>
+									<div className="text-xs text-brand">{t("common.system_avatar")}</div>
 								</div>
 								{t("space.system")}
 							</div>
@@ -218,20 +223,22 @@ export function SpacePage() {
 
 					return (
 						<div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-							<Button
-								type="link"
-								icon={<SvgIcon name="view" />}
-								onClick={(e) => {
-									e.stopPropagation();
-									handleView(record);
-								}}
-							/>
+							<Tooltip title={t("space.setting.title")}>
+								<Button
+									type="link"
+									icon={<SettingOutlined />}
+									onClick={(e) => {
+										e.stopPropagation();
+										handleView(record);
+									}}
+								/>
+							</Tooltip>
 						</div>
 					);
 				},
 			},
 		],
-		[t, handleView, handleDelete],
+		[t, handleView, handleDelete, navigate],
 	);
 
 	// 监听 URL 状态变化，重新加载数据

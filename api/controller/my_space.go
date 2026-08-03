@@ -55,9 +55,14 @@ type RecordingFolderResponse struct {
 	Folder *model.File `json:"folder"`
 }
 
+type RecordingFileListItem struct {
+	model.File
+	InsightPage *model.RecordingFileInsightPage `json:"insight_page,omitempty"`
+}
+
 type RecordingListResponse struct {
-	Count int64               `json:"count"`
-	Data  []model.File        `json:"data"`
+	Count int64                   `json:"count"`
+	Data  []RecordingFileListItem `json:"data"`
 }
 
 type RecordingListItem struct {
@@ -420,6 +425,7 @@ func CreateMySpaceRecordingFolder(c *gin.Context) {
 // @Param type query string true "类型筛选(dir/file)"
 // @Param offset query int false "偏移量" default(0)
 // @Param limit query int false "每页条数" default(30)
+// @Param group_id query int false "录音文件分组ID"
 // @Success 200 {object} model.CommonResponse{data=controller.RecordingListResponse}
 // @Failure 500 {object} model.CommonResponse
 // @Router /api/my-space/recordings [get]
@@ -428,11 +434,16 @@ func GetMySpaceRecordings(c *gin.Context) {
 	userID := config.GetUserId(c)
 
 	var req struct {
-		Path    string `form:"path"`
-		Keyword string `form:"keyword"`
-		Type    string `form:"type" binding:"required"`
-		Offset  int    `form:"offset"`
-		Limit   int    `form:"limit"`
+		Path      string `form:"path"`
+		Keyword   string `form:"keyword"`
+		Type      string `form:"type" binding:"required"`
+		Offset    int    `form:"offset"`
+		Limit     int    `form:"limit"`
+		GroupID   int64  `form:"group_id"`
+		SortBy    string `form:"sort_by"`
+		Order     string `form:"order"`
+		StartTime int64  `form:"start_time"`
+		EndTime   int64  `form:"end_time"`
 	}
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
@@ -446,15 +457,32 @@ func GetMySpaceRecordings(c *gin.Context) {
 	}
 
 	svc := service.NewMySpaceRecordingService(eid)
-	files, total, err := svc.ListEntries(c.Request.Context(), userID, req.Path, fileType, req.Keyword, req.Offset, req.Limit)
+	files, total, err := svc.ListEntries(c.Request.Context(), userID, req.Path, fileType, req.Keyword, req.Offset, req.Limit, req.GroupID, req.SortBy, req.Order, req.StartTime, req.EndTime)
 	if err != nil {
 		logger.SysErrorf("【录音】获取我的录音列表失败: eid=%d user_id=%d err=%v", eid, userID, err)
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
+
+	// 批量查询洞察页面编排结果
+	fileIDs := make([]int64, 0, len(files))
+	for _, f := range files {
+		fileIDs = append(fileIDs, f.ID)
+	}
+	insightPages, _ := model.BatchGetRecordingFileInsightPagesByFileIDs(fileIDs)
+
+	items := make([]RecordingFileListItem, 0, len(files))
+	for _, f := range files {
+		item := RecordingFileListItem{File: f}
+		if p, ok := insightPages[f.ID]; ok {
+			item.InsightPage = p
+		}
+		items = append(items, item)
+	}
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(RecordingListResponse{
 		Count: total,
-		Data:  files,
+		Data:  items,
 	}))
 }
 

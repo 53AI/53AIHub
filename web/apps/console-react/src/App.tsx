@@ -10,7 +10,12 @@ import "dayjs/locale/zh-tw";
 import "dayjs/locale/en";
 import "dayjs/locale/ja";
 import { AppRouter } from "./router";
-import { useEnterpriseStore, useLocaleStore, useUserStore } from "@/stores";
+import {
+  useChannelStore,
+  useEnterpriseStore,
+  useLocaleStore,
+  useUserStore,
+} from "@/stores";
 import { useEnv } from "@/hooks/useEnv";
 import { useMultiAccountGuard } from "@/hooks/useMultiAccountGuard";
 import { eventBus } from "@km/shared-utils";
@@ -100,6 +105,7 @@ export function App() {
     Promise.all([
       enterpriseStore.loadSelfInfo(),
       userStore.loadSelfInfo(),
+      useChannelStore.getState().loadModelConfig(),
     ]).catch(console.error);
   }, []);
 

@@ -30,6 +30,7 @@ require (
 	github.com/swaggo/swag v1.16.4
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.1.34
 	go.uber.org/zap v1.27.0
+	golang.org/x/net v0.50.0
 	golang.org/x/text v0.34.0
 	gorm.io/driver/postgres v1.5.7
 	gorm.io/gorm v1.30.0
@@ -43,6 +44,7 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/JohannesKaufmann/dom v0.2.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
+	github.com/aichy126/json_repair v0.0.0-20260117102223-347cca95b390 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/gateway-dingtalk v1.0.2 // indirect
@@ -97,6 +99,7 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
+	github.com/mozillazg/go-pinyin v0.21.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -161,7 +164,6 @@ require (
 	github.com/ugorji/go/codec v1.3.0 // indirect
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1

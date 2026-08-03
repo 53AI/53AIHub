@@ -8,7 +8,7 @@ type ImageDownloadTask struct {
 	FileBodyID  int64  `json:"file_body_id"`
 	Eid         int64  `json:"eid"`
 	UserID      int64  `json:"user_id"`
-	StaticPath  string `json:"static_path"`   // 原始 /static/... 路径
+	StaticPath  string `json:"static_path"`  // 原始 /static/... 路径
 	AbsoluteURL string `json:"absolute_url"` // 完整下载URL
 	PreviewKey  string `json:"preview_key"`  // 预览键
 	StorageKey  string `json:"storage_key"`  // 存储键
@@ -19,15 +19,15 @@ type ImageDownloadTask struct {
 
 // BatchMeta 批次元数据
 type BatchMeta struct {
-	BatchID       string            `json:"batch_id"`
-	FileBodyID    int64             `json:"file_body_id"`
-	Eid           int64             `json:"eid"`
-	UserID        int64             `json:"user_id"`
-	TotalTasks    int               `json:"total_tasks"`
-	PendingTasks  int               `json:"pending_tasks"`
-	Mapping       map[string]string `json:"mapping"`        // staticPath -> previewURL
-	CreatedAt     time.Time         `json:"created_at"`
-	CompletedAt   *time.Time        `json:"completed_at"`
+	BatchID      string            `json:"batch_id"`
+	FileBodyID   int64             `json:"file_body_id"`
+	Eid          int64             `json:"eid"`
+	UserID       int64             `json:"user_id"`
+	TotalTasks   int               `json:"total_tasks"`
+	PendingTasks int               `json:"pending_tasks"`
+	Mapping      map[string]string `json:"mapping"` // staticPath -> previewURL
+	CreatedAt    time.Time         `json:"created_at"`
+	CompletedAt  *time.Time        `json:"completed_at"`
 }
 
 // UploadFileMeta 上传文件元数据
@@ -51,7 +51,7 @@ const (
 
 // 下载配置常量
 const (
-	MaxRetries      = 3
-	DefaultTimeout  = 30 * time.Second
-	RetryBaseDelay  = 300 * time.Millisecond
+	MaxRetries     = 3
+	DefaultTimeout = 30 * time.Second
+	RetryBaseDelay = 300 * time.Millisecond
 )

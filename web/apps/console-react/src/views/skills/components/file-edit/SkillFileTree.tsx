@@ -115,7 +115,7 @@ export function SkillFileTree() {
   if (files.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Empty description="暂无文件" />
+        <Empty description={t("common.no_data")} />
       </div>
     )
   }

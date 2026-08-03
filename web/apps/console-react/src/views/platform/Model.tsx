@@ -219,6 +219,16 @@ export function PlatformModel() {
           if (model.value in (custom_config.alias_map || {})) {
             delete custom_config.alias_map[model.value];
           }
+          // 同步删除语音模型配置
+          if (custom_config.voice_models?.[model.value]) {
+            delete custom_config.voice_models[model.value];
+          }
+          // 同步删除 custom_config.models 中对应的自定义模型
+          if (Array.isArray(custom_config.models)) {
+            custom_config.models = custom_config.models.filter(
+              (item: any) => item.model_id !== model.value,
+            );
+          }
           await channelApi.update(data.channel_id, {
             channel_id: data.channel_id,
             key: data.key,

@@ -74,7 +74,7 @@ import {
 	checkPermission as checkUserPermission,
 	checkPermissionAsync as checkUserPermissionAsync,
 } from "@/utils/permission";
-import { buildUrl } from "@/utils/router";
+import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
 import { checkVersion } from "@/utils/version";
 import AgentTooltip from "./components/AgentTooltip";
 import OpenClawPanel from "./components/OpenClawPanel";
@@ -104,8 +104,10 @@ import {
 	type OpenClawConnectionState,
 } from "./openclaw-status";
 import EnhancedMentionDropdown from "./sender-bridges/EnhancedMentionDropdown";
+import type { KnowledgeSourceSelectorRef } from "@/components/KnowledgeSource";
 import KnowledgeSenderExtras from "./sender-bridges/KnowledgeSenderExtras";
 import LegacyLinkList from "./sender-bridges/LegacyLinkList";
+import WikiLinkList from "./sender-bridges/WikiLinkList";
 import { useKnowledgeSenderConfig } from "./sender-bridges/useKnowledgeSenderConfig";
 import { useWorkAiSenderConfig } from "./sender-bridges/useWorkAiSenderConfig";
 import WorkAiSenderExtras from "./sender-bridges/WorkAiSenderExtras";
@@ -608,6 +610,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 		const agentStore = useAgentStore();
 		const storeCurrentAgent = useCurrentAgent();
 		const currentAgent = currentAgentOverride || storeCurrentAgent;
+
 		const convStore = useConversationStore();
 		const sharedConvStore = useSharedChatConversationStore();
 		const addFrontConversation = useConversationStore(
@@ -935,19 +938,22 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			[],
 		);
 
-		// ============ Dialog 引用(work-ai 多入口 + knowledge 模式 @ 知识库入口共用) ============
+		// ============ Dialog 引用(work-ai 多入口共用 spaceDialogRef;knowledge 模式复用 KnowledgeSourceSelector 内部 dialog) ============
 		const spaceDialogRef = useRef<SpaceDialogRef>(null);
 		const uploadsDialogRef = useRef<MyFilesDialogRef>(null);
 		const aiGeneratedDialogRef = useRef<MyFilesDialogRef>(null);
 		const recordingsDialogRef = useRef<MyFilesDialogRef>(null);
+		// knowledge 模式:指向 KnowledgeSenderExtras 内 KnowledgeSourceSelector 的 ref,
+		// 让 @ 弹窗底部「从知识库里选择」入口复用该 selector 的 SpaceDialog(单一对话框)。
+		const knowledgeSelectorRef = useRef<KnowledgeSourceSelectorRef>(null);
 
 		const knowledgeSenderConfig = useKnowledgeSenderConfig({
 			currentAgent,
 			enabled: currentAgent?.agent_usage === AGENT_USAGES.KM_AI_SEARCH,
 			isInLibrary: isInLibraryMode,
-			// knowledge 模式:复用 work-ai 模式的 spaceDialogRef,
-			// 让 @ 弹窗底部的「@ 从知识库里选择」入口可打开 SpaceDialog(对齐原版 Sender 的 handleOpenLibrary)
-			spaceDialogRef,
+			// knowledge 模式:@ 弹窗底部的「@ 从知识库里选择」入口通过 selector.open() 复用
+			// KnowledgeSourceSelector 内部 SpaceDialog(对齐原版 Sender 的 handleOpenLibrary)
+			knowledgeSelectorRef,
 		});
 		const workAiSenderConfig = useWorkAiSenderConfig({
 			currentAgent,
@@ -979,6 +985,17 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				/>
 			);
 		}, [workAiSenderConfig]);
+
+		// AI 搜问 (knowledge) 模式:复用与小助理同款的 EnhancedMentionDropdown,但只暴露
+		// 「从知识库里选择」入口,不显示「从我上传/AI生成/我的录音」三项(这些是小助理专属)。
+		// slotProps.onOpenLibrary 由 Sender 透传 mention.onOpenLibrary(已接到 KnowledgeSourceSelector.open())。
+		const knowledgeMentionDropdownSlot = useMemo(() => {
+			if (!knowledgeSenderConfig) return undefined;
+			return (slotProps: any) => (
+				// 仅透传 slotProps(包含 onOpenLibrary);其余三个回调不注入 → EnhancedMentionDropdown 自动隐藏对应入口
+				<EnhancedMentionDropdown {...slotProps} />
+			);
+		}, [knowledgeSenderConfig]);
 
 		const handleOpenClawHistoryOpenChange = useCallback((open: boolean) => {
 			if (open) {
@@ -1909,7 +1926,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			const libraryId = file.library_id;
 			const fileId = file.file_id || file.id;
 			if (libraryId && fileId) {
-				const url = buildUrl(`/library/${libraryId}/file/${fileId}`);
+				const url = buildKnowledgeFileUrl(libraryId, fileId);
 				window.open(url, "_blank", "noopener,noreferrer");
 			}
 		}, []);
@@ -2072,21 +2089,11 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 		const lockOpenClawEmbeddedPreviewToCurrentAgent =
 			embeddedOpenClawPreview && isOpenclaw;
 
-		// 配置 features（内部使用）
-		// - feedbackEnabled / menu.feedback：openclaw 类型反馈先禁用（占位字段，
-		//   当前 ChatView 内部仍以 agent_type === 2 独立计算 feedbackEnabled，
-		//   这里先在 ChatContainer 侧标记，待 ChatView 支持读取 features 后生效）
+		// 透传给 ChatView 的功能分组(已收敛到 ChatViewProps 的 feature group)。
+		// - feedback.enabled 不在此处聚合,见 <ChatView feedback={{ enabled: !isOpenclaw }} />
+		// - menu.* 由 ChatView 内部基于 feedbackEnabled / shareEnabled / openclawEnabled 派生,不在此处提供
 		const features = useMemo(
 			() => ({
-				menu: {
-					copy: true,
-					regenerate: true,
-					share: true,
-					// openclaw 类型反馈先禁用：菜单中的反馈按钮开关
-					feedback: !isOpenclaw,
-				},
-				// openclaw 类型反馈先禁用：顶层总开关（占位）
-				feedbackEnabled: !isOpenclaw,
 				history: !isOpenclaw && !isIndexRoute,
 				newConversation: !isOpenclaw && !isIndexRoute,
 				languageSwitcher: false,
@@ -2096,13 +2103,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					currentAgent?.settings_obj?.image_parse?.enable,
 				guide: true, // 工作台入口也需要显示使用指引面板
 				share: !isOpenclaw,
-				agentTooltip:
-					!isIndexRoute && !lockOpenClawEmbeddedPreviewToCurrentAgent,
 				messageMenu: true,
 				skipInitialLoad: isIndexRoute ? false : !isOpenclaw,
-				showRecommend: lockOpenClawEmbeddedPreviewToCurrentAgent
-					? false
-					: showRecommend,
 				enableDragUpload: false,
 				allowMultiple: true,
 				openclaw: isOpenclaw,
@@ -2131,13 +2133,12 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			[
 				currentAgent,
 				isOpenclaw,
-				lockOpenClawEmbeddedPreviewToCurrentAgent,
 				openClawHealthy,
 				openClawConnectionState,
 				openClawCurrentConversationResolving,
 				openClawGatewayName,
-				showRecommend,
 				isIndexRoute,
+				t,
 			],
 		);
 
@@ -2980,6 +2981,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					agentModels={knowledgeSenderConfig.agentModels as any}
 					model={knowledgeSenderConfig.model}
 					onChangeModel={knowledgeSenderConfig.onChangeModel}
+					selectorRef={knowledgeSelectorRef}
 					knowledgeSource={knowledgeSenderConfig.knowledgeSource}
 					onChangeKnowledgeSource={
 						knowledgeSenderConfig.onChangeKnowledgeSource
@@ -2992,7 +2994,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 									agent_id: currentAgent.agent_id,
 									name: currentAgent.name,
 									logo: currentAgent.logo,
-									// KnowledgeSourceSelector 读取 settings.web_search_setting / graph_search_setting
+									// KnowledgeSourceSelector 读取 settings.web_search_setting / graph_search_setting / wiki_search_setting
 									// currentAgent 上对应的字段是 settings_obj
 									settings: currentAgent.settings_obj
 										? {
@@ -3000,6 +3002,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 													currentAgent.settings_obj.web_search_setting,
 												graph_search_setting:
 													currentAgent.settings_obj.graph_search_setting,
+												wiki_search_setting:
+													currentAgent.settings_obj.wiki_search_setting,
 											}
 										: undefined,
 								}
@@ -3062,8 +3066,17 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			if (activeSenderKind === "knowledge") {
 				return {
 					...(knowledgeSenderConfig?.senderSlots ?? {}),
+					// AI 搜问:与小助理复用同款 EnhancedMentionDropdown,只显示「从知识库里选择」入口。
+					mentionDropdown: knowledgeMentionDropdownSlot as any,
 					// legacy chip 视觉:复刻 knowledge/chat.tsx line 2284-2310
 					linkList: LegacyLinkList as any,
+					// 动态知识选中项（在 linkList 下方渲染）
+					linkListBelow: (
+						<WikiLinkList
+							knowledgeSource={knowledgeSenderConfig.knowledgeSource}
+							onChangeKnowledgeSource={knowledgeSenderConfig.onChangeKnowledgeSource}
+						/>
+					),
 				};
 			}
 			if (activeSenderKind === "work-ai") {
@@ -3081,6 +3094,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			knowledgeSenderConfig,
 			workAiSenderConfig,
 			workAiMentionDropdownSlot,
+			knowledgeMentionDropdownSlot,
 		]);
 
 		const senderPlaceholder = useMemo(
@@ -3093,6 +3107,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			[activeSenderKind, knowledgeSenderConfig, workAiSenderConfig],
 		);
 
+		// work-ai (小助理):使用 extras 模式。Sender 在 extras 模式下默认把 @ 按钮放在右侧
+		// toolbar(与 send 同一组),技能/附件 icon 放在左侧 toolbar,符合产品视觉规范。
 		const senderActionPosition = useMemo(
 			() => (activeSenderKind === "work-ai" ? ("extras" as const) : undefined),
 			[activeSenderKind],
@@ -3103,13 +3119,19 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				const currentModel = knowledgeSenderConfig.agentModels.find(
 					(m: any) => m.value === knowledgeSenderConfig.model,
 				);
+				const { networkSearch, knowledgeGraph, wiki, selectedWikiSpaces, selectedWikiPages } = knowledgeSenderConfig.knowledgeSource;
+				const wikis = [...(selectedWikiSpaces || []), ...(selectedWikiPages || [])];
 				return {
 					type: "km-ai-search",
-					networkSearch: knowledgeSenderConfig.knowledgeSource.networkSearch,
-					knowledgeGraph: knowledgeSenderConfig.knowledgeSource.knowledgeGraph,
-					allKnowledge: knowledgeSenderConfig.knowledgeSource.allKnowledge,
+					knowledgeSource: {
+						state: knowledgeSenderConfig.knowledgeSource,
+						graphEnabled: knowledgeGraph,
+						webSearchEnabled: networkSearch,
+						wikiEnabled: wiki,
+					},
 					library: knowledgeSenderConfig.library,
 					links: knowledgeSenderConfig.selectedMentionLinks,
+					wikis,
 					modelId: currentModel?.id ?? "",
 					agentInfo: currentAgent,
 					minimalParams: false,
@@ -3198,7 +3220,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 							syncToUrl={!disableOpenClawUrlSync}
 							agentInfo={chatAgentInfo}
 							userAvatar={userAvatar}
-							features={features}
 							slots={slots as any}
 							renderHeader={renderHeader as any}
 							// ============ 发送上下文(按 agent_usage 透传给 ChatView.handleSend) ============
@@ -3239,37 +3260,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								onNavigateNext: handleNextAgent,
 								onRefresh: handleInitAgent,
 							}}
-							onMessageSent={() => {
-								eventBus.emit(EVENT_NAMES.SHORTCUT_UPDATED);
-								if (activeSenderKind === "knowledge" && knowledgeSenderConfig) {
-									knowledgeSenderConfig.reset();
-								} else if (
-									activeSenderKind === "work-ai" &&
-									workAiSenderConfig
-								) {
-									workAiSenderConfig.reset();
-								}
-							}}
-							onOutputFilePreview={
-								isOpenclaw
-									? handleOpenOutputFilePreview
-									: handlePreviewOutputFile
-							}
-							onOutputFileFavorite={
-								!isOpenclaw && hasKnowledgeBase
-									? (file, msg) => handleToggleOutputFileFavorite(file, msg)
-									: undefined
-							}
-							onOutputFileCheckFavorite={
-								!isOpenclaw && hasKnowledgeBase
-									? (fileIds, _msg) => handleCheckOutputFilesFavorite(fileIds)
-									: undefined
-							}
-							onAddAsMd={handleAddAnswerAsMd}
-							onFileClick={handleFileClick}
-							onOpenClawConversationResolved={
-								handleOpenClawConversationResolved
-							}
 							message={{
 								showMenu: features.messageMenu,
 								onSent: () => {
@@ -3299,7 +3289,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 										? (fileIds, _msg) => handleCheckOutputFilesFavorite(fileIds)
 										: undefined,
 								onSaveToKnowledge: handleAddAnswerAsMd,
-								onFileClick: handleFileClick,
 							}}
 							share={{
 								enabled: features.share,
@@ -3308,6 +3297,11 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 							permission={{
 								checkAccess: handleCheckAccess,
 							}}
+							// OpenClaw / QClaw 等智能体(agent_type=2)禁用 feedback 按钮。
+							// 上游 override 优先级高于 ChatView 内部的 agent_type 检测。
+							feedback={{
+								enabled: !isOpenclaw,
+							}}
 							openclaw={{
 								enabled: features.openclaw,
 								inputDisabled: features.openclawInputDisabled,
@@ -3315,6 +3309,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								initialConversationResolving:
 									features.initialConversationResolving,
 								skipInitialLoad: features.skipInitialLoad,
+								onConversationResolved: handleOpenClawConversationResolved,
 							}}
 							timeout={features.timeout}
 						/>
@@ -3464,27 +3459,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 						</div>
 					)}
 					<AddAnswerAsMd ref={addAnswerAsMdRef} />
-
-					{/* ============ Knowledge 模式 @ 知识库入口对话框 ============ */}
-					{/* @ 下拉底部「@ 从知识库里选择」入口触发此 Dialog(对齐原版 Sender 的 handleOpenLibrary) */}
-					{activeSenderKind === "knowledge" && knowledgeSenderConfig && (
-						<SpaceDialog
-							ref={spaceDialogRef}
-							allowSelectLibrary={true}
-							allowSelectSpace={true}
-							onConfirm={(
-								files: FileItem[],
-								libraries?: LibraryItem[],
-								spaces?: SpaceItem[],
-							) =>
-								knowledgeSenderConfig.mention.onSelectFiles?.(
-									(files || []) as any,
-									libraries || [],
-									spaces || [],
-								)
-							}
-						/>
-					)}
 
 					{/* ============ Work-ai 模式 @ 多入口对话框 ============ */}
 					{/* 这些对话框由 EnhancedMentionDropdown 通过闭包触发 */}

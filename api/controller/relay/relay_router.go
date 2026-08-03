@@ -100,7 +100,7 @@ func (rr *RelayRouter) Level3Router() *RouterResult {
 
 	// 获取 ChunkConfig
 	configService := rag.NewChunkConfigService(model.DB)
-	chunkConfig, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+	chunkConfig, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil || chunkConfig == nil {
 		logger.Warnf(ctx, "Failed to get chunk config: %v", err)
 		return nil
@@ -126,27 +126,11 @@ func (rr *RelayRouter) Level3Router() *RouterResult {
 	}
 	availableSkills := buildIntentSkillCandidates(rr.MS.AgentModel, rr.CR, buildIntentSkillCandidateQuery(query, request.Conversation), scope, nil)
 
-	result, err := contentGenerator.GenerateFastIntentRoute(ctx, eid, chunkConfig, request, availableSkills, rr.MS.AgentModel)
+	result, err := contentGenerator.GenerateIntentClassification(ctx, eid, chunkConfig, request, availableSkills, rr.MS.AgentModel)
 	if err != nil {
 		logger.Warnf(ctx, "Intent classification failed: %v", err)
 		return nil // 分类失败，继续默认流程
 	}
-	if result != nil && result.Intent == "COMPLEX_AGENT" {
-		expansionQuery := strings.TrimSpace(result.NormalizedQuery)
-		if expansionQuery == "" {
-			expansionQuery = query
-		}
-		expansion, expansionErr := contentGenerator.GenerateComplexQueryExpansion(ctx, eid, chunkConfig, &rag.IntentClassificationRequest{
-			Query:        expansionQuery,
-			Conversation: request.Conversation,
-		}, rr.MS.AgentModel)
-		if expansionErr != nil {
-			logger.Warnf(ctx, "Query expansion failed: %v", expansionErr)
-		} else {
-			mergeComplexQueryExpansionResult(result, expansion)
-		}
-	}
-
 	if rr.MS != nil && result != nil {
 		if normalizedQuery := strings.TrimSpace(result.NormalizedQuery); normalizedQuery != "" {
 			rr.MS.RewrittenQuestion = normalizedQuery

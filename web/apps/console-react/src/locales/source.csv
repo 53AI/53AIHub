@@ -36,6 +36,7 @@ action.save_failed,保存失败,保存失敗,Saving failed,保存失敗
 action.success,操作成功,操作成功,Operation successful,操作成功
 action.setting,设置,設置,Setting,設定
 action.view,查看,查看,View,表示
+action.disable,禁用,禁用,Disable,無効化
 action_add,添加,添加,Add,追加
 action_add_success,已添加,已添加,Added,追加しました
 action_amplify,扩大,擴大,Enlarge,拡大
@@ -222,6 +223,9 @@ skills.usage.answer_placeholder,请输入回答,請輸入回答,Enter answer,回
 skills.usage.title,标题,標題,Title,タイトル
 skills.usage.title_placeholder,请填写内容标题,請填寫內容標題,Enter title,タイトルを入力
 skills.usage.content_placeholder,请填写输出的内容,請填寫輸出的內容,Enter content,内容を入力
+skills.usage.score_required,使用说明-{section}已启用，请填写评分,使用說明-{section}已啟用，請填寫評分,Usage guide {section} is enabled, please fill in the score,使用ガイド{section}が有効になっています、評分を入力してください
+skills.usage.best_practice_required,使用说明-{section}已启用，请至少填写正面案例或反面案例,使用說明-{section}已啟用，請至少填寫正面案例或反面案例,Usage guide {section} is enabled, please fill in positive or negative case,使用ガイド{section}が有効になっています、ポジティブケースまたはネガティブケースを入力してください
+skills.usage.content_required,使用说明-{section}已启用，请填写内容,使用說明-{section}已啟用，請填寫內容,Usage guide {section} is enabled, please fill in content,使用ガイド{section}が有効になっています、内容を入力してください
 skills.editor.unsupported_file,当前文件不支持预览或编辑,當前文件不支持預覽或編輯,Current file does not support preview or editing,現在のファイルはプレビューまたは編集に対応していません
 agent.53ai.agent_type_chat,对话型（智能问答）,對話型應用,Conversational (Intelligent Q&A),会話型アプリケーション
 agent.53ai.agent_type_chat_desc,用户与大模型进行对话，由一个大模型自主思考决策，适用于较为简单的业务逻辑。,用戶與大模型進行對話，由一個大模型自主思考決策，適用於較為簡單的業務邏輯。,"User interacts with a large model, which is autonomous and decision-making, suitable for simple business logic.",ユーザーが大模型と対話し、大模型が自主的に判断決定する。シンプルな業務ロジックに適しています。
@@ -441,6 +445,7 @@ common.name,名称,名稱,Name,名前
 common.image_cropper,图片裁剪,圖片裁剪,Image Cropper,画像裁剪
 common.short_name,简称,簡稱,Abbreviation,簡略名
 common.no_data,暂无数据,暫無數據,No Data,データがありません
+library.file_count,文档数量,文檔數量,Document Count,ドキュメント数
 common.feature_coming_soon,功能即将上线，敬请期待,功能即將上線，敬請期待,"Feature coming soon, please wait",機能はすぐに登場します。お楽しみに！
 common.feature_not_available,{functionName}暂不可用，请联系管理员~~,{functionName}暫不可用，請聯繫管理員~~,"{functionName} is not available, please contact the administrator~~",{functionName}は利用できません。管理者にお問い合わせください~~
 common.feature_over_limit,{functionName}数量已达上限，请联系管理员~~,{functionName}數量已達上限，請聯繫管理員~~,"{functionName} has reached the upper limit, please contact the administrator~~",{functionName}の使用量は上限を超えています。管理者にお問い合わせください~~
@@ -944,6 +949,7 @@ model.fast_reasoning_desc,快速输出答案，高效信息获取,迅速輸出�
 model.intent_recognition,意图识别,意圖識別,Intent Recognition,意圖識別
 model.reasoning,默认推理模型,默认推理模型,Logic Reasoning Model,デフォルトの論理推論モデル
 model.rerank,重排序模型,重排序模型,Rerank Model,再ランキングモデル
+model.voice,语音识别模型,語音識別模型,Voice Recognition Model,音声認識モデル
 model.select_model,选择模型,選擇模型,Select Model,モデル選択
 model.temperature,温度,溫度,Temperature,温度調整
 model.temperature_desc,温度越高，模型回答越随机,溫度越高，模型回答越隨機,"The higher the temperature, the more random the model's answer",温度が高いほど、モデルの回答がランダムになります
@@ -1395,8 +1401,13 @@ platform.file_editor_not_connected,还未接入文档编辑，来添加文档编
 platform.model_test_failed,测试失败：您已超出当前配额，请检查您的账单详情,測試失敗，「{platform}」當前不可用,"Test failed, ""{platform}"" is currently unavailable",テスト失敗、「{platform}」現在正常に使用できません
 platform.model_test_success,测试成功，「{platform}」当前可正常使用,測試成功，「{platform}」當前可正常使用,"Test successful, ""{platform}"" is currently available",テスト成功、「{platform}」現在正常に使用できます
 platform.model_tip,{total}个{ type },{total}個{ type },{total} { type },{total}個{ type }
+platform.delete_config_confirm,确定删除{name}配置吗？,確定刪除{name}配置嗎？,"Are you sure to delete the {name} config?",「{name}」設定を削除してもよろしいですか？
+platform.delete_wps_config_confirm,确定删除WPS WebOffice配置吗？,確定刪除WPS WebOffice配置嗎？,Are you sure to delete the WPS WebOffice config?,WPS WebOffice設定を削除してもよろしいですか？
 platform.select_access,选择接入,選擇接入,Select Access,選択アクセス
 platform.standard_parse,标准解析,標準解析,Standard Parse,標準解析
+platform.parser_health_available,可用,可用,Available,利用可能
+platform.parser_health_unavailable,不可用,不可用,Unavailable,利用不可
+platform.parser_health_unchecked,未检测,未檢測,Not checked,未検出
 platform.web_search_not_connected,还未接入联网搜索，来添加联网搜索吧~,還未接入聯網搜索，來添加聯網搜索吧~,"Not connected to online search, add online search now~",未接続のオンライン検索、オンライン検索を追加してください~
 platform_auth.53ai.tip,"前往 53AI（{url}） 第一步：登录后，点击左侧导航栏的 ""设置""
 第二步：在""企业信息""下点击生成Secret Key
@@ -1602,6 +1613,9 @@ search-feedback.unstatisfied_type,不满意类型,,Unstatisfied Type,不滿意�
 search-feedback.user,反馈人,反饋人,User,反饋人
 search-record.all,全部,全部,All,全部
 search-record.all_knowledge_base,全部知识库,全部知識庫,All Knowledge Base,全部知識庫
+search-record.all_wiki,全部WIKI,全部WIKI,All Wiki,全部WIKI
+search-record.hybrid_wiki,混合知识库 WIKI,混合知識庫 WIKI,Hybrid Wiki,混合知識庫 WIKI
+search-record.specified_wiki,指定 WIKI,指定 WIKI,Specified Wiki,指定 WIKI
 search-record.answer,回答,回答,Answer,回答
 search-record.answer_status,回答状态,回答狀態,Answer Status,回答状態
 search-record.status,状态,狀態,Status,状態
@@ -1982,6 +1996,7 @@ integrate.copy_embed_html,复制接入代码嵌入到对应网站页面<html>中
 integrate.copy_embed_body,复制接入代码嵌入到对应网站页面<body>中,複製接入代碼嵌入到對應網站頁面<body>中,Copy and embed the code into the <body> of your website page,<body>タグ内に埋め込みコードをコピー
 integrate.api_access,API接入,API接入,API Access,APIアクセス
 integrate.api_access_desc,调用API接口，实现诸多自定义聊天场景,調用API接口，實現許多自定義聊天場景,Call API interface to achieve various custom chat scenarios,APIインターフェースを呼び出して様々なカスタムチャットシナリオを実現
+integrate.skills_list,技能列表,技能列表,Skill List,スキル一覧
 recording.parse_mode,解析方式,解析方式,Parse Mode,解析モード
 recording.parse_app,应用解析,應用解析,App Parse,アプリ解析
 recording.parse_model,解析模型,解析模型,Parse Model,解析モデル
@@ -2007,5 +2022,193 @@ recording.count_unit,个,個,count,件
 recording.total_duration,录音总时长,錄音總時長,Total Duration,総録音時間
 recording.hour_unit,小时,小時,Hour(s),時間
 recording.duration,时长,時長,Duration,時間
+recording_voice_required,请选择语音识别模型,請選擇語音識別模型,Please select a voice recognition model,音声認識モデルを選択してください
+recording_insight_required,请选择洞察生成模型,請選擇洞察生成模型,Please select an insight generation model,洞察生成モデルを選択してください
 
 module.platform_model_model_exists,该模型已存在,該模型已存在,Model already exists,モデルが既に存在します
+space.setting.title,空间设置,空間設置,Space Settings,空間設定
+space.setting.menu.basicInfo,基础信息,基礎資訊,Basic Info,基本情報
+space.setting.menu.members,成员与权限,成員與權限,Members & Permissions,メンバーと権限
+space.setting.menu.knowledge,知识库管理,知識庫管理,Knowledge Management,ナレッジ管理
+space.setting.menu.knowledgeGraph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
+space.setting.menu.dynamic,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+space.setting.menu.recycle,回收站,回收站,Recycle Bin,ごみ箱
+space.basicInfo.danger_zone,删除空间,刪除空間,Delete Space,スペースを削除
+space.basicInfo.delete_tip,将这个空间彻底删除，知识空间下的所有数据将会删除,將這個空間徹底刪除，知識空間下的所有資料將會刪除,Permanently delete this space. All data under the knowledge space will be removed,このスペースを完全に削除します。ナレッジスペース下のすべてのデータが削除されます
+space.recycle.title,空间回收站,空間回收站,Space Recycle Bin,空間ごみ箱
+space.recycle.empty,暂无内容,暫無內容,No content,コンテンツなし
+space.recycle.search_placeholder,搜索文件名,搜索檔案名,Search by file name,ファイル名を検索
+space.recycle.deleted_time,删除时间,刪除時間,Deleted Time,削除時間
+space.recycle.size,大小,大小,Size,サイズ
+space.recycle.recover,恢复,恢復,Recover,復元
+space.recycle.delete,彻底删除,徹底刪除,Delete Permanently,完全に削除
+space.recycle.batch_recover,批量恢复,批量恢復,Batch Recover,一括復元
+space.recycle.batch_delete,批量删除,批量刪除,Batch Delete,一括削除
+space.recycle.delete_confirm,确定彻底删除所选项?,確定徹底刪除所選項?,Are you sure to permanently delete the selected items?,選択した項目を完全に削除してもよろしいですか?
+space.recycle.recover_success,恢复成功,恢復成功,Recovered successfully,復元に成功しました
+space.recycle.delete_success,删除成功,刪除成功,Deleted successfully,削除に成功しました
+space.recycle.select_first,请先选择条目,請先選擇條目,Please select items first,項目を選択してください
+space.knowledgeGraph.placeholder,知识图谱功能开发中,知識圖譜功能開發中,Knowledge Graph is under development,ナレッジグラフは開発中です
+space.knowledge_graph.core_entities,核心实体,核心實體,Core Entities,コアエンティティ
+space.knowledge_graph.entity_relations,实体关系,實體關係,Entity Relations,エンティティ関係
+space.knowledge_graph.ai_generate,AI生成,AI生成,AI Generate,AI生成
+space.knowledge_graph.select_entity_placeholder,请选择实体,請選擇實體,Please select entity,エンティティを選択してください
+space.knowledge_graph.relation_type_placeholder,请输入关系类型，例如：包含,請輸入關係類型，例如：包含,"Please enter relation type, e.g.: contains",関係タイプを入力してください（例：含む）
+space.knowledge_graph.entity_type_placeholder,请输入实体类型,請輸入實體類型,Please enter entity type,エンティティタイプを入力してください
+space.dynamic.placeholder,动态知识功能开发中,動態知識功能開發中,Dynamic Knowledge is under development,動的ナレッジは開発中です
+space.dynamic.knowledge_type,知识类型,知識類型,Knowledge Type,知識タイプ
+space.dynamic.page_config,页面配置,頁面配置,Page Config,ページ設定
+space.dynamic.new_config,新建配置,新建配置,New Config,新規設定
+space.dynamic.delete_type_confirm,确定要删除此知识类型吗？,確定要刪除此知識類型嗎？,Are you sure to delete this knowledge type?,この知識タイプを削除してもよろしいですか？
+space.dynamic.delete_type_warning,删除后将无法恢复,刪除後將無法恢復,Cannot recover after deletion,削除後は復元できません
+space.dynamic.title,标题,標題,Title,タイトル
+space.dynamic.description,描述,描述,Description,説明
+space.dynamic.description_placeholder,请输入内容,請輸入內容,Please enter content,内容を入力してください
+space.dynamic.rule,规则,規則,Rule,ルール
+space.dynamic.rule_placeholder,请输入规则,請輸入規則,Please enter rule,ルールを入力してください
+space.dynamic.empty_form_tip,请选择或添加页面配置,請選擇或添加頁面配置,Please select or add a page config,ページ設定を選択または追加してください
+common.untitled,未命名,未命名,Untitled,無題
+action.saving,保存中,保存中,Saving...,保存中...
+common.tip,提示,提示,Notice,ヒント
+space.members.col_user,用户,用戶,User,ユーザー
+space.members.col_permission,权限,權限,Permission,権限
+space.members.add_member,添加成员,添加成員,Add Member,メンバーを追加
+space.members.delete_confirm,确定删除该成员吗？,確定刪除該成員嗎？,Are you sure to remove this member?,このメンバーを削除してもよろしいですか？
+space.members.cannot_delete_creator,创建者不可删,創建者不可刪,Creator cannot be deleted,作成者は削除できません
+space.recycle.retention_tip,文档删除后，将在回收站内保存30天，逾期后将永久删除文档,文檔刪除后，將在回收站內保存30天，逾期後將永久刪除文檔,Deleted documents are kept in the recycle bin for 30 days and permanently deleted afterwards,削除されたドキュメントは30日間ごみ箱に保存され、その後完全に削除されます
+space.recycle.selected_prefix,已选中:,已選中:,Selected:,選択済み:
+space.recycle.selected_suffix,,,,
+space.recycle.delete_title,提示,提示,Confirm,ヒント
+space.recycle.batch_delete_title,彻底删除,徹底刪除,Delete permanently,完全に削除
+space.recycle.batch_delete_content,是否彻底删除这{count}个文档，删除后将无法恢复,是否徹底刪除這{count}個文檔，刪除後將無法恢復,Permanently delete these {count} items? They cannot be recovered.,この{count}件の項目を完全に削除しますか？復元できません
+space.recycle.delete_single_content,确定彻底删除该文件吗？删除后将无法恢复,確定徹底刪除該文件嗎？刪除後將無法恢復,Permanently delete this file? It cannot be recovered.,このファイルを完全に削除しますか？復元できません
+space.recycle.batch_recover_title,恢复文档,恢復文檔,Recover document,ドキュメントを復元
+space.recycle.batch_recover_content,确定将 {count}个文档恢复到原有位置，若父级节点不存在，将直接恢复到根目录,確定將 {count}個文檔恢復到原有位置，若父級節點不存在，將直接恢復到根目錄,Restore {count} documents; files whose parent no longer exists will be placed at the root,{count}件のドキュメントを復元します。親が存在しない場合はルートに復元されます
+space.enable_dynamic_knowledge_tip,请先启用知识图谱，再打开动态知识,請先啟用知識圖譜，再打開動態知識,Please enable the knowledge graph before turning on dynamic knowledge,ナレッジグラフを有効にしてから動的ナレッジをオンにしてください
+space.knowledge_graph_desc,基于知识图谱实体关系进行知识检索和提取，提升回答的场景贴合度,基於知識圖譜實體關係進行知識檢索和提取，提升回答的場景貼合度,"Based on knowledge graph entity relationships, retrieve and extract knowledge to improve scenario relevance of answers",ナレッジグラフのエンティティ関係に基づくナレッジ検索と抽出により、回答のシナリオ適合性を向上させます
+module.dynamic_knowledge,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+module.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
+common.dept,系,系,Dept,部署
+common.system_avatar,系,系,S,S
+permission.member_and_role,成员与权限,成員與權限,Members & Permissions,メンバーと権限
+space.label,空间,空間,Space,スペース
+space.column_knowledge,知识,知識,Knowledge,知識
+apply.title,权限申请,權限申請,Apply for Permission,権限申請
+apply.submit,提交申请,提交申請,Submit Application,申請を送信
+apply.access_label,申请访问,申請訪問,Apply for Access,アクセスを申請
+apply.permission_label,申请权限,申請權限,Apply for Permission,権限を申請
+apply.permission_required,请选择申请权限,請選擇申請權限,Please select the permission to apply for,申請する権限を選択してください
+apply.reason_label,申请原因,申請原因,Reason for Application,申請理由
+apply.reason_placeholder_v2,请填写权限申请原因,請填寫權限申請原因,Please fill in the reason for the application,申請理由を入力してください
+domain.load_failed,加载域名数据失败,加載域名數據失敗,Failed to load domain data,ドメインデータの読み込みに失敗しました
+domain.no_copyable_domain,没有可复制的域名,沒有可複製的域名,No domain available to copy,コピー可能なドメインがありません
+domain.copy_failed,复制失败,複製失敗,Copy failed,コピーに失敗しました
+domain.id_missing,域名ID不存在,域名ID不存在,Domain ID does not exist,ドメインIDが存在しません
+domain.delete_failed,删除失败,刪除失敗,Delete failed,削除に失敗しました
+domain.parse_config_failed,解析独立域名配置失败,解析獨立域名配置失敗,Failed to parse independent domain config,獨立ドメイン設定の解析に失敗しました
+domain.delete_independent_failed,删除独立域名失败,刪除獨立域名失敗,Failed to delete independent domain,獨立ドメインの削除に失敗しました
+domain.exclusive_save_failed,保存独占域名失败,保存獨占域名失敗,Failed to save exclusive domain,専用ドメインの保存に失敗しました
+domain.independent_save_failed,保存独立域名失败,保存獨立域名失敗,Failed to save independent domain,獨立ドメインの保存に失敗しました
+navigation.load_failed,加载导航数据失败,加載導航數據失敗,Failed to load navigation data,ナビゲーションデータの読み込みに失敗しました
+navigation.update_status_failed,更新状态失败,更新狀態失敗,Failed to update status,ステータスの更新に失敗しました
+navigation.delete_failed,删除导航失败,刪除導航失敗,Failed to delete navigation,ナビゲーションの削除に失敗しました
+navigation.update_order_failed,更新排序失败,更新排序失敗,Failed to update order,並び替えの更新に失敗しました
+navigation.save_failed,保存导航失败,保存導航失敗,Failed to save navigation,ナビゲーションの保存に失敗しました
+navigation.load_detail_failed,加载导航详情失败,加載導航詳情失敗,Failed to load navigation details,ナビゲーション詳細の読み込みに失敗しました
+navigation.load_list_failed,加载导航列表失败,加載導航列表失敗,Failed to load navigation list,ナビゲーションリストの読み込みに失敗しました
+navigation.save_content_failed,保存内容失败,保存內容失敗,Failed to save content,内容の保存に失敗しました
+payment.get_settings_failed,获取支付设置失败,獲取支付設置失敗,Failed to get payment settings,支払い設定の取得に失敗しました
+payment.update_status_failed,更新支付状态失败,更新支付狀態失敗,Failed to update payment status,支払いステータスの更新に失敗しました
+search.view_reference,查看引用: {sourceType}-{sourceNumber},查看引用: {sourceType}-{{sourceNumber}},View reference: {sourceType}-{sourceNumber},參考を見る: {sourceType}-{sourceNumber}
+search.botchat_greeting,你好，我是{name}助手。无论你有什么问题，我都会尽我所能为你提供帮助和支持。,你好，我是{name}助手。無論你有什麼問題，我都會盡我所能為你提供幫助和支持。,"Hello, I am {name} assistant. Whatever questions you have, I will do my best to provide you with help and support.",こんにちは、{name}アシスタントです。どんな質問でも、全力を尽くしてお手伝いします。
+search.out_of_scope,当前问题可能因内容未收录、解析中或权限限制无法解答。,當前問題可能因內容未收錄、解析中或權限限制無法解答。,The current question may not be answered due to content not being included, being parsed, or permission restrictions.,現在の質問は、コンテンツが含まれていないか、解析中か、権限の制限により回答できない可能性があります。
+search.out_of_scope_prompt,你是一个专业、友好的AI助手。现在用户提出的问题超出了你的知识库范围，你需要生成一个礼貌且有帮助的回复。\n\n## 回复要求\n- 诚实承认你无法提供准确信息\n- 引导用户提供更多上下文,或建议他们换个方式提问,你是一個專業、友好的AI助手。現在用戶提出的問題超出了你的知識庫範圍，你需要生成一個禮貌且有幫助的回覆。\n\n## 回覆要求\n- 誠實承認你無法提供準確資訊\n- 引導用戶提供更多上下文,或建議他們換個方式提問,"You are a professional and friendly AI assistant. Now the user's question is beyond your knowledge base, and you need to generate a polite and helpful reply.\n\n## Response requirements\n- Honestly admit that you cannot provide accurate information\n- Guide users to provide more context, or suggest that they ask questions in a different way","あなたはプロフェッショナルでフレンドリーなAIアシスタントです。現在、ユーザーの質問はあなたのナレッジベースの範囲を超えています。礼儀正しくて役に立つ返答を生成する必要があります。\n\n## 返答要件\n- 正確な情報を提供できないことを誠実に認める\n- ユーザーにより多くのコンテキストを提供するよう誘導する、または別の方法で質問するよう提案する"
+search.suggestion_industry,最近几年哪几个行业的前景不错？,最近幾年哪幾個行業的前景不錯？,Which industries have promising prospects in recent years?,近年、どの業界の見通しが明るいですか？
+search.suggestion_ai,说说AI行业的发展趋势和重要事件,說說AI行業的發展趨勢和重要事件,Talk about the development trends and important events in the AI industry,AI業界の発展傾向と重要なイベントについて話してください
+search.bocha,博查（API）,博查（API）,Bocha (API),ボッチャ（API）
+search.select_web_search,请选择联网搜索,請選擇聯網搜索,Please select web search,ウェブ検索を選択してください
+apply.reason_placeholder,请填写权限申请原因,請填寫權限申請原因,Please fill in the reason for the application,申請理由を入力してください
+apply.approver_label,审批人,審批人,Approver,承認者
+document_setting.baidu_editor,百度编辑器,百度編輯器,Baidu Editor,Baiduエディタ
+cleaning_policy.system_provided_desc,由系统提供的解析服务,由系統提供的解析服務,System-provided parse service,システム提供の解析サービス
+cleaning_policy.untitled_pipeline,未命名管线,未命名管線,Untitled Pipeline,無題のパイプライン
+agent_app.insufficient_balance,当前应用模型余额不足,當前應用模型餘額不足,Current application model balance is insufficient,現在のアプリケーションモデルの残高が不足しています
+agent.ai_search,AI 搜索,AI 搜索,AI Search,AI検索
+integrate.web_link,网页链接,網頁鏈接,Web Link,ウェブリンク
+knowledge_map.default_name,知识地图,知識地圖,Knowledge Map,ナレッジマップ
+knowledge_map.select_model_tip,请选择生成模型,請選擇生成模型,Please select a generation model,生成モデルを選択してください
+slide_dialog.new_command,新建划词指令,新建劃詞指令,New Selection Command,新規単語選択コマンド
+slide_dialog.quick_command,快捷指令,快捷指令,Quick Command,クイックコマンド
+slide_dialog.slide_command,划词指令,劃詞指令,Selection Command,単語選択コマンド
+slide_dialog.icon_and_name,图标和名称,圖標和名稱,Icon and Name,アイコンと名前
+common.yes,是,是,Yes,はい
+common.no,否,否,No,いいえ
+recording.template.name_required,请输入名称,請輸入名稱,Please enter name,名前を入力してください
+recording.template.name_placeholder,请输入名称,請輸入名稱,Please enter name,名前を入力してください
+recording.template.group_label,分组,分組,Group,グループ
+recording.template.group_required,请选择分组,請選擇分組,Please select a group,グループを選択してください
+recording.template.group_placeholder,请选择分组,請選擇分組,Please select a group,グループを選択してください
+recording.template.description_placeholder,请输入该模板的描述，如使用场景,請輸入該模板的描述，如使用場景,Please enter the template description, e.g. use case,このテンプレートの説明を入力してください（使用シーンなど）
+recording.template.prompt_label,指令,指令,Prompt,指示
+recording.template.prompt_required,请输入指令,請輸入指令,Please enter prompt,指示を入力してください
+recording.template.prompt_placeholder,请输入指令,請輸入指令,Please enter prompt,指示を入力してください
+recording.template.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,保存されていない変更があります。離れますか？
+integrate.secret_key_limit,SECRET_KEY 数量已达上限，最多只能创建 10 个,SECRET_KEY 數量已達上限，最多隻能創建 10 個,SECRET_KEY limit reached, you can create at most 10,SECRET_KEY数の上限に達しました。最大10個までしか作成できません
+integrate.delete_api_key_confirm,删除后外部系统将无法继续调用该Agent，确定要删除吗？,刪除後外部系統將無法繼續調用該Agent，確定要刪除嗎？,After deletion, the external system will not be able to call this Agent. Are you sure to delete it?,削除後、外部システムはエージェントの呼び出しができなくなります。削除してもよろしいですか？
+integrate.var_key,变量KEY,變量KEY,Variable KEY,変数KEY
+integrate.required,是否必须,是否必須,Required,必須
+integrate.desc,说明,說明,Description,説明
+integrate.param,参数,參數,Parameter,パラメータ
+integrate.value,取值,取值,Value,値
+integrate.method,请求方式,請求方式,Method,リクエスト方式
+integrate.endpoint,请求地址,請求地址,Endpoint,エンドポイント
+integrate.request_desc,请求说明,請求說明,Request Description,リクエスト説明
+integrate.base_info,基础信息,基礎信息,Basic Info,基本情報
+integrate.header_desc,使用上面的全局Header参数,使用上面的全局Header參數,Use the global Header parameters above,上のグローバルHeaderパラメータを使用
+integrate.request_example,请求示例,請求示例,Request Example,リクエスト例
+integrate.response_example,返回示例,返回示例,Response Example,レスポンス例
+integrate.skills_list_desc,获取当前智能体已绑定的技能列表,獲取當前智能體已綁定的技能列表,Get the skill list bound to the current agent,現在のエージェントにバインドされているスキルリストを取得
+integrate.auth,鉴权,鑑權,Authentication,認証
+agent.date_format.y,年,年,Year,年
+agent.date_format.ym,年/月,年/月,Year/Month,年/月
+agent.date_format.ymd,年/月/日,年/月/日,Year/Month/Day,年/月/日
+agent.date_format.hm,时/分,時/分,Hour/Minute,時/分
+agent.date_format.daterange,时间范围,時間範圍,Date Range,時間範囲
+agent.field_input.mode,模式,模式,Mode,モード
+agent.field_input.single,单选,單選,Single,単一選択
+agent.field_input.multiple,多选,多選,Multiple,複数選択
+agent.field_input.file_type,上传文件类型,上傳文件類型,Upload File Type,アップロードファイルタイプ
+agent.field_input.all_format,不限格式,不限格式,All Formats,すべての形式
+agent.field_input.custom,自定义,自定義,Custom,カスタム
+agent.field_input.supported_format,支持文件格式,支持文件格式,Supported File Formats,サポートされているファイル形式
+agent.field_input.file_size_limit,单个文件上限,單個文件上限,Single File Size Limit,単一ファイルサイズ上限
+agent.field_input.file_max_count,上传最大数量,上傳最大數量,Max Upload Count,最大アップロード数
+agent.field_input.count_unit,个,個,piece,個
+knowledge.chunk.header_h1,一级标题（H1）,一級標題（H1）,Heading 1 (H1),見出し1（H1）
+knowledge.chunk.header_h2,二级标题（H2）,二級標題（H2）,Heading 2 (H2),見出し2（H2）
+knowledge.chunk.header_h3,三级标题（H3）,三級標題（H3）,Heading 3 (H3),見出し3（H3）
+knowledge.chunk.header_h4,四级标题（H4）,四級標題（H4）,Heading 4 (H4),見出し4（H4）
+knowledge.chunk.header_h5,五级标题（H5）,五級標題（H5）,Heading 5 (H5),見出し5（H5）
+knowledge.chunk.newline_1,1 个换行符（\n）,1 個換行符（\n）,1 newline (\n),1つの改行文字（\n）
+knowledge.chunk.newline_2,2 个换行符（\n\n）,2 個換行符（\n\n）,2 newlines (\n\n),2つの改行文字（\n\n）
+knowledge.chunk.period,句号（。）,句號（。）,Period (。),句点（。）
+knowledge.chunk.exclamation,感叹号（！）,感嘆號（！）,Exclamation (！),感嘆符（！）
+knowledge.chunk.question,问号（？）,問號（？）,Question (？),疑問符（？）
+knowledge.chunk.semicolon,分号（；）,分號（；）,Semicolon (；),セミコロン（；）
+knowledge.chunk.divider,分割线（---）,分割線（---）,Divider (---),分割線（---）
+knowledge.chunk.knowledge_label,知识点,知識點,Knowledge Point,ナレッジポイント
+knowledge.chunk.index_label,检索块,檢索塊,Index Block,インデックブロック
+knowledge.chunk.knowledge_rule_required,知识点拆分规则不能为空,知識點拆分規則不能為空,Knowledge point split rule cannot be empty,ナレッジポイントの分割ルールは空にできません
+knowledge.chunk.index_rule_required,索引块拆分规则不能为空,索引塊拆分規則不能為空,Index block split rule cannot be empty,インデックブロックの分割ルールは空にできません
+knowledge.chunk.desc_default,根据智能算法进行分段计算及数据清洗,根據智能算法進行分段計算及數據清洗,Perform segmentation and data cleaning based on intelligent algorithms,インテリジェントアルゴリズムによるセグメンテーションとデータクリーニング
+knowledge.chunk.desc_data_table,识别表格结构与数据逻辑，自动对表格类文档进行分段计算与数据清洗,識別表格結構與數據邏輯，自動對表格類文檔進行分段計算與數據清洗,Identify table structure and data logic, automatically perform segmentation and data cleaning for table documents,テーブル構造とデータロジックを認識し、表ドキュメントのセグメンテーションとデータクリーニングを自動的に実行します
+knowledge.chunk.desc_qa,聚焦问答类文档的问答结构，清晰拆分问题与答案,聚焦問答類文檔的問答結構，清晰拆分問題與答案,Focus on Q&A structure of Q&A documents, clearly split questions and answers,QAドキュメントのQ&A構造に焦点を当て、質問と回答を明確に分割します
+space.knowledge_graph.add_entity_title,添加实体,添加實體,Add Entity,エンティティを追加
+space.knowledge_graph.unadded_label,未添加,未添加,Unadded,未追加
+space.knowledge_graph.added_label,已添加,已添加,Added,追加済み
+space.knowledge_graph.attribute_name,名称,名稱,Name,名前
+space.knowledge_graph.add_short,添加,添加,Add,追加
+login.bind_phone_failed,绑定手机号失败,綁定手機號失敗,Failed to bind mobile number,携帯電話番号のバインドに失敗しました
+work_ai.file_id_label,文件 {id},文件 {id},"File {id}",ファイル {id}
+work_ai.tool_kb_qa,指定知识问答,指定知識問答,Targeted Knowledge Q&A,指定知識問答
+work_ai.tool_kb_qa_placeholder,分配一项任务或基于企业知识提任何问题,分配一項任務或基於企業知識提任何問題,Assign a task or ask any question based on enterprise knowledge,タスクを割り当てるか、企業知識に基づいて質問をしてください

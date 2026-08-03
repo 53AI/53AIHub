@@ -15,6 +15,8 @@ export interface SpaceItem {
   owner_info: {
     nickname: string
   }
+  enable_wiki_knowledge_graph?: boolean
+  enable_wiki_dynamic_knowledge?: boolean
 }
 
 export interface SpaceListRequest {
@@ -39,6 +41,8 @@ export interface SpaceCreateRequest {
     subject_id: number
     permission: number
   }[]
+  enable_wiki_knowledge_graph?: boolean
+  enable_wiki_dynamic_knowledge?: boolean
 }
 
 export interface SpaceDisplayItem extends Omit<SpaceItem, 'created_time' | 'updated_time'> {
@@ -56,5 +60,31 @@ export interface SpacePermissionItem {
   permission: number
   created_time: number
   updated_time: number
+}
+
+/**
+ * 空间回收站条目（后端字段未就绪时先用占位结构）
+ * TODO: 后端就绪后, 按实际返回字段调整
+ */
+export interface SpaceRecycleItem {
+  id: string
+  name: string
+  space_id: string
+  library_id?: string
+  deleted_time?: number
+  deleted_by?: string
+  size?: number
+}
+
+export interface SpaceRecycleListRequest {
+  space_id: SpaceItem['id']
+  keyword?: string
+  offset?: number
+  limit?: number
+}
+
+export interface SpaceRecycleListResponse {
+  items: SpaceRecycleItem[]
+  count: number
 }
 

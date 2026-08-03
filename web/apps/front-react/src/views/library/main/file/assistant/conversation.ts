@@ -1,20 +1,28 @@
 import { create } from 'zustand'
-import conversationApi from '@/api/modules/conversation/index'
+import conversationApi, { type DocumentType } from '@/api/modules/conversation/index'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 
 interface ConversationState {
   conversations: Conversation.Info[]
   current_conversationid: number | string
   current_agentid: string
-  current_fileid: string | null
+  /** 当前激活的文档引用（v0.4.2 §3.2），用于筛选与创建会话 */
+  currentDocumentRef: { documentType?: DocumentType; documentId?: string }
   currentVirtualId: string
   // Getters
   currentConversation: () => Conversation.Info | { conversation_id: number; title: string; create_time: number; update_time: number; top: number; is_valid: number; virtual_id: string }
   // Actions
   setAgentId: (agent_id: string) => void
-  setFileId: (file_id: string | null) => void
+  setDocumentRef: (ref: { documentType?: DocumentType; documentId?: string } | null) => void
   loadConversations: () => Promise<Conversation.Info[]>
-  createConversation: (agent_id: string, title?: string, file_id?: string) => Promise<Conversation.Info>
+  /**
+   * 创建会话（v0.4.2 §3.2）：仅使用 document_type + document_id。
+   */
+  createConversation: (
+    agent_id: string,
+    title?: string,
+    documentRef?: { documentType?: DocumentType; documentId?: string }
+  ) => Promise<Conversation.Info>
   addConversation: (conversation: Conversation.Info) => void
   updateConversation: (conversation: Partial<Conversation.Info>) => void
   editConversation: (conversation: Pick<Conversation.Info, 'conversation_id' | 'title'>) => Promise<void>
@@ -27,7 +35,7 @@ export const useFileConversationStore = create<ConversationState>((set, get) => 
   conversations: [],
   current_conversationid: 0,
   current_agentid: '',
-  current_fileid: null,
+  currentDocumentRef: {},
   currentVirtualId: '',
 
   // Getter
@@ -58,16 +66,18 @@ export const useFileConversationStore = create<ConversationState>((set, get) => 
     set({ current_agentid: agent_id })
   },
 
-  setFileId: (file_id) => {
-    set({ current_fileid: file_id })
+  setDocumentRef: (ref) => {
+    set({ currentDocumentRef: ref ?? {} })
   },
 
   loadConversations: async () => {
     const state = get()
+    const { documentType, documentId } = state.currentDocumentRef ?? {}
     const res = await conversationApi.agentList(state.current_agentid, {
-      file_id: state.current_fileid,
+      document_type: documentType,
+      document_id: documentId,
       offset: 0,
-      limit: 100
+      limit: 100,
     })
     const conversations = res.data.items.map((item) => {
       return {
@@ -86,13 +96,24 @@ export const useFileConversationStore = create<ConversationState>((set, get) => 
     return conversations
   },
 
-  createConversation: (agent_id: string, title = '', file_id?: string) => {
-    const data: { agent_id: string; title: string; file_id?: string } = {
+  createConversation: (
+    agent_id: string,
+    title = '',
+    documentRef?: { documentType?: DocumentType; documentId?: string },
+  ) => {
+    const data: {
+      agent_id: string
+      title: string
+      document_type?: DocumentType
+      document_id?: string
+    } = {
       agent_id,
       title,
     }
-    if (file_id) {
-      data.file_id = file_id
+    // 统一文档引用（v0.4.2 §3.2）：仅 document_type + document_id
+    if (documentRef?.documentType && documentRef?.documentId) {
+      data.document_type = documentRef.documentType
+      data.document_id = documentRef.documentId
     }
     return conversationApi
       .create(data)

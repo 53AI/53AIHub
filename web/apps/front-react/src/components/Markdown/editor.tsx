@@ -11,11 +11,23 @@ interface EditConfig {
   mode: 'editor' | 'both'
 }
 
+interface LinkPickEvent {
+  type: string
+  callback: (result: { url: string; title: string }) => void
+}
+
+interface LinkConfig {
+  isOpen: boolean
+  pick: (event: LinkPickEvent) => void
+}
+
 interface MarkdownEditorProps {
   value?: string
   onChange?: (value: string) => void
   height?: string
   className?: string
+  /** 自定义链接选择配置 */
+  link?: LinkConfig
 }
 
 export interface MarkdownEditorRef {
@@ -39,7 +51,7 @@ const EDIT_MODES: EditConfig[] = [
 ]
 
 export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(
-  ({ value = '', onChange, height = '500px', className }, ref) => {
+  ({ value = '', onChange, height = '500px', className, link }, ref) => {
     const vditorRef = useRef<HTMLDivElement>(null)
     const vditorInstance = useRef<any>(null)
     const [loading, setLoading] = useState(false)
@@ -157,6 +169,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               inlineDigit: true,
             },
           },
+          link: link,
         }
 
         setTimeout(() => {
@@ -167,7 +180,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       } catch (error) {
         console.error('Failed to initialize Vditor:', error)
       }
-    }, [height, value, onChange, type, mode, getUploadConfig])
+    }, [height, value, onChange, type, mode, getUploadConfig, link])
 
     const handleEditMode = useCallback((item: EditConfig) => {
       setType(item.type)

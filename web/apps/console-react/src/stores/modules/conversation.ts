@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { conversationApi, type ChatCompletionParams } from '@/api/modules/conversation';
+import { buildKnowledgeSourcePayload } from '@km/shared-business/agent-create';
 
 interface ConversationState {
   loadListData: (opts?: { data?: { offset?: number; limit?: number } }) => Promise<unknown[]>
@@ -70,29 +71,33 @@ export const useConversationStore = create<ConversationState>(() => ({
     // search_config 等知识库字段，对应后端 agent.json payload 形态。
     const isMinimal = (finalData as any).type === 'agent' || (finalData as any).minimalParams === true
     if (!isMinimal) {
-      const networkSearch = !!(finalData as any).networkSearch
-      const knowledgeGraph = !!(finalData as any).knowledgeGraph
+      const knowledgeSource = (finalData as any).knowledgeSource
       const agentInfo = (finalData as any).agentInfo
       const library = (finalData as any).library
       const rerankConfig = agentInfo?.settings?.rerank_config || {}
       const webSearchConfig = agentInfo?.settings?.web_search_setting || {}
+      // networkSearch 时不指定知识库（使用空数组），其他模式默认全部知识库
+      const isNetworkSearch = knowledgeSource?.state?.networkSearch
+      const useAllKnowledge = !isNetworkSearch && (
+        !knowledgeSource ||
+        knowledgeSource?.state?.allKnowledge
+      )
+
       Object.assign(finalData, {
         enable_process_steps: true,
-        knowledge_base_ids: networkSearch ? [] : (library?.value ?? ['all']),
+        knowledge_base_ids: isNetworkSearch ? [] : (useAllKnowledge ? ['all'] : library?.value ?? []),
         file_ids: [],
         space_ids: [],
         solo_file_mode: false,
         search_config: {
           ...rerankConfig,
-          top_k: networkSearch
+          top_k: isNetworkSearch
             ? webSearchConfig.top_k ?? rerankConfig.top_k
             : rerankConfig.top_k,
         },
-        web_search_config: networkSearch ? webSearchConfig : {},
-        enable_graph_search: knowledgeGraph,
+        ...(knowledgeSource ? buildKnowledgeSourcePayload(knowledgeSource) : {}),
       })
-      delete (finalData as any).networkSearch
-      delete (finalData as any).knowledgeGraph
+      delete (finalData as any).knowledgeSource
       delete (finalData as any).library
       delete (finalData as any).agentInfo
     }

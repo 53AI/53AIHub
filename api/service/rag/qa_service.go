@@ -168,6 +168,8 @@ type QAResponse struct {
 
 // SourceReference 引用来源
 type SourceReference struct {
+	SourceType    string  `json:"source_type,omitempty"`
+	WikiPageID    int64   `json:"wiki_page_id,omitempty"`
 	ReferenceID   string  `json:"reference_id"`
 	ChunkID       int64   `json:"chunk_id"`
 	FileID        int64   `json:"file_id"`
@@ -192,6 +194,8 @@ type SourceReference struct {
 	// 新增字段：空间信息
 	SpaceID   string `json:"space_id"`   // 空间ID
 	SpaceName string `json:"space_name"` // 空间名称
+	Slug      string `json:"slug,omitempty"`
+	Title     string `json:"title,omitempty"`
 
 	// 图谱聚合结构化结果
 	EntityCount                  int                  `json:"entity_count,omitempty"`

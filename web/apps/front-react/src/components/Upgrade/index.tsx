@@ -1,10 +1,10 @@
 import { useState, useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react'
 import { Modal, Button, Divider, Radio, message, Avatar } from 'antd'
 import {
-  CloseOutlined,
-  LeftOutlined,
-  RightOutlined,
-  ArrowUpOutlined,
+    CloseOutlined,
+    LeftOutlined,
+    RightOutlined,
+    ArrowUpOutlined,
 } from '@ant-design/icons'
 import PaymentQrcode, { PaymentQrcodeRef } from './payment-qrcode'
 import subscriptionApi from '@/api/modules/subscription'
@@ -279,7 +279,7 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                             <div className="flex-1" />
                             <div>
                               <div className="flex items-center gap-1">
-                                <span className="text-lg font-bold text-black">
+                                <span className="text-lg font-bold text-primary">
                                   {item.month_info.currency_symbol}
                                   {item.month_info.amount}
                                 </span>
@@ -301,7 +301,7 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                       {!isSingleOption && (
                         <>
                           <div className="flex items-center gap-1">
-                            <span className="text-lg font-bold text-black">
+                            <span className="text-lg font-bold text-primary">
                               {item.month_info.currency_symbol}
                               {item.month_info.amount}
                             </span>
@@ -428,10 +428,10 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                       >
                         <div className="time-label">{t(`subscription.time_unit_${key}`)}</div>
                         <div className="time-price">
-                          <span className="text-lg font-bold text-black">
+                          <span className="text-lg font-bold text-primary">
                             {info.currency_symbol || '￥'}
                           </span>
-                          <span className="text-2xl font-bold text-black mx-1">
+                          <span className="text-2xl font-bold text-primary mx-1">
                             {info.amount || 0}
                           </span>
                           <span className="text-sm text-[#333]">
@@ -511,7 +511,7 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
               <div className={`min-h-1 ${displayPaymentDetail ? 'pb-0' : 'pb-1'}`}>
                 {displayPaymentDetail && (
                   <div>
-                    <h2 className="mt-10 text-2xl font-semibold text-black">
+                    <h2 className="mt-10 text-2xl font-semibold text-primary">
                       {t('subscription.aside_title')}
                     </h2>
                     <p className="mt-2 text-sm text-[#333]">{t('subscription.aside_desc')}</p>
@@ -522,7 +522,7 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                       </div>
                     </div>
                     <Divider className="!my-5 !border-[#E7ECF7]" />
-                    <div className="w-full flex items-center justify-between text-lg text-black min-h-[48px] border-b">
+                    <div className="w-full flex items-center justify-between text-lg text-primary min-h-[48px] border-b">
                       <span>{activeSubscriptionInfo?.group_name || '- -'}</span>
                       <span>{activeTimeInfo?.currency_symbol || '￥'}{activeTimeInfo?.amount || 0}</span>
                     </div>
@@ -531,7 +531,7 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
 
                 {paymentOptions.length > 1 && (
                   <div className="flex flex-row items-center gap-4 min-h-max">
-                    <h2 className="text-lg text-black whitespace-nowrap">{t('subscription.payment')}</h2>
+                    <h2 className="text-lg text-primary whitespace-nowrap">{t('subscription.payment')}</h2>
                     <Radio.Group
                       value={activePayment}
                       onChange={(e) => setActivePayment(e.target.value)}
@@ -548,10 +548,10 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
 
                 <div className="flex flex-row items-end gap-4">
                   <div className="mt-4 flex gap-1 items-end">
-                    <span className="text-lg text-black">
+                    <span className="text-lg text-primary">
                       {activeTimeInfo?.currency_symbol || '￥'}
                     </span>
-                    <span className="text-4xl font-semibold text-black">
+                    <span className="text-4xl font-semibold text-primary">
                       {Number(activeTimeInfo?.amount || 0).toFixed(2)}
                     </span>
                   </div>

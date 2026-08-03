@@ -4,12 +4,19 @@ import { t } from "@/locales";
 import { SvgIcon, Dropdown } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import { useFileConversationStore } from "../conversation";
+import type { DocumentType } from "@/api/modules/conversation";
 import "./ChatHistoryDrawer.css";
+
+export interface ChatHistoryDrawerDocumentRef {
+  documentType?: DocumentType;
+  documentId?: string;
+}
 
 interface ChatHistoryDrawerProps {
   open: boolean;
   agentId: number;
-  fileId: string | null;
+  /** 文档引用（v0.4.2 §3.2），用于筛选当前文件/Wiki 页面的会话历史 */
+  documentRef: ChatHistoryDrawerDocumentRef | null;
   onClose: () => void;
   onConversation: (id: string) => void;
 }
@@ -25,7 +32,7 @@ interface ConversationItem {
 export function ChatHistoryDrawer({
   open,
   agentId,
-  fileId,
+  documentRef,
   onClose,
   onConversation,
 }: ChatHistoryDrawerProps) {
@@ -81,12 +88,20 @@ export function ChatHistoryDrawer({
 
   useEffect(() => {
     if (open && agentId) {
-      // Same as Vue: setAgentId and setFileId, then loadConversations
+      // Same as Vue: setAgentId and setDocumentRef, then loadConversations
       convStore.setAgentId(agentId);
-      convStore.setFileId(fileId);
+      // 文档引用统一（v0.4.2 §3.2）：仅使用 document_type + document_id
+      convStore.setDocumentRef(
+        documentRef?.documentType && documentRef?.documentId
+          ? {
+              documentType: documentRef.documentType,
+              documentId: documentRef.documentId,
+            }
+          : null,
+      );
       convStore.loadConversations();
     }
-  }, [open, agentId, fileId]);
+  }, [open, agentId, documentRef?.documentType, documentRef?.documentId]);
 
   const selectConversation = (conversation: any) => {
     onConversation(conversation.conversation_id || conversation.id);

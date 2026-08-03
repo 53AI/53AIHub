@@ -75,7 +75,6 @@ export const NAVIGATION_INIT_DATA = () => {
       icon: `${img_host}/icon/icon34.png`,
       config: createDefaultConfig(),
     },
-    ...(window.$vars?.includeKm ? [NAV_KM_ITEM] : []),
     {
       jump_path: '/agent',
       name: '智能体',
@@ -83,6 +82,7 @@ export const NAVIGATION_INIT_DATA = () => {
       icon: `${img_host}/icon/icon33.png`,
       config: createDefaultConfig(),
     },
+    ...(window.$vars?.includeKm ? [NAV_KM_ITEM] : []),
     {
       jump_path: '/prompt',
       name: '提示词',

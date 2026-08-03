@@ -13,10 +13,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// generateFileSummaryAndFAQ 生成文件级摘要和常见问法（强制执行，无 toggle）
-// 在 document_chunking 步骤中调用，失败会导致 chunking 步骤失败。
+var generateFileSummaryAndFAQFunc = generateFileSummaryAndFAQ
+
+// generateFileSummaryAndFAQ 生成文件级摘要和常见问法。
+// 在 document_chunking 步骤中调用；当摘要和问法都被配置为 manual 时直接跳过，
+// 避免继续占用模型调用与步骤时间。
 func generateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, eid, fileID int64, content string, chunkConfig *rag.ChunkConfig) (string, []string, error) {
 	logger.Infof(ctx, "【文件摘要】开始生成文件摘要和常见问法: file_id=%d", fileID)
+
+	generateSummary, generateQuestions := resolveDocumentChunkGenerativeEnhancements(chunkConfig)
+	if !generateSummary && !generateQuestions {
+		logger.Infof(ctx, "【文件摘要】已跳过摘要和常见问法生成: file_id=%d", fileID)
+		if db != nil {
+			if err := model.UpdateFileAIGenerateSQStatus(fileID, model.AIGenerateSQStatusInactive); err != nil {
+				logger.Warnf(ctx, "【文件摘要】更新跳过状态失败(非致命): file_id=%d, err=%v", fileID, err)
+			}
+		}
+		return "", nil, nil
+	}
 
 	configService := rag.NewChunkConfigService(db)
 	enterpriseConfig, err := configService.GetConfig(eid, nil, model.ChunkTypeDefault)
@@ -49,8 +63,8 @@ func generateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, eid, fileID int
 	resp, _, err := contentGenerator.GenerateSummaryQuestionsKnowledgeMap(ctx, eid, generationConfig, &rag.GenerateSummaryQuestionsKnowledgeMapRequest{
 		Content:              content,
 		RootTitle:            rootTitle,
-		GenerateSummary:      true,
-		GenerateQuestions:    true,
+		GenerateSummary:      generateSummary,
+		GenerateQuestions:    generateQuestions,
 		GenerateKnowledgeMap: false,
 	})
 	elapsed := time.Since(startTime).Milliseconds()
@@ -87,6 +101,39 @@ func generateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, eid, fileID int
 		fileID, elapsed, len(summaryText), len(questions))
 
 	return summaryText, questions, nil
+}
+
+func maybeGenerateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, job *model.RagJob, eid, fileID int64, content string, chunkConfig *rag.ChunkConfig) (string, []string, error) {
+	if isWikiPageGenerationActive(job) {
+		logger.Infof(ctx, "【文件摘要】wiki_page_generation 已启用，跳过旧摘要/问法生成: file_id=%d", fileID)
+		if db != nil {
+			if err := model.UpdateFileAIGenerateSQStatus(fileID, model.AIGenerateSQStatusInactive); err != nil {
+				logger.Warnf(ctx, "【文件摘要】更新跳过状态失败(非致命): file_id=%d, err=%v", fileID, err)
+			}
+		}
+		return "", nil, nil
+	}
+	generateSummary, generateQuestions := resolveDocumentChunkGenerativeEnhancements(chunkConfig)
+	if !generateSummary && !generateQuestions {
+		logger.Infof(ctx, "【文件摘要】已跳过摘要和常见问法生成: file_id=%d", fileID)
+		if db != nil {
+			if err := model.UpdateFileAIGenerateSQStatus(fileID, model.AIGenerateSQStatusInactive); err != nil {
+				logger.Warnf(ctx, "【文件摘要】更新跳过状态失败(非致命): file_id=%d, err=%v", fileID, err)
+			}
+		}
+		return "", nil, nil
+	}
+	return generateFileSummaryAndFAQFunc(ctx, db, eid, fileID, content, chunkConfig)
+}
+
+func resolveDocumentChunkGenerativeEnhancements(chunkConfig *rag.ChunkConfig) (generateSummary bool, generateQuestions bool) {
+	if chunkConfig == nil {
+		return true, true
+	}
+
+	generateSummary = strings.EqualFold(strings.TrimSpace(chunkConfig.SummaryGeneration), "ai")
+	generateQuestions = strings.EqualFold(strings.TrimSpace(chunkConfig.QuestionGeneration), "ai")
+	return generateSummary, generateQuestions
 }
 
 // extractEntities 对文件进行实体抽取（强制执行，无 toggle）

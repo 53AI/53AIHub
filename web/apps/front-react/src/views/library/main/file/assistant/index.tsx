@@ -10,13 +10,13 @@ import {
 import { CloseOutlined } from "@ant-design/icons";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
-import { getPublicPath } from "@/utils/config";
 import { ChatAssistant, ChatRef } from "./Chat";
 import { MapAssistant } from "./Map";
 import { AgentApp } from "./AgentApp";
 import { ChatConfigProvider } from "@km/shared-business/chat";
 import { chatAdapters } from "@/adapters/chat-adapters";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
+import { AI_ICON_URL, MAP_ICON_URL } from "../components/sidebar-app-item";
 import "./index.css";
 
 interface CustomAppItem {
@@ -74,12 +74,12 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
       if (activeMenu === "chat") {
         return {
           title: t("library.document_chat"),
-          img: getPublicPath("/images/library/ai.png"),
+          img: AI_ICON_URL,
         };
       } else if (activeMenu === "map") {
         return {
           title: t("library.knowledge_map"),
-          img: getPublicPath("/images/library/map.png"),
+          img: MAP_ICON_URL,
         };
       } else {
         return {
@@ -225,7 +225,7 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
             src={curApp.img}
             alt=""
             onError={(e) => {
-              (e.target as HTMLImageElement).src = getPublicPath("/images/library/ai.png");
+              (e.target as HTMLImageElement).src = AI_ICON_URL;
             }}
           />
           <div className="flex-1 text-base text-[#1D1E1F]">{curApp.title}</div>

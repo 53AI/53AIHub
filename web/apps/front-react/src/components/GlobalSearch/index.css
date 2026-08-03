@@ -1,0 +1,7 @@
+.global-search-tabs.ant-tabs >.ant-tabs-nav {
+  margin: 0 !important;
+}
+
+.creator-dept-member-picker .trigger-wrapper {
+  width: 100%;
+}

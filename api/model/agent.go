@@ -41,32 +41,32 @@ func ClearAgentCache() {
 }
 
 type Agent struct {
-	AgentID           int64   `json:"agent_id" gorm:"primaryKey;autoIncrement"`
-	BotID             string  `json:"bot_id" gorm:"-"`
-	Eid               int64   `json:"eid" gorm:"not null;index"`
-	Name              string  `json:"name" gorm:"not null"`
-	Logo              string  `json:"logo" gorm:"not null"`
-	Sort              int     `json:"sort" gorm:"default:0"`
-	Description       string  `json:"description" gorm:"not null"`
-	ChannelType       int     `json:"channel_type" gorm:"default:0"`
-	Model             string  `json:"model" gorm:"not null"`
-	SpecificChannelID int64   `json:"-" gorm:"-"`
-	Prompt            string  `json:"prompt" gorm:"not null"`
-	Configs           string  `json:"configs" gorm:"not null;type:text"`
-	Tools             string  `json:"tools" gorm:"not null;type:text"`
-	GroupID           int64   `json:"group_id" gorm:"type:int;default:0;not null"`
-	UseCases          string  `json:"use_cases" gorm:"not null;type:text"`
-	CreatedBy         int64   `json:"created_by" gorm:"not null"`
-	CustomConfig      string  `json:"custom_config" gorm:"not null;type:text"`
-	Settings          string  `json:"settings" gorm:"not null;type:text"`
+	AgentID           int64               `json:"agent_id" gorm:"primaryKey;autoIncrement"`
+	BotID             string              `json:"bot_id" gorm:"-"`
+	Eid               int64               `json:"eid" gorm:"not null;index"`
+	Name              string              `json:"name" gorm:"not null"`
+	Logo              string              `json:"logo" gorm:"not null"`
+	Sort              int                 `json:"sort" gorm:"default:0"`
+	Description       string              `json:"description" gorm:"not null"`
+	ChannelType       int                 `json:"channel_type" gorm:"default:0"`
+	Model             string              `json:"model" gorm:"not null"`
+	SpecificChannelID int64               `json:"-" gorm:"-"`
+	Prompt            string              `json:"prompt" gorm:"not null"`
+	Configs           string              `json:"configs" gorm:"not null;type:text"`
+	Tools             string              `json:"tools" gorm:"not null;type:text"`
+	GroupID           int64               `json:"group_id" gorm:"type:int;default:0;not null"`
+	UseCases          string              `json:"use_cases" gorm:"not null;type:text"`
+	CreatedBy         int64               `json:"created_by" gorm:"not null"`
+	CustomConfig      string              `json:"custom_config" gorm:"not null;type:text"`
+	Settings          string              `json:"settings" gorm:"not null;type:text"`
 	UserGroupIds      []int64             `json:"user_group_ids" gorm:"-"`
 	Scopes            []ResourceScopeItem `json:"scopes" gorm:"-"`
 	Enable            bool                `json:"enable" gorm:"default:false;comment:enable status"`
-	ConversationCount int64   `json:"conversation_count" gorm:"-"`
-	AgentType         int     `json:"agent_type" gorm:"default:0"`
-	AgentUsage        int     `json:"agent_usage" gorm:"default:0"`
-	OwnerID           int64   `json:"owner_id" gorm:"default:0;index:idx_agent_owner"` // 归属用户ID，0=企业智能体，>0=个人智能体
-	IsSystem          bool    `json:"is_system" gorm:"default:false;comment:系统创建标记"`
+	ConversationCount int64               `json:"conversation_count" gorm:"-"`
+	AgentType         int                 `json:"agent_type" gorm:"default:0"`
+	AgentUsage        int                 `json:"agent_usage" gorm:"default:0"`
+	OwnerID           int64               `json:"owner_id" gorm:"default:0;index:idx_agent_owner"` // 归属用户ID，0=企业智能体，>0=个人智能体
+	IsSystem          bool                `json:"is_system" gorm:"default:false;comment:系统创建标记"`
 	BaseModel
 }
 
@@ -87,6 +87,7 @@ const (
 	AgentUsageFileChat     = 2 // KM 文件单聊模式
 	AgentUsageKnowledgeMap = 3 // 知识地图
 	AgentUsageWorkAI       = 4 // 工作AI
+	AgentUsageRecording    = 5 // 录音文档应用
 )
 
 func (a *Agent) FillBotID() {
@@ -572,6 +573,12 @@ type GraphSearchConfig struct {
 	DefaultEnable bool `json:"default_enable"` // 前端默认是否启用图谱搜索
 }
 
+// WikiSearchConfig Wiki 动态知识搜索配置。
+type WikiSearchConfig struct {
+	Enable        bool `json:"enable"`
+	DefaultEnable bool `json:"default_enable"`
+}
+
 // GetWebSearchConfig 从 Agent Settings 中获取AI在线搜索配置
 // 使用 "web_search_config" 作为字典的 key 来获取配置
 func (a *Agent) GetWebSearchConfig() (*WebSearchConfig, error) {
@@ -630,6 +637,31 @@ func (a *Agent) GetGraphSearchConfig() (*GraphSearchConfig, error) {
 	}
 
 	return nil, nil
+}
+
+// GetWikiSearchConfig 从 Agent Settings 中获取 Wiki 动态知识搜索配置。
+func (a *Agent) GetWikiSearchConfig() (*WikiSearchConfig, error) {
+	config := &WikiSearchConfig{}
+	if a == nil || a.Settings == "" {
+		return config, nil
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal([]byte(a.Settings), &settings); err != nil {
+		return nil, err
+	}
+	configData, exists := settings["wiki_search_setting"]
+	if !exists {
+		return config, nil
+	}
+	configBytes, err := json.Marshal(configData)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(configBytes, config); err != nil {
+		return nil, err
+	}
+	return config, nil
 }
 
 // SkillRunConfig 技能执行配置
@@ -704,6 +736,27 @@ func (a *Agent) GetDeepThinkingConfig() (*DeepThinkingConfig, error) {
 	}
 
 	return nil, nil
+}
+
+// GetDisableThinkingConfig 从 Agent Settings 中获取是否禁用思考
+// true: 关闭思考，不设置或 false: 当前行为
+func (a *Agent) GetDisableThinkingConfig() bool {
+	if a.Settings == "" {
+		return true
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal([]byte(a.Settings), &settings); err != nil {
+		return true
+	}
+
+	if v, exists := settings["disable_thinking"]; exists {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+
+	return true
 }
 
 // OpenClawGatewayConfig OpenClaw Gateway 配置
@@ -844,8 +897,9 @@ func GetPersonalAgentByID(eid, userID, agentID int64) (*Agent, error) {
 // 1. 个人智能体（owner_id > 0）：只有 owner 可以访问
 // 2. 企业智能体且 agent_usage 为 1(KM AI搜索) 或 4(工作AI)：默认可用，跳过组权限检查
 // 3. 其他企业智能体（owner_id == 0）：
-//    - 用户在 resource_permissions 表中有该 agent 的 read 权限
-//    - 或用户所属组在智能体的 UserGroupIds 中
+//   - 用户在 resource_permissions 表中有该 agent 的 read 权限
+//   - 或用户所属组在智能体的 UserGroupIds 中
+//
 // 两者满足其一即可访问
 func CanUserAccessAgent(eid, userID, agentID int64) (bool, *Agent, error) {
 	agent, err := GetAgentByID(eid, agentID)

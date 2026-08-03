@@ -79,8 +79,8 @@ func WorkflowRun(c *gin.Context) {
 		logger.SysLogf("工作流请求设置了 stream=true，但工作流不支持流式响应，将忽略此参数")
 	}
 
-	logger.SysLogf("工作流运行请求 - Agent: %s, Stream: %v, Parameters: %+v",
-		agent.Model, workflowRequest.Stream, workflowRequest.Parameters)
+	logger.SysLogf("工作流运行请求 - Agent: %s, Stream: %v, %s",
+		agent.Model, workflowRequest.Stream, logger.SummarizeToolArguments(workflowRequest.Parameters))
 
 	// 执行工作流
 	response, err := executeWorkflow(c, &workflowRequest, agent)
@@ -166,8 +166,8 @@ func executeWorkflow(c *gin.Context, workflowRequest *WorkflowRunRequest, agent 
 		c.Request = c.Request.WithContext(runCtx)
 	}
 
-	logger.SysLogf("工作流执行开始 - Model: %s, ConversationID: %d, Parameters: %+v",
-		workflowRequest.Model, workflowRequest.ConversationID, workflowRequest.Parameters)
+	logger.SysLogf("工作流执行开始 - Model: %s, ConversationID: %d, %s",
+		workflowRequest.Model, workflowRequest.ConversationID, logger.SummarizeToolArguments(workflowRequest.Parameters))
 
 	modelName := agent.Model
 	// 获取渠道并检查/刷新token
@@ -252,8 +252,8 @@ func handleWorkflowError(resp *http.Response, workflowType string) error {
 	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 
-	logger.SysErrorf("❌ %s工作流请求失败 - 状态码: %d, 响应: %s",
-		workflowType, resp.StatusCode, string(body))
+	logger.SysErrorf("❌ %s工作流请求失败 - 状态码: %d, response_bytes=%d",
+		workflowType, resp.StatusCode, len(body))
 
 	// 尝试解析错误响应获取详细信息
 	var detailMsg string
@@ -380,7 +380,6 @@ func executeCozeWorkflow(c *gin.Context, workflowRequest *WorkflowRunRequest, ag
 
 	if len(workflowResponse.WorkflowOutputData) == 0 {
 		logger.SysLogf("⚠️ Coze工作流执行成功但输出字段为空 - ExecuteID: %s", workflowResponse.ExecuteID)
-		logger.SysLogf("🔍 Coze工作流详细输出数据: %+v", workflowResponse)
 	} else {
 		logger.SysLogf("✅ Coze工作流执行成功 - ExecuteID: %s, 输出字段数: %d",
 			workflowResponse.ExecuteID, len(workflowResponse.WorkflowOutputData))
@@ -466,7 +465,6 @@ func executeDifyWorkflow(c *gin.Context, workflowRequest *WorkflowRunRequest, ag
 
 	if len(workflowResponse.WorkflowOutputData) == 0 {
 		logger.SysLogf("⚠️ DIFY工作流执行成功但输出字段为空 - ExecuteID: %s", workflowResponse.ExecuteID)
-		logger.SysLogf("🔍 DIFY工作流详细输出数据: %+v", workflowResponse)
 	} else {
 		logger.SysLogf("✅ DIFY工作流执行成功 - ExecuteID: %s, 输出字段数: %d",
 			workflowResponse.ExecuteID, len(workflowResponse.WorkflowOutputData))
@@ -551,7 +549,6 @@ func executeFastGPTWorkflow(c *gin.Context, workflowRequest *WorkflowRunRequest,
 
 	if len(workflowResponse.WorkflowOutputData) == 0 {
 		logger.SysLogf("⚠️ FastGPT工作流执行成功但输出字段为空 - ExecuteID: %s", workflowResponse.ExecuteID)
-		logger.SysLogf("🔍 FastGPT工作流详细输出数据: %+v", workflowResponse)
 	} else {
 		logger.SysLogf("✅ FastGPT工作流执行成功 - ExecuteID: %s, 输出字段数: %d",
 			workflowResponse.ExecuteID, len(workflowResponse.WorkflowOutputData))
@@ -636,7 +633,6 @@ func executeAI53Workflow(c *gin.Context, workflowRequest *WorkflowRunRequest, ag
 
 	if len(workflowResponse.WorkflowOutputData) == 0 {
 		logger.SysLogf("⚠️ 53AI工作流执行成功但输出字段为空 - TaskID: %s", workflowResponse.ExecuteID)
-		logger.SysLogf("🔍 53AI工作流详细输出数据: %+v", workflowResponse)
 	} else {
 		logger.SysLogf("✅ 53AI工作流执行成功 - TaskID: %s, 输出字段数: %d",
 			workflowResponse.ExecuteID, len(workflowResponse.WorkflowOutputData))
@@ -904,7 +900,6 @@ func executeN8nWorkflow(c *gin.Context, workflowRequest *WorkflowRunRequest, age
 
 	if len(workflowResponse.WorkflowOutputData) == 0 {
 		logger.SysLogf("⚠️ n8n工作流执行成功但输出字段为空 - ExecuteID: %s", workflowResponse.ExecuteID)
-		logger.SysLogf("🔍 n8n工作流详细输出数据: %+v", workflowResponse)
 	} else {
 		logger.SysLogf("✅ n8n工作流执行成功 - ExecuteID: %s, 输出字段数: %d",
 			workflowResponse.ExecuteID, len(workflowResponse.WorkflowOutputData))
@@ -1076,13 +1071,12 @@ func executeDifyCompletionMessages(c *gin.Context, workflowRequest *WorkflowRunR
 
 	logger.SysLogf("🚀 DIFY补全消息请求开始")
 	logger.SysLogf("┌─────────────────────────────────────────────────────────────")
-	logger.SysLogf("│ 📡 请求URL: %s", url)
-	logger.SysLogf("│ 🔑 API Key: %s", helper.MaskAPIKey(meta.APIKey))
+	logger.SysLogf("│ 📡 请求URL: %s", logger.SanitizeURL(url))
+	logger.SysLogf("│ 🔑 API Key configured: %t", strings.TrimSpace(meta.APIKey) != "")
 	logger.SysLogf("│ 📝 请求方法: POST")
 	logger.SysLogf("│ 📋 Content-Type: application/json")
 	logger.SysLogf("├─────────────────────────────────────────────────────────────")
-	logger.SysLogf("│ 📦 请求参数:")
-	logger.SysLogf("│   %s", string(requestBody))
+	logger.SysLogf("│ 📦 请求摘要: %s", logger.SummarizeRequestBody(requestBody))
 	logger.SysLogf("└─────────────────────────────────────────────────────────────")
 
 	// 创建HTTP请求

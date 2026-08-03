@@ -7,6 +7,7 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/model"
+	"gorm.io/gorm"
 )
 
 const permissionCacheTTLSeconds int64 = 60 * 60
@@ -25,6 +26,7 @@ type permissionResolver struct {
 	spaceRolePermissionCache map[int64]int
 	libraryPermissionCache   map[int64]int
 	filePermissionCache      map[int64]int
+	wikiPagePermissionCache  map[int64]int
 }
 
 type fileChain struct {
@@ -60,6 +62,7 @@ func NewPermissionResolver(eid int64, userID int64) (*permissionResolver, error)
 		spaceRolePermissionCache: make(map[int64]int),
 		libraryPermissionCache:   make(map[int64]int),
 		filePermissionCache:      make(map[int64]int),
+		wikiPagePermissionCache:  make(map[int64]int),
 	}, nil
 }
 
@@ -195,6 +198,8 @@ func (r *permissionResolver) ResolvePermission(resourceType int, resourceID int6
 		return r.resolveLibraryPermission(resourceID)
 	case model.RESOURCE_TYPE_FILE:
 		return r.resolveFilePermission(resourceID)
+	case model.RESOURCE_TYPE_WIKI_PAGE:
+		return r.resolveWikiPagePermission(resourceID)
 	default:
 		return 0, errors.New("未知资源错误")
 	}
@@ -208,6 +213,8 @@ func (r *permissionResolver) cacheResolvedPermission(resourceType int, resourceI
 		r.libraryPermissionCache[resourceID] = permission
 	case model.RESOURCE_TYPE_FILE:
 		r.filePermissionCache[resourceID] = permission
+	case model.RESOURCE_TYPE_WIKI_PAGE:
+		r.wikiPagePermissionCache[resourceID] = permission
 	}
 }
 
@@ -222,6 +229,9 @@ func (r *permissionResolver) cachedResolvedPermission(resourceType int, resource
 	case model.RESOURCE_TYPE_FILE:
 		permission, ok := r.filePermissionCache[resourceID]
 		return permission, ok
+	case model.RESOURCE_TYPE_WIKI_PAGE:
+		permission, ok := r.wikiPagePermissionCache[resourceID]
+		return permission, ok
 	default:
 		return 0, false
 	}
@@ -234,6 +244,9 @@ func (r *permissionResolver) loadSpace(spaceID int64) (*model.Space, error) {
 
 	space, err := model.GetSpaceByID(r.eid, spaceID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	r.spaceCache[spaceID] = space
@@ -247,6 +260,9 @@ func (r *permissionResolver) loadLibrary(libraryID int64) (*model.Library, error
 
 	library, err := model.GetLibraryByID(r.eid, libraryID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	r.libraryCache[libraryID] = library
@@ -260,6 +276,9 @@ func (r *permissionResolver) loadFileChain(fileID int64) (*fileChain, error) {
 
 	currentFile, files, err := model.GetFileWithParentsByID(r.eid, fileID)
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -279,6 +298,10 @@ func (r *permissionResolver) resolveSpacePermission(spaceID int64) (int, error) 
 	space, err := r.loadSpace(spaceID)
 	if err != nil {
 		return 0, err
+	}
+	if space == nil {
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_SPACE, spaceID, model.PERMISSION_NONE)
+		return model.PERMISSION_NONE, nil
 	}
 
 	if r.user.Type == model.UserTypeRegistered {
@@ -579,6 +602,131 @@ func (r *permissionResolver) resolveFilePermission(fileID int64) (int, error) {
 		return 0, err
 	}
 	r.cacheResolvedPermission(model.RESOURCE_TYPE_FILE, fileID, permission)
+	return permission, nil
+}
+
+func (r *permissionResolver) resolveWikiPagePermission(pageID int64) (int, error) {
+	if permission, ok := r.cachedResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID); ok {
+		return permission, nil
+	}
+
+	if r.user.Type == model.UserTypeRegistered {
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, model.PERMISSION_NONE)
+		return model.PERMISSION_NONE, nil
+	}
+
+	page, err := model.GetWikiPageByID(r.eid, pageID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, model.PERMISSION_NONE)
+			return model.PERMISSION_NONE, nil
+		}
+		return 0, err
+	}
+
+	allPerms, err := model.GetResourcesPermissions(r.eid, model.RESOURCE_TYPE_WIKI_PAGE, []int64{pageID})
+	if err != nil || len(allPerms) == 0 {
+		permission, permErr := r.resolveLibraryPermission(page.LibraryID)
+		if permErr != nil {
+			return 0, permErr
+		}
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, permission)
+		return permission, nil
+	}
+
+	var maxGroupPermission *int
+	var companyPermission *int
+	var libraryUserPermission *int
+	hasSpaceAdminRecord := false
+	hasSpaceUserRecord := false
+	spaceAdminPermission := model.PERMISSION_MANAGE
+	spaceUserPermission := model.PERMISSION_NONE
+
+	for _, perm := range allPerms {
+		if perm.ResourceID != pageID {
+			continue
+		}
+		if perm.SubjectType == model.SUBJECT_TYPE_USER && perm.SubjectID == r.userID {
+			r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, perm.Permission)
+			return perm.Permission, nil
+		}
+
+		if len(r.groupIDs) > 0 && perm.SubjectType == model.SUBJECT_TYPE_GROUP &&
+			helper.Int64InArray(perm.SubjectID, r.groupIDs) {
+			if maxGroupPermission == nil || perm.Permission > *maxGroupPermission {
+				value := perm.Permission
+				maxGroupPermission = &value
+			}
+		}
+
+		if perm.SubjectType == model.SUBJECT_TYPE_COMPANY_ALL {
+			if companyPermission == nil || perm.Permission > *companyPermission {
+				value := perm.Permission
+				companyPermission = &value
+			}
+		}
+
+		if perm.SubjectType == model.SUBJECT_TYPE_LIBRARY_USER {
+			if libraryUserPermission == nil || perm.Permission > *libraryUserPermission {
+				value := perm.Permission
+				libraryUserPermission = &value
+			}
+		}
+
+		if perm.SubjectType == model.SUBJECT_TYPE_SPACE_ADMIN {
+			hasSpaceAdminRecord = true
+			spaceAdminPermission = perm.Permission
+		}
+		if perm.SubjectType == model.SUBJECT_TYPE_SPACE_USER {
+			hasSpaceUserRecord = true
+			spaceUserPermission = perm.Permission
+		}
+	}
+
+	if maxGroupPermission != nil {
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, *maxGroupPermission)
+		return *maxGroupPermission, nil
+	}
+
+	if companyPermission != nil {
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, *companyPermission)
+		return *companyPermission, nil
+	}
+
+	spacePermission, err := r.resolveSpaceRolePermission(page.SpaceID)
+	if err != nil {
+		return 0, err
+	}
+	isAdmin := spacePermission == model.PERMISSION_MANAGE
+	isMember := spacePermission >= model.PERMISSION_VIEW_ONLY
+
+	if isAdmin {
+		if !hasSpaceAdminRecord {
+			r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, spacePermission)
+			return spacePermission, nil
+		}
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, spaceAdminPermission)
+		return spaceAdminPermission, nil
+	}
+	if isMember {
+		if !hasSpaceUserRecord {
+			r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, spacePermission)
+			return spacePermission, nil
+		}
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, spaceUserPermission)
+		return spaceUserPermission, nil
+	}
+
+	if libraryUserPermission != nil {
+		r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, *libraryUserPermission)
+		return *libraryUserPermission, nil
+	}
+
+	permission, err := r.resolveLibraryPermission(page.LibraryID)
+	if err != nil {
+		return 0, err
+	}
+	r.cacheResolvedPermission(model.RESOURCE_TYPE_WIKI_PAGE, pageID, permission)
 	return permission, nil
 }
 

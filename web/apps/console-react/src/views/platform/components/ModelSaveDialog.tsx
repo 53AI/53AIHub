@@ -93,6 +93,7 @@ interface FormData {
     models: any[];
     alias_map: Record<string, string>;
     [key: string]: any;
+    voice_models: Record<string, any>;
   };
   // 多模型时为数组，单模型时为对象
   config: ConfigModelItem[] | Record<string, any>;
@@ -121,6 +122,7 @@ const normalizeCustomConfig = (custom_config: any) => {
   const next = {
     models: [] as any[],
     alias_map: {} as Record<string, string>,
+    voice_models: {} as Record<string, any>,
     ...(custom_config || {}),
   };
   if (!Array.isArray(next.models)) next.models = [];
@@ -131,11 +133,19 @@ const normalizeCustomConfig = (custom_config: any) => {
   ) {
     next.alias_map = {};
   }
+  if (
+    !next.voice_models ||
+    typeof next.voice_models !== "object" ||
+    Array.isArray(next.voice_models)
+  ) {
+    next.voice_models = {};
+  }
   // 移除 max_tokens 和 context_length（已迁移到 config 数组）
   delete next.max_tokens;
   delete next.context_length;
   return next;
 };
+
 
 export function ModelSaveDialog({
   open,
@@ -168,6 +178,7 @@ export function ModelSaveDialog({
     vector_dimension: DEFAULT_VECTOR_DIMENSION,
     max_tokens: DEFAULT_MAX_TOKENS,
     context_length: DEFAULT_CONTEXT_LENGTH,
+    workspace_id: "",
   });
 
   // 外部 API 获取的模型配置映射
@@ -314,7 +325,7 @@ export function ModelSaveDialog({
       channelData.custom_config || {},
     ).filter(
       (key) =>
-        !["deep_thinking", "vision", "alias_map", "models"].includes(key),
+        !["deep_thinking", "vision", "alias_map", "models", "voice_models"].includes(key),
     );
     const models = customConfigKeys.map(
       (item) => buildModelValue(channelData.custom_config[item], item),
@@ -423,6 +434,17 @@ export function ModelSaveDialog({
         }),
       );
 
+      // TODO 语音模型：后端暂未返回，前端兜底追加空分类，结构与重排序一致，靠“添加”按钮录入
+      if (!options.some((item: any) => String(item.model_type) === MODEL_USE_TYPE.VOICE)) {
+        options.push({
+          icon: "",
+          model_type: Number(MODEL_USE_TYPE.VOICE),
+          model_type_name: t("model.voice"),
+          model_count: 0,
+          models: [],
+        });
+      }
+
       setModelOptions(options);
     },
     [modelList],
@@ -476,6 +498,7 @@ export function ModelSaveDialog({
       vector_dimension: DEFAULT_VECTOR_DIMENSION,
       max_tokens: DEFAULT_MAX_TOKENS,
       context_length: DEFAULT_CONTEXT_LENGTH,
+      workspace_id: "",
     });
     modelAddForm.setFieldsValue({
       model_id: "",
@@ -486,6 +509,7 @@ export function ModelSaveDialog({
       vector_dimension: DEFAULT_VECTOR_DIMENSION,
       max_tokens: DEFAULT_MAX_TOKENS,
       context_length: DEFAULT_CONTEXT_LENGTH,
+      workspace_id: "",
     });
     setModelAddVisible(true);
   };
@@ -496,10 +520,10 @@ export function ModelSaveDialog({
       const values = await modelAddForm.validateFields();
       const modelId = values.model_id.trim();
 
-      // 检查是否已存在于自定义模型列表中
+      // 检查是否已存在于自定义模型列表或语音模型配置中
       const existsInCustomModels = (formData.custom_config?.models || []).some(
         (item: any) => item.model_id === modelId
-      );
+      ) || (formData.custom_config?.voice_models || {})[modelId] !== undefined;
       if (existsInCustomModels) {
         message.warning(t("module.platform_model_model_exists"));
         return;
@@ -532,13 +556,26 @@ export function ModelSaveDialog({
         is_system: false,
       };
 
-      setFormData((prev) => ({
-        ...prev,
-        custom_config: {
-          ...prev.custom_config,
-          models: [...(prev.custom_config.models || []), newModel],
-        },
-      }));
+      setFormData((prev) => {
+        const next = {
+          ...prev,
+          custom_config: {
+            ...prev.custom_config,
+            models: [...(prev.custom_config.models || []), newModel],
+            voice_models: { ...(prev.custom_config.voice_models || {}) },
+          },
+        };
+        // 仅语音模型才将配置写入 voice_models 和 alias_map
+        if (String(modelAddData.model_type) === MODEL_USE_TYPE.VOICE) {
+          const voiceConfig: Record<string, any> = {};
+          if (values.workspace_id) voiceConfig.workspace_id = values.workspace_id;
+          if (values.model_name) voiceConfig.display_name = values.model_name;
+          if (Object.keys(voiceConfig).length > 0) {
+            next.custom_config.voice_models[modelId] = voiceConfig;
+          }
+        }
+        return next;
+      });
       setModelAddVisible(false);
     } catch (error) {
       console.error("Validation error:", error);
@@ -547,21 +584,29 @@ export function ModelSaveDialog({
 
   // Handle model delete
   const handleModelDelete = (model: ExtendedModel) => {
-    setFormData((prev) => ({
-      ...prev,
-      models: prev.models.filter((item) => item !== model.value),
-      custom_config: {
-        ...prev.custom_config,
-        models: (prev.custom_config.models || []).filter(
-          (item: any) => item.model_id !== model.model_id,
-        ),
-        alias_map: Object.fromEntries(
-          Object.entries(prev.custom_config.alias_map || {}).filter(
-            ([key]) => key !== model.model_id,
+    setFormData((prev) => {
+      const next = {
+        ...prev,
+        models: prev.models.filter((item) => item !== model.value),
+        custom_config: {
+          ...prev.custom_config,
+          models: (prev.custom_config.models || []).filter(
+            (item: any) => item.model_id !== model.model_id,
           ),
-        ),
-      },
-    }));
+          alias_map: Object.fromEntries(
+            Object.entries(prev.custom_config.alias_map || {}).filter(
+              ([key]) => key !== model.model_id,
+            ),
+          ),
+        },
+      };
+      // 同步删除语音模型配置
+      if (prev.custom_config.voice_models?.[model.model_id]) {
+        next.custom_config.voice_models = { ...prev.custom_config.voice_models };
+        delete next.custom_config.voice_models[model.model_id];
+      }
+      return next;
+    });
   };
 
   // Get model by value
@@ -669,6 +714,15 @@ export function ModelSaveDialog({
     // 保留自定义模型列表
     if (data.custom_config?.models && Array.isArray(data.custom_config.models)) {
       custom_config.models = data.custom_config.models;
+    }
+
+    // 保留语音模型配置
+    if (
+      data.custom_config?.voice_models &&
+      typeof data.custom_config.voice_models === "object" &&
+      !Array.isArray(data.custom_config.voice_models)
+    ) {
+      custom_config.voice_models = data.custom_config.voice_models;
     }
 
     return { custom_config, configModels };
@@ -1171,21 +1225,21 @@ export function ModelSaveDialog({
                         }
                       />
                     </div> */}
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-400 w-22 flex-none">
-                        {t("module.platform_model_context_length")}
-                      </span>
-                      <InputNumber
-                        className="flex-1"
-                        min={1}
-                        max={getModelContextLengthLimit(item.model_id)}
-                        controls={false}
-                        value={getModelContextLength(item.model_id)}
-                        onChange={(value) =>
-                          handleModelContextLengthChange(item.model_id, value)
-                        }
-                      />
-                    </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-400 w-22 flex-none">
+                          {t("module.platform_model_context_length")}
+                        </span>
+                        <InputNumber
+                          className="flex-1"
+                          min={1}
+                          max={getModelContextLengthLimit(item.model_id)}
+                          controls={false}
+                          value={getModelContextLength(item.model_id)}
+                          onChange={(value) =>
+                            handleModelContextLengthChange(item.model_id, value)
+                          }
+                        />
+                      </div>
                   </div>
                 )}
               </div>
@@ -1293,8 +1347,8 @@ export function ModelSaveDialog({
                 >
                   {renderFormItem(config)}
                 </Form.Item>
-                {/* 单选模型选中后显示 max_tokens 输入框 */}
-                {config.prop === "models" && !config.multiple && formData.models[0] && (
+                {/* 单选模型选中后显示 max_tokens 输入框（语音模型不展示） */}
+                {config.prop === "models" && !config.multiple && formData.models[0] && formData.model_type !== MODEL_USE_TYPE.VOICE && (
                   // 只有表单配置中没有 max_tokens 字段时才显示
                   !modelSchemas.some(s => s.prop === "config.max_tokens") && (
                     <Form.Item label={t("module.platform_model_max_tokens")}>
@@ -1335,6 +1389,23 @@ export function ModelSaveDialog({
         ]}
       >
         <Form form={modelAddForm} layout="vertical">
+          {modelAddData.model_type === MODEL_USE_TYPE.VOICE && (
+            <Form.Item
+              label="Workspace ID"
+              name="workspace_id"
+              rules={[{ required: true, message: t("form_input_placeholder") }]}
+            >
+              <Input
+                placeholder={t("form_input_placeholder")}
+                onChange={(e) => {
+                  setModelAddData((prev) => ({
+                    ...prev,
+                    workspace_id: e.target.value,
+                  }));
+                }}
+              />
+            </Form.Item>
+          )}
           <Form.Item
             label={t("module.platform_model_models_id")}
             name="model_id"
@@ -1359,10 +1430,20 @@ export function ModelSaveDialog({
             />
           </Form.Item>
           <Form.Item
-            label={t("module.platform_model_models_name")}
+            label={
+              modelAddData.model_type === MODEL_USE_TYPE.VOICE
+                ? t("module.platform_model_display_name")
+                : t("module.platform_model_models_name")
+            }
             name="model_name"
           >
-            <Input placeholder={t("form_input_placeholder")} />
+            <Input
+              placeholder={
+                modelAddData.model_type === MODEL_USE_TYPE.VOICE
+                  ? t("module.platform_model_display_name_placeholder")
+                  : t("form_input_placeholder")
+              }
+            />
           </Form.Item>
           {modelAddData.model_type === MODEL_USE_TYPE.REASONING && (
             <>

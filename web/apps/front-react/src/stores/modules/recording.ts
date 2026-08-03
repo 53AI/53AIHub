@@ -1,12 +1,13 @@
-import React from 'react'
 import { create } from 'zustand'
 import { message, Modal } from 'antd'
-import { RecordingBridge } from '@/services/recording-bridge'
+import { RecordingBridge, USER_CANCELLED_PICKER } from '@/services/recording-bridge'
 import { recordingChannel } from '@/services/recording-channel'
 import { wakeLockService } from '@/services/wake-lock'
 import { recordingApi } from '@/api/modules/recording'
+import type { RecordingConfig } from '@/api/modules/recording/types'
 import { RecordingStateAction } from '@/api/modules/recording/types'
 import { MAX_RECORDING_DURATION_HOURS } from '@/constants/recording'
+import { t } from '@/locales'
 
 // ============= Type Definitions =============
 
@@ -36,9 +37,11 @@ export interface RecordingState {
   isTransitioning: boolean        // 状态切换中（防止快速点击）
   _bridge: RecordingBridge | null
   blockedByOtherTab: boolean       // 被其他正在录音的标签页阻塞
+  recordingConfig: RecordingConfig | null  // 录音配置（enabled、parser_platform）
+  enableSystemAudio: boolean       // 是否在本次录音中启用了系统声音（恢复时透传给 bridge）
 
   // Actions
-  start: (showFloat?: boolean) => Promise<void>
+  start: (showFloat?: boolean, groupId?: number, enableSystemAudio?: boolean) => Promise<void>
   pause: () => Promise<void>
   resume: () => Promise<void>
   finish: () => Promise<void>
@@ -51,7 +54,7 @@ export interface RecordingState {
   _setNetworkOffline: (offline: boolean) => void
   _setHeartbeatFail: (failCount: number) => void
   _resetHeartbeatError: () => void
-  recoverInterrupted: (showFloatOnStart?: boolean) => Promise<void>
+  recoverInterrupted: (showFloatOnStart?: boolean, enableSystemAudio?: boolean) => Promise<void>
   interrupt: () => Promise<void>
   _onWakeLockReleased: () => void
   _onRecordingInterrupted: (gap: number) => void
@@ -59,6 +62,7 @@ export interface RecordingState {
   _cleanup: () => void
   _setBlockedByOtherTab: (blocked: boolean) => void
   _finalizeWithRetry: (jobId: string, skipFinalizeCall?: boolean) => Promise<void>
+  loadConfig: () => Promise<void>
 }
 
 // ============= Helper Functions =============
@@ -138,7 +142,8 @@ function getIdleResetState(): Partial<RecordingState> {
     heartbeatFailCount: 0,
     heartbeatError: false,
     isTransitioning: false,
-    blockedByOtherTab: false
+    blockedByOtherTab: false,
+    enableSystemAudio: false
   }
 }
 
@@ -268,10 +273,12 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   isTransitioning: false,
   blockedByOtherTab: false,
   _bridge: null,
+  recordingConfig: null,
+  enableSystemAudio: false,
 
   // ============= Actions =============
 
-  start: async (showFloat: boolean = true) => {
+  start: async (showFloat: boolean = true, groupId?: number, enableSystemAudio = false) => {
     const state = get()
 
     // Prevent rapid clicks
@@ -335,7 +342,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
 
     try {
       // Start recording via bridge
-      const jobId = await bridge.start()
+      const jobId = await bridge.start(groupId, { enableSystemAudio })
       const info = bridge.getRecordingInfo()
       const recordingStartTime = Date.now()
 
@@ -346,7 +353,8 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
         startTime: recordingStartTime,
         duration: 0,
         floatVisible: showFloat,
-        _bridge: bridge
+        _bridge: bridge,
+        enableSystemAudio
       })
 
       // Set this tab as the main recorder
@@ -365,7 +373,9 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
 
       const errorMsg = error?.message || ''
 
-      if (errorMsg === '功能已被停用，请刷新页面后重试') {
+      if (errorMsg === USER_CANCELLED_PICKER) {
+        message.info(t('recording.user_cancelled_picker'))
+      } else if (errorMsg === '功能已被停用，请刷新页面后重试') {
         message.warning(errorMsg)
       } else {
         const displayMsg = handleMediaError(error)
@@ -415,7 +425,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
       registerBridgeHandlers(bridge)
 
       try {
-        await bridge.recover(state.jobId)
+        await bridge.recover(state.jobId, { enableSystemAudio: state.enableSystemAudio })
 
         set({
           status: 'recording',
@@ -550,7 +560,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
     })
   },
 
-  recoverInterrupted: async (showFloatOnStart = true) => {
+  recoverInterrupted: async (showFloatOnStart = true, enableSystemAudio = false) => {
     const state = get()
 
     // Guard: must have interrupted job
@@ -578,8 +588,8 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
     })
 
     try {
-      // Recover recording via bridge
-      await bridge.recover(jobId)
+      // Recover recording via bridge (preserve original enableSystemAudio choice)
+      await bridge.recover(jobId, { enableSystemAudio })
 
       // Calculate duration from interrupted job
       const startDuration = state.interruptedJob.durationSec
@@ -772,6 +782,15 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
     set({ blockedByOtherTab: blocked })
   },
 
+  loadConfig: async () => {
+    try {
+      const config = await recordingApi.getConfig()
+      set({ recordingConfig: config })
+    } catch (e) {
+      console.error('Failed to load recording config:', e)
+    }
+  },
+
   _finalizeWithRetry: async (jobId: string, skipFinalizeCall = false) => {
     const maxPolls = 20
     const baseInterval = 3000
@@ -804,13 +823,6 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
           set(getIdleResetState())
           recordingChannel.broadcast({ type: 'RECORDING_STOPPED' })
           get()._bridge?.destroy()
-          message.success(
-            React.createElement('span', null,
-              '录音保存成功，前往 ',
-              React.createElement('a', { href: '/mine?tab=audio', style: { color: '#1890ff' } }, '我的录音'),
-              ' 查看'
-            )
-          )
           return
         }
         if (job.status === 'failed') {

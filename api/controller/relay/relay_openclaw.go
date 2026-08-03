@@ -337,11 +337,11 @@ func handleOpenClawStream(
 						}
 					}
 					if run != nil {
-				if _, err := runSvc.AppendEvent(execCtx, eid, run.RunID, run.RequestID, model.AgentRunEventMessageDone, msg.ID, map[string]interface{}{
-					"answer": fullContent,
-				}); err != nil {
-					logger.Warnf(execCtx, "append agent run message.completed failed: eid=%d, run_id=%s, err=%v", eid, run.RunID, err)
-				}
+						if _, err := runSvc.AppendEvent(execCtx, eid, run.RunID, run.RequestID, model.AgentRunEventMessageDone, msg.ID, map[string]interface{}{
+							"answer": fullContent,
+						}); err != nil {
+							logger.Warnf(execCtx, "append agent run message.completed failed: eid=%d, run_id=%s, err=%v", eid, run.RunID, err)
+						}
 						if _, err := runSvc.FinalizeCompletedRun(execCtx, eid, run.RunID, "", ""); err != nil {
 							logger.Warnf(execCtx, "finalize completed run failed: eid=%d, run_id=%s, err=%v", eid, run.RunID, err)
 						}
@@ -354,13 +354,13 @@ func handleOpenClawStream(
 			if len(chunk.Choices) > 0 {
 				delta := chunk.Choices[0].Delta.Content
 				fullContent += delta
-			if run != nil {
-				if _, err := runSvc.AppendEvent(execCtx, eid, run.RunID, run.RequestID, model.AgentRunEventMessageDelta, msg.ID, map[string]interface{}{
-					"delta": delta,
-				}); err != nil {
-					logger.Warnf(execCtx, "append agent run message.delta failed: eid=%d, run_id=%s, err=%v", eid, run.RunID, err)
+				if run != nil {
+					if _, err := runSvc.AppendEvent(execCtx, eid, run.RunID, run.RequestID, model.AgentRunEventMessageDelta, msg.ID, map[string]interface{}{
+						"delta": delta,
+					}); err != nil {
+						logger.Warnf(execCtx, "append agent run message.delta failed: eid=%d, run_id=%s, err=%v", eid, run.RunID, err)
+					}
 				}
-			}
 
 				response := map[string]interface{}{
 					"choices": []map[string]interface{}{

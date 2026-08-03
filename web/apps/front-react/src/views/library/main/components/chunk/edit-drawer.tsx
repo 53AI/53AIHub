@@ -1,5 +1,5 @@
 import { useState, useCallback, forwardRef, useImperativeHandle, useRef } from "react";
-import { Drawer, Button, Input, Tag, Spin, message, Space } from "antd";
+import { Button, Input, Tag, Spin, message, Space } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import { MarkdownEditor, type MarkdownEditorRef } from "@/components/Markdown/editor";
 import { EditorSection } from "./editor-section";
@@ -14,7 +14,6 @@ import { CHUNK_TYPE, AI_GENERATE_CHUNK_STATUS } from "@/constants/chunk";
 import { useLibraryStore, type FileItem } from "@/stores/modules/library";
 import { usePoll } from "@/hooks/usePoll";
 import { LibraryQueue, QueueType } from "@/views/library/components/queue";
-import "./edit-drawer.css";
 
 const { TextArea } = Input;
 
@@ -205,58 +204,54 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
       [startPoll, loadChunkDetail],
     );
 
+    if (!visible) return null;
+
     return (
-      <Drawer
-        open={visible}
-        onClose={handleCancel}
-        size="100%"
-        className="chunk-edit-drawer"
-        mask={{ closable: false }}
-        styles={{ body: { padding: 0 } }}
-        title={
-          <div className="flex items-center justify-center gap-1">
-            <div className="text-sm text-[#1D1E1F]">{drawerFile?.name || file?.name}</div>
+      <div className="fixed inset-0 z-50 flex chunk-edit-drawer">
+        {/* Backdrop */}
+        <div className="absolute inset-0 bg-black/30" />
+
+        {/* Panel */}
+        <div className="relative ml-auto h-full w-full bg-white flex flex-col">
+          {/* Title */}
+          <div className="flex-none h-14 border-b flex items-center justify-center gap-1">
+            <div className="text-sm text-[#1D1E1F]">
+              {drawerFile?.name || file?.name}
+            </div>
             <Tag>#{numberToIndex(knowledge.chunk_index)}</Tag>
           </div>
-        }
-        footer={
-          <div className="flex justify-end gap-2">
-            <Button onClick={handleCancel}>{t("action.cancel")}</Button>
-            <Button type="primary" loading={saving} onClick={handleSave}>
-              {t("action.save")}
-            </Button>
-          </div>
-        }
-      >
-        <Spin
-          spinning={loading}
-          classNames={{
-            root: "h-full",
-            container: "h-full",
-          }}
-        >
-          <div className="h-full flex overflow-hidden border-b">
-            {/* Left Panel - Knowledge */}
-            <div className="flex-1 flex flex-col overflow-y-auto">
-              <div className="border-b flex px-5">
-                <h5 className="h-14 flex items-center text-base text-[#2563EB] border-b-2 border-[#2563EB]">
-                  {t("chunk.knowledge")}
-                </h5>
-              </div>
-              <div className="flex-1 px-5 py-5 overflow-y-auto">
-                {/* Use key to force remount when knowledge.id changes, ensuring editor gets correct initial value */}
-                <MarkdownEditor
-                  ref={editorRef}
-                  key={knowledge.id}
-                  value={knowledge.content}
-                  onChange={(value) =>
-                    setKnowledge((prev) => ({ ...prev, content: value }))
-                  }
-                  height="100%"
-                  className="border rounded"
-                />
-              </div>
-            </div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-hidden">
+            <Spin
+              spinning={loading}
+              classNames={{
+                root: "h-full",
+                container: "h-full",
+              }}
+            >
+              <div className="h-full flex overflow-hidden">
+                {/* Left Panel - Knowledge */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  <div className="border-b flex px-5">
+                    <h5 className="h-14 flex items-center text-base text-[#2563EB] border-b-2 border-[#2563EB]">
+                      {t("chunk.knowledge")}
+                    </h5>
+                  </div>
+                  <div className="flex-1 px-5 py-5 overflow-hidden">
+                    {/* 直接挂载编辑器：抽屉关闭时整个 DOM 卸载，重开时编辑器以正确尺寸初始化 */}
+                    <MarkdownEditor
+                      ref={editorRef}
+                      key={knowledge.id}
+                      value={knowledge.content}
+                      onChange={(value) =>
+                        setKnowledge((prev) => ({ ...prev, content: value }))
+                      }
+                      height="100%"
+                      className="border rounded"
+                    />
+                  </div>
+                </div>
 
             {/* Right Panel - Retrieval */}
             <div className="flex-1 border-l flex flex-col">
@@ -418,8 +413,18 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
               </div>
             </div>
           </div>
-        </Spin>
-      </Drawer>
+          </Spin>
+          </div>
+
+          {/* Footer */}
+          <div className="flex-none h-14 border-t flex items-center justify-end px-4 gap-2">
+            <Button onClick={handleCancel}>{t("action.cancel")}</Button>
+            <Button type="primary" loading={saving} onClick={handleSave}>
+              {t("action.save")}
+            </Button>
+          </div>
+        </div>
+      </div>
     );
   },
 );

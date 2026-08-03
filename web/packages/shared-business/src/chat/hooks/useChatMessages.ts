@@ -1,17 +1,198 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { Message, Skill, MessageFile, SpecifiedFile, OutputFile, ProcessRecord } from "../types";
+import type {
+  Message,
+  Skill,
+  MessageFile,
+  SpecifiedFile,
+  OutputFile,
+  ProcessRecord,
+  RagStats,
+  OpenClawTurnProjection,
+  OpenClawTurnState,
+  OpenClawTimelineItem,
+  OpenClawActivityItem,
+} from "../types";
 import { AGENT_RUN_TERMINAL_EVENTS } from "../adapters/types";
 import { parseJson } from "./useChatStream";
 import { parseQuestionWithSkill } from "../utils/parseQuestionWithSkill";
 import { parseRegenerateParams } from "./parseRegenerateParams";
 import type { RegenerateParams, UseChatMessagesRegenerateOptions } from "../types/regenerate";
-import { useRagStats } from "./useRagStats";
+import { useRagStats, formatRagStats as formatRagStatsPure } from "./useRagStats";
+import { isAssistantMessage, isOpenClawAssistantMessage } from "../types";
 import { useChatAdapters } from "../i18n";
 import { useAgentRun, type RecoverCallbacks } from "./useAgentRun";
 import { applyAgentRunEvents } from "../utils/agentrun-events";
 import { collapseDuplicateOpenClawIntermediateRows } from "../utils/openclaw-adapter";
+import { decodeOutputFile } from "../utils/openclaw-transport";
 import { readPaginationHasMore, readPaginationNextOffset } from "../utils/pagination";
 import { formatFileInfo, JSONParse } from "@km/shared-utils";
+
+type RagStatsFormatter = (ragStats: any, processRecords: any[]) => RagStats | null;
+
+export interface LoadMessagesOptions {
+  skillList?: any[];
+  mySkillList?: any[];
+  /** 是否保留 info 中的 specified_content，默认 false */
+  supportSpecifiedContent?: boolean;
+  /** 自定义 rag_stats 规范化函数，默认使用 useRagStats 中的实现 */
+  formatRagStats?: RagStatsFormatter;
+}
+
+/**
+ * 把后端原始消息数组规范化成 ChatMessages 可消费的 Message[]。
+ * 纯函数：不在 React 渲染/状态中持引用，便于在 hook 外（例如历史回放/详情弹窗）复用。
+ * 通过 `./index` 以 `loadMessages` 名字对外导出，避开与 hook 闭包同名导致的递归。
+ */
+export async function loadMessagesData(
+  messages: any[],
+  limit: number,
+  options: LoadMessagesOptions = {}
+): Promise<{ messages: Message[]; hasMore: boolean }> {
+  const validSkillList = options.skillList || [];
+  const validMySkillList = options.mySkillList || [];
+  const supportSpecifiedContent = options.supportSpecifiedContent || false;
+  const formatRagStatsFn = options.formatRagStats || formatRagStatsPure;
+
+  try {
+    const list: Message[] = [];
+
+    for (const item of messages) {
+      const message = JSONParse(
+        item.message,
+        typeof item.message === "string" ? [{ role: "user", content: item.message }] : []
+      );
+      const userMessage = message.find((item: any) => item.role === "user") || { content: "" };
+      const userInfoList = supportSpecifiedContent
+        ? message.filter((item: any) => item.role === "info")
+        : [message.find((item: any) => item.role === "info")].filter(Boolean);
+
+      let specified_files: SpecifiedFile[] = [];
+      let specified_content = "";
+      let uploaded_files: MessageFile[] = normalizeMessageFiles((item as any).uploaded_files);
+      let questionText = "";
+
+      const userContent: any = JSONParse(userMessage.content, null);
+
+      if (Array.isArray(userContent)) {
+        const textItem = userContent.find((item: any) => item?.type === "text");
+        questionText = textItem?.content || "";
+
+        // uploaded_files: 没有 library_id 的文件
+        uploaded_files = userContent
+          .filter((item: any) => item != null && item.type === "file" && !item.library_id)
+          .map((fileItem: any) => {
+            const fileId = fileItem.content?.replace("file_id:", "") || "";
+            return {
+              id: fileId,
+              name: fileItem.filename || `文件 ${fileId}`,
+              filename: fileItem.filename || `文件 ${fileId}`,
+              size: fileItem.size,
+              mime_type: fileItem.mime_type,
+              preview_key: fileItem.preview_key,
+            };
+          });
+
+        // specified_files: 有 library_id 的文件（从 userContent 解析）
+        const userContentSpecifiedFiles = userContent
+          .filter((item: any) => item != null && item.type === "file" && item.library_id)
+          .map((fileItem: any) => {
+            const fileId = fileItem.content?.replace("file_id:", "") || "";
+            const file = formatFileInfo(fileItem.filename || "", fileItem.isfolder || fileItem.mime_type === 'folder');
+            return {
+              icon: file.icon,
+              id: fileItem.file_id,
+              upload_file_id: fileId,
+              name: fileItem.filename,
+              file_name: fileItem.filename,
+              file_id: fileItem.file_id,
+              library_id: fileItem.library_id,
+              mime_type: fileItem.mime_type,
+              isfolder: fileItem.isfolder,
+              islibrary: fileItem.islibrary,
+            };
+          });
+        specified_files = [...specified_files, ...userContentSpecifiedFiles];
+      } else {
+        const content = userMessage.content;
+        questionText = typeof content === "string" ? content : (content?.text || content?.content || "");
+      }
+
+      const projectedSkill = normalizeMessageSkill((item as any).skill);
+      let skill: Skill = projectedSkill || { skill_name: "", display_name: "" };
+      if (!projectedSkill) {
+        const { question: parsedQuestion, skill: parsedSkill } = parseQuestionWithSkill(
+          questionText,
+          { skillList: validSkillList, mySkillList: validMySkillList },
+        );
+        questionText = parsedQuestion;
+        skill = parsedSkill;
+      }
+
+      let answer = "";
+      let processedOutputFiles: any[] = [];
+      if (item.process_records?.length > 0) {
+        processedOutputFiles = processRecordsToOutputFiles(item.process_records);
+      }
+      answer = item.answer || "";
+
+      // 从 info role 解析的 specified_files（追加到列表）
+      userInfoList.forEach((userInfo: any) => {
+        if (!userInfo) return;
+        userInfo.content = JSONParse(userInfo.content, {});
+        const infoType = userInfo.content?.type;
+
+        if (infoType === "specified_files") {
+          specified_files = [...specified_files, ...userInfo.content.list.map((fileItem: any) => {
+            const file = formatFileInfo(fileItem.name, fileItem.isfolder)
+            return {
+              icon: file.icon,
+              ...fileItem
+            }
+          })]
+        } else if (infoType === "specified_content" && supportSpecifiedContent) {
+          specified_content = userInfo.content.content || "";
+        }
+      });
+
+      const initialFeedbackParams = {
+        feedbackId: null,
+        feedbackVisible: false,
+        feedbackTypeOptions: null,
+        submitBtnDisabled: true,
+        feedbackSuccessful: false,
+        feedback_type: "",
+        feedbackLoading: false,
+      };
+
+      list.push({
+        ...item,
+        id: item.id,
+        question: questionText,
+        role: "assistant",
+        skill,
+        answer: answer?.split("<decision>DONE</decision>").join(""),
+        rag_stats: formatRagStatsFn(item.rag_stats, item.process_records),
+        specified_files,
+        uploaded_files,
+        specified_content: supportSpecifiedContent ? specified_content : undefined,
+        outputFiles: processedOutputFiles,
+        ...initialFeedbackParams,
+        error: answer?.includes("Access denied") || answer?.includes("InvalidApiKey") || false,
+        // 历史数据显示时间
+        showTime: true,
+        created_time: item.created_time,
+      });
+    }
+
+    return {
+      messages: list,
+      hasMore: list.length === limit,
+    };
+  } catch (err) {
+    console.error("Failed to load messages:", err);
+    return { messages: [], hasMore: false };
+  }
+}
 
 function processRecordsToOutputFiles(records: ProcessRecord[]): OutputFile[] {
   const outputFiles: OutputFile[] = [];
@@ -30,7 +211,7 @@ function processRecordsToOutputFiles(records: ProcessRecord[]): OutputFile[] {
       const signedDownloadUrl = typeof file.signed_download_url === "string" ? file.signed_download_url : typeof file.signedDownloadUrl === "string" ? file.signedDownloadUrl : "";
       const rawUrl = typeof file.url === "string" ? file.url : typeof file.href === "string" ? file.href : "";
       const url = previewUrl || rawUrl || (base64 ? `data:${mimeType || "application/octet-stream"};base64,${base64}` : signedDownloadUrl || downloadUrl || undefined);
-      const id = file.id ?? file.file_id ?? file.fileId ?? file.artifact_id ?? file.artifactId ?? file.upload_file_id ?? file.uploadFileId ?? url ?? fileName;
+      const id = decodeOutputFile(file)?.id ?? url ?? fileName;
       if (id == null && !url && !fileName) return;
       const key = id != null ? String(id) : `${url || ""}|${fileName || ""}`;
       const incoming = {
@@ -232,15 +413,65 @@ function areMessagesEquivalent(left: Message, right: Message): boolean {
   }
 }
 
-function preserveLongerArray(target: Record<string, any>, existing: Message, incoming: Message, key: string) {
-  const existingValue = (existing as any)[key];
-  const incomingValue = (incoming as any)[key];
+// ---------------------------------------------------------------------------
+// OpenClaw merge helpers
+//
+// The OpenClaw projection merge reads/writes fields that live on different
+// branches of the Message discriminated union (`answer`, `openclawTurn`,
+// `openclawProjection`, ...). The helpers below narrow through the
+// `isAssistantMessage` / `isOpenClawAssistantMessage` guards instead of using
+// `as any`, so callers can stay type-safe while still operating on the union.
+// ---------------------------------------------------------------------------
+
+type OpenClawMergeArrayKey =
+  | "outputFiles"
+  | "process_records"
+  | "processRecords"
+  | "skillRunItems"
+  | "openclawTimelineItems"
+  | "openclawActivities";
+
+function getAssistantAnswer(message: Message): string {
+  return isAssistantMessage(message) ? String(message.answer || "") : "";
+}
+
+function getAssistantLoading(message: Message): boolean {
+  return isAssistantMessage(message) ? Boolean(message.loading) : false;
+}
+
+function getOpenClawProjection(message: Message): OpenClawTurnProjection | undefined {
+  return isOpenClawAssistantMessage(message) ? message.openclawProjection : undefined;
+}
+
+function getOpenClawTimelineItems(message: Message): OpenClawTimelineItem[] | undefined {
+  return isOpenClawAssistantMessage(message) ? message.openclawTimelineItems : undefined;
+}
+
+function getOpenClawTurnState(message: Message): OpenClawTurnState | undefined {
+  return isOpenClawAssistantMessage(message) ? message.openclawTurn : undefined;
+}
+
+function getOpenClawActivities(message: Message): OpenClawActivityItem[] | undefined {
+  return isOpenClawAssistantMessage(message) ? message.openclawActivities : undefined;
+}
+
+function getMessageArrayValue(message: Message, key: OpenClawMergeArrayKey): unknown[] | undefined {
+  return (message as unknown as Record<OpenClawMergeArrayKey, unknown[] | undefined>)[key];
+}
+
+function setMessageArrayValue(target: Record<string, unknown>, key: OpenClawMergeArrayKey, value: unknown[]): void {
+  target[key] = value;
+}
+
+function preserveLongerArray(target: Record<string, unknown>, existing: Message, incoming: Message, key: OpenClawMergeArrayKey) {
+  const existingValue = getMessageArrayValue(existing, key);
+  const incomingValue = getMessageArrayValue(incoming, key);
   if (
     Array.isArray(existingValue) &&
     existingValue.length > 0 &&
     (!Array.isArray(incomingValue) || incomingValue.length < existingValue.length)
   ) {
-    target[key] = existingValue;
+    setMessageArrayValue(target, key, existingValue);
   }
 }
 
@@ -250,21 +481,26 @@ function isWeakOpenClawAnswer(value: unknown): boolean {
 }
 
 function hasOpenClawRenderableAnswer(message: Message): boolean {
+  const answer = getAssistantAnswer(message).trim();
+  if (answer) return true;
+  const projection = getOpenClawProjection(message);
+  if (projection && String(projection.visibleAnswer || "").trim()) return true;
   return Boolean(
-    String((message as any).answer || "").trim() ||
-      String((message as any).openclawProjection?.visibleAnswer || "").trim() ||
-      (message as any).openclawTimelineItems?.some((item: any) => item?.type === "answer" && String(item?.content || "").trim())
+    getOpenClawTimelineItems(message)?.some(
+      (item) => item?.type === "answer" && String(item?.content || "").trim()
+    )
   );
 }
 
 function hasOpenClawTerminalTurnSignal(message: Message): boolean {
-  const turn = (message as any).openclawTurn;
+  const turn = getOpenClawTurnState(message);
   const status = String(turn?.status || "");
   if (status === "completed" || status === "interrupted" || status === "failed") return true;
-  if ((message as any).openclawProjection?.isStreaming === false) return true;
+  if (getOpenClawProjection(message)?.isStreaming === false) return true;
   return Boolean(
-    turn?.events?.some((event: any) =>
-      event?.kind === "run.completed" ||
+    turn?.events?.some(
+      (event) =>
+        event?.kind === "run.completed" ||
         event?.kind === "run.interrupted" ||
         event?.kind === "run.failed" ||
         event?.payload?.openclaw_ledger?.event_type === "turn.completed" ||
@@ -275,23 +511,23 @@ function hasOpenClawTerminalTurnSignal(message: Message): boolean {
 }
 
 function shouldCloseOpenClawLoadingFromIncoming(incoming: Message, merged: Message): boolean {
-  if ((incoming as any).loading === true) return false;
+  if (getAssistantLoading(incoming)) return false;
   if (hasOpenClawTerminalTurnSignal(incoming)) return true;
   if (hasOpenClawTerminalTurnSignal(merged) && hasOpenClawRenderableAnswer(merged)) return true;
   return false;
 }
 
-function preserveStrongerOpenClawAnswer(target: Record<string, any>, existing: Message, incoming: Message, preferExistingAnswer = false) {
-  const existingAnswer = (existing as any).answer;
-  const incomingAnswer = (incoming as any).answer;
+function preserveStrongerOpenClawAnswer(target: Record<string, unknown>, existing: Message, incoming: Message, preferExistingAnswer = false) {
+  const existingAnswer = getAssistantAnswer(existing);
+  const incomingAnswer = getAssistantAnswer(incoming);
   if (isWeakOpenClawAnswer(existingAnswer)) return;
   if (isWeakOpenClawAnswer(incomingAnswer) || preferExistingAnswer) {
     target.answer = existingAnswer;
   }
 }
 
-function scoreOpenClawProjection(projection: any): number {
-  if (!projection || typeof projection !== "object") return 0;
+function scoreOpenClawProjection(projection: OpenClawTurnProjection | undefined): number {
+  if (!projection) return 0;
   const answer = String(projection.visibleAnswer || "").trim();
   const timelineCount = Array.isArray(projection.timelineItems) ? projection.timelineItems.length : 0;
   const outputFileCount = Array.isArray(projection.outputFiles) ? projection.outputFiles.length : 0;
@@ -304,25 +540,25 @@ function scoreOpenClawProjection(projection: any): number {
   );
 }
 
-function preserveStrongerOpenClawProjection(target: Record<string, any>, existing: Message, incoming: Message) {
-  const existingProjection = (existing as any).openclawProjection;
-  const incomingProjection = (incoming as any).openclawProjection;
+function preserveStrongerOpenClawProjection(target: Record<string, unknown>, existing: Message, incoming: Message) {
+  const existingProjection = getOpenClawProjection(existing);
+  const incomingProjection = getOpenClawProjection(incoming);
   if (scoreOpenClawProjection(existingProjection) <= scoreOpenClawProjection(incomingProjection)) return;
 
   target.openclawProjection = existingProjection;
   if (!isWeakOpenClawAnswer(existingProjection?.visibleAnswer)) {
     target.answer = existingProjection.visibleAnswer;
   }
-  for (const key of ["openclawTimelineItems", "openclawActivities", "outputFiles"]) {
-    const existingValue = (existing as any)[key];
+  for (const key of ["openclawTimelineItems", "openclawActivities", "outputFiles"] as const) {
+    const existingValue = getMessageArrayValue(existing, key);
     if (Array.isArray(existingValue) && existingValue.length > 0) {
-      target[key] = existingValue;
+      setMessageArrayValue(target, key, existingValue);
     }
   }
 }
 
 function mergeOpenClawSupportFields(existing: Message, incoming: Message, options?: { preferExistingAnswer?: boolean }): Message {
-  const merged: Message & Record<string, any> = {
+  const merged: Record<string, unknown> = {
     ...existing,
     ...incoming,
   };
@@ -335,12 +571,12 @@ function mergeOpenClawSupportFields(existing: Message, incoming: Message, option
     "skillRunItems",
     "openclawTimelineItems",
     "openclawActivities",
-  ]) {
+  ] as const) {
     preserveLongerArray(merged, existing, incoming, key);
   }
 
-  const existingTurn = (existing as any).openclawTurn;
-  const incomingTurn = (incoming as any).openclawTurn;
+  const existingTurn = getOpenClawTurnState(existing);
+  const incomingTurn = getOpenClawTurnState(incoming);
   if (existingTurn && (!incomingTurn || !Array.isArray(incomingTurn.events) || incomingTurn.events.length === 0)) {
     merged.openclawTurn = existingTurn;
   } else if (existingTurn && incomingTurn) {
@@ -354,10 +590,10 @@ function mergeOpenClawSupportFields(existing: Message, incoming: Message, option
           : existingTurn.events,
     };
   }
-  if (shouldCloseOpenClawLoadingFromIncoming(incoming, merged)) {
+  if (shouldCloseOpenClawLoadingFromIncoming(incoming, merged as Message)) {
     merged.loading = false;
   }
-  return merged;
+  return merged as Message;
 }
 
 function messageBelongsToConversation(message: Message, conversationId: string): boolean {
@@ -391,10 +627,6 @@ export function mergeOpenClawMessages(
 
   const currentByKey = new Map<string, Message>();
   const currentByLogicalKey = new Map<string, Message[]>();
-  // 同 _openclawTurnStartSeq 兜底：mirror 源和 openclaw 源对同一条逻辑消息的 id 格式不同
-  // （例如 `turn:...legacy:1:assistant` vs `agent:main:main:assistant:2`），stableKey 匹配不到，
-  // logicalKey 也匹配不到（question 为空或不一致）时，按 seq 匹配能让 incoming 替换 stale 的 existing。
-  const currentBySeq = new Map<number, Message[]>();
   for (const message of currentMessages) {
     const key = messageStableMergeKey(message);
     if (key) currentByKey.set(key, message);
@@ -404,12 +636,6 @@ export function mergeOpenClawMessages(
       bucket.push(message);
       currentByLogicalKey.set(logicalKey, bucket);
     }
-    const seq = (message as any)._openclawTurnStartSeq;
-    if (typeof seq === "number" && seq > 0) {
-      const seqBucket = currentBySeq.get(seq) || [];
-      seqBucket.push(message);
-      currentBySeq.set(seq, seqBucket);
-    }
   }
 
   const incomingKeys = new Set(incomingMessages.map(messageStableMergeKey).filter(Boolean));
@@ -418,28 +644,7 @@ export function mergeOpenClawMessages(
 
   const mergedIncoming = incomingMessages.map((incoming) => {
     const key = messageStableMergeKey(incoming);
-    const incomingSeq = (incoming as any)._openclawTurnStartSeq;
     let existing = key ? currentByKey.get(key) : undefined;
-    if (!existing) {
-      // seq 兜底：stableKey 和 logicalKey 都匹配不到时（同 seq 不同 id 的跨源场景），
-      // 让 incoming 替换 existing（openclaw 源更新更权威）。
-      // 跳过 optimistic / streaming 消息，避免覆盖正在流式渲染的内容。
-      if (typeof incomingSeq === "number" && incomingSeq > 0) {
-        const seqCandidates = currentBySeq.get(incomingSeq) || [];
-        const seqMatch = seqCandidates.find(
-          (candidate) =>
-            !consumedCurrentMessages.has(candidate) &&
-            !consumedLogicalCandidates.has(candidate) &&
-            String(candidate.id) !== String(incoming.id) &&
-            isOpenClawMessage(candidate) &&
-            !hasOpenClawOptimisticOrRuntimeIdentity(candidate),
-        );
-        if (seqMatch) {
-          existing = seqMatch;
-          consumedCurrentMessages.add(seqMatch);
-        }
-      }
-    }
     if (!existing) {
       const logicalKey = getOpenClawLogicalMergeKey(incoming);
       const candidates = logicalKey ? currentByLogicalKey.get(logicalKey) || [] : [];
@@ -451,7 +656,13 @@ export function mergeOpenClawMessages(
         consumedLogicalCandidates.add(existing);
       }
     }
-    if (!existing) return incoming;
+    if (!existing) {
+      // 之前这里有 seq 兜底，会出现 fresh 行（如 "nihao"，seq=1）匹配到历史某条同样
+      // seq=1 的 row 并把它从 preservedMessages 里吞掉的 bug。fresh=true 的语义是
+      // 追加最新数据而不是替换历史，所以保留 stableKey / logicalKey 两层兜底就够，
+      // seq 兜底直接砍掉。详见 trace `merge.preserved.droppedReasons`。
+      return incoming;
+    }
     consumedCurrentMessages.add(existing);
     const merged = mergeOpenClawSupportFields(existing, incoming, options);
     return areMessagesEquivalent(existing, merged) ? existing : merged;
@@ -587,52 +798,6 @@ function createFeedbackUpdater(feedback: any) {
   });
 }
 
-function isOpenClawUiDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const params = new URLSearchParams(window.location.search || "");
-    return (
-      params.get("openclaw_debug") === "1" ||
-      params.get("OPENCLAW_LEDGER_DEBUG") === "1" ||
-      window.localStorage?.getItem("OPENCLAW_LEDGER_DEBUG") === "1"
-    );
-  } catch {
-    return false;
-  }
-}
-
-function hashOpenClawText(value?: string | null): string {
-  const text = String(value || "");
-  let hash = 2166136261;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function traceOpenClawMessages(label: string, messages: Message[]) {
-  if (!isOpenClawUiDebugEnabled()) return;
-  const openclawMessages = messages.filter((message: any) => message.openclawTurn || message.openclawProjection || message.openclawTimelineItems);
-  if (!openclawMessages.length) return;
-  console.info(`[openclaw-ui:${label}] ${JSON.stringify({
-    count: messages.length,
-    openclawCount: openclawMessages.length,
-    messages: openclawMessages.map((message: any) => ({
-      id: message.id,
-      conversationId: message.conversation_id,
-      questionLen: String(message.question || "").length,
-      questionHash: hashOpenClawText(message.question),
-      answerLen: String(message.answer || "").length,
-      answerHash: hashOpenClawText(message.answer),
-      timelineCount: message.openclawTimelineItems?.length || 0,
-      eventCount: message.openclawTurn?.events?.length || 0,
-      status: message.openclawTurn?.status,
-      loading: Boolean(message.loading),
-    })),
-  })}`);
-}
-
 type LoadMessagesApi = (
   conversationId: string,
   params: { offset: number; limit: number; fresh?: boolean }
@@ -643,7 +808,16 @@ interface LoadMessageListOptions {
   mySkillList?: any[];
   isRunning?: boolean;
   runningMessageId?: string | number;
+  /**
+   * 测试用：跳过 UI loading 状态、保留已有消息并合并。生产代码不传该字段，
+   * 合并语义由 `fresh` 决定。
+   */
   silent?: boolean;
+  /**
+   * fresh=true 表示响应里只包含最新 tail 数据，需要追加到当前列表末尾。
+   * fresh=false/undefined 表示响应是分页历史数据，应替换当前列表。
+   */
+  fresh?: boolean;
 }
 
 function splitLoadMessagesArgs<TOptions extends Record<string, any>>(
@@ -705,156 +879,25 @@ export function useChatMessages(options?: UseChatMessagesOptions) {
   // 是否加载反馈（需要 loadFeedback 选项且 feedback adapter 存在）
   const shouldLoadFeedback = options?.loadFeedback && Boolean(adapters?.feedback);
 
+  // 复用导出的纯函数，注入 hook 持有的 deps（formatRagStats / skill 列表等）
   const loadMessages = useCallback(
     async (
       messages: any[],
       limit: number,
       skipFeedback: boolean = true,
-      options?: { skillList?: any[]; mySkillList?: any[] }
+      overrideOptions?: { skillList?: any[]; mySkillList?: any[] }
     ): Promise<{ messages: Message[]; hasMore: boolean }> => {
-      const validSkillList = options?.skillList || skillList;
-      const validMySkillList = options?.mySkillList || mySkillList;
-
-      try {
-        const list: Message[] = [];
-
-        for (const item of messages) {
-          const message = JSONParse(
-            item.message,
-            typeof item.message === "string" ? [{ role: "user", content: item.message }] : []
-          );
-          const userMessage = message.find((item: any) => item.role === "user") || { content: "" };
-          const userInfoList = supportSpecifiedContent
-            ? message.filter((item: any) => item.role === "info")
-            : [message.find((item: any) => item.role === "info")].filter(Boolean);
-
-          let specified_files: SpecifiedFile[] = [];
-          let specified_content = "";
-          let uploaded_files: MessageFile[] = normalizeMessageFiles((item as any).uploaded_files);
-          let questionText = "";
-
-          const userContent: any = JSONParse(userMessage.content, null);
-
-          if (Array.isArray(userContent)) {
-            const textItem = userContent.find((item: any) => item?.type === "text");
-            questionText = textItem?.content || "";
-
-            // uploaded_files: 没有 library_id 的文件
-            uploaded_files = userContent
-              .filter((item: any) => item != null && item.type === "file" && !item.library_id)
-              .map((fileItem: any) => {
-                const fileId = fileItem.content?.replace("file_id:", "") || "";
-                return {
-                  id: fileId,
-                  name: fileItem.filename || `文件 ${fileId}`,
-                  filename: fileItem.filename || `文件 ${fileId}`,
-                  size: fileItem.size,
-                  mime_type: fileItem.mime_type,
-                  preview_key: fileItem.preview_key,
-                };
-              });
-
-            // specified_files: 有 library_id 的文件（从 userContent 解析）
-            const userContentSpecifiedFiles = userContent
-              .filter((item: any) => item != null && item.type === "file" && item.library_id)
-              .map((fileItem: any) => {
-                const fileId = fileItem.content?.replace("file_id:", "") || "";
-                const file = formatFileInfo(fileItem.filename || "", fileItem.isfolder || fileItem.mime_type === 'folder');
-                return {
-                  icon: file.icon,
-                  id: fileItem.file_id,
-                  upload_file_id: fileId,
-                  name: fileItem.filename,
-                  file_name: fileItem.filename,
-                  file_id: fileItem.file_id,
-                  library_id: fileItem.library_id,
-                  mime_type: fileItem.mime_type,
-                  isfolder: fileItem.isfolder,
-                  islibrary: fileItem.islibrary,
-                };
-              });
-            specified_files = [...specified_files, ...userContentSpecifiedFiles];
-          } else {
-            const content = userMessage.content;
-            questionText = typeof content === "string" ? content : (content?.text || content?.content || "");
-          }
-
-          const projectedSkill = normalizeMessageSkill((item as any).skill);
-          let skill: Skill = projectedSkill || { skill_name: "", display_name: "" };
-          if (!projectedSkill) {
-            const { question: parsedQuestion, skill: parsedSkill } = parseQuestionWithSkill(
-              questionText,
-              { skillList: validSkillList, mySkillList: validMySkillList },
-            );
-            questionText = parsedQuestion;
-            skill = parsedSkill;
-          }
-
-          let answer = "";
-          let processedOutputFiles: any[] = [];
-          if (item.process_records?.length > 0) {
-            processedOutputFiles = processRecordsToOutputFiles(item.process_records);
-          }
-          answer = item.answer || "";
-
-          // 从 info role 解析的 specified_files（追加到列表）
-          userInfoList.forEach((userInfo: any) => {
-            if (!userInfo) return;
-            userInfo.content = JSONParse(userInfo.content, {});
-            const infoType = userInfo.content?.type;
-
-            if (infoType === "specified_files") {
-              specified_files = [...specified_files, ...userInfo.content.list.map((fileItem: any) => {
-                const file = formatFileInfo(fileItem.name, fileItem.isfolder)
-                return {
-                  icon: file.icon,
-                  ...fileItem
-                }
-              })]
-            } else if (infoType === "specified_content" && supportSpecifiedContent) {
-              specified_content = userInfo.content.content || "";
-            }
-          });
-
-          const initialFeedbackParams = {
-            feedbackId: null,
-            feedbackVisible: false,
-            feedbackTypeOptions: null,
-            submitBtnDisabled: true,
-            feedbackSuccessful: false,
-            feedback_type: "",
-            feedbackLoading: !skipFeedback,
-          };
-
-
-          list.push({
-            ...item,
-            id: item.id,
-            question: questionText,
-            role: "assistant",
-            skill,
-            answer: answer?.split("<decision>DONE</decision>").join(""),
-            rag_stats: formatRagStats(item.rag_stats, item.process_records),
-            specified_files,
-            uploaded_files,
-            specified_content: supportSpecifiedContent ? specified_content : undefined,
-            outputFiles: processedOutputFiles,
-            ...initialFeedbackParams,
-            error: answer?.includes("Access denied") || answer?.includes("InvalidApiKey") || false,
-            // 历史数据显示时间
-            showTime: true,
-            created_time: item.created_time,
-          });
-        }
-
-        return {
-          messages: list,
-          hasMore: list.length === limit,
-        };
-      } catch (err) {
-        console.error("Failed to load messages:", err);
-        return { messages: [], hasMore: false };
+      const result = await loadMessagesData(messages, limit, {
+        skillList: overrideOptions?.skillList || skillList,
+        mySkillList: overrideOptions?.mySkillList || mySkillList,
+        supportSpecifiedContent,
+        formatRagStats,
+      });
+      // 保留原始行为：skipFeedback=false 时全部消息进入反馈加载中态
+      if (!skipFeedback && result.messages.length > 0) {
+        result.messages = result.messages.map((m) => ({ ...m, feedbackLoading: true }));
       }
+      return result;
     },
     [formatRagStats, supportSpecifiedContent, skillList, mySkillList]
   );
@@ -916,7 +959,7 @@ export function useChatMessages(options?: UseChatMessagesOptions) {
       const key = `[Source:${data.sourceType}-${data.sourceNumber}]`;
       const chunk = chunks.find((item: any) => item.source_key === key || item.source === key);
       if (chunk) {
-        if (chunk.chunk_type === "graph_result") {
+        if (chunk.chunk_type === ("graph_result" as const)) {
           if (graphSourceRef) {
             graphSourceRef.current = data.element;
           }
@@ -985,7 +1028,6 @@ export function useChatMessages(options?: UseChatMessagesOptions) {
         const { messages, hasMore } = await loadMessages(res.data?.messages || res.messages || [], limit, true, options);
         const responseHasMore = readPaginationHasMore(res);
         const responseNextOffset = readPaginationNextOffset(res);
-        traceOpenClawMessages("load-more", messages);
 
         if (
           requestSeq !== loadMoreRequestSeqRef.current ||
@@ -1071,12 +1113,15 @@ export function useChatMessages(options?: UseChatMessagesOptions) {
       }));
 
       try {
-        const res = await loadMessagesApi(conversationId, { offset: 0, limit });
+        const res = await loadMessagesApi(conversationId, {
+          offset: 0,
+          limit,
+          fresh: options?.fresh,
+        });
 
         const rawInput = res.data?.messages || res.messages || [];
         const { messages, hasMore } = await loadMessages(rawInput, limit, true, options);
         const responseHasMore = readPaginationHasMore(res);
-        traceOpenClawMessages("load-list", messages);
 
         if (requestSeq !== loadMessageListRequestSeqRef.current) {
           return [];
@@ -1105,8 +1150,15 @@ export function useChatMessages(options?: UseChatMessagesOptions) {
         const messagesWithMeta = attachOpenClawHistoryMeta(messages, res);
 
         setState((prev) => {
+          // 合并策略（优先级从高到低）：
+          // 1) silent（测试）：强制合并，避免覆盖 mock 数据
+          // 2) fresh=true：响应只包含最新 tail 数据，必须 merge，不合并会丢历史
+          // 3) 历史数据（fresh 缺省/false）：若同会话则 merge，否则替换
+          //    —— 历史分页本身就代表完整页面，跨页靠 offset 增量加载，不靠这里覆盖。
+          const isFreshAppend = options?.fresh === true;
           const shouldMerge =
             silent ||
+            isFreshAppend ||
             shouldMergeOpenClawHistoryLoad(conversationId, prev.messageList, messagesWithMeta);
           return {
             ...prev,

@@ -76,7 +76,7 @@ export const permissionsApi = {
   delete(permission_id: PermissionItem['id']) {
     return service.delete(`/api/permissions/${permission_id}`).catch(handleError)
   },
-  create(resource_type: number, resource_id: number, data: PermissionCreateRequest) {
+  create(resource_type: number, resource_id: string, data: PermissionCreateRequest) {
     return service.post(`/api/permissions/${resource_type}/${resource_id}`, data).catch(handleError)
   },
   my(params: PermissionMeRequest): Promise<PermissionMeResponse> {

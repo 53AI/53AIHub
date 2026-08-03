@@ -17,7 +17,7 @@ type BaseGroupRequest struct {
 }
 
 type GroupRequest struct {
-	GroupType int64 `json:"group_type" example:"1"` // Group type: 1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组
+	GroupType int64 `json:"group_type" example:"1"` // Group type: 1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组, 8=录音文件分组, 9=录音模板分组, 101=KM文件快速指令组, 102=KM文件划词指令组
 	BaseGroupRequest
 }
 
@@ -179,7 +179,7 @@ func DeleteGroup(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组）"
+// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组, 8=录音文件分组, 9=录音模板分组, 101=KM文件快速指令组, 102=KM文件划词指令组）"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups/type/{group_type} [get]
 func GetGroups(c *gin.Context) {
@@ -190,7 +190,13 @@ func GetGroups(c *gin.Context) {
 	}
 
 	eid := config.GetEID(c)
-	groups, err := model.GetGroupsByEid(eid, int64(groupType))
+	var groups []model.Group
+	if int64(groupType) == model.RECORDING_FILE_GROUP_TYPE {
+		userID := config.GetUserId(c)
+		groups, err = model.GetGroupsByEid(eid, int64(groupType), userID)
+	} else {
+		groups, err = model.GetGroupsByEid(eid, int64(groupType))
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
@@ -203,7 +209,7 @@ func GetGroups(c *gin.Context) {
 // @Tags Group
 // @Accept json
 // @Produce json
-// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组）"
+// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组, 8=录音文件分组, 9=录音模板分组, 101=KM文件快速指令组, 102=KM文件划词指令组）"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups/type/current/{group_type} [get]
 func GetCurrentGroups(c *gin.Context) {
@@ -232,7 +238,7 @@ func GetCurrentGroups(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组）"
+// @Param group_type path int true "Group type（1=用户分组, 2=AI链接分组, 3=Agent分组, 4=内部用户分组, 5=系统提示词分组, 6=个人提示词分组, 7=技能分组, 8=录音文件分组, 9=录音模板分组, 101=KM文件快速指令组, 102=KM文件划词指令组）"
 // @Param groups body BatchSubmitGroupsRequest true "Groups information to submit"
 // @Success 200 {object} model.CommonResponse "Success"
 // @Router /api/groups/type/{group_type} [post]

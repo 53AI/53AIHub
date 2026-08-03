@@ -60,5 +60,5 @@ func GetNavigationContentByID(navID int64) (*NavigationContent, error) {
 }
 
 func DeleteNavigationContentByNavID(navID int64) error {
-    return DB.Where("navigation_id = ?", navID).Delete(&NavigationContent{}).Error
+	return DB.Where("navigation_id = ?", navID).Delete(&NavigationContent{}).Error
 }

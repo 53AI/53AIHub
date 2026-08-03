@@ -28,7 +28,6 @@ export interface BubbleUserProps {
   contentAfter?: React.ReactNode;
   footer?: React.ReactNode;
   menu?: React.ReactNode;
-  onFileClick?: (file: FileItem) => void;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -44,7 +43,6 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
   contentAfter,
   footer,
   menu,
-  onFileClick,
   className,
   style,
 }) => {
@@ -61,10 +59,7 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
   };
 
   const handleFileClick = (file: FileItem) => {
-    if (onFileClick) {
-      onFileClick(file);
-      return;
-    }
+
     const url = file.url || file.file_url;
     if (url) {
       window.open(url, "_blank");

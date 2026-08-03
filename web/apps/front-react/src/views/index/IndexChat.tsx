@@ -78,7 +78,7 @@ import FileViewer from "@/components/FileViewer";
 import { t } from "@/locales";
 import { eventBus, formatFileInfo } from "@km/shared-utils";
 import { checkPermission, checkLoginStatus } from "@/utils/permission";
-import { buildUrl } from "@/utils/router";
+import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
 import { AGENT_USAGES } from "@/constants/agent";
 import { EVENT_NAMES } from "@/constants/events";
 import { api_host, getPublicPath } from '@/utils/config';
@@ -482,7 +482,6 @@ function IndexChatViewInner() {
       if (currentConversation.id) return currentConversation.id;
       const conversation = await convStore.createConversation(
         agent_id,
-        undefined,
         question,
       );
 
@@ -1124,8 +1123,9 @@ function IndexChatViewInner() {
    * 查看文件详情
    */
   const handleViewFileDetail = useCallback(() => {
-    const url = buildUrl(
-      `/library/${filePreviewState.currentFile.library_id}/file/${filePreviewState.currentFile.id}`,
+    const url = buildKnowledgeFileUrl(
+      filePreviewState.currentFile.library_id,
+      filePreviewState.currentFile.id,
     );
     window.open(url);
   }, [filePreviewState.currentFile]);

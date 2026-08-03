@@ -119,7 +119,7 @@ export function DomainPage() {
       processIndependentDomainData(independent_domains[0] || {});
     } catch (error) {
       console.error("加载域名数据失败:", error);
-      message.error("加载域名数据失败");
+      message.error(t("domain.load_failed"));
     } finally {
       setLoading(false);
     }
@@ -127,7 +127,7 @@ export function DomainPage() {
 
   const handleCopyDomain = async (domainUrl: string) => {
     if (!domainUrl) {
-      message.warning("没有可复制的域名");
+      message.warning(t("domain.no_copyable_domain"));
       return;
     }
 
@@ -136,7 +136,7 @@ export function DomainPage() {
       message.success(t("action_copy_success"));
     } catch (error) {
       console.error("复制失败:", error);
-      message.error("复制失败");
+      message.error(t("domain.copy_failed"));
     }
   };
 
@@ -160,7 +160,7 @@ export function DomainPage() {
       onOk: async () => {
         const domainId = independentDomainInfo.rawData.id;
         if (!domainId) {
-          message.error("域名ID不存在");
+          message.error(t("domain.id_missing"));
           return;
         }
 
@@ -176,7 +176,7 @@ export function DomainPage() {
           message.success(t("action_delete_success"));
         } catch (error) {
           console.error("删除独立域名失败:", error);
-          message.error("删除失败");
+          message.error(t("domain.delete_failed"));
         }
       },
     });

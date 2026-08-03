@@ -114,7 +114,7 @@ func GetOpenAPIConversationDetail(c *gin.Context) {
 		}
 	}
 
-	enhancedMessages := convertToEnhancedMessages(messages, fileMap)
+	enhancedMessages := convertToEnhancedMessages(messages, fileMap, nil)
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":       conversation.ConversationID,
@@ -359,7 +359,22 @@ func GetOpenAPIAgentInfo(c *gin.Context) {
 	})
 }
 
+type CreateOpenAPIConversationRequest struct {
+	Title        string `json:"title" example:"New conversation"`
+	FileID       int64  `json:"file_id" example:"0"`
+	DocumentType string `json:"document_type" example:"wiki" enums:"file,wiki"`
+	DocumentID   int64  `json:"document_id" example:"0"`
+}
+
 // CreateOpenAPIConversation creates a new conversation for the authenticated agent.
+// @Summary Create a conversation
+// @Description Creates a conversation and optionally binds it to one File or Wiki document.
+// @Tags OpenAPI
+// @Accept json
+// @Produce json
+// @Param conversation body CreateOpenAPIConversationRequest false "Conversation parameters"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/conversations [post]
 func CreateOpenAPIConversation(c *gin.Context) {
 	eid, userID, ok := resolveOpenAPIUser(c)
 	if !ok {
@@ -382,14 +397,38 @@ func CreateOpenAPIConversation(c *gin.Context) {
 		return
 	}
 
+	var req CreateOpenAPIConversationRequest
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToOpenAIErrorResponeWithType(err, "invalid_request_error"))
+			return
+		}
+	}
+	documentType, documentID, err := resolveConversationDocumentReference(req.DocumentType, req.DocumentID, req.FileID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToOpenAIErrorResponeWithType("invalid document reference", "invalid_request_error"))
+		return
+	}
+
 	conversation := &model.Conversation{
 		Eid:     eid,
 		UserID:  userID,
 		AgentID: agent.AgentID,
-		Title:   "New conversation",
+		Title:   req.Title,
 		Status:  model.ConversationStatusActive,
 		Model:   agent.Model,
 		Source:  model.MessageRequestSourceAPI,
+		FileID: func() int64 {
+			if documentType == model.DocumentTypeFile {
+				return documentID
+			}
+			return 0
+		}(),
+		DocumentType: documentType,
+		DocumentID:   documentID,
+	}
+	if conversation.Title == "" {
+		conversation.Title = "New conversation"
 	}
 	relay.ApplyVisitorIdentityToConversation(c, conversation)
 

@@ -54,7 +54,19 @@ function shortcutToNavItem(shortcut: AgentShortcutItem): NavItem {
   };
 }
 
-export function IndexSidebar() {
+interface IndexSidebarProps {
+  /**
+   * 当前用于强制 Outlet 重新挂载的 render key（由 IndexLayout 传入）。
+   * 登录成功后通过 onChatRenderKeyChange 自增，让 ChatView 重新加载登录后才有的数据。
+   */
+  chatRenderKey?: number;
+  onChatRenderKeyChange?: (key: number) => void;
+}
+
+export function IndexSidebar({
+  chatRenderKey = 0,
+  onChatRenderKeyChange,
+}: IndexSidebarProps = {}) {
   const location = useLocation();
   const navigate = useNavigate();
   const [showExploreModal, setShowExploreModal] = useState(false);
@@ -62,6 +74,12 @@ export function IndexSidebar() {
   const [loading, setLoading] = useState(true);
   const activeItemRef = useRef<HTMLAnchorElement>(null);
   const [activeType, setActiveType] = useState('explore')
+
+  // 通过 ref 持有最新的回调与 key，避免把变化频繁的值放进 effect deps
+  const bumpChatRenderKeyRef = useRef(onChatRenderKeyChange);
+  bumpChatRenderKeyRef.current = onChatRenderKeyChange;
+  const chatRenderKeyRef = useRef(chatRenderKey);
+  chatRenderKeyRef.current = chatRenderKey;
 
   // 将快捷方式列表转换为导航项，并根据权限过滤
   const navItems = useMemo(() => {
@@ -177,10 +195,14 @@ export function IndexSidebar() {
     };
   }, [fetchShortcuts]);
 
-  // 监听登录成功事件，刷新快捷方式列表
+  // 监听登录成功事件，刷新快捷方式列表并通知 IndexLayout 重新挂载 ChatView
+  // 访客访问 /agent/agent?agent_id=xxx 时，ChatView 初次渲染依赖的是未登录态的数据
+  // （未加载 myList 等接口）。登录成功后通过自增 render key 让 Outlet 重新挂载，
+  // ChatView 的所有 effect（含 loadRouteData）会重新执行，从而加载登录后才有的接口。
   useEffect(() => {
     const handleLoginSuccess = () => {
       fetchShortcuts();
+      bumpChatRenderKeyRef.current?.(chatRenderKeyRef.current + 1);
     };
     eventBus.on(EVENT_NAMES.LOGIN_SUCCESS, handleLoginSuccess);
     return () => {
@@ -240,7 +262,7 @@ export function IndexSidebar() {
   };
 
   return (
-    <div className="w-[252px] h-full py-3 bg-[#fff] border-r border-[#E5E7EB] flex flex-col shrink-0">
+    <div className="w-[280px] h-full py-3 bg-[#fff] border-r border-[#E5E7EB] flex flex-col shrink-0">
       <div className="px-5 h-9 flex items-center gap-2">
         <ExpandSidebarButton />
         <div className="flex-1 text-sm text-[#1D1E1F]">{t('workbench.title')}</div>

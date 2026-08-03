@@ -164,7 +164,7 @@ func GetChannelEmbeddingModels(c *gin.Context) {
 
 // ValidateEmbeddingModelRequest 验证embedding模型请求
 type ValidateEmbeddingModelRequest struct {
-	ChannelID int64  `json:"channel_id" binding:"required" example:"1"`                    // 渠道ID
+	ChannelID int64  `json:"channel_id" binding:"required" example:"1"`                      // 渠道ID
 	ModelName string `json:"model_name" binding:"required" example:"text-embedding-ada-002"` // 模型名称
 }
 

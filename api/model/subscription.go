@@ -210,7 +210,7 @@ func GetDefaultSubscription(eid int64) (*SubscriptionSetting, error) {
 	var defaultSubscription SubscriptionSetting
 
 	// Query the database for the default subscription setting
-	err := DB.Debug().Where("is_default = ? and group_id in ?",  true, groupIds).First(&defaultSubscription).Error
+	err := DB.Debug().Where("is_default = ? and group_id in ?", true, groupIds).First(&defaultSubscription).Error
 	if err != nil {
 		// Return nil and the error if the query fails
 		return nil, err

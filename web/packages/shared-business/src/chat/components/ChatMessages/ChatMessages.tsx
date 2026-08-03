@@ -20,14 +20,6 @@ const DEFAULT_FEATURES: ChatMessagesFeatures = {
     addAsMd: false,
     feedback: false,
   },
-  // 以下字段已废弃，保留以维持向后兼容
-  outputFiles: false,
-  fileFavorite: false,
-  sourceRef: false,
-  processFlow: false,
-  specifiedFiles: false,
-  specifiedFilesType: 'no_jump',
-  skillTag: false,
 };
 
 const DEFAULTS = {

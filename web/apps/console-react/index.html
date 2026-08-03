@@ -84,6 +84,18 @@
         }
         location.search = joinSearchParam(search_params);
       }
+
+      // 开源版：访问 /console（base URL）且无 token 时直接跳到 /，避免 SPA 加载后再跳转造成闪烁
+      if (!localStorage.getItem("access_token") && !window.location.hash) {
+        const _pn = window.location.pathname;
+        if (
+          _pn === "/console" ||
+          _pn === "/console/" ||
+          _pn.endsWith("/console/index.html")
+        ) {
+          window.location.replace(window.location.origin + "/");
+        }
+      }
     </script>
     <script type="module" src="/src/main.tsx"></script>
     <script>

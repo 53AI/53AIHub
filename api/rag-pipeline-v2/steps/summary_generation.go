@@ -76,6 +76,22 @@ func NewSummaryGenerationHandler(db *gorm.DB) func(ctx context.Context, job *mod
 
 		logger.Info(ctx, fmt.Sprintf("SummaryGenerationStepHandler: processing job %d for file %d", job.JobID, fileID))
 
+		if isWikiPageGenerationActive(job) {
+			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 summary_generation 的旧摘要/问法/知识图谱生成: file_id=%d", fileID)
+			if fileID > 0 {
+				if err := model.UpdateFileAIGenerateSQStatus(fileID, model.AIGenerateSQStatusInactive); err != nil {
+					return fmt.Errorf("更新文件生成状态失败: %v", err)
+				}
+			}
+			return completeSummaryGenerationStep(db, job.JobID, map[string]interface{}{
+				"summary":       "",
+				"questions":     []string{},
+				"knowledge_map": "",
+				"word_count":    0,
+				"total_tokens":  0,
+			})
+		}
+
 		var file model.File
 		if err := db.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error; err != nil {
 			return fmt.Errorf("获取文件信息失败: %v", err)

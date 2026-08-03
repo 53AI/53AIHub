@@ -15,6 +15,8 @@ export interface SourceReferenceManagerRef {
 export interface SourceReferenceManagerProps {
   /** 获取 chunk 详情回调 */
   fetchChunkDetail?: ChunkProps['fetchChunkDetail'];
+  /** 获取 wiki 页面详情回调（动态知识：/api/spaces/{space_id}/wiki/pages/{slug}） */
+  fetchWikiPageDetail?: ChunkProps['fetchWikiPageDetail'];
   /** Markdown 渲染回调 */
   renderMarkdown?: ChunkProps['renderMarkdown'];
   /** 打开文档回调 */
@@ -26,7 +28,7 @@ export interface SourceReferenceManagerProps {
 }
 
 const SourceReferenceManager = forwardRef<SourceReferenceManagerRef, SourceReferenceManagerProps>(
-  ({ fetchChunkDetail, renderMarkdown, onOpenLibrary, onGraphView, onChunkNotFound }, ref) => {
+  ({ fetchChunkDetail, fetchWikiPageDetail, renderMarkdown, onOpenLibrary, onGraphView, onChunkNotFound }, ref) => {
     const chunkRef = useRef<ChunkRef>(null);
     const chunkSourceRef = useRef<HTMLDivElement | null>(null);
     const graphRef = useRef<GraphRef>(null);
@@ -34,7 +36,7 @@ const SourceReferenceManager = forwardRef<SourceReferenceManagerRef, SourceRefer
 
     // 处理源引用点击 - 打开弹窗
     const handleSourceClick = useCallback((source: ChunkItem, msg: Message) => {
-      if (source.chunk_type === 'graph_result') {
+      if (source.chunk_type === ('graph_result' as const)) {
         graphSourceRef.current = null;
         graphRef.current?.setLibraryInfo(source, msg.rag_stats?.type);
       } else {
@@ -59,7 +61,7 @@ const SourceReferenceManager = forwardRef<SourceReferenceManagerRef, SourceRefer
 
       if (chunk) {
         // 根据类型打开对应的弹窗
-        if (chunk.chunk_type === 'graph_result') {
+        if (chunk.chunk_type === ('graph_result' as const)) {
           graphSourceRef.current = data.element || null;
           graphRef.current?.setLibraryInfo(chunk, msg.rag_stats?.type);
         } else {
@@ -82,6 +84,7 @@ const SourceReferenceManager = forwardRef<SourceReferenceManagerRef, SourceRefer
           ref={chunkRef}
           virtualRef={chunkSourceRef}
           fetchChunkDetail={fetchChunkDetail}
+          fetchWikiPageDetail={fetchWikiPageDetail}
           renderMarkdown={renderMarkdown}
           onOpenLibrary={onOpenLibrary}
         />

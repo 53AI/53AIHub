@@ -46,7 +46,7 @@ export function PaymentPage() {
       setPaymentSettings(transformToPaymentSettingMap(settingsList));
     } catch (error) {
       console.error("获取支付设置失败:", error);
-      message.error("获取支付设置失败");
+      message.error(t("payment.get_settings_failed"));
     }
   };
 
@@ -82,7 +82,7 @@ export function PaymentPage() {
       await refresh();
     } catch (error) {
       console.error("更新支付状态失败:", error);
-      message.error("更新支付状态失败");
+      message.error(t("payment.update_status_failed"));
     }
   };
 

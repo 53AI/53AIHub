@@ -5,17 +5,17 @@ import (
 )
 
 type DingtalkSuite struct {
-	SuiteID                 string `json:"suite_id" gorm:"primaryKey;type:varchar(32)"`
-	Secret                  string `json:"secret" gorm:"type:varchar(255);not null"`
-	Ticket                  string `json:"ticket" gorm:"type:varchar(255)"`
-	TicketUpdateTime        int64  `json:"ticket_update_time" gorm:"type:bigint"`
-	AccessToken             string `json:"access_token" gorm:"type:varchar(255)"`
-	ExpiresIn               int    `json:"expires_in" gorm:"type:int"`
-	TokenUpdateTime         int64  `json:"token_update_time" gorm:"type:bigint"`
-	Name                    string `json:"name" gorm:"type:varchar(255);not null"`
-	Token                   string `json:"token" gorm:"type:varchar(255);not null"`
-	EncodingAesKey          string `json:"encoding_aes_key" gorm:"type:varchar(255);not null"`
-	CorpID                  string `json:"corp_id" gorm:"type:varchar(255);index"`
+	SuiteID          string `json:"suite_id" gorm:"primaryKey;type:varchar(32)"`
+	Secret           string `json:"secret" gorm:"type:varchar(255);not null"`
+	Ticket           string `json:"ticket" gorm:"type:varchar(255)"`
+	TicketUpdateTime int64  `json:"ticket_update_time" gorm:"type:bigint"`
+	AccessToken      string `json:"access_token" gorm:"type:varchar(255)"`
+	ExpiresIn        int    `json:"expires_in" gorm:"type:int"`
+	TokenUpdateTime  int64  `json:"token_update_time" gorm:"type:bigint"`
+	Name             string `json:"name" gorm:"type:varchar(255);not null"`
+	Token            string `json:"token" gorm:"type:varchar(255);not null"`
+	EncodingAesKey   string `json:"encoding_aes_key" gorm:"type:varchar(255);not null"`
+	CorpID           string `json:"corp_id" gorm:"type:varchar(255);index"`
 	BaseModel
 }
 

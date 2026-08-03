@@ -16,15 +16,20 @@ import (
 )
 
 const (
-	vectorIndexingWaitTimeout          = 30 * time.Minute
+	vectorIndexingWaitTimeout          = 24 * time.Hour
 	vectorIndexingInitialPollDelay     = 5 * time.Second
-	vectorIndexingMaximumPollDelay     = 2 * time.Minute
+	vectorIndexingMaximumPollDelay     = 1 * time.Minute
 	maxDeleteVectorsByFilterIteration  = 50
 )
 
 // NewVectorIndexingHandler 创建 vector_indexing 步骤处理函数
 func NewVectorIndexingHandler(db *gorm.DB) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
 	return func(ctx context.Context, job *model.RagJob, stepConfig json.RawMessage) error {
+		if isWikiPageGenerationActive(job) {
+			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 vector_indexing 的向量化处理")
+			return nil
+		}
+
 		// 1. 解析基础参数
 		var params map[string]interface{}
 		if err := json.Unmarshal([]byte(job.StartParameters), &params); err != nil {
@@ -78,6 +83,23 @@ func NewVectorIndexingHandler(db *gorm.DB) func(ctx context.Context, job *model.
 			logger.Info(ctx, fmt.Sprintf("已重置失败检索块为待处理: %d", resetCount))
 		}
 
+		// 也重置 indexing 状态为 pending，防止崩溃后 chunk 卡在 indexing 状态
+		resetProcessingCount, pErr := resetProcessingRetrievalChunksToPending(db, eid, fileID)
+		if pErr != nil {
+			logger.Warn(ctx, fmt.Sprintf("重置 processing 检索块失败 (非致命错误): %v", pErr))
+		} else if resetProcessingCount > 0 {
+			logger.Info(ctx, fmt.Sprintf("已重置 processing 检索块为待处理: %d", resetProcessingCount))
+		}
+
+		// 重置已完成向量化的 chunk 为 pending
+		// cleanupVectorsByFileID 已从向量库删除旧向量，retry/success 重跑需重置 DB 状态以便重新入队
+		resetSucceededCount, sErr := resetSucceededRetrievalChunksToPending(db, eid, fileID)
+		if sErr != nil {
+			logger.Warn(ctx, fmt.Sprintf("重置已完成检索块失败 (非致命错误): %v", sErr))
+		} else if resetSucceededCount > 0 {
+			logger.Info(ctx, fmt.Sprintf("已重置已完成检索块为待处理: %d", resetSucceededCount))
+		}
+
 		if ensured, err := ensureVectorCollectionExists(ctx, db, eid, fileID, &file); err != nil {
 			logger.Warn(ctx, fmt.Sprintf("预创建向量集合失败 (将继续尝试插入时自动创建): %v", err))
 		} else if ensured {
@@ -91,86 +113,15 @@ func NewVectorIndexingHandler(db *gorm.DB) func(ctx context.Context, job *model.
 			return fmt.Errorf("提交向量化任务失败: %v", err)
 		}
 
-// 6. 等待向量化完成，失败自动重试
-	retryCount := 0
-	const maxEmbeddingRetries = 3
-	for {
-		if err := waitForEmbeddingCompletion(ctx, db, eid, fileID, file.LibraryID); err != nil {
-			updateParsingStatus(model.FileParsingStatusFail)
-			return fmt.Errorf("等待向量化完成失败: %v", err)
-		}
-
-		var failedChunks []model.RetrievalChunk
-		if err := db.Where("eid = ? AND file_id = ? AND embedding_status = ?", eid, fileID, model.RetrievalChunkEmbeddingStatusFailed).
-			Find(&failedChunks).Error; err != nil {
-			logger.Warn(ctx, fmt.Sprintf("检查失败分块失败: %v", err))
-			break
-		}
-
-		if len(failedChunks) == 0 {
-			break
-		}
-
-		if retryCount >= maxEmbeddingRetries {
-			logger.Warn(ctx, fmt.Sprintf("向量化重试已达上限 (%d)，仍有 %d 个分块失败", maxEmbeddingRetries, len(failedChunks)))
-			break
-		}
-
-		retryCount++
-		logger.Info(ctx, fmt.Sprintf("向量化完成但有 %d 个分块失败，开始第 %d 次重试", len(failedChunks), retryCount))
-
-		if err := db.Model(&model.RetrievalChunk{}).
-			Where("eid = ? AND file_id = ? AND embedding_status = ?", eid, fileID, model.RetrievalChunkEmbeddingStatusFailed).
-			Updates(map[string]interface{}{
-				"embedding_status": model.RetrievalChunkEmbeddingStatusPending,
-				"vector_id":        "",
-				"error_reason":     "",
-			}).Error; err != nil {
-			logger.Warn(ctx, fmt.Sprintf("重置失败分块状态失败: %v", err))
-			break
-		}
-
-		if err := batchProcessor.ProcessFileChunks(eid, fileID); err != nil {
-			logger.Warn(ctx, fmt.Sprintf("重新提交向量化任务失败: %v", err))
-			break
-		}
+	// 6. 等待向量化完成
+	if err := waitForEmbeddingCompletion(ctx, db, eid, fileID, file.LibraryID); err != nil {
+		updateParsingStatus(model.FileParsingStatusFail)
+		return fmt.Errorf("等待向量化完成失败: %v", err)
 	}
 
-	// 7. 统计结果 (向量片数和模型维度)
-	var vectorCount int64
-		if err := db.Model(&model.RetrievalChunk{}).
-			Where("eid = ? AND file_id = ? AND vector_id IS NOT NULL AND vector_id != ''", eid, fileID).
-			Count(&vectorCount).Error; err != nil {
-			logger.Warn(ctx, fmt.Sprintf("统计向量数量失败: %v", err))
-		}
-
-		// 获取维度信息
-		dimension := 0
-
-		// 记录结果日志
-		logger.Info(ctx, fmt.Sprintf("VectorIndexing 完成: 向量数=%d, 维度=%d", vectorCount, dimension))
-
-		indexingStatus, err := model.GetFileIndexingStatus(eid, fileID)
-		if err != nil {
-			updateParsingStatus(model.FileParsingStatusFail)
-			return fmt.Errorf("获取文件索引状态失败: %v", err)
-		}
-		updateParsingStatus(indexingStatus)
-
-		// 如果是向量模型重建触发的 vector_indexing job，完成后恢复流水线信息
-		if indexingStatus == model.FileParsingStatusNormal {
-			restoreReindexCleaningRuleInfo(ctx, db, job)
-		}
-
-		if indexingStatus == model.FileParsingStatusFail {
-			var failedCount int64
-			_ = db.Model(&model.RetrievalChunk{}).
-				Where("eid = ? AND file_id = ? AND embedding_status = ?", eid, fileID, model.RetrievalChunkEmbeddingStatusFailed).
-				Count(&failedCount).Error
-			return fmt.Errorf("向量化完成但文件状态为失败 (failed_chunks=%d，请检查 retrieval_chunks)", failedCount)
-		}
-
-		return nil
+	updateParsingStatus(model.FileParsingStatusNormal)
+	logger.Info(ctx, fmt.Sprintf("VectorIndexing 完成: file_id=%d", fileID))
+	return nil
 	}
 }
 
@@ -407,10 +358,9 @@ func waitForEmbeddingCompletion(ctx context.Context, db *gorm.DB, eid, fileID, l
 
 			delay = nextVectorIndexingPollDelay(delay)
 
-			// 可选：打印进度日志
-			if elapsed := time.Since(startTime); elapsed > 10*time.Second && elapsed%(30*time.Second) == 0 {
-				logger.Info(ctx, fmt.Sprintf("等待向量化... 剩余 %d 个任务", pending))
-			}
+			// 每轮都记录剩余待向量化 chunk 数量，用于排查排队问题
+			logger.Info(ctx, fmt.Sprintf("[VectorIndexing] 文件 %d 等待向量化完成，剩余 %d 个 retrieval chunk，已等待 %v",
+				fileID, pending, time.Since(startTime).Round(time.Second)))
 		}
 	}
 }
@@ -538,6 +488,21 @@ func resetFailedRetrievalChunksToPending(db *gorm.DB, eid, fileID int64) (int64,
 	return tx.RowsAffected, tx.Error
 }
 
+// resetSucceededRetrievalChunksToPending 将已完成向量化的 chunk 重置为 pending
+// 用于 retry 场景：向量已通过 cleanupVectorsByFileID 从向量库删除，需重置 DB 状态以便重新入队
+func resetSucceededRetrievalChunksToPending(db *gorm.DB, eid, fileID int64) (int64, error) {
+	tx := db.Model(&model.RetrievalChunk{}).
+		Where("eid = ? AND file_id = ? AND embedding_status IN ?",
+			eid, fileID, model.RetrievalChunkEmbeddingSuccessStatuses()).
+		Where("(vector_id IS NOT NULL AND vector_id != '')").
+		Updates(map[string]any{
+			"embedding_status": model.RetrievalChunkEmbeddingStatusPending,
+			"vector_id":        "",
+			"error_reason":     "",
+		})
+	return tx.RowsAffected, tx.Error
+}
+
 func ensureVectorCollectionExists(ctx context.Context, db *gorm.DB, eid, fileID int64, file *model.File) (bool, error) {
 	cfgService := rag.NewChunkConfigService(db)
 	chunkCfg, err := cfgService.GetConfigWithFileID(eid, &file.LibraryID, &fileID)
@@ -586,11 +551,8 @@ func ensureVectorCollectionExists(ctx context.Context, db *gorm.DB, eid, fileID 
 			if vectorstore.IsExistsError(createErr) {
 				logger.SysLogf("【诊断-确保集合存在】collection已存在，尝试读取实际维度: %s", collection)
 				if info, infoErr := store.GetCollectionInfo(ctx, collection); infoErr == nil && info.Dimension > 0 && info.Dimension != meta.Dimensions {
-					logger.SysLogf("【诊断-确保集合存在】collection维度不匹配，先删除旧集合: %s, 期望=%d, 实际=%d", collection, meta.Dimensions, info.Dimension)
-					if delErr := store.DeleteCollection(ctx, collection); delErr != nil && !vectorstore.IsNotFoundError(delErr) {
-						return false, fmt.Errorf("删除旧集合失败: %w", delErr)
-					}
-					logger.SysLogf("【诊断-确保集合存在】旧集合已删除，准备重建: %s", collection)
+					logger.SysLogf("【诊断-确保集合存在】⚠️ catalog维度=%d 与集合实际维度=%d 不一致，以集合实际维度为准，跳过重建: %s",
+						meta.Dimensions, info.Dimension, collection)
 				} else if infoErr == nil {
 					logger.SysLogf("【诊断-确保集合存在】collection维度一致: %s, dimension=%d", collection, info.Dimension)
 				} else {

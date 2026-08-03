@@ -6,8 +6,13 @@ import (
 )
 
 type RecordingConfig struct {
-	Enabled        bool   `json:"enabled"`
-	ParserPlatform string `json:"parser_platform"`
+	Enabled              bool   `json:"enabled"`
+	ParserPlatform       string `json:"parser_platform"`
+	VoiceModelID         int64  `json:"voice_model_id"`
+	VoiceModelName       string `json:"voice_model_name"`
+	InferenceModelID     int64  `json:"inference_model_id"`     // 注意：存储的是 channel_id，不是 model_id
+	InferenceModelName   string `json:"inference_model_name"`   // 注意：存储的是 channel_name，不是 model_name
+	RecordingAgentEnabled bool  `json:"recording_agent_enabled"` // 是否启用录音应用（agent_usage=5）
 }
 
 func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
@@ -25,8 +30,11 @@ func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
 	}
 
 	defaultConfig := &RecordingConfig{
-		Enabled:        true,
-		ParserPlatform: "",
+		Enabled:               true,
+		ParserPlatform:        "",
+		VoiceModelID:          0,
+		InferenceModelID:      0,
+		RecordingAgentEnabled: false,
 	}
 
 	value, err := json.Marshal(defaultConfig)
@@ -48,10 +56,15 @@ func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
 	return defaultConfig, nil
 }
 
-func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string) error {
+func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voiceModelID int64, voiceModelName string, inferenceModelID int64, inferenceModelName string, recordingAgentEnabled bool) error {
 	config := RecordingConfig{
-		Enabled:        enabled,
-		ParserPlatform: parserPlatform,
+		Enabled:               enabled,
+		ParserPlatform:        parserPlatform,
+		VoiceModelID:          voiceModelID,
+		VoiceModelName:        voiceModelName,
+		InferenceModelID:      inferenceModelID,
+		InferenceModelName:    inferenceModelName,
+		RecordingAgentEnabled: recordingAgentEnabled,
 	}
 	value, err := json.Marshal(config)
 	if err != nil {
@@ -60,7 +73,7 @@ func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string) error
 	return UpdateOrCreateSetting(eid, SETTING_RECORDING_CONFIG, string(value), 0)
 }
 
-func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string) error {
+func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool) error {
 	current, err := ValidateOrCreateRecordingConfig(eid)
 	if err != nil {
 		return fmt.Errorf("获取当前配置失败: %w", err)
@@ -70,6 +83,21 @@ func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string) erro
 	}
 	if parserPlatform != nil {
 		current.ParserPlatform = *parserPlatform
+	}
+	if voiceModelID != nil {
+		current.VoiceModelID = *voiceModelID
+	}
+	if voiceModelName != nil {
+		current.VoiceModelName = *voiceModelName
+	}
+	if inferenceModelID != nil {
+		current.InferenceModelID = *inferenceModelID
+	}
+	if inferenceModelName != nil {
+		current.InferenceModelName = *inferenceModelName
+	}
+	if recordingAgentEnabled != nil {
+		current.RecordingAgentEnabled = *recordingAgentEnabled
 	}
 	value, err := json.Marshal(current)
 	if err != nil {

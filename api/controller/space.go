@@ -31,6 +31,12 @@ type SpaceRequest struct {
 	// 用于在创建空间时为指定用户或分组设置权限
 	// 支持为用户(0)或分组(1)设置权限级别：2-仅查看，6-可管理
 	Permissions []*model.PermissionData `json:"permissions"`
+
+	// 开启 Wiki 知识图谱（实体/概念提取）
+	EnableWikiKnowledgeGraph bool `json:"enable_wiki_knowledge_graph" example:"false"`
+
+	// 开启 Wiki 动态知识（摘要/索引/分类页面）
+	EnableWikiDynamicKnowledge bool `json:"enable_wiki_dynamic_knowledge" example:"false"`
 }
 
 type SpaceSortRequest struct {
@@ -73,7 +79,7 @@ func CreateSpace(c *gin.Context) {
 	}
 
 	spaceService := mcpsvc.NewSpaceService()
-	space, err := spaceService.CreateSpace(c.Request.Context(), eid, userID, req.Name, req.Description, req.Icon, req.Visibility, req.Permissions)
+	space, err := spaceService.CreateSpace(c.Request.Context(), eid, userID, req.Name, req.Description, req.Icon, req.Visibility, req.Permissions, req.EnableWikiKnowledgeGraph, req.EnableWikiDynamicKnowledge)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
@@ -153,7 +159,7 @@ func GetSpaces(c *gin.Context) {
 	var err2 error
 	if view == "user" {
 		// 获取用户所属的空间(带筛选条件和分页)
-		count, spaces, err2 = sps.GetUserSpaces(userID, status, name, offset, limit)
+		count, spaces, err2 = sps.GetUserSpaces(userID, status, name, nil, 0, 0, 0, 0, offset, limit)
 	} else {
 		if !common.IsAdmin(c) {
 			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
@@ -318,6 +324,8 @@ func UpdateSpace(c *gin.Context) {
 	space.Name = req.Name
 	space.Description = req.Description
 	space.Icon = req.Icon
+	space.EnableWikiKnowledgeGraph = req.EnableWikiKnowledgeGraph
+	space.EnableWikiDynamicKnowledge = req.EnableWikiDynamicKnowledge
 
 	// 处理可见性更新
 	visibility := req.Visibility

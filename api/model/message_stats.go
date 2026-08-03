@@ -1,6 +1,7 @@
 package model
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -36,22 +37,41 @@ type MessageStatsSummary struct {
 // IncrementField 给指定字段增加指定值，如果没有今天的记录就创建新记录
 // eid: 企业ID
 // agentID: Agent ID
-// fieldName: 字段名 (total_questions, no_search_results, quick_answers, deep_thinking, web_search_count, satisfied_count, unsatisfied_count)
+// fieldName: 字段名 (total_questions, no_search_results, quick_answers, deep_thinking, web_search_count, total_tokens, total_duration_ms)
 // increment: 增加的值，默认为1
 func IncrementField(eid int64, agentID int64, fieldName string, increment int64) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = incrementFieldOnce(eid, agentID, fieldName, increment)
+		if err == nil || !isRetryableMessageStatsError(err) || attempt == 2 {
+			return err
+		}
+		time.Sleep(time.Duration(attempt+1) * 20 * time.Millisecond)
+	}
+	return err
+}
+
+func incrementFieldOnce(eid int64, agentID int64, fieldName string, increment int64) error {
+	if _, err := messageStatsIncrementUpdates(fieldName, increment); err != nil {
+		return err
+	}
+
 	// 获取今天的日期时间戳（精确到天，00:00:00）
 	now := time.Now()
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
 
 	// 使用事务确保操作的原子性
 	return DB.Transaction(func(tx *gorm.DB) error {
+		updates, err := messageStatsIncrementUpdates(fieldName, increment)
+		if err != nil {
+			return err
+		}
+		updates["updated_time"] = time.Now().UTC().UnixMilli()
+
 		// 尝试更新今天的记录
 		result := tx.Model(&MessageStats{}).
 			Where("eid = ? AND agent_id = ? AND stat_date = ?", eid, agentID, today).
-			Updates(map[string]interface{}{
-				fieldName:      gorm.Expr(fieldName+" + ?", increment),
-				"updated_time": time.Now().UTC().UnixMilli(),
-			})
+			Updates(updates)
 
 		if result.Error != nil {
 			return result.Error
@@ -65,26 +85,8 @@ func IncrementField(eid int64, agentID int64, fieldName string, increment int64)
 				StatDate: today,
 			}
 
-			// 根据字段名设置对应的值
-			switch fieldName {
-			case "total_questions":
-				stats.TotalQuestions = increment
-			case "no_search_results":
-				stats.NoSearchResults = increment
-			case "quick_answers":
-				stats.QuickAnswers = increment
-			case "deep_thinking":
-				stats.DeepThinking = increment
-			case "web_search_count":
-				stats.WebSearchCount = increment
-			case "total_tokens":
-				stats.TotalTokens = increment
-			case "total_duration_ms":
-				stats.TotalDurationMs = increment
-				// case "satisfied_count":
-				// 	stats.SatisfiedCount = increment
-				// case "unsatisfied_count":
-				// 	stats.UnsatisfiedCount = increment
+			if err := setInitialMessageStatsValue(stats, fieldName, increment); err != nil {
+				return err
 			}
 
 			// 尝试创建记录，如果已存在则更新
@@ -94,12 +96,14 @@ func IncrementField(eid int64, agentID int64, fieldName string, increment int64)
 				// 如果是唯一约束冲突错误，说明记录已经被其他协程创建
 				// 此时我们再次尝试更新
 				if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "duplicate") {
+					retryUpdates, updateErr := messageStatsIncrementUpdates(fieldName, increment)
+					if updateErr != nil {
+						return updateErr
+					}
+					retryUpdates["updated_time"] = time.Now().UTC().UnixMilli()
 					return tx.Model(&MessageStats{}).
 						Where("eid = ? AND agent_id = ? AND stat_date = ?", eid, agentID, today).
-						Updates(map[string]interface{}{
-							fieldName:      gorm.Expr(fieldName+" + ?", increment),
-							"updated_time": time.Now().UTC().UnixMilli(),
-						}).Error
+						Updates(retryUpdates).Error
 				}
 				return err
 			}
@@ -107,6 +111,65 @@ func IncrementField(eid int64, agentID int64, fieldName string, increment int64)
 
 		return nil
 	})
+}
+
+func messageStatsIncrementUpdates(fieldName string, increment int64) (map[string]interface{}, error) {
+	updates := make(map[string]interface{}, 1)
+	switch fieldName {
+	case "total_questions":
+		updates["total_questions"] = gorm.Expr("total_questions + ?", increment)
+	case "no_search_results":
+		updates["no_search_results"] = gorm.Expr("no_search_results + ?", increment)
+	case "quick_answers":
+		updates["quick_answers"] = gorm.Expr("quick_answers + ?", increment)
+	case "deep_thinking":
+		updates["deep_thinking"] = gorm.Expr("deep_thinking + ?", increment)
+	case "web_search_count":
+		updates["web_search_count"] = gorm.Expr("web_search_count + ?", increment)
+	case "total_tokens":
+		updates["total_tokens"] = gorm.Expr("total_tokens + ?", increment)
+	case "total_duration_ms":
+		updates["total_duration_ms"] = gorm.Expr("total_duration_ms + ?", increment)
+	default:
+		return nil, fmt.Errorf("unsupported message stats field: %s", fieldName)
+	}
+	return updates, nil
+}
+
+func setInitialMessageStatsValue(stats *MessageStats, fieldName string, increment int64) error {
+	if stats == nil {
+		return fmt.Errorf("message stats is nil")
+	}
+	switch fieldName {
+	case "total_questions":
+		stats.TotalQuestions = increment
+	case "no_search_results":
+		stats.NoSearchResults = increment
+	case "quick_answers":
+		stats.QuickAnswers = increment
+	case "deep_thinking":
+		stats.DeepThinking = increment
+	case "web_search_count":
+		stats.WebSearchCount = increment
+	case "total_tokens":
+		stats.TotalTokens = increment
+	case "total_duration_ms":
+		stats.TotalDurationMs = increment
+	default:
+		return fmt.Errorf("unsupported message stats field: %s", fieldName)
+	}
+	return nil
+}
+
+func isRetryableMessageStatsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "deadlock") ||
+		strings.Contains(errText, "error 1213") ||
+		strings.Contains(errText, "40001") ||
+		strings.Contains(errText, "serialization failure")
 }
 
 // GetTodayStats 获取今天的统计数据

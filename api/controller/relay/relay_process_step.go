@@ -15,8 +15,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var messageProcessStepSaver = func(step *model.MessageProcessStep) error {
-	return model.CreateMessageProcessStep(step)
+var messageProcessStepSaver = func(ctx context.Context, step *model.MessageProcessStep) error {
+	db := model.DB
+	if ctx != nil {
+		db = db.WithContext(ctx)
+	}
+	return db.Create(step).Error
 }
 
 func NewProcessSender(c *gin.Context, requestId string, chatRequest *ChatRequest, messageStatus *MessageStatsInfo) *ProcessSender {
@@ -47,7 +51,7 @@ func normalizeProcessStep(step ProcessStep) ProcessStep {
 	}
 }
 
-func saveProcessStepRecord(eid, messageID int64, requestID string, step ProcessStep) error {
+func saveProcessStepRecord(ctx context.Context, eid, messageID int64, requestID string, step ProcessStep) error {
 	record := &model.MessageProcessStep{
 		Eid:           eid,
 		MessageID:     messageID,
@@ -61,7 +65,12 @@ func saveProcessStepRecord(eid, messageID int64, requestID string, step ProcessS
 	if err := record.SetDataMap(step.Data); err != nil {
 		return err
 	}
-	return messageProcessStepSaver(record)
+	if enqueueAgentRunAsyncWrite(ctx, "message_process_step", func(writeCtx context.Context) error {
+		return messageProcessStepSaver(writeCtx, record)
+	}) {
+		return nil
+	}
+	return messageProcessStepSaver(ctx, record)
 }
 
 func recordProcessStepForHistory(ctx context.Context, eid int64, messageStatus *MessageStatsInfo, requestID string, step ProcessStep) {
@@ -76,7 +85,7 @@ func recordProcessStepForHistory(ctx context.Context, eid int64, messageStatus *
 		messageStatus.BufferedSteps = append(messageStatus.BufferedSteps, normalized)
 		return
 	}
-	if err := saveProcessStepRecord(eid, messageStatus.MessageID, requestID, normalized); err != nil {
+	if err := saveProcessStepRecord(ctx, eid, messageStatus.MessageID, requestID, normalized); err != nil {
 		messageStatus.ProcessRecordError = err.Error()
 		logger.Warnf(ctx, "【技能运行】过程记录落库失败: message_id=%d, step_code=%s, err=%v",
 			messageStatus.MessageID, normalized.StepCode, err)
@@ -107,7 +116,7 @@ func bindMessageIDAndFlushProcessSteps(ctx context.Context, eid int64, messageSt
 	messageStatus.BufferedSteps = nil
 
 	for _, step := range buffered {
-		if err := saveProcessStepRecord(eid, messageID, messageStatus.RequestId, step); err != nil {
+		if err := saveProcessStepRecord(ctx, eid, messageID, messageStatus.RequestId, step); err != nil {
 			messageStatus.ProcessRecordError = err.Error()
 			logger.Warnf(ctx, "【技能运行】过程记录缓冲刷新失败: message_id=%d, step_code=%s, err=%v",
 				messageID, step.StepCode, err)
@@ -146,11 +155,11 @@ func sendProcessStepRaw(c *gin.Context, requestId string, hashedStep ProcessStep
 	}
 	if hashedStep.StepCode != "llm_delta" {
 		logger.SysLogf(
-			"步骤 step=%s status=%s name=%s msg=%s",
+			"步骤 step=%s status=%s name=%s message_chars=%d",
 			hashedStep.StepCode,
 			hashedStep.Status,
 			hashedStep.Name,
-			hashedStep.Message,
+			len(hashedStep.Message),
 		)
 	}
 	payload := buildProcessStepPayload(requestId, hashedStep)
@@ -166,15 +175,17 @@ func sendProcessStepRaw(c *gin.Context, requestId string, hashedStep ProcessStep
 		reqCtx = context.Background()
 	}
 	if hashedStep.StepCode == STEP_REF_ANALYSIS {
-		logger.Debugf(reqCtx, "【引用分析】准备写入前的 payload: request_id=%s, payload=%s",
-			requestId, string(b))
+		logger.Debugf(reqCtx, "【引用分析】准备写入: request_id=%s, payload_bytes=%d",
+			requestId, len(b))
 	}
 
 	chunk := append([]byte("data: "), b...)
 	chunk = append(chunk, []byte("\n\n")...)
 
-	logger.Debugf(reqCtx, "【SSE发送】step=%s, request_id=%s, 完整包体=\n%s",
-		hashedStep.StepCode, requestId, string(chunk))
+	if hashedStep.StepCode != "llm_delta" {
+		logger.Debugf(reqCtx, "【SSE发送】step=%s, request_id=%s, chunk_bytes=%d",
+			hashedStep.StepCode, requestId, len(chunk))
+	}
 
 	if _, err := c.Writer.Write(chunk); err != nil {
 		return err
@@ -407,7 +418,8 @@ func (ps *ProcessSender) truncateSourcesContent(data map[string]interface{}) map
 }
 
 func shouldPreserveSourceContent(source rag.SourceReference) bool {
-	return source.ChunkType == rag.GraphAggregateChunkType ||
+	return source.SourceType == "wiki" ||
+		source.ChunkType == rag.GraphAggregateChunkType ||
 		source.ReferenceID == rag.GraphAggregateReferenceID ||
 		source.SourceKey == "[Source:G-1]"
 }

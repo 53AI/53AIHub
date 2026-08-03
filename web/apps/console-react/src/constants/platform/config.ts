@@ -47,6 +47,8 @@ const MODEL_USE_TYPE = {
   EMBEDDING: '2',
   // 重排序
   RERANKER: '3',
+  // 语音
+  VOICE: '4',
 } as const
 
 const REASONING_MODE = {

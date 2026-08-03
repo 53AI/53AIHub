@@ -31,6 +31,12 @@ func (r *recordingAssemblyLockRegistry) lock(jobID int64) func() {
 	return lk.Unlock
 }
 
+func (r *recordingAssemblyLockRegistry) cleanupLock(jobID int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.locks, jobID)
+}
+
 type RecordingAssemblyService struct {
 	eid int64
 }

@@ -44,7 +44,7 @@ func (f *Favorite) Validate() error {
 	if f.ResourceID <= 0 {
 		return errors.New("资源ID无效")
 	}
-	if f.ResourceType != RESOURCE_TYPE_FILE && f.ResourceType != RESOURCE_TYPE_LIBRARY {
+	if f.ResourceType != RESOURCE_TYPE_FILE && f.ResourceType != RESOURCE_TYPE_LIBRARY && f.ResourceType != RESOURCE_TYPE_WIKI_PAGE {
 		return errors.New("资源类型无效")
 	}
 	return nil
@@ -225,6 +225,33 @@ func GetUserFavoriteFilesByKeyword(userID, eid int64, keyword string, offset, li
 	keyword = strings.TrimSpace(keyword)
 	if keyword != "" {
 		db = db.Where("files.path LIKE ?", "%"+keyword+"%")
+	}
+
+	db = db.Order("favorites.updated_time DESC")
+	if offset > 0 {
+		db = db.Offset(offset)
+	}
+	if limit > 0 {
+		db = db.Limit(limit)
+	}
+
+	if err := db.Find(&favs).Error; err != nil {
+		return nil, err
+	}
+	return favs, nil
+}
+
+// GetUserFavoriteWikiPagesByKeyword 获取用户收藏的 Wiki 页面列表，支持关键词和分页
+func GetUserFavoriteWikiPagesByKeyword(userID, eid int64, keyword string, offset, limit int) ([]Favorite, error) {
+	var favs []Favorite
+	db := DB.Table("favorites").
+		Select("favorites.*").
+		Joins("JOIN wiki_pages ON wiki_pages.id = favorites.resource_id AND wiki_pages.eid = ?", eid).
+		Where("favorites.user_id = ? AND favorites.status = ? AND favorites.resource_type = ?", userID, FavoriteStatusActive, RESOURCE_TYPE_WIKI_PAGE)
+
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" {
+		db = db.Where("wiki_pages.title LIKE ?", "%"+keyword+"%")
 	}
 
 	db = db.Order("favorites.updated_time DESC")

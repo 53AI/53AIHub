@@ -102,6 +102,7 @@ type Client struct {
 	maxSize      int64
 	retryTimes   int
 	pollInterval time.Duration
+	healthTimeout  time.Duration
 	httpClient   *http.Client
 }
 
@@ -128,6 +129,7 @@ func NewClient() *Client {
 		maxSize:      maxSize,
 		retryTimes:   env.Int("DOC_CONVERT_RETRY_TIMES", 3),
 		pollInterval: time.Duration(env.Int("DOC_CONVERT_POLL_INTERVAL", 5)) * time.Second,
+		healthTimeout: time.Duration(env.Int("DOC_CONVERT_HEALTH_TIMEOUT", 30)) * time.Second,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -157,8 +159,8 @@ type JobParams struct {
 
 // TextinConfig represents the configuration for Textin XParse v1.3 API
 type TextinConfig struct {
-	AppID      string       `json:"app_id"`
-	SecretCode string       `json:"secret_code"`
+	AppID      string        `json:"app_id"`
+	SecretCode string        `json:"secret_code"`
 	Parse      *TextinXParse `json:"parse,omitempty"`
 }
 
@@ -568,6 +570,10 @@ func (c *Client) SubmitJob(ctx context.Context, req *ConvertRequest) (*JobRespon
 	}
 
 	url := strings.TrimSuffix(c.baseURL, "/") + "/v1/jobs"
+	if req.JobParams != nil && req.JobParams.TextinConfig != nil {
+		logger.Debugf(ctx, "【诊断-Textin请求】endpoint=%s source_url_set=%t parser_type=%s %s",
+			url, req.SourceURL != "", req.JobParams.ParserType, textinConfigDebugSummary(req.JobParams.TextinConfig))
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(string(reqBody)))
 	if err != nil {
 		return nil, &ConvertError{
@@ -598,6 +604,10 @@ func (c *Client) SubmitJob(ctx context.Context, req *ConvertRequest) (*JobRespon
 			Message: err.Error(),
 		}
 	}
+	if req.JobParams != nil && req.JobParams.TextinConfig != nil {
+		logger.Debugf(ctx, "【诊断-Textin响应】http_status=%d content_type=%s request_id=%s body_len=%d body=%s",
+			resp.StatusCode, resp.Header.Get("Content-Type"), resp.Header.Get("X-Request-ID"), len(body), c.truncateBody(string(body)))
+	}
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
 		return nil, c.parseErrorResponse("submit", resp.StatusCode, body, resp.Header.Get("X-Request-ID"))
@@ -612,9 +622,55 @@ func (c *Client) SubmitJob(ctx context.Context, req *ConvertRequest) (*JobRespon
 			RawBody: c.truncateBody(string(body)),
 		}
 	}
-
 	logger.Infof(ctx, "submitted conversion job: %s for URL: %s", jobResp.JobID, req.SourceURL)
 	return &jobResp, nil
+}
+
+// textinConfigDebugSummary 返回不包含密钥原文的 TextIn 请求摘要。
+func textinConfigDebugSummary(config *TextinConfig) string {
+	if config == nil {
+		return "config=nil"
+	}
+
+	parsePresent := config.Parse != nil
+	capabilitiesPresent := parsePresent && config.Parse.Capabilities != nil
+	scopePresent := parsePresent && config.Parse.Scope != nil
+	configBlockPresent := parsePresent && config.Parse.Config != nil
+	engineParamsPresent := configBlockPresent && config.Parse.Config.EngineParams != nil
+
+	parseMode := ""
+	pageRange := ""
+	tableView := ""
+	forceEngine := ""
+	if engineParamsPresent {
+		parseMode = config.Parse.Config.EngineParams.ParseMode
+	}
+	if scopePresent {
+		pageRange = config.Parse.Scope.PageRange
+	}
+	if capabilitiesPresent {
+		tableView = config.Parse.Capabilities.TableView
+	}
+	if configBlockPresent {
+		forceEngine = config.Parse.Config.ForceEngine
+	}
+
+	return fmt.Sprintf("app_id=%s app_id_len=%d secret_code_set=%t secret_code_len=%d app_id_trimmed=%t secret_code_trimmed=%t parse_present=%t capabilities_present=%t scope_present=%t config_present=%t engine_params_present=%t force_engine=%s parse_mode=%s page_range=%s table_view=%s",
+		maskTextinAppID(config.AppID), len(config.AppID), config.SecretCode != "", len(config.SecretCode),
+		config.AppID == strings.TrimSpace(config.AppID), config.SecretCode == strings.TrimSpace(config.SecretCode),
+		parsePresent, capabilitiesPresent, scopePresent, configBlockPresent, engineParamsPresent,
+		forceEngine, parseMode, pageRange, tableView)
+}
+
+func maskTextinAppID(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "<empty>"
+	}
+	if len(value) <= 4 {
+		return "****"
+	}
+	return value[:2] + "***" + value[len(value)-2:]
 }
 
 // QueryJob 查询任务状态
