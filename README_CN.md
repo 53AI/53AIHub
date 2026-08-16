@@ -171,7 +171,7 @@ docker compose up -d
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=53AI/53AIhub&type=Date)](https://star-history.com/#53AI/53AIhub&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=53AI/53AIhub&type=Date)](https://star-history.dera.page/#53AI/53AIhub&Date)
 
 ## 参与项目
 
