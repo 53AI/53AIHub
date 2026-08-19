@@ -611,61 +611,92 @@ func (s *AgentRunService) finalizeRun(ctx context.Context, eid int64, runID stri
 	}
 
 	var terminalEvent *model.AgentRunEvent
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
-		updates := map[string]interface{}{
-			"status":      status,
-			"finished_at": now,
-		}
-		if errorCode != "" {
-			updates["error_code"] = errorCode
-		}
-		if errorMessage != "" {
-			updates["error_message"] = errorMessage
-		}
-		if status == model.AgentRunStatusCancelled {
-			if run.CancelRequestedAt > 0 {
-				updates["cancel_requested_at"] = run.CancelRequestedAt
-			} else {
-				updates["cancel_requested_at"] = now
+	finalizeOnce := func() error {
+		terminalEvent = nil
+		return model.DB.Transaction(func(tx *gorm.DB) error {
+			updates := map[string]interface{}{
+				"status":      status,
+				"finished_at": now,
 			}
-		}
+			if errorCode != "" {
+				updates["error_code"] = errorCode
+			}
+			if errorMessage != "" {
+				updates["error_message"] = errorMessage
+			}
+			if status == model.AgentRunStatusCancelled {
+				if run.CancelRequestedAt > 0 {
+					updates["cancel_requested_at"] = run.CancelRequestedAt
+				} else {
+					updates["cancel_requested_at"] = now
+				}
+			}
 
-		result := tx.Model(&model.AgentRun{}).
-			Where("eid = ? AND run_id = ? AND status NOT IN ?", eid, runID, []string{
-				model.AgentRunStatusCompleted,
-				model.AgentRunStatusFailed,
-				model.AgentRunStatusCancelled,
-			}).
-			Updates(updates)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
+			result := tx.Model(&model.AgentRun{}).
+				Where("eid = ? AND run_id = ? AND status NOT IN ?", eid, runID, []string{
+					model.AgentRunStatusCompleted,
+					model.AgentRunStatusFailed,
+					model.AgentRunStatusCancelled,
+				}).
+				Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return nil
+			}
 
-		event, appendErr := appendAgentRunEventInTx(tx, eid, runID, &model.AgentRunEvent{
-			RequestID:   run.RequestID,
-			EventType:   eventType,
-			MessageID:   run.MessageID,
-			PayloadJSON: mustMarshalJSONString(eventPayload),
-			CreatedAt:   now,
+			event, appendErr := appendAgentRunEventInTx(tx, eid, runID, &model.AgentRunEvent{
+				RequestID:   run.RequestID,
+				EventType:   eventType,
+				MessageID:   run.MessageID,
+				PayloadJSON: mustMarshalJSONString(eventPayload),
+				CreatedAt:   now,
+			})
+			if appendErr != nil {
+				return appendErr
+			}
+			terminalEvent = event
+
+			return tx.Model(&model.AgentRun{}).
+				Where("eid = ? AND run_id = ?", eid, runID).
+				Updates(map[string]interface{}{
+					"last_event_id": event.ID,
+				}).Error
 		})
-		if appendErr != nil {
-			return appendErr
+	}
+	const maxFinalizeAttempts = 8
+	for attempt := 0; attempt < maxFinalizeAttempts; attempt++ {
+		err = finalizeOnce()
+		if err == nil {
+			break
 		}
-		terminalEvent = event
-
-		return tx.Model(&model.AgentRun{}).
-			Where("eid = ? AND run_id = ?", eid, runID).
-			Updates(map[string]interface{}{
-				"last_event_id": event.ID,
-			}).Error
-	})
+		if !isAgentRunFinalizeRetryable(err) {
+			return nil, err
+		}
+		time.Sleep(time.Duration(attempt+1) * time.Millisecond)
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("finalize agent run failed after retries: run_id=%s: %w", runID, err)
 	}
 	s.publishEventNotification(ctx, terminalEvent)
 
 	return s.GetRunByRunID(ctx, eid, runID)
+}
+
+func isAgentRunFinalizeRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate key") ||
+		strings.Contains(message, "duplicate entry") ||
+		strings.Contains(message, "unique constraint") ||
+		strings.Contains(message, "unique failed") ||
+		strings.Contains(message, "database is locked") ||
+		strings.Contains(message, "database table is locked") ||
+		strings.Contains(message, "deadlock")
 }

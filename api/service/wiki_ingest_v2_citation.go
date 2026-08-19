@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/model"
 )
 
@@ -175,11 +175,7 @@ func truncateWikiRunes(s string, maxRunes int) string {
 }
 
 func decodeWikiLLMJSON(raw string, dst any) error {
-	raw = cleanLLMJSON(raw)
-	if err := json.Unmarshal([]byte(raw), dst); err != nil {
-		return err
-	}
-	return nil
+	return common.ParseLLMJSONInto(context.Background(), raw, dst)
 }
 
 func renderWikiCandidateSlugsXML(candidates []wikiIngestV2Candidate) string {

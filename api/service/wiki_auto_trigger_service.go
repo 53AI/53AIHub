@@ -50,14 +50,15 @@ func (s *WikiAutoTriggerService) MaybeEnqueueWikiGeneration(ctx context.Context,
 		return err
 	}
 
-	library, err := model.GetLibraryByID(in.Eid, file.LibraryID)
+	var library model.Library
+	err := s.db.WithContext(ctx).Where("eid = ? AND id = ?", in.Eid, file.LibraryID).First(&library).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
 		return err
 	}
-	if library == nil || library.SpaceID <= 0 {
+	if library.SpaceID <= 0 {
 		return nil
 	}
 

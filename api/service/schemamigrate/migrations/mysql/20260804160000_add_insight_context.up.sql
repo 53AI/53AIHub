@@ -1,0 +1,2 @@
+ALTER TABLE files ADD COLUMN insight_context LONGTEXT NULL;
+ALTER TABLE files ADD COLUMN insight_generation BIGINT NOT NULL DEFAULT 0;

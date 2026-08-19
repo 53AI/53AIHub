@@ -26,12 +26,13 @@ type File struct {
 	LibraryID int64  `json:"library_id" gorm:"not null;index:idx_files_library_id;index:idx_files_eid_library_deleted_type,priority:4"`
 	Eid       int64  `json:"eid" gorm:"not null;index;index:idx_files_eid_library_deleted_type,priority:1"`
 	// 新增：文档级配置ID
-	ConfigID     *int64 `json:"config_id" gorm:"index" comment:"文档专用分块配置ID"`
-	UploadFileID int64  `json:"upload_file_id" gorm:"not null"`
-	OriginType   string `json:"origin_type" gorm:"size:32;not null;default:manual_create;index"`
-	OriginRefID  int64  `json:"origin_ref_id" gorm:"not null;default:0;index"`
-	OriginSource string `json:"origin_source" gorm:"size:64;not null;default:'';index"`
-	GroupID      int64  `json:"group_id" gorm:"not null;default:0;index"`
+	ConfigID           *int64 `json:"config_id" gorm:"index" comment:"文档专用分块配置ID"`
+	UploadFileID       int64  `json:"upload_file_id" gorm:"not null"`
+	OriginType         string `json:"origin_type" gorm:"size:32;not null;default:manual_create;index"`
+	OriginRefID        int64  `json:"origin_ref_id" gorm:"not null;default:0;index"`
+	OriginSource       string `json:"origin_source" gorm:"size:64;not null;default:'';index"`
+	InsightPerspective string `json:"insight_perspective" gorm:"size:32;not null;default:auto;index"`
+	GroupID            int64  `json:"group_id" gorm:"not null;default:0;index"`
 	// 解析类型: default, textin, mineru.net
 	ParseType string `json:"parse_type" gorm:"type:varchar(50);not null;default:''"`
 
@@ -55,6 +56,9 @@ type File struct {
 	Questions      string   `json:"questions" gorm:"type:text;comment:'AI生成的问题JSON数组字符串'"`
 	KnowledgeMap   string   `json:"knowledge_map" gorm:"type:text;comment:'知识地图(Mermaid mindmap)'"`
 	InsightSummary LongText `json:"insight_summary" gorm:"comment:'洞察和总结(Markdown格式,用于页面展示)'"`
+	// InsightContext 保存用户在洞察协同研讨中确认的背景快照，供重新生成时复现输入。
+	InsightContext    LongText `json:"-" gorm:"comment:'洞察重生成背景上下文(JSON)'"`
+	InsightGeneration int64    `json:"-" gorm:"not null;default:0;comment:'洞察生成版本号'"`
 
 	// 索引禁用相关字段
 	DisabledReason string `json:"disabled_reason,omitempty" gorm:"type:varchar(255);comment:'禁用原因'"`
@@ -176,6 +180,44 @@ func (f *File) IsMyRecordingResource() bool {
 	return f.IsRecordingOriginType()
 }
 
+// PrepareForCreate 校验路径并补默认状态，供录音导入/第三方同步等非标准创建路径复用
+// （标准上传走 CreateFileRecord）。路径校验：非空、文件必须有扩展名；状态补默认值。
+func (f *File) PrepareForCreate() error {
+	pathStr := f.GetPath()
+	if pathStr == "" {
+		return errors.New("file path is empty")
+	}
+	if f.Type == FILE_TYPE_FILE && path.Ext(pathStr) == "" {
+		return errors.New("file path must contain filename and extension")
+	}
+	f.Path = pathStr
+	if strings.TrimSpace(f.ConversionStatus) == "" {
+		f.ConversionStatus = FileConversionStatusNormal
+	}
+	if strings.TrimSpace(f.ParsingStatus) == "" {
+		f.ParsingStatus = FileParsingStatusNormal
+	}
+	return nil
+}
+
+// 录音管线各阶段错误类型常量
+const (
+	ErrorTypeInsufficientBalance = "insufficient_balance" // 余额不足
+	ErrorTypeAPIKeyInvalid       = "api_key_invalid"      // API Key 无效
+	ErrorTypeTimeout             = "timeout"              // 请求超时
+	ErrorTypeModelUnavailable    = "model_unavailable"    // 模型不可用
+	ErrorTypeASRFailed           = "asr_failed"           // 语音识别失败
+)
+
+// LLMError 携带 LLM 调用错误的分类信息，供 steps 包通过 errors.As 提取。
+type LLMError struct {
+	Err       error
+	ErrorType string
+}
+
+func (e *LLMError) Error() string { return e.Err.Error() }
+func (e *LLMError) Unwrap() error { return e.Err }
+
 // FileCleaningRuleInfo 存储在 CleaningRuleInfo 中的 JSON 结构
 type FileCleaningRuleInfo struct {
 	StrategyID   string `json:"strategy_id"`
@@ -206,10 +248,16 @@ type FileCleaningRuleInfo struct {
 
 	// 纪要/洞察/转写状态，由 GenerateMeetingMinutes/GenerateInsights/转录策略 写入
 	// 独立于管线状态，避免被 pipeline 的 UpdateFileCleaningRuleInfoHelper 覆盖
-	MeetingMinutesStatus string `json:"meeting_minutes"`
-	InsightsStatus       string `json:"insights"`
-	InsightPageStatus    string `json:"insight_page"`
-	TranscriptionStatus  string `json:"transcription"`
+	MeetingMinutesStatus    string `json:"meeting_minutes"`
+	MeetingMinutesError     string `json:"meeting_minutes_error,omitempty"`
+	MeetingMinutesErrorType string `json:"meeting_minutes_error_type,omitempty"`
+	InsightsStatus          string `json:"insights"`
+	InsightsError           string `json:"insights_error,omitempty"`
+	InsightsErrorType       string `json:"insights_error_type,omitempty"`
+	InsightPageStatus       string `json:"insight_page"`
+	TranscriptionStatus     string `json:"transcription"`
+	TranscriptionError      string `json:"transcription_error,omitempty"`
+	TranscriptionErrorType  string `json:"transcription_error_type,omitempty"`
 }
 
 func ResolveFileRunStatus(cleaningRuleInfo string) string {
@@ -481,6 +529,9 @@ func (file *File) Save() error {
 	// }
 
 	file.Path = pathStr
+	if strings.TrimSpace(file.InsightPerspective) == "" {
+		file.InsightPerspective = string(InsightPerspectiveAuto)
+	}
 	if strings.TrimSpace(file.OriginType) == "" {
 		if file.UploadFileID > 0 {
 			file.SetPersonalUploadOrigin(file.UploadFileID)
@@ -592,6 +643,34 @@ func GetFileByPathAndLibraryNotDeleted(eid int64, libraryID int64, filePath stri
 		return nil, err
 	}
 	return &file, nil
+}
+
+// ResolveUniqueFilePath 在同知识库内生成不冲突的文件路径：若目标路径已被**未删除**文件占用，
+// 自动追加 -2/-3 序号（保留 .md 后缀），返回第一个可用路径。
+// 场景：两条远端录音标题相同 → 同库同路径会互相覆盖/去重混淆，需确保路径唯一。
+// 说明：软删文件不占用路径（其文件已不可见，新录音可复用该路径，与既有重导语义一致）。
+func ResolveUniqueFilePath(eid, libraryID int64, desiredPath string) (string, error) {
+	if desiredPath == "" {
+		return desiredPath, nil
+	}
+	// 直接在目标路径查未删文件；不存在则原样返回
+	if _, err := GetFileByPathAndLibraryNotDeleted(eid, libraryID, desiredPath); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return desiredPath, nil
+		}
+		return "", err
+	}
+	// 已占用：去 .md 后缀后追加序号（/xxx.md → /xxx-2.md → /xxx-3.md …）
+	base := strings.TrimSuffix(desiredPath, ".md")
+	for i := 2; ; i++ {
+		candidate := fmt.Sprintf("%s-%d.md", base, i)
+		if _, err := GetFileByPathAndLibraryNotDeleted(eid, libraryID, candidate); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return candidate, nil
+			}
+			return "", err
+		}
+	}
 }
 
 // GetFileByPathAndLibraryWithDeleted 根据路径和知识库ID获取文件（包括已删除的）
@@ -1711,6 +1790,57 @@ func SetFileTranscriptionStatus(fileID int64, status string) error {
 		json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
 	}
 	info.TranscriptionStatus = status
+	data, _ := json.Marshal(info)
+	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
+}
+
+// SetFileTranscriptionError 更新 FileCleaningRuleInfo 中的转写错误状态和错误信息。
+func SetFileTranscriptionError(fileID int64, status string, errMsg string, errorType string) error {
+	var file File
+	if err := DB.Where("id = ?", fileID).Select("cleaning_rule_info").First(&file).Error; err != nil {
+		return err
+	}
+	var info FileCleaningRuleInfo
+	if file.CleaningRuleInfo != "" {
+		json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+	}
+	info.TranscriptionStatus = status
+	info.TranscriptionError = errMsg
+	info.TranscriptionErrorType = errorType
+	data, _ := json.Marshal(info)
+	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
+}
+
+// SetMeetingMinutesStatus 更新 FileCleaningRuleInfo 中的纪要状态、错误信息和错误类型。
+func SetMeetingMinutesStatus(fileID int64, status string, errMsg string, errorType string) error {
+	var file File
+	if err := DB.Where("id = ?", fileID).Select("cleaning_rule_info").First(&file).Error; err != nil {
+		return err
+	}
+	var info FileCleaningRuleInfo
+	if file.CleaningRuleInfo != "" {
+		json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+	}
+	info.MeetingMinutesStatus = status
+	info.MeetingMinutesError = errMsg
+	info.MeetingMinutesErrorType = errorType
+	data, _ := json.Marshal(info)
+	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
+}
+
+// SetInsightsStatus 更新 FileCleaningRuleInfo 中的洞察状态、错误信息和错误类型。
+func SetInsightsStatus(fileID int64, status string, errMsg string, errorType string) error {
+	var file File
+	if err := DB.Where("id = ?", fileID).Select("cleaning_rule_info").First(&file).Error; err != nil {
+		return err
+	}
+	var info FileCleaningRuleInfo
+	if file.CleaningRuleInfo != "" {
+		json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+	}
+	info.InsightsStatus = status
+	info.InsightsError = errMsg
+	info.InsightsErrorType = errorType
 	data, _ := json.Marshal(info)
 	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
 }

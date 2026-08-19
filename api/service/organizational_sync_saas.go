@@ -55,4 +55,3 @@ func runDingtalkSyncOrganization(e *model.Enterprise, params SyncOrganizationPar
 	}
 	return (&saas_dingtalk.SyncOrganizational{Dc: dc, E: e}).Run()
 }
-

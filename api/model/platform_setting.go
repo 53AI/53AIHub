@@ -18,6 +18,7 @@ const (
 	PLATFORM_KEY_PADDLEPADDLE_PADDLEOCR_VL    = "paddlepaddle_paddleocr-vl"   // 视觉语言模型配置
 	PLATFORM_KEY_TINGWU                       = "tingwu"
 	PLATFORM_KEY_VOICE_MODEL_PREFIX           = "voice:"                            // 语音模型渠道前缀
+	PLATFORM_KEY_SONICNOTE                    = "sonicnote_transcript"              // SonicNote 同步预置转写（document_parsing 跳过 ASR 的来源标记，非可选引擎）
 	PLATFORM_KEY_BUILTIN                      = "builtin"                           // file-service builtin 本地引擎
 	PLATFORM_KEY_OPENDATALOADER               = "opendataloader"                    // file-service OpenDataLoader 引擎（仅PDF）
 )
@@ -233,3 +234,6 @@ func GetPlatformSettingByExternalID(eid int64, externalID string, platformKey st
 	}
 	return &platformSetting, nil
 }
+
+// PLATFORM_KEY_OPENAI_AUDIO_PREFIX OpenAI 兼容语音转写 parse_type 前缀（openai:{channel_type}:{model_name}）。
+const PLATFORM_KEY_OPENAI_AUDIO_PREFIX = "openai:"

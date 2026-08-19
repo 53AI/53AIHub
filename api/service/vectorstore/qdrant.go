@@ -468,7 +468,18 @@ func (b *VectorInsertBuffer) Insert(ctx context.Context, collection string, vect
 		}
 	}
 
-	return nil
+	// 等待批次完成
+	select {
+	case <-signal.Done():
+		// 批次处理完成
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.ctx.Done():
+		return errors.New("buffer closed")
+	}
+
+	// 返回批量错误（如果有）
+	return batchErrHolder.Get()
 }
 
 // Type 返回存储类型

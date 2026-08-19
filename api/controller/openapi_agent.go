@@ -32,7 +32,7 @@ func GetOpenAPIConversations(c *gin.Context) {
 		offset, limit = 0, 50
 	}
 
-	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID, -1, visitorID, offset, limit)
+	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID, -1, visitorID, "", offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToOpenAIErrorResponeWithType(err, "server_error"))
 		return

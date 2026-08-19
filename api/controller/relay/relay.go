@@ -918,6 +918,15 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			drainAgentRunEventSink(c.Request.Context(), runEventSink, requestID)
 		}()
 	}
+	// Install the request-level terminal owner before any routing branch can
+	// return. Manual /skill requests used to bypass the later setup point,
+	// leaving compact streams with a deferred-but-never-written [DONE].
+	if chatRequest.Stream {
+		SetupStreamInterceptor(c)
+		SetUpStreamResponseHeaders(c)
+		defer installDeferredStreamDone(c)()
+		logger.Infof(ctx, "【诊断-流结束】聊天流收尾器初始化完成: request_id=%s compact=%v writer=%T", requestID, config.IsSSECompactMode(), c.Writer)
+	}
 
 	// 设置 EnableProcessSteps 默认值为 true
 	if !chatRequest.EnableProcessSteps {
@@ -1017,12 +1026,6 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		// 直接进入技能执行流程
 		requestId := requestID
 
-		// 确保流式响应拦截器已设置
-		if chatRequest.Stream {
-			SetupStreamInterceptor(c)
-			SetUpStreamResponseHeaders(c)
-		}
-
 		messageStatus := newSkillMessageStatsInfo(agent, relayMode, requestId, originalQuestion, "", &scope, extractUploadedFilesFromMessages(chatRequest.Messages), normalizeRequestSource(chatRequest.Source))
 		messageStatus.SkillSnapshot = skill.GetManager().CreateRunSnapshot(agent.Eid, requestId, scope)
 		stepSender := NewProcessSender(c, requestId, &chatRequest, messageStatus)
@@ -1046,13 +1049,6 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 
 	requestId := requestID
 
-	// 确保流式响应拦截器已设置（如果需要流式响应）
-	if chatRequest.Stream {
-		SetupStreamInterceptor(c)
-		SetUpStreamResponseHeaders(c)
-		defer installDeferredStreamDone(c)()
-		logger.Infof(ctx, "【诊断-流结束】标准聊天流初始化完成: request_id=%s compact=%v writer=%T", requestId, config.IsSSECompactMode(), c.Writer)
-	}
 	runScope := buildSkillRunScope(ctx, agent, agent.Eid, ".", requestId)
 
 	messageStatus := newSkillMessageStatsInfo(agent, relayMode, requestId, originalQuestion, rewrittenQuestion, &runScope, extractUploadedFilesFromMessages(chatRequest.Messages), normalizeRequestSource(chatRequest.Source))
@@ -2092,9 +2088,9 @@ func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Age
 	if cid, ok := rawRequest["conversation_id"].(string); ok && cid != "" {
 		channelConvID = cid
 		projConv = ensureOpenClawWSProjectionConversation(c, agent, channelConvID)
-		if projConv != nil && openClawMsg.ID > 0 {
+		if projConv != nil {
 			openClawMsg.ConversationID = projConv.ConversationID
-			openClawMsg.OpenClawProjectionKey = fmt.Sprintf("ws-%d", openClawMsg.ID)
+			openClawMsg.OpenClawProjectionKey = fmt.Sprintf("ws-%s", openClawMsg.RequestId)
 		}
 	}
 
@@ -2122,7 +2118,12 @@ func handleOpenClawWSStatelessChat(c *gin.Context, body []byte, agent *model.Age
 		return
 	}
 
-	updateOpenClawWSMessage(c, openClawMsg)
+	content, reasoningContent := GetResponseContent(c, false, nil)
+	openClawMsg.Answer = content
+	openClawMsg.ReasoningContent = reasoningContent
+	if err := model.CreateMessage(openClawMsg); err != nil {
+		logger.Warnf(ctx, "[openclaw-ws] createMessage failed: agent_id=%d err=%v", agent.AgentID, err)
+	}
 
 	if projConv != nil && openClawMsg.Answer != "" {
 		projConv.LastMessage = openClawMsg.Answer
@@ -2240,14 +2241,14 @@ func relayHelper(c *gin.Context, relayMode int, messageStatus *MessageStatsInfo)
 	switch relayMode {
 	case relaymode.ImagesGenerations:
 		err = controller.RelayImageHelper(c, relayMode)
-	// case relaymode.AudioSpeech:
-	// 	fallthrough
-	// case relaymode.AudioTranslation:
-	// 	fallthrough
-	// case relaymode.AudioTranscription:
-	// 	err = controller.RelayAudioHelper(c, relayMode)
-	// case relaymode.Proxy:
-	// 	err = controller.RelayProxyHelper(c, relayMode)
+	case relaymode.AudioSpeech:
+		fallthrough
+	case relaymode.AudioTranslation:
+		fallthrough
+	case relaymode.AudioTranscription:
+		err = controller.RelayAudioHelper(c, relayMode)
+	case relaymode.Proxy:
+		err = controller.RelayProxyHelper(c, relayMode)
 	default:
 		err = RelayTextHelper(c, messageStatus)
 	}
@@ -2475,8 +2476,8 @@ func appendAgentRunEventOrdered(ctx context.Context, runSvc *service.AgentRunSer
 	return err
 }
 
-func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, conversationID int64, messageID int64, requestID string, status string, errorCode string, errorMessage string) {
-	if agent == nil || conversationID <= 0 || messageID <= 0 || strings.TrimSpace(requestID) == "" {
+func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, conversationID int64, messageID int64, requestID string, status string, errorCode string, errorMessage string) error {
+	if agent == nil || conversationID <= 0 || strings.TrimSpace(requestID) == "" {
 		logger.Warnf(ctx, "【诊断-AgentRun】终态持久化参数无效: agent_nil=%v eid=%d conversation_id=%d message_id=%d request_id_empty=%v status=%s",
 			agent == nil, func() int64 {
 				if agent == nil {
@@ -2484,7 +2485,7 @@ func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, convers
 				}
 				return agent.Eid
 			}(), conversationID, messageID, strings.TrimSpace(requestID) == "", status)
-		return
+		return fmt.Errorf("invalid agent run finalization identity")
 	}
 	logger.Infof(ctx, "【诊断-AgentRun】开始终态持久化: eid=%d conversation_id=%d message_id=%d request_id=%s status=%s",
 		agent.Eid, conversationID, messageID, requestID, status)
@@ -2494,7 +2495,7 @@ func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, convers
 	if err != nil {
 		logger.Warnf(ctx, "finalize agent run failed: eid=%d, conversation_id=%d, message_id=%d, request_id=%s, err=%v",
 			agent.Eid, conversationID, messageID, requestID, err)
-		return
+		return err
 	}
 	logger.Infof(ctx, "【诊断-AgentRun】已解析待收尾Run: eid=%d run_id=%s run_status=%s created=%v last_event_id=%d request_id=%s",
 		run.Eid, run.RunID, run.Status, created, run.LastEventID, requestID)
@@ -2521,24 +2522,23 @@ func finalizeAgentRunForMessage(ctx context.Context, agent *model.Agent, convers
 	case model.AgentRunStatusCompleted:
 		if _, err := runSvc.FinalizeCompletedRun(ctx, agent.Eid, run.RunID, errorCode, errorMessage); err != nil {
 			logger.Warnf(ctx, "finalize agent run completed failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
-		} else {
-			logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
+			return err
 		}
 	case model.AgentRunStatusFailed:
 		if _, err := runSvc.FinalizeFailedRun(ctx, agent.Eid, run.RunID, errorCode, errorMessage); err != nil {
 			logger.Warnf(ctx, "finalize agent run failed failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
-		} else {
-			logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
+			return err
 		}
 	case model.AgentRunStatusCancelled:
 		if _, err := runSvc.FinalizeCancelledRun(ctx, agent.Eid, run.RunID, errorCode, errorMessage); err != nil {
 			logger.Warnf(ctx, "finalize agent run cancelled failed: eid=%d, run_id=%s, err=%v", agent.Eid, run.RunID, err)
-		} else {
-			logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
+			return err
 		}
 	default:
-		logger.Warnf(ctx, "【诊断-AgentRun】未知终态: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
+		return fmt.Errorf("unsupported agent run terminal status: %s", status)
 	}
+	logger.Infof(ctx, "【诊断-AgentRun】完成终态持久化: eid=%d run_id=%s status=%s request_id=%s", agent.Eid, run.RunID, status, requestID)
+	return nil
 }
 
 func finalizeAgentRunOnRequestExit(ctx context.Context, eid int64, runID string) error {
@@ -2585,7 +2585,11 @@ func isAgentRunTerminalStatusForRelay(status string) bool {
 	}
 }
 
-var finalizeAgentRunForMessagePersist = finalizeAgentRunForMessage
+var finalizeAgentRunForMessagePersist = func(ctx context.Context, agent *model.Agent, conversationID int64, messageID int64, requestID string, status string, errorCode string, errorMessage string) {
+	if err := finalizeAgentRunForMessage(ctx, agent, conversationID, messageID, requestID, status, errorCode, errorMessage); err != nil {
+		logger.Warnf(ctx, "异步 AgentRun 收尾失败: request_id=%s status=%s message_id=%d err=%v", requestID, status, messageID, err)
+	}
+}
 
 func finalizeAgentRunForMessageAsync(ctx context.Context, agent *model.Agent, conversationID int64, messageID int64, requestID string, status string, errorCode string, errorMessage string) {
 	logger.Infof(ctx, "【诊断-AgentRun】异步提交 Run 收尾: request_id=%s message_id=%d status=%s", requestID, messageID, status)
@@ -3112,7 +3116,7 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		textRequest, ratio, preConsumedQuota, modelRatio, groupRatio,
 		systemPromptReset, responseContent, reasoningContent, customConfig, messageID, messageStatus)
 
-	if !c.GetBool("agent_internal_stream_turn") {
+	if shouldFinalizeAgentRunAfterLLMResponse(c) {
 		requestID := ""
 		if messageStatus != nil {
 			requestID = messageStatus.RequestId
@@ -3145,6 +3149,13 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 	}
 
 	return nil
+}
+
+// shouldFinalizeAgentRunAfterLLMResponse is false for every turn owned by the
+// agent loop. The name of the legacy context key predates non-streaming agent
+// execution; it protects internal tool-planning turns in both response modes.
+func shouldFinalizeAgentRunAfterLLMResponse(c *gin.Context) bool {
+	return c == nil || !c.GetBool("agent_internal_stream_turn")
 }
 
 func supportsSystemRole(channelType int) bool {

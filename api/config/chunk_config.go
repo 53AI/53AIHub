@@ -26,6 +26,11 @@ var (
 
 	// 性能监控配置
 	CHUNK_SAVE_MONITOR_ENABLED = env.Bool("CHUNK_SAVE_MONITOR_ENABLED", true) // 是否启用性能监控
+
+	// WHOLE_CHUNK_MAX_TOKENS 整篇(whole)模式单块最大 token 数
+	// 整篇模式优先整篇一块,超过该上限时按系统分隔符兜底切割。
+	// 默认 20000。部署模型上下文较小或召回数较多时,建议调小(如 6400 = 128k/20)。
+	WHOLE_CHUNK_MAX_TOKENS = env.Int("WHOLE_CHUNK_MAX_TOKENS", 20000)
 )
 
 // ChunkSaveStrategy 分块保存策略

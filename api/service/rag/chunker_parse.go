@@ -19,19 +19,24 @@ func (s *ChunkerService) parseMarkdown(content string) *ParsedContent {
 	parsed := &ParsedContent{
 		Content: content,
 	}
-	parsed.Headers = s.extractHeaders(content)
-	parsed.Paragraphs = s.extractParagraphs(content)
+	// 先提取 SpecialBlocks，再提取标题（传入 blocks 过滤代码块内的 #）
 	parsed.SpecialBlocks = s.extractSpecialBlocks(content)
+	parsed.Headers = s.extractHeaders(content, parsed.SpecialBlocks)
+	parsed.Paragraphs = s.extractParagraphs(content)
 	return parsed
 }
 
-// extractHeaders finds markdown headers (#..######)
-func (s *ChunkerService) extractHeaders(content string) []HeaderInfo {
+// extractHeaders finds markdown headers (#..######), skipping positions inside blocks
+func (s *ChunkerService) extractHeaders(content string, blocks []SpecialBlock) []HeaderInfo {
 	headerRegex := regexp.MustCompile(`(?m)^(#{1,6})\s+(.+)$`)
 	matches := headerRegex.FindAllStringSubmatchIndex(content, -1)
 
 	var headers []HeaderInfo
 	for _, match := range matches {
+		// 跳过在 SpecialBlock 内的匹配（如代码块内 # 注释）
+		if isInsideBlocks(match[0], blocks) {
+			continue
+		}
 		headerText := content[match[0]:match[1]]
 		level := len(content[match[2]:match[3]])
 		title := content[match[4]:match[5]]
@@ -118,7 +123,7 @@ func (s *ChunkerService) extractHTMLTables(content string) []SpecialBlock {
 	blocks := make([]SpecialBlock, 0, len(matches))
 	for _, match := range matches {
 		blocks = append(blocks, SpecialBlock{
-			Type:      "table",
+			Type:      "html_table",
 			Content:   content[match[0]:match[1]],
 			Position:  match[0],
 			EndPos:    match[1],
@@ -237,6 +242,16 @@ func (s *ChunkerService) extractImageBlocks(content string) []SpecialBlock {
 		})
 	}
 	return blocks
+}
+
+// isInsideBlocks 检查位置 pos 是否在任意 SpecialBlock 内
+func isInsideBlocks(pos int, blocks []SpecialBlock) bool {
+	for _, block := range blocks {
+		if pos >= block.Position && pos < block.EndPos {
+			return true
+		}
+	}
+	return false
 }
 
 // getLinePosition returns rune offset of a line

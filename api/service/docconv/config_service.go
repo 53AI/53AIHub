@@ -407,11 +407,12 @@ func (s *DocumentConfigService) ConvertToTextinConfig(platformConfig *TextinPlat
 				IncludeInlineObjects:  &includeInlineObjects,
 			},
 			Config: &TextinConfigBlock{
-				EngineParams: &TextinEngineParams{
-					ParseMode:         "auto",
-					FormulaLevel:      0,
-					RecognizeChemical: &recognizeChemical,
-				},
+			EngineParams: &TextinEngineParams{
+				ParseMode:         "auto",
+				FormulaLevel:      0,
+				RecognizeChemical: &recognizeChemical,
+				Dpi:               216,
+			},
 			},
 		},
 	}

@@ -185,6 +185,18 @@ func SetApiRouter(router *gin.Engine) {
 	recordingRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
 		recordingRoute.GET("/config", controller.GetRecordingConfigForUser)
+		recordingRoute.GET("/insight-perspectives", controller.GetInsightPerspectives)
+		recordingRoute.GET("/memories/overview", controller.GetRecordingMemoryOverview)
+		recordingRoute.GET("/memories/entities", controller.ListRecordingMemoryEntities)
+		recordingRoute.GET("/memories/schema", controller.GetRecordingMemoryEntitySchema)
+		recordingRoute.POST("/memories/entity-merges", controller.MergeRecordingMemoryEntities)
+		recordingRoute.GET("/memories/entities/:entity_id", controller.GetRecordingMemoryEntity)
+		recordingRoute.PATCH("/memories/entities/:entity_id", controller.UpdateRecordingMemoryEntity)
+		recordingRoute.DELETE("/memories/entities/:entity_id", controller.DeleteRecordingMemoryEntity)
+		recordingRoute.POST("/memories/entities/:entity_id/facts", controller.CreateRecordingMemoryFact)
+		recordingRoute.DELETE("/memories/entities/:entity_id/facts/:fact_id", controller.DeleteRecordingMemoryFact)
+		recordingRoute.POST("/memories/entities/:entity_id/relations", controller.CreateRecordingMemoryRelation)
+		recordingRoute.DELETE("/memories/entities/:entity_id/relations/:relation_id", controller.DeleteRecordingMemoryRelation)
 		recordingRoute.POST("", controller.CreateRecordingJob)
 		recordingRoute.GET("/active", controller.GetActiveRecordingJob)
 		recordingRoute.GET("/:job_id", controller.GetRecordingJob)
@@ -198,14 +210,33 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.POST("/files/:file_id/templates", controller.UserAddFileTemplate)
 		recordingRoute.GET("/files/:file_id/templates", controller.UserGetFileTemplates)
 		recordingRoute.GET("/files/:file_id/parse-status", controller.GetFileParseStatus)
+		recordingRoute.POST("/files/:file_id/retranscribe", controller.RetranscribeRecordingFile)
+		recordingRoute.PATCH("/files/:file_id/insight-perspective", controller.UpdateFileInsightPerspective)
 		recordingRoute.POST("/files/:file_id/pipeline", controller.RunRecordingPipeline)
 		recordingRoute.GET("/files/:file_id/insight-page", controller.GetFileInsightPage)
+		recordingRoute.GET("/files/:file_id/insight-context", controller.GetFileInsightBackground)
+		recordingRoute.POST("/files/:file_id/insight-context/chat", controller.ChatFileInsightWorkshop)
+		recordingRoute.POST("/files/:file_id/insights/regenerate", controller.RegenerateInsights)
+		recordingRoute.POST("/files/:file_id/entities/extract", controller.ReExtractEntities)
 		recordingRoute.GET("/files/:file_id/transcription", controller.GetFileTranscription)
+		recordingRoute.GET("/files/:file_id/transcription/export", controller.ExportTranscript)
+		recordingRoute.POST("/files/:file_id/share", controller.CreateRecordingShareHandler)
+		recordingRoute.PUT("/files/:file_id/group", controller.MoveRecordingFileToGroup)
 		recordingRoute.GET("/my-queued-count", controller.GetMyQueuedCount)
 		recordingRoute.POST("/files/:file_id/summarize", controller.UserFileSummarize)
 		recordingRoute.GET("/files/:file_id/summaries", controller.UserGetFileSummaries)
 		recordingRoute.GET("/summaries/:summary_id", controller.UserGetFileSummaryDetail)
 		recordingRoute.DELETE("/summaries/:summary_id", controller.UserDeleteFileSummary)
+		recordingRoute.GET("/devices", controller.GetRecordingDevices)
+		recordingRoute.POST("/devices", controller.CreateRecordingDevice)
+		recordingRoute.PUT("/devices", controller.PutRecordingDevice)
+		recordingRoute.PUT("/devices/:device_id", controller.UpdateRecordingDeviceByID)
+		recordingRoute.PUT("/devices/:device_id/active", controller.SetActiveRecordingDevice)
+		recordingRoute.DELETE("/devices/:device_id", controller.DeleteRecordingDeviceByID)
+		recordingRoute.GET("/devices/:device_type/status", controller.GetRecordingDeviceStatus)
+		recordingRoute.POST("/sync", controller.SyncRecording)
+		recordingRoute.POST("/sync-sonicnote", controller.SyncSonicNote)
+		recordingRoute.GET("/sync-status", controller.GetRecordingSyncStatus)
 	}
 
 	// 录音管理接口（管理员权限）— 独立前缀避免与用户路由冲突
@@ -643,6 +674,9 @@ func SetApiRouter(router *gin.Engine) {
 		apiV1Router.POST("/chat/completions", relay.Relay)
 		apiV1Router.POST("/workflow/run", relay.WorkflowRun)
 		apiV1Router.POST("/rerank", controller.Rerank)
+		apiV1Router.POST("/audio/transcriptions", relay.RelayAudio)
+		apiV1Router.POST("/audio/translations", relay.RelayAudio)
+		apiV1Router.POST("/audio/speech", relay.RelayAudio)
 	}
 
 	feedback := apiRouter.Group("/feedback")
@@ -796,6 +830,10 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		sharesPublic.GET("/:share_id", controller.GetShare)
 	}
+
+	// 录音分享公开访问（无需登录）
+	apiRouter.GET("/recordings/shared/:share_id", controller.GetSharedRecording)
+
 	// 空间管理路由
 	spaceRoute := apiRouter.Group("/spaces")
 	spaceRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
@@ -1298,6 +1336,12 @@ func SetApiRouter(router *gin.Engine) {
 		wsAdminRoute.POST("/agents/:id/ban", controller.BanWSAgent)
 		wsAdminRoute.POST("/agents/:id/unban", controller.UnbanWSAgent)
 	}
+	// 全平台全局统计（内部服务调用，不经过 UserTokenAuth）
+	adminPlatformRoute := apiRouter.Group("/admin/platform")
+	{
+		adminPlatformRoute.GET("/global-stats", controller.GetGlobalStats)
+	}
+
 
 	SetKmApiRouter(apiRouter)
 

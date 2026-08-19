@@ -114,7 +114,14 @@ func SearchFileLogs(c *gin.Context) {
 // @Success 200 {string} string "HTML page"
 // @Router /api/system_logs/file_logs/ui [get]
 func GetFileLogsUI(c *gin.Context) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(fileLogsUIHTML))
+	// 将 BuildTime "20060102150405" 格式化为可读 "2006-01-02 15:04:05"
+	bt := config.BuildTime
+	if len(bt) == 14 {
+		bt = bt[:4] + "-" + bt[4:6] + "-" + bt[6:8] + " " + bt[8:10] + ":" + bt[10:12] + ":" + bt[12:14]
+	}
+	html := strings.Replace(fileLogsUIHTML, "{{VERSION}}", config.Version, 1)
+	html = strings.Replace(html, "{{BUILD_TIME}}", bt, 1)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
 // ArchiveResponse 归档结果
@@ -222,7 +229,8 @@ const fileLogsUIHTML = `<!doctype html>
 <body>
   <div class="wrap">
     <div class="card">
-      <h2 style="margin:0 0 10px 0;">53AIHub 单机日志检索</h2>
+      <h2 style="margin:0 0 0 0;">53AIHub 单机日志检索</h2>
+      <div style="font-size:14px;font-weight:600;color:var(--brand);padding:10px 12px;background:#e6f8f3;border-radius:8px;margin-bottom:10px;">版本: {{VERSION}} | 编译: {{BUILD_TIME}}</div>
       <div style="margin-bottom:10px;">
         <label>鉴权 Token（仅支持 ENV: FILE_LOG_VIEWER_ACCESS_TOKEN）</label>
         <input id="token" placeholder="粘贴 FILE_LOG_VIEWER_ACCESS_TOKEN，刷新后会自动保留" />

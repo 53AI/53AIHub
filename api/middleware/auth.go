@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/session"
@@ -50,6 +51,9 @@ func UserTokenAuth(role int64) func(c *gin.Context) {
 		}
 
 		setUserSession(c, user, tokenEid)
+		// 更新最后活跃时间（4 小时窗口，避免频繁写 DB）
+		tryUpdateLastActive(user)
+
 		c.Next()
 	}
 }
@@ -158,4 +162,17 @@ func HandleTokenAuth(token string, role int64) (user *model.User, tokenEid int64
 	}
 
 	return user, tokenEid, nil
+}
+
+// tryUpdateLastActive 更新用户最后活跃时间，4 小时窗口避免频繁写 DB
+func tryUpdateLastActive(user *model.User) {
+	if user == nil {
+		return
+	}
+	now := time.Now().UTC().UnixMilli()
+	if now-user.LastLoginTime < 4*time.Hour.Milliseconds() {
+		return
+	}
+	user.LastLoginTime = now
+	model.DB.Model(user).Update("last_login_time", now)
 }

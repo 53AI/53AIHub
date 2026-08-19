@@ -41,6 +41,9 @@ func processKnowledgeChunkPostSave(ctx context.Context, task knowledgeChunkPostS
 		return nil
 	}
 
+	// 事务内收集旧检索块的 vector_id，事务外异步清理向量数据库
+	var oldVectorIDs []string
+
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var knowledgeChunk model.DocumentChunk
 		if err := tx.Where("eid = ? AND id = ?", task.EID, task.ChunkID).First(&knowledgeChunk).Error; err != nil {
@@ -64,25 +67,66 @@ func processKnowledgeChunkPostSave(ctx context.Context, task knowledgeChunkPostS
 		questionChunks := make([]model.RetrievalChunk, 0, len(task.CommonQuestions))
 		relationChunks := make([]model.KnowledgeRelation, 0, len(task.RelatedKnowledgeIDs)*2)
 
-		if task.IsUpdate {
-			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type IN (?)",
-				task.EID, task.ChunkID, []string{"summary", "question"}).Delete(&model.RetrievalChunk{}).Error; err != nil {
-				return fmt.Errorf("删除现有概要/问题块失败: %v", err)
+		// ── 删除阶段：数据驱动，传入什么字段就处理什么 ──
+		// 检索块：autoSplitRetrieval=true 时清旧重建
+		if task.AutoSplitRetrieval {
+			var oldChunks []model.RetrievalChunk
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
+				task.EID, task.ChunkID, "retrieval").Find(&oldChunks).Error; err != nil {
+				return fmt.Errorf("获取旧检索块失败: %v", err)
 			}
-			if task.AutoSplitRetrieval {
-				if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
-					task.EID, task.ChunkID, "retrieval").Delete(&model.RetrievalChunk{}).Error; err != nil {
-					return fmt.Errorf("删除现有检索块失败: %v", err)
+			for _, c := range oldChunks {
+				if c.VectorID != "" {
+					oldVectorIDs = append(oldVectorIDs, c.VectorID)
 				}
 			}
-			if len(task.RelatedKnowledgeIDs) > 0 {
-				if err := model.DeleteKnowledgeRelationsByKnowledgeIDWithDB(tx, task.EID, knowledgeChunk.ID); err != nil {
-					return fmt.Errorf("删除现有关联知识点失败: %v", err)
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
+				task.EID, task.ChunkID, "retrieval").Delete(&model.RetrievalChunk{}).Error; err != nil {
+				return fmt.Errorf("删除现有检索块失败: %v", err)
+			}
+		}
+		// 概要块：传了 summary 才清旧重建
+		if len(task.Summary) > 0 {
+			var oldChunks []model.RetrievalChunk
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
+				task.EID, task.ChunkID, "summary").Find(&oldChunks).Error; err != nil {
+				return fmt.Errorf("获取旧概要块失败: %v", err)
+			}
+			for _, c := range oldChunks {
+				if c.VectorID != "" {
+					oldVectorIDs = append(oldVectorIDs, c.VectorID)
 				}
-				if err := tx.Where("eid = ? AND knowledge_chunk_id = ?", task.EID, knowledgeChunk.ID).
-					Delete(&model.ChunkRelation{}).Error; err != nil {
-					return fmt.Errorf("删除现有关联关系失败: %v", err)
+			}
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
+				task.EID, task.ChunkID, "summary").Delete(&model.RetrievalChunk{}).Error; err != nil {
+				return fmt.Errorf("删除现有概要块失败: %v", err)
+			}
+		}
+		// 问法块：传了 common_questions 才清旧重建
+		if len(task.CommonQuestions) > 0 {
+			var oldChunks []model.RetrievalChunk
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
+				task.EID, task.ChunkID, "question").Find(&oldChunks).Error; err != nil {
+				return fmt.Errorf("获取旧问法块失败: %v", err)
+			}
+			for _, c := range oldChunks {
+				if c.VectorID != "" {
+					oldVectorIDs = append(oldVectorIDs, c.VectorID)
 				}
+			}
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ? AND chunk_type = ?",
+				task.EID, task.ChunkID, "question").Delete(&model.RetrievalChunk{}).Error; err != nil {
+				return fmt.Errorf("删除现有问法块失败: %v", err)
+			}
+		}
+		// 关联关系：传了 related_ids 才清旧重建
+		if len(task.RelatedKnowledgeIDs) > 0 {
+			if err := model.DeleteKnowledgeRelationsByKnowledgeIDWithDB(tx, task.EID, knowledgeChunk.ID); err != nil {
+				return fmt.Errorf("删除现有关联知识点失败: %v", err)
+			}
+			if err := tx.Where("eid = ? AND knowledge_chunk_id = ?", task.EID, knowledgeChunk.ID).
+				Delete(&model.ChunkRelation{}).Error; err != nil {
+				return fmt.Errorf("删除现有关联关系失败: %v", err)
 			}
 		}
 
@@ -177,6 +221,11 @@ func processKnowledgeChunkPostSave(ctx context.Context, task knowledgeChunkPostS
 		return nil
 	}); err != nil {
 		return err
+	}
+
+	// 事务外：异步清理旧检索块在向量数据库中的向量（best effort）
+	if len(oldVectorIDs) > 0 {
+		rag.CleanupVectorsAsync(task.EID, task.LibraryID, oldVectorIDs)
 	}
 
 	if err := enqueueRetrievalChunksByFile(task.EID, task.FileID, task.LibraryID); err != nil {

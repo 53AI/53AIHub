@@ -291,16 +291,17 @@ func (f *RecordingFinalizeService) directFinalizeRecordingJob(ctx context.Contex
 	}
 
 	recordingFile := &model.File{
-		Eid:              f.eid,
-		LibraryID:        job.LibraryID,
-		Path:             recordingPath,
-		Type:             model.FILE_TYPE_FILE,
-		UserID:           job.UserID,
-		UploadFileID:     uploadFile.ID,
-		DurationMs:       job.TotalRecordedMs,
-		GroupID:          job.GroupID,
-		ConversionStatus: model.FileConversionStatusNormal,
-		ParsingStatus:    parsingStatus,
+		Eid:                f.eid,
+		LibraryID:          job.LibraryID,
+		Path:               recordingPath,
+		Type:               model.FILE_TYPE_FILE,
+		UserID:             job.UserID,
+		UploadFileID:       uploadFile.ID,
+		DurationMs:         job.TotalRecordedMs,
+		GroupID:            job.GroupID,
+		ConversionStatus:   model.FileConversionStatusNormal,
+		ParsingStatus:      parsingStatus,
+		InsightPerspective: string(model.NormalizeInsightPerspective(job.InsightPerspective)),
 	}
 	recordingFile.SetRecordingAudioOrigin(job.ID)
 	if err := recordingFile.Save(); err != nil {
@@ -830,4 +831,69 @@ func TriggerPendingRecordingParsings(ctx context.Context, eid int64, parserPlatf
 	}
 
 	return nil
+}
+
+// CreateRagJobsForRecordingFile 导出包装：从子包创建录音文件的 RAG 解析任务。
+// 内部委托给包级函数变量 createRagJobsForFile（file_processor.go），便于测试替换。
+func CreateRagJobsForRecordingFile(ctx context.Context, eid, fileID int64, paramsJSON string) ([]*model.RagJob, error) {
+	return createRagJobsForFile(ctx, eid, fileID, paramsJSON)
+}
+
+// ErrRetranscribeAlreadyProcessing 表示文件已有进行中的 document_parsing 任务（幂等，不重复建 job）。
+var ErrRetranscribeAlreadyProcessing = errors.New("转写任务已在处理中")
+
+// RetranscribeRecordingFile 对录音文件补触发转写（document_parsing job）。
+// 用于同步时引擎未就绪导致"有录音无转写"的存量文件；复用 CreateRagJobsForRecordingFile。
+// 幂等：已有 pending/processing document_parsing job 时返回 ErrRetranscribeAlreadyProcessing。
+func RetranscribeRecordingFile(ctx context.Context, eid, fileID int64) error {
+	file, err := model.GetFileByID(eid, fileID)
+	if err != nil || file == nil {
+		return fmt.Errorf("录音文件不存在: file_id=%d", fileID)
+	}
+	if !file.IsRecordingOriginType() && !isRecordingAudioPath(file.GetPath()) {
+		return fmt.Errorf("非录音文件，不支持补转写: file_id=%d origin_type=%s", fileID, file.OriginType)
+	}
+
+	var jobCount int64
+	model.DB.Model(&model.RagJob{}).
+		Where("eid = ? AND related_id = ? AND type = ? AND status IN ?", eid, fileID, "document_parsing",
+			[]string{model.RagJobStatusPending, model.RagJobStatusProcessing}).
+		Count(&jobCount)
+	if jobCount > 0 {
+		return ErrRetranscribeAlreadyProcessing
+	}
+
+	params := map[string]interface{}{
+		"eid":           eid,
+		"file_id":       fileID,
+		"user_id":       file.UserID,
+		"library_id":    file.LibraryID,
+		"origin_status": model.FileConversionStatusPending,
+	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("序列化 RAG 参数失败: %w", err)
+	}
+
+	jobs, err := CreateRagJobsForRecordingFile(ctx, eid, fileID, string(paramsJSON))
+	if err != nil {
+		return fmt.Errorf("创建解析任务失败: %w", err)
+	}
+	if len(jobs) > 0 {
+		if err := model.UpdateFileConversionStatus(fileID, model.FileConversionStatusPending); err != nil {
+			return fmt.Errorf("更新文件转换状态失败: %w", err)
+		}
+	}
+	return nil
+}
+
+// isRecordingAudioPath 判断文件路径扩展名是否为录音音频格式（兼容早期 origin_type 缺失的录音文件）。
+func isRecordingAudioPath(filePath string) bool {
+	ext := strings.ToLower(path.Ext(filePath))
+	for _, format := range RecordingAudioFormats {
+		if ext == format {
+			return true
+		}
+	}
+	return false
 }

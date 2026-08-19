@@ -15,8 +15,14 @@ import (
 // Version 硬编码的系统版本号
 var Version = "v0.4.2"
 
+var chinaTimeZone = time.FixedZone("UTC+8", 8*60*60)
+
+func formatChinaTime(value time.Time, layout string) string {
+	return value.In(chinaTimeZone).Format(layout)
+}
+
 // BuildTime 编译时间，通过 init 记录进程启动时间作为构建参考
-var BuildTime = time.Now().Format("20060102150405")
+var BuildTime = formatChinaTime(time.Now(), "20060102150405")
 
 // Server 服务标识
 var Server = env.String("HUB_SERVER", "")
@@ -70,7 +76,7 @@ var SLOW_API_THRESHOLD_MS = env.Int("SLOW_API_THRESHOLD_MS", 1000)
 var SLOW_SQL_THRESHOLD_MS = env.Int("SLOW_SQL_THRESHOLD_MS", 200)
 var DebugEnabled = env.Bool("DEBUG", false)
 var OnlyOneLogFile = env.Bool("ONLY_ONE_LOG_FILE", false)
-var StartTime = time.Now().Format("2006-01-02 15:04:05")
+var StartTime = formatChinaTime(time.Now(), "2006-01-02 15:04:05")
 var IS_SAAS = env.Bool("IS_SAAS", false)
 var ENTERPRISE_APPLY_AUTO_APPROVE = env.Bool("ENTERPRISE_APPLY_AUTO_APPROVE", true) // 默认自动批准企业申请
 var ApiHost = env.String("API_HOST", "http://127.0.0.1:3000")
@@ -146,6 +152,21 @@ var AGENT_MAX_TURNS_HARD_LIMIT = env.Int("AGENT_MAX_TURNS_HARD_LIMIT", 30)
 var AGENT_MAX_WALL_CLOCK_SECONDS = env.Int("AGENT_MAX_WALL_CLOCK_SECONDS", 900)
 var AGENT_MAX_REPEATED_TOOL_CALLS = env.Int("AGENT_MAX_REPEATED_TOOL_CALLS", 3)
 var AGENT_MAX_CONSECUTIVE_TOOL_FAILURES = env.Int("AGENT_MAX_CONSECUTIVE_TOOL_FAILURES", 3)
+
+// Agent tool hardening is introduced behind independently reversible flags.
+// They default to false so existing agent runs retain their legacy path.
+var AGENT_SUCCESS_RATE_ENHANCEMENTS_ENABLED = env.Bool("AGENT_SUCCESS_RATE_ENHANCEMENTS_ENABLED", false)
+var AGENT_TOOL_PIPELINE_ENABLED = env.Bool("AGENT_TOOL_PIPELINE_ENABLED", false)
+var AGENT_TOOL_INPUT_GUARD_ENABLED = env.Bool("AGENT_TOOL_INPUT_GUARD_ENABLED", false)
+var AGENT_UNIFIED_TOOL_RESULT_ENABLED = env.Bool("AGENT_UNIFIED_TOOL_RESULT_ENABLED", false)
+var AGENT_STRUCTURED_PROVIDER_RETRY_ENABLED = env.Bool("AGENT_STRUCTURED_PROVIDER_RETRY_ENABLED", false)
+var AGENT_COMPLETION_POLICY_ENABLED = env.Bool("AGENT_COMPLETION_POLICY_ENABLED", false)
+var AGENT_READ_CONTINUATION_ENABLED = env.Bool("AGENT_READ_CONTINUATION_ENABLED", false)
+var AGENT_TOOL_ARGUMENT_ADAPTER_ENABLED = env.Bool("AGENT_TOOL_ARGUMENT_ADAPTER_ENABLED", false)
+var AGENT_EDIT_V2_ENABLED = env.Bool("AGENT_EDIT_V2_ENABLED", false)
+var AGENT_EDIT_NORMALIZED_MATCH_ENABLED = env.Bool("AGENT_EDIT_NORMALIZED_MATCH_ENABLED", false)
+var AGENT_EDIT_BATCH_ENABLED = env.Bool("AGENT_EDIT_BATCH_ENABLED", false)
+var AGENT_RUN_SHELL_OUTPUT_V2_ENABLED = env.Bool("AGENT_RUN_SHELL_OUTPUT_V2_ENABLED", false)
 var RAG_MULTI_LIBRARY_SEARCH_MAX_CONCURRENT = env.Int("RAG_MULTI_LIBRARY_SEARCH_MAX_CONCURRENT", 4)
 var RAG_COLLECTION_SEARCH_MAX_CONCURRENT = env.Int("RAG_COLLECTION_SEARCH_MAX_CONCURRENT", 3)
 var RAG_SEARCH_ENGINE_MAX_WORKERS = env.Int("RAG_SEARCH_ENGINE_MAX_WORKERS", 3)
@@ -160,6 +181,17 @@ var RECORDING_SPOOL_FLUSH_DURATION_MS = env.Int("RECORDING_SPOOL_FLUSH_DURATION_
 // Chunk 上传临时存储目录配置（避免多实例跨 tmp 目录互相影响）
 var CHUNK_UPLOAD_TEMP_DIR = env.String("CHUNK_UPLOAD_TEMP_DIR", "")
 
+
+// Keystone 监控上报配置
+var KEYSTONE_ENABLED = env.Bool("KEYSTONE_ENABLED", false)
+var KEYSTONE_ENDPOINT = env.String("KEYSTONE_ENDPOINT", "")
+var KEYSTONE_INTEGRATION_KEY = env.String("KEYSTONE_INTEGRATION_KEY", "53ai-km")
+var KEYSTONE_SECRET = env.String("KEYSTONE_SECRET", "")
+var KEYSTONE_PRODUCT_KEY = env.String("KEYSTONE_PRODUCT_KEY", "53ai-knowledge-management")
+var KEYSTONE_SERVICE_KEY = env.String("KEYSTONE_SERVICE_KEY", "km-backend")
+var KEYSTONE_ENVIRONMENT_KEY = env.String("KEYSTONE_ENVIRONMENT_KEY", "production")
+var KEYSTONE_TIMEOUT_SECONDS = env.Int("KEYSTONE_TIMEOUT_SECONDS", 5)
+var KEYSTONE_MAX_RETRIES = env.Int("KEYSTONE_MAX_RETRIES", 2)
 // getAppDir 获取应用程序所在目录，用于基于可执行文件位置计算数据目录
 func getAppDir() string {
 	if execPath, err := os.Executable(); err == nil {

@@ -229,12 +229,12 @@ func (s *ChunkerService) createRetrievalChunksForUpdatedKnowledge(tx *gorm.DB, e
 			IndexChunk: model.IndexChunkingConfig{
 				SplitRule:       "\n\n",
 				MaxLength:       2000,
-				OverlapSize:     100,
+				OverlapSize:     20,
 				IncludeTitle:    false,
 				IncludeFileName: false,
 			},
 			IndexMaxLength:   2000,
-			IndexOverlapSize: 100,
+			IndexOverlapSize: 20,
 		}
 	}
 

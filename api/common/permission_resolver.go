@@ -96,8 +96,19 @@ func (r *permissionResolver) GetPermission(resourceType int, resourceID int64) (
 		return model.PERMISSION_NONE, nil
 	}
 
+	// 个人知识库权限由创建者和 library_kind 决定，不能被 Redis 中的旧权限覆盖。
+	// 先加载资源确认类型，再决定是否使用外部缓存。
+	bypassRedisCache := false
+	if resourceType == model.RESOURCE_TYPE_LIBRARY {
+		library, err := r.loadLibrary(resourceID)
+		if err != nil {
+			return 0, err
+		}
+		bypassRedisCache = library != nil && library.IsPersonalLibrary()
+	}
+
 	cacheKey := GetPermissionCacheKey(r.eid, resourceType, resourceID, r.userID)
-	if RedisEnabled {
+	if RedisEnabled && !bypassRedisCache {
 		if cachedPermission, cacheErr := RedisGetInt64(cacheKey); cacheErr == nil {
 			permission := int(cachedPermission)
 			r.cacheResolvedPermission(resourceType, resourceID, permission)
@@ -111,7 +122,7 @@ func (r *permissionResolver) GetPermission(resourceType int, resourceID int64) (
 	}
 
 	r.cacheResolvedPermission(resourceType, resourceID, permission)
-	if RedisEnabled {
+	if RedisEnabled && !bypassRedisCache {
 		if cacheErr := RedisSetInt64(cacheKey, int64(permission), permissionCacheTTLSeconds); cacheErr != nil &&
 			!errors.Is(cacheErr, ErrRedisNotEnabled) {
 			logger.SysWarnf("Failed to cache permission: eid=%d resource_type=%d resource_id=%d user_id=%d err=%v",

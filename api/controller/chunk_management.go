@@ -345,6 +345,19 @@ func UpdateChunk(c *gin.Context) {
 		return
 	}
 
+	// 内容变化的知识分片，异步重拆检索块 + embedding
+	if chunk.ChunkType == "knowledge" && oldContent != req.Content {
+		scheduleKnowledgeChunkPostSave(knowledgeChunkPostSaveTask{
+			EID:                eid,
+			UserID:             userID,
+			FileID:             chunk.FileID,
+			LibraryID:          chunk.LibraryID,
+			ChunkID:            id,
+			IsUpdate:           true,
+			AutoSplitRetrieval: true,
+		})
+	}
+
 	// 记录操作日志
 	err = model.CreateEditLog(eid, chunk.FileID, userID, id, oldContent, req.Content)
 	if err != nil {

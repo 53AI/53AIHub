@@ -112,36 +112,67 @@ func (s *EntityExtractionService) selectLLM(cfg *ChunkConfig) (*model.Channel, s
 	return cfg.SelectPipelineLLM()
 }
 
+// buildEntityExtractionSystemPrompt 构建实体抽取 System Prompt（使用全部默认类型）
 func (s *EntityExtractionService) buildEntityExtractionSystemPrompt() string {
-	return fmt.Sprintf(`你是一个信息抽取 system。你的任务是从给定文本中抽取“实体（Entity）”。
+	return s.buildEntityExtractionSystemPromptWithTypes(nil)
+}
+
+// buildEntityExtractionSystemPromptWithTypes 按指定类型列表构建实体抽取 System Prompt
+// types 为空时使用全部默认类型
+func (s *EntityExtractionService) buildEntityExtractionSystemPromptWithTypes(types []string) string {
+	if len(types) == 0 {
+		types = getAllDefaultEntityTypes()
+	}
+
+	var typeDescLines []string
+	for _, t := range types {
+		switch t {
+		case model.EntityTypePerson:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 人物（真实的人名，含职务代称可归一，比如李总、李楠）", model.EntityTypePerson))
+		case model.EntityTypeOrganization:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 组织/公司/部门/机构", model.EntityTypeOrganization))
+		case model.EntityTypeProduct:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 产品/系统/服务/平台名称（软件、硬件、业务产品）", model.EntityTypeProduct))
+		case model.EntityTypeLocation:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 地点（国家、省市、园区、地址等）", model.EntityTypeLocation))
+		case model.EntityTypeTime:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 时间（日期、月份、年份、时间点、时间范围）", model.EntityTypeTime))
+		case model.EntityTypeEvent:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 事件（发布、会议、故障、活动等有发生含义的事件）", model.EntityTypeEvent))
+		case model.EntityTypeDocument:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 文档/制度/规范/手册/协议/文件名等", model.EntityTypeDocument))
+		case model.EntityTypeConcept:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 概念/术语/指标/名词性知识点", model.EntityTypeConcept))
+		case model.EntityTypeMethod:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 方法/流程/步骤/方案/机制", model.EntityTypeMethod))
+		case model.EntityTypeMatter:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 事项（讨论或决定的具体事务，提炼核心动作与对象）", model.EntityTypeMatter))
+		case model.EntityTypeCommitment:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 承诺（明确认领的行动或交付，尽量注明谁和何时）", model.EntityTypeCommitment))
+		case model.EntityTypePrinciple:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 原则（决策依据的规则或优先次序，如\"安全优先\"\"成本可控\"）", model.EntityTypePrinciple))
+		case model.EntityTypeRedLine:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 红线（不可逾越的硬性底线，如\"不得低于成本价\"\"禁止使用未授权数据\"）", model.EntityTypeRedLine))
+		case model.EntityTypeDisagreement:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 分歧（意见不一致的具体观点，需列明争议双方和核心差异）", model.EntityTypeDisagreement))
+		case model.EntityTypeRisk:
+			typeDescLines = append(typeDescLines, fmt.Sprintf("- %s: 风险（可能影响目标的不确定性因素，指出来源与可能后果）", model.EntityTypeRisk))
+		}
+	}
+
+	typeDesc := strings.Join(typeDescLines, "\n")
+
+	return fmt.Sprintf(`你是一个信息抽取 system。你的任务是从给定文本中抽取"实体（Entity）"。
 
 实体类型必须从下面枚举中选择，且必须严格使用这些英文标签：
-- %s: 人物（真实的人名）
-- %s: 组织/公司/部门/机构
-- %s: 产品/系统/服务/平台名称（软件、硬件、业务产品）
-- %s: 地点（国家、省市、园区、地址等）
-- %s: 时间（日期、月份、年份、时间点、时间范围）
-- %s: 事件（发布、会议、故障、活动等有发生含义的事件）
-- %s: 文档/制度/规范/手册/协议/文件名等
-- %s: 概念/术语/指标/名词性知识点
-- %s: 方法/流程/步骤/方案/机制
+%s
 
-抽取规则：`,
-		model.EntityTypePerson,
-		model.EntityTypeOrganization,
-		model.EntityTypeProduct,
-		model.EntityTypeLocation,
-		model.EntityTypeTime,
-		model.EntityTypeEvent,
-		model.EntityTypeDocument,
-		model.EntityTypeConcept,
-		model.EntityTypeMethod,
-	) + `
+抽取规则：
 1) 只抽取文本中明确出现的实体，不要猜测或补全。
 2) 实体名必须是原文中的连续片段，保持原文大小写与中文全角半角。
 3) 去重：同一 type + name 只能出现一次。
 4) 如果不确定类型，优先用 Concept；不要发明新类型。
-5) 高频基础实体补充：当文本中某个复合实体（例如“火星导弹”）重复出现时，需要补充抽取其基础组成实体（例如“火星”“导弹”），基础实体也必须满足规则 1) 和 2)。
+5) 高频基础实体补充：当文本中某个复合实体（例如"火星导弹"）重复出现时，需要补充抽取其基础组成实体（例如"火星""导弹"），基础实体也必须满足规则 1) 和 2)。
 
 输出要求：
 只输出 JSON，不要 Markdown，不要解释。
@@ -151,7 +182,22 @@ func (s *EntityExtractionService) buildEntityExtractionSystemPrompt() string {
     {"type": "Person", "name": "张三", "confidence": 0.86}
   ]
 }
-confidence 取值范围 0-1。`
+confidence 取值范围 0-1。`, typeDesc)
+}
+
+// getAllDefaultEntityTypes 返回所有默认实体类型
+func getAllDefaultEntityTypes() []string {
+	return []string{
+		model.EntityTypePerson,
+		model.EntityTypeOrganization,
+		model.EntityTypeProduct,
+		model.EntityTypeLocation,
+		model.EntityTypeTime,
+		model.EntityTypeEvent,
+		model.EntityTypeDocument,
+		model.EntityTypeConcept,
+		model.EntityTypeMethod,
+	}
 }
 
 func (s *EntityExtractionService) buildEntityExtractionUserPrompt(content string) string {
@@ -182,6 +228,12 @@ func (s *EntityExtractionService) cleanEntities(entities []ExtractedEntity) []Ex
 		model.EntityTypeDocument:     {},
 		model.EntityTypeConcept:      {},
 		model.EntityTypeMethod:       {},
+		model.EntityTypeMatter:       {},
+		model.EntityTypeCommitment:   {},
+		model.EntityTypePrinciple:    {},
+		model.EntityTypeRedLine:      {},
+		model.EntityTypeDisagreement: {},
+		model.EntityTypeRisk:         {},
 	}
 
 	seen := make(map[string]struct{}, len(entities))
@@ -395,6 +447,11 @@ func (s *EntityExtractionService) ExtractAndStoreForFileMeta(ctx context.Context
 }
 
 func (s *EntityExtractionService) ExtractAndStoreForFileContent(ctx context.Context, eid int64, fileID int64, content string) error {
+	return s.ExtractAndStoreForFileContentWithTypes(ctx, eid, fileID, content, nil)
+}
+
+// ExtractAndStoreForFileContentWithTypes 按指定实体类型从文件内容中抽取并存储实体
+func (s *EntityExtractionService) ExtractAndStoreForFileContentWithTypes(ctx context.Context, eid int64, fileID int64, content string, types []string) error {
 	content = strings.TrimSpace(content)
 	if fileID <= 0 {
 		return fmt.Errorf("file_id is empty")
@@ -435,7 +492,7 @@ func (s *EntityExtractionService) ExtractAndStoreForFileContent(ctx context.Cont
 	timeoutCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	systemPrompt := s.buildEntityExtractionSystemPrompt()
+	systemPrompt := s.buildEntityExtractionSystemPromptWithTypes(types)
 	userPrompt := s.buildEntityExtractionUserPrompt(content)
 
 	// 使用统一预算模型：caller_requested=8192，stepMaxInput=6000

@@ -138,13 +138,30 @@ func UpsertChannelVectorModelThreshold(existing string, modelName string, thresh
 
 // IsVoiceModelChannel 判断渠道是否为语音模型渠道。
 //
-// 当前仅支持阿里百炼模型类型（channeltype.Ali = 17），通过 custom_config 中的
-// voice_models 字段标识语音模型。新增其他供应商（如 Azure STT、Google STT）时：
-//   - 在 model/channel.go 中新增 ChannelApi 常量（如 ChannelApiAzureSTT = 1018）
-//   - 在此处添加 || channel.Type == ChannelApiAzureSTT
-//   - 确保该供应商的 channel 创建时 custom_config 包含 voice_models 字段
+// 支持两类语音渠道：
+//   - 阿里百炼（channeltype.Ali = 17）：voice_models 标识，workspace_id 校验（DashScope 语义）
+//   - OpenAI 兼容语音渠道（ChannelApiTypeCustomOpenAI = 1012）：custom_config.voice_models 标识，
+//     无 workspace_id，走 /v1/audio/transcriptions multipart 转写
+//
+// 判定唯一依据：custom_config.voice_models 非空（model_type 仅 UI 展示，不参与判定）。
 func IsVoiceModelChannel(channel *Channel) bool {
-	if channel.Type != channeltype.Ali {
+	if channel == nil {
+		return false
+	}
+	return IsOpenAIAudioChannel(channel) || (channel.Type == channeltype.Ali && hasVoiceModels(channel))
+}
+
+// IsOpenAIAudioChannel 判断渠道是否为 OpenAI 兼容语音转写渠道（type=1012 + voice_models 配置）。
+func IsOpenAIAudioChannel(channel *Channel) bool {
+	if channel == nil || channel.Type != ChannelApiTypeCustomOpenAI {
+		return false
+	}
+	return hasVoiceModels(channel)
+}
+
+// hasVoiceModels 检查 custom_config 是否含非空 voice_models。
+func hasVoiceModels(channel *Channel) bool {
+	if channel == nil {
 		return false
 	}
 	cfg, err := ParseChannelCustomConfig(channel.CustomConfig)

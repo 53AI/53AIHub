@@ -88,7 +88,7 @@ type ListAgentAPIKeyRequest struct {
 }
 
 // @Summary 获取 Agent API 密钥列表
-// @Description 获取企业下所有 Agent API 密钥，secret_key 只显示前 8 位掩码
+// @Description 获取企业下所有 Agent API 密钥及完整 secret_key
 // @Tags Agent
 // @Accept json
 // @Produce json

@@ -11,15 +11,22 @@ import (
 
 // EntityType* 实体类型枚举（用于统一管理实体分类）
 const (
-	EntityTypePerson       = "Person"       // 人物（真实的人名）
+	EntityTypePerson       = "Person"       // 人物（真实的人名，含职务代称可归一，比如李总、李楠）
 	EntityTypeOrganization = "Organization" // 组织/公司/部门/机构
 	EntityTypeProduct      = "Product"      // 产品/系统/服务/平台名称（软件、硬件、业务产品）
 	EntityTypeLocation     = "Location"     // 地点（国家、省市、园区、地址等）
 	EntityTypeTime         = "Time"         // 时间（日期、月份、年份、时间点、时间范围）
-	EntityTypeEvent        = "Event"        // 事件（发布、会议、故障、活动等）
+	EntityTypeEvent        = "Event"        // 事件（发布、会议、故障、活动等有发生含义的事件）
 	EntityTypeDocument     = "Document"     // 文档/制度/规范/手册/协议/文件名等
 	EntityTypeConcept      = "Concept"      // 概念/术语/指标/名词性知识点（默认兜底）
 	EntityTypeMethod       = "Method"       // 方法/流程/步骤/方案/机制
+	// 录音专用实体类型
+	EntityTypeMatter       = "Matter"       // 事项（讨论或决定的具体事务，提炼核心动作与对象）
+	EntityTypeCommitment   = "Commitment"   // 承诺（明确认领的行动或交付，尽量注明谁和何时）
+	EntityTypePrinciple    = "Principle"    // 原则（决策依据的规则或优先次序，如"安全优先""成本可控"）
+	EntityTypeRedLine      = "RedLine"      // 红线（不可逾越的硬性底线，如"不得低于成本价""禁止使用未授权数据"）
+	EntityTypeDisagreement = "Disagreement" // 分歧（意见不一致的具体观点，需列明争议双方和核心差异）
+	EntityTypeRisk         = "Risk"         // 风险（可能影响目标的不确定性因素，指出来源与可能后果）
 )
 
 // EntityRelationSource* 实体关联来源枚举（用于区分自动/手动来源，便于重生成时隔离）
@@ -38,7 +45,7 @@ const (
 // GetAllEntityTypes 返回所有预定义的实体类型及其描述
 func GetAllEntityTypes() map[string]string {
 	return map[string]string{
-		EntityTypePerson:       "人物（真实的人名）",
+		EntityTypePerson:       "人物（真实的人名，含职务代称可归一，比如李总、李楠）",
 		EntityTypeOrganization: "组织/公司/部门/机构",
 		EntityTypeProduct:      "产品/系统/服务/平台名称（软件、硬件、业务产品）",
 		EntityTypeLocation:     "地点（国家、省市、园区、地址等）",
@@ -47,6 +54,12 @@ func GetAllEntityTypes() map[string]string {
 		EntityTypeDocument:     "文档/制度/规范/手册/协议/文件名等",
 		EntityTypeConcept:      "概念/术语/指标/名词性知识点",
 		EntityTypeMethod:       "方法/流程/步骤/方案/机制",
+		EntityTypeMatter:       "事项（讨论或决定的具体事务，提炼核心动作与对象）",
+		EntityTypeCommitment:   "承诺（明确认领的行动或交付，尽量注明谁和何时）",
+		EntityTypePrinciple:    "原则（决策依据的规则或优先次序，如\"安全优先\"\"成本可控\"）",
+		EntityTypeRedLine:      "红线（不可逾越的硬性底线，如\"不得低于成本价\"\"禁止使用未授权数据\"）",
+		EntityTypeDisagreement: "分歧（意见不一致的具体观点，需列明争议双方和核心差异）",
+		EntityTypeRisk:         "风险（可能影响目标的不确定性因素，指出来源与可能后果）",
 	}
 }
 

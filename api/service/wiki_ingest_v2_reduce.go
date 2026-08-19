@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -939,42 +938,7 @@ func persistWikiPageWrite(ctx context.Context, tx *gorm.DB, page *model.WikiPage
 		PublishKind:   model.WikiPagePublishKindSync,
 	}
 	if err := tx.Create(version).Error; err != nil {
-		if shouldFallbackToLegacyWikiPageVersionUpdate(tx, err) {
-			// 旧库可能还保留着历史唯一索引，导致版本追加写入失败。
-			// 这里退化为原地更新当前版本记录，保证重建不会中断；后续 schema migration 会移除该索引。
-			existingVersion, loadErr := loadLatestWikiPageVersionForWrite(tx, page.ID)
-			if loadErr != nil {
-				return loadErr
-			}
-			if existingVersion == nil {
-				return err
-			}
-
-			existingVersion.Eid = version.Eid
-			existingVersion.VersionNo = version.VersionNo
-			existingVersion.Title = version.Title
-			existingVersion.Slug = version.Slug
-			existingVersion.PageType = version.PageType
-			existingVersion.AliasesJSON = version.AliasesJSON
-			existingVersion.SourcesJSON = version.SourcesJSON
-			existingVersion.LinksJSON = version.LinksJSON
-			existingVersion.BacklinksJSON = version.BacklinksJSON
-			existingVersion.Body = version.Body
-			existingVersion.BodyFormat = version.BodyFormat
-			existingVersion.ChangeSummary = version.ChangeSummary
-			existingVersion.Checksum = version.Checksum
-			existingVersion.SourceVersion = version.SourceVersion
-			existingVersion.EditorID = version.EditorID
-			existingVersion.IsPublished = version.IsPublished
-			existingVersion.PublishKind = version.PublishKind
-			existingVersion.PublishedTime = version.PublishedTime
-			if err := tx.Save(existingVersion).Error; err != nil {
-				return err
-			}
-			version.ID = existingVersion.ID
-		} else {
-			return err
-		}
+		return err
 	}
 	page.CurrentVersionID = version.ID
 	return tx.Model(page).Updates(map[string]any{
@@ -1136,48 +1100,6 @@ func nextWikiPageVersionNo(tx *gorm.DB, pageID int64) (int64, error) {
 		return 1, nil
 	}
 	return nextVersionNo, nil
-}
-
-func loadLatestWikiPageVersionForWrite(tx *gorm.DB, pageID int64) (*model.WikiPageVersion, error) {
-	if tx == nil || pageID == 0 {
-		return nil, nil
-	}
-
-	var version model.WikiPageVersion
-	if err := tx.Where("page_id = ?", pageID).Order("version_no DESC, id DESC").First(&version).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return &version, nil
-}
-
-func shouldFallbackToLegacyWikiPageVersionUpdate(tx *gorm.DB, err error) bool {
-	if tx == nil || err == nil {
-		return false
-	}
-	if !isDuplicateKeyErrText(err) {
-		return false
-	}
-	return tx.Migrator().HasIndex(&model.WikiPageVersion{}, "idx_wiki_page_versions_unique")
-}
-
-func isDuplicateKeyErrText(err error) bool {
-	msg := strings.ToLower(strings.TrimSpace(err.Error()))
-	switch {
-	case strings.Contains(msg, "duplicate entry"):
-		return true
-	case strings.Contains(msg, "duplicate key"):
-		return true
-	case strings.Contains(msg, "unique constraint failed"):
-		return true
-	case strings.Contains(msg, "1062"):
-		return true
-	case strings.Contains(msg, "23505"):
-		return true
-	}
-	return false
 }
 
 // isWikiCompilationConflictErr 判断是否为 wiki 页面编译期间的版本冲突错误。

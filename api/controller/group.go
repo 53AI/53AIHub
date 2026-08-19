@@ -192,6 +192,7 @@ func GetGroups(c *gin.Context) {
 	eid := config.GetEID(c)
 	var groups []model.Group
 	if int64(groupType) == model.RECORDING_FILE_GROUP_TYPE {
+		// 录音文件分组（type=8）已改为用户级管理，请使用 /api/user/groups/type/8
 		userID := config.GetUserId(c)
 		groups, err = model.GetGroupsByEid(eid, int64(groupType), userID)
 	} else {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/53AI/53AIHub/common"
+	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	rag "github.com/53AI/53AIHub/service/rag"
@@ -24,13 +25,17 @@ func NewRecordingAdminService(eid int64) *RecordingAdminService {
 }
 
 type RecordingConfigResult struct {
-Enabled               bool                          `json:"enabled"`
-	ParserPlatform        string                        `json:"parser_platform"`
-	VoiceModelID          int64                         `json:"voice_model_id"`
-	VoiceModelName        string                        `json:"voice_model_name"`
-	InferenceModelID      int64                         `json:"inference_model_id"`
-	InferenceModelName    string                        `json:"inference_model_name"`
-	RecordingAgentEnabled bool                          `json:"recording_agent_enabled"`
+	Enabled                 bool                          `json:"enabled"`
+	ParserPlatform          string                        `json:"parser_platform"`
+	VoiceModelID            int64                         `json:"voice_model_id"`
+	VoiceModelName          string                        `json:"voice_model_name"`
+	InferenceModelID        int64                         `json:"inference_model_id"`
+	InferenceModelName      string                        `json:"inference_model_name"`
+	RecordingAgentEnabled   bool                          `json:"recording_agent_enabled"`
+	MultiPerspectiveEnabled bool                          `json:"multi_perspective_enabled"`
+	MemoryExtraction        *model.MemoryExtractionConfig `json:"memory_extraction,omitempty"`
+	// InsightRegenerateEnabled 企业级开关：是否允许重新生成洞察（未配置时视为允许）。
+	InsightRegenerateEnabled bool `json:"insight_regenerate_enabled"`
 }
 
 func (s *RecordingAdminService) GetRecordingConfig(ctx context.Context) (*RecordingConfigResult, error) {
@@ -39,17 +44,20 @@ func (s *RecordingAdminService) GetRecordingConfig(ctx context.Context) (*Record
 		return nil, fmt.Errorf("获取录音配置失败: %w", err)
 	}
 	return &RecordingConfigResult{
-		Enabled:               config.Enabled,
-		ParserPlatform:        config.ParserPlatform,
-		VoiceModelID:          config.VoiceModelID,
-		VoiceModelName:        config.VoiceModelName,
-		InferenceModelID:      config.InferenceModelID,
-		InferenceModelName:    config.InferenceModelName,
-		RecordingAgentEnabled: config.RecordingAgentEnabled,
+		Enabled:                  config.Enabled,
+		ParserPlatform:           config.ParserPlatform,
+		VoiceModelID:             config.VoiceModelID,
+		VoiceModelName:           config.VoiceModelName,
+		InferenceModelID:         config.InferenceModelID,
+		InferenceModelName:       config.InferenceModelName,
+		RecordingAgentEnabled:    config.RecordingAgentEnabled,
+		MultiPerspectiveEnabled:  config.MultiPerspectiveEnabled,
+		MemoryExtraction:         config.MemoryExtraction,
+		InsightRegenerateEnabled: model.IsInsightRegenerateEnabled(s.eid),
 	}, nil
 }
 
-func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool) error {
+func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *model.MemoryExtractionConfig, insightRegenerateEnabled *bool) error {
 	if parserPlatform != nil && *parserPlatform != "" && !IsValidParserPlatform(*parserPlatform) {
 		return fmt.Errorf("不支持的解析平台: %s", *parserPlatform)
 	}
@@ -57,12 +65,20 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 	if voiceModelID != nil && *voiceModelID > 0 && (parserPlatform == nil || *parserPlatform == "") {
 		parserPlatformValue := ""
 		if ch, chErr := model.GetChannelByID(*voiceModelID); chErr == nil && model.IsVoiceModelChannel(ch) {
-			parserPlatformValue = fmt.Sprintf("voice:%d", ch.Type)
+			if model.IsOpenAIAudioChannel(ch) {
+				parserPlatformValue = fmt.Sprintf("openai:%d", ch.Type)
+			} else {
+				parserPlatformValue = fmt.Sprintf("voice:%d", ch.Type)
+			}
 			if cfg, parseErr := model.ParseChannelCustomConfig(ch.CustomConfig); parseErr == nil {
 				if vms, ok := cfg["voice_models"].(map[string]interface{}); ok && len(vms) > 0 {
 					for mn := range vms {
 						if model.IsModelInChannelModels(mn, ch.Models) {
-							parserPlatformValue = fmt.Sprintf("voice:%d:%s", ch.Type, mn)
+							if model.IsOpenAIAudioChannel(ch) {
+								parserPlatformValue = fmt.Sprintf("openai:%d:%s", ch.Type, mn)
+							} else {
+								parserPlatformValue = fmt.Sprintf("voice:%d:%s", ch.Type, mn)
+							}
 							if voiceModelName == nil {
 								voiceModelName = &mn
 							}
@@ -75,7 +91,7 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 		parserPlatform = &parserPlatformValue
 	}
 
-	if err := model.PatchRecordingConfig(s.eid, enabled, parserPlatform, voiceModelID, voiceModelName, inferenceModelID, inferenceModelName, recordingAgentEnabled); err != nil {
+	if err := model.PatchRecordingConfig(s.eid, enabled, parserPlatform, voiceModelID, voiceModelName, inferenceModelID, inferenceModelName, recordingAgentEnabled, multiPerspectiveEnabled, memoryExtraction, insightRegenerateEnabled); err != nil {
 		return fmt.Errorf("更新录音配置失败: %w", err)
 	}
 
@@ -101,7 +117,6 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 		if err := InitializeRecordingPipelineForPersonalLibrary(ctx, s.eid, finalPlatform); err != nil {
 			logger.SysErrorf("【录音配置】初始化解析管线失败（不阻塞主流程）: eid=%d platform=%s err=%v", s.eid, finalPlatform, err)
 		}
-		// 自动触发所有未解析录音文件的解析
 		if err := TriggerPendingRecordingParsings(ctx, s.eid, finalPlatform); err != nil {
 			logger.SysErrorf("【录音配置】触发待解析录音失败（不阻塞主流程）: eid=%d err=%v", s.eid, err)
 		}
@@ -111,7 +126,7 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 }
 
 func IsValidParserPlatform(platform string) bool {
-	if strings.HasPrefix(platform, "voice:") {
+	if strings.HasPrefix(platform, "voice:") || strings.HasPrefix(platform, "openai:") {
 		parts := strings.Split(platform, ":")
 		if len(parts) < 2 {
 			return false
@@ -337,6 +352,19 @@ func (s *RecordingAdminService) CreateFileSummary(ctx context.Context, fileID, t
 	// 异步生成总结内容，回填数据
 	go s.fillSummaryContent(context.Background(), summary, config, template)
 
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskCreated(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("recording-summary-%d-%d", fileID, templateID),
+			TaskType:       "RECORDING_PIPELINE",
+			StageKey:       "custom_template_summary",
+			ServiceKey:     "recording-pipeline",
+			StartedAt:      time.Now().UTC(),
+			Metadata: map[string]string{
+				"fileId":     strconv.FormatInt(fileID, 10),
+				"templateId": strconv.FormatInt(templateID, 10),
+			},
+		})
+	}
 	return summary, nil
 }
 
@@ -355,6 +383,17 @@ func (s *RecordingAdminService) fillSummaryContent(ctx context.Context, summary 
 	})
 	if err != nil {
 		logger.Errorf(ctx, "【总结】转写压缩失败 summaryID=%d err=%v", summary.ID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-summary-%d-%d", summary.FileID, summary.TemplateID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "custom_template_summary",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "TEMPLATE_SUMMARY_FAILED",
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		summary.Status = "failed"
 		model.UpdateRecordingFileSummary(summary)
 		return
@@ -363,6 +402,17 @@ func (s *RecordingAdminService) fillSummaryContent(ctx context.Context, summary 
 	channel, err := model.GetChannelByID(config.InferenceModelID)
 	if err != nil {
 		logger.Errorf(ctx, "【总结】推理模型渠道不存在 summaryID=%d err=%v", summary.ID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-summary-%d-%d", summary.FileID, summary.TemplateID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "custom_template_summary",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "TEMPLATE_SUMMARY_FAILED",
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		summary.Status = "failed"
 		model.UpdateRecordingFileSummary(summary)
 		return
@@ -389,12 +439,33 @@ func (s *RecordingAdminService) fillSummaryContent(ctx context.Context, summary 
 	summaryResult, err, _ := generator.TestChannel(ctxTimeout, channel, request)
 	if err != nil {
 		logger.Errorf(ctx, "【总结】调用推理模型生成失败 summaryID=%d err=%v", summary.ID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-summary-%d-%d", summary.FileID, summary.TemplateID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "custom_template_summary",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "TEMPLATE_SUMMARY_FAILED",
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		summary.Status = "failed"
 		model.UpdateRecordingFileSummary(summary)
 		return
 	}
 
 	summary.SummaryContent = model.LongText(summaryResult)
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskStageCompleted(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("recording-summary-%d-%d", summary.FileID, summary.TemplateID),
+			TaskType:       "RECORDING_PIPELINE",
+			StageKey:       "custom_template_summary",
+			StageStatus:    keystone.TaskStatusSucceeded,
+			ServiceKey:     "recording-pipeline",
+			FinishedAt:     time.Now().UTC(),
+		})
+	}
 	summary.Status = "completed"
 	if err := model.UpdateRecordingFileSummary(summary); err != nil {
 		logger.Errorf(ctx, "【总结】保存结果失败 summaryID=%d err=%v", summary.ID, err)

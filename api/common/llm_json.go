@@ -3,6 +3,7 @@ package common
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,6 +14,15 @@ import (
 const (
 	defaultLLMJSONPreviewChars = 512
 )
+
+// IsTruncationError 判断 LLM JSON 解析错误是否为响应截断（unexpected EOF）。
+// 当 LLM 返回的 JSON 被截断时，json.Decoder.Decode 返回 io.ErrUnexpectedEOF。
+func IsTruncationError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF)
+}
 
 // ParseLLMJSONInto 从 LLM 输出中提取并严格解析 JSON 到目标结构。
 // 解析流程：
@@ -38,9 +48,13 @@ func ParseLLMJSONInto(ctx context.Context, content string, target any) error {
 	}
 
 	var lastErr error
+	var truncationErr error
 	for idx, candidate := range candidates {
 		if err := strictDecodeJSON(candidate, target); err != nil {
 			lastErr = err
+			if IsTruncationError(err) && truncationErr == nil {
+				truncationErr = err
+			}
 			logger.Debugf(ctx, "【工具执行】LLM JSON 候选解析失败: 候选序号=%d, 候选长度=%d, 错误=%v, 片段=%s",
 				idx+1, len([]rune(candidate)), err, previewText(candidate, defaultLLMJSONPreviewChars))
 			if repaired, changed := repairLLMJSONStringLiterals(candidate); changed {
@@ -50,6 +64,9 @@ func ParseLLMJSONInto(ctx context.Context, content string, target any) error {
 					return nil
 				} else {
 					lastErr = repairErr
+					if IsTruncationError(repairErr) && truncationErr == nil {
+						truncationErr = repairErr
+					}
 					logger.Debugf(ctx, "【工具执行】LLM JSON 候选修复后仍解析失败: 候选序号=%d, 错误=%v, 片段=%s",
 						idx+1, repairErr, previewText(repaired, defaultLLMJSONPreviewChars))
 				}
@@ -64,6 +81,9 @@ func ParseLLMJSONInto(ctx context.Context, content string, target any) error {
 		return nil
 	}
 
+	if truncationErr != nil {
+		return fmt.Errorf("LLM JSON 解析失败: %w", truncationErr)
+	}
 	return fmt.Errorf("LLM JSON 解析失败: %w", lastErr)
 }
 

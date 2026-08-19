@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
 	"gorm.io/gorm"
 )
@@ -48,6 +49,16 @@ func (s *ExtractEntitiesStep) Execute(parameters any) error {
 	}
 
 	logger.SysLogf("开始抽取实体: eid=%d file_id=%d", params.Eid, params.FileID)
+
+	// 录音文件：检查历史记忆配置，关闭或未配置 Document 类型时跳过实体抽取
+	var file model.File
+	if err := s.DB.Where("eid = ? AND id = ?", params.Eid, params.FileID).First(&file).Error; err == nil {
+		if file.IsRecordingOriginType() && !model.IsRecordingMemoryExtractionTypeEnabled(params.Eid, model.EntityTypeDocument) {
+			logger.SysLogf("实体抽取跳过（历史记忆关闭或未配置 Document 类型）: file_id=%d", params.FileID)
+			s.Step.CompleteSuccessfully(ExtractEntitiesResult{Success: true, FileID: params.FileID})
+			return nil
+		}
+	}
 
 	// 1. 保存传入的实体（如果有）
 	extractor := rag.NewEntityExtractionService(s.DB)

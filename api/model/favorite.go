@@ -36,6 +36,9 @@ const (
 	FavoriteStatusCancel int8 = 0
 )
 
+// 收藏专用资源类型常量
+// RESOURCE_TYPE_FAVORITE_SPACE 区别于权限系统的 RESOURCE_TYPE_SPACE = 0，用于收藏空间级别资源
+const RESOURCE_TYPE_FAVORITE_SPACE = 4
 // 校验
 func (f *Favorite) Validate() error {
 	if f.UserID <= 0 {
@@ -44,7 +47,7 @@ func (f *Favorite) Validate() error {
 	if f.ResourceID <= 0 {
 		return errors.New("资源ID无效")
 	}
-	if f.ResourceType != RESOURCE_TYPE_FILE && f.ResourceType != RESOURCE_TYPE_LIBRARY && f.ResourceType != RESOURCE_TYPE_WIKI_PAGE {
+	if f.ResourceType != RESOURCE_TYPE_FILE && f.ResourceType != RESOURCE_TYPE_LIBRARY && f.ResourceType != RESOURCE_TYPE_WIKI_PAGE && f.ResourceType != RESOURCE_TYPE_FAVORITE_SPACE {
 		return errors.New("资源类型无效")
 	}
 	return nil
@@ -252,6 +255,33 @@ func GetUserFavoriteWikiPagesByKeyword(userID, eid int64, keyword string, offset
 	keyword = strings.TrimSpace(keyword)
 	if keyword != "" {
 		db = db.Where("wiki_pages.title LIKE ?", "%"+keyword+"%")
+	}
+
+	db = db.Order("favorites.updated_time DESC")
+	if offset > 0 {
+		db = db.Offset(offset)
+	}
+	if limit > 0 {
+		db = db.Limit(limit)
+	}
+
+	if err := db.Find(&favs).Error; err != nil {
+		return nil, err
+	}
+	return favs, nil
+}
+
+// GetUserFavoriteSpacesByKeyword 获取用户收藏的空间列表，支持关键词和分页
+func GetUserFavoriteSpacesByKeyword(userID, eid int64, keyword string, offset, limit int) ([]Favorite, error) {
+	var favs []Favorite
+	db := DB.Table("favorites").
+		Select("favorites.*").
+		Joins("JOIN spaces ON spaces.id = favorites.resource_id AND spaces.eid = ?", eid).
+		Where("favorites.user_id = ? AND favorites.status = ? AND favorites.resource_type = ?", userID, FavoriteStatusActive, RESOURCE_TYPE_FAVORITE_SPACE)
+
+	keyword = strings.TrimSpace(keyword)
+	if keyword != "" {
+		db = db.Where("spaces.name LIKE ?", "%"+keyword+"%")
 	}
 
 	db = db.Order("favorites.updated_time DESC")

@@ -111,7 +111,13 @@ func (s *UserMemoryService) FormatUserMemoryForPrompt(ctx context.Context, eid, 
 	if department != "" {
 		md += "- 部门：" + department + "\n"
 	}
-	if nickname == "" && department == "" {
+	if memory.Position != "" {
+		md += "- 职位：" + memory.Position + "\n"
+	}
+	if memory.Style != "" {
+		md += "- 风格：" + memory.Style + "\n"
+	}
+	if nickname == "" && department == "" && memory.Position == "" && memory.Style == "" {
 		md += "_暂无基本信息_\n"
 	}
 
@@ -693,7 +699,7 @@ func buildUserMemoryImportPromptWithContext(nickname, department, existingMemory
 
  带沟通对象的示例：
  {"items":[{"fact":"给王总汇报：结论先行、数据驱动、结构化","category":"preference","memory_type":"preference","tags":["王总","向上汇报","沟通风格"],"topic":"沟通风格","keywords":"汇报,结论先行,数据驱动","evidence":"用户明确要求","expire_at":0,"weight":80,"action":"keep"},{"fact":"给小李沟通：鼓励为主、包容引导","category":"preference","memory_type":"preference","tags":["小李","向下沟通","沟通风格"],"topic":"沟通风格","keywords":"沟通,鼓励,包容","evidence":"用户明确要求","expire_at":0,"weight":80,"action":"keep"}],"existing_memory_actions":[]}
-%s`, existingBlock, identityBlock, existingListBlock)
+`, existingBlock, identityBlock, existingListBlock)
 }
 
 const userMemoryCacheTTL = 60 * time.Second

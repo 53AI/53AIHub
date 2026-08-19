@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -157,14 +158,80 @@ func (s *VoiceModelDocumentStrategy) ProcessWithUploadFile(fileID int64, content
 		Hotwords:    hotwords,
 	}
 
-	sourceURL := uploadFile.GetPreviewOrOssDownloadUrl()
-	// 本地存储时，预览 URL 可能指向 127.0.0.1，阿里 ASR API 需要公网可达的地址
-	if config.StorageType != "aliyun_oss" && strings.Contains(sourceURL, "127.0.0.1") {
-		sourceURL = strings.Replace(sourceURL, "http://127.0.0.1:3000", "https://kmapitest.53ai.com", 1)
-		logger.Infof(context.Background(), "【语音模型】替换预览 URL: %s", sourceURL)
+	// file_urls 需要公网可达的音频地址：
+	//   - SaaS 版：UploadFile 的可访问 URL 直接可用
+	//   - 本地版：预览 URL 指向内网/127.0.0.1，阿里 ASR 无法访问 → 先把音频上传到 DashScope uploads 换取临时 URL
+	//     （若上传失败，明确提示改用 OpenAI 兼容语音模型，避免本地版依赖 kmapitest 域名 hack）
+	var sourceURL string
+	if config.IS_SAAS {
+		sourceURL = uploadFile.GetPreviewOrOssDownloadUrl()
+	} else {
+		src, rerr := ResolveAudioFile(context.Background(), uploadFile)
+		if rerr != nil {
+			return nil, fmt.Errorf("读取本地音频失败: %w", rerr)
+		}
+		sourceURL, err = s.uploadToDashScope(context.Background(), &voiceCfg, src.Data, uploadFile.FileName)
+		if err != nil {
+			return nil, fmt.Errorf("本地版请配置 OpenAI 兼容语音模型（DashScope 本地上传失败: %v）", err)
+		}
+		logger.Infof(context.Background(), "【语音模型】本地版上传音频到 DashScope 获取临时 URL: %s", sourceURL)
 	}
 
 	return s.callDashScopeNative(context.Background(), fileID, sourceURL, &voiceCfg)
+}
+
+// uploadToDashScope 将本地音频上传到 DashScope /api/v1/uploads（multipart），返回供 file_urls 使用的临时下载 URL。
+// 本地版无公网可达的音频 URL 时，用该临时 URL 走 file_urls 流程。
+func (s *VoiceModelDocumentStrategy) uploadToDashScope(ctx context.Context, cfg *voiceModelConfig, audio []byte, filename string) (string, error) {
+	baseURL := strings.TrimRight(cfg.ApiDomain, "/")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+	uploadURL := baseURL + "/api/v1/uploads"
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", fmt.Errorf("构造上传 multipart 失败: %w", err)
+	}
+	if _, err := part.Write(audio); err != nil {
+		return "", fmt.Errorf("写入音频数据失败: %w", err)
+	}
+	writer.Close()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadURL, &buf)
+	if err != nil {
+		return "", fmt.Errorf("创建上传请求失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.ApiKey)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("上传请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("上传返回 HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var parsed struct {
+		Data struct {
+			UploadedFile struct {
+				DownloadURL string `json:"download_url"`
+			} `json:"uploaded_file"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &parsed); err != nil {
+		return "", fmt.Errorf("解析上传响应失败: %w", err)
+	}
+	if parsed.Data.UploadedFile.DownloadURL == "" {
+		return "", fmt.Errorf("上传响应缺少 download_url: %s", strings.TrimSpace(string(respBody)))
+	}
+	return parsed.Data.UploadedFile.DownloadURL, nil
 }
 
 // voiceModelConfig 语音模型配置。
@@ -198,8 +265,15 @@ type dashScopeResultResponse struct {
 	Output    struct {
 		TaskID     string `json:"task_id"`
 		TaskStatus string `json:"task_status"`
-		Results    []struct {
+		// Message 任务失败时 DashScope 返回的具体原因（部分场景位于 output 顶层）。
+		Message string `json:"message"`
+		Results []struct {
 			TranscriptionURL string `json:"transcription_url"`
+			// Code/Message 子任务失败时的错误码与原因（官方文档：失败信息在 results[].message，
+			// 且多子任务时任一成功 task_status 即为 SUCCEEDED，需用 subtask_status 判断）。
+			Code          string `json:"code"`
+			Message       string `json:"message"`
+			SubtaskStatus string `json:"subtask_status"`
 		} `json:"results"`
 	} `json:"output"`
 }
@@ -212,13 +286,40 @@ func updatePollInterval(current *time.Duration, maxInterval time.Duration) {
 	}
 }
 
+// dashScopeFailureDetail 从查询任务响应中提取失败原因。
+// DashScope 失败信息可能位于 output.results[].code/message（子任务级，官方文档主路径）
+// 或 output.message（顶层）。两者都无时回退到 fallback（task_id）。
+func dashScopeFailureDetail(r *dashScopeResultResponse, fallback string) string {
+	if r == nil {
+		return fallback
+	}
+	if len(r.Output.Results) > 0 {
+		sub := r.Output.Results[0]
+		if sub.Code != "" || sub.Message != "" {
+			detail := fallback
+			if sub.Code != "" {
+				detail += " code=" + sub.Code
+			}
+			if sub.Message != "" {
+				detail += " message=" + sub.Message
+			}
+			return detail
+		}
+	}
+	if r.Output.Message != "" {
+		return fallback + " message=" + r.Output.Message
+	}
+	return fallback
+}
+
 // callDashScopeNative 调用阿里百炼 DashScope 异步语音识别 API。
 //
 // 当前实现针对 DashScope 异步接口（fun-asr/paraformer），使用"提交任务→轮询结果"模式。
 // 新增其他供应商时，应新建对应的 callXxx 方法，在此处根据 cfg.ApiDomain 或 channel type 路由。
 //
 // DashScope 异步接口文档：
-//   https://help.aliyun.com/zh/model-studio/fun-asr-recorded-speech-recognition-http-api
+//
+//	https://help.aliyun.com/zh/model-studio/fun-asr-recorded-speech-recognition-http-api
 func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fileID int64, sourceURL string, cfg *voiceModelConfig) (*DocumentProcessResult, error) {
 	baseURL := strings.TrimRight(cfg.ApiDomain, "/")
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -297,7 +398,10 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 		}
 
 		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("语音识别任务超时（%v）", maxWait)
+			return nil, &model.LLMError{
+				Err:       fmt.Errorf("语音识别任务超时（%v）", maxWait),
+				ErrorType: model.ErrorTypeTimeout,
+			}
 		}
 
 		time.Sleep(pollInterval)
@@ -338,7 +442,20 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 				return nil, fmt.Errorf("任务完成但无结果")
 			}
 
-			transcriptionURL := resultResp.Output.Results[0].TranscriptionURL
+			first := resultResp.Output.Results[0]
+			// 官方文档：多子任务时任一成功 task_status 即为 SUCCEEDED，
+			// 子任务失败信息在 results[].code/message，transcription_url 为空。
+			// 此时应识别为转写失败而不是"获取转录结果失败"。
+			if first.SubtaskStatus == "FAILED" || (first.TranscriptionURL == "" && (first.Code != "" || first.Message != "")) {
+				failDetail := dashScopeFailureDetail(&resultResp, taskID)
+				logger.Errorf(ctx, "【语音模型】转写子任务失败 fileID=%d task_id=%s detail=%s", fileID, taskID, failDetail)
+				return nil, &model.LLMError{
+					Err:       fmt.Errorf("语音识别任务失败: %s", failDetail),
+					ErrorType: model.ErrorTypeASRFailed,
+				}
+			}
+
+			transcriptionURL := first.TranscriptionURL
 			transcriptionResp, err := httpClient.Get(transcriptionURL)
 			if err != nil {
 				return nil, fmt.Errorf("获取转录结果失败: %w", err)
@@ -407,7 +524,12 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 			}, nil
 
 		case "FAILED":
-			return nil, fmt.Errorf("语音识别任务失败: task_id=%s", taskID)
+			failDetail := dashScopeFailureDetail(&resultResp, taskID)
+			logger.Errorf(ctx, "【语音模型】转写任务失败 fileID=%d task_id=%s detail=%s", fileID, taskID, failDetail)
+			return nil, &model.LLMError{
+				Err:       fmt.Errorf("语音识别任务失败: %s", failDetail),
+				ErrorType: model.ErrorTypeASRFailed,
+			}
 
 		default:
 		}

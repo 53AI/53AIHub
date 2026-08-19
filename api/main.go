@@ -9,7 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/53AI/53AIHub/controller"
+
 	"github.com/53AI/53AIHub/common"
+	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
@@ -18,6 +21,7 @@ import (
 	hub_openai "github.com/53AI/53AIHub/service/hub_adaptor/openai"
 	"github.com/53AI/53AIHub/service/image_asset"
 	"github.com/53AI/53AIHub/service/sms"
+	"github.com/53AI/53AIHub/service/sonicnote"
 	"github.com/53AI/53AIHub/service/tools"
 	"github.com/53AI/53AIHub/service/vectorstore"
 
@@ -38,6 +42,23 @@ import (
 
 func main() {
 	common.Init()
+
+	// 初始化 Keystone 上报客户端
+	keystoneCfg := keystone.LoadConfig()
+	keystoneCfg.Endpoint = config.KEYSTONE_ENDPOINT
+	keystoneCfg.IntegrationKey = config.KEYSTONE_INTEGRATION_KEY
+	keystoneCfg.Secret = config.KEYSTONE_SECRET
+	keystoneCfg.ProductKey = config.KEYSTONE_PRODUCT_KEY
+	keystoneCfg.ServiceKey = config.KEYSTONE_SERVICE_KEY
+	keystoneCfg.EnvironmentKey = config.KEYSTONE_ENVIRONMENT_KEY
+	keystoneCfg.Enabled = config.KEYSTONE_ENABLED
+	keystoneClient := keystoneCfg.ToClient()
+	keystone.GlobalClient = keystoneClient
+	if keystoneClient != nil {
+		logger.SysLogf("Keystone 上报客户端已初始化: endpoint=%s product=%s service=%s", config.KEYSTONE_ENDPOINT, config.KEYSTONE_PRODUCT_KEY, config.KEYSTONE_SERVICE_KEY)
+	} else {
+		logger.SysLogf("Keystone 上报客户端未启用 (设置 KEYSTONE_ENABLED=true 和 KEYSTONE_ENDPOINT/KEYSTONE_SECRET)")
+	}
 	model.InitDB()
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
@@ -53,6 +74,10 @@ func main() {
 	} else {
 		logger.SysLogf("录音启动恢复完成: assemblies=%d finalizing=%d", summary.AssembliesRecovered, summary.FinalizingRecovered)
 	}
+	// 同步启动恢复：标记当前实例中断的 SonicNote 同步任务（多实例安全）
+	if err := sonicnote.RecoverSyncState(appCtx); err != nil {
+		logger.SysWarn(fmt.Sprintf("SonicNote 同步启动恢复失败: %v", err))
+	}
 	chunkTempDir := config.ChunkUploadTempDir()
 	if err := os.MkdirAll(chunkTempDir, 0o755); err != nil {
 		logger.SysWarn(fmt.Sprintf("Chunk 上传临时目录检查失败: path=%s err=%v", chunkTempDir, err))
@@ -63,6 +88,9 @@ func main() {
 	service.StartRecordingFinalizeWorker(appCtx)
 	service.InitLibraryFileCountCacheInvalidator()
 	service.InitLibraryCacheInvalidator()
+	// 启动全局统计定时推送（推送到 Keystone）
+	controller.StartGlobalStatsPushWorker(appCtx, 5*time.Minute)
+
 
 	// 检查并执行数据迁移
 	// needMigration, err := model.CheckMigrationNeeded()

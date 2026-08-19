@@ -101,6 +101,11 @@ func UpdateSiteModelConfig(c *gin.Context) {
 		logger.SysErrorf("[SiteReindex] 获取旧站点模型配置失败，跳过向量重建差异判断: eid=%d, err=%v", eid, oldModelConfigErr)
 	}
 
+	if err := configService.ValidateAndNormalizeModelConfig(chunkConfig, req.ModelConfig); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
+
 	// 提取新旧向量模型配置，预检新模型可用性
 	_, newModelName := extractVectorEmbeddingConfig(req.ModelConfig)
 	oldChannelID, oldModelName := extractVectorEmbeddingConfig(oldModelConfig)
@@ -112,7 +117,7 @@ func UpdateSiteModelConfig(c *gin.Context) {
 	var actualVectorDim int
 	if vectorModelChanged {
 		// 预检：调用新模型 API 验证可用性并检测实际维度
-		dim, err := verifyNewEmbeddingModel(eid, newChannelID, newModelName)
+		dim, err := verifyNewEmbeddingModelForConfig(eid, newChannelID, newModelName)
 		if err != nil {
 			logger.SysErrorf("[SiteReindex] 新向量模型验证失败: eid=%d, channel=%d, model=%s, err=%v", eid, newChannelID, newModelName, err)
 			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(fmt.Sprintf("新模型验证失败: %v", err)))
@@ -151,7 +156,7 @@ func UpdateSiteModelConfig(c *gin.Context) {
 			oldModelName, resolveCatalogDimension(oldModelName), newModelName, actualVectorDim)
 		logger.SysLogf("[SiteReindex] 开始重建向量集合: eid=%d, %s", eid, rebuildLog)
 
-		if err := rebuildVectorCollection(eid, actualVectorDim); err != nil {
+		if err := rebuildVectorCollectionForConfig(eid, actualVectorDim); err != nil {
 			logger.SysErrorf("[SiteReindex] 重建向量集合失败: eid=%d, err=%v", eid, err)
 			c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse(fmt.Sprintf("重建向量集合失败: %v", err)))
 			return
@@ -213,6 +218,8 @@ func UpdateSiteModelConfig(c *gin.Context) {
 
 var triggerSiteEmbeddingReindex = triggerSiteEmbeddingReindexAsync
 var triggerWikiVectorReindex = triggerWikiVectorReindexAsync
+var verifyNewEmbeddingModelForConfig = verifyNewEmbeddingModel
+var rebuildVectorCollectionForConfig = rebuildVectorCollection
 
 func triggerSiteEmbeddingReindexAsync(eid int64, oldCfg, newCfg *model.ModelConfigData, actualVectorDim int) {
 	oldChannelID, oldModelName := extractVectorEmbeddingConfig(oldCfg)
@@ -226,11 +233,11 @@ func triggerSiteEmbeddingReindexAsync(eid int64, oldCfg, newCfg *model.ModelConf
 		ctx := context.Background()
 		service := rag.NewSiteEmbeddingReindexService(model.DB)
 		run, err := service.Start(ctx, rag.SiteEmbeddingReindexStartRequest{
-			Eid:            eid,
-			OldChannelID:   oldChannelID,
-			OldModelName:   oldModelName,
-			NewChannelID:   newChannelID,
-			NewModelName:   newModelName,
+			Eid:             eid,
+			OldChannelID:    oldChannelID,
+			OldModelName:    oldModelName,
+			NewChannelID:    newChannelID,
+			NewModelName:    newModelName,
 			ActualVectorDim: actualVectorDim,
 		})
 		if err != nil {

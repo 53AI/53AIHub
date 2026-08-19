@@ -39,6 +39,9 @@ func InitRAGJobEngine() {
 	// 注册纪要生成回调，不依赖 Redis
 	v2steps.GenerateMeetingMinutesFn = GenerateMeetingMinutes
 
+	// 注册转写复用回调（同内容文件已有 completed 转写 → 拷贝跳过 ASR）
+	v2steps.ReuseTranscriptFn = reuseTranscriptForFile
+
 	// 注册洞察生成回调（在 document_chunking 步骤中实体抽取完成后触发）
 	v2steps.GenerateInsightsFn = GenerateInsights
 
@@ -74,11 +77,6 @@ func InitRAGJobEngine() {
 
 		// 注册 V2 Handler
 		ragJobEngineV2.RegisterHandler("document_parsing", v2steps.NewDocumentParsingHandler(model.DB))
-
-		ragJobEngineV2.RegisterHandler("content_cleaning", func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
-			logger.Info(ctx, "V2 Handler: content_cleaning executed")
-			return nil
-		})
 
 		registerRagJobEngineV2Handlers(ragJobEngineV2)
 
@@ -130,10 +128,7 @@ func registerRagJobEngineV2Handlers(engine *v2engines.RagJobEngineV2) {
 
 	// 注册 V2 Handler
 	engine.RegisterHandler("document_parsing", v2steps.NewDocumentParsingHandler(model.DB))
-	engine.RegisterHandler("content_cleaning", func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
-		logger.Info(ctx, "V2 Handler: content_cleaning executed")
-		return nil
-	})
+	engine.RegisterHandler("content_cleaning", v2steps.NewContentCleaningHandler(model.DB))
 	engine.RegisterHandler("summary_generation", v2steps.NewSummaryGenerationHandler(model.DB))
 	engine.RegisterHandler("document_chunking", v2steps.NewDocumentChunkingHandler(model.DB))
 	engine.RegisterHandler("vector_indexing", v2steps.NewVectorIndexingHandler(model.DB))
@@ -143,7 +138,7 @@ func registerRagJobEngineV2Handlers(engine *v2engines.RagJobEngineV2) {
 
 	// 注册 V2 Recovery Handler
 	engine.RegisterRecoveryHandler("document_parsing", v2steps.RecoverDocumentParsing(model.DB))
-	engine.RegisterRecoveryHandler("content_cleaning", v2steps.RecoverContentCleaning())
+	engine.RegisterRecoveryHandler("content_cleaning", v2steps.RecoverContentCleaning(model.DB))
 	engine.RegisterRecoveryHandler("summary_generation", v2steps.RecoverSummaryGeneration(model.DB))
 	engine.RegisterRecoveryHandler("document_chunking", v2steps.RecoverDocumentChunking(model.DB))
 	engine.RegisterRecoveryHandler("vector_indexing", v2steps.RecoverVectorIndexing(model.DB))
@@ -235,8 +230,24 @@ func RetryJobStepV2WithOptions(ctx context.Context, jobID int64, newConfig json.
 		job.RuntimeProfile = string(newProfileBytes)
 	}
 
+	// 记录该 job 是否由批量运行创建（single_step 标志随后会被删除，先记录再删）。
+	// 批量运行创建的步骤由管理端显式选择，不受手动步骤断点约束；
+	// 普通链上任务的主动重试必须尊重手动步骤边界，避免跳过内容清洗等手动节点。
+	_, wasBatchSingleStep := params["__single_step_execution"]
 	// 确保移除单步执行标志，让引擎能够触发后续步骤
 	delete(params, "__single_step_execution")
+
+	// 手动步骤断点：链上任务重试时，若该步骤之前存在未执行（paused）的手动步骤，
+	// 拒绝重试，要求用户先手动执行该手动步骤。
+	if !wasBatchSingleStep {
+		blocked, err := hasPausedManualStepBefore(ctx, job.RunID, currentIndex, profile)
+		if err != nil {
+			return fmt.Errorf("检查前置手动步骤失败: %v", err)
+		}
+		if blocked {
+			return fmt.Errorf("步骤 %s 之前存在未执行的手动步骤（如内容清洗），请先手动执行该步骤", step.StepKey)
+		}
+	}
 
 	// 手动 retry 时清除 reindex 引用，防止 guard 用已取消的 run_id 拦截
 	delete(params, "embedding_reindex_run_id")
@@ -372,6 +383,25 @@ func BatchRetryJobStepsV2(ctx context.Context, items []BatchRetryJobStepItemV2) 
 				return err
 			}
 		}
+		return nil
+	}
+
+	// 批量运行/重试同样尊重手动步骤断点：目标步骤之前存在未执行（paused）的
+	// 手动步骤时，该 job 保持 paused 等待手动触发，不再自动入队，
+	// 避免"内容清洗"未手动开始而语料拆分/向量化等下游步骤自动完成。
+	blocked, err := isJobBlockedByPausedManualStep(ctx, items[0].JobID)
+	if err != nil {
+		return err
+	}
+	if blocked {
+		// 置 paused 而非保持 pending：pending 会污染排队统计并让文件 run_status 误判为
+		// processing；paused 表示等待手动触发，手动步骤执行后由 EnqueueNextJob 正常推进。
+		if err := model.DB.WithContext(ctx).Model(&model.RagJob{}).
+			Where("job_id = ?", items[0].JobID).
+			Update("status", model.RagJobStatusPaused).Error; err != nil {
+			return err
+		}
+		logger.Infof(ctx, "Batch retry stopped at job %d: 前置手动步骤未执行，置 paused 等待手动触发", items[0].JobID)
 		return nil
 	}
 
@@ -536,6 +566,10 @@ func BatchRunJobStepsV2(ctx context.Context, eid int64, run BatchRunContextV2, i
 	}
 	paramsMap["eid"] = eid
 	paramsMap["file_id"] = run.RelatedID
+	// Batch 单步运行可由管理端直接发起，StartParameters 并不保证带有 user_id。
+	// 下游的纪要、洞察和安心录记忆均按 owner_id 查询，因此在任务创建时补齐
+	// 文件创建者，保证新任务和常规上传任务的归属一致。
+	populateRagJobOwnerID(paramsMap, file.UserID)
 	paramsMap["__single_step_execution"] = true
 	if strategy != nil {
 		if _, exists := paramsMap["cleaning_rule"]; !exists {
@@ -597,6 +631,21 @@ func BatchRunJobStepsV2(ctx context.Context, eid int64, run BatchRunContextV2, i
 			}
 			continue
 		}
+		// 手动步骤断点：该步骤之前存在未执行（paused）的手动步骤时，
+		// 保持 paused 等待手动触发，不自动入队，避免"内容清洗"未手动开始
+		// 而语料拆分/向量化等下游步骤自动完成（也不产生孤儿 pending 污染排队统计）。
+		blocked, err := isJobBlockedByPausedManualStep(ctx, job.JobID)
+		if err != nil {
+			return "", nil, err
+		}
+		if blocked {
+			if err := db.Model(&model.RagJob{}).Where("job_id = ?", job.JobID).
+				Update("status", model.RagJobStatusPaused).Error; err != nil {
+				return "", nil, err
+			}
+			logger.Infof(ctx, "BatchRun: job %d (step=%s) 前置手动步骤未执行，置 paused 等待手动触发", job.JobID, job.Type)
+			continue
+		}
 		retryItems = append(retryItems, BatchRetryJobStepItemV2{JobID: job.JobID})
 	}
 
@@ -607,6 +656,15 @@ func BatchRunJobStepsV2(ctx context.Context, eid int64, run BatchRunContextV2, i
 	}
 
 	return runID, createdJobIDs, nil
+}
+
+func populateRagJobOwnerID(params map[string]interface{}, fileOwnerID int64) {
+	if fileOwnerID <= 0 {
+		return
+	}
+	if _, exists := params["user_id"]; !exists {
+		params["user_id"] = fileOwnerID
+	}
 }
 
 func resolveBatchRunMode(step v2model.ProfileStep, runMode string) (v2model.RunMode, error) {
@@ -648,6 +706,24 @@ func runBatchRetryJobStepsV2(ctx context.Context, items []BatchRetryJobStepItemV
 		}
 		if status != model.RagJobStatusSuccess {
 			logger.Errorf(ctx, "Batch retry stopped: job %d status %s", prevJobID, status)
+			return
+		}
+		// 手动步骤断点：该步骤之前存在未执行（paused）的手动步骤时停止串行，
+		// 该 job 置 paused 等待用户手动触发，避免跳过内容清洗等手动节点
+		// （也避免残留 pending 孤儿污染排队统计/误判 run_status）。
+		blocked, err := isJobBlockedByPausedManualStep(ctx, item.JobID)
+		if err != nil {
+			logger.Errorf(ctx, "Batch retry check manual step boundary failed: job %d, err %v", item.JobID, err)
+			return
+		}
+		if blocked {
+			if err := model.DB.WithContext(ctx).Model(&model.RagJob{}).
+				Where("job_id = ?", item.JobID).
+				Update("status", model.RagJobStatusPaused).Error; err != nil {
+				logger.Errorf(ctx, "Batch retry pause job %d failed: %v", item.JobID, err)
+				return
+			}
+			logger.Infof(ctx, "Batch retry stopped at job %d: 前置手动步骤未执行，置 paused 等待手动触发", item.JobID)
 			return
 		}
 		if err := batchRetryJobStepExecutor(ctx, item.JobID, item.Config); err != nil {
@@ -961,6 +1037,64 @@ func extractProfileStepIndex(startParameters string) (int, bool) {
 		return -1, false
 	}
 	return int(idx), true
+}
+
+// hasPausedManualStepBefore 检查 run 中是否存在位于 stepIndex 之前、尚未执行（paused）的手动步骤。
+// 存在时该步骤之后的所有下游步骤都不应被自动推进，必须等待用户手动触发该手动步骤，
+// 防止"内容清洗"等手动节点未执行时语料拆分/向量化等下游步骤自动完成。
+// 该函数只识别 profile 中 run_mode 为 manual 且 job 仍为 paused 的步骤；
+// paused 的 auto 步骤（如 reindex 遗留）不构成手动断点。
+func hasPausedManualStepBefore(ctx context.Context, runID string, stepIndex int, profile v2model.RuntimeProfile) (bool, error) {
+	if runID == "" || stepIndex <= 0 {
+		return false, nil
+	}
+	var jobs []model.RagJob
+	if err := model.DB.WithContext(ctx).Select("start_parameters").
+		Where("run_id = ? AND status = ?", runID, model.RagJobStatusPaused).
+		Find(&jobs).Error; err != nil {
+		return false, err
+	}
+	for _, j := range jobs {
+		idx, ok := extractProfileStepIndex(j.StartParameters)
+		if !ok || idx < 0 || idx >= stepIndex || idx >= len(profile.Steps) {
+			continue
+		}
+		step := profile.Steps[idx]
+		runMode := step.RunMode
+		if runMode == "" {
+			if step.Enabled {
+				runMode = v2model.RunModeAuto
+			} else {
+				runMode = v2model.RunModeManual
+			}
+		}
+		if runMode == v2model.RunModeManual {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// isJobBlockedByPausedManualStep 判断指定 job 是否被同 run 内未执行（paused）的手动步骤阻塞。
+// profile/参数解析失败等异常场景返回 false，保持调用方原有行为（不额外阻塞）。
+func isJobBlockedByPausedManualStep(ctx context.Context, jobID int64) (bool, error) {
+	var job model.RagJob
+	if err := model.DB.WithContext(ctx).Select("run_id", "start_parameters", "runtime_profile_json").
+		First(&job, jobID).Error; err != nil {
+		return false, err
+	}
+	if job.RunID == "" || job.RuntimeProfile == "" {
+		return false, nil
+	}
+	var profile v2model.RuntimeProfile
+	if err := json.Unmarshal([]byte(job.RuntimeProfile), &profile); err != nil {
+		return false, nil
+	}
+	idx, ok := extractProfileStepIndex(job.StartParameters)
+	if !ok {
+		return false, nil
+	}
+	return hasPausedManualStepBefore(ctx, job.RunID, idx, profile)
 }
 
 func resetJobStepResults(ctx context.Context, jobID int64) error {

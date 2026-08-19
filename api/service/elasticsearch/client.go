@@ -7,44 +7,60 @@ import (
 )
 
 var (
-	globalClient *Client
-	once         sync.Once
+	globalClient            *Client
+	globalClientMu          sync.Mutex
+	globalClientInitialized bool
 )
 
 // InitGlobalClient 初始化全局 Elasticsearch 客户端
 func InitGlobalClient() error {
-	var err error
-	once.Do(func() {
-		config := LoadFromEnv()
-		globalClient, err = NewClient(config)
-		if err != nil {
-			logger.SysLogf("初始化 Elasticsearch 客户端失败: %v", err)
-			return
-		}
+	globalClientMu.Lock()
+	defer globalClientMu.Unlock()
+	if globalClientInitialized {
+		return nil
+	}
+	globalClientInitialized = true
 
-		// 如果未禁用，创建索引
-		if !config.Disabled {
-			indexManager := NewIndexManager(globalClient)
-			if err := indexManager.CreateFilesIndex(); err != nil {
-				logger.SysLogf("创建 Elasticsearch 索引失败: %v", err)
-			}
+	var err error
+	config := LoadFromEnv()
+	globalClient, err = NewClient(config)
+	if err != nil {
+		logger.SysLogf("初始化 Elasticsearch 客户端失败: %v", err)
+		return err
+	}
+
+	// 如果未禁用，创建索引
+	if !config.Disabled {
+		indexManager := NewIndexManager(globalClient)
+		if err := indexManager.CreateFilesIndex(); err != nil {
+			logger.SysLogf("创建 Elasticsearch 索引失败: %v", err)
 		}
-	})
+	}
 	return err
 }
 
 // GetGlobalClient 获取全局 Elasticsearch 客户端
 func GetGlobalClient() *Client {
-	if globalClient == nil {
-		logger.SysLogf("Elasticsearch 客户端未初始化，尝试初始化")
-		if err := InitGlobalClient(); err != nil {
-			logger.SysLogf("初始化 Elasticsearch 客户端失败: %v", err)
-			// 返回一个禁用的客户端
-			config := &ElasticsearchConfig{Disabled: true}
-			globalClient, _ = NewClient(config)
-		}
+	globalClientMu.Lock()
+	client := globalClient
+	globalClientMu.Unlock()
+	if client != nil {
+		return client
 	}
-	return globalClient
+	logger.SysLogf("Elasticsearch 客户端未初始化，尝试初始化")
+	if err := InitGlobalClient(); err != nil {
+		logger.SysLogf("初始化 Elasticsearch 客户端失败: %v", err)
+		// 返回一个禁用的客户端
+		config := &ElasticsearchConfig{Disabled: true}
+		fallback, _ := NewClient(config)
+		globalClientMu.Lock()
+		globalClient = fallback
+		globalClientMu.Unlock()
+	}
+	globalClientMu.Lock()
+	client = globalClient
+	globalClientMu.Unlock()
+	return client
 }
 
 // GetAddresses 获取客户端地址列表
@@ -63,6 +79,8 @@ func IsEnabled() bool {
 
 // ResetGlobalClientForTest 重置全局客户端，避免测试间串扰。
 func ResetGlobalClientForTest() {
+	globalClientMu.Lock()
+	defer globalClientMu.Unlock()
 	globalClient = nil
-	once = sync.Once{}
+	globalClientInitialized = false
 }

@@ -1,3 +1,4 @@
+
 package model
 
 import (
@@ -19,6 +20,11 @@ type UserMemory struct {
 	// CustomMemory 自定义记忆信息（用户手动编辑的记忆）
 	CustomMemory LongText `json:"custom_memory"`
 
+	// Position 职位（用户填写，15字限制）
+	Position string `json:"position" gorm:"size:15;default:'';not null;comment:'职位（用户填写，15字限制）'"`
+	// Style 风格（选项，用户选择）
+	Style string `json:"style" gorm:"size:50;default:'';not null;comment:'风格（选项，用户选择）'"`
+
 	// Version 乐观锁版本号
 	Version int `json:"version" gorm:"default:0"`
 
@@ -38,7 +44,15 @@ type UserMemoryResponse struct {
 	Department   string `json:"department"` // 动态从组织架构读取
 	SmartMemory  string `json:"smart_memory"`
 	CustomMemory string `json:"custom_memory"`
+	Position     string `json:"position"`
+	Style        string `json:"style"`
 	Version      int    `json:"version"`
+}
+
+var StyleOptions = []string{
+	"内容简洁、引发思考",
+	"结论先行、细节支撑",
+	"详细分析、引发思考",
 }
 
 // GetSmartMemoryItems 解析智能记忆列表
@@ -111,6 +125,8 @@ func (m *UserMemory) ToResponse(nickname, department string) *UserMemoryResponse
 		Department:   department,
 		SmartMemory:  smartMemory,
 		CustomMemory: customMemory,
+		Position:     m.Position,
+		Style:        m.Style,
 		Version:      m.Version,
 	}
 }
@@ -127,6 +143,8 @@ func (m *UserMemory) Update() error {
 		Updates(map[string]interface{}{
 			"smart_memory":  m.SmartMemory,
 			"custom_memory": m.CustomMemory,
+			"position":      m.Position,
+			"style":         m.Style,
 			"version":       gorm.Expr("version + 1"),
 			"updated_time":  m.UpdatedTime,
 		})

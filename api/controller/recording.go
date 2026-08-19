@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
@@ -11,6 +14,7 @@ import (
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -109,10 +113,15 @@ type CreateRecordingJobRequest struct {
 	UploadIntervalMs        int64  `json:"upload_interval_ms"`
 	MaxDurationMs           int64  `json:"max_duration_ms"`
 	GroupID                 *int64 `json:"group_id"`
+	InsightPerspective      string `json:"insight_perspective"`
 }
 
 type UpdateRecordingJobStateRequest struct {
 	Action string `json:"action" binding:"required"`
+}
+
+type UpdateFileInsightPerspectiveRequest struct {
+	Perspective string `json:"perspective" binding:"required"`
 }
 
 type UploadRecordingSegmentRequest struct {
@@ -142,6 +151,63 @@ type RecordingSegmentManifestResponse struct {
 	MissingSegments []int64                                `json:"missing_segments"`
 	SegmentCount    int                                    `json:"segment_count"`
 	MissingCount    int                                    `json:"missing_count"`
+}
+
+// GetInsightPerspectives godoc
+// @Summary 获取内置洞察视角
+// @Description 返回录音/材料生成决策洞察时可选择的内置视角
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse{data=[]model.InsightPerspectiveOption}
+// @Router /api/recordings/insight-perspectives [get]
+func GetInsightPerspectives(c *gin.Context) {
+	c.JSON(http.StatusOK, model.Success.ToResponse(model.InsightPerspectiveOptions()))
+}
+
+// UpdateFileInsightPerspective godoc
+// @Summary 修改文件洞察视角
+// @Description 修改文件后续生成决策洞察时采用的视角，不会自动触发重新生成
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Param request body controller.UpdateFileInsightPerspectiveRequest true "洞察视角"
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Router /api/recordings/files/{file_id}/insight-perspective [patch]
+func UpdateFileInsightPerspective(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	var req UpdateFileInsightPerspectiveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	perspective, err := service.SetFileInsightPerspective(
+		c.Request.Context(), config.GetEID(c), config.GetUserId(c), fileID, req.Perspective,
+	)
+	if err != nil {
+		if errors.Is(err, service.ErrInsightPerspectiveForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(err.Error()))
+			return
+		}
+		if errors.Is(err, service.ErrInvalidInsightPerspective) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不支持的洞察视角"))
+			return
+		}
+		logger.SysErrorf("【洞察】修改视角失败: file_id=%d err=%v", fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("修改洞察视角失败"))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
+		"file_id":             fileID,
+		"insight_perspective": perspective,
+	}))
 }
 
 // CreateRecordingJob godoc
@@ -184,33 +250,9 @@ func CreateRecordingJob(c *gin.Context) {
 	groupID := int64(0)
 	if req.GroupID != nil {
 		groupID = *req.GroupID
-		if groupID < 0 {
-			logger.SysErrorf("【录音】分组ID无效: eid=%d group_id=%d", eid, groupID)
-			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
+		if err := validateRecordingGroupID(c, eid, userID, groupID); err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 			return
-		}
-		if groupID > 0 {
-			g, err := model.GetGroupByID(groupID)
-			if err != nil {
-				logger.SysErrorf("【录音】分组不存在: eid=%d group_id=%d err=%v", eid, groupID, err)
-				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
-				return
-			}
-			if g.Eid != eid {
-				logger.SysErrorf("【录音】分组不属于当前企业: eid=%d group_id=%d group_eid=%d", eid, groupID, g.Eid)
-				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
-				return
-			}
-			if g.GroupType != model.RECORDING_FILE_GROUP_TYPE {
-				logger.SysErrorf("【录音】分组类型不匹配: eid=%d group_id=%d group_type=%d want=%d", eid, groupID, g.GroupType, model.RECORDING_FILE_GROUP_TYPE)
-				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组类型不匹配")))
-				return
-			}
-			if g.CreatedBy != userID {
-				logger.SysErrorf("【录音】分组不属于当前用户: eid=%d user_id=%d group_created_by=%d", eid, userID, g.CreatedBy)
-				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("分组不存在")))
-				return
-			}
 		}
 	}
 
@@ -223,6 +265,7 @@ func CreateRecordingJob(c *gin.Context) {
 		UploadIntervalMs:        req.UploadIntervalMs,
 		MaxDurationMs:           req.MaxDurationMs,
 		GroupID:                 groupID,
+		InsightPerspective:      req.InsightPerspective,
 	})
 	if err != nil {
 		logger.SysErrorf("【录音】创建录音任务失败: eid=%d user_id=%d library_id=%d err=%v", eid, userID, req.LibraryID, err)
@@ -560,6 +603,37 @@ func respondRecordingError(c *gin.Context, err error) {
 	}
 }
 
+// validateRecordingGroupID 校验录音分组归属（CreateRecordingJob 与移动分组共用）。
+// 分组必须属于当前企业、类型为录音文件分组（type=8）且为当前用户创建；
+// groupID=0 表示未分组，合法。返回 nil 表示通过。
+func validateRecordingGroupID(c *gin.Context, eid, userID, groupID int64) error {
+	if groupID < 0 {
+		logger.SysErrorf("【录音】分组ID无效: eid=%d group_id=%d", eid, groupID)
+		return fmt.Errorf("分组不存在")
+	}
+	if groupID == 0 {
+		return nil
+	}
+	g, err := model.GetGroupByID(groupID)
+	if err != nil {
+		logger.SysErrorf("【录音】分组不存在: eid=%d group_id=%d err=%v", eid, groupID, err)
+		return fmt.Errorf("分组不存在")
+	}
+	if g.Eid != eid {
+		logger.SysErrorf("【录音】分组不属于当前企业: eid=%d group_id=%d group_eid=%d", eid, groupID, g.Eid)
+		return fmt.Errorf("分组不存在")
+	}
+	if g.GroupType != model.RECORDING_FILE_GROUP_TYPE {
+		logger.SysErrorf("【录音】分组类型不匹配: eid=%d group_id=%d group_type=%d want=%d", eid, groupID, g.GroupType, model.RECORDING_FILE_GROUP_TYPE)
+		return fmt.Errorf("分组类型不匹配")
+	}
+	if g.CreatedBy != userID {
+		logger.SysErrorf("【录音】分组不属于当前用户: eid=%d user_id=%d group_created_by=%d", eid, userID, g.CreatedBy)
+		return fmt.Errorf("分组不存在")
+	}
+	return nil
+}
+
 // GetAvailableTemplates godoc
 // @Summary 获取可用总结模板列表
 // @Description 获取当前企业可用于录音总结的模板列表
@@ -762,6 +836,14 @@ func UserGetFileTemplates(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
+			return
+		}
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
 
 	svc := service.NewRecordingAdminService(eid)
 	summaries, err := svc.ListFileSummaries(c, fileID)
@@ -790,9 +872,56 @@ func GetFileParseStatus(c *gin.Context) {
 		return
 	}
 	eid := config.GetEID(c)
+	// 权限放开：parse-status 供其他知识库（团队/共享库）使用，只要求用户对文件所在知识库有查看权限，
+	// 不再要求文件创建者是当前用户（GetViewableRecordingFile vs GetAccessibleRecordingFile）。
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
+			return
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		return
+	}
 
 	result := service.GetFileParseStatus(eid, fileID)
 	c.JSON(http.StatusOK, model.Success.ToResponse(result))
+}
+
+// RetranscribeRecordingFile godoc
+// @Summary 补触发转写
+// @Description 对指定录音文件重新触发转写任务（document_parsing），用于同步时引擎未就绪导致"有录音无转写"的存量文件
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=object} "补触发结果"
+// @Router /api/recordings/files/{file_id}/retranscribe [post]
+func RetranscribeRecordingFile(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该录音文件"))
+			return
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		return
+	}
+
+	if err := service.RetranscribeRecordingFile(c.Request.Context(), eid, fileID); err != nil {
+		if errors.Is(err, service.ErrRetranscribeAlreadyProcessing) {
+			c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{"status": "processing", "message": err.Error()}))
+			return
+		}
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{"status": "pending"}))
 }
 
 // GetFileInsightPage godoc
@@ -813,8 +942,11 @@ func GetFileInsightPage(c *gin.Context) {
 	}
 	eid := config.GetEID(c)
 
-	// 校验文件归属，防止跨企业访问
-	if _, err := model.GetFileByID(eid, fileID); err != nil {
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
+			return
+		}
 		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 		return
 	}
@@ -825,6 +957,73 @@ func GetFileInsightPage(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(page))
+}
+
+// GetFileInsightBackground godoc
+// @Summary 获取洞察协同研讨背景
+// @Description 返回本次洞察生成使用的个人、企业、历史和纪要背景快照
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=service.InsightBackground}
+// @Router /api/recordings/files/{file_id}/insight-context [get]
+func GetFileInsightBackground(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	background, err := service.GetInsightBackground(c.Request.Context(), config.GetEID(c), config.GetUserId(c), fileID)
+	if err != nil {
+		if errors.Is(err, service.ErrInsightContextForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该洞察背景"))
+			return
+		}
+		logger.SysErrorf("【洞察】读取协同背景失败 fileID=%d err=%v", fileID, err)
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("读取洞察背景失败"))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(background))
+}
+
+// ChatFileInsightWorkshop godoc
+// @Summary 洞察背景协同对话
+// @Description 基于当前背景与纪要进行补充说明对话，不直接覆盖洞察结果
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Param request body service.InsightWorkshopChatRequest true "协同对话请求"
+// @Success 200 {object} model.CommonResponse{data=service.InsightWorkshopChatResponse}
+// @Router /api/recordings/files/{file_id}/insight-context/chat [post]
+func ChatFileInsightWorkshop(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	var req service.InsightWorkshopChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	response, err := service.ChatInsightWorkshop(c.Request.Context(), config.GetEID(c), config.GetUserId(c), fileID, req)
+	if err != nil {
+		if errors.Is(err, service.ErrInsightContextForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权使用该洞察协同对话"))
+			return
+		}
+		if errors.Is(err, service.ErrInsightContextEmpty) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("补充说明不能为空"))
+			return
+		}
+		logger.SysErrorf("【洞察】协同对话失败 fileID=%d err=%v", fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("洞察协同对话失败"))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(response))
 }
 
 // GetMyQueuedCount godoc
@@ -862,7 +1061,11 @@ func GetFileTranscription(c *gin.Context) {
 	}
 	eid := config.GetEID(c)
 
-	if _, err := model.GetFileByID(eid, fileID); err != nil {
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
+			return
+		}
 		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 		return
 	}
@@ -876,6 +1079,50 @@ func GetFileTranscription(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
 		"file_id": fileID,
 		"content": text,
+	}))
+}
+
+// ExportTranscript godoc
+// @Summary 获取转写 Markdown
+// @Description 将转写 JSON 转换为带说话人/时间/内容的 Markdown 返回（非文件下载）
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Router /api/recordings/files/{file_id}/transcription/export [get]
+func ExportTranscript(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
+			return
+		}
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+
+	md, fileName, err := service.ExportTranscriptMarkdown(c.Request.Context(), eid, fileID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		} else {
+			logger.SysErrorf("【录音】导出转写失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
+		"file_id":   fileID,
+		"markdown":  md,
+		"file_name": fileName,
 	}))
 }
 
@@ -902,6 +1149,10 @@ func RunRecordingPipeline(c *gin.Context) {
 
 	result, err := service.RunRecordingPipeline(c.Request.Context(), eid, fileID, userID)
 	if err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该录音文件"))
+			return
+		}
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
 		return
 	}
@@ -913,4 +1164,254 @@ func RunRecordingPipeline(c *gin.Context) {
 	} else {
 		c.JSON(http.StatusAccepted, model.Success.ToResponse(result))
 	}
+}
+
+// RegenerateInsights godoc
+// @Summary 重新生成洞察
+// @Description 清除现有洞察数据，重新调用 LLM 生成洞察。不重新转写和纪要，异步执行，前端轮询 parse-status 获取进度。
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 202 {object} model.CommonResponse "已触发洞察重新生成"
+// @Failure 400 {object} model.CommonResponse "参数错误或文件不存在"
+// @Router /api/recordings/files/{file_id}/insights/regenerate [post]
+func RegenerateInsights(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+	var req service.InsightRegenerationRequest
+	var request *service.InsightRegenerationRequest
+	if err := c.ShouldBindJSON(&req); err == nil {
+		request = &req
+	} else if !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	if err := service.RegenerateInsightsWithContext(c.Request.Context(), eid, userID, fileID, request); err != nil {
+		if errors.Is(err, service.ErrInsightContextForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该文件"))
+			return
+		}
+		if errors.Is(err, service.ErrInsightContextEmpty) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("洞察背景不能为空"))
+			return
+		}
+		logger.SysErrorf("【洞察】触发重新生成失败 fileID=%d err=%v", fileID, err)
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("重新生成洞察失败"))
+		return
+	}
+
+	logger.Infof(c, "【洞察】触发重新生成: fileID=%d eid=%d userID=%d", fileID, eid, userID)
+	c.JSON(http.StatusAccepted, model.Success.ToResponse(gin.H{"ok": true}))
+}
+
+// ReExtractEntities godoc
+// @Summary 重新抽取实体
+// @Description 根据录音配置中的历史记忆设置，重新抽取文件的实体。不重新转写和纪要，依赖文件已有内容。
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 202 {object} model.CommonResponse "已触发实体抽取"
+// @Failure 400 {object} model.CommonResponse "参数错误或文件不存在"
+// @Router /api/recordings/files/{file_id}/entities/extract [post]
+func ReExtractEntities(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+
+	// 重新抽取会写入通用实体与会议记忆，必须由该个人录音创建者发起。
+	if _, err := service.GetAccessibleRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID, true); err != nil {
+		if errors.Is(err, service.ErrRecordingFileForbidden) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该录音文件"))
+			return
+		}
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("文件不存在"))
+		return
+	}
+
+	// 读取录音配置获取历史记忆设置
+	cfg, err := model.ValidateOrCreateRecordingConfig(eid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+
+	memCfg := cfg.MemoryExtraction
+	if memCfg == nil {
+		memCfg = &model.MemoryExtractionConfig{Enabled: true, Types: []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeCommitment}}
+	}
+
+	// 异步执行实体抽取
+	go func() {
+		ctx := context.Background()
+		extractor := rag.NewEntityExtractionService(model.DB)
+
+		if memCfg.IsEffectivelyEnabled() {
+			var file model.File
+			if err := model.DB.Where("id = ?", fileID).First(&file).Error; err != nil {
+				logger.SysErrorf("【实体抽取】查询文件失败: fileID=%d err=%v", fileID, err)
+				return
+			}
+			body, err := model.GetLastFileBodyByFileID(eid, fileID)
+			if err != nil {
+				logger.SysErrorf("【实体抽取】读取文件内容失败: fileID=%d err=%v", fileID, err)
+				return
+			}
+			content, err := body.GetContent()
+			if err != nil {
+				logger.SysErrorf("【实体抽取】解析文件内容失败: fileID=%d err=%v", fileID, err)
+				return
+			}
+
+			if err := extractor.ExtractAndStoreForFileContentWithTypes(ctx, eid, fileID, content, memCfg.Types); err != nil {
+				logger.SysErrorf("【实体抽取】按配置类型抽取失败: fileID=%d err=%v", fileID, err)
+			} else {
+				logger.Infof(ctx, "【实体抽取】按配置类型完成: fileID=%d types=%v", fileID, memCfg.Types)
+			}
+
+			// 元信息实体抽取（文件名、知识库名、空间名），仅当配置类型包含 Document 时执行
+			if model.ContainsString(memCfg.Types, model.EntityTypeDocument) {
+				if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
+					logger.SysErrorf("【实体抽取】元信息抽取失败: fileID=%d err=%v", fileID, err)
+				}
+			}
+
+			// 安心录专属实体属性记忆从已有纪要的 memory_entities 编译，
+			// 不修改通用 RAG 实体模型；旧纪要没有该字段时安全返回空结果。
+			if _, err := service.CompileRecordingEntityMemory(ctx, eid, fileID, file.UserID); err != nil {
+				logger.SysErrorf("【实体记忆】重新编译失败: fileID=%d err=%v", fileID, err)
+			}
+		}
+	}()
+
+	logger.Infof(c, "【实体抽取】触发重新抽取: fileID=%d eid=%d", fileID, eid)
+	c.JSON(http.StatusAccepted, model.Success.ToResponse(gin.H{"ok": true}))
+}
+
+// MoveRecordingFileToGroup godoc
+// @Summary 移动录音文件至分组
+// @Description 修改录音文件的 group_id；group_id=0 表示移出分组（未分组）。分组必须为当前用户创建的录音文件分组（type=8）
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Param request body object true "请求体" {"group_id":0}
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Failure 400 {object} model.CommonResponse
+// @Failure 403 {object} model.CommonResponse
+// @Failure 404 {object} model.CommonResponse
+// @Failure 500 {object} model.CommonResponse
+// @Router /api/recordings/files/{file_id}/group [put]
+func MoveRecordingFileToGroup(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	// group_id 用指针区分"缺参"与 0（0 = 移出分组，合法值，不能用 binding:"required"）
+	var req struct {
+		GroupID *int64 `json:"group_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	if req.GroupID == nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少 group_id 参数"))
+		return
+	}
+	if err := validateRecordingGroupID(c, eid, userID, *req.GroupID); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	// 文件归属校验：存在、未删除、属于当前用户、是录音文件（与"我的录音"列表过滤一致）
+	var file model.File
+	if err := model.DB.Where("eid = ? AND id = ? AND is_deleted = ?", eid, fileID, false).First(&file).Error; err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+		return
+	}
+	if file.UserID != userID {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+		return
+	}
+	if !file.IsRecordingOriginType() {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("仅支持移动录音文件"))
+		return
+	}
+
+	if err := model.DB.Model(&model.File{}).Where("id = ?", fileID).Update("group_id", *req.GroupID).Error; err != nil {
+		logger.SysErrorf("【录音】移动文件分组失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
+		"file_id":  fileID,
+		"group_id": *req.GroupID,
+	}))
+}
+
+// CreateRecordingShare godoc
+// @Summary 创建录音分享链接
+// @Description 生成分享链接（share_id），无有效期，参考 /api/shares 智能体分享模式
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Router /api/recordings/files/{file_id}/share [post]
+func CreateRecordingShareHandler(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
+	shareID, err := service.CreateRecordingShare(c.Request.Context(), eid, fileID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{"share_id": shareID}))
+}
+
+// GetSharedRecording godoc
+// @Summary 匿名访问分享的录音内容
+// @Description 通过 share_id 匿名访问录音的转写、纪要、洞察、总结内容（无需登录）
+// @Tags 录音
+// @Produce json
+// @Param share_id path string true "分享ID"
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Router /api/recordings/shared/{share_id} [get]
+func GetSharedRecording(c *gin.Context) {
+	shareID := strings.TrimSpace(c.Param("share_id"))
+	if shareID == "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("empty share_id"))
+		return
+	}
+
+	data, err := service.GetSharedRecordingContent(c.Request.Context(), shareID)
+	if err != nil {
+		c.JSON(http.StatusOK, model.NotFound.ToNewErrorResponse("分享不存在"))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(data))
 }

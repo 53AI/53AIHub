@@ -65,7 +65,13 @@ func searchMySpaceFilesByKeywordWithFilters(ctx context.Context, eid, libraryID 
 		response, err := searchService.Search(eid, request)
 		if err == nil {
 			files, materializeErr := materializeMySpaceFilesFromSearchResults(eid, response.Results, offset, limit, gid)
-			if materializeErr == nil {
+			// ES 返回 err==nil 且物化出文件才算命中。注意：ES 索引可能不完整
+			// （如设备导入的 recording_imported 文件未同步进 ES），空结果不能当作
+			// "无匹配"直接返回——否则 keyword 搜索会漏掉 ES 缺失的文件。空结果必须
+			// fallback 到 DB 查询兜底。即使 ES Total>0 但物化后 files 为空
+			// （结果文件已软删/DB 查不到），同样 fallback，避免返回"空数组+非零 total"
+			// 的矛盾结果（前端拿不到数据却分页提示还有更多）。
+			if materializeErr == nil && len(files) > 0 {
 				return files, response.Total, nil
 			}
 		}

@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -184,112 +183,12 @@ func mirrorAgentRunTimelineEvent(c *gin.Context, requestID string, eventType str
 	mirrorAgentRunTimelineEventWithMessageID(c, requestID, eventType, messageID, payload)
 }
 
-type agentRunTimelineQueue struct {
-	mu     sync.Mutex
-	items  []agentRunTimelineQueueItem
-	notify chan struct{}
-}
-
-type agentRunTimelineQueueItem struct {
-	input    model.AgentRunEventInput
-	terminal bool
-}
-
-var agentRunTimelineQueues sync.Map
-
 func mirrorAgentRunTimelineEventAsync(c *gin.Context, requestID string, eventType string, payload map[string]interface{}) {
-	eid, messageID, ok := getAgentRunMirrorContext(c, requestID)
+	_, messageID, ok := getAgentRunMirrorContext(c, requestID)
 	if !ok {
 		return
 	}
-	key := fmt.Sprintf("%d:%s", eid, strings.TrimSpace(requestID))
-	queueValue, loaded := agentRunTimelineQueues.LoadOrStore(key, &agentRunTimelineQueue{notify: make(chan struct{}, 1)})
-	queue := queueValue.(*agentRunTimelineQueue)
-	queue.mu.Lock()
-	queue.items = append(queue.items, agentRunTimelineQueueItem{input: model.AgentRunEventInput{
-		EventType: eventType,
-		MessageID: messageID,
-		Payload:   cloneAgentRunEventPayload(payload),
-	}})
-	queue.mu.Unlock()
-	if !loaded {
-		go drainAgentRunTimelineQueue(eid, strings.TrimSpace(requestID), key, queue)
-	}
-	select {
-	case queue.notify <- struct{}{}:
-	default:
-	}
-}
-
-func drainAgentRunTimelineQueue(eid int64, requestID, key string, queue *agentRunTimelineQueue) {
-	const maxBatchSize = 100
-	const batchWait = 20 * time.Millisecond
-	ctx := context.Background()
-	for {
-		select {
-		case <-queue.notify:
-		case <-time.After(batchWait):
-		}
-
-		queue.mu.Lock()
-		if len(queue.items) == 0 {
-			queue.mu.Unlock()
-			continue
-		}
-		batchSize := len(queue.items)
-		if batchSize > maxBatchSize {
-			batchSize = maxBatchSize
-		}
-		items := append([]agentRunTimelineQueueItem(nil), queue.items[:batchSize]...)
-		queue.items = queue.items[batchSize:]
-		queue.mu.Unlock()
-		batch := make([]model.AgentRunEventInput, 0, len(items))
-		terminal := false
-		for _, item := range items {
-			batch = append(batch, item.input)
-			terminal = terminal || item.terminal
-		}
-
-		logger.Infof(ctx, "【诊断-AgentRun】批量写入事件: request_id=%s count=%d", requestID, len(batch))
-		if err := service.NewAgentRunService().AppendEventsForRequestBatch(ctx, eid, requestID, batch); err != nil {
-			logger.Warnf(ctx, "【技能运行】批量镜像过程事件失败: eid=%d, request_id=%s, count=%d, err=%v", eid, requestID, len(batch), err)
-		}
-		if terminal {
-			agentRunTimelineQueues.Delete(key)
-			return
-		}
-	}
-}
-
-func enqueueAgentRunFinalResponse(c *gin.Context, requestID string, messageID int64, answer, reasoningContent string) {
-	payload := map[string]interface{}{"answer": answer}
-	if strings.TrimSpace(reasoningContent) != "" {
-		payload["reasoning_content"] = reasoningContent
-	}
-	eid, resolvedMessageID, ok := getAgentRunMirrorContext(c, requestID)
-	if !ok {
-		return
-	}
-	if messageID > 0 {
-		resolvedMessageID = messageID
-	}
-	key := fmt.Sprintf("%d:%s", eid, strings.TrimSpace(requestID))
-	queueValue, loaded := agentRunTimelineQueues.LoadOrStore(key, &agentRunTimelineQueue{notify: make(chan struct{}, 1)})
-	queue := queueValue.(*agentRunTimelineQueue)
-	queue.mu.Lock()
-	queue.items = append(queue.items, agentRunTimelineQueueItem{input: model.AgentRunEventInput{
-		EventType: model.AgentRunEventMessageDone,
-		MessageID: resolvedMessageID,
-		Payload:   payload,
-	}, terminal: true})
-	queue.mu.Unlock()
-	if !loaded {
-		go drainAgentRunTimelineQueue(eid, strings.TrimSpace(requestID), key, queue)
-	}
-	select {
-	case queue.notify <- struct{}{}:
-	default:
-	}
+	mirrorAgentRunTimelineEventWithMessageID(c, requestID, eventType, messageID, payload)
 }
 
 func getAgentRunMirrorContext(c *gin.Context, requestID string) (int64, int64, bool) {
@@ -337,17 +236,6 @@ func mirrorAgentRunTimelineEventWithMessageID(c *gin.Context, requestID string, 
 	if _, err := runSvc.AppendEventForRequest(ctx, eid, requestID, eventType, messageID, payload); err != nil {
 		logger.Warnf(ctx, "【技能运行】镜像过程事件失败: eid=%d, request_id=%s, event_type=%s, err=%v", eid, requestID, eventType, err)
 	}
-}
-
-func cloneAgentRunEventPayload(payload map[string]interface{}) map[string]interface{} {
-	if payload == nil {
-		return nil
-	}
-	cloned := make(map[string]interface{}, len(payload))
-	for key, value := range payload {
-		cloned[key] = value
-	}
-	return cloned
 }
 
 func mirrorOutOfRangeReplyForSubscribe(c *gin.Context, requestID string, messageID int64, answer string) {
@@ -398,7 +286,7 @@ var mirrorAgentRunFinalResponsePersist = mirrorAgentRunFinalResponse
 
 func mirrorAgentRunFinalResponseAsync(c *gin.Context, requestID string, messageID int64, answer string, reasoningContent string) {
 	logger.Infof(c, "【诊断-AgentRun】异步提交最终事件: request_id=%s message_id=%d", requestID, messageID)
-	enqueueAgentRunFinalResponse(c, requestID, messageID, answer, reasoningContent)
+	mirrorAgentRunFinalResponse(c, requestID, messageID, answer, reasoningContent)
 }
 
 // handleOutOfRangeReply 处理超纲回复

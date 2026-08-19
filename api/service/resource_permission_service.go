@@ -41,7 +41,49 @@ func UpdateResourcePermissions(c *gin.Context, tx *gorm.DB, resourceID int64, re
 		}
 	}
 
+	if resourceType == model.ResourceTypePrompt || resourceType == model.ResourceTypeAILink || resourceType == model.ResourceTypeSkillLibrary {
+		eid, err := getResourceEnterpriseID(tx, resourceID, resourceType)
+		if err != nil {
+			return err
+		}
+		scopes := make([]model.ResourceScopeItem, 0, len(groupIDs))
+		for _, groupID := range groupIDs {
+			if groupID > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: groupID})
+			}
+		}
+		if len(scopes) == 0 {
+			scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeCompany, TargetID: 0})
+		}
+		if err := ReplaceResourceScopes(tx, resourceID, resourceType, scopes, eid); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func getResourceEnterpriseID(tx *gorm.DB, resourceID int64, resourceType string) (int64, error) {
+	var eid int64
+	var err error
+	switch resourceType {
+	case model.ResourceTypePrompt:
+		var resource model.Prompt
+		err = tx.Select("eid").Where("prompt_id = ?", resourceID).First(&resource).Error
+		eid = resource.Eid
+	case model.ResourceTypeAILink:
+		var resource model.AILink
+		err = tx.Select("eid").Where("id = ?", resourceID).First(&resource).Error
+		eid = resource.Eid
+	case model.ResourceTypeSkillLibrary:
+		var resource model.SkillLibrary
+		err = tx.Select("eid").Where("id = ?", resourceID).First(&resource).Error
+		eid = resource.Eid
+	}
+	if err != nil {
+		return 0, err
+	}
+	return eid, nil
 }
 
 // UpdateAgentResourcePermissions 更新Agent资源权限的专用方法
