@@ -16,6 +16,7 @@ func registerSaasRoutes(router *gin.Engine) {
 		apiRouter.Use(middleware.Logger())
 		apiRouter.Use(middleware.SlowAPILogger())
 
+
 		maybeUseSaasEnv(apiRouter)
 
 		// 添加Hashids中间件，统一处理ID编解码

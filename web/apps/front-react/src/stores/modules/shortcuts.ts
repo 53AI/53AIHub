@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import shortcutsApi from '@/api/modules/shortcuts'
 import { checkPermission } from '@/utils/permission'
-import { buildWikiPageUrl } from '@/utils/router'
+import { buildUrl, buildWikiPageUrl } from '@/utils/router'
 import { message } from 'antd'
 import { t } from '@/locales'
 import type { ShortcutItem, ShortcutType } from '@/api/modules/shortcuts/types'
@@ -125,20 +125,26 @@ export const useShortcutsStore = create<ShortcutsState>((set, get) => ({
     const { type, related_id, url, related_info } = shortcut
     switch (type) {
       case "agent":
-        return `/agent/${related_id}`
+        return buildUrl(`/agent/${related_id}`)
       case "library":
-        return `/library/${related_id}`
+        return buildUrl(`/library/${related_id}`)
       case "file":
-        return `/library/${related_info?.library_id || ""}/file/${related_id}`
+        return buildUrl(`/library/${related_info?.library_id || ""}/file/${related_id}`)
       case "wiki_page":
         return buildWikiPageUrl(
           related_info?.space_id || "",
           related_info?.slug || related_id,
         )
+      case "space_wiki":
+        // 空间快捷方式：related_id 是空间 HashID，跳转到 Wiki 索引页
+        return buildUrl("/knowledge/wiki", {
+          space_id: related_id,
+          sub: "index",
+        })
       case "ai_link":
         return url || ""
       default:
-        return "/"
+        return buildUrl("/")
     }
   },
 

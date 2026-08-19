@@ -1,5 +1,5 @@
-import { Tooltip } from 'antd'
 import { StarFilled, StarOutlined } from '@ant-design/icons'
+import { IconButton } from '@/components/IconButton'
 import { t } from '@/locales'
 
 export interface FavoriteToggleProps {
@@ -7,17 +7,6 @@ export interface FavoriteToggleProps {
   favorite?: boolean
   /** 点击切换 */
   onToggle?: () => void
-  /**
-   * 按钮尺寸预设。
-   * - `default`：34px 方块 + #F0F0F0 悬浮底色（右栏预览头部）
-   * - `compact`：28px 方块 + #F5F5F7 悬浮底色（抽屉头部）
-   */
-  size?: 'default' | 'compact'
-}
-
-const SIZE_CLASS: Record<NonNullable<FavoriteToggleProps['size']>, string> = {
-  default: 'size-[34px] hover:bg-[#F0F0F0]',
-  compact: 'size-7 hover:bg-[#F5F5F7]',
 }
 
 /**
@@ -31,21 +20,19 @@ const SIZE_CLASS: Record<NonNullable<FavoriteToggleProps['size']>, string> = {
 export function FavoriteToggle({
   favorite = false,
   onToggle,
-  size = 'default',
 }: FavoriteToggleProps) {
   return (
-    <Tooltip title={favorite ? t('action.unfavorite') : t('action.favorite')}>
-      <div
-        className={`${SIZE_CLASS[size]} rounded flex items-center justify-center cursor-pointer`}
-        onClick={() => onToggle?.()}
-      >
-        {favorite ? (
-          <StarFilled className="text-[#FFB300] text-base" />
-        ) : (
-          <StarOutlined className="text-[#1D1E1F] text-base" />
-        )}
-      </div>
-    </Tooltip>
+    <IconButton
+      title={favorite ? t('action.unfavorite') : t('action.favorite')}
+      size="medium"
+      onClick={onToggle}
+    >
+      {favorite ? (
+        <StarFilled className="text-[#FFB300] text-base" />
+      ) : (
+        <StarOutlined className="text-[#1D1E1F] text-base" />
+      )}
+    </IconButton>
   )
 }
 

@@ -9,6 +9,7 @@ import {
 import { Spin } from "antd";
 import loadLib from "@/utils/loadLib";
 import { lib_host, api_host } from "@/utils/config";
+import { buildPreviewUrl } from "@/utils/preview";
 
 export interface MarkdownEditorProps {
   className?: string;
@@ -49,7 +50,7 @@ const getUploadConfig = () => {
         data: {
           errFiles: [],
           succMap: {
-            [`${files[0].name}`]: `${api_host}/api/preview/${data.preview_key || ""}`,
+            [`${files[0].name}`]: buildPreviewUrl(data.preview_key) ?? "",
           },
         },
       });

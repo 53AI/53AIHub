@@ -292,11 +292,54 @@ func NewSummaryGenerationHandler(db *gorm.DB) func(ctx context.Context, job *mod
 
 		if generateEntities {
 			extractor := rag.NewEntityExtractionService(db)
-			if err := extractor.ExtractAndStoreForFileContent(ctx, eid, fileID, content); err != nil {
-				logger.Errorf(ctx, "实体生成失败: %v", err)
+
+			// 判断是否为录音文件，如果是则按历史记忆配置抽取
+			isRecording := false
+			for _, rt := range model.RecordingOriginTypes() {
+				if file.OriginType == rt {
+					isRecording = true
+					break
+				}
 			}
-			if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
-				logger.Errorf(ctx, "元信息实体生成失败: %v", err)
+
+			if isRecording {
+				// 录音文件：读取历史记忆配置
+				recCfg, cfgErr := model.ValidateOrCreateRecordingConfig(eid)
+				if cfgErr == nil && recCfg != nil {
+					memCfg := recCfg.MemoryExtraction
+					if memCfg == nil {
+						memCfg = &model.MemoryExtractionConfig{Enabled: true, Types: []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeCommitment}}
+					}
+
+					if memCfg.IsEffectivelyEnabled() {
+						// 记忆开启且有选中类型 → 按配置类型抽取
+						if err := extractor.ExtractAndStoreForFileContentWithTypes(ctx, eid, fileID, content, memCfg.Types); err != nil {
+							logger.Errorf(ctx, "实体生成失败（按记忆配置）: %v", err)
+						}
+
+						// 元信息实体抽取（文件名、知识库名、空间名），仅当配置类型包含 Document 时执行
+						if model.ContainsString(memCfg.Types, model.EntityTypeDocument) {
+							if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
+								logger.Errorf(ctx, "元信息实体生成失败: %v", err)
+							}
+						}
+					} else {
+						// 记忆关闭或空类型 → 跳过实体抽取
+						logger.Infof(ctx, "实体抽取跳过（历史记忆关闭）: fileID=%d", fileID)
+					}
+				} else {
+					logger.Errorf(ctx, "实体抽取跳过（读取录音配置失败）: fileID=%d err=%v", fileID, cfgErr)
+				}
+			} else {
+				// 非录音文件：按默认 9 种类型抽取
+				if err := extractor.ExtractAndStoreForFileContent(ctx, eid, fileID, content); err != nil {
+					logger.Errorf(ctx, "实体生成失败: %v", err)
+				}
+
+				// 非录音文件：元信息实体抽取始终执行
+				if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
+					logger.Errorf(ctx, "元信息实体生成失败: %v", err)
+				}
 			}
 		}
 

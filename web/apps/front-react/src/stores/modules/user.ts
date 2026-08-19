@@ -176,7 +176,7 @@ export const useUserStore = create<UserState>((set, get) => ({
         openid: res.openid || '',
         username: res.username || '',
         nickname: res.nickname || '',
-        avatar: res.avatar?.replace(/^(\/\/)/, 'http://') || 'https://chat.53ai.com/images/robot_avatar.png',
+        avatar: res.avatar || '',
         email: res.email || '',
         eid: res.eid || 0,
         role: res.role || 0,

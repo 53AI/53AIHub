@@ -174,3 +174,10 @@ export {
   type RuleItem,
   type ValidatorOpts,
 } from './form-rule.js'
+
+// 通用 JSON token 编解码（base64url + JSON.stringify）
+export {
+  encodeJsonToken,
+  decodeJsonToken,
+  appendJsonTokenToUrl,
+} from './json-token.js'

@@ -26,6 +26,14 @@ type FileDetailResult struct {
 }
 
 var RenameFileAsyncEntityExtraction = func(eid, fileID int64) {
+	// 录音文件：检查历史记忆配置，关闭或未配置 Document 类型时跳过元信息实体抽取
+	var file model.File
+	if err := model.DB.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error; err == nil {
+		if file.IsRecordingOriginType() && !model.IsRecordingMemoryExtractionTypeEnabled(eid, model.EntityTypeDocument) {
+			return
+		}
+	}
+
 	extractor := rag.NewEntityExtractionService(model.DB)
 	if err := extractor.ExtractAndStoreForFileMeta(context.Background(), eid, fileID); err != nil {
 		// ignore background error

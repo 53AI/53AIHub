@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, memo } from "react";
+import React, { useState, useCallback, useEffect, useMemo, memo } from "react";
 import { t } from "../../locale";
 import Icon from "../Icon/index";
 import MdRenderer from "../Markdown/renderer";
@@ -191,6 +191,8 @@ export interface BubbleAssistantProps {
   markdownOptions?: any;
   reasoning?: string;
   reasoningExpanded?: boolean;
+  /** 是否渲染独立的深度思考区块；Agent 执行过程可将推理统一放入 header。 */
+  showReasoning?: boolean;
   alwaysShowMenu?: boolean;
   streaming?: boolean;
   messageStyle?: React.CSSProperties;
@@ -222,6 +224,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
   markdownOptions = {},
   reasoning = "",
   reasoningExpanded: reasoningExpandedProp = false,
+  showReasoning = true,
   alwaysShowMenu = false,
   streaming = false,
   messageStyle = {},
@@ -245,6 +248,12 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
   const [isReasoningExpanded, setIsReasoningExpanded] = useState(
     reasoningExpandedProp,
   );
+
+  // reasoningExpanded 既会随流式阶段自动收起，也允许用户在组件内手动展开。
+  // 仅在父级值实际变化时同步，避免普通重渲染覆盖用户的手动操作。
+  useEffect(() => {
+    setIsReasoningExpanded(reasoningExpandedProp);
+  }, [reasoningExpandedProp]);
 
   // 提取 <think> 标签内容
   const { extractedReasoning, displayContent } = useMemo(() => {
@@ -286,7 +295,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
           className={`x-assistant-bubble__message ${type === "welcome" ? "x-assistant-bubble__message--welcome" : "x-assistant-bubble__message--assistant"} ${messageClass}`}
           style={messageStyle}
         >
-          {extractedReasoning && (
+          {showReasoning && extractedReasoning && (
             <div className="x-assistant-bubble__reasoning">
               <div
                 className="x-assistant-bubble__reasoning-header"

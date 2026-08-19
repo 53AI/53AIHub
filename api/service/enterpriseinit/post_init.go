@@ -3,6 +3,8 @@ package enterpriseinit
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/53AI/53AIHub/common"
@@ -182,6 +184,10 @@ func EnsureEnterprisePostInit(tx *gorm.DB, enterprise *model.Enterprise, adminUs
 		return err
 	}
 
+	if err := EnsureLocalModelChannels(tx, enterprise.Eid); err != nil {
+		return err
+	}
+
 	if err := ensureDefaultSiteModelConfigFromInitializedChannels(tx, enterprise.Eid); err != nil {
 		return err
 	}
@@ -203,6 +209,68 @@ func EnsureEnterprisePostInit(tx *gorm.DB, enterprise *model.Enterprise, adminUs
 	}
 
 	logger.Debugf(nil, "【企业初始化】后置初始化完成: eid=%d", enterprise.Eid)
+	return nil
+}
+
+// EnsureLocalModelChannels checks environment variables and auto-creates channels
+// for local Embedding and Rerank models if configured.
+// It is idempotent: existing channels are skipped.
+func EnsureLocalModelChannels(tx *gorm.DB, eid int64) error {
+	embedURL := os.Getenv("EMBEDDING_BASE_URL")
+	embedModel := os.Getenv("EMBEDDING_MODEL_NAME")
+	rerankURL := os.Getenv("RERANK_BASE_URL")
+	rerankModel := os.Getenv("RERANK_MODEL_NAME")
+
+	type localChannel struct {
+		URL, Model, TypeName string // TypeName: "2"=embedding, "3"=rerank
+	}
+	var targets []localChannel
+	if embedURL != "" && embedModel != "" {
+		targets = append(targets, localChannel{embedURL, embedModel, "2"})
+	}
+	if rerankURL != "" && rerankModel != "" {
+		targets = append(targets, localChannel{rerankURL, rerankModel, "3"})
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+
+	for _, t := range targets {
+		var existing model.Channel
+		err := tx.Where("eid = ? AND type = ? AND other = ?",
+			eid, model.ChannelApiTypeCustomOpenAI, t.Model).First(&existing).Error
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		other := t.Model
+		aliasMap, _ := json.Marshal(map[string]string{t.Model: t.Model})
+		customConfig, _ := json.Marshal(map[string]interface{}{
+			t.Model:    t.TypeName,
+			"alias_map": json.RawMessage(string(aliasMap)),
+		})
+		customConfigStr := string(customConfig)
+
+		channel := model.Channel{
+			Eid:          eid,
+			Type:         model.ChannelApiTypeCustomOpenAI,
+			Key:          "sk-local",
+			Name:         "本地模型",
+			Models:       t.Model,
+			Other:        &other,
+			BaseURL:      &t.URL,
+			Status:       model.ChannelStatusEnabled,
+			Config:       `{"context_length":128000,"agent_thought":false,"deep_thinking":false,"vision":false}`,
+			CustomConfig: customConfigStr,
+		}
+		if err := tx.Create(&channel).Error; err != nil {
+			return fmt.Errorf("创建本地模型渠道失败: %v", err)
+		}
+		logger.SysLogf("【本地模型】已自动创建渠道: type=%d, model=%s, url=%s", model.ChannelApiTypeCustomOpenAI, t.Model, t.URL)
+	}
 	return nil
 }
 
@@ -329,7 +397,7 @@ func ensureDefaultSiteModelConfigFromInitializedChannels(tx *gorm.DB, eid int64)
 
 func getInitializedChannels(tx *gorm.DB, eid int64) ([]model.Channel, error) {
 	var channels []model.Channel
-	if err := tx.Where("eid = ? AND status = ? AND type IN ?", eid, model.ChannelStatusEnabled, []int{17, 900, 44}).
+	if err := tx.Where("eid = ? AND status = ? AND type IN ?", eid, model.ChannelStatusEnabled, []int{17, 900, 44, model.ChannelApiTypeCustomOpenAI}).
 		Order("channel_id asc").
 		Find(&channels).Error; err != nil {
 		return nil, err
@@ -438,10 +506,10 @@ func buildDefaultSiteModelConfigFromChannels(channels []model.Channel, selection
 			ScoreThresholdEnabled: false,
 			Weights: model.SearchWeights{
 				KeywordSetting: model.KeywordSetting{
-					KeywordWeight: 0,
+				KeywordWeight: 0.5,
 				},
 				VectorSetting: model.VectorSetting{
-					VectorWeight: 0,
+				VectorWeight: 0.5,
 				},
 			},
 		},
@@ -660,9 +728,7 @@ func buildDefaultAgents(selection *defaultModelSelection, createdBy int64) []mod
 		buildWorkAIAgent(logic, createdBy),
 		buildAISearchAgent(logic, rerank, createdBy),
 		buildDocumentAppAgent(logic, rerank, createdBy),
-	}
-	if config.IS_SAAS {
-		agents = append(agents, buildKnowledgeMapAgent(logic, createdBy))
+		buildKnowledgeMapAgent(logic, createdBy),
 	}
 
 	// 录音应用当前与文档应用行为一致，复用 buildDocumentAppAgent，
@@ -925,10 +991,10 @@ func buildDefaultRerankConfig(scoreThreshold float64, topK int, scoreThresholdEn
 		"score_threshold_enabled": scoreThresholdEnabled,
 		"weights": map[string]interface{}{
 			"keyword_setting": map[string]interface{}{
-				"keyword_weight": 1,
+				"keyword_weight": 0.5,
 			},
 			"vector_setting": map[string]interface{}{
-				"vector_weight": 0,
+				"vector_weight": 0.5,
 			},
 		},
 	}
@@ -1329,6 +1395,11 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 			},
 			{
 				"run_mode": "auto",
+				"step_key": "content_cleaning",
+				"config":   defaultContentCleaningProfileConfig(),
+			},
+			{
+				"run_mode": "auto",
 				"step_key": "document_chunking",
 				"config": map[string]interface{}{
 					"chunk_type":              "default",
@@ -1339,6 +1410,7 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 						"strategy":         "identifier",
 						"identifier_level": "h2",
 						"max_length":       2048,
+						"overlap_size":     80,
 						"append_filename":  true,
 						"append_title":     true,
 						"append_subtitle":  true,
@@ -1348,6 +1420,7 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 						"strategy":         "length",
 						"identifier_level": "h3",
 						"max_length":       512,
+						"overlap_size":     20,
 					},
 					"index_enhancement": map[string]interface{}{
 						"metadata_injection": map[string]interface{}{
@@ -1401,7 +1474,6 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 		}
 	}
 
-
 	var strategy model.RagRoutingStrategy
 	if err := tx.Where("eid = ? AND name = ?", eid, defaultStrategyName).First(&strategy).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1424,6 +1496,20 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 		}
 	}
 
-
 	return nil
+}
+
+// defaultContentCleaningProfileConfig 返回默认流水线中 content_cleaning 节点的配置 map。
+// 使用 model.DefaultContentCleaningConfig() 的四开三关默认值，经 JSON 往返转为 map。
+func defaultContentCleaningProfileConfig() map[string]interface{} {
+	cfg := model.DefaultContentCleaningConfig()
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return map[string]interface{}{}
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return map[string]interface{}{}
+	}
+	return m
 }

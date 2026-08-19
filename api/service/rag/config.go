@@ -16,13 +16,13 @@ const (
 	DefaultMinChunkSize             = 1000
 	DefaultKnowledgeSplitRule       = "h3,\n,\n\n,。"
 	DefaultKnowledgeMaxLength       = 2048
-	DefaultKnowledgeOverlapSize     = 0
+	DefaultKnowledgeOverlapSize     = 80
 	DefaultKnowledgeIncludeTitle    = false // 默认不添加知识标题
 	DefaultKnowledgeIncludeFileName = true  // 默认添加文件名
 	DefaultKnowledgeIncludeSubtitle = false // 默认不添加子标题
 	DefaultIndexSplitRule           = "h3,\n,\n\n,。"
 	DefaultIndexMaxLength           = 384
-	DefaultIndexOverlapSize         = 0
+	DefaultIndexOverlapSize         = 20
 	DefaultIndexIncludeTitle        = true  // 默认添加知识标题
 	DefaultIndexIncludeFileName     = true  // 默认添加文件名
 	DefaultIndexIncludeSubtitle     = false // 默认不添加子标题
@@ -474,10 +474,12 @@ func (s *ChunkConfigService) CreateDefaultConfig(eid int64, libraryID *int64, ch
 }
 
 // ValidateChannels 验证渠道配置
+// 通过 s.db 查询而非 model.GetChannelByID（全局 DB）：初始化流程中渠道创建于未提交事务内，
+// 全局 DB 不可见会导致初始化误报“渠道不存在”。
 func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, embeddingChannelID *int64) error {
 	if logicChannelID != nil {
-		channel, err := model.GetChannelByID(*logicChannelID)
-		if err != nil {
+		var channel model.Channel
+		if err := s.db.Where("channel_id = ?", *logicChannelID).First(&channel).Error; err != nil {
 			return fmt.Errorf("逻辑推理渠道不存在: %v", err)
 		}
 		if channel.Eid != eid {
@@ -489,8 +491,8 @@ func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, 
 	}
 
 	if embeddingChannelID != nil {
-		channel, err := model.GetChannelByID(*embeddingChannelID)
-		if err != nil {
+		var channel model.Channel
+		if err := s.db.Where("channel_id = ?", *embeddingChannelID).First(&channel).Error; err != nil {
 			return fmt.Errorf("向量嵌入渠道不存在: %v", err)
 		}
 		if channel.Eid != eid {
@@ -1322,6 +1324,9 @@ func (s *ChunkConfigService) UpdateModelConfigInChunkConfig(config *ChunkConfig,
 	if modelConfig == nil {
 		return nil
 	}
+	if err := s.ValidateAndNormalizeModelConfig(config, modelConfig); err != nil {
+		return err
+	}
 
 	// 直接获取并更新 ChunkSetting 的 ModelConfigJSON
 	var setting model.ChunkSetting
@@ -1367,6 +1372,32 @@ func (s *ChunkConfigService) UpdateModelConfigInChunkConfig(config *ChunkConfig,
 	// 更新搜索配置
 	config.SearchConfig = &modelConfig.SearchConfig
 
+	return nil
+}
+
+// ValidateAndNormalizeModelConfig 校验并补全模型配置，确保写库前配置有效。
+func (s *ChunkConfigService) ValidateAndNormalizeModelConfig(config *ChunkConfig, modelConfig *model.ModelConfigData) error {
+	if config == nil || modelConfig == nil {
+		return errors.New("模型配置不能为空")
+	}
+
+	normalizedSearchConfig := modelConfig.SearchConfig
+	if normalizedSearchConfig.TopK == 0 {
+		normalizedSearchConfig.TopK = 4
+	}
+
+	candidate := *config
+	candidate.LogicChannelID = modelConfig.LogicReasoning.ChannelID
+	candidate.LogicModelName = modelConfig.LogicReasoning.ModelName
+	candidate.EmbeddingChannelID = modelConfig.VectorEmbedding.ChannelID
+	candidate.EmbeddingModelName = modelConfig.VectorEmbedding.ModelName
+	candidate.FastReasoning = modelConfig.FastReasoning
+	candidate.SearchConfig = &normalizedSearchConfig
+	if err := s.validateConfig(&candidate); err != nil {
+		return err
+	}
+
+	modelConfig.SearchConfig = normalizedSearchConfig
 	return nil
 }
 

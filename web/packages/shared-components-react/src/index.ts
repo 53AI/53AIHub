@@ -59,3 +59,7 @@ export type { CropperDialogProps, CropperDialogRef } from './CropperDialog/index
 // FileIcon
 export { default as FileIcon } from './FileIcon/index'
 export type { FileIconProps } from './FileIcon/index'
+
+// SidePanel
+export { default as SidePanel } from './SidePanel/index'
+export type { SidePanelProps, SidePanelSide } from './SidePanel/index'

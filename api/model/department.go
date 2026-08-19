@@ -32,7 +32,7 @@ const (
 type Department struct {
 	DID       int64  `json:"did" gorm:"column:did;primaryKey;autoIncrement;comment:'Department ID'"`
 	PDID      int64  `json:"pdid" gorm:"column:pdid;not null;default:0;comment:'Parent Department ID'"`
-	EID       int64  `json:"eid" gorm:"column:eid;not null;default:0;index;comment:'Enterprise ID'"`
+	EID       int64  `json:"eid" gorm:"column:eid;not null;default:0;comment:'Enterprise ID'"`
 	Name      string `json:"name" gorm:"column:name;size:255;not null;default:'';comment:'Department Name'"`
 	Path      string `json:"path" gorm:"column:path;size:512;not null;default:'';comment:'Department Path'"`
 	Sort      int    `json:"sort" gorm:"column:sort;not null;default:0;comment:'Sort Order'"`

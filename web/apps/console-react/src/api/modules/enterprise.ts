@@ -28,6 +28,8 @@ export const enterpriseApi = {
     logo: string
     ico?: string
     display_name: string
+    full_name?: string
+    industry?: string
     language: string
     description: string
     keywords?: string

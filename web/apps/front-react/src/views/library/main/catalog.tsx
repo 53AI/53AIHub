@@ -16,11 +16,20 @@ import { useLibraryStore } from "@/stores/modules/library";
 import { CatalogDropdown } from "./components/catalog/dropdown";
 import LibraryPermission from "../components/permission/Library";
 import FilePermission from "../components/permission/File";
-import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
+import {
+  PERMISSION_TYPE,
+  RESOURCE_TYPE,
+} from "@/components/KMPermission/constant";
 import { buildUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { filesApi } from "@/api/modules/files";
+import { permissionsApi } from "@/api/modules/permissions";
 import { generateUniqueName } from "@/utils/uniqueName";
+import {
+  MoveToModal,
+  type MoveToModalSource,
+} from "@/views/mine/components/MoveToModal";
+import type { FetchDirsFn } from "@/views/mine/hooks/useFolderTree";
 import "./catalog.css";
 
 /** 重命名错误提示 — 区分文件/文件夹 */
@@ -62,6 +71,9 @@ export interface CatalogRef {
   newTab: (data: FileItem) => Window | null;
   filter: (keyword: string) => void;
   command: (cmd: string, data: FileItem) => void;
+  // 打开内置「移动到」弹窗。复用 catalog 内的 MoveToModal/fetchDirs/确认逻辑，
+  // 外部调用方（如 file header 的 FileMore）只需传入目标 FileItem 即可。
+  moveTo: (data: FileItem) => void;
 }
 
 export const Catalog = forwardRef<CatalogRef, CatalogProps>(
@@ -85,6 +97,10 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     const deleteFileAction = useLibraryStore((s) => s.deleteFile);
     const createFolderAction = useLibraryStore((s) => s.createFolder);
     const createFileAction = useLibraryStore((s) => s.createFile);
+    // 当前知识库名称，作为「移动到」弹窗的根标签文案展示。
+    // store.library 在路由进入后由 loadLibrary() 异步填充，未就绪时降级为空串，
+    // 弹窗内部 title 用 {title && ...} 守卫，name 为空时不渲染该段。
+    const libraryName = useLibraryStore((s) => s.library?.name || "");
 
     // 缓存 treeFiles —— 仅在 files 变化时重建，避免每次渲染都重跑 buildFileTree
     // biome-ignore lint/correctness/useExhaustiveDependencies: treeFilesFn 是稳定 slice 选择器但其内部通过 get() 读取最新 files；列出 files 才能在 files 变化时刷新缓存，否则 memo 会永远返回初次结果。
@@ -122,6 +138,11 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     const [renameModalVisible, setRenameModalVisible] = useState(false);
     const [renameValue, setRenameValue] = useState("");
     const [renamingFile, setRenamingFile] = useState<FileItem | null>(null);
+
+    // 「移动到」弹窗状态
+    const [moveToModalVisible, setMoveToModalVisible] = useState(false);
+    const [moveToSourceItem, setMoveToSourceItem] =
+      useState<MoveToModalSource | null>(null);
 
     // Inline editing state
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -545,6 +566,130 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       ],
     );
 
+    // 「移动到」弹窗适配：基于 filesApi.all 按 parent_path 列目录内/文件内子项。
+    // - 路径参数：MoveToModal 用 '/' 表示根目录、'/A' 表示 A 文件夹内；
+    //   filesApi.all 的 parent_path 用 '' 表示根级（与 Space/dialog 一致），
+    //   非根时直接透传 '/xxx'，由后端按前缀匹配。
+    // - type 参数：MoveToModal 内部传 'dir' / 'file'，filesApi.all 返回的
+    //   RawFileItem.type 是 0/1，这里按 targetType 过滤后映射成 TreeNode 形状。
+    // - 权限校验：调 permissionsApi.myBatch 一次性拿当前用户对这些 file/folder 的权限，
+    //   权限 < edit_knowledge 的项标记 disabled（tooltip 由 MoveToModal 渲染），
+    //   这样用户无法把文件搬到自己没有写权限的目录下。
+    // 关键词搜索暂未在 library 维度实现，遇到 keyword 时返回空（保持弹窗可用）。
+    // 根目录自身（path === '/'）的过滤由 MoveToModal 内部 filteredFetchDirs 完成，
+    // 任何调用方都自带防御，不依赖外部记得过滤。
+    const moveToFetchDirs = useMemo<FetchDirsFn>(
+      () => async (params) => {
+        if (params.keyword) {
+          return { data: [] }
+        }
+        const targetType = params.type === 'file' ? 1 : 0
+        const isRoot = !params.path || params.path === '/'
+        const apiParams: { library_id: string; parent_path?: string } = {
+          library_id: libraryId,
+        }
+        if (!isRoot) {
+          apiParams.parent_path = params.path
+        }
+        const list = await filesApi.all(apiParams)
+        const filtered = (list || []).filter(
+          (item: any) => item.type === targetType,
+        )
+
+        // 批量查权限：用于决定哪些目录不能作为移动目标（无编辑权限）。
+        // 文件行本身在 MoveToModal 内已默认禁用，这里也一并查以便展示 tooltip 文案统一。
+        let permMap: Record<string, number> = {}
+        if (filtered.length > 0) {
+          try {
+            permMap = await permissionsApi.myBatch({
+              resource_type: RESOURCE_TYPE.file,
+              resource_ids: filtered.map((item: any) => String(item.id)),
+            })
+          } catch (e) {
+            // 权限接口失败时降级为不禁用，让 MoveToModal 仍可使用；
+            // 真实场景下后端会兜底拒绝无权限的写入，所以前端不强阻塞。
+            permMap = {}
+          }
+        }
+
+        const noPermissionReason =
+          t("move_to.no_permission") || "当前用户没有操作权限"
+        const data = filtered.map((item: any) => {
+          // 文件：优先用 upload_file.file_name（如 myFile.pdf），
+          //         避免双重扩展名 .pdf.md 在 UI 上展示为 .pdf.md；
+          // 文件夹：path 最后一段。
+          const segment =
+            item.path?.split('/').filter(Boolean).pop() || item.path
+          const isFolder = item.type === 0
+          const name = isFolder
+            ? segment
+            : item.upload_file?.file_name || segment
+          const maxPerm =
+            permMap[`${RESOURCE_TYPE.file}:${item.id}`] ?? PERMISSION_TYPE.none
+          // 文件夹：无 edit_knowledge 权限视为不可作为目标（即便能看到）。
+          // 文件行始终 disabled（MoveToModal 内已默认），这里仍写入 reason 用于 tooltip 文案。
+          const disabled =
+            !isFolder ||
+            maxPerm < PERMISSION_TYPE.edit_knowledge
+          return {
+            id: String(item.id),
+            name,
+            path: item.path,
+            disabled,
+            disabledReason: disabled ? noPermissionReason : undefined,
+          }
+        })
+        return { data }
+      },
+      [libraryId],
+    )
+
+    // 打开「移动到」弹窗
+    const openMoveToModal = useCallback((data: FileItem) => {
+      setMoveToSourceItem({
+        id: data.id,
+        name: data.name,
+        path: data.path,
+        isfolder: data.isfolder,
+        file_ext: data.file_ext,
+        icon: data.icon,
+      })
+      setMoveToModalVisible(true)
+    }, [])
+
+    // 提交移动：调 filesApi.rename 改 path 实现移动，刷新文件树
+    const handleMoveToConfirm = useCallback(
+      async (targetPath: string) => {
+        if (!moveToSourceItem) return
+        try {
+          // 与现有 handleDrop 一致：catalog 内的文件最终都带 .md 后缀，
+          // FileItem.name 已剥离 .md，需按 file_ext 重新拼回扩展名。
+          const ext = moveToSourceItem.file_ext || ''
+          const isMd = ext === 'md'
+          const realExt = isMd ? '' : ext ? `.${ext.replace(/^\./, '')}` : ''
+          const fileName = moveToSourceItem.isfolder
+            ? moveToSourceItem.name
+            : `${moveToSourceItem.name}${realExt}${isMd ? '.md' : ''}`
+          const normalizedTarget =
+            targetPath === '/' ? '' : targetPath.replace(/\/$/, '')
+          const newPath = `${normalizedTarget}/${fileName}`
+
+          await renameFileAction(moveToSourceItem.id, newPath)
+          loadFilesAll()
+          message.success(t("mine.moved"))
+          setMoveToModalVisible(false)
+          setMoveToSourceItem(null)
+        } catch (error: any) {
+          message.error(
+            error?.response?.data?.message ||
+              error?.message ||
+              t("mine.move_failed"),
+          )
+        }
+      },
+      [moveToSourceItem, renameFileAction, loadFilesAll],
+    )
+
     // Handle command from dropdown
     const handleCommand = useCallback(
       (command: string) => {
@@ -574,12 +719,15 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
           case "rename":
             openRenameModal(data);
             break;
+          case "move-to":
+            openMoveToModal(data);
+            break;
           case "delete":
             deleteFile(data);
             break;
         }
       },
-      [openRenameModal, deleteFile],
+      [openRenameModal, openMoveToModal, deleteFile],
     );
 
     // Handle folder command
@@ -885,6 +1033,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       },
       filter,
       command: handleFolderCommand,
+      moveTo: openMoveToModal,
     }));
 
     // Build tree data from already-structured tree files
@@ -965,6 +1114,10 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
                             {
                               key: "rename",
                               label: t("action.rename"),
+                            },
+                            {
+                              key: "move-to",
+                              label: t("action.move_to"),
                             },
                             {
                               key: "delete",
@@ -1105,7 +1258,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
               style={{
                 "--ant-tree-title-height": "34px",
                 "--ant-tree-indent-size": "12px",
-                "--ant-tree-switcher-size": "12px",
+                "--ant-tree-switcher-size": "20px",
               }}
             />
           ) : (
@@ -1143,6 +1296,19 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
             />
           </div>
         </Modal>
+
+        {/* 移动到 Modal */}
+        <MoveToModal
+          open={moveToModalVisible}
+          sourceItem={moveToSourceItem}
+          fetchDirs={moveToFetchDirs}
+          onConfirm={handleMoveToConfirm}
+          onCancel={() => {
+            setMoveToModalVisible(false);
+            setMoveToSourceItem(null);
+          }}
+          title={libraryName}
+        />
       </div>
     );
   },

@@ -91,7 +91,6 @@ const CHAT_KEYS: readonly KeyRow[] = [
   // Agent 相关
   ['agent.loading', '加载 Agent 信息...', '加載 Agent 信息...', 'Loading agent...', 'エージェントを読み込み中...'],
   ['agent.not_found', '无法获取 Agent 信息', '無法獲取 Agent 信息', 'Agent not found', 'エージェントが見つかりません'],
-  ['agent.missing_id', '缺少 agent_id 参数', '缺少 agent_id 参数', 'Missing agent_id', 'agent_id がありません'],
   // 通用
   ['common.no_data', '暂无数据', '暫無數據', 'No data', 'データなし'],
   ['common.language', '语言', '語言', 'Language', '言語'],

@@ -194,6 +194,7 @@ func obsCallTimestampsKey(eid int64) string {
 func obsLastCallTsKey(eid int64) string {
 	return fmt.Sprintf("rag:emb:obs:%d:last_call_ts", eid)
 }
+
 // obsChunksKey 今日已处理 chunk 总数 key
 func obsChunksKey(eid int64, date string) string {
 	return fmt.Sprintf("rag:emb:obs:%d:chunks:%s", eid, date)
@@ -219,11 +220,11 @@ func (q *embeddingRedisQueue) recordAPICall(ctx context.Context, eid int64, elap
 // remainingChunks 为该文件当前尚未完成的 chunk 数量（pending + indexing）
 func (q *embeddingRedisQueue) recordActiveFile(ctx context.Context, eid, fileID int64, fileName, modelName string, remainingChunks int) {
 	info, _ := json.Marshal(map[string]interface{}{
-		"file_id":     fileID,
-		"file_name":   fileName,
-		"model":       modelName,
-		"remaining":   remainingChunks,
-		"started_at":  time.Now().UnixMilli(),
+		"file_id":    fileID,
+		"file_name":  fileName,
+		"model":      modelName,
+		"remaining":  remainingChunks,
+		"started_at": time.Now().UnixMilli(),
 	})
 	pipe := q.rdb.Pipeline()
 	pipe.Set(ctx, obsActiveKey(eid, fileID), string(info), 300*time.Second)
@@ -253,12 +254,12 @@ func obsRunningTasksKey(eid int64) string {
 func (q *embeddingRedisQueue) setCurrentTask(ctx context.Context, eid int64, workerName string, chunkID, fileID int64, step string) {
 	now := time.Now().UnixMilli()
 	info, _ := json.Marshal(map[string]interface{}{
-		"chunk_id":      chunkID,
-		"file_id":       fileID,
-		"step":          step,
+		"chunk_id":        chunkID,
+		"file_id":         fileID,
+		"step":            step,
 		"step_started_at": now,
-		"steps":         map[string]interface{}{},
-		"started_at":    now,
+		"steps":           map[string]interface{}{},
+		"started_at":      now,
 	})
 	pipe := q.rdb.Pipeline()
 	pipe.Set(ctx, obsWorkerTaskKey(eid, workerName), string(info), 30*time.Second)
@@ -507,7 +508,7 @@ func (q *embeddingRedisQueue) consumeLoop(ctx context.Context, eid int64, worker
 			q.clearCurrentTask(ctx, eid, workerName, firstTask.RetrievalChunkID)
 		}
 	}
- }
+}
 
 func (q *embeddingRedisQueue) handlePayload(ctx context.Context, eid int64, payloadStr string) {
 	var task EmbeddingTask
@@ -579,20 +580,20 @@ func (q *embeddingRedisQueue) handlePayload(ctx context.Context, eid int64, payl
 
 	// process embedding（含耗时统计）
 	apiStart := time.Now()
- 	svc := NewRetrievalChunkService(model.DB)
- 	err = svc.ProcessEmbeddingForRetrievalChunk(eid, chunk)
- 	if err != nil {
- 		task.Retries++
- 		if task.Retries > q.opts.MaxRetries {
- 			_ = q.rdb.Del(ctx, q.dedupKey(task.Eid, task.RetrievalChunkID)).Err()
- 			logger.Error(context.TODO(), fmt.Sprintf("[embGiveUp][eid=%d][retrievalID=%d][retries=%d]%+v", eid, task.RetrievalChunkID, task.Retries, err))
- 			return
- 		}
- 		logger.Warn(context.TODO(), fmt.Sprintf("[embRetry][eid=%d][retrievalID=%d][retries=%d]%+v", eid, task.RetrievalChunkID, task.Retries, err))
- 		// 延迟重试：写入 retry ZSET，由调度器搬回 list
- 		q.scheduleRetry(ctx, eid, task)
- 		return
- 	}
+	svc := NewRetrievalChunkService(model.DB)
+	err = svc.ProcessEmbeddingForRetrievalChunk(eid, chunk)
+	if err != nil {
+		task.Retries++
+		if task.Retries > q.opts.MaxRetries {
+			_ = q.rdb.Del(ctx, q.dedupKey(task.Eid, task.RetrievalChunkID)).Err()
+			logger.Error(context.TODO(), fmt.Sprintf("[embGiveUp][eid=%d][retrievalID=%d][retries=%d]%+v", eid, task.RetrievalChunkID, task.Retries, err))
+			return
+		}
+		logger.Warn(context.TODO(), fmt.Sprintf("[embRetry][eid=%d][retrievalID=%d][retries=%d]%+v", eid, task.RetrievalChunkID, task.Retries, err))
+		// 延迟重试：写入 retry ZSET，由调度器搬回 list
+		q.scheduleRetry(ctx, eid, task)
+		return
+	}
 
 	apiElapsed := time.Since(apiStart).Milliseconds()
 	q.recordAPICall(ctx, eid, apiElapsed, 1)
@@ -637,6 +638,7 @@ func (q *embeddingRedisQueue) handleBatchPayload(ctx context.Context, eid int64,
 		q.processFileBatch(ctx, eid, fileID, fileTasks, workerName)
 	}
 }
+
 // processFileBatch 批量处理同一文件下的多个 chunk：一次性 API 调用 + 逐个存储
 func (q *embeddingRedisQueue) processFileBatch(ctx context.Context, eid int64, fileID int64, tasks []EmbeddingTask, workerName string) {
 	svc := NewRetrievalChunkService(model.DB)

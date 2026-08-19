@@ -2,6 +2,7 @@ package dbgormlogger
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -14,14 +15,26 @@ type writer struct {
 	prefix string
 }
 
+type sanitizingWriter struct{ writer gormlogger.Writer }
+
+var sqlSensitiveAssignmentPattern = regexp.MustCompile(`(?i)([\x60\"]?(?:access_token|api[_-]?key|token|password|secret|authorization)[\x60\"]?\s*=\s*)'[^']*'`)
+
 // Printf implements gormlogger.Writer
 func (w *writer) Printf(format string, args ...interface{}) {
-	msg := fmt.Sprintf(format, args...)
+	msg := sanitizeSQLLog(fmt.Sprintf(format, args...))
 	if w.prefix != "" {
 		msg = w.prefix + msg
 	}
 	// unify to SysLog; gorm will include level tag in message
 	logger.SysLog(msg)
+}
+
+func (w sanitizingWriter) Printf(format string, args ...interface{}) {
+	w.writer.Printf("%s", sanitizeSQLLog(fmt.Sprintf(format, args...)))
+}
+
+func sanitizeSQLLog(message string) string {
+	return sqlSensitiveAssignmentPattern.ReplaceAllString(message, "${1}'[REDACTED]'")
 }
 
 // NewWriter creates a gorm-compatible writer with optional prefix.
@@ -31,15 +44,20 @@ func NewWriter(prefix string) gormlogger.Writer {
 
 // Build constructs a gorm logger with provided options.
 func Build(prefix string, level gormlogger.LogLevel, slowThresholdMs int) gormlogger.Interface {
+	return buildWithWriter(NewWriter(prefix), level, slowThresholdMs)
+}
+
+func buildWithWriter(writer gormlogger.Writer, level gormlogger.LogLevel, slowThresholdMs int) gormlogger.Interface {
 	if slowThresholdMs <= 0 {
 		slowThresholdMs = 200
 	}
 	return gormlogger.New(
-		NewWriter(prefix),
+		sanitizingWriter{writer: writer},
 		gormlogger.Config{
 			SlowThreshold:             time.Duration(slowThresholdMs) * time.Millisecond,
 			LogLevel:                  level,
 			IgnoreRecordNotFoundError: true,
+			ParameterizedQueries:      true,
 			Colorful:                  false,
 		},
 	)

@@ -10,6 +10,7 @@ import { SvgIcon } from "@km/shared-components-react";
 import { copyToClip } from "@km/shared-utils";
 import FileViewer from '@/components/FileViewer';
 import { FullscreenToggle } from '@/components/FullscreenToggle';
+import { IconButton } from '@/components/IconButton';
 import ChunkEditor, { ChunkEditorRef } from '@/components/Markdown/ChunkEditor';
 import { t } from '@/locales';
 import memoryApi from '@/api/modules/memory';
@@ -21,11 +22,12 @@ interface UserMemoryDetailProps {
   file: MemoryTypeItem;
   onBack?: () => void;
   onClose?: () => void;
-  onToggleFullscreen?: () => void;
-  isFullscreen?: boolean;
+  fullscreen: boolean;
+  onToggle: () => void;
+  composeClassName: (base: string) => string;
 }
 
-export function UserMemoryDetail({ agentId, file, onBack, onClose, onToggleFullscreen, isFullscreen }: UserMemoryDetailProps) {
+export function UserMemoryDetail({ agentId, file, onBack, onClose, fullscreen, onToggle, composeClassName }: UserMemoryDetailProps) {
   const fileName = file.name.replace(/\.md$/, '');
   const isMemoryFile = file.name === 'MEMORY.md';
 
@@ -231,47 +233,57 @@ export function UserMemoryDetail({ agentId, file, onBack, onClose, onToggleFulls
   };
 
   return (
-    <div className="h-full bg-white flex flex-col">
+    <div className={composeClassName('h-full bg-white flex flex-col')}>
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-[#F0F0F0]">
         <div className="flex items-center gap-3">
-          <div
-            className="cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
+          <IconButton
+            title={t('action.back')}
+            size="compact"
             onClick={handleBack}
           >
             <LeftOutlined style={{ fontSize: '16px' }} />
-          </div>
+          </IconButton>
           <span className="text-base">{fileName}</span>
         </div>
         <div className="flex items-center gap-2">
           {!isEditing && (
             <>
-              <div
-                className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
+              <IconButton
+                title={t('action.edit')}
+                size="compact"
                 onClick={handleEdit}
               >
                 <EditOutlined style={{ fontSize: '16px' }} />
-              </div>
+              </IconButton>
               <div className="h-4 border-r border-[#E6E8EB]" />
-              <div className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]" onClick={handleDownload}>
+              <IconButton
+                title={t('action.download')}
+                size="compact"
+                onClick={handleDownload}
+              >
                 <DownloadOutlined style={{ fontSize: '16px' }} />
-              </div>
-              <div className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]" onClick={handleCopy}>
+              </IconButton>
+              <IconButton
+                title={t('action.copy')}
+                size="compact"
+                onClick={handleCopy}
+              >
                 <SvgIcon name="copy" size="16" />
-              </div>
+              </IconButton>
             </>
           )}
           <FullscreenToggle
-            fullscreen={isFullscreen}
-            onToggle={onToggleFullscreen}
-            size="compact"
+            fullscreen={fullscreen}
+            onToggle={onToggle}
           />
-          <div
-            className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
+          <IconButton
+            title={t('action.close')}
+            size="compact"
             onClick={handleUnsavedCheck(() => onClose?.())}
           >
             <CloseOutlined style={{ fontSize: '16px' }} />
-          </div>
+          </IconButton>
         </div>
       </div>
 

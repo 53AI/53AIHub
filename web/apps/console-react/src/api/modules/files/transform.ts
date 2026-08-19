@@ -3,6 +3,7 @@ import { PERMISSION_TYPE } from './types'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { PARSING_STATUS } from '@/constants/chunk'
 import { api_host, getPublicPath } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 
 export const formatFileInfo = (fileName: string): { ext: string; fname: string; icon: string } => {
   let file_ext = ''
@@ -77,7 +78,7 @@ export const formatFile = (file: RawFileItem): FileItem => {
     permission: PERMISSION_TYPE.loading,
     file_type: isfolder ? 'folder' : 'file',
     icon: getPublicPath(iconPath),
-    file_url: file.upload_file ? `${api_host}/api/preview/${file.upload_file.preview_key || ''}` : '',
+    file_url: file.upload_file ? (buildPreviewUrl(file.upload_file.preview_key) ?? '') : '',
     created_at: getSimpleDateFormatString({ date: file.created_time, format: 'YYYY-MM-DD hh:mm' }),
     updated_at: getSimpleDateFormatString({ date: file.updated_time, format: 'YYYY-MM-DD hh:mm' }),
     updated_date: getSimpleDateFormatString({ date: file.updated_time, format: 'MM-DD' }),

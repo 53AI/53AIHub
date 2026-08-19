@@ -96,4 +96,5 @@ a:-webkit-any-link {
   --ant-modal-content-padding: 24px;
   --ant-modal-title-font-size: 18px;
   --ant-modal-title-line-height: 24px;
+  --ant-modal-header-margin-bottom: 20px;
 }

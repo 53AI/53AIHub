@@ -365,11 +365,14 @@ func estimateTokens(messages []relaymodel.Message) int {
 
 // ==================== max_tokens 封顶 ====================
 
-// ApplyMaxTokens 对 max_tokens 做封顶处理
-// 规则：用户未设置时用配置值作为默认值；用户已设置时取 min(用户值, 配置值)
+// ApplyMaxTokens 对显式设置的 max_tokens 做封顶处理。
+// MaxTokens=0 表示不设置输出上限，不能被渠道配置偷偷改成默认上限。
 // configMaxTokens <= 0 时不做任何修改
 func ApplyMaxTokens(ctx context.Context, channelID int64, request *relaymodel.GeneralOpenAIRequest, configMaxTokens int64) {
-	if configMaxTokens <= 0 || request.MaxTokens <= 0 {
+	if configMaxTokens <= 0 || request == nil {
+		return
+	}
+	if request.MaxTokens <= 0 {
 		return
 	}
 	if int64(request.MaxTokens) > configMaxTokens {

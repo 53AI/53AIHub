@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Spin, Empty } from 'antd'
+import { Spin, Empty, Button } from 'antd'
 import fileSharesApi from '@/api/modules/file-shares'
+import { t } from '@/locales'
 
 export function ShareFileView() {
   const { id } = useParams()
@@ -44,8 +45,11 @@ export function ShareFileView() {
 
   if (error) {
     return (
-      <div className="w-full h-full flex items-center justify-center">
-        <Empty description="分享信息不存在或已过期，请刷新页面重试" />
+      <div className="w-full h-full flex flex-col items-center justify-center gap-4">
+        <Empty description={t('share.link_expired')} />
+        <Button type="primary" onClick={() => navigate('/')}>
+          {t('common.back_home')}
+        </Button>
       </div>
     )
   }

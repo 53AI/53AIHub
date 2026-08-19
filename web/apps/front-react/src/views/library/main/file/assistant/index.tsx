@@ -6,6 +6,7 @@ import {
   useImperativeHandle,
   useMemo,
   useCallback,
+  type ReactNode,
 } from "react";
 import { CloseOutlined } from "@ant-design/icons";
 import { t } from "@/locales";
@@ -29,12 +30,23 @@ interface AssistantProps {
   chatAgent: any;
   mapAgent: any;
   fileInfo: any;
+  /** 当前激活的侧边栏菜单：
+   *  - 'chat' / 'map' / 'insight-regenerate'（录音端「参谋洞察」）
+   *  - 或某个自定义应用的 setting_id
+   *  prop 系列命名 insightRegenerate*（camelCase）与之对应，文案取自 t('recording.insight_regenerate')。 */
   activeMenu: string;
   curCustomApp?: CustomAppItem | null;
   onClose?: () => void;
   onOpen?: () => void;
   onVisible?: (value: boolean) => void;
   onCollapsed?: (value: boolean) => void;
+  /**
+   * 录音端「参谋洞察」专用面板：当 activeMenu === 'insight-regenerate' 时渲染。
+   * 由 DocumentApp 通过调用方注入节点，避免本组件反向依赖 recording 模块。
+   */
+  insightRegeneratePanel?: ReactNode;
+  /** 录音端参谋洞察面板的标题与图标（与 chat/map 对齐） */
+  insightRegenerateHeader?: { title: string; img: string };
 }
 
 export interface AssistantRef {
@@ -55,6 +67,8 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
       onOpen,
       onVisible,
       onCollapsed,
+      insightRegeneratePanel,
+      insightRegenerateHeader,
     },
     ref,
   ) => {
@@ -81,13 +95,20 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
           title: t("library.knowledge_map"),
           img: MAP_ICON_URL,
         };
+      } else if (activeMenu === "insight-regenerate") {
+        // 录音端「参谋洞察」入口的标题与图标由 DocumentApp 注入；
+        // 默认降级到通用 AI 图标，避免父级未传时显示空白。
+        return {
+          title: insightRegenerateHeader?.title || t("library.document_chat"),
+          img: insightRegenerateHeader?.img || AI_ICON_URL,
+        };
       } else {
         return {
           title: curCustomApp?.name || "",
           img: curCustomApp?.logo || "",
         };
       }
-    }, [activeMenu, curCustomApp]);
+    }, [activeMenu, curCustomApp, insightRegenerateHeader]);
 
     const setFileRightSiderStyle = useCallback(() => {
       const fileRightSider = document.querySelector(
@@ -285,8 +306,16 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
         )}
 
         {/* Custom Agent Section */}
-        {activeMenu !== "chat" && activeMenu !== "map" && curCustomApp && (
-          <AgentApp agentInfo={curCustomApp} fileInfo={fileInfo} />
+        {activeMenu !== "chat" &&
+          activeMenu !== "map" &&
+          activeMenu !== "insight-regenerate" &&
+          curCustomApp && (
+            <AgentApp agentInfo={curCustomApp} fileInfo={fileInfo} />
+          )}
+
+        {/* Insight Regenerate Section（录音端专用） */}
+        {activeMenu === "insight-regenerate" && insightRegeneratePanel && (
+          <div className="flex-1 overflow-hidden">{insightRegeneratePanel}</div>
         )}
       </div>
       </ChatConfigProvider>

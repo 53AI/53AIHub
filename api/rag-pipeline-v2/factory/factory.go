@@ -312,10 +312,17 @@ func (f *JobFactory) GetJobsByRunID(ctx context.Context, runID string) ([]model.
 // EnqueueNextJob 将下一个自动步骤推入队列
 // currentStepIndex: 当前步骤的索引
 // runID: 运行ID
+//
+// 同时认领 paused 与孤儿 pending 的步骤：
+//   - paused：正常等待推进的步骤（含等待手动触发的手动步骤）；
+//   - pending：批量运行中断等场景遗留的孤儿（DB 已写但从未入队/从未被领取）。
+//     将其纳入推进目标，避免链断裂；若 pending 步骤实际已在队列中（worker 幂等
+//     校验 status 非 pending 即跳过），重复入队是安全的。
 func (f *JobFactory) EnqueueNextJob(ctx context.Context, runID string, currentStepIndex int) error {
 	var nextJob model.RagJob
 	err := f.db.WithContext(ctx).
-		Where("run_id = ? AND status = ?", runID, model.RagJobStatusPaused).
+		Where("run_id = ? AND status IN ?", runID,
+			[]string{model.RagJobStatusPaused, model.RagJobStatusPending}).
 		First(&nextJob).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {

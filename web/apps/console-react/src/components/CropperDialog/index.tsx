@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import { CropperDialog as BaseCropperDialog, type CropperDialogRef, type CropperDialogProps } from "@km/shared-components-react";
 import { t } from "@/locales";
-import { api_host } from "@/utils/config";
+import { buildPreviewUrl } from "@/utils/preview";
 import uploadApi from "@/api/modules/upload";
 
 export type { CropperDialogRef, CropperDialogProps };
@@ -17,7 +17,7 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
   ) {
     const handleUpload = async (file: File) => {
       const res = await uploadApi.upload(file);
-      const url = `${api_host}/api/preview/${res.data?.preview_key || ""}`;
+      const url = buildPreviewUrl(res.data?.preview_key) ?? "";
       return { url, preview_key: res.data?.preview_key };
     };
 

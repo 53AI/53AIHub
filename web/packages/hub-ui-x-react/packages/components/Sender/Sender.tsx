@@ -186,7 +186,10 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     onBeforeActivate: () => cleanupSkillRef.current?.(),
     // 走 useEditor.insertNode,触发 togglePlaceholder + 前后补空格,
     // 修复点击 @ 按钮后 placeholder 仍显示、chip 换行的问题。
-    onInsertInput: (input) => editor.insertNode(input),
+    // cursor 必须透传:用户把光标放在中间时,@ 触发不应把 chip append 到末尾。
+    onInsertInput: (input, cursor) => editor.insertNode(input, cursor),
+    // Esc 取消 @ 输入态后,把焦点放回编辑器(下拉搜索框卸载前会抢走 focus)
+    focusEditor: editor.focusAtEnd,
   });
 
   const skillHook = useSkill({
@@ -209,7 +212,10 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     onBeforeActivate: () => cleanupMentionRef.current?.(),
     // 走 useEditor.insertNode,触发 togglePlaceholder + 前后补空格,
     // 修复点击技能按钮后 placeholder 仍显示、chip 换行的问题。
-    onInsertInput: (input) => editor.insertNode(input),
+    // cursor 必须透传:用户在中间输入 / 触发时,chip 不应被 append 到末尾。
+    onInsertInput: (input, cursor) => editor.insertNode(input, cursor),
+    // Esc 取消 / 输入态后,把焦点放回编辑器(下拉搜索框卸载前会抢走 focus)
+    focusEditor: editor.focusAtEnd,
   });
 
   // 绑定互斥 cleanup(useEffect 在第一次渲染后跑,用户操作时 cleanup 已就绪)
@@ -901,7 +907,9 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     return (
       <div className={`x-sender__link-list ${linkListCollapsed ? 'x-sender__link-list--collapsed' : ''}`}>
         {currentMentionList.map(link => (
-          <div key={link.id} className="x-sender__link-item">
+          // 复合 key:跨 dialog source(knowledge/uploads/recordings 等)允许同一文件 ID 并存,
+          // 只用 link.id 会让 React 报 duplicate key。fallback 到 id 保证 source 缺失时也唯一。
+          <div key={`${link.source ?? ''}::${link.id}`} className="x-sender__link-item">
             {link.icon && <img src={link.icon} className="x-sender__link-icon" alt="" />}
             <span className="x-sender__link-name">{link.name}</span>
             <div className="x-sender__link-delete" onClick={() => {
@@ -983,8 +991,10 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
             // 关闭 mention 弹窗(互斥)
             mentionHook.closeSelect();
             setTimeout(() => {
-              const cursor = editor.getAliveLastCursor();
-              skillHook.activateSkillInput(cursor);
+              // 静默把光标移到逻辑开头,让按钮无视用户光标位置也能触发技能。
+              // 之后 getEditorCursor() 拿到的是刚放好的新光标,作为 chip 插入位置。
+              skillHook.moveCursorToLogicalStart();
+              skillHook.activateSkillInput(editor.getEditorCursor());
             }, 30);
           }}
         >
@@ -1107,6 +1117,7 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
                 onSearchChange: mentionHook.handleSearch,
                 onOpenLibrary: mentionConfig.onOpenLibrary,
                 onClose: mentionHook.closeSelect,
+                onCancel: () => mentionHook.cancelMentionInput(true),
                 style: getDropdownStyle(mentionHook.atRect),
                 enhanced: mentionConfig.enhanced,
                 hasKnowledgeBase: mentionConfig.hasKnowledgeBase,
@@ -1122,6 +1133,7 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
                 onSearchChange={mentionHook.handleSearch}
                 onOpenLibrary={mentionConfig.onOpenLibrary}
                 onClose={mentionHook.closeSelect}
+                onCancel={() => mentionHook.cancelMentionInput(true)}
                 style={getDropdownStyle(mentionHook.atRect)}
                 enhanced={mentionConfig.enhanced}
                 hasKnowledgeBase={mentionConfig.hasKnowledgeBase}
@@ -1141,6 +1153,7 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
                 onSearchChange: skillHook.handleSearch,
                 onOpenLibrary: skillConfig.onOpenLibrary,
                 onClose: skillHook.closeSelect,
+                onCancel: () => skillHook.cancelSkillInput(true),
                 style: getDropdownStyle(skillHook.atRect),
               })
             ) : (
@@ -1153,6 +1166,7 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
                 onSearchChange={skillHook.handleSearch}
                 onOpenLibrary={skillConfig.onOpenLibrary}
                 onClose={skillHook.closeSelect}
+                onCancel={() => skillHook.cancelSkillInput(true)}
                 style={getDropdownStyle(skillHook.atRect)}
               />
             )

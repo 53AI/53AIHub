@@ -16,6 +16,8 @@ declare global {
 interface MarkdownViewerProps {
   url?: string
   content?: string
+  bgColor?: string
+  padding?: string
   containerClass?: string
 }
 
@@ -35,7 +37,7 @@ const copyItem = {
   }
 }
 
-export default function MarkdownViewer({ url, content, containerClass }: MarkdownViewerProps) {
+export default function MarkdownViewer({ url, content, containerClass, bgColor = '#fff', padding = 'p-6' }: MarkdownViewerProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [markdownContent, setMarkdownContent] = useState('')
@@ -104,6 +106,9 @@ export default function MarkdownViewer({ url, content, containerClass }: Markdow
     eventCallbackRef.current = []
 
     highlighterInstanceRef.current.init()
+    // 通知上层「highlighter 已就绪」，上层会重新派发 viewer-event 把最新菜单注入进来。
+    // 覆盖 MarkdownViewer 异步 mount（lazy + loadFile + loadHighlighter）期间的菜单丢失。
+    window.dispatchEvent(new CustomEvent('highlighter-ready'))
     return highlighterInstanceRef.current
   }, [viewerEvent])
 
@@ -219,10 +224,10 @@ export default function MarkdownViewer({ url, content, containerClass }: Markdow
   }
 
   return (
-    <div className="markdown-viewer-root h-full w-full overflow-hidden bg-white">
+    <div className={`markdown-viewer-root h-full w-full overflow-hidden bg-[${bgColor}]`}>
       <div className='h-full overflow-y-auto'>
         <div className={containerClass}>
-          <div ref={previewRef} className="markdown-viewer-content vditor-reset p-6" />
+          <div ref={previewRef} className={`markdown-viewer-content vditor-reset ${padding}`} />
         </div>
     </div>
     </div>

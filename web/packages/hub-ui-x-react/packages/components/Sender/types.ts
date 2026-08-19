@@ -251,7 +251,16 @@ export interface MentionDropdownSlotProps {
   onSelect: (item: MentionDocItem) => void
   onSearchChange: (keyword: string) => void
   onOpenLibrary?: () => void
+  /**
+   * 仅关闭下拉,不触碰编辑器里的 chip。
+   * 适用于关闭按钮、"切换到别的功能"等场景。
+   */
   onClose?: () => void
+  /**
+   * 取消整个 @ 输入:关闭下拉 + 把 chip 还原成普通字符 + 把焦点放回编辑器。
+   * Esc 键必须用这个(否则 chip 仍以 mention-input 形式留在 DOM)。
+   */
+  onCancel?: () => void
   style: CSSProperties
   /** 是否增强版模式 */
   enhanced?: boolean
@@ -266,7 +275,14 @@ export interface SkillDropdownSlotProps {
   onSelect: (skill: SkillItem) => void
   onSearchChange: (keyword: string) => void
   onOpenLibrary?: () => void
+  /**
+   * 仅关闭下拉,不触碰编辑器里的 chip。
+   */
   onClose?: () => void
+  /**
+   * 取消整个 / 输入:关闭下拉 + 把 chip 还原成普通字符 + 把焦点放回编辑器。
+   */
+  onCancel?: () => void
   style: CSSProperties
 }
 

@@ -241,6 +241,7 @@ export interface RecordingConfig {
   enabled: boolean
   parser_platform: string
   voice_model_name?: string
+  recording_agent_enabled?: boolean
 }
 
 // ============= 录音错误码 =============
@@ -296,12 +297,22 @@ export interface RecordingFileSummary {
 
 // ============= 解析状态 =============
 
+/** 失败错误类型（status = failed 时由后端返回） */
+export type ParseStageErrorType =
+  | 'insufficient_balance'
+  | 'api_key_invalid'
+  | 'timeout'
+  | 'asr_failed'
+  | 'model_unavailable'
+
 /** 解析阶段状态 */
 export interface StageStatus {
   status: string // normal/pending/parsing/processing/completed/failed/skipped/inactive
   pipeline?: 'active' | 'failed' | 'inactive' // 管线可达性
-  /** 待执行原因（如 waiting_for_manual_trigger = 等用户手动触发） */
+  /** @保留字段以兼容后端响应；前端已不再消费 */
   pending_reason?: string
+  /** 失败错误类型（仅 status = failed 时有值） */
+  error_type?: ParseStageErrorType
   updated_at: number
 }
 
@@ -325,6 +336,31 @@ export interface RecordingFileInsightPage {
   updated_time: number
 }
 
+/** 洞察协同研讨中的背景快照 */
+export interface InsightConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface InsightBackground {
+  personal_info: string
+  company_info: string
+  historical_context: string
+  external_constraints: string
+  material_context: string
+  conversation?: InsightConversationMessage[]
+}
+
+export interface InsightWorkshopChatRequest {
+  message: string
+  background: InsightBackground
+  conversation: InsightConversationMessage[]
+}
+
+export interface InsightWorkshopChatResponse {
+  reply: string
+}
+
 /** 页面编排 Block 类型 */
 export interface DecisionPageBlock {
   id: string
@@ -333,6 +369,8 @@ export interface DecisionPageBlock {
        | 'ordered_list' | 'unordered_list' | 'action_list' | 'rule_list'
        | 'red_line' | 'verification_list' | 'closing'
        | 'key_points' | 'long_analysis' | 'insight_stack' | 'breakthrough'
+       /** 前端从 ```mermaid 围栏解析出的非流程图方言（sequence / pie / gantt / timeline） */
+       | 'mermaid_diagram'
   importance: number
   source_unit_ids: string[]
   variant: 'neutral' | 'info' | 'positive' | 'warning' | 'danger' | 'critical' | 'dark'
@@ -355,10 +393,7 @@ export interface MermaidFlowEdge {
 }
 
 export interface MermaidFlowDiagram {
-  syntax: 'mermaid-flow.v1'
   direction: 'TB' | 'LR'
-  routing: 'orthogonal'
-  source: string
   nodes: MermaidFlowNode[]
   edges: MermaidFlowEdge[]
 }
@@ -381,6 +416,125 @@ export interface QueuedCountResponse {
   queued_count: number
 }
 
+// ============= 会议记忆总览 =============
+
+export type RecordingMemoryKind =
+  | 'decision'
+  | 'commitment'
+  | 'action'
+  | 'risk'
+  | 'opportunity'
+  | 'viewpoint'
+  | 'issue'
+  | 'open_question'
+  | 'quote'
+
+export interface RecordingMemoryStats {
+  total_claims: number
+  source_meetings: number
+  confirmed_decisions: number
+  active_commitments: number
+  active_risks: number
+  needs_confirmation: number
+  evidence_coverage: number
+  uncompiled_meetings: number
+}
+
+export interface RecordingMemoryClaimItem {
+  id: string | number
+  file_id: string | number
+  claim_kind: RecordingMemoryKind
+  content: string
+  assertion_state: string
+  epistemic_type: string
+  lifecycle_state: string
+  review_state: string
+  source_confidence: number
+  evidence_available: boolean
+  source_segment_count: number
+  source_file: string
+  updated_time: number
+}
+
+export interface RecordingMemoryOverview {
+  stats: RecordingMemoryStats
+  items: RecordingMemoryClaimItem[]
+  kinds: Array<{ kind: RecordingMemoryKind; count: number }>
+}
+
+export type RecordingMemoryEntityType = 'person' | 'matter' | 'risk' | 'principle'
+
+/**
+ * 会议记忆实体的单个属性 schema 定义
+ * - label：中文展示名（来自后端，前端零硬编码）
+ * - values：枚举值映射；缺省即为自由文本字段，值原样展示
+ */
+export interface RecordingMemoryEntitySchemaAttribute {
+  label: string
+  values?: Record<string, string>
+}
+
+/** 某类实体的 schema：类型中文名 + 全部属性定义 */
+export interface RecordingMemoryEntitySchema {
+  label: string
+  attributes: Record<string, RecordingMemoryEntitySchemaAttribute>
+}
+
+/** 全量实体 schema：键为 entity_type，值为该类型的定义 */
+export type RecordingMemoryEntitySchemas = Record<RecordingMemoryEntityType, RecordingMemoryEntitySchema>
+
+export interface RecordingMemoryEntityItem {
+  id: string | number
+  entity_type: RecordingMemoryEntityType
+  canonical_name: string
+  summary: string
+  fact_count: number
+  source_meetings: number
+  last_fact_at: number
+  updated_time: number
+}
+
+export interface RecordingMemoryEntityList {
+  items: RecordingMemoryEntityItem[]
+  total: number
+}
+
+export interface RecordingMemoryEntityFact {
+  id: string | number
+  entity_type: RecordingMemoryEntityType
+  fact_kind: 'extracted' | 'manual_correction'
+  content: string
+  attributes: Record<string, string>
+  source_segment_ids: string[]
+  source_type: 'automatic' | 'manual'
+  occurred_at: number
+  source_file: string
+  file_id: string | number
+  updated_time: number
+}
+
+export interface RecordingMemoryEntityRelation {
+  id: string | number
+  related_entity_id: string | number
+  related_name: string
+  related_type: RecordingMemoryEntityType
+  relation_type: string
+}
+
+export interface RecordingMemoryEntityDetail extends RecordingMemoryEntityItem {
+  attributes: Record<string, string>
+  aliases: string[]
+  first_mentioned_at: number
+  facts: RecordingMemoryEntityFact[]
+  relations: RecordingMemoryEntityRelation[]
+}
+
+export interface UpdateRecordingMemoryEntityRequest {
+  canonical_name?: string
+  summary?: string
+  attributes?: Record<string, string>
+}
+
 // ============= 转写原文 🆕 =============
 
 /** 转写原文响应 */
@@ -388,6 +542,20 @@ export interface FileTranscriptionResponse {
   file_id: number
   /** 转写纯文本 */
   content: string
+}
+
+// ============= 转写导出 =============
+
+/**
+ * 转写导出响应（后端把 DashScope 转写 JSON 渲染为 Markdown 直接返回，
+ * 前端拿到字符串自行展示/复制/保存）
+ */
+export interface TranscriptionExportResponse {
+  file_id: string
+  /** 建议的文件名（含 .md 后缀） */
+  file_name: string
+  /** 渲染好的 Markdown 正文 */
+  markdown: string
 }
 
 // ============= 继续生成管线 🆕 =============
@@ -398,4 +566,177 @@ export interface PipelineResult {
   meeting_minutes: 'skipped' | 'processing'
   insights: 'skipped' | 'processing'
   insight_page: 'skipped' | 'processing'
+}
+
+// ============= 移动文件到分组 🆕 =============
+
+/**
+ * 移动文件到分组请求
+ * group_id = 0 表示移出分组（未分组）
+ */
+export interface MoveFileToGroupRequest {
+  group_id: number
+}
+
+/** 移动文件到分组响应 */
+export interface MoveFileToGroupResponse {
+  file_id: string
+  group_id: number
+}
+
+// ============= 录音分享 🆕 =============
+
+/** 创建录音分享响应（share_id 为 10 位随机串，链接永久有效、无取消接口） */
+export interface RecordingShareCreateResponse {
+  share_id: string
+}
+
+/**
+ * 分享内容快照（匿名可访问）
+ *
+ * 后端按文件实际内容存在性返回字段，不是全量结构 —— 除 title 外都可能缺省，
+ * 前端必须按"字段有没有"来决定展示哪些 Tab，不能假设一定存在。
+ *
+ * transcription 后端已预渲染为 `[hh:mm:ss] 说话人: 文本` 风格的 Markdown，
+ * 不再返回原始语音模型 JSON；音频地址也不再直接下发，前端从 upload_file.preview_key
+ * 还原 /api/preview/{key} 给 AudioPlayerBar 用。
+ */
+export interface RecordingSharedContent {
+  /** 文件 HashID，匿名访问也返回 */
+  file_id: string
+  /** 文件名 */
+  title: string
+  /** 转写 Markdown（`# 文件名\n[hh:mm:ss] 说话人: 内容`） */
+  transcription?: string
+  /** 总结/纪要列表，含 template_id = 0 的纪要，后端不做过滤 */
+  summaries?: RecordingFileSummary[]
+  /** 洞察页面编排结果（Markdown 字符串，含 mermaid 代码块等） */
+  insight_page?: string
+  /** 音频时长（毫秒） */
+  duration_ms?: number
+  /** 文件创建时间戳 */
+  created_time?: number
+  /** 分享创建人头像 URL（可能为空） */
+  avatar?: string
+  /** 分享创建人昵称 */
+  nickname?: string
+  /** 后端透传的原始上传文件元信息（preview_key 用于还原音频播放地址） */
+  upload_file?: RecordingSharedUploadFile
+}
+
+/** 分享快照中的上传文件元信息（preview_key → /api/preview/{key} 是分享页唯一的音频来源） */
+export interface RecordingSharedUploadFile {
+  id: string
+  eid: string
+  file_name: string
+  extension: string
+  size: number
+  mime_type: string
+  hash: string
+  key: string
+  preview_key: string
+  status: string
+  source_type: string
+  user_id: number
+  message_id: number
+  error: string
+  cleanup_retry_count: number
+  created_time: number
+  updated_time: number
+  processed_time: number
+}
+
+// ============= SonicNote 设备与同步 🆕 =============
+
+/**
+ * 录音设备品牌类型
+ * - 'sonicnote'：当前已对接
+ * - 'soninote' / 'ticnote'：UI 占位，待后续接入
+ */
+export type RecordingDeviceType = 'sonicnote' | 'soninote' | 'ticnote'
+
+/** 设备配置项（单条） */
+export interface RecordingDeviceConfig {
+  device_type: RecordingDeviceType
+  /** API Key 明文（用户自己的 Key，前端不做脱敏） */
+  api_key: string
+  enabled: boolean
+}
+
+/**
+ * 设备配置 PUT 请求
+ *
+ * - api_key 传空字符串表示"不修改、保留原值"，传具体值则覆盖
+ * - enabled 可单独切换；不传则后端视为不修改
+ */
+export interface RecordingDeviceConfigUpdate {
+  device_type: RecordingDeviceType
+  api_key?: string
+  enabled?: boolean
+}
+
+/**
+ * 设备可用性探测响应
+ * 实时探测设备是否可用（Login 成功 + 列表接口可达），非缓存。
+ *
+ * 注意：HTTP 200 + code 0 即便 available=false 也是成功响应，
+ * 真正的网络/服务异常会进入 reason 字段（如 'network_error'）。
+ * 仅当 HTTP 层面失败时 axios 才会 reject。
+ */
+export interface RecordingDeviceStatusResponse {
+  device_type: RecordingDeviceType
+  /** 是否已配置 Key */
+  configured: boolean
+  /** 设备是否启用 */
+  enabled: boolean
+  /** 是否可用（Login 成功 + 列表接口可达） */
+  available: boolean
+  /** 远端录音总数（可用时为真实值，否则 0） */
+  total_recordings: number
+  /** 不可用原因：未配置设备 / 设备未启用 / key_invalid / network_error / 探测失败: <详情> */
+  reason?: string
+}
+
+/** 触发 SonicNote 同步请求 */
+export interface SyncSonicNoteRequest {
+  /** true 忽略去重标记全量重新导入（会重建文件，谨慎使用） */
+  force?: boolean
+  /** 本次同步最多处理的远端录音条数；0=不限（默认）；负数由后端报 400 */
+  limit?: number
+}
+
+/** 触发 SonicNote 同步响应 */
+export interface SyncSonicNoteResponse {
+  job_id: string
+}
+
+/**
+ * 同步任务状态（对齐 mine-audio.md 4.3 同步状态轮询）
+ *
+ * - running：进行中，继续轮询
+ * - completed / failed：正常终态，结束轮询
+ * - interrupted：服务重启导致后台任务被中断的终态，前端提示用户重试
+ *
+ * 后端没有 'pending' 概念：running 涵盖启动期。
+ */
+export type SyncStatus = 'running' | 'completed' | 'failed' | 'interrupted'
+
+/** 同步任务状态响应 */
+export interface SyncStatusResponse {
+  job_id: string
+  status: SyncStatus
+  /** 同步开始时间戳（毫秒） */
+  started_at?: number
+  /** 同步结束时间戳（毫秒），进行中时为 null */
+  finished_at?: number | null
+  /** 远端发现的录音条数（含已同步跳过的条目） */
+  discovered: number
+  /** 本次实际导入的条数 */
+  imported: number
+  /** 跳过（已存在）的条数 */
+  skipped: number
+  /** 失败的条数 */
+  failed: number
+  /** 失败时的错误信息 */
+  error_message?: string
 }

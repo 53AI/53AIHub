@@ -24,7 +24,7 @@ import "../mine.css";
 import { RESOURCE_TYPE } from '@/components/KMPermission/constant';
 
 interface FavItem {
-  type: "library" | "file" | "wiki";
+  type: "library" | "file" | "wiki" | "space";
   id: string;
   name: string;
   icon: string;
@@ -35,7 +35,7 @@ interface FavItem {
   isfolder?: boolean;
   libraryId?: string;
   rawData: any;
-  space_id?: string; // For wiki pages
+  space_id?: string; // For wiki pages / space favorites
   isRecording?: boolean; // 录音/录音导入文件
 }
 
@@ -85,6 +85,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     return (data.items || []).map((item: any) => {
       const isFile = item.resource_type === RESOURCE_TYPE.file;
       const isWikiPage = item.resource_type === RESOURCE_TYPE.wiki_page;
+      const isSpace = item.resource_type === RESOURCE_TYPE.favorite_space;
       const library = item.library_id ? librariesMap[item.library_id] : null;
       const space = item.space_id ? spacesMap[item.space_id] : null;
       const creatorFromIncludes = item.creator_id
@@ -132,6 +133,20 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
           favoriteTime: getFormatTimeStamp(item.recent_time),
           isFavorite: item.is_favorite ?? true,
         }
+      } else if (isSpace) {
+        // 空间收藏：resource_type=4，名称/logo 从 includes.spaces[space_id] 取值
+        return {
+          type: 'space' as const,
+          id: item.resource_id,
+          icon: '',
+          name: space?.name || '--',
+          rawData: space,
+          position: '--',
+          owner: owner || '--',
+          space_id: item.space_id,
+          favoriteTime: getFormatTimeStamp(item.recent_time),
+          isFavorite: item.is_favorite ?? true,
+        }
       } else {
         const formattedLib = formatLibrary(library || {});
         const position = space ? space.name : "--";
@@ -165,7 +180,11 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
           keyword: kw || undefined,
         };
         if (filterType !== "all") {
-          params.resource_type = filterType === "library" ? 1 : filterType === 'wiki' ? 3 : 2;
+          params.resource_type =
+            filterType === "library" ? RESOURCE_TYPE.library :
+            filterType === "wiki" ? RESOURCE_TYPE.wiki_page :
+            filterType === "space" ? RESOURCE_TYPE.favorite_space :
+            RESOURCE_TYPE.file;
         }
 
         const res = await mySpaceApi.getFavorites(params);
@@ -224,12 +243,17 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
 
   // Handle unfavorite
   const handleToggleFavorite = async (
-    type: "library" | "file",
+    type: FavItem["type"],
     resourceId: string,
   ) => {
     try {
+      const resource_type =
+        type === "library" ? RESOURCE_TYPE.library :
+        type === "space" ? RESOURCE_TYPE.favorite_space :
+        type === "wiki" ? RESOURCE_TYPE.wiki_page :
+        RESOURCE_TYPE.file;
       await favoritesApi.toggle({
-        resource_type: type === "library" ? 1 : 2,
+        resource_type,
         resource_id: resourceId,
       });
       message.success("已取消");
@@ -254,8 +278,14 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
       navigate(`/library/${item.id}`);
     } else if(item.type === 'wiki') {
       navigate(buildWikiPageUrl(item.space_id, item.rawData.slug));
+    } else if (item.type === 'space') {
+      // 空间收藏：跳转到 Wiki 索引页（对接文档约定）
+      navigate(buildUrl("/knowledge/wiki", {
+        space_id: item.space_id || item.id,
+        sub: "index",
+      }));
     } else if (item.isRecording) {
-      navigate(`/recording?preview=${item.id}`);
+      navigate(`/recording/preview/${item.id}`);
     } else {
       if (item.position === "--") {
         try {
@@ -323,6 +353,14 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
       },
     },
     {
+      key: "space",
+      label: "空间",
+      onClick: (e) => {
+        e.domEvent.stopPropagation();
+        setFilterType("space");
+      },
+    },
+    {
       key: "file",
       label: "知识",
       onClick: (e) => {
@@ -340,6 +378,8 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
         return "知识";
       case "wiki":
         return "动态知识";
+      case "space":
+        return "空间";
       default:
         return "全部";
     }
@@ -436,8 +476,13 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
               const url =
                 item.type === "library"
                   ? buildUrl(`/library/${item.id}`)
+                  : item.type === "space"
+                    ? buildUrl("/knowledge/wiki", {
+                        space_id: item.space_id || item.id,
+                        sub: "index",
+                      })
                   : item.isRecording
-                    ? buildUrl(`/recording?preview=${item.id}`)
+                    ? buildUrl(`/recording/preview/${item.id}`)
                     : item.position === "--"
                       ? buildUrl(`/mine?tab=fav&preview=${item.id}`)
                       : buildKnowledgeFileUrl(item.libraryId, item.id, '', item.isfolder);
@@ -455,6 +500,10 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                         src={getPublicPath("/images/default_popover_img.png")}
                         size={26}
                       />
+                    ) : item.type === "space" ? (
+                      <div className="size-[26px] rounded bg-[#E6EEFF] flex items-center justify-center text-theme flex-none">
+                        <SvgIcon name="database-k" />
+                      </div>
                     ) : ( item.icon ? (
                       <img
                         className="flex-none w-6 h-6"

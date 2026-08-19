@@ -23,6 +23,7 @@ import (
 
 const compactChatDeltaFlushChars = 64
 const compactChatDeltaFlushWindow = 100 * time.Millisecond
+const streamTerminalWriterGinKey = "relay_stream_terminal_writer"
 
 // GetResponseContent 获取响应内容
 func GetResponseContent(c *gin.Context, isStream bool, resp *http.Response) (string, string) {
@@ -199,7 +200,32 @@ func (w *StreamResponseInterceptor) Write(b []byte) (int, error) {
 		}
 		return n, nil
 	}
+	w.observeOuterStreamDone(b)
 	return len(b), nil
+}
+
+func (w *StreamResponseInterceptor) observeOuterStreamDone(b []byte) {
+	if w == nil || w.c == nil || isInternalAgentStreamTurn(w.c) || len(b) == 0 {
+		return
+	}
+	w.sseBuffer.Write(b)
+	normalized := strings.ReplaceAll(w.sseBuffer.String(), "\r\n", "\n")
+	for {
+		idx := strings.Index(normalized, "\n\n")
+		if idx < 0 {
+			break
+		}
+		event := normalized[:idx]
+		normalized = normalized[idx+2:]
+		_, isDone, ok := extractSSEDataContent([]byte(event + "\n\n"))
+		if ok && isDone {
+			markStreamDone(w.c)
+		}
+	}
+	w.sseBuffer.Reset()
+	if normalized != "" {
+		w.sseBuffer.WriteString(normalized)
+	}
 }
 
 func openClawSSEInterceptorTraceEnabled() bool {
@@ -655,6 +681,10 @@ func (w *StreamResponseInterceptor) sanitizeSSEEvent(event string) ([]byte, bool
 	choices, hasChoices := payload["choices"].([]interface{})
 	if hasChoices {
 		if config.IsSSECompactMode() {
+			// null logprobs carries no token-probability information. Compact
+			// Agent streams omit it, while legacy OpenAI-compatible streams keep
+			// their original wire shape for compatibility.
+			omitNullStreamChoiceLogprobs(choices)
 			choices = compactSanitizeChoices(choices)
 			payload["choices"] = choices
 		}
@@ -686,6 +716,18 @@ func (w *StreamResponseInterceptor) sanitizeSSEEvent(event string) ([]byte, bool
 	return []byte("data: " + string(rebuilt) + "\n\n"), true
 }
 
+func omitNullStreamChoiceLogprobs(choices []interface{}) {
+	for _, choiceAny := range choices {
+		choice, ok := choiceAny.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if logprobs, exists := choice["logprobs"]; exists && logprobs == nil {
+			delete(choice, "logprobs")
+		}
+	}
+}
+
 func isInternalAgentStreamTurn(c *gin.Context) bool {
 	if c == nil {
 		return false
@@ -714,11 +756,14 @@ func shouldDeferStreamDone(c *gin.Context) bool {
 }
 
 func installDeferredStreamDone(c *gin.Context) func() {
-	if c == nil || !config.IsSSECompactMode() {
+	if c == nil {
 		return func() {}
 	}
 	logger.Infof(c, "【诊断-流结束】安装 deferred DONE: request_id=%s writer=%T", helper.GetRequestID(c.Request.Context()), c.Writer)
 	c.Set("defer_stream_done", true)
+	if _, exists := c.Get(streamTerminalWriterGinKey); !exists {
+		c.Set(streamTerminalWriterGinKey, unwrapStreamResponseWriter(c.Writer))
+	}
 	return func() {
 		logger.Infof(c, "【诊断-流结束】开始执行 deferred DONE cleanup: request_id=%s", helper.GetRequestID(c.Request.Context()))
 		flushDeferredStreamDone(c)
@@ -744,6 +789,9 @@ func flushDeferredStreamDone(c *gin.Context) {
 	if c == nil {
 		return
 	}
+	if isInternalAgentStreamTurn(c) {
+		return
+	}
 	value, exists := c.Get("stream_response_done_deferred")
 	if !exists {
 		logger.Infof(c, "【诊断-流结束】未发现 deferred DONE 标记: request_id=%s", helper.GetRequestID(c.Request.Context()))
@@ -764,10 +812,19 @@ func flushDeferredStreamDone(c *gin.Context) {
 	// after all upstream streams have completed. In that path no outer upstream
 	// [DONE] reaches the interceptor, so the request-level defer must still
 	// guarantee one terminal frame.
-	if !deferred && !shouldDeferStreamDone(c) {
+	ensureTerminal := false
+	if value, exists := c.Get("defer_stream_done"); exists {
+		ensureTerminal, _ = value.(bool)
+	}
+	if !deferred && !ensureTerminal {
 		return
 	}
 	writer := unwrapStreamResponseWriter(c.Writer)
+	if captured, exists := c.Get(streamTerminalWriterGinKey); exists {
+		if capturedWriter, ok := captured.(gin.ResponseWriter); ok && capturedWriter != nil {
+			writer = capturedWriter
+		}
+	}
 	logger.Infof(c, "【诊断-流结束】写入 deferred DONE: request_id=%s writer=%T", helper.GetRequestID(c.Request.Context()), writer)
 	if _, err := writer.Write([]byte("data: [DONE]\n\n")); err != nil {
 		logger.Warnf(c, "flush deferred [DONE] failed: %v", err)
@@ -849,6 +906,7 @@ func hasFinalChatChunkFinishReason(choices []interface{}) bool {
 
 func compactSanitizeChoices(choices []interface{}) []interface{} {
 	sanitized := make([]interface{}, 0, len(choices))
+	singleChoice := len(choices) == 1
 	for _, choiceAny := range choices {
 		choice, ok := choiceAny.(map[string]interface{})
 		if !ok {
@@ -859,6 +917,11 @@ func compactSanitizeChoices(choices []interface{}) []interface{} {
 		normalized := make(map[string]interface{}, len(choice))
 		for k, v := range choice {
 			normalized[k] = v
+		}
+		if singleChoice && strings.TrimSpace(toString(normalized["index"])) == "0" {
+			// Compact web streams always consume choices[0]. The zero index only
+			// matters for OpenAI multi-choice compatibility, which legacy mode keeps.
+			delete(normalized, "index")
 		}
 
 		finishReason, finishExists := normalized["finish_reason"]

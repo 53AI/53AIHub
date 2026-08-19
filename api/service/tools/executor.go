@@ -85,10 +85,11 @@ type SandboxStreamHandler func(event SandboxStreamEvent)
 
 // ToolResult represents the result of a tool execution
 type ToolResult struct {
-	Output      string       // 标准输出内容
-	Stderr      string       // 标准错误内容
-	ExitCode    int          // 退出码
-	OutputFiles []OutputFile // 沙盒生成的文件
+	Output      string                 // 标准输出内容
+	Stderr      string                 // 标准错误内容
+	ExitCode    int                    // 退出码
+	OutputFiles []OutputFile           // 沙盒生成的文件
+	Meta        map[string]interface{} // 模型侧结果规整使用的中立元数据
 }
 
 // ExecuteTool executes a tool by name with given arguments
@@ -914,6 +915,10 @@ func executeRunShell(ctx context.Context, args map[string]interface{}) (*ToolRes
 		return nil, wrapSandboxServiceError(err)
 	}
 	output := formatCommandResult(resp.Stdout, resp.Stderr, resp.ExitCode)
+	var outputMeta map[string]interface{}
+	if agentSuccessRateFeatureFlagsFromContext(ctx).ShellOutputV2 {
+		output, outputMeta = shapeShellOutput(resp.Stdout, resp.Stderr, resp.ExitCode)
+	}
 	if resp.ExitCode != 0 && hasUploadedFilesInContext(ctx) && isLikelyMissingFileError(output) {
 		logger.Warnf(ctx, "run_shell detected missing-file error, trying one upload reseed retry: session=%s, cwd=%s", req.SessionID, req.Cwd)
 		if reseedErr := forceReseedUploadedFiles(ctx, req.SessionID, req.Cwd); reseedErr != nil {
@@ -925,6 +930,9 @@ func executeRunShell(ctx context.Context, args map[string]interface{}) (*ToolRes
 			} else {
 				resp = retryResp
 				output = formatCommandResult(resp.Stdout, resp.Stderr, resp.ExitCode)
+				if agentSuccessRateFeatureFlagsFromContext(ctx).ShellOutputV2 {
+					output, outputMeta = shapeShellOutput(resp.Stdout, resp.Stderr, resp.ExitCode)
+				}
 				logger.Infof(ctx, "run_shell retry after upload reseed completed: exit_code=%d", resp.ExitCode)
 			}
 		}
@@ -934,6 +942,7 @@ func executeRunShell(ctx context.Context, args map[string]interface{}) (*ToolRes
 		Output:   output,
 		Stderr:   resp.Stderr,
 		ExitCode: resp.ExitCode,
+		Meta:     outputMeta,
 		OutputFiles: func() []OutputFile {
 			outputFiles, snapshot := filterSandboxOutputFilesBySnapshot(loadSandboxOutputSnapshot(ctx), convertSandboxOutputFiles(resp.OutputFiles))
 			rememberSandboxOutputSnapshot(ctx, snapshot)
@@ -984,14 +993,20 @@ func executeReadFile(ctx context.Context, args map[string]interface{}) (*ToolRes
 	if resp.Content == "" {
 		return &ToolResult{Output: "(Empty file)", ExitCode: 0}, nil
 	}
-	paginated := paginateReadFileContent(resp.Content, args)
+	page := buildReadFilePageWithContinuation(resp.Content, args, agentSuccessRateFeatureFlagsFromContext(ctx).ReadContinuation)
+	paginated := page.Output
 	if strings.TrimSpace(paginated) == "" {
 		return &ToolResult{Output: "(Empty file)", ExitCode: 0}, nil
 	}
-	if paginated != resp.Content {
+	features := agentSuccessRateFeatureFlagsFromContext(ctx)
+	if paginated != resp.Content && !features.ReadContinuation {
 		paginated += "\n\n【说明】这是文件预览，省略部分是正常截断，不代表文件损坏。如需更多内容，请通过 offset/limit/tail_lines 继续读取。"
 	}
-	return &ToolResult{Output: paginated, ExitCode: 0}, nil
+	result := &ToolResult{Output: paginated, ExitCode: 0}
+	if features.ReadContinuation {
+		result.Meta = page.Meta()
+	}
+	return result, nil
 }
 
 func executeWriteFile(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
@@ -1082,6 +1097,9 @@ func executeWriteFileWithPathNormalizer(ctx context.Context, args map[string]int
 }
 
 func executeEditFile(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
+	if agentSuccessRateFeatureFlagsFromContext(ctx).EditV2 {
+		return executeEditFileV2(ctx, args)
+	}
 	path, ok := args["path"].(string)
 	if !ok || strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("missing path argument")
@@ -1247,11 +1265,10 @@ func executeListFiles(ctx context.Context, args map[string]interface{}) (*ToolRe
 }
 
 func ParseToolArguments(argStr string) (map[string]interface{}, error) {
-	var args map[string]interface{}
 	var lastErr error
 
-	if err := json.Unmarshal([]byte(argStr), &args); err == nil {
-		return args, nil
+	if parsed, err := parseToolArgumentObject(argStr); err == nil {
+		return parsed, nil
 	} else {
 		lastErr = err
 	}
@@ -1259,8 +1276,8 @@ func ParseToolArguments(argStr string) (map[string]interface{}, error) {
 	// 某些模型会把 arguments 再包一层 JSON string，这里做一次兜底解析。
 	var wrapped string
 	if err := json.Unmarshal([]byte(argStr), &wrapped); err == nil {
-		if innerErr := json.Unmarshal([]byte(wrapped), &args); innerErr == nil {
-			return args, nil
+		if parsed, innerErr := parseToolArgumentObject(wrapped); innerErr == nil {
+			return parsed, nil
 		} else {
 			lastErr = innerErr
 		}
@@ -1271,8 +1288,8 @@ func ParseToolArguments(argStr string) (map[string]interface{}, error) {
 	trimmed := strings.TrimSpace(argStr)
 	trimmed = strings.Trim(trimmed, `"'`)
 	if trimmed != argStr {
-		if err := json.Unmarshal([]byte(trimmed), &args); err == nil {
-			return args, nil
+		if parsed, err := parseToolArgumentObject(trimmed); err == nil {
+			return parsed, nil
 		} else {
 			lastErr = err
 		}
@@ -1280,8 +1297,8 @@ func ParseToolArguments(argStr string) (map[string]interface{}, error) {
 
 	// 提取首个完整 JSON 对象，兼容模型在 arguments 后追加噪声文本的场景。
 	if extracted := extractFirstJSONObject(trimmed); extracted != "" && extracted != trimmed {
-		if err := json.Unmarshal([]byte(extracted), &args); err == nil {
-			return args, nil
+		if parsed, err := parseToolArgumentObject(extracted); err == nil {
+			return parsed, nil
 		} else {
 			lastErr = err
 		}
@@ -1291,6 +1308,122 @@ func ParseToolArguments(argStr string) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("parse tool arguments failed: %w", lastErr)
 	}
 	return nil, fmt.Errorf("parse tool arguments failed")
+}
+
+// parseToolArgumentObject keeps the final tool-argument repair deliberately
+// narrow. It repairs only invalid string escapes and raw control characters,
+// following Pi's conservative repairJson behavior. Structural truncation,
+// missing braces, and missing fields remain errors and must be retried by the
+// model instead of being turned into an executable request.
+func parseToolArgumentObject(raw string) (map[string]interface{}, error) {
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &args); err == nil {
+		return args, nil
+	}
+
+	repaired, changed := repairJSONStrings(raw)
+	if !changed {
+		var lastErr error
+		if err := json.Unmarshal([]byte(raw), &args); err != nil {
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+
+	if err := json.Unmarshal([]byte(repaired), &args); err != nil {
+		return nil, err
+	}
+	return args, nil
+}
+
+func repairJSONStrings(raw string) (string, bool) {
+	const validEscapes = `"\\/bfnrtu`
+	runes := []rune(raw)
+	var builder strings.Builder
+	builder.Grow(len(raw) + 16)
+	inString := false
+	escaped := false
+	changed := false
+
+	for index := 0; index < len(runes); index++ {
+		r := runes[index]
+		if !inString {
+			builder.WriteRune(r)
+			if r == '"' {
+				inString = true
+			}
+			continue
+		}
+
+		if escaped {
+			if r == 'u' {
+				if index+4 < len(runes) && isHexRune(runes[index+1]) && isHexRune(runes[index+2]) && isHexRune(runes[index+3]) && isHexRune(runes[index+4]) {
+					builder.WriteString(`\u`)
+					for offset := 1; offset <= 4; offset++ {
+						builder.WriteRune(runes[index+offset])
+					}
+					index += 4
+					escaped = false
+					continue
+				}
+				builder.WriteString(`\\u`)
+				changed = true
+				escaped = false
+				continue
+			}
+			if strings.ContainsRune(validEscapes, r) {
+				builder.WriteRune('\\')
+				builder.WriteRune(r)
+				escaped = false
+				continue
+			}
+			builder.WriteString(`\\`)
+			builder.WriteRune(r)
+			changed = true
+			escaped = false
+			continue
+		}
+
+		switch r {
+		case '"':
+			builder.WriteRune(r)
+			inString = false
+		case '\\':
+			escaped = true
+		case '\b':
+			builder.WriteString(`\b`)
+			changed = true
+		case '\f':
+			builder.WriteString(`\f`)
+			changed = true
+		case '\n':
+			builder.WriteString(`\n`)
+			changed = true
+		case '\r':
+			builder.WriteString(`\r`)
+			changed = true
+		case '\t':
+			builder.WriteString(`\t`)
+			changed = true
+		default:
+			if r < 0x20 {
+				builder.WriteString(fmt.Sprintf(`\u%04x`, r))
+				changed = true
+				continue
+			}
+			builder.WriteRune(r)
+		}
+	}
+
+	if escaped {
+		// A trailing backslash is structural truncation, not a repairable escape.
+		return raw, false
+	}
+	return builder.String(), changed
+}
+
+func isHexRune(r rune) bool {
+	return r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F'
 }
 
 // extractFirstJSONObject extracts the first balanced JSON object from raw text.
@@ -1476,13 +1609,49 @@ func parseIntValue(value interface{}, defaultValue int) int {
 	return defaultValue
 }
 
+type readFilePage struct {
+	Output         string
+	StartLine      int
+	EndLine        int
+	TotalLines     int
+	HasMore        bool
+	NextOffset     int
+	NextByteOffset int
+	UseByteOffset  bool
+	Truncated      bool
+	TruncateReason string
+}
+
+func (p readFilePage) Meta() map[string]interface{} {
+	return map[string]interface{}{
+		"read_range": map[string]interface{}{
+			"start_line": p.StartLine, "end_line": p.EndLine, "total_lines": p.TotalLines,
+			"has_more": p.HasMore, "next_offset": p.NextOffset, "next_byte_offset": p.NextByteOffset,
+		},
+		"byte_count": len([]byte(p.Output)), "truncated": p.Truncated, "truncate_reason": p.TruncateReason,
+	}
+}
+
 func paginateReadFileContent(content string, args map[string]interface{}) string {
+	return buildReadFilePage(content, args).Output
+}
+
+// buildReadFilePage preserves the legacy zero-based input offset and exposes
+// human-readable one-based line numbers in its result metadata.
+func buildReadFilePage(content string, args map[string]interface{}) readFilePage {
+	return buildReadFilePageWithContinuation(content, args, agentSuccessRateFeatureFlagsFromContext(context.Background()).ReadContinuation)
+}
+
+func buildReadFilePageWithContinuation(content string, args map[string]interface{}, readContinuation bool) readFilePage {
 	const readFileMaxChars = 50000
+	if byteOffset := parseIntValue(args["byte_offset"], 0); byteOffset > 0 {
+		return buildReadFileBytePage(content, byteOffset, readFileMaxChars)
+	}
 
 	lines := strings.Split(content, "\n")
 	total := len(lines)
 	if total == 0 {
-		return ""
+		return readFilePage{}
 	}
 
 	tailLines := parseIntValue(args["tail_lines"], 0)
@@ -1499,7 +1668,7 @@ func paginateReadFileContent(content string, args map[string]interface{}) string
 	} else {
 		if offset > 0 {
 			if offset >= total {
-				return fmt.Sprintf("(offset %d exceeds file length of %d lines)", offset, total)
+				return readFilePage{Output: fmt.Sprintf("(offset %d exceeds file length of %d lines)", offset, total), TotalLines: total}
 			}
 			start = offset
 		}
@@ -1510,6 +1679,7 @@ func paginateReadFileContent(content string, args map[string]interface{}) string
 
 	sliced := lines[start:end]
 	output := strings.Join(sliced, "\n")
+	page := readFilePage{Output: output, StartLine: start + 1, EndLine: end, TotalLines: total, HasMore: end < total, NextOffset: end}
 	if runeLen(output) > readFileMaxChars {
 		keptLines := make([]string, 0, len(sliced))
 		usedChars := 0
@@ -1529,24 +1699,69 @@ func paginateReadFileContent(content string, args map[string]interface{}) string
 			runes := []rune(sliced[0])
 			keep := min(len(runes), readFileMaxChars)
 			keptLines = append(keptLines, string(runes[:keep]))
+			page.TruncateReason = "line_too_large"
+			page.UseByteOffset = true
+			page.NextByteOffset = len([]byte(keptLines[0]))
 		}
 		shownLines := len(keptLines)
 		if shownLines <= 0 {
-			return fmt.Sprintf("[Output capped at %d chars. File has %d total lines. Use offset=0 limit=<n> to continue reading.]", readFileMaxChars, total)
+			page.Output = fmt.Sprintf("[Output capped at %d chars. File has %d total lines. Use offset=0 limit=<n> to continue reading.]", readFileMaxChars, total)
+			page.Truncated, page.TruncateReason, page.HasMore, page.NextOffset = true, "max_bytes", true, start
+			return page
 		}
 		endLine := start + shownLines
-		return strings.Join(keptLines, "\n") + fmt.Sprintf(
-			"\n\n[Output capped at %d chars. Showing lines %d-%d of %d total. Use offset=%d limit=<n> to continue reading.]",
-			readFileMaxChars, start, endLine-1, total, endLine,
-		)
+		if !readContinuation {
+			page.Output = strings.Join(keptLines, "\n") + fmt.Sprintf(
+				"\n\n[Output capped at %d chars. Showing lines %d-%d of %d total. Use offset=%d limit=<n> to continue reading.]",
+				readFileMaxChars, start, endLine-1, total, endLine,
+			)
+			return page
+		}
+		page.Output = strings.Join(keptLines, "\n")
+		page.EndLine, page.NextOffset, page.HasMore, page.Truncated = endLine, endLine, endLine < total, true
+		if page.UseByteOffset {
+			page.HasMore = page.NextByteOffset < len(content)
+			page.Output += fmt.Sprintf("\n\n[当前显示超大行的前 %d 个字符。继续读取请使用 byte_offset=%d。]", readFileMaxChars, page.NextByteOffset)
+		} else {
+			page.Output += fmt.Sprintf("\n\n[当前显示第 %d—%d 行，共 %d 行。继续读取请使用 offset=%d。]", start+1, endLine, total, endLine)
+		}
+		if page.TruncateReason == "" {
+			page.TruncateReason = "line_limit"
+		}
+		return page
 	}
 
-	if tailLines > 0 {
-		output += fmt.Sprintf("\n\n[Showing last %d lines of %d total]", len(sliced), total)
+	if readContinuation && page.HasMore {
+		page.Output += fmt.Sprintf("\n\n[当前显示第 %d—%d 行，共 %d 行。继续读取请使用 offset=%d。]", page.StartLine, page.EndLine, total, page.NextOffset)
+	} else if tailLines > 0 {
+		page.Output += fmt.Sprintf("\n\n[Showing last %d lines of %d total]", len(sliced), total)
 	} else if offset > 0 || limit > 0 {
-		output += fmt.Sprintf("\n\n[Showing lines %d-%d of %d total]", start, end-1, total)
+		page.Output += fmt.Sprintf("\n\n[Showing lines %d-%d of %d total]", start, end-1, total)
 	}
-	return output
+	return page
+}
+
+func buildReadFileBytePage(content string, byteOffset, maxChars int) readFilePage {
+	if byteOffset >= len(content) {
+		return readFilePage{Output: fmt.Sprintf("(byte_offset %d exceeds file length of %d bytes)", byteOffset, len(content)), TotalLines: strings.Count(content, "\n") + 1, UseByteOffset: true}
+	}
+	for byteOffset < len(content) && (content[byteOffset]&0xc0) == 0x80 {
+		byteOffset++
+	}
+	remaining := content[byteOffset:]
+	runes := []rune(remaining)
+	keep := min(len(runes), maxChars)
+	output := string(runes[:keep])
+	nextByteOffset := byteOffset + len([]byte(output))
+	page := readFilePage{
+		Output: output, TotalLines: strings.Count(content, "\n") + 1, HasMore: nextByteOffset < len(content),
+		NextByteOffset: nextByteOffset, UseByteOffset: true, Truncated: nextByteOffset < len(content),
+	}
+	if page.HasMore {
+		page.TruncateReason = "byte_limit"
+		page.Output += fmt.Sprintf("\n\n[继续读取请使用 byte_offset=%d。]", nextByteOffset)
+	}
+	return page
 }
 
 func runeLen(value string) int {

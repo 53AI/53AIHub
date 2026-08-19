@@ -37,6 +37,7 @@ type DocumentChunk struct {
 	ContentHash     string           `json:"content_hash"`
 	ChunkConfigID   int64            `json:"chunk_config_id"`            // 添加ChunkConfigID字段
 	RetrievalChunks []RetrievalChunk `json:"retrieval_chunks,omitempty"` // 添加关联的检索块
+	PageKey         string           `json:"-"`                          // page 切分的内部边界标识
 }
 
 // ChunkMetadata 分块元数据

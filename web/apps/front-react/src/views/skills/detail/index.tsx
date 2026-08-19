@@ -12,7 +12,7 @@ import { copyToClip } from "@km/shared-utils";
 import { StarRating } from "@/components/StarRating";
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
 import Footer from "@/components/Layout/Footer";
-import DetailBreadcrumb, { MODULE_CONFIGS } from "@/components/DetailBreadcrumb";
+import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import { useSkillsStore } from "@/stores/modules/skills";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { t } from "@/locales";
@@ -269,7 +269,7 @@ export function SkillDetailView() {
       <div className="flex-1 py-6 overflow-y-auto">
         <div className={`w-11/12 lg:w-4/5 max-w-[1200px] mx-auto`}>
           {!isSoftStyle && (
-            <DetailBreadcrumb
+            <Breadcrumb
               module={MODULE_CONFIGS.skill}
               name={skill.display_name}
               className="mb-5"
@@ -284,7 +284,7 @@ export function SkillDetailView() {
             />
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-3xl font-bold text-gray-900">
+                <h1 className="text-xl font-medium text-primary">
                   {skill.display_name}
                 </h1>
                 <Tag className="text-xs rounded-3xl truncate max-w-[80px]" title={skill.version}>{skill.version}</Tag>

@@ -1455,8 +1455,8 @@ describe("ChatContainer OpenClaw bootstrap", () => {
     const sidePanel = await screen.findByTestId("openclaw-side-panel");
     expect(sidePanel).toContainElement(screen.getByTestId("openclaw-panel"));
     expect(sidePanel.className).toContain("flex-none");
-    expect(sidePanel.className).toContain("w-[450px]");
     expect(sidePanel.className).toContain("border-l");
+    expect((sidePanel as HTMLElement).style.width).toBe("450px");
   });
 
   it("closes the usage guide when opening the Gateway settings panel", async () => {

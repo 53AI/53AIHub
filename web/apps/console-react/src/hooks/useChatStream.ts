@@ -7,7 +7,7 @@ import { filesApi } from '@/api'
 export type SkillRunItemStatus = 'pending' | 'running' | 'completed'
 
 /** 流程步骤状态 */
-export type StepStatus = 'start' | 'completed'
+export type StepStatus = 'start' | 'streaming' | 'completed'
 
 /** 脚本类技能项 */
 export type SkillRunScriptItem = {
@@ -15,6 +15,14 @@ export type SkillRunScriptItem = {
   title: string
   bash: string
   output: string
+  status: SkillRunItemStatus
+}
+
+/** LLM 思考流步骤 */
+export type SkillRunLlmItem = {
+  type: 'llm'
+  title: string
+  content: string
   status: SkillRunItemStatus
 }
 
@@ -52,7 +60,7 @@ export type SkillRunSkillItem = {
   _toolCallId?: string
 }
 
-export type SkillRunItem = SkillRunScriptItem | SkillRunSearchItem | SkillRunSkillItem
+export type SkillRunItem = SkillRunScriptItem | SkillRunSearchItem | SkillRunSkillItem | SkillRunLlmItem
 
 /** 流程步骤数据 */
 export type ProcessStep = {
@@ -100,8 +108,9 @@ export function serializeSkillRunItems(items: SkillRunItem[]): string {
     }
     return item
   })
-  const firstItem = serialized[0]
-  return serialized.length && firstItem?.type === 'skill' && firstItem.skillName
+  const hasSkill = serialized.some((item) => item.type === 'skill' && item.skillName)
+  const hasLlm = serialized.some((item) => item.type === 'llm')
+  return serialized.length && (hasSkill || hasLlm)
     ? '```skill-run\n' + JSON.stringify(serialized) + '\n```\n\n'
     : ''
 }
@@ -251,9 +260,60 @@ export function handleToolResult(step: ProcessStep, skillRunItems: SkillRunItem[
   ]
 }
 
+/** 处理 Agent 规划轮的 LLM 输出，并保持在 skill-run 流程块中 */
+export function handleLlmDelta(step: ProcessStep, skillRunItems: SkillRunItem[]): SkillRunItem[] {
+  if ((step.status !== 'streaming' && step.status !== 'completed') || !step.data) return skillRunItems
+
+  const data = step.data as { content?: unknown }
+  const content = typeof data.content === 'string' ? data.content : ''
+  if (!content) return skillRunItems
+
+  const completed = step.status === 'completed'
+
+  const existingIdx = skillRunItems.findIndex((item) => item.type === 'llm' && item.status === 'running')
+  if (existingIdx !== -1) {
+    const existing = skillRunItems[existingIdx] as SkillRunLlmItem
+    return [
+      ...skillRunItems.slice(0, existingIdx),
+      {
+        ...existing,
+        title: completed ? '思考完成' : existing.title,
+        content: completed && content.startsWith(existing.content) ? content : existing.content + content,
+        status: completed ? 'completed' : 'running',
+      },
+      ...skillRunItems.slice(existingIdx + 1),
+    ]
+  }
+
+  return [
+    ...skillRunItems,
+    {
+      type: 'llm',
+      title: completed ? '思考完成' : '思考中...',
+      content,
+      status: completed ? 'completed' : 'running',
+    },
+  ]
+}
+
+function finishLlmDelta(skillRunItems: SkillRunItem[]): SkillRunItem[] {
+  const llmIdx = skillRunItems.findIndex((item) => item.type === 'llm' && item.status === 'running')
+  if (llmIdx === -1) return skillRunItems
+  const item = skillRunItems[llmIdx] as SkillRunLlmItem
+  return [
+    ...skillRunItems.slice(0, llmIdx),
+    { ...item, title: '思考完成', status: 'completed' },
+    ...skillRunItems.slice(llmIdx + 1),
+  ]
+}
+
 /** 应用流程步骤到 skillRunItems，返回更新后的 items 和是否有数据变化 */
 export function applyProcessStep(step: ProcessStep, items: SkillRunItem[]): { items: SkillRunItem[]; hasUpdate: boolean } {
   let newItems = [...items]
+
+  if (step.step_code !== 'llm_delta') {
+    newItems = finishLlmDelta(newItems)
+  }
 
   switch (step.step_code) {
     case 'intent_classification':
@@ -268,8 +328,11 @@ export function applyProcessStep(step: ProcessStep, items: SkillRunItem[]): { it
     case 'tool_result':
       newItems = handleToolResult(step, newItems)
       break
+    case 'llm_delta':
+      newItems = handleLlmDelta(step, newItems)
+      break
     default:
-      return { items, hasUpdate: false }
+      return { items: newItems, hasUpdate: newItems !== items }
   }
 
   return { items: newItems, hasUpdate: newItems !== items }
@@ -323,14 +386,16 @@ export const useChatStream = () => {
           const ps = data.process_step || {}
           const process_data = ps.data || {}
 
-          // 使用 step_id 去重，如果没有 step_id 则用 step_code + status 组合
+          // llm_delta 是一个连续流，不能按 step_code + status 去重；
+          // 其它步骤仍按原有规则去重。
+          const isLlmDelta = ps.step_code === 'llm_delta'
           const stepId = ps.step_id ?? `${ps.step_code}_${ps.status}`
           if (!Array.isArray(lastMessage.processedStepIds)) lastMessage.processedStepIds = []
-          if (lastMessage.processedStepIds.includes(stepId)) {
+          if (!isLlmDelta && lastMessage.processedStepIds.includes(stepId)) {
             // 已处理过，跳过
             return
           }
-          lastMessage.processedStepIds.push(stepId)
+          if (!isLlmDelta) lastMessage.processedStepIds.push(stepId)
 
           if (process_data.sources) {
             lastMessage.rag_temp.document_search = {

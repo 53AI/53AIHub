@@ -14,6 +14,20 @@ import { debounce } from "@km/shared-utils";
 import { SvgIcon } from "@km/shared-components-react";
 
 const DOCUMENT_APPLICATION = "document_application";
+const RECORDING_APPLICATION = "recording_application";
+
+const APP_KEY_TITLE_MAP: Record<string, string> = {
+  [DOCUMENT_APPLICATION]: "module.document_app",
+  [RECORDING_APPLICATION]: "module.recording",
+};
+
+const APP_KEY_FALLBACK_PATH_MAP: Record<string, string> = {
+  [RECORDING_APPLICATION]: "/recording",
+};
+
+const APP_KEY_ADD_SUCCESS_REDIRECT_MAP: Record<string, string> = {
+  [RECORDING_APPLICATION]: "/recording",
+};
 
 interface DocumentAppAgent {
   agent_id: number;
@@ -53,6 +67,8 @@ export function AppSettingPage() {
   const [userScopeData, setUserScopeData] = useState<
     { nickname: string; id: number; user_id?: number }[]
   >([]);
+  const appKey = searchParams.get("key") || DOCUMENT_APPLICATION;
+
   const promptInputRef = useRef<(PromptInputRef | null)[]>([]);
 
   const variables = useMemo(() => {
@@ -69,6 +85,11 @@ export function AppSettingPage() {
   }, []);
 
   const handleBack = () => {
+    const fallbackPath = APP_KEY_FALLBACK_PATH_MAP[appKey];
+    if (fallbackPath) {
+      navigate(fallbackPath);
+      return;
+    }
     navigate(-1);
   };
 
@@ -199,7 +220,7 @@ export function AppSettingPage() {
       return;
     }
     const data = {
-      key: DOCUMENT_APPLICATION,
+      key: appKey,
       value: JSON.stringify(currentAgent),
     };
     const add = searchParams.get("add");
@@ -208,7 +229,9 @@ export function AppSettingPage() {
       await settingApi.create(data);
       message.success(t("action_add_success"));
       setTimeout(() => {
-        navigate("/knowledge?tab=assistant");
+        const redirectPath =
+          APP_KEY_ADD_SUCCESS_REDIRECT_MAP[appKey] || "/knowledge?tab=assistant";
+        navigate(redirectPath);
       }, 200);
     } else if (settingId) {
       await settingApi.update(Number(settingId), data);
@@ -259,7 +282,7 @@ export function AppSettingPage() {
   return (
     <PageLayoutContent
       header={{
-        title: t("module.document_app"),
+        title: t(APP_KEY_TITLE_MAP[appKey] || "module.document_app"),
         back: true,
         onBack: handleBack,
       }}

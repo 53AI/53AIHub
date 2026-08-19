@@ -39,3 +39,19 @@ func GetResourceScopesByResource(resourceID int64, resourceType string) ([]Resou
 	}
 	return scopes, nil
 }
+
+func GetResourceScopeItemsByResource(resourceID int64, resourceType string) ([]ResourceScopeItem, error) {
+	scopes, err := GetResourceScopesByResource(resourceID, resourceType)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]ResourceScopeItem, 0, len(scopes))
+	for _, scope := range scopes {
+		items = append(items, ResourceScopeItem{
+			ScopeType: scope.ScopeType,
+			TargetID:  scope.TargetID,
+		})
+	}
+	return items, nil
+}

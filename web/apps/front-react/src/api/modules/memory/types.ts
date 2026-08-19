@@ -61,6 +61,10 @@ export interface UserMemoryResponse {
   nickname: string
   /** 部门（只读） */
   department: string
+  /** 职位 */
+  position?: string
+  /** 期望风格 */
+  style?: string
   /** 智能记忆 JSON: MemoryItem[] 或纯文本 */
   smart_memory: string
   /** 自定义记忆 JSON: MemoryItem[] 或纯文本 */
@@ -90,6 +94,10 @@ export interface ReplaceAgentToolLessonsRequest {
 
 /** 全量替换用户全局记忆请求 */
 export interface ReplaceUserMemoryRequest {
+  /** 职位 */
+  position?: string
+  /** 期望风格 */
+  style?: string
   /** 智能记忆（纯文本或 JSON: MemoryItem[]） */
   smart_memory?: string
   /** 自定义记忆（纯文本或 JSON: MemoryItem[]） */

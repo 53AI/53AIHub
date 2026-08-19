@@ -68,6 +68,14 @@ export function Quotation({ type, files = [] }: QuotationProps) {
     }
   };
 
+  // 拼出 `/空间名/知识库名` 后缀；任一为空则跳过对应段
+  const buildPathSuffix = (space_name: string, library_name?: string): string => {
+    const parts = [space_name, library_name].filter(
+      (s) => typeof s === 'string' && s.trim().length > 0
+    ) as string[];
+    return parts.length > 0 ? `/${parts.join('/')}` : '';
+  };
+
   return (
     <>
       <RagPill
@@ -113,11 +121,12 @@ export function Quotation({ type, files = [] }: QuotationProps) {
 
             // 动态知识（wiki）：跳转到 wiki 页面 URL
             if (item.chunk_type === ('wiki' as const)) {
+              const pathSuffix = buildPathSuffix(item?.space_name);
               return (
                 <div
                   key={item.id || index}
                   onClick={() => handleFileClick(item)}
-                  className="flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F5] rounded px-1 py-0.5 -mx-1"
+                  className="flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F5] rounded px-1 py-0.5 -mx-1 group"
                 >
                   <div className="size-4 rounded-full bg-[#EDEDED] flex items-center justify-center text-xs text-[#4F5052]">
                     {displayIndex}
@@ -127,16 +136,20 @@ export function Quotation({ type, files = [] }: QuotationProps) {
                   </span>
                   <div className="flex-1 text-sm text-[#1D1E1F] truncate">
                     {item.title}
+                    {pathSuffix && (
+                      <span className="text-[#939499] ml-1 invisible group-hover:visible">{pathSuffix}</span>
+                    )}
                   </div>
                 </div>
               );
             }
 
             // 知识库类型：跳转到文档
+            const pathSuffix = buildPathSuffix(item?.space_name, item?.library_name);
             return (
               <div
                 key={item.id || index}
-                className="flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F5] rounded px-1 py-0.5 -mx-1"
+                className="flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F5] rounded px-1 py-0.5 -mx-1 group"
                 onClick={() => handleFileClick(item)}
               >
                 <div className="size-4 rounded-full bg-[#EDEDED] flex items-center justify-center text-xs text-[#4F5052]">
@@ -145,6 +158,9 @@ export function Quotation({ type, files = [] }: QuotationProps) {
                 {item.file_icon && <img src={item.file_icon} className="size-5" alt="" />}
                 <div className="flex-1 text-sm text-[#1D1E1F] truncate">
                   {item.name || item.file_name}
+                  {pathSuffix && (
+                    <span className="text-[#939499] ml-1 invisible group-hover:visible">{pathSuffix}</span>
+                  )}
                 </div>
               </div>
             );

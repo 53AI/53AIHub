@@ -30,34 +30,35 @@ const (
 )
 
 type SkillLibrary struct {
-	ID                int64   `json:"id" gorm:"primaryKey;autoIncrement"`
-	Eid               int64   `json:"eid" gorm:"not null;index:idx_skill_libraries_query,priority:1;uniqueIndex:uk_skill_libraries_eid_name,priority:1"`
-	SourceType        string  `json:"source_type" gorm:"size:20;not null"`
-	SourceRef         string  `json:"source_ref" gorm:"size:512;not null;default:''"`
-	SkillName         string  `json:"skill_name" gorm:"size:120;not null;uniqueIndex:uk_skill_libraries_eid_name,priority:2"`
-	Sort              int64   `json:"sort" gorm:"not null;default:0;index:idx_skill_libraries_query,priority:4"`
-	GroupIDs          []int64 `json:"group_ids" gorm:"-"`
-	DisplayName       string  `json:"display_name" gorm:"size:120;not null;default:''"`
-	Description       string  `json:"description" gorm:"type:text"`
-	Version           string  `json:"version" gorm:"size:50;not null;default:'v1.0.0'"`
-	UsageGuide        string  `json:"usage_guide" gorm:"type:text"`
-	OriginZipKey      string  `json:"origin_zip_key" gorm:"size:512;not null;default:''"`
-	OriginZipName     string  `json:"origin_zip_name" gorm:"size:255;not null;default:''"`
-	OriginZipSize     int64   `json:"origin_zip_size" gorm:"not null;default:0"`
-	OriginZipSHA256   string  `json:"origin_zip_sha256" gorm:"size:128;not null;default:''"`
-	ExtractFolder     string  `json:"extract_folder" gorm:"size:150;not null;default:''"`
-	InstallPath       string  `json:"install_path" gorm:"size:512;not null;default:''"`
-	PublishStatus     string  `json:"publish_status" gorm:"size:20;not null;index:idx_skill_libraries_query,priority:2"`
-	AdminStatus       string  `json:"admin_status" gorm:"size:20;not null;index:idx_skill_libraries_query,priority:3"`
-	RiskLevel         string  `json:"risk_level" gorm:"size:20;not null;default:''"`
-	ScoreIntegrity    float64 `json:"score_integrity" gorm:"not null;default:0"`
-	ScorePracticality float64 `json:"score_practicality" gorm:"not null;default:0"`
-	ScoreSafety       float64 `json:"score_safety" gorm:"not null;default:0"`
-	ScoreCodeQuality  float64 `json:"score_code_quality" gorm:"not null;default:0"`
-	ScoreDocQuality   float64 `json:"score_doc_quality" gorm:"not null;default:0"`
-	Logo              string  `json:"logo" gorm:"size:512;not null;default:''"`
-	ScanMessage       string  `json:"scan_message" gorm:"type:text"`
-	ScanPayload       string  `json:"scan_payload" gorm:"type:text"`
+	ID                int64               `json:"id" gorm:"primaryKey;autoIncrement"`
+	Eid               int64               `json:"eid" gorm:"not null;index:idx_skill_libraries_query,priority:1;uniqueIndex:uk_skill_libraries_eid_name,priority:1"`
+	SourceType        string              `json:"source_type" gorm:"size:20;not null"`
+	SourceRef         string              `json:"source_ref" gorm:"size:512;not null;default:''"`
+	SkillName         string              `json:"skill_name" gorm:"size:120;not null;uniqueIndex:uk_skill_libraries_eid_name,priority:2"`
+	Sort              int64               `json:"sort" gorm:"not null;default:0;index:idx_skill_libraries_query,priority:4"`
+	GroupIDs          []int64             `json:"group_ids" gorm:"-"`
+	Scopes            []ResourceScopeItem `json:"scopes" gorm:"-"`
+	DisplayName       string              `json:"display_name" gorm:"size:120;not null;default:''"`
+	Description       string              `json:"description" gorm:"type:text"`
+	Version           string              `json:"version" gorm:"size:50;not null;default:'v1.0.0'"`
+	UsageGuide        string              `json:"usage_guide" gorm:"type:text"`
+	OriginZipKey      string              `json:"origin_zip_key" gorm:"size:512;not null;default:''"`
+	OriginZipName     string              `json:"origin_zip_name" gorm:"size:255;not null;default:''"`
+	OriginZipSize     int64               `json:"origin_zip_size" gorm:"not null;default:0"`
+	OriginZipSHA256   string              `json:"origin_zip_sha256" gorm:"size:128;not null;default:''"`
+	ExtractFolder     string              `json:"extract_folder" gorm:"size:150;not null;default:''"`
+	InstallPath       string              `json:"install_path" gorm:"size:512;not null;default:''"`
+	PublishStatus     string              `json:"publish_status" gorm:"size:20;not null;index:idx_skill_libraries_query,priority:2"`
+	AdminStatus       string              `json:"admin_status" gorm:"size:20;not null;index:idx_skill_libraries_query,priority:3"`
+	RiskLevel         string              `json:"risk_level" gorm:"size:20;not null;default:''"`
+	ScoreIntegrity    float64             `json:"score_integrity" gorm:"not null;default:0"`
+	ScorePracticality float64             `json:"score_practicality" gorm:"not null;default:0"`
+	ScoreSafety       float64             `json:"score_safety" gorm:"not null;default:0"`
+	ScoreCodeQuality  float64             `json:"score_code_quality" gorm:"not null;default:0"`
+	ScoreDocQuality   float64             `json:"score_doc_quality" gorm:"not null;default:0"`
+	Logo              string              `json:"logo" gorm:"size:512;not null;default:''"`
+	ScanMessage       string              `json:"scan_message" gorm:"type:text"`
+	ScanPayload       string              `json:"scan_payload" gorm:"type:text"`
 	BaseModel
 }
 
@@ -113,15 +114,22 @@ func ListExploreSkillLibrariesWithFilter(eid int64, filter SkillLibraryExploreFi
 	// 有可见分组时，按分组权限筛选技能（仅平台技能 + 有权限的技能）
 	// 无可见分组时（未登录），完全依赖 Query.eid = <企业eid> OR eid = 0 展示全部已发布技能
 	if len(filter.VisibleGroupIDs) > 0 {
-		resourceIDs, err := GetDistinctResourceIDsByGroupsAndType(filter.VisibleGroupIDs, ResourceTypeSkillLibrary)
-		if err != nil {
-			return nil, 0, err
-		}
-		if len(resourceIDs) > 0 {
-			query = query.Where(DB.Where("skill_libraries.eid = ?", 0).Or("skill_libraries.id IN ?", resourceIDs))
-		} else {
-			query = query.Where("skill_libraries.eid = ?", 0)
-		}
+		groups := append([]int64(nil), filter.VisibleGroupIDs...)
+		query = query.Where(`
+			skill_libraries.eid = ?
+			OR skill_libraries.id IN (
+				SELECT resource_id FROM resource_scopes
+				WHERE resource_type = ?
+				AND (eid = ? OR eid = 0)
+				AND (scope_type = ? OR (scope_type = ? AND target_id IN ?))
+			)
+			OR skill_libraries.id IN (
+				SELECT resource_id FROM resource_permissions
+				WHERE resource_type = ? AND group_id IN ? AND permission = ?
+			)`,
+			0,
+			ResourceTypeSkillLibrary, eid, ScopeTypeCompany, ScopeTypeGroup, groups,
+			ResourceTypeSkillLibrary, groups, PermissionRead)
 	}
 	if len(filter.SkillIDs) > 0 {
 		query = query.Where("skill_libraries.id IN ?", filter.SkillIDs)
@@ -162,9 +170,17 @@ func (s *SkillLibrary) LoadSkillGroups() error {
 	if s == nil {
 		return nil
 	}
-	groupIDs, err := GetResourcePermissionGroupIDs(s.ID, ResourceTypeSkillLibrary)
+	items, err := GetResourceScopeItemsByResource(s.ID, ResourceTypeSkillLibrary)
 	if err != nil {
 		return err
+	}
+	s.Scopes = items
+	groupIDs := scopeGroupIDs(items)
+	if len(items) == 0 {
+		groupIDs, err = GetResourcePermissionGroupIDs(s.ID, ResourceTypeSkillLibrary)
+		if err != nil {
+			return err
+		}
 	}
 	if groupIDs == nil {
 		groupIDs = []int64{}

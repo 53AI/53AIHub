@@ -1,9 +1,10 @@
 import { useState, Suspense, lazy, useRef, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Spin, Switch } from "antd";
 import { PageLayoutContent, PageLayoutTabs } from "@/components/PageLayout";
 import { t } from "@/locales";
 import type { AgentInfo } from "@/api/modules/agents/index";
+import { AGENT_USAGES } from "@/constants/agent";
 import { getPublicPath } from "@/utils/config";
 import "./index.css";
 
@@ -13,13 +14,20 @@ const Statistic = lazy(() => import("./Statistic"));
 
 export function ChatPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("setting");
   const [agentChat, setAgentChat] = useState<AgentInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const settingRef = useRef<any>(null);
 
+  // 录音场景：usage=5、from=recording；知识库场景：默认 KM_FILE_CHAT、from=knowledge
+  const usageParam = searchParams.get("usage");
+  const fromParam = searchParams.get("from");
+  const agentUsage = usageParam ? Number(usageParam) : AGENT_USAGES.KM_FILE_CHAT;
+  const isFromRecording = fromParam === "recording";
+
   const handleBack = () => {
-    navigate("/knowledge?tab=assistant");
+    navigate(isFromRecording ? "/recording" : "/knowledge?tab=assistant");
   };
 
   const handleStatusChange = (enable: boolean) => {
@@ -45,6 +53,7 @@ export function ChatPage() {
           <Suspense fallback={<Spin />}>
             <Setting
               ref={settingRef}
+              agentUsage={agentUsage}
               onAgentChange={onAgentChange}
               onLoading={handleLoading}
             />
@@ -70,13 +79,13 @@ export function ChatPage() {
         ),
       },
     ],
-    [agentChat?.agent_id],
+    [agentChat?.agent_id, agentUsage],
   );
 
   return (
     <PageLayoutContent
       header={{
-        title: t("module.knowledge_space"),
+        title: isFromRecording ? t("module.recording") : t("module.knowledge_space"),
         back: true,
         onBack: handleBack,
       }}

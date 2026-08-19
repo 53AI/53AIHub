@@ -212,7 +212,7 @@ func GetConversations(c *gin.Context) {
 		limit = 20
 	}
 
-	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPaged(config.GetEID(c), config.GetUserId(c), req.AgentID, convType, session.GetVisitorID(c), offset, limit)
+	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPaged(config.GetEID(c), config.GetUserId(c), req.AgentID, convType, session.GetVisitorID(c), req.Keyword, offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return

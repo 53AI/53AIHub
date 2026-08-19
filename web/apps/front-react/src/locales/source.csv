@@ -68,6 +68,7 @@ move_to.retry,重试,重試,Retry,再試行
 move_to.empty,暂无子项,暫無子項,No items,子項目なし
 move_to.no_match,无匹配目录,無匹配目錄,No matching folders,一致するフォルダーはありません
 move_to.cannot_move_to_file,不支持移动到当前类型下,不支持移動到當前類型下,Cannot move to this type,このタイプには移動できません
+move_to.no_permission,当前用户没有操作权限,當前用戶沒有操作權限,No operation permission,操作権限がありません
 action.next_step,下一步,下一步,Next step,次のステップ
 action.not_update,暂不更新,暫不更新,Not now,更新しない
 action.ok,确定,確定,OK,OK
@@ -272,9 +273,11 @@ chat.online_search,联网搜索,聯網搜索,Online Search,オンライン検索
 chat.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
 chat.select_from_library,从知识库中选择,從知識庫中選擇,Select from Library,ナレッジベースから選択
 chat.select_from_knowledge,选择指定内容,選擇指定內容,Select specific content,指定した内容を選択
+chat.select_from_my,从我的中选择,從我的中選擇,Select from mine,マイから選択
 chat.mention.search_placeholder,搜索文件,搜索文件,Search files,ファイルを検索
 chat.mention.search_result,搜索结果,搜索結果,Search results,検索結果
-chat.mention.search_no_result,没有找到相关文件,沒有找到相關文件,No matching files,一致するファイルがありません
+chat.mention.search_no_result,暂无搜索结果,暫無搜索結果,No search results,検索結果はありません
+chat.mention.searching,搜索中,搜索中,Searching,検索中
 chat.mention.no_recent,暂无最近访问,暫無最近訪問,No recent visits,最近アクセスがありません
 chat.output,输出,輸出,Output,出力
 chat.regenerate,重新生成,重新生成,Regenerate,再生成
@@ -580,6 +583,8 @@ form.password_not_match,两次输入的密码不一致,兩次輸入的密碼不�
 form.password_placeholder,请输入密码,請輸入密碼,Please enter password,パスワードを入力してください
 form.password_validator,请输入密码,請輸入密碼,Please enter the password,パスワードを入力してください
 form.path_validator,请输入正确的路径,請輸入正確的路徑,Please enter the correct path,正しいパスを入力してください
+form.position,职位,職位,Position,役職
+form.position_placeholder,请输入职位（不超过 20 字）,請輸入職位（不超過 20 字）,Please enter your position (up to 20 characters),役職を入力してください（20文字以内）
 form.remark,备注, 備註 ,Remark, 備考
 form.required,必填项,必填項,Required,必須項目
 form.reset_password,重置密码,重置密碼,Reset Password,パスワードをリセット
@@ -831,9 +836,14 @@ profile.setting,个人设置,個人設置,Personal Setting,個人設定
 profile.user_info,用户信息,用戶信息,User Info,ユーザー情報
 profile.user_memory,用户记忆,用戶記憶,User Memory,ユーザーメモリ
 profile.user_memory_desc,记忆让 53AI 记住你的偏好和习惯，对话越多，它就越懂你。记忆内容仅你本人可见。,記憶讓 53AI 記住你的偏好和習慣，對話越多，它就越懂你。記憶內容僅你本人可見。,Memory makes 53AI remember your preferences and habits. The more you chat, the better it understands you. Memory content is only visible to you.,記憶が53AIにあなたの好みと習慣を記憶させます。チャットをすればなるほど、それはあなたをよりよく理解します。記憶内容はあなただけが見ることができます。
-profile.smart_memory,智能记忆信息,智能記憶信息,Smart Memory Information,スマートメモリ情報
+profile.smart_memory,智能记忆,智能記憶,Smart Memory,スマートメモリ
 profile.smart_memory_placeholder,请输入更多关于自己的信息，如：我是一名位于纽约市的分析师，主要从事 React 和 SQL。,請輸入更多關於自己的信息，如：我是一名位於紐約市的分析師，主要從事 React 和 SQL。,Please enter more information about yourself, such as: I am an analyst located in New York City, mainly working with React and SQL。,自分についてもっと情報を入力してください、例えば：私はニューヨークシティに住むアナリストで、主にReactとSQLを扱っています。
-profile.custom_memory,自定义记忆信息,自定義記憶信息,Custom Memory Information,カスタムメモリ情報
+profile.style,期望风格,期望風格,Preferred Style,期望スタイル
+profile.style_placeholder,请选择期望风格,請選擇期望風格,Please select a preferred style,期望スタイルを選択してください
+profile.style_concise,内容简洁、突出结论,內容簡潔、突出結論,Concise with key conclusions,簡潔で結論を強調
+profile.style_conclusion_first,结论先行、细节支撑,結論先行、細節支撐,Conclusion first with supporting details,結論先行で詳細をサポート
+profile.style_detailed,详细分析、引发思考,詳細分析、引發思考,Detailed analysis to provoke thought,詳細分析と思考の喚起
+profile.custom_memory,个性要求,個性要求,Personal Preferences,個性要求
 profile.custom_memory_placeholder,请输入自定义指令，如：简洁直接。除非我另行说明，默认使用 Python。编写文档时，以专业语气书写并引用来源。,請輸入自定義指令，如：簡潔直接。除非我另行說明，否則默認使用 Python。編寫文檔時，以專業語氣書寫並引用來源。,Please enter custom instructions, such as: concise and direct. Unless otherwise specified, Python is used by default. When writing documents, use a professional tone and cite sources.,自定義指令を入力してください。例えば：簡潔直接。特に指定がない場合は、Pythonを使用します。ドキュメントを書く際には、専門的な口調で書くことと、ソースを引用することです。
 profile.save_success,设置已保存,設置已保存,Settings saved,設定が保存されました
 profile.import_memory_title,导入记忆,導入記憶,Import Memory,メモリのインポート
@@ -1056,6 +1066,23 @@ upgrade_dialog.register_user,站点注册用户,站點註冊用戶,Site register
 upgrade_dialog.title,站点注册用户已达上限，请联系管理员~~,站點註冊用戶已達上限，請聯繫管理員~~,"The number of registered users of the site has reached the upper limit, please contact the administrator~~",サイトの登録ユーザー数が上限に達しました、管理者に連絡してください~~
 form.input_placeholder_max_length,最大限制输入{max}个字符,最大限制輸入{max}個字符,Maximum {max} characters allowed,最大入力{max}文字
 form.upload_placeholder,请上传,請上傳,Please upload,アップロードしてください
+share.create_failed,创建分享失败,創建分享失敗,Failed to create share,共有の作成に失敗しました
+share.link_expired,分享链接已失效，分享信息不存在或已过期,分享連結已失效，分享資訊不存在或已過期,Share link has expired or the share no longer exists,共有リンクは無効です。共有情報が見つからないか期限切れです
+share.recording_title,分享,分享,Share,共有
+share.recording_desc,通过链接分享此内容（仅支持查看）,通過連結分享此內容（僅支援查看）,Share via link (view-only),リンクで共有（閲覧のみ）
+share.recording_share_time,分享于{time},分享於{time},Shared on {time},{time}に共有
+share.recording_created_time,创建于{time},創建於{time},Created on {time},{time}に作成
+share.recording_duration,时长{duration},時長{duration},Duration {duration},再生時間{duration}
+share.no_content,录音内容为空,錄音內容為空,Recording content is empty,録音内容が空です
+share.recording_document_title,{nickname}分享了一份决策洞察,{nickname}分享了一份決策洞察,{nickname} shared a decision insight,{nickname}が意思決定インサイトを共有しました
+share.recording_share_action,分享给我的好友,分享給我的好友,Share with friends,友達に共有する
+share.recording_share_guide,点击右上角分享给好友,點擊右上角分享給好友,Tap the top-right to share with friends,右上角をタップして友達に共有
+share.qrcode,二维码,二維碼,QR Code,QRコード
+share.scan_qrcode,微信扫码,微信掃碼,WeChat Scan,WeChatスキャン
+share.recording_scan_footer,扫码分享,扫码分享,WeChat Scan,WeChatスキャン
+share.recording_chip_section,选择指定内容,選擇指定內容,Select specific content,表示するコンテンツを選択
+share.recording_switch_tabs,切换,切換,Switch,切り替え
+share.recording_insight_not_ready,请生成洞察后，再进行分享,請生成洞察後，再進行分享,Please wait for the insight to be generated before sharing,インサイト生成後に共有してください
 skill.binding_id_not_found,技能绑定ID不存在,技能绑定ID不存在,Skill binding ID not found,スキルのバインドIDが存在しません
 skill.enable_first,请先启用技能再使用,請先啟用技能再使用,Please enable the skill first,先にスキルを有効にしてください
 skill.disabled_by_admin,当前技能已禁用，请联系管理员,當前技能已禁用，請聯繫管理員,The skill has been disabled by admin, please contact administrator,現在のスキルは管理者によって無効にされています
@@ -1096,6 +1123,24 @@ recording.system_audio,录制系统声音,錄製系統聲音,Record system audio
 recording.system_audio_hint,启用后将录制您选择的标签页或窗口的音频，需在共享时勾选"共享音频",啟用後將錄製您選擇的標籤頁或窗口的音頻，需在共享時勾選"共享音頻",Enable to record audio from the selected tab or window. Check "Share audio" when sharing.,有効化後、選択したタブまたはウィンドウの音声を録音します。共有時に「音声を共有」をチェックしてください
 recording.system_audio_missing,未检测到共享音频，仅录制麦克风,未檢測到共享音頻，僅錄製麥克風,No shared audio detected. Recording microphone only.,共有音声が検出されません。マイクのみ録音中
 recording.user_cancelled_picker,已取消录音启动,已取消錄音啟動,Recording start cancelled.,録音開始がキャンセルされました
+recording.default_name,录音,錄音,Recording,録音
+recording.tab.insight,洞察,洞察,Insight,インサイト
+recording.insight_regenerate,参谋洞察,參謀洞察,Strategy Insight,参謀インサイト
+recording.tab.summary,纪要,紀要,Meeting Minutes,議事録
+recording.tab.transcript,转写,轉寫,Transcript,文字起こし
+recording.tab.template_default,总结,總結,Summary,サマリー
+recording.empty.no_insight,暂无洞察,暫無洞察,No insight yet,インサイトがありません
+recording.empty.no_summary,暂无纪要,暫無紀要,No meeting minutes yet,議事録がありません
+recording.empty.no_transcript,暂无文字稿,暫無文字稿,No transcript yet,文字起こしがありません
+recording.empty.no_template_summary,暂无总结内容,暫無總結內容,No summary content yet,要約内容がありません
+recording.export.menu_label,导出/下载,導出/下載,Export/Download,エクスポート/ダウンロード
+recording.export.audio,导出音频,導出音訊,Export Audio,オーディオをエクスポート
+recording.export.insight,导出洞察,導出洞察,Export Insight,インサイトをエクスポート
+recording.export.summary,导出纪要,導出紀要,Export Meeting Minutes,議事録をエクスポート
+recording.export.transcript,导出转写,導出轉寫,Export Transcript,文字起こしをエクスポート
+recording.export.transcript_exporting,正在导出转写...,正在導出轉寫...,Exporting transcript...,文字起こしをエクスポート中...
+recording.export.not_ready_warning,{type}内容尚未生成,{type}內容尚未生成,{type} is not ready,{type}は未生成です
+recording.export.template_prefix,导出,導出,Export,エクスポート
 mine.space_init,个人空间正在初始化，请稍候...,個人空間正在初始化，請稍候...,Personal space is initializing, please wait...,個人スペースを初期化中、お待ちください...
 mine.untitled_folder,无标题文件夹,無標題文件夾,Untitled Folder,無題のフォルダ
 mine.untitled_knowledge,无标题知识,無標題知識,Untitled Knowledge,無題のナレッジ
@@ -1112,6 +1157,7 @@ mine.folder_name_placeholder,请输入文件夹名称（不能包含 / 或 \\）
 mine.all_recording,全部录音,全部錄音,All Recordings,すべての録音
 mine.unfavorite_success,已取消,已取消,Removed,削除済み
 mine.moved,已移动,已移動,Moved,移動済み
+mine.moved_to,已移动到「{name}」,已移動到「{name}」,Moved to "{name}","{name}"に移動しました
 mine.move_failed,移动失败,移動失敗,Move failed,移動失敗
 mine.no_recording_task,当前没有活跃录音任务，无法创建录音文件夹,當前沒有活躍錄音任務，無法創建錄音文件夾,No active recording task, cannot create recording folder,アクティブな録音タスクがないため、録音フォルダを作成できません
 mine.no_recording_found,未找到相关内容,未找到相關內容,No matching results found,関連する内容が見つかりません

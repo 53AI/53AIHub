@@ -17,6 +17,7 @@ import { useSpaceStore } from "@/stores/modules/space";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { EntityDisplay } from "@/components/EntityDisplay";
 import Header from "@/components/Layout/Header";
+import { MoreDropdown, type MenuItem } from "@/components/MoreDropdown";
 import {
   PERMISSION_TYPE,
   RESOURCE_TYPE,
@@ -29,7 +30,7 @@ import { t } from "@/locales";
 import type { SortOrder } from "../types";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "../library/InfoSaveDialog";
 import List from "../library/List";
-import { getPublicPath } from "@/utils";
+import { getPublicPath, admin_url } from "@/utils/config";
 
 const GlobalSearch = lazy(() =>
   import("@/components/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
@@ -93,6 +94,73 @@ export function KnowledgePanel({
   const handleSortOrder = useCallback((order: SortOrder) => {
     setSortOrder(order);
   }, []);
+
+  // 跳转到管理后台（参考 ProfilePopover 的 handleJumpToAdmin）
+  // console-react 使用 HashRouter：特定路由必须挂在 # 之后，否则会被当成服务器路径返回 404。
+  // 同时 index.html 脚本通过 location.search 读取 access_token，因此 query 参数必须保持在 # 之前。
+  const buildAdminUrl = useCallback(
+    (path = "") => {
+      const params = new URLSearchParams({
+        access_token: userStore.info.access_token,
+        eid: userStore.info.eid,
+        from_origin: window.location.origin,
+      });
+      const query = params.toString();
+      return path
+        ? `${admin_url}?${query}#${path}`
+        : `${admin_url}?${query}`;
+    },
+    [userStore.info.access_token, userStore.info.eid],
+  );
+
+  const handleJumpToAdmin = useCallback(() => {
+    if (!activeSpaceId) return;
+    const url = buildAdminUrl(`/space/${activeSpaceId}/setting`);
+    window.open(url, "_blank");
+  }, [buildAdminUrl, activeSpaceId]);
+
+  // 跳转到空间成员与权限管理页（console-react: #/space/:id/setting/members）
+  const handleJumpToSpaceMembers = useCallback(() => {
+    console.log(activeSpaceId)
+    if (!activeSpaceId) return;
+    const url = buildAdminUrl(`/space/${activeSpaceId}/setting/members`);
+    window.open(url, "_blank");
+  }, [buildAdminUrl, activeSpaceId]);
+
+  // 是否为管理员（与 ProfilePopover 中的判断保持一致）
+  const isAdmin = Boolean(userStore.info.role) && userStore.info.role > 1;
+
+  // MoreDropdown 菜单项：仅管理员可见
+  const moreItems: MenuItem[] = [
+    {
+      key: "member-permission",
+      icon: "peoples",
+      label: t("permission.member_and_role"),
+      disabled: !activeSpaceId,
+    },
+    {
+      key: "manage",
+      icon: "setting2",
+      label: t("action.manage"),
+    },
+  ];
+
+  // 处理 MoreDropdown 点击
+  const handleMore = useCallback(
+    (command: string | number) => {
+      switch (command) {
+        case "manage":
+          handleJumpToAdmin();
+          break;
+        case "member-permission":
+          handleJumpToSpaceMembers();
+          break;
+        default:
+          break;
+      }
+    },
+    [handleJumpToAdmin, handleJumpToSpaceMembers],
+  );
 
   // 排序菜单
   const sortMenuItems: MenuProps["items"] = [
@@ -306,7 +374,14 @@ export function KnowledgePanel({
         </div>
         {/* 右侧：知识库列表 */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white overflow-y-auto">
-          {isSoftStyle && <Header title={t("module.index")} border={false} sticky />}
+          {isSoftStyle && (
+            <Header
+              title={t("module.index")}
+              border={false}
+              sticky
+              after={isAdmin ? <MoreDropdown items={moreItems} onCommand={handleMore} placement="bottomRight" /> : undefined}
+            />
+          )}
           <div className="flex-1 min-h-0">
             <div className="h-full flex flex-col">
               {loading ? (

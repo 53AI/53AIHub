@@ -4,7 +4,6 @@ import { useSpaceStore } from "@/stores/modules/space";
 import { useWikiStore } from "@/stores/modules/wiki";
 import agentsApi from "@/api/modules/agents";
 import { AGENT_USAGES } from "@/constants/agent";
-import type { WikiPageDetail } from "@/api/modules/wiki";
 import { downloadFile } from "@km/shared-utils";
 import { useKnowledgeAssistantStore } from "@/stores/modules/knowledge-assistant";
 import { t } from "@/locales";

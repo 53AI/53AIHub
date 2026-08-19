@@ -2,6 +2,8 @@ package tools
 
 import (
 	"fmt"
+
+	"github.com/53AI/53AIHub/config"
 )
 
 // ToolDefinition represents the schema for an LLM tool
@@ -126,6 +128,10 @@ var registry = map[string]ToolDefinition{
 					"offset": map[string]interface{}{
 						"type":        "integer",
 						"description": "Start line number (0-indexed). Optional.",
+					},
+					"byte_offset": map[string]interface{}{
+						"type":        "integer",
+						"description": "Continuation byte offset returned for an oversized single line. Optional.",
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",
@@ -333,9 +339,55 @@ var registry = map[string]ToolDefinition{
 // GetToolDefinition returns the full tool definition for a given tool name
 func GetToolDefinition(name string) (*ToolDefinition, error) {
 	if tool, ok := registry[name]; ok {
+		if name == "edit" {
+			tool = editToolDefinitionForFlags(tool)
+		}
 		return &tool, nil
 	}
 	return nil, fmt.Errorf("tool not found: %s", name)
+}
+
+func editToolDefinitionForFlags(tool ToolDefinition) ToolDefinition {
+	if !config.AGENT_SUCCESS_RATE_ENHANCEMENTS_ENABLED || !config.AGENT_EDIT_V2_ENABLED || !config.AGENT_EDIT_BATCH_ENABLED {
+		return tool
+	}
+	parameters, ok := tool.Function.Parameters.(map[string]interface{})
+	if !ok {
+		return tool
+	}
+	parameters = cloneToolSchema(parameters)
+	properties, _ := parameters["properties"].(map[string]interface{})
+	properties["edits"] = map[string]interface{}{
+		"type":        "array",
+		"description": "Atomic edit operations. Each item requires old_string and new_string.",
+		"items": map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"old_string":  map[string]interface{}{"type": "string"},
+				"new_string":  map[string]interface{}{"type": "string"},
+				"replace_all": map[string]interface{}{"type": "boolean"},
+			},
+			"required": []string{"old_string", "new_string"},
+		},
+	}
+	parameters["required"] = []string{"path"}
+	tool.Function.Parameters = parameters
+	return tool
+}
+
+func cloneToolSchema(value map[string]interface{}) map[string]interface{} {
+	cloned := make(map[string]interface{}, len(value))
+	for key, item := range value {
+		switch typed := item.(type) {
+		case map[string]interface{}:
+			cloned[key] = cloneToolSchema(typed)
+		case []string:
+			cloned[key] = append([]string(nil), typed...)
+		default:
+			cloned[key] = item
+		}
+	}
+	return cloned
 }
 
 // ListTools returns all available tools

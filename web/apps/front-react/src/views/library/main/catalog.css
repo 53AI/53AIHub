@@ -49,6 +49,12 @@
   margin-right: 4px;
 }
 
+/* 展开/收起 switcher 图标：覆盖 antd 默认 fontSize:10 让 svg 跟随容器 12px，
+   否则 svg 用 1em 计算后是 10px，会与 12px 的 switcher 容器不一致。 */
+.library-documents-tree .ant-tree-switcher::before {
+  height: 20px;
+}
+
 /* 选中状态 - 还原 Vue 版本的选中样式 */
 .library-documents-tree .ant-tree-treenode-selected .ant-tree-node-content-wrapper {
   background-color: #F1F4FA !important;

@@ -18,42 +18,138 @@ const DATA_PIPELINE_KEYS: readonly KeyRow[] = [
   // 通用状态
   ['loading', '加载中...', '載入中...', 'Loading...', '読み込み中...'],
   ['data_pipeline.loading', '加载中...', '載入中...', 'Loading...', '読み込み中...'],
-  ['data_pipeline.no_parse_methods', '暂无解析方法', '暫無解析方法', 'No parse methods available', '解析方法なし'],
+  [
+    'data_pipeline.no_parse_methods',
+    '暂无解析方法',
+    '暫無解析方法',
+    'No parse methods available',
+    '解析方法なし'
+  ],
 
   // Pipeline 基础
   ['data_pipeline.add_pipeline', '添加管线', '添加管線', 'Add Pipeline', 'パイプラインを追加'],
-  ['data_pipeline.cannot_delete_unsaved', '无法删除未保存的流水线', '無法刪除未保存的流水線', 'Cannot delete an unsaved pipeline', '未保存の流水線は削除できません'],
+  [
+    'data_pipeline.cannot_delete_unsaved',
+    '无法删除未保存的流水线',
+    '無法刪除未保存的流水線',
+    'Cannot delete an unsaved pipeline',
+    '未保存の流水線は削除できません'
+  ],
   ['data_pipeline.created_at_label', '创建时间', '創建時間', 'Created', '作成日時'],
-  ['data_pipeline.delete_confirm', '确定要删除流水线「{name}」吗？', '確定要刪除流水線「{name}」嗎？', 'Delete pipeline "{name}"?', '流水線「{name}」を削除しますか？'],
+  [
+    'data_pipeline.delete_confirm',
+    '确定要删除流水线「{name}」吗？',
+    '確定要刪除流水線「{name}」嗎？',
+    'Delete pipeline "{name}"?',
+    '流水線「{name}」を削除しますか？'
+  ],
   ['data_pipeline.deleted_success', '已删除', '已刪除', 'Deleted', '削除しました'],
   ['data_pipeline.dialog_title_create', '创建', '創建', 'Create', '作成'],
   ['data_pipeline.dialog_title_edit', '编辑', '編輯', 'Edit', '編集'],
-  ['data_pipeline.name_duplicate', '管线名称已存在，请使用其他名称', '管線名稱已存在，請使用其他名稱', 'Pipeline name already exists, use another', 'パイプライン名は既に存在します。別の名前を使用してください'],
+  [
+    'data_pipeline.name_duplicate',
+    '管线名称已存在，请使用其他名称',
+    '管線名稱已存在，請使用其他名稱',
+    'Pipeline name already exists, use another',
+    'パイプライン名は既に存在します。別の名前を使用してください'
+  ],
   ['data_pipeline.name_label', '名称', '名稱', 'Name', '名前'],
-  ['data_pipeline.name_max_length', '名称长度不能超过20个字符', '名稱長度不能超過20個字符', 'Name must be 20 characters or less', '名前は20文字以内にしてください'],
-  ['data_pipeline.name_placeholder', '请输入管线名称', '請輸入管線名稱', 'Enter pipeline name', 'パイプライン名を入力してください'],
+  [
+    'data_pipeline.name_max_length',
+    '名称长度不能超过20个字符',
+    '名稱長度不能超過20個字符',
+    'Name must be 20 characters or less',
+    '名前は20文字以内にしてください'
+  ],
+  [
+    'data_pipeline.name_placeholder',
+    '请输入管线名称',
+    '請輸入管線名稱',
+    'Enter pipeline name',
+    'パイプライン名を入力してください'
+  ],
   ['data_pipeline.section_title', '数据管线', '數據管線', 'Data Pipeline', 'データパイプライン'],
-  ['data_pipeline.graph_template_required', '请先选择图谱模板', '請先選擇圖譜模板', 'Please select a graph template first', 'グラフテンプレートを選択してください'],
+  [
+    'data_pipeline.graph_template_required',
+    '请先选择图谱模板',
+    '請先選擇圖譜模板',
+    'Please select a graph template first',
+    'グラフテンプレートを選択してください'
+  ],
   ['data_pipeline.no_config_available', '暂无配置', '暫無配置', 'No config available', '設定なし'],
   ['data_pipeline.chunk_specified_identifier_tip', '可输入自定义标识符，回车添加,可輸入自訂標識符', 'Enter 添加,Type and press Enter to add a custom identifier', 'カスタム識別子を入力し Enter で追加'],
 
   // Node 节点
   ['data_pipeline.node_config', '节点配置', '節點配置', 'Node Config', 'ノード設定'],
-  ['data_pipeline.node_content_cleaning', '内容清洗', '內容清洗', 'Content Cleaning', 'コンテンツ清洗'],
+  [
+    'data_pipeline.node_content_cleaning',
+    '内容清洗',
+    '內容清洗',
+    'Content Cleaning',
+    'コンテンツ清洗'
+  ],
   ['data_pipeline.node_document_chunking', '语料拆分', '語料拆分', 'Chunking', 'チャンキング'],
-  ['data_pipeline.node_document_parsing', '文档解析', '文檔解析', 'Document Parsing', 'ドキュメント解析'],
+  [
+    'data_pipeline.node_document_parsing',
+    '文档解析',
+    '文檔解析',
+    'Document Parsing',
+    'ドキュメント解析'
+  ],
   ['data_pipeline.node_graph_generation', '图谱生成', '圖譜生成', 'Graph Generation', 'グラフ生成'],
-  ['data_pipeline.node_summary_generation', '生成摘要', '生成摘要', 'Summary Generation', '要約生成'],
+  [
+    'data_pipeline.node_summary_generation',
+    '生成摘要',
+    '生成摘要',
+    'Summary Generation',
+    '要約生成'
+  ],
   ['data_pipeline.node_vector_indexing', '向量索引', '向量索引', 'Vector Indexing', 'ベクトル索引'],
   ['data_pipeline.node_wiki_page_generation', 'Wiki 生成', 'Wiki 生成', 'Wiki Generation', 'Wiki 生成'],
 
   // Node 描述
-  ['data_pipeline.node_desc_content_cleaning', '规整文本，去冗余、修格式', '規整文本，去冗餘、修格式', 'Normalize text, remove redundancy, fix format', 'テキストを正規化し、冗長を除去、フォーマットを修正'],
-  ['data_pipeline.node_desc_document_chunking', '拆分文档内容为语料片段', '拆分文檔內容為語料片段', 'Split document content into chunks', 'ドキュメントをチャンクに分割'],
-  ['data_pipeline.node_desc_document_parsing', '转文档为可处理的结构化文本', '轉文檔為可處理的結構化文本', 'Convert documents to structured text for processing', 'ドキュメントを処理可能な構造化テキストに変換'],
-  ['data_pipeline.node_desc_graph_generation', '提取信息，用图谱呈现内容关联', '提取信息，用圖譜呈現內容關聯', 'Extract information and present relations as a graph', '情報を抽出しグラフで関連を表示'],
-  ['data_pipeline.node_desc_summary_generation', '生成文档摘要、文档标签与知识地图', '生成文檔摘要、文檔標籤與知識地圖', 'Generate document summary, tags and knowledge map', 'ドキュメント要約・タグ・知識マップを生成'],
-  ['data_pipeline.node_desc_vector_indexing', '拆分文本并建索引，便于检索', '拆分文本並建索引，便於檢索', 'Split text and build index for retrieval', 'テキストを分割し検索用インデックスを構築'],
+  [
+    'data_pipeline.node_desc_content_cleaning',
+    '规整文本，去冗余、修格式',
+    '規整文本，去冗餘、修格式',
+    'Normalize text, remove redundancy, fix format',
+    'テキストを正規化し、冗長を除去、フォーマットを修正'
+  ],
+  [
+    'data_pipeline.node_desc_document_chunking',
+    '拆分文档内容为语料片段',
+    '拆分文檔內容為語料片段',
+    'Split document content into chunks',
+    'ドキュメントをチャンクに分割'
+  ],
+  [
+    'data_pipeline.node_desc_document_parsing',
+    '转文档为可处理的结构化文本',
+    '轉文檔為可處理的結構化文本',
+    'Convert documents to structured text for processing',
+    'ドキュメントを処理可能な構造化テキストに変換'
+  ],
+  [
+    'data_pipeline.node_desc_graph_generation',
+    '提取信息，用图谱呈现内容关联',
+    '提取信息，用圖譜呈現內容關聯',
+    'Extract information and present relations as a graph',
+    '情報を抽出しグラフで関連を表示'
+  ],
+  [
+    'data_pipeline.node_desc_summary_generation',
+    '生成文档摘要、文档标签与知识地图',
+    '生成文檔摘要、文檔標籤與知識地圖',
+    'Generate document summary, tags and knowledge map',
+    'ドキュメント要約・タグ・知識マップを生成'
+  ],
+  [
+    'data_pipeline.node_desc_vector_indexing',
+    '拆分文本并建索引，便于检索',
+    '拆分文本並建索引，便於檢索',
+    'Split text and build index for retrieval',
+    'テキストを分割し検索用インデックスを構築'
+  ],
 
   // 运行模式
   ['data_pipeline.run_mode_auto', '自动', '自動', 'Auto', '自動'],
@@ -62,154 +158,748 @@ const DATA_PIPELINE_KEYS: readonly KeyRow[] = [
 
   // 解析配置
   ['data_pipeline.parse_config_suffix', '配置', '配置', 'Config', '設定'],
-  ['data_pipeline.parse_default_desc', '由系统提供的解析服务', '由系統提供的解析服務', 'Parsing service provided by the system', 'システム提供の解析サービス'],
-  ['data_pipeline.parse_scan_enhance', '扫描件增强', '掃描件增強', 'Scan Enhancement', 'スキャン強化'],
-  ['data_pipeline.parse_scan_enhance_desc', '对纯图片型 PDF 启用轻量级 OCR', '對純圖片型 PDF 啟用輕量級 OCR', 'Enable lightweight OCR for image-only PDFs', '画像のみのPDFで軽量OCRを有効化'],
-  ['data_pipeline.no_parse_methods', '暂无解析方法', '暫無解析方法', 'No parse methods available', '解析方法なし'],
+  [
+    'data_pipeline.parse_default_desc',
+    '由系统提供的解析服务',
+    '由系統提供的解析服務',
+    'Parsing service provided by the system',
+    'システム提供の解析サービス'
+  ],
+  [
+    'data_pipeline.parse_scan_enhance',
+    '扫描件增强',
+    '掃描件增強',
+    'Scan Enhancement',
+    'スキャン強化'
+  ],
+  [
+    'data_pipeline.parse_scan_enhance_desc',
+    '对纯图片型 PDF 启用轻量级 OCR',
+    '對純圖片型 PDF 啟用輕量級 OCR',
+    'Enable lightweight OCR for image-only PDFs',
+    '画像のみのPDFで軽量OCRを有効化'
+  ],
+  [
+    'data_pipeline.no_parse_methods',
+    '暂无解析方法',
+    '暫無解析方法',
+    'No parse methods available',
+    '解析方法なし'
+  ],
 
   // 分块配置
-  ['data_pipeline.chunk_append_filename', '叠加文件名', '疊加文件名', 'Append Filename', 'ファイル名を追加'],
-  ['data_pipeline.chunk_append_title_subtitle', '叠加标题及子标题', '疊加標題及子標題', 'Append Title and Subtitle', 'タイトル・サブタイトルを追加'],
+  [
+    'data_pipeline.chunk_append_filename',
+    '叠加文件名',
+    '疊加文件名',
+    'Append Filename',
+    'ファイル名を追加'
+  ],
+  [
+    'data_pipeline.chunk_append_title_subtitle',
+    '叠加标题及子标题',
+    '疊加標題及子標題',
+    'Append Title and Subtitle',
+    'タイトル・サブタイトルを追加'
+  ],
   ['data_pipeline.chunk_append_title', '叠加标题', '疊加標題', 'Append Title', 'タイトルを追加'],
-  ['data_pipeline.chunk_append_subtitle', '叠加子标题', '疊加子標題', 'Append Subtitle', 'サブタイトルを追加'],
+  [
+    'data_pipeline.chunk_append_subtitle',
+    '叠加子标题',
+    '疊加子標題',
+    'Append Subtitle',
+    'サブタイトルを追加'
+  ],
   ['data_pipeline.chunk_auto_generate', '自动生成', '自動生成', 'Auto Generate', '自動生成'],
-  ['data_pipeline.chunk_common_divider', '分割线（---）', '分割線（---）', 'Divider (---)', '区切り線（---）'],
-  ['data_pipeline.chunk_common_exclamation', '感叹号（！）', '感嘆號（！）', 'Exclamation (!)', '感嘆符（！）'],
-  ['data_pipeline.chunk_common_newline1', '1 个换行符（\\n）', '1 個換行符（\\n）', '1 newline (\\n)', '改行1つ（\\n）'],
-  ['data_pipeline.chunk_common_newline2', '2 个换行符（\\n\\n）', '2 個換行符（\\n\\n）', '2 newlines (\\n\\n)', '改行2つ（\\n\\n）'],
+  [
+    'data_pipeline.chunk_common_divider',
+    '分割线（---）',
+    '分割線（---）',
+    'Divider (---)',
+    '区切り線（---）'
+  ],
+  [
+    'data_pipeline.chunk_common_exclamation',
+    '感叹号（！）',
+    '感嘆號（！）',
+    'Exclamation (!)',
+    '感嘆符（！）'
+  ],
+  [
+    'data_pipeline.chunk_common_newline1',
+    '1 个换行符（\\n）',
+    '1 個換行符（\\n）',
+    '1 newline (\\n)',
+    '改行1つ（\\n）'
+  ],
+  [
+    'data_pipeline.chunk_common_newline2',
+    '2 个换行符（\\n\\n）',
+    '2 個換行符（\\n\\n）',
+    '2 newlines (\\n\\n)',
+    '改行2つ（\\n\\n）'
+  ],
   ['data_pipeline.chunk_common_period', '句号（。）', '句號（。）', 'Period (.)', '句点（。）'],
-  ['data_pipeline.chunk_common_question', '问号（？）', '問號（？）', 'Question mark (?)', '疑問符（？）'],
-  ['data_pipeline.chunk_common_semicolon', '分号（；）', '分號（；）', 'Semicolon (;)', 'セミコロン（；）'],
+  [
+    'data_pipeline.chunk_common_question',
+    '问号（？）',
+    '問號（？）',
+    'Question mark (?)',
+    '疑問符（？）'
+  ],
+  [
+    'data_pipeline.chunk_common_semicolon',
+    '分号（；）',
+    '分號（；）',
+    'Semicolon (;)',
+    'セミコロン（；）'
+  ],
   ['data_pipeline.chunk_faq', '常见问法', '常見問法', 'FAQ', 'よくある質問'],
   ['data_pipeline.chunk_identifier', '标识符', '標識符', 'Identifier', '識別子'],
-  ['data_pipeline.chunk_identifier_first', '标识符优先', '標識符優先', 'Identifier First', '識別子優先'],
+  [
+    'data_pipeline.chunk_identifier_first',
+    '标识符优先',
+    '標識符優先',
+    'Identifier First',
+    '識別子優先'
+  ],
   ['data_pipeline.chunk_index_enhance', '索引增强', '索引增強', 'Index Enhancement', '索引強化'],
-  ['data_pipeline.chunk_length', '长度', '長度', 'Length', '長さ'],
+  ['data_pipeline.chunk_length', '切片长度', '切片長度', 'Chunk Length', 'チャンク長さ'],
+  [
+    'data_pipeline.chunk_length_tip',
+    '知识点的最大字符数（50-5000）。默认 512 ≈ 中文 300 tokens / 英文 100-130 tokens。FAQ 用 200-400，叙述性长文档用 1000-2000。',
+    '知識點的最大字元數（50-5000）。預設 512 ≈ 中文 300 tokens / 英文 100-130 tokens。FAQ 用 200-400，敘述性長文件用 1000-2000。',
+    'Maximum number of characters per knowledge chunk (50-5000). Default 512 ≈ 300 tokens for Chinese / 100-130 tokens for English. Use 200-400 for FAQs, and 1000-2000 for long narrative documents.',
+    'ナレッジチャンクの最大文字数（50-5000）。デフォルト 512 ≈ 中国語 300 トークン / 英語 100-130 トークン。FAQ は 200-400、叙述的な長文は 1000-2000 を使用します。'
+  ],
+  [
+    'data_pipeline.retrieval_chunk_length_tip',
+    '检索块的最大字符数（0-2048）。默认 512 ≈ 中文 300 tokens / 英文 100-130 tokens。如果大于知识点的切片长度，将不再拆分检索块。',
+    '檢索塊的最大字元數（0-2048）。預設 512 ≈ 中文 300 tokens / 英文 100-130 tokens。如果大於知識點的切片長度，將不再拆分檢索塊。',
+    'Maximum number of characters per retrieval chunk (0-2048). Default 512 ≈ 300 tokens for Chinese / 100-130 tokens for English. If this exceeds the knowledge chunk length, the retrieval chunk will not be split further.',
+    '検索チャンクの最大文字数（0-2048）。デフォルト 512 ≈ 中国語 300 トークン / 英語 100-130 トークン。ナレッジチャンクの長さを超える場合、検索チャンクはそれ以上分割されません。'
+  ],
+  ['data_pipeline.chunk_by_page', '按页', '按頁', 'By Page', 'ページごと'],
+  [
+    'data_pipeline.chunk_overlap',
+    '切片重叠',
+    '切片重疊',
+    'Chunk Overlap',
+    'チャンクオーバーラップ'
+  ],
+  [
+    'data_pipeline.chunk_overlap_tip',
+    '相邻分块之间共享的字符数（0-500）。默认 80 ≈ 分块大小的 15%，符合当前研究推荐。FAQ/结构化数据用 0，长篇叙述用 150-200。',
+    '相鄰分塊之間共享的字元數（0-500）。預設 80 ≈ 分塊大小的 15%，符合當前研究推薦。FAQ/結構化資料用 0，長篇敘述用 150-200。',
+    'Number of characters shared between adjacent chunks (0-500). Default 80 ≈ 15% of the chunk size, in line with current research recommendations. Use 0 for FAQs/structured data, and 150-200 for long narratives.',
+    '隣接するチャンク間で共有する文字数（0-500）。デフォルト 80 ≈ チャンクサイズの 15% で、現在の研究の推奨に沿っています。FAQ／構造化データは 0、長い叙述は 150-200 を使用します。'
+  ],
+  [
+    'data_pipeline.chunk_overlap_warning_tip',
+    '切片重叠大于切片长度时，切片之间会共享大部分内容。',
+    '切片重疊大於切片長度時，切片之間會共享大部分內容。',
+    'When the chunk overlap exceeds the chunk length, adjacent chunks will share most of their content.',
+    'チャンクオーバーラップがチャンク長を超えると、隣接するチャンク同士が大部分の内容を共有します。'
+  ],
   ['data_pipeline.chunk_length_first', '长度优先', '長度優先', 'Length First', '長さ優先'],
   ['data_pipeline.chunk_none', '整篇', '整篇', 'Whole Document', '全文'],
   ['data_pipeline.chunk_retrieval_block', '检索块', '檢索塊', 'Retrieval Block', '検索ブロック'],
   ['data_pipeline.chunk_default', '默认', '默認', 'Default', 'デフォルト'],
   ['data_pipeline.chunk_default_index', '默认索引', '默認索引', 'Default Index', 'デフォルト索引'],
-  ['data_pipeline.chunk_custom', '自定义拆分', '自定義拆分', 'Custom Split', 'カスタム分割'],
+  ['data_pipeline.chunk_custom', '自定义', '自定義', 'Custom', 'カスタム'],
   ['data_pipeline.chunk_type_data_table', '数据表格', '數據表格', 'Data Table', 'データテーブル'],
-  ['data_pipeline.chunk_type_data_table_desc', '识别表格结构，分段计算其清洗数据', '識別表格結構，分段計算其清洗數據', 'Recognize table structure and segment for cleaning', '表構造を認識し分割・清洗'],
-  ['data_pipeline.chunk_type_default', '通用文档', '通用文檔', 'General Document', '汎用ドキュメント'],
-  ['data_pipeline.chunk_type_default_desc', '多格式文档，智能分段并清洗数据', '多格式文檔，智能分段並清洗數據', 'Multi-format documents, smart segmentation and cleaning', '多形式ドキュメント、スマート分割・清洗'],
+  [
+    'data_pipeline.chunk_type_data_table_desc',
+    '识别表格结构，分段计算其清洗数据',
+    '識別表格結構，分段計算其清洗數據',
+    'Recognize table structure and segment for cleaning',
+    '表構造を認識し分割・清洗'
+  ],
+  [
+    'data_pipeline.chunk_type_default',
+    '通用文档',
+    '通用文檔',
+    'General Document',
+    '汎用ドキュメント'
+  ],
+  [
+    'data_pipeline.chunk_type_default_desc',
+    '多格式文档，智能分段并清洗数据',
+    '多格式文檔，智能分段並清洗數據',
+    'Multi-format documents, smart segmentation and cleaning',
+    '多形式ドキュメント、スマート分割・清洗'
+  ],
   ['data_pipeline.chunk_type_qa', '百问百答', '百問百答', 'Q&A', 'Q&A'],
-  ['data_pipeline.chunk_type_qa_desc', '聚焦问答类结构，拆分问题与答案', '聚焦問答類結構，拆分問題與答案', 'Q&A structure, split questions and answers', 'Q&A構造、質問と回答を分割'],
-  ['data_pipeline.chunk_header_h1', '一级标题（H1）', '一級標題（H1）', 'Heading 1 (H1)', '見出し1（H1）'],
-  ['data_pipeline.chunk_header_h2', '二级标题（H2）', '二級標題（H2）', 'Heading 2 (H2)', '見出し2（H2）'],
-  ['data_pipeline.chunk_header_h3', '三级标题（H3）', '三級標題（H3）', 'Heading 3 (H3)', '見出し3（H3）'],
-  ['data_pipeline.chunk_header_h4', '四级标题（H4）', '四級標題（H4）', 'Heading 4 (H4)', '見出し4（H4）'],
-  ['data_pipeline.chunk_header_h5', '五级标题（H5）', '五級標題（H5）', 'Heading 5 (H5)', '見出し5（H5）'],
+  [
+    'data_pipeline.chunk_type_qa_desc',
+    '聚焦问答类结构，拆分问题与答案',
+    '聚焦問答類結構，拆分問題與答案',
+    'Q&A structure, split questions and answers',
+    'Q&A構造、質問と回答を分割'
+  ],
+  [
+    'data_pipeline.chunk_header_h1',
+    '一级标题（H1）',
+    '一級標題（H1）',
+    'Heading 1 (H1)',
+    '見出し1（H1）'
+  ],
+  [
+    'data_pipeline.chunk_header_h2',
+    '二级标题（H2）',
+    '二級標題（H2）',
+    'Heading 2 (H2)',
+    '見出し2（H2）'
+  ],
+  [
+    'data_pipeline.chunk_header_h3',
+    '三级标题（H3）',
+    '三級標題（H3）',
+    'Heading 3 (H3)',
+    '見出し3（H3）'
+  ],
+  [
+    'data_pipeline.chunk_header_h4',
+    '四级标题（H4）',
+    '四級標題（H4）',
+    'Heading 4 (H4)',
+    '見出し4（H4）'
+  ],
+  [
+    'data_pipeline.chunk_header_h5',
+    '五级标题（H5）',
+    '五級標題（H5）',
+    'Heading 5 (H5)',
+    '見出し5（H5）'
+  ],
   ['data_pipeline.chunk_knowledge_point', '知识点', '知識點', 'Knowledge Point', '知識ポイント'],
-  ['data_pipeline.chunk_recall_metadata', '召回语料', '召回語料', 'Recall Metadata', '検索メタデータ'],
-  ['data_pipeline.chunk_specified_identifier', '指定标识符', '指定標識符', 'Specified Identifier', '指定識別子'],
+  [
+    'data_pipeline.chunk_recall_metadata',
+    '召回语料',
+    '召回語料',
+    'Recall Metadata',
+    '検索メタデータ'
+  ],
+  [
+    'data_pipeline.chunk_specified_identifier',
+    '指定标识符',
+    '指定標識符',
+    'Specified Identifier',
+    '指定識別子'
+  ],
   ['data_pipeline.chunk_summary', '内容概要', '內容概要', 'Summary', '概要'],
   // ChunkConfig 扩展
   ['data_pipeline.chunk_smart_match', '智能匹配', '智能匹配', 'Smart Match', 'スマートマッチ'],
-  ['data_pipeline.chunk_smart_match_desc', 'AI 智能选择最合适的拆分规则', 'AI 智能選擇最合適的拆分規則', 'AI intelligently selects the best chunking rule', 'AIが最適なチャンキングルールを選択'],
-  ['data_pipeline.chunk_match_preference_prompt', '匹配偏好提示', '匹配偏好提示', 'Match Preference Prompt', 'マッチング設定'],
-  ['data_pipeline.chunk_match_preference_placeholder', '请输入匹配偏好...', '請輸入匹配偏好...', 'Enter match preference...', 'マッチング設定を入力...'],
-  ['data_pipeline.chunk_select_type', '选择拆分类型', '選擇拆分類型', 'Select Chunk Type', 'チャンキングタイプを選択'],
-  ['data_pipeline.chunk_parent_config', '父块配置', '父塊配置', 'Parent Chunk Config', '親チャンク設定'],
-  ['data_pipeline.chunk_child_config', '子块配置', '子塊配置', 'Child Chunk Config', '子チャンク設定'],
-  ['data_pipeline.chunk_identifier_level', '标识符级别', '標識符級別', 'Identifier Level', '識別子レベル'],
+  [
+    'data_pipeline.chunk_smart_match_desc',
+    'AI 智能选择最合适的拆分规则',
+    'AI 智能選擇最合適的拆分規則',
+    'AI intelligently selects the best chunking rule',
+    'AIが最適なチャンキングルールを選択'
+  ],
+  [
+    'data_pipeline.chunk_match_preference_prompt',
+    '匹配偏好提示',
+    '匹配偏好提示',
+    'Match Preference Prompt',
+    'マッチング設定'
+  ],
+  [
+    'data_pipeline.chunk_match_preference_placeholder',
+    '请输入匹配偏好...',
+    '請輸入匹配偏好...',
+    'Enter match preference...',
+    'マッチング設定を入力...'
+  ],
+  [
+    'data_pipeline.chunk_select_type',
+    '选择拆分类型',
+    '選擇拆分類型',
+    'Select Chunk Type',
+    'チャンキングタイプを選択'
+  ],
+  [
+    'data_pipeline.chunk_parent_config',
+    '父块配置',
+    '父塊配置',
+    'Parent Chunk Config',
+    '親チャンク設定'
+  ],
+  [
+    'data_pipeline.chunk_child_config',
+    '子块配置',
+    '子塊配置',
+    'Child Chunk Config',
+    '子チャンク設定'
+  ],
+  [
+    'data_pipeline.chunk_identifier_level',
+    '标识符级别',
+    '標識符級別',
+    'Identifier Level',
+    '識別子レベル'
+  ],
   ['data_pipeline.chunk_max_length', '最大长度', '最大長度', 'Max Length', '最大長'],
   ['data_pipeline.chunk_strategy', '拆分策略', '拆分策略', 'Chunk Strategy', 'チャンキング戦略'],
   ['data_pipeline.chunk_strategy_length', '按长度', '按長度', 'By Length', '長さで'],
   ['data_pipeline.chunk_strategy_identifier', '按标识符', '按標識符', 'By Identifier', '識別子で'],
-  ['data_pipeline.chunk_index_enhancement', '索引增强', '索引增強', 'Index Enhancement', '索引強化'],
-  ['data_pipeline.chunk_metadata_injection', '元数据注入', '元數據注入', 'Metadata Injection', 'メタデータ注入'],
-  ['data_pipeline.chunk_generative_enhancement', '生成增强', '生成增強', 'Generative Enhancement', '生成強化'],
+  [
+    'data_pipeline.chunk_index_enhancement',
+    '索引增强',
+    '索引增強',
+    'Index Enhancement',
+    '索引強化'
+  ],
+  [
+    'data_pipeline.chunk_metadata_injection',
+    '元数据注入',
+    '元數據注入',
+    'Metadata Injection',
+    'メタデータ注入'
+  ],
+  [
+    'data_pipeline.chunk_generative_enhancement',
+    '生成增强',
+    '生成增強',
+    'Generative Enhancement',
+    '生成強化'
+  ],
   ['data_pipeline.chunk_generate_summary', '生成摘要', '生成摘要', 'Generate Summary', '要約生成'],
   ['data_pipeline.chunk_generate_faq', '生成FAQ', '生成FAQ', 'Generate FAQ', 'FAQ生成'],
 
   // 清洗配置
   ['data_pipeline.clean_action', '动作', '動作', 'Action', 'アクション'],
-  ['data_pipeline.clean_preview_after', '效果预览(处理后)', '效果預覽(處理後)', 'Preview (After)', 'プレビュー（処理後）'],
-  ['data_pipeline.clean_preview_before', '效果预览(处理前)', '效果預覽(處理前)', 'Preview (Before)', 'プレビュー（処理前）'],
-  ['data_pipeline.clean_rule_invalid_tags', '移除无效标签', '移除無效標籤', 'Remove Invalid Tags', '無効タグを削除'],
-  ['data_pipeline.clean_rule_invalid_tags_desc', '移除文档中的页眉、页脚、页码、脚注等无效标签。', '移除文檔中的頁眉、頁腳、頁頁碼、腳註等無效標籤。', 'Remove headers, footers, page numbers, footnotes, etc.', 'ヘッダー、フッター、ページ番号、脚注などを削除。'],
-  ['data_pipeline.clean_rule_pronoun_replace', '代词替换', '代詞替換', 'Pronoun Replacement', '代名詞置換'],
-  ['data_pipeline.clean_rule_pronoun_replace_desc', '将原文中的代词替换为指定的实际内容。', '將原文中的代詞替換為指定的實際內容。', 'Replace pronouns with specified content.', '代名詞を指定内容に置換。'],
-  ['data_pipeline.clean_rule_special_char', '特殊字符过滤', '特殊字符過濾', 'Special Character Filter', '特殊文字フィルター'],
-  ['data_pipeline.clean_rule_special_char_desc', '移除原文中特殊字符占比过高的段落。', '移除原文中特殊字符佔比過高的段落。', 'Remove paragraphs with excessive special characters.', '特殊文字比率が高い段落を削除。'],
+  [
+    'data_pipeline.clean_preview_before',
+    '效果预览(处理前)',
+    '效果預覽(處理前)',
+    'Preview (Before)',
+    'プレビュー（処理前）'
+  ],
+  [
+    'data_pipeline.clean_preview_after',
+    '效果预览(处理后)',
+    '效果預覽(處理後)',
+    'Preview (After)',
+    'プレビュー（処理後）'
+  ],
+  [
+    'data_pipeline.clean_subtitle',
+    '配置内容清洗规则',
+    '配置內容清洗規則',
+    'Configure content cleaning rules',
+    'コンテンツ清洗ルールを設定'
+  ],
+  [
+    'data_pipeline.clean_rule_invalid_tags',
+    '移除无效标签',
+    '移除無效標籤',
+    'Remove Invalid Tags',
+    '無効タグを削除'
+  ],
+  [
+    'data_pipeline.clean_rule_invalid_tags_desc',
+    '移除文档中的页眉、页脚、页码、脚注等无效标签。',
+    '移除文檔中的頁眉、頁腳、頁頁碼、腳註等無效標籤。',
+    'Remove headers, footers, page numbers, footnotes, etc.',
+    'ヘッダー、フッター、ページ番号、脚注などを削除。'
+  ],
   ['data_pipeline.clean_rule_spell_check', '错别字纠正', '錯別字糾正', 'Spell Check', '誤字訂正'],
-  ['data_pipeline.clean_rule_spell_check_desc', '识别并纠正原文中的错别字。', '識別並糾正原文中的錯別字。', 'Detect and correct typos in the text.', '原文の誤字を検出して訂正。'],
-  ['data_pipeline.clean_short_text_threshold', '短文本长度阈值', '短文本長度閾值', 'Short Text Length Threshold', '短文長閾値'],
-  ['data_pipeline.clean_special_char_threshold', '特殊字符占比阈值', '特殊字符佔比閾值', 'Special Character Ratio Threshold', '特殊文字比率閾値'],
-  ['data_pipeline.clean_threshold_tune', '清洗阈值精调', '清洗閾值精調', 'Cleaning Threshold Tuning', '清洗閾値調整'],
+  [
+    'data_pipeline.clean_rule_spell_check_desc',
+    '识别并纠正原文中的错别字。',
+    '識別並糾正原文中的錯別字。',
+    'Detect and correct typos in the text.',
+    '原文の誤字を検出して訂正。'
+  ],
+  [
+    'data_pipeline.clean_rule_grammar',
+    '语法错误纠正',
+    '語法錯誤糾正',
+    'Grammar Correction',
+    '文法訂正'
+  ],
+  [
+    'data_pipeline.clean_rule_grammar_desc',
+    '识别并纠正原文中的语法错误。',
+    '識別並糾正原文中的語法錯誤。',
+    'Detect and correct grammar errors in the text.',
+    '原文の文法エラーを検出して訂正。'
+  ],
+  [
+    'data_pipeline.clean_rule_format',
+    '格式纠正',
+    '格式糾正',
+    'Format Correction',
+    'フォーマット訂正'
+  ],
+  [
+    'data_pipeline.clean_rule_format_desc',
+    '补齐 Markdown 表格、加粗、代码块等缺失闭合格式',
+    '補齊 Markdown 表格、加粗、代碼塊等缺失閉合格式',
+    'Complete missing Markdown tables, bold, code block closings',
+    'Markdownテーブル、太字、コードブロックなどの閉じタグを補完'
+  ],
+  ['data_pipeline.clean_rule_ocr', 'OCR识别纠错', 'OCR識別糾錯', 'OCR Correction', 'OCR認識訂正'],
+  [
+    'data_pipeline.clean_rule_ocr_desc',
+    '清除水印 / 页眉页脚杂字，还原误识的√/X符号',
+    '清除水印 / 頁眉頁腳雜字，還原誤識的√/X符號',
+    'Strip watermarks / header-footer noise, restore √/X symbols',
+    '透かし / ヘッダーフッターの不要文字を除去、√/X記号を復元'
+  ],
+  ['data_pipeline.clean_rule_formula', '公式还原', '公式還原', 'Formula Restoration', '公式復元'],
+  [
+    'data_pipeline.clean_rule_formula_desc',
+    '修正 OCR 识别错的公式样式',
+    '修正 OCR 識別錯的公式樣式',
+    'Fix formula formatting errors from OCR',
+    'OCRが誤認識した数式スタイルを修正'
+  ],
+  [
+    'data_pipeline.clean_rule_sensitive',
+    '敏感信息过滤',
+    '敏感資訊過濾',
+    'Sensitive Information Filtering',
+    '機密情報フィルター'
+  ],
+  [
+    'data_pipeline.clean_rule_sensitive_desc',
+    '过滤或脱敏文本中的身份证、手机号等敏感信息',
+    '過濾或脫敏文本中的身份證、手機號等敏感資訊',
+    'Filter or mask sensitive data such as ID and phone numbers',
+    '身分證、携帯番号などの機密情報をフィルター・マスキング'
+  ],
+  ['data_pipeline.clean_rule_sensitive_tag_name', '姓名', '姓名', 'Name', '氏名'],
+  ['data_pipeline.clean_rule_sensitive_tag_phone', '电话', '電話', 'Phone', '電話'],
+  ['data_pipeline.clean_rule_sensitive_tag_email', '邮箱', '郵箱', 'Email', 'メール'],
+  ['data_pipeline.clean_rule_sensitive_tag_id_card', '身份证', '身份證', 'ID Card', '身分證'],
+  [
+    'data_pipeline.clean_rule_sensitive_tag_bank_card',
+    '银行卡',
+    '銀行卡',
+    'Bank Card',
+    '銀行カード'
+  ],
+  ['data_pipeline.clean_rule_sensitive_tag_api_key', 'API Key', 'API Key', 'API Key', 'API Key'],
+  [
+    'data_pipeline.clean_rule_dictionary',
+    '专业词库',
+    '專業詞庫',
+    'Professional Vocabulary',
+    '専門用語辞書'
+  ],
+  [
+    'data_pipeline.clean_rule_dictionary_desc',
+    '显著降低生僻字、专业名词的识别错误率',
+    '顯著降低生僻字、專業名詞的識別錯誤率',
+    'Significantly reduce recognition errors for rare and domain-specific terms',
+    '難読字・専門用語の認識誤り率を大幅に低減'
+  ],
+  [
+    'data_pipeline.clean_rule_dictionary_placeholder',
+    '顿号、逗号、分号和回车键可支持添加多个',
+    '頓號、逗號、分號和回車鍵可支援新增多個',
+    'Use 、, comma, semicolon or Enter to add multiple terms',
+    '、読点、セミコロン、Enterキーで複数の項目を追加できます'
+  ],
+  [
+    'data_pipeline.clean_rule_dictionary_edit',
+    '编辑词库',
+    '編輯詞庫',
+    'Edit Glossary',
+    '語彙集を編集'
+  ],
+  ['data_pipeline.clean_rule_custom', '自定义规则', '自定義規則', 'Custom Rules', 'カスタムルール'],
+  [
+    'data_pipeline.clean_rule_custom_desc',
+    '配置内容清洗输出结果的行文风格、语调表达偏好。',
+    '配置內容清洗輸出結果的行文風格、語調表達偏好。',
+    'Configure the writing style and tone preferences for cleaning output.',
+    '清洗出力の文体・トーン表現の好みを設定。'
+  ],
+  ['data_pipeline.clean_rule_custom_action', '配置', '配置', 'Configure', '設定'],
+  [
+    'data_pipeline.clean_rule_custom_placeholder',
+    '配置个性化内容清洗的风格或偏好',
+    '配置個性化內容清洗的風格或偏好',
+    'Configure personalized cleaning style or preferences',
+    'パーソナライズされた清洗スタイルまたは設定'
+  ],
 
   // 摘要配置
-  ['data_pipeline.summary_doc_summary', '文档摘要', '文檔摘要', 'Document Summary', 'ドキュメント要約'],
-  ['data_pipeline.summary_doc_summary_desc', '提取文档的核心主题、关键内容点与核心内容，快速理解文档核心思想', '提取文檔的核心主題、關鍵內容點與核心內容，快速理解文檔核心思想', 'Extract core topics and key content for quick understanding', '核心テーマと重要内容を抽出して理解を促進'],
+  [
+    'data_pipeline.summary_doc_summary',
+    '文档摘要',
+    '文檔摘要',
+    'Document Summary',
+    'ドキュメント要約'
+  ],
+  [
+    'data_pipeline.summary_doc_summary_desc',
+    '提取文档的核心主题、关键内容点与核心内容，快速理解文档核心思想',
+    '提取文檔的核心主題、關鍵內容點與核心內容，快速理解文檔核心思想',
+    'Extract core topics and key content for quick understanding',
+    '核心テーマと重要内容を抽出して理解を促進'
+  ],
   ['data_pipeline.summary_doc_tag', '文档标签', '文檔標籤', 'Document Tags', 'ドキュメントタグ'],
-  ['data_pipeline.summary_doc_tag_desc', '基于文档的核心内容与重点信息，生成文档标签', '基於文檔的核心內容與重點信息，生成文檔標籤', 'Generate tags from core content and key information', '核心内容と重点情報からタグを生成'],
+  [
+    'data_pipeline.summary_doc_tag_desc',
+    '基于文档的核心内容与重点信息，生成文档标签',
+    '基於文檔的核心內容與重點信息，生成文檔標籤',
+    'Generate tags from core content and key information',
+    '核心内容と重点情報からタグを生成'
+  ],
   ['data_pipeline.summary_knowledge_map', '知识地图', '知識地圖', 'Knowledge Map', '知識マップ'],
-  ['data_pipeline.summary_knowledge_map_desc', '梳理文档内的逻辑框架与信息关联，生成可视化的内容结构与知识关联图谱', '梳理文檔內的邏輯框架與信息關聯，生成可視化的內容結構與知識關聯圖譜', 'Organize logic and relations into a visual knowledge graph', '論理と関連を可視化した知識グラフを生成'],
+  [
+    'data_pipeline.summary_knowledge_map_desc',
+    '梳理文档内的逻辑框架与信息关联，生成可视化的内容结构与知识关联图谱',
+    '梳理文檔內的邏輯框架與信息關聯，生成可視化的內容結構與知識關聯圖譜',
+    'Organize logic and relations into a visual knowledge graph',
+    '論理と関連を可視化した知識グラフを生成'
+  ],
 
   // 向量配置
   ['data_pipeline.vector_available', '可用', '可用', 'Available', '利用可能'],
-  ['data_pipeline.vector_global_embedding', '系统嵌入模型（全局）', '系統嵌入模型（全局）', 'System Embedding Model (Global)', 'システム埋め込みモデル（グローバル）'],
-  ['data_pipeline.vector_go_model_setting', '去「后台 - 知识库 - 模型设置」管理全局配置', '去「後台 - 知識庫 - 模型設置」管理全局配置', 'Go to Backend - Knowledge - Model Settings to manage global config', '管理画面 - 知識庫 - モデル設定でグローバル設定を管理'],
-  ['data_pipeline.vector_no_config', '暂无配置，避免流程无法正常运行。请前往系统接入设置配置向量模型。', '暫無配置，避免流程無法正常運行。請前往系統接入設置配置向量模型。', 'No config yet. Please configure the vector model in System Access settings to run the pipeline.', '未設定です。パイプライン実行にはシステムアクセス設定でベクトルモデルを設定してください。'],
+  [
+    'data_pipeline.vector_global_embedding',
+    '系统嵌入模型（全局）',
+    '系統嵌入模型（全局）',
+    'System Embedding Model (Global)',
+    'システム埋め込みモデル（グローバル）'
+  ],
+  [
+    'data_pipeline.vector_go_model_setting',
+    '去「后台 - 知识库 - 模型设置」管理全局配置',
+    '去「後台 - 知識庫 - 模型設置」管理全局配置',
+    'Go to Backend - Knowledge - Model Settings to manage global config',
+    '管理画面 - 知識庫 - モデル設定でグローバル設定を管理'
+  ],
+  [
+    'data_pipeline.vector_no_config',
+    '暂无配置，避免流程无法正常运行。请前往系统接入设置配置向量模型。',
+    '暫無配置，避免流程無法正常運行。請前往系統接入設置配置向量模型。',
+    'No config yet. Please configure the vector model in System Access settings to run the pipeline.',
+    '未設定です。パイプライン実行にはシステムアクセス設定でベクトルモデルを設定してください。'
+  ],
   ['data_pipeline.vector_refresh_config', '刷新配置', '刷新配置', 'Refresh Config', '設定を更新'],
   ['data_pipeline.vector_refresh_success', '刷新成功', '刷新成功', 'Refresh Success', '更新成功'],
   ['data_pipeline.vector_unavailable', '不可用', '不可用', 'Unavailable', '利用不可'],
-  ['data_pipeline.vector_embedding_tip', '向量模型用于将文本转化为向量索引，是检索的核心依赖', '向量模型用於將文本轉化為向量索引，是檢索的核心依賴', 'Vector model converts text to vector index, core dependency for retrieval', 'ベクトルモデルはテキストをベクトル索引に変換する検索の中核依存'],
-  ['data_pipeline.vector_model_error', '模型配置异常', '模型配置異常', 'Model Error', 'モデル設定エラー'],
-  ['data_pipeline.vector_check_config', '请检查模型配置是否正确', '請檢查模型配置是否正確', 'Please check model config', 'モデル設定を確認してください'],
-  ['data_pipeline.vector_model_provider', '模型供应商', '模型供應商', 'Model Provider', 'モデルプロバイダー'],
+  [
+    'data_pipeline.vector_embedding_tip',
+    '向量模型用于将文本转化为向量索引，是检索的核心依赖',
+    '向量模型用於將文本轉化為向量索引，是檢索的核心依賴',
+    'Vector model converts text to vector index, core dependency for retrieval',
+    'ベクトルモデルはテキストをベクトル索引に変換する検索の中核依存'
+  ],
+  [
+    'data_pipeline.vector_model_error',
+    '模型配置异常',
+    '模型配置異常',
+    'Model Error',
+    'モデル設定エラー'
+  ],
+  [
+    'data_pipeline.vector_check_config',
+    '请检查模型配置是否正确',
+    '請檢查模型配置是否正確',
+    'Please check model config',
+    'モデル設定を確認してください'
+  ],
+  [
+    'data_pipeline.vector_model_provider',
+    '模型供应商',
+    '模型供應商',
+    'Model Provider',
+    'モデルプロバイダー'
+  ],
 
   // 图谱配置
-  ['data_pipeline.graph_add_entity_type', '添加实体类型', '添加實體類型', 'Add Entity Type', 'エンティティタイプを追加'],
+  [
+    'data_pipeline.graph_add_entity_type',
+    '添加实体类型',
+    '添加實體類型',
+    'Add Entity Type',
+    'エンティティタイプを追加'
+  ],
   ['data_pipeline.graph_ai_generate', 'AI 一键生成', 'AI 一鍵生成', 'AI Generate', 'AI一括生成'],
-  ['data_pipeline.graph_auto_discover', '自动发现模式', '自動發現模式', 'Auto Discover', '自動発見'],
-  ['data_pipeline.graph_auto_discover_desc', '让 AI 自动识别文档中的知识图谱', '讓 AI 自動識別文檔中的知識圖譜', 'Let AI discover knowledge graph in the document', 'AIがドキュメント内の知識グラフを自動認識'],
-  ['data_pipeline.graph_entity_config', '核心实体配置', '核心實體配置', 'Core Entity Config', 'コアエンティティ設定'],
-  ['data_pipeline.graph_index_title', '知识图谱索引', '知識圖譜索引', 'Knowledge Graph Index', '知識グラフ索引'],
-  ['data_pipeline.graph_index_desc', '知识图谱通过提取文档中的实体与关系，构建非线性的语义网络。这对于处理复杂逻辑查询（如：A 与 B 的关系是什么？）具有显著的召回优势。', '知識圖譜通過提取文檔中的實體與關係，構建非線性的語義網絡。這對於處理複雜邏輯查詢（如：A 與 B 的關係是什麼？）具有顯著的召回優勢。', 'Knowledge graph extracts entities and relations to build a semantic network. It improves recall for complex queries (e.g. what is the relation between A and B?).', '知識グラフはエンティティと関係を抽出してセマンティックネットワークを構築します。複雑な論理クエリ（例：AとBの関係は？）の再現率向上に有効です。'],
+  [
+    'data_pipeline.graph_auto_discover',
+    '自动发现模式',
+    '自動發現模式',
+    'Auto Discover',
+    '自動発見'
+  ],
+  [
+    'data_pipeline.graph_auto_discover_desc',
+    '让 AI 自动识别文档中的知识图谱',
+    '讓 AI 自動識別文檔中的知識圖譜',
+    'Let AI discover knowledge graph in the document',
+    'AIがドキュメント内の知識グラフを自動認識'
+  ],
+  [
+    'data_pipeline.graph_entity_config',
+    '核心实体配置',
+    '核心實體配置',
+    'Core Entity Config',
+    'コアエンティティ設定'
+  ],
+  [
+    'data_pipeline.graph_index_title',
+    '知识图谱索引',
+    '知識圖譜索引',
+    'Knowledge Graph Index',
+    '知識グラフ索引'
+  ],
+  [
+    'data_pipeline.graph_index_desc',
+    '知识图谱通过提取文档中的实体与关系，构建非线性的语义网络。这对于处理复杂逻辑查询（如：A 与 B 的关系是什么？）具有显著的召回优势。',
+    '知識圖譜通過提取文檔中的實體與關係，構建非線性的語義網絡。這對於處理複雜邏輯查詢（如：A 與 B 的關係是什麼？）具有顯著的召回優勢。',
+    'Knowledge graph extracts entities and relations to build a semantic network. It improves recall for complex queries (e.g. what is the relation between A and B?).',
+    '知識グラフはエンティティと関係を抽出してセマンティックネットワークを構築します。複雑な論理クエリ（例：AとBの関係は？）の再現率向上に有効です。'
+  ],
   ['data_pipeline.graph_entity_clause', '条款', '條款', 'Clause', '条項'],
-  ['data_pipeline.graph_entity_clause_attrs', '类型、权重、条款内容', '類型、權重、條款內容', 'Type, Weight, Content', 'タイプ、重み、内容'],
+  [
+    'data_pipeline.graph_entity_clause_attrs',
+    '类型、权重、条款内容',
+    '類型、權重、條款內容',
+    'Type, Weight, Content',
+    'タイプ、重み、内容'
+  ],
   ['data_pipeline.graph_entity_contract', '合同', '合同', 'Contract', '契約'],
-  ['data_pipeline.graph_entity_contract_attrs', '甲方、乙方、金额、状态、签署时间', '甲方、乙方、金額、狀態、簽署時間', 'Party A, Party B, Amount, Status, Signing Time', '甲、乙、金額、状態、署名日時'],
-  ['data_pipeline.graph_entity_org_attrs', '名称、代码、规模', '名稱、代碼、規模', 'Name, Code, Scale', '名称、コード、規模'],
+  [
+    'data_pipeline.graph_entity_contract_attrs',
+    '甲方、乙方、金额、状态、签署时间',
+    '甲方、乙方、金額、狀態、簽署時間',
+    'Party A, Party B, Amount, Status, Signing Time',
+    '甲、乙、金額、状態、署名日時'
+  ],
+  [
+    'data_pipeline.graph_entity_org_attrs',
+    '名称、代码、规模',
+    '名稱、代碼、規模',
+    'Name, Code, Scale',
+    '名称、コード、規模'
+  ],
   ['data_pipeline.graph_entity_organization', '组织', '組織', 'Organization', '組織'],
-  ['data_pipeline.graph_ontology_template', '本体模板', '本體模板', 'Ontology Template', 'オントロジーテンプレート'],
-  ['data_pipeline.graph_predefined', '预定义模式', '預定義模式', 'Predefined Mode', '事前定義モード'],
-  ['data_pipeline.graph_predefined_desc', '仅提取指定的实体与关系（推荐）', '僅提取指定的實體與關係（推薦）', 'Extract specified entities and relations only (recommended)', '指定したエンティティと関係のみ抽出（推奨）'],
-  ['data_pipeline.graph_relation_tip', '基于所选实体，自动推导可能存在的关系链路。', '基於所選實體，自動推導可能存在的關係鏈路。', 'Derive possible relation links from selected entities.', '選択したエンティティから可能な関係を導出。'],
+  [
+    'data_pipeline.graph_ontology_template',
+    '本体模板',
+    '本體模板',
+    'Ontology Template',
+    'オントロジーテンプレート'
+  ],
+  [
+    'data_pipeline.graph_predefined',
+    '预定义模式',
+    '預定義模式',
+    'Predefined Mode',
+    '事前定義モード'
+  ],
+  [
+    'data_pipeline.graph_predefined_desc',
+    '仅提取指定的实体与关系（推荐）',
+    '僅提取指定的實體與關係（推薦）',
+    'Extract specified entities and relations only (recommended)',
+    '指定したエンティティと関係のみ抽出（推奨）'
+  ],
+  [
+    'data_pipeline.graph_relation_tip',
+    '基于所选实体，自动推导可能存在的关系链路。',
+    '基於所選實體，自動推導可能存在的關係鏈路。',
+    'Derive possible relation links from selected entities.',
+    '選択したエンティティから可能な関係を導出。'
+  ],
   ['data_pipeline.graph_relation_type', '关系类型', '關係類型', 'Relation Type', '関係タイプ'],
   ['data_pipeline.graph_template_finance', '金融分析', '金融分析', 'Finance', '金融'],
   ['data_pipeline.graph_template_general', '通用模板', '通用模板', 'General', '汎用'],
   ['data_pipeline.graph_template_plan', '策划方案', '策劃方案', 'Plan', '企画案'],
   // GraphConfig 扩展
   ['data_pipeline.graph_smart_match', '智能匹配', '智能匹配', 'Smart Match', 'スマートマッチ'],
-  ['data_pipeline.graph_smart_match_on_desc', '智能选择本体模板', '智能選擇本體模板', 'Smart template selection', 'スマートテンプレート選択'],
-  ['data_pipeline.graph_smart_match_off_desc', '手动选择本体模板', '手動選擇本體模板', 'Manual template selection', '手動テンプレート選択'],
-  ['data_pipeline.graph_smart_generation', '智能生成', '智能生成', 'Smart Generation', 'スマート生成'],
-  ['data_pipeline.graph_smart_generation_desc', '未匹配到本体模板时，将对文档进行智能抽取', '未匹配到本體模板時，將對文檔進行智能抽取', 'When no template matched, extract from document intelligently', 'テンプレート未匹配時、ドキュメントから智能抽出'],
-  ['data_pipeline.graph_smart_fallback', '若无最匹配模板，将兜底执行', '若無最匹配模板，將兜底執行', 'Fallback if no template matched', 'マッチするテンプレートがない場合、フォールバック'],
-  ['data_pipeline.graph_select_template', '选择本体模板', '選擇本體模板', 'Select Ontology Template', 'オントロジーテンプレートを選択'],
+  [
+    'data_pipeline.graph_smart_match_on_desc',
+    '智能选择本体模板',
+    '智能選擇本體模板',
+    'Smart template selection',
+    'スマートテンプレート選択'
+  ],
+  [
+    'data_pipeline.graph_smart_match_off_desc',
+    '手动选择本体模板',
+    '手動選擇本體模板',
+    'Manual template selection',
+    '手動テンプレート選択'
+  ],
+  [
+    'data_pipeline.graph_smart_generation',
+    '智能生成',
+    '智能生成',
+    'Smart Generation',
+    'スマート生成'
+  ],
+  [
+    'data_pipeline.graph_smart_generation_desc',
+    '未匹配到本体模板时，将对文档进行智能抽取',
+    '未匹配到本體模板時，將對文檔進行智能抽取',
+    'When no template matched, extract from document intelligently',
+    'テンプレート未匹配時、ドキュメントから智能抽出'
+  ],
+  [
+    'data_pipeline.graph_smart_fallback',
+    '若无最匹配模板，将兜底执行',
+    '若無最匹配模板，將兜底執行',
+    'Fallback if no template matched',
+    'マッチするテンプレートがない場合、フォールバック'
+  ],
+  [
+    'data_pipeline.graph_select_template',
+    '选择本体模板',
+    '選擇本體模板',
+    'Select Ontology Template',
+    'オントロジーテンプレートを選択'
+  ],
   ['data_pipeline.graph_no_templates', '暂无数据', '暫無數據', 'No data', 'データなし'],
-  ['data_pipeline.graph_template_info', '模板信息', '模板信息', 'Template Info', 'テンプレート情報'],
-  ['data_pipeline.graph_entity_types', '实体类型', '實體類型', 'Entity Types', 'エンティティタイプ'],
+  [
+    'data_pipeline.graph_template_info',
+    '模板信息',
+    '模板信息',
+    'Template Info',
+    'テンプレート情報'
+  ],
+  [
+    'data_pipeline.graph_entity_types',
+    '实体类型',
+    '實體類型',
+    'Entity Types',
+    'エンティティタイプ'
+  ],
   ['data_pipeline.graph_relation_types', '关系类型', '關係類型', 'Relation Types', '関係タイプ'],
   ['data_pipeline.graph_no_description', '暂无描述', '暫無描述', 'No description', '説明なし'],
   ['data_pipeline.graph_no_tags', '暂无标签', '暫無標籤', 'No tags', 'タグなし'],
 
   // 智能匹配
   ['data_pipeline.smart_match', '智能匹配', '智能匹配', 'Smart Match', 'スマートマッチ'],
-  ['data_pipeline.smart_match_on_desc', '智能选择拆分规则', '智能選擇拆分規則', 'Smart chunking rule selection', 'スマート分割ルール選択'],
-  ['data_pipeline.smart_match_off_desc', '手动选择拆分规则', '手動選擇拆分規則', 'Manual chunking rule selection', '手動で分割規則を選択'],
+  [
+    'data_pipeline.smart_match_on_desc',
+    '智能选择拆分规则',
+    '智能選擇拆分規則',
+    'Smart chunking rule selection',
+    'スマート分割ルール選択'
+  ],
+  [
+    'data_pipeline.smart_match_off_desc',
+    '手动选择拆分规则',
+    '手動選擇拆分規則',
+    'Manual chunking rule selection',
+    '手動で分割規則を選択'
+  ],
 
   // 列表列
   ['data_pipeline.col_enabled_nodes', '启用节点', '啟用節點', 'Enabled Nodes', '有効ノード'],
   ['data_pipeline.col_name', '名称', '名稱', 'Name', '名前'],
   ['data_pipeline.col_operation', '操作', '操作', 'Actions', '操作'],
   ['data_pipeline.col_success_rate', '成功率', '成功率', 'Success Rate', '成功率'],
-  ['data_pipeline.col_volume', '处理量', '處理量', 'Volume', '処理量'],
+  ['data_pipeline.col_volume', '处理量', '處理量', 'Volume', '処理量']
 ] as const
 
 export const dataPipelineMessages = buildMessages(DATA_PIPELINE_KEYS)

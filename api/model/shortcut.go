@@ -12,6 +12,8 @@ const (
 	ShortcutTypeLibrary  = "library"   // 知识库
 	ShortcutTypeAILink   = "ai_link"   // AI工具
 	ShortcutTypeWikiPage = "wiki_page" // Wiki页面
+	ShortcutTypeSpace    = "space"     // 空间（用于跳转 Wiki 索引页）
+	ShortcutTypeSpaceWiki = "space_wiki" // 有Wiki的空间（区别于纯空间）
 )
 
 // Shortcut 快捷方式表
@@ -37,7 +39,7 @@ func (s *Shortcut) Validate() error {
 		return errors.New("关联ID无效")
 	}
 	switch s.Type {
-	case ShortcutTypeAgent, ShortcutTypeLibrary, ShortcutTypeAILink, ShortcutTypeWikiPage:
+	case ShortcutTypeAgent, ShortcutTypeLibrary, ShortcutTypeAILink, ShortcutTypeWikiPage, ShortcutTypeSpace, ShortcutTypeSpaceWiki:
 		return nil
 	default:
 		return errors.New("快捷方式类型无效")

@@ -41,7 +41,7 @@ func InitDB() {
 
 	if config.MigrateDBEnabled {
 		logger.Debug(context.TODO(), "database migration started")
-		if err = migrateDB(); err != nil {
+		if err = migrateDBWithLock(); err != nil {
 			logger.FatalLog("failed to migrate database: " + err.Error())
 			return
 		}
@@ -267,6 +267,18 @@ func migrateDB() error {
 		return err
 	}
 
+	// Pre-migration: handle space_id column addition for existing user_recent_useds table.
+	// GORM's Migrator().AddColumn reads the struct tag (not null) and generates
+	// ADD column bigint NOT NULL, which PostgreSQL rejects on a non-empty table.
+	// Add as nullable first, then let AutoMigrate add the NOT NULL constraint.
+	if DB.Migrator().HasTable(&UserRecentUsed{}) && !DB.Migrator().HasColumn(&UserRecentUsed{}, "SpaceID") {
+		if err := DB.Exec("ALTER TABLE user_recent_useds ADD COLUMN space_id bigint").Error; err != nil {
+			return err
+		}
+		// Backfill existing rows — 0 is a safe sentinel ("no space")
+		DB.Model(&UserRecentUsed{}).Where("space_id IS NULL").Update("space_id", 0)
+	}
+
 	if err := DB.AutoMigrate(&UserBrowseHistory{}); err != nil {
 		return err
 	}
@@ -344,9 +356,6 @@ func migrateDB() error {
 	); err != nil {
 		return err
 	}
-	if err = repairWikiPageVersionNumbers(); err != nil {
-		return err
-	}
 	if err := DB.AutoMigrate(&WikiPageVersion{}); err != nil {
 		return err
 	}
@@ -373,13 +382,43 @@ func migrateDB() error {
 	// 安心录 V2 语音模型
 	if err := DB.AutoMigrate(
 		&RecordingSummaryTemplate{},
+		&RecordingShare{},
 		&RecordingFileSummary{},
 		&RecordingFileInsightPage{},
+		&RecordingMemoryClaim{},
+		&RecordingMemoryEntity{},
+		&RecordingMemoryFact{},
+		&RecordingMemoryEntityRelation{},
+		&RecordingDeviceConfig{},
+		&RecordingSyncSource{},
+		&RecordingSyncJob{},
 	); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// MigrateTestDatabase 初始化仅供测试使用的 SQLite 完整 schema。
+//
+// 测试包可能会创建独立的 SQLite 数据库，不能依赖 model 包的 TestMain。
+// 统一从这里复用应用的模型清单，避免新增模型后只更新生产迁移而遗漏测试表。
+// 该入口明确拒绝非 SQLite 数据库，正式的 PostgreSQL/MySQL 测试仍应使用真实迁移。
+func MigrateTestDatabase(db *gorm.DB) error {
+	if db == nil {
+		return fmt.Errorf("test database is nil")
+	}
+	if db.Dialector == nil {
+		return fmt.Errorf("test database has no dialector")
+	}
+	if dialect := db.Dialector.Name(); dialect != "sqlite" {
+		return fmt.Errorf("test database must use sqlite, got %q", dialect)
+	}
+
+	previousDB := DB
+	DB = db
+	defer func() { DB = previousDB }()
+	return migrateDB()
 }
 
 func repairRecordingJobStatusValues() error {
@@ -391,59 +430,80 @@ func repairRecordingJobStatusValues() error {
 		Update("status", RecordingJobStatusFinalizingProcessing).Error
 }
 
-func repairWikiPageVersionNumbers() error {
-	if DB == nil {
-		return nil
+// migrateDBWithLock 使用数据库级 advisory lock 防止多个实例并发执行 AutoMigrate，
+// 避免 MySQL Error 1213 (deadlock) 或 PostgreSQL 表锁冲突。
+//
+// - MySQL:  SELECT GET_LOCK('53aihub:automigrate', 0) — 非阻塞，锁被占用时跳过迁移
+// - PostgreSQL: SELECT pg_try_advisory_lock(hashtext('53aihub_automigrate')) — 同上
+// - SQLite: 文件级锁，无跨进程死锁风险，直接执行
+func migrateDBWithLock() error {
+	// 使用 dedicated connection 持有 advisory lock，避免连接池回收导致锁释放
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("get underlying sql.DB: %w", err)
 	}
-	if !DB.Migrator().HasTable(&WikiPageVersion{}) {
+
+	switch {
+	case config.UsingMySQL:
+		return migrateDBWithMySQLLock(context.Background(), sqlDB)
+	case config.UsingPostgreSQL:
+		return migrateDBWithPGLock(context.Background(), sqlDB)
+	default:
+		// SQLite: 文件级锁，无跨实例并发死锁风险
+		logger.SysLog("SQLite: running migration directly (no advisory lock needed)")
+		return migrateDB()
+	}
+}
+
+func migrateDBWithMySQLLock(ctx context.Context, sqlDB *sql.DB) error {
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("get dedicated connection for MySQL GET_LOCK: %w", err)
+	}
+	defer conn.Close()
+
+	var gotLock int
+	if err := conn.QueryRowContext(ctx, "SELECT GET_LOCK(?, 0)", "53aihub:automigrate").Scan(&gotLock); err != nil {
+		return fmt.Errorf("acquire MySQL GET_LOCK: %w", err)
+	}
+	if gotLock != 1 {
+		logger.SysLog("AutoMigrate skipped: another instance holds the MySQL GET_LOCK('53aihub:automigrate')")
 		return nil
 	}
 
-	var versions []WikiPageVersion
-	if err := DB.WithContext(context.TODO()).
-		Order("page_id asc, version_no asc, id asc").
-		Find(&versions).Error; err != nil {
-		return err
-	}
-	if len(versions) == 0 {
-		return nil
-	}
-
-	type pageVersionState struct {
-		nextVersionNo   int64
-		latestVersionID int64
-	}
-
-	return DB.Transaction(func(tx *gorm.DB) error {
-		states := make(map[int64]*pageVersionState)
-		for i := range versions {
-			version := &versions[i]
-			state := states[version.PageID]
-			if state == nil {
-				state = &pageVersionState{}
-				states[version.PageID] = state
-			}
-			state.nextVersionNo++
-			if version.VersionNo != state.nextVersionNo {
-				if err := tx.Model(&WikiPageVersion{}).
-					Where("id = ?", version.ID).
-					Update("version_no", state.nextVersionNo).Error; err != nil {
-					return err
-				}
-			}
-			state.latestVersionID = version.ID
+	logger.SysLog("AutoMigrate lock acquired (MySQL GET_LOCK)")
+	defer func() {
+		if _, err := conn.ExecContext(ctx, "SELECT RELEASE_LOCK(?)", "53aihub:automigrate"); err != nil {
+			logger.SysErrorf("release MySQL GET_LOCK: %v", err)
 		}
+	}()
 
-		for pageID, state := range states {
-			if state.latestVersionID == 0 {
-				continue
-			}
-			if err := tx.Model(&WikiPage{}).
-				Where("id = ?", pageID).
-				Update("current_version_id", state.latestVersionID).Error; err != nil {
-				return err
-			}
-		}
+	return migrateDB()
+}
+
+func migrateDBWithPGLock(ctx context.Context, sqlDB *sql.DB) error {
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("get dedicated connection for pg_try_advisory_lock: %w", err)
+	}
+	defer conn.Close()
+
+	// pg_try_advisory_lock 使用 64-bit key，用 hashtext 将字符串转为 int4
+	var gotLock bool
+	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext('53aihub_automigrate'))").Scan(&gotLock); err != nil {
+		return fmt.Errorf("acquire pg_try_advisory_lock: %w", err)
+	}
+	if !gotLock {
+		logger.SysLog("AutoMigrate skipped: another instance holds the pg_advisory_lock")
 		return nil
-	})
+	}
+
+	logger.SysLog("AutoMigrate lock acquired (pg_advisory_lock)")
+	defer func() {
+		if _, err := conn.ExecContext(ctx, "SELECT pg_advisory_unlock(hashtext('53aihub_automigrate'))"); err != nil {
+			logger.SysErrorf("release pg_advisory_lock: %v", err)
+		}
+	}()
+
+	return migrateDB()
 }

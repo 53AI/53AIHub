@@ -99,3 +99,10 @@ export { getGreetingByTime } from './time.js'
 
 // 唯一名称生成
 export { generateUniqueFolderName, generateUniqueFileName } from './unique-name.js'
+
+// 通用 JSON token 编解码（纯字符串，无 DOM 依赖）
+export {
+  encodeJsonToken,
+  decodeJsonToken,
+  appendJsonTokenToUrl,
+} from './json-token.js'

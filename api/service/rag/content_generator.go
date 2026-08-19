@@ -1313,16 +1313,19 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 		// 	ElapsedTime: helper.CalcElapsedTime(startTime),
 		// })
 	}()
-	logger.SysDebug(string(jsonData))
 	requestBody := bytes.NewBuffer(jsonData)
 	c.Request.Body = io.NopCloser(requestBody)
 	resp, err := adaptor.DoRequest(c, meta, requestBody)
 	if err != nil {
+		logger.Warnf(ctx, "【LLM诊断-请求】渠道请求失败: channel_id=%d, api_type=%d, model=%s, max_tokens=%d, request_bytes=%d, err_type=%T",
+			channel.ChannelID, apiType, meta.ActualModelName, request.MaxTokens, len(jsonData), err)
 		return "", nil, err, nil
 	}
 	if resp != nil && resp.StatusCode != http.StatusOK {
 		responseBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
+		logger.Warnf(ctx, "【LLM诊断-响应】渠道返回非成功状态: channel_id=%d, api_type=%d, model=%s, http_status=%d, response_bytes=%d",
+			channel.ChannelID, apiType, meta.ActualModelName, resp.StatusCode, len(responseBody))
 
 		// 尝试解析 OpenAI 格式的错误
 		var errResponse relaymodel.ErrorWithStatusCode
@@ -1335,16 +1338,33 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 	}
 	usage, respErr := adaptor.DoResponse(c, resp, meta)
 	if respErr != nil {
+		logger.Warnf(ctx, "【LLM诊断-响应】渠道响应转换失败: channel_id=%d, api_type=%d, model=%s, response_bytes=%d, err_type=%T",
+			channel.ChannelID, apiType, meta.ActualModelName, w.Body.Len(), respErr)
 		return "", nil, fmt.Errorf("%s", respErr.Error.Message), &respErr.Error
 	}
 	if usage == nil {
+		logger.Warnf(ctx, "【LLM诊断-响应】渠道响应 usage 为空: channel_id=%d, api_type=%d, model=%s, response_bytes=%d",
+			channel.ChannelID, apiType, meta.ActualModelName, w.Body.Len())
 		return "", nil, errors.New("usage is nil"), nil
 	}
 	rawResponse := w.Body.String()
-	logger.SysDebug(rawResponse)
 	_, responseMessage, err = s.parseTestResponse(rawResponse)
 	if err != nil {
+		logger.Warnf(ctx, "【LLM诊断-解析】响应无法用于内容生成: channel_id=%d, api_type=%d, model=%s, max_tokens=%d, %s, parse_err=%v",
+			channel.ChannelID, apiType, meta.ActualModelName, request.MaxTokens, summarizeTestChannelResponse(rawResponse), err)
+		if json.Valid([]byte(rawResponse)) {
+			if responseError := classifyTestChannelResponseError(rawResponse, ""); responseError != nil {
+				logger.Warnf(ctx, "【LLM诊断-错误】响应包含模型错误: channel_id=%d, model=%s, %s",
+					channel.ChannelID, meta.ActualModelName, summarizeTestChannelResponse(rawResponse))
+				return "", nil, responseError, nil
+			}
+		}
 		return "", nil, err, nil
+	}
+	if responseError := classifyTestChannelResponseError(rawResponse, responseMessage); responseError != nil {
+		logger.Warnf(ctx, "【LLM诊断-错误】响应内容被判定为模型错误: channel_id=%d, model=%s, %s",
+			channel.ChannelID, meta.ActualModelName, summarizeTestChannelResponse(rawResponse))
+		return "", nil, responseError, nil
 	}
 
 	// 统一 token 预算日志
@@ -1471,6 +1491,45 @@ func (s *ContentGeneratorService) parseTestResponse(resp string) (*openai.TextRe
 		return nil, "", errors.New("response content is not string")
 	}
 	return &response, stringContent, nil
+}
+
+// summarizeTestChannelResponse 只输出响应结构信息，不输出模型原文，避免日志泄露用户内容或密钥。
+func summarizeTestChannelResponse(raw string) string {
+	type responseChoice struct {
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
+			Content          json.RawMessage `json:"content"`
+			ReasoningContent json.RawMessage `json:"reasoning_content"`
+		} `json:"message"`
+		Text json.RawMessage `json:"text"`
+	}
+	var envelope struct {
+		Choices []responseChoice `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		return fmt.Sprintf("response_bytes=%d, json_valid=false", len(raw))
+	}
+	contentBytes := 0
+	reasoningBytes := 0
+	textBytes := 0
+	finishReason := ""
+	if len(envelope.Choices) > 0 {
+		choice := envelope.Choices[0]
+		contentBytes = len(choice.Message.Content)
+		reasoningBytes = len(choice.Message.ReasoningContent)
+		textBytes = len(choice.Text)
+		finishReason = choice.FinishReason
+	}
+	return fmt.Sprintf("response_bytes=%d, json_valid=true, choices=%d, content_bytes=%d, reasoning_bytes=%d, text_bytes=%d, finish_reason=%q",
+		len(raw), len(envelope.Choices), contentBytes, reasoningBytes, textBytes, finishReason)
+}
+
+func classifyTestChannelResponseError(rawResponse, responseContent string) error {
+	message := common.ClassifyLLMResponseError(rawResponse, responseContent)
+	if message == "" {
+		return nil
+	}
+	return errors.New(message)
 }
 
 // buildFastIntentRouteSystemPrompt 构建轻量意图路由系统提示词

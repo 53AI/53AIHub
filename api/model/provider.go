@@ -15,7 +15,7 @@ type Provider struct {
 	RefreshToken          string  `json:"refresh_token" gorm:"type:text"`
 	ExpiresIn             int64   `json:"expires_in" gorm:"not null"`
 	AuthedTime            int64   `json:"authed_time" gorm:"not null"`
-	TokenRefreshFailCount int     `json:"token_refresh_fail_count" gorm:"not null;default:0"`
+	TokenRefreshFailCount int64   `json:"token_refresh_fail_count" gorm:"not null;default:0"`
 	BaseURL               *string `json:"base_url" gorm:"size:512;column:base_url;default:''"`
 	BaseModel
 }
@@ -67,17 +67,7 @@ func DeleteProviderByID(id, eid int64) error {
 
 func UpdateProvider(provider *Provider) error {
 	return DB.Model(provider).
-		Updates(map[string]interface{}{
-			"name":          provider.Name,
-			"provider_type": provider.ProviderType,
-			"configs":       provider.Configs,
-			"is_authorized": provider.IsAuthorized,
-			"access_token":  provider.AccessToken,
-			"refresh_token": provider.RefreshToken,
-			"expires_in":    provider.ExpiresIn,
-			"authed_time":   provider.AuthedTime,
-			"base_url":      provider.BaseURL,
-		}).Error
+		Updates(provider).Error
 }
 
 func GetProviderByID(id, eid int64) (*Provider, error) {

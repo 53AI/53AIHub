@@ -14,17 +14,16 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { Avatar, Spin, message } from "antd";
-import { DownOutlined } from "@ant-design/icons";
 import { SvgIcon } from "@km/shared-components-react";
 import { useLibraryStore } from "@/stores/modules/library";
 import { useUserStore } from "@/stores/modules/user";
-import { useEnterpriseStore } from "@/stores/modules/enterprise";
+import { useEnterpriseStore, useIsSoftStyle } from "@/stores/modules/enterprise";
 import { useNavigationStore } from "@/stores/modules/navigation";
 import { ProfilePopover, MessageCenter } from "@/components/Layout";
 import { Catalog, type CatalogRef } from "./catalog";
-import { LibrarySelector } from "./components/library-selector";
 import { FileUpload } from "./components/file-upload";
 import { ApplyDialog, type ApplyDialogRef } from "../components/apply";
+import VirtualLogo from "@/components/VirtualLogo";
 import { FileSearch } from "@/components/FileSearch";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { ProfileModal } from "@/views/profile";
@@ -35,6 +34,8 @@ import { eventBus, copyToClip } from "@km/shared-utils";
 import { buildUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { useEnv } from "@/hooks/useEnv";
+import { useFullscreen } from "@/hooks/useFullscreen";
+import Breadcrumb from "@/components/Breadcrumb";
 import "./index.css";
 
 interface UploadItem {
@@ -53,6 +54,26 @@ export const useCatalogRef = () => {
   return useContext(CatalogRefContext);
 };
 
+// 文件预览全屏状态 Context：跨越 LibraryFileLayout 这一中间 Outlet 层，
+// 让 LibraryFileView 能直接消费（useOutletContext 只能读最近一层 Outlet）。
+export interface FileViewFullscreenValue {
+  fileViewFullscreen: boolean;
+  toggleFileViewFullscreen: () => void;
+  composeFileViewClassName: (base: string) => string;
+}
+
+export const FileViewFullscreenContext = createContext<FileViewFullscreenValue | null>(null);
+
+export const useFileViewFullscreen = () => {
+  const ctx = useContext(FileViewFullscreenContext);
+  if (!ctx) {
+    throw new Error(
+      "useFileViewFullscreen 必须在 LibraryMainView 内部使用",
+    );
+  }
+  return ctx;
+};
+
 export function LibraryMainView() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -61,6 +82,7 @@ export function LibraryMainView() {
   const libraryStore = useLibraryStore();
   const userStore = useUserStore();
   const enterpriseStore = useEnterpriseStore();
+  const isSoftStyle = useIsSoftStyle();
   const navigationStore = useNavigationStore();
   const { isDevEnv } = useEnv();
 
@@ -87,14 +109,25 @@ export function LibraryMainView() {
   const [messageCenterReady, setMessageCenterReady] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
+  // 文件预览全屏状态提到这一层：让 .assistant-sider 能在全屏时提升 z-index，
+  // 保证 DocumentApp 始终 portal 到外层容器渲染，与非全屏行为一致。
+  const {
+    fullscreen: fileViewFullscreen,
+    toggle: toggleFileViewFullscreen,
+    composeClassName: composeFileViewClassName,
+  } = useFullscreen();
+
   // Computed values
   const libraryId = params.id || "";
 
   // Get current route name based on pathname
   const getRouteName = useCallback(() => {
     const pathname = location.pathname;
-    if (pathname.includes("/home/chat")) return "LibraryChat";
-    if (pathname.includes("/home")) return "LibraryHome";
+    const libraryBasePath = `/library/${libraryId}`;
+    if (pathname === libraryBasePath || pathname === `${libraryBasePath}/`) {
+      return "LibraryHome";
+    }
+    if (pathname === `${libraryBasePath}/chat`) return "LibraryChat";
     if (pathname.includes("/recall")) return "LibraryRecallTest";
     if (pathname.includes("/graph")) return "LibraryGraph";
     if (pathname.includes("/file/")) {
@@ -104,9 +137,20 @@ export function LibraryMainView() {
     }
     if (pathname.includes("/folder/")) return "LibraryFolder";
     return "";
-  }, [location.pathname]);
+  }, [location.pathname, libraryId]);
 
   const routeName = getRouteName();
+
+  // 判断是否处于文件预览页（用于助手面板显隐 + 自动退出全屏）。
+  const isFileView = routeName === "LibraryFileView";
+
+  // 离开文件预览页时自动退出全屏，避免下次进入仍是全屏态。
+  // 必须在所有早返回之前调用，遵守 Rules of Hooks。
+  useEffect(() => {
+    if (!isFileView && fileViewFullscreen) {
+      toggleFileViewFullscreen();
+    }
+  }, [isFileView, fileViewFullscreen, toggleFileViewFullscreen]);
 
   // Helper functions for icon/block colors
   const getIconColor = (bool: boolean) => {
@@ -378,13 +422,17 @@ export function LibraryMainView() {
     );
   }
 
-  // 获取当前路由名称用于判断是否显示助手面板
-  const isFileView = routeName === "LibraryFileView";
-
   return (
     <CatalogRefContext.Provider value={catalogRef}>
+      <FileViewFullscreenContext.Provider
+        value={{
+          fileViewFullscreen,
+          toggleFileViewFullscreen,
+          composeFileViewClassName,
+        }}
+      >
       <div
-        className={`h-full flex bg-[#F8FAFD] p-2 overflow-hidden ${assistantExpanded ? "gap-3" : "gap-2"}`}
+        className={composeFileViewClassName(`h-full flex bg-[#F8FAFD] overflow-hidden ${fileViewFullscreen ? "z-50" : ""}`)}
       >
         {/* 外层：边框发光容器 */}
         <div
@@ -418,7 +466,7 @@ export function LibraryMainView() {
             </>
           )}
           {/* 内层：白色背景 + 内发光 */}
-          <div className="h-full flex relative bg-white rounded-xl">
+          <div className="h-full flex relative bg-white">
             {/* 鼠标悬停展开区域 */}
             {!libraryStore.siderVisible && !libraryStore.sidebarCollapsed && (
               <div
@@ -428,59 +476,39 @@ export function LibraryMainView() {
             )}
 
             {/* 左边栏 */}
-            <div
+            {!fileViewFullscreen && <div
               ref={siderRef}
               className={`
-            bg-[#fff] px-4 flex flex-col transition-all duration-300 ease-linear absolute top-0 left-0 h-full z-10 rounded-lg shadow-lg
+            bg-[#fff] px-4 pt-5  flex flex-col transition-all duration-300 ease-linear absolute top-0 left-0 h-full z-10 border-r
             ${libraryStore.siderVisible ? "" : "-translate-x-full -ml-2"}
             ${!libraryStore.siderVisible && libraryStore.sidebarCollapsed ? "translate-x-0 shadow-xl" : ""}
           `}
               style={{ width: `${libraryStore.sidebarWidth}px` }}
               onMouseLeave={handleMouseLeave}
             >
-              {/* Header - Logo 和选择器 */}
-              <div className="h-7 flex items-center justify-between mt-4">
-                <LibrarySelector
-                  reference={
-                    libraryStore.space ? (
-                      <a
-                        href={`#/space/${libraryStore.space?.id}`}
-                        className="h-7 px-1 flex items-center gap-1.5 rounded cursor-pointer overflow-hidden hover:bg-[#EDEEF0]"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          navigate(`/knowledge?space_id=${libraryStore.space?.id}`, {
-                            replace: true,
-                          });
-                        }}
-                      >
-                        <div className="size-5" title={t("module.index")}>
-                          <img
-                            className="w-5 cursor-pointer"
-                            src={enterpriseStore.ico}
-                            alt=""
-                          />
-                        </div>
-                        <DownOutlined
-                          style={{ fontSize: 12, color: "#ADAFB3" }}
-                        />
-                      </a>
-                    ) : undefined
-                  }
+              <div className="flex items-center gap-1 text-sm text-secondary">
+                <Breadcrumb
+                  className="text-sm"
+                  items={[
+                    {
+                      path: `/knowledge`,
+                      i18nKey: "module.knowledge",
+                    },
+                    {
+                      path: libraryStore.space?.id
+                        ? `/knowledge?space_id=${libraryStore.space?.id}`
+                        : "/knowledge",
+                      label: libraryStore.space?.name ?? t("module.space"),
+                      linkable: true,
+                    },
+                  ]}
                 />
-                {libraryStore.siderVisible && (
-                  <div
-                    className="size-5 flex items-center justify-center cursor-pointer"
-                    title="收起"
-                    onClick={() => libraryStore.toggleSider()}
-                  >
-                    <SvgIcon name="double-left" />
-                  </div>
-                )}
               </div>
 
               {/* 库名称和更多操作 */}
-              <div className="flex-none h-7 flex items-center justify-between gap-1 mt-4 group">
-                <h2 className="text-lg text-[#1D1E1F] truncate">
+              <div className="flex-none h-7 flex items-center gap-2.5 mt-4 group">
+                <VirtualLogo text={libraryStore.library?.name} src={libraryStore.library?.icon} size={26} />
+                <h2 className="flex-1 text-lg text-[#1D1E1F] truncate">
                   {libraryStore.library?.name}
                 </h2>
                 <MoreDropdown
@@ -510,28 +538,9 @@ export function LibraryMainView() {
                 />
               </div>
 
-              {/* 来源空间 */}
-              <div className="flex-none flex items-center">
-                <h3 className="text-sm text-[#999999] truncate">
-                  来自{" "}
-                  {libraryStore.space && (
-                    <a
-                      className="text-[#999999] hover:text-[#2563EB]"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        navigate(`/knowledge?space_id=${libraryStore.space?.id}`, {
-                          replace: true,
-                        });
-                      }}
-                    >
-                      {libraryStore.space?.name}
-                    </a>
-                  )}
-                </h3>
-              </div>
 
               {/* 文件搜索 */}
-              <FileSearch className="mt-3" libraryId={libraryId} />
+              <FileSearch className="mt-4" libraryId={libraryId} />
 
               {/* 导航菜单 */}
               <div className="flex flex-col gap-1 py-3">
@@ -611,30 +620,32 @@ export function LibraryMainView() {
               )}
 
               {/* 用户区域 */}
-              <div className="flex-none -mx-3 p-4 flex items-center gap-1 relative">
-                <div className="border-t absolute top-0 left-2 right-2" />
+              {!isSoftStyle && (
+                <div className="flex-none -mx-3 p-4 flex items-center gap-1 relative">
+                  <div className="border-t absolute top-0 left-2 right-2" />
 
-                <ProfilePopover onProfile={handleOpenProfile}>
-                  <div className="flex-1 overflow-hidden flex items-center gap-2">
-                    <Avatar
-                      size={34}
-                      src={userStore.info.avatar}
-                      className="border border-white"
-                    />
-                    <div className="flex-1 overflow-hidden cursor-pointer">
-                      <div className="text-sm font-medium text-[#1D1E1F] truncate">
-                        {userStore.info.nickname || userStore.info.username}
-                      </div>
-                      <div className="text-xs text-[#999999] truncate">
-                        {enterpriseStore.display_name}
+                  <ProfilePopover onProfile={handleOpenProfile}>
+                    <div className="flex-1 overflow-hidden flex items-center gap-2">
+                      <Avatar
+                        size={34}
+                        src={userStore.info.avatar}
+                        className="border border-white"
+                      />
+                      <div className="flex-1 overflow-hidden cursor-pointer">
+                        <div className="text-sm font-medium text-[#1D1E1F] truncate">
+                          {userStore.info.nickname || userStore.info.username}
+                        </div>
+                        <div className="text-xs text-[#999999] truncate">
+                          {enterpriseStore.display_name}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </ProfilePopover>
-                {userStore.is_login &&
-                  navigationStore.hasKnowledge &&
-                  messageCenterReady && <MessageCenter />}
-              </div>
+                  </ProfilePopover>
+                  {userStore.is_login &&
+                    navigationStore.hasKnowledge &&
+                    messageCenterReady && <MessageCenter />}
+                </div>
+              )}
 
               {/* 拖拽调整器 */}
               {libraryStore.siderVisible && (
@@ -644,14 +655,14 @@ export function LibraryMainView() {
                   onMouseDown={handleResizeStart}
                 />
               )}
-            </div>
+            </div>}
 
             {/* 拖拽调整器 */}
             <div
-              className="flex-1 flex min-h-0 relative shadow-lg rounded-lg bg-white overflow-hidden"
+              className="flex-1 flex min-h-0 relative  bg-white overflow-hidden"
               style={{
-                marginLeft: libraryStore.siderVisible
-                  ? `${libraryStore.sidebarWidth + 8}px`
+                marginLeft: libraryStore.siderVisible && !fileViewFullscreen
+                  ? `${libraryStore.sidebarWidth}px`
                   : "0",
               }}
             >
@@ -677,10 +688,13 @@ export function LibraryMainView() {
           </div>
         </div>
 
-        {/* 右侧助手面板 */}
+        {/* 右侧助手面板：全屏时提升 z-index 到 202，浮于 LibraryFileView 全屏覆盖层 (z-201) 之上。
+             DocumentApp 通过 portal 渲染到这里，跟非全屏表现完全一致。 */}
         {isFileView && assistantVisible && (
           <div
             className={`assistant-sider flex bg-white relative rounded-lg overflow-hidden transition-all duration-300 ${
+              fileViewFullscreen ? "z-[202]" : ""
+            } ${
               assistantCollapsed
                 ? "flex-none w-[452px]"
                 : assistantExpanded
@@ -690,6 +704,7 @@ export function LibraryMainView() {
           />
         )}
       </div>
+      </FileViewFullscreenContext.Provider>
     </CatalogRefContext.Provider>
   );
 }

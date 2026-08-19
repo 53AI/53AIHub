@@ -8,6 +8,8 @@ function makeBaseProps(overrides: Partial<BubbleAssistantProps> = {}): BubbleAss
     content: "",
     streaming: false,
     reasoning: "",
+    reasoningExpanded: false,
+    showReasoning: true,
     showError: false,
     menu: undefined,
     error: undefined,
@@ -90,6 +92,18 @@ describe("shouldBubbleAssistantSkipRender", () => {
   it("returns false when reasoning changes", () => {
     const prev = makeBaseProps({ reasoning: "old" });
     const next = makeBaseProps({ reasoning: "new" });
+    expect(shouldBubbleAssistantSkipRender(prev, next)).toBe(false);
+  });
+
+  it("returns false when reasoningExpanded changes", () => {
+    const prev = makeBaseProps({ reasoningExpanded: true });
+    const next = makeBaseProps({ reasoningExpanded: false });
+    expect(shouldBubbleAssistantSkipRender(prev, next)).toBe(false);
+  });
+
+  it("returns false when showReasoning changes", () => {
+    const prev = makeBaseProps({ showReasoning: true });
+    const next = makeBaseProps({ showReasoning: false });
     expect(shouldBubbleAssistantSkipRender(prev, next)).toBe(false);
   });
 

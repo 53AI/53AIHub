@@ -55,28 +55,7 @@ func (s *DefaultChunkStrategy) ProcessChunking(service *ChunkerService, eid int6
 
 	knowledgeChunks := service.chunkByRules(parsed, config.KnowledgeChunk.ChunkMode, config.KnowledgeChunk.GetSplitRules(), config.KnowledgeMaxLength, "knowledge")
 
-	// 将表格类型的分块按行拆分为多个分块
-	var expandedChunks []DocumentChunk
-	for _, chunk := range knowledgeChunks {
-		trimmed := strings.TrimSpace(chunk.Content)
-		if strings.HasPrefix(strings.ToLower(trimmed), "<table") || strings.Contains(trimmed, "|") {
-			tableRows := service.parseMarkdownTable(trimmed)
-			if len(tableRows) > 1 {
-				for _, row := range tableRows {
-					expandedChunks = append(expandedChunks, DocumentChunk{
-						Type:       chunk.Type,
-						Content:    row.Content,
-						StartPos:   chunk.StartPos,
-						EndPos:     chunk.EndPos,
-						TokenCount: 0,
-					})
-				}
-				continue
-			}
-		}
-		expandedChunks = append(expandedChunks, chunk)
-	}
-	result.Chunks = append(result.Chunks, expandedChunks...)
+	result.Chunks = append(result.Chunks, knowledgeChunks...)
 
 	service.addOverlaps(result.Chunks, config)
 	return result, nil
@@ -105,8 +84,12 @@ func (s *QAChunkStrategy) ProcessChunking(service *ChunkerService, eid int64, fi
 	// 解析QA对，按照Python代码逻辑实现
 	qas := service.parseQAContent(content)
 	if len(qas) == 0 {
-		result.Warnings = append(result.Warnings, "no_qa_pairs_detected")
+		// QA解析结果为空，降级到默认策略
+		result.Warnings = append(result.Warnings, "no_qa_pairs_detected, fallback to default strategy")
+		defaultStrategy := &DefaultChunkStrategy{}
+		return defaultStrategy.ProcessChunking(service, eid, fileID, content, config)
 	}
+
 
 	// 为每个QA对创建一个分块
 	currentPos := 0
@@ -536,83 +519,102 @@ type TableRow struct {
 	Metadata map[string]interface{}
 }
 
-// parseMarkdownTable 解析Markdown表格内容
+// parseMarkdownTable 解析表格内容
+// 先判断内容格式（HTML 或 Markdown 管道符），再走对应解析器。
+// 兜底使用 extractTableBlocks 尝试从内容中提取表格片段。
 func (s *ChunkerService) parseMarkdownTable(content string) []TableRow {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil
+	}
+
+	// 先判断格式：HTML 表格
+	if strings.HasPrefix(strings.ToLower(trimmed), "<table") {
+		return s.parseHTMLTable(trimmed)
+	}
+
+	// Markdown 管道符表格（| 格式）
+	if strings.Contains(trimmed, "|") {
+		return s.parsePipeTable(trimmed)
+	}
+
+	// 兜底：使用 extractTableBlocks 从内容中提取表格片段
 	var rows []TableRow
-
-	// 使用已有的extractTableBlocks方法提取表格（支持Markdown和HTML格式）
 	tables := s.extractTableBlocks(content)
-
-	// 处理每个表格
 	for _, table := range tables {
-		trimmed := strings.TrimSpace(table.Content)
-		if strings.HasPrefix(strings.ToLower(trimmed), "<table") {
-			// HTML 表格 → 走 HTML 解析器
-			htmlRows := s.parseHTMLTable(trimmed)
+		t := strings.TrimSpace(table.Content)
+		if strings.HasPrefix(strings.ToLower(t), "<table") {
+			htmlRows := s.parseHTMLTable(t)
 			rows = append(rows, htmlRows...)
+		} else {
+			pipeRows := s.parsePipeTable(t)
+			rows = append(rows, pipeRows...)
+		}
+	}
+	return rows
+}
+
+// parsePipeTable 解析 Markdown 管道符表格（| 格式）
+func (s *ChunkerService) parsePipeTable(tableContent string) []TableRow {
+	var rows []TableRow
+	lines := strings.Split(tableContent, "\n")
+	if len(lines) < 2 {
+		return nil // 至少需要表头和一行数据
+	}
+
+	// 解析表头
+	headerLine := strings.Trim(lines[0], "| ")
+	headers := strings.Split(headerLine, "|")
+	for i := range headers {
+		headers[i] = strings.TrimSpace(headers[i])
+		// 处理空表头
+		if headers[i] == "" {
+			headers[i] = "列" + fmt.Sprintf("%d", i+1)
+		}
+	}
+
+	// 确定数据开始行（跳过分隔符行）
+	dataStartIndex := 1
+	if len(lines) > 1 && s.isSeparatorLine(lines[1]) {
+		dataStartIndex = 2
+	}
+
+	// 解析数据行
+	for i := dataStartIndex; i < len(lines); i++ {
+		line := strings.Trim(lines[i], "| ")
+		if line == "" {
 			continue
 		}
 
-		// Markdown 表格（| 管道符格式）
-		lines := strings.Split(trimmed, "\n")
-		if len(lines) < 2 {
-			continue // 至少需要表头和一行数据
+		// 分割数据
+		values := strings.Split(line, "|")
+		for j := range values {
+			values[j] = strings.TrimSpace(values[j])
 		}
 
-		// 解析表头
-		headerLine := strings.Trim(lines[0], "| ")
-		headers := strings.Split(headerLine, "|")
-		for i := range headers {
-			headers[i] = strings.TrimSpace(headers[i])
-			// 处理空表头
-			if headers[i] == "" {
-				headers[i] = "列" + fmt.Sprintf("%d", i+1)
+		// 构建内容字符串
+		var contentBuilder strings.Builder
+		for j, value := range values {
+			var header string
+			if j < len(headers) {
+				header = headers[j]
+			} else {
+				header = "列" + fmt.Sprintf("%d", j+1)
 			}
+			// 处理空值
+			if value == "" {
+				value = "无"
+			}
+			contentBuilder.WriteString(fmt.Sprintf("%s: %s\n", header, value))
 		}
 
-		// 确定数据开始行（跳过分隔符行）
-		dataStartIndex := 1
-		if len(lines) > 1 && s.isSeparatorLine(lines[1]) {
-			dataStartIndex = 2
+		row := TableRow{
+			Content: contentBuilder.String(),
+			Metadata: map[string]interface{}{
+				"row": i - dataStartIndex,
+			},
 		}
-
-		// 解析数据行
-		for i := dataStartIndex; i < len(lines); i++ {
-			line := strings.Trim(lines[i], "| ")
-			if line == "" {
-				continue
-			}
-
-			// 分割数据
-			values := strings.Split(line, "|")
-			for j := range values {
-				values[j] = strings.TrimSpace(values[j])
-			}
-
-			// 构建内容字符串
-			var contentBuilder strings.Builder
-			for j, value := range values {
-				var header string
-				if j < len(headers) {
-					header = headers[j]
-				} else {
-					header = "列" + fmt.Sprintf("%d", j+1)
-				}
-				// 处理空值
-				if value == "" {
-					value = "无"
-				}
-				contentBuilder.WriteString(fmt.Sprintf("%s: %s\n", header, value))
-			}
-
-			row := TableRow{
-				Content: contentBuilder.String(),
-				Metadata: map[string]interface{}{
-					"row": i - dataStartIndex,
-				},
-			}
-			rows = append(rows, row)
-		}
+		rows = append(rows, row)
 	}
 
 	return rows

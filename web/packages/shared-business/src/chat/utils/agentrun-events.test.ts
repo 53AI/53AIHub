@@ -94,14 +94,40 @@ describe("applyAgentRunEvents — pure function", () => {
     expect(r2.answer).toBe("answer");
   });
 
-  it("message.completed overrides answer and clears loading", () => {
+  it("message.completed does not replace an already streamed mismatching answer", () => {
     const partial = applyAgentRunEvents(baseMessage, [
       ev("message.delta", { content: "draft" }),
     ]);
     const done = applyAgentRunEvents(partial, [
       ev("message.completed", { answer: "final" }),
     ]);
-    expect(done.answer).toBe("final");
+    expect(done.answer).toBe("draft");
+    expect(done.loading).toBe(false);
+  });
+
+  it("message.completed fills only a missing streamed suffix", () => {
+    const partial: Message = { ...baseMessage, answer: "final ans", loading: true };
+    const done = applyAgentRunEvents(partial, [
+      ev("message.completed", { answer: "final answer" }),
+    ]);
+    expect(done.answer).toBe("final answer");
+    expect(done.loading).toBe(false);
+  });
+
+  it("message.completed restores a full snapshot when no delta was received", () => {
+    const done = applyAgentRunEvents({ ...baseMessage, loading: true }, [
+      ev("message.completed", { answer: "recovered answer" }),
+    ]);
+    expect(done.answer).toBe("recovered answer");
+    expect(done.loading).toBe(false);
+  });
+
+  it("metadata-only message.completed keeps the streamed answer", () => {
+    const streamed: Message = { ...baseMessage, answer: "streamed", loading: true };
+    const done = applyAgentRunEvents(streamed, [
+      ev("message.completed", { answer_bytes: 8, answer_sha256: "hash" }),
+    ]);
+    expect(done.answer).toBe("streamed");
     expect(done.loading).toBe(false);
   });
 

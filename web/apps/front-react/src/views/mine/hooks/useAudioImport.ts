@@ -3,14 +3,20 @@ import { message } from 'antd'
 import { recordingApi } from '@/api/modules/recording'
 import filesApi from '@/api/modules/files'
 import { useBatchProgress } from '@/hooks/useBatchProgress'
+import { t } from '@/locales'
 
 const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'wav', 'flac', 'ogg', 'aac']
+
+/** 音频导入默认单文件大小上限：200MB。调用方可通过 maxSize 覆盖。 */
+const DEFAULT_MAX_AUDIO_SIZE = 200 * 1024 * 1024
 
 export interface AudioImportConfig {
   ensureLibraryId: () => Promise<string>
   currentPath: string
   onSuccess: () => void
   groupId?: number
+  /** 单文件大小上限（字节）。默认 200MB。 */
+  maxSize?: number
 }
 
 export interface UseAudioImportReturn {
@@ -25,7 +31,8 @@ export interface UseAudioImportReturn {
  * 封装音频文件导入逻辑
  */
 export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn {
-  const { ensureLibraryId, currentPath, onSuccess, groupId } = config
+  const { ensureLibraryId, currentPath, onSuccess, groupId, maxSize = DEFAULT_MAX_AUDIO_SIZE } = config
+  const maxSizeMB = Math.floor(maxSize / 1024 / 1024)
 
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -64,6 +71,10 @@ export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn 
           const ext = file.name.split('.').pop()?.toLowerCase()
           if (!ext || !AUDIO_EXTENSIONS.includes(ext)) {
             message.warning(`文件 ${file.name} 格式不支持，已跳过`)
+            continue
+          }
+          if (file.size >= maxSize) {
+            message.warning(t('file.file_exceed', { size: maxSizeMB, name: file.name }))
             continue
           }
 
@@ -130,7 +141,7 @@ export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn 
         event.target.value = ''
       }
     },
-    [ensureLibraryId, currentPath, onSuccess, waitForComplete]
+    [ensureLibraryId, currentPath, onSuccess, waitForComplete, maxSize, maxSizeMB]
   )
 
   return {

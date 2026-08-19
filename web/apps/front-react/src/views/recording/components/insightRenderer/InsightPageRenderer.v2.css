@@ -1,0 +1,1988 @@
+/* ── Insight Schema 卡片样式 v2 ─ 排版 demo 版（不动色）──
+   收敛目标：
+   - 字号阶梯：12 / 14 / 16 / 18 / 22 / 28（仅 6 档）
+   - 正文 16px / line-height 1.75 / 左对齐（去掉所有 justify）
+   - 浅灰底只保留 #F5F6F7 一档
+*/
+
+.insight-schema {
+  --insight-accent: #A75850;
+  --insight-accent-soft: #f7e9e4;
+  --insight-danger: #FF4F4F;
+  --insight-danger-soft: #FFF2F2;
+  --insight-danger-text: #FA5151;
+
+  /* 移动端溢出保护：父容器宽度由外层 w-4/5 限定，这里确保子级不溢出 */
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Block wrapper ── */
+.insight-block-wrapper {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* ── Theme 变体 ── */
+.insight-schema.theme-blue {
+  --insight-accent: #60a5fa;
+  --insight-accent-soft: rgba(96, 165, 250, 0.14);
+}
+.insight-schema.theme-purple {
+  --insight-accent: #a78bfa;
+  --insight-accent-soft: rgba(167, 139, 250, 0.14);
+}
+.insight-schema.theme-orange {
+  --insight-accent: #fb923c;
+  --insight-accent-soft: rgba(251, 146, 60, 0.14);
+}
+.insight-schema.theme-red {
+  --insight-accent: #fb7185;
+  --insight-accent-soft: rgba(251, 113, 133, 0.14);
+}
+.insight-schema.theme-dark {
+  --insight-accent: #cbd5e1;
+  --insight-accent-soft: rgba(203, 213, 225, 0.12);
+}
+
+/* ── Block header（卡片外标题） ── */
+
+.insight-block-header {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.insight-block-header-bar {
+  width: 4px;
+  /* 高跟随标题行数：父容器 align-items: stretch + 自身 flex-shrink:0，
+     让 bar 撑到与 h3 同高（1 行 / 2 行自适应） */
+  align-self: stretch;
+  background: var(--insight-accent);
+  margin: 4px 0;  
+  flex-shrink: 0;
+}
+
+.insight-block-header .eyebrow {
+  color: var(--insight-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.insight-block-header h3 {
+  margin: 0;
+  font-weight: 700;
+  font-size: 20px;
+  line-height: 1.5;
+  color: #1D1E1F;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Cover / Page header ── */
+.insight-cover {
+  padding: 24px;
+  border: 1px solid #E6EEFF;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--insight-accent) 6%, white);
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.insight-cover > * {
+  min-width: 0;
+}
+.insight-cover .insight-cover-tag {
+  display: inline-block;
+  background: var(--insight-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+.insight-cover .eyebrow {
+  color: var(--insight-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+.insight-cover h2 {
+  margin: 0 0 12px;
+  font-weight: 700;
+  font-size: 24px;
+  line-height: 1.5;
+  color: #1D1E1F;
+}
+.insight-cover p,
+.insight-cover .insight-cover-subtitle {
+  font-size: 16px;
+  color: #373A3D;
+  line-height: 1.5;
+}
+.insight-cover .insight-cover-subtitle {
+  font-size: 16px;
+  color: #373A3D;
+  line-height: 1.5;
+}
+.insight-cover .insight-cover-subtitle p {
+  margin: 0 0 8px;
+}
+.insight-cover .insight-cover-subtitle p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Card ── */
+.insight-card {
+  margin-top: 12px;
+  padding: 24px;
+  border: 1px solid #e1e7ed;
+  border-radius: 12px;
+  background: #fff;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.insight-card > * {
+  min-width: 0;
+  max-width: 100%;
+}
+.insight-schema strong {
+  color: var(--insight-accent);
+  font-weight: 700;
+}
+.insight-card h3 {
+  margin: 4px 0 8px;
+  font-weight: 600;
+  font-size: 18px;
+}
+.insight-card p {
+  margin: 0 0 8px;
+}
+.insight-card p:last-child {
+  margin-bottom: 0;
+}
+.insight-card .eyebrow {
+  color: var(--insight-accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  display: block;
+  margin-bottom: 4px;
+}
+.insight-card .insight-richtext p {
+  margin: 0 0 8px;
+}
+.insight-card .insight-richtext p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Hero card ── */
+.insight-hero {
+  padding: 20px;
+  border-color: color-mix(in srgb, var(--insight-accent) 45%, transparent);
+  background: linear-gradient(135deg, var(--insight-accent-soft), #fff 72%);
+}
+.insight-hero h3 {
+  font-size: 18px;
+  margin-top: 6px;
+  color: #253243;
+  font-weight: 600;
+}
+
+/* ── Callout ── */
+.insight-callout {
+  background: #F5F6F7;
+  border-left: 3px solid #8795a5;
+  border-radius: 8px;
+}
+.insight-callout.warning {
+  background: color-mix(in srgb, var(--insight-accent) 22%, white);
+  border-left-color: var(--insight-accent);
+}
+.insight-callout.danger {
+  background: #FFF2F2;
+  border-left-color: var(--insight-danger);
+}
+.insight-callout.info {
+  background: #EFF6FF;
+  border-left-color: #60A5FA;
+}
+.insight-callout.danger .eyebrow {
+  color: var(--insight-danger-text);
+}
+.insight-callout.info .eyebrow {
+  color: #2563EB;
+}
+
+/* ── Mermaid 通用视口 ──
+   仿 meeting-recorder 的 .insight-graph-viewport：
+   负 margin 让图稍微越过 .insight-card 的内边距，避免视觉上"挤在角落"，
+   横向滚动条靠容器自身提供，不靠外层卡片。
+*/
+.insight-mermaid-viewport {
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  -webkit-overflow-scrolling: touch;
+}
+.insight-mermaid-viewport > .insight-mermaid-flow,
+.insight-mermaid-viewport > .insight-mermaid-sequence,
+.insight-mermaid-viewport > .insight-mermaid-pie,
+.insight-mermaid-viewport > .insight-mermaid-gantt,
+.insight-mermaid-viewport > .insight-mermaid-timeline {
+  padding: 0;
+}
+
+/* ── Mermaid 子标题（仅在卡片没有 section h3 时作 fallback；存在则弱化为副标） ── */
+.insight-mermaid-pie-title,
+.insight-mermaid-gantt-title,
+.insight-mermaid-timeline-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.insight-mermaid-pie-title {
+  text-align: center;
+}
+
+/* ── Mermaid flow diagram（HTML 卡片 + SVG 边） ──
+   与 meeting-recorder 同构：节点用 .insight-flow-node article（CSS 自动换行 + 高度自撑），
+   边走 .insight-flow-lines 透明 overlay SVG（pointer-events:none，z-index 低于节点）。
+*/
+.insight-mermaid-flow {
+  display: block;
+  /* 仿 meeting-recorder：当内容宽度小于视口时撑满视口，让节点自然居中 */
+  min-width: 100%;
+  box-sizing: border-box;
+}
+.insight-mermaid-flow .insight-flow-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+.insight-mermaid-flow .insight-flow-edge-label {
+  font-family: inherit;
+  font-size: 10px;
+  fill: #687586;
+  paint-order: stroke;
+  stroke: #fbfcfd;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.insight-mermaid-flow .insight-flow-node {
+  position: absolute;
+  z-index: 2;
+  min-height: 68px;
+  padding: 11px 12px;
+  border: 1px solid #dce3e9;
+  border-radius: 11px;
+  background: #f0f3f6;
+  box-sizing: border-box;
+  box-shadow: 0 4px 10px rgba(71, 85, 105, .07);
+  /* 关键：长文本自然换行，box 高度自动撑开 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-mermaid-flow .insight-flow-node-title {
+  display: block;
+  color: #354356;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+.insight-mermaid-flow .insight-flow-node-body {
+  margin-top: 5px;
+  color: #6b7787;
+  font-size: 11px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+/* tone 调色板（与 meeting-recorder 对齐；中文主题色板继续走 light 模式） */
+.insight-mermaid-flow .insight-flow-node.tone-neutral {
+  background: #f0f3f6;
+  border-color: #dce3e9;
+}
+.insight-mermaid-flow .insight-flow-node.tone-positive {
+  background: #e4f3eb;
+  border-color: #86c7a3;
+}
+.insight-mermaid-flow .insight-flow-node.tone-positive .insight-flow-node-title {
+  color: #2f6e51;
+}
+.insight-mermaid-flow .insight-flow-node.tone-info {
+  background: #eaf2fb;
+  border-color: #9bbbe2;
+}
+.insight-mermaid-flow .insight-flow-node.tone-info .insight-flow-node-title {
+  color: #2d548a;
+}
+.insight-mermaid-flow .insight-flow-node.tone-warning {
+  background: #fff4df;
+  border-color: #e1b56f;
+}
+.insight-mermaid-flow .insight-flow-node.tone-warning .insight-flow-node-title {
+  color: #8a5e1a;
+}
+.insight-mermaid-flow .insight-flow-node.tone-danger {
+  background: #f8e3de;
+  border-color: #d98b78;
+}
+.insight-mermaid-flow .insight-flow-node.tone-danger .insight-flow-node-title {
+  color: #92321e;
+}
+.insight-mermaid-flow .insight-flow-node.tone-critical {
+  background: #f4d4cf;
+  border-color: #ba6659;
+}
+.insight-mermaid-flow .insight-flow-node.tone-critical .insight-flow-node-title {
+  color: #802d23;
+}
+.insight-mermaid-flow .insight-flow-node.tone-pending {
+  background: #fff8df;
+  border-color: #d6bd67;
+  border-style: dashed;
+}
+.insight-mermaid-flow .insight-flow-node.tone-pending .insight-flow-node-title {
+  color: #7a6516;
+}
+
+/* ── Mermaid sequenceDiagram ── */
+.insight-mermaid-sequence {
+  display: block;
+  width: 100%;
+}
+.insight-mermaid-sequence svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+  font-family: inherit;
+}
+
+/* ── Mermaid pie ── */
+.insight-mermaid-pie {
+  padding: 4px 0;
+}
+.insight-mermaid-pie-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.insight-mermaid-pie-body svg {
+  flex: 0 0 auto;
+}
+.insight-mermaid-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 180px;
+  max-width: 320px;
+  flex: 0 1 320px;
+}
+.insight-mermaid-pie-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: #1d2b3e;
+  min-width: 0;
+}
+.insight-mermaid-pie-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.insight-mermaid-pie-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.insight-mermaid-pie-value {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+/* ── Mermaid gantt ── */
+.insight-mermaid-gantt {
+  padding: 4px 0;
+}
+.insight-mermaid-gantt-section + .insight-mermaid-gantt-section {
+  margin-top: 12px;
+}
+.insight-mermaid-gantt-section-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.insight-mermaid-gantt-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.insight-mermaid-gantt-label {
+  flex: 0 1 160px;
+  min-width: 80px;
+  max-width: 220px;
+  color: #1d2b3e;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.insight-mermaid-gantt-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 16px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  min-width: 120px;
+}
+.insight-mermaid-gantt-bar {
+  position: absolute;
+  top: 2px;
+  height: 12px;
+  min-width: 4px;
+  border-radius: 3px;
+  background: #3b82f6;
+}
+.insight-mermaid-gantt-bar.is-done {
+  background: #94a3b8;
+}
+.insight-mermaid-gantt-bar.is-active {
+  background: #22c55e;
+}
+.insight-mermaid-gantt-bar.is-crit {
+  background: #ef4444;
+}
+.insight-mermaid-gantt-bar.is-milestone,
+.insight-mermaid-gantt-bar.is-point {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #f59e0b;
+  transform: translateX(-6px) rotate(45deg);
+}
+.insight-mermaid-gantt-date {
+  flex: 0 0 auto;
+  color: #64748b;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Mermaid timeline ── */
+.insight-mermaid-timeline {
+  padding: 4px 0;
+}
+.insight-mermaid-timeline-section + .insight-mermaid-timeline-section {
+  margin-top: 14px;
+}
+.insight-mermaid-timeline-section-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.insight-mermaid-timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 14px;
+  border-left: 2px solid #e2e8f0;
+}
+.insight-mermaid-timeline-event {
+  position: relative;
+  padding: 6px 0;
+}
+.insight-mermaid-timeline-event::before {
+  content: '';
+  position: absolute;
+  left: -19px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+}
+.insight-mermaid-timeline-time {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d2b3e;
+  margin-right: 8px;
+}
+.insight-mermaid-timeline-items {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
+}
+.insight-mermaid-timeline-item {
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #4f5052;
+  font-size: 12px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* ── Key points（核心要点列表） ── */
+.insight-key-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+.insight-key-points .key-point-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #F5F6F7;
+  border-left: 3px solid var(--insight-accent);
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-key-points .key-point-bullet {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--insight-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+.insight-key-points .key-point-title {
+  font-weight: 700;
+  color: #1D2B3E;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-key-points .key-point-content {
+  margin-top: 4px;
+  color: #373A3D;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Long analysis（长文分析，含可选分段） ── */
+.insight-long-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.insight-long-analysis .la-intro {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+}
+.insight-long-analysis .la-section {
+  border-left: 3px solid var(--insight-accent);
+  padding-left: 14px;
+}
+.insight-long-analysis .la-section-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--insight-accent);
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+.insight-long-analysis .la-section-body {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+}
+
+/* ── Insight stack（多条洞察卡片堆叠） ── */
+.insight-insight-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.insight-insight-stack .stack-item {
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--insight-accent) 6%, #fff);
+  border: 1px solid color-mix(in srgb, var(--insight-accent) 18%, #e4e9ee);
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-insight-stack .stack-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.insight-insight-stack .stack-item-index {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--insight-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+.insight-insight-stack .stack-item-title {
+  font-weight: 700;
+  color: #1D2B3E;
+  font-size: 15px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+.insight-insight-stack .stack-item-body {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Breakthrough（破局点）── 加深视觉强调 */
+.insight-breakthrough {
+  background: linear-gradient(135deg, #fff, var(--insight-accent-soft));
+  border-color: color-mix(in srgb, var(--insight-accent) 35%, transparent);
+  position: relative;
+}
+.insight-breakthrough::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: var(--insight-accent);
+  border-radius: 12px 0 0 12px;
+}
+.insight-breakthrough h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+.insight-breakthrough .breakthrough-content {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #1D2B3E;
+}
+.insight-breakthrough .breakthrough-foot {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--insight-accent);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+/* ── Quote（会议原话 / 引用） ── */
+.insight-card.insight-quote {
+  padding: 16px 20px;
+  border: none;
+  background: color-mix(in srgb, var(--insight-accent) 10%, white);
+  font-size: 16px;
+  line-height: 1.75;
+  text-align: center;
+  font-weight: 400;
+  box-shadow: none;
+  margin: 12px 0;
+}
+
+.insight-card.insight-quote .insight-richtext {
+  color: #333333;
+  font-size: 16px;
+  text-align: center;
+  line-height: 1.75;
+  font-weight: 600;
+}
+
+.insight-card.insight-quote .insight-richtext p {
+  margin: 0;
+}
+
+/* ── Tags ── */
+.insight-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.insight-tag {
+  color: var(--insight-accent);
+  background: var(--insight-accent-soft);
+  border: 1px solid color-mix(in srgb, var(--insight-accent) 30%, transparent);
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
+/* ── Highlight ── */
+.insight-highlight {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--insight-accent);
+  background: #F5F6F7;
+  line-height: 1.75;
+}
+
+/* ── Risk / Action / Verify grids ── */
+.insight-risk-grid,
+.insight-action-grid,
+.insight-verify-grid {
+  display: grid;
+  gap: 8px;
+}
+
+/* ── Item ── */
+.insight-item {
+  padding: 12px;
+  border-radius: 10px;
+  background: #F5F6F7;
+  border: 1px solid #e4e9ee;
+  color: #373A3D;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-item .item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-item .item-title .num {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--insight-accent);
+  font-size: 11px;
+  flex: none;
+}
+.insight-item .item-body {
+  margin-top: 6px;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-item .item-meta {
+  margin-top: 6px;
+  color: #7b8795;
+  font-size: 12px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-item.level-high {
+  border-left: 3px solid #fb7185;
+}
+.insight-item.level-medium {
+  border-left: 3px solid #fbbf24;
+}
+.insight-item.level-low {
+  border-left: 3px solid #60a5fa;
+}
+
+/* ── 风险专用样式 ── */
+.insight-risk-grid .insight-item {
+  background: var(--insight-danger-soft);
+  border: none;
+  border-left: 5px solid var(--insight-danger);
+  padding: 12px 16px;
+  border-radius: 0;
+}
+.insight-risk-grid .insight-item .item-title {
+  color: var(--insight-danger-text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.75;
+}
+.insight-risk-grid .insight-item .item-title .num {
+  display: none;
+}
+.insight-risk-grid .insight-item .item-body {
+  margin-top: 4px;
+  color: #373A3D;
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+/* ── 历史提醒"血泪史" ── */
+.insight-risk-grid.tone-history .insight-item {
+  background: color-mix(in srgb, var(--insight-accent) 24%, white);
+  border-left: 6px solid var(--insight-accent);
+  padding: 12px 16px;
+  border-radius: 0;
+  line-height: 1.75;
+  color: color-mix(in srgb, var(--insight-accent) 80%, #4a3030);
+}
+.insight-risk-grid.tone-history .insight-item .item-title {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--insight-accent) 80%, #4a3030);
+}
+.insight-risk-grid.tone-history .insight-item .item-body {
+  color: #373A3D;
+}
+
+/* ── 行动样式 ── */
+.insight-action-grid .insight-item {
+  background: #fff;
+  border: none;
+  padding: 0;
+  border-radius: 0;
+}
+.insight-action-grid .insight-item .item-title {
+  color: #1D2B3E;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.75;
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-action-grid .insight-item .item-title .num {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--insight-accent);
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+  margin-top: 4px;
+}
+.insight-action-grid .insight-item .item-title .insight-action-inline {
+  font-weight: 400;
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-action-grid .insight-item .item-body {
+  margin-top: 6px;
+  margin-left: 30px;
+  color: #373A3D;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-action-grid .insight-item .item-meta {
+  margin-top: 6px;
+  margin-left: 30px;
+  font-size: 12px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Comparison ── */
+.insight-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 100%;
+  min-width: 0;
+}
+.insight-compare {
+  padding: 16px 20px;
+  border-radius: 10px;
+  background: #F5F6F7;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare.bad {
+  background: color-mix(in srgb, var(--insight-accent) 14%, white);
+}
+.insight-compare.good {
+  background: #F5F6F7;
+}
+.insight-compare.neutral {
+  background: #F5F6F7;
+}
+.insight-compare h4 {
+  margin: 0 0 6px;
+  color: #1D2B3E;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare.bad h4 {
+  color: var(--insight-accent);
+}
+.insight-compare .compare-label {
+  display: none;
+}
+.insight-compare-grid .insight-compare .compare-label {
+  display: block;
+  margin: 0 0 8px;
+  color: #1D2B3E;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare.bad .compare-label {
+  color: var(--insight-accent);
+}
+.insight-compare-list {
+  margin: 0;
+  padding-left: 18px;
+  list-style-type: disc;
+  color: #373A3D;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare-list li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare .insight-compare-desc {
+  margin-bottom: 8px;
+  color: #4F5052;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare .insight-compare-desc:last-child {
+  margin-bottom: 0;
+}
+.insight-compare .insight-richtext {
+  color: #373A3D;
+  font-size: 16px;
+  line-height: 1.75;
+}
+.insight-compare .insight-richtext p {
+  margin: 0 0 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-compare .insight-richtext p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Flow diagram ── */
+.insight-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid #e4e9ee;
+  border-radius: 12px;
+  background: #fff;
+  max-width: 100%;
+  min-width: 0;
+}
+.insight-flow-node {
+  padding: 16px 20px;
+  border-radius: 8px;
+  background: #F5F6F7;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-flow-node strong {
+  font-size: 16px;
+  font-weight: 700;
+}
+.insight-flow-node p {
+  margin-top: 4px;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-flow-node.critical {
+  border-color: var(--insight-accent);
+  background: color-mix(in srgb, var(--insight-accent) 10%, white);
+}
+.insight-flow-arrow {
+  align-self: center;
+  color: var(--insight-accent);
+  font-size: 20px;
+  line-height: 1;
+  flex: none;
+}
+
+/* ── Assumption chain（脆弱假设）──
+   设计目标：把"假设 → 论据 → 替代"作为论证链展示，
+   区别于风险卡片的同色处理。每个 step 按 tone 套用：
+   - claim       → 命题框（中性灰边 / 浅灰底）
+   - fragility   → 琥珀警告（区别于风险的亮红：用 --insight-accent-soft）
+   - alternative → 青绿替代解释
+   - note        → 普通灰色节点
+*/
+.insight-assumption-claim {
+  position: relative;
+  padding: 14px 18px 14px 22px;
+  border: 1px solid color-mix(in srgb, var(--insight-accent) 35%, #e4e9ee);
+  border-left: 4px solid var(--insight-accent);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--insight-accent) 8%, #fff),
+    #fff 80%
+  );
+  border-radius: 10px;
+  margin-top: 4px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-assumption-claim .claim-label {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--insight-accent);
+  margin-bottom: 6px;
+}
+.insight-assumption-claim .claim-body {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #1D2B3E;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-assumption-claim .claim-body strong {
+  color: #1D2B3E;
+}
+.insight-assumption-claim .claim-desc {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #4F5052;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.insight-assumption-claims {
+  display: grid;
+  gap: 8px;
+}
+
+.insight-assumption-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.insight-assumption-step {
+  position: relative;
+  padding: 12px 16px;
+  border-radius: 0;
+  background: #fff;
+  border: none;
+  border-left: 5px solid #cbd5e1;
+  max-width: 100%;
+  min-width: 0;
+}
+.insight-assumption-step .step-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+.insight-assumption-step .step-tone {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #F5F6F7;
+  color: #4F5052;
+  flex: none;
+}
+.insight-assumption-step .step-label {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1D2B3E;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+}
+.insight-assumption-step .step-body {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* fragility tone：琥珀警告（区别于风险的亮红） */
+.insight-assumption-step.tone-fragility {
+  background: color-mix(in srgb, var(--insight-accent) 10%, #fff);
+  border-left-color: var(--insight-accent);
+}
+.insight-assumption-step.tone-fragility .step-tone {
+  background: color-mix(in srgb, var(--insight-accent) 18%, #fff);
+  color: color-mix(in srgb, var(--insight-accent) 80%, #4a3030);
+}
+
+/* alternative tone：青绿替代解释 */
+.insight-assumption-step.tone-alternative {
+  background: color-mix(in srgb, #14b8a6 8%, #fff);
+  border-left-color: #14b8a6;
+}
+.insight-assumption-step.tone-alternative .step-tone {
+  background: color-mix(in srgb, #14b8a6 16%, #fff);
+  color: color-mix(in srgb, #14b8a6 70%, #0f766e);
+}
+
+.insight-assumption-validation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 0;
+  background: #F5F6F7;
+  border-left: 4px solid #1D2B3E;
+  margin-top: 4px;
+  flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
+}
+.insight-assumption-validation .validation-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1D2B3E;
+  color: #fff;
+  flex: none;
+}
+.insight-assumption-validation .validation-text {
+  font-size: 14px;
+  color: #4F5052;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* ── Timeline ── */
+.insight-timeline {
+  position: relative;
+  padding-left: 28px;
+  max-width: 100%;
+  min-width: 0;
+}
+.insight-timeline-item {
+  position: relative;
+  padding: 0 0 18px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -23px;
+  top: 4px;
+  bottom: -4px;
+  width: 2px;
+  background: color-mix(in srgb, var(--insight-accent) 35%, transparent);
+  z-index: 0;
+}
+.insight-timeline-item:last-child {
+  padding-bottom: 0;
+}
+.insight-timeline .timeline-dot {
+  position: absolute;
+  z-index: 1;
+  left: -28px;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--insight-accent);
+  background: #fff;
+  box-sizing: border-box;
+  display: block;
+}
+.insight-timeline .timeline-date {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--insight-accent);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-timeline .timeline-title {
+  margin-top: 4px;
+  color: #1d2b3e;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-timeline .timeline-body {
+  margin-top: 4px;
+  color: #373A3D;
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Verification list ── */
+.insight-verify-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.insight-verify-grid .insight-verify-item {
+  background: transparent;
+  border: none;
+  padding: 0;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.insight-verify-grid .insight-verify-item .item-body {
+  display: flex;
+  align-items: start;
+  margin-top: 0;
+  flex-wrap: wrap;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.insight-verify-grid .insight-verify-item p {
+  color: #373A3D;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* checkbox 前缀图标 */
+.insight-checkbox {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--insight-accent);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--insight-accent) 8%, white);
+  margin-right: 8px;
+  flex: none;
+  box-sizing: border-box;
+  margin-top: 6px;
+}
+.item-body-main {
+  flex: 1;
+}
+
+/* ── Closing ── */
+.insight-closing {
+  padding: 20px 32px;
+  border-radius: 12px;
+  border: none;
+  background: color-mix(in srgb, var(--insight-accent) 12%, white);
+  text-align: center;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.insight-closing p {
+  color: #373A3D;
+  font-weight: 600;
+  font-size: 16px;
+  margin: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Section intro ── */
+.insight-section-intro {
+  font-size: 16px;
+  line-height: 1.75;
+  padding-bottom: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+
+/* ── Richtext ── */
+.insight-richtext {
+  font-size: 16px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
+}
+.insight-richtext p {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-richtext p:last-child {
+  margin-bottom: 0;
+}
+.insight-richtext strong {
+  font-weight: 700;
+}
+.insight-richtext em {
+  color: var(--insight-accent);
+  font-style: normal;
+}
+.insight-richtext code,
+.insight-inline-code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #F5F6F7;
+  color: var(--insight-accent);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.insight-richtext h4 {
+  margin: 12px 0 6px;
+  color: var(--insight-accent);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-richtext h4:first-child {
+  margin-top: 0;
+}
+.insight-richtext ul,
+.insight-richtext ol {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  max-width: 100%;
+}
+.insight-richtext ul {
+  list-style-type: disc;
+}
+.insight-richtext ol {
+  list-style-type: decimal;
+}
+.insight-richtext li {
+  margin: 3px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.insight-blockquote,
+.insight-richtext blockquote {
+  padding: 12px 16px;
+  border-left: 4px solid #D1D1D1;
+  background: #F5F6F7;
+  border-radius: 0;
+  line-height: 1.75;
+  color: #373A3D;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ── Markdown 表格 ── */
+.insight-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e4e9ee;
+}
+.insight-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 16px;
+  line-height: 1.75;
+  color: #373A3D;
+  background: #fff;
+}
+.insight-table thead th {
+  background: #F5F6F7;
+  color: #1D2B3E;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e4e9ee;
+  text-align: left;
+  white-space: nowrap;
+}
+.insight-table tbody td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #eef1f4;
+  vertical-align: top;
+}
+.insight-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.insight-table tbody tr:hover {
+  background: #fafbfc;
+}
+
+/* ── Markdown 围栏代码块（含 mermaid 解析失败时的兜底展示） ── */
+.insight-code-block {
+  margin: 8px 0;
+  padding: 12px 14px;
+  background: #1d2b3e;
+  color: #e2e8f0;
+  border-radius: 8px;
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre;
+}
+.insight-code-block code {
+  font-family: inherit;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: inherit;
+  white-space: pre;
+}
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  /* Block header：缩 h3 字号；bar 高度由 align-items: stretch 跟随 h3，无需硬编码 */
+  .insight-block-header h3 {
+    font-size: 18px;
+    line-height: 1.45;
+  }
+
+  /* Cover：收紧 padding，h2 字号略小 */
+  .insight-cover {
+    padding: 18px;
+  }
+  .insight-cover h2 {
+    font-size: 22px;
+    line-height: 1.45;
+  }
+
+  /* Card：通用 padding 收紧，避免在窄屏 padding 占比过大 */
+  .insight-card {
+    padding: 18px;
+    gap: 10px;
+  }
+
+  /* Hero */
+  .insight-hero {
+    padding: 16px;
+  }
+
+  /* Quote：text-align 居中在窄屏不合适，改左对齐更易读 */
+  .insight-card.insight-quote {
+    padding: 14px 16px;
+  }
+  .insight-card.insight-quote .insight-richtext,
+  .insight-card.insight-quote .insight-richtext p {
+    text-align: left;
+  }
+
+  /* Key points：缩 bullet 与 padding */
+  .insight-key-points .key-point-item {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .insight-key-points .key-point-bullet {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+  }
+
+  /* Stack item：缩 padding */
+  .insight-insight-stack .stack-item {
+    padding: 12px 14px;
+  }
+
+  /* Item：padding 略缩 */
+  .insight-item {
+    padding: 10px;
+  }
+
+  /* Compare：padding 缩 */
+  .insight-compare {
+    padding: 14px 16px;
+  }
+
+  /* Flow：缩 padding */
+  .insight-flow {
+    padding: 12px;
+  }
+  .insight-flow-node {
+    padding: 12px 14px;
+  }
+
+  /* Assumption claim / step：缩 padding */
+  .insight-assumption-claim {
+    padding: 12px 14px 12px 18px;
+  }
+  .insight-assumption-step {
+    padding: 10px 14px;
+  }
+  .insight-assumption-validation {
+    padding: 6px 12px;
+  }
+
+  /* Timeline：缩 padding-left + 调整 dot 与 line 偏移 */
+  .insight-timeline {
+    padding-left: 22px;
+  }
+  .insight-timeline-item::before {
+    left: -19px;
+  }
+  .insight-timeline .timeline-dot {
+    left: -22px;
+  }
+
+  /* Closing：缩 padding */
+  .insight-closing {
+    padding: 16px 20px;
+  }
+
+  /* Action grid：缩 margin-left（30px → 24px），让 item-body 不被挤到卡外 */
+  .insight-action-grid .insight-item .item-body,
+  .insight-action-grid .insight-item .item-meta {
+    margin-left: 24px;
+  }
+
+  /* Mermaid */
+  .insight-mermaid-flow .insight-flow-node {
+    padding: 9px 10px;
+    min-height: 56px;
+    border-radius: 10px;
+  }
+  .insight-mermaid-flow .insight-flow-node-title {
+    font-size: 11.5px;
+  }
+  .insight-mermaid-flow .insight-flow-node-body {
+    font-size: 10.5px;
+    margin-top: 4px;
+  }
+
+  /* Sequence：浏览器对 SVG 的 max-width 缩放天然支持；这里只调节奏 */
+  .insight-mermaid-sequence svg {
+    font-size: 12px;
+  }
+
+  /* Pie：缩小尺寸 + 图例与饼图之间留更多呼吸空间 */
+  .insight-mermaid-pie-body {
+    gap: 18px;
+  }
+
+  /* Gantt：日期列允许换行（避免被强行压窄看不到） */
+  .insight-mermaid-gantt-date {
+    white-space: normal;
+    line-height: 1.45;
+  }
+
+  /* Timeline（Mermaid）：紧凑化时间线左内边距 */
+  .insight-mermaid-timeline-list {
+    padding-left: 12px;
+  }
+
+  /* Viewport：收紧负 margin，避免图挤到卡片外 */
+  .insight-mermaid-viewport {
+    margin: 4px -4px -4px;
+    padding: 0 4px 4px;
+  }
+}
+
+@media (max-width: 560px) {
+  .insight-compare-grid {
+    grid-template-columns: 1fr;
+  }
+  .insight-cover h2 {
+    font-size: 22px;
+  }
+  /* Insight schema 整体 stack 间距收紧 */
+  .insight-schema.space-y-\[30px\] {
+    --tw-space-y-reverse: 0;
+    margin-top: calc(20px * calc(1 - var(--tw-space-y-reverse)));
+    margin-bottom: calc(20px * var(--tw-space-y-reverse));
+  }
+  /* Viewport：去掉负 margin（窄屏上不该突破卡片），并允许横向滚动（避免宽图被裁） */
+  .insight-mermaid-viewport {
+    margin: 4px 0 -4px;
+    padding: 0 0 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Block header h3 再小一点 */
+  .insight-block-header h3 {
+    font-size: 17px;
+  }
+
+  /* Cover：进一步缩 */
+  .insight-cover {
+    padding: 14px;
+  }
+  .insight-cover h2 {
+    font-size: 20px;
+    line-height: 1.4;
+  }
+  .insight-cover .insight-cover-subtitle {
+    font-size: 14px;
+  }
+
+  /* Card */
+  .insight-card {
+    padding: 14px;
+  }
+  .insight-card h3 {
+    font-size: 16px;
+  }
+
+  /* Hero */
+  .insight-hero {
+    padding: 14px;
+  }
+  .insight-hero h3 {
+    font-size: 16px;
+  }
+
+  /* Callout */
+  .insight-callout {
+    padding: 12px 14px;
+  }
+
+  /* Key points：缩 bullet */
+  .insight-key-points .key-point-item {
+    padding: 8px 10px;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  .insight-key-points .key-point-bullet {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  /* Insight stack item */
+  .insight-insight-stack .stack-item {
+    padding: 10px 12px;
+  }
+  .insight-insight-stack .stack-item-title {
+    font-size: 14px;
+  }
+  .insight-insight-stack .stack-item-body {
+    font-size: 14px;
+  }
+
+  /* Item 字号收紧 */
+  .insight-item {
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .insight-item .item-title {
+    font-size: 14px;
+  }
+  .insight-item .item-body {
+    font-size: 14px;
+  }
+  .insight-risk-grid .insight-item {
+    padding: 10px 12px;
+  }
+  .insight-risk-grid .insight-item .item-title {
+    font-size: 14px;
+  }
+  .insight-risk-grid .insight-item .item-body {
+    font-size: 14px;
+  }
+
+  /* Action grid：margin-left 缩到 20px，给正文留出空间 */
+  .insight-action-grid .insight-item .item-body,
+  .insight-action-grid .insight-item .item-meta {
+    margin-left: 20px;
+  }
+  .insight-action-grid .insight-item .item-title {
+    font-size: 14px;
+    gap: 10px;
+  }
+  .insight-action-grid .insight-item .item-title .insight-action-inline {
+    font-size: 14px;
+  }
+
+  /* Compare */
+  .insight-compare {
+    padding: 12px 14px;
+  }
+  .insight-compare-grid .insight-compare .compare-label {
+    font-size: 16px;
+  }
+  .insight-compare-list,
+  .insight-compare .insight-richtext,
+  .insight-compare .insight-compare-desc {
+    font-size: 14px;
+  }
+
+  /* Flow：缩 padding */
+  .insight-flow {
+    padding: 10px;
+  }
+  .insight-flow-node {
+    padding: 10px 12px;
+  }
+  .insight-flow-node strong {
+    font-size: 14px;
+  }
+  .insight-flow-node p {
+    font-size: 14px;
+  }
+
+  /* Assumption claim / step */
+  .insight-assumption-claim {
+    padding: 10px 12px 10px 16px;
+  }
+  .insight-assumption-claim .claim-body {
+    font-size: 14px;
+  }
+  .insight-assumption-step {
+    padding: 8px 12px;
+  }
+  .insight-assumption-step .step-label {
+    font-size: 14px;
+  }
+  .insight-assumption-step .step-body {
+    font-size: 14px;
+  }
+  .insight-assumption-validation {
+    padding: 6px 10px;
+  }
+  .insight-assumption-validation .validation-text {
+    font-size: 13px;
+  }
+
+  /* Timeline：padding-left 进一步缩 */
+  .insight-timeline {
+    padding-left: 18px;
+  }
+  .insight-timeline-item::before {
+    left: -16px;
+  }
+  .insight-timeline .timeline-dot {
+    left: -18px;
+    width: 10px;
+    height: 10px;
+  }
+  .insight-timeline .timeline-date {
+    font-size: 13px;
+  }
+  .insight-timeline .timeline-title,
+  .insight-timeline .timeline-body {
+    font-size: 14px;
+  }
+
+  /* Closing */
+  .insight-closing {
+    padding: 14px 16px;
+  }
+  .insight-closing p {
+    font-size: 14px;
+  }
+
+  /* Long analysis */
+  .insight-long-analysis .la-intro,
+  .insight-long-analysis .la-section-body {
+    font-size: 14px;
+  }
+  .insight-long-analysis .la-section-label {
+    font-size: 13px;
+  }
+
+  /* Breakthrough */
+  .insight-breakthrough h3 {
+    font-size: 16px;
+  }
+  .insight-breakthrough .breakthrough-content {
+    font-size: 14px;
+  }
+
+  /* Highlight */
+  .insight-highlight {
+    font-size: 14px;
+  }
+
+  /* Richtext 字号收紧 */
+  .insight-richtext {
+    font-size: 14px;
+  }
+  .insight-richtext h4 {
+    font-size: 14px;
+  }
+  .insight-blockquote,
+  .insight-richtext blockquote {
+    font-size: 14px;
+  }
+
+  /* Table 字号收紧 */
+  .insight-table {
+    font-size: 13px;
+  }
+  .insight-table thead th {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+  .insight-table tbody td {
+    padding: 6px 10px;
+  }
+
+  /* Code block */
+  .insight-code-block {
+    font-size: 12px;
+    padding: 10px 12px;
+  }
+
+  /* Mermaid */
+  .insight-mermaid-flow .insight-flow-node {
+    padding: 8px 9px;
+    min-height: 50px;
+  }
+  .insight-mermaid-flow .insight-flow-node-title {
+    font-size: 11px;
+  }
+  .insight-mermaid-flow .insight-flow-node-body {
+    font-size: 10px;
+  }
+
+  .insight-mermaid-sequence svg {
+    font-size: 13px;
+  }
+
+  .insight-mermaid-pie-body {
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .insight-mermaid-pie-legend {
+    flex-basis: auto;
+    width: 100%;
+    max-width: none;
+  }
+
+  .insight-mermaid-gantt-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .insight-mermaid-gantt-label {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .insight-mermaid-gantt-track {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .insight-mermaid-gantt-date {
+    flex: 1 1 100%;
+    text-align: right;
+  }
+
+  .insight-mermaid-timeline-list {
+    padding-left: 10px;
+  }
+  .insight-mermaid-timeline-event::before {
+    left: -16px;
+    width: 7px;
+    height: 7px;
+  }
+  .insight-mermaid-timeline-time {
+    font-size: 11.5px;
+  }
+  .insight-mermaid-timeline-item {
+    font-size: 11.5px;
+  }
+
+  .insight-mermaid-viewport {
+    margin: 4px 0 -4px;
+    padding: 0 0 4px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  /* flow 容器在窄屏允许超出视口宽度，由 viewport 提供横向滚动条 */
+  .insight-mermaid-flow {
+    min-width: 100%;
+  }
+}

@@ -94,11 +94,17 @@ func GetPrompts(c *gin.Context) {
 	}
 
 	var userId int64
+	var visibleGroupIDs []int64
 	eid := config.GetEID(c)
 	user, err := model.GetLoginUser(c)
 	if err == nil {
 		userId = user.UserID
 		eid = user.Eid
+		visibleGroupIDs, err = user.GetUserGroupIds()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
 	}
 
 	status := -1
@@ -142,6 +148,7 @@ func GetPrompts(c *gin.Context) {
 		status,
 		promptListRequest.Offset,
 		promptListRequest.Limit,
+		visibleGroupIDs,
 	)
 
 	if err != nil {
@@ -350,6 +357,17 @@ func GetPrompt(c *gin.Context) {
 	if prompt.Eid != eid {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
 		return
+	}
+	if user != nil {
+		accessible, accessErr := service.CheckResourceScopeAccess(user.UserID, eid, int64(prompt.PromptID), model.ResourceTypePrompt)
+		if accessErr != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
+		if !accessible {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+			return
+		}
 	}
 
 	// 加载提示词的分组信息

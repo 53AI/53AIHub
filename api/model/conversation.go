@@ -191,7 +191,7 @@ func GetConversationsByUserIDAndTypeWithVisitor(eid, userID, agentID int64, conv
 	return conversations, nil
 }
 
-func GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID int64, convType int, visitorID string, offset, limit int) ([]*Conversation, int64, error) {
+func GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID int64, convType int, visitorID string, keyword string, offset, limit int) ([]*Conversation, int64, error) {
 	query := DB.Where("eid = ? AND user_id = ?", eid, userID)
 	query = applyVisitorConversationScope(query, visitorID)
 	if convType >= 0 {
@@ -199,6 +199,9 @@ func GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID int64,
 	}
 	if agentID > 0 {
 		query = query.Where("agent_id = ?", agentID)
+	}
+	if keyword != "" {
+		query = query.Where("title LIKE ?", "%"+keyword+"%")
 	}
 
 	var total int64

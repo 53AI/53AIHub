@@ -272,16 +272,26 @@
   align-items: center;
   gap: 8px;
   height: 32px;
+  max-width: 100%;
   padding: 0 8px;
   border-radius: 16px;
   background-color: #F3F4F6;
   color: #373A3D;
   font-size: 14px;
   margin-bottom: 8px;
+  overflow: hidden;
   cursor: pointer;
 }
 
+.x-task-tag-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .x-task-tag-icon {
+  flex: 0 0 16px;
   width: 16px;
   height: 16px;
   display: flex;

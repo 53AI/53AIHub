@@ -32,6 +32,8 @@ export function shouldBubbleAssistantSkipRender(
     prev.content === next.content &&
     prev.streaming === next.streaming &&
     prev.reasoning === next.reasoning &&
+    prev.reasoningExpanded === next.reasoningExpanded &&
+    prev.showReasoning === next.showReasoning &&
     prev.showError === next.showError &&
     prev.alwaysShowMenu === next.alwaysShowMenu &&
     suggestionsEqual &&

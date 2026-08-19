@@ -24,7 +24,9 @@ export function LegacyLinkList({ links = [], onRemove, collapsed, onToggleCollap
     >
       {links.map((link: MentionLinkItem) => (
         <LinkChip
-          key={link.id}
+          // 复合 key:跨 dialog source(knowledge/uploads/recordings 等)允许同一文件 ID 并存,
+          // 只用 link.id 会让 React 报 duplicate key。fallback 到 id 保证 source 缺失时也唯一。
+          key={`${link.source ?? ''}::${link.id}`}
           icon={link.icon ? <img src={link.icon} className="size-4" alt="" /> : null}
           name={link.name}
           onRemove={() => onRemove(link)}

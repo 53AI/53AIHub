@@ -23,8 +23,13 @@ import (
 	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
-// RecordingAudioFormats 录音功能支持的音频格式（浏览器/移动端上传录音文件）
-var RecordingAudioFormats = []string{".m4a", ".mp3", ".wav", ".aac", ".flac", ".opus"}
+// RecordingAudioFormats 录音功能支持的音频格式（浏览器/移动端上传录音文件 + DashScope fun-asr 离线转写支持列表）。
+// 与阿里云百炼 fun-asr 官方支持格式对齐：aac amr avi flac flv m4a mkv mov mp3 mp4 mpeg ogg opus wav webm wma wmv。
+var RecordingAudioFormats = []string{
+	".m4a", ".mp3", ".wav", ".aac", ".flac", ".opus",
+	".amr", ".ogg", ".mpeg", ".webm", ".wma", ".wmv",
+	".avi", ".mkv", ".mov", ".mp4", ".flv",
+}
 
 var createRagJobsForFile = func(ctx context.Context, eid, fileID int64, paramsJSON string) ([]*model.RagJob, error) {
 	factory := GetRagJobFactoryV2()
@@ -664,15 +669,9 @@ func (fp *FileProcessor) createUploadFileRecordFromTask(task *UploadTask) (*mode
 		return existingUploadFile, nil
 	}
 
-	// 重置临时文件指针到开头准备读取内容
+	// 重置临时文件指针到开头准备存储
 	if _, err := tempFile.Seek(0, 0); err != nil {
 		return nil, fmt.Errorf("重置临时文件指针失败: %v", err)
-	}
-
-	// 读取临时文件内容用于存储
-	fileContent, err := io.ReadAll(tempFile)
-	if err != nil {
-		return nil, fmt.Errorf("读取临时文件内容失败: %v", err)
 	}
 
 	extension := filepath.Ext(task.FileHeader.Filename)
@@ -683,9 +682,8 @@ func (fp *FileProcessor) createUploadFileRecordFromTask(task *UploadTask) (*mode
 
 	key := model.GetFileKey(previewKey, task.EID, task.UserID)
 
-	// 存储文件
-	err = storage.StorageInstance.Save(fileContent, key)
-	if err != nil {
+	// 存储文件（流式：直接从临时文件上传存储，避免大文件全量读入内存导致 OOM/超时）
+	if err := storage.StorageInstance.SaveFromReader(tempFile, key); err != nil {
 		return nil, fmt.Errorf("存储文件失败: %v", err)
 	}
 

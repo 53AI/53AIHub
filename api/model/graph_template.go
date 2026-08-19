@@ -30,8 +30,8 @@ type RelationDefinition struct {
 // GraphTemplate 图谱模板表
 type GraphTemplate struct {
 	ID          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Eid         int64  `json:"eid" gorm:"not null;index;uniqueIndex:idx_eid_name,priority:1"`
-	Name        string `json:"name" gorm:"size:100;not null;uniqueIndex:idx_eid_name,priority:2"`
+	Eid         int64  `json:"eid" gorm:"not null;index;uniqueIndex:idx_graph_templates_eid_name,priority:1"`
+	Name        string `json:"name" gorm:"size:100;not null;uniqueIndex:idx_graph_templates_eid_name,priority:2"`
 	Description string `json:"description" gorm:"size:500"`
 	Logo        string `json:"logo" gorm:"size:255;default:'';comment:模板图标URL"`
 

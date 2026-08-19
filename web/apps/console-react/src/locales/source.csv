@@ -475,7 +475,7 @@ data_pipeline.chunk_common_newline2,2 个换行符（\n\n）,2 個換行符（\n
 data_pipeline.chunk_common_period,句号（。）,句號（。）,Period (.),句点（。）
 data_pipeline.chunk_common_question,问号（？）,問號（？）,Question mark (?),疑問符（？）
 data_pipeline.chunk_common_semicolon,分号（；）,分號（；）,Semicolon (;),セミコロン（；）
-data_pipeline.chunk_custom,自定义拆分,自定義拆分,Custom Split,カスタム分割
+data_pipeline.chunk_custom,自定义,自定義,Custom,カスタム
 data_pipeline.chunk_default,默认,默認,Default,デフォルト
 data_pipeline.chunk_default_index,默认索引,默認索引,Default Index,デフォルト索引
 data_pipeline.chunk_faq,常见问法,常見問法,FAQ,よくある質問
@@ -488,7 +488,9 @@ data_pipeline.chunk_identifier,标识符,標識符,Identifier,識別子
 data_pipeline.chunk_identifier_first,标识符优先,標識符優先,Identifier First,識別子優先
 data_pipeline.chunk_index_enhance,索引增强,索引增強,Index Enhancement,索引強化
 data_pipeline.chunk_knowledge_point,知识点,知識點,Knowledge Point,知識ポイント
-data_pipeline.chunk_length,长度,長度,Length,長さ
+data_pipeline.chunk_length,切片长度,切片長度,Chunk Length,チャンク長さ
+data_pipeline.chunk_by_page,按页,按頁,By Page,ページごと
+data_pipeline.chunk_overlap,切片重叠,切片重疊,Chunk Overlap,チャンクオーバーラップ
 data_pipeline.chunk_length_first,长度优先,長度優先,Length First,長さ優先
 data_pipeline.chunk_none,整篇,整篇,Whole Document,全文
 data_pipeline.chunk_recall_metadata,召回语料,召回語料,Recall Metadata,検索メタデータ
@@ -1016,6 +1018,8 @@ module.dialogue_prompt,提示词,提示詞,Prompts,プロンプト
 module.document-setting,文档设置,文檔設定,Document Settings,文書設定
 module.document_app,文档应用,文檔應用,Document Application,文書アプリケーション
 module.document_assistant,文档助手,文檔助手,Document Assistant,文書助手
+module.staff_insight,参谋洞察,參謀洞察,Staff Insight,参謀インサイト
+module.staff_insight_desc,自定义业务背景信息，定向生成深度文档洞察分析报告,自定義業務背景資訊，定向生成深度文檔洞察分析報告,Customize business context and generate in-depth document insight reports,業務背景情報をカスタマイズし、深度のある文書インサイトレポートを生成します
 module.search_desc,通过智能问答与文档交互，快速获取信息、处理文档，让知识检索与内容交互更高效。,通過智能問答與文件交互，快速獲取信息、處理文件，讓知識檢索與內容交互更高效。,"Through intelligent Q\&A and document interaction, quickly acquire information and process documents, making knowledge retrieval and content interaction more efficient.",スマートQAとドキュメントとのインタラクションを通じて、迅速に情報を取得し、ドキュメントを処理し、知識検索とコンテンツのインタラクションをより効率的に行います。
 module.document_assistant_desc,文档互动与提问，支持将高频使用场景配置为快捷指令，大幅提升文档处理与信息查询效率,文檔互動與提問，支持將高頻使用場景配置為快捷指令，大幅提升文檔處理與信息查詢效率,"Document interaction and question, support configuring high-frequency usage scenarios as shortcut commands, greatly improving document processing and information query efficiency",文書互動と質問、高頻使用シーンをショートカットコマンドに設定して、文書処理と情報検索効率を大幅に向上させます
 module.document_map,知识地图,知識地圖,Knowledge Map,知識地図
@@ -1051,6 +1055,14 @@ module.domain_independent_ssl_private_key,私钥,私鑰,Private Key,秘密鍵
 module.domain_independent_ssl_private_key_placeholder,请将证书私钥复制后粘贴到这里,請將證書私鑰複製後粘貼到這裡,Please copy and paste the private key here,秘密鍵の内容をコピーして貼り付けてください
 module.draft,智能方案,智能方案,intelligent Solutions,インテリジェントプラン
 module.enterprise_info,企业信息,企業信息,Enterprise Information,企業情報
+module.enterprise_info_full_name,企业全称,企業全稱,Enterprise Full Name,企業正式名称
+module.enterprise_info_full_name_placeholder,请输入企业全称,請輸入企業全稱,Please enter enterprise full name,企業正式名称を入力してください
+module.enterprise_info_intro,企业介绍,企業介紹,Enterprise Introduction,企業紹介
+module.enterprise_info_intro_placeholder,请输入企业介绍,請輸入企業介紹,Please enter enterprise introduction,企業紹介を入力してください
+module.enterprise_info_industry,所属行业,所屬行業,Industry,業種
+module.enterprise_info_industry_placeholder,请选择所属行业,請選擇所屬行業,Please select industry,業種を選択してください
+module.enterprise_info_short_name,企业简称,企業簡稱,Enterprise Short Name,企業略称
+module.enterprise_info_short_name_placeholder,请输入企业简称,請輸入企業簡稱,Please enter enterprise short name,企業略称を入力してください
 module.feature_not_available,{functionName}暂不可用，请联系管理员~~,{functionName}暫不可用，請聯繫管理員~~,"{functionName} is not available, please contact the administrator~~",{functionName}は現在利用できません。管理者にお問い合わせください~~
 module.feature_over_limit,{functionName}数量已达上限，请联系管理员~~,{functionName}數量已達上限，請聯繫管理員~~,"{functionName} has reached the upper limit, please contact the administrator~~",{functionName}の数が上限に達しました。管理者にお問い合わせください~~
 module.feedback,问答反馈,問答反饋,Question and Answer Feedback,問答フィードバック
@@ -1064,6 +1076,26 @@ module.homepage,首页,首頁,Homepage,ホームページ
 module.hybrid_search,混合检索,混合檢索,Hybrid Search,混合検索
 module.hybrid_search_desc,同时执行向量检索和全文检索，通过Rerank模型（必须启用）进行重新排序，匹配用户问题的最佳结果,同時執行向量檢索和全文檢索，通過Rerank模型（必須啟用）進行重新排序，匹配用戶問題的最佳結果,"Execute vector search and fulltext search simultaneously, rerank the results using the Rerank model (must be enabled) to match the best result for the user's question",ベクトル検索と全文検索を同時に実行し、Rerankモデル（必須有効）を使用して再順序付けし、ユーザーの問題に最も適した結果を選択します
 module.icp_license,备案信息,備案資訊,Filing Information,登録情報
+module.industry_agriculture,农、林、牧、渔业,農、林、牧、漁業,Agriculture/Forestry/Animal Husbandry/Fishery,農業、林業、牧畜業、漁業
+module.industry_construction,建筑业,建築業,Construction,建設業
+module.industry_culture_sports,文化、体育和娱乐业,文化、體育和娛樂業,Culture/Sports/Entertainment,文化、スポーツ、娯楽業
+module.industry_education,教育,教育,Education,教育
+module.industry_energy,电力、热力、燃气及水生产和供应业,電力、熱力、燃氣及水生產和供應業,"Electricity/Heat/Gas/Water Production & Supply",電力・熱力・ガス・水道の生産・供給業
+module.industry_finance,金融业,金融業,Finance,金融業
+module.industry_health_social,卫生和社会工作,衛生和社會工作,Health & Social Work,衛生・社会福祉業
+module.industry_hospitality,住宿和餐饮业,住宿和餐飲業,Accommodation & Catering,宿泊・飲食サービス業
+module.industry_information_technology,信息传输、软件和信息技术服务业,信息傳輸、軟件和信息技術服務業,Information Transmission/Software/IT Services,情報伝送・ソフトウェア・ITサービス業
+module.industry_international_organizations,国际组织,國際組織,International Organizations,国際機関
+module.industry_leasing_services,租赁和商务服务业,租賃和商務服務業,Leasing & Business Services,リース・ビジネスサービス業
+module.industry_manufacturing,制造业,製造業,Manufacturing,製造業
+module.industry_mining,采矿业,採礦業,Mining,鉱業
+module.industry_public_administration,公共管理、社会保障和社会组织,公共管理、社會保障和社會組織,Public Administration/Social Security/Social Organizations,公共管理・社会保障・社会組織
+module.industry_real_estate,房地产业,房地產業,Real Estate,不動産業
+module.industry_resident_services,居民服务、修理和其他服务业,居民服務、修理和其他服務業,Resident Services/Repair & Other Services,住民サービス・修理等サービス業
+module.industry_science_technology,科学研究和技术服务业,科學研究和技術服務業,Scientific Research & Technical Services,科学研究・技術サービス業
+module.industry_transportation,交通运输、仓储和邮政业,交通運輸、倉儲和郵政業,Transportation/Warehousing/Postal Services,運輸・倉庫・郵便業
+module.industry_water_environment,水利、环境和公共设施管理业,水利、環境和公共設施管理業,Water/Environment/Public Facilities Management,水利・環境・公共施設管理業
+module.industry_wholesale_retail,批发和零售业,批發和零售業,Wholesale & Retail,卸売・小売業
 module.knowledge,知识管理,知識管理,Knowledge management,知識管理
 module.knowledge_library_search,知识库搜索,知識庫檢索,Knowledge Library Search,知識庫検索
 module.knowledge_space,知识库,知識庫,Knowledge Base,知識庫
@@ -1084,6 +1116,7 @@ module.nav_seo_setting_keywords,Keywords,SEO Keywords,SEO Keywords,SEOキーワ�
 module.nav_seo_setting_keywords_tip,每个关键词请用英文逗号隔开,每個關鍵詞請用英文逗號隔開,Separate each keyword with commas,"キーワードは英語のカンマ（,）で区切ってください"
 module.nav_seo_setting_title,Title,SEO Title,SEO Title,SEOタイトル
 module.nav_custom_path_blacklist_tip,自定义页跳转地址不能使用保留路径（如 console）,自定義頁跳轉地址不能使用保留路徑（如 console）,Custom page path cannot use reserved paths (e.g. console),カスタムページのパスは予約パス（例: console）は使用できません
+module.nav_custom_path_must_start_slash,自定义页跳转地址必须以 / 开头（如 /my-page）,自定義頁跳轉地址必須以 / 開頭（如 /my-page）,Custom page path must start with / (e.g. /my-page),カスタムページのパスは / で始める必要があります（例: /my-page）
 module.nav_target,打开方式,打開方式,Open mode,開き方
 module.nav_target_blank,新窗口,新窗口,New Window,新しいウィンドウ
 module.nav_target_self,原窗口,原窗口,Current Window,同じウィンドウ
@@ -2153,6 +2186,18 @@ recording.template.prompt_label,指令,指令,Prompt,指示
 recording.template.prompt_required,请输入指令,請輸入指令,Please enter prompt,指示を入力してください
 recording.template.prompt_placeholder,请输入指令,請輸入指令,Please enter prompt,指示を入力してください
 recording.template.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,保存されていない変更があります。離れますか？
+recording.agent_app_toggle_desc,开启后对会议总结提供文档应用能力,開啟後對會議總結提供文檔應用能力,Enable Document Application for meeting summaries,会議サマリーに文書アプリを有効にします
+recording.multi_perspective,自动视角,自動視角,Automatic perspective,自動視点
+recording.multi_perspective_desc,开启后，用户未指定视角时将根据录音纪要自动判断培训、演讲、路演、拜访等分析视角,開啟後，使用者未指定視角時將根據錄音紀要自動判斷培訓、演講、路演、拜訪等分析視角,When enabled, recordings without a user-selected perspective are automatically classified from the minutes,自動視点を有効にすると、ユーザーが視点を指定していない録音を議事録から自動分類します
+recording.history_memory,历史记忆,歷史記憶,Historical Memory,履歴メモリ
+recording.history_memory_desc,从录音转写中抽取历史记忆数据,開啟後從錄音轉寫中抽取歷史記憶數據,Extract historical memory from recordings transcriptions,録音の文字起こしから履歴メモリを抽出します
+recording.memory_type.person,人物,人物,Person,人物
+recording.memory_type.matter,事项,事項,Matter,事項
+recording.memory_type.commitment,承诺,承諾,Commitment,コミットメント
+recording.memory_type.principle,原则,原則,Principle,原則
+recording.memory_type.red_line,红线,紅線,Red Line,レッドライン
+recording.memory_type.disagreement,分歧,分歧,Disagreement,意見の相違
+recording.memory_type.risk,风险,風險,Risk,リスク
 integrate.secret_key_limit,SECRET_KEY 数量已达上限，最多只能创建 10 个,SECRET_KEY 數量已達上限，最多隻能創建 10 個,SECRET_KEY limit reached, you can create at most 10,SECRET_KEY数の上限に達しました。最大10個までしか作成できません
 integrate.delete_api_key_confirm,删除后外部系统将无法继续调用该Agent，确定要删除吗？,刪除後外部系統將無法繼續調用該Agent，確定要刪除嗎？,After deletion, the external system will not be able to call this Agent. Are you sure to delete it?,削除後、外部システムはエージェントの呼び出しができなくなります。削除してもよろしいですか？
 integrate.var_key,变量KEY,變量KEY,Variable KEY,変数KEY

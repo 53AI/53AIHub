@@ -120,7 +120,6 @@ export function PreviewPanel({ file, content, loading, onBack, onCommand, onEdit
         icon="more-h"
         iconSize={16}
         tooltip={t('action.more')}
-        backgroundColor="#F0F0F0"
         items={menuItems}
         onCommand={onCommand}
       />

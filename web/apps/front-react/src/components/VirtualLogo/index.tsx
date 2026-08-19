@@ -19,6 +19,8 @@ interface VirtualLogoProps {
   size?: number | string
   realSize?: number | string
   text?: string
+  /** 文字颜色（默认 #07C160） */
+  textColor?: string
   round?: number | string
   realRound?: number | string
   border?: boolean
@@ -42,6 +44,7 @@ export const VirtualLogo = forwardRef<VirtualLogoRef, VirtualLogoProps>(
       borderWidth = 1,
       realBorderWidth = 1,
       backgroundColor = '#FCFFFE',
+      textColor = '#07C160',
       src = '',
     },
     ref
@@ -55,8 +58,6 @@ export const VirtualLogo = forwardRef<VirtualLogoRef, VirtualLogoProps>(
         ? Array.from(trimmedText)[0].toUpperCase()
         : Array.from(trimmedText)[0]
       : '-'
-
-    const textColor = '#07C160'
 
     const sizeCss = typeof size === 'number' ? `${size}px` : size
     const fontSizeCss =

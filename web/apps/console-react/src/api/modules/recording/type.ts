@@ -2,6 +2,34 @@
  * 录音管理后台相关类型定义
  */
 
+/**
+ * 历史记忆抽取实体类型
+ * 与后端 /api/recordings/memories/schema 返回的 entity_type 对齐：
+ * 仅保留人物/事项/原则/风险 4 类，Commitment/RedLine/Disagreement 已下线。
+ *
+ * 存储层使用首字母大写形式（与历史 config 兼容），前端通过小写 schema key 映射回来。
+ */
+export type MemoryExtractionType = "Person" | "Matter" | "Principle" | "Risk";
+
+/** 历史记忆抽取配置 */
+export interface MemoryExtractionConfig {
+  enabled: boolean;
+  types: MemoryExtractionType[];
+}
+
+/** 历史记忆抽取类型 → 中文 label 映射（来自 schema） */
+export type MemoryExtractionLabels = Partial<Record<MemoryExtractionType, string>>;
+
+/**
+ * schema 端 entity_type → 中文 label（小写 key，跟接口契约一致）。
+ * 这里只关心 label，不关心 attributes —— 历史记忆设置面板只用到类型名。
+ */
+export interface MemoryEntityTypeSchema {
+  label: string;
+}
+
+export type MemoryEntityTypeSchemas = Record<string, MemoryEntityTypeSchema>;
+
 /** 录音配置 */
 export interface RecordingConfig {
   enabled: boolean;
@@ -10,6 +38,10 @@ export interface RecordingConfig {
   voice_model_name: string;
   inference_model_id: number;
   inference_model_name: string;
+  recording_agent_enabled?: boolean;
+  multi_perspective_enabled?: boolean;
+  insight_regenerate_enabled?: boolean;
+  memory_extraction?: MemoryExtractionConfig;
 }
 
 /** 更新录音配置请求体 */
@@ -20,6 +52,10 @@ export interface UpdateRecordingConfigRequest {
   voice_model_name?: string;
   inference_model_id?: number;
   inference_model_name?: string;
+  recording_agent_enabled?: boolean;
+  multi_perspective_enabled?: boolean;
+  insight_regenerate_enabled?: boolean;
+  memory_extraction?: MemoryExtractionConfig;
 }
 
 /** 模板项 */

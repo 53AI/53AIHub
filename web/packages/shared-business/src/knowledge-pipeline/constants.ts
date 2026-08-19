@@ -10,7 +10,7 @@ export const NODE_ICONS_MAP: Record<string, string> = {
   summary_generation: 'notes',
   document_chunking: 'split-cells',
   vector_indexing: 'clue',
-  graph_generation: 'six-points',
+  graph_generation: 'six-points'
 }
 
 /**
@@ -23,7 +23,7 @@ export const STEP_KEY_TO_NAME_I18N_KEY: Record<string, string> = {
   summary_generation: 'data_pipeline.node_summary_generation',
   document_chunking: 'data_pipeline.node_document_chunking',
   vector_indexing: 'data_pipeline.node_vector_indexing',
-  graph_generation: 'data_pipeline.node_graph_generation',
+  graph_generation: 'data_pipeline.node_graph_generation'
 }
 
 /**
@@ -36,7 +36,7 @@ export const STEP_KEY_TO_DESCRIPTION_I18N_KEY: Record<string, string> = {
   summary_generation: 'data_pipeline.node_desc_summary_generation',
   document_chunking: 'data_pipeline.node_desc_document_chunking',
   vector_indexing: 'data_pipeline.node_desc_vector_indexing',
-  graph_generation: 'data_pipeline.node_desc_graph_generation',
+  graph_generation: 'data_pipeline.node_desc_graph_generation'
 }
 
 /**
@@ -46,10 +46,11 @@ export const STEP_KEY_TO_DESCRIPTION_I18N_KEY: Record<string, string> = {
  */
 export const LIST_DISPLAY_NODE_TYPES = [
   'document_parsing',
+  'content_cleaning',
   // 'summary_generation', // TODO: 暂时隐藏
   'document_chunking',
   'vector_indexing',
-  'graph_generation',
+  'graph_generation'
 ]
 
 /**
@@ -64,8 +65,25 @@ export const DEFAULT_PIPELINE_STEP: PipelineNode[] = [
     description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.document_parsing,
     config: {
       engine: 'markitdown',
-      enable_smart_match: false,
-    },
+      enable_smart_match: false
+    }
+  },
+  {
+    step_key: 'content_cleaning',
+    run_mode: 'auto',
+    name: STEP_KEY_TO_NAME_I18N_KEY.content_cleaning,
+    description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.content_cleaning,
+    config: {
+      remove_invalid_tags: true,
+      typo_correction: true,
+      grammar_correction: true,
+      format_correction: false,
+      ocr_correction: false,
+      formula_restoration: false,
+      sensitive_mask: { enabled: false, fields: ['姓名', '手机号'] },
+      glossary: { enabled: false, items: [] },
+      custom_prompt: { enabled: false, content: '' }
+    }
   },
   {
     step_key: 'document_chunking',
@@ -84,32 +102,34 @@ export const DEFAULT_PIPELINE_STEP: PipelineNode[] = [
         append_filename: true,
         append_title: true,
         append_subtitle: true,
+        overlap_size: 80
       },
       child_chunk: {
         mode: 'custom',
         strategy: 'length',
         identifier_level: 'h3',
         max_length: 512,
+        overlap_size: 20
       },
       index_enhancement: {
         metadata_injection: {
           append_filename: true,
           append_title: true,
-          append_subtitle: true,
+          append_subtitle: true
         },
         generative_enhancement: {
           generate_summary: true,
-          generate_faq: true,
-        },
-      },
-    },
+          generate_faq: true
+        }
+      }
+    }
   },
   {
     step_key: 'vector_indexing',
     run_mode: 'auto',
     name: STEP_KEY_TO_NAME_I18N_KEY.vector_indexing,
     description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.vector_indexing,
-    config: {},
+    config: {}
   },
   // {
   //   step_key: 'summary_generation',
@@ -127,8 +147,8 @@ export const DEFAULT_PIPELINE_STEP: PipelineNode[] = [
     run_mode: 'skip',
     name: STEP_KEY_TO_NAME_I18N_KEY.graph_generation,
     description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.graph_generation,
-    config: { graph_template_id: '', enable_smart_match: true, enable_smart_generation: true },
-  },
+    config: { graph_template_id: '', enable_smart_match: true, enable_smart_generation: true }
+  }
 ]
 
 /**
@@ -140,27 +160,27 @@ export const createNewPipeline = (): Pipeline => ({
   icon: '',
   created_at: new Date().toLocaleString(),
   profile_json: {
-    steps: JSON.parse(JSON.stringify(DEFAULT_PIPELINE_STEP)),
+    steps: JSON.parse(JSON.stringify(DEFAULT_PIPELINE_STEP))
   },
-  stats: { total: 0, success_rate: 0 },
+  stats: { total: 0, success_rate: 0 }
 })
 
 // Chunk config constants
 export const CHUNK_TYPE_OPTIONS = [
   { value: 'default', label: 'data_pipeline.chunk_type_default' },
   { value: 'semantic', label: 'data_pipeline.chunk_type_semantic' },
-  { value: 'recursive', label: 'data_pipeline.chunk_type_recursive' },
+  { value: 'recursive', label: 'data_pipeline.chunk_type_recursive' }
 ]
 
 export const SPLIT_TYPE_OPTIONS = [
   { value: 'identifier', label: 'data_pipeline.split_type_identifier' },
-  { value: 'length', label: 'data_pipeline.split_type_length' },
+  { value: 'length', label: 'data_pipeline.split_type_length' }
 ]
 
 export const IDENTIFIER_LEVEL_OPTIONS = [
   { value: 'h1', label: 'data_pipeline.identifier_h1' },
   { value: 'h2', label: 'data_pipeline.identifier_h2' },
-  { value: 'h3', label: 'data_pipeline.identifier_h3' },
+  { value: 'h3', label: 'data_pipeline.identifier_h3' }
 ]
 
 // Escape character map for special characters in clean config
@@ -168,12 +188,12 @@ export const ESCAPE_MAP: Record<string, string> = {
   '\\n': '\n',
   '\\r': '\r',
   '\\t': '\t',
-  '\\s': ' ',
+  '\\s': ' '
 }
 
 export const REVERSE_ESCAPE_MAP: Record<string, string> = {
   '\n': '\\n',
   '\r': '\\r',
   '\t': '\\t',
-  ' ': '\\s',
+  ' ': '\\s'
 }

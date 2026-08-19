@@ -512,7 +512,12 @@ func executeSandboxRuntimeReadFile(ctx context.Context, args map[string]interfac
 	if len(data) == 0 {
 		return &ToolResult{Output: "(Empty file)", ExitCode: 0}, nil
 	}
-	return &ToolResult{Output: paginateReadFileContent(string(data), args), ExitCode: 0}, nil
+	page := buildReadFilePageWithContinuation(string(data), args, agentSuccessRateFeatureFlagsFromContext(ctx).ReadContinuation)
+	result := &ToolResult{Output: page.Output, ExitCode: 0}
+	if agentSuccessRateFeatureFlagsFromContext(ctx).ReadContinuation {
+		result.Meta = page.Meta()
+	}
+	return result, nil
 }
 
 func executeSandboxRuntimeWriteFile(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
@@ -576,6 +581,9 @@ func executeSandboxRuntimeWriteFileWithPathNormalizer(ctx context.Context, args 
 }
 
 func executeSandboxRuntimeEditFile(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
+	if agentSuccessRateFeatureFlagsFromContext(ctx).EditV2 {
+		return executeSandboxRuntimeEditFileV2(ctx, args)
+	}
 	path, ok := args["path"].(string)
 	if !ok || strings.TrimSpace(path) == "" {
 		return nil, fmt.Errorf("missing path argument")
@@ -644,6 +652,65 @@ func executeSandboxRuntimeEditFile(ctx context.Context, args map[string]interfac
 	}, nil
 }
 
+func executeSandboxRuntimeEditFileV2(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
+	path, ok := args["path"].(string)
+	if !ok || strings.TrimSpace(path) == "" {
+		return nil, fmt.Errorf("missing path argument")
+	}
+	path, err := normalizeSandboxWorkspacePath(path)
+	if err != nil {
+		return nil, err
+	}
+	features := agentSuccessRateFeatureFlagsFromContext(ctx)
+	operations, err := parseEditV2OperationsWithBatch(args, features.EditBatch)
+	if err != nil {
+		return nil, err
+	}
+	session, err := runtimeSessionForContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rt, err := getSandboxRuntime()
+	if err != nil {
+		return nil, err
+	}
+	data, err := rt.ReadFile(ctx, session, path, 0)
+	if err != nil {
+		return nil, err
+	}
+	originalContent := string(data)
+	spans, matchMode, err := buildEditV2SpansForContentWithNormalizedMatch(originalContent, operations, features.EditNormalizedMatch)
+	if err != nil {
+		return nil, err
+	}
+	newContent := applyEditV2Spans(originalContent, spans)
+	if newContent == originalContent {
+		return nil, fmt.Errorf("EDIT_NO_CHANGE: edits do not change file content")
+	}
+	written := sandboxruntime.FileObject{Path: path, Data: []byte(newContent)}
+	if err := rt.WriteFiles(ctx, session, []sandboxruntime.FileObject{written}); err != nil {
+		return nil, err
+	}
+	if err := formatSandboxRuntimeWrittenFiles(ctx, rt, session, []sandboxruntime.FileObject{written}); err != nil {
+		return nil, err
+	}
+	if err := validateSandboxRuntimeWrittenFiles(ctx, rt, session, []sandboxruntime.FileObject{written}); err != nil {
+		return nil, err
+	}
+	prevSnapshot := loadSandboxOutputSnapshot(ctx)
+	outputFiles, currentSnapshot, collectErr := collectRuntimeOutputFiles(ctx, session, prevSnapshot)
+	if collectErr != nil {
+		return nil, collectErr
+	}
+	rememberSandboxOutputSnapshot(ctx, currentSnapshot)
+	return &ToolResult{
+		Output:      fmt.Sprintf("Edited %s (%d replacement(s), atomic batch)", path, len(spans)),
+		ExitCode:    0,
+		OutputFiles: outputFiles,
+		Meta:        map[string]interface{}{"edit_count": len(operations), "match_mode": matchMode},
+	}, nil
+}
+
 func executeSandboxRuntimeListFiles(ctx context.Context, args map[string]interface{}) (*ToolResult, error) {
 	path := "."
 	if v, exists := args["path"]; exists {
@@ -706,6 +773,9 @@ func getSandboxRuntimeResultWithStream(ctx context.Context, session *sandboxrunt
 		Output:   formatCommandResult(res.Stdout, res.Stderr, res.ExitCode),
 		Stderr:   res.Stderr,
 		ExitCode: res.ExitCode,
+	}
+	if agentSuccessRateFeatureFlagsFromContext(ctx).ShellOutputV2 {
+		result.Output, result.Meta = shapeShellOutput(res.Stdout, res.Stderr, res.ExitCode)
 	}
 	if runErr != nil {
 		return result, runErr

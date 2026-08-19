@@ -16,6 +16,8 @@ import (
 )
 
 const (
+	SiliconFlowBaseURL  = "https://api.siliconflow.cn"
+	SiliconFlowEndpoint = "/v1/rerank"
 
 	BaiduQianfanBaseURL  = "https://qianfan.baidubce.com"
 	BaiduQianfanEndpoint = "/v2/rerank"
@@ -88,6 +90,8 @@ type OpenAIService struct{}
 // BailianRerankService 处理百炼 rerank API 调用的服务
 type BailianRerankService struct{}
 
+// SiliconFlowRerankService 处理硅基流动 rerank API 调用的服务
+type SiliconFlowRerankService struct{}
 
 // BaiduQianfanRerankService 处理百度千帆 rerank API 调用的服务
 type BaiduQianfanRerankService struct{}
@@ -182,7 +186,90 @@ func commonAPICall(ctx context.Context, req *RerankRequest, meta *meta.Meta,
 	// 根据平台类型解析响应
 
 	switch platformName {
+	case "硅基流动":
+		var siliconFlowResp struct {
+			Id      string `json:"id"`
+			Object  string `json:"object"`
+			Created int64  `json:"created"`
+			Model   string `json:"model"`
+			Results []struct {
+				Document *struct {
+					Text string `json:"text"`
+				} `json:"document"`
+				Index          int     `json:"index"`
+				RelevanceScore float64 `json:"relevance_score"`
+			} `json:"results"`
+			Meta interface{} `json:"meta"`
+		}
 
+		if err := json.Unmarshal(respBody, &siliconFlowResp); err != nil {
+			logger.SysErrorf("❌ 解析硅基流动Rerank响应失败: %v", err)
+			return nil, nil, fmt.Errorf("解析响应失败: %v", err)
+		}
+
+		openaiResp.Data = make([]RerankResult, len(siliconFlowResp.Results))
+		for i, result := range siliconFlowResp.Results {
+			openaiResult := RerankResult{
+				Object:         "rerank_result",
+				Index:          result.Index,
+				RelevanceScore: result.RelevanceScore,
+			}
+
+			if req.ReturnDocuments != nil && *req.ReturnDocuments {
+				if result.Document != nil {
+					openaiResult.Document = &RerankDocument{
+						Text: result.Document.Text,
+					}
+				}
+			} else if req.ReturnDocuments == nil {
+				if result.Document != nil {
+					openaiResult.Document = &RerankDocument{
+						Text: result.Document.Text,
+					}
+				}
+			}
+
+			openaiResp.Data[i] = openaiResult
+		}
+
+		// 从 meta 中提取 token 信息
+		totalTokens := 0
+		if metaMap, ok := siliconFlowResp.Meta.(map[string]interface{}); ok {
+			if tokens, exists := metaMap["tokens"]; exists {
+				if tokenMap, ok := tokens.(map[string]interface{}); ok {
+					if inputTokens, exists := tokenMap["input_tokens"]; exists {
+						if val, ok := inputTokens.(float64); ok {
+							totalTokens += int(val)
+						}
+					}
+					if outputTokens, exists := tokenMap["output_tokens"]; exists {
+						if val, ok := outputTokens.(float64); ok {
+							totalTokens += int(val)
+						}
+					}
+				}
+			}
+		} else if metaSlice, ok := siliconFlowResp.Meta.([]interface{}); ok {
+			for _, item := range metaSlice {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					if tokens, exists := itemMap["tokens"]; exists {
+						if tokenMap, ok := tokens.(map[string]interface{}); ok {
+							if inputTokens, exists := tokenMap["input_tokens"]; exists {
+								if val, ok := inputTokens.(float64); ok {
+									totalTokens += int(val)
+								}
+							}
+							if outputTokens, exists := tokenMap["output_tokens"]; exists {
+								if val, ok := outputTokens.(float64); ok {
+									totalTokens += int(val)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		openaiResp.Usage.TotalTokens = totalTokens
 
 	case "百度千帆":
 		var qianfanResp struct {
@@ -324,6 +411,10 @@ func parseGenericRerankResponse(openaiResp *RerankResponse, respBody []byte, req
 	return nil
 }
 
+// CallSiliconFlowRerankAPI 调用硅基流动 rerank API
+func (s *SiliconFlowRerankService) CallSiliconFlowRerankAPI(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
+	return commonAPICall(ctx, req, meta, SiliconFlowBaseURL, SiliconFlowEndpoint, "硅基流动")
+}
 
 // CallBaiduQianfanRerankAPI 调用百度千帆 rerank API
 func (s *BaiduQianfanRerankService) CallBaiduQianfanRerankAPI(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {

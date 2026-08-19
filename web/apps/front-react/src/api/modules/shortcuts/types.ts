@@ -1,4 +1,9 @@
-export type ShortcutType = "agent" | "library" | "ai_link" | "wiki_page";
+export type ShortcutType =
+  | "agent"
+  | "library"
+  | "ai_link"
+  | "wiki_page"
+  | "space_wiki";
 
 export interface ShortcutRelatedInfo {
   /** wiki_page: 所属空间 ID，用于还原访问路径 */

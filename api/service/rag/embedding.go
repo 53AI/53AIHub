@@ -1387,7 +1387,7 @@ func (s *EmbeddingService) CallEmbeddingAPIBatchWithModel(contents []string, cha
 		var err error
 
 		switch channel.Type {
-		case channeltype.OpenAI, channeltype.Ali, channeltype.SiliconFlow, model.ChannelApiVolcengineModel:
+		case channeltype.OpenAI, channeltype.Ali, channeltype.SiliconFlow, model.ChannelApiVolcengineModel, model.ChannelApiTypeCustomOpenAI:
 			vectors, err = s.callOpenAIEmbeddingBatchWithModel(truncatedContents, channel, modelName)
 		case channeltype.Azure:
 			vectors, err = s.callAzureEmbeddingBatchWithModel(truncatedContents, channel, modelName)

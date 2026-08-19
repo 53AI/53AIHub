@@ -5,6 +5,13 @@ export interface TreeNode {
 	name: string
 	path: string
 	hasChildren?: boolean
+	/**
+	 * 该节点对当前用户不可作为移动目标（如无权限）。
+	 * MoveToModal 会据此禁用 radio 并展示 disabledReason 的 tooltip。
+	 */
+	disabled?: boolean
+	/** 禁用原因文案，传给 tooltip；与 disabled 配合使用 */
+	disabledReason?: string
 }
 
 export type FetchDirsFn = (params: {

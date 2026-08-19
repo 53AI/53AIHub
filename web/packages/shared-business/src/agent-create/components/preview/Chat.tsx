@@ -9,6 +9,7 @@ import { copyToClip } from '@km/shared-utils'
 // 通过相对路径引用 shared-business/chat 内的 hooks，避免 tsup 自引用 dist 子路径未构建的问题
 import { useChatStream, useRagStats } from '../../../chat/hooks'
 import { ProcessFlowHeader } from '../../../chat/components/process-flow'
+import { projectReasoningIntoProcessRecords } from '../../../chat/utils/reasoning-process-projection'
 
 /** 条件字段展开：只包含有值（非 undefined/null/false）的字段 */
 function buildOptionalFields(fields: Record<string, unknown>): Record<string, unknown> {
@@ -602,13 +603,18 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
               content={message.answer}
               reasoning={message.reasoning_content}
               reasoningExpanded={message.reasoning_expanded}
+              showReasoning={!message.process_records?.length}
               streaming={message.loading}
               alwaysShowMenu={messageIndex === chatList.length - 1}
               header={
                 message.process_records && message.process_records.length > 0
                   ? (
                     <ProcessFlowHeader
-                      processRecords={message.process_records}
+                      processRecords={projectReasoningIntoProcessRecords(
+                        message.process_records,
+                        message.reasoning_content,
+                        message.loading,
+                      )}
                       streaming={message.loading}
                       hasContent={Boolean(message.answer)}
                       t={t}

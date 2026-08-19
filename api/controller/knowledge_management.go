@@ -110,12 +110,9 @@ func saveKnowledgeChunkWithTransaction(eid int64, userID int64, req *SaveKnowled
 	var fileID int64
 
 	// 确定是否需要自动分检索块
-	autoSplitRetrieval := true // 默认值
+	autoSplitRetrieval := true // 默认值（新增和更新都默认自动拆分检索块）
 	if req.AutoSplitRetrieval != nil {
 		autoSplitRetrieval = *req.AutoSplitRetrieval
-	} else {
-		// 新增默认分，更新默认不分
-		autoSplitRetrieval = !isUpdate
 	}
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
@@ -212,6 +209,7 @@ func saveKnowledgeChunkWithTransaction(eid int64, userID int64, req *SaveKnowled
 	}
 
 	if result != nil && result.AsyncQueued {
+		// 数据驱动：传入什么字段就处理什么，下游根据字段长度决定是否操作
 		scheduleKnowledgeChunkPostSave(knowledgeChunkPostSaveTask{
 			EID:                 eid,
 			UserID:              userID,

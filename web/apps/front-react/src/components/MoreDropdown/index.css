@@ -9,7 +9,7 @@
 }
 
 .more-dropdown-trigger:hover {
-  background-color: var(--background-color, #F5F6F7);
+  background-color: var(--background-color, #F2F6FE);
 }
 
 .more-dropdown-overlay .ant-dropdown-menu {

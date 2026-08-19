@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import { Button, Tooltip, Modal, message } from "antd";
+import { Button, Modal, message } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { MoreDropdown, MenuItem } from "@/components/MoreDropdown";
 import { AI_ICON_URL } from "@/views/library/main/file/components/sidebar-app-item";
@@ -11,6 +11,7 @@ import type { WikiPageDetail } from "@/api/modules/wiki";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
+import { IconButton } from "@/components/IconButton";
 import { useWikiPagePermission } from "@/hooks/useWikiPagePermission";
 import KnowledgeHistoryDrawer, {
   KnowledgeHistoryDrawerRef,
@@ -187,16 +188,16 @@ const ViewMode: React.FC<ViewModeProps> = ({ detail, onEdit, onExport }) => {
                 {t("action.edit")}
               </Button>
             </PermissionWiki>
-            <WikiFav pageId={pageId} />
+            <WikiFav resource_id={pageId} />
             {assistantInstall && (
-              <Tooltip title={t("library.document_chat")}>
-                <div
-                  className={`size-8 flex-center rounded cursor-pointer hover:bg-[#F0F2F5] ${assistantVisible ? "bg-[#F0F2F5]" : ""}`}
-                  onClick={assistantToggle}
-                >
-                  <img className="size-5" src={AI_ICON_URL} alt="" />
-                </div>
-              </Tooltip>
+              <IconButton
+                title={t("library.document_chat")}
+                size="medium"
+                onClick={assistantToggle}
+                activeClassName={assistantVisible ? "bg-[#F2F6FE]" : ""}
+              >
+                <img className="size-5" src={AI_ICON_URL} alt="" />
+              </IconButton>
             )}
             <FullscreenToggle fullscreen={fullscreen} onToggle={toggleFullscreen} />
             <MoreDropdown items={items} onCommand={handleMore} placement="bottomRight" />

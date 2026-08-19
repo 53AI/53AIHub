@@ -2,6 +2,7 @@ package controller
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -95,6 +96,8 @@ type UpdateEnterpriseRequest struct {
 	Description  string `json:"description" example:"Description Test"`
 	TemplateType string `json:"template_type" example:"default"`
 	LayoutType   string `json:"layout_type" example:"1"`
+	FullName     string `json:"full_name"`
+	Industry     string `json:"industry"`
 }
 
 // @Summary Update enterprise information
@@ -154,11 +157,37 @@ func UpdateEnterprise(c *gin.Context) {
 		// }
 	}
 
+	// Description 1000字限制
+	if len([]rune(req.Description)) > 1000 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("企业介绍不能超过1000字")))
+		return
+	}
+
+	// FullName 50字限制
+	if len([]rune(req.FullName)) > 50 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("企业全称不能超过50字")))
+		return
+	}
+
+	// Industry 合法性校验
+	if req.Industry != "" {
+		valid := false
+		for _, cat := range model.IndustryCategories {
+			if cat == req.Industry {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("不支持的行业: %s", req.Industry)))
+			return
+		}
+	}
+
 	oldEnterprise := *enterprise
 
 	// 构建要更新的字段映射
 	updateData := make(map[string]interface{})
-
 	if req.DisplayName != "" {
 		updateData["display_name"] = req.DisplayName
 		enterprise.DisplayName = req.DisplayName
@@ -199,6 +228,14 @@ func UpdateEnterprise(c *gin.Context) {
 	updateData["layout_type"] = req.LayoutType
 	enterprise.LayoutType = req.LayoutType
 
+	if req.FullName != "" {
+		updateData["full_name"] = req.FullName
+		enterprise.FullName = req.FullName
+	}
+	if req.Industry != "" {
+		updateData["industry"] = req.Industry
+		enterprise.Industry = req.Industry
+	}
 	if err := enterprise.PartialUpdateEnterprise(updateData); err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return

@@ -69,6 +69,7 @@ type RecordingJob struct {
 	OutputFileID             int64  `json:"output_file_id" gorm:"not null;default:0;index"`
 	LastError                string `json:"last_error" gorm:"type:text"`
 	GroupID                  int64  `json:"group_id" gorm:"not null;default:0;index"`
+	InsightPerspective       string `json:"insight_perspective" gorm:"size:32;not null;default:auto;index"`
 	BaseModel
 }
 
@@ -152,6 +153,7 @@ func (j *RecordingJob) Normalize() {
 		j.LastRecoveredAt = 0
 	}
 	j.OwnerInstance = normalizeRecordingInstanceID(j.OwnerInstance)
+	j.InsightPerspective = string(NormalizeInsightPerspective(j.InsightPerspective))
 }
 
 func (j *RecordingJob) BeforeCreate(tx *gorm.DB) error {
@@ -208,6 +210,7 @@ func (j *RecordingJob) PublicView() *RecordingJobPublicView {
 		OutputFileID:             j.OutputFileID,
 		LastError:                j.LastError,
 		GroupID:                  j.GroupID,
+		InsightPerspective:       string(NormalizeInsightPerspective(j.InsightPerspective)),
 		CreatedTime:              j.CreatedTime,
 		UpdatedTime:              j.UpdatedTime,
 	}
@@ -239,6 +242,7 @@ type RecordingJobPublicView struct {
 	OutputFileID             int64  `json:"output_file_id"`
 	LastError                string `json:"last_error"`
 	GroupID                  int64  `json:"group_id"`
+	InsightPerspective       string `json:"insight_perspective"`
 	CreatedTime              int64  `json:"created_time"`
 	UpdatedTime              int64  `json:"updated_time"`
 }
@@ -538,6 +542,12 @@ func recordingCurrentInstanceID() string {
 		instanceID = "default"
 	}
 	return instanceID
+}
+
+// GetRecordingInstanceID 返回当前实例 ID（导出版，供子包使用）。
+// 多实例部署时每个实例配置不同的 RECORDING_INSTANCE_ID，用于任务隔离。
+func GetRecordingInstanceID() string {
+	return recordingCurrentInstanceID()
 }
 
 func normalizeRecordingInstanceID(instanceID string) string {

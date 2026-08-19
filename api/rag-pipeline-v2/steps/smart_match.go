@@ -175,7 +175,7 @@ func buildDocumentChunkingSmartMatchSystemPrompt(candidates []SmartMatchCandidat
 	sb.WriteString("1. 先看结构特征摘要，再看内容预览，不要只凭局部关键词判断。\n")
 	sb.WriteString("2. 标题层级清晰、章节边界明显时，优先选择 strategy=identifier。\n")
 	sb.WriteString("3. 标题稀疏、段落长、叙述型内容占比高时，优先选择 strategy=length。\n")
-	sb.WriteString("4. identifier_level 只允许从 h2、h3、h4 中选择；h2 用于大章节，h3 用于中等粒度，h4 仅在 h2/h3 过粗时使用。\n")
+	sb.WriteString("4. parent_chunk.mode 和 child_chunk.mode 允许选择 page；page 仅在文档包含独立行 <!-- page: N --> 页面标记时使用，并按页面保持边界。使用 page 时不需要 identifier_level。\n")
 	sb.WriteString("5. max_length 只能从 512、768、1024、1536、2048、3072 中选择，不要输出任意数值。\n")
 	sb.WriteString("6. append_subtitle 只有在文档确实存在稳定的多级标题链、子标题能帮助召回时才开启；平铺式或噪声式文档应关闭。\n")
 	sb.WriteString("7. append_title 和 append_filename 用于补充检索上下文，文档标题清晰且内容较长时通常保留开启。\n")
@@ -830,9 +830,17 @@ func normalizeV2DocumentChunkingConfig(cfg *V2DocumentChunkingConfig) {
 	cfg.ParentChunk.Mode = strings.TrimSpace(cfg.ParentChunk.Mode)
 	cfg.ParentChunk.Strategy = strings.TrimSpace(cfg.ParentChunk.Strategy)
 	cfg.ParentChunk.IdentifierLevel = strings.TrimSpace(cfg.ParentChunk.IdentifierLevel)
+	if cfg.ParentChunk.OverlapSize != nil {
+		value := clampV2OverlapSize(*cfg.ParentChunk.OverlapSize)
+		cfg.ParentChunk.OverlapSize = &value
+	}
 	cfg.ChildChunk.Mode = strings.TrimSpace(cfg.ChildChunk.Mode)
 	cfg.ChildChunk.Strategy = strings.TrimSpace(cfg.ChildChunk.Strategy)
 	cfg.ChildChunk.IdentifierLevel = strings.TrimSpace(cfg.ChildChunk.IdentifierLevel)
+	if cfg.ChildChunk.OverlapSize != nil {
+		value := clampV2OverlapSize(*cfg.ChildChunk.OverlapSize)
+		cfg.ChildChunk.OverlapSize = &value
+	}
 	if cfg.ChunkType == "" {
 		cfg.ChunkType = model.ChunkTypeDefault
 	}
@@ -861,6 +869,7 @@ func validateDocumentChunkingLayerConfig(fieldName string, layer V2ChunkingLayer
 		"default": {},
 		"custom":  {},
 		"whole":   {},
+		"page":    {},
 	}
 	if _, ok := validModes[strings.TrimSpace(layer.Mode)]; !ok {
 		return fmt.Errorf("%s 的 mode 非法: %s", fieldName, layer.Mode)
@@ -876,18 +885,22 @@ func validateDocumentChunkingLayerConfig(fieldName string, layer V2ChunkingLayer
 	}
 
 	level := strings.TrimSpace(layer.IdentifierLevel)
-	if requireIdentifierLevel && level == "" {
+	if requireIdentifierLevel && level == "" && strings.TrimSpace(layer.Mode) != "page" {
 		return fmt.Errorf("%s 的 identifier_level 不能为空", fieldName)
 	}
 	if level != "" {
 		validLevels := map[string]struct{}{
 			"h1": {}, "h2": {}, "h3": {}, "h4": {}, "h5": {}, "h6": {},
 		}
+		if requireIdentifierLevel {
+			validLevels["page"] = struct{}{}
+		}
 		if _, ok := validLevels[level]; !ok {
 			return fmt.Errorf("%s 的 identifier_level 非法: %s", fieldName, layer.IdentifierLevel)
 		}
 	}
-	if layer.MaxLength <= 0 {
+	if layer.MaxLength <= 0 && strings.TrimSpace(layer.Mode) != "whole" {
+		// 整篇(whole)模式不强制 max_length:未配置时由后端 WHOLE_CHUNK_MAX_TOKENS 兜底
 		return fmt.Errorf("%s 的 max_length 必须大于 0", fieldName)
 	}
 

@@ -25,6 +25,7 @@ import { t } from '@/locales'
 import { generateRandomId } from '@/utils'
 import { copyToClip } from '@km/shared-utils'
 import { lib_host, api_host, img_host, isOpLocal, isPrivatePrem } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 import { ImageUpload } from '@/components/Upload/image'
 import { GroupSelect } from '@/components/GroupSelect'
 import { GroupTabs } from '@/components/GroupTabs'
@@ -737,7 +738,7 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
     const res = await uploadApi.upload(file)
     return {
       id: res.data.id,
-      url: `${api_host}/api/preview/${res.data.preview_key || ''}`,
+      url: buildPreviewUrl(res.data.preview_key) ?? '',
       size: res.data.size,
       name: res.data.file_name,
       mime_type: res.data.mime_type,

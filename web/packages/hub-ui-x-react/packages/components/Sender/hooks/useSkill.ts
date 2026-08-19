@@ -1,10 +1,28 @@
 /**
  * / 技能功能 Hook
+ *
+ * ⚠️ 镜像同步警告 ⚠️
+ * 本 hook 与 `./useMention.ts` 共享 ~70% 状态机逻辑,以下函数必须**逐行同步修改**:
+ *   - closeSelect
+ *   - handleClickOutside
+ *   - handleClickOnInput
+ *   - quitSkillInput
+ *   - cancelSkillInput
+ *   - checkAndConvertInput
+ *   - handleSearch
+ *   - handleInputCheck
+ *   - handleKeyDown
+ *
+ * 这些函数体在两份文件里**应当字面相同**,只有关键字 / className / 数据类型差异。
+ * 改动任何一个,必须立刻同步改 useMention.ts 的对应函数,否则 @ 和 / 行为会漂移。
+ * 每个函数体顶部都有 `// SYNC: useMention.<fnName>` 标记,grep 即可定位。
+ *
+ * 长期方案:抽 `useChipTrigger` 高阶 hook 统一这两处。详见 OpenSpec 记录。
  */
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { SkillItem } from '../types';
-import { getCursor, hasClassName, findParent, moveCursorToEnd } from './useEditor';
+import { getCursor, hasClassName, findParent, moveCursorTo, moveCursorToEnd, dissolveChip } from './useEditor';
 
 export interface UseSkillOptions {
   editorRef: React.RefObject<HTMLDivElement>;
@@ -39,6 +57,12 @@ export interface UseSkillOptions {
    * 这种情况下 placeholder 不会自动更新、inline-block chip 可能换行。
    */
   onInsertInput?: (input: HTMLElement, cursor?: any) => void;
+  /**
+   * 把焦点放回编辑器。Esc 取消 / 输入态时必须调用 —— 否则焦点留在
+   * 已被卸载的下拉搜索框上,用户后续按键无效。
+   * 通常指向 `useEditor.focusAtEnd`。
+   */
+  focusEditor?: () => void;
 }
 
 export const useSkill = (options: UseSkillOptions) => {
@@ -58,6 +82,7 @@ export const useSkill = (options: UseSkillOptions) => {
     onClickOutside,
     onBeforeActivate,
     onInsertInput,
+    focusEditor,
   } = options;
 
   const [canShowSelect, setCanShowSelect] = useState(false);
@@ -136,6 +161,105 @@ export const useSkill = (options: UseSkillOptions) => {
    */
   const getCurrentSkillTag = useCallback((): HTMLElement | null => {
     return editorRef.current?.querySelector('.skill-tag') as HTMLElement | null;
+  }, [editorRef]);
+
+  /**
+   * 判断节点是否「惰性」(对触发位置判定不算「真内容」):
+   *   - 纯空白文本节点(只有空格 / 换行)
+   *   - mention / skill 等 inline-block chip(`.mention-line-block`)
+   *   - 占位用的 `<br>`
+   *   - `.x-sender__placeholder`
+   *
+   * 「逻辑开头」定义:从编辑器开头到光标位置的 Range 覆盖范围内,所有节点都是惰性的。
+   * 这样 [skill-tag] | 算开头(光标前只有 chip),但 [skill-tag] hello| 不算(hello 是真内容)。
+   */
+  const isInertNode = (node: Node): boolean => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = (node as Text).textContent || '';
+      return text.trim().length === 0;
+    }
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      return (
+        el.classList.contains('mention-line-block') ||
+        el.tagName === 'BR' ||
+        el.classList.contains('x-sender__placeholder')
+      );
+    }
+    return false;
+  };
+
+  /**
+   * 判断光标是否在「逻辑开头」。
+   *
+   * 用 Range(editor, 0) → (cursor.element, cursor.cursorPos) 包住光标之前的所有内容,
+   * 全部惰性就算逻辑开头;出现非惰性节点(hello / 真文本 / 非 chip 元素)就算中间位置。
+   *
+   * 用于 / 触发位置限制 —— 领导要求 / 只能在编辑器逻辑开头触发,中间位置输入 / 当普通字符。
+   * Q4 例外:如果之前选过技能(只剩 [skill-tag]),仍允许再输入 / 触发新选择。
+   */
+  const isCursorAtLogicalStart = (cursor: { element: Node; cursorPos: number } | null): boolean => {
+    const editor = editorRef.current;
+    if (!cursor || !editor) return false;
+
+    const range = document.createRange();
+    try {
+      range.setStart(editor, 0);
+      range.setEnd(cursor.element, cursor.cursorPos);
+    } catch {
+      return false;
+    }
+
+    const fragment = range.cloneContents();
+    for (const node of Array.from(fragment.childNodes)) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = (node as Text).textContent || '';
+        if (text.trim().length > 0) return false;
+        continue;
+      }
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        if (!isInertNode(node)) return false;
+        continue;
+      }
+      return false;
+    }
+    return true;
+  };
+
+  /**
+   * 把光标移到「逻辑开头」。
+   *
+   * 找到编辑器里第一个非惰性节点:
+   *   - 文本节点 → 光标落到 (text, 0)
+   *   - 非惰性元素 → 光标落到该元素之前 (editor, index)
+   * 全部惰性 → 光标移到编辑器末尾。
+   *
+   * 由 Skill 按钮点击时调用,让用户即便光标停在中间,也能从按钮触发技能选择。
+   */
+  const moveCursorToLogicalStart = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    for (let i = 0; i < editor.childNodes.length; i++) {
+      const node = editor.childNodes[i];
+      if (isInertNode(node)) continue;
+
+      if (node.nodeType === Node.TEXT_NODE) {
+        moveCursorTo(node as Text, 0);
+        return;
+      }
+      // 非惰性元素 → 光标落到它之前
+      const sel = document.getSelection();
+      const r = document.createRange();
+      r.setStart(editor, i);
+      r.setEnd(editor, i);
+      sel?.removeAllRanges();
+      sel?.addRange(r);
+      return;
+    }
+
+    // 全部惰性 → 末尾
+    moveCursorToEnd(editor);
   }, [editorRef]);
 
   /**
@@ -236,10 +360,12 @@ export const useSkill = (options: UseSkillOptions) => {
     // 创建技能标签
     const skillTag = createSkillTagElement(skill);
 
-    // prepend 后走 editor.insertNode 路径(由 onInsertInput 转发)
-    // 这样自动:BR 处理 + 全局补空格 + placeholder 同步(对齐原版 addLink)
+    // 技能选择后,skill-tag 必须放在最前 ——「/ 只能在逻辑开头触发」的语义延伸。
+    // 显式传 cursor={editor, 0},让 insertNode prepend 到 firstChild 之前,
+    // 而不是 fallback 到 appendOrBeforeBR 把 chip 扔到编辑器末尾。
+    // (insertNode 已专门处理 element === editor && cursorPos === 0 → prepend)
     if (onInsertInput) {
-      (onInsertInput as any)(skillTag);
+      (onInsertInput as any)(skillTag, { element: editorRef.current, cursorPos: 0 });
     } else {
       editorRef.current.prepend(skillTag);
       moveCursorToEnd(skillTag);
@@ -255,6 +381,7 @@ export const useSkill = (options: UseSkillOptions) => {
 
   /**
    * 关闭选择器
+   * // SYNC: useMention.closeSelect
    */
   const closeSelect = useCallback(() => {
     setCanShowSelect(false);
@@ -264,6 +391,7 @@ export const useSkill = (options: UseSkillOptions) => {
 
   /**
    * 点击外部处理
+   * // SYNC: useMention.handleClickOutside
    */
   const handleClickOutside = useCallback(() => {
     if (!canShowSelect) return;
@@ -276,12 +404,10 @@ export const useSkill = (options: UseSkillOptions) => {
     // 根据 hasSelectAfterOpen 决定处理方式
     const input = getCurrentSkillInput();
     if (input) {
-      if (hasSelectAfterOpen) {
-        input.remove();
-      } else {
-        const text = document.createTextNode(input.textContent || '');
-        input.replaceWith(text);
-      }
+      // 已选择过 → 删除 skill-input;未选择过 → 转换为普通文字
+      // restoreCaret=false + normalize=false:点击发生在编辑器外部,
+      // 不能把光标抢回来,也不能合并相邻文本节点顶掉浏览器刚放好的光标
+      dissolveChip(input, { keepText: !hasSelectAfterOpen, restoreCaret: false, normalize: false });
     }
 
     onClickOutside?.();
@@ -289,6 +415,7 @@ export const useSkill = (options: UseSkillOptions) => {
 
   /**
    * 点击 skill-input 时重新打开下拉框
+   * // SYNC: useMention.handleClickOnInput
    */
   const handleClickOnInput = useCallback((input: HTMLElement) => {
     if (!enabled) return;
@@ -309,25 +436,72 @@ export const useSkill = (options: UseSkillOptions) => {
 
   /**
    * 退出 skill-input 模式
+   *
+   * 用于"用户把注意力移到别处"的场景(点击编辑器其它位置、输入 @ 触发互斥清理)。
+   * 这些场景下光标已经由用户的操作决定,所以 restoreCaret=false,不能抢回来。
+   * 键盘主动取消(Esc / Backspace)请用 cancelSkillInput。
+   *
+   * 也不调 normalize():浏览器已经在 mousedown 时把光标放到了用户点击的位置,
+   * 立刻合并相邻文本节点会让光标所在的节点被吞掉,Selection 失锚,光标塌缩到编辑器开头。
+   *
    * @param force - 强制删除（不转换为文字）
+   * // SYNC: useMention.quitMentionInput
    */
   const quitSkillInput = useCallback((force = false) => {
     const input = getCurrentSkillInput();
     if (!input) return;
 
-    if (hasSelectAfterOpen || force) {
-      input.remove();
-    } else {
-      const text = document.createTextNode(input.textContent || '');
-      input.replaceWith(text);
-    }
+    dissolveChip(input, {
+      keepText: !(hasSelectAfterOpen || force),
+      restoreCaret: false,
+      normalize: false,
+    });
 
     closeSelect();
     setHasSelectAfterOpen(false);
   }, [hasSelectAfterOpen, getCurrentSkillInput, closeSelect]);
 
   /**
+   * 主动取消 / 输入态（键盘触发，必须恢复光标）
+   *
+   * @param toText - true: chip 还原成普通 "/" 文字，光标停在它后面（Esc）
+   *                 false: 整块删除，光标回到 chip 原来的位置（删掉 / 触发符）
+   * @returns 是否真的处理了（编辑器里没有 skill-input 时返回 false）
+   * // SYNC: useMention.cancelMentionInput
+   */
+  const cancelSkillInput = useCallback((toText: boolean): boolean => {
+    const input = getCurrentSkillInput();
+    if (!input) return false;
+
+    dissolveChip(input, { keepText: toText, restoreCaret: true });
+
+    closeSelect();
+    setHasSelectAfterOpen(false);
+    // chip 内的文字原本被 getPureText 当作 mention 块跳过,
+    // 溶解成普通文字/删除后内容变了,必须同步一次 onChange。
+    onInput?.();
+    // 焦点要拉回编辑器:下拉弹窗的搜索框在被卸载前抢走了 focus,
+    // 不主动 focus 回去,用户后续按键(包括再次输入 /)都进不来。
+    // 用 queueMicrotask 而不是 setTimeout(0):微任务在当前同步代码块结束
+    // 后立即 flush,比 React 下一次 commit 早一步,焦点回拉更紧凑;
+    // 且浏览器会把失败的焦点切换(目标已 detach)抛到 microtask 队列,
+    // 比 setTimeout 多一层错误兜底。
+    if (focusEditor) {
+      queueMicrotask(() => focusEditor());
+    }
+    return true;
+  }, [getCurrentSkillInput, closeSelect, onInput, focusEditor]);
+
+  /**
    * 检查并转换无效的 skill-input
+   *
+   * 两种"无效"情况都在这里收口:
+   * - 内容被删空（用户 Backspace 删掉了 /）→ 整块删除
+   * - 内容不再以 / 开头 → 还原成普通文字
+   *
+   * 必须走 dissolveChip 恢复光标:原实现 `input.replaceWith(空文本节点)` 会让
+   * Selection 失去锚点,浏览器把光标塌缩到编辑器开头 —— 即"删除 / 后光标出现在 / 前面"。
+   * // SYNC: useMention.checkAndConvertInput
    */
   const checkAndConvertInput = useCallback(() => {
     const input = getCurrentSkillInput();
@@ -338,14 +512,14 @@ export const useSkill = (options: UseSkillOptions) => {
 
     const text = input.textContent || '';
     if (!text.startsWith(triggerCode)) {
-      const textNode = document.createTextNode(text);
-      input.replaceWith(textNode);
+      dissolveChip(input, { keepText: true, restoreCaret: true });
       closeSelect();
     }
   }, [triggerCode, getCurrentSkillInput, closeSelect]);
 
   /**
    * 处理搜索
+   * // SYNC: useMention.handleSearch
    */
   const handleSearch = useCallback((keyword: string) => {
     setInternalSearchKeyword(keyword);
@@ -377,9 +551,9 @@ export const useSkill = (options: UseSkillOptions) => {
 
     const skillTag = createSkillTagElement(skill);
 
-    // prepend 后走 editor.insertNode 路径(由 onInsertInput 转发)
+    // 同样传 cursor={editor, 0},强制 prepend 到最前(对齐 selectSkill 的语义)
     if (onInsertInput) {
-      (onInsertInput as any)(skillTag);
+      (onInsertInput as any)(skillTag, { element: editorRef.current, cursorPos: 0 });
     } else {
       editorRef.current.prepend(skillTag);
       moveCursorToEnd(skillTag);
@@ -400,6 +574,7 @@ export const useSkill = (options: UseSkillOptions) => {
 
   /**
    * 处理输入（检查 / 触发）
+   * // SYNC: useMention.handleInputCheck
    */
   const handleInputCheck = useCallback((event?: React.KeyboardEvent) => {
     if (!enabled) return;
@@ -421,6 +596,14 @@ export const useSkill = (options: UseSkillOptions) => {
     // 检查是否输入了 /
     const cursorChar = cursor.element.textContent?.slice(cursor.cursorPos - 1, cursor.cursorPos) || '';
     if (cursorChar === triggerCode && !getCurrentSkillInput()) {
+      // 位置限制:领导要求 / 只能在「逻辑开头」触发。
+      // 用户刚刚敲入 / 时,光标在 / 之后;所以检查的是「/ 字符所在位置之前」
+      // (即 cursorPos - 1)是否全是惰性。光标前有真内容 → / 当普通字符保留,不弹窗。
+      // Q4 优先:如果前面只有 [skill-tag] / [mention-link] 这类惰性 chip,
+      // isCursorAtLogicalStart 仍返回 true,允许再次输入 / 触发新选择(用户语义是「替换上一个技能」)。
+      if (!isCursorAtLogicalStart({ element: cursor.element, cursorPos: cursor.cursorPos - 1 })) {
+        return;
+      }
       // 移除 / 字符并激活输入
       if (cursor.element.nodeType === Node.TEXT_NODE) {
         const textNode = cursor.element as Text;
@@ -440,18 +623,55 @@ export const useSkill = (options: UseSkillOptions) => {
           sel.addRange(newRange);
         }
       }
-      activateSkillInput();
+      // 必须把 cursor 透传出去,否则 activateSkillInput 的 onInsertInput 收到 undefined,
+      // 内部 insertNode 走 appendOrBeforeBR 分支,chip 被 append 到编辑器末尾。
+      // 表现:用户在文本中间输入 / 触发时,chip 跑到最后面,光标跟着跳过去。
+      activateSkillInput(getCursor() || undefined);
     }
   }, [enabled, triggerCode, findSkillInput, getCurrentSkillInput, activateSkillInput, handleSearch]);
 
   /**
    * 处理键盘导航
+   *
+   * Esc / Backspace 的判定用 getCurrentSkillInput()(编辑器内查询)而不是
+   * findSkillInput()(基于光标向上找):点技能按钮进入输入态时光标可能不在 chip 内,
+   * 用光标判定会漏掉。方向键/回车仍沿用原来的光标判定,避免行为变化。
+   * // SYNC: useMention.handleKeyDown
    */
   const handleKeyDown = useCallback((event: React.KeyboardEvent): boolean => {
-    if (!canShowSelect) return false;
-
-    const skillInput = findSkillInput();
+    const skillInput = getCurrentSkillInput();
     if (!skillInput) return false;
+
+    // Esc:取消 / 技能选择状态,chip 还原成一个普通的 "/" 字符,光标停在它后面
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // 阻止冒泡,避免顺带关掉外层 Modal/Drawer
+      event.stopPropagation();
+      cancelSkillInput(true);
+      return true;
+    }
+
+    // Backspace:chip 内只剩触发符时整块删除,并把光标放回 chip 原来的位置。
+    // 交给浏览器处理会留下一个空 span,后续清理时 Selection 失锚,
+    // 光标会被塌缩到编辑器开头(表现为跑到 / 前面)。
+    if (event.key === 'Backspace') {
+      const cursor = getCursor();
+      const inputAtCursor = cursor?.element ? findSkillInput(cursor.element) : null;
+      const isCollapsed = cursor?.range ? cursor.range.collapsed : true;
+      if (
+        inputAtCursor === skillInput &&
+        isCollapsed &&
+        (cursor?.cursorPos ?? 0) > 0 &&
+        (skillInput.textContent || '') === triggerCode
+      ) {
+        event.preventDefault();
+        cancelSkillInput(false);
+        return true;
+      }
+    }
+
+    if (!canShowSelect) return false;
+    if (!findSkillInput()) return false;
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -477,13 +697,17 @@ export const useSkill = (options: UseSkillOptions) => {
       return true;
     }
 
-    if (event.key === 'Escape') {
-      closeSelect();
-      return true;
-    }
-
     return false;
-  }, [canShowSelect, findSkillInput, filteredSuggestions, selectedIndex, selectSkill, closeSelect]);
+  }, [
+    canShowSelect,
+    triggerCode,
+    getCurrentSkillInput,
+    findSkillInput,
+    filteredSuggestions,
+    selectedIndex,
+    selectSkill,
+    cancelSkillInput,
+  ]);
 
   // 重置选中索引
   useEffect(() => {
@@ -509,7 +733,9 @@ export const useSkill = (options: UseSkillOptions) => {
     handleClickOutside,
     handleClickOnInput,
     quitSkillInput,
+    cancelSkillInput,
     checkAndConvertInput,
     hasSelectAfterOpen,
+    moveCursorToLogicalStart,
   };
 };

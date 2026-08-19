@@ -2578,7 +2578,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 		}
 
 		if (!agentId) {
-			return <LoadingState message={t("agent.missing_id")} />;
+			return <div></div>;
 		}
 
 		if (!agentInfo) {
