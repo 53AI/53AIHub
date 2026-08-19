@@ -15,6 +15,7 @@ import type {
   RecordingFileSummary,
   RecordingFileGroup,
   CreateRecordingFileGroupRequest,
+  MemoryEntityTypeSchemas,
 } from "./type";
 import type { RecordingListDataDisplay, RecordingStatsDisplay } from "./type";
 
@@ -35,6 +36,18 @@ const recordingApi = {
   updateConfig(data: UpdateRecordingConfigRequest): Promise<{ ok: boolean }> {
     return service
       .put("/api/admin/recordings/config", data)
+      .then((res: any) => res.data)
+      .catch(handleError);
+  },
+
+  /**
+   * 获取会议记忆实体 schema（实体类型 + 中文 label + 属性定义）。
+   * 进入设置页面时拉一次缓存：历史记忆可抽取的类型从这里派生。
+   * 对齐 front-react 的 /api/recordings/memories/schema。
+   */
+  getMemorySchema(): Promise<MemoryEntityTypeSchemas> {
+    return service
+      .get("/api/recordings/memories/schema")
       .then((res: any) => res.data)
       .catch(handleError);
   },

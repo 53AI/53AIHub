@@ -20,9 +20,11 @@ import { t } from "@/locales";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { checkPermission } from "@/utils/permission";
-import { api_host } from "@/utils/config";
+import { buildPreviewUrl } from "@/utils/preview";
 import uploadApi from "@/api/modules/upload";
 import { AGENT_USAGES } from "@/constants/agent";
+import { useRecordingStore } from "@/stores/modules/recording";
+import type { FileSource, SelectedFilesBySource } from "@/components/MyFilesDialog/types";
 
 export interface WorkAiSenderConfig {
   mention: MentionFeature;
@@ -47,18 +49,25 @@ export interface WorkAiSenderConfig {
   /** acceptTypes */
   acceptTypes: string;
   /**
-   * 4 个 @ 入口的 select/open 工厂收敛(OpenSpec sender-migration §7)。
-   * 推荐使用 sources.* 替代下方标 @deprecated 的 openFromX / confirmFromX。
+   * 2 个 @ 入口的 select/open 工厂收敛(OpenSpec sender-migration §7 + my-files-dialogs 合并)。
+   * - `library`:复用 SpaceDialog,select 接受 (files, libraries, spaces)
+   * - `myFiles`:复用合并后的 MyFilesDialog,selectBySource 接受按 source 分桶的 bySource
    */
-  sources: Record<
-    "library" | "uploads" | "ai-generated" | "recordings",
-    {
-      /** Dialog 确认回调(由 ChatContainer 在 Dialog.onConfirm 接入)。 */
+  sources: {
+    library: {
       select: (...args: any[]) => void;
-      /** Dialog 打开器(由 ChatContainer 渲染外部 Dialog 后,ref 传入)。 */
       open: (dialogRef: any) => void;
-    }
-  >;
+    };
+    myFiles: {
+      selectBySource: (bySource: SelectedFilesBySource) => void;
+      open: (dialogRef: any) => void;
+    };
+  };
+  /**
+   * 当前可启用的"我的文件"Tab 列表(由 version 模块 + recordingConfig 守卫得出),
+   * ChatContainer 直接传给合并后的 MyFilesDialog.enabledSources。
+   */
+  myFilesEnabledSources: FileSource[];
   /** 发送后清空受控 list(在 ChatContainer.message.onSent 调用) */
   reset: () => void;
   /**
@@ -100,6 +109,11 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
   const agentSkillsMap = useSkillsStore((state) => state.agentSkillsMap);
   const loadAgentSkillsFromStore = useSkillsStore((state) => state.loadAgentSkills);
 
+  // 安心录总开关:管理后台关闭后,我的录音 Tab 要收起。
+  // null(配置尚未加载完成)沿用 layout.tsx 的 lenient-on-null 语义,默认视为启用,
+  // 避免冷启动闪烁。enable=false 来自 useRecordingStore.loadConfig() 返回值。
+  const recordingConfig = useRecordingStore((s) => s.recordingConfig);
+
   const searchSeqRef = useRef(0);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skillSearchSeqRef = useRef(0);
@@ -110,6 +124,19 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
   const canMention =
     enabled && userStore.is_login && userStore.info.is_internal && (hasKnowledgeBase || checkVersion(VERSION_MODULE.WORKBENCH) || checkVersion(VERSION_MODULE.RECORDING));
   const canSkill = enabled && userStore.is_login;
+
+  // 我的文件 Tab 启用列表(version + recordingConfig 守卫,封装在此处,
+  // ChatContainer 直接消费,不需要重复 checkVersion)
+  const myFilesEnabledSources = useMemo<FileSource[]>(() => {
+    const list: FileSource[] = [];
+    if (checkVersion(VERSION_MODULE.WORKBENCH)) {
+      list.push('uploads', 'ai-generated');
+    }
+    if (checkVersion(VERSION_MODULE.RECORDING) && recordingConfig?.enabled !== false) {
+      list.push('recordings');
+    }
+    return list;
+  }, [recordingConfig?.enabled]);
 
   // ============ 加载技能列表(探索 + 我的) ============
   // deps 使用 selector 订阅的稳定函数引用;loadFeedbackConfig 在 ChatConfigProvider
@@ -296,7 +323,7 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
     setSelectedMentionLinks((prev) => prev.filter((p) => String(p.id) !== String(item.id)));
   }, []);
 
-  // ============ Dialog 回调(用于 EnhancedMentionDropdown 4 个入口) ============
+  // ============ Dialog 回调(用于 EnhancedMentionDropdown 2 个入口) ============
   // 把外部 dialog 返回的 files/libraries/spaces 合并到 selectedMentionLinks
   // (保持 source 隔离:同 source 的会被替换,跨 source 保留)
   const bulkReplaceBySource = useCallback((source: string, newLinks: any[]) => {
@@ -307,51 +334,54 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
   }, []);
 
   // Dialog key → mention source 的映射(library 在 mention 内部用 source="knowledge")
-  const DIALOG_TO_MENTION_SOURCE: Record<"library" | "uploads" | "ai-generated" | "recordings", string> = {
+  const DIALOG_TO_MENTION_SOURCE = {
     library: "knowledge",
-    uploads: "uploads",
-    "ai-generated": "ai-generated",
-    recordings: "recordings",
-  };
+    myFiles: ["uploads", "ai-generated", "recordings"], // 占位,实际 mapFileLink 时按 file.source 写
+  } as const;
 
   // 工厂:把单个 dialog 入口的 select/open 闭包收敛(OpenSpec sender-migration §7)
+  // dialogKey === "library" → 原 SpaceDialog(select 接受 files/libraries/spaces)
+  // dialogKey === "myFiles" → 合并后的 MyFilesDialog(selectBySource 接受 bySource 分桶)
   const makeFileSource = (
-    dialogKey: "library" | "uploads" | "ai-generated" | "recordings",
+    dialogKey: "library" | "myFiles",
     selectedMentionLinksSnapshot: any[],
   ) => {
-    const mentionSource = DIALOG_TO_MENTION_SOURCE[dialogKey];
     const isLibrary = dialogKey === "library";
+    const libraryMentionSource = DIALOG_TO_MENTION_SOURCE.library;
 
-    const mapFileLink = (f: any) => ({
-      id: String(f.id),
-      name: f.name,
-      icon: f.icon,
-      library_id: isLibrary ? f.library_id : undefined,
-      isfolder: !!f.isfolder,
-      upload_file_id: f.upload_file_id ?? (isLibrary ? null : (f.upload_file_id ?? null)),
-      file_size: isLibrary ? (f.file_size ?? null) : (f.file_size ?? f.upload_file?.size ?? null),
-      file_mime: isLibrary ? (f.file_mime ?? null) : (f.file_mime ?? f.upload_file?.mime_type ?? null),
-      source: mentionSource as "knowledge" | "uploads" | "ai-generated" | "recordings",
-      islibrary: false,
-      isspace: false,
-      ui: { active: true },
-      path: isLibrary ? undefined : f.path,
-      rawData: isLibrary ? undefined : f.rawData,
-    });
+    const mapFileLink = (f: any, sourceOverride?: string) => {
+      const source = sourceOverride || libraryMentionSource;
+      return {
+        id: String(f.id),
+        name: f.name,
+        icon: f.icon,
+        library_id: isLibrary ? f.library_id : undefined,
+        isfolder: !!f.isfolder,
+        upload_file_id: f.upload_file_id ?? (isLibrary ? null : (f.upload_file_id ?? null)),
+        file_size: isLibrary ? (f.file_size ?? null) : (f.file_size ?? f.upload_file?.size ?? null),
+        file_mime: isLibrary ? (f.file_mime ?? null) : (f.file_mime ?? f.upload_file?.mime_type ?? null),
+        source: source as "knowledge" | "uploads" | "ai-generated" | "recordings",
+        islibrary: false,
+        isspace: false,
+        ui: { active: true },
+        path: isLibrary ? undefined : f.path,
+        rawData: isLibrary ? undefined : f.rawData,
+      };
+    };
 
-    return {
-      // Dialog 确认回调(由 ChatContainer 在 Dialog.onConfirm 接入)
-      select: (...args: any[]) => {
-        if (isLibrary) {
+    if (isLibrary) {
+      return {
+        // Dialog 确认回调(由 ChatContainer 在 Dialog.onConfirm 接入)
+        select: (...args: any[]) => {
           const [files = [], libraries = [], spaces = []] = args;
-          const newFiles = files.map(mapFileLink);
+          const newFiles = files.map((f: any) => mapFileLink(f));
           const newLibs = libraries.map((l: any) => ({
             id: String(l.id),
             name: l.name,
             icon: l.icon,
             islibrary: true,
             isspace: false,
-            source: mentionSource,
+            source: libraryMentionSource,
             ui: { active: true },
           }));
           const newSpaces = spaces.map((s: any) => ({
@@ -360,20 +390,15 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
             icon: s.icon,
             islibrary: false,
             isspace: true,
-            source: mentionSource,
+            source: libraryMentionSource,
             ui: { active: true },
           }));
-          bulkReplaceBySource(mentionSource, [...newFiles, ...newLibs, ...newSpaces]);
-        } else {
-          const [files = []] = args;
-          bulkReplaceBySource(mentionSource, files.map(mapFileLink));
-        }
-      },
-      // Dialog 打开器(由 ChatContainer 渲染外部 Dialog 后,ref 传入)
-      open: (dialogRef: any) => {
-        if (!dialogRef?.current) return;
-        const links = selectedMentionLinksSnapshot.filter((l: any) => l.source === mentionSource);
-        if (isLibrary) {
+          bulkReplaceBySource(libraryMentionSource, [...newFiles, ...newLibs, ...newSpaces]);
+        },
+        // Dialog 打开器(由 ChatContainer 渲染外部 Dialog 后,ref 传入)
+        open: (dialogRef: any) => {
+          if (!dialogRef?.current) return;
+          const links = selectedMentionLinksSnapshot.filter((l: any) => l.source === libraryMentionSource);
           const files = links.filter((l: any) => !l.islibrary && !l.isspace).map((l: any) => ({
             id: l.id, name: l.name, icon: l.icon, library_id: l.library_id,
             isfolder: l.isfolder, upload_file_id: l.upload_file_id,
@@ -382,12 +407,42 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
           const libraries = links.filter((l: any) => l.islibrary).map((l: any) => ({ id: l.id, name: l.name, icon: l.icon }));
           const spaces = links.filter((l: any) => l.isspace).map((l: any) => ({ id: l.id, name: l.name, icon: l.icon }));
           dialogRef.current.open(files, libraries, undefined, spaces);
-        } else {
-          const files = links.map((l: any) => ({
-            id: l.id, name: l.name, icon: l.icon, path: l.path, isfolder: l.isfolder, rawData: l.rawData,
-          }));
-          dialogRef.current.open(files);
-        }
+        },
+      };
+    }
+
+    // myFiles 分支
+    return {
+      // 按 source 分桶确认:每次确认按 source 调 bulkReplaceBySource
+      selectBySource: (bySource: SelectedFilesBySource) => {
+        (["uploads", "ai-generated", "recordings", "favorites", "recently"] as FileSource[]).forEach((source) => {
+          const files = bySource[source];
+          if (files?.length) {
+            bulkReplaceBySource(
+              source,
+              files.map((f) => mapFileLink(f, source))
+            );
+          }
+        });
+      },
+      // Dialog 打开器:合并 5 个 source 的 selectedMentionLinks,每个 file 带 source 字段
+      open: (dialogRef: any) => {
+        if (!dialogRef?.current) return;
+        const sources: FileSource[] = ["uploads", "ai-generated", "recordings", "favorites", "recently"];
+        const files = sources.flatMap((source) =>
+          selectedMentionLinksSnapshot
+            .filter((l: any) => l.source === source && !l.islibrary && !l.isspace)
+            .map((l: any) => ({
+              id: l.id,
+              name: l.name,
+              icon: l.icon,
+              path: l.path,
+              isfolder: l.isfolder,
+              rawData: l.rawData,
+              source, // 告诉弹窗归属哪个 tab
+            }))
+        );
+        dialogRef.current.open(files);
       },
     };
   };
@@ -438,7 +493,7 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
               size: dataFile.size,
               mime_type: dataFile.type,
               preview_key: res.data?.preview_key,
-              url: res.data?.preview_key ? `${api_host}/api/preview/${res.data.preview_key}` : "",
+              url: buildPreviewUrl(res.data?.preview_key) ?? "",
             });
           } catch (error) {
             reject(error);
@@ -514,13 +569,13 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
   }, []);
 
   // ============ Dialog 打开器 / 确认回调 (factory 收敛) ============
-  // 通过 sources.* 暴露 4 个 dialog 入口(OpenSpec sender-migration §7)
+  // 通过 sources.* 暴露 2 个 dialog 入口:
+  //   - library:SpaceDialog(SpaceDialogRef 由 ChatContainer 传入)
+  //   - myFiles:合并后的 MyFilesDialog(单个 ref 承载 3 个 source 的 Tab)
   const sources = useMemo(
     () => ({
       library: makeFileSource("library", selectedMentionLinks),
-      uploads: makeFileSource("uploads", selectedMentionLinks),
-      "ai-generated": makeFileSource("ai-generated", selectedMentionLinks),
-      recordings: makeFileSource("recordings", selectedMentionLinks),
+      myFiles: makeFileSource("myFiles", selectedMentionLinks),
     }),
     [selectedMentionLinks, bulkReplaceBySource],
   );
@@ -541,6 +596,8 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
     httpRequest,
     acceptTypes: WORK_AI_ACCEPT_TYPES,
     sources,
+    /** 我的文件 Tab 启用列表(封装 version + recordingConfig 守卫) */
+    myFilesEnabledSources,
     reset,
     selectedMentionLinks,
     /** 当前 agent 的内置技能列表(已过滤 disabled),供 WorkAiSenderExtras 消费 */

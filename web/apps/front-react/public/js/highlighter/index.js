@@ -78,6 +78,10 @@
       this.lastMouseX = 0;
       this.lastMouseY = 0;
 
+      // 标记：最近一次 mouseup 发生在菜单上（用于在 selectionchange 中抑制误清状态）
+      // 设为时间戳，selectionchange 触发时若间隔过短则认为是菜单点击的副作用，跳过重置
+      this._mouseUpOnMenuAt = 0;
+
       // 绑定方法上下文
       this.handleParagraphEnter = this.handleParagraphEnter.bind(this);
       this.handleParagraphLeave = this.handleParagraphLeave.bind(this);
@@ -384,14 +388,30 @@
     handleMouseUp(e) {
       if (!this.options.enableManualHighlight) return;
 
-      // 如果已经有手动高亮，阻止新的选择
+      // mouseup 发生在菜单上时（点击"更多箭头"等），保留划词选区与手动高亮状态，
+      // 不能让后续流程误判为"用户重新划词"或"选区丢失"而清掉高亮。
+      if (this.state.menuElement && this.state.menuElement.contains(e.target)) {
+        this._mouseUpOnMenuAt = Date.now();
+        return;
+      }
+
+      // 如果已经有手动高亮，先判断当前手势是否产生了新的容器内选区。
       if (this.state.currentManualHighlight) {
-        // 清除选择，阻止新选择
         const selection = window.getSelection();
         if (selection.rangeCount > 0) {
-          selection.removeAllRanges();
+          const range = selection.getRangeAt(0);
+          if (this.isSelectionInContainer(range)) {
+            // 新选区应由后续流程处理，不能清掉用户刚完成的 selection。
+            this.resetManualHighlightState();
+          } else {
+            // 容器外的 selection 属于其他输入区域，保留它不受高亮器影响。
+            this.resetManualHighlightState();
+            return;
+          }
+        } else {
+          // mouseup 与菜单 click 之间不能同步清状态，否则菜单 handler 无法读取旧选区。
+          return;
         }
-        return;
       }
 
       const selection = window.getSelection();
@@ -410,9 +430,11 @@
         return;
       }
 
-      // 检查是否在限制区域内
+      // mouseup 落在限制区域外：只重置内部状态，绝不能 selection.removeAllRanges()
+      // 把用户在聊天输入框、标题、按钮文字等位置已经完成的选区清掉 —— 这正是
+      // "markdown 区域划词会影响其他地方的划词复制" 的根因。同文件 handleSelectionChange
+      // 在 selection 离开 highlighter 容器时也明确不动外部 selection。
       if (!this.isInRestrictArea(e.target)) {
-        selection.removeAllRanges();
         this.state.isSelecting = false;
         return;
       }
@@ -457,14 +479,41 @@
       // 如果已经有手动高亮，阻止新的选择
       if (this.state.currentManualHighlight) {
         const selection = window.getSelection();
-        if (selection.rangeCount > 0) {
-          const range = selection.getRangeAt(0);
-          const selectedText = range.toString().trim();
-          // 如果有新选择，清除它
-          if (selectedText.length > 0) {
-            selection.removeAllRanges();
+        if (selection.rangeCount === 0) {
+          // 200ms 内的 selection 被清掉，可能是刚刚 mousedown 在菜单上（点击"更多箭头"展开下拉）
+          // 引起的浏览器副作用，并非用户主动取消划词。
+          // 跳过这次重置，让后续 click 流程自然跑完。
+          if (Date.now() - this._mouseUpOnMenuAt < 200) {
+            return;
           }
+          // selection 被外部清掉（用户在菜单上 mouseup 后、用户在聊天框点击空白等）：
+          // 必须延迟重置 —— mouseup 与 click 之间间隔极短，handleMenuClick 需要
+          // currentManualHighlight 仍存在以构建 highlightInfo；同步清会导致
+          // item.handler(highlightInfo) 拿到 null → handler 内 e.text 报错。
+          // 捕获本次调度时的高亮引用：setTimeout 回调里只重置**同一个**实例，
+          // 避免用户在这 100ms 内重新划了新词时，误把新词 state 一并清掉。
+          const scheduledHighlight = this.state.currentManualHighlight;
+          setTimeout(() => {
+            if (this.state.currentManualHighlight === scheduledHighlight) {
+              this.resetManualHighlightState();
+            }
+          }, 100);
+          return;
         }
+
+        const range = selection.getRangeAt(0);
+
+        if (!this.isSelectionInContainer(range)) {
+          // selection 离开 highlighter 容器（用户在聊天输入框等其他区域）：
+          // 只重置状态，不动外部 selection —— 这是修复"在输入框里无法输入"的关键：
+          // 不能 clearManualHighlight（其内部会 selection.removeAllRanges 清掉输入框的 selection）
+          this.resetManualHighlightState();
+          return;
+        }
+
+        // 用户在容器内做新 selection（重新划词）→ 重置上一次的状态，
+        // 但**不能** removeAllRanges，否则会把用户正在做的 selection 立刻清掉
+        this.resetManualHighlightState();
         return;
       }
 
@@ -1206,6 +1255,22 @@
     }
 
     /**
+     * 仅重置手动高亮的内部状态，不动外部 selection，也不发 selection-change 事件。
+     * 用于 selectionchange / mouseup 路径 —— 这些场景下用户当前可能正在做新 selection
+     * 或正在聊天框输入，不能用 clearManualHighlight（其内部会 selection.removeAllRanges
+     * 把当前 selection 一并清掉）。
+     */
+    resetManualHighlightState() {
+      if (!this.state.currentManualHighlight &&
+          !this.state.currentManualHighlights.length) {
+        return;
+      }
+      this.state.currentManualHighlight = null;
+      this.state.currentManualHighlights = [];
+      this.hideMenu();
+    }
+
+    /**
      * 清除手动高亮
      */
     clearManualHighlight() {
@@ -1467,6 +1532,13 @@
         dropdownToggle.type = 'button';
         dropdownToggle.className = `${this.options.menuClass}-item dropdown-toggle`;
         dropdownToggle.innerHTML = '<svg class="icon" viewBox="0 0 16 16" fill="currentColor" style="width: 16px; height: 16px; display: block;"><path d="M3 6l5 5 5-5z"/></svg>';
+
+        // 阻止 mousedown 默认行为，避免点击"更多箭头"时浏览器清掉划词选区
+        // （默认行为会触发 selectionchange → resetManualHighlightState，导致菜单立即失效）
+        dropdownToggle.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        });
 
         dropdownToggle.addEventListener('click', (e) => {
           e.stopPropagation();

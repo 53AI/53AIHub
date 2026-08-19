@@ -17,12 +17,13 @@ import {
   useInlineEdit,
 } from "../../composables/useInlineEdit";
 import { t } from "@/locales";
-import { CatalogRefContext } from "../index";
+import { CatalogRefContext, useFileViewFullscreen } from "../index";
 import agentsApi from "@/api/modules/agents";
 import { AGENT_USAGES } from "@/constants/agent";
+import { FullscreenToggle } from "@/components/FullscreenToggle";
 
 const FileViewer = lazy(() => import("@/components/FileViewer/view"));
-const AudioViewer = lazy(() => import("./views/audio"));
+const LibraryAudioView = lazy(() => import("./views/library-audio"));
 const VideoViewer = lazy(() => import("./views/video"));
 
 interface FileViewState {
@@ -57,6 +58,16 @@ export function LibraryFileView() {
   const currentFile = files.find((item) => item.id === currentFileId);
   const assistantVisible = useLibraryStore((state) => state.assistantVisible);
   const setAssistantVisible = useLibraryStore((state) => state.setAssistantVisible);
+
+  // 全屏状态由外层 library/main/index.tsx 持有，通过 React Context 跨越中间
+  // LibraryFileLayout 这一层 Outlet 传下来。
+  // - `fullscreen` / `toggleFullscreen`：供 FullscreenToggle 按钮使用
+  // - `composeFileViewClassName`：在外层 LibraryMainView 已经应用到包裹 <Outlet /> 的 div 上，
+  //   这里只用来兜底 / 备用，不再额外应用到内层容器。
+  const {
+    fileViewFullscreen: fullscreen,
+    toggleFileViewFullscreen: toggleFullscreen,
+  } = useFileViewFullscreen();
 
   // Find assistant-sider container when assistantVisible becomes true
   useEffect(() => {
@@ -172,6 +183,10 @@ export function LibraryFileView() {
                 />
                 <FileFav />
                 <AssistantBtn />
+                <FullscreenToggle
+                  fullscreen={fullscreen}
+                  onToggle={toggleFullscreen}
+                />
                 <FileMore
                   catalogRef={catalogRef?.current}
                   onPermission={() =>
@@ -207,7 +222,7 @@ export function LibraryFileView() {
             {currentFile && (
               <div className="flex-1 flex overflow-hidden relative">
                 {currentFile.file_mime === "mp3" ? (
-                  <AudioViewer currentFile={currentFile} />
+                  <LibraryAudioView currentFile={currentFile} />
                 ) : currentFile.file_mime === "mp4" ? (
                   <VideoViewer currentFile={currentFile} />
                 ) : (
@@ -236,7 +251,9 @@ export function LibraryFileView() {
         )}
       </div>
 
-      {/* Portal to assistant-sider for DocumentApp */}
+      {/* DocumentApp portal 到外层 .assistant-sider 容器（由 library/main/index.tsx 渲染）。
+           全屏时 .assistant-sider 在 layout 层提升 z-index 到 202 浮于覆盖层之上，行为与
+           非全屏一致。 */}
       {!state.isLoading &&
         isLibraryFileView &&
         assistantVisible &&

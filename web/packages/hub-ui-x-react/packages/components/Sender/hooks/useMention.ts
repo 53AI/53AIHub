@@ -1,10 +1,28 @@
 /**
  * @ 提及功能 Hook
+ *
+ * ⚠️ 镜像同步警告 ⚠️
+ * 本 hook 与 `./useSkill.ts` 共享 ~70% 状态机逻辑,以下函数必须**逐行同步修改**:
+ *   - closeSelect
+ *   - handleClickOutside
+ *   - handleClickOnInput
+ *   - quitMentionInput
+ *   - cancelMentionInput
+ *   - checkAndConvertInput
+ *   - handleSearch
+ *   - handleInputCheck
+ *   - handleKeyDown
+ *
+ * 这些函数体在两份文件里**应当字面相同**,只有关键字 / className / 数据类型差异。
+ * 改动任何一个,必须立刻同步改 useSkill.ts 的对应函数,否则 @ 和 / 行为会漂移。
+ * 每个函数体顶部都有 `// SYNC: useSkill.<fnName>` 标记,grep 即可定位。
+ *
+ * 长期方案:抽 `useChipTrigger` 高阶 hook 统一这两处。详见 OpenSpec 记录。
  */
 
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import type { MentionDocItem, MentionLinkItem } from '../types';
-import { getCursor, hasClassName, findParent, moveCursorToEnd, createSpace, insertToTextNode, getPureText } from './useEditor';
+import { getCursor, hasClassName, findParent, moveCursorToEnd, createSpace, insertToTextNode, getPureText, dissolveChip } from './useEditor';
 
 export interface UseMentionOptions {
   editorRef: React.RefObject<HTMLDivElement>;
@@ -48,6 +66,12 @@ export interface UseMentionOptions {
    * 这种情况下 placeholder 不会自动更新、inline-block chip 可能换行。
    */
   onInsertInput?: (input: HTMLElement, cursor?: any) => void;
+  /**
+   * 把焦点放回编辑器。Esc 取消 @ 输入态时必须调用 —— 否则焦点留在
+   * 已被卸载的下拉搜索框上,用户后续按键无效。
+   * 通常指向 `useEditor.focusAtEnd`。
+   */
+  focusEditor?: () => void;
 }
 
 export const useMention = (options: UseMentionOptions) => {
@@ -72,6 +96,7 @@ export const useMention = (options: UseMentionOptions) => {
     onClickOutside,
     onBeforeActivate,
     onInsertInput,
+    focusEditor,
   } = options;
 
   const [canShowSelect, setCanShowSelect] = useState(false);
@@ -86,13 +111,15 @@ export const useMention = (options: UseMentionOptions) => {
   // 过滤后的建议列表
   const filteredSuggestions = useMemo(() => {
     const keyword = searchKeyword.trim();
-    if (keyword && suggestions.length > 0) {
+    // 搜索态:结果即结果,空结果就是空态,不回落到「最近访问」
+    // (回落会导致 results=null 时下拉里仍列出最近文件,用户误以为是搜索命中)
+    if (keyword) {
       return suggestions;
     }
     if (recentList.length > 0) {
       return recentList.slice(0, 5);
     }
-    return suggestions.length > 0 ? suggestions.slice(0, 5) : [];
+    return suggestions.slice(0, 5);
   }, [searchKeyword, suggestions, recentList]);
 
   /**
@@ -266,10 +293,14 @@ export const useMention = (options: UseMentionOptions) => {
 
       if (input) {
         // mention-input → mention-link 替换,然后 link 后跟一个空格
-        // 走 editor.insertNode(传入 space)走统一的 BR/空格/placeholder 流程
+        // 走 editor.insertNode 走统一的 BR/空格/placeholder 流程
         input.replaceWith(link);
         if (onInsertInput) {
-          (onInsertInput as any)(space);
+          // 必须传 cursor,否则 insertNode fallback 到 appendOrBeforeBR,
+          // space 会被 append 到编辑器末尾(用户看到的「空格跑掉了」)。
+          // link 是 element 不是 text,cursorPos 任意 → insertNode 走 element.after(node) 分支,
+          // 把 space 插到 link 之后,正是我们想要的位置。
+          (onInsertInput as any)(space, { element: link, cursorPos: 0 });
         } else {
           link.after(space);
           moveCursorToEnd(space);
@@ -299,6 +330,7 @@ export const useMention = (options: UseMentionOptions) => {
 
   /**
    * 关闭选择器
+   * // SYNC: useSkill.closeSelect
    */
   const closeSelect = useCallback(() => {
     setCanShowSelect(false);
@@ -309,6 +341,7 @@ export const useMention = (options: UseMentionOptions) => {
   /**
    * 点击外部处理
    * 根据 hasSelectAfterOpen 决定是否删除 mention-input
+   * // SYNC: useSkill.handleClickOutside
    */
   const handleClickOutside = useCallback(() => {
     if (!canShowSelect) return;
@@ -321,14 +354,10 @@ export const useMention = (options: UseMentionOptions) => {
     // 根据 hasSelectAfterOpen 决定处理方式
     const input = getCurrentMentionInput();
     if (input) {
-      if (hasSelectAfterOpen) {
-        // 已选择过 → 删除 mention-input
-        input.remove();
-      } else {
-        // 未选择过 → 转换为普通文字
-        const text = document.createTextNode(input.textContent || '');
-        input.replaceWith(text);
-      }
+      // 已选择过 → 删除 mention-input;未选择过 → 转换为普通文字
+      // restoreCaret=false + normalize=false:点击发生在编辑器外部,
+      // 不能把光标抢回来,也不能合并相邻文本节点顶掉浏览器刚放好的光标
+      dissolveChip(input, { keepText: !hasSelectAfterOpen, restoreCaret: false, normalize: false });
     }
 
     onClickOutside?.();
@@ -336,6 +365,7 @@ export const useMention = (options: UseMentionOptions) => {
 
   /**
    * 点击 mention-input 时重新打开下拉框
+   * // SYNC: useSkill.handleClickOnInput
    */
   const handleClickOnInput = useCallback((input: HTMLElement) => {
     if (!enabled) return;
@@ -356,24 +386,61 @@ export const useMention = (options: UseMentionOptions) => {
 
   /**
    * 退出 mention-input 模式
+   *
+   * 用于"用户把注意力移到别处"的场景(点击编辑器其它位置、输入 / 触发互斥清理)。
+   * 这些场景下光标已经由用户的操作决定,所以 restoreCaret=false,不能抢回来。
+   * 键盘主动取消(Esc / Backspace)请用 cancelMentionInput。
+   *
+   * 也不调 normalize():浏览器已经在 mousedown 时把光标放到了用户点击的位置,
+   * 立刻合并相邻文本节点会让光标所在的节点被吞掉,Selection 失锚,光标塌缩到编辑器开头。
+   *
    * @param force - 强制删除（不转换为文字）
+   * // SYNC: useSkill.quitSkillInput
    */
   const quitMentionInput = useCallback((force = false) => {
     const input = getCurrentMentionInput();
     if (!input) return;
 
-    if (hasSelectAfterOpen || force) {
-      // 删除 mention-input
-      input.remove();
-    } else {
-      // 转换为普通文字
-      const text = document.createTextNode(input.textContent || '');
-      input.replaceWith(text);
-    }
+    dissolveChip(input, {
+      keepText: !(hasSelectAfterOpen || force),
+      restoreCaret: false,
+      normalize: false,
+    });
 
     closeSelect();
     setHasSelectAfterOpen(false);
   }, [hasSelectAfterOpen, getCurrentMentionInput, closeSelect]);
+
+  /**
+   * 主动取消 @ 输入态（键盘触发，必须恢复光标）
+   *
+   * @param toText - true: chip 还原成普通 "@" 文字，光标停在它后面（Esc）
+   *                 false: 整块删除，光标回到 chip 原来的位置（删掉 @ 触发符）
+   * @returns 是否真的处理了（编辑器里没有 mention-input 时返回 false）
+   * // SYNC: useSkill.cancelSkillInput
+   */
+  const cancelMentionInput = useCallback((toText: boolean): boolean => {
+    const input = getCurrentMentionInput();
+    if (!input) return false;
+
+    dissolveChip(input, { keepText: toText, restoreCaret: true });
+
+    closeSelect();
+    setHasSelectAfterOpen(false);
+    // chip 内的文字原本被 getPureText 当作 mention 块跳过,
+    // 溶解成普通文字/删除后内容变了,必须同步一次 onChange。
+    onInput?.();
+    // 焦点要拉回编辑器:下拉弹窗的搜索框在被卸载前抢走了 focus,
+    // 不主动 focus 回去,用户后续按键(包括再次输入 @)都进不来。
+    // 用 queueMicrotask 而不是 setTimeout(0):微任务在当前同步代码块结束
+    // 后立即 flush,比 React 下一次 commit 早一步,焦点回拉更紧凑;
+    // 且浏览器会把失败的焦点切换(目标已 detach)抛到 microtask 队列,
+    // 比 setTimeout 多一层错误兜底。
+    if (focusEditor) {
+      queueMicrotask(() => focusEditor());
+    }
+    return true;
+  }, [getCurrentMentionInput, closeSelect, onInput, focusEditor]);
 
   /**
    * 处理外部 Dialog 选中文件(SpaceDialog / MyFilesDialog)。
@@ -401,7 +468,14 @@ export const useMention = (options: UseMentionOptions) => {
 
   /**
    * 检查并转换无效的 mention-input
-   * 内容不以 @ 开头时转换为普通文字
+   *
+   * 两种"无效"情况都在这里收口:
+   * - 内容被删空（用户 Backspace 删掉了 @）→ 整块删除
+   * - 内容不再以 @ 开头 → 还原成普通文字
+   *
+   * 必须走 dissolveChip 恢复光标:原实现 `input.replaceWith(空文本节点)` 会让
+   * Selection 失去锚点,浏览器把光标塌缩到编辑器开头 —— 即"删除 @ 后光标出现在 @ 前面"。
+   * // SYNC: useSkill.checkAndConvertInput
    */
   const checkAndConvertInput = useCallback(() => {
     const input = getCurrentMentionInput();
@@ -413,15 +487,14 @@ export const useMention = (options: UseMentionOptions) => {
 
     const text = input.textContent || '';
     if (!text.startsWith(triggerCode)) {
-      // 内容不以 @ 开头 → 转换为普通文字
-      const textNode = document.createTextNode(text);
-      input.replaceWith(textNode);
+      dissolveChip(input, { keepText: true, restoreCaret: true });
       closeSelect();
     }
   }, [triggerCode, getCurrentMentionInput, closeSelect]);
 
   /**
    * 处理搜索
+   * // SYNC: useSkill.handleSearch
    */
   const handleSearch = useCallback((keyword: string) => {
     setInternalSearchKeyword(keyword);
@@ -430,6 +503,7 @@ export const useMention = (options: UseMentionOptions) => {
 
   /**
    * 处理输入（检查 @ 触发）
+   * // SYNC: useSkill.handleInputCheck
    */
   const handleInputCheck = useCallback((event?: React.KeyboardEvent) => {
     if (!enabled) return;
@@ -470,18 +544,52 @@ export const useMention = (options: UseMentionOptions) => {
           sel.addRange(newRange);
         }
       }
-      activateMentionInput();
+      activateMentionInput(getCursor() || undefined);
     }
   }, [enabled, triggerCode, findMentionInput, getCurrentMentionInput, activateMentionInput, handleSearch]);
 
   /**
    * 处理键盘导航
+   *
+   * Esc / Backspace 的判定用 getCurrentMentionInput()(编辑器内查询)而不是
+   * findMentionInput()(基于光标向上找):点 @ 按钮进入输入态时光标可能不在 chip 内,
+   * 用光标判定会漏掉。方向键/回车仍沿用原来的光标判定,避免行为变化。
+   * // SYNC: useSkill.handleKeyDown
    */
   const handleKeyDown = useCallback((event: React.KeyboardEvent): boolean => {
-    if (!canShowSelect) return false;
-
-    const mentionInput = findMentionInput();
+    const mentionInput = getCurrentMentionInput();
     if (!mentionInput) return false;
+
+    // Esc:取消 @ 文档选择状态,chip 还原成一个普通的 "@" 字符,光标停在它后面
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      // 阻止冒泡,避免顺带关掉外层 Modal/Drawer
+      event.stopPropagation();
+      cancelMentionInput(true);
+      return true;
+    }
+
+    // Backspace:chip 内只剩触发符时整块删除,并把光标放回 chip 原来的位置。
+    // 交给浏览器处理会留下一个空 span,后续清理时 Selection 失锚,
+    // 光标会被塌缩到编辑器开头(表现为跑到 @ 前面)。
+    if (event.key === 'Backspace') {
+      const cursor = getCursor();
+      const inputAtCursor = cursor?.element ? findMentionInput(cursor.element) : null;
+      const isCollapsed = cursor?.range ? cursor.range.collapsed : true;
+      if (
+        inputAtCursor === mentionInput &&
+        isCollapsed &&
+        (cursor?.cursorPos ?? 0) > 0 &&
+        (mentionInput.textContent || '') === triggerCode
+      ) {
+        event.preventDefault();
+        cancelMentionInput(false);
+        return true;
+      }
+    }
+
+    if (!canShowSelect) return false;
+    if (!findMentionInput()) return false;
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();
@@ -507,13 +615,17 @@ export const useMention = (options: UseMentionOptions) => {
       return true;
     }
 
-    if (event.key === 'Escape') {
-      closeSelect();
-      return true;
-    }
-
     return false;
-  }, [canShowSelect, findMentionInput, filteredSuggestions, selectedIndex, selectItem, closeSelect]);
+  }, [
+    canShowSelect,
+    triggerCode,
+    getCurrentMentionInput,
+    findMentionInput,
+    filteredSuggestions,
+    selectedIndex,
+    selectItem,
+    cancelMentionInput,
+  ]);
 
   // 重置选中索引
   useEffect(() => {
@@ -538,6 +650,7 @@ export const useMention = (options: UseMentionOptions) => {
     handleClickOutside,
     handleClickOnInput,
     quitMentionInput,
+    cancelMentionInput,
     checkAndConvertInput,
     handleSelectFiles,
     hasSelectAfterOpen,

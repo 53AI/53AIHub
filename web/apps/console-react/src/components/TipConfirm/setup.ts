@@ -1,3 +1,4 @@
+import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import TipConfirmComponent, { type TipConfirmRef, type TipConfirmProps } from './index'
 
@@ -38,7 +39,7 @@ export default function showTipConfirm(options: TipConfirmOptions): TipConfirmIn
     showConfirmButton = true,
     showCancelButton = true,
     onConfirm,
-    onCancel,
+    onCancel
   } = options
 
   const container = document.createElement('div')
@@ -61,21 +62,19 @@ export default function showTipConfirm(options: TipConfirmOptions): TipConfirmIn
     onCancel: () => {
       onCancel?.()
       destroy()
-    },
+    }
   }
 
-  const Component = (
-    <TipConfirmComponent
-      {...props}
-      ref={(ref) => {
-        instance = ref
-        if (ref) {
-          // Auto open after mount
-          setTimeout(() => ref.open(), 0)
-        }
-      }}
-    />
-  )
+  const Component = createElement(TipConfirmComponent, {
+    ...props,
+    ref: (ref: TipConfirmRef | null) => {
+      instance = ref
+      if (ref) {
+        // Auto open after mount
+        setTimeout(() => ref.open(), 0)
+      }
+    }
+  })
 
   root.render(Component)
 
@@ -90,6 +89,6 @@ export default function showTipConfirm(options: TipConfirmOptions): TipConfirmIn
   return {
     open: () => instance?.open(),
     close: () => instance?.close(),
-    destroy,
+    destroy
   }
 }

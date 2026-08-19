@@ -28,6 +28,36 @@ export interface MenuItem {
   visible?: boolean;
   /** Optional wrapper function for the item content (e.g., permission tooltip) */
   wrapper?: (children: React.ReactNode) => React.ReactNode;
+  /** Submenu items; when present, Antd renders this item as a hover submenu */
+  children?: MenuItem[];
+}
+
+/** Recursively build Antd menu item shape from MenuItem, preserving submenu children. */
+function buildAntdItem(item: MenuItem): NonNullable<MenuProps["items"]>[number] {
+  if (item.divided) {
+    return { type: "divider", key: item.key };
+  }
+  const labelContent = (
+    <span className={`flex items-center`}>
+      {item.icon && (
+        <SvgIcon
+          name={item.icon}
+          size={item.iconSize || 16}
+          className={`${item.iconClass ?? "menu-icon"}${item.danger ? " danger" : ""}`}
+        />
+      )}
+      {item.label}
+    </span>
+  );
+  return {
+    key: item.key,
+    label: item.wrapper ? item.wrapper(labelContent) : labelContent,
+    disabled: item.disabled,
+    danger: item.danger,
+    children: item.children?.length
+      ? item.children.map((c) => buildAntdItem(c))
+      : undefined,
+  };
 }
 
 interface MoreDropdownProps {
@@ -65,6 +95,8 @@ interface MoreDropdownProps {
   open?: boolean;
   /** Callback when open state changes */
   onOpenChange?: (open: boolean) => void;
+  /** Whether to unmount the dropdown when hidden (avoid perf issues when rendering many at once) */
+  destroyOnHidden?: boolean;
 }
 
 export function MoreDropdown({
@@ -73,7 +105,7 @@ export function MoreDropdown({
   iconSize = 18,
   tooltip = "更多",
   trigger = ["click"],
-  backgroundColor = "#F5F6F7",
+  backgroundColor = "#F2F6FE",
   triggerClassName = "",
   items = [],
   triggerElement,
@@ -82,45 +114,11 @@ export function MoreDropdown({
   placement,
   open,
   onOpenChange,
+  destroyOnHidden,
 }: MoreDropdownProps) {
-  const getIconClass = (item: MenuItem) => {
-    const classes: string[] = [];
-    if (item.iconClass) {
-      classes.push(item.iconClass);
-    } else {
-      classes.push("menu-icon");
-    }
-    if (item.danger) {
-      classes.push("danger");
-    }
-    return classes.join(" ");
-  };
-
   const menuItems: MenuProps["items"] = items
     .filter((item) => item.visible !== false)
-    .map((item) => {
-      if (item.divided) {
-        return { type: "divider", key: item.key };
-      }
-      const labelContent = (
-        <span className={`flex items-center`}>
-          {item.icon && (
-            <SvgIcon
-              name={item.icon}
-              size={item.iconSize || 16}
-              className={getIconClass(item)}
-            />
-          )}
-          {item.label}
-        </span>
-      );
-      return {
-        key: item.key,
-        label: item.wrapper ? item.wrapper(labelContent) : labelContent,
-        disabled: item.disabled,
-        danger: item.danger,
-      };
-    });
+    .map((item) => buildAntdItem(item));
 
   const handleClick: MenuProps["onClick"] = ({ key, domEvent }) => {
     domEvent.stopPropagation();
@@ -151,6 +149,7 @@ export function MoreDropdown({
       classNames={{ root: "more-dropdown-overlay" }}
       open={open}
       onOpenChange={onOpenChange}
+      destroyOnHidden={destroyOnHidden}
     >
       {tooltip ? (
         <Tooltip title={tooltip}>{triggerButton}</Tooltip>

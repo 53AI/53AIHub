@@ -298,7 +298,7 @@ export function ShareChatView() {
 
   return (
     <div className="h-full flex flex-col bg-[#F1F4FB] overflow-hidden">
-      <div className="w-11/12 md:w-[900px] h-[90%] overflow-hidden rounded-3xl m-auto bg-white flex flex-col">
+      <div className="w-11/12 lg:w-[1200px] h-[90%] overflow-hidden rounded-3xl m-auto bg-white flex flex-col">
         {/* Header */}
         <div className="flex-none h-[110px] flex items-center gap-2 max-md:h-20 border-b md:px-10 px-3">
           <img

@@ -19,7 +19,7 @@ import {
   Empty
 } from "antd";
 import { DownOutlined } from "@ant-design/icons";
-import { SvgIcon, OverflowTooltip } from "@km/shared-components-react";
+import { SvgIcon, OverflowTooltip, SidePanel } from "@km/shared-components-react";
 
 // ============ Stores ============
 import { useConversationStore } from "./conversation";
@@ -48,8 +48,9 @@ import {
   useChatSend,
   useChatShare,
   useRagStats,
-  convertReplayEventToSSE,
-  processStreamDataItem,
+  applyAgentRunProjectionEvents,
+  mergeAgentRunProjectionIntoMessage,
+  type AgentRunMessageProjection,
 } from "@km/shared-business/chat";
 
 // ============ Components ============
@@ -69,7 +70,7 @@ import {
 } from "@/components/Chat";
 import { BubbleList, BubbleUser, BubbleAssistant } from "@km/hub-ui-x-react";
 import { UserMemory } from "@/components/UserMemory";
-import { ProcessFlowHeader, ChatConfigProvider, type KnowledgePanelData } from "@km/shared-business/chat";
+import { ProcessFlowHeader, ChatConfigProvider, projectReasoningIntoProcessRecords, type KnowledgePanelData } from "@km/shared-business/chat";
 import { chatAdapters } from "@/adapters/chat-adapters";
 import FileViewerWrapper from "@/components/FileViewer/view";
 import FileViewer from "@/components/FileViewer";
@@ -81,7 +82,8 @@ import { checkPermission, checkLoginStatus } from "@/utils/permission";
 import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
 import { AGENT_USAGES } from "@/constants/agent";
 import { EVENT_NAMES } from "@/constants/events";
-import { api_host, getPublicPath } from '@/utils/config';
+import { getPublicPath } from '@/utils/config';
+import { buildPreviewUrl } from '@/utils/preview';
 import ChatHistory from "./history";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -206,6 +208,10 @@ function IndexChatViewInner() {
   const addAnswerAsMdRef = useRef<any>(null);
   const loadConversationRequestId = useRef(0);
   const latestRunFetchedRef = useRef(false);
+  /** AgentRun 订阅的独立增量投影，避免与主 SSE 双写同一 answer */
+  const agentRunProjectionRef = useRef<AgentRunMessageProjection | null>(null);
+  /** 刷新恢复时没有主 SSE，由 AgentRun 投影接管实时状态；主动发送时由主 SSE 单写 */
+  const agentRunOwnsLiveStateRef = useRef(true);
   const checkedFilesRef = useRef<Set<string>>(new Set());
   const currentGraphMessage = useRef<any>(null);
 
@@ -368,9 +374,7 @@ function IndexChatViewInner() {
               size: dataFile.size,
               mime_type: dataFile.type,
               preview_key: res.data?.preview_key,
-              url: res.data?.preview_key
-                ? `${api_host}/api/preview/${res.data.preview_key}`
-                : "",
+              url: buildPreviewUrl(res.data?.preview_key) ?? "",
             });
           } catch (error) {
             reject(error);
@@ -511,6 +515,7 @@ function IndexChatViewInner() {
 
       setIsStreaming(true);
       latestRunFetchedRef.current = false;
+      agentRunOwnsLiveStateRef.current = false;
 
       const agent_id = agentInfo?.agent_id;
       // 创建会话并获取 conversation_id
@@ -887,6 +892,7 @@ function IndexChatViewInner() {
   const loadConversation = useCallback(
     async (conversation_id: string): Promise<boolean> => {
       const requestId = ++loadConversationRequestId.current;
+      agentRunOwnsLiveStateRef.current = true;
 
       // 使用 Promise 包装 recover，等待 onMessage 完成
       return new Promise((resolve) => {
@@ -1065,7 +1071,7 @@ function IndexChatViewInner() {
     try {
       if (file.url || file.preview_key) {
         const fileUrl =
-          file.url || `${api_host}/api/preview/${file.preview_key}`;
+          file.url || buildPreviewUrl(file.preview_key) || "";
         setFilePreviewState({
           visible: true,
           loading: false,
@@ -1369,37 +1375,29 @@ function IndexChatViewInner() {
     if (isTerminalEvent) {
       setIsStreaming(false)
     }
-    if (events.length > 0 && messageId) {
-      updateMessageList((list) => {
-        const targetIndex = list.findIndex((m: any) => m.id === messageId)
-        if (targetIndex === -1) return list
+    updateMessageList((list) => {
+      const targetIndex = list.findIndex((m: any) => String(m.id) === String(messageId))
+      if (targetIndex === -1) return list
 
-        const message = {
-          ...list[targetIndex],
-          process_records: [],
-          skillRunItems: [],
-          outputFiles: [],
-          rag_temp: {},
-          rag_stats: undefined,
-          answer: '',
-          reasoning_content: '',
-          loading: !isTerminalEvent
-        }
+      const projection = applyAgentRunProjectionEvents(
+        agentRunProjectionRef.current,
+        events as any[],
+        messageId,
+        formatRagStats,
+        `${currentRun.run_id}:${messageId}`,
+      )
+      if (projection === agentRunProjectionRef.current) return list
 
-        for (const event of events) {
-          const sseData = convertReplayEventToSSE(event as any, messageId)
-          if (sseData) {
-            processStreamDataItem(sseData, message, formatRagStats)
-          } else if (event.type === 'message.completed' || event.event_type === 'message.completed') {
-            message.answer = event.payload.answer;
-          }
-        }
-
-        const newList = [...list]
-        newList[targetIndex] = message
-        return newList
-      })
-    }
+      const newList = [...list]
+      newList[targetIndex] = mergeAgentRunProjectionIntoMessage(
+        list[targetIndex],
+        projection.message,
+        { projectionOwnsLiveState: agentRunOwnsLiveStateRef.current },
+      )
+      // 只有目标消息存在且事件真正应用后才推进游标；恢复时不会丢历史事件。
+      agentRunProjectionRef.current = projection
+      return newList
+    })
   }, [agentRunEvents, agentRunCurrentRun, updateMessageList, formatRagStats])
 
   /**
@@ -1628,6 +1626,7 @@ function IndexChatViewInner() {
                         content={msg.answer}
                         reasoning={msg.reasoning_content}
                         reasoningExpanded={msg.reasoning_expanded}
+                        showReasoning={!msg.process_records?.length}
                         streaming={msg.loading}
                         alwaysShowMenu={
                           index === messageList.length - 1 ||
@@ -1648,7 +1647,11 @@ function IndexChatViewInner() {
                         header={
                           <ChatConfigProvider lang={locale} adapters={chatAdapters} onOpenKnowledgePanel={handleOpenKnowledgePanel(msg)}>
                             <ProcessFlowHeader
-                              processRecords={msg.process_records}
+                              processRecords={projectReasoningIntoProcessRecords(
+                                msg.process_records,
+                                msg.reasoning_content,
+                                msg.loading,
+                              )}
                               streaming={msg.loading}
                               hasContent={!!(msg.answer || msg.content)}
                               getKnowledgeSearchFiles={() => msg.rag_stats?.files_search || []}
@@ -2070,14 +2073,14 @@ function IndexChatViewInner() {
       )}
 
       {/* ============ 思考知识库侧边栏 ============ */}
-      {showThinkKnowledge && (
-        <div className="h-full w-[418px] border-l">
+      <SidePanel side="right" width={418} open={showThinkKnowledge}>
+        <div className="h-full border-l">
           <ThinkKnowledge
             ref={thinkKnowledgeRef}
             onClose={() => setShowThinkKnowledge(false)}
           />
         </div>
-      )}
+      </SidePanel>
 
       {/* 用户记忆侧边栏 */}
       {showUserMemory && (

@@ -9,6 +9,7 @@ export interface Strategy {
   priority: number
   logic: number
   enabled: boolean
+  is_default?: boolean
   conditions_json: string
   pipeline_name: string
   created_time: number

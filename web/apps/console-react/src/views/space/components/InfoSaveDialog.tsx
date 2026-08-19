@@ -8,7 +8,7 @@ import { permissionsApi } from '@/api/modules/permissions'
 import type { SpaceItem, SpaceCreateRequest } from '@/api/modules/spaces/types'
 import { useUserStore } from '@/stores/modules/user'
 import { uploadApi } from '@/api/modules/upload'
-import { api_host } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 import { createIconFileFromStatic } from '@km/shared-utils'
 import { t } from '@/locales'
 
@@ -141,7 +141,7 @@ function InfoSaveDialogInner(
       let icon = formData.icon
       if (iconFile && typeof iconFile !== 'string') {
         const res = await uploadIcon(iconFile)
-        icon = `${api_host}/api/preview/${res?.preview_key || ''}`
+        icon = buildPreviewUrl(res?.preview_key) ?? ''
       }
 
       const submitData: SpaceCreateRequest = {

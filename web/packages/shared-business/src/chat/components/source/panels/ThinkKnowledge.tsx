@@ -250,20 +250,20 @@ export const ThinkKnowledge = forwardRef<
   return (
     <div className="h-full bg-white flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-5">
-        <h2 className="text-base font-semibold text-[#1D1E1F]">
+      <div className="h-16 flex items-center justify-between px-5 border-b">
+        <h4 className="text-lg text-primary">
           {t("source.knowledge_search_data")}
-        </h2>
-        <button
+        </h4>
+        <div
+          className="flex-center size-6 rounded cursor-pointer hover:bg-[#ECEDEE]"
           onClick={handleClose}
-          className="text-gray-400 hover:text-gray-600 transition-colors"
         >
           <CloseOutlined />
-        </button>
+        </div>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4">
+      <div className="flex-1 overflow-y-auto p-4">
         {/* Empty state */}
         {searchResults.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-gray-500">

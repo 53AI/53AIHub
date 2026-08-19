@@ -1,7 +1,7 @@
 import { useRef, useState, forwardRef, useImperativeHandle, ReactNode } from 'react'
 import { Upload, message } from 'antd'
 import type { UploadFile, UploadProps } from 'antd'
-import { API_HOST } from '@/api/host'
+import { buildPreviewUrl } from '@/utils/preview'
 import uploadApi from '@/api/modules/upload'
 import { checkPermission } from '@/utils/permission'
 import './upload.css'
@@ -112,7 +112,7 @@ export const UploadComponent = forwardRef<UploadComponentRef, UploadComponentPro
         const res = await uploadApi.upload(file)
         customOnSuccess?.({
           id: res.data.id,
-          url: `${API_HOST}/api/preview/${res.data.preview_key || ''}`,
+          url: buildPreviewUrl(res.data.preview_key) ?? '',
           size: res.data.size,
           name: res.data.file_name,
           mime_type: res.data.mime_type,

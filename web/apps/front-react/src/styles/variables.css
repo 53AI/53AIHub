@@ -73,31 +73,26 @@
  *    收成 0 宽度来隐藏，hover 时 border-width 归零露出来 —— border-width 是
  *    布局属性，会强制滚动条部件重新布局+重绘，实测稳定。
  */
-.scroll-y-auto::-webkit-scrollbar,
-.overflow-y-auto::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 6px;
   height: 6px;
   background: transparent;
 }
 
 /* 两端箭头：自定义滚动条下默认已不占尺寸，显式关掉更保险 */
-.scroll-y-auto::-webkit-scrollbar-button,
-.overflow-y-auto::-webkit-scrollbar-button {
+::-webkit-scrollbar-button{
   display: none;
   width: 0;
   height: 0;
 }
 
-.scroll-y-auto::-webkit-scrollbar-track,
-.overflow-y-auto::-webkit-scrollbar-track,
-.scroll-y-auto::-webkit-scrollbar-corner,
-.overflow-y-auto::-webkit-scrollbar-corner {
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
 /* content-box 宽度为 0 → 不可见 */
-.scroll-y-auto::-webkit-scrollbar-thumb,
-.overflow-y-auto::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 3px;
   background-color: var(--scrollbar-thumb-color);
@@ -105,14 +100,12 @@
 }
 
 /* border 归零 → 露出完整 6px */
-.scroll-y-auto:hover::-webkit-scrollbar-thumb,
-.overflow-y-auto:hover::-webkit-scrollbar-thumb {
+:hover::-webkit-scrollbar-thumb {
   border-width: 0;
 }
 
 /* Safari 对滚动条伪元素的样式失效同样不可靠，改一个自定义属性强制重算 */
-.scroll-y-auto:hover,
-.overflow-y-auto:hover {
+:hover {
   --scrollbar-hover-fix: ;
 }
 

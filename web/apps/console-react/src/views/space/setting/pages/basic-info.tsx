@@ -6,7 +6,7 @@ import { Header } from "@/components/Header";
 import IconPopover from "@/components/Icon/popover";
 import { spacesApi } from "@/api/modules/spaces";
 import { uploadApi } from "@/api/modules/upload";
-import { api_host } from "@/utils/config";
+import { buildPreviewUrl } from "@/utils/preview";
 import { createIconFileFromStatic } from "@km/shared-utils";
 import {
   VISIBILITY_TYPE,
@@ -101,7 +101,7 @@ export function BasicInfoPage() {
       let icon = typeof iconFile === "string" ? iconFile : "";
       if (iconFile && typeof iconFile !== "string") {
         const res = await uploadIcon(iconFile);
-        icon = `${api_host}/api/preview/${res?.preview_key || ""}`;
+        icon = buildPreviewUrl(res?.preview_key) ?? "";
       }
 
       await spacesApi.update(space.id, {

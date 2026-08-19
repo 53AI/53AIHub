@@ -1,11 +1,15 @@
 /**
- * mermaid-flow.v1 流程图 SVG 渲染器
+ * mermaid-flow.v1 流程图渲染器
  *
- * 输入：parse_mermaid_flow() 输出的 {syntax, direction, nodes, edges} 结构。
+ * 仿 meeting-recorder 的实现：
+ * - 节点用 HTML <article> 卡片（CSS 自动换行，box 高度自然撑开）
+ * - 边用 SVG overlay（位置基于节点实测高度计算）
+ * - useLayoutEffect 测量 offsetHeight，触发动态重排
+ * - 不依赖第三方 mermaid 运行时；与 React 其它卡片共享 --insight-accent 主题变量
+ *
  * 算法：rank 分层 → 同层均匀分布 → 正交折线。
- * 完全本地实现，无第三方依赖；与 React 其它卡片共享 --insight-accent 主题变量。
  */
-import React from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   MermaidFlowDiagram,
   MermaidFlowNode,
@@ -14,80 +18,36 @@ import type {
 
 // ============= 布局常量 =============
 
-const NODE_W = 200
-const NODE_H = 90
-const COL_GAP = 70   // 同层节点水平间距（TB 模式）
-const ROW_GAP = 60   // 同列节点垂直间距（LR 模式）
-const RANK_GAP_TB = 70 // TB 模式不同 rank 之间的纵向间距
-const RANK_GAP_LR = 70 // LR 模式不同 rank 之间的横向间距
-const CANVAS_PAD = 24
-
-const TITLE_CHARS = 13
-const TITLE_LINES = 2
-const CONTENT_CHARS = 19
-const CONTENT_LINES = 3
-const LINE_H_TITLE = 17
-const LINE_H_CONTENT = 14
+const MIN_NODE_W = 168
+const MAX_NODE_W = 220
+const LR_NODE_W = 190
+// 视口 < 480 时节点可下探的下限：手机竖屏避免单节点就撑爆
+const NARROW_MIN_NODE_W = 132
+// 视口 < 480 时 TB 节点上限（推导自目标 totalW=330：2 节点 + COL_GAP + CANVAS_PAD*2
+// = 2*X + 16 + 28 = 330 → X ≤ 143；3 节点更小，会被自然溢出，让 viewport 提供横向滚动条）
+const NARROW_MAX_NODE_W = 143
+const NODE_MIN_H = 68
 const NODE_PAD_X = 12
-const NODE_PAD_Y = 10
+const NODE_PAD_Y = 11
 
-// ============= 文本截断/换行 =============
+const COL_GAP = 16 // TB 同 rank 内节点水平间距
+const RANK_GAP_TB = 38 // TB 不同 rank 之间的纵向间距
+const ROW_GAP_LR = 16 // LR 同 rank 内节点垂直间距
+const RANK_GAP_LR = 48 // LR 不同 rank 之间的横向间距
+const CANVAS_PAD = 14
 
-/** 把文本按 maxChars 切分到 maxLines 行；超出用 … 省略 */
-function wrapText(text: string, maxChars: number, maxLines: number): string[] {
-  const value = (text || '').trim()
-  if (!value) return []
-  const lines: string[] = []
-  let remaining = value
-  while (remaining.length > 0 && lines.length < maxLines) {
-    if (remaining.length <= maxChars) {
-      lines.push(remaining)
-      remaining = ''
-      break
-    }
-    let breakAt = remaining.lastIndexOf(' ', maxChars)
-    if (breakAt <= 0 || breakAt >= remaining.length - 1) breakAt = maxChars
-    lines.push(remaining.slice(0, breakAt))
-    remaining = remaining.slice(breakAt).trimStart()
-  }
-  if (remaining.length > 0 && lines.length >= maxLines) {
-    const last = lines[maxLines - 1]
-    if (last.length >= maxChars - 1) {
-      lines[maxLines - 1] = last.slice(0, maxChars - 1) + '…'
-    } else {
-      lines[maxLines - 1] = last.slice(0, Math.max(0, last.length - 1)) + '…'
-    }
-  }
-  return lines
-}
+const SAFE_TONES = new Set([
+  'neutral',
+  'positive',
+  'info',
+  'warning',
+  'danger',
+  'critical',
+  'pending',
+])
 
-// ============= 配色（按 tone） =============
-
-interface TonePalette {
-  fill: string
-  stroke: string
-  text: string
-  textMuted: string
-  dashed: boolean
-}
-
-function getToneColors(tone: string): TonePalette {
-  switch (tone) {
-    case 'positive':
-      return { fill: '#f0fdf4', stroke: '#22c55e', text: '#14532d', textMuted: '#166534', dashed: false }
-    case 'info':
-      return { fill: '#eff6ff', stroke: '#3b82f6', text: '#1e3a8a', textMuted: '#1e40af', dashed: false }
-    case 'warning':
-      return { fill: '#fffbeb', stroke: '#f59e0b', text: '#78350f', textMuted: '#92400e', dashed: false }
-    case 'danger':
-      return { fill: '#fef2f2', stroke: '#ef4444', text: '#7f1d1d', textMuted: '#991b1b', dashed: false }
-    case 'critical':
-      return { fill: '#fee2e2', stroke: '#dc2626', text: '#7f1d1d', textMuted: '#991b1b', dashed: false }
-    case 'pending':
-      return { fill: '#f9fafb', stroke: '#9ca3af', text: '#374151', textMuted: '#4b5563', dashed: true }
-    default:
-      return { fill: '#f5f6f7', stroke: '#cbd5e1', text: '#1d2b3e', textMuted: '#4f5052', dashed: false }
-  }
+function normalizeTone(tone: string | undefined): string {
+  return tone && SAFE_TONES.has(tone) ? tone : 'neutral'
 }
 
 // ============= 布局算法 =============
@@ -99,10 +59,21 @@ interface Position {
   h: number
 }
 
+interface LayoutInput {
+  /** 节点宽（不同方向/可用宽度下不同） */
+  nodeWidth: number
+  /** 实测高度（首次渲染用 NODE_MIN_H 兜底） */
+  heights: Map<string, number>
+  /** 视口可用宽度；totalW 至少取这个值，让小图也能撑满视口居中（仿 meeting-recorder） */
+  availableWidth?: number
+}
+
 interface Layout {
   width: number
   height: number
   positions: Map<string, Position>
+  /** 该方向下"每 rank 自身高度"数组，供高度变化时增量重排 */
+  rowHeights: number[]
 }
 
 function groupByRank(nodes: MermaidFlowNode[]): Map<number, MermaidFlowNode[]> {
@@ -115,75 +86,147 @@ function groupByRank(nodes: MermaidFlowNode[]): Map<number, MermaidFlowNode[]> {
   return groups
 }
 
-function layoutDiagram(diagram: MermaidFlowDiagram): Layout {
+/**
+ * 根据 rank 分组 + 实测高度计算每个节点的最终坐标。
+ * 高度变化时上下节点的 y 会随之平移，所以 edges 坐标也跟着走。
+ */
+function computeLayout(
+  nodes: MermaidFlowNode[],
+  isTB: boolean,
+  input: LayoutInput,
+): Layout {
   const positions = new Map<string, Position>()
-  const groups = groupByRank(diagram.nodes)
+  const groups = groupByRank(nodes)
   const ranks = Array.from(groups.keys()).sort((a, b) => a - b)
-  const isTB = diagram.direction !== 'LR'
+  if (ranks.length === 0) {
+    return { width: 0, height: 0, positions, rowHeights: [] }
+  }
   const maxPerRank = Math.max(1, ...Array.from(groups.values(), list => list.length))
+  const nodeWidth = input.nodeWidth
 
   if (isTB) {
-    const rowW = maxPerRank * NODE_W + (maxPerRank - 1) * COL_GAP
-    const totalW = Math.max(360, rowW) + CANVAS_PAD * 2
-    const totalH = ranks.length * NODE_H + (ranks.length - 1) * RANK_GAP_TB + CANVAS_PAD * 2
+    // 先算每行的"行高"（该 rank 中所有节点的最大实测高度）
+    const rowHeights = ranks.map(rank => {
+      const list = groups.get(rank) || []
+      return Math.max(NODE_MIN_H, ...list.map(n => input.heights.get(n.id) || NODE_MIN_H))
+    })
+    const totalRowH = rowHeights.reduce((a, b) => a + b, 0) + (ranks.length - 1) * RANK_GAP_TB
+    // 窄屏（< 480）下把 availableWidth 钳到 330，避免 root.clientWidth 测出 334 等小数值时
+    // totalW 被它带成 334，导致横向滚动条多滚几像素。330 是窄屏下 2 节点一行的「安全值」
+    // （132*2 + 16 + 28 = 308，刚好放下，totalW 取大者保证居中留白）
+    const safeAvailableWidth = (input.availableWidth || 330) < 480
+      ? Math.min(330, input.availableWidth || 330)
+      : (input.availableWidth || 330)
+    // totalW 取视口可用宽度与内容宽度的较大者：内容更宽时滚动，内容更窄时撑满视口让节点自然居中（仿 meeting-recorder）
+    const totalW = Math.max(
+      safeAvailableWidth,
+      maxPerRank * nodeWidth + (maxPerRank - 1) * COL_GAP + CANVAS_PAD * 2,
+    )
+    const totalH = Math.max(180, totalRowH + CANVAS_PAD * 2)
 
     let y = CANVAS_PAD
-    for (const rank of ranks) {
+    ranks.forEach((rank, ri) => {
       const list = groups.get(rank) || []
-      const listW = list.length * NODE_W + (list.length - 1) * COL_GAP
+      const rowH = rowHeights[ri]
+      const listW = list.length * nodeWidth + (list.length - 1) * COL_GAP
       const startX = (totalW - listW) / 2
-      for (let i = 0; i < list.length; i++) {
-        const node = list[i]
-        positions.set(node.id, { x: startX + i * (NODE_W + COL_GAP), y, w: NODE_W, h: NODE_H })
-      }
-      y += NODE_H + RANK_GAP_TB
-    }
-    return { width: totalW, height: totalH, positions }
+      list.forEach((node, i) => {
+        const h = input.heights.get(node.id) || NODE_MIN_H
+        // 行内垂直居中（虽然高度一致；保留居中逻辑方便未来混排）
+        const localY = y + (rowH - h) / 2
+        positions.set(node.id, {
+          x: startX + i * (nodeWidth + COL_GAP),
+          y: localY,
+          w: nodeWidth,
+          h,
+        })
+      })
+      y += rowH + RANK_GAP_TB
+    })
+
+    return { width: totalW, height: totalH, positions, rowHeights }
   }
 
   // LR：rank 沿 X 轴展开，同 rank 内沿 Y 轴展开
-  const colH = maxPerRank * NODE_H + (maxPerRank - 1) * ROW_GAP
-  const totalH = Math.max(220, colH) + CANVAS_PAD * 2
-  const totalW = ranks.length * NODE_W + (ranks.length - 1) * RANK_GAP_LR + CANVAS_PAD * 2
-
-  let x = CANVAS_PAD
-  for (const rank of ranks) {
+  const colWidth = nodeWidth + RANK_GAP_LR
+  // 同上：窄屏下钳到 330，避免 clientWidth 测得 334/360 等值时 totalW 被带大
+  const safeAvailableWidth = (input.availableWidth || 330) < 480
+    ? Math.min(330, input.availableWidth || 330)
+    : (input.availableWidth || 330)
+  // totalW 取视口可用宽度与内容宽度的较大者（仿 meeting-recorder）
+  const totalW = Math.max(
+    safeAvailableWidth,
+    ranks.length * colWidth + CANVAS_PAD * 2 - RANK_GAP_LR,
+  )
+  // 每列的行高 = 该 rank 内所有节点高之和 + gap
+  const colHeights = ranks.map(rank => {
     const list = groups.get(rank) || []
-    const listH = list.length * NODE_H + (list.length - 1) * ROW_GAP
-    const startY = (totalH - listH) / 2
-    for (let i = 0; i < list.length; i++) {
-      const node = list[i]
-      positions.set(node.id, { x, y: startY + i * (NODE_H + ROW_GAP), w: NODE_W, h: NODE_H })
-    }
-    x += NODE_W + RANK_GAP_LR
-  }
-  return { width: totalW, height: totalH, positions }
+    return (
+      list.reduce((sum, n) => sum + (input.heights.get(n.id) || NODE_MIN_H), 0) +
+      Math.max(0, list.length - 1) * ROW_GAP_LR
+    )
+  })
+  const totalH = Math.max(180, Math.max(...colHeights) + CANVAS_PAD * 2)
+
+  ranks.forEach((rank, col) => {
+    const list = groups.get(rank) || []
+    const colH = colHeights[col]
+    let y = (totalH - colH) / 2
+    list.forEach(node => {
+      const h = input.heights.get(node.id) || NODE_MIN_H
+      positions.set(node.id, {
+        x: CANVAS_PAD + col * colWidth,
+        y,
+        w: nodeWidth,
+        h,
+      })
+      y += h + ROW_GAP_LR
+    })
+  })
+
+  return { width: totalW, height: totalH, positions, rowHeights: colHeights }
 }
 
 // ============= 边的正交路径 =============
 
-/** 为 TB 走向生成三段折线（向下 → 横移 → 向下） */
+/** TB 走向：从 from 底部 → 中点 → to 顶部 */
 function tbEdgePath(from: Position, to: Position): string {
-  const sx = from.x + from.w / 2
-  const sy = from.y + from.h
-  const tx = to.x + to.w / 2
-  const ty = to.y
-  const midY = (sy + ty) / 2
-  return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`
+  const x1 = from.x + from.w / 2
+  const y1 = from.y + from.h
+  const x2 = to.x + to.w / 2
+  const y2 = to.y
+  const midY = y1 + (y2 - y1) / 2
+  return `M ${x1} ${y1} V ${midY} H ${x2} V ${y2}`
 }
 
-/** 为 LR 走向生成三段折线（向右 → 纵移 → 向右） */
+/** LR 走向：从 from 右侧 → 中点 → to 左侧 */
 function lrEdgePath(from: Position, to: Position): string {
-  const sx = from.x + from.w
-  const sy = from.y + from.h / 2
-  const tx = to.x
-  const ty = to.y + to.h / 2
-  const midX = (sx + tx) / 2
-  return `M ${sx} ${sy} L ${midX} ${sy} L ${midX} ${ty} L ${tx} ${ty}`
+  const x1 = from.x + from.w
+  const y1 = from.y + from.h / 2
+  const x2 = to.x
+  const y2 = to.y + to.h / 2
+  const midX = x1 + (x2 - x1) / 2
+  return `M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`
 }
 
 function edgePath(direction: 'TB' | 'LR', from: Position, to: Position): string {
   return direction === 'LR' ? lrEdgePath(from, to) : tbEdgePath(from, to)
+}
+
+/** 边标签位置：放在路径中点稍微偏上 */
+function edgeLabelPosition(
+  direction: 'TB' | 'LR',
+  from: Position,
+  to: Position,
+): { x: number; y: number } {
+  if (direction === 'TB') {
+    const midY = (from.y + from.h + to.y) / 2
+    const x = (from.x + from.w / 2 + to.x + to.w / 2) / 2
+    return { x, y: midY - 4 }
+  }
+  const midX = (from.x + from.w + to.x) / 2
+  const y = (from.y + from.h / 2 + to.y + to.h / 2) / 2
+  return { x: midX, y: y - 4 }
 }
 
 // ============= 组件 =============
@@ -195,144 +238,248 @@ interface MermaidFlowRendererProps {
 }
 
 export function MermaidFlowRenderer({ diagram, className }: MermaidFlowRendererProps) {
-  if (!diagram || !Array.isArray(diagram.nodes) || diagram.nodes.length === 0) return null
-  const layout = layoutDiagram(diagram)
-  const isTB = diagram.direction !== 'LR'
+  // 守卫（仿 meeting-recorder）：nodes 和 edges 都必须是数组且非空；hooks 之前先校验，但 hooks 仍要无条件调用
+  const safeDiagram =
+    diagram &&
+    Array.isArray(diagram.nodes) &&
+    Array.isArray(diagram.edges) &&
+    diagram.nodes.length > 0 &&
+    diagram.edges.length > 0
+      ? diagram
+      : null
 
-  // 边标签位置：取路径中点（TB 取横段中点；LR 取纵段中点）
-  const labelPositions = (edge: MermaidFlowEdge): { x: number; y: number; anchor: 'start' | 'middle' | 'end' } | null => {
+  const containerRef = useRef<HTMLDivElement>(null)
+  /** 实测高度：首次渲染用 NODE_MIN_H 兜底，mount 后 useLayoutEffect 校正 */
+  const [measuredHeights, setMeasuredHeights] = useState<Map<string, number>>(new Map())
+  const [nodeWidth, setNodeWidth] = useState<number>(LR_NODE_W)
+  /** 视口可用宽度：用于把 flow 容器撑到与视口同宽，让小图节点自然居中（仿 meeting-recorder）
+   *  ref 挂在 .insight-mermaid-viewport 上 —— viewport 的 clientWidth 随窗口缩放/侧栏折叠变化，
+   *  ResizeObserver 才能稳定触发；flow 自身有 inline width，观察它不会随窗口变化。 */
+  const [availableWidth, setAvailableWidth] = useState<number>(330)
+
+  const isTB = safeDiagram?.direction !== 'LR'
+
+  // 节点排序：rank 升序，rank 相同时 id 字典序；保证渲染顺序稳定（仿 meeting-recorder）
+  const sortedNodes = useMemo(() => {
+    if (!safeDiagram) return []
+    return [...safeDiagram.nodes].sort(
+      (a, b) =>
+        (Number(a.rank || 0) - Number(b.rank || 0)) ||
+        String(a.id).localeCompare(String(b.id)),
+    )
+  }, [safeDiagram])
+
+  // 首次 mount 后：用 offsetHeight 校正每个节点高度 + 可用宽度重算 nodeWidth + 记录 availableWidth
+  useLayoutEffect(() => {
+    if (!containerRef.current || !safeDiagram) return
+    const root = containerRef.current
+    // 注意：root.clientWidth=0 时不能用 `|| 600`，否则会把布局算成 600 撑爆窄屏。
+    // 真实为 0（首帧未布局完成）时按 330 兜底，与 min(MAX_NODE_W) 保持兼容
+    const measuredAvailableWidth = root.clientWidth > 0
+      ? root.clientWidth
+      : 330
+    const newWidth = computeNodeWidth(
+      measuredAvailableWidth,
+      isTB,
+      countMaxRankSize(safeDiagram.nodes),
+    )
+
+    const heights = new Map<string, number>()
+    root.querySelectorAll<HTMLElement>('[data-flow-node-id]').forEach(el => {
+      const id = el.dataset.flowNodeId
+      if (!id) return
+      heights.set(id, Math.max(NODE_MIN_H, el.offsetHeight))
+    })
+
+    const heightChanged =
+      heights.size !== measuredHeights.size ||
+      Array.from(heights.entries()).some(([k, v]) => measuredHeights.get(k) !== v)
+    const widthChanged = newWidth !== nodeWidth
+    const availableWidthChanged = measuredAvailableWidth !== availableWidth
+    if (heightChanged) setMeasuredHeights(heights)
+    if (widthChanged) setNodeWidth(newWidth)
+    if (availableWidthChanged) setAvailableWidth(measuredAvailableWidth)
+  })
+
+  // 视口尺寸变化时（窗口缩放 / 侧栏折叠 / 父容器 resize）重新测量并触发重排（仿 meeting-recorder）
+  useEffect(() => {
+    if (!containerRef.current || !safeDiagram) return
+    if (typeof ResizeObserver === 'undefined') return
+    const root = containerRef.current
+    const remeasure = () => {
+      // 同上：clientWidth=0 时按 330 兜底，而不是 600（窄屏下 600 会撑爆视口）
+      const measuredAvailableWidth = root.clientWidth > 0
+        ? root.clientWidth
+        : 330
+      const newWidth = computeNodeWidth(
+        measuredAvailableWidth,
+        isTB,
+        countMaxRankSize(safeDiagram.nodes),
+      )
+      const heights = new Map<string, number>()
+      root.querySelectorAll<HTMLElement>('[data-flow-node-id]').forEach(el => {
+        const id = el.dataset.flowNodeId
+        if (!id) return
+        heights.set(id, Math.max(NODE_MIN_H, el.offsetHeight))
+      })
+      // 仅在数值真正变化时 setState，避免 ResizeObserver + 自身 layout 引发死循环
+      setMeasuredHeights(prev => {
+        if (
+          prev.size !== heights.size ||
+          Array.from(heights.entries()).some(([k, v]) => prev.get(k) !== v)
+        ) {
+          return heights
+        }
+        return prev
+      })
+      setNodeWidth(prev => (prev === newWidth ? prev : newWidth))
+      setAvailableWidth(prev => (prev === measuredAvailableWidth ? prev : measuredAvailableWidth))
+    }
+    const observer = new ResizeObserver(remeasure)
+    observer.observe(root)
+    return () => observer.disconnect()
+  }, [safeDiagram, isTB])
+
+  const layout = useMemo(
+    () =>
+      computeLayout(sortedNodes, !!isTB, {
+        nodeWidth,
+        heights: measuredHeights,
+        availableWidth,
+      }),
+    [sortedNodes, isTB, nodeWidth, measuredHeights, availableWidth],
+  )
+
+  if (!safeDiagram) return null
+
+  // 边标签
+  const renderEdge = (edge: MermaidFlowEdge, idx: number) => {
     const fromPos = layout.positions.get(edge.from)
     const toPos = layout.positions.get(edge.to)
     if (!fromPos || !toPos) return null
-    if (isTB) {
-      const midY = (fromPos.y + fromPos.h + toPos.y) / 2
-      const x = (fromPos.x + fromPos.w / 2 + toPos.x + toPos.w / 2) / 2
-      return { x, y: midY - 6, anchor: 'middle' }
-    }
-    const midX = (fromPos.x + fromPos.w + toPos.x) / 2
-    const y = (fromPos.y + fromPos.h / 2 + toPos.y + toPos.h / 2) / 2
-    return { x: midX, y: y - 6, anchor: 'middle' }
+    const d = edgePath(safeDiagram.direction, fromPos, toPos)
+    const labelPos = edge.label ? edgeLabelPosition(safeDiagram.direction, fromPos, toPos) : null
+    return (
+      <g key={`e-${idx}`}>
+        <path
+          d={d}
+          fill="none"
+          stroke="rgba(148,163,184,.78)"
+          strokeWidth={1.8}
+          markerEnd="url(#insight-flow-arrow)"
+        />
+        {labelPos && edge.label && (
+          <text
+            x={labelPos.x}
+            y={labelPos.y}
+            textAnchor="middle"
+            className="insight-flow-edge-label"
+          >
+            {edge.label}
+          </text>
+        )}
+      </g>
+    )
   }
 
   return (
-    <div className={`insight-mermaid-flow ${className || ''}`}>
-      <svg
-        width={layout.width}
-        height={layout.height}
-        viewBox={`0 0 ${layout.width} ${layout.height}`}
-        xmlns="http://www.w3.org/2000/svg"
-        role="img"
-        aria-label="因果/推演流程图"
+    <div ref={containerRef} className="insight-mermaid-viewport">
+      <div
+        className={`insight-mermaid-flow ${className || ''}`}
+        style={{ position: 'relative', width: layout.width, height: layout.height }}
       >
-        <defs>
-          {/* 箭头 marker：与 accent 颜色绑定；中性灰色，不抢节点视觉 */}
-          <marker
-            id="insight-mermaid-arrow"
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="6"
-            markerHeight="6"
-            orient="auto-start-reverse"
-          >
-            <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
-          </marker>
-        </defs>
-
-        {/* 边 */}
-        {diagram.edges.map((edge, idx) => {
-          const fromPos = layout.positions.get(edge.from)
-          const toPos = layout.positions.get(edge.to)
-          if (!fromPos || !toPos) return null
-          const d = edgePath(diagram.direction, fromPos, toPos)
-          return (
-            <g key={`e-${idx}`}>
-              <path
-                d={d}
-                className="insight-mermaid-edge"
-                fill="none"
-                stroke="#94a3b8"
-                strokeWidth={1.5}
-                markerEnd="url(#insight-mermaid-arrow)"
-              />
-              {edge.label && labelPositions(edge) && (() => {
-                const lp = labelPositions(edge)!
-                return (
-                  <text
-                    x={lp.x}
-                    y={lp.y}
-                    textAnchor={lp.anchor}
-                    className="insight-mermaid-edge-label"
-                    fill="#64748b"
-                    fontSize={11}
-                  >
-                    {edge.label}
-                  </text>
-                )
-              })()}
-            </g>
-          )
-        })}
-
-        {/* 节点 */}
-        {diagram.nodes.map(node => {
+        <svg
+          className="insight-flow-lines"
+          width={layout.width}
+          height={layout.height}
+          viewBox={`0 0 ${layout.width} ${layout.height}`}
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+        >
+          <defs>
+            <marker
+              id="insight-flow-arrow"
+              markerWidth={7}
+              markerHeight={7}
+              refX={6}
+              refY={3.5}
+              orient="auto"
+            >
+              <path d="M 0 0 L 7 3.5 L 0 7 z" fill="rgba(148,163,184,.85)" />
+            </marker>
+          </defs>
+          {safeDiagram.edges.map(renderEdge)}
+        </svg>
+        {safeDiagram.nodes.map(node => {
           const pos = layout.positions.get(node.id)
           if (!pos) return null
-          const colors = getToneColors(node.tone)
-          const titleLines = wrapText(node.title || node.id, TITLE_CHARS, TITLE_LINES)
-          const contentLines = wrapText(node.content, CONTENT_CHARS, CONTENT_LINES)
-
-          const titleEls = titleLines.map((line, i) => (
-            <text
-              key={`t-${i}`}
-              x={pos.x + NODE_PAD_X}
-              y={pos.y + NODE_PAD_Y + (i + 1) * LINE_H_TITLE}
-              className="insight-mermaid-node-title"
-              fontSize={14}
-              fontWeight={700}
-              fill={colors.text}
-            >
-              {line}
-            </text>
-          ))
-          // 内容第一行的 y = title 区底部 + 4px 间隙 + 1 行 line-height
-          const contentStartY = pos.y + NODE_PAD_Y + titleLines.length * LINE_H_TITLE + 4 + LINE_H_CONTENT
-          const contentEls = contentLines.length > 0
-            ? contentLines.map((line, i) => (
-                <text
-                  key={`c-${i}`}
-                  x={pos.x + NODE_PAD_X}
-                  y={contentStartY + i * LINE_H_CONTENT}
-                  className="insight-mermaid-node-content"
-                  fontSize={11}
-                  fill={colors.textMuted}
-                >
-                  {line}
-                </text>
-              ))
-            : null
-
+          const tone = normalizeTone(node.tone)
+          const title = (node.title || node.id).trim()
+          const content = (node.content || '').trim()
           return (
-            <g key={node.id}>
-              <rect
-                x={pos.x}
-                y={pos.y}
-                width={pos.w}
-                height={pos.h}
-                rx={8}
-                ry={8}
-                fill={colors.fill}
-                stroke={colors.stroke}
-                strokeWidth={1.5}
-                strokeDasharray={colors.dashed ? '5 4' : undefined}
-              />
-              {titleEls}
-              {contentEls}
-            </g>
+            <article
+              key={node.id}
+              data-flow-node-id={node.id}
+              className={`insight-flow-node tone-${tone}`}
+              style={{
+                position: 'absolute',
+                left: pos.x,
+                top: pos.y,
+                width: pos.w,
+              }}
+            >
+              <strong className="insight-flow-node-title">{title}</strong>
+              {content && <div className="insight-flow-node-body">{content}</div>}
+            </article>
           )
         })}
-      </svg>
+      </div>
     </div>
+  )
+}
+
+function countMaxRankSize(nodes: MermaidFlowNode[]): number {
+  const groups = new Map<number, number>()
+  for (const node of nodes) {
+    groups.set(node.rank, (groups.get(node.rank) || 0) + 1)
+  }
+  return Math.max(1, ...Array.from(groups.values()))
+}
+
+/**
+ * 根据视口可用宽度 + 方向，计算单个节点的目标宽度。
+ *
+ * - TB：等分每 rank 内节点（最多 `maxPerRank` 个），下限 MIN_NODE_W / NARROW_MIN_NODE_W，上限 MAX_NODE_W
+ * - LR：每 rank 1 列，节点宽 = min(LR_NODE_W, 可用宽度 - 边距)，下限 MIN_NODE_W
+ *
+ * 当视口 < 480 时，TB / LR 方向的最小宽度都允许下探到 NARROW_MIN_NODE_W，
+ * 避免窄屏上 2 个节点一行就撑出 380px 视口，让用户横向滚动条能少滚一截。
+ */
+function computeNodeWidth(
+  availableWidth: number,
+  isTB: boolean,
+  maxPerRank: number,
+): number {
+  const isNarrow = availableWidth < 480
+  const narrowFloor = isNarrow ? NARROW_MIN_NODE_W : MIN_NODE_W
+  if (isTB) {
+    // 窄屏用 NARROW_MAX_NODE_W（143）当上限，确保 2 节点时 contentWidth ≤ 330；
+    // 3+ 节点会算出更小值然后被 narrowFloor 兜住，totalW 自然超出 330，由 viewport 滚动条接管
+    const tbMaxW = isNarrow ? NARROW_MAX_NODE_W : MAX_NODE_W
+    return Math.min(
+      tbMaxW,
+      Math.max(
+        narrowFloor,
+        Math.floor(
+          (availableWidth - 24 - (maxPerRank - 1) * COL_GAP) /
+            Math.max(1, maxPerRank),
+        ),
+      ),
+    )
+  }
+  return Math.min(
+    LR_NODE_W,
+    Math.max(narrowFloor, Math.floor(availableWidth - CANVAS_PAD * 2 - 24)),
   )
 }
 

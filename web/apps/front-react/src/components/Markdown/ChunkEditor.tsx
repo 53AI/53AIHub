@@ -9,6 +9,7 @@ import { Spin } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import loadLib from "@/utils/loadLib";
 import { API_HOST } from "@/api/host";
+import { buildPreviewUrl } from "@/utils/preview";
 import { t } from "@/locales";
 
 interface EditConfig {
@@ -72,7 +73,7 @@ const ChunkEditor = forwardRef<ChunkEditorRef, ChunkEditorProps>(
             data: {
               errFiles: [],
               succMap: {
-                [`${files[0].name}`]: `${API_HOST}/api/preview/${result.data.preview_key}`,
+                [`${files[0].name}`]: buildPreviewUrl(result.data.preview_key) ?? '',
               },
             },
           });

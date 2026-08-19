@@ -1,14 +1,15 @@
-import React, { useEffect, useRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useEffect, useRef, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { Tooltip } from "antd";
-import { LeftOutlined, RightOutlined } from "@ant-design/icons";
+import { LeftOutlined } from "@ant-design/icons";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { checkPermission } from "@/utils/permission";
 import { t } from "@/locales";
+import Breadcrumb from "@/components/Breadcrumb";
 import { ExpandSidebarButton } from "./ExpandSidebarButton";
 // import { Upgrade } from '@/components/Upgrade'
 
-// 新增：面包屑项类型
+// 新增：面包屑项类型（保留旧类型以兼容已有调用方，内部委托给 Breadcrumb 组件渲染）
 export interface BreadcrumbItem {
   label: string;
   path?: string; // 可选，没有 path 则不可点击
@@ -23,12 +24,12 @@ interface LayoutHeaderProps {
   onBack?: () => void;
   title?: string;
   border?: boolean;
-  beforePrefix?: React.ReactNode;
-  titlePrefix?: React.ReactNode;
-  titleSuffix?: React.ReactNode;
-  titleSlot?: React.ReactNode;
-  after?: React.ReactNode;
-  right?: React.ReactNode;
+  beforePrefix?: ReactNode;
+  titlePrefix?: ReactNode;
+  titleSuffix?: ReactNode;
+  titleSlot?: ReactNode;
+  after?: ReactNode;
+  right?: ReactNode;
   expandSidebar?: boolean;
   // 新增
   breadcrumb?: BreadcrumbItem[];
@@ -98,30 +99,14 @@ export function Header({
     if (!breadcrumb || breadcrumb.length === 0) return null;
 
     return (
-      <div className="flex items-center gap-1 overflow-hidden">
-        {breadcrumb.map((item, index) => {
-          return (
-            <React.Fragment key={index}>
-              {index > 0 && (
-                <RightOutlined
-                  style={{ fontSize: 12 }}
-                  className="text-regular flex-shrink-0"
-                />
-              )}
-              {item.path ? (
-                <Link
-                  to={item.path}
-                  className="text-sm text-[#6B7280] font-normal hover-text-theme truncate"
-                >
-                  {item.label}
-                </Link>
-              ) : (
-                <span className="text-sm text-primary truncate">{item.label}</span>
-              )}
-            </React.Fragment>
-          );
-        })}
-      </div>
+      <Breadcrumb
+        showHome={false}
+        items={breadcrumb.map((item) => ({
+          path: item.path ?? "",
+          label: item.label,
+          linkable: !!item.path,
+        }))}
+      />
     );
   };
 
@@ -130,7 +115,7 @@ export function Header({
       className={`flex-none h-16 sticky top-0 z-10 bg-white ${border ? "border-b" : ""} ${className}`}
     >
       <div
-        className={`mx-auto px-5 flex items-center justify-between h-full ${mainClass}`}
+        className={`px-5 flex items-center justify-between h-full ${mainClass}`}
       >
         <div className="flex-1 flex items-center gap-2 overflow-hidden">
           { expandSidebar && <ExpandSidebarButton />}
@@ -162,7 +147,7 @@ export function Header({
           {titleSuffix}
         </div>
 
-        <div className="flex items-center gap-2">{after || right}</div>
+        <div className=" flex-shrink-0 flex items-center gap-2">{after || right}</div>
       </div>
       {/* todo: 引入后会报错 */}
       {/* <Upgrade ref={upgradeRef} /> */}

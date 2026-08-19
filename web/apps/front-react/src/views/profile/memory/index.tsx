@@ -1,5 +1,5 @@
 import { useState, useEffect, forwardRef, useImperativeHandle } from "react";
-import { Form, Input, Button, message, Spin } from "antd";
+import { Form, Input, Button, message, Spin, Select } from "antd";
 import { useUserStore } from "@/stores/modules/user";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { t } from "@/locales";
@@ -16,7 +16,12 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
   const enterpriseStore = useEnterpriseStore();
   const [saving, setSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [initialValues, setInitialValues] = useState({ smart_memory: "", custom_memory: "" });
+  const [initialValues, setInitialValues] = useState({
+    smart_memory: "",
+    custom_memory: "",
+    position: "",
+    style: "",
+  });
   const [showButtons, setShowButtons] = useState(false);
   const [loading, setLoading] = useState(true);
   const [nickname, setNickname] = useState("");
@@ -54,6 +59,8 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
         const values = {
           smart_memory: parseMemoryContent(data.smart_memory || ""),
           custom_memory: parseMemoryContent(data.custom_memory || ""),
+          position: data.position || "",
+          style: data.style || "",
         };
         setInitialValues(values);
         form.setFieldsValue(values);
@@ -75,7 +82,9 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
     const currentValues = form.getFieldsValue();
     const hasChanges =
       currentValues.smart_memory !== initialValues.smart_memory ||
-      currentValues.custom_memory !== initialValues.custom_memory;
+      currentValues.custom_memory !== initialValues.custom_memory ||
+      currentValues.position !== initialValues.position ||
+      currentValues.style !== initialValues.style;
     setShowButtons(hasChanges);
   };
 
@@ -84,19 +93,25 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
     const currentValues = form.getFieldsValue();
     return (
       currentValues.smart_memory !== initialValues.smart_memory ||
-      currentValues.custom_memory !== initialValues.custom_memory
+      currentValues.custom_memory !== initialValues.custom_memory ||
+      currentValues.position !== initialValues.position ||
+      currentValues.style !== initialValues.style
     );
   };
 
   const handleSave = async (values: {
     smart_memory: string;
     custom_memory: string;
+    position?: string;
+    style?: string;
   }) => {
     setSaving(true);
     try {
       await memoryApi.user.replace({
         smart_memory: values.smart_memory,
         custom_memory: values.custom_memory,
+        position: values.position,
+        style: values.style,
       });
       message.success(t("profile.save_success"));
       setInitialValues(values);
@@ -176,7 +191,38 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
             </Form.Item>
           </div>
 
-          {/* 智能记忆信息 */}
+          <div className="flex gap-6">
+            <Form.Item
+              name="position"
+              label={t("form.position")}
+              className="flex-1"
+            >
+              <Input
+                maxLength={15}
+                showCount
+                placeholder={t("form.position_placeholder")}
+                className="h-10"
+              />
+            </Form.Item>
+            <Form.Item
+              name="style"
+              label={t("profile.style")}
+              className="flex-1"
+            >
+              <Select
+                placeholder={t("profile.style_placeholder")}
+                allowClear
+                className="h-10"
+                options={[
+                  { value: t("profile.style_concise"), label: t("profile.style_concise") },
+                  { value:  t("profile.style_conclusion_first"), label: t("profile.style_conclusion_first") },
+                  { value: t("profile.style_detailed"), label: t("profile.style_detailed") },
+                ]}
+              />
+            </Form.Item>
+          </div>
+
+          {/* 智能记忆 */}
           <Form.Item
             name="smart_memory"
             label={
@@ -193,7 +239,7 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
             />
           </Form.Item>
 
-          {/* 自定义记忆信息 */}
+          {/* 个性要求 */}
           <Form.Item
             name="custom_memory"
             label={

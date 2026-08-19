@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 
 /** 全屏覆盖样式：与右栏预览一致（固定全屏 + 高层级，覆盖侧栏/抽屉） */
-const FULLSCREEN_OVERLAY = 'fixed inset-0 z-[201]';
+const FULLSCREEN_OVERLAY = '!fixed inset-0 z-[201]';
 
 export interface UseFullscreenOptions {
   /** 初始是否全屏，默认 false */

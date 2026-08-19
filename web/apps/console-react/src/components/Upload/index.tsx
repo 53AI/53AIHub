@@ -3,7 +3,7 @@ import type { UploadProps, UploadFile } from "antd";
 import { useRef, useState, forwardRef, useImperativeHandle } from "react";
 import uploadApi from "@/api/modules/upload";
 import { ImageUpload, ImageUploadProps } from "./image";
-import { api_host } from "@/utils/config";
+import { buildPreviewUrl } from "@/utils/preview";
 
 export { ImageUpload };
 export type { ImageUploadProps };
@@ -121,7 +121,7 @@ export const Upload = forwardRef<UploadRef, UploadComponentProps>(
           },
         });
 
-        const url = `${api_host}/api/preview/${res.data?.preview_key || ""}`;
+        const url = buildPreviewUrl(res.data?.preview_key) ?? "";
 
         uploadSuccess?.(res.data);
         onSuccess?.({

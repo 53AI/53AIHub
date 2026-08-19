@@ -5,21 +5,19 @@
  * 来源:apps/front-react/src/components/Chat/Sender.tsx line 2400-2499
  * (legacy enhancedMention=true 模式下的 dropdown)
  *
- * 4 个入口:
+ * 2 个入口:
  *   1. @ 从知识库里选择  → onOpenLibrary(ChatContainer 渲染 SpaceDialog 或 KnowledgeSourceSelector)
- *   2. @ 从我上传的选择  → onOpenUploads(ChatContainer 渲染 MyFilesDialog source=uploads)
- *   3. @ 从AI生成的选择  → onOpenAIGenerated(MyFilesDialog source=ai-generated)
- *   4. @ 从我的录音选择  → onOpenRecordings(MyFilesDialog source=recordings)
+ *   2. @ 从我的中选择    → onOpenMyFiles(ChatContainer 渲染合并后的 MyFilesDialog)
  *
  * 入口的可见性:
- *   - 入口 1 由 hasKnowledgeBase 控制(回调存在时显示);
- *   - 入口 2、3 由回调 + workbench 版本控制;
- *   - 入口 4 由回调 + recording 版本控制。
- *   - 实际项目中也通过 VERSION_MODULE.KNOWLEDGE_BASE / WORKBENCH / RECORDING 判定。
+ *   - 入口 1 由 hasKnowledgeBase + 回调存在 共同决定;
+ *   - 入口 2 由 onOpenMyFiles 回调存在决定;version 模块(WORKBENCH / RECORDING)
+ *     的判定由 ChatContainer 在计算 enabledSources 时完成,本组件不感知。
+ *   - knowledge 模式复用本组件时不传 onOpenMyFiles → 自动隐藏入口 2。
  *
  * 视觉效果:对齐 legacy(308px 宽 / max-h-[450px] / antd 风格阴影 / 圆角 xl / 搜索框 + 最近访问 + 文件列表)。
  */
-import { Input } from "antd";
+import { Empty, Input } from "antd";
 import {
   CloseOutlined,
   LoadingOutlined,
@@ -35,12 +33,8 @@ import { t } from "@/locales";
 export interface EnhancedMentionDropdownCallbacks {
   /** 「从知识库里选择」入口回调;不传则不渲染 */
   onOpenLibrary?: () => void;
-  /** 「从我上传的选择」入口回调;不传则不渲染(对齐小助理专属) */
-  onOpenUploads?: () => void;
-  /** 「从AI生成的选择」入口回调;不传则不渲染(对齐小助理专属) */
-  onOpenAIGenerated?: () => void;
-  /** 「从我的录音选择」入口回调;不传则不渲染(对齐小助理专属) */
-  onOpenRecordings?: () => void;
+  /** 「从我的中选择」入口回调;不传则不渲染(对齐小助理专属) */
+  onOpenMyFiles?: () => void;
 }
 
 export type EnhancedMentionDropdownProps = MentionDropdownSlotProps &
@@ -58,12 +52,11 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
     onSelect,
     onSearchChange,
     onClose,
+    onCancel,
     style,
     hasKnowledgeBase = true,
     onOpenLibrary,
-    onOpenUploads,
-    onOpenAIGenerated,
-    onOpenRecordings,
+    onOpenMyFiles,
     className = "",
   } = props;
 
@@ -78,18 +71,13 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
   }, []);
 
   // 入口可见性:
-  // - 「从知识库里选择」由 hasKnowledgeBase + 回调存在 共同决定(knowledge 模式 + 小助理 都可见)
-  // - 「从我上传/AI 生成」由回调存在 + workbench 版本 共同决定(仅小助理可见)
-  // - 「从我的录音」由回调存在 + recording 版本 共同决定(仅小助理可见)
+  // - 「从知识库里选择」由 hasKnowledgeBase + KNOWLEDGE_BASE 版本 + 回调存在 共同决定。
+  // - 「从我的中选择」由 onOpenMyFiles 回调存在 决定;version / recordingConfig 的
+  //   守卫由调用方在计算 enabledSources 时完成,本组件不感知。
   // 回调缺失即可关闭对应入口,使 AI 搜问复用同一组件时只展示「从知识库里选择」。
   const showKnowledgeEntry =
     Boolean(hasKnowledgeBase) && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE) && Boolean(onOpenLibrary);
-  const showUploadsEntry =
-    Boolean(onOpenUploads) && checkVersion(VERSION_MODULE.WORKBENCH);
-  const showAIGeneratedEntry =
-    Boolean(onOpenAIGenerated) && checkVersion(VERSION_MODULE.WORKBENCH);
-  const showRecordingsEntry =
-    Boolean(onOpenRecordings) && checkVersion(VERSION_MODULE.RECORDING);
+  const showMyFilesEntry = Boolean(onOpenMyFiles);
 
   // 显示的列表:有搜索关键词时用 suggestions,否则用 recentList
   const displayList = useMemo<MentionDocItem[]>(() => {
@@ -99,6 +87,9 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
   }, [searchKeyword, suggestions, recentList]);
 
   const isSearching = Boolean(searchKeyword.trim());
+
+  // 搜索态下只呈现搜索结果,隐藏底部 4 个入口
+  const showEntries = !isSearching;
 
   const handleItemClick = (item: MentionDocItem) => {
     onSelect(item);
@@ -113,12 +104,18 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
-      onClose?.();
+      // Esc 必须把 chip 还原成普通字符,而不仅是关掉下拉 —— 否则
+      // `<span class="mention-input">@</span>` 会继续以 chip 形式留在编辑器里。
+      if (onCancel) {
+        onCancel();
+      } else {
+        onClose?.();
+      }
     }
   };
 
   // 只在没有任何入口时,显示"无匹配项"占位
-  const noEntries = !showKnowledgeEntry && !showUploadsEntry && !showAIGeneratedEntry && !showRecordingsEntry;
+  const noEntries = !showKnowledgeEntry && !showMyFilesEntry;
 
   return (
     <div
@@ -147,37 +144,42 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
             <div className="enhanced-mention-dropdown__section-title">
               {isSearching ? t("chat.mention.search_result") : t("common.recently_visit")}
             </div>
-            <div className="enhanced-mention-dropdown__items">
-              {displayList.map((doc, index) => (
-                <div
-                  key={doc.id}
-                  className={`enhanced-mention-dropdown__item ${selectedIndex === index ? "is-selected" : ""}`}
-                  onClick={() => handleItemClick(doc)}
-                >
-                  <div className="enhanced-mention-dropdown__icon">
-                    {doc.icon ? (
-                      <img src={doc.icon} className="enhanced-mention-dropdown__icon-img" alt="" />
-                    ) : null}
+            {/* 搜索中只展示 loading,不与(上一次关键词的)列表同时展示 */}
+            {isSearching && searchLoading ? (
+              <div className="enhanced-mention-dropdown__loading">
+                <LoadingOutlined /> {t("chat.mention.searching")}
+              </div>
+            ) : displayList.length === 0 ? (
+              <Empty
+                className="enhanced-mention-dropdown__empty"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={
+                  isSearching ? t("chat.mention.search_no_result") : t("chat.mention.no_recent")
+                }
+              />
+            ) : (
+              <div className="enhanced-mention-dropdown__items">
+                {displayList.map((doc, index) => (
+                  <div
+                    key={doc.id}
+                    className={`enhanced-mention-dropdown__item ${selectedIndex === index ? "is-selected" : ""}`}
+                    onClick={() => handleItemClick(doc)}
+                  >
+                    <div className="enhanced-mention-dropdown__icon">
+                      {doc.icon ? (
+                        <img src={doc.icon} className="enhanced-mention-dropdown__icon-img" alt="" />
+                      ) : null}
+                    </div>
+                    <p className="enhanced-mention-dropdown__name">{doc.name}</p>
                   </div>
-                  <p className="enhanced-mention-dropdown__name">{doc.name}</p>
-                </div>
-              ))}
-              {isSearching && searchLoading && (
-                <div className="enhanced-mention-dropdown__empty">
-                  <LoadingOutlined /> 搜索中...
-                </div>
-              )}
-              {!searchLoading && displayList.length === 0 && (
-                <div className="enhanced-mention-dropdown__empty">
-                  {isSearching ? t("chat.mention.search_no_result") : t("chat.mention.no_recent")}
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
-        {/* 4 个入口 */}
-        {showKnowledgeEntry && (
+        {/* 2 个入口 —— 搜索态下隐藏,只呈现搜索结果 */}
+        {showEntries && showKnowledgeEntry && (
           <div
             className="enhanced-mention-dropdown__entry"
             onClick={() => handleEntryClick(onOpenLibrary)}
@@ -188,39 +190,23 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
             <RightOutlined />
           </div>
         )}
-        {showUploadsEntry && (
+        {showEntries && showMyFilesEntry && (
           <div
             className="enhanced-mention-dropdown__entry"
-            onClick={() => handleEntryClick(onOpenUploads)}
+            onClick={() => handleEntryClick(onOpenMyFiles)}
           >
-            <span className="flex-1">@ 从我上传的选择</span>
-            <RightOutlined />
-          </div>
-        )}
-        {showAIGeneratedEntry && (
-          <div
-            className="enhanced-mention-dropdown__entry"
-            onClick={() => handleEntryClick(onOpenAIGenerated)}
-          >
-            <span className="flex-1">@ 从AI生成的选择</span>
-            <RightOutlined />
-          </div>
-        )}
-        {showRecordingsEntry && (
-          <div
-            className="enhanced-mention-dropdown__entry"
-            onClick={() => handleEntryClick(onOpenRecordings)}
-          >
-            <span className="flex-1">@ 从我的录音选择</span>
+            <span className="flex-1">@ {t("chat.select_from_my")}</span>
             <RightOutlined />
           </div>
         )}
 
         {/* 没有任何入口(非内部用户)时给提示 */}
         {noEntries && !hasKnowledgeBase && (
-          <div className="enhanced-mention-dropdown__empty">
-            当前模式暂无可用入口
-          </div>
+          <Empty
+            className="enhanced-mention-dropdown__empty"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="当前模式暂无可用入口"
+          />
         )}
       </div>
 
@@ -319,9 +305,19 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
         .enhanced-mention-dropdown__entry:hover {
           background-color: #EBF1FF;
         }
-        .enhanced-mention-dropdown__empty {
+        .enhanced-mention-dropdown__loading {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
           padding: 24px 16px;
-          text-align: center;
+          font-size: 12px;
+          color: #9FA4C5;
+        }
+        .enhanced-mention-dropdown__empty {
+          margin: 12px 0;
+        }
+        .enhanced-mention-dropdown__empty .ant-empty-description {
           font-size: 12px;
           color: #9FA4C5;
         }

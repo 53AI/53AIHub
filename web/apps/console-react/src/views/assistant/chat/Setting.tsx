@@ -1,10 +1,10 @@
 import {
-    useState,
-    useEffect,
-    useImperativeHandle,
-    forwardRef,
-    useRef,
-    useMemo,
+  useState,
+  useEffect,
+  useImperativeHandle,
+  forwardRef,
+  useRef,
+  useMemo,
 } from "react";
 import { Checkbox, Switch, Button, Slider, message, Spin } from "antd";
 import { t } from "@/locales";
@@ -18,7 +18,7 @@ import { transformPlatformSetting } from "@/api/modules/platform-settings/transf
 import type { PlatformSetting } from "@/api/modules/platform-settings/types";
 import promptApi from "@/api/modules/prompt";
 import { GROUP_TYPE } from "@/constants/group";
-import { MODEL_USE_TYPE, REASONING_MODE } from "@/constants/platform/config";
+import { MODEL_USE_TYPE } from "@/constants/platform/config";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import ModelSelectPopover from "@/components/Model/select-popover";
 import SelectPlus from "@/components/SelectPlus";
@@ -31,6 +31,7 @@ export interface ChatSettingRef {
 }
 
 interface ChatSettingProps {
+  agentUsage?: number; // 当前场景的 agent_usage，默认 KM_FILE_CHAT（知识库）
   onAgentChange?: (agent: AgentInfo) => void;
   onLoading?: (loading: boolean) => void;
 }
@@ -40,7 +41,7 @@ const RERANKING_MODE = {
   RERANKING_MODEL: "reranking_model",
 };
 
-const getDefaultSettings = (enterpriseName: string) => ({
+const getDefaultSettings = (enterpriseName: string, agentUsage: number) => ({
   name: "",
   logo: "",
   description: "",
@@ -124,11 +125,11 @@ const getDefaultSettings = (enterpriseName: string) => ({
       temperature: 0.7,
     },
   },
-  agent_usage: AGENT_USAGES.KM_FILE_CHAT,
+  agent_usage: agentUsage,
 });
 
 export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
-  ({ onAgentChange, onLoading }, ref) => {
+  ({ agentUsage = AGENT_USAGES.KM_FILE_CHAT, onAgentChange, onLoading }, ref) => {
     const enterpriseStore = useEnterpriseStore();
     const [isLoading, setIsLoading] = useState(false);
     const [agent, setAgent] = useState<AgentInfo | null>(null);
@@ -431,12 +432,13 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
       try {
         const DEFAULT_SETTINGS = getDefaultSettings(
           enterpriseStore.info?.name || "",
+          agentUsage,
         );
         const result = await agentsApi.list({
-          agent_usages: AGENT_USAGES.KM_FILE_CHAT,
+          agent_usages: agentUsage,
         });
         const agentChat = result.agents.find(
-          (a: any) => a.agent_usage === AGENT_USAGES.KM_FILE_CHAT,
+          (a: any) => a.agent_usage === agentUsage,
         );
         const agentData = agentChat
           ? transformAgentInfo(agentChat)
@@ -507,7 +509,6 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
                     form.settings?.fast_reasoning_config?.temperature
                   }
                   type={MODEL_USE_TYPE.REASONING}
-                  mode={REASONING_MODE.FAST}
                   onChange={setFastReasoningValue}
                   onTemperatureChange={(val) =>
                     setForm((prev: any) => ({
@@ -555,7 +556,6 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
                       form.settings?.deep_thinking_config?.temperature
                     }
                     type={MODEL_USE_TYPE.REASONING}
-                    mode={REASONING_MODE.DEEP}
                     onChange={setDeepThinkingValue}
                     onTemperatureChange={(val) =>
                       setForm((prev: any) => ({
@@ -609,6 +609,7 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
                         {t("module.online_search_source")}
                       </div>
                       <SelectPlus
+                        className="flex-1"
                         value={getSearchValue()}
                         useI18n={false}
                         options={searchOptions}

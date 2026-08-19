@@ -443,7 +443,7 @@ export function MetadataView() {
                     {entities.map((entity) => (
                       <span
                         key={entity.id}
-                        className="bg-[#EFF6FF] text-sm text-[#2563EB] px-2 py-1 rounded hover:bg-blue-100 transition-colors cursor-default group/tag relative"
+                        className="bg-[#EFF6FF] text-sm text-[#2563EB] px-2 py-1 rounded hover:bg-blue-100 transition-colors cursor-default group/tag relative break-words min-w-0 max-w-full"
                       >
                         {entity.name}
                         <div className="absolute -right-1 -top-1 border rounded-full opacity-0 group-hover/tag:opacity-100 shadow-sm cursor-pointer hover:text-red-500 transition-opacity">

@@ -48,7 +48,7 @@ vi.mock("@km/shared-components-react", () => ({
   SvgIcon: () => <span data-testid="svg-icon" />,
 }));
 
-vi.mock("@/components/DetailBreadcrumb", () => ({
+vi.mock("@/components/Breadcrumb", () => ({
   default: ({ name }: any) => <div data-testid="breadcrumb">{name}</div>,
   MODULE_CONFIGS: { agent: {} },
 }));

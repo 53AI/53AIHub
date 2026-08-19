@@ -42,6 +42,7 @@ import { useConversationStore } from "@/stores";
 import { useUserStore } from "@/stores/modules/user";
 import { assign, deepCopy } from "@/utils";
 import { getPublicPath } from "@/utils/config";
+import { buildPreviewUrl } from "@/utils/preview";
 import "./Setting.scss";
 
 interface SettingProps {
@@ -1163,9 +1164,7 @@ const WorkAISetting: React.FC<SettingProps> = ({
 												size: file.size,
 												mime_type: file.type,
 												preview_key: res.data?.preview_key,
-												url: res.data?.preview_key
-													? `${(window as any).$api_host || ""}/api/preview/${res.data.preview_key}`
-													: "",
+												url: buildPreviewUrl(res.data?.preview_key) ?? "",
 											};
 										}}
 										onSend={handleSend}

@@ -20,6 +20,7 @@ import type {
   ChatMessagesSlots,
 } from "../ChatMessages/types";
 import { getOutputFileDownloadStrategy } from "../../utils/output-file-download";
+import { projectReasoningIntoProcessRecords } from "../../utils/reasoning-process-projection";
 
 // === Main Props ===
 
@@ -378,8 +379,16 @@ function AssistantMessageInner({
 
   const assistantMenuContent = openclawEnabled ? getOpenClawAssistantContent(message) : (message.answer || message.content || "");
   const showMenu = !message.loading && !isShareMode;
+  const projectedProcessRecords = useMemo(
+    () => projectReasoningIntoProcessRecords(
+      message.process_records,
+      message.reasoning_content,
+      message.loading || (isStreaming && isLastMessage),
+    ),
+    [message.process_records, message.reasoning_content, message.loading, isStreaming, isLastMessage],
+  );
   // 数据驱动：有 process_records 数据就显示 ProcessFlow
-  const showProcessFlow = message.process_records && message.process_records.length > 0;
+  const showProcessFlow = projectedProcessRecords && projectedProcessRecords.length > 0;
   // 数据驱动：有 outputFiles 数据就显示输出文件
   const showOutputFiles = !openclawEnabled && message.outputFiles && message.outputFiles.length > 0;
   // 数据驱动：有 file_quotations 数据就显示引用
@@ -403,7 +412,7 @@ function AssistantMessageInner({
     return (
       <ProcessFlowHeader
         t={t}
-        processRecords={message.process_records}
+        processRecords={projectedProcessRecords}
         streaming={message.loading || (isStreaming && isLastMessage)}
         hasContent={!!(message.answer || message.content)}
         getKnowledgeSearchFiles={() => ragStats?.files_search || []}
@@ -414,7 +423,7 @@ function AssistantMessageInner({
   }, [
     showProcessFlow,
     t,
-    message.process_records,
+    projectedProcessRecords,
     message.loading,
     isStreaming,
     isLastMessage,
@@ -614,6 +623,7 @@ function AssistantMessageInner({
           streaming={message.loading || (isStreaming && isLastMessage)}
           reasoning={message.reasoning_content}
           reasoningExpanded={message.reasoning_expanded}
+          showReasoning={!showProcessFlow}
           avatar={agentInfo?.logo}
           alwaysShowMenu={isLastMessage || actualFeedbackVisible}
           className={className}

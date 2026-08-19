@@ -66,7 +66,6 @@ export function ToolboxRefactoredPage() {
     setSaving,
     updateGroupOptions,
     updateSortOrder,
-    refresh,
   } = useToolboxStore();
 
   // 计算属性
@@ -170,11 +169,11 @@ export function ToolboxRefactoredPage() {
       await toolboxApi.sort(sortItems);
       message.success(t("action_save_success"));
       setIsSort(false);
-      refresh();
+      await loadData();
     } finally {
       setSaving(false);
     }
-  }, [groupOptions, setSaving, setIsSort, refresh]);
+  }, [groupOptions, setSaving, setIsSort, loadData]);
 
   // 处理添加
   const handleAdd = useCallback(() => {
@@ -223,11 +222,11 @@ export function ToolboxRefactoredPage() {
         onOk: async () => {
           await toolboxApi.delete(item.ai_link_id);
           message.success(t("action_delete_success"));
-          refresh();
+          await loadData();
         },
       });
     },
-    [refresh],
+    [loadData],
   );
 
   // 渲染工具卡片

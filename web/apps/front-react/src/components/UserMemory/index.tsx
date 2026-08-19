@@ -3,6 +3,7 @@ import { LeftOutlined } from '@ant-design/icons';
 import { Skeleton } from 'antd';
 import { SvgIcon } from "@km/shared-components-react";
 import { UserMemoryDetail } from './detail';
+import { useFullscreen } from '@/hooks/useFullscreen';
 import memoryApi from '@/api/modules/memory';
 import type { MemoryTypeItem } from '@/api/modules/memory/types';
 
@@ -24,11 +25,9 @@ export const clearMemoryListCache = (agentId?: string | number) => {
 interface UserMemoryProps {
   agentId: string | number;
   onClose?: () => void;
-  onToggleFullscreen?: () => void;
-  isFullscreen?: boolean;
 }
 
-export function UserMemory({ agentId, onClose, onToggleFullscreen, isFullscreen }: UserMemoryProps) {
+export function UserMemory({ agentId, onClose }: UserMemoryProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [memoryList, setMemoryList] = useState<MemoryTypeItem[]>(() => {
     // 初始化时先使用缓存
@@ -38,6 +37,7 @@ export function UserMemory({ agentId, onClose, onToggleFullscreen, isFullscreen 
     // 如果有缓存，初始不显示 loading
     return !memoryListCache.has(agentId);
   });
+  const { fullscreen, toggle, setFullscreen, composeClassName } = useFullscreen({ withBackground: false });
 
   useEffect(() => {
     // 如果已有缓存，不再请求
@@ -70,10 +70,14 @@ export function UserMemory({ agentId, onClose, onToggleFullscreen, isFullscreen 
       <UserMemoryDetail
         agentId={agentId}
         file={selectedFile}
-        onBack={() => setSelectedPath(null)}
+        fullscreen={fullscreen}
+        onToggle={toggle}
+        composeClassName={composeClassName}
+        onBack={() => {
+          setSelectedPath(null);
+          setFullscreen(false);
+        }}
         onClose={onClose}
-        onToggleFullscreen={onToggleFullscreen}
-        isFullscreen={isFullscreen}
       />
     );
   }

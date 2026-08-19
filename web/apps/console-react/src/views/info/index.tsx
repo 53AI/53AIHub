@@ -1,13 +1,13 @@
 import {
-    Form,
-    Input,
-    Button,
-    Image,
-    Select,
-    Switch,
-    message,
-    Modal,
-    Divider,
+  Form,
+  Input,
+  Button,
+  Image,
+  Select,
+  Switch,
+  message,
+  Modal,
+  Divider,
 } from "antd";
 import { CheckOutlined } from "@ant-design/icons";
 import { useEffect, useState, useMemo } from "react";
@@ -19,11 +19,13 @@ import { enterpriseApi } from "@/api/modules/enterprise";
 import { useEnv } from "@/hooks/useEnv";
 import { useInternalUserStats } from "@/hooks/useInternalUserStats";
 import {
-    WEBSITE_TYPE,
-    WEBSITE_VERSION,
-    WEBSITE_TYPE_LABEL_MAP,
-    WEBSITE_TYPE_DESC_MAP,
-    VERSION_MODULE,
+  WEBSITE_TYPE,
+  WEBSITE_VERSION,
+  WEBSITE_TYPE_LABEL_MAP,
+  WEBSITE_TYPE_DESC_MAP,
+  VERSION_MODULE,
+  ENTERPRISE_INDUSTRY_OPTIONS,
+  ENTERPRISE_INDUSTRY_LABEL_MAP,
 } from "@/constants/enterprise";
 import { checkVersion, checkVersionPermission } from "@/utils/version";
 import { VersionGuard } from "@/components/VersionGuard";
@@ -37,8 +39,10 @@ interface InfoForm {
   logo: string;
   ico: string;
   name: string;
+  full_name: string;
   keywords: string[];
   desc: string;
+  industry: string;
   language: string;
   website_type: string;
   copyright: boolean;
@@ -123,8 +127,10 @@ export function InfoPage() {
         logo: enterpriseInfo.logo || "",
         ico: enterpriseInfo.ico || "",
         name: (enterpriseInfo as any).display_name || enterpriseInfo.name || "",
+        full_name: (enterpriseInfo as any).full_name || "",
         keywords,
         desc: (enterpriseInfo as any).description || "",
+        industry: (enterpriseInfo as any).industry || "",
         language: (enterpriseInfo as any).language || "zh-cn",
         website_type: (enterpriseInfo as any).type || WEBSITE_TYPE.INDEPENDENT,
         copyright:
@@ -215,6 +221,8 @@ export function InfoPage() {
           logo: values.logo,
           ico: values.ico,
           display_name: values.name,
+          full_name: values.full_name,
+          industry: values.industry,
           language: values.language,
           description: values.desc,
           keywords: JSON.stringify(values.keywords),
@@ -306,28 +314,72 @@ export function InfoPage() {
             </div>
           </Form.Item>
 
-          {/* Name */}
+          {/* Name (Enterprise Short Name) */}
           <Form.Item
-            label={t("module.website_info_name")}
+            label={
+              <span>
+                {t("module.enterprise_info_short_name")}
+                <span className="text-red-500 ml-0.5">*</span>
+              </span>
+            }
+            required={false}
             name="name"
             rules={[
               {
                 required: true,
-                message: t("module.website_info_name_placeholder"),
+                message: t("module.enterprise_info_short_name_placeholder"),
               },
             ]}
           >
             <Input
               className="max-w-[660px]"
-              placeholder={t("module.website_info_name_placeholder")}
-              maxLength={120}
+              placeholder={t("module.enterprise_info_short_name_placeholder")}
+              maxLength={20}
               showCount
               allowClear
             />
           </Form.Item>
 
+          {/* Full Name (Enterprise Full Name) */}
+          <Form.Item
+            label={t("module.enterprise_info_full_name")}
+            name="full_name"
+            rules={[
+              {
+                max: 50,
+                message: t("module.enterprise_info_full_name_placeholder"),
+              },
+            ]}
+          >
+            <Input
+              className="max-w-[660px]"
+              placeholder={t("module.enterprise_info_full_name_placeholder")}
+              maxLength={50}
+              showCount
+              allowClear
+            />
+          </Form.Item>
+
+          {/* Industry */}
+          <Form.Item
+            label={t("module.enterprise_info_industry")}
+            name="industry"
+          >
+            <Select
+              className="max-w-[660px]"
+              placeholder={t("module.enterprise_info_industry_placeholder")}
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={ENTERPRISE_INDUSTRY_OPTIONS.map((value) => ({
+                value: t(ENTERPRISE_INDUSTRY_LABEL_MAP.get(value) || ""),
+                label: t(ENTERPRISE_INDUSTRY_LABEL_MAP.get(value) || ""),
+              }))}
+            />
+          </Form.Item>
+
           {/* Keywords */}
-          <Form.Item label={t("module.website_info_keyword")} name="keywords">
+          {/* <Form.Item label={t("module.website_info_keyword")} name="keywords">
             <Select
               mode="tags"
               className="max-w-[660px]"
@@ -338,14 +390,14 @@ export function InfoPage() {
               suffixIcon={""}
               allowClear
             />
-          </Form.Item>
+          </Form.Item> */}
 
-          {/* Description */}
-          <Form.Item label={t("module.website_info_desc")} name="desc">
+          {/* Description (Enterprise Introduction) */}
+          <Form.Item label={t("module.enterprise_info_intro")} name="desc">
             <Input.TextArea
               className="max-w-[660px]"
-              placeholder={t("module.website_info_desc_placeholder")}
-              maxLength={200}
+              placeholder={t("module.enterprise_info_intro_placeholder")}
+              maxLength={1000}
               showCount
               autoSize={{ minRows: 5, maxRows: 6 }}
               style={{ resize: "none" }}

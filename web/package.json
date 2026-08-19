@@ -1,6 +1,6 @@
 {
   "name": "km-monorepo",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "description": "53AI KM Monorepo - front, console & mobile",
   "author": "53aihub",
@@ -20,7 +20,6 @@
     "format:check": "biome format .",
     "type-check": "turbo run type-check",
     "clean": "turbo run clean",
-    "clean:vite": "rimraf apps/front/node_modules/.vite apps/console/node_modules/.vite",
     "clean:modules": "rimraf node_modules apps/*/node_modules packages/*/node_modules",
     "clean:report": "node scripts/clean-report.mjs",
     "prepare": "husky"

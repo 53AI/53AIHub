@@ -1,6 +1,6 @@
 import { message } from 'antd'
 import uploadApi from '@/api/modules/upload'
-import { api_host } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 
 export interface UploadResult {
   url: string
@@ -32,7 +32,7 @@ export class UploadService {
       const result = res.data
 
       // 构建完整的URL
-      const url = `${api_host}/api/preview/${result.preview_key || ''}`
+      const url = buildPreviewUrl(result.preview_key) ?? ''
       const uploadResult: UploadResult = {
         ...result,
         url

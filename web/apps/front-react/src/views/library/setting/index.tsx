@@ -24,7 +24,7 @@ export function LibrarySettingLayout() {
   }, [params.id])
 
   return (
-    <div className="h-screen flex overflow-hidden">
+    <div className="fixed inset-0 h-screen flex overflow-hidden z-50">
       <SettingSider className="flex-none" />
       {loading && (
         <div className="flex-1 flex items-center justify-center">

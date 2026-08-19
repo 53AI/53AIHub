@@ -28,6 +28,8 @@ export * from "./utils/openclaw-timeline";
 export * from "./utils/openclaw-turn";
 export * from "./utils/openclaw-transport";
 export * from "./utils/output-file-download";
+export * from "./utils/agentrun-projection";
+export * from "./utils/reasoning-process-projection";
 
 // Components
 export * from "./components";

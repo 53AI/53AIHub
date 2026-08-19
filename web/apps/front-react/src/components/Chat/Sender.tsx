@@ -30,7 +30,7 @@ import {
 import { getPublicPath } from "@/utils/config";
 import SpaceDialog from "@/components/Space/dialog";
 import { MyFilesDialog } from "@/components/MyFilesDialog/dialog";
-import type { MyFilesDialogRef } from "@/components/MyFilesDialog/types";
+import type { MyFilesDialogRef, SelectedFilesBySource } from "@/components/MyFilesDialog/types";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { checkVersion } from "@/utils/version";
 
@@ -259,9 +259,8 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
     }>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const isBackspaceRef = useRef(false);
-    const uploadedDialogRef = useRef<MyFilesDialogRef>(null);
-    const aiGeneratedDialogRef = useRef<MyFilesDialogRef>(null);
-    const recordingsDialogRef = useRef<MyFilesDialogRef>(null);
+    // 合并后的"我的文件"对话框 ref(OpenSpec merge-my-files-dialogs:用 1 个 ref 承载 3 个 source 的 Tab)
+    const myFilesDialogRef = useRef<MyFilesDialogRef>(null);
 
     const [isComposing, setIsComposing] = useState(false);
     const [composingEndTime, setComposingEndTime] = useState(0);
@@ -1999,53 +1998,54 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
       }));
     }, []);
 
-    // 打开弹窗的通用方法（传入当前 source 类型的文件）
-    const openMyFilesDialog = useCallback((dialogRef: React.RefObject<MyFilesDialogRef | null>, source: string) => {
+    // 打开弹窗的通用方法（合并后:单个 ref 承载 3 个 source Tab,每个 file 带 source 字段让弹窗归位）
+    const openMyFilesDialog = useCallback(() => {
       cleanupInputElements();
-      // 只传入同 source 类型的已选文件
-      const sourceFiles = links.filter((l) => l.source === source).map((l) => ({
-        id: l.id,
-        name: l.name,
-        icon: l.icon || '',
-        path: l.path || '',
-        isfolder: l.isfolder || false,
-        rawData: l.rawData,
-      }));
-      dialogRef.current?.open(sourceFiles);
+      // 把 3 个 source 已选文件合并传给弹窗;SelectedFileInfo.source 让弹窗按 Tab 分桶
+      const allFiles = links
+        .filter((l) => l.source === 'uploads' || l.source === 'ai-generated' || l.source === 'recordings')
+        .map((l) => ({
+          id: l.id,
+          name: l.name,
+          icon: l.icon || '',
+          path: l.path || '',
+          isfolder: l.isfolder || false,
+          rawData: l.rawData,
+          source: l.source as 'uploads' | 'ai-generated' | 'recordings',
+        }));
+      myFilesDialogRef.current?.open(allFiles);
     }, [cleanupInputElements, links]);
 
-    // 选择文件确认的通用方法（根据 source 替换同类型文件）
-    const handleSelectMyFiles = useCallback((files: any[], source: string) => {
-      const newLinks = convertFilesToLinks(files, source);
-      // 替换同 source 类型的文件，保留其他 source 的文件
+    // 选择文件确认的通用方法（合并后:onConfirm 收到 bySource 分桶,逐 source 替换）
+    const handleSelectMyFilesBySource = useCallback((bySource: SelectedFilesBySource) => {
+      const allNewLinks: any[] = [];
+      (['uploads', 'ai-generated', 'recordings'] as const).forEach((source) => {
+        const files = bySource[source];
+        if (files?.length) {
+          allNewLinks.push(...convertFilesToLinks(files, source));
+        }
+      });
+      // 替换 3 个 source 的文件,保留非这 3 个 source 的(knowledge 等)
       setMentionLinkModel((prev) => {
-        const otherLinks = prev.links.filter((l) => l.source !== source);
-        return { ...prev, links: [...otherLinks, ...newLinks], collapsed: false };
+        const otherLinks = prev.links.filter(
+          (l) => l.source !== 'uploads' && l.source !== 'ai-generated' && l.source !== 'recordings',
+        );
+        return { ...prev, links: [...otherLinks, ...allNewLinks], collapsed: false };
       });
       setHasSelectAfterOpen(true);
     }, [convertFilesToLinks]);
 
     const handleOpenUploadedDialog = useCallback(() => {
-      openMyFilesDialog(uploadedDialogRef, 'uploads');
+      openMyFilesDialog();
     }, [openMyFilesDialog]);
 
     const handleOpenAIGeneratedDialog = useCallback(() => {
-      openMyFilesDialog(aiGeneratedDialogRef, 'ai-generated');
+      openMyFilesDialog();
     }, [openMyFilesDialog]);
 
     const handleOpenRecordingsDialog = useCallback(() => {
-      openMyFilesDialog(recordingsDialogRef, 'recordings');
+      openMyFilesDialog();
     }, [openMyFilesDialog]);
-
-    const handleSelectFromUploaded = useCallback((files: any[]) => {
-      handleSelectMyFiles(files, 'uploads');
-    }, [handleSelectMyFiles]);
-    const handleSelectFromAIGenerated = useCallback((files: any[]) => {
-      handleSelectMyFiles(files, 'ai-generated');
-    }, [handleSelectMyFiles]);
-    const handleSelectFromRecordings = useCallback((files: any[]) => {
-      handleSelectMyFiles(files, 'recordings');
-    }, [handleSelectMyFiles]);
 
     const handleRemoveLink = useCallback((link: LinkItem) => {
       setMentionLinkModel((prev) => ({
@@ -2718,19 +2718,9 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
         </div>
         <SpaceDialog ref={spaceDialogRef} onConfirm={handleSelectFiles} allowSelectLibrary={allowSelectLibrary} allowSelectSpace={allowSelectSpace} />
         <MyFilesDialog
-          ref={uploadedDialogRef}
-          source="uploads"
-          onConfirm={handleSelectFromUploaded}
-        />
-        <MyFilesDialog
-          ref={aiGeneratedDialogRef}
-          source="ai-generated"
-          onConfirm={handleSelectFromAIGenerated}
-        />
-        <MyFilesDialog
-          ref={recordingsDialogRef}
-          source="recordings"
-          onConfirm={handleSelectFromRecordings}
+          ref={myFilesDialogRef}
+          enabledSources={['uploads', 'ai-generated', 'recordings']}
+          onConfirm={handleSelectMyFilesBySource}
         />
 
         {/* Styles */}

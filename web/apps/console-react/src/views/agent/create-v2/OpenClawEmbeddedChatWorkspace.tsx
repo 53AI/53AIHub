@@ -5,6 +5,7 @@ import conversationApi from '@/api/modules/conversation'
 import openclawApi from '@/api/modules/openclaw'
 import uploadApi from '@/api/modules/upload'
 import { api_host, getPublicPath } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 
 interface ConsoleOpenClawEmbeddedChatWorkspaceProps {
   className?: string
@@ -59,7 +60,7 @@ export function ConsoleOpenClawEmbeddedChatWorkspace({ className }: ConsoleOpenC
         const res = await uploadApi.upload(file)
         return {
           id: res.data.id,
-          url: `${api_host}/api/preview/${res.data.preview_key || ''}`,
+          url: buildPreviewUrl(res.data.preview_key) ?? '',
           size: res.data.size,
           name: res.data.file_name,
           mime_type: res.data.mime_type,

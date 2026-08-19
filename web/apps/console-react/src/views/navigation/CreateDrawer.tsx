@@ -164,6 +164,12 @@ const CreateDrawer = forwardRef<CreateDrawerRef, CreateDrawerProps>(
       if (!value) return Promise.resolve();
 
       if (form.getFieldValue("type") === NAVIGATION_TYPE.CUSTOM) {
+        if (!value.startsWith("/")) {
+          return Promise.reject(
+            new Error(t("module.nav_custom_path_must_start_slash")),
+          );
+        }
+
         const exists = navigationList.some(
           (item) =>
             item.jump_path === value &&
@@ -306,15 +312,10 @@ const CreateDrawer = forwardRef<CreateDrawerRef, CreateDrawerProps>(
                       { validator: validatePath },
                     ]}
                   >
-                    <div className="flex items-center">
-                      <span className="flex items-center px-3 h-[32px] bg-[#f5f5f5] border border-r-0 border-[#d9d9d9] rounded-l text-sm text-tertiary whitespace-nowrap">
-                        {domainUrl}
-                      </span>
-                      <Input
-                        className="!rounded-l-none flex-1"
-                        placeholder={t("form_input_placeholder")}
-                      />
-                    </div>
+                    <Input
+                      addonBefore={domainUrl}
+                      placeholder={t("form_input_placeholder")}
+                    />
                   </Form.Item>
                 );
               }

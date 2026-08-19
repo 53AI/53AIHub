@@ -304,6 +304,7 @@ export function GuideView() {
           account: values.account,
           password: values.password,
         };
+        applyPlatformDefaults(platform);
         setCurrentStep(2);
         return;
       }
@@ -319,15 +320,19 @@ export function GuideView() {
     }
   };
 
-  const handlePrev = () => setCurrentStep((s) => s - 1);
-
-  const handlePlatformChange = (value: PlatformKey) => {
-    setPlatform(value);
+  const applyPlatformDefaults = (value: PlatformKey) => {
     const config = PLATFORM_CONFIG[value];
     form.setFieldsValue({
       baseURL: config.defaults.baseURL || "",
       apiKey: "",
     });
+  };
+
+  const handlePrev = () => setCurrentStep((s) => s - 1);
+
+  const handlePlatformChange = (value: PlatformKey) => {
+    setPlatform(value);
+    applyPlatformDefaults(value);
   };
 
   const stepItems = [

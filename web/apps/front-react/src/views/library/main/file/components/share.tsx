@@ -5,6 +5,7 @@ import { cacheManager, CacheMode, copyToClip } from "@km/shared-utils";
 import { buildUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
+import { IconButton } from "@/components/IconButton";
 import "./share.css";
 
 interface FileShareProps {
@@ -67,7 +68,8 @@ export function FileShare({ fileId, fileName }: FileShareProps) {
         </div>
       </div>
       <Button
-        style={{ backgroundColor: "#F5F6F7" }}
+        color="default"
+        variant="filled"
         onClick={handleCopyShareUrl}
       >
         <SvgIcon className="mr-1" name="link" />
@@ -82,11 +84,9 @@ export function FileShare({ fileId, fileName }: FileShareProps) {
       trigger="click"
       onOpenChange={(open) => open && onSharePopoverShow()}
     >
-      <Tooltip title="分享">
-        <div className="size-8 rounded flex-center cursor-pointer hover:bg-[#F0F0F0]">
-          <SvgIcon name="share-two" />
-        </div>
-      </Tooltip>
+      <IconButton title={t("action.share")} size="medium">
+        <SvgIcon name="share-two" />
+      </IconButton>
     </Popover>
   );
 }

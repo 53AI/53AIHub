@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { Dropdown, Spin } from "antd";
 import type { MenuProps } from "antd";
 import { Loading3QuartersOutlined, CheckOutlined } from "@ant-design/icons";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { SvgIcon, Search } from "@km/shared-components-react";
 import type {
   WikiPageSortBy,
@@ -21,11 +21,11 @@ import {
   RESOURCE_TYPE,
   type PermissionType,
 } from "@/components/KMPermission/constant";
-import { usePoll } from "@/hooks/usePoll";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import { useUrlEnumState } from "@/hooks/useUrlEnumState";
 import { useWikiPageList } from "./useWikiPageList";
 import type { ActiveTab } from "./index";
+import Breadcrumb from "@/components/Breadcrumb";
 import { t } from "@/locales";
 
 type SortType = "alphabetical" | "updated" | "created";
@@ -104,7 +104,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const currentSpace = useSpaceStore((state) => state.currentSpace);
   // 共享 pagesData 仍供 RightContent（按 slug 查 pageId）/ 选择器弹窗使用
   const loadPages = useWikiStore((state) => state.loadPages);
-  const navigate = useNavigate();
 
   // 标签计数来自索引接口
   const [pageTypeCounts, setPageTypeCounts] = useState<WikiPageTypeCounts | null>(null);
@@ -189,21 +188,21 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   }, [spaceId]);
 
   // 使用轮询，每10秒请求一次
-  const { start: startPolling, stop: stopPolling } = usePoll(loadProgress, 10000);
+  // const { start: startPolling, stop: stopPolling } = usePoll(loadProgress, 10000);
 
   // 初始加载一次
-  useEffect(() => {
-    loadProgress();
-  }, [loadProgress]);
+  // useEffect(() => {
+  //   loadProgress();
+  // }, [loadProgress]);
 
   // 根据是否有待处理任务启动/停止轮询
-  useEffect(() => {
-    if (pendingCount > 0) {
-      startPolling();
-    } else {
-      stopPolling();
-    }
-  }, [pendingCount, startPolling, stopPolling]);
+  // useEffect(() => {
+  //   if (pendingCount > 0) {
+  //     startPolling();
+  //   } else {
+  //     stopPolling();
+  //   }
+  // }, [pendingCount, startPolling, stopPolling]);
 
   // 当待处理数量从 > 0 变为 0 时，刷新列表与标签计数
   useEffect(() => {
@@ -324,27 +323,20 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   return (
     <div className="w-[280px] pt-5 h-full flex flex-col border-r border-gray-200 bg-white shrink-0 min-h-0">
       <div className="px-3 flex items-center gap-1 text-sm text-secondary">
-        <a
-          className="cursor-pointer hover:text-theme"
-          onClick={() => navigate(`/`)}
-        >
-          {t("module.index")}
-        </a>
-        <span>{'>'}</span>
-        <a
-          className="cursor-pointer hover:text-theme"
-          onClick={() => navigate(`/knowledge`)}
-        >
-          {t("module.knowledge")}
-        </a>
-        <span>{'>'}</span>
-        <a
-          className="cursor-pointer text-primary hover:text-theme truncate max-w-[160px]"
-          onClick={() => navigate(`/knowledge?space_id=${spaceId}`)}
-          title={currentSpace?.name}
-        >
-          {currentSpace?.name ?? t("module.space")}
-        </a>
+        <Breadcrumb
+          className="text-sm"
+          items={[
+            {
+              path: `/knowledge`,
+              i18nKey: "module.knowledge",
+            },
+            {
+              path: spaceId ? `/knowledge?space_id=${spaceId}` : "/knowledge",
+              label: currentSpace?.name ?? t("module.space"),
+              linkable: true,
+            },
+          ]}
+        />
       </div>
       <div className="px-3 flex items-center gap-2.5 mt-3">
         <div className="size-[26px] rounded bg-[#E6EEFF] flex items-center justify-center text-theme">

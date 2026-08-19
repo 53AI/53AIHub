@@ -54,7 +54,7 @@ export const formatLibrary = (library: LibraryItem): LibraryItem & { updated_dat
 
 // Constants
 const POLLING_INTERVAL = 5000
-const MIN_SIDEBAR_WIDTH = 240
+const MIN_SIDEBAR_WIDTH = 280
 const MAX_SIDEBAR_WIDTH = 480
 
 interface LibraryState {

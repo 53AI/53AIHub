@@ -158,12 +158,14 @@ export function IndexSidebar({
   // 当加载完成且路径为 /agent/agent 无 agent_id 时，导航到默认智能体
   // 优先选 KM_AI_SEARCH（chat/AI搜问）的快捷方式，找不到再退回 navItems[0]
   // 显示顺序保持 API 原顺序不变，本逻辑仅影响默认导航目标
+  // 重要：如果 URL 中已有 redirect 参数（如登录重定向），不执行自动重定向
   useEffect(() => {
     if (!loading && navItems.length > 0) {
       const params = new URLSearchParams(location.search);
       const currentAgentId = params.get("agent_id");
+      const hasRedirect = params.get("redirect");
 
-      if (!currentAgentId) {
+      if (!currentAgentId && !hasRedirect) {
         const chatItem = navItems.find((item) => item.agentUsage === AGENT_USAGES.KM_AI_SEARCH && item.is_system);
         const defaultItem = chatItem || navItems[0];
         if (defaultItem.agentId) {

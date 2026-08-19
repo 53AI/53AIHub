@@ -8,6 +8,9 @@ import { useShortcutsStore } from "@/stores/modules/shortcuts";
 import { LibraryHeader } from "@/views/library/components/header";
 import { LibraryFav } from "@/views/library/components/fav";
 import { MoreDropdown } from "@/components/MoreDropdown";
+import { IconButton } from "@/components/IconButton";
+import { FullscreenToggle } from "@/components/FullscreenToggle";
+import { useFullscreen } from "@/hooks/useFullscreen";
 import LibraryPermission from "@/views/library/components/permission/Library";
 import {
   PERMISSION_TYPE,
@@ -27,8 +30,8 @@ export function LibraryHomeView() {
   const libraryStore = useLibraryStore();
   const userStore = useUserStore();
   const shortcutsStore = useShortcutsStore();
+  const { fullscreen, toggle: toggleFullscreen, composeClassName } = useFullscreen();
 
-  const libraryId = params.id || "";
 
   // Check if current library is a shortcut
   const isShortcut = useMemo(() => {
@@ -151,12 +154,20 @@ export function LibraryHomeView() {
   }, [isShortcut]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className={composeClassName("flex-1 flex flex-col overflow-hidden")}>
       <LibraryHeader
         className="border-none"
         footer={
           library && (
             <>
+              <IconButton
+                title={t("action.share")}
+                size="medium"
+                onClick={handleShare}
+              >
+                <SvgIcon name="share-two" />
+              </IconButton>
+
               <LibraryFav
                 is_favorite={library.is_favorite || false}
                 resource_type={RESOURCE_TYPE.library}
@@ -164,13 +175,10 @@ export function LibraryHomeView() {
                 onChange={handleFavoriteChange}
               />
 
-              <div
-                className="size-8 rounded flex items-center justify-center cursor-pointer hover:bg-[#F0F0F0]"
-                title="分享"
-                onClick={handleShare}
-              >
-                <SvgIcon name="share-two" />
-              </div>
+              <FullscreenToggle
+                fullscreen={fullscreen}
+                onToggle={toggleFullscreen}
+              />
 
               <MoreDropdown onCommand={handleMore} items={moreItems} />
             </>

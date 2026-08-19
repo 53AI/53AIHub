@@ -133,10 +133,7 @@ describe('新增 block 类型烟测', () => {
 
 describe('flow_diagram mermaid-flow.v1', () => {
   const sampleDiagram: MermaidFlowDiagram = {
-    syntax: 'mermaid-flow.v1',
     direction: 'TB',
-    routing: 'orthogonal',
-    source: '',
     nodes: [
       { id: 'A', title: '需求发散', content: '流程不标准', tone: 'neutral', rank: 0 },
       { id: 'B', title: '定制抽取层', content: '消耗研发工时', tone: 'warning', rank: 1 },
@@ -151,7 +148,7 @@ describe('flow_diagram mermaid-flow.v1', () => {
     ],
   }
 
-  it('data.diagram 存在时：渲染 SVG 且节点数 = diagram.nodes.length', () => {
+  it('data.diagram 存在时：渲染 SVG 边层 + HTML 节点卡片,且节点数 = diagram.nodes.length', () => {
     const block = baseBlock({
       type: 'flow_diagram',
       data: { eyebrow: '因果链', title: '推演路径', diagram: sampleDiagram },
@@ -159,9 +156,13 @@ describe('flow_diagram mermaid-flow.v1', () => {
     const { container } = render(<>{renderBlock(block, 0)}</>)
     const svg = container.querySelector('.insight-mermaid-flow svg')
     expect(svg).not.toBeNull()
-    // 4 节点 → 4 个 <rect>，加上 4 条边 → 4 条可见 .insight-mermaid-edge 路径
-    expect(container.querySelectorAll('.insight-mermaid-flow svg rect')).toHaveLength(4)
-    expect(container.querySelectorAll('.insight-mermaid-flow svg .insight-mermaid-edge')).toHaveLength(4)
+    // 新结构（仿 meeting-recorder）：节点是 HTML <article> 卡片，边走 SVG <path marker-end>
+    // 4 节点 → 4 张 .insight-flow-node article
+    expect(container.querySelectorAll('.insight-mermaid-flow .insight-flow-node')).toHaveLength(4)
+    // 4 条边 → 4 个带箭头的 <path>
+    expect(container.querySelectorAll('.insight-mermaid-flow svg path[marker-end]')).toHaveLength(4)
+    // 边标签：2 条带 label 的边 → 2 个 <text class="insight-flow-edge-label">
+    expect(container.querySelectorAll('.insight-flow-edge-label')).toHaveLength(2)
   })
 
   it('没有 data.diagram 时：fallback 到 items（兼容 {title,content} 形状）', () => {

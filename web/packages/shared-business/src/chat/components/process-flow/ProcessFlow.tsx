@@ -717,7 +717,9 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
         <div className="x-task-step-body">
           <div className="x-task-tag x-task-tag--normal">
             <div className="x-task-tag-icon"><SvgIcon name="search" size={16} /></div>
-            {t("process.scope_narrowing.converged_to")} {afterLibraryCount} {t("process.scope_narrowing.libraries")}
+            <span className="x-task-tag-text">
+              {t("process.scope_narrowing.converged_to")} {afterLibraryCount} {t("process.scope_narrowing.libraries")}
+            </span>
           </div>
           {libraries.length > 0 && (
             <div className="x-task-relation-list" style={{ marginTop: "8px" }}>
@@ -770,7 +772,9 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                 <>
                   <div className={`x-task-tag ${isInteractive ? "" : "x-task-tag--normal"}`} onClick={isInteractive ? handleKnowledgeTagClick : undefined}>
                     <div className="x-task-tag-icon"><SvgIcon name="search" size={16} /></div>
-                    {t("process.graph_found")} {graphResults.reduce((sum: number, item: any) => sum + (item.graph?.relations?.length || 0), 0)} 个
+                    <span className="x-task-tag-text">
+                      {t("process.graph_found")} {graphResults.reduce((sum: number, item: any) => sum + (item.graph?.relations?.length || 0), 0)} 个
+                    </span>
                     {isInteractive && <div className="x-task-tag-icon"><SvgIcon name="arrow-right" size={16} /></div>}
                   </div>
                   <div className="x-task-relation-list">
@@ -811,20 +815,22 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                       <>
                         <div className={`x-task-tag ${isInteractive ? "" : "x-task-tag--normal"}`} onClick={isInteractive ? handleKnowledgeTagClick : undefined}>
                           <div className="x-task-tag-icon"><SvgIcon name="search" size={16} /></div>
-                          {(() => {
-                            const segments: string[] = [];
-                            if (knowledgeSources.length > 0) {
-                              segments.push(`${uniqueLibraries.size}${t("process.knowledge_libraries")}`);
-                              segments.push(`${dedupedSources.length}${t("process.knowledge_documents")}`);
-                            }
-                            if (wikiPages.length > 0) {
-                              segments.push(`${wikiPages.length}${t("process.wiki_documents")}`);
-                            }
-                            const prefix = knowledgeSources.length > 0
-                              ? t("process.knowledge_found")
-                              : t("process.wiki_found");
-                            return segments.length > 0 ? `${prefix}${segments.join("、")}` : null;
-                          })()}
+                          <span className="x-task-tag-text">
+                            {(() => {
+                              const segments: string[] = [];
+                              if (knowledgeSources.length > 0) {
+                                segments.push(`${uniqueLibraries.size}${t("process.knowledge_libraries")}`);
+                                segments.push(`${dedupedSources.length}${t("process.knowledge_documents")}`);
+                              }
+                              if (wikiPages.length > 0) {
+                                segments.push(`${wikiPages.length}${t("process.wiki_documents")}`);
+                              }
+                              const prefix = knowledgeSources.length > 0
+                                ? t("process.knowledge_found")
+                                : t("process.wiki_found");
+                              return segments.length > 0 ? `${prefix}${segments.join("、")}` : null;
+                            })()}
+                          </span>
                           {isInteractive && <div className="x-task-tag-icon"><SvgIcon name="arrow-right" size={16} /></div>}
                         </div>
                         <div className="x-task-relation-list">
@@ -868,7 +874,9 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                 <div style={{ marginTop: graphResults.length > 0 || knowledgeSources.length > 0 ? "16px" : 0 }}>
                   <div className={`x-task-tag ${isInteractive ? "" : "x-task-tag--normal"}`} onClick={isInteractive ? handleKnowledgeTagClick : undefined}>
                     <div className="x-task-tag-icon"><SvgIcon name="search" size={16} /></div>
-                    {t("process.web_found")}{webPageResults.length}{t("process.web_pages")}
+                    <span className="x-task-tag-text">
+                      {t("process.web_found")}{webPageResults.length}{t("process.web_pages")}
+                    </span>
                     {isInteractive && <div className="x-task-tag-icon"><SvgIcon name="arrow-right" size={16} /></div>}
                   </div>
                   <div className="x-task-relation-list">

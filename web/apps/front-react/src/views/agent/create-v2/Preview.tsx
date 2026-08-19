@@ -19,7 +19,7 @@ import { ConversationType } from "@/api/modules/conversation";
 import uploadApi from "@/api/modules/upload";
 import chatApi from "@/api/modules/chat";
 import { copyToClip } from "@km/shared-utils";
-import { API_HOST } from "@/api/host";
+import { buildPreviewUrl } from "@/utils/preview";
 import { t } from "@/locales";
 import {
   BubbleList,
@@ -91,7 +91,7 @@ export const PreviewPanel = forwardRef<PreviewPanelRef>((_, ref) => {
       const res = await uploadApi.upload(dataFile);
       return {
         id: res.data.id,
-        url: `${API_HOST}/api/preview/${res.data.preview_key || ""}`,
+        url: buildPreviewUrl(res.data.preview_key) ?? "",
         size: res.data.size,
         name: res.data.file_name,
         mime_type: res.data.mime_type,

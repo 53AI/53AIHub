@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DownOutlined } from '@ant-design/icons'
 import { Modal, Radio, Spin, Tooltip, Tree } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import { Search as SearchInput } from '@km/shared-components-react'
@@ -47,6 +46,7 @@ const MOVE_TO_EMPTY_FALLBACK = '暂无子项'
 const MOVE_TO_NO_MATCH_FALLBACK = '无匹配目录'
 const MOVE_TO_CANNOT_FILE_FALLBACK = '不支持移动到当前类型下'
 const MOVE_TO_SEARCH_FALLBACK = '搜索'
+const MOVE_TO_NO_PERMISSION_FALLBACK = '当前用户没有操作权限'
 
 // 文件行默认 icon 解析：复用 formatFileInfo 与 uploaded 外层保持一致
 const defaultResolveFileIcon = (node: TreeNode): string => formatFileInfo(node.name, false).icon
@@ -130,9 +130,12 @@ export function MoveToModal({
 	}, [keyword, fetchDirs])
 
 	/** 目录树行的 DataNode 构造器（递归：把已加载的子目录与子文件拼成 children，使 antd Tree 看到懒加载后的子树） */
-	const buildDirNode = (node: { id: string; name: string; path: string }): DataNode => {
+	const buildDirNode = (node: { id: string; name: string; path: string; disabled?: boolean; disabledReason?: string }): DataNode => {
 		const isSelected = selectedPath === node.path
 		const illegal = sourceItem ? isIllegalTarget(sourceItem.path, node.path) : false
+		// 节点被调用方标记为禁用（如无操作权限）同样禁止选中
+		const unavailable = illegal || !!node.disabled
+		const tipTitle = node.disabledReason
 		// 取该目录节点已加载的子目录与子文件
 		const childDirs = tree.getDirChildren(node.path)
 		const childFiles = tree.getFileChildren(node.path)
@@ -140,33 +143,34 @@ export function MoveToModal({
 			...childDirs.map(buildDirNode),
 			...childFiles.map(buildFileNode),
 		]
+		const row = (
+			<div
+				className={`group flex items-center gap-2 w-full ${unavailable ? 'opacity-50 cursor-not-allowed' : ''}`}
+			>
+				<img
+					className="flex-none w-5 h-5"
+					src={getPublicPath('/images/file/folder.png')}
+					alt=""
+				/>
+				<Tooltip title={node.name} placement="topLeft">
+					<span className="flex-1 truncate text-sm min-w-0">{node.name}</span>
+				</Tooltip>
+				<span onClick={(e) => e.stopPropagation()}>
+					<Radio
+						checked={isSelected}
+						disabled={unavailable}
+						className={`${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}`}
+						onChange={() => {
+							if (unavailable) return
+							setSelectedPath((prev) => (prev === node.path ? '' : node.path))
+						}}
+					/>
+				</span>
+			</div>
+		)
 		return {
 			key: node.id,
-			title: (
-				<div
-					className={`group flex items-center gap-2 w-full ${illegal ? 'opacity-50 cursor-not-allowed' : ''}`}
-				>
-					<img
-						className="flex-none w-5 h-5"
-						src={getPublicPath('/images/file/folder.png')}
-						alt=""
-					/>
-					<Tooltip title={node.name} placement="topLeft">
-						<span className="flex-1 truncate text-sm min-w-0">{node.name}</span>
-					</Tooltip>
-					<span onClick={(e) => e.stopPropagation()}>
-						<Radio
-							checked={isSelected}
-							disabled={illegal}
-							className={`${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}`}
-							onChange={() => {
-								if (illegal) return
-								setSelectedPath((prev) => (prev === node.path ? '' : node.path))
-							}}
-						/>
-					</span>
-				</div>
-			),
+			title: tipTitle ? <Tooltip title={tipTitle}>{row}</Tooltip> : row,
 			children: childNodes,
 		}
 	}
@@ -176,11 +180,16 @@ export function MoveToModal({
 		const icon = resolveFileIcon(node)
 		// 使用 formatFileInfo 处理文件名，消除双重扩展名（如 .xls.md → 只显示原始文件名）
 		const { fname: displayName } = formatFileInfo(node.name, false)
+		// 文件默认禁用原因；调用方传 disabledReason 可覆盖（如无权限）
+		const fileTip =
+			node.disabledReason ||
+			t('move_to.cannot_move_to_file') ||
+			MOVE_TO_CANNOT_FILE_FALLBACK
 		return {
 			key: node.id,
 			isLeaf: true,
 			title: (
-				<Tooltip title={t('move_to.cannot_move_to_file') || MOVE_TO_CANNOT_FILE_FALLBACK}>
+				<Tooltip title={fileTip}>
 					<div className="group flex items-center gap-2 w-full opacity-60 cursor-not-allowed">
 						<img className="flex-none w-5 h-5" src={icon} alt="" />
 							<span className="flex-1 truncate text-sm min-w-0">{displayName}</span>
@@ -312,7 +321,6 @@ export function MoveToModal({
 							loadData={handleLoadData}
 							blockNode
 							className="move-to-tree"
-							switcherIcon={<DownOutlined />}
 						/>
 					)
 				)}
@@ -326,14 +334,15 @@ export function MoveToModal({
 							{searchResults.map((node) => {
 								const isSelected = selectedPath === node.path
 								const illegal = sourceItem ? isIllegalTarget(sourceItem.path, node.path) : false
-								return (
+								const unavailable = illegal || !!node.disabled
+								const row = (
 									<div
 										key={node.id}
-										className={`flex items-center gap-2 px-1 py-1 cursor-pointer hover:bg-gray-50 ${
+										className={`flex items-center gap-2 px-1 py-1 cursor-pointer hover:bg-gray-50 ${unavailable ? 'opacity-50 cursor-not-allowed' : ''} ${
 											isSelected ? 'bg-[#E8F3FF]' : ''
 										}`}
 										onClick={() => {
-											if (illegal) return
+											if (unavailable) return
 											setSelectedPath((p) => (p === node.path ? '' : node.path))
 										}}
 									>
@@ -343,8 +352,13 @@ export function MoveToModal({
 											alt=""
 										/>
 										<span className="flex-1 text-sm truncate">{node.name}</span>
-										<Radio checked={isSelected} disabled={illegal} />
+										<Radio checked={isSelected} disabled={unavailable} />
 									</div>
+								)
+								return node.disabledReason ? (
+									<Tooltip key={node.id} title={node.disabledReason}>{row}</Tooltip>
+								) : (
+									row
 								)
 							})}
 						</div>

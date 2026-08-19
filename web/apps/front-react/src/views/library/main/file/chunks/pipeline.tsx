@@ -231,22 +231,46 @@ export function ChunksPipeline({
               value: stepConfig.typo_correction ? "开启" : "关闭",
             });
           }
-          if (stepConfig.special_char_filter?.enabled !== undefined) {
-            config.push({
-              label: "特殊字符过滤",
-              value: stepConfig.special_char_filter.enabled ? "开启" : "关闭",
-            });
-          }
-          if (stepConfig.pronoun_replacement !== undefined) {
-            config.push({
-              label: "代词替换",
-              value: stepConfig.pronoun_replacement ? "开启" : "关闭",
-            });
-          }
           if (stepConfig.grammar_correction !== undefined) {
             config.push({
               label: "语法纠正",
               value: stepConfig.grammar_correction ? "开启" : "关闭",
+            });
+          }
+          if (stepConfig.format_correction !== undefined) {
+            config.push({
+              label: "格式纠正",
+              value: stepConfig.format_correction ? "开启" : "关闭",
+            });
+          }
+          if (stepConfig.ocr_correction !== undefined) {
+            config.push({
+              label: "OCR纠正",
+              value: stepConfig.ocr_correction ? "开启" : "关闭",
+            });
+          }
+          if (stepConfig.formula_restoration !== undefined) {
+            config.push({
+              label: "公式恢复",
+              value: stepConfig.formula_restoration ? "开启" : "关闭",
+            });
+          }
+          if (stepConfig.sensitive_mask?.enabled !== undefined) {
+            config.push({
+              label: "敏感信息掩码",
+              value: stepConfig.sensitive_mask.enabled ? "开启" : "关闭",
+            });
+          }
+          if (stepConfig.glossary?.enabled !== undefined) {
+            config.push({
+              label: "术语表",
+              value: stepConfig.glossary.enabled ? "开启" : "关闭",
+            });
+          }
+          if (stepConfig.custom_prompt?.enabled !== undefined) {
+            config.push({
+              label: "自定义清洗",
+              value: stepConfig.custom_prompt.enabled ? "开启" : "关闭",
             });
           }
           break;
@@ -360,7 +384,6 @@ export function ChunksPipeline({
     if (!jobData?.length) return [];
 
     return jobData
-      .filter((job) => job.type !== "content_cleaning")
       .filter(item => item.type !== 'wiki_page_generation').map((job) => {
       const stepInfo = STEP_TYPE_MAP[job.type] || {
         name: job.type,

@@ -2,11 +2,27 @@ import type { AgentRunEvent, AgentRunStatus } from "../adapters/types";
 import { AGENT_RUN_RUNNING_STATUSES } from "../adapters/types";
 import type { Message } from "../types";
 
+export function reconcileAgentRunCompletedAnswer(
+  currentAnswer: unknown,
+  completedAnswer: unknown,
+): string | undefined {
+  const currentText = typeof currentAnswer === "string" ? currentAnswer : undefined;
+  if (typeof completedAnswer !== "string") return currentText;
+  if (typeof currentAnswer !== "string" || currentAnswer.length === 0) return completedAnswer;
+  if (completedAnswer === currentAnswer) return currentText;
+
+  // Replay/recovery may miss the tail of message.delta. A completed snapshot
+  // may safely fill that suffix, but it must never replace already rendered
+  // content with a different document (the source of the terminal flash).
+  if (completedAnswer.startsWith(currentAnswer)) return completedAnswer;
+  return currentText;
+}
+
 /**
  * 将 AgentRun 事件列表应用到消息对象
  *
- * 遍历事件列表，按顺序更新消息的 loading/answer/reasoning_content 等字段。
- * 每次调用都是幂等的——从完整事件列表重新计算消息状态。
+ * 遍历尚未应用的事件，按顺序更新消息的 loading/answer/reasoning_content 等字段。
+ * message.delta 是累积事件，调用方必须用 seq 游标保证每条事件只应用一次。
  */
 export function applyAgentRunEvents(
   message: Message,
@@ -62,11 +78,10 @@ export function applyAgentRunEvents(
 
       case 'message.completed': {
         const completedAnswer = event.payload.answer;
-        const updates: Partial<Message> = { loading: false };
-        if (typeof completedAnswer === 'string') {
-          updates.answer = completedAnswer;
+        const answer = reconcileAgentRunCompletedAnswer(next.answer, completedAnswer);
+        if (next.loading !== false || answer !== next.answer) {
+          next = { ...next, loading: false, answer };
         }
-        next = { ...next, ...updates };
         break;
       }
 

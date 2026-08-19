@@ -12,20 +12,20 @@
  * - ChatContainer（来自 shared-business）
  */
 import {
-    useEffect,
-    useRef,
-    useMemo,
-    forwardRef,
-    useImperativeHandle,
-    useState,
+  useEffect,
+  useRef,
+  useMemo,
+  forwardRef,
+  useImperativeHandle,
+  useState,
 } from "react";
-import { useSearchParams, useNavigate, Outlet, useLocation } from "react-router-dom";
+import { useSearchParams, Outlet, useLocation } from "react-router-dom";
 import { Button } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { useAgentStore, useCurrentAgent } from "@/stores/modules/agent";
 import { useConversationStore } from "@/stores/modules/conversation";
 import {
-    useIsSoftStyle,
+  useIsSoftStyle,
 } from "@/stores/modules/enterprise";
 import { useUserStore } from "@/stores/modules/user";
 import agentsApi from "@/api/modules/agents";
@@ -33,7 +33,7 @@ import { parseAgentParsedFields } from "@/api/modules/agents/transform";
 import { eventBus } from "@km/shared-utils";
 import { EVENT_NAMES } from "@/constants/events";
 import { t } from "@/locales";
-import DetailBreadcrumb, { MODULE_CONFIGS } from "@/components/DetailBreadcrumb";
+import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import ChatContainer, { ChatContainerRef } from "./ChatContainer";
 import { isOpenClawCompatibleChannelType } from "@km/shared-business/agent-create";
 
@@ -45,14 +45,11 @@ export interface ChatViewRef {
 
 const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const location = useLocation();
 
   const chatRef = useRef<ChatContainerRef>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const [hideBottomActions, setHideBottomActions] = useState(true);
-  const [showUserMemory, setShowUserMemory] = useState(false);
-  const [showSetting, setShowSetting] = useState(false);
 
   const agentStore = useAgentStore();
   const convStore = useConversationStore();
@@ -224,7 +221,7 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
       >
       {isWebsite && (
         <div className="relative flex-none w-11/12 lg:w-4/5 max-w-[1200px] mx-auto">
-          <DetailBreadcrumb
+          <Breadcrumb
             module={MODULE_CONFIGS.agent}
             name={detailData.name}
             extra={
@@ -270,10 +267,6 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
             showRecommend={false}
             hideMenuHeader={isWebsite}
             isIndexRoute={isIndexRoute}
-            showUserMemory={showUserMemory}
-            onShowUserMemoryChange={setShowUserMemory}
-            showSetting={showSetting}
-            onShowSettingChange={setShowSetting}
             className="flex-1"
           />
         </div>

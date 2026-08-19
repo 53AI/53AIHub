@@ -1,5 +1,5 @@
-import { Tooltip } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
+import { IconButton } from '@/components/IconButton'
 import { t } from '@/locales'
 
 export interface FullscreenToggleProps {
@@ -7,19 +7,8 @@ export interface FullscreenToggleProps {
   fullscreen?: boolean
   /** 点击切换 */
   onToggle?: () => void
-  /**
-   * 按钮尺寸预设。
-   * - `default`：34px 方块 + #F0F0F0 悬浮底色（右栏预览头部，如 Wiki 详情 / 安心录预览）
-   * - `compact`：28px 方块 + #F5F5F7 悬浮底色（抽屉头部，如用户记忆详情）
-   */
-  size?: 'default' | 'compact'
   /** 图标尺寸，默认 16 */
   iconSize?: number
-}
-
-const SIZE_CLASS: Record<NonNullable<FullscreenToggleProps['size']>, string> = {
-  default: 'size-[34px] hover:bg-[#F0F0F0]',
-  compact: 'size-7 hover:bg-[#F5F5F7]',
 }
 
 /**
@@ -38,21 +27,19 @@ const SIZE_CLASS: Record<NonNullable<FullscreenToggleProps['size']>, string> = {
 export function FullscreenToggle({
   fullscreen = false,
   onToggle,
-  size = 'default',
   iconSize = 16,
 }: FullscreenToggleProps) {
   return (
-    <Tooltip title={fullscreen ? t('action.exit_fullscreen') : t('action.fullscreen')}>
-      <div
-        className={`${SIZE_CLASS[size]} rounded flex items-center justify-center cursor-pointer`}
-        onClick={() => onToggle?.()}
-      >
-        <SvgIcon
-          name={fullscreen ? 'right-bar-bottom-collapse' : 'right-bar-bottom-expand'}
-          size={iconSize}
-        />
-      </div>
-    </Tooltip>
+    <IconButton
+      title={fullscreen ? t('action.exit_fullscreen') : t('action.fullscreen')}
+      size="medium"
+      onClick={onToggle}
+    >
+      <SvgIcon
+        name={fullscreen ? 'right-bar-bottom-collapse' : 'right-bar-bottom-expand'}
+        size={iconSize}
+      />
+    </IconButton>
   )
 }
 

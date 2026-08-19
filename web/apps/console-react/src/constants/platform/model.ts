@@ -84,6 +84,7 @@ export const OPENAI_FORM_CONFIG: FormConfig[] = [
     type: 'url',
     placeholder: window.$t('module.platform_model_base_url_placeholder'),
     required: true,
+    default: 'https://api.openai.com/v1'
   },
   {
     label: window.$t('module.platform_tool_api_key'),
@@ -101,7 +102,7 @@ export const OPENAI_FORM_CONFIG: FormConfig[] = [
     required: true,
   },
 ]
-
+// 硅基流动表单配置
 export const SILICONFLOW_FORM_CONFIG: FormConfig[] = [
   {
     label: window.$t('module.platform_tool_api_key'),
@@ -282,6 +283,7 @@ export const CUSTOM_OPENAI_FORM_CONFIG: FormConfig[] = [
   },
 ]
 
+// 百炼表单配置
 export const BAILIAN_FORM_CONFIG: FormConfig[] = [
   {
     label: window.$t('module.platform_model_api_endpoint'),
@@ -289,7 +291,7 @@ export const BAILIAN_FORM_CONFIG: FormConfig[] = [
     type: 'url',
     placeholder: window.$t('module.platform_model_base_url_placeholder'),
     required: true,
-    // default: 'https://example.com',
+    default: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
   {
     label: window.$t('module.platform_tool_api_key'),

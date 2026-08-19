@@ -116,6 +116,19 @@ export const moveCursorToEnd = (el: Node | null) => {
 };
 
 /**
+ * 强制把焦点放回编辑器并把光标移到末尾。
+ *
+ * 为什么需要:mention / skill 的下拉弹窗里有自己的搜索框会自动 focus,
+ * 用户按 Esc 后如果不主动 focus 回编辑器,焦点会留在已经卸载的搜索框上,
+ * 后续键盘事件(包括再次输入 @)就丢了。
+ */
+export const focusEditorAtEnd = (editor: HTMLElement | null) => {
+  if (!editor) return;
+  editor.focus();
+  moveCursorToEnd(editor);
+};
+
+/**
  * 将光标移动到指定位置
  */
 export const moveCursorTo = (el: Node, offset: number) => {
@@ -125,6 +138,123 @@ export const moveCursorTo = (el: Node, offset: number) => {
   range.setEnd(el, offset);
   sel?.removeAllRanges();
   sel?.addRange(range);
+};
+
+export interface DissolveChipOptions {
+  /**
+   * true  → 保留 chip 内的文字,把整块替换成普通文本节点(例如 Esc 后 `@` 变回一个普通字符)
+   * false → 整块删除
+   * 注意:keepText=true 但 chip 内已经没有文字时,等价于 false(不会插入空文本节点)。
+   */
+  keepText?: boolean;
+  /**
+   * 是否把光标放回 chip 原来的位置。
+   * - 键盘触发(Esc / Backspace)必须为 true,否则光标会跑掉
+   * - 点击其它位置触发时必须为 false,否则会抢走用户的点击落点
+   */
+  restoreCaret?: boolean;
+  /**
+   * 是否在溶解后合并相邻文本节点。
+   * - 默认 true —— Esc/Backspace 路径需要,Sender 的 cleanResidualStyles 在下一次 input 时
+   *   会再 normalize() 一次,光标会再次被打乱,这里提前合并好,确保光标稳定。
+   * - 但在"用户点击编辑器其它位置"场景(restoreCaret=false)必须为 false:浏览器已经在
+   *   mousedown 时把光标放到了用户点击的位置,如果我们立刻 normalize() 把新插入的 "@"
+   *   文本节点与相邻文本节点合并,光标所在的文本节点可能消失/合并,Selection 失锚,
+   *   浏览器把光标塌缩到编辑器开头 —— 这就是"点击输入框,光标跳到最前面"的根因。
+   *
+   * 留到 Sender 的 cleanResidualStyles 在用户下一次输入时再合并,正好够用。
+   */
+  normalize?: boolean;
+}
+
+/**
+ * 定位 `node` 所在的"连续文本节点串"的首节点,以及 node 起点在该串中的偏移。
+ *
+ * 用途:`normalize()` 会把连续的文本节点合并到串里的**第一个**节点上,其余节点被移除。
+ * 所以要先把光标坐标换算成 (首节点, 串内偏移),normalize 之后再定位,光标才不会丢。
+ */
+const textRunAnchor = (node: Text): { first: Text; offset: number } => {
+  let first = node;
+  let offset = 0;
+  while (first.previousSibling?.nodeType === Node.TEXT_NODE) {
+    first = first.previousSibling as Text;
+    offset += first.length;
+  }
+  return { first, offset };
+};
+
+/** 把光标放到某个文本节点的指定位置,并先做一次 normalize 让相邻文本节点合并 */
+const caretAtTextNode = (parent: Node, node: Text, offsetInNode: number) => {
+  const { first, offset } = textRunAnchor(node);
+  const target = offset + offsetInNode;
+  // 立刻合并:否则 Sender 的 cleanResidualStyles 在下一次 input 时 normalize(),
+  // 会再一次把刚放好的光标打乱。
+  parent.normalize();
+  moveCursorTo(first, Math.min(target, first.length));
+};
+
+/**
+ * 溶解一个 chip(`.mention-input` / `.skill-input`),并把光标放回正确的位置。
+ *
+ * 为什么需要显式恢复光标:
+ * `chip.replaceWith(document.createTextNode(''))` 或 `chip.remove()` 会让当前 Selection
+ * 的锚点节点从文档里消失。浏览器此时会把光标塌缩到最近的可用位置 —— 实际表现就是
+ * 跳到编辑器开头,即"删除 @ 之后光标出现在 @ 前面"。所以删除前先记下 chip 在父节点中的
+ * 下标,删除后按这个下标重新 setStart。
+ */
+export const dissolveChip = (
+  chip: HTMLElement | null | undefined,
+  options: DissolveChipOptions = {}
+): void => {
+  const { keepText = true, restoreCaret = true, normalize: shouldNormalize = true } = options;
+  const parent = chip?.parentNode;
+  if (!chip || !parent) return;
+
+  const text = chip.textContent || '';
+
+  // 有文字且要求保留 → 替换成普通文本节点,光标落在文字末尾
+  if (keepText && text.length > 0) {
+    const textNode = document.createTextNode(text);
+    // 关键:不能用 chip.replaceWith(textNode)。
+    // 按 DOM 规范 replaceWith 是"先 remove 再 insert",对锚在父节点坐标上的 live range
+    // (浏览器点击后就是这种锚定方式,例如光标在 chip 之后 = (parent, chipIndex + 1)):
+    //   remove: startOffset > chipIndex → 减 1
+    //   insert: startOffset > 插入点 不成立 → 不加回来
+    // 净效果 offset 少 1,光标从"chip 之后"退到"chip 之前" —— 用户看到的
+    // "点击输入框光标跳到最前面" / "删除 @ 后光标跑到 @ 前面"。
+    // 先 insert 再 remove 则 +1 / -1 正好抵消,光标原地不动。
+    chip.before(textNode);
+    chip.remove();
+    if (restoreCaret) {
+      caretAtTextNode(parent, textNode, textNode.length);
+    } else if (shouldNormalize) {
+      // 仅在没有外部 Selection 关心当前位置时才合并,否则会顶掉浏览器刚放好的光标
+      parent.normalize();
+    }
+    return;
+  }
+
+  // 整块删除:先记录下标,删除后光标回到同一个位置
+  const index = Array.prototype.indexOf.call(parent.childNodes, chip);
+  chip.remove();
+  if (!restoreCaret || index < 0) {
+    if (shouldNormalize) parent.normalize();
+    return;
+  }
+
+  // 优先落到前一个文本节点末尾,其次是后一个文本节点开头 —— 文本节点内的偏移
+  // 比 (parent, index) 更稳定,不会被 normalize()/浏览器归一化打乱。
+  const prev = parent.childNodes[index - 1];
+  if (prev?.nodeType === Node.TEXT_NODE) {
+    caretAtTextNode(parent, prev as Text, (prev as Text).length);
+    return;
+  }
+  const next = parent.childNodes[index];
+  if (next?.nodeType === Node.TEXT_NODE) {
+    caretAtTextNode(parent, next as Text, 0);
+    return;
+  }
+  moveCursorTo(parent, Math.min(index, parent.childNodes.length));
 };
 
 /**
@@ -304,7 +434,9 @@ export const useEditor = (options: UseEditorOptions) => {
     };
 
     // 选区折叠(删除选中文本)
-    if (cursor && !cursor.range.collapsed) {
+    // cursor.range 是可选字段 —— selectSkill / insertSkillTag 这种传 {element, cursorPos}
+    // 简化 cursor 的场景不能崩。
+    if (cursor?.range && !cursor.range.collapsed) {
       cursor.range.deleteContents();
     }
 
@@ -319,8 +451,19 @@ export const useEditor = (options: UseEditorOptions) => {
     const { element, cursorPos } = cursor;
 
     if (element === editor) {
-      // 光标在 editor 自身(选中后塌缩到 editor):按 lastChild 处理
-      appendOrBeforeBR();
+      // 光标在 editor 自身。按 cursorPos 区分:
+      //   cursorPos === 0 → 开头,prepend 到 firstChild 之前(用于「技能选择后 chip 必须 prepend」场景)
+      //   cursorPos  > 0  → 塌缩到 editor(选中后塌缩),按 lastChild 处理
+      if (cursorPos === 0) {
+        const firstChild = editor.firstChild;
+        if (firstChild) {
+          firstChild.before(node);
+        } else {
+          editor.appendChild(node);
+        }
+      } else {
+        appendOrBeforeBR();
+      }
     } else if (
       (element as HTMLElement).tagName === 'BR' &&
       element === editor.lastChild
@@ -359,6 +502,15 @@ export const useEditor = (options: UseEditorOptions) => {
       moveCursorToEnd(editorRef.current);
     }
   }, [editorRef, disabled]);
+
+  /**
+   * 聚焦编辑器并把光标移到末尾(无论末尾是文本节点还是空 BR 都行)。
+   * 下拉弹窗的搜索框自动抢焦点 → Esc 后需要主动 focus 回编辑器,否则
+   * 后续键盘事件发不出去。
+   */
+  const focusAtEnd = useCallback(() => {
+    focus(true);
+  }, [focus]);
 
   /**
    * 处理输入事件
@@ -486,6 +638,7 @@ export const useEditor = (options: UseEditorOptions) => {
     insertNode,
     clear,
     focus,
+    focusAtEnd,
     handleInput,
     handleCompositionStart,
     handleCompositionEnd,

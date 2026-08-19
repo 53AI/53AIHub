@@ -1,0 +1,9 @@
+/* 移动端 Tab 切换抽屉：圆角 16px，body 背景与页面一致，移除默认内边距 */
+.share-record-switch-drawer .ant-drawer-content {
+  border-radius: 16px 16px 0 0;
+}
+
+.share-record-switch-drawer .ant-drawer-body {
+  padding: 0;
+  background-color: #F1F4FB;
+}

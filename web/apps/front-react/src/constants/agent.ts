@@ -4,6 +4,7 @@ export const AGENT_USAGES = {
   KM_FILE_CHAT: 2,
   KM_FILE_MAP: 3,
   WORK_AI: 4,
+  KM_RECORDING_CHAT: 5,
 }
 
 export const REASONING_MODE = {

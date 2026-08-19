@@ -1,3 +1,4 @@
+import { createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import UserLoginDialogComponent, { type UserLoginDialogRef } from './index'
 
@@ -22,17 +23,15 @@ export default function showUserLoginDialog(): UserLoginDialogInstance {
 
   let instance: UserLoginDialogRef | null = null
 
-  const Component = (
-    <UserLoginDialogComponent
-      ref={(ref) => {
-        instance = ref
-        if (ref) {
-          // Auto open after mount
-          setTimeout(() => ref.open(), 0)
-        }
-      }}
-    />
-  )
+  const Component = createElement(UserLoginDialogComponent, {
+    ref: (ref: UserLoginDialogRef | null) => {
+      instance = ref
+      if (ref) {
+        // Auto open after mount
+        setTimeout(() => ref.open(), 0)
+      }
+    }
+  })
 
   root.render(Component)
 
@@ -48,6 +47,6 @@ export default function showUserLoginDialog(): UserLoginDialogInstance {
     open: () => instance?.open(),
     close: () => instance?.close(),
     reset: () => instance?.reset(),
-    destroy,
+    destroy
   }
 }

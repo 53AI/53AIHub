@@ -20,6 +20,7 @@ const SkillDropdown: React.FC<SkillDropdownProps> = ({
   onSearchChange,
   onOpenLibrary,
   onClose,
+  onCancel,
   style,
   className = '',
 }) => {
@@ -42,7 +43,13 @@ const SkillDropdown: React.FC<SkillDropdownProps> = ({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
-      onClose?.();
+      // Esc 必须把 chip 还原成普通字符,而不仅是关掉下拉 —— 否则
+      // `<span class="skill-input">/</span>` 会继续以 chip 形式留在编辑器里。
+      if (onCancel) {
+        onCancel();
+      } else {
+        onClose?.();
+      }
     }
   };
 

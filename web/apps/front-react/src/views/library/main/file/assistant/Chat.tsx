@@ -290,6 +290,11 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
     ) => {
       if (isStreaming || !question.trim()) return;
 
+      if (!currentModel) {
+        message.warning(t("chat.no_model_config"));
+        return;
+      }
+
       // 文档引用统一（v0.4.2 §3.4 / §5.4）：
       // - wiki 单文档：调用方显式选择 wikis 通道，不把 wiki 页面作为 file link 发送；
       //   同时用 completion_params 覆盖 message_file_id（wiki hashid 不应作为 message_file_id）。
@@ -587,6 +592,10 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
       window.addEventListener("selection-change", onSelectionChange as any);
       window.addEventListener("quick-command", onQuickCommand as any);
       window.addEventListener("resize", handleResize);
+      // MarkdownViewer 是 lazy 组件，slide commands 派发时 listener 还没注册；
+      // highlighter-ready 触发后重新派发，覆盖 MarkdownViewer 异步加载窗口。
+      const onHighlighterReady = () => loadSlideCommands();
+      window.addEventListener("highlighter-ready", onHighlighterReady);
 
       // Wiki 单文档模式（v0.4.2 §3.4 / §5.4）：Wiki 页面是结构化知识，
       // 不需要走"摘要 + 推荐问题"生成流程；summary/questions 由 Wiki 自身维护。
@@ -606,6 +615,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
         );
         window.removeEventListener("quick-command", onQuickCommand as any);
         window.removeEventListener("resize", handleResize);
+        window.removeEventListener("highlighter-ready", onHighlighterReady);
         handleStop();
         stopPoll();
       };

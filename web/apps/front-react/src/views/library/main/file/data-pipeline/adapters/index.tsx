@@ -16,6 +16,7 @@ import type {
 import { ragPipelineApi } from '@/api/modules/rag-pipeline'
 import { uploadApi } from '@/api/modules/upload'
 import { api_host, getPublicPath } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { getSimpleParserConfigs } from '@/constants/parser'
 import platformSettingsApi from '@/api/modules/platform-settings'
@@ -229,7 +230,7 @@ async function uploadIcon(icon: string): Promise<string> {
       console.error('Upload icon failed: no preview_key in response')
       return ''
     }
-    return `${api_host}/api/preview/${previewKey}`
+    return buildPreviewUrl(previewKey) ?? ''
   } catch (error) {
     console.error('Upload icon error:', error)
     return ''

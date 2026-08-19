@@ -1,7 +1,7 @@
-import { Tooltip } from "antd";
 import { useLibraryStore } from "@/stores/modules/library";
 import { eventBus } from "@km/shared-utils";
 import { t } from "@/locales";
+import { IconButton } from "@/components/IconButton";
 import { AI_ICON_URL } from "./sidebar-app-item";
 
 export function AssistantBtn() {
@@ -22,16 +22,14 @@ export function AssistantBtn() {
   };
 
   return (
-    <Tooltip title={t("library.document_chat")}>
-      <div
-        role="button"
-        aria-label={t("library.document_chat")}
-        className={`size-8 flex-center rounded cursor-pointer hover:bg-[#F0F2F5] ${assistantVisible ? "bg-[#F0F2F5]" : ""}`}
-        onClick={handleClick}
-      >
-        <img className="size-5" src={AI_ICON_URL} alt="" />
-      </div>
-    </Tooltip>
+    <IconButton
+      title={t("library.document_chat")}
+      size="medium"
+      onClick={handleClick}
+      activeClassName={assistantVisible ? "bg-[#F2F6FE]" : ""}
+    >
+      <img className="size-5" src={AI_ICON_URL} alt="" />
+    </IconButton>
   );
 }
 

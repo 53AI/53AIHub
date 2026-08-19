@@ -265,7 +265,6 @@ function PlatformAccessSection({ agent }: { agent: IAgentInfo }) {
 export function Setting({ agent, onClose, onSkillOpen, onUseSkill }: SettingProps) {
   const agentUsage = agent?.agent_usage ?? 0;
   const [showMemory, setShowMemory] = useState(false);
-  const [isMemoryFullscreen, setIsMemoryFullscreen] = useState(false);
   const [showSkill, setShowSkill] = useState(false);
 
   // 点击技能按钮：先触发技能列表拉取，再展示技能面板
@@ -282,20 +281,13 @@ export function Setting({ agent, onClose, onSkillOpen, onUseSkill }: SettingProp
     );
   }
 
-  // 点击记忆 → 展示记忆面板（记忆面板有全屏样式特殊处理，保持条件渲染）
+  // 记忆面板（自带全屏能力，内部 useFullscreen 管理覆盖层）
   if (showMemory) {
     return (
-      <div className={`flex flex-col bg-white h-full ${isMemoryFullscreen ? "fixed inset-0 z-[201]" : ""}`}>
-        <UserMemory
-          agentId={String(agent.agent_id)}
-          onClose={() => {
-            setShowMemory(false);
-            setIsMemoryFullscreen(false);
-          }}
-          onToggleFullscreen={() => setIsMemoryFullscreen(!isMemoryFullscreen)}
-          isFullscreen={isMemoryFullscreen}
-        />
-      </div>
+      <UserMemory
+        agentId={String(agent.agent_id)}
+        onClose={() => setShowMemory(false)}
+      />
     );
   }
 
@@ -309,7 +301,7 @@ export function Setting({ agent, onClose, onSkillOpen, onUseSkill }: SettingProp
       {/* 正常设置内容 */}
       <div className={`h-full flex flex-col ${showSkill ? 'hidden' : ''}`}>
         {/* Header */}
-        <div className="h-15 flex items-center justify-between px-5 flex-shrink-0 bg-white border-b">
+        <div className="h-16 flex items-center justify-between px-5 flex-shrink-0 bg-white border-b">
           <span className="text-lg text-primary">{t('setting.title')}</span>
           {onClose && (
             <div

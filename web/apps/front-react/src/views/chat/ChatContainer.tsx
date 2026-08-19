@@ -1,5 +1,6 @@
 import {
 	CloseOutlined,
+	DownloadOutlined,
 	DownOutlined,
 	LeftOutlined,
 	UpOutlined,
@@ -23,7 +24,7 @@ import {
 	useConversationStore as useSharedChatConversationStore,
 } from "@km/shared-business/chat";
 import { Setting } from "./components/Setting/Setting";
-import { SvgIcon } from "@km/shared-components-react";
+import { SidePanel, SvgIcon } from "@km/shared-components-react";
 import { eventBus } from "@km/shared-utils";
 import { Button, message, Popover, Tooltip } from "antd";
 import {
@@ -42,6 +43,7 @@ import {
 	createOpenClawConversationApiAdapter,
 } from "@/adapters/chat-adapters";
 import { API_HOST } from "@/api/host";
+import { buildPreviewUrl } from "@/utils/preview";
 import favoritesApi from "@/api/modules/favorites";
 import mySpaceApi from "@/api/modules/my-space";
 import openclawApi, { type OpenClawSession } from "@/api/modules/openclaw";
@@ -53,10 +55,13 @@ import AddAnswerAsMd, {
 	type AddAnswerAsMdRef,
 } from "@/components/Chat/AddAnswerAsMd";
 import FileViewer from "@/components/FileViewer";
+import { FullscreenToggle } from "@/components/FullscreenToggle";
+import { IconButton } from "@/components/IconButton";
 import { ExpandSidebarButton } from "@/components/Layout/ExpandSidebarButton";
 import MoreDropdown from "@/components/MoreDropdown";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { EVENT_NAMES } from "@/constants/events";
+import { useFullscreen } from "@/hooks/useFullscreen";
 import { t } from "@/locales";
 import { useAgentStore, useCurrentAgent } from "@/stores/modules/agent";
 import { useConversationStore } from "@/stores/modules/conversation";
@@ -124,10 +129,6 @@ interface ChatContainerProps {
 	skipOpenClawFrontStoreMirror?: boolean;
 	isIndexRoute?: boolean; // 工作台入口路径判断
 	showRecommend?: boolean;
-	showUserMemory?: boolean;
-	onShowUserMemoryChange?: (show: boolean) => void;
-  showSetting?: boolean;
-  onShowSettingChange?: (show: boolean) => void;
 }
 
 export interface ChatContainerRef {
@@ -590,11 +591,9 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			skipOpenClawFrontStoreMirror = false,
 			isIndexRoute = false,
 			showRecommend = false,
-			showUserMemory = false,
-			onShowUserMemoryChange,
-			showSetting = false,
-      onShowSettingChange,
 		} = props;
+		// 设置面板：内部自管 state,点击顶部"设置"图标即可开关。
+		const [showSetting, setShowSetting] = useState(false);
 		const navigate = useNavigate();
 		const [searchParams] = useSearchParams();
 		const chatViewRef = useRef<ChatViewRef>(null);
@@ -667,6 +666,11 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				file_ext?: string;
 			};
 		}>({ visible: false, currentFile: {} });
+		const {
+			fullscreen: outputFileBrowserFullscreen,
+			toggle: toggleOutputFileBrowserFullscreen,
+			composeClassName: composeOutputFileBrowserClassName,
+		} = useFullscreen({ withBackground: false });
 		// 已被检查过的 fileId 集合，避免重复请求
 		const checkedOutputFileIdsRef = useRef<Set<string>>(new Set());
 		const [openClawHistoryOpen, setOpenClawHistoryOpen] = useState(false);
@@ -940,9 +944,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 
 		// ============ Dialog 引用(work-ai 多入口共用 spaceDialogRef;knowledge 模式复用 KnowledgeSourceSelector 内部 dialog) ============
 		const spaceDialogRef = useRef<SpaceDialogRef>(null);
-		const uploadsDialogRef = useRef<MyFilesDialogRef>(null);
-		const aiGeneratedDialogRef = useRef<MyFilesDialogRef>(null);
-		const recordingsDialogRef = useRef<MyFilesDialogRef>(null);
+		// 我的文件对话框(合并后):单个 ref 承载 uploads/ai-generated/recordings 3 个 Tab
+		const myFilesDialogRef = useRef<MyFilesDialogRef>(null);
 		// knowledge 模式:指向 KnowledgeSenderExtras 内 KnowledgeSourceSelector 的 ref,
 		// 让 @ 弹窗底部「从知识库里选择」入口复用该 selector 的 SpaceDialog(单一对话框)。
 		const knowledgeSelectorRef = useRef<KnowledgeSourceSelectorRef>(null);
@@ -977,11 +980,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				<EnhancedMentionDropdown
 					{...slotProps}
 					onOpenLibrary={() => sources.library.open(spaceDialogRef)}
-					onOpenUploads={() => sources.uploads.open(uploadsDialogRef)}
-					onOpenAIGenerated={() =>
-						sources["ai-generated"].open(aiGeneratedDialogRef)
-					}
-					onOpenRecordings={() => sources.recordings.open(recordingsDialogRef)}
+					onOpenMyFiles={() => sources.myFiles.open(myFilesDialogRef)}
 				/>
 			);
 		}, [workAiSenderConfig]);
@@ -1461,8 +1460,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
       setShowHistory(false);
       setShowThinkKnowledge(false);
 			setShowGuide(false)
-      if (showSetting && onShowSettingChange) {
-        onShowSettingChange(false);
+      if (showSetting) {
+        setShowSetting(false);
       }
     }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1730,13 +1729,15 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 		const closeAllSidePanels = useCallback(() => {
 			setShowGuide(false);
 			setOpenClawPanelOpen(false);
-			onShowSettingChange?.(false);
+			setShowSetting(false);
+			setShowThinkKnowledge(false);
 			setOutputFilePreview({ visible: false, currentFile: {} });
 			setOutputFileBrowserState({ visible: false, currentFile: {} });
 		}, [
 			setShowGuide,
 			setOpenClawPanelOpen,
-			onShowSettingChange,
+			setShowSetting,
+			setShowThinkKnowledge,
 			setOutputFilePreview,
 			setOutputFileBrowserState,
 		]);
@@ -1935,6 +1936,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 		const handleOpenKnowledgePanel = useCallback((data: KnowledgePanelData) => {
 			// knowledge_search: 打开知识检索结果侧边栏
 			if (data.type === "knowledge_search") {
+				closeAllSidePanels();
 				setShowThinkKnowledge(true);
 				// 先传递所有检索结果
 				if (data.files && data.files.length > 0) {
@@ -1946,6 +1948,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			}
 			// source_click: 打开侧边栏，传递完整数据并选中对应文件
 			if (data.type === "source_click" && data.source) {
+				closeAllSidePanels();
 				setShowThinkKnowledge(true);
 				// 如果有完整的 files 数据，先更新，再选中
 				if (data.files && data.files.length > 0) {
@@ -1972,7 +1975,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				return true;
 			}
 			return false;
-		}, []);
+		}, [closeAllSidePanels]);
 
 		const handleCloseOutputFilePreview = useCallback(() => {
 			setOutputFilePreview((previous) => {
@@ -2145,7 +2148,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 		// 文件上传函数
 		const uploadRequest = useCallback(async (file: File) => {
 			const res = await uploadApi.upload(file, "my_uploads");
-			const previewUrl = `${API_HOST}/api/preview/${res.data.preview_key || ""}`;
+			const previewUrl = buildPreviewUrl(res.data.preview_key) ?? "";
 			return {
 				id: res.data.id,
 				url: previewUrl,
@@ -2589,18 +2592,20 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								{/* 工作台入口 + 普通智能体：显示历史/新建按钮 */}
 								{isIndexRoute && !showHistory && !isOpenclaw ? (
 									<>
-										<div className="flex-none flex items-center gap-3">
-											<div
-												className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
+										<div className="flex-none flex items-center gap-2">
+											<IconButton
+												title={t("chat.history")}
+												size="medium"
 												onClick={() => {
 													if (!checkLoginStatus()) return;
 													setShowHistory(true);
 												}}
 											>
 												<SvgIcon name="history" size={16} />
-											</div>
-											<div
-												className="size-7 cursor-pointer rounded flex items-center justify-center hover:bg-[#F5F5F7]"
+											</IconButton>
+											<IconButton
+												title={t("chat.new_chat")}
+												size="medium"
 												onClick={() => {
 													if (!checkLoginStatus()) return;
 													chatViewRef.current?.newConversation();
@@ -2608,7 +2613,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 												}}
 											>
 												<SvgIcon name="add-chat" size={16} />
-											</div>
+											</IconButton>
 										</div>
 										<div className="h-4 border-l" />
 									</>
@@ -2815,47 +2820,43 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								>
 									<SvgIcon name="return" size={18} stroke />
 								</span>
-								{isOpenclaw ? (<Tooltip title={t("openclaw.panel.settings")}>
-										<button
-											type="button"
-											aria-label={t("openclaw.panel.settings")}
-											className={`size-7 rounded flex-center cursor-pointer border-0 bg-transparent p-0 hover:bg-[#E1E2E3] ${openClawPanelOpen ? 'bg-[#E1E2E3]' : ''}`}
-											onClick={() => {
-												closeAllSidePanels();
-												setOpenClawPanelOpen(!openClawPanelOpen);
-											}}
-										>
-                      <SvgIcon name="equalizer" size={18} className="rotate-90" />
-										</button>
-									</Tooltip>) : (
-                  <Tooltip title={t("action.setting")}>
-                    <div
-                      role="button"
-                      aria-label={t("action.setting")}
-                      className={`size-7 rounded flex-center cursor-pointer hover:bg-[#E1E2E3] ${showSetting ? 'bg-[#E1E2E3]' : ''}`}
-                      onClick={() => {
-                        closeAllSidePanels();
-                        onShowSettingChange?.(!showSetting);
-                      }}
-                    >
-                      <SvgIcon name="equalizer" size={18} className="rotate-90" />
-                    </div>
-                  </Tooltip>
+								{isOpenclaw ? (<IconButton
+									title={t("openclaw.panel.settings")}
+									size="medium"
+									onClick={() => {
+										closeAllSidePanels();
+										setOpenClawPanelOpen(!openClawPanelOpen);
+									}}
+									activeClassName={openClawPanelOpen ? "bg-[#E1E2E3]" : ""}
+									className="hover:bg-[#E1E2E3]"
+								>
+									<SvgIcon name="equalizer" size={18} className="rotate-90" />
+								</IconButton>) : (<IconButton
+									title={t("action.setting")}
+									size="medium"
+									onClick={() => {
+										closeAllSidePanels();
+										setShowSetting(!showSetting);
+									}}
+									activeClassName={showSetting ? "bg-[#E1E2E3]" : ""}
+									className="hover:bg-[#E1E2E3]"
+								>
+									<SvgIcon name="equalizer" size={18} className="rotate-90" />
+								</IconButton>
                 )}
 
-								<Tooltip title={t("chat.usage_guide")}>
-									<div
-										role="button"
-										aria-label={t("chat.usage_guide")}
-										className={`h-6 px-1 rounded flex-center gap-1 cursor-pointer hover:bg-[#E1E2E3] ${showGuide ? 'bg-[#E1E2E3]' : ''}`}
-										onClick={() => {
-											closeAllSidePanels();
-											setGuideVisible(!showGuide);
-										}}
-									>
-										<SvgIcon name="layout-split" size={18} />
-									</div>
-								</Tooltip>
+								<IconButton
+									title={t("chat.usage_guide")}
+									size="medium"
+									onClick={() => {
+										closeAllSidePanels();
+										setGuideVisible(!showGuide);
+									}}
+									activeClassName={showGuide ? "bg-[#E1E2E3]" : ""}
+									className="hover:bg-[#E1E2E3]"
+								>
+									<SvgIcon name="layout-split" size={18} />
+								</IconButton>
 								<MoreDropdown
 									items={[
 										!isShortcut
@@ -2911,8 +2912,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				convStore,
 				setShowGuide,
 				isCompletion,
-				showUserMemory,
-				onShowUserMemoryChange,
 				isUserMemoryFullscreen,
 				// 三个按钮的背景色 / toggle 闭包需要这些状态
 				openClawPanelOpen,
@@ -2926,7 +2925,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
       openClawPanelOpen ||
       outputFilePreview.visible ||
       outputFileBrowserState.visible ||
-      showUserMemory ||
       showSetting
     );
 
@@ -3191,8 +3189,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					className={`flex h-full min-w-0 ${embeddedOpenClawPreview ? "openclaw-embedded-workspace overflow-x-hidden" : ""} ${hasRightPane ? "gap-0" : ""} ${className || ""}`}
 				>
 					{/* 工作台入口历史侧边栏 - 放在最左边 */}
-					{isIndexRoute && showHistory && (
-						<div className="w-60 flex-shrink-0">
+					{isIndexRoute && (
+						<SidePanel side="left" width={240} open={showHistory}>
 							<ChatHistory
 								sidebarMode
 								open={showHistory}
@@ -3206,7 +3204,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 									chatViewRef.current?.selectConversation(conv);
 								}}
 							/>
-						</div>
+						</SidePanel>
 					)}
 					{/* 聊天区域 */}
 					<div
@@ -3315,9 +3313,13 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 						/>
 					</div>
 					{/* 使用指引右侧面板 - completion 模式由 CompletionView 内部处理 */}
-					{showGuide && currentAgent && !isCompletion && (
-						<div className="flex-none w-[450px] flex flex-col bg-white overflow-hidden">
-							<div className="h-15 flex items-center justify-between px-5 border-b">
+					<SidePanel
+						side="right"
+						width={450}
+						open={!!(showGuide && currentAgent && !isCompletion)}
+					>
+						<div className="h-full flex flex-col bg-white">
+							<div className="h-16 flex items-center justify-between px-5 border-b">
 								<h4 className="text-lg text-primary">
 									{t("chat.usage_guide")}
 								</h4>
@@ -3333,60 +3335,58 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								showChannel={isOpenclaw}
 							/>
 						</div>
-					)}
+					</SidePanel>
 					{/* 思考知识库侧边栏 */}
-					{showThinkKnowledge && (
-						<div className="h-full w-[418px] border-l flex flex-col bg-white">
+					<SidePanel side="right" width={418} open={showThinkKnowledge}>
+						<div className="h-full border-l flex flex-col bg-white">
 							<ThinkKnowledge
 								ref={thinkKnowledgeRef}
 								onClose={() => setShowThinkKnowledge(false)}
 							/>
 						</div>
-					)}
+					</SidePanel>
 					{/* 设置右侧面板 */}
-					{showSetting && (
-						<div className="flex-none w-[450px] flex flex-col bg-white overflow-hidden">
-							<Setting
-								agent={currentAgent}
-								onClose={() => {
-									onShowSettingChange?.(false);
-								}}
-								onSkillOpen={() => useSkillsStore.getState().loadAgentSkills(agentId)}
-								onUseSkill={(skill) => {
-									// 将技能添加到对话框
-									workAiSenderConfig?.skill.onSelect?.({
-										label: skill.display_name,
-										display_name: skill.display_name,
-										skill_name: skill.skill_name,
-										icon: skill.icon,
-									});
-									onShowSettingChange?.(false);
-								}}
-							/>
-						</div>
-					)}
-					{isOpenclaw && openClawPanelOpen && !embeddedOpenClawPreview && (
-						<div
-							data-testid="openclaw-side-panel"
-							className="flex-none w-[450px] flex flex-col bg-white overflow-hidden"
-						>
-							<OpenClawPanel
-								agentId={agentId}
-								open={openClawPanelOpen}
-								status={openClawStatusPayload}
-								connectionState={openClawConnectionState}
-								statusLoading={openClawStatusLoading}
-								onRefreshStatus={refreshOpenClawStatus}
-								onClose={() => setOpenClawPanelOpen(false)}
-							/>
-						</div>
-					)}
+					<SidePanel side="right" width={450} open={!!showSetting}>
+						<Setting
+							agent={currentAgent}
+							onClose={() => {
+								setShowSetting(false);
+							}}
+							onSkillOpen={() => useSkillsStore.getState().loadAgentSkills(agentId)}
+							onUseSkill={(skill) => {
+								// 将技能添加到对话框
+								workAiSenderConfig?.skill.onSelect?.({
+									label: skill.display_name,
+									display_name: skill.display_name,
+									skill_name: skill.skill_name,
+									icon: skill.icon,
+								});
+								setShowSetting(false);
+							}}
+						/>
+					</SidePanel>
+					<SidePanel
+						side="right"
+						width={450}
+						open={!!(isOpenclaw && openClawPanelOpen && !embeddedOpenClawPreview)}
+						data-testid="openclaw-side-panel"
+					>
+						<OpenClawPanel
+							agentId={agentId}
+							open={openClawPanelOpen}
+							status={openClawStatusPayload}
+							connectionState={openClawConnectionState}
+							statusLoading={openClawStatusLoading}
+							onRefreshStatus={refreshOpenClawStatus}
+							onClose={() => setOpenClawPanelOpen(false)}
+						/>
+					</SidePanel>
 					{isOpenclaw && outputFilePreview.visible && (
 						<div
 							data-testid="openclaw-output-file-preview-pane"
 							className="flex-none w-[450px] h-full flex flex-col bg-white overflow-hidden"
 						>
-							<div className="h-15 flex items-center justify-between px-5 border-b">
+							<div className="h-16 flex items-center justify-between px-5 border-b">
 								<div className="flex min-w-0 items-center gap-3">
 									<h4 className="text-lg text-primary truncate">
 										{outputFilePreview.currentFile.name || "--"}
@@ -3422,41 +3422,52 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 						</div>
 					)}
 					{/* 非 OpenClaw 模式：outputfile 预览面板 */}
-					{!isOpenclaw && outputFileBrowserState.visible && (
-						<div className="flex-none w-[450px] h-full flex flex-col bg-white overflow-hidden">
-							<div className="h-15 flex items-center justify-between px-5 border-b">
-								<div className="flex min-w-0 items-center gap-3">
-									<h4 className="text-lg text-primary truncate">
+					{!isOpenclaw && (
+						<SidePanel
+							side="right"
+							width={450}
+							open={outputFileBrowserState.visible}
+						>
+							<div
+								className={composeOutputFileBrowserClassName(
+									"h-full flex flex-col bg-white",
+								)}
+							>
+								<div className="h-16 flex items-center justify-between px-4 border-b border-[#F0F0F0]">
+									<span className="text-base text-primary truncate min-w-0 flex-1 mr-3">
 										{outputFileBrowserState.currentFile.name || "--"}
-									</h4>
-									{outputFileBrowserState.currentFile.file_url && (
-										<Button
-											color="primary"
-											variant="link"
-											size="small"
-											className="shrink-0"
-											onClick={downloadOutputFileBrowser}
+									</span>
+									<div className="flex items-center gap-2 shrink-0">
+										{outputFileBrowserState.currentFile.file_url && (
+											<IconButton
+												title={t("action.download")}
+												size="medium"
+												onClick={downloadOutputFileBrowser}
+											>
+												<DownloadOutlined style={{ fontSize: '16px' }} />
+											</IconButton>
+										)}
+										<FullscreenToggle
+											fullscreen={outputFileBrowserFullscreen}
+											onToggle={toggleOutputFileBrowserFullscreen}
+										/>
+										<IconButton
+											title={t("action.close")}
+											size="medium"
+											onClick={closeOutputFileBrowser}
 										>
-											{t("action.download")}
-										</Button>
-									)}
+											<CloseOutlined style={{ fontSize: '16px' }} />
+										</IconButton>
+									</div>
 								</div>
-								<div
-									role="button"
-									aria-label="关闭文件预览"
-									className="flex-center size-6 rounded shrink-0 cursor-pointer hover:bg-[#ECEDEE]"
-									onClick={closeOutputFileBrowser}
-								>
-									<CloseOutlined />
+								<div className="flex-1 overflow-hidden">
+									<FileViewer
+										url={outputFileBrowserState.currentFile.file_url}
+										extension={outputFileBrowserState.currentFile.file_ext}
+									/>
 								</div>
 							</div>
-							<div className="flex-1 overflow-hidden">
-								<FileViewer
-									url={outputFileBrowserState.currentFile.file_url}
-									extension={outputFileBrowserState.currentFile.file_ext}
-								/>
-							</div>
-						</div>
+						</SidePanel>
 					)}
 					<AddAnswerAsMd ref={addAnswerAsMdRef} />
 
@@ -3481,24 +3492,10 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								}
 							/>
 							<MyFilesDialog
-								ref={uploadsDialogRef}
-								source="uploads"
-								onConfirm={(files) =>
-									workAiSenderConfig.sources.uploads.select(files || [])
-								}
-							/>
-							<MyFilesDialog
-								ref={aiGeneratedDialogRef}
-								source="ai-generated"
-								onConfirm={(files) =>
-									workAiSenderConfig.sources["ai-generated"].select(files || [])
-								}
-							/>
-							<MyFilesDialog
-								ref={recordingsDialogRef}
-								source="recordings"
-								onConfirm={(files) =>
-									workAiSenderConfig.sources.recordings.select(files || [])
+								ref={myFilesDialogRef}
+								enabledSources={workAiSenderConfig.myFilesEnabledSources}
+								onConfirm={(bySource) =>
+									workAiSenderConfig.sources.myFiles.selectBySource(bySource)
 								}
 							/>
 						</>

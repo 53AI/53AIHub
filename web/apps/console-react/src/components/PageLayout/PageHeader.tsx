@@ -63,7 +63,7 @@ export function PageHeader({ config, className = "" }: PageHeaderProps) {
     return (
       <div className={`flex items-center gap-4 ${className}`}>
         <div
-          className={`size-[60px] flex items-center justify-center rounded-lg ${icon.bgColor || "bg-[#5899FC]"}`}
+          className={`flex-shrink-0 size-[60px] flex items-center justify-center rounded-lg ${icon.bgColor || "bg-[#5899FC]"}`}
           style={icon.customStyle}
         >
           {icon.svgIcon ? (
@@ -79,7 +79,7 @@ export function PageHeader({ config, className = "" }: PageHeaderProps) {
         <div className="flex flex-col gap-1">
           <TitleText title={title} className="text-[22px] text-primary font-bold" />
           {description && (
-            <DescText desc={description} className="text-sm text-placeholder" />
+            <DescText desc={description} className="text-sm text-placeholder " />
           )}
         </div>
         {center}
@@ -96,7 +96,7 @@ export function PageHeader({ config, className = "" }: PageHeaderProps) {
         <div className="flex-1 flex items-center gap-2">
           {back && (
             <div
-              className="w-7 h-7 flex items-center justify-center cursor-pointer hover:bg-gray-100 rounded"
+              className="flex-shrink-0 w-7 h-7 flex items-center justify-center cursor-pointer hover:bg-gray-100 rounded"
               onClick={handleBack}
             >
               <LeftOutlined style={{ fontSize: 16 }} />

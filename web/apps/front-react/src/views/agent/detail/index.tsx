@@ -8,7 +8,7 @@ import { chatAdapters } from "@/adapters/chat-adapters";
 import { createPlatformsByType } from '@km/shared-business/agent-create';
 import { SvgIcon } from '@km/shared-components-react';
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
-import DetailBreadcrumb, { MODULE_CONFIGS } from "@/components/DetailBreadcrumb";
+import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import AuthTagGroup from "@/components/AuthTagGroup";
 import agentsApi from "@/api/modules/agents";
 import { checkPermission } from "@/utils/permission";
@@ -217,7 +217,7 @@ export function AgentDetailView() {
       <div className="flex-1 py-6 overflow-y-auto">
         <div className={`w-11/12 lg:w-4/5 max-w-[1200px] mx-auto`}>
           {!isSoftStyle && (
-            <DetailBreadcrumb
+            <Breadcrumb
               module={MODULE_CONFIGS.agent}
               name={detailData.name}
             />

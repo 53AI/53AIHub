@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, forwardRef, useImperativeHandle, useCallba
 import { t } from '@/locales'
 import loadLib from '@/utils/loadLib'
 import { API_HOST } from '@/api/host'
+import { buildPreviewUrl } from '@/utils/preview'
 import './editor.css'
 
 interface EditConfig {
@@ -78,7 +79,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
             data: {
               errFiles: [],
               succMap: {
-                [`${files[0].name}`]: `${API_HOST}/api/preview/${result.data.preview_key}`,
+                [`${files[0].name}`]: buildPreviewUrl(result.data.preview_key) ?? '',
               },
             },
           })

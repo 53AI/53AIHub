@@ -469,7 +469,7 @@ export default function OpenClawPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white">
-      <div className="h-15 flex items-center justify-between px-5 border-b">
+      <div className="h-16 flex items-center justify-between px-5 border-b">
         <h4 className="text-lg text-primary">{t("openclaw.panel.settings")}</h4>
         <button
           type="button"

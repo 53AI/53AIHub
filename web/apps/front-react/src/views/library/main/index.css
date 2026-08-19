@@ -67,9 +67,9 @@
 /* 外层容器：边框发光 */
 .border-glow-wrapper {
   position: relative;
-  padding: 4px;
-  margin: -4px; /* 抵消内层的padding，保持整体尺寸不变 */
-  border-radius: 12px;
+  /* padding: 4px; */
+  /* margin: -4px; 抵消内层的padding，保持整体尺寸不变 */
+  /* border-radius: 12px; */
   background: transparent;
 }
 

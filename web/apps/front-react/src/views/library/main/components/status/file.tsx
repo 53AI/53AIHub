@@ -7,7 +7,7 @@ import { t } from '@/locales'
 import './file.css'
 
 // 获取步骤名称（运行时翻译）
-const STEP_KEY_TO_NAME: Record<string, string> = {
+export const STEP_KEY_TO_NAME: Record<string, string> = {
   document_parsing: t('data_pipeline.node_document_parsing'),
   content_cleaning: t('data_pipeline.node_content_cleaning'),
   summary_generation: t('data_pipeline.node_summary_generation'),

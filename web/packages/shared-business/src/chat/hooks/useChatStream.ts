@@ -203,10 +203,14 @@ function handleToolResult(step: ProcessRecord, skillRunItems: SkillRunItem[]): S
 }
 
 function handleLlmDelta(step: ProcessRecord, skillRunItems: SkillRunItem[]): SkillRunItem[] {
-  if (step.status !== "streaming" || !step.data) return skillRunItems;
+  if ((step.status !== "streaming" && step.status !== "completed") || !step.data) {
+    return skillRunItems;
+  }
 
   const data = step.data as { content?: string };
   const content = data?.content || "";
+  if (!content) return skillRunItems;
+  const completed = step.status === "completed";
 
   const existingIdx = skillRunItems.findIndex(
     (item) => item.type === "llm" && item.status === "running"
@@ -216,7 +220,12 @@ function handleLlmDelta(step: ProcessRecord, skillRunItems: SkillRunItem[]): Ski
     const existing = skillRunItems[existingIdx] as { type: "llm"; title: string; content: string; status: "running" | "completed" };
     return [
       ...skillRunItems.slice(0, existingIdx),
-      { ...existing, content: existing.content + content },
+      {
+        ...existing,
+        title: completed ? "思考完成" : existing.title,
+        content: completed && content.startsWith(existing.content) ? content : existing.content + content,
+        status: completed ? "completed" : "running",
+      },
       ...skillRunItems.slice(existingIdx + 1),
     ];
   }
@@ -225,9 +234,9 @@ function handleLlmDelta(step: ProcessRecord, skillRunItems: SkillRunItem[]): Ski
     ...skillRunItems,
     {
       type: "llm",
-      title: "思考中...",
+      title: completed ? "思考完成" : "思考中...",
       content,
-      status: "running",
+      status: completed ? "completed" : "running",
     },
   ];
 }

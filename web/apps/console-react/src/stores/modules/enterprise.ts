@@ -84,6 +84,8 @@ interface EnterpriseState {
       logo: string
       ico?: string
       display_name: string
+      full_name?: string
+      industry?: string
       language: string
       description: string
       keywords?: string
@@ -282,6 +284,8 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
       logo,
       ico,
       display_name,
+      full_name,
+      industry,
       language,
       description,
       keywords,
@@ -298,6 +302,8 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
       logo,
       ico,
       display_name,
+      full_name,
+      industry,
       language: language || 'zh-cn',
       description,
       keywords,

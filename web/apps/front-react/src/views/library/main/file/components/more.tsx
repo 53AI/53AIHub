@@ -18,6 +18,7 @@ interface FileMoreProps {
     newTab: (file: FileItem) => void;
     renameFile: (file: FileItem) => void;
     deleteFile: (file: FileItem) => void;
+    moveTo: (file: FileItem) => void;
   } | null;
 }
 
@@ -109,6 +110,9 @@ export function FileMore({
       case "rename":
         catalogRef?.renameFile(currentFile);
         break;
+      case "move_to":
+        catalogRef?.moveTo(currentFile);
+        break;
       case "delete":
         catalogRef?.deleteFile(currentFile);
         break;
@@ -122,7 +126,7 @@ export function FileMore({
     libraryStore.restoreContent = content;
     libraryStore.isRestore = true;
     message.success(t("history.restore_success"));
-    navigate(`/library/${params.id}/file/${params.fid}/chunks/edit`);
+    navigate(`/library/${params.id}/file/${params.fid}/chunks-edit`);
   };
 
   const items: MenuItem[] = [
@@ -132,16 +136,7 @@ export function FileMore({
       label: t("common.new_tab_page") + t("action.open"),
     },
     { key: "divider", divided: true },
-    {
-      key: "rename",
-      icon: "edit",
-      label: t("action.rename"),
-      wrapper: (children) => (
-        <PermissionFile required={PERMISSION_TYPE.edit_all}>
-          {children}
-        </PermissionFile>
-      ),
-    },
+
     {
       key: "export",
       icon: "export",
@@ -171,6 +166,26 @@ export function FileMore({
           {children}
         </PermissionFile>
       ),
+    },    
+    {
+      key: "move_to",
+      icon: "move",
+      label: t("action.move_to"),
+      wrapper: (children) => (
+        <PermissionFile required={PERMISSION_TYPE.edit_all}>
+          {children}
+        </PermissionFile>
+      ),
+    },
+    {
+      key: "rename",
+      icon: "edit",
+      label: t("action.rename"),
+      wrapper: (children) => (
+        <PermissionFile required={PERMISSION_TYPE.edit_all}>
+          {children}
+        </PermissionFile>
+      ),
     },
     { key: "divider2", divided: true },
     {
@@ -191,10 +206,8 @@ export function FileMore({
     <>
       <MoreDropdown
         size="32px"
-        icon="more-h"
         iconSize={16}
         tooltip={t("action.more")}
-        backgroundColor="#F2F6FE"
         items={items}
         onCommand={handleMore}
       />

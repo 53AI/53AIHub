@@ -4,7 +4,7 @@ import { t } from '@/locales'
 import { useAgentFormStore } from '../store'
 import { useConversationStore } from '@/stores'
 import { copyToClip } from '@km/shared-utils'
-import { api_host } from '@/utils/config'
+import { buildPreviewUrl } from '@/utils/preview'
 import { AGENT_TYPES } from '@/constants/platform/config'
 import uploadApi from '@/api/modules/upload'
 import { XBubbleList, XBubbleUser, XBubbleAssistant, XIcon, XSender } from '@km/hub-ui-x-react'
@@ -105,7 +105,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave }, ref) 
       const res = await uploadApi.upload(dataFile)
       return {
         id: res.data.id,
-        url: `${api_host}/api/preview/${res.data.preview_key || ''}`,
+        url: buildPreviewUrl(res.data.preview_key) ?? '',
         size: res.data.size,
         name: res.data.file_name,
         mime_type: res.data.mime_type,
