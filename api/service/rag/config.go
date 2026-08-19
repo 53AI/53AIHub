@@ -474,10 +474,12 @@ func (s *ChunkConfigService) CreateDefaultConfig(eid int64, libraryID *int64, ch
 }
 
 // ValidateChannels 验证渠道配置
+// 通过 s.db 查询而非 model.GetChannelByID（全局 DB）：初始化流程中渠道创建于未提交事务内，
+// 全局 DB 不可见会导致初始化误报“渠道不存在”。
 func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, embeddingChannelID *int64) error {
 	if logicChannelID != nil {
-		channel, err := model.GetChannelByID(*logicChannelID)
-		if err != nil {
+		var channel model.Channel
+		if err := s.db.Where("channel_id = ?", *logicChannelID).First(&channel).Error; err != nil {
 			return fmt.Errorf("逻辑推理渠道不存在: %v", err)
 		}
 		if channel.Eid != eid {
@@ -489,8 +491,8 @@ func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, 
 	}
 
 	if embeddingChannelID != nil {
-		channel, err := model.GetChannelByID(*embeddingChannelID)
-		if err != nil {
+		var channel model.Channel
+		if err := s.db.Where("channel_id = ?", *embeddingChannelID).First(&channel).Error; err != nil {
 			return fmt.Errorf("向量嵌入渠道不存在: %v", err)
 		}
 		if channel.Eid != eid {

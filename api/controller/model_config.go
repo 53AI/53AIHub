@@ -36,8 +36,13 @@ func GetSiteModelConfig(c *gin.Context) {
 	// 获取站点配置
 	chunkConfig, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
-		return
+		// 站点级模型配置尚未建立（未初始化/渠道未配置）时，退回系统默认配置供前端展示与编辑，
+		// 避免 500 阻断前端页面；写入由 UpdateSiteModelConfig 自动创建站点配置。
+		chunkConfig, err = configService.GetConfig(eid, nil, model.ChunkTypeDefault)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
 	}
 
 	// 获取模型配置JSON
