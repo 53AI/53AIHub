@@ -86,13 +86,14 @@ export const ModelSettingDialog = forwardRef<ModelSettingDialogRef, ModelSetting
         if (!custom_config.alias_map[id]) delete custom_config.alias_map[id]
         if (!Object.keys(custom_config.alias_map).length) delete custom_config.alias_map
 
-        // 语音模型：更新 voice_models 中的 display_name
+        // 语音模型：更新 voice_models 中的 display_name 与 api_domain
         if (isVoiceModel) {
           custom_config.voice_models = {
             ...(custom_config.voice_models || {}),
             [id]: {
               ...(custom_config.voice_models?.[id] || {}),
-              display_name: name.trim(),
+              display_name: id,
+              api_domain: originData.base_url || '',
             },
           }
         }
@@ -158,7 +159,6 @@ export const ModelSettingDialog = forwardRef<ModelSettingDialogRef, ModelSetting
             <Form.Item
               label="Workspace ID"
               name="workspace_id"
-              rules={[{ required: true, message: t('form_input_placeholder') }]}
             >
               <Input disabled placeholder={t('form_input_placeholder')} />
             </Form.Item>
