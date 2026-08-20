@@ -160,7 +160,7 @@ export function ModelSaveDialog({
   });
   const [form] = Form.useForm();
   const [modelAddForm] = Form.useForm();
-
+  
   const [loading, setLoading] = useState(false);
   const [modelAddVisible, setModelAddVisible] = useState(false);
   const [modelSchemas, setModelSchemas] = useState<FormConfig[]>([]);
@@ -519,7 +519,6 @@ export function ModelSaveDialog({
     try {
       const values = await modelAddForm.validateFields();
       const modelId = values.model_id.trim();
-
       // 检查是否已存在于自定义模型列表或语音模型配置中
       const existsInCustomModels = (formData.custom_config?.models || []).some(
         (item: any) => item.model_id === modelId
@@ -567,12 +566,12 @@ export function ModelSaveDialog({
         };
         // 仅语音模型才将配置写入 voice_models 和 alias_map
         if (String(modelAddData.model_type) === MODEL_USE_TYPE.VOICE) {
-          const voiceConfig: Record<string, any> = {};
+          const voiceConfig: Record<string, any> = {
+            display_name: modelId,
+          };
           if (values.workspace_id) voiceConfig.workspace_id = values.workspace_id;
-          if (values.model_name) voiceConfig.display_name = values.model_name;
-          if (Object.keys(voiceConfig).length > 0) {
-            next.custom_config.voice_models[modelId] = voiceConfig;
-          }
+          if (prev.base_url) voiceConfig.api_domain = prev.base_url;
+          next.custom_config.voice_models[modelId] = voiceConfig;
         }
         return next;
       });
@@ -650,14 +649,28 @@ export function ModelSaveDialog({
     configModels?: ConfigModelItem[];
   } => {
     const custom_config: Record<string, any> = {};
-
     if (isSingleModel) {
       // 单模型处理（Azure, CUSTOM_OPENAI）
       const modelId = Array.isArray(data.models) ? data.models[0] : data.models;
-      custom_config[modelId] = data.model_type;
+      // 优先用 form 上选中的 model_type，回退到 custom_config[modelId]（radio 未传值时）
+    
+      const effectiveModelType =
+        data.model_type ?? data.custom_config?.[modelId] ?? MODEL_USE_TYPE.REASONING;
+      custom_config[modelId] = effectiveModelType;
       // 只有 custom_openai 才将 other 作为别名保存
       if (data.type === MODEL_VALUES.CUSTOM_OPENAI && data.other && modelId) {
         custom_config.alias_map = { [modelId]: data.other };
+      }
+      // 语音模型：补齐 voice_models 条目
+      if (modelId && String(effectiveModelType) === MODEL_USE_TYPE.VOICE) {
+        custom_config.voice_models = {
+          ...(data.custom_config?.voice_models || {}),
+          [modelId]: {
+            ...(data.custom_config?.voice_models?.[modelId] || {}),
+            display_name: modelId,
+            api_domain: data.base_url || data.custom_config?.voice_models?.[modelId]?.api_domain || "",
+          },
+        };
       }
       return { custom_config };
     }
@@ -717,12 +730,26 @@ export function ModelSaveDialog({
     }
 
     // 保留语音模型配置
-    if (
+    const existingVoiceModels =
       data.custom_config?.voice_models &&
       typeof data.custom_config.voice_models === "object" &&
       !Array.isArray(data.custom_config.voice_models)
-    ) {
-      custom_config.voice_models = data.custom_config.voice_models;
+        ? data.custom_config.voice_models
+        : {};
+    // 为每个语音模型补齐 voice_models 条目（display_name = modelId, api_domain = base_url）
+    const voiceModels = { ...existingVoiceModels };
+    models.forEach((modelId) => {
+      const modelType = custom_config[modelId];
+      if (String(modelType) === MODEL_USE_TYPE.VOICE) {
+        voiceModels[modelId] = {
+          ...(voiceModels[modelId] || {}),
+          display_name: modelId,
+          api_domain: data.base_url || voiceModels[modelId]?.api_domain || "",
+        };
+      }
+    });
+    if (Object.keys(voiceModels).length > 0) {
+      custom_config.voice_models = voiceModels;
     }
 
     return { custom_config, configModels };
@@ -813,14 +840,17 @@ export function ModelSaveDialog({
     try {
       setLoading(true);
       const values = await form.validateFields();
+      // values 中不包含 custom_config（它不是表单字段），需避免 ...values 把 formData.custom_config 覆盖成 undefined
+      const { custom_config: _ignoredCustomConfig, ...restValues } = values as any;
       // 保留 formData.models，因为列表视图不通过表单控件更新
       // 多模型时 config 是数组，不需要深度合并
       const saveData = {
         ...formData,
-        ...values,
+        ...restValues,
+        custom_config: formData.custom_config,
         models: formData.models,
         config: isSingleModel
-          ? { ...formData.config, ...values.config }
+          ? { ...formData.config, ...restValues.config }
           : formData.config,
       };
 
@@ -829,7 +859,6 @@ export function ModelSaveDialog({
         setLoading(false);
         return;
       }
-
       const { models, typeMapping } = processModels(saveData);
       const { custom_config, configModels } = buildCustomConfig(saveData, models);
 
