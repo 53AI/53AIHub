@@ -998,6 +998,11 @@ func (s *wikiSpaceReadService) resolveVisibleSpaceLibraries(ctx context.Context,
 		if req.LibraryID > 0 && library.ID != req.LibraryID {
 			continue
 		}
+		permission, permErr := GetUserPermission(req.Eid, model.RESOURCE_TYPE_LIBRARY, library.ID, req.UserID)
+		if permErr != nil || permission < model.PERMISSION_VIEW_ONLY {
+			continue
+		}
+		library.Permission = permission
 		visible = append(visible, library)
 		ids = append(ids, library.ID)
 		byID[library.ID] = library

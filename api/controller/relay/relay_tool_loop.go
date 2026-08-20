@@ -45,6 +45,13 @@ func buildAgentHardStopContent(content, stopDetail string) string {
 	return content + "\n\n" + stopDetail
 }
 
+func agentRunStatusForHardStop(terminalTool bool) string {
+	if terminalTool {
+		return model.AgentRunStatusCompleted
+	}
+	return model.AgentRunStatusFailed
+}
+
 func buildRelayToolCallSignature(functionName, argsString string) string {
 	return agentexec.ToolCallSignature(functionName, argsString)
 }

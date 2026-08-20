@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/53AI/53AIHub/common/thinkingpolicy"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/thinkingpolicy"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
@@ -428,7 +428,7 @@ func resetRecordingConfigForDeletedChannel(channelID int64, eid int64) {
 	}
 
 	if needsUpdate {
-		if err := model.UpdateRecordingConfig(eid, config.Enabled, config.ParserPlatform, config.VoiceModelID, config.VoiceModelName, config.InferenceModelID, config.InferenceModelName, config.RecordingAgentEnabled); err != nil {
+		if err := model.UpdateRecordingConfig(eid, config.Enabled, config.ParserPlatform, config.VoiceModelID, config.VoiceModelName, config.InferenceModelID, config.InferenceModelName, config.RecordingAgentEnabled, config.MultiPerspectiveEnabled, config.MemoryExtraction, config.InsightRegenerateEnabled); err != nil {
 			logger.SysErrorf("【录音配置】删除语音渠道后重置配置失败: eid=%d channel_id=%d err=%v", eid, channelID, err)
 		}
 	}
@@ -529,6 +529,14 @@ func validateVoiceModelChannel(channel *model.Channel) error {
 		mc, ok := modelCfg.(map[string]interface{})
 		if !ok {
 			return fmt.Errorf("voice_models.%s 配置格式错误", modelName)
+		}
+		if model.IsOpenAIAudioChannel(channel) {
+			// OpenAI 兼容语音渠道（1012）：无 workspace_id（DashScope 专属字段），
+			// 要求 base_url 已配置（key 已在上面校验）
+			if channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "" {
+				return fmt.Errorf("模型 %s 必须配置 base_url（OpenAI 兼容语音渠道）", modelName)
+			}
+			continue
 		}
 		if _, hasWS := mc["workspace_id"]; !hasWS || mc["workspace_id"].(string) == "" {
 			return fmt.Errorf("模型 %s 必须配置 workspace_id", modelName)

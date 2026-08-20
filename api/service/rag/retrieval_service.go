@@ -173,7 +173,7 @@ func (s *RetrievalChunkService) splitContentForRetrieval(content string, config 
 
 	// 使用 ChunkerService 的统一分块逻辑
 	chunkerService := NewChunkerService(s.db)
-	chunks := chunkerService.ChunkByRulesForRetrieval(content, config.IndexChunk.ChunkMode, splitRules, maxLength)
+	chunks := chunkerService.ChunkByRulesForRetrievalWithOverlap(content, config.IndexChunk.ChunkMode, splitRules, maxLength, config.IndexOverlapSize)
 
 	// 如果需要包含前缀，为分块添加前缀
 	if prefix != "" {
@@ -273,14 +273,7 @@ func (s *RetrievalChunkService) splitByRule(content string, rule string, maxLeng
 
 // getOverlapContent 获取重叠内容
 func (s *RetrievalChunkService) getOverlapContent(content string, overlapSize int) string {
-	words := strings.Fields(content)
-	if len(words) <= overlapSize {
-		return content
-	}
-
-	// 取最后的overlapSize个词
-	overlapWords := words[len(words)-overlapSize:]
-	return strings.Join(overlapWords, " ")
+	return getTextSuffix(content, overlapSize)
 }
 
 // UpdateRetrievalChunk 更新检索块
@@ -1186,11 +1179,14 @@ func (s *RetrievalChunkService) splitBySeparator(content string, separator strin
 
 	var chunks []string
 
-	for _, segment := range segments {
-		// 清理片段内容：去除前后空白，并检查是否为空
-		segment = strings.TrimSpace(segment)
+	for i, segment := range segments {
+		// 仅清理水平空白，保留换行等原始分隔符。
+		segment = strings.Trim(segment, " \t\r")
 		if segment == "" {
 			continue
+		}
+		if i < len(segments)-1 {
+			segment += separator
 		}
 
 		segmentTokens, _ := s.tokenizer.CountTokens(segment)

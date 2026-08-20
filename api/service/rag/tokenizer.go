@@ -193,20 +193,18 @@ func (ts *TokenizerService) SplitTextByTokens(text string, maxTokens int, overla
 		return nil, fmt.Errorf("maxTokens must be greater than 0")
 	}
 
-	// 清理文本
+	// 仅使用清洗后的文本计算Token数量，切分结果必须基于原始文本，保留换行等格式。
 	cleanText := ts.cleanText(text)
-
-	// 如果总token数不超过maxTokens，直接返回原文本
 	totalTokens, err := ts.CountTokens(cleanText)
 	if err != nil {
 		return nil, err
 	}
 
 	if totalTokens <= maxTokens {
-		return []string{cleanText}, nil
+		return []string{text}, nil
 	}
 
-	chunks := ts.forceSplitText(cleanText, maxTokens)
+	chunks := ts.forceSplitText(text, maxTokens)
 
 	return chunks, nil
 }
@@ -229,8 +227,8 @@ func (ts *TokenizerService) forceSplitText(text string, maxTokens int) []string 
 		}
 
 		chunk := string(runes[i:end])
-		if strings.TrimSpace(chunk) != "" {
-			chunks = append(chunks, strings.TrimSpace(chunk))
+		if chunk != "" {
+			chunks = append(chunks, chunk)
 		}
 	}
 

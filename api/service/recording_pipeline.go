@@ -35,7 +35,9 @@ func getStageStatuses(fileID int64) (minutes, insights, page string) {
 }
 
 func RunRecordingPipeline(ctx context.Context, eid, fileID, userID int64) (*PipelineResult, error) {
-	if _, err := model.GetFileByID(eid, fileID); err != nil {
+	// 权限放开：继续生成管线供其他知识库（团队/共享库）使用，只要求库查看权限，
+	// 不再要求文件创建者是当前用户；非创建者触发时生成函数内部以文件创建者为记忆归属。
+	if _, err := GetViewableRecordingFile(ctx, eid, userID, fileID); err != nil {
 		return nil, fmt.Errorf("文件不存在: %w", err)
 	}
 

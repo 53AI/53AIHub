@@ -51,6 +51,7 @@ type RecentAccessSpaceSummary struct {
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	SpaceKind string `json:"space_kind"`
+	Logo      string `json:"logo,omitempty"`
 }
 
 type RecentAccessWikiPageDetail struct {
@@ -98,12 +99,11 @@ type RecentAccessListResponse struct {
 	Items    []RecentAccessItem    `json:"items"`
 	Includes *RecentAccessIncludes `json:"includes,omitempty"`
 }
-
 func parseTabResourceType(raw int) (*int, error) {
 	if raw == 0 {
 		return nil, nil
 	}
-	if raw != model.RESOURCE_TYPE_LIBRARY && raw != model.RESOURCE_TYPE_FILE && raw != model.RESOURCE_TYPE_WIKI_PAGE {
+	if raw != model.RESOURCE_TYPE_LIBRARY && raw != model.RESOURCE_TYPE_FILE && raw != model.RESOURCE_TYPE_WIKI_PAGE && raw != model.RESOURCE_TYPE_FAVORITE_SPACE {
 		return nil, errors.New("资源类型无效")
 	}
 	return &raw, nil
@@ -492,6 +492,7 @@ func buildRecentAccessItemsFromHistories(eid int64, histories []model.UserBrowse
 					ID:        encodeRecentAccessID(space.ID),
 					Name:      space.Name,
 					SpaceKind: space.SpaceKind,
+					Logo:      space.Icon,
 				}
 			} else {
 				continue

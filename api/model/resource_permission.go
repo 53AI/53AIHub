@@ -102,16 +102,30 @@ func GetDistinctResourceIDsByGroupsAndType(groupIDs []int64, resourceType string
 		return []int64{}, nil
 	}
 
-	var resourceIDs []int64
+	var scopedResourceIDs []int64
+	if err := DB.Model(&ResourceScope{}).
+		Where("target_id IN ? AND scope_type = ? AND resource_type = ?", groupIDs, ScopeTypeGroup, resourceType).
+		Pluck("resource_id", &scopedResourceIDs).Error; err != nil {
+		return nil, err
+	}
+
+	var legacyResourceIDs []int64
 	err := DB.Model(&ResourcePermission{}).
 		Distinct("resource_id").
 		Where("group_id IN (?) AND resource_type = ?", groupIDs, resourceType).
-		Pluck("resource_id", &resourceIDs).Error
+		Pluck("resource_id", &legacyResourceIDs).Error
 	if err != nil {
 		return nil, err
 	}
-	if resourceIDs == nil {
-		resourceIDs = []int64{}
+
+	seen := make(map[int64]struct{}, len(scopedResourceIDs)+len(legacyResourceIDs))
+	resourceIDs := make([]int64, 0, len(scopedResourceIDs)+len(legacyResourceIDs))
+	for _, resourceID := range append(scopedResourceIDs, legacyResourceIDs...) {
+		if _, ok := seen[resourceID]; ok {
+			continue
+		}
+		seen[resourceID] = struct{}{}
+		resourceIDs = append(resourceIDs, resourceID)
 	}
 	return resourceIDs, nil
 }

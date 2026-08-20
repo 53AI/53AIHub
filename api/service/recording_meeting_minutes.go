@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/tokenlimit"
 	"github.com/53AI/53AIHub/model"
@@ -159,7 +160,20 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 
 实体中的 canonical_name 只有在可以高置信度确定时才填写。无法确定时置空，不得自行补全。
 
-六、输出格式
+六、安心录实体记忆
+
+除 key_entities 外，必须输出 memory_entities。它仅用于安心录后续决策洞察，不是通用知识图谱实体。
+
+只允许以下四类，且只提取逐字稿或纪要中有明确证据的内容：
+
+- person：company、position、demand、relationship(potential_customer|customer|partner|competitor|irrelevant)；
+- matter：status(todo|in_progress|completed|shelved)、priority(high|medium|low)、deliverable、dependency；
+- risk：risk_type(compliance|delivery|financial|technical)、risk_level(high|medium|low)、probability、response；
+- principle：principle_type(company_policy|industry_norm|compliance_req|business_principle)、applicable_scope、binding_force(mandatory|recommended|reference)、exceptions。
+
+属性无法由证据确认时不要输出该属性；特别是不得编造联系人、截止日期、概率或人物关系。每条事实必须包含 source_segment_ids。canonical_name 只在身份明确时填写；同名但身份不明的人物不要擅自合并。
+
+七、输出格式
 
 严格输出 JSON，不输出 Markdown，不输出 JSON 之外的说明。
 
@@ -187,6 +201,23 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
       "description": "",
       "confidence": 0,
       "source_segment_ids": []
+    }
+  ],
+  "memory_entities": [
+    {
+      "entity_type": "person|matter|risk|principle",
+      "mention": "",
+      "canonical_name": "",
+      "summary": "",
+      "aliases": [],
+      "attributes": {},
+      "facts": [
+        {
+          "content": "",
+          "attributes": {},
+          "source_segment_ids": []
+        }
+      ]
     }
   ],
   "keywords": [],
@@ -310,7 +341,8 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 4. 是否为关键对象保留了原文证据；
 5. 纪要主体是否根据内容自由组织，而不是套固定格式；
 6. 是否在纪要阶段做了过度经营推演；
-7. 是否存在原文未出现的人物、预算、权限或截止时间。`
+7. 是否存在原文未出现的人物、预算、权限或截止时间；
+8. memory_entities 的每个属性和事实是否都有对应证据。`
 
 // getRecordingContextBudget 获取录音管线的上下文预算（token 数）。
 func getRecordingContextBudget(ctx context.Context, config *model.RecordingConfig) int {
@@ -336,7 +368,50 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		return nil
 	}
 
+	// 纪要复用（仅录音文件）：同内容源文件（同 upload_files.hash 或同 upload_file_id）已有
+	// completed 纪要 → 直接拷贝反转布局（FileBody=纪要 + Summary(-1)=转写），跳过 LLM 生成与存储反转。
+	// 源无/pending/failed → 走正常生成。template_id>0 自定义总结不拷贝。
+	// 与 SonicNote 预置转写互斥：目标 parse_type=sonicnote_transcript（预置官方转写）时跳过复用，
+	// 走 LLM 生成（反转保留预置转写），避免源转写覆盖预置转写（与 document_parsing 转写复用同一不变量）。
+	if file, ferr := model.GetFileByID(eid, fileID); ferr == nil && file.ParseType != model.PLATFORM_KEY_SONICNOTE &&
+		file.IsRecordingOriginType() && file.UploadFileID > 0 {
+		if uf, uerr := model.GetUploadFileByID(file.UploadFileID); uerr == nil && uf != nil {
+			cands, cerr := findReuseSourceCandidates(ctx, eid, uf.Hash, uf.ID, fileID)
+			if cerr == nil {
+				for _, cand := range cands {
+					ok, herr := ReuseSourceHasMinutes(ctx, eid, cand.ID)
+					if herr != nil || !ok {
+						continue
+					}
+					if rerr := ReuseMinutesForFile(ctx, eid, cand.ID, fileID, userID); rerr != nil {
+						logger.Warnf(ctx, "【纪要】复用失败，降级生成 fileID=%d: %v", fileID, rerr)
+						break
+					}
+					// 复用成功后按会议标题重命名文件（对齐正常生成路径第 8 步；失败不阻塞）
+					if srcBody, berr := model.GetLastFileBodyByFileID(eid, cand.ID); berr == nil {
+						if minutesJSON, cerr := srcBody.GetContent(); cerr == nil {
+							renameFileByMeetingTitle(ctx, eid, fileID, file, minutesJSON)
+						}
+					}
+					setMeetingMinutesStatus(fileID, "completed")
+					logger.Infof(ctx, "【纪要】复用完成 fileID=%d src_file_id=%d", fileID, cand.ID)
+					return nil
+				}
+			}
+		}
+	}
+
 	setMeetingMinutesStatus(fileID, "processing")
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskStageStarted(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+			TaskType:       "RECORDING_PIPELINE",
+			StageKey:       "meeting_minutes",
+			StageStatus:    keystone.TaskStatusRunning,
+			ServiceKey:     "recording-pipeline",
+			StartedAt:      time.Now().UTC(),
+		})
+	}
 
 	startTime := time.Now()
 
@@ -356,6 +431,18 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	transcriptText, err := loadTranscriptTextRaw(ctx, eid, fileID)
 	if err != nil {
 		logger.Errorf(ctx, "【纪要】读取转写文本失败 fileID=%d err=%v", fileID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "meeting_minutes",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "MEETING_MINUTES_FAILED",
+				FailureMessage: err.Error(),
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("读取转写文本失败: %w", err)
 	}
@@ -376,6 +463,18 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	})
 	if err != nil {
 		logger.Errorf(ctx, "【纪要】转写压缩失败 fileID=%d err=%v", fileID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "meeting_minutes",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "MEETING_MINUTES_FAILED",
+				FailureMessage: err.Error(),
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("转写压缩失败: %w", err)
 	}
@@ -386,6 +485,18 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	result, err := callMeetingMinutesLLM(ctx, config, fileID, prepared.Text, startedAt, endedAt)
 	if err != nil {
 		logger.Errorf(ctx, "【纪要】生成失败 fileID=%d err=%v", fileID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "meeting_minutes",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "MEETING_MINUTES_FAILED",
+				FailureMessage: err.Error(),
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("纪要生成失败: %w", err)
 	}
@@ -394,8 +505,25 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	file, err := model.GetFileByID(eid, fileID)
 	if err != nil {
 		logger.Errorf(ctx, "【纪要】加载文件失败 fileID=%d err=%v", fileID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "meeting_minutes",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "MEETING_MINUTES_FAILED",
+				FailureMessage: err.Error(),
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("加载文件失败: %w", err)
+	}
+	resolvedOwnerID := resolveRecordingMinutesOwnerID(userID, file.UserID)
+	if resolvedOwnerID != userID {
+		logger.Warnf(ctx, "【纪要】user_id 无效，使用文件创建者 fileID=%d job_user_id=%d file_user_id=%d", fileID, userID, file.UserID)
+		userID = resolvedOwnerID
 	}
 
 	// 6. transcriptText 已是原始 DashScope JSON（step 2 调用 loadTranscriptTextRaw 获取）
@@ -443,6 +571,18 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		return nil
 	}); err != nil {
 		logger.Errorf(ctx, "【纪要】存储反转失败 fileID=%d err=%v", fileID, err)
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageCompleted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "meeting_minutes",
+				StageStatus:    keystone.TaskStatusFailed,
+				FailureCode:    "MEETING_MINUTES_FAILED",
+				FailureMessage: err.Error(),
+				ServiceKey:     "recording-pipeline",
+				FinishedAt:     time.Now().UTC(),
+			})
+		}
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("存储反转失败: %w", err)
 	}
@@ -450,12 +590,40 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	elapsed := time.Since(startTime)
 	logger.Infof(ctx, "【纪要】生成成功 fileID=%d elapsed=%v", fileID, elapsed)
 
+	// 纪要已经以新版本落库后，编译结构化会议记忆。编译失败不阻断纪要和洞察主链路，
+	// GenerateInsights 仍会使用现有实体+历史纪要 fallback。
+	if recordingMemoryExtractionEnabled(config) {
+		if _, memoryErr := CompileRecordingMemory(ctx, eid, fileID, userID); memoryErr != nil {
+			logger.Warnf(ctx, "【会议记忆】当前纪要编译失败，洞察将降级: fileID=%d err=%v", fileID, memoryErr)
+		}
+		if _, entityMemoryErr := CompileRecordingEntityMemory(ctx, eid, fileID, userID); entityMemoryErr != nil {
+			logger.Warnf(ctx, "【实体记忆】当前纪要编译失败，洞察将降级: fileID=%d err=%v", fileID, entityMemoryErr)
+		}
+	}
+
 	// 8. 按会议标题重命名文件（失败不阻塞管线）
 	renameFileByMeetingTitle(ctx, eid, fileID, file, result)
 
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskStageCompleted(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+			TaskType:       "RECORDING_PIPELINE",
+			StageKey:       "meeting_minutes",
+			StageStatus:    keystone.TaskStatusSucceeded,
+			ServiceKey:     "recording-pipeline",
+			FinishedAt:     time.Now().UTC(),
+		})
+	}
 	setMeetingMinutesStatus(fileID, "completed")
 
 	return nil
+}
+
+func resolveRecordingMinutesOwnerID(userID, fileOwnerID int64) int64 {
+	if userID <= 0 && fileOwnerID > 0 {
+		return fileOwnerID
+	}
+	return userID
 }
 
 // loadTranscriptTextRaw 读取转写原文（DashScope ASR 原始 JSON，不提取）。
@@ -861,8 +1029,27 @@ RENDER:
 	return result
 }
 
-// extractTranscriptFromJSON 从 DashScope 转写 JSON 中提取 transcripts[].text。
+// extractTranscriptFromJSON 提取转写纯文本。支持两种来源格式：
+//  1. SonicNote：JSON 数组 [{spokesperson,text,time}, ...]（逐条取 text 拼接）
+//  2. DashScope：{"transcripts":[{"text":...}]}（含外层 text 兜底）
+//
+// 非 JSON 或内容为空返回 ""，调用方维持现有退化行为。
 func extractTranscriptFromJSON(raw string) string {
+	// 先尝试 SonicNote 数组格式（DashScope 是对象，unmarshal 进数组会报错，自动落到下方）
+	var sonicItems []map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &sonicItems); err == nil && len(sonicItems) > 0 {
+		var texts []string
+		for _, it := range sonicItems {
+			if text, ok := it["text"].(string); ok && strings.TrimSpace(text) != "" {
+				texts = append(texts, strings.TrimSpace(text))
+			}
+		}
+		if len(texts) > 0 {
+			return strings.Join(texts, "\n\n")
+		}
+		return ""
+	}
+
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		return ""
@@ -1055,6 +1242,16 @@ func setInsightPageStatus(fileID int64, status string) {
 	setStageStatus(fileID, "insight_page", status)
 }
 
+// SetInsightsStatus 公开导出，供 controller 直接调用触发洞察状态更新。
+func SetInsightsStatus(fileID int64, status string) {
+	setInsightsStatus(fileID, status)
+}
+
+// SetInsightPageStatus 公开导出，供 controller 直接调用触发页面编排状态更新。
+func SetInsightPageStatus(fileID int64, status string) {
+	setInsightPageStatus(fileID, status)
+}
+
 // setTranscriptionStatus 更新 cleaning_rule_info 中的转写状态（独立于 parsing_status，避免被 RAG 管线失败覆盖）。
 func setTranscriptionStatus(fileID int64, status string) {
 	setStageStatus(fileID, "transcription", status)
@@ -1107,20 +1304,53 @@ var callLLMWithRetry = func(ctx context.Context, config *model.RecordingConfig, 
 			if httpCode, ok := openAIErr.Code.(float64); ok {
 				code := int(httpCode)
 				if code == 401 || code == 403 || code == 400 {
-					return "", fmt.Errorf("非重试性错误: %w (http_code=%d)", err, code)
+					errorType := model.ErrorTypeModelUnavailable
+					if code == 401 || code == 403 {
+						errorType = model.ErrorTypeAPIKeyInvalid
+					}
+					return "", &model.LLMError{
+						Err:       fmt.Errorf("非重试性错误: %w (http_code=%d)", err, code),
+						ErrorType: errorType,
+					}
+				}
+				if code == 402 {
+					return "", &model.LLMError{
+						Err:       fmt.Errorf("非重试性错误: %w (http_code=%d)", err, code),
+						ErrorType: model.ErrorTypeInsufficientBalance,
+					}
 				}
 			}
 			// 字符串匹配作为兜底
 			codeStr := fmt.Sprintf("%v", openAIErr.Code)
 			if strings.Contains(codeStr, "invalid") || strings.Contains(codeStr, "unauthorized") {
-				return "", fmt.Errorf("非重试性错误: %w (raw_code=%v)", err, openAIErr.Code)
+				return "", &model.LLMError{
+					Err:       fmt.Errorf("非重试性错误: %w (raw_code=%v)", err, openAIErr.Code),
+					ErrorType: model.ErrorTypeAPIKeyInvalid,
+				}
 			}
 		}
 
 		lastErr = fmt.Errorf("attempt %d: %w (openai_err=%v)", attempt+1, err, openAIErr)
 		logger.Warnf(ctx, "【LLM】调用失败，准备重试 attempt=%d err=%v", attempt+1, lastErr)
 	}
-	return "", lastErr
+	// 所有重试都失败，判断错误类型
+	lastErrMsg := lastErr.Error()
+	if strings.Contains(lastErrMsg, "http_code=402") || strings.Contains(lastErrMsg, "Insufficient Balance") || strings.Contains(lastErrMsg, "insufficient") {
+		return "", &model.LLMError{
+			Err:       lastErr,
+			ErrorType: model.ErrorTypeInsufficientBalance,
+		}
+	}
+	if strings.Contains(lastErrMsg, "timeout") || strings.Contains(lastErrMsg, "Timeout") || strings.Contains(lastErrMsg, "deadline") {
+		return "", &model.LLMError{
+			Err:       lastErr,
+			ErrorType: model.ErrorTypeTimeout,
+		}
+	}
+	return "", &model.LLMError{
+		Err:       lastErr,
+		ErrorType: model.ErrorTypeModelUnavailable,
+	}
 }
 
 // GetFileParseStatus 获取文件的四阶段解析状态及管线可达性。
@@ -1138,6 +1368,12 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 		return result
 	}
 
+	// 最新 document_parsing job 状态：用于无转写内容时区分"处理中/失败/未开始"
+	var parsingJobStatus string
+	model.DB.Model(&model.RagJob{}).
+		Where("eid = ? AND related_id = ? AND type = ?", eid, fileID, "document_parsing").
+		Order("job_id DESC").Limit(1).Pluck("status", &parsingJobStatus)
+
 	// 转写状态：优先使用 cleaning_rule_info 中的独立字段，避免被 RAG 管线的 parsing_status 覆盖
 	transcription := result["transcription"].(map[string]interface{})
 	var ruleInfo model.FileCleaningRuleInfo
@@ -1146,8 +1382,51 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 	}
 	if ruleInfo.TranscriptionStatus != "" {
 		transcription["status"] = ruleInfo.TranscriptionStatus
+		if ruleInfo.TranscriptionStatus == "failed" {
+			if ruleInfo.TranscriptionError != "" {
+				transcription["error"] = ruleInfo.TranscriptionError
+			}
+			if ruleInfo.TranscriptionErrorType != "" {
+				transcription["error_type"] = ruleInfo.TranscriptionErrorType
+			}
+		}
 	} else {
-		transcription["status"] = file.ParsingStatus
+		// 无录音管线专用转写状态（如走了通用文档管线）：按实际判定，
+		// 避免盲目兜底 parsing_status（其 "normal" 会掩盖 document_parsing 失败、无转写的事实）。
+		if txt, terr := loadTranscriptTextRaw(context.Background(), eid, fileID); terr == nil && strings.TrimSpace(txt) != "" {
+			// 已有转写内容（Summary(-1) 或 FileBody）→ completed
+			// （即使最近一次 document_parsing 失败、旧转写残留，也以"有数据可导出"为准）
+			transcription["status"] = "completed"
+		} else if ruleInfo.StepKey == "document_parsing" && ruleInfo.Status == "failed" {
+			// 无转写内容且文档解析（对录音即转写）步骤失败 → failed
+			transcription["status"] = "failed"
+			transcription["error"] = "文档解析（转写）失败"
+		} else {
+			// 无转写内容且无录音管线专用转写状态：按 document_parsing job 状态区分，
+			// 避免 "pending" 混淆"正在处理"与"从未开始/不会自动处理"。
+			switch parsingJobStatus {
+			case model.RagJobStatusPending, model.RagJobStatusProcessing:
+				// 有转写 job 排队/执行中 → 处理中（会有任务自动完成）
+				transcription["status"] = "processing"
+			case model.RagJobStatusSuccess:
+				// job 已成功但无转写内容（如静音/ASR 返回空）→ 不能误报"未触发"，
+				// 明确提示"已完成但无内容"，避免与"从未触发"混淆
+				transcription["status"] = "failed"
+				transcription["error"] = "转写已完成但未识别到转写内容"
+			case model.RagJobStatusPaused:
+				// job 被暂停（系统级）→ 非终态，保持处理中语义，避免误报"未触发/失败"
+				transcription["status"] = "processing"
+			case model.RagJobStatusFailed, model.RagJobStatusCancelled:
+				// 转写 job 失败（且 cleaning_rule_info 未标记失败）→ failed
+				transcription["status"] = "failed"
+				transcription["error"] = "文档解析（转写）失败"
+			default:
+				// 无转写 job → 没有任何任务会自动处理该文件（转写管线靠 job 驱动），
+				// pending 会永久停留误导用户等待 → 直接 failed，提示需手动触发转写
+				transcription["status"] = "failed"
+				transcription["error"] = "未触发转写任务，需手动处理"
+			}
+		}
 	}
 	transcription["updated_at"] = file.UpdatedTime
 
@@ -1156,11 +1435,27 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 	if ruleInfo.MeetingMinutesStatus != "" {
 		meetingMinutes["status"] = ruleInfo.MeetingMinutesStatus
 		meetingMinutes["updated_at"] = file.UpdatedTime
+		if ruleInfo.MeetingMinutesStatus == "failed" {
+			if ruleInfo.MeetingMinutesError != "" {
+				meetingMinutes["error"] = ruleInfo.MeetingMinutesError
+			}
+			if ruleInfo.MeetingMinutesErrorType != "" {
+				meetingMinutes["error_type"] = ruleInfo.MeetingMinutesErrorType
+			}
+		}
 	}
 	if ruleInfo.InsightsStatus != "" {
 		insights := result["insights"].(map[string]interface{})
 		insights["status"] = ruleInfo.InsightsStatus
 		insights["updated_at"] = file.UpdatedTime
+		if ruleInfo.InsightsStatus == "failed" {
+			if ruleInfo.InsightsError != "" {
+				insights["error"] = ruleInfo.InsightsError
+			}
+			if ruleInfo.InsightsErrorType != "" {
+				insights["error_type"] = ruleInfo.InsightsErrorType
+			}
+		}
 	}
 	if ruleInfo.InsightPageStatus != "" {
 		insightPage := result["insight_page"].(map[string]interface{})
@@ -1274,8 +1569,8 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 func CountMyQueuedFiles(eid, userID int64) int64 {
 	var count int64
 	model.DB.Model(&model.RagJob{}).
-		Joins("JOIN files f ON f.id = rag_job.related_id").
-		Where("f.eid = ? AND f.user_id = ? AND f.origin_type IN ? AND rag_job.status = ?",
+		Joins("JOIN files f ON f.id = rag_jobs.related_id").
+		Where("f.eid = ? AND f.user_id = ? AND f.origin_type IN ? AND rag_jobs.status = ?",
 			eid, userID, model.RecordingOriginTypes(), model.RagJobStatusPending).
 		Count(&count)
 	return count
@@ -1311,9 +1606,13 @@ func ensureUniqueRecordingFilePath(eid, libraryID int64, targetPath string, excl
 		return targetPath, nil
 	}
 
+	// 分离基名与扩展名：冲突序号（1）（2）... 应插入扩展名前（如 标题（1）.mp3.md），
+	// 而不是追加到扩展名后（标题.mp3（1）.md）。
 	name := strings.TrimSuffix(path.Base(targetPath), ".md")
+	ext := path.Ext(name)
+	base := strings.TrimSuffix(name, ext)
 	for i := 1; i <= 1000; i++ {
-		candidate := fmt.Sprintf("/%s（%d）.md", name, i)
+		candidate := fmt.Sprintf("/%s（%d）%s.md", base, i, ext)
 		existingCandidate, candidateErr := model.GetFileByPathAndLibraryNotDeleted(eid, libraryID, candidate)
 		if candidateErr != nil && !errors.Is(candidateErr, gorm.ErrRecordNotFound) {
 			return "", candidateErr

@@ -25,6 +25,7 @@ import (
 	"github.com/53AI/53AIHub/common/session"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/controller/relay/agentcore"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
@@ -91,7 +92,7 @@ const maxRecoverableWriteFileContentChars = 200 * 1024
 const maxToolRawArgsEchoChars = 3000
 const sandboxSignedDownloadTTL = 168 * time.Hour
 const compactLLMDeltaFlushChars = 96
-const compactLLMDeltaFlushWindow = 300 * time.Millisecond
+const compactLLMDeltaFlushWindow = 80 * time.Millisecond
 const compactToolLogDeltaFlushChars = 120
 const compactToolLogDeltaFlushWindow = 80 * time.Millisecond
 const compactToolResultMaxChars = 1200
@@ -242,6 +243,8 @@ type LLMDeltaCollector struct {
 	contentDeltas            []string
 	pendingDeltas            map[string]*strings.Builder
 	pendingLastFlush         map[string]time.Time
+	pendingFlushTimer        *time.Timer
+	processHistoryBlocks     []llmDeltaProcessHistoryBlock
 	contentSanitizer         *streamControlSanitizer
 	requestId                string
 	ctx                      context.Context
@@ -250,6 +253,7 @@ type LLMDeltaCollector struct {
 	decisionResolved         bool
 	decisionValue            string
 	shouldEmitLLMDelta       bool
+	llmDeltaContentQueued    int
 	passthroughMode          bool
 	seenFirstContent         bool
 	upstreamSeq              int64
@@ -261,6 +265,12 @@ type LLMDeltaCollector struct {
 	passthroughContent          strings.Builder
 	passthroughReasoningContent strings.Builder
 	passthroughContentDeltas    []string
+}
+
+type llmDeltaProcessHistoryBlock struct {
+	Content   string
+	DeltaType string
+	Timestamp int64
 }
 
 type streamToolCallDelta struct {
@@ -316,15 +326,17 @@ func (w *LLMDeltaCollector) Write(b []byte) (int, error) {
 		buffer = buffer[idx+2:]
 		w.processSSEEvent(event)
 		if w.passthroughMode {
-			buffer = strings.TrimLeft(buffer, "\n")
+			// The residual bytes may be only the beginning of the next SSE
+			// event. Transfer them to the passthrough parser without clearing
+			// the buffer it uses to retain that partial event.
+			w.sseBuffer.Reset()
 			if buffer != "" {
 				if isInternalAgentStreamTurn(w.c) {
-					_, _ = w.writeInternalPassthrough([]byte(buffer + "\n\n"))
+					_, _ = w.writeInternalPassthrough([]byte(buffer))
 				} else {
-					_, _ = w.writeExternalPassthrough([]byte(buffer + "\n\n"))
+					_, _ = w.writeExternalPassthrough([]byte(buffer))
 				}
 			}
-			w.sseBuffer.Reset()
 			return len(b), nil
 		}
 	}
@@ -387,15 +399,16 @@ func (w *LLMDeltaCollector) writeInternalPassthrough(b []byte) (int, error) {
 			w.upstreamSawDone = true
 			continue
 		}
-		if w.captureInternalPassthroughControlEvent(event) {
+		sanitizedEvent, shouldForward := w.sanitizeInternalPassthroughEvent(event)
+		if !shouldForward {
 			continue
 		}
-		if _, err := w.ResponseWriter.Write([]byte(event + "\n\n")); err != nil {
+		if _, err := w.ResponseWriter.Write([]byte(sanitizedEvent + "\n\n")); err != nil {
 			return len(b), err
 		}
 
 		// Track content in passthrough mode for later DB persistence
-		w.trackPassthroughContent(event)
+		w.trackPassthroughContent(sanitizedEvent)
 	}
 
 	w.sseBuffer.Reset()
@@ -405,17 +418,16 @@ func (w *LLMDeltaCollector) writeInternalPassthrough(b []byte) (int, error) {
 	return len(b), nil
 }
 
-// captureInternalPassthroughControlEvent is a defensive guard for an upstream
-// that emits a tool call after visible content has already entered passthrough.
-// Tool protocol frames are internal control data: never expose them to the
-// client, and keep enough state for runAgentLoop to execute the tool.
-func (w *LLMDeltaCollector) captureInternalPassthroughControlEvent(event string) bool {
+// sanitizeInternalPassthroughEvent keeps the outer stream under one terminal
+// owner. Internal provider finish frames and tool protocol are consumed here;
+// only visible deltas are forwarded to the request-level stream writer.
+func (w *LLMDeltaCollector) sanitizeInternalPassthroughEvent(event string) (string, bool) {
 	dataLine := strings.TrimSpace(event)
 	if strings.HasPrefix(dataLine, "data:") {
 		dataLine = strings.TrimSpace(dataLine[5:])
 	}
 	if dataLine == "" || dataLine == "[DONE]" {
-		return false
+		return event, true
 	}
 
 	var payload struct {
@@ -429,7 +441,7 @@ func (w *LLMDeltaCollector) captureInternalPassthroughControlEvent(event string)
 		} `json:"choices"`
 	}
 	if err := json.Unmarshal([]byte(dataLine), &payload); err != nil || len(payload.Choices) == 0 {
-		return false
+		return event, true
 	}
 
 	choice := payload.Choices[0]
@@ -447,14 +459,45 @@ func (w *LLMDeltaCollector) captureInternalPassthroughControlEvent(event string)
 		if firstLateToolCall {
 			logger.Warnf(w.ctx, "【技能运行】内部透传后收到延迟工具调用，已拦截外泄并恢复Agent执行: request_id=%s", w.requestId)
 		}
-		return true
+		return "", false
 	}
-	if choice.FinishReason != nil && *choice.FinishReason == "tool_calls" {
+	if choice.FinishReason == nil {
+		return event, true
+	}
+
+	finishReason := strings.TrimSpace(*choice.FinishReason)
+	if finishReason != "" {
 		w.upstreamSeq++
-		w.upstreamLastFinishReason = *choice.FinishReason
-		return true
+		w.upstreamLastFinishReason = finishReason
 	}
-	return false
+	if finishReason == "tool_calls" {
+		return "", false
+	}
+
+	// A provider may combine the final visible delta and finish_reason in one
+	// frame. Keep the delta, but remove finish_reason so runAgentLoop emits the
+	// single canonical stop after process/output persistence is complete.
+	if choice.Delta.Content == "" && choice.Delta.ReasoningContent == "" {
+		return "", false
+	}
+	var generic map[string]interface{}
+	if err := json.Unmarshal([]byte(dataLine), &generic); err != nil {
+		return "", false
+	}
+	choices, _ := generic["choices"].([]interface{})
+	if len(choices) == 0 {
+		return "", false
+	}
+	choiceMap, _ := choices[0].(map[string]interface{})
+	if choiceMap == nil {
+		return "", false
+	}
+	delete(choiceMap, "finish_reason")
+	rebuilt, err := json.Marshal(generic)
+	if err != nil {
+		return "", false
+	}
+	return "data: " + string(rebuilt), true
 }
 
 // trackPassthroughContent parses an SSE data line during passthrough and buffers the content
@@ -536,6 +579,7 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 	if dataContent == "" || dataContent == "[DONE]" {
 		if dataContent == "[DONE]" {
 			w.upstreamSawDone = true
+			w.flushVisibleControlState()
 		}
 		w.flushPendingDeltas(true)
 		return
@@ -577,6 +621,12 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 		finishReason := fmt.Sprintf("%v", streamResp.Choices[0].FinishReason)
 		if finishReason != "" && finishReason != "<nil>" {
 			w.upstreamLastFinishReason = finishReason
+			if finishReason == "tool_calls" {
+				// Some providers send the finish marker separately from the
+				// tool_calls delta. Treat it as a control turn immediately.
+				w.hasToolCall = true
+				w.enableLLMDeltaIfNeeded("tool_calls_finish_reason")
+			}
 		}
 	}
 	delta := streamResp.Choices[0].Delta
@@ -597,7 +647,7 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 				w.visibleContent.WriteString(visible)
 				w.contentDeltas = append(w.contentDeltas, visible)
 				if w.shouldEmitLLMDelta {
-					w.queueLLMDelta(visible, "content")
+					w.queueVisibleContentLLMDelta()
 				}
 			}
 		}
@@ -611,12 +661,14 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 		return
 	}
 
-	// 关键透传检测：第一个 content chunk 且没有 tool_calls -> 可能是最终回答
-	// 但如果内容包含 <decision> 标签，可能是控制轮次，需要缓冲解析决策
+	// Route by the orchestrator-declared turn phase. Planning content is visible
+	// immediately in process.step; only answering content may enter outer choices.
 	if !w.seenFirstContent && hasVisibleContent && !w.hasToolCall {
 		contentChunk := *delta.Content
-		// 检查是否包含决策标签前缀（可能需要等待完整标签）
-		if w.shouldDelayPassthroughForDecision(contentChunk) {
+		if w.shouldRoutePlanningToProcess() {
+			w.seenFirstContent = true
+			w.enableLLMDeltaIfNeeded("planning_phase")
+		} else if w.shouldDelayPassthroughForDecision(contentChunk) {
 			// 内容可能包含决策标签，不立即透传，继续缓冲
 			w.seenFirstContent = true
 			// 继续下面的常规内容处理
@@ -638,7 +690,7 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 			w.visibleContent.WriteString(visible)
 			w.contentDeltas = append(w.contentDeltas, visible)
 			if w.shouldEmitLLMDelta {
-				w.queueLLMDelta(visible, "content")
+				w.queueVisibleContentLLMDelta()
 			}
 		}
 	}
@@ -651,7 +703,7 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 
 	if w.decisionResolved && w.decisionValue != DecisionDone {
 		w.enableLLMDeltaIfNeeded("decision")
-	} else if w.decisionResolved && w.decisionValue == DecisionDone && !w.hasToolCall {
+	} else if w.decisionResolved && w.decisionValue == DecisionDone && !w.hasToolCall && !w.shouldRoutePlanningToProcess() {
 		w.switchBufferedContentToPassthroughLocked("decision_done")
 	}
 }
@@ -688,6 +740,9 @@ func (w *LLMDeltaCollector) switchBufferedContentToPassthroughLocked(trigger str
 		return
 	}
 	visible := w.visibleContent.String()
+	if visible == "" {
+		return
+	}
 	payload := map[string]interface{}{
 		"choices": []map[string]interface{}{
 			{"delta": map[string]interface{}{"content": visible}},
@@ -704,6 +759,7 @@ func (w *LLMDeltaCollector) switchBufferedContentToPassthroughLocked(trigger str
 
 // emitLLMDelta sends a llm_delta process step to the client
 func (w *LLMDeltaCollector) emitLLMDelta(content string, deltaType string) {
+	w.captureProcessHistoryDelta(content, deltaType)
 	step := ProcessStep{
 		StepCode:  "llm_delta",
 		Name:      "LLM 输出",
@@ -723,6 +779,60 @@ func (w *LLMDeltaCollector) emitLLMDelta(content string, deltaType string) {
 	if err != nil {
 		logger.Warnf(w.ctx, "Failed to send llm_delta step: %v", err)
 	}
+}
+
+func (w *LLMDeltaCollector) captureProcessHistoryDelta(content string, deltaType string) {
+	if content == "" {
+		return
+	}
+	if deltaType == "" {
+		deltaType = "reasoning"
+	}
+	lastIndex := len(w.processHistoryBlocks) - 1
+	if lastIndex >= 0 && w.processHistoryBlocks[lastIndex].DeltaType == deltaType {
+		w.processHistoryBlocks[lastIndex].Content += content
+		return
+	}
+	w.processHistoryBlocks = append(w.processHistoryBlocks, llmDeltaProcessHistoryBlock{
+		Content:   content,
+		DeltaType: deltaType,
+		Timestamp: time.Now().Unix(),
+	})
+}
+
+// TakeProcessHistorySteps returns compact completed snapshots for exactly the
+// llm_delta blocks that were already exposed to the live process stream. The
+// live stream remains chunk based, while message history stores one row per
+// contiguous reasoning/content block instead of one row per token.
+func (w *LLMDeltaCollector) TakeProcessHistorySteps() []ProcessStep {
+	if w == nil {
+		return nil
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if len(w.processHistoryBlocks) == 0 {
+		return nil
+	}
+
+	blocks := w.processHistoryBlocks
+	w.processHistoryBlocks = nil
+	steps := make([]ProcessStep, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Content == "" {
+			continue
+		}
+		steps = append(steps, ProcessStep{
+			StepCode: "llm_delta",
+			Name:     "LLM 输出",
+			Status:   STEP_STATUS_COMPLETED,
+			Data: map[string]interface{}{
+				"content": block.Content,
+				"type":    block.DeltaType,
+			},
+			Timestamp: block.Timestamp,
+		})
+	}
+	return steps
 }
 
 func (w *LLMDeltaCollector) queueLLMDelta(content string, deltaType string) {
@@ -749,6 +859,33 @@ func (w *LLMDeltaCollector) queueLLMDelta(content string, deltaType string) {
 	}
 	if shouldFlush {
 		w.flushPendingDeltaType(deltaType)
+		return
+	}
+	w.schedulePendingDeltaFlushLocked()
+}
+
+func (w *LLMDeltaCollector) schedulePendingDeltaFlushLocked() {
+	if w.pendingFlushTimer != nil {
+		return
+	}
+	w.pendingFlushTimer = time.AfterFunc(compactLLMDeltaFlushWindow, w.flushPendingDeltasOnTimer)
+}
+
+func (w *LLMDeltaCollector) stopPendingDeltaFlushTimerLocked() {
+	if w.pendingFlushTimer == nil {
+		return
+	}
+	w.pendingFlushTimer.Stop()
+	w.pendingFlushTimer = nil
+}
+
+func (w *LLMDeltaCollector) flushPendingDeltasOnTimer() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.pendingFlushTimer = nil
+	w.flushPendingDeltas(true)
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
 	}
 }
 
@@ -764,6 +901,9 @@ func (w *LLMDeltaCollector) flushPendingDeltaType(deltaType string) {
 }
 
 func (w *LLMDeltaCollector) flushPendingDeltas(force bool) {
+	if force {
+		w.stopPendingDeltaFlushTimerLocked()
+	}
 	for deltaType, builder := range w.pendingDeltas {
 		if builder == nil || builder.Len() == 0 {
 			continue
@@ -798,8 +938,8 @@ func (w *LLMDeltaCollector) enableLLMDeltaIfNeeded(trigger string) {
 		w.pendingLastFlush["content"] = time.Time{}
 		w.pendingLastFlush["reasoning"] = time.Time{}
 	}
-	if !wasEnabled && w.visibleContent.Len() > 0 {
-		w.queueLLMDelta(w.visibleContent.String(), "content")
+	if w.visibleContent.Len() > 0 {
+		w.queueVisibleContentLLMDelta()
 	}
 	if !wasEnabled && w.reasoningContent.Len() > 0 {
 		w.queueLLMDelta(w.reasoningContent.String(), "reasoning")
@@ -807,6 +947,36 @@ func (w *LLMDeltaCollector) enableLLMDeltaIfNeeded(trigger string) {
 	// logger.Debugf(w.ctx,
 	// 	"【技能运行】启用 llm_delta: trigger=%s, decision=%s, has_tool_call=%v, content_len=%d, reasoning_len=%d",
 	// 	trigger, w.decisionValue, w.hasToolCall, w.visibleContent.Len(), w.reasoningContent.Len())
+}
+
+func (w *LLMDeltaCollector) queueVisibleContentLLMDelta() {
+	visible := w.visibleContent.String()
+	if visible == "" || w.llmDeltaContentQueued >= len(visible) {
+		return
+	}
+	w.queueLLMDelta(visible[w.llmDeltaContentQueued:], "content")
+	w.llmDeltaContentQueued = len(visible)
+}
+
+func (w *LLMDeltaCollector) shouldRoutePlanningToProcess() bool {
+	return isInternalAgentStreamTurn(w.c) && getAgentStreamPhase(w.c) == agentStreamPhasePlanning
+}
+
+// PromoteBufferedContentToLLMDelta covers fallback tool calls encoded in
+// ordinary content instead of delta.tool_calls.
+func (w *LLMDeltaCollector) PromoteBufferedContentToLLMDelta(trigger string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.passthroughMode {
+		return
+	}
+	w.hasToolCall = true
+	w.enableLLMDeltaIfNeeded(trigger)
+	w.flushVisibleControlState()
+	w.flushPendingDeltas(true)
 }
 
 func (w *LLMDeltaCollector) switchToPassthrough(currentDataContent string) {
@@ -922,6 +1092,26 @@ func getAgentInitialStreamPhase(c *gin.Context) string {
 	return agentStreamPhasePlanning
 }
 
+func getAgentStreamPhase(c *gin.Context) string {
+	if c == nil {
+		return agentStreamPhasePlanning
+	}
+	if value, ok := c.Get(agentStreamPhaseContextKey); ok {
+		if phase, ok := value.(string); ok && phase == agentStreamPhaseAnswering {
+			return agentStreamPhaseAnswering
+		}
+	}
+	return agentStreamPhasePlanning
+}
+
+func shouldStartAgentFinalAnswerTurn(streamPhase string, finalAnswerOnly bool) bool {
+	return streamPhase == agentStreamPhasePlanning && !finalAnswerOnly
+}
+
+func shouldReserveAgentFinalAnswerTurn(turnCount, maxTurns int, streamPhase string, finalAnswerOnly bool) bool {
+	return maxTurns > 0 && turnCount == maxTurns-1 && shouldStartAgentFinalAnswerTurn(streamPhase, finalAnswerOnly)
+}
+
 func (w *LLMDeltaCollector) drainResidualSSEBuffer() {
 	if w.sseBuffer.Len() == 0 {
 		return
@@ -946,7 +1136,7 @@ func (w *LLMDeltaCollector) flushVisibleControlState() {
 		w.visibleContent.WriteString(visible)
 		w.contentDeltas = append(w.contentDeltas, visible)
 		if w.shouldEmitLLMDelta {
-			w.queueLLMDelta(visible, "content")
+			w.queueVisibleContentLLMDelta()
 		}
 	}
 }
@@ -2621,6 +2811,7 @@ type agentRunTerminalGuard struct {
 	conversationID int64
 	messageID      func() int64
 	requestID      string
+	beforeFinalize func()
 	finalized      bool
 }
 
@@ -2634,6 +2825,12 @@ func newAgentRunTerminalGuard(ctx context.Context, agent *model.Agent, conversat
 	}
 }
 
+func (g *agentRunTerminalGuard) SetBeforeFinalize(callback func()) {
+	if g != nil {
+		g.beforeFinalize = callback
+	}
+}
+
 func (g *agentRunTerminalGuard) Finalize(status, errorCode, errorMessage string) {
 	if g == nil {
 		logger.Warnf(context.Background(), "【诊断-AgentRun】终态收尾跳过: guard=nil status=%s", status)
@@ -2644,16 +2841,14 @@ func (g *agentRunTerminalGuard) Finalize(status, errorCode, errorMessage string)
 		return
 	}
 	logger.Infof(g.ctx, "【诊断-AgentRun】进入终态收尾: request_id=%s conversation_id=%d status=%s error_code=%s", g.requestID, g.conversationID, status, errorCode)
-	g.finalized = true
 	if g.agent == nil || g.conversationID <= 0 || g.messageID == nil || strings.TrimSpace(g.requestID) == "" {
 		logger.Warnf(g.ctx, "【诊断-AgentRun】终态收尾身份校验失败: agent_nil=%v conversation_id=%d message_id_fn_nil=%v request_id_empty=%v status=%s",
 			g.agent == nil, g.conversationID, g.messageID == nil, strings.TrimSpace(g.requestID) == "", status)
 		return
 	}
 	messageID := g.messageID()
-	if messageID <= 0 {
-		logger.Warnf(g.ctx, "【诊断-AgentRun】终态收尾跳过: message_id=%d request_id=%s status=%s", messageID, g.requestID, status)
-		return
+	if g.beforeFinalize != nil {
+		g.beforeFinalize()
 	}
 
 	finalizeCtx := g.ctx
@@ -2662,8 +2857,12 @@ func (g *agentRunTerminalGuard) Finalize(status, errorCode, errorMessage string)
 	} else {
 		finalizeCtx = context.WithoutCancel(finalizeCtx)
 	}
+	if err := finalizeAgentRunForMessage(finalizeCtx, g.agent, g.conversationID, messageID, g.requestID, status, errorCode, errorMessage); err != nil {
+		logger.Warnf(finalizeCtx, "agent run terminal guard finalize failed: request_id=%s status=%s err=%v", g.requestID, status, err)
+		return
+	}
+	g.finalized = true
 	logger.Infof(finalizeCtx, "【诊断-AgentRun】调用终态持久化: request_id=%s message_id=%d status=%s", g.requestID, messageID, status)
-	finalizeAgentRunForMessage(finalizeCtx, g.agent, g.conversationID, messageID, g.requestID, status, errorCode, errorMessage)
 }
 
 func (g *agentRunTerminalGuard) FinalizeUnhandled() {
@@ -2884,7 +3083,6 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 		}
 	}
 	runFinalizer := newAgentRunTerminalGuard(ctx, agent, conversation.ConversationID, getCurrentMessageID, requestID)
-	defer runFinalizer.FinalizeUnhandled()
 
 	runnableSkillPaths := runnableSkillPathsFromSet(runnableSkillPathSet)
 	currentSkillName := getCurrentSkillName()
@@ -2892,6 +3090,19 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 	if messageStatus != nil && messageStatus.RouterResult != nil && messageStatus.RouterResult.Skill != nil {
 		currentSkillRoot = messageStatus.RouterResult.Skill.Path
 	}
+	var currentSkill *skill.Skill
+	if messageStatus != nil && messageStatus.RouterResult != nil {
+		currentSkill = messageStatus.RouterResult.Skill
+	}
+	featureFlags := resolveAgentToolFeatureFlags(ctx, agent, currentSkill)
+	c.Set(agentToolFeatureFlagsContextKey, featureFlags)
+	var runMetrics *agentRunMetrics
+	if featureFlags.EnhancementsEnabled {
+		runMetrics = newAgentRunMetrics(newAgentRunMetricsDimensions(agent, currentSkillName, requestModel, featureFlags))
+		c.Set(agentRunMetricsContextKey, runMetrics)
+		runFinalizer.SetBeforeFinalize(func() { runMetrics.persist(c, requestID) })
+	}
+	defer runFinalizer.FinalizeUnhandled()
 	runIDValue, _ := c.Get(session.SESSION_AGENT_RUN_ID)
 	runID, _ := runIDValue.(string)
 	channelID := int64(0)
@@ -2934,8 +3145,20 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 	defer c.Set(relayAgentLoopStatsContextKey, false)
 
 	nextStreamPhase := getAgentInitialStreamPhase(c)
+	emptyResponseCorrectionAttempted := false
+	emptyProviderCorrectionAttempted := false
+	finalAnswerOnly := nextStreamPhase == agentStreamPhaseAnswering
+	terminalCompletion := false
 agentLoop:
 	for turnCount < maxTurns {
+		// Reserve the last available model turn for a user-facing answer. A tool-
+		// enabled planning turn cannot safely stream into outer choices because a
+		// late tool call may still arrive.
+		if shouldReserveAgentFinalAnswerTurn(turnCount, maxTurns, nextStreamPhase, finalAnswerOnly) {
+			finalAnswerOnly = true
+			nextStreamPhase = agentStreamPhaseAnswering
+			logger.Infof(ctx, "【技能运行】保留最后轮次生成最终答复: request_id=%s, next_turn=%d", requestID, turnCount+1)
+		}
 		if stop := loopSafety.CheckWallClock(); stop != nil {
 			loopStop = stop
 			break
@@ -2943,6 +3166,7 @@ agentLoop:
 		select {
 		case <-ctx.Done():
 			logger.Infof(ctx, "【技能运行】检测到取消请求，退出 agent loop: request_id=%s, turn=%d", requestID, turnCount)
+			runMetrics.fail("cancelled")
 			runFinalizer.Finalize(model.AgentRunStatusCancelled, "cancelled", "User requested cancellation")
 			return
 		default:
@@ -2959,6 +3183,7 @@ agentLoop:
 			break
 		}
 		turnCount = turnRecord.Number
+		runMetrics.setTurnCount(turnCount)
 		c.Set("agent_loop_turn", turnCount)
 		c.Set("agent_loop_skill_name", getCurrentSkillName())
 		c.Set("agent_loop_request_model", requestModel)
@@ -2974,6 +3199,14 @@ agentLoop:
 		currentRequest := *chatRequest
 		currentRequest.Stream = streamIntermediate // Enable streaming for intermediate turns when outer is streaming
 		currentRequest.Model = requestModel        // Fix: Ensure request uses the actual underlying model name, not the virtual agent name
+		if nextStreamPhase == agentStreamPhaseAnswering {
+			currentRequest.Tools = nil
+			currentRequest.Messages = append([]relay_model.Message(nil), chatRequest.Messages...)
+			currentRequest.Messages = append(currentRequest.Messages, relay_model.Message{
+				Role:    "system",
+				Content: "现在进入最终答复阶段。只输出给用户的最终答案：不要调用任何工具，不要继续规划，不要复述内部思考过程，也不要输出 <decision> 控制标签。",
+			})
+		}
 
 		// Prepare request body
 		modifiedBody, err := json.Marshal(currentRequest)
@@ -3015,9 +3248,11 @@ agentLoop:
 		}
 
 		var errResp *model.OpenAIErrorResponse
-		if streamIntermediate {
-			c.Set("agent_internal_stream_turn", true)
-		}
+		// Every LLM call made by the agent loop is an internal turn, including
+		// non-streaming calls.  The response handler otherwise treats a tool-call
+		// turn as the final response and finalizes the AgentRun, which closes the
+		// request event sink before the loop can persist its tool results/metrics.
+		c.Set("agent_internal_stream_turn", true)
 		llmSpan := executionContext.BeginStage(agentexec.StageLLM, map[string]string{
 			"model": requestModel,
 			"turn":  strconv.Itoa(turnCount),
@@ -3041,8 +3276,8 @@ agentLoop:
 		} else {
 			llmSpan.End(agentexec.StatusCompleted, nil)
 		}
+		c.Set("agent_internal_stream_turn", false)
 		if streamIntermediate {
-			c.Set("agent_internal_stream_turn", false)
 			c.Set(agentLLMDeltaCollectorContextKey, nil)
 		}
 
@@ -3062,6 +3297,7 @@ agentLoop:
 				}
 				if cancelled {
 					logger.Infof(ctx, "【技能运行】LLM请求期间检测到取消，结束 agent run: request_id=%s, turn=%d", requestID, turnCount)
+					runMetrics.fail("cancelled")
 					runFinalizer.Finalize(model.AgentRunStatusCancelled, "cancelled", "User requested cancellation")
 					return
 				}
@@ -3074,6 +3310,7 @@ agentLoop:
 			} else {
 				c.JSON(500, errResp)
 			}
+			runMetrics.fail("provider_error")
 			runFinalizer.Finalize(model.AgentRunStatusFailed, "llm_request_failed", "LLM request failed")
 			return
 		}
@@ -3087,6 +3324,12 @@ agentLoop:
 			// Get buffered content from delta collector
 			var streamedToolCalls []relay_model.Tool
 			contentStr, reasoningStr, streamedToolCalls = deltaCollector.GetContent()
+			// Keep one compact durable snapshot for every contiguous llm_delta
+			// block that was shown live. AgentRun remains the realtime event log;
+			// MessageProcessStep is the history projection used after reopen.
+			for _, step := range deltaCollector.TakeProcessHistorySteps() {
+				recordProcessStepForHistory(ctx, config.GetEID(c), messageStatus, messageStatus.RequestId, step)
+			}
 			// Build a synthetic JSON response for parsing
 			finishReason := deltaCollector.GetUpstreamFinishReason()
 			if finishReason == "" && deltaCollector.IsUpstreamComplete() {
@@ -3250,6 +3493,12 @@ agentLoop:
 
 		if len(openaiResp.Choices) == 0 {
 			logger.Warnf(ctx, "LLM response has no choices: response_bytes=%d", len(responseBody))
+			if featureFlags.StructuredProviderRetry && !emptyProviderCorrectionAttempted && (deltaCollector == nil || !deltaCollector.HasUpstreamEvents()) {
+				emptyProviderCorrectionAttempted = true
+				chatRequest.Messages = append(chatRequest.Messages, relay_model.Message{Role: "system", Content: "上一轮未返回有效 choices。请继续当前任务：需要工具时返回合法 tool_call，已完成时返回非空最终回答。"})
+				logger.Warnf(ctx, "【技能运行】Provider 返回空 choices，执行一次协议纠正: turn=%d", turnCount)
+				continue
+			}
 			if chatRequest.Stream && len(sseSteps) > 0 {
 				if responseRecorder != nil {
 					replayBufferedHeaders(c, responseRecorder)
@@ -3269,9 +3518,42 @@ agentLoop:
 		}
 
 		choice := openaiResp.Choices[0]
+		streamComplete := !streamIntermediate || (deltaCollector != nil && deltaCollector.IsUpstreamComplete())
+		assistantResponse := normalizeAssistantResponse(choice.Message, reasoningStr, choice.FinishReason, streamComplete)
+		if streamIntermediate && deltaCollector != nil && shouldBlockIncompleteAssistantResponse(assistantResponse) {
+			logger.Warnf(ctx, "【技能运行】上游流未完成，拒绝解释或执行部分响应: request_id=%s, turn=%d, tool_calls=%d, content_chars=%d",
+				requestID, turnCount, len(assistantResponse.ToolCalls), len(assistantResponse.Content))
+			runMetrics.fail("provider_stream_incomplete")
+			runFinalizer.Finalize(model.AgentRunStatusFailed, "provider_stream_incomplete", "upstream stream ended before finish_reason or DONE")
+			return
+		}
+		if duplicateID := duplicateAssistantToolCallID(assistantResponse.ToolCalls); duplicateID != "" {
+			logger.Warnf(ctx, "【技能运行】Provider 返回重复 tool_call_id，拒绝执行: request_id=%s, turn=%d, tool_call_id=%s",
+				requestID, turnCount, duplicateID)
+			errResponse := model.OpenAIErrorResponse{Error: model.OpenAIError{
+				Message: "Provider returned duplicate tool call IDs",
+				Type:    "invalid_provider_response",
+			}}
+			if chatRequest.Stream {
+				writeStreamOpenAIError(c, http.StatusBadGateway, errResponse)
+			} else {
+				c.JSON(http.StatusBadGateway, errResponse)
+			}
+			runMetrics.fail("duplicate_tool_call_id")
+			runFinalizer.Finalize(model.AgentRunStatusFailed, "duplicate_tool_call_id", "provider returned duplicate tool call IDs")
+			return
+		}
 		// Convert relay_model.Message to local Message (or generic struct) to check tools
 		// choice.Message is relay_model.Message which should have ToolCalls
 		message := choice.Message
+		if finalAnswerOnly && len(message.ToolCalls) > 0 {
+			logger.Warnf(ctx, "【技能运行】完成模式拒绝额外工具调用: request_id=%s, turn=%d, tool_calls=%d", requestID, turnCount, len(message.ToolCalls))
+			message.ToolCalls = nil
+			choice.Message.ToolCalls = nil
+			appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
+			chatRequest.Messages = append(chatRequest.Messages, relay_model.Message{Role: "system", Content: "最终答复阶段不允许调用工具。请直接返回非空最终答复。"})
+			continue
+		}
 
 		// === Decision-based branching ===
 		// Parse decision from LLM response content
@@ -3279,7 +3561,9 @@ agentLoop:
 		if contentStr == "" {
 			contentStr = ""
 		}
-		if str, ok := message.Content.(string); ok {
+		if assistantResponse.Content != "" {
+			contentStr = assistantResponse.Content
+		} else if str, ok := message.Content.(string); ok {
 			contentStr = str
 		} else {
 			contentStr = fmt.Sprintf("%v", message.Content)
@@ -3293,12 +3577,23 @@ agentLoop:
 
 		controlEvent := ParseAgentControlEvent(contentStr)
 		decision := controlEvent.Decision
+		if featureFlags.CompletionPolicy && decision != nil && decision.Decision == DecisionDone && len(assistantResponse.ToolCalls) > 0 {
+			logger.Infof(ctx, "【技能运行】Completion Policy: tool calls take precedence over legacy DONE: turn=%d", turnCount)
+			decision = nil
+		}
 		logger.Debugf(ctx, "Agent control event: decision=%v legacy=%v content_length=%d", decision, controlEvent.IsLegacy, len(contentStr))
 
 		// Decision switch: handle based on parsed decision
 		if decision != nil {
 			switch decision.Decision {
 			case DecisionDone:
+				if shouldStartAgentFinalAnswerTurn(nextStreamPhase, finalAnswerOnly) {
+					appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
+					finalAnswerOnly = true
+					nextStreamPhase = agentStreamPhaseAnswering
+					logger.Infof(ctx, "【技能运行】Planning DONE 转入独立最终答复轮次: request_id=%s, turn=%d", requestID, turnCount)
+					continue
+				}
 				// LLM indicates conversation is complete - return final answer
 				finalAnswerContent := sanitizeFinalAssistantContent(contentStr)
 				currentRunMessages := chatRequest.Messages
@@ -3345,6 +3640,7 @@ agentLoop:
 						}
 						if deltaCollector != nil && !deltaCollector.IsUpstreamComplete() {
 							logger.Warnf(ctx, "【技能运行】上游流未完整结束，跳过最终回答写入: request_id=%s, message_id=%d", messageStatus.RequestId, getCurrentMessageID())
+							runMetrics.fail("provider_stream_incomplete")
 							runFinalizer.Finalize(model.AgentRunStatusFailed, "incomplete_stream", "upstream stream ended before finish_reason or DONE")
 							return
 						}
@@ -3379,24 +3675,10 @@ agentLoop:
 							flusher.Flush()
 						}
 
-						// Send message.completed SSE event（使用 passthrough 跟踪到的真实内容）
+						// Live completion carries reconciliation metadata only. The durable
+						// AgentRun event below keeps the full snapshot for replay/recovery.
 						msgID := getCurrentMessageID()
-						if msgID > 0 {
-							payload := map[string]interface{}{
-								"event_type": model.AgentRunEventMessageDone,
-								"answer":     passthroughAnswer,
-							}
-							if reasoningStr != "" {
-								payload["reasoning_content"] = reasoningStr
-							}
-							completedBytes, _ := json.Marshal(payload)
-							c.Writer.Write([]byte("data: "))
-							c.Writer.Write(completedBytes)
-							c.Writer.Write([]byte("\n\n"))
-							if flusher, ok := c.Writer.(http.Flusher); ok {
-								flusher.Flush()
-							}
-						}
+						writeLiveMessageCompleted(c, passthroughAnswer)
 
 						if !config.IsSSECompactMode() {
 							c.Writer.Write([]byte("data: [DONE]\n\n"))
@@ -3418,6 +3700,11 @@ agentLoop:
 					sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, false)
 					replaySanitizedAssistantResponse(c, responseRecorder, openaiResp, finalAnswerContent, sessionOutputFiles, responseBody)
 				}
+				completionSource := "legacy_done"
+				if finalAnswerOnly && len(toolUsageCount) > 0 {
+					completionSource = "tool_finalize"
+				}
+				runMetrics.complete(completionSource)
 				runFinalizer.Finalize(model.AgentRunStatusCompleted, "", "")
 				return
 
@@ -3656,7 +3943,10 @@ agentLoop:
 					if !isAnsweringPhase {
 						detectedToolCalls := tools.DetectToolCallsFromContent(contentStr)
 						if len(detectedToolCalls) > 0 {
-							validDetectedCalls := filterDuplicateToolCallsFromContent(ctx, getCurrentSkillName(), detectedToolCalls, sessionFileVersions)
+							validDetectedCalls := detectedToolCalls
+							if !featureFlags.ToolPipeline {
+								validDetectedCalls = filterDuplicateToolCallsFromContent(ctx, getCurrentSkillName(), detectedToolCalls, sessionFileVersions)
+							}
 
 							if len(validDetectedCalls) > 0 {
 								logger.Infof(ctx, "Detected %d tool calls from content fallback", len(validDetectedCalls))
@@ -3675,11 +3965,37 @@ agentLoop:
 
 		// Filter duplicate tool calls within this turn.
 		if len(message.ToolCalls) > 0 {
-			injectedTools := getInjectedToolNames()
-			newToolCalls := filterDuplicateToolCallsForTurn(ctx, getCurrentSkillName(), message.ToolCalls, injectedTools, sessionFileVersions)
-			message.ToolCalls = newToolCalls
-			// Update the choice message to reflect filtered calls
-			choice.Message.ToolCalls = newToolCalls
+			if !featureFlags.ToolPipeline {
+				injectedTools := getInjectedToolNames()
+				newToolCalls := filterDuplicateToolCallsForTurn(ctx, getCurrentSkillName(), message.ToolCalls, injectedTools, sessionFileVersions)
+				message.ToolCalls = newToolCalls
+				// Update the choice message to reflect filtered calls
+				choice.Message.ToolCalls = newToolCalls
+			}
+		}
+		if len(message.ToolCalls) > 0 && deltaCollector != nil {
+			// Standard tool deltas already promote themselves in the collector;
+			// this also covers fallback tool calls parsed from ordinary content.
+			deltaCollector.PromoteBufferedContentToLLMDelta("agent_tool_calls_parsed")
+		}
+
+		if featureFlags.CompletionPolicy {
+			completion := decideAgentCompletion(CompletionInput{
+				ToolCallCount: len(message.ToolCalls), Content: contentStr,
+				EmptyCorrectionAttempted: emptyResponseCorrectionAttempted,
+			})
+			switch completion.Action {
+			case CompletionGenerateFinal:
+				emptyResponseCorrectionAttempted = true
+				runMetrics.incEmptyResponseCorrection()
+				chatRequest.Messages = append(chatRequest.Messages, relay_model.Message{Role: "system", Content: "上一轮没有返回正文，也没有返回工具调用。请继续完成当前任务：需要工具时返回合法 tool_call；已完成时返回非空最终回答。"})
+				logger.Warnf(ctx, "【技能运行】Completion Policy: requesting one empty-response correction: turn=%d", turnCount)
+				continue
+			case CompletionFail:
+				loopStop = &agentLoopStop{Code: "empty_assistant_response", Message: "模型连续返回空响应，无法生成最终答复。"}
+				runMetrics.fail("empty_assistant_response")
+				break agentLoop
+			}
 		}
 
 		// 5. Check for Tool Calls
@@ -3732,8 +4048,14 @@ agentLoop:
 			var turnHasReadOnlyTool bool
 			var turnHasMutatingTool bool
 			var turnOutcome agentToolTurnOutcome
+			var completionOutcome toolCompletionOutcome
+			var pipelinePreflight agentcore.ToolPolicy
+			if featureFlags.ToolPipeline {
+				pipelinePreflight = newRelayToolPreflightPolicy(getCurrentSkillName(), getInjectedToolNames(), sessionFileVersions, runMetrics.incToolDedupHit)
+			}
 
-			for _, toolCall := range message.ToolCalls {
+			for toolCallIndex, toolCall := range message.ToolCalls {
+				runMetrics.incToolCall()
 				functionName := toolCall.Function.Name
 				argsStr := toolCall.Function.Arguments
 				toolStartTime := time.Now()
@@ -3762,6 +4084,7 @@ agentLoop:
 					loopStop = stop
 					logger.Warnf(ctx, "【技能运行】触发工具调用硬熔断: request_id=%s, turn=%d, code=%s, detail=%s",
 						requestID, turnCount, stop.Code, stop.Message)
+					appendUnexecutedToolResultMessages(&chatRequest.Messages, message.ToolCalls[toolCallIndex:], stop.Message, featureFlags.UnifiedToolResult)
 					break
 				}
 
@@ -3809,8 +4132,73 @@ agentLoop:
 					"turn": strconv.Itoa(turnCount),
 				})
 				args, err := tools.ParseToolArguments(argsStrString)
-				oversizedWriteRecovered := false
 				if err != nil {
+					runMetrics.incToolArgumentInvalid()
+				}
+				// Gray-1 rolls out argument compatibility before the Tool Pipeline.
+				// Apply it directly here so this independent flag does not route an
+				// otherwise legacy execution through the pipeline.
+				if err == nil && featureFlags.ArgumentAdapter {
+					adapterCall := &agentcore.ToolCallContext{FunctionName: functionName, ArgsParsed: args}
+					if adapterErr := adaptRelayToolArgumentsWithEditFlags(adapterCall, featureFlags.EditV2, featureFlags.EditBatch, true); adapterErr != nil {
+						err = adapterErr
+						runMetrics.incToolArgumentInvalid()
+					}
+				}
+				var schemaDecision *agentcore.BeforeToolDecision
+				if err == nil {
+					decision := relayToolSchemaValidatorPolicy().Before(ctx, &agentcore.ToolCallContext{
+						FunctionName: functionName, ArgsRaw: argsStrString, ArgsParsed: args,
+					})
+					if decision.Block || decision.Skip {
+						schemaDecision = &decision
+						runMetrics.incToolArgumentInvalid()
+					}
+				}
+				oversizedWriteRecovered := false
+				if schemaDecision != nil {
+					logger.Warnf(ctx, "【技能运行】工具参数 Schema 校验失败: turn=%d, skill=%s, tool=%s, code=%s",
+						turnCount, getCurrentSkillName(), functionName, schemaDecision.Code)
+					validationResult := &agentcore.ToolExecutionResult{
+						OK: false, Code: schemaDecision.Code, Output: schemaDecision.Content, ExitCode: -1, Meta: schemaDecision.Meta,
+					}
+					output = schemaDecision.Content
+					if featureFlags.UnifiedToolResult {
+						llmOutput = agentcore.MarshalToolResultEnvelope(validationResult, toolOutputDefaultMaxCharsForLLM)
+					} else {
+						llmOutput = buildToolExecutionFailureLLMOutput(functionName, schemaDecision.Content, nil)
+					}
+					resultExitCode = -1
+					toolStatus = model.ToolCallStatusFailed
+					toolErrorMsg = schemaDecision.Content
+				} else if err != nil && shouldUseRelayToolPipeline(featureFlags) {
+					var parsePolicies []agentcore.ToolPolicy
+					if pipelinePreflight != nil {
+						parsePolicies = append(parsePolicies, pipelinePreflight)
+					}
+					pipelineExecution := executeRelayToolPipeline(ctx, &agentcore.ToolCallContext{
+						RunID:        runID,
+						Turn:         turnCount,
+						SkillName:    getCurrentSkillName(),
+						ToolCallID:   toolCall.Id,
+						FunctionName: functionName,
+						ArgsRaw:      argsStrString,
+						ParseErr:     err,
+						UsageCount:   toolUsageCount[functionName],
+						FailureCount: toolFailureCount[functionName],
+					}, func(context.Context, map[string]interface{}) (*tools.ToolResult, error) {
+						return nil, fmt.Errorf("invalid tool arguments reached executor")
+					}, parsePolicies...)
+					output = pipelineExecution.Result.Output
+					if featureFlags.UnifiedToolResult {
+						llmOutput = agentcore.MarshalToolResultEnvelope(pipelineExecution.Result, toolOutputDefaultMaxCharsForLLM)
+					} else {
+						llmOutput = buildToolArgParseFailureLLMOutput(functionName, argsStrString, err)
+					}
+					resultExitCode = -1
+					toolStatus = model.ToolCallStatusFailed
+					toolErrorMsg = err.Error()
+				} else if err != nil {
 					logger.Warnf(ctx, "【工具执行】工具参数解析失败: turn=%d, skill=%s, tool=%s, err=%v", turnCount, getCurrentSkillName(), functionName, err)
 					output = "参数解析失败，请检查工具调用格式"
 					if isWriteLikeTool(functionName) && strings.Contains(strings.ToLower(err.Error()), "unexpected end") {
@@ -3821,6 +4209,7 @@ agentLoop:
 					toolStatus = model.ToolCallStatusFailed
 					toolErrorMsg = err.Error()
 				} else if isWriteLikeTool(functionName) && len(argsStrString) > maxWriteFileArgsChars && !shouldAutoRecoverLargeWriteLikeCall(functionName, len(argsStrString), args) {
+					runMetrics.incToolArgumentInvalid()
 					err := fmt.Errorf("tool arguments too large: %d > %d chars", len(argsStrString), maxWriteFileArgsChars)
 					logger.Warnf(ctx, "【工具执行】工具参数超限: turn=%d, skill=%s, tool=%s, args_chars=%d, max_allowed=%d",
 						turnCount, getCurrentSkillName(), functionName, len(argsStrString), maxWriteFileArgsChars)
@@ -3837,47 +4226,111 @@ agentLoop:
 					}
 
 					toolCtx := buildSkillToolContext(ctx, messageStatus, conversationSandboxID, toolSessionID, agent.Eid, agent.AgentID, config.GetUserId(c))
+					toolCtx = tools.WithAgentSuccessRateFeatureFlags(toolCtx, tools.AgentSuccessRateFeatureFlags{
+						Enabled: featureFlags.EnhancementsEnabled, ReadContinuation: featureFlags.ReadContinuation,
+						EditV2: featureFlags.EditV2, EditNormalizedMatch: featureFlags.EditNormalizedMatch,
+						EditBatch: featureFlags.EditBatch, ShellOutputV2: featureFlags.ShellOutputV2,
+					})
 					if messageStatus != nil && len(messageStatus.UploadedFiles) > 0 {
 						logger.Infof(ctx, "Injected %d uploaded files to tool context", len(messageStatus.UploadedFiles))
 					}
 
-					// 使用 ExecuteToolStream 进行流式执行（当客户端启用流式时）
-					// 否则使用非流式执行
-					var toolResult *tools.ToolResult
-					if oversizedWriteRecovered {
-						path, _ := args["path"].(string)
-						content, _ := args["content"].(string)
-						seedCtx := context.WithValue(toolCtx, tools.RuntimeSeedFilesKey, map[string]string{path: content})
-						seedResult, seedErr := tools.ExecuteToolWithResult(seedCtx, "run_shell", map[string]interface{}{"command": ":"})
-						if seedErr != nil {
-							err = seedErr
-						} else {
-							toolResult = &tools.ToolResult{
+					// Keep the legacy executor as the sole implementation of side
+					// effects. When the pipeline flag is enabled it is invoked via the
+					// adapter, preserving the raw result for the existing SSE and file
+					// persistence paths below.
+					executeParsedTool := func(executionCtx context.Context, parsedArgs map[string]interface{}) (*tools.ToolResult, error) {
+						if oversizedWriteRecovered {
+							path, _ := parsedArgs["path"].(string)
+							content, _ := parsedArgs["content"].(string)
+							seedCtx := context.WithValue(executionCtx, tools.RuntimeSeedFilesKey, map[string]string{path: content})
+							seedResult, seedErr := tools.ExecuteToolWithResult(seedCtx, "run_shell", map[string]interface{}{"command": ":"})
+							if seedErr != nil {
+								return nil, seedErr
+							}
+							return &tools.ToolResult{
 								Output:      fmt.Sprintf("Wrote %d bytes to %s", len(content), path),
 								Stderr:      seedResult.Stderr,
 								ExitCode:    seedResult.ExitCode,
 								OutputFiles: seedResult.OutputFiles,
+							}, nil
+						}
+						if chatRequest.Stream {
+							handler := func(event tools.SandboxStreamEvent) {
+								handleSandboxStreamEvent(c, messageStatus.RequestId, event, toolCall.Id, functionName)
+							}
+							return tools.ExecuteToolStream(executionCtx, functionName, parsedArgs, handler)
+						}
+						return tools.ExecuteToolWithResult(executionCtx, functionName, parsedArgs)
+					}
+
+					var toolResult *tools.ToolResult
+					var pipelineResult *agentcore.ToolExecutionResult
+					if shouldUseRelayToolPipeline(featureFlags) {
+						var pipelinePolicies []agentcore.ToolPolicy
+						if featureFlags.ArgumentAdapter {
+							pipelinePolicies = append(pipelinePolicies, relayToolArgumentAliasPolicy{
+								hasFeatureSnapshot: true, editV2Enabled: featureFlags.EditV2, editBatchEnabled: featureFlags.EditBatch,
+							})
+						}
+						// Argument aliases and safe scalar coercions must run before
+						// schema validation, matching Pi's prepareArguments -> validate
+						// order. The schema check itself is always-on for execution.
+						pipelinePolicies = append(pipelinePolicies, relayToolSchemaValidatorPolicy())
+						if featureFlags.ToolInputGuard {
+							pipelinePolicies = append(pipelinePolicies, relayToolInputGuardOnlyPolicies()...)
+						}
+						if pipelinePreflight != nil {
+							pipelinePolicies = append(pipelinePolicies, pipelinePreflight)
+						}
+						pipelineExecution := executeRelayToolPipeline(toolCtx, &agentcore.ToolCallContext{
+							RunID:        runID,
+							Turn:         turnCount,
+							SkillName:    getCurrentSkillName(),
+							ToolCallID:   toolCall.Id,
+							FunctionName: functionName,
+							ArgsRaw:      argsStrString,
+							ArgsParsed:   args,
+							UsageCount:   toolUsageCount[functionName],
+							FailureCount: toolFailureCount[functionName],
+						}, executeParsedTool, pipelinePolicies...)
+						toolResult = pipelineExecution.ToolResult
+						pipelineResult = pipelineExecution.Result
+						if pipelineExecution.Result != nil {
+							err = pipelineExecution.Result.Err
+							if err == nil && toolResult == nil && !pipelineExecution.Result.OK {
+								err = fmt.Errorf("%s", pipelineExecution.Result.Code)
+								output = pipelineExecution.Result.Output
 							}
 						}
-					} else if chatRequest.Stream {
-						// 创建流式处理器，将事件发送给客户端
-						handler := func(event tools.SandboxStreamEvent) {
-							handleSandboxStreamEvent(c, messageStatus.RequestId, event, toolCall.Id, functionName)
-						}
-						toolResult, err = tools.ExecuteToolStream(toolCtx, functionName, args, handler)
 					} else {
-						toolResult, err = tools.ExecuteToolWithResult(toolCtx, functionName, args)
+						toolResult, err = executeParsedTool(toolCtx, args)
 					}
 					if err != nil {
 						logger.Errorf(ctx, "【工具执行】工具执行失败: turn=%d, skill=%s, tool=%s, err=%v", turnCount, getCurrentSkillName(), functionName, err)
-						output = fmt.Sprintf("Error executing tool: %v", err)
-						llmOutput = buildToolExecutionFailureLLMOutput(functionName, output, err)
+						if featureFlags.UnifiedToolResult && pipelineResult != nil {
+							output = pipelineResult.Output
+							llmOutput = agentcore.MarshalToolResultEnvelope(pipelineResult, toolOutputDefaultMaxCharsForLLM)
+							if envelope := agentcore.BuildToolResultEnvelope(pipelineResult, toolOutputDefaultMaxCharsForLLM); envelope.Meta["truncated"] == true {
+								runMetrics.incToolResultTruncated()
+							}
+						} else {
+							output = fmt.Sprintf("Error executing tool: %v", err)
+							llmOutput = buildToolExecutionFailureLLMOutput(functionName, output, err)
+						}
 						resultExitCode = -1
 						toolStatus = model.ToolCallStatusFailed
 						toolErrorMsg = err.Error()
 					} else {
 						output = toolResult.Output
-						llmOutput = sanitizeToolOutputForLLM(functionName, toolResult.Output)
+						if featureFlags.UnifiedToolResult && pipelineResult != nil {
+							llmOutput = agentcore.MarshalToolResultEnvelope(pipelineResult, toolOutputDefaultMaxCharsForLLM)
+							if envelope := agentcore.BuildToolResultEnvelope(pipelineResult, toolOutputDefaultMaxCharsForLLM); envelope.Meta["truncated"] == true {
+								runMetrics.incToolResultTruncated()
+							}
+						} else {
+							llmOutput = sanitizeToolOutputForLLM(functionName, toolResult.Output)
+						}
 						resultExitCode = toolResult.ExitCode
 						if oversizedWriteRecovered {
 							path, _ := args["path"].(string)
@@ -3992,6 +4445,7 @@ agentLoop:
 					LLMOutput:    llmOutput,
 				}
 				turnOutcome.Observe(executionSignal)
+				completionOutcome.Observe(runtimeToolCompletionMode(getCurrentSkillName(), functionName), !isFailedToolExecutionSignal(executionSignal), output)
 				if loopStop == nil {
 					if stop := loopSafety.ObserveToolResult(!isFailedToolExecutionSignal(executionSignal)); stop != nil {
 						loopStop = stop
@@ -4041,6 +4495,7 @@ agentLoop:
 				logger.Debugf(ctx, "Appended Tool Message. Total messages: %d. ToolCallID: %s", len(chatRequest.Messages), toolCall.Id)
 				updateToolCallRecord(output)
 				if loopStop != nil {
+					appendUnexecutedToolResultMessages(&chatRequest.Messages, message.ToolCalls[toolCallIndex+1:], loopStop.Message, featureFlags.UnifiedToolResult)
 					break
 				}
 			}
@@ -4089,6 +4544,22 @@ agentLoop:
 				logger.Warnf(ctx, "Injected repeated tool loop hint: %s", repeatedToolLoopHint)
 			}
 			nextStreamPhase = turnOutcome.NextStreamPhase()
+			if featureFlags.CompletionPolicy {
+				switch completionOutcome.Mode() {
+				case ToolCompletionTerminal:
+					terminalCompletion = true
+					lastVisibleAssistantContent = strings.TrimSpace(completionOutcome.terminalResult)
+					if lastVisibleAssistantContent == "" {
+						lastVisibleAssistantContent = "操作已完成。"
+					}
+					loopStop = &agentLoopStop{}
+					logger.Infof(ctx, "【技能运行】Completion Policy: terminal tool result completes run: turn=%d", turnCount)
+				case ToolCompletionFinalize:
+					finalAnswerOnly = true
+					nextStreamPhase = agentStreamPhaseAnswering
+					logger.Infof(ctx, "【技能运行】Completion Policy: tool success requires final answer: turn=%d", turnCount)
+				}
+			}
 			if len(sessionOutputFiles) > 0 {
 				nextStreamPhase = agentStreamPhaseAnswering
 			} else if repeatedToolFailureHint != "" || repeatedToolLoopHint != "" {
@@ -4101,6 +4572,13 @@ agentLoop:
 			}
 		} else {
 			// No tool calls -> Final Answer (default DONE behavior)
+			if shouldStartAgentFinalAnswerTurn(nextStreamPhase, finalAnswerOnly) {
+				appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
+				finalAnswerOnly = true
+				nextStreamPhase = agentStreamPhaseAnswering
+				logger.Infof(ctx, "【技能运行】Planning 无工具输出转入独立最终答复轮次: request_id=%s, turn=%d", requestID, turnCount)
+				continue
+			}
 			finalAnswerContent := sanitizeFinalAssistantContent(contentStr)
 			currentRunMessages := chatRequest.Messages
 			if runStartMsgCount >= 0 && runStartMsgCount <= len(chatRequest.Messages) {
@@ -4145,6 +4623,7 @@ agentLoop:
 					}
 					if deltaCollector != nil && !deltaCollector.IsUpstreamComplete() {
 						logger.Warnf(ctx, "【技能运行】上游流未完整结束，跳过最终回答写入: request_id=%s, message_id=%d", messageStatus.RequestId, getCurrentMessageID())
+						runMetrics.fail("provider_stream_incomplete")
 						runFinalizer.Finalize(model.AgentRunStatusFailed, "incomplete_stream", "upstream stream ended before finish_reason or DONE")
 						return
 					}
@@ -4179,24 +4658,10 @@ agentLoop:
 						flusher.Flush()
 					}
 
-					// Send message.completed SSE event（使用 passthrough 跟踪到的真实内容）
+					// Live completion carries reconciliation metadata only. The durable
+					// AgentRun event below keeps the full snapshot for replay/recovery.
 					msgID := getCurrentMessageID()
-					if msgID > 0 {
-						payload := map[string]interface{}{
-							"event_type": model.AgentRunEventMessageDone,
-							"answer":     passthroughAnswer,
-						}
-						if reasoningStr != "" {
-							payload["reasoning_content"] = reasoningStr
-						}
-						completedBytes, _ := json.Marshal(payload)
-						c.Writer.Write([]byte("data: "))
-						c.Writer.Write(completedBytes)
-						c.Writer.Write([]byte("\n\n"))
-						if flusher, ok := c.Writer.(http.Flusher); ok {
-							flusher.Flush()
-						}
-					}
+					writeLiveMessageCompleted(c, passthroughAnswer)
 
 					if !config.IsSSECompactMode() {
 						c.Writer.Write([]byte("data: [DONE]\n\n"))
@@ -4217,6 +4682,11 @@ agentLoop:
 				sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, false)
 				replaySanitizedAssistantResponse(c, responseRecorder, openaiResp, finalAnswerContent, sessionOutputFiles, responseBody)
 			}
+			completionSource := "natural_answer"
+			if finalAnswerOnly && len(toolUsageCount) > 0 {
+				completionSource = "tool_finalize"
+			}
+			runMetrics.complete(completionSource)
 			runFinalizer.Finalize(model.AgentRunStatusCompleted, "", "")
 			return
 		}
@@ -4254,6 +4724,16 @@ agentLoop:
 			stopCode, turnCount, time.Since(loopStartedAt), stopDetail)
 	} else {
 		logger.Warnf(ctx, "Agent loop reached max turns (%d) without terminal response", maxTurns)
+		runMetrics.markMaxTurnsReached()
+	}
+	if terminalCompletion {
+		runMetrics.complete("tool_terminal")
+	} else {
+		failureReason := stopCode
+		if loopStop == nil || stopCode == "max_turns_reached" {
+			failureReason = "max_turns"
+		}
+		runMetrics.fail(failureReason)
 	}
 	fallbackContent := buildAgentHardStopContent(lastVisibleAssistantContent, stopNotice)
 	finalRequestID := requestID
@@ -4265,11 +4745,12 @@ agentLoop:
 		syncFinalAIUploadFiles(sessionOutputFiles, sessionFolderPath)
 	})
 	defer finishOutputSync()
+	hardStopRunStatus := agentRunStatusForHardStop(terminalCompletion)
 	if chatRequest.Stream {
 		sendOutputFilesStep(c, ctx, finalRequestID, sessionOutputFiles, messageStatus, true)
 
 		sendStreamResponse(c, finalRequestID, requestModel, fallbackContent, "", getCurrentMessageID(), nil)
-		runFinalizer.Finalize(model.AgentRunStatusCompleted, stopCode, stopDetail)
+		runFinalizer.Finalize(hardStopRunStatus, stopCode, stopDetail)
 		return
 	}
 
@@ -4296,11 +4777,11 @@ agentLoop:
 	body, err := json.Marshal(fallbackResp)
 	if err != nil {
 		c.JSON(200, fallbackResp)
-		runFinalizer.Finalize(model.AgentRunStatusCompleted, stopCode, stopDetail)
+		runFinalizer.Finalize(hardStopRunStatus, stopCode, stopDetail)
 		return
 	}
 	c.Data(200, "application/json; charset=utf-8", injectOutputFilesToResponse(body, sessionOutputFiles))
-	runFinalizer.Finalize(model.AgentRunStatusCompleted, stopCode, stopDetail)
+	runFinalizer.Finalize(hardStopRunStatus, stopCode, stopDetail)
 }
 
 func prepareFinalOutputSync(stream bool, syncFn func()) func() {
@@ -4392,6 +4873,11 @@ func executeLLMRequest(c *gin.Context, chatRequest *ChatRequest, ctx context.Con
 	if retryCount < 1 {
 		retryCount = 1
 	}
+	retryPolicy := defaultStructuredRetryPolicy()
+	featureFlags := agentToolFeatureFlagsFromGin(c)
+	if featureFlags.StructuredProviderRetry && retryCount > retryPolicy.MaxAttempts {
+		retryCount = retryPolicy.MaxAttempts
+	}
 
 	var bizErr *relay_model.ErrorWithStatusCode
 	for attempt := 1; attempt <= retryCount; attempt++ {
@@ -4438,6 +4924,22 @@ func executeLLMRequest(c *gin.Context, chatRequest *ChatRequest, ctx context.Con
 
 		if attempt == retryCount {
 			break
+		}
+		if metrics := agentRunMetricsFromGin(c); metrics != nil {
+			metrics.incProviderRetry()
+		}
+		if featureFlags.StructuredProviderRetry {
+			delay := retryPolicy.DelayForRetry(attempt)
+			logger.Infof(ctx, "【技能运行】Provider 结构化重试等待: attempt=%d/%d delay=%s", attempt, retryCount, delay)
+			cancelled := false
+			select {
+			case <-ctx.Done():
+				cancelled = true
+			case <-time.After(delay):
+			}
+			if cancelled {
+				break
+			}
 		}
 	}
 
@@ -4532,19 +5034,35 @@ func handleSandboxStreamEvent(c *gin.Context, requestId string, event tools.Sand
 	}
 }
 
+func writeLiveMessageCompleted(c *gin.Context, answer string) {
+	if c == nil || c.Writer == nil {
+		return
+	}
+	sum := sha256.Sum256([]byte(answer))
+	payload := map[string]interface{}{
+		"event_type":    model.AgentRunEventMessageDone,
+		"answer_bytes":  len([]byte(answer)),
+		"answer_sha256": fmt.Sprintf("%x", sum[:]),
+	}
+	completedBytes, err := json.Marshal(payload)
+	if err != nil {
+		logger.Warnf(c, "【技能运行】序列化实时完成元数据失败: %v", err)
+		return
+	}
+	_, _ = c.Writer.Write([]byte("data: "))
+	_, _ = c.Writer.Write(completedBytes)
+	_, _ = c.Writer.Write([]byte("\n\n"))
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoningContent string, messageID int64, contentDeltas []string) {
 	logger.Infof(c, "【诊断-流结束】sendStreamResponse 开始: request_id=%s message_id=%d compact=%v", requestId, messageID, config.IsSSECompactMode())
 
 	// 客户端已断开时跳过 SSE 发送，但仍要把 deltas 和最终事件持久化到 agent_run_events，
 	// 否则 subscribe 端在重连后既看不到逐段内容、也无法增量回放最终答案。
-	clientDisconnected := false
-	if c != nil && c.Request != nil {
-		select {
-		case <-c.Request.Context().Done():
-			clientDisconnected = true
-		default:
-		}
-	}
+	clientDisconnected := isRelayClientDisconnected(c)
 	if clientDisconnected {
 		if messageID <= 0 {
 			if masterMsgIDVal, exists := c.Get("agent_master_message_id"); exists {
@@ -4558,7 +5076,7 @@ func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoning
 			if segment == "" {
 				continue
 			}
-			mirrorAgentRunTimelineEventAsync(c, requestId, model.AgentRunEventMessageDelta, map[string]interface{}{
+			mirrorAgentRunTimelineEvent(c, requestId, model.AgentRunEventMessageDelta, map[string]interface{}{
 				"choices": []map[string]interface{}{
 					{
 						"delta": relay_model.Message{
@@ -4568,7 +5086,7 @@ func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoning
 				},
 			})
 		}
-		mirrorAgentRunFinalResponseAsync(c, requestId, messageID, content, reasoningContent)
+		mirrorAgentRunFinalResponse(c, requestId, messageID, content, reasoningContent)
 		return
 	}
 
@@ -4665,24 +5183,10 @@ func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoning
 		flusher.Flush()
 	}
 
-	// 5. Send SSE: message.completed — 位于 DONE 之前，与 OpenClaw 路径一致
-	if messageID > 0 {
-		payload := map[string]interface{}{
-			"event_type": model.AgentRunEventMessageDone,
-			"answer":     content,
-		}
-		if reasoningContent != "" {
-			payload["reasoning_content"] = reasoningContent
-		}
-		completedBytes, _ := json.Marshal(payload)
-		c.Writer.Write([]byte("data: "))
-		c.Writer.Write(completedBytes)
-		c.Writer.Write([]byte("\n\n"))
-		if flusher, ok := c.Writer.(http.Flusher); ok {
-			flusher.Flush()
-		}
-		logger.Infof(c, "【诊断-流结束】message.completed 已写出: request_id=%s message_id=%d", requestId, messageID)
-	}
+	// 5. Send metadata-only live completion. Full answer/reasoning remain in the
+	// durable AgentRun message.completed snapshot written below.
+	writeLiveMessageCompleted(c, content)
+	logger.Infof(c, "【诊断-流结束】message.completed 已写出: request_id=%s message_id=%d", requestId, messageID)
 	markDeferredStreamDone(c)
 
 	// 6. Send DONE (in compact mode, let defer handle it to ensure process steps are sent first)

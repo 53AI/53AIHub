@@ -61,6 +61,36 @@ func CheckUploadHash(c *gin.Context) {
 // @Success      404  {object}  model.CommonResponse  "hash not found (quick-upload miss)"
 // @Router       /api/upload [post]
 func Upload(c *gin.Context) {
+	eid := config.GetEID(c)
+	user_id := config.GetUserId(c)
+	if eid == 0 || user_id == 0 {
+		c.JSON(http.StatusBadRequest, model.AuthFailed.ToResponse(nil))
+		return
+	}
+
+	// 无文件但带 hash 时执行秒传引用，供前端在已上传文件上复用记录。
+	if hashStr := strings.TrimSpace(c.Query("hash")); hashStr != "" {
+		existingUploadFile, err := model.GetUploadFileByEidHashAndSourceType(eid, hashStr, model.UploadFileSourceUserUpload)
+		if errors.Is(err, gorm.ErrRecordNotFound) || existingUploadFile == nil {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+		if err := syncUploadToMyUploads(c, eid, user_id, existingUploadFile); err != nil {
+			if errors.Is(err, service.ErrPersonalWorkspaceInitializing) {
+				c.JSON(http.StatusTooManyRequests, model.OperateTooFast.ToResponse(err))
+				return
+			}
+			c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+			return
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(existingUploadFile))
+		return
+	}
+
 	// upload file
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -77,12 +107,6 @@ func Upload(c *gin.Context) {
 		uploadTarget = "attachment"
 	}
 
-	eid := config.GetEID(c)
-	user_id := config.GetUserId(c)
-	if eid == 0 || user_id == 0 {
-		c.JSON(http.StatusBadRequest, model.AuthFailed.ToResponse(nil))
-		return
-	}
 	file, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.FileError.ToResponse(err))

@@ -15,13 +15,16 @@ import (
 )
 
 type UpdateRecordingConfigRequest struct {
-	Enabled               *bool   `json:"enabled"`
-	ParserPlatform        *string `json:"parser_platform"`
-	VoiceModelID          *int64  `json:"voice_model_id"`
-	VoiceModelName        *string `json:"voice_model_name"`
-	InferenceModelID      *int64  `json:"inference_model_id"`
-	InferenceModelName    *string `json:"inference_model_name"`
-	RecordingAgentEnabled *bool   `json:"recording_agent_enabled"`
+	Enabled                  *bool                         `json:"enabled"`
+	ParserPlatform           *string                       `json:"parser_platform"`
+	VoiceModelID             *int64                        `json:"voice_model_id"`
+	VoiceModelName           *string                       `json:"voice_model_name"`
+	InferenceModelID         *int64                        `json:"inference_model_id"`
+	InferenceModelName       *string                       `json:"inference_model_name"`
+	RecordingAgentEnabled    *bool                         `json:"recording_agent_enabled"`
+	MultiPerspectiveEnabled  *bool                         `json:"multi_perspective_enabled"`
+	MemoryExtraction         *model.MemoryExtractionConfig `json:"memory_extraction,omitempty"`
+	InsightRegenerateEnabled *bool                         `json:"insight_regenerate_enabled,omitempty"`
 }
 
 type ListRecordingsRequest struct {
@@ -97,7 +100,7 @@ func UpdateRecordingConfig(c *gin.Context) {
 		return
 	}
 
-	if req.Enabled == nil && req.ParserPlatform == nil && req.VoiceModelID == nil && req.InferenceModelID == nil && req.InferenceModelName == nil && req.RecordingAgentEnabled == nil {
+	if req.Enabled == nil && req.ParserPlatform == nil && req.VoiceModelID == nil && req.InferenceModelID == nil && req.InferenceModelName == nil && req.RecordingAgentEnabled == nil && req.MultiPerspectiveEnabled == nil && req.MemoryExtraction == nil && req.InsightRegenerateEnabled == nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("至少需要一个参数")))
 		return
 	}
@@ -108,7 +111,7 @@ func UpdateRecordingConfig(c *gin.Context) {
 	}
 
 	svc := service.NewRecordingAdminService(eid)
-	if err := svc.UpdateRecordingConfig(c, req.Enabled, req.ParserPlatform, req.VoiceModelID, req.VoiceModelName, req.InferenceModelID, req.InferenceModelName, req.RecordingAgentEnabled); err != nil {
+	if err := svc.UpdateRecordingConfig(c, req.Enabled, req.ParserPlatform, req.VoiceModelID, req.VoiceModelName, req.InferenceModelID, req.InferenceModelName, req.RecordingAgentEnabled, req.MultiPerspectiveEnabled, req.MemoryExtraction, req.InsightRegenerateEnabled); err != nil {
 		logger.SysErrorf("【录音配置】更新失败: eid=%d err=%v", eid, err)
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return

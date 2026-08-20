@@ -141,12 +141,52 @@ func resolveDocumentChunkGenerativeEnhancements(chunkConfig *rag.ChunkConfig) (g
 func extractEntities(ctx context.Context, db *gorm.DB, eid, fileID int64, content string) error {
 	logger.Infof(ctx, "【实体抽取】开始: file_id=%d", fileID)
 
-	extractor := rag.NewEntityExtractionService(db)
-	if err := extractor.ExtractAndStoreForFileContent(ctx, eid, fileID, content); err != nil {
-		return fmt.Errorf("内容实体抽取失败: %v", err)
+	// 录音文件：检查历史记忆配置，关闭时跳过实体抽取
+	var file model.File
+	var memTypes []string
+	isRecording := false
+	if err := db.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error; err == nil {
+		for _, rt := range model.RecordingOriginTypes() {
+			if file.OriginType == rt {
+				isRecording = true
+				break
+			}
+		}
+		if isRecording {
+			recCfg, cfgErr := model.ValidateOrCreateRecordingConfig(eid)
+			if cfgErr == nil && recCfg != nil {
+				memCfg := recCfg.MemoryExtraction
+				if memCfg == nil {
+					memCfg = &model.MemoryExtractionConfig{Enabled: true, Types: []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeCommitment}}
+				}
+				if !memCfg.IsEffectivelyEnabled() {
+					logger.Infof(ctx, "【实体抽取】跳过（历史记忆关闭）: file_id=%d", fileID)
+					return nil
+				}
+				memTypes = memCfg.Types
+			}
+		}
 	}
-	if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
-		return fmt.Errorf("元信息实体抽取失败: %v", err)
+
+	extractor := rag.NewEntityExtractionService(db)
+	if isRecording {
+		// 录音文件：按配置类型抽取
+		if err := extractor.ExtractAndStoreForFileContentWithTypes(ctx, eid, fileID, content, memTypes); err != nil {
+			return fmt.Errorf("内容实体抽取失败: %v", err)
+		}
+		if model.ContainsString(memTypes, model.EntityTypeDocument) {
+			if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
+				return fmt.Errorf("元信息实体抽取失败: %v", err)
+			}
+		}
+	} else {
+		// 非录音文件：按默认 9 种类型抽取
+		if err := extractor.ExtractAndStoreForFileContent(ctx, eid, fileID, content); err != nil {
+			return fmt.Errorf("内容实体抽取失败: %v", err)
+		}
+		if err := extractor.ExtractAndStoreForFileMeta(ctx, eid, fileID); err != nil {
+			return fmt.Errorf("元信息实体抽取失败: %v", err)
+		}
 	}
 
 	logger.Infof(ctx, "【实体抽取】完成: file_id=%d", fileID)

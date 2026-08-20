@@ -199,6 +199,7 @@ func (s *OpenClawService) cacheSnapshot(ctx context.Context, req OpenClawRequest
 		"snapshot_json": string(data),
 		"last_seq":      extractOpenClawLastSeq(data),
 	})
+	s.refreshOpenClawAgentShortcutFromMirror(ctx, req, false)
 }
 
 func (s *OpenClawService) fallbackConversationList(ctx context.Context, req OpenClawRequestContext, svcErr *OpenClawServiceError) (json.RawMessage, *OpenClawServiceError, bool) {

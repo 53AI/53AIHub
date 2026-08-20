@@ -30,14 +30,15 @@ import (
 var knowledgeBaseFeatureAvailable = service.IsFeatureAvailable
 
 type FileRequst struct {
-	Path         string                  `json:"path" form:"path"`
-	Type         int                     `json:"type" form:"type"`
-	LibraryID    int64                   `json:"library_id" form:"library_id"`
-	OriginType   string                  `json:"origin_type" form:"origin_type"`
-	OriginSource string                  `json:"origin_source" form:"origin_source"`
-	OriginRefID  int64                   `json:"origin_ref_id" form:"origin_ref_id"`
-	GroupID      int64                   `json:"group_id"`
-	Permissions  []*model.PermissionData `json:"permissions"`
+	Path               string                  `json:"path" form:"path"`
+	Type               int                     `json:"type" form:"type"`
+	LibraryID          int64                   `json:"library_id" form:"library_id"`
+	OriginType         string                  `json:"origin_type" form:"origin_type"`
+	OriginSource       string                  `json:"origin_source" form:"origin_source"`
+	OriginRefID        int64                   `json:"origin_ref_id" form:"origin_ref_id"`
+	GroupID            int64                   `json:"group_id"`
+	InsightPerspective string                  `json:"insight_perspective" form:"insight_perspective"`
+	Permissions        []*model.PermissionData `json:"permissions"`
 }
 
 type FileChildrenListQuery struct {
@@ -353,6 +354,10 @@ func CreateFile(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("知识库ID不能为空")))
 		return
 	}
+	if !model.IsValidInsightPerspective(req.InsightPerspective) {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("不支持的洞察视角")))
+		return
+	}
 
 	library, err := model.GetLibraryByID(eid, req.LibraryID)
 	if err != nil {
@@ -375,14 +380,15 @@ func CreateFile(c *gin.Context) {
 	}
 
 	file := model.File{
-		Eid:         eid,
-		Path:        req.Path,
-		Type:        req.Type,
-		LibraryID:   req.LibraryID,
-		UserID:      userID, // 设置文件创建人
-		OriginType:  model.FileOriginTypeManualCreate,
-		OriginRefID: 0,
-		GroupID:     req.GroupID,
+		Eid:                eid,
+		Path:               req.Path,
+		Type:               req.Type,
+		LibraryID:          req.LibraryID,
+		UserID:             userID, // 设置文件创建人
+		OriginType:         model.FileOriginTypeManualCreate,
+		OriginRefID:        0,
+		GroupID:            req.GroupID,
+		InsightPerspective: string(model.NormalizeInsightPerspective(req.InsightPerspective)),
 	}
 
 	switch strings.TrimSpace(req.OriginType) {
@@ -991,9 +997,12 @@ func RenameFile(c *gin.Context) {
 	elasticsearch.SyncFileToES(file, "update")
 
 	go func() {
-		extractor := rag.NewEntityExtractionService(model.DB)
-		if err := extractor.ExtractAndStoreForFileMeta(context.Background(), eid, file.ID); err != nil {
-			logger.SysLogf("文件重命名后更新元数据实体失败: eid=%d file_id=%d err=%v", eid, file.ID, err)
+		// 录音文件：检查历史记忆配置，关闭或未配置 Document 类型时跳过元信息实体抽取
+		if !file.IsRecordingOriginType() || model.IsRecordingMemoryExtractionTypeEnabled(eid, model.EntityTypeDocument) {
+			extractor := rag.NewEntityExtractionService(model.DB)
+			if err := extractor.ExtractAndStoreForFileMeta(context.Background(), eid, file.ID); err != nil {
+				logger.SysLogf("文件重命名后更新元数据实体失败: eid=%d file_id=%d err=%v", eid, file.ID, err)
+			}
 		}
 	}()
 

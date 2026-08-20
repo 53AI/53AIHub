@@ -38,6 +38,9 @@ func (s *ChunkerService) chunkByRulesWithContext(parsed *ParsedContent, chunkMod
 	if len(rules) == 0 {
 		return s.chunkAsWhole(parsed, chunkType)
 	}
+	if len(rules) == 1 && strings.EqualFold(strings.TrimSpace(rules[0]), "page") {
+		return s.chunkByPage(parsed.Content, chunkMode, []string{"none"}, maxLength, chunkType)
+	}
 	if chunkMode == ChunkModelIdentifierFirst {
 		// 标识符优先
 		if len(rules) == 1 {
@@ -53,8 +56,33 @@ func (s *ChunkerService) chunkByRulesWithContext(parsed *ParsedContent, chunkMod
 	}
 }
 
+func (s *ChunkerService) chunkByPage(content string, chunkMode string, rules []string, maxLength int, chunkType string) []DocumentChunk {
+	pages := splitContentByPages(content)
+	if len(pages) == 0 {
+		return []DocumentChunk{}
+	}
+
+	chunks := make([]DocumentChunk, 0, len(pages))
+	for _, page := range pages {
+		parsed := s.parseMarkdown(page.Content)
+		pageChunks := s.chunkByRulesWithContext(parsed, chunkMode, rules, maxLength, chunkType)
+		for i := range pageChunks {
+			pageChunks[i].StartPos += page.StartPosition
+			pageChunks[i].EndPos += page.StartPosition
+			pageChunks[i].PageKey = page.Key
+		}
+		chunks = append(chunks, pageChunks...)
+	}
+	return chunks
+}
+
 // ChunkByRulesForRetrieval 为检索场景提供的公开分块方法
 func (s *ChunkerService) ChunkByRulesForRetrieval(content string, chunkMode string, rules []string, maxLength int) []string {
+	return s.ChunkByRulesForRetrievalWithOverlap(content, chunkMode, rules, maxLength, 0)
+}
+
+// ChunkByRulesForRetrievalWithOverlap 为检索场景提供带字符重叠的分块方法。
+func (s *ChunkerService) ChunkByRulesForRetrievalWithOverlap(content string, chunkMode string, rules []string, maxLength int, overlapSize int) []string {
 	// 索引块允许按最大长度拆分 table；knowledge chunk 仍保持 table 完整。
 	retrievalService := *s
 	retrievalService.disableTableProtection = true
@@ -67,8 +95,28 @@ func (s *ChunkerService) ChunkByRulesForRetrieval(content string, chunkMode stri
 	for i, chunk := range documentChunks {
 		chunks[i] = chunk.Content
 	}
+	if overlapSize > 0 {
+		chunks = applyStringChunkOverlap(chunks, overlapSize)
+	}
 
 	return chunks
+}
+
+func applyStringChunkOverlap(chunks []string, overlapSize int) []string {
+	if len(chunks) <= 1 || overlapSize <= 0 {
+		return chunks
+	}
+	overlapSize = clampOverlapSize(overlapSize)
+	if overlapSize == 0 {
+		return chunks
+	}
+
+	overlapped := make([]string, len(chunks))
+	copy(overlapped, chunks)
+	for i := 1; i < len(chunks); i++ {
+		overlapped[i] = getTextSuffix(chunks[i-1], overlapSize) + chunks[i]
+	}
+	return overlapped
 }
 
 // 第二版本的分片｜分块
@@ -114,33 +162,41 @@ func (s *ChunkerService) chunkByRuleV2(parsed *ParsedContent, separators []strin
 	// 第二步：对初始分块应用普通分隔符
 	finalChunks := initialChunks
 	for _, separator := range regularSeparators {
-		// 跳过对已有标题的分块应用行分隔符，避免破坏标题结构
 		var chunksToSplit []DocumentChunk
 		var headerChunks []DocumentChunk
 
-		for _, chunk := range finalChunks {
-			if s.contentHasHeader(chunk.Content) {
-				headerChunks = append(headerChunks, chunk)
-			} else {
-				chunksToSplit = append(chunksToSplit, chunk)
+		if len(headerSeparators) > 0 {
+			// 有标题分隔符 → 保护 Step 1 已按标题切好的块不被普通分隔符破坏
+			for _, chunk := range finalChunks {
+				if s.contentHasHeader(chunk.Content, nil, 0) {
+					headerChunks = append(headerChunks, chunk)
+				} else {
+					chunksToSplit = append(chunksToSplit, chunk)
+				}
 			}
+		} else {
+			// 没有标题分隔符 → 所有块都应应用普通分隔符
+			chunksToSplit = finalChunks
 		}
 
-		// 只对无标题的分块应用分隔符
 		if len(chunksToSplit) > 0 {
 			splitChunks := s.applySeparatorToChunks(chunksToSplit, separator, maxLength, chunkType)
-			// 合并标题分块和分割后的分块，保持顺序
-			finalChunks = s.mergeChunksPreservingOrder(headerChunks, splitChunks)
+			if len(headerSeparators) > 0 {
+				// 有标题分隔符 → 合并标题块和分割块，保持原始顺序
+				finalChunks = s.mergeChunksPreservingOrder(headerChunks, splitChunks)
+			} else {
+				finalChunks = splitChunks
+			}
 		}
 	}
 
 	// 第三步：按最大长度处理分片 - 超长则强制分割，不够长则合并（有标题的不能强制合并）
-	return s.mergeAndSplitChunks(finalChunks, maxLength, chunkType)
+	return s.mergeAndSplitChunks(finalChunks, maxLength, chunkType, parsed.SpecialBlocks)
 }
 
 // mergeAndSplitChunks 合并和分割分片，确保每个分块长度合适
 // 规则：超长则强制分割，不够长则合并（有标题的分片不能强制合并）
-func (s *ChunkerService) mergeAndSplitChunks(chunks []DocumentChunk, maxLength int, chunkType string) []DocumentChunk {
+func (s *ChunkerService) mergeAndSplitChunks(chunks []DocumentChunk, maxLength int, chunkType string, blocks []SpecialBlock) []DocumentChunk {
 	if len(chunks) == 0 {
 		return chunks
 	}
@@ -163,8 +219,8 @@ func (s *ChunkerService) mergeAndSplitChunks(chunks []DocumentChunk, maxLength i
 			continue
 		}
 
-		// 检查分块是否包含标题（通过简单判断是否包含 # 符号）
-		hasHeader := s.contentHasHeader(chunk.Content)
+		// 检查分块是否包含标题，过滤 SpecialBlock 内的 #
+		hasHeader := s.contentHasHeader(chunk.Content, blocks, chunk.StartPos)
 
 		// 如果当前没有正在合并的分块
 		if currentMerge == nil {
@@ -222,13 +278,21 @@ func (s *ChunkerService) mergeAndSplitChunks(chunks []DocumentChunk, maxLength i
 }
 
 // contentHasHeader 检查内容是否包含标题
-func (s *ChunkerService) contentHasHeader(content string) bool {
+// contentHasHeader 检查内容是否包含标题，过滤掉 SpecialBlock 内的 #
+func (s *ChunkerService) contentHasHeader(content string, blocks []SpecialBlock, basePos int) bool {
 	lines := strings.Split(content, "\n")
+	runningPos := basePos
 	for _, line := range lines {
+		// 跳过 SpecialBlock 内的行（如代码块内的 # 注释）
+		if isInsideBlocks(runningPos, blocks) {
+			runningPos += len(line) + 1
+			continue
+		}
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "#") {
 			return true
 		}
+		runningPos += len(line) + 1
 	}
 	return false
 }
@@ -298,6 +362,9 @@ func (s *ChunkerService) chunkAsWhole(parsed *ParsedContent, chunkType string) [
 	}
 
 	content := allContent.String()
+	if content == "" {
+		content = strings.TrimSpace(parsed.Content)
+	}
 	if content == "" {
 		return []DocumentChunk{} // 如果没有内容，返回空分块
 	}
@@ -710,7 +777,7 @@ func (s *ChunkerService) chunkContentBySeparator(content string, separator strin
 	}
 
 	// 解析临时内容（获取标题信息）
-	tempParsed.Headers = s.extractHeaders(content)
+	tempParsed.Headers = s.extractHeaders(content, nil)
 
 	// 使用现有的 chunkByRule 方法
 	return s.chunkByRule(tempParsed, separator, maxLength, chunkType)

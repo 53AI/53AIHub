@@ -13,4 +13,3 @@ func maybeUseSaasEnv(apiRouter *gin.RouterGroup) {
 		apiRouter.Use(saas_middleware.SaasEnv())
 	}
 }
-

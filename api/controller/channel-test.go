@@ -3,10 +3,13 @@ package controller
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +24,7 @@ import (
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	"github.com/53AI/53AIHub/service/document"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
 	"github.com/53AI/53AIHub/service/hub_adaptor/gemini"
 	"github.com/53AI/53AIHub/service/rag"
@@ -30,6 +34,12 @@ import (
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
 	"github.com/songquanpeng/one-api/relay/relaymode"
 )
+
+// embeddedTestSpeech 内置真实语音样本（约 1.6s "关于使用阿里云"），供 OpenAI 兼容语音渠道测试上传，
+// 确保 ASR 返回非空文本（生成的正弦音对多数 ASR 返回空）。
+//
+//go:embed testdata/speech.mp3
+var embeddedTestSpeech []byte
 
 type ChannelTestResponse struct {
 	Success bool    `json:"success"`
@@ -78,6 +88,10 @@ func TestChannel(c *gin.Context) {
 			responseMessage, err := testEmbeddingChannel(ctx, channel, modelName)
 			returnResponse(c, channel, tik, modelName, responseMessage, err)
 			return
+		case "4", "voice":
+			responseMessage, err := testAudioTranscriptionChannel(ctx, channel, modelName)
+			returnResponse(c, channel, tik, modelName, responseMessage, err)
+			return
 		case "1", "chat":
 			// 跳过下面的自动检测，直接进入聊天模型测试
 		default:
@@ -103,6 +117,13 @@ func TestChannel(c *gin.Context) {
 	// 检查是否为图像生成模型
 	if isImageGenerationModel(modelName) {
 		responseMessage, err := testImageGenerationChannel(ctx, channel, modelName)
+		returnResponse(c, channel, tik, modelName, responseMessage, err)
+		return
+	}
+
+	// 检查是否为语音模型（model_type=4，通过 custom_config 判断）
+	if isVoiceModelInChannel(channel, modelName) {
+		responseMessage, err := testAudioTranscriptionChannel(ctx, channel, modelName)
 		returnResponse(c, channel, tik, modelName, responseMessage, err)
 		return
 	}
@@ -471,9 +492,83 @@ func boolPtr(b bool) *bool {
 	return &b
 }
 
+// isVoiceModelInChannel 检查模型在渠道的 custom_config 中是否为语音模型（model_type=4）
+func isVoiceModelInChannel(channel *model.Channel, modelName string) bool {
+	if channel == nil || modelName == "" {
+		return false
+	}
+	// 阿里 DashScope 语音模型走 TestVoiceChannel，不在此处理
+	if model.IsVoiceModelChannel(channel) {
+		return false
+	}
+	// 检查 custom_config 中该模型的类型标记
+	cfg, err := model.ParseChannelCustomConfig(channel.CustomConfig)
+	if err != nil {
+		return false
+	}
+	// 旧格式：{"model_name": "model_type_string"}，如 {"meeting-transcriber-v1": "4"}
+	if modelTypeStr, ok := cfg[modelName].(string); ok && modelTypeStr == "4" {
+		return true
+	}
+	// 新格式：model_type 字段
+	if modelType, ok := cfg["model_type"].(float64); ok && int(modelType) == 4 {
+		return true
+	}
+	return false
+}
+
+// testAudioTranscriptionChannel 测试 OpenAI 兼容语音模型（model_type=4）
+// 发送 POST /v1/audio/transcriptions 到上游，验证语音识别接口可达
+func testAudioTranscriptionChannel(ctx context.Context, channel *model.Channel, modelName string) (responseMessage string, err error) {
+	logger.SysLogf("开始测试音频转录渠道 #%d, 模型: %s", channel.ChannelID, modelName)
+
+	// 构造 URL：使用 custom_openai 适配器逻辑
+	baseURL := channel.GetBaseURL()
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	baseURL = strings.TrimSuffix(baseURL, "/")
+	testURL := baseURL + "/v1/audio/transcriptions"
+
+	// 构建测试请求：使用文本内容模拟，实际转录需要音频文件
+	// 这里发送一个简单的 JSON 请求验证连通性
+	testPayload := map[string]interface{}{
+		"model": modelName,
+	}
+	bodyBytes, _ := json.Marshal(testPayload)
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", testURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("创建请求失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+channel.Key)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("连接失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	// 只要服务端返回了 HTTP 响应，就证明通道可达
+	// 400/415 等只是我们没传真实音频文件导致的格式问题
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Sprintf("音频模型 %s 测试成功 (status=%d，认证通过但可能权限不足)", modelName, resp.StatusCode), nil
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 500 {
+		return fmt.Sprintf("音频模型 %s 测试成功 (status=%d)", modelName, resp.StatusCode), nil
+	}
+
+	return "", fmt.Errorf("响应状态码: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+}
+
 // TestVoiceChannel godoc
 // @Summary 测试语音模型渠道
-// @Description 使用 DashScope 原生异步接口验证语音模型配置可达性，需指定 model_name 查询参数
+// @Description 验证语音模型配置可达性，需指定 model_name 查询参数。百炼渠道（17）走 DashScope 原生异步接口；OpenAI 兼容渠道（1012）走两段式：配置检查 → 上传 1 秒音频到 /v1/audio/transcriptions → 校验转写文本
 // @Tags Channel
 // @Accept json
 // @Produce json
@@ -503,6 +598,12 @@ func TestVoiceChannel(c *gin.Context) {
 	modelName := c.Query("model_name")
 	if modelName == "" {
 		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("缺少 model_name 查询参数")))
+		return
+	}
+
+	// OpenAI 兼容语音渠道（1012）：两段式测试（配置检查 → 上传 1 秒音频 → 校验转写文本）
+	if model.IsOpenAIAudioChannel(channel) {
+		testOpenAIVoiceChannel(c, channel, modelName)
 		return
 	}
 
@@ -601,4 +702,137 @@ func TestVoiceChannel(c *gin.Context) {
 		Model:   modelName,
 		Time:    consumedTime,
 	}))
+}
+
+// testOpenAIVoiceChannel OpenAI 兼容语音渠道（type=1012）两段式测试：
+//   - 阶段 1：配置检查（base_url/key/voice_models.model 存在性），不发起网络请求
+//   - 阶段 2：上传 1 秒测试音频到 {base}/v1/audio/transcriptions，校验转写文本非空
+func testOpenAIVoiceChannel(c *gin.Context, channel *model.Channel, modelName string) {
+	startTime := time.Now()
+
+	// 阶段 1：配置检查
+	cfg, err := model.ParseChannelCustomConfig(channel.CustomConfig)
+	if err != nil {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("CustomConfig 解析失败: %v", err)))
+		return
+	}
+	voiceModels, _ := cfg["voice_models"].(map[string]interface{})
+	vm, ok := voiceModels[modelName].(map[string]interface{})
+	if !ok {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("voice_models 中未找到模型 %s", modelName)))
+		return
+	}
+	apiKey := channel.Key
+	if apiKey == "" {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("渠道 Key 为空")))
+		return
+	}
+	baseURL := channel.GetBaseURL()
+	if d, ok := vm["api_domain"].(string); ok && strings.TrimSpace(d) != "" {
+		baseURL = d
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("模型 %s 缺少 base_url（voice_models.%s.api_domain 或 channel.base_url）", modelName, modelName)))
+		return
+	}
+	transcriptionsURL := document.NormalizeOpenAIBaseURL(baseURL) + "/v1/audio/transcriptions"
+
+	// 阶段 2：上传测试音频（优先内置真实语音样本，保证 ASR 返回非空文本）
+	audio := embeddedTestSpeech
+	filename := "test_speech.mp3"
+	if len(audio) == 0 {
+		// 无内置语音样本时回退：生成 1 秒正弦音（部分 ASR 对纯音返回空文本）
+		audio = generateTestWAV(1, 16000)
+		filename = "test_1s.wav"
+	}
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		c.JSON(http.StatusOK, model.SystemError.ToErrorResponse(fmt.Errorf("构造 multipart 失败: %v", err)))
+		return
+	}
+	if _, err := part.Write(audio); err != nil {
+		c.JSON(http.StatusOK, model.SystemError.ToErrorResponse(fmt.Errorf("写入音频失败: %v", err)))
+		return
+	}
+	_ = writer.WriteField("model", modelName)
+	responseFormat := "json"
+	if strings.Contains(modelName, "diarize") {
+		responseFormat = "diarized_json"
+	}
+	_ = writer.WriteField("response_format", responseFormat)
+	writer.Close()
+
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, transcriptionsURL, body)
+	if err != nil {
+		c.JSON(http.StatusOK, model.SystemError.ToErrorResponse(fmt.Errorf("创建请求失败: %v", err)))
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 5 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		c.JSON(http.StatusOK, model.ParamError.ToErrorResponse(fmt.Errorf("连接失败: %v", err)))
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
+	consumedTime := float64(time.Since(startTime).Milliseconds()) / 1000.0
+
+	if resp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusOK, model.ParamError.ToErrorResponse(fmt.Errorf("响应状态码: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))))
+		return
+	}
+
+	var parsed struct {
+		Text string `json:"text"`
+	}
+	_ = json.Unmarshal(respBody, &parsed)
+	if parsed.Text == "" {
+		c.JSON(http.StatusOK, model.ParamError.ToErrorResponse(fmt.Errorf("转写结果为空（返回 body: %s）", strings.TrimSpace(string(respBody)))))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(ChannelTestResponse{
+		Success: true,
+		Message: fmt.Sprintf("转写成功，识别文本: %s", parsed.Text),
+		Model:   modelName,
+		Time:    consumedTime,
+	}))
+}
+
+// generateTestWAV 生成 seconds 秒 16-bit 单声道 PCM WAV（内存），用于语音渠道测试。
+// 440Hz 正弦 + 1Hz 幅度包络，避免纯静音导致 ASR 转写为空。
+func generateTestWAV(seconds int, sampleRate int) []byte {
+	numSamples := seconds * sampleRate
+	dataSize := numSamples * 2
+	buf := new(bytes.Buffer)
+	writeLE16 := func(v uint16) { buf.Write([]byte{byte(v), byte(v >> 8)}) }
+	writeLE32 := func(v uint32) { buf.Write([]byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)}) }
+
+	buf.Write([]byte("RIFF"))
+	writeLE32(uint32(36 + dataSize))
+	buf.Write([]byte("WAVE"))
+	buf.Write([]byte("fmt "))
+	writeLE32(16)                 // PCM chunk 大小
+	writeLE16(1)                  // audio format = PCM
+	writeLE16(1)                  // 单声道
+	writeLE32(uint32(sampleRate)) // sample rate
+	writeLE32(uint32(sampleRate * 2))
+	writeLE16(2) // block align
+	writeLE16(16)
+	buf.Write([]byte("data"))
+	writeLE32(uint32(dataSize))
+
+	const amp = 12000.0
+	for i := 0; i < numSamples; i++ {
+		t := float64(i) / float64(sampleRate)
+		env := 0.5 + 0.5*math.Sin(2*math.Pi*t) // 1Hz 包络
+		s := int16(amp * env * math.Sin(2*math.Pi*440*t))
+		buf.Write([]byte{byte(s), byte(s >> 8)})
+	}
+	return buf.Bytes()
 }

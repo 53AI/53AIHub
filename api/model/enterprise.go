@@ -25,13 +25,38 @@ type Enterprise struct {
 	Slogan              string               `json:"slogan" gorm:"not null" binding:"required" example:"Slogan Test"`
 	Status              int                  `json:"status" gorm:"type:int;default:1;not null" example:"1"`
 	Description         string               `json:"description" gorm:"not null" example:"Description Test"`
-	TemplateType        string               `json:"template_type" gorm:"type:text;not null" example:"default"`
+	FullName            string               `json:"full_name" gorm:"size:50;default:'';not null;comment:'企业全称'"`
+	Industry            string               `json:"industry" gorm:"size:50;default:'';not null;comment:'行业（国标分类，存行业名）'"`
 	LayoutType          string               `json:"layout_type" gorm:"type:varchar(10);default:1;not null" example:"1"`
+	TemplateType        string               `json:"template_type" gorm:"type:text;not null" example:"default"`
 	WecomCorpID         string               `json:"wecom_corp_id" gorm:"type:varchar(100);default:'';not null" example:""`
 	DingtalkCorpID      string               `json:"dingtalk_corp_id" gorm:"type:varchar(100);default:'';not null" example:""`
 	WecomInstallInfo    *WecomInstallInfo    `json:"wecom_install_info" gorm:"-"`
 	DingtalkInstallInfo *DingtalkInstallInfo `json:"dingtalk_auth_corp_info" gorm:"-"`
 	BaseModel
+}
+
+var IndustryCategories = []string{
+	"农、林、牧、渔业",
+	"采矿业",
+	"制造业",
+	"电力、热力、燃气及水生产和供应业",
+	"建筑业",
+	"批发和零售业",
+	"交通运输、仓储和邮政业",
+	"住宿和餐饮业",
+	"信息传输、软件和信息技术服务业",
+	"金融业",
+	"房地产业",
+	"租赁和商务服务业",
+	"科学研究和技术服务业",
+	"水利、环境和公共设施管理业",
+	"居民服务、修理和其他服务业",
+	"教育",
+	"卫生和社会工作",
+	"文化、体育和娱乐业",
+	"公共管理、社会保障和社会组织",
+	"国际组织",
 }
 
 type WecomInstallInfo struct {
@@ -134,6 +159,8 @@ func (enterprise *Enterprise) PartialUpdateEnterprise(updateData map[string]inte
 		"description":   true,
 		"template_type": true,
 		"layout_type":   true,
+		"full_name":     true,
+		"industry":      true,
 	}
 
 	// 过滤非法字段

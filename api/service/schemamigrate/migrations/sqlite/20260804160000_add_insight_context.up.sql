@@ -1,0 +1,2 @@
+ALTER TABLE files ADD COLUMN insight_context TEXT NOT NULL DEFAULT '';
+ALTER TABLE files ADD COLUMN insight_generation INTEGER NOT NULL DEFAULT 0;

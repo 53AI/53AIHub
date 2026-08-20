@@ -37,6 +37,11 @@ func (s *ChunkerService) DeleteVectorFromDB(eid int64, libraryID int64, vectorID
 	return lastErr
 }
 
+// CleanupVectorsAsync 异步清理向量数据（导出包装，供外部包调用）
+func CleanupVectorsAsync(eid int64, libraryID int64, vectorIDs []string) {
+	NewChunkerService(model.DB).cleanupVectorsAsync(eid, libraryID, vectorIDs)
+}
+
 // cleanupVectorsAsync 异步清理向量数据
 func (s *ChunkerService) cleanupVectorsAsync(eid int64, libraryID int64, vectorIDs []string) {
 	if len(vectorIDs) == 0 {

@@ -25,6 +25,8 @@ import (
 type UserMemoryUpdateRequest struct {
 	SmartMemory  string `json:"smart_memory" example:"我是一名位于纽约市的分析师，主要从事 React 和 SQL"`
 	CustomMemory string `json:"custom_memory" example:"简洁直接。除非另行说明，默认使用 Python"`
+	Position     string `json:"position" example:"产品经理"`
+	Style        string `json:"style" example:"结论先行、细节支撑"`
 }
 
 // UserMemoryMergeRequest 增量合并记忆请求
@@ -99,6 +101,10 @@ func UpdateMyMemory(c *gin.Context) {
 	if model.ContainsSensitiveInfo(req.SmartMemory) || model.ContainsSensitiveInfo(req.CustomMemory) {
 		warning = "记忆内容包含敏感信息（API Key/密码/身份证/银行卡号等），已自动脱敏处理"
 	}
+
+	// Set Position and Style
+	memory.Position = req.Position
+	memory.Style = req.Style
 
 	smartItems, err := parseMemoryInputItems(req.SmartMemory, "user_input")
 	if err != nil {

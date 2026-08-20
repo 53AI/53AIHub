@@ -10,13 +10,15 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
+	appconfig "github.com/53AI/53AIHub/config"
+	env_util "github.com/53AI/53AIHub/common/utils/env"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
-	env_util "github.com/53AI/53AIHub/common/utils/env"
 	"gorm.io/gorm"
 )
 
-// GenerateInsightsFn 由 service 包注册，实体抽取完成后同步触发洞察生成。
+// GenerateInsightsFn 由 service 包注册，在切分完成后异步触发洞察生成。
+// 洞察生成会自行幂等编译会议记忆，因此不依赖并行的通用实体抽取完成。
 // 使用函数变量避免 package 循环依赖。
 var GenerateInsightsFn func(ctx context.Context, eid, fileID, userID int64)
 
@@ -115,6 +117,7 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		if v2Config != nil && hasChunkingOverrides(v2Config) {
 			overrideCfg := convertToRagChunkConfig(v2Config)
 			mergeChunkingConfig(chunkConfig, overrideCfg)
+			applyV2OverlapOverrides(chunkConfig, v2Config)
 		}
 		chunkConfig.Eid = eid
 		chunkConfig.LibraryID = &file.LibraryID
@@ -162,6 +165,7 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 					selectedCfg := convertToRagChunkConfig(result.SelectedConfig)
 					if selectedCfg != nil {
 						mergeChunkingConfig(chunkConfig, selectedCfg)
+						applyV2OverlapOverrides(chunkConfig, result.SelectedConfig)
 						if selectedCfg.Type != "" {
 							desiredType = selectedCfg.Type
 							chunkConfig.Type = selectedCfg.Type
@@ -181,8 +185,10 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 				chunkConfig.Type = desiredType
 			}
 		}
-		logger.Info(ctx, fmt.Sprintf("DocumentChunking 配置: desired_type=%s, effective_type=%s, knowledge_max_length=%d, index_max_length=%d",
-			desiredType, chunkConfig.Type, chunkConfig.KnowledgeMaxLength, chunkConfig.IndexMaxLength))
+		logger.Info(ctx, fmt.Sprintf("DocumentChunking 配置: desired_type=%s, effective_type=%s, knowledge_max_length=%d, index_max_length=%d, knowledge_overlap=%d, index_overlap=%d, page_mode=%t",
+			desiredType, chunkConfig.Type, chunkConfig.KnowledgeMaxLength, chunkConfig.IndexMaxLength,
+			chunkConfig.KnowledgeOverlapSize, chunkConfig.IndexOverlapSize,
+			chunkConfig.KnowledgeChunk.SplitRule == "page"))
 
 		// 8. 执行分块 (DocumentChunking 逻辑)
 		var chunkResult *rag.ChunkResult
@@ -257,6 +263,12 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			logger.Warn(ctx, fmt.Sprintf("统计知识点分块数量失败: %v", err))
 			count = 0
 		}
+		var retrievalCount int64
+		if err := db.Model(&model.RetrievalChunk{}).
+			Where("eid = ? AND file_id = ? AND chunk_type = ?", eid, fileID, "retrieval").
+			Count(&retrievalCount).Error; err != nil {
+			logger.Warn(ctx, fmt.Sprintf("统计检索块数量失败: %v", err))
+		}
 
 		// 计算平均字符数
 		var totalChars int64 = 0
@@ -293,9 +305,12 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		}
 
 		stepResults := map[string]interface{}{
-			"chunk_type":   chunkConfig.Type,
-			"chunk_count":  count,
-			"average_size": avgChars,
+			"chunk_type":        chunkConfig.Type,
+			"chunk_count":       count,
+			"retrieval_count":   retrievalCount,
+			"average_size":      avgChars,
+			"knowledge_overlap": chunkConfig.KnowledgeOverlapSize,
+			"index_overlap":     chunkConfig.IndexOverlapSize,
 		}
 		if smartMatchResult != nil {
 			stepResults["smart_match"] = smartMatchResult
@@ -329,11 +344,11 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 					updateParsingStatus(model.FileParsingStatusFail)
 				}
 			}()
-		} else if isWikiPageGenerationActive(job) {
+		} else {
 			logger.Info(ctx, fmt.Sprintf("DocumentChunking 跳过旧实体抽取: file_id=%d", fileID))
 		}
 
-		// 实体抽取完成后，异步触发洞察生成
+		// 异步触发洞察生成。通用实体抽取可并行执行；洞察内会确保会议 Claim 和实体事实已就绪。
 		// 实体从纪要中抽取（而非转写原文），因纪要是处理过的价值高、格式稳定的内容。
 		// 洞察生成不阻塞管线，异步执行。
 		if GenerateInsightsFn != nil {
@@ -347,7 +362,8 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		}
 
 		// 记录结果日志
-		logger.Info(ctx, fmt.Sprintf("DocumentChunking 完成: 分块数=%d, 平均字符数=%.2f", count, avgChars))
+		logger.Info(ctx, fmt.Sprintf("DocumentChunking 完成: 知识点数=%d, 检索块数=%d, 平均字符数=%.2f, knowledge_overlap=%d, index_overlap=%d",
+			count, retrievalCount, avgChars, chunkConfig.KnowledgeOverlapSize, chunkConfig.IndexOverlapSize))
 		updateParsingStatus(model.FileParsingStatusNormal)
 
 		return nil
@@ -385,6 +401,7 @@ type V2ChunkingLayerConfig struct {
 	Strategy        string `json:"strategy"`         // identifier, length
 	IdentifierLevel string `json:"identifier_level"` // h1-h6
 	MaxLength       int    `json:"max_length"`
+	OverlapSize     *int   `json:"overlap_size,omitempty"`
 	AppendFilename  bool   `json:"append_filename"`
 	AppendTitle     bool   `json:"append_title"`
 	AppendSubtitle  bool   `json:"append_subtitle"`
@@ -430,7 +447,9 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	}
 
 	// 映射 ParentChunk -> KnowledgeChunk
-	if v2.ParentChunk.Mode == "whole" {
+	if v2.ParentChunk.Mode == "page" {
+		config.KnowledgeChunk.SplitRule = "page"
+	} else if v2.ParentChunk.Mode == "whole" {
 		config.KnowledgeChunk.SplitRule = "none"
 	} else {
 		config.KnowledgeChunk.SplitRule = v2.ParentChunk.IdentifierLevel
@@ -441,8 +460,15 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 		}
 	}
 	config.KnowledgeMaxLength = v2.ParentChunk.MaxLength
+	if v2.ParentChunk.Mode == "whole" && config.KnowledgeMaxLength <= 0 {
+		config.KnowledgeMaxLength = appconfig.WHOLE_CHUNK_MAX_TOKENS
+	}
 	// config.KnowledgeChunk.MaxLength is also used in some places, so set both
-	config.KnowledgeChunk.MaxLength = v2.ParentChunk.MaxLength
+	config.KnowledgeChunk.MaxLength = config.KnowledgeMaxLength
+	if v2.ParentChunk.OverlapSize != nil {
+		config.KnowledgeOverlapSize = clampV2OverlapSize(*v2.ParentChunk.OverlapSize)
+		config.KnowledgeChunk.OverlapSize = config.KnowledgeOverlapSize
+	}
 
 	config.KnowledgeIncludeFileName = v2.ParentChunk.AppendFilename
 	config.KnowledgeIncludeTitle = v2.ParentChunk.AppendTitle
@@ -452,7 +478,9 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	config.KnowledgeChunk.AppendSubtitle = v2.ParentChunk.AppendSubtitle
 
 	// 映射 ChildChunk -> IndexChunk
-	if v2.ChildChunk.Mode == "whole" {
+	if v2.ChildChunk.Mode == "page" {
+		config.IndexChunk.SplitRule = "page"
+	} else if v2.ChildChunk.Mode == "whole" {
 		config.IndexChunk.SplitRule = "none"
 	} else {
 		config.IndexChunk.SplitRule = v2.ChildChunk.IdentifierLevel
@@ -463,7 +491,15 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 		}
 	}
 	config.IndexMaxLength = v2.ChildChunk.MaxLength
-	config.IndexChunk.MaxLength = v2.ChildChunk.MaxLength
+	if v2.ChildChunk.Mode == "whole" && config.IndexMaxLength <= 0 {
+		// 整篇模式未显式配置长度时,使用环境变量兜底(默认 20000 token)
+		config.IndexMaxLength = appconfig.WHOLE_CHUNK_MAX_TOKENS
+	}
+	config.IndexChunk.MaxLength = config.IndexMaxLength
+	if v2.ChildChunk.OverlapSize != nil {
+		config.IndexOverlapSize = clampV2OverlapSize(*v2.ChildChunk.OverlapSize)
+		config.IndexChunk.OverlapSize = config.IndexOverlapSize
+	}
 
 	config.IndexIncludeFileName = v2.ChildChunk.AppendFilename || v2.IndexEnhancement.MetadataInjection.AppendFilename
 	config.IndexIncludeTitle = v2.ChildChunk.AppendTitle || v2.IndexEnhancement.MetadataInjection.AppendTitle
@@ -487,6 +523,30 @@ func convertToRagChunkConfig(v2 *V2DocumentChunkingConfig) *rag.ChunkConfig {
 	return config
 }
 
+func clampV2OverlapSize(value int) int {
+	if value < 0 {
+		return 0
+	}
+	if value > 500 {
+		return 500
+	}
+	return value
+}
+
+func applyV2OverlapOverrides(dst *rag.ChunkConfig, src *V2DocumentChunkingConfig) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.ParentChunk.OverlapSize != nil {
+		dst.KnowledgeOverlapSize = clampV2OverlapSize(*src.ParentChunk.OverlapSize)
+		dst.KnowledgeChunk.OverlapSize = dst.KnowledgeOverlapSize
+	}
+	if src.ChildChunk.OverlapSize != nil {
+		dst.IndexOverlapSize = clampV2OverlapSize(*src.ChildChunk.OverlapSize)
+		dst.IndexChunk.OverlapSize = dst.IndexOverlapSize
+	}
+}
+
 func hasChunkingOverrides(config *V2DocumentChunkingConfig) bool {
 	if config == nil {
 		return false
@@ -497,7 +557,8 @@ func hasChunkingOverrides(config *V2DocumentChunkingConfig) bool {
 		config.ParentChunk.MaxLength > 0 ||
 		config.ParentChunk.AppendFilename ||
 		config.ParentChunk.AppendTitle ||
-		config.ParentChunk.AppendSubtitle {
+		config.ParentChunk.AppendSubtitle ||
+		config.ParentChunk.OverlapSize != nil {
 		return true
 	}
 	if config.ChildChunk.Mode != "" ||
@@ -506,7 +567,8 @@ func hasChunkingOverrides(config *V2DocumentChunkingConfig) bool {
 		config.ChildChunk.MaxLength > 0 ||
 		config.ChildChunk.AppendFilename ||
 		config.ChildChunk.AppendTitle ||
-		config.ChildChunk.AppendSubtitle {
+		config.ChildChunk.AppendSubtitle ||
+		config.ChildChunk.OverlapSize != nil {
 		return true
 	}
 	if config.IndexEnhancement.MetadataInjection.AppendFilename ||
@@ -567,5 +629,9 @@ func mergeChunkingConfig(dst *rag.ChunkConfig, src *rag.ChunkConfig) {
 	}
 	if src.QuestionGeneration != "" {
 		dst.QuestionGeneration = src.QuestionGeneration
+	}
+
+	if src.Type != "" {
+		dst.Type = src.Type
 	}
 }

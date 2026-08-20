@@ -1519,13 +1519,14 @@ func (s *SkillLibraryService) UpdateSkillEnvVar(ctx context.Context, eid, skillI
 	if req.Sensitive != nil {
 		updates["sensitive"] = *req.Sensitive
 	}
-
-	if len(updates) > 0 {
-		if err := model.UpdateSkillEnvVar(nil, eid, skillID, envVarID, updates); err != nil {
-			return nil, err
-		}
-		invalidateSkillEnvVarCache(eid, skillID)
+	if len(updates) == 0 {
+		return nil, fmt.Errorf("%w: no fields to update", ErrSkillImportRequestInvalid)
 	}
+
+	if err := model.UpdateSkillEnvVar(nil, eid, skillID, envVarID, updates); err != nil {
+		return nil, err
+	}
+	invalidateSkillEnvVarCache(eid, skillID)
 
 	// 获取更新后的记录
 	records, err := model.GetSkillEnvVarsBySkillID(eid, skillID)
@@ -1751,28 +1752,8 @@ func (s *SkillLibraryService) BatchUpdateSkillUserEnvVars(ctx context.Context, e
 	return model.GetSkillUserEnvVarsBySkillID(eid, userID, skillID)
 }
 
-func (s *SkillLibraryService) checkUserSkillPermission(userID, skillLibraryID int64) (bool, error) {
-	userGroupIDs, err := s.resolveVisibleSkillGroupIDs(userID)
-	if err != nil {
-		return false, err
-	}
-	if len(userGroupIDs) == 0 {
-		return false, nil
-	}
-	skillGroupIDs, err := model.GetResourcePermissionGroupIDs(skillLibraryID, model.ResourceTypeSkillLibrary)
-	if err != nil {
-		return false, err
-	}
-	skillGroupSet := make(map[int64]struct{}, len(skillGroupIDs))
-	for _, gid := range skillGroupIDs {
-		skillGroupSet[gid] = struct{}{}
-	}
-	for _, ugid := range userGroupIDs {
-		if _, ok := skillGroupSet[ugid]; ok {
-			return true, nil
-		}
-	}
-	return false, nil
+func (s *SkillLibraryService) checkUserSkillPermission(eid, userID, skillLibraryID int64) (bool, error) {
+	return CheckResourceScopeAccess(userID, eid, skillLibraryID, model.ResourceTypeSkillLibrary)
 }
 
 func (s *SkillLibraryService) ListAgentSkills(ctx context.Context, eid, agentID, userID int64) ([]*model.AgentSkillBindingWithSkill, error) {
@@ -1792,7 +1773,7 @@ func (s *SkillLibraryService) ListAgentSkills(ctx context.Context, eid, agentID,
 		if item.Status != model.AgentSkillBindingStatusEnabled {
 			continue
 		}
-		hasPermission, err := s.checkUserSkillPermission(userID, item.SkillLibraryID)
+		hasPermission, err := s.checkUserSkillPermission(eid, userID, item.SkillLibraryID)
 		if err != nil {
 			return nil, err
 		}
@@ -1828,7 +1809,7 @@ func (s *SkillLibraryService) AddAgentSkill(ctx context.Context, eid, agentID, u
 		return ErrSkillAlreadyBuiltin
 	}
 
-	hasPermission, err := s.checkUserSkillPermission(userID, skillLibraryID)
+	hasPermission, err := s.checkUserSkillPermission(eid, userID, skillLibraryID)
 	if err != nil {
 		return err
 	}
@@ -1885,30 +1866,12 @@ func (s *SkillLibraryService) GetAgentRunnableSkillPathSet(ctx context.Context, 
 		return nil, err
 	}
 
-	userGroupIDs, err := s.resolveVisibleSkillGroupIDs(userID)
-	if err != nil {
-		return nil, err
-	}
-
 	permittedSkillIDs := make([]int64, 0, len(userSkillIDs))
 	if len(userSkillIDs) > 0 {
 		for _, skillID := range userSkillIDs {
-			if len(userGroupIDs) == 0 {
-				continue
-			}
-			skillGroupIDs, gErr := model.GetResourcePermissionGroupIDs(skillID, model.ResourceTypeSkillLibrary)
-			if gErr != nil {
-				continue
-			}
-			skillSet := make(map[int64]struct{}, len(skillGroupIDs))
-			for _, gid := range skillGroupIDs {
-				skillSet[gid] = struct{}{}
-			}
-			for _, ugid := range userGroupIDs {
-				if _, ok := skillSet[ugid]; ok {
-					permittedSkillIDs = append(permittedSkillIDs, skillID)
-					break
-				}
+			accessible, accessErr := CheckResourceScopeAccess(userID, eid, skillID, model.ResourceTypeSkillLibrary)
+			if accessErr == nil && accessible {
+				permittedSkillIDs = append(permittedSkillIDs, skillID)
 			}
 		}
 	}

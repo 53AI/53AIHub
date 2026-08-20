@@ -69,32 +69,24 @@ func CreateAILink(c *gin.Context) {
 		allGroupIds = append(allGroupIds, req.UserGroupIds...)
 	}
 
-	// 创建资源权限
-	if len(allGroupIds) > 0 {
-		tx := model.DB.Begin()
-		if tx.Error != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
-
-		defer func() {
-			if r := recover(); r != nil {
-				tx.Rollback()
-			}
-		}()
-
-		// 使用通用方法更新资源权限
-		if err := service.UpdateResourcePermissions(c, tx, link.ID, model.ResourceTypeAILink, allGroupIds); err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
-
-		// 提交事务
-		if err := tx.Commit().Error; err != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
+	// 创建资源范围；没有指定分组时写入企业范围。
+	tx := model.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
+	if err := service.UpdateResourcePermissions(c, tx, link.ID, model.ResourceTypeAILink, allGroupIds); err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+		return
+	}
+	if err := link.LoadUserGroupIds(); err != nil {
+		link.UserGroupIds = []int64{}
+		link.Scopes = []model.ResourceScopeItem{}
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(link))
@@ -116,6 +108,17 @@ func GetAILink(c *gin.Context) {
 	if err != nil || link.Eid != config.GetEID(c) {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
 		return
+	}
+	if user, userErr := model.GetLoginUser(c); userErr == nil {
+		accessible, accessErr := service.CheckResourceScopeAccess(user.UserID, link.Eid, link.ID, model.ResourceTypeAILink)
+		if accessErr != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+			return
+		}
+		if !accessible {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+			return
+		}
 	}
 	err = link.LoadUserGroupIds()
 	if err != nil {
@@ -234,15 +237,15 @@ func DeleteAILink(c *gin.Context) {
 		return
 	}
 
-	// 删除AI链接
-	if err := tx.Delete(link).Error; err != nil {
+	// 使用通用方法删除资源权限
+	if err := service.UpdateResourcePermissions(c, tx, int64(id), model.ResourceTypeAILink, []int64{}); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
 	}
 
-	// 使用通用方法删除资源权限
-	if err := service.UpdateResourcePermissions(c, tx, int64(id), model.ResourceTypeAILink, []int64{}); err != nil {
+	// 删除AI链接
+	if err := tx.Delete(link).Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
@@ -310,6 +313,20 @@ func GetCurrentSiteAILinks(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
+	}
+	if user, userErr := model.GetLoginUser(c); userErr == nil {
+		filtered := make([]model.AILink, 0, len(links))
+		for _, link := range links {
+			accessible, accessErr := service.CheckResourceScopeAccess(user.UserID, eid, link.ID, model.ResourceTypeAILink)
+			if accessErr != nil {
+				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
+				return
+			}
+			if accessible {
+				filtered = append(filtered, link)
+			}
+		}
+		links = filtered
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(links))

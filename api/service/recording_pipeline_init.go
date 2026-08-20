@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -48,8 +49,9 @@ func InitializeRecordingPipelineForPersonalLibrary(ctx context.Context, eid int6
 			}
 		}
 
-	} else if strings.HasPrefix(parserPlatform, "voice:") {
+	} else if strings.HasPrefix(parserPlatform, "voice:") || strings.HasPrefix(parserPlatform, "openai:") {
 		// 验证语音模型渠道（安心录管线不依赖语音模型，但保留渠道验证用于 RecordingConfig 一致性）
+		// voice:（百炼）/ openai:（OpenAI 兼容）统一校验，IsVoiceModelChannel 同时覆盖两类渠道
 		parts := strings.Split(parserPlatform, ":")
 		if len(parts) < 2 {
 			logger.Infof(ctx, "【录音配置】平台 %s 格式无效", parserPlatform)
@@ -118,7 +120,8 @@ func createTingwuPipeline(eid int64) (*model.RagPipelineProfile, error) {
                         "identifier_level": "h3",
                         "max_length": 512,
                         "mode": "custom",
-                        "strategy": "length"
+                        "strategy": "length",
+                        "overlap_size": 20
                     },
                     "chunk_type": "default",
                     "index_enhancement": {
@@ -139,7 +142,8 @@ func createTingwuPipeline(eid int64) (*model.RagPipelineProfile, error) {
                         "identifier_level": "h2",
                         "max_length": 2048,
                         "mode": "custom",
-                        "strategy": "identifier"
+                        "strategy": "identifier",
+                        "overlap_size": 80
                     },
                     "enable_smart_match": false,
                     "match_preference_prompt": ""
@@ -241,13 +245,15 @@ func buildAnxinluProfileJSON(channelID int64, engine string) string {
                         "identifier_level": "h2",
                         "max_length": 2048,
                         "mode": "custom",
-                        "strategy": "identifier"
+                        "strategy": "identifier",
+                        "overlap_size": 80
                     },
                     "child_chunk": {
                         "identifier_level": "h3",
                         "max_length": 512,
                         "mode": "custom",
-                        "strategy": "length"
+                        "strategy": "length",
+                        "overlap_size": 20
                     },
                     "index_enhancement": {
                         "generative_enhancement": {
@@ -303,22 +309,24 @@ func createAnxinluPipeline(eid int64, channelID int64, engine string) (*model.Ra
 	return pipeline, nil
 }
 
-func createAnxinluStrategy(eid int64, pipelineID int64) (*model.RagRoutingStrategy, error) {
-	conditionsJSON := `{
-        "matchers": [
-            {
-                "type": "extension",
-                "operator": "eq",
-                "value": "mp3"
-            },
-            {
-                "type": "extension",
-                "operator": "eq",
-                "value": "m4a"
-            }
-        ]
-    }`
+// buildAnxinluStrategyConditions 构建安心录路由策略匹配条件：
+// 覆盖全部录音格式（对齐 RecordingAudioFormats：m4a/mp3/wav/aac/flac/opus），
+// 避免 .opus/.wav/.aac 等落到默认策略走 docconv 失败。
+func buildAnxinluStrategyConditions() string {
+	matchers := make([]map[string]interface{}, 0, len(RecordingAudioFormats))
+	for _, ext := range RecordingAudioFormats {
+		matchers = append(matchers, map[string]interface{}{
+			"type":     "extension",
+			"operator": "eq",
+			"value":    strings.TrimPrefix(ext, "."),
+		})
+	}
+	cond := map[string]interface{}{"matchers": matchers}
+	conditionsJSON, _ := json.Marshal(cond)
+	return string(conditionsJSON)
+}
 
+func createAnxinluStrategy(eid int64, pipelineID int64) (*model.RagRoutingStrategy, error) {
 	strategy := &model.RagRoutingStrategy{
 		Eid:            eid,
 		Name:           "安心录",
@@ -328,7 +336,7 @@ func createAnxinluStrategy(eid int64, pipelineID int64) (*model.RagRoutingStrate
 		IsDefault:      false,
 		PipelineID:     pipelineID,
 		Logic:          model.RagRoutingLogicOr,
-		ConditionsJSON: conditionsJSON,
+		ConditionsJSON: buildAnxinluStrategyConditions(),
 	}
 
 	if err := model.DB.Create(strategy).Error; err != nil {
@@ -399,6 +407,13 @@ func initializeAnxinluPipeline(ctx context.Context, eid int64, engine string) er
 			model.DB.Model(&existingStrategies[0]).Update("pipeline_id", pipelineID)
 			logger.Infof(ctx, "【录音配置】更新安心录策略pipeline指向: strategy_id=%d old_pipeline=%d new_pipeline=%d",
 				existingStrategies[0].ID, existingStrategies[0].PipelineID, pipelineID)
+		}
+		// 修复旧版本 matchers 不全（仅 mp3/m4a，导致 .opus/.wav/.aac 落到默认策略走 docconv）：
+		// 条件与全量录音格式不一致时更新
+		wantConditions := buildAnxinluStrategyConditions()
+		if existingStrategies[0].ConditionsJSON != wantConditions {
+			model.DB.Model(&existingStrategies[0]).Update("conditions_json", wantConditions)
+			logger.Infof(ctx, "【录音配置】更新安心录策略匹配条件（补齐录音格式）: strategy_id=%d", existingStrategies[0].ID)
 		}
 	}
 

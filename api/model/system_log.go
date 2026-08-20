@@ -14,7 +14,7 @@ type SystemLog struct {
 	Eid        int64  `json:"eid" gorm:"not null;comment:站点ID"`
 	UserID     int64  `json:"user_id" gorm:"not null;comment:操作成员ID"`
 	Nickname   string `json:"nickname" gorm:"size:255;not null;comment:成员名称"`
-	Module     uint8  `json:"module" gorm:"not null;comment:模块。1系统；2智能体；3提示词；4AI工具；5订单数据；6注册用户；7内部用户；8订阅设置；9管理员；10模板风格；11Banner图；12导航管理；13站点信息；14平台接入；15支付配置；16站点域名；17三方统计；18空间管理；19知识库管理；20文档；21模型配置"`
+	Module     uint8  `json:"module" gorm:"not null;comment:模块。1系统；2智能体；3提示词；4AI工具；5订单数据；6注册用户；7内部用户；8订阅设置；9管理员；10模板风格；11Banner图；12导航管理；13站点信息；14平台接入；15支付配置；16站点域名；17三方统计"`
 	Action     uint8  `json:"action" gorm:"not null;comment:动作。1新建；2编辑；3删除；4启用/停用；5登录/退出"`
 	Content    string `json:"content" gorm:"type:text;not null;comment:日志内容"`
 	IP         string `json:"ip" gorm:"size:20;not null;comment:ip"`
@@ -43,7 +43,7 @@ const (
 	SystemLogModuleSpace        uint8 = 18 // 空间管理
 	SystemLogModuleLibrary      uint8 = 19 // 知识库管理
 	SystemLogModuleFile         uint8 = 20
-	SystemLogModuleModelConfig  uint8 = 21 // 模型配置
+	SystemLogModuleModelConfig  uint8 = 21
 )
 
 // GetModuleByGroupType 根据分组类型获取对应的系统日志模块
@@ -115,9 +115,13 @@ func GetSystemLogsByConditions(eid, module, action, userID, startTime, endTime i
 
 // CreateSystemLog 创建系统日志记录
 func CreateSystemLog(log *SystemLog) {
+	db := DB
 	go func() {
+		if db == nil {
+			return
+		}
 		log.ActionTime = time.Now().UnixMilli()
-		if err := DB.Create(log).Error; err != nil {
+		if err := db.Create(log).Error; err != nil {
 			// 记录日志失败时输出错误日志
 			fmt.Printf("创建系统日志失败: %v\n", err)
 		}
@@ -263,7 +267,6 @@ var moduleTextMap = map[uint8]string{
 	SystemLogModuleSpace:        "空间管理",
 	SystemLogModuleLibrary:      "知识库管理",
 	SystemLogModuleFile:         "文档",
-	SystemLogModuleModelConfig:  "模型配置",
 }
 
 // GetAllModules 获取所有模块定义

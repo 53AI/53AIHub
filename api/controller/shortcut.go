@@ -223,7 +223,7 @@ var errInvalidShortcutType = errors.New("快捷方式类型无效")
 
 func validateShortcutType(shortcutType string) error {
 	switch shortcutType {
-	case model.ShortcutTypeAgent, model.ShortcutTypeLibrary, model.ShortcutTypeAILink, model.ShortcutTypeWikiPage:
+	case model.ShortcutTypeAgent, model.ShortcutTypeLibrary, model.ShortcutTypeAILink, model.ShortcutTypeWikiPage, model.ShortcutTypeSpace, model.ShortcutTypeSpaceWiki:
 		return nil
 	default:
 		return errInvalidShortcutType
@@ -254,6 +254,18 @@ func validateShortcutRelatedObjectExists(eid int64, shortcutType string, related
 		page, err := model.GetWikiPageByID(eid, relatedID)
 		if err != nil || page == nil {
 			return errors.New("Wiki页面不存在")
+		}
+		return nil
+	case model.ShortcutTypeSpace:
+		space, err := model.GetSpaceByID(eid, relatedID)
+		if err != nil || space == nil {
+			return errors.New("空间不存在")
+		}
+		return nil
+	case model.ShortcutTypeSpaceWiki:
+		space, err := model.GetSpaceByID(eid, relatedID)
+		if err != nil || space == nil {
+			return errors.New("空间不存在")
 		}
 		return nil
 	default:
@@ -305,6 +317,19 @@ func buildShortcutItem(eid int64, s model.Shortcut) (ShortcutItem, error) {
 			return ShortcutItem{}, errors.New("Wiki页面不存在")
 		}
 		item.Name = page.Title
+	case model.ShortcutTypeSpace:
+		space, err := model.GetSpaceByID(eid, s.RelatedID)
+		if err != nil || space == nil {
+			return ShortcutItem{}, errors.New("空间不存在")
+		}
+		item.Name = space.Name
+	case model.ShortcutTypeSpaceWiki:
+		space, err := model.GetSpaceByID(eid, s.RelatedID)
+		if err != nil || space == nil {
+			return ShortcutItem{}, errors.New("空间不存在")
+		}
+		item.Name = space.Name
+		item.Logo = space.Icon
 	default:
 		return ShortcutItem{}, errInvalidShortcutType
 	}
@@ -321,6 +346,7 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 	libraryIDs := make([]int64, 0)
 	aiLinkIDs := make([]int64, 0)
 	wikiPageIDs := make([]int64, 0)
+	spaceIDs := make([]int64, 0)
 
 	for _, s := range shortcuts {
 		switch s.Type {
@@ -332,6 +358,8 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 			aiLinkIDs = append(aiLinkIDs, s.RelatedID)
 		case model.ShortcutTypeWikiPage:
 			wikiPageIDs = append(wikiPageIDs, s.RelatedID)
+		case model.ShortcutTypeSpace, model.ShortcutTypeSpaceWiki:
+			spaceIDs = append(spaceIDs, s.RelatedID)
 		}
 	}
 
@@ -355,6 +383,11 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 	type wikiPageMeta struct {
 		ID    int64  `gorm:"column:id"`
 		Title string `gorm:"column:title"`
+	}
+	type spaceMeta struct {
+		ID   int64  `gorm:"column:id"`
+		Name string `gorm:"column:name"`
+		Icon string `gorm:"column:icon"`
 	}
 
 	agentMap := map[int64]agentMeta{}
@@ -413,6 +446,20 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 		}
 	}
 
+	spaceMap := map[int64]spaceMeta{}
+	if len(spaceIDs) > 0 {
+		var spaces []spaceMeta
+		if err := model.DB.Model(&model.Space{}).
+			Select("id, name, icon").
+			Where("eid = ? AND id IN ?", eid, spaceIDs).
+			Find(&spaces).Error; err != nil {
+			return nil, err
+		}
+		for _, s := range spaces {
+			spaceMap[s.ID] = s
+		}
+	}
+
 	out := make([]ShortcutItem, 0, len(shortcuts))
 	for _, s := range shortcuts {
 		encodedRelatedID, err := hashids.Encode(s.RelatedID)
@@ -453,6 +500,12 @@ func buildShortcutItems(eid int64, shortcuts []model.Shortcut) ([]ShortcutItem, 
 		case model.ShortcutTypeWikiPage:
 			if p, ok := wikiPageMap[s.RelatedID]; ok {
 				item.Name = p.Title
+				out = append(out, item)
+			}
+		case model.ShortcutTypeSpace, model.ShortcutTypeSpaceWiki:
+			if sp, ok := spaceMap[s.RelatedID]; ok {
+				item.Name = sp.Name
+				item.Logo = sp.Icon
 				out = append(out, item)
 			}
 		}

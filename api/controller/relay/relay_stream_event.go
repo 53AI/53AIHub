@@ -22,6 +22,7 @@ const (
 	ctxKeyMessageIDFirstFrameSent = "relay_message_id_first_frame_sent"
 	ctxKeyPendingProcessSteps     = "relay_pending_process_steps"
 	ctxKeyPendingProcessStepEnds  = "relay_pending_process_step_ends"
+	ctxKeyClientRequestContext    = "relay_client_request_context"
 )
 
 type pendingProcessStep struct {
@@ -85,10 +86,40 @@ func prepareDetachedExecutionContext(c *gin.Context, preferredRequestID string) 
 	}
 
 	execCtx := context.WithValue(context.Background(), helper.RequestIdKey, requestID)
+	if c != nil {
+		c.Set(ctxKeyClientRequestContext, requestCtx)
+	}
 	if c != nil && c.Request != nil {
 		c.Request = c.Request.WithContext(execCtx)
 	}
 	return requestCtx, execCtx, requestID
+}
+
+func isRelayClientDisconnected(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if disconnected, exists := c.Get("relay_client_write_disconnected"); exists {
+		if value, ok := disconnected.(bool); ok && value {
+			return true
+		}
+	}
+	var clientCtx context.Context
+	if value, exists := c.Get(ctxKeyClientRequestContext); exists {
+		clientCtx, _ = value.(context.Context)
+	}
+	if clientCtx == nil && c.Request != nil {
+		clientCtx = c.Request.Context()
+	}
+	if clientCtx == nil || clientCtx.Done() == nil {
+		return false
+	}
+	select {
+	case <-clientCtx.Done():
+		return true
+	default:
+		return false
+	}
 }
 
 func startAgentRunCancelWatcher(baseCtx context.Context, eid int64, requestID string, pollInterval time.Duration) (context.Context, context.CancelFunc) {

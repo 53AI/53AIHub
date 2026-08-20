@@ -322,9 +322,15 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 			json.Unmarshal([]byte(lockedFile.CleaningRuleInfo), &latestInfo)
 		}
 		info.MeetingMinutesStatus = latestInfo.MeetingMinutesStatus
+		info.MeetingMinutesError = latestInfo.MeetingMinutesError
+		info.MeetingMinutesErrorType = latestInfo.MeetingMinutesErrorType
 		info.InsightsStatus = latestInfo.InsightsStatus
+		info.InsightsError = latestInfo.InsightsError
+		info.InsightsErrorType = latestInfo.InsightsErrorType
 		info.InsightPageStatus = latestInfo.InsightPageStatus
 		info.TranscriptionStatus = latestInfo.TranscriptionStatus
+		info.TranscriptionError = latestInfo.TranscriptionError
+		info.TranscriptionErrorType = latestInfo.TranscriptionErrorType
 
 		newInfoBytes, err := json.Marshal(info)
 		if err != nil {

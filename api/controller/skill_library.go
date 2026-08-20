@@ -21,31 +21,32 @@ type SkillExploreQuery struct {
 }
 
 type SkillPublicResponse struct {
-	ID                int64   `json:"id"`
-	Eid               int64   `json:"eid"`
-	SourceType        string  `json:"source_type"`
-	Logo              string  `json:"logo"`
-	SkillName         string  `json:"skill_name"`
-	Sort              int64   `json:"sort"`
-	DisplayName       string  `json:"display_name"`
-	Description       string  `json:"description"`
-	Version           string  `json:"version"`
-	UsageGuide        string  `json:"usage_guide"`
-	OriginZipName     string  `json:"origin_zip_name"`
-	OriginZipSize     int64   `json:"origin_zip_size"`
-	OriginZipSHA256   string  `json:"origin_zip_sha256"`
-	PublishStatus     string  `json:"publish_status"`
-	AdminStatus       string  `json:"admin_status"`
-	RiskLevel         string  `json:"risk_level"`
-	ScoreIntegrity    float64 `json:"score_integrity"`
-	ScorePracticality float64 `json:"score_practicality"`
-	ScoreSafety       float64 `json:"score_safety"`
-	ScoreCodeQuality  float64 `json:"score_code_quality"`
-	ScoreDocQuality   float64 `json:"score_doc_quality"`
-	ScanMessage       string  `json:"scan_message"`
-	GroupIDs          []int64 `json:"group_ids"`
-	CreatedTime       int64   `json:"created_time"`
-	UpdatedTime       int64   `json:"updated_time"`
+	ID                int64                     `json:"id"`
+	Eid               int64                     `json:"eid"`
+	SourceType        string                    `json:"source_type"`
+	Logo              string                    `json:"logo"`
+	SkillName         string                    `json:"skill_name"`
+	Sort              int64                     `json:"sort"`
+	DisplayName       string                    `json:"display_name"`
+	Description       string                    `json:"description"`
+	Version           string                    `json:"version"`
+	UsageGuide        string                    `json:"usage_guide"`
+	OriginZipName     string                    `json:"origin_zip_name"`
+	OriginZipSize     int64                     `json:"origin_zip_size"`
+	OriginZipSHA256   string                    `json:"origin_zip_sha256"`
+	PublishStatus     string                    `json:"publish_status"`
+	AdminStatus       string                    `json:"admin_status"`
+	RiskLevel         string                    `json:"risk_level"`
+	ScoreIntegrity    float64                   `json:"score_integrity"`
+	ScorePracticality float64                   `json:"score_practicality"`
+	ScoreSafety       float64                   `json:"score_safety"`
+	ScoreCodeQuality  float64                   `json:"score_code_quality"`
+	ScoreDocQuality   float64                   `json:"score_doc_quality"`
+	ScanMessage       string                    `json:"scan_message"`
+	GroupIDs          []int64                   `json:"group_ids"`
+	Scopes            []model.ResourceScopeItem `json:"scopes"`
+	CreatedTime       int64                     `json:"created_time"`
+	UpdatedTime       int64                     `json:"updated_time"`
 }
 
 type SkillExploreListItemResponse struct {
@@ -69,6 +70,10 @@ func buildSkillPublicResponse(skillInfo *model.SkillLibrary) *SkillPublicRespons
 	groupIDs := skillInfo.GroupIDs
 	if groupIDs == nil {
 		groupIDs = []int64{}
+	}
+	scopes := skillInfo.Scopes
+	if scopes == nil {
+		scopes = []model.ResourceScopeItem{}
 	}
 	return &SkillPublicResponse{
 		ID:                skillInfo.ID,
@@ -94,6 +99,7 @@ func buildSkillPublicResponse(skillInfo *model.SkillLibrary) *SkillPublicRespons
 		ScoreDocQuality:   skillInfo.ScoreDocQuality,
 		ScanMessage:       skillInfo.ScanMessage,
 		GroupIDs:          groupIDs,
+		Scopes:            scopes,
 		CreatedTime:       skillInfo.CreatedTime,
 		UpdatedTime:       skillInfo.UpdatedTime,
 	}

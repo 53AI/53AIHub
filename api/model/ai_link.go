@@ -17,9 +17,10 @@ type AILink struct {
 	CreatedBy   int64  `json:"created_by" gorm:"not null" example:"1"`
 	BaseModel
 	// 字符串字段存 共享账号（账号、密码、备注）
-	SharedAccount   string  `json:"shared_account" gorm:"not null" example:"[{'account':'admin', 'password':'<PASSWORD>', 'remark':''}]"`
-	HasShareAccount bool    `json:"has_share_account" gorm:"-"`
-	UserGroupIds    []int64 `json:"user_group_ids" gorm:"-"`
+	SharedAccount   string              `json:"shared_account" gorm:"not null" example:"[{'account':'admin', 'password':'<PASSWORD>', 'remark':''}]"`
+	HasShareAccount bool                `json:"has_share_account" gorm:"-"`
+	UserGroupIds    []int64             `json:"user_group_ids" gorm:"-"`
+	Scopes          []ResourceScopeItem `json:"scopes" gorm:"-"`
 }
 
 func (aiLink *AILink) CheckGroup() error {
@@ -65,11 +66,21 @@ func GetAILinkByID(id int64) (*AILink, error) {
 }
 
 func (aiLink *AILink) LoadUserGroupIds() error {
-	var userGroupIds []int64
-	if err := DB.Model(&ResourcePermission{}).
-		Where("resource_id = ? AND resource_type = ?", aiLink.ID, ResourceTypeAILink).
-		Pluck("group_id", &userGroupIds).Error; err != nil {
+	items, err := GetResourceScopeItemsByResource(aiLink.ID, ResourceTypeAILink)
+	if err != nil {
 		return err
+	}
+	aiLink.Scopes = items
+	userGroupIds := scopeGroupIDs(items)
+	if len(items) == 0 {
+		if err := DB.Model(&ResourcePermission{}).
+			Where("resource_id = ? AND resource_type = ?", aiLink.ID, ResourceTypeAILink).
+			Pluck("group_id", &userGroupIds).Error; err != nil {
+			return err
+		}
+	}
+	if userGroupIds == nil {
+		userGroupIds = []int64{}
 	}
 	aiLink.UserGroupIds = userGroupIds
 	return nil

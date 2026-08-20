@@ -4,12 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
-	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
@@ -153,21 +151,10 @@ func CozeCallBack(c *gin.Context) {
 			return
 		}
 	}
-	var domain string
 
-	if config.IS_SAAS {
-		domain = os.Getenv("DOMAIN")
-		if domain == "" {
-			domain = "kmmix.53ai.com"
-		}
-	} else {
-		// Redirect to frontend page
-		domain = c.Request.Host
-
-	}
+	// Redirect to frontend page
 	redirectURL := fmt.Sprintf(scheme+"://%s/console/?is_authorized=%t&provider_id=%d&provider_type=%d",
-		domain, provider.IsAuthorized, provider.ProviderID, provider.ProviderType)
-
+		c.Request.Host, provider.IsAuthorized, provider.ProviderID, provider.ProviderType)
 	c.Redirect(http.StatusFound, redirectURL)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))

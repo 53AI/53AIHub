@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
+	"time"
 
+	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
@@ -295,7 +298,22 @@ func (s *AutoChunkingService) ProcessAutoChunkingWithPipeline(eid int64, fileID 
 	}
 
 	if len(jobs) > 0 {
+		runID := jobs[0].RunID
 		fmt.Printf("已创建自动分块流水线任务 - 任务ID: %d, 文件ID: %d\n", jobs[0].JobID, fileID)
+
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskCreated(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("rag-pipeline-%d-%s", fileID, runID),
+				TaskType:       "RAG_INDEXING",
+				ServiceKey:     "rag-indexing",
+				TraceID:        runID,
+				StartedAt:      time.Now().UTC(),
+				Metadata: map[string]string{
+					"fileId":   strconv.FormatInt(fileID, 10),
+					"pipeline": "auto_chunking",
+				},
+			})
+		}
 	}
 	return nil
 }

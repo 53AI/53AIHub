@@ -18,6 +18,11 @@ const (
 	ChunkTypeCustom         = "custom"          // 自定义
 )
 
+const (
+	defaultKnowledgeChunkOverlapSize = 80
+	defaultIndexChunkOverlapSize     = 20
+)
+
 type ChunkSetting struct {
 	ID        int64  `json:"id" gorm:"primaryKey;autoIncrement"`
 	Eid       int64  `json:"eid" gorm:"not null;index"`
@@ -328,14 +333,14 @@ func (cs *ChunkSetting) GetChunkingConfig() (*ChunkingConfigData, error) {
 			KnowledgeChunk: KnowledgeChunkingConfig{
 				SplitRule:       "h2",
 				MaxLength:       2000,
-				OverlapSize:     0,
+				OverlapSize:     80,
 				IncludeTitle:    false,
 				IncludeFileName: false,
 			},
 			IndexChunk: IndexChunkingConfig{
 				SplitRule:       "\n\n",
 				MaxLength:       2000,
-				OverlapSize:     0,
+				OverlapSize:     20,
 				IncludeTitle:    false,
 				IncludeFileName: false,
 			},
@@ -352,6 +357,32 @@ func (cs *ChunkSetting) GetChunkingConfig() (*ChunkingConfigData, error) {
 	err := json.Unmarshal([]byte(cs.ChunkingConfigJSON), &config)
 	if err != nil {
 		return nil, err
+	}
+
+	// 历史配置可能没有 overlap_size 字段。仅对缺失字段应用新默认值，
+	// 显式配置为 0 时仍保持关闭重叠的语义。
+	var rawConfig map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(cs.ChunkingConfigJSON), &rawConfig); err != nil {
+		return nil, err
+	}
+	var knowledgeRaw map[string]json.RawMessage
+	if raw, ok := rawConfig["knowledge_chunking"]; ok {
+		if err := json.Unmarshal(raw, &knowledgeRaw); err != nil {
+			return nil, err
+		}
+	}
+	if _, exists := knowledgeRaw["overlap_size"]; !exists {
+		config.KnowledgeChunk.OverlapSize = defaultKnowledgeChunkOverlapSize
+	}
+
+	var indexRaw map[string]json.RawMessage
+	if raw, ok := rawConfig["index_chunk"]; ok {
+		if err := json.Unmarshal(raw, &indexRaw); err != nil {
+			return nil, err
+		}
+	}
+	if _, exists := indexRaw["overlap_size"]; !exists {
+		config.IndexChunk.OverlapSize = defaultIndexChunkOverlapSize
 	}
 	return &config, nil
 }
@@ -507,14 +538,14 @@ func CreateDefaultChunkSetting(eid int64, libraryID *int64) (*ChunkSetting, erro
 		KnowledgeChunk: KnowledgeChunkingConfig{
 			SplitRule:       "h2",
 			MaxLength:       2000,
-			OverlapSize:     0,
+			OverlapSize:     80,
 			IncludeTitle:    false,
 			IncludeFileName: false,
 		},
 		IndexChunk: IndexChunkingConfig{
 			SplitRule:    "\n\n",
 			MaxLength:    2000,
-			OverlapSize:  0,
+			OverlapSize:  20,
 			IncludeTitle: false,
 		},
 		ContentSummary: ContentGenerationConfig{

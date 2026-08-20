@@ -2,6 +2,7 @@ package rag
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -68,27 +69,42 @@ func (s *ChunkerService) chunkBySentences(parsed *ParsedContent, maxLength int, 
 
 // splitLargeContent 分割大内容，优先按语义边界拆分
 func (s *ChunkerService) splitLargeContent(content string, maxLength int, chunkType string, basePos int) []DocumentChunk {
-	if s.containsTable(content) {
-		tokenCount, _ := s.tokenizer.CountTokens(content)
-		return []DocumentChunk{{
-			Type:       chunkType,
-			Content:    content,
-			StartPos:   basePos,
-			EndPos:     basePos + len(content),
-			TokenCount: tokenCount,
-		}}
+	// 受保护块（表格等）保持完整，间隙按正常方式拆分
+	if !s.disableTableProtection {
+		if blocks := s.extractTableBlocks(content); len(blocks) > 0 {
+			return s.splitContentWithProtectedBlocks(content, blocks, maxLength, chunkType, basePos,
+				func(gapContent string, maxLen int, ct string, bp int) []DocumentChunk {
+					// 优先按语义边界（句子）拆分
+					if chunks := s.splitBySemanticBoundaries(gapContent, maxLen, ct, bp); len(chunks) > 1 {
+						return chunks
+					}
+					// 如果语义拆分无效，使用tokenizer强制拆分
+					textChunks, err := s.tokenizer.SplitTextByTokens(gapContent, maxLen, 0)
+					if err != nil {
+						tCount, _ := s.tokenizer.CountTokens(gapContent)
+						return []DocumentChunk{{Type: ct, Content: gapContent, StartPos: bp, EndPos: bp + len(gapContent), TokenCount: tCount}}
+					}
+					var gapResult []DocumentChunk
+					curPos := bp
+					for _, tc := range textChunks {
+						tCount, _ := s.tokenizer.CountTokens(tc)
+						gapResult = append(gapResult, DocumentChunk{Type: ct, Content: tc, StartPos: curPos, EndPos: curPos + len(tc), TokenCount: tCount})
+						curPos += len(tc)
+					}
+					return gapResult
+				},
+			)
+		}
 	}
 
-	// 首先尝试按语义边界（句子）拆分
+	// 无受保护块时的原始逻辑
 	chunks := s.splitBySemanticBoundaries(content, maxLength, chunkType, basePos)
 	if len(chunks) > 1 {
 		return chunks
 	}
 
-	// 如果语义拆分无效，使用tokenizer强制拆分
 	textChunks, err := s.tokenizer.SplitTextByTokens(content, maxLength, 0)
 	if err != nil {
-		// 如果分割失败，返回原内容
 		tokenCount, _ := s.tokenizer.CountTokens(content)
 		return []DocumentChunk{{
 			Type:       chunkType,
@@ -101,7 +117,6 @@ func (s *ChunkerService) splitLargeContent(content string, maxLength int, chunkT
 
 	var result []DocumentChunk
 	currentPos := basePos
-
 	for _, textChunk := range textChunks {
 		tokenCount, _ := s.tokenizer.CountTokens(textChunk)
 		result = append(result, DocumentChunk{
@@ -113,12 +128,72 @@ func (s *ChunkerService) splitLargeContent(content string, maxLength int, chunkT
 		})
 		currentPos += len(textChunk)
 	}
-
 	return result
 }
 
 func (s *ChunkerService) containsTable(content string) bool {
 	return !s.disableTableProtection && len(s.extractTableBlocks(content)) > 0
+}
+
+// splitContentWithProtectedBlocks 在受保护块周围拆分内容。
+// 每个受保护块独立成块（保持完整不被拆分）。
+// 块之间的间隙使用 splitFn 按 maxLength 正常拆分。
+func (s *ChunkerService) splitContentWithProtectedBlocks(
+	content string,
+	blocks []SpecialBlock,
+	maxLength int,
+	chunkType string,
+	basePos int,
+	splitFn func(content string, maxLength int, chunkType string, basePos int) []DocumentChunk,
+) []DocumentChunk {
+	if len(blocks) == 0 {
+		return nil
+	}
+
+	// 按位置排序
+	sorted := make([]SpecialBlock, len(blocks))
+	copy(sorted, blocks)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Position < sorted[j].Position
+	})
+
+	var result []DocumentChunk
+	lastEnd := 0
+
+	for _, block := range sorted {
+		// 块前的间隙
+		if block.Position > lastEnd {
+			gapContent := strings.TrimSpace(content[lastEnd:block.Position])
+			if gapContent != "" {
+				gapChunks := splitFn(gapContent, maxLength, chunkType, basePos+lastEnd)
+				result = append(result, gapChunks...)
+			}
+		}
+
+		// 受保护块本身 — 保持完整
+		blockContent := content[block.Position:block.EndPos]
+		tokenCount, _ := s.tokenizer.CountTokens(blockContent)
+		result = append(result, DocumentChunk{
+			Type:       chunkType,
+			Content:    blockContent,
+			StartPos:   basePos + block.Position,
+			EndPos:     basePos + block.EndPos,
+			TokenCount: tokenCount,
+		})
+
+		lastEnd = block.EndPos
+	}
+
+	// 最后一个块后的剩余内容
+	if lastEnd < len(content) {
+		gapContent := strings.TrimSpace(content[lastEnd:])
+		if gapContent != "" {
+			gapChunks := splitFn(gapContent, maxLength, chunkType, basePos+lastEnd)
+			result = append(result, gapChunks...)
+		}
+	}
+
+	return result
 }
 
 // findSeparatorIndices 找到所有分隔符的位置（返回分隔符起始索引，升序）
@@ -304,7 +379,8 @@ func (s *ChunkerService) splitByPattern(content string, pattern string, maxLengt
 	currentPos := basePos
 
 	for _, segment := range segments {
-		segment = strings.TrimSpace(segment)
+		// 仅去掉段首尾的水平空白，保留换行等原始分隔符格式。
+		segment = strings.Trim(segment, " \t\r")
 		if segment == "" {
 			continue
 		}
@@ -340,8 +416,6 @@ func (s *ChunkerService) splitByPattern(content string, pattern string, maxLengt
 		if currentTokens+segmentTokens <= maxLength {
 			if currentChunk.Len() == 0 {
 				chunkStartPos = currentPos
-			} else {
-				currentChunk.WriteString(" ")
 			}
 			currentChunk.WriteString(segment)
 			currentTokens += segmentTokens
@@ -518,39 +592,52 @@ func (s *ChunkerService) isEnglishPunctuation(separator string) bool {
 
 // addOverlaps 添加重叠
 func (s *ChunkerService) addOverlaps(chunks []DocumentChunk, config *ChunkConfig) {
-	if len(chunks) <= 1 {
+	if len(chunks) <= 1 || config == nil {
 		return
 	}
 
-	overlapSize := config.KnowledgeOverlapSize
-	if config.IndexOverlapSize > overlapSize {
-		overlapSize = config.IndexOverlapSize
+	overlapSize := clampOverlapSize(config.KnowledgeOverlapSize)
+	if overlapSize == 0 {
+		return
 	}
 
-	if overlapSize <= 0 {
-		return
+	originalContents := make([]string, len(chunks))
+	for i := range chunks {
+		originalContents[i] = chunks[i].Content
 	}
 
 	for i := range chunks {
-		if i > 0 {
-			// 添加前一个分块的结尾
-			prevTail := s.getTextTail(chunks[i-1].Content, overlapSize)
-			if prevTail != "" {
-				chunks[i].Content = prevTail + "\n\n" + chunks[i].Content
-			}
+		if i > 0 && chunks[i].PageKey == chunks[i-1].PageKey {
+			prevTail := getTextSuffix(originalContents[i-1], overlapSize)
+			chunks[i].Content = prevTail + originalContents[i]
+		} else {
+			chunks[i].Content = originalContents[i]
 		}
 
-		if i < len(chunks)-1 {
-			// 添加下一个分块的开头
-			nextHead := s.getTextHead(chunks[i+1].Content, overlapSize)
-			if nextHead != "" {
-				chunks[i].Content = chunks[i].Content + "\n\n" + nextHead
-			}
-		}
-
-		// 重新计算Token数量
 		chunks[i].TokenCount, _ = s.tokenizer.CountTokens(chunks[i].Content)
 	}
+}
+
+func clampOverlapSize(overlapSize int) int {
+	if overlapSize < 0 {
+		return 0
+	}
+	if overlapSize > 500 {
+		return 500
+	}
+	return overlapSize
+}
+
+func getTextSuffix(text string, size int) string {
+	size = clampOverlapSize(size)
+	if text == "" || size == 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= size {
+		return text
+	}
+	return string(runes[len(runes)-size:])
 }
 
 // getTextHead 获取文本开头
@@ -604,17 +691,23 @@ func (s *ChunkerService) getTextTail(text string, maxTokens int) string {
 
 // splitLargeContentBySystemSeparators 使用系统自定义分隔符分割超长内容
 func (s *ChunkerService) splitLargeContentBySystemSeparators(content string, maxLength int, chunkType string, basePos int) []DocumentChunk {
-	if s.containsTable(content) {
-		tokenCount, _ := s.tokenizer.CountTokens(content)
-		return []DocumentChunk{{
-			Type:       chunkType,
-			Content:    content,
-			StartPos:   basePos,
-			EndPos:     basePos + len(content),
-			TokenCount: tokenCount,
-		}}
+	// 受保护块（表格等）保持完整，间隙按系统分隔符拆分
+	if !s.disableTableProtection {
+		if blocks := s.extractTableBlocks(content); len(blocks) > 0 {
+			return s.splitContentWithProtectedBlocks(content, blocks, maxLength, chunkType, basePos,
+				func(gapContent string, maxLen int, ct string, bp int) []DocumentChunk {
+					return s.splitGapBySystemSeparators(gapContent, maxLen, ct, bp)
+				},
+			)
+		}
 	}
 
+	// 无受保护块时的原始逻辑
+	return s.splitGapBySystemSeparators(content, maxLength, chunkType, basePos)
+}
+
+// splitGapBySystemSeparators 使用系统预定义分隔符拆分内容（不含受保护块）。
+func (s *ChunkerService) splitGapBySystemSeparators(content string, maxLength int, chunkType string, basePos int) []DocumentChunk {
 	// 系统预定义的分隔符，按优先级排序（从高到低）
 	systemSeparators := []string{
 		"\n\n", // 段落分隔符

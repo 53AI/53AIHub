@@ -29,11 +29,11 @@ type SiteEmbeddingReindexService struct {
 }
 
 type SiteEmbeddingReindexStartRequest struct {
-	Eid            int64
-	OldChannelID   int64
-	OldModelName   string
-	NewChannelID   int64
-	NewModelName   string
+	Eid             int64
+	OldChannelID    int64
+	OldModelName    string
+	NewChannelID    int64
+	NewModelName    string
 	ActualVectorDim int // 实际 API 返回的向量维度，0 表示使用 catalog 维度
 }
 
@@ -658,7 +658,6 @@ func rebuildSiteEmbeddingReindexCollection(ctx context.Context, eid, libraryID i
 	}
 
 	logger.SysLogf("【诊断-重建删除集合完成】eid=%d, library_id=%d, mode=%s, new_dimension=%d", eid, libraryID, mode, newDimension)
-
 
 	return nil
 }

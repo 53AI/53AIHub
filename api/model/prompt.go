@@ -8,23 +8,24 @@ import (
 
 // Prompt 提示词表
 type Prompt struct {
-	PromptID     int64        `json:"prompt_id" gorm:"primaryKey;autoIncrement;comment:自增id"`
-	Name         string       `json:"name" gorm:"size:255;not null;default:'';comment:名称"`
-	Logo         string       `json:"logo" gorm:"size:500;default:'';comment:图标URL"`
-	Content      string       `json:"content" gorm:"size:5000;not null;default:'';comment:技能提示语"`
-	Description  string       `json:"description" gorm:"type:text;comment:描述"`
-	Type         int          `json:"type" gorm:"not null;default:1;comment:类型。1个人；2系统"`
-	Status       int          `json:"status" gorm:"not null;default:1;comment:状态。；0未启用；1正常；2删除"`
-	UserID       int64        `json:"user_id" gorm:"not null;default:0;comment:creator user id"`
-	Eid          int64        `json:"eid" gorm:"not null;default:0;comment:团队id"`
-	Views        int64        `json:"views" gorm:"not null;default:0;comment:查看次数"`
-	Likes        int64        `json:"likes" gorm:"not null;default:0;comment:点赞次数"`
-	Sort         int          `json:"sort" gorm:"not null;default:0;comment:排序"`
-	CustomConfig string       `json:"custom_config" gorm:"not null;type:text"`
-	AILinks      string       `json:"ai_links" gorm:"type:text;comment:关联的AI链接"`
-	AILinksData  []AILinkInfo `gorm:"-" json:"ai_links_data"`
-	GroupIDs     []int64      `json:"group_ids" gorm:"-"`
-	IsLiked      bool         `json:"is_liked" gorm:"-"`
+	PromptID     int64               `json:"prompt_id" gorm:"primaryKey;autoIncrement;comment:自增id"`
+	Name         string              `json:"name" gorm:"size:255;not null;default:'';comment:名称"`
+	Logo         string              `json:"logo" gorm:"size:500;default:'';comment:图标URL"`
+	Content      string              `json:"content" gorm:"size:5000;not null;default:'';comment:技能提示语"`
+	Description  string              `json:"description" gorm:"type:text;comment:描述"`
+	Type         int                 `json:"type" gorm:"not null;default:1;comment:类型。1个人；2系统"`
+	Status       int                 `json:"status" gorm:"not null;default:1;comment:状态。；0未启用；1正常；2删除"`
+	UserID       int64               `json:"user_id" gorm:"not null;default:0;comment:creator user id"`
+	Eid          int64               `json:"eid" gorm:"not null;default:0;comment:团队id"`
+	Views        int64               `json:"views" gorm:"not null;default:0;comment:查看次数"`
+	Likes        int64               `json:"likes" gorm:"not null;default:0;comment:点赞次数"`
+	Sort         int                 `json:"sort" gorm:"not null;default:0;comment:排序"`
+	CustomConfig string              `json:"custom_config" gorm:"not null;type:text"`
+	AILinks      string              `json:"ai_links" gorm:"type:text;comment:关联的AI链接"`
+	AILinksData  []AILinkInfo        `gorm:"-" json:"ai_links_data"`
+	GroupIDs     []int64             `json:"group_ids" gorm:"-"`
+	Scopes       []ResourceScopeItem `json:"scopes" gorm:"-"`
+	IsLiked      bool                `json:"is_liked" gorm:"-"`
 	BaseModel
 }
 
@@ -115,7 +116,7 @@ func GetPromptsByEid(eid int) ([]*Prompt, error) {
 	return prompts, nil
 }
 
-func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset int, limit int) (int64, []*Prompt, error) {
+func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset int, limit int, visibleGroupIDs []int64) (int64, []*Prompt, error) {
 	statusArray := []int{PromptStatusNormal, PromptStatusDisable}
 	if status != -1 {
 		statusArray = []int{status}
@@ -124,6 +125,34 @@ func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset 
 
 	if keyword != "" {
 		db = db.Where("name LIKE ?", "%"+keyword+"%")
+	}
+	if visibleGroupIDs != nil {
+		if len(visibleGroupIDs) == 0 {
+			visibleGroupIDs = []int64{-1}
+		}
+		db = db.Where(`
+			NOT EXISTS (
+				SELECT 1 FROM resource_scopes rs0
+				WHERE rs0.resource_id = prompts.prompt_id AND rs0.resource_type = ?
+			)
+			OR EXISTS (
+				SELECT 1 FROM resource_scopes rs1
+				WHERE rs1.resource_id = prompts.prompt_id AND rs1.resource_type = ?
+				AND rs1.eid = ? AND rs1.scope_type = ?
+			)
+			OR EXISTS (
+				SELECT 1 FROM resource_scopes rs2
+				WHERE rs2.resource_id = prompts.prompt_id AND rs2.resource_type = ?
+				AND rs2.target_id IN ? AND rs2.scope_type = ?
+			)
+			OR EXISTS (
+				SELECT 1 FROM resource_permissions rp
+				WHERE rp.resource_id = prompts.prompt_id AND rp.resource_type = ?
+				AND rp.group_id IN ? AND rp.permission = ?
+			)`,
+			ResourceTypePrompt, ResourceTypePrompt, eid, ScopeTypeCompany,
+			ResourceTypePrompt, visibleGroupIDs, ScopeTypeGroup,
+			ResourceTypePrompt, visibleGroupIDs, PermissionRead)
 	}
 
 	if groupIDStr != "" {
@@ -148,10 +177,17 @@ func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset 
 		}
 
 		if len(groupIDs) > 0 {
-			// 通过 ResourcePermission 表关联查询
-			db = db.Joins("JOIN resource_permissions ON prompts.prompt_id = resource_permissions.resource_id").
-				Where("resource_permissions.group_id IN (?) AND resource_permissions.resource_type = ?", groupIDs, ResourceTypePrompt).
-				Group("prompts.prompt_id") // 确保结果不重复
+			db = db.Where(`
+				prompts.prompt_id IN (
+					SELECT resource_id FROM resource_scopes
+					WHERE resource_type = ? AND scope_type = ? AND target_id IN ?
+				)
+				OR prompts.prompt_id IN (
+					SELECT resource_id FROM resource_permissions
+					WHERE resource_type = ? AND group_id IN ? AND permission = ?
+				)`,
+				ResourceTypePrompt, ScopeTypeGroup, groupIDs,
+				ResourceTypePrompt, groupIDs, PermissionRead)
 		}
 	}
 
@@ -194,18 +230,32 @@ func (p *Prompt) UpdateCustomConfig(config string) error {
 }
 
 func (p *Prompt) LoadPromptGroups() error {
-	// 获取提示词关联的所有分组ID
-	var groupIDs []int64
-	err := DB.Model(&ResourcePermission{}).
-		Where("resource_id = ? AND resource_type = ?", p.PromptID, ResourceTypePrompt).
-		Pluck("group_id", &groupIDs).Error
+	items, err := GetResourceScopeItemsByResource(p.PromptID, ResourceTypePrompt)
 	if err != nil {
 		return err
 	}
-
-	// 将分组ID添加到提示词对象中
-	p.GroupIDs = groupIDs
+	p.Scopes = items
+	p.GroupIDs = scopeGroupIDs(items)
+	if len(items) == 0 {
+		p.GroupIDs, err = GetResourcePermissionGroupIDs(p.PromptID, ResourceTypePrompt)
+		if err != nil {
+			return err
+		}
+	}
+	if p.GroupIDs == nil {
+		p.GroupIDs = []int64{}
+	}
 	return nil
+}
+
+func scopeGroupIDs(items []ResourceScopeItem) []int64 {
+	groupIDs := make([]int64, 0, len(items))
+	for _, item := range items {
+		if item.ScopeType == ScopeTypeGroup && item.TargetID > 0 {
+			groupIDs = append(groupIDs, item.TargetID)
+		}
+	}
+	return groupIDs
 }
 
 func (p *Prompt) LoadIsLiked(UserId int64) error {

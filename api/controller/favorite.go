@@ -102,6 +102,17 @@ func ToggleFavorite(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 				return
 			}
+		case model.RESOURCE_TYPE_FAVORITE_SPACE:
+			_, err := model.GetSpaceByID(eid, req.ResourceID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("空间不存在")))
+					return
+				}
+				logger.Errorf(c, "GetSpaceByID error: %v", err)
+				c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+				return
+			}
 		case RESOURCE_TYPE_UPLOAD_FILE:
 			files, err := model.GetFilesByUploadFileID(req.ResourceID)
 			if err != nil {
@@ -217,6 +228,14 @@ func loadFavoriteListItems(eid, userID int64, resourceTypeFilter *int, keyword s
 		return buildFavoriteItemsFromFavorites(eid, userID, favs, "")
 	}
 
+	if resourceTypeFilter != nil && *resourceTypeFilter == model.RESOURCE_TYPE_FAVORITE_SPACE {
+		favs, queryErr := model.GetUserFavoriteSpacesByKeyword(userID, eid, keyword, offset, limit)
+		if queryErr != nil {
+			return nil, queryErr
+		}
+		return buildFavoriteItemsFromFavorites(eid, userID, favs, "")
+	}
+
 	if resourceTypeFilter == nil {
 		return loadFavoriteListItemsByKeywordAll(eid, userID, keyword, offset, limit)
 	}
@@ -262,6 +281,14 @@ func loadFavoriteListItemsByKeywordAll(eid, userID int64, keyword string, offset
 		newFavoriteAllSource(
 			func(sourceOffset, sourceLimit int) ([]model.Favorite, error) {
 				return model.GetUserFavoriteWikiPagesByKeyword(userID, eid, keyword, sourceOffset, sourceLimit)
+			},
+			func(batch []model.Favorite) ([]favoriteListItem, error) {
+				return buildFavoriteItemsFromFavorites(eid, userID, batch, "")
+			},
+		),
+		newFavoriteAllSource(
+			func(sourceOffset, sourceLimit int) ([]model.Favorite, error) {
+				return model.GetUserFavoriteSpacesByKeyword(userID, eid, keyword, sourceOffset, sourceLimit)
 			},
 			func(batch []model.Favorite) ([]favoriteListItem, error) {
 				return buildFavoriteItemsFromFavorites(eid, userID, batch, "")
@@ -444,6 +471,7 @@ func convertFavoriteItemsToRecentAccessItems(items []favoriteListItem) []recentA
 					ID:        encodeRecentAccessID(item.space.ID),
 					Name:      item.space.Name,
 					SpaceKind: item.space.SpaceKind,
+					Logo:      item.space.Icon,
 				}
 			}
 			recentItems = append(recentItems, recentAccessItem{
@@ -484,6 +512,7 @@ func convertFavoriteItemsToRecentAccessItems(items []favoriteListItem) []recentA
 					ID:        encodeRecentAccessID(item.space.ID),
 					Name:      item.space.Name,
 					SpaceKind: item.space.SpaceKind,
+					Logo:      item.space.Icon,
 				}
 			}
 			recentItems = append(recentItems, recentAccessItem{
@@ -526,6 +555,7 @@ func convertFavoriteItemsToRecentAccessItems(items []favoriteListItem) []recentA
 					ID:        encodeRecentAccessID(item.space.ID),
 					Name:      item.space.Name,
 					SpaceKind: item.space.SpaceKind,
+					Logo:      item.space.Icon,
 				}
 			}
 			recentItems = append(recentItems, recentAccessItem{
@@ -550,9 +580,27 @@ func convertFavoriteItemsToRecentAccessItems(items []favoriteListItem) []recentA
 				recentTime: item.favoriteTime,
 				isFavorite: true,
 			})
+		case model.RESOURCE_TYPE_FAVORITE_SPACE:
+			if item.space == nil {
+				continue
+			}
+			spaceSummary := &RecentAccessSpaceSummary{
+				ID:        encodeRecentAccessID(item.space.ID),
+				Name:      item.space.Name,
+				SpaceKind: item.space.SpaceKind,
+				Logo:      item.space.Icon,
+			}
+			recentItems = append(recentItems, recentAccessItem{
+				resourceType: model.RESOURCE_TYPE_FAVORITE_SPACE,
+				resourceID:   item.space.ID,
+				spaceID:      item.space.ID,
+				creatorID:    item.space.OwnerID,
+				space:        spaceSummary,
+				recentTime:   item.favoriteTime,
+				isFavorite:   true,
+			})
 		}
 	}
-
 	return recentItems
 }
 
@@ -702,6 +750,7 @@ func buildFavoriteItemsFromFavorites(eid, userID int64, favs []model.Favorite, k
 	fileIDs := make([]int64, 0, len(favs))
 	libraryIDs := make([]int64, 0, len(favs))
 	wikiPageIDs := make([]int64, 0, len(favs))
+	favoriteSpaceIDs := make([]int64, 0, len(favs))
 	for _, fav := range favs {
 		switch fav.ResourceType {
 		case model.RESOURCE_TYPE_FILE:
@@ -710,6 +759,8 @@ func buildFavoriteItemsFromFavorites(eid, userID int64, favs []model.Favorite, k
 			libraryIDs = append(libraryIDs, fav.ResourceID)
 		case model.RESOURCE_TYPE_WIKI_PAGE:
 			wikiPageIDs = append(wikiPageIDs, fav.ResourceID)
+		case model.RESOURCE_TYPE_FAVORITE_SPACE:
+			favoriteSpaceIDs = append(favoriteSpaceIDs, fav.ResourceID)
 		}
 	}
 
@@ -829,6 +880,14 @@ func buildFavoriteItemsFromFavorites(eid, userID int64, favs []model.Favorite, k
 		}
 	}
 
+	// 收藏的空间 ID 也加入 spacesByID 查询
+	for _, sid := range favoriteSpaceIDs {
+		if _, ok := spaceSeen[sid]; !ok {
+			spaceSeen[sid] = struct{}{}
+			spaceIDs = append(spaceIDs, sid)
+		}
+	}
+
 	spacesByID := map[int64]*model.Space{}
 	if len(spaceIDs) > 0 {
 		spaces, err := model.GetSpacesByIDs(eid, spaceIDs)
@@ -908,8 +967,19 @@ func buildFavoriteItemsFromFavorites(eid, userID int64, favs []model.Favorite, k
 				space:        space,
 				favoriteTime: fav.UpdatedTime,
 			})
+		case model.RESOURCE_TYPE_FAVORITE_SPACE:
+			space, ok := spacesByID[fav.ResourceID]
+			if !ok || space == nil {
+				continue
+			}
+			items = append(items, favoriteListItem{
+				resourceType: model.RESOURCE_TYPE_FAVORITE_SPACE,
+				resourceID:   space.ID,
+				space:        space,
+				favoriteTime: fav.UpdatedTime,
+			})
 		}
-	}
+}
 
 	return items, nil
 }
@@ -926,7 +996,7 @@ type CheckFavoritesResponse struct {
 // CheckFavorites godoc
 // @Summary 批量查询收藏状态
 // @Description 通过多个 hashID 批量查询资源是否被当前用户收藏，返回已收藏的 hashID 列表
-// @Description resource_type: 1=知识库, 2=文件, 9999=上传文件(用 uploadfile 查 file 再查收藏)
+// @Description resource_type: 1=知识库, 2=文件, 3=Wiki页面, 4=空间, 9999=上传文件(用 uploadfile 查 file 再查收藏)
 // @Tags 我的空间
 // @Accept json
 // @Produce json
@@ -943,8 +1013,8 @@ func CheckFavorites(c *gin.Context) {
 		return
 	}
 
-	if req.ResourceType != model.RESOURCE_TYPE_FILE && req.ResourceType != model.RESOURCE_TYPE_LIBRARY && req.ResourceType != model.RESOURCE_TYPE_WIKI_PAGE && req.ResourceType != RESOURCE_TYPE_UPLOAD_FILE {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("resource_type 无效，必须为 1（知识库）、2（文件）、3（Wiki 页面）或 9999（上传文件）")))
+	if req.ResourceType != model.RESOURCE_TYPE_FILE && req.ResourceType != model.RESOURCE_TYPE_LIBRARY && req.ResourceType != model.RESOURCE_TYPE_WIKI_PAGE && req.ResourceType != model.RESOURCE_TYPE_FAVORITE_SPACE && req.ResourceType != RESOURCE_TYPE_UPLOAD_FILE {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("resource_type 无效，必须为 1（知识库）、2（文件）、3（Wiki 页面）、4（空间）或 9999（上传文件）")))
 		return
 	}
 

@@ -32,17 +32,18 @@ type SchemaValidationWarning struct {
 
 // Skill represents a loaded skill from SKILL.md
 type Skill struct {
-	Name         string           `json:"name"`
-	Description  string           `json:"description"`
-	Version      string           `json:"version"`
-	Path         string           `json:"path"`          // Path to the skill directory
-	Content      string           `json:"content"`       // Full content of SKILL.md
-	Instruction  string           `json:"instruction"`   // The instruction part
-	Tools        []ToolDefinition `json:"tools"`         // Tools defined in the skill
-	AllowedTools []string         `json:"allowed_tools"` // Allowed script patterns for code-interpreter
-	Resources    []string         `json:"resources"`
-	Requires     SkillRequires    `json:"requires"`
-	AutoMatch    bool             `json:"auto_match"` // Whether to automatically match this skill in intent classification
+	Name              string           `json:"name"`
+	Description       string           `json:"description"`
+	Version           string           `json:"version"`
+	Path              string           `json:"path"`          // Path to the skill directory
+	Content           string           `json:"content"`       // Full content of SKILL.md
+	Instruction       string           `json:"instruction"`   // The instruction part
+	Tools             []ToolDefinition `json:"tools"`         // Tools defined in the skill
+	AllowedTools      []string         `json:"allowed_tools"` // Allowed script patterns for code-interpreter
+	Resources         []string         `json:"resources"`
+	Requires          SkillRequires    `json:"requires"`
+	AgentToolFeatures map[string]bool  `json:"agent_tool_features" yaml:"agent_tool_features"`
+	AutoMatch         bool             `json:"auto_match"` // Whether to automatically match this skill in intent classification
 }
 
 type SkillRequires struct {
@@ -86,25 +87,27 @@ func parseFlowStringList(raw string) []string {
 
 // frontmatterStruct 用于 YAML 解析的临时结构
 type frontmatterStruct struct {
-	Name         string        `yaml:"name"`
-	Description  string        `yaml:"description"`
-	Version      string        `yaml:"version"`
-	AutoMatch    bool          `yaml:"auto_match"`
-	Tools        interface{}   `yaml:"tools"`
-	AllowedTools []string      `yaml:"allowed_tools"`
-	Resources    []string      `yaml:"resources"`
-	Requires     SkillRequires `yaml:"requires"`
+	Name              string          `yaml:"name"`
+	Description       string          `yaml:"description"`
+	Version           string          `yaml:"version"`
+	AutoMatch         bool            `yaml:"auto_match"`
+	Tools             interface{}     `yaml:"tools"`
+	AllowedTools      []string        `yaml:"allowed_tools"`
+	Resources         []string        `yaml:"resources"`
+	Requires          SkillRequires   `yaml:"requires"`
+	AgentToolFeatures map[string]bool `yaml:"agent_tool_features"`
 }
 
 var knownFrontmatterFields = map[string]struct{}{
-	"name":          {},
-	"description":   {},
-	"version":       {},
-	"auto_match":    {},
-	"tools":         {},
-	"allowed_tools": {},
-	"resources":     {},
-	"requires":      {},
+	"name":                {},
+	"description":         {},
+	"version":             {},
+	"auto_match":          {},
+	"tools":               {},
+	"allowed_tools":       {},
+	"resources":           {},
+	"requires":            {},
+	"agent_tool_features": {},
 }
 
 func hasCodeInterpreterTool(tools []ToolDefinition) bool {
@@ -377,6 +380,7 @@ func ParseSkillMetadata(content string) (*Skill, error) {
 		skill.AllowedTools = fm.AllowedTools
 		skill.Resources = fm.Resources
 		skill.Requires = fm.Requires
+		skill.AgentToolFeatures = fm.AgentToolFeatures
 		skill.Tools = parseToolsField(fm.Tools)
 		return skill, nil
 	}

@@ -203,6 +203,7 @@ type TextinEngineParams struct {
 	ImageOutputType   string `json:"image_output_type,omitempty"`
 	ParseMode         string `json:"parse_mode,omitempty"`
 	RecognizeChemical *bool  `json:"recognize_chemical,omitempty"`
+	Dpi               int    `json:"dpi,omitempty"`
 }
 
 // buildPageRange converts old flat page_start/page_count to XParse page_range string.

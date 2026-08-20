@@ -65,6 +65,7 @@ type CreateRecordingJobRequest struct {
 	UploadIntervalMs        int64
 	MaxDurationMs           int64
 	GroupID                 int64
+	InsightPerspective      string
 }
 
 type UploadRecordingSegmentRequest struct {
@@ -116,6 +117,9 @@ func (s *RecordingService) CreateJob(ctx context.Context, userID int64, req *Cre
 	if req.LibraryID <= 0 {
 		return nil, errors.New("library id is required")
 	}
+	if !model.IsValidInsightPerspective(req.InsightPerspective) {
+		return nil, fmt.Errorf("不支持的洞察视角: %s", req.InsightPerspective)
+	}
 
 	logger.Infof(ctx, "【录音】开始创建录音任务: eid=%d user_id=%d library_id=%d", s.eid, userID, req.LibraryID)
 
@@ -150,6 +154,7 @@ func (s *RecordingService) CreateJob(ctx context.Context, userID int64, req *Cre
 		UploadIntervalMs:         req.UploadIntervalMs,
 		MaxDurationMs:            req.MaxDurationMs,
 		GroupID:                  req.GroupID,
+		InsightPerspective:       string(model.NormalizeInsightPerspective(req.InsightPerspective)),
 		Status:                   model.RecordingJobStatusRecording,
 		StartedAt:                time.Now().UTC().UnixMilli(),
 		LastActiveAt:             time.Now().UTC().UnixMilli(),

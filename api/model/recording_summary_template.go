@@ -2,8 +2,8 @@ package model
 
 type RecordingSummaryTemplate struct {
 	ID          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	Eid         int64  `json:"eid" gorm:"not null;uniqueIndex:idx_eid_name"`
-	Name        string `json:"name" gorm:"size:100;not null;uniqueIndex:idx_eid_name"`
+	Eid         int64  `json:"eid" gorm:"not null;uniqueIndex:idx_recording_summary_templates_eid_name"`
+	Name        string `json:"name" gorm:"size:100;not null;uniqueIndex:idx_recording_summary_templates_eid_name"`
 	Description string `json:"description" gorm:"type:text;not null"`
 	Prompt      string `json:"prompt" gorm:"type:text;not null"`
 	GroupID     int64  `json:"group_id" gorm:"not null;default:0"`
