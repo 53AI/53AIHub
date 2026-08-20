@@ -13,7 +13,7 @@ import (
 )
 
 // Version 硬编码的系统版本号
-var Version = "v0.4.2"
+var Version = "v0.5.0"
 
 var chinaTimeZone = time.FixedZone("UTC+8", 8*60*60)
 
