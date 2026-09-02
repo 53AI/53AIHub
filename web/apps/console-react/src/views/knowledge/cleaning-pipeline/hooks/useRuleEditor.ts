@@ -418,7 +418,7 @@ export function useRuleEditor({ rules, onSuccess }: UseRuleEditorOptions) {
     if (currentJson !== initialJson) {
       Modal.confirm({
         title: t('tip'),
-        content: t('cleaning_policy.unsaved_confirm_message'),
+        content: t('common.unsaved_confirm_message'),
         onOk: () => {
           setDrawerVisible(false)
           setCurrentStep(0)

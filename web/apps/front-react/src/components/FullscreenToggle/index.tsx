@@ -1,5 +1,5 @@
 import { SvgIcon } from '@km/shared-components-react'
-import { IconButton } from '@/components/IconButton'
+import { IconAction } from '@km/shared-components-react'
 import { t } from '@/locales'
 
 export interface FullscreenToggleProps {
@@ -9,6 +9,13 @@ export interface FullscreenToggleProps {
   onToggle?: () => void
   /** 图标尺寸，默认 16 */
   iconSize?: number
+  /** 进入全屏（非全屏态）图标名，默认 right-bar-bottom-expand */
+  expandIcon?: string
+  /** 退出全屏（全屏态）图标名，默认 right-bar-bottom-collapse */
+  collapseIcon?: string
+  size?: 'default' | 'medium' | 'compact'
+  /** 额外 className */
+  className?: string
 }
 
 /**
@@ -28,18 +35,23 @@ export function FullscreenToggle({
   fullscreen = false,
   onToggle,
   iconSize = 16,
+  expandIcon = 'right-bar-bottom-expand',
+  collapseIcon = 'right-bar-bottom-collapse',
+  size = 'medium',
+  className
 }: FullscreenToggleProps) {
   return (
-    <IconButton
+    <IconAction
       title={fullscreen ? t('action.exit_fullscreen') : t('action.fullscreen')}
-      size="medium"
+      size={size}
       onClick={onToggle}
+      className={className}
     >
       <SvgIcon
-        name={fullscreen ? 'right-bar-bottom-collapse' : 'right-bar-bottom-expand'}
+        name={fullscreen ? collapseIcon : expandIcon}
         size={iconSize}
       />
-    </IconButton>
+    </IconAction>
   )
 }
 

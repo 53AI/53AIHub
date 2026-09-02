@@ -1986,3 +1986,10 @@
     min-width: 100%;
   }
 }
+.insight-html-frame {
+  display: block;
+  width: 100%;
+  min-height: 640px;
+  border: 0;
+  background: transparent;
+}

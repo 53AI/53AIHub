@@ -39,7 +39,7 @@ import {
   useChatFeedback,
   useChatShare,
 } from "@km/shared-business/chat";
-import { getGreetingByTime } from "@km/shared-utils";
+import { buildAgentModelOptions, getGreetingByTime } from "@km/shared-utils";
 import { GROUP_TYPE } from "@/constants/group";
 import { RUN_STATUS } from "@/constants/chunk";
 import agentsApi from "@/api/modules/agents";
@@ -53,7 +53,7 @@ interface ModelItem {
   id: number;
   value: string;
   channel_id: number;
-  channel_type: string;
+  channel_type: number;
   model: string;
   name: string;
   icon: string;
@@ -166,36 +166,14 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
           ?.fast_reasoning_config || {
           temperature: 0.5,
         };
-        // 通过匹配配置来判断是否为深度思考模型（与 Vue 版本保持一致）
-        const deepValue =
-          deepThinkingConfig.channel_id +
-          "_" +
-          deepThinkingConfig.channel_type +
-          "_" +
-          deepThinkingConfig.model_name;
-
-        const models = (res.agent_models || [])
-          .map((item: any) => {
-            const value =
-              item.channel_id + "_" + item.channel_type + "_" + item.model;
-            const isDeepThinking = value === deepValue;
-            return {
-              ...item,
-              type: isDeepThinking ? "deep_reasoning" : "fast_reasoning",
-              icon: isDeepThinking ? "star-link" : "lightning",
-              name: isDeepThinking
-                ? t("chat.deep_thinking")
-                : t("chat.fast_response"),
-              temperature: isDeepThinking
-                ? deepThinkingConfig.temperature
-                : fastReasoningConfig.temperature,
-              value: value,
-            };
-          })
-          .filter(
-            (item: any, index: number, self: any[]) =>
-              index === self.findIndex((t) => t.type === item.type),
-          );
+        // 约定第 2 个(index===1)为深度思考模型（与 Vue 版本保持一致）
+        const models = buildAgentModelOptions({
+          models: res.agent_models,
+          deepConfig: deepThinkingConfig,
+          fastConfig: fastReasoningConfig,
+          deepName: t("chat.deep_thinking"),
+          fastName: t("chat.fast_response"),
+        });
 
         if (models.length) {
           setModel((models[0] as ModelItem).value);

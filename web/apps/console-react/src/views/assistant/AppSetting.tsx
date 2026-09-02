@@ -14,20 +14,14 @@ import { debounce } from "@km/shared-utils";
 import { SvgIcon } from "@km/shared-components-react";
 
 const DOCUMENT_APPLICATION = "document_application";
-const RECORDING_APPLICATION = "recording_application";
 
 const APP_KEY_TITLE_MAP: Record<string, string> = {
   [DOCUMENT_APPLICATION]: "module.document_app",
-  [RECORDING_APPLICATION]: "module.recording",
 };
 
-const APP_KEY_FALLBACK_PATH_MAP: Record<string, string> = {
-  [RECORDING_APPLICATION]: "/recording",
-};
+const APP_KEY_FALLBACK_PATH_MAP: Record<string, string> = {};
 
-const APP_KEY_ADD_SUCCESS_REDIRECT_MAP: Record<string, string> = {
-  [RECORDING_APPLICATION]: "/recording",
-};
+const APP_KEY_ADD_SUCCESS_REDIRECT_MAP: Record<string, string> = {};
 
 interface DocumentAppAgent {
   agent_id: number;

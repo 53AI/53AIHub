@@ -10,7 +10,8 @@ import type {
 import { useWikiStore } from "@/stores/modules/wiki";
 
 export interface PageListQuery {
-  pageType: WikiPageType;
+  pageType?: WikiPageType;
+  categoryId?: string;
   keyword: string;
   offset: number;
   limit: number;
@@ -21,8 +22,9 @@ export interface PageListQuery {
 /**
  * 构建 wiki 页面列表查询参数。
  *
- * 规则：有关键词（去空格非空）时走全局搜索——只带 keyword，忽略 page_type；
- * 否则按当前标签浏览——只带 page_type。分页与排序始终透传。
+ * 规则：有关键词（去空格非空）时走全局搜索——只带 keyword，忽略 page_type / category_id；
+ * 否则按当前筛选浏览——透传 page_type 与 category_id（有则带，无则省略）。分页与排序始终透传。
+ * 注意：categoryId 为 0（「其他」虚拟分类）时需传特殊值 `other` 而非 0。
  */
 export function buildPageListParams(query: PageListQuery): WikiPageListParams {
   const kw = query.keyword.trim();
@@ -35,7 +37,12 @@ export function buildPageListParams(query: PageListQuery): WikiPageListParams {
   if (kw) {
     params.keyword = kw;
   } else {
-    params.page_type = query.pageType;
+    if (query.pageType) params.page_type = query.pageType;
+    if (query.categoryId === '' || query.categoryId === '0') {
+      params.category_id = 'other'
+    } else if (query.categoryId) {
+      params.category_id = query.categoryId;
+    }
   }
   return params;
 }
@@ -44,7 +51,8 @@ const DEFAULT_LIMIT = 30;
 
 export interface UseWikiPageListArgs {
   spaceId: string;
-  pageType: WikiPageType;
+  pageType?: WikiPageType;
+  categoryId?: string;
   keyword: string;
   sortBy: WikiPageSortBy;
   sortOrder: WikiSortOrder;
@@ -66,7 +74,7 @@ export interface UseWikiPageListResult {
  * 查询条件变化时自动重置到第一页。
  */
 export function useWikiPageList(args: UseWikiPageListArgs): UseWikiPageListResult {
-  const { spaceId, pageType, keyword, sortBy, sortOrder } = args;
+  const { spaceId, pageType, categoryId, keyword, sortBy, sortOrder } = args;
   const limit = args.limit ?? DEFAULT_LIMIT;
 
   const [items, setItems] = useState<WikiPageItem[]>([]);
@@ -98,6 +106,7 @@ export function useWikiPageList(args: UseWikiPageListArgs): UseWikiPageListResul
       try {
         const params = buildPageListParams({
           pageType,
+          categoryId,
           keyword,
           offset,
           limit,
@@ -119,7 +128,7 @@ export function useWikiPageList(args: UseWikiPageListArgs): UseWikiPageListResul
         }
       }
     },
-    [spaceId, pageType, keyword, limit, sortBy, sortOrder],
+    [spaceId, pageType, categoryId, keyword, limit, sortBy, sortOrder],
   );
 
   // 查询条件变化：重置并加载第一页

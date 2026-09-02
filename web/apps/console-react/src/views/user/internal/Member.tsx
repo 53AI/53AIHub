@@ -1,5 +1,5 @@
-import { MoreOutlined, PlusOutlined, UserOutlined } from "@ant-design/icons";
-import { Dropdown, Search, SvgIcon } from "@km/shared-components-react";
+import { PlusOutlined, UserOutlined } from "@ant-design/icons";
+import { Dropdown, Search, SvgIcon, IconAction } from "@km/shared-components-react";
 import { Button, Modal, message, Select, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -402,20 +402,19 @@ export const UserMember = forwardRef<MemberRef, MemberProps>(
 				{
 					title: t("operation"),
 					key: "operation",
-					width: 130,
+					width: 110,
 					fixed: "end",
 					render: (_: any, record: Member) => (
 						<div className="opacity-0 group-hover:opacity-100 transition-opacity">
 							{record.user_id ? (
 								<div className="flex items-center gap-1">
-									<Button
-										type="link"
-										icon={<SvgIcon name="edit" />}
-										onClick={(e) => {
-											e.stopPropagation();
-											handleEdit(record);
-										}}
-									/>
+									<IconAction
+										variant="row"
+										title={t("action.edit")}
+										onClick={() => handleEdit(record)}
+									>
+										<SvgIcon name="edit" />
+									</IconAction>
 									<Dropdown
 										menu={{
 											items: [
@@ -445,11 +444,12 @@ export const UserMember = forwardRef<MemberRef, MemberProps>(
 										}}
 										trigger={["click"]}
 									>
-										<Button
-											type="link"
-											icon={<MoreOutlined />}
-											onClick={(e) => e.stopPropagation()}
-										/>
+										<IconAction
+											variant="row"
+											title={t("more")}
+										>
+											<SvgIcon name="more-two" />
+										</IconAction>
 									</Dropdown>
 								</div>
 							) : (

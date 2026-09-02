@@ -2,7 +2,20 @@ import { render, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { DeptMemberPicker } from '../index'
 
-// Mock APIs (匹配 ScopeDisplay 测试的 mock pattern)
+// Mock 共享字典加载器(DeptMemberPicker 内部走 loadScopeDictionary)
+vi.mock('@/hooks/useScopeDictionary', () => ({
+  loadScopeDictionary: vi.fn(() =>
+    Promise.resolve({
+      treeData: [{ value: 0, label: '全部成员', did: 0, children: [] }],
+      users: [],
+      groups: [],
+    })
+  ),
+  useScopeDictionary: () => null,
+  invalidateScopeDictionary: () => {},
+}))
+
+// 兼容:这些模块在 DeptMemberPicker 中已不再直接调用,但保留 mock 防止意外拉真实 API
 vi.mock('@/api/modules/department', () => ({
   departmentApi: {
     fetch_department_tree: vi.fn(() =>

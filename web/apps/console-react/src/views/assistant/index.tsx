@@ -11,7 +11,7 @@ import type { AgentInfo } from "@/api/modules/agents/index";
 import { getPublicPath } from "@/utils/config";
 import RelateAgentsDialog, {
     RelateAgentsDialogRef,
-} from "@/views/agent/create/components/config/RelateAgentsDialog";
+} from "@/views/agent/create-v2/shared/components/config/RelateAgentsDialog";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { useVersion } from "@/hooks";

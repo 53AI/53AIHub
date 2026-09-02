@@ -182,7 +182,7 @@ function renderMarkdownText(value: string): React.ReactNode {
       const parsed = parseMermaidDiagram(body)
       if (parsed) {
         output.push(
-          <MermaidDiagram diagram={parsed} />
+          <MermaidDiagram key={`${keyBase}code-${output.length}`} diagram={parsed} />
         )
         return
       }

@@ -21,14 +21,15 @@ export interface MemoryExtractionConfig {
 export type MemoryExtractionLabels = Partial<Record<MemoryExtractionType, string>>;
 
 /**
- * schema 端 entity_type → 中文 label（小写 key，跟接口契约一致）。
- * 这里只关心 label，不关心 attributes —— 历史记忆设置面板只用到类型名。
+ * schema 端实体类型 → 中文 label（小写 key 存在 type 字段上，跟接口契约一致）。
+ * 这里只关心 type + label，不关心 attributes —— 历史记忆设置面板只用到类型名。
  */
 export interface MemoryEntityTypeSchema {
+  type: string;
   label: string;
 }
 
-export type MemoryEntityTypeSchemas = Record<string, MemoryEntityTypeSchema>;
+export type MemoryEntityTypeSchemas = MemoryEntityTypeSchema[];
 
 /** 录音配置 */
 export interface RecordingConfig {

@@ -53,7 +53,14 @@ service.interceptors.request.use(
     }
 
     const params = config.params || {}
-    const access_token = params.access_token || localStorage.getItem('access_token') || ''
+    // 优先级：请求级 params.token（兼容 params.access_token）→ sessionStorage 的 share_token
+    // （share 路由从 URL ?token=… 写入，会话级共享给所有 axios 请求）→ localStorage 的登录态
+    const access_token =
+      params.token ||
+      params.access_token ||
+      (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('share_token') : '') ||
+      localStorage.getItem('access_token') ||
+      ''
     if (access_token) config.headers.set('Authorization', `Bearer ${access_token}`)
 
     // 如果需要身份验证，但没有token，则返回200, code 返回特定的1000

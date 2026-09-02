@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo } from 'react';
 import { Button, Spin } from 'antd';
 import { CheckCircleFilled, CloseCircleFilled, InfoCircleOutlined, LoadingOutlined, CloseOutlined } from "@ant-design/icons";
 import { SvgIcon } from '@km/shared-components-react';
@@ -182,8 +182,7 @@ export function ParsingPlaceholder({
   const failed = hasFailedStatus(stages, allowedKeys)
   const title = failed ? STEP_TITLES[activeStep].failedText : STEP_TITLES[activeStep].parsing
   // 失败时，从激活的失败阶段读取 error_type，映射为用户提示文案
-  const errorMessage = failed ? getErrorTypeMessage(getActiveFailedStage(stages, allowedKeys)?.error_type) : null
-
+  const errorMessage = failed ? (getActiveFailedStage(stages, allowedKeys)?.error || getErrorTypeMessage(getActiveFailedStage(stages, allowedKeys)?.error_type)) : null
   function getStatus (step: ParsingStep) {
     const insightCombined = (() => {
       const ins = getStageStatus(stages.insights)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Button, Drawer, Modal, Form, Input, Empty, message, Tooltip } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { Button, Drawer, Modal, Form, Input, Empty, message } from "antd";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
@@ -148,28 +148,29 @@ export function PlatformWebSearch() {
 
             {/* 右侧：操作按钮 */}
             <div className="flex items-center gap-2 ml-2">
-              <Tooltip title={t("action_test")}>
-                <Button
-                  type="text"
-                  icon={<SvgIcon name="tool" />}
-                  className="invisible group-hover:visible hover:!text-brand"
-                  loading={testing}
-                  onClick={handleTest}
-                />
-              </Tooltip>
-              <Button
-                type="text"
-                icon={<SvgIcon name="edit" />}
-                className="invisible group-hover:visible hover:!text-brand"
+              <IconAction
+                variant="row"
+                title={t("action_test")}
+                loading={testing}
+                onClick={handleTest}
+              >
+                <SvgIcon name="tool" />
+              </IconAction>
+              <IconAction
+                variant="row"
+                title={t("action_edit")}
                 onClick={handleEdit}
-              />
-              <Button
-                type="text"
+              >
+                <SvgIcon name="edit" />
+              </IconAction>
+              <IconAction
+                variant="row"
+                title={t("action_delete")}
                 danger
-                icon={<SvgIcon name="delete" />}
-                className="invisible group-hover:visible hover:!text-tag-red"
                 onClick={handleDelete}
-              />
+              >
+                <SvgIcon name="delete" />
+              </IconAction>
             </div>
           </div>
         ) : (

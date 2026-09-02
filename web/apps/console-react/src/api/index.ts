@@ -42,6 +42,7 @@ export * from './modules/enterprise'
 export * from './modules/rag-pipeline'
 export * from './modules/rag-strategy'
 export * from './modules/graph-templates'
+export * from './modules/wiki'
 export * from './modules/files'
 
 export { default as service } from './config'

@@ -284,8 +284,6 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
         space_id: item.space_id || item.id,
         sub: "index",
       }));
-    } else if (item.isRecording) {
-      navigate(`/recording/preview/${item.id}`);
     } else {
       if (item.position === "--") {
         try {
@@ -481,11 +479,9 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                         space_id: item.space_id || item.id,
                         sub: "index",
                       })
-                  : item.isRecording
-                    ? buildUrl(`/recording/preview/${item.id}`)
-                    : item.position === "--"
-                      ? buildUrl(`/mine?tab=fav&preview=${item.id}`)
-                      : buildKnowledgeFileUrl(item.libraryId, item.id, '', item.isfolder);
+                  : item.position === "--"
+                    ? buildUrl(`/mine?tab=fav&preview=${item.id}`)
+                    : buildKnowledgeFileUrl(item.libraryId, item.id, '', item.isfolder);
 
               return (
                 <div

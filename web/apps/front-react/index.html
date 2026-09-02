@@ -4,15 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title> </title>
-    <script>
-      const pathname = location.pathname || location.hash
-      if (pathname.includes('share/recording')) {
-        document.title = '安心录'
-      } else {
-        document.title = '53AIKM'
-      }
-    </script>
+    <title>53AIKM</title>
   </head>
   <body>
     <div id="root"></div>
@@ -76,7 +68,8 @@
         }
       }
       if (search_params.access_token) {
-        localStorage.removeItem("access_token");
+        // 直接覆盖写入 access_token，不要先 removeItem——否则其它标签页会收到"token 被删除"
+        // 的 storage 事件，触发多账号守卫的 onTokenRemoved 而无条件刷新（见 useMultiAccountGuard）
         localStorage.removeItem("user_info");
         localStorage.setItem("access_token", search_params.access_token);
         localStorage.setItem(

@@ -460,20 +460,6 @@ export default function ChunkView({
     setOutlineVisible(!outlineVisible);
   };
 
-  // 收集所有标题 ID（扁平化）
-  const allHeadingIds = useMemo(() => {
-    const ids: string[] = [];
-    const traverse = (nodes: OutlineNode[]) => {
-      nodes.forEach((node) => {
-        ids.push(node.id);
-        if (node.children.length > 0) {
-          traverse(node.children);
-        }
-      });
-    };
-    traverse(outline);
-    return ids;
-  }, [outline]);
 
   // 滚动时高亮当前可见的标题
   useEffect(() => {

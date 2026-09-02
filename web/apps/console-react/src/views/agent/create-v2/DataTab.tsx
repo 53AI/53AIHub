@@ -6,7 +6,7 @@
  * - 其他类型: WorkAIStatistic
  */
 
-import WorkAIStatistic from '@/views/work-ai/Statistic'
+import WorkAIStatistic from './components/Statistic'
 import { Record } from '@/views/search/record/Record'
 
 interface AgentDataTabProps {

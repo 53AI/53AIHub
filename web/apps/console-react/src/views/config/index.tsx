@@ -3,33 +3,17 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { t } from "@/locales";
 import { PageLayoutTabs } from "@/components/PageLayout";
 import { LazyPage } from "@/components/LazyPage";
-import { useEnv } from "@/hooks/useEnv";
 
 type TabKey =
   | "info"
   | "template-style"
   | "navigation"
-  | "domain"
   | "statistics";
 
 export function ConfigPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState<TabKey>("info");
-  const { isOpLocalEnv, isPrivatePremEnv } = useEnv();
-
-  // Initialize tab from URL query
-  useEffect(() => {
-    const tab = searchParams.get("tab") as TabKey;
-    if (
-      tab &&
-      ["info", "template-style", "navigation", "domain", "statistics"].includes(
-        tab,
-      )
-    ) {
-      setActiveTab(tab);
-    }
-  }, [searchParams]);
+  const [activeTab, setActiveTab] = useState<TabKey | "">("");
 
   // Handle tab change
   const handleTabChange = (key: string) => {
@@ -71,16 +55,6 @@ export function ConfigPage() {
         ),
       },
       {
-        key: "domain",
-        label: t("module.domain"),
-        children: (
-          <LazyPage
-            loader={() => import("@/views/domain").then((m) => m.DomainPage)}
-          />
-        ),
-        visible: !isOpLocalEnv && !isPrivatePremEnv,
-      },
-      {
         key: "statistics",
         label: t("module.statistics"),
         children: (
@@ -92,8 +66,21 @@ export function ConfigPage() {
         ),
       },
     ],
-    [isOpLocalEnv, isPrivatePremEnv],
+    [],
   );
+
+  // 根据 URL tab 解析当前激活页（只考虑可见页）；不存在或无效时回退到第一个可见页
+  useEffect(() => {
+    const tabKeys = tabs
+      .filter((item) => item.visible !== false)
+      .map((item) => item.key);
+    const urlTab = searchParams.get("tab") as TabKey;
+    if (urlTab && tabKeys.includes(urlTab)) {
+      setActiveTab(urlTab);
+    } else if (tabKeys.length > 0) {
+      setActiveTab(tabKeys[0]);
+    }
+  }, [searchParams, tabs]);
 
   return (
     <PageLayoutTabs

@@ -74,6 +74,8 @@ export interface CatalogRef {
   // 打开内置「移动到」弹窗。复用 catalog 内的 MoveToModal/fetchDirs/确认逻辑，
   // 外部调用方（如 file header 的 FileMore）只需传入目标 FileItem 即可。
   moveTo: (data: FileItem) => void;
+  // 展开并滚动定位到指定节点（与首次进入一致）。供外部如 FileSearch 选中后调用。
+  scrollToNode: (nodeId: string) => void;
 }
 
 export const Catalog = forwardRef<CatalogRef, CatalogProps>(
@@ -151,16 +153,6 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
 
     const libraryId = params.id || "";
 
-    // Focus input when editing starts
-    useEffect(() => {
-      if (editingNodeId !== null) {
-        setTimeout(() => {
-          inlineInputRef.current?.focus();
-          inlineInputRef.current?.select();
-        }, 50);
-      }
-    }, [editingNodeId]);
-
     // Update tree height when container resizes
     useEffect(() => {
       const container = treeContainerRef.current;
@@ -190,98 +182,57 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       return { pathToId, idToBasePath };
     }, [files]);
 
-    // 当前文件被路由选中（包含刷新页面）时，展开祖先并滚动到目标节点
-    // 解决"library/:id/file/:fid 刷新后目录未展开 / 未滚动到文件"的 bug
-    //
-    // 仅在 currentFileId 变化时触发（首次进入 / 切换文件）。
-    // 数据更新（files 重载）和用户手动折叠/展开不应触发，避免打断当前视图。
-    // 用 processedFileIdRef 标记"已为该目标处理过"，并在标记后再调度滚动 rAF：
-    // 后续因 setExpandedKeys 触发的 effect 重跑会早返回，但已调度的 rAF 仍会执行。
-    // 用 scrollGenerationRef 让过期 rAF 自废，无需 cancelAnimationFrame。
-    // 记录"已为 (id, base_path) 组合处理过"。仅 id 不够：
-    // 用户在 /file/X 滚动到 X 后拖拽 X 到新文件夹（base_path 变了），
-    // id 不变但需要重新展开新位置的祖先并滚动。
-    const processedTargetRef = useRef<{ id: string; basePath: string } | null>(
-      null,
-    );
-    // 滚动请求的代数计数器：每次调度新滚动 +1；rAF 回调比较当前代数，过期则 no-op，
-    // 避免上一次的滚动在新的 targetId 到来后还命中。
+    // 仅当【本次挂载】URL 带节点 id（file/folder 路由）时做一次"展开+滚动定位"。
+    // 之后（页面内切换、新建、数据刷新、手动滚动）都不触发，除非外部显式调用 scrollToNode（如 FileSearch 选中）。
+    const [mountNodeId] = useState<string | null>(() => params.fid ?? null);
+    const didInitialScrollRef = useRef(false);
     const scrollGenerationRef = useRef(0);
 
-    // biome-ignore lint/correctness/useExhaustiveDependencies: 反应性已通过 folderPathIndex（files 派生）覆盖，setExpandedKeys 是稳定的 zustand 选择器；刻意不直接依赖 files 与 expandedKeys：files 由 folderPathIndex 传递，expandedKeys 展开状态变化时 processedTargetRef 已护身（基于 id+basePath），加进 deps 反而每次 expand/collapse 都触发多余的 find+walk。
-    useEffect(() => {
-      const targetId = currentFileId;
-      // currentFileId 短暂变空时【不清空】已处理记忆。
-      // file/layout.tsx 会在 pathname 变化 / 组件卸载时把 currentFileId 置为 ''，
-      // 随后又设回同一个 id（例如 preview↔chunks 切换、或列表数据刷新引发的重渲）。
-      // 若在此处清空记忆，回到同一文件时会再次滚动，把用户已手动滚动到的位置
-      // 强行拉回目标节点——表现为：滚到下方给最底部文件夹点“上传”时列表跳回最上面，
-      // 且上传下拉菜单所在的虚拟列表节点被滚动卸载，导致“选择文件”弹窗无法触发。
-      // 真正切到不同文件（id 变化）仍会滚动；文件被拖拽移动（base_path 变化）仍会重新定位。
-      if (!targetId) return;
-      // 数据未就绪：等待 files 变化后再次触发
-      if (!files || files.length === 0) return;
-
-      const target = files.find((f) => f.id === targetId);
-      if (!target) return;
-      const targetBasePath = target.base_path || "";
-
-      // 已为该 (id, basePath) 组合处理过：跳过。basePath 变化（文件被移动）会重做。
-      const processed = processedTargetRef.current;
-      if (processed?.id === targetId && processed?.basePath === targetBasePath)
-        return;
-
-      // O(depth) 向上爬：target.base_path → 父文件夹 id → 父.base_path → ...
-      const { pathToId, idToBasePath } = folderPathIndex;
-      const ancestors: string[] = [];
-      let parentPath = targetBasePath;
-      let hops = 0;
-      while (parentPath && hops < 512) {
-        const fid = pathToId.get(parentPath);
-        if (!fid) break;
-        ancestors.push(fid);
-        parentPath = idToBasePath.get(fid) || "";
-        hops++;
-      }
-
-      // 合并到现有 expandedKeys（仅追加缺失项，幂等不破坏用户状态）
-      if (ancestors.length > 0) {
+    // 展开 target 的祖先目录，并在下一帧 DOM 提交后滚动定位到该节点（最多重试 5 帧）。
+    // 首次进入与 FileSearch 选中后共用同一套“展开+滚动”逻辑。
+    const scrollTreeToTarget = useCallback(
+      (nodeId: string) => {
+        const target = files.find((f) => f.id === nodeId);
+        if (!target) return;
+        const { pathToId, idToBasePath } = folderPathIndex;
+        let parentPath = target.base_path ?? "";
+        const ancestors: string[] = [];
+        let hops = 0;
+        while (parentPath && hops < 512) {
+          const fid = pathToId.get(parentPath);
+          if (!fid) break;
+          ancestors.push(fid);
+          parentPath = idToBasePath.get(fid) ?? "";
+          hops++;
+        }
         const missing = ancestors.filter((id) => !expandedKeys.includes(id));
-        if (missing.length > 0) {
-          setExpandedKeys([...expandedKeys, ...missing]);
-        }
-      }
+        if (missing.length) setExpandedKeys([...expandedKeys, ...missing]);
 
-      // 关键：先标记已处理，再调度滚动，避免后续 effect 重跑重复处理
-      // 记录 (id, basePath)：basePath 变了（文件被移动）会触发重新处理
-      processedTargetRef.current = { id: targetId, basePath: targetBasePath };
-
-      // 替代原 setTimeout(120) 魔数：用 rAF 等到下一帧 DOM 提交后调用 scrollTo。
-      // rc-tree 的虚拟列表在 commit 后还可能做内部测量布局，所以加一个重试兜底
-      // （最多 5 帧 ≈ 80ms @ 60fps，比旧 120ms 紧；最终失败时 warn 暴露问题）。
-      // 用 scrollGenerationRef 让过期 rAF 自废，无需 cancelAnimationFrame。
-      const scheduledKey = targetId;
-      const generation = ++scrollGenerationRef.current;
-      const maxScrollAttempts = 5;
-      const tryScroll = (attempts: number): void => {
-        if (scrollGenerationRef.current !== generation) return;
-        try {
-          treeRef.current?.scrollTo?.({
-            key: scheduledKey,
-            align: "auto",
-          });
-        } catch (err) {
-          if (attempts < maxScrollAttempts) {
-            requestAnimationFrame(() => tryScroll(attempts + 1));
-          } else {
-            console.warn(
-              `[catalog] scrollTo ${maxScrollAttempts} 帧内未命中，放弃 key=${scheduledKey}`,
-              err,
-            );
+        // 下一帧 DOM 提交后滚动到目标（最多重试 5 帧）
+        const generation = ++scrollGenerationRef.current;
+        const tryScroll = (t = 1) => {
+          if (scrollGenerationRef.current !== generation) return;
+          try {
+            treeRef.current?.scrollTo?.({ key: nodeId, align: "auto" });
+          } catch {
+            if (t < 5) requestAnimationFrame(() => tryScroll(t + 1));
+            else console.warn(`[catalog] scrollTo 未命中 key=${nodeId}`);
           }
-        }
-      };
-      requestAnimationFrame(() => tryScroll(1));
+        };
+        requestAnimationFrame(() => tryScroll());
+      },
+      [files, folderPathIndex, expandedKeys, setExpandedKeys],
+    );
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: 由 currentFileId 与 files(folderPathIndex) 驱动；didInitialScrollRef/mountNodeId 是非响应式守卫，scrollTreeToTarget 内已用自身依赖实现展开+滚动。
+    useEffect(() => {
+      if (didInitialScrollRef.current) return;
+      if (!mountNodeId || !currentFileId) return;
+      if (!files?.length) return;
+      const target = files.find((f) => f.id === currentFileId);
+      if (!target) return;
+      didInitialScrollRef.current = true;
+      scrollTreeToTarget(currentFileId);
     }, [currentFileId, folderPathIndex]);
 
     // 卸载时清理挂起的 rAF（拖拽悬停）
@@ -418,12 +369,24 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       [loadFilesAll],
     );
 
+    // 新建子项后把父文件夹追加进展开列表（幂等），保证未展开的父目录里新子项可见；父为根目录时返回原数组
+    const expandParent = (
+      parentFolder: FileItem | null,
+      currentExpandedKeys: string[],
+    ): string[] => {
+      if (!parentFolder?.isfolder || currentExpandedKeys.includes(parentFolder.id)) {
+        return currentExpandedKeys;
+      }
+      return [...currentExpandedKeys, parentFolder.id];
+    };
+
     // Create folder with unique name
     const createFolder = useCallback(
       (path: string) => {
         const nodes = findNodeInBasePath(path, treeFiles);
         const existingNames = nodes.map((item) => item.name);
         const name = generateUniqueName("无标题文件夹", existingNames);
+        const parentFolder = findNodeInPath(path, treeFiles);
         createFolderAction({ name, path }).then((res: any) => {
           // Save current expanded state via getState() 读最新值
           const { expandedKeys: currentKeys, setExpandedKeys: setKeys } =
@@ -431,7 +394,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
           const currentExpandedKeys = [...currentKeys];
           loadFilesAll().then(() => {
             // Restore expanded state
-            setKeys(currentExpandedKeys);
+            setKeys(expandParent(parentFolder, currentExpandedKeys));
             // Start inline editing for the new folder
             setTimeout(() => {
               startInlineEdit(res.id, name);
@@ -442,6 +405,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       [
         createFolderAction,
         findNodeInBasePath,
+        findNodeInPath,
         loadFilesAll,
         startInlineEdit,
         treeFiles,
@@ -456,6 +420,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
         const existingNames = nodes.map((item) => item.name.replace(".md", ""));
         const baseName = generateUniqueName("无标题知识", existingNames);
         const name = `${baseName}.md`;
+        const parentFolder = findNodeInPath(path, treeFiles);
         createFileAction({ name, path, permissions: [] })
           .then((res: any) => {
             // Save current expanded state via getState() 读最新值
@@ -464,7 +429,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
             const currentExpandedKeys = [...currentKeys];
             loadFilesAll().then(() => {
               // Restore expanded state
-              setKeys(currentExpandedKeys);
+              setKeys(expandParent(parentFolder, currentExpandedKeys));
               // Start inline editing for the new file
               setTimeout(() => {
                 startInlineEdit(res.id, baseName);
@@ -475,6 +440,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       [
         createFileAction,
         findNodeInBasePath,
+        findNodeInPath,
         loadFilesAll,
         startInlineEdit,
         treeFiles,
@@ -1034,6 +1000,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       filter,
       command: handleFolderCommand,
       moveTo: openMoveToModal,
+      scrollToNode: (nodeId: string) => scrollTreeToTarget(nodeId),
     }));
 
     // Build tree data from already-structured tree files
@@ -1082,6 +1049,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
                         handleInlineEditSave(file, editingNodeValue);
                       }
                     }}
+                    autoFocus
                     onClick={(e) => e.stopPropagation()}
                   />
                 ) : (

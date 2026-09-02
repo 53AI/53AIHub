@@ -18,6 +18,7 @@ account_register,注册账号,註冊賬號,Register Account,アカウント登�
 action.add,添加,添加,Add,追加
 action.added,已添加,已添加,Added,追加済み
 action.cancel,取消,取消,Cancel,キャンセル
+action.cancel_select_all,取消全选,取消全選,Cancel Select All,選択をすべて解除
 action.confirm,确认,確認,Confirm,確認
 action.create,创建,創建,Create,作成
 action.delete,删除,刪除,Delete,削除
@@ -27,6 +28,7 @@ action.more,更多,更多,More,もっと
 action.next,下一步,下一步,Next,次へ
 action.operation,操作,操作,Operation,操作
 action.save,保存,保存,Save,保存
+action.select_all,全选,全選,Select All,すべて選択
 action.copy_success,已复制,已複製,Copied,コピーしました
 action.prev,上一步,上一步,Previous,前へ
 action.preview,预览,預覽,Preview,プレビュー
@@ -121,7 +123,6 @@ admin_user.title,管理员,管理員,Administrator,管理員
 skills.search_placeholder,技能名称,技能名稱,Search skills,スキル検索
 skills.action_add,添加技能,添加技能,Add Skill,スキルを追加
 skills.delete_confirm,确定要删除技能「{skill}」吗？删除后将无法恢复。,確定要刪除技能「{skill}」嗎？刪除後將無法恢復。,Are you sure you want to delete the skill "{skill}"? This action cannot be undone.,スキル「{skill}」を削除してもよろしいですか？削除後は復元できません。
-skills.unsaved_confirm_message,有未保存的更改，确定要离开吗？,有未保存的更改，確定要離開嗎？,There are unsaved changes. Are you sure you want to leave?,保存されていない変更があります。離れてもよろしいですか？
 skills.env.title,环境变量,環境變數,Environment Variables,環境変数
 skills.env.placeholder_key,请输入变量名,請輸入變數名,Enter variable name,変数名を入力してください
 skills.env.placeholder_value,请输入变量值,請輸入變數值,Enter variable value,変数値を入力してください
@@ -399,7 +400,6 @@ bind_account,已绑定的账户,已綁定的賬戶,Bound Account,バインドア
 chat.empty_desc,在输入框中填写内容调试吧~,在輸入框中填寫內容調試吧~,Fill in the content in the input box to debug,入力ボックスに内容を入力してデバッグしてください
 chat_glm,智谱AI,智譜AI,ChatGLM,ChatGLM
 cleaning_policy.add_condition,添加,添加,Add,追加
-cleaning_policy.add_rule,添加管线,添加管线,Add Pipeline,ルールを追加
 cleaning_policy.custom_rules,自定义,自定義,Custom,カスタム
 cleaning_policy.and,且,且,And,かつ
 cleaning_policy.condition_required,请输入条件,請輸入條件,Enter condition,条件を入力してください
@@ -432,9 +432,15 @@ cleaning_policy.rule_name_placeholder,请输入规则名称,請輸入規則名�
 cleaning_policy.rule_name_required,请输入规则名称,請輸入規則名稱,Enter rule name,ルール名を入力してください
 cleaning_policy.select_pipeline_placeholder,请选择执行的数据管线,請選擇執行的數據管線,Select data pipeline,データパイプラインを選択
 cleaning_policy.then_action,则执行（动作）,則執行（動作）,Then execute (action),実行する（アクション）
-cleaning_policy.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,未保存の変更があります。終了しますか？
 cleaning_policy.when,当,當,When,当
 cleaning_policy.when_condition,当满足（条件）,當滿足（條件）,When (conditions),条件を満たすとき
+graph_pipeline.delete_confirm,确定要删除图谱策略「{name}」吗？,確定要刪除圖譜策略「{name}」嗎？,Are you sure you want to delete the graph strategy "{name}"?,グラフ戦略「{name}」を削除しますか？
+graph_pipeline.delete_pipeline_confirm,确定要删除图谱管线「{name}」吗？,確定要刪除圖譜管線「{name}」嗎？,Are you sure you want to delete the graph pipeline "{name}"?,グラフパイプライン「{name}」を削除しますか？
+graph_pipeline.then_action,则抽取（图谱模板）,則抽取（圖譜模板）,Then extract (graph template),抽出（グラフテンプレート）
+graph_pipeline.template_required,请选择图谱模板,請選擇圖譜模板,Please select a graph template,グラフテンプレートを選択してください
+graph_pipeline.template_loading,正在加载图谱模板…,正在載入圖譜模板…,Loading graph templates…,グラフテンプレートを読み込み中…
+graph_pipeline.untitled_pipeline,未命名图谱管线,未命名圖譜管線,Untitled Graph Pipeline,無題のグラフラパイプライン
+graph_pipeline.smart_extract,智能抽取,智能抽取,Smart Extract,スマート抽出
 cloud_computing_platform,云计算平台,雲計算平台,Cloud Computing Platform,クラウドコンピューティングプラットフォーム
 commom.add_manual,手动添加,手動添加,Add Manually,手動追加
 commom.add_market,从应用市场添加,從應用市場添加,Add from App Market,アプリケーションマーケットから追加
@@ -445,6 +451,8 @@ common.name,名称,名稱,Name,名前
 common.image_cropper,图片裁剪,圖片裁剪,Image Cropper,画像裁剪
 common.short_name,简称,簡稱,Abbreviation,簡略名
 common.no_data,暂无数据,暫無數據,No Data,データがありません
+common.no_match,暂无匹配,暫無匹配,No Match,一致なし
+common.search,搜索,搜索,Search,検索
 library.file_count,文档数量,文檔數量,Document Count,ドキュメント数
 common.feature_coming_soon,功能即将上线，敬请期待,功能即將上線，敬請期待,"Feature coming soon, please wait",機能はすぐに登場します。お楽しみに！
 common.feature_not_available,{functionName}暂不可用，请联系管理员~~,{functionName}暫不可用，請聯繫管理員~~,"{functionName} is not available, please contact the administrator~~",{functionName}は利用できません。管理者にお問い合わせください~~
@@ -1007,7 +1015,7 @@ module.app_management,应用管理,應用管理,Application Management,アプリ
 module.banner_diagram,Banner,Banner,Banner,バナー
 module.bot,智能体,智能體,AI Agent,インテリジェントエージェント
 module.chunk_setting,拆分策略,拆分策略,Splitting Strategy,分割戦略
-module.cleaning_pipeline,清洗管线,清洗管線,Cleaning Pipeline,クリーニングパイプライン
+module.cleaning_pipeline,RAG管线,RAG管線,RAG Pipeline,RAGパイプライン
 module.combinat,单点登录,單點登錄,Single Sign-On,シングルサインオン
 module.custom,自定义,自定義,Custom,カスタム
 module.data-pipeline,数据管线,數據管線,Data Pipeline,データパイプライン
@@ -1018,6 +1026,7 @@ module.dialogue_prompt,提示词,提示詞,Prompts,プロンプト
 module.document-setting,文档设置,文檔設定,Document Settings,文書設定
 module.document_app,文档应用,文檔應用,Document Application,文書アプリケーション
 module.document_assistant,文档助手,文檔助手,Document Assistant,文書助手
+module.graph_pipeline,图谱管线,圖譜管線,Graph Pipeline,グラフパイプライン
 module.staff_insight,参谋洞察,參謀洞察,Staff Insight,参謀インサイト
 module.staff_insight_desc,自定义业务背景信息，定向生成深度文档洞察分析报告,自定義業務背景資訊，定向生成深度文檔洞察分析報告,Customize business context and generate in-depth document insight reports,業務背景情報をカスタマイズし、深度のある文書インサイトレポートを生成します
 module.search_desc,通过智能问答与文档交互，快速获取信息、处理文档，让知识检索与内容交互更高效。,通過智能問答與文件交互，快速獲取信息、處理文件，讓知識檢索與內容交互更高效。,"Through intelligent Q\&A and document interaction, quickly acquire information and process documents, making knowledge retrieval and content interaction more efficient.",スマートQAとドキュメントとのインタラクションを通じて、迅速に情報を取得し、ドキュメントを処理し、知識検索とコンテンツのインタラクションをより効率的に行います。
@@ -1312,8 +1321,7 @@ module.website_type_industry_desc,站点为内部员工+注册用户 访问使�
 module.weighted_score,权重计算,權重計算,Weighted Score,重み付け計算
 module.weighted_score_desc,通过调整分配的权重，重新排序策略确定是优先进行语义匹配还是关键字匹配。,通過調整分配的權重，重新排序策略確定是優先進行語義匹配還是關鍵字匹配。,"By adjusting the assigned weights, the reranking strategy determines whether to prioritize semantic matching or keyword matching.",重みを調整することで、再順序付け戦略が語義マッチング優先かキーワードマッチング優先かを決定します。
 module.writer,内容创作,內容創作,Content Creation,コンテンツ作成
-module.work_ai,工作台,工作台,Workbench,ワークベンチ
-module.knowledge_graph,知识图谱,知識圖谱,KKnowledge Graph,知識グラフ
+module.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
 month,月,月,Month,月
 monthly,月,月,Month,月間
 more,更多,更多,More,もっと
@@ -1517,47 +1525,35 @@ prompt.content_required,请填写提示词内容,請填寫提示詞內容,Please
 prompt.default_name,提示词,提示詞,Prompt,プロンプト
 prompt.role_instruction_placeholder,"#角色设定
 （例如：资深职场顾问，风格专业严谨）
-
 #技能要求
 1. （例如：分析职场问题并给出解决方案）
-
 #输出示例
 用户输入：（例如：新入职团队，怎么快速融入并建立好人际关系？）
 输出：（例如：建议你可以从这几点入手：1. 主动和同事做简短自我介绍，重点说明自己的岗位和能提供的支持；2. 先快速熟悉团队的工作节奏和沟通习惯，不急于发表观点。）
-
 #限制
 （例如：不提供违法违规建议，不涉及人身攻击）","#角色設定
 （例如：資深職場顧問，風格專業嚴謹）
-
 #技能要求
 1. （例如：分析職場問題並給出解決方案）
-
 #輸出示例
 用戶輸入：（例如：新入職團隊，怎麼快速融入並建立好人際關係？）
 輸出：（例如：建議你可以從這幾點入手：1. 主動和同事做簡短自我介紹，重點說明自己的崗位和能提供的支持；2. 先快速熟悉團隊的工作節奏和溝通習慣，不急於發表觀點。）
-
 #限制
 （例如：不提供違法違規建議，不涉及人身攻擊）","#Role Setting
 (e.g., Senior workplace consultant, professional and rigorous style)
-
 #Skills Required
 1. (e.g., Analyze workplace issues and provide solutions)
-
 #Output Example
 User input: (e.g., New to the team, how to quickly integrate and build good relationships?)
 Output: (e.g., You can start from these points: 1. Give a brief self-introduction to colleagues, highlighting your role and support you can provide; 2. Quickly familiarize yourself with the team's work pace and communication habits, don't rush to express opinions.)
-
 #Constraints
 (e.g., No illegal suggestions, no personal attacks)","#ロール設定
 （例：経験豊富な職場コンサルタント、専門的で厳格なスタイル）
-
 #スキル要件
 1. （例：職場の問題を分析し、解決策を提案）
-
 #出力例
 ユーザー入力：（例：新しくチームに加入、どうやって素早く馴染み、良好な人間関係を築く？）
 出力：（例：以下の点から始めると良いでしょう：1. 同僚に簡単な自己紹介を行い、自分の役割と提供できるサポートを説明；2. チームの作業ペースとコミュニケーション習慣を素早く把握し、焦って意見を述べない）
-
 #制約
 （例：違法な提案はしない、人身攻撃は避ける）"
 prompt_config,提示词配置,提示詞配置,Prompt Config,プロンプト設定
@@ -1613,6 +1609,7 @@ response_message.user_not_found,用户不存在,用戶不存在,User Not Found,�
 response_message.wechat_user_not_found,微信账号未绑定，请先绑定手机号,微信賬號未綁定，請先綁定手機號,WeChat account not bound，please bind your mobile number first,WeChatアカウントがバインドされていません。先に携帯番号をバインドしてください
 response_message.username_or_password_is_incorrect,用户名或密码错误,用戶名或密碼錯誤,Username or Password is Incorrect,ユーザー名またはパスワードが間違っています
 response_message.param_error,参数错误,參數錯誤,Parameter Error,パラメータエラー
+response_message.wiki_category_draft_at_least_two,分类草稿需至少生成两个分类,分類草稿需至少生成兩個分類,"The wiki category draft must contain at least two categories",ウィキカテゴリ案は少なくとも2つのカテゴリを含む必要があります
 restart,重新开始,重新開始,Restart,再起動
 return,返回,返回,Back,戻る
 reupload,重新上传,重新上傳,Re-upload,再アップロード
@@ -1909,13 +1906,9 @@ wechat_payment.api_guide.step_2,2、在弹出窗口中点击“已沟通”，�
 wechat_payment.api_guide.title,如何获取APIV3密钥,如何獲取APIV3密鑰,How to get APIv3 Key,APIV3密鑰の取得方法
 wechat_payment.app_guide.step_1,1、在微信支付商户平台的【产品中心 - AppID账号管理】中点击“关联APPID”，将之前获取的微信公众号或小程序的APPID填入并确认关联。登录微信开放平台，在消息中心中同意关联。,1、在微信支付商戶平台的【產品中心 - AppID賬號管理】中點擊“關聯APPID”，將之前獲取的公眾號或小程序的APPID填入並確認關聯。登錄微信開放平台，在消息中心中同意關聯。,"1、In the WeChat Pay Merchant Platform, go to [Product Center - AppID Account Management] and click ""Associate APPID"". Fill in the APPID of the previously obtained WeChat Official Account or Mini Program and confirm the association. Log in to the WeChat Open Platform and agree to the association in the Message Center.","1、在微信支付商戶平台的【產品中心 - AppID賬號管理】中點擊""關聯APPID""，將之前獲取的公眾號或小程序的APPID填入並確認關聯。登錄微信開放平台，在消息中心中同意關聯。"
 wechat_payment.app_guide.step_2,"2、将已关联的APPID，复制填入表单。
-
 补充：如果还未关联任何公众号，则需要先关联公众号，操作方法：点击关联AppID","2、將已關聯的APPID，複製填入表單。
-
 補充：如果還未關聯任何公眾號，則需要先關聯公眾號，操作方法：點擊關聯AppID","2、Copy the associated APPID and fill it into the form.
-
  note: If no Official Account has been associated yet, you need to associate an Official Account first. Operation method: Click to associate AppID","2、將已關聯的APPID，複製填入表單。
-
 補充：如果還未關聯任何公眾號，則需要先關聯公眾號，操作方法：點擊關聯AppID"
 wechat_payment.app_guide.step_3,然后登录微信公众平台（{url}），进入公众号后台，在【设置与开发 - 基本配置】中获取开发者ID（AppID）。如果是小程序，可在微信公众平台的小程序管理后台获取小程序APPID。,然後登錄微信公眾平台（{url}），進入公眾號後台，在【設置與開發 - 基本配置】中獲取開發者ID（AppID）。如果是小程序，可在微信公眾平台的小程序管理後台獲取小程序APPID。,"Then log in to the WeChat Official Platform ({url}), enter the Official Account backend, and obtain the Developer ID (AppID) in [Settings and Development - Basic Configuration]. If it's a Mini Program, you can obtain the Mini Program APPID in the Mini Program management backend of the WeChat Official Platform.",然後登錄微信公眾平台（{url}），進入公眾號後台，在【設置與開發 - 基本配置】中獲取開發者ID（AppID）。如果是小程序，可在微信公眾平台的小程序管理後台獲取小程序APPID。
 wechat_payment.app_guide.title,如何获取APPID,如何獲取APPID,How to get APPID,APPIDの取得方法
@@ -1954,46 +1947,15 @@ podcast.knowledge_extraction,知识萃取,知識萃取,Knowledge Extraction,知�
 podcast.knowledge_extraction_desc,专注于合同文本的智能审阅工具，能识别合同条款风险、审查合规性、优化表述，提供专业且高效的支持。,專注於合同文本的智能審閱工具，能識別合同條款風險、審查合規性、優化表述，提供專業且高效的支持。,Intelligent review tool focused on contract texts, identifying contract clause risks, reviewing compliance, and optimizing expressions to provide professional and efficient support.,契約書のインテリジェントレビューツールは、契約条項のリスクを特定し、コンプライアンスを確認し、表現を最適化し、専門的で効率的なサポートを提供します。
 podcast.ai_podcast,AI播客,AI播客,AI Podcast,AIポッドキャスト
 podcast.ai_podcast_desc,基于多领域知识的智能播客生成助手，可快速创作主题丰富、内容专业的播客内容，满足文档收听的需求。,基於多領域知識的智能播客生成助手，可快速創作主題豐富、內容專業的播客內容，滿足文檔收聽的需求。,Intelligent podcast generation assistant based on multi-domain knowledge, quickly creating rich-themed and professional podcast content to meet document listening needs.,多分野の知識に基づくインテリジェントポッドキャスト生成アシスタントは、テーマ豊かで専門的なポッドキャストコンテンツを素早く作成し、ドキュメント聴取のニーズを満たします。
-work_ai.description,配置具备自主规划、工具使用和反思能力的数字员工,配置具備自主規劃、工具使用和反思能力的數字員工,Configure digital employees with autonomous planning, tool use, and reflection capabilities,自主的な計画、ツールの使用、および反省能力を備えたデジタル従業員を構成する
-work_ai.cognitive_brain,认知大脑,認知大腦,Cognitive Brain,認知脳
-work_ai.cognitive_brain_desc,定义 Agent 如何思考、规划和执行任务。采用"Planning + React"双循环架构,定義 Agent 如何思考、規劃和執行任務。採用"Planning + React"雙循環架構,Define how the Agent thinks, plans, and executes tasks. Adopting a "Planning + React" dual-loop architecture,エージェントがどのように考え、計画し、タスクを実行するかを定義します。「Planning + React」デュアルループアーキテクチャを採用
-work_ai.user_input,用户输入,用戶輸入,User Input,ユーザー入力
-work_ai.planning_reasoning,规划推理,規劃推理,Planning & Reasoning,計画と推論
-work_ai.planning,规划,規劃,Planning,計画
-work_ai.reasoning,推理,推理,Reasoning,推論
-work_ai.reflection,反思,反思,Reflection,振り返り
 work_ai.planning_reasoning_model,规划推理模型,規劃推理模型,Planning & Reasoning Model,計画推論モデル
-work_ai.planning_reasoning_model_desc,负责任务拆解、路径规划和复杂逻辑推理,負責任務拆解、路徑規劃和複雜邏輯推理,Responsible for task decomposition, path planning, and complex logical reasoning,タスク分解、パス計画、複雑な論理推論を担当
 work_ai.skill_execution_model,技能执行模型,技能執行模型,Skill Execution Model,スキル実行モデル
-work_ai.skill_execution_model_desc,负责生成代码、调用 API和处理具体任务,負責生成代碼、調用 API和處理具體任務,Responsible for code generation, API calls, and handling specific tasks,コード生成、API呼び出し、具体的なタスク処理を担当
 work_ai.meta_instruction,元指令,元指令,Meta Instruction,メタ指示
-work_ai.meta_instruction_desc,用于对工作台的回复做出一系列指令和约束,用於對工作台的回覆做出一系列指令和約束,Used to make a series of instructions and constraints for the workbench responses,ワークベンチの応答に対して一連の指示と制約を行うために使用
-work_ai.meta_instruction_placeholder,请输入元指令,請輸入元指令,Please enter meta instruction,メタ指示を入力してください
-work_ai.active_welcome,主动欢迎语,主動歡迎語,Active Welcome,アクティブウェルカム
-work_ai.opening_statement,开场白,開場白,Opening Statement,オープニングステートメント
 work_ai.skill_config,技能配置,技能配置,Skill Configuration,スキル設定
-work_ai.skill_config_desc,配置"技能管理" 菜单中的预设的技能,配置"技能管理" 菜單中的預設的技能,Configure preset skills in the "Skill Management" menu,"スキル管理"メニューのプリセットスキルを設定
-work_ai.effect_preview,效果预览,效果預覽,Effect Preview,効果プレビュー
-work_ai.specify_knowledge_or_skill,指定知识或技能问答,指定知識或技能問答,Specify knowledge or skill Q&A,知識またはスキルQ&Aを指定
-work_ai.specify_skill,指定技能问答,指定技能問答,Specify skill Q&A,スキルQ&Aを指定
-work_ai.task_placeholder,分配一项任务或基于企业知识提任何问题,分配一項任務或基於企業知識提任何問題,Assign a task or ask any question based on enterprise knowledge,タスクを割り当てるか、企業の知識に基づいて質問をする
-work_ai.publish_update,发布更新,發布更新,Publish Update,更新を公開
-work_ai.workbench,工作台,工作台,Workbench,ワークベンチ
-work_ai.skill_test_code,测试代码生成,測試代碼生成,Test Code Generation,テストコード生成
-work_ai.skill_audio_to_text,录音转文字,錄音轉文字,Audio to Text,音声をテキストに
-work_ai.skill_weather,天气查询,天氣查詢,Weather Query,天気予報
-work_ai.default_opening_statement,下午好，希望我为你做些什么？,下午好，希望我為你做些什麼？,Good afternoon, how can I help you?,こんにちは、何かお手伝いしましょうか？
-work_ai.deep_thinking,深度思考,深度思考,Deep Thinking,深い思考
-work_ai.quick_answer,快速回答,快速回答,Quick Answer,クイック回答
-work_ai.please_save_first,请先保存,請先保存,Please save first,先に保存してください
-work_ai.model_config_changed_please_save,模型配置已修改，请先保存后再发送消息,模型配置已修改，请先保存后再发送消息,Model configuration has been modified, please save before sending messages,モデル設定が変更されました。メッセージを送信する前に保存してください
 work_ai.data_statistics,数据统计,數據統計,Data Statistics,データ統計
 work_ai.data_details,数据明细,數據明細,Data Details,データ詳細
-work_ai.question_content,提问内容,提問內容,Question Content,質問内容
 all_knowledge_base,全部知识库,全部知識庫,All Knowledge Bases,全知識ベース
 download_failed,下载失败,下載失敗,Download Failed,ダウンロード失敗
 file_label,文件,文件,File,ファイル
-
 agent.tab_config,配置,配置,Configuration,設定
 agent.tab_data,数据,數據,Data,データ
 agent.tab_integrate,接入,接入,Integration,連携
@@ -2055,9 +2017,9 @@ recording.count_unit,个,個,count,件
 recording.total_duration,录音总时长,錄音總時長,Total Duration,総録音時間
 recording.hour_unit,小时,小時,Hour(s),時間
 recording.duration,时长,時長,Duration,時間
+recording.publish_update,发布更新,發布更新,Publish Update,更新を公開
 recording_voice_required,请选择语音识别模型,請選擇語音識別模型,Please select a voice recognition model,音声認識モデルを選択してください
 recording_insight_required,请选择洞察生成模型,請選擇洞察生成模型,Please select an insight generation model,洞察生成モデルを選択してください
-
 module.platform_model_model_exists,该模型已存在,該模型已存在,Model already exists,モデルが既に存在します
 space.setting.title,空间设置,空間設置,Space Settings,空間設定
 space.setting.menu.basicInfo,基础信息,基礎資訊,Basic Info,基本情報
@@ -2095,11 +2057,69 @@ space.dynamic.new_config,新建配置,新建配置,New Config,新規設定
 space.dynamic.delete_type_confirm,确定要删除此知识类型吗？,確定要刪除此知識類型嗎？,Are you sure to delete this knowledge type?,この知識タイプを削除してもよろしいですか？
 space.dynamic.delete_type_warning,删除后将无法恢复,刪除後將無法恢復,Cannot recover after deletion,削除後は復元できません
 space.dynamic.title,标题,標題,Title,タイトル
-space.dynamic.description,描述,描述,Description,説明
-space.dynamic.description_placeholder,请输入内容,請輸入內容,Please enter content,内容を入力してください
+space.dynamic.name_placeholder,请输入分类名称,請輸入分類名稱,Please enter category name,分類名を入力してください
+space.dynamic.name_required,请输入分类名称,請輸入分類名稱,Please enter category name,分類名を入力してください
+space.dynamic.name_duplicate,该分类名称已存在，请使用其他名称,該分類名稱已存在，請使用其他名稱,Category name already exists, please use another name,この分類名は既に存在します。別の名前を使用してください
+space.dynamic.save_empty_categories_confirm,未配置任何分类，是否仍要保存？,未配置任何分類，是否仍要儲存？,No categories have been configured. Still save?,カテゴリが設定されていません。それでも保存しますか？
+space.dynamic.description_label,描述,描述,Description,説明
+space.dynamic.description_placeholder,请描述什么样的文字内容应归入此类，可参考特定的行业术语、专有名词或上下文语境。比如“有明确购买意向或正在接触过程中的个人或企业代表”,請描述什麼樣的文字內容應歸入此類，可參考特定的行業術語、專有名詞或上下文語境。比如「有明確購買意向或正在接觸過程中的個人或企業代表」,Describe what kind of text content should fall into this category, referencing specific industry terms, proper nouns, or contextual language. For example, "individuals or business representatives with clear purchase intent or currently in the process of engagement",どのようなテキスト内容がこのカテゴリに分類されるべきかを説明してください。特定の業界用語、固有名詞、または文脈を参考にしてください。例：「明確な購入意向がある、または接客中の個人や企業担当者」
 space.dynamic.rule,规则,規則,Rule,ルール
 space.dynamic.rule_placeholder,请输入规则,請輸入規則,Please enter rule,ルールを入力してください
 space.dynamic.empty_form_tip,请选择或添加页面配置,請選擇或添加頁面配置,Please select or add a page config,ページ設定を選択または追加してください
+space.dynamic.enable_label,启用,啟用,Enable,有効化
+space.dynamic.set_range,设置范围,設置範圍,Set Range,範囲を設定
+space.dynamic.category_config,分类配置,分類配置,Category Config,分類設定
+space.dynamic.add_category,添加,添加,Add,追加
+space.dynamic.ai_generate,AI生成,AI生成,AI Generate,AI生成
+space.dynamic.data_mode,数据模式,數據模式,Data Mode,データモード
+space.dynamic.ai_generate_empty,未生成任何分类草稿，请调整空间名称/简介后重试,未生成任何分類草稿，請調整空間名稱/簡介後重試,No category drafts generated. Please adjust the space name/description and retry,分類ドラフトが生成されていません。スペース名・説明を調整して再試行してください
+space.dynamic.ai_generate_duplicate,所选分类与现有分类重名,所選分類與現有分類重名,Selected categories duplicate existing ones,選択した分類は既存の分類と重複しています
+space.dynamic.ai_generate_skipped,已跳过 {count} 个与现有分类重名的草稿,已跳過 {count} 個與現有分類重名的草稿,{count} drafts skipped as they duplicate existing categories,既存の分類と重複する{count}件のドラフトをスキップしました
+space.dynamic.ai_generate_selected_prefix,共选择,共選擇,Selected,選択済み
+space.dynamic.ai_generate_selected_unit,个,個,items,件
+space.dynamic.extraction_rule,生成方式,生成方式,Generation Method,生成方法
+space.dynamic.extraction_preference,偏好,偏好,Preference,好み
+space.dynamic.rule_ai,智能生成,智能生成,AI Generate,AI生成
+space.dynamic.rule_ai_desc,由大模型自主挖掘实体及其邻近连线数据，在保障逻辑严谨的前提下发散重组为可读性强的精美 Wiki。,由大模型自主挖掘实体及其邻近连线数据，在保障逻辑严谨的前提下发散重组为可读性强的精美 Wiki。,"AI proactively extracts entities and their relationships, then re-organizes them into readable Wiki content while maintaining logical rigor.",大規模モデルがエンティティとその隣接リンクデータを自律的に挖掘し、ロジック厳密さを確保した上で可読性の高いWikiに再構成します。
+space.dynamic.rule_conditional,条件引导,條件引導,Conditional Guide,条件ガイド
+space.dynamic.rule_conditional_desc,通过预先设定的判断条件和分支路径，引导大模型按业务场景抽取结构化知识。,通過預先設定的判斷條件和分支路徑，引導大模型按業務場景抽取結構化知識。,Guide the LLM to extract structured knowledge via preset conditions and branching paths tailored to your scenario.,事前設定された判斷條件と分岐パスに従い、業務シナリオに応じた構造化知識をLLMに抽出させます。
+space.dynamic.rule_fixed,固定结构,固定結構,Fixed Structure,固定構造
+space.dynamic.rule_fixed_desc,严谨遵循设定的 Markdown 大纲结构和层级进行文字填充，不擅作多余大纲。,嚴謹遵循設定的 Markdown 大綱結構和層級進行文字填充，不擅作多餘大綱。,Strictly fill content into the preset Markdown outline structure and hierarchy without adding extra outlines.,設定されたMarkdownアウトライン構造と階層に厳密に従い文字を充填し、余計なアウトラインは作成しません。
+space.dynamic.preference_professional,专业严谨,專業嚴謹,Professional,專業的
+space.dynamic.preference_casual,通俗易懂,通俗易懂,Casual,分かりやすい
+space.dynamic.preference_dialog,对话访谈,對話訪談,Dialogue,対話形式
+space.dynamic.preference_custom,自定义,自定義,Custom,カスタム
+space.dynamic.custom_description_placeholder,请输入自定义抽取偏好描述,請輸入自定義抽取偏好描述,Please enter custom extraction preference description,カスタム抽出設定の説明を入力してください
+space.dynamic.delete_category_confirm,确定要删除该分类吗？,確定要刪除該分類嗎？,Are you sure to delete this category?,この分類を削除してもよろしいですか？
+space.dynamic.structure_outline,结构大纲,結構大綱,Structure Outline,構造アウトライン
+space.dynamic.outline_level_1,H1,H1,H1,H1
+space.dynamic.outline_level_2,H2,H2,H2,H2
+space.dynamic.outline_level_3,H3,H3,H3,H3
+space.dynamic.outline_level_4,H4,H4,H4,H4
+space.dynamic.outline_level_5,H5,H5,H5,H5
+space.dynamic.outline_level_6,H6,H6,H6,H6
+space.dynamic.outline_title_placeholder,请输入抽取标题,請輸入抽取標題,Please enter an extraction title,抽出タイトルを入力してください
+space.dynamic.outline_desc_placeholder,请输入抽取描述与内容要求,請輸入抽取描述與內容要求,Please enter the extraction description and content requirements,抽出の説明とコンテンツ要件を入力してください
+space.dynamic.outline_add,添加,添加,Add,追加
+space.dynamic.outline_required,请至少添加一项结构大纲,請至少添加一項結構大綱,Please add at least one outline item,構造アウトラインを少なくとも1つ追加してください
+space.dynamic.outline_delete_confirm,确定要删除该大纲项吗？,確定要刪除該大綱項嗎？,Are you sure to delete this outline item?,このアウトライン項目を削除してもよろしいですか？
+space.dynamic.outline_duplicate,结构大纲中已存在相同的抽取标题，请勿重复,結構大綱中已存在相同的抽取標題，請勿重複,A duplicate extraction title already exists in the outline. Please remove it,構造アウトラインに同じ抽出タイトルが既に存在します。重複しないようにしてください
+space.dynamic.advanced_settings,高级设置,高級設置,Advanced Settings,詳細設定
+space.dynamic.strict_field_fill,严格字段填充约束,嚴格字段填充約束,Strict field fill constraint,厳格なフィールド入力制約
+space.dynamic.strict_field_fill_desc,不允许在既定大纲之外生成任何额外的段落,不允許在既定大綱之外生成任何額外的段落,Do not generate any extra paragraphs beyond the given outline,設定されたアウトライン以外で追加の段落を生成しません
+space.dynamic.target_entity_type,类型,類型,Type,タイプ
+space.dynamic.target_entity_type_placeholder,请选择主目标实体,請選擇主目標實體,Please select target entity type,主対象エンティティを選択してください
+space.dynamic.target_entity_type_required,请选择主目标实体,請選擇主目標實體,Please select target entity type,主対象エンティティを選択してください
+space.dynamic.entity_person,人物,人物,Person,人物
+space.dynamic.entity_organization,组织,組織,Organization,組織
+space.dynamic.entity_concept,概念,概念,Concept,概念
+space.dynamic.entity_place,地点,地點,Place,場所
+space.dynamic.entity_event,事件,事件,Event,イベント
+space.dynamic.entity_product,产品,產品,Product,製品
+space.dynamic.style_placeholder,请输入写作风格文案,請輸入寫作風格文案,Please enter the writing style prompt,執筆スタイルのプロンプトを入力してください
+space.dynamic.preference_required,请选择或填写偏好,請選擇或填寫偏好,Please select or enter a preference,好みを選択または入力してください
+space.dynamic.template_requires_heading,模板必须包含至少一个一级标题,模板必須包含至少一個一級標題,The template must contain at least one Level-1 heading,テンプレートには少なくとも1つのレベル1見出しが必要です
+message_status.delete_success,删除成功,刪除成功,Deleted successfully,削除に成功しました
 common.untitled,未命名,未命名,Untitled,無題
 action.saving,保存中,保存中,Saving...,保存中...
 common.tip,提示,提示,Notice,ヒント
@@ -2185,10 +2205,9 @@ recording.template.description_placeholder,请输入该模板的描述，如使�
 recording.template.prompt_label,指令,指令,Prompt,指示
 recording.template.prompt_required,请输入指令,請輸入指令,Please enter prompt,指示を入力してください
 recording.template.prompt_placeholder,请输入指令,請輸入指令,Please enter prompt,指示を入力してください
-recording.template.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,保存されていない変更があります。離れますか？
 recording.agent_app_toggle_desc,开启后对会议总结提供文档应用能力,開啟後對會議總結提供文檔應用能力,Enable Document Application for meeting summaries,会議サマリーに文書アプリを有効にします
-recording.multi_perspective,自动视角,自動視角,Automatic perspective,自動視点
-recording.multi_perspective_desc,开启后，用户未指定视角时将根据录音纪要自动判断培训、演讲、路演、拜访等分析视角,開啟後，使用者未指定視角時將根據錄音紀要自動判斷培訓、演講、路演、拜訪等分析視角,When enabled, recordings without a user-selected perspective are automatically classified from the minutes,自動視点を有効にすると、ユーザーが視点を指定していない録音を議事録から自動分類します
+recording.multi_perspective,自动场景,自動場景,Automatic scene,自動シーン
+recording.multi_perspective_desc,开启后，用户未指定场景时将根据录音纪要自动判断培训、演讲、路演、拜访等分析场景,開啟後，使用者未指定場景時將根據錄音紀要自動判斷培訓、演講、路演、拜訪等分析場景,"When enabled and no scene is specified, the recording is automatically classified from its minutes into scenarios such as training, speeches, roadshows, or visits",シーンが指定されていない場合、議事録から研修、講演、ロードショー、訪問などのシーンを自動判定します
 recording.history_memory,历史记忆,歷史記憶,Historical Memory,履歴メモリ
 recording.history_memory_desc,从录音转写中抽取历史记忆数据,開啟後從錄音轉寫中抽取歷史記憶數據,Extract historical memory from recordings transcriptions,録音の文字起こしから履歴メモリを抽出します
 recording.memory_type.person,人物,人物,Person,人物
@@ -2253,7 +2272,12 @@ space.knowledge_graph.unadded_label,未添加,未添加,Unadded,未追加
 space.knowledge_graph.added_label,已添加,已添加,Added,追加済み
 space.knowledge_graph.attribute_name,名称,名稱,Name,名前
 space.knowledge_graph.add_short,添加,添加,Add,追加
+space.knowledge_graph.enable_label,启用,啟用,Enable,有効化
+space.knowledge_graph.set_range,设置范围,設置範圍,Set Range,範囲を設定
+space.knowledge_graph.select_title,选择,選擇,Select,選択
+space.knowledge_graph.libraries_section,知识库,知識庫,Knowledge Libraries,ナレッジベース
+space.knowledge_graph.selected_count,已选 {count} 个,已選 {count} 個,{count} selected,{count}件選択中
+space.knowledge_graph.all_libraries,全部知识库,全部知識庫,All Libraries,すべてのナレッジベース
+space.knowledge_graph.loading,加载中...,載入中...,Loading...,読み込み中...
 login.bind_phone_failed,绑定手机号失败,綁定手機號失敗,Failed to bind mobile number,携帯電話番号のバインドに失敗しました
-work_ai.file_id_label,文件 {id},文件 {id},"File {id}",ファイル {id}
-work_ai.tool_kb_qa,指定知识问答,指定知識問答,Targeted Knowledge Q&A,指定知識問答
-work_ai.tool_kb_qa_placeholder,分配一项任务或基于企业知识提任何问题,分配一項任務或基於企業知識提任何問題,Assign a task or ask any question based on enterprise knowledge,タスクを割り当てるか、企業知識に基づいて質問をしてください
+common.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,未保存の変更があります。離れますか？

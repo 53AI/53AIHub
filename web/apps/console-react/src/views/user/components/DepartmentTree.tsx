@@ -463,7 +463,7 @@ export const DepartmentTree = forwardRef<
       const isRoot = !data.did;
 
       return (
-        <div className="h-6 w-full flex items-center gap-2 group pr-2">
+        <div className="h-8 w-full flex items-center gap-2 group pr-2">
           <SvgIcon
             name="department"
             width="16px"
@@ -656,6 +656,7 @@ export const DepartmentTree = forwardRef<
                   ? filterDepartments(treeData, keyword.trim())
                   : treeData
               )}
+              itemHeight={34}
               expandedKeys={expandedKeys}
               onExpand={(keys) => setExpandedKeys(keys as (string | number)[])}
               onSelect={(_, info) => {

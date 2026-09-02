@@ -1,4 +1,4 @@
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Switch, Table, message, Modal } from "antd";
@@ -7,13 +7,13 @@ import CreateSkillDialog from "./components/CreateSkillDialog";
 import { skillApi } from "@/api/modules/skill";
 import { GROUP_TYPE } from "@/constants/group";
 import { PublishStatus_TYPE } from "@/api/modules/skill/types";
+import type { ScopeItem } from "@/api/modules/agent";
 import GroupTabs from "@/components/GroupTabs";
 import { PageLayoutContent } from "@/components/PageLayout";
+import ScopeDisplay from "@/components/ScopeDisplay";
 import { t } from "@/locales";
 import { api_host } from "@/utils/config";
-import { groupApi } from "@/api/modules/group";
-import type { Group } from "@/api/modules/group";
-import { useListState } from "@/hooks";
+import { useListState, useScopeDictionary } from "@/hooks";
 
 const DEFAULT_LOGO = `${api_host}/api/images/skill/logo.png`;
 
@@ -25,11 +25,11 @@ interface SkillItem {
   logo?: string;
   group_ids: number[];
   group_names: string[];
-  internal_members: string[];
   admin_status: "enabled" | "disabled";
   status: number;
   eid: number;
   publish_status: string;
+  scopes?: ScopeItem[];
 }
 
 interface FilterForm {
@@ -68,30 +68,18 @@ export default function Skills() {
   const [tableData, setTableData] = useState<SkillItem[]>([]);
   const [tableTotal, setTableTotal] = useState(0);
   const [tableLoading, setTableLoading] = useState(false);
-  const [internalGroupOptions, setInternalGroupOptions] = useState<Record<number, string>>({});
-  const internalGroupOptionsRef = useRef<Record<number, string>>({});
+  // ScopeDisplay 共享字典:全局 hook 自动 dedup,任意调用方只触发 3 个请求
+  const scopeDict = useScopeDictionary();
 
   const getGroupList = useCallback(() => {
     const options = groupTabsRef.current?.getOptions() || [];
     const idNameMap: Record<number, string> = {};
     if (options?.length > 0) {
-      options.forEach((item: Group) => {
+      options.forEach((item: any) => {
         idNameMap[item.group_id] = item.group_name;
       });
     }
     return idNameMap;
-  }, []);
-
-  const loadInternalGroupList = useCallback(async () => {
-    const list = await groupApi.list({
-      params: { group_type: GROUP_TYPE.INTERNAL_USER },
-    });
-    const options: Record<number, string> = {};
-    list.forEach((item: Group) => {
-      options[item.group_id] = item.group_name;
-    });
-    internalGroupOptionsRef.current = options;
-    setInternalGroupOptions(options);
   }, []);
 
   const fetchSkillData = useCallback(async () => {
@@ -109,7 +97,6 @@ export default function Skills() {
       });
       setTableTotal(total);
       const options = getGroupList();
-      const currentInternalGroupOptions = internalGroupOptionsRef.current;
       const data = [...list].map((item: any) => {
         item.status =
           item.admin_status === "enabled"
@@ -119,13 +106,10 @@ export default function Skills() {
               : null;
         item.group_ids = item.group_ids || [];
         item.group_names = [];
-        item.internal_members = [];
+        item.scopes = item.scopes || [];
         item.group_ids.forEach((id: number) => {
           if (options[id]) {
             item.group_names.push(options[id]);
-          }
-          if (currentInternalGroupOptions[id]) {
-            item.internal_members.push(currentInternalGroupOptions[id]);
           }
         });
         item.logo = item.logo || DEFAULT_LOGO;
@@ -195,7 +179,6 @@ export default function Skills() {
 
   useEffect(() => {
     const init = async () => {
-      await loadInternalGroupList();
       initializedRef.current = true;
       fetchSkillData();
     };
@@ -218,13 +201,10 @@ export default function Skills() {
       width: 180,
       render: (_: any, row: SkillItem) => (
         <div className="flex items-center gap-2 w-full">
-          <img
+          <SafeImage
             className="flex-none w-8 h-8 rounded-full overflow-hidden"
-            src={row.logo || DEFAULT_LOGO}
+            src={row.logo || ""}
             alt=""
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = DEFAULT_LOGO;
-            }}
           />
           <div className="flex-1 w-0 text-sm flex flex-col">
             <div className="text-primary truncate">{row.skill_name || "--"}</div>
@@ -265,11 +245,12 @@ export default function Skills() {
       width: 180,
       ellipsis: true,
       render: (_: any, row: SkillItem) => (
-        <div
-          className={`whitespace-nowrap truncate ${!row.internal_members?.length ? "text-placeholder" : ""}`}
-        >
-          {row.internal_members?.join("、") || "--"}
-        </div>
+        <ScopeDisplay
+          scopes={row.scopes}
+          treeData={scopeDict?.treeData}
+          users={scopeDict?.users}
+          groups={scopeDict?.groups}
+        />
       ),
     },
     {
@@ -298,26 +279,22 @@ export default function Skills() {
       fixed: "end",
       render: (_: any, row: SkillItem) => (
         <>
-          <Button
-            type="text"
-            icon={<SvgIcon name="edit" />}
-            className="invisible group-hover:visible hover:!text-brand"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMoreCommand("edit", row);
-            }}
-          />
-          <Button
-            type="text"
+          <IconAction
+            variant="row"
+            title={t("action.edit")}
+            onClick={() => handleMoreCommand("edit", row)}
+          >
+            <SvgIcon name="edit" />
+          </IconAction>
+          <IconAction
+            variant="row"
+            title={t("action.delete")}
             danger
-            icon={<SvgIcon name="delete" />}
-            className="invisible group-hover:visible hover:!text-tag-red"
             disabled={row.eid === 0}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleMoreCommand("delete", row);
-            }}
-          />
+            onClick={() => handleMoreCommand("delete", row)}
+          >
+            <SvgIcon name="delete" />
+          </IconAction>
         </>
       ),
     },

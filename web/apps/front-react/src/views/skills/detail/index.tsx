@@ -22,7 +22,7 @@ import SkillEnvVarsDrawer from "../components/SkillEnvVarsDrawer";
 import { api_host } from '@/utils/config';
 import AuthTagGroup from "@/components/AuthTagGroup";
 import AddSkillModal from "../components/AddSkillModal";
-import { checkPermission } from "@/utils/permission";
+import { checkPermissionAsync } from "@/utils/permission";
 
 const getQualityIcon = (key: string) => {
   const iconMap: Record<string, string> = {
@@ -200,8 +200,10 @@ export function SkillDetailView() {
 
   const handleAdd = () => {
     if (!skill) return;
-    checkPermission({
+    checkPermissionAsync({
       groupIds: skill?.group_ids || [],
+      resourceId: skill.id,
+      resourceType: 'skill_library',
       onClick: async () => {
         setAddModalOpen(true);
       }
@@ -503,7 +505,7 @@ export function SkillDetailView() {
               <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
                 <div className="flex-1 overflow-hidden">
                   {/* 可在此处添加权限标签等信息 */}
-                  { skill.group_ids && skill.group_ids.length > 0 && <AuthTagGroup value={skill.group_ids}  mode="compact"  /> }
+                  { skill.group_ids && skill.group_ids.length > 0 && <AuthTagGroup value={skill.group_ids} scopes={skill.scopes} mode="compact" /> }
                 </div>
                 {skill.added ? (
                   <Button type="primary" onClick={handleUse}>{t('skill.workbench_use')}</Button>

@@ -6,7 +6,6 @@ import {
     Button,
     Divider,
     message,
-    Image,
 } from "antd";
 import {
     useState,
@@ -21,6 +20,7 @@ import { useEnterpriseStore } from "@/stores";
 import { useEnv } from "@/hooks/useEnv";
 import { img_host } from "@/utils/config";
 import IconPopover from "@/components/Icon/popover";
+import { SafeImage } from "@km/shared-components-react";
 import {
     NAVIGATION_TYPE,
     NAVIGATION_TARGET,
@@ -252,13 +252,11 @@ const CreateDrawer = forwardRef<CreateDrawerRef, CreateDrawerProps>(
                 disabled={typeValue === NAVIGATION_TYPE.SYSTEM}
               >
                 <div className="size-12 border border-gray-200 rounded flex items-center justify-center overflow-hidden">
-                  <Image
+                  <SafeImage
                     className="size-6 overflow-hidden"
                     src={iconValue || `${img_host}/icon/icon1.png`}
                     alt=""
                     style={{ objectFit: "contain" }}
-                    preview={false}
-                    fallback="/images/default_agent.png"
                   />
                 </div>
               </IconPopover>

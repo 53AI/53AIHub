@@ -49,7 +49,6 @@ export function watchAccountConflict(options: {
 
   // 初始化当前身份基准（用于后续比对）
   const currentIdentity = getCurrentIdentity()
-  let lastEid: string | number = currentIdentity.eid
   let lastUserId: string = currentIdentity.user_id
   let modalShown = false
 
@@ -69,10 +68,11 @@ export function watchAccountConflict(options: {
       const newIdentity = await onTokenChanged()
       if (!newIdentity) return
 
-      const eidChanged = String(newIdentity.eid) !== String(lastEid)
+      // 只以 user_id 判定账号是否切换；eid 是企业上下文，同一用户的不同企业（或 token
+      // 内嵌企业与当前切换企业不一致）不应判定为账号冲突，否则会导致误刷新
       const userIdChanged = newIdentity.user_id !== lastUserId
 
-      if (eidChanged || userIdChanged) {
+      if (userIdChanged) {
         if (!modalShown) {
           modalShown = true
           const oldIdentity = getCurrentIdentity()
@@ -81,7 +81,6 @@ export function watchAccountConflict(options: {
         }
       } else {
         // 同一用户重新登录（token 刷新）
-        lastEid = newIdentity.eid
         lastUserId = newIdentity.user_id
       }
     } catch (error) {

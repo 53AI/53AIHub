@@ -171,7 +171,7 @@ export const useUserStore = create<UserState>((set, get) => ({
         subscriptionApi.list()
       ])
       const info: RawUserInfo = {
-        access_token: res.access_token || access_token || '',
+        access_token: res.access_token || access_token || localStorage.getItem(TOKEN_KEY) || '',
         user_id: res.user_id || '',
         openid: res.openid || '',
         username: res.username || '',

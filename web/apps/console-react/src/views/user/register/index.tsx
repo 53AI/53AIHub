@@ -6,8 +6,7 @@ import {
   message,
   Modal
 } from "antd";
-import { MoreOutlined } from "@ant-design/icons";
-import { SvgIcon, Dropdown, Search } from "@km/shared-components-react";
+import { SvgIcon, Dropdown, Search, IconAction } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { groupApi } from "@/api";
 import { useUserStore, useEnterpriseStore } from "@/stores";
@@ -266,19 +265,19 @@ export function UserRegisterList() {
         width: 120,
         fixed: "end",
         render: (_: any, record: RegisterUser) => (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
-            <Button
-              type="link"
-              icon={<SvgIcon name="edit" />}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEdit(record);
-              }}
-            />
+          <div className="flex items-center">
+            <IconAction
+              variant="row"
+              title={t("action.edit")}
+              onClick={() => handleEdit(record)}
+            >
+              <SvgIcon name="edit" />
+            </IconAction>
             {isWorkEnv ? (
               <Button
                 type="link"
                 danger
+                className="opacity-0 group-hover:opacity-100"
                 icon={<SvgIcon name="delete" />}
                 disabled={record.user_id === userInfo.user_id}
                 onClick={(e) => {
@@ -309,11 +308,9 @@ export function UserRegisterList() {
                 }}
                 trigger={["click"]}
               >
-                <Button
-                  type="link"
-                  icon={<MoreOutlined />}
-                  onClick={(e) => e.stopPropagation()}
-                />
+                <IconAction variant="row" title={t("more")}>
+                  <SvgIcon name="more-h" />
+                </IconAction>
               </Dropdown>
             )}
           </div>

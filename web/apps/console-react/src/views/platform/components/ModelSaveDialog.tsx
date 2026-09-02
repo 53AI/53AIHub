@@ -160,7 +160,7 @@ export function ModelSaveDialog({
   });
   const [form] = Form.useForm();
   const [modelAddForm] = Form.useForm();
-  
+
   const [loading, setLoading] = useState(false);
   const [modelAddVisible, setModelAddVisible] = useState(false);
   const [modelSchemas, setModelSchemas] = useState<FormConfig[]>([]);
@@ -653,7 +653,6 @@ export function ModelSaveDialog({
       // 单模型处理（Azure, CUSTOM_OPENAI）
       const modelId = Array.isArray(data.models) ? data.models[0] : data.models;
       // 优先用 form 上选中的 model_type，回退到 custom_config[modelId]（radio 未传值时）
-    
       const effectiveModelType =
         data.model_type ?? data.custom_config?.[modelId] ?? MODEL_USE_TYPE.REASONING;
       custom_config[modelId] = effectiveModelType;
@@ -911,7 +910,6 @@ export function ModelSaveDialog({
     } else if (config.min !== undefined && value < config.min) {
       finalValue = config.default ?? config.min;
     }
-    console.log(prop)
     handleFieldChange(prop, finalValue);
   };
 

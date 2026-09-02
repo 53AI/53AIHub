@@ -1,7 +1,7 @@
 import { useLibraryStore } from "@/stores/modules/library";
 import { eventBus } from "@km/shared-utils";
 import { t } from "@/locales";
-import { IconButton } from "@/components/IconButton";
+import { IconAction } from "@km/shared-components-react";
 import { AI_ICON_URL } from "./sidebar-app-item";
 
 export function AssistantBtn() {
@@ -22,14 +22,14 @@ export function AssistantBtn() {
   };
 
   return (
-    <IconButton
+    <IconAction
       title={t("library.document_chat")}
       size="medium"
       onClick={handleClick}
       activeClassName={assistantVisible ? "bg-[#F2F6FE]" : ""}
     >
       <img className="size-5" src={AI_ICON_URL} alt="" />
-    </IconButton>
+    </IconAction>
   );
 }
 

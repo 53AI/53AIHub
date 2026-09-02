@@ -64,7 +64,7 @@ export function SummaryTabContent({
     return <SummaryContent content={meetingMinutesSummary.summary_content} />
   }
   // 纪要阶段失败 → 展示错误态（仅看本阶段，不被后置阶段拖累）
-  if (hasStageFailed(stages, ['meetingMinutes'])) {
+  if (hasStageFailed(stages, ['meetingMinutes', 'transcription'])) {
     return <ParsingPlaceholder stages={stages} visibleSteps={visibleSteps} onStart={onStartGenerate} loading={generating} />
   }
   if (showSummaryPending) {

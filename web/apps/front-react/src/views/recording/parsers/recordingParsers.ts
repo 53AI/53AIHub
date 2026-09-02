@@ -193,16 +193,39 @@ export function parseTranscriptLines(content: string): TranscriptItem[] {
   return items
 }
 
+export interface ParsedInsightHTMLPage {
+  _format: 'html_v2'
+  _html: string
+  _version?: number
+}
+
+/** 判断 page_json 是否是第二步生成的独立 HTML 页面。 */
+export function isInsightHTMLPage(pageJson: Record<string, any> | null | undefined): pageJson is ParsedInsightHTMLPage {
+  return pageJson?._format === 'html_v2' && typeof pageJson._html === 'string' && pageJson._html.trim().length > 0
+}
+
 /**
- * 解析 page_json：兼容旧 JSON Block 格式和新 Markdown 格式
- * 旧格式以 { 开头（JSON.parse），新格式为 Markdown 字符串
- * 统一返回 { _markdown?: string, ... } 结构，非 Markdown 时保留原有字段
+ * 解析 page_json：兼容旧 JSON Block、旧 Markdown 和新的 HTML 页面封装。
+ * 新 HTML 仍复用 page_json 字段，但使用 format 标记选择隔离的 HTML 渲染器；
+ * 未带标记的历史值保持原有解析结果。
  */
 export function parsePageJson(pageJson: string): Record<string, any> {
   const trimmed = pageJson.trim()
   if (trimmed.startsWith('{')) {
+    const parsed = JSON.parse(pageJson)
+    if (parsed?.format === 'html_v2' && typeof parsed.html === 'string') {
+      return {
+        _format: 'html_v2',
+        _version: typeof parsed.version === 'number' ? parsed.version : undefined,
+        _html: parsed.html,
+      }
+    }
     // 旧格式：JSON Block 结构
-    return JSON.parse(pageJson)
+    return parsed
+  }
+  if (/^<!doctype\s+html[\s>]/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) {
+    // 兼容曾经直接保存完整 HTML 的实验数据。
+    return { _format: 'html_v2', _html: trimmed }
   }
   // 新格式：Markdown 字符串
   // 后端可能用 ```markdown ... ``` 把整段包起来返回，先剥掉围栏避免污染

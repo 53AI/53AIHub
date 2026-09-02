@@ -8,7 +8,7 @@
  * - workflow (工作流):     WorkAIFeedback, type='workflow'
  */
 
-import WorkAIFeedback from '@/views/work-ai/Feedback'
+import WorkAIFeedback from './components/Feedback'
 import { Feedback as SearchFeedback } from '@/views/search/feedback/Feedback'
 
 interface AgentFeedbackTabProps {

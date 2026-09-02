@@ -114,7 +114,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: devServerPort,
-      allowedHosts: ['vevadob.kmtest.53ai.com','wescrm.kmtest.53ai.com', '352vtkg.kmtest.53ai.com', 'ct11fmn.kmtest.53ai.com']
+      allowedHosts: ['vevadob.kmtest.53ai.com','wescrm.kmtest.53ai.com', '352vtkg.kmtest.53ai.com', 'ct11fmn.kmtest.53ai.com', 'testkmdomain.kmtest.53ai.com']
     },
     build: {
       rollupOptions: {

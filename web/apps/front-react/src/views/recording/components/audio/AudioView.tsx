@@ -64,8 +64,6 @@ interface AudioViewProps {
   templateCategories?: TemplateCategory[]
   /** 录音配置（用于判断语音模型是否可用） */
   recordingConfig?: RecordingConfig
-  /** 外部已取到的文件数据，避免 useFileParse 重复请求 */
-  initialFileData?: Record<string, any>
   /** 外部已取到的解析状态，避免 useFileParse 重复请求 */
   parseStatus?: FileParseStatus | null
   /** 洞察/页面编排完成时回调，用于更新左侧列表描述文本 */
@@ -105,7 +103,7 @@ export interface AudioViewRef {
   startInsightRegeneration: () => void
 }
 
-export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function AudioView({ currentFile, shouldPoll = true, templates, templateCategories, recordingConfig, initialFileData, parseStatus, onDescriptionUpdate, onMeetingMinutesRename, readOnly = false, onInsightStateChange }, ref) {
+export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function AudioView({ currentFile, shouldPoll = true, templates, templateCategories, recordingConfig, parseStatus, onDescriptionUpdate, onMeetingMinutesRename, readOnly = false, onInsightStateChange }, ref) {
   const [currentTranscriptId, setCurrentTranscriptId] = useState('')
   const audioPlayerRef = useRef<AudioPlayerBarHandles>(null)
 
@@ -160,7 +158,6 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
     insightPageJson,
     fileSummaries,
     fileSummariesLoading,
-    hasContent,
     transcriptionStatus,
     meetingMinutesStatus,
     insightsStatus,
@@ -172,7 +169,7 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
     startInsightRegeneration,
     updateSummary,
     insightPageApiDone,
-  } = useFileParse({ fileId: currentFile?.id, shouldPoll, initialFileData, initialParseStatus: parseStatus })
+  } = useFileParse({ fileId: currentFile?.id, shouldPoll, initialParseStatus: parseStatus })
 
   // 我的录音旧数据：转录和洞察都完成，纪要/页面编排为 pending → 不展示重新生成页面
   const isLegacyData = isStageDone(transcriptionStatus) && isStageDone(insightsStatus) &&

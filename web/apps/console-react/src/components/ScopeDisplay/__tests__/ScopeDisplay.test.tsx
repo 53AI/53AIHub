@@ -1,11 +1,12 @@
 import { render, screen, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import ScopeDisplay from '../index'
 import { departmentApi } from '@/api/modules/department'
 import { userApi } from '@/api/modules/user'
 import { groupApi } from '@/api/modules/group'
+import { invalidateScopeDictionary } from '@/hooks/useScopeDictionary'
 
-// Mock APIs
+// Mock 底层 API:真实 loadScopeDictionary + cacheManager.getOrFetch 会调到这里
 vi.mock('@/api/modules/department', () => ({
   departmentApi: {
     fetch_department_tree: vi.fn(() =>
@@ -43,7 +44,18 @@ vi.mock('@/api/modules/group', () => ({
   },
 }))
 
+vi.mock('@/locales', () => ({
+  t: (k: string) => (k === 'internal_user.status.all' ? '全部成员' : k),
+}))
+
 describe('ScopeDisplay', () => {
+  beforeEach(() => {
+    invalidateScopeDictionary()
+    vi.mocked(departmentApi.fetch_department_tree).mockClear()
+    vi.mocked(userApi.fetch_internal_user).mockClear()
+    vi.mocked(groupApi.list).mockClear()
+  })
+
   it('should render "--" when scopes is undefined', () => {
     render(<ScopeDisplay />)
     expect(screen.getByText('--')).toBeInTheDocument()
@@ -56,6 +68,13 @@ describe('ScopeDisplay', () => {
 })
 
 describe('ScopeDisplay Rendering', () => {
+  beforeEach(() => {
+    invalidateScopeDictionary()
+    vi.mocked(departmentApi.fetch_department_tree).mockClear()
+    vi.mocked(userApi.fetch_internal_user).mockClear()
+    vi.mocked(groupApi.list).mockClear()
+  })
+
   it('should render company scope', async () => {
     render(<ScopeDisplay scopes={[{ scope_type: 'company', target_id: 0 }]} />)
 
@@ -106,6 +125,7 @@ describe('ScopeDisplay Rendering', () => {
 
 describe('ScopeDisplay external dictionary (avoids N+1 API calls)', () => {
   beforeEach(() => {
+    invalidateScopeDictionary()
     vi.mocked(departmentApi.fetch_department_tree).mockClear()
     vi.mocked(userApi.fetch_internal_user).mockClear()
     vi.mocked(groupApi.list).mockClear()
@@ -153,6 +173,41 @@ describe('ScopeDisplay external dictionary (avoids N+1 API calls)', () => {
       expect(screen.getByText('张三')).toBeInTheDocument()
     })
 
+    expect(userApi.fetch_internal_user).toHaveBeenCalledTimes(1)
+    expect(groupApi.list).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('ScopeDisplay row-level dedup (列表行内 N+1 防护)', () => {
+  beforeEach(() => {
+    invalidateScopeDictionary()
+    vi.mocked(departmentApi.fetch_department_tree).mockClear()
+    vi.mocked(userApi.fetch_internal_user).mockClear()
+    vi.mocked(groupApi.list).mockClear()
+  })
+
+  it('多个行同时挂载也只触发一次 API(共享 cache key dedup)', async () => {
+    // 模拟列表场景:父级未传 props 时,10 行同时挂载,只触发一次共享加载
+    render(
+      <>
+        {Array.from({ length: 10 }).map((_, i) => (
+          <ScopeDisplay
+            key={i}
+            scopes={[
+              { scope_type: 'department', target_id: 1 },
+              { scope_type: 'user', target_id: 100 },
+            ]}
+          />
+        ))}
+      </>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText('技术部').length).toBe(10)
+    })
+
+    // 共享 cache key + 并发 dedup,10 行只触发一次底层 API
+    expect(departmentApi.fetch_department_tree).toHaveBeenCalledTimes(1)
     expect(userApi.fetch_internal_user).toHaveBeenCalledTimes(1)
     expect(groupApi.list).toHaveBeenCalledTimes(1)
   })

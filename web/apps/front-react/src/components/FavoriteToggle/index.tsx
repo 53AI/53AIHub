@@ -1,5 +1,5 @@
 import { StarFilled, StarOutlined } from '@ant-design/icons'
-import { IconButton } from '@/components/IconButton'
+import { IconAction } from '@km/shared-components-react'
 import { t } from '@/locales'
 
 export interface FavoriteToggleProps {
@@ -22,7 +22,7 @@ export function FavoriteToggle({
   onToggle,
 }: FavoriteToggleProps) {
   return (
-    <IconButton
+    <IconAction
       title={favorite ? t('action.unfavorite') : t('action.favorite')}
       size="medium"
       onClick={onToggle}
@@ -32,7 +32,7 @@ export function FavoriteToggle({
       ) : (
         <StarOutlined className="text-[#1D1E1F] text-base" />
       )}
-    </IconButton>
+    </IconAction>
   )
 }
 

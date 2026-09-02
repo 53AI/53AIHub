@@ -6,7 +6,7 @@ import AuthTagGroup from '@/components/AuthTagGroup';
 import UserMemory from '@/components/UserMemory';
 import SkillPanel from './Skill';
 import { AGENT_USAGES } from '@/constants/agent';
-import { SvgIcon } from '@km/shared-components-react';
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { usePlatformAccessItems } from './hooks/usePlatformAccessItems';
 
 interface SettingProps {
@@ -104,18 +104,13 @@ function MenuItem({
  * 基本信息卡片
  */
 function BasicInfoSection({ agent }: { agent: IAgentInfo }) {
-  const DEFAULT_IMG = '/images/default_agent.png';
-
   return (
     <Section title={t('setting.basic_info')}>
       <div className="flex items-center gap-3">
-        <img
-          src={agent.logo || DEFAULT_IMG}
+        <SafeImage
+          src={agent.logo}
           alt={agent.name}
           className="size-8 rounded-xl object-cover"
-          onError={(e) => {
-            (e.target as HTMLImageElement).src = DEFAULT_IMG;
-          }}
         />
         <div className="flex-1 min-w-0">
           <div className="text-sm text-primary truncate">

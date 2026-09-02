@@ -12,17 +12,9 @@ import { useVersion } from "@/hooks";
 import { useEnterpriseStore } from "@/stores";
 import { includeKm } from "@/utils/config";
 
-const VALID_TAB_NAMES = [
-  "model",
-  "agent",
-  "online",
-  "viewer",
-  "parse",
-] as const;
-
 export function PlatformPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState("model");
+  const [activeTab, setActiveTab] = useState("");
   const enterpriseStore = useEnterpriseStore();
 
   const { canUse: canUseAgent } = useVersion({ module: VERSION_MODULE.AGENT });
@@ -34,13 +26,6 @@ export function PlatformPage() {
     setActiveTab(key);
     setSearchParams({ tab: key });
   };
-
-  useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab && VALID_TAB_NAMES.includes(tab as any)) {
-      setActiveTab(tab);
-    }
-  }, [searchParams]);
 
   // Tab items
   const tabs = useMemo(() => {
@@ -91,6 +76,17 @@ export function PlatformPage() {
 
     return items;
   }, [enterpriseStore.info.is_enterprise, canUseAgent, canUseKnowledgeBase, canUseRegisteredUser]);
+
+  // 根据 URL tab 解析当前激活页；不存在或无效时回退到第一个可用页
+  useEffect(() => {
+    const tabKeys = tabs.map((item) => item.key);
+    const urlTab = searchParams.get("tab");
+    if (urlTab && tabKeys.includes(urlTab)) {
+      setActiveTab(urlTab);
+    } else if (tabKeys.length > 0) {
+      setActiveTab(tabKeys[0]);
+    }
+  }, [searchParams, tabs]);
 
   return (
     <PageLayoutTabs

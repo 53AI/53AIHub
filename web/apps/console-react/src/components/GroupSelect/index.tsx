@@ -1,20 +1,15 @@
-import { Select, Checkbox, Radio, Skeleton } from "antd";
+import { Select, Skeleton } from "antd";
 import { useEffect, useMemo, useRef, useState, forwardRef, useCallback, useImperativeHandle } from "react";
 import { t } from "@/locales";
 import groupApi from "@/api/modules/group";
 import { GROUP_TYPE, type GroupType } from "@/constants/group";
-import { DeptMemberPicker } from "@/components/DeptMemberPicker";
-import type { ScopeItem } from "@km/shared-business/agent-create";
 
 export interface GroupSelectProps {
   value?: number | string | number[] | string[] | null;
   onChange?: (value: number | string | number[] | string[] | null) => void;
-  onConfirm?: (value: number | string | number[] | string[] | null) => void;
   groupType?: GroupType;
-  type?: "select" | "checkbox" | "picker" | "radio" | "scope";
   defaultAll?: boolean;
   defaultFirst?: boolean;
-  defaultFirstValue?: boolean;
   disabled?: boolean;
   size?: "large" | "middle" | "small";
   style?: React.CSSProperties;
@@ -24,7 +19,6 @@ export interface GroupSelectProps {
   mode?: "multiple" | "tags";
   multiple?: boolean;
   onOptionsLoad?: (options: GroupOption[]) => void;
-  children?: React.ReactNode; // trigger slot for picker type
 }
 
 export interface GroupOption {
@@ -36,8 +30,6 @@ export interface GroupOption {
 
 export interface GroupSelectRef {
   refresh: () => Promise<void>;
-  open: () => void;
-  close: () => void;
 }
 
 function GroupSelectInner(
@@ -47,12 +39,9 @@ function GroupSelectInner(
   const {
     value,
     onChange,
-    onConfirm,
     groupType = GROUP_TYPE.USER,
-    type = "select",
     defaultAll = false,
     defaultFirst = false,
-    defaultFirstValue = false,
     disabled = false,
     size = "middle",
     style,
@@ -61,32 +50,24 @@ function GroupSelectInner(
     mode,
     multiple,
     onOptionsLoad,
-    children,
   } = props;
 
   const [options, setOptions] = useState<GroupOption[]>([]);
   const [loading, setLoading] = useState(false);
 
   const onChangeRef = useRef(onChange);
-  const onConfirmRef = useRef(onConfirm);
   const onOptionsLoadRef = useRef(onOptionsLoad);
   const didApplyDefault = useRef(false);
   const groupTypeRef = useRef(groupType);
 
   useEffect(() => {
     onChangeRef.current = onChange;
-    onConfirmRef.current = onConfirm;
     onOptionsLoadRef.current = onOptionsLoad;
-  }, [onChange, onConfirm, onOptionsLoad]);
+  }, [onChange, onOptionsLoad]);
 
   useEffect(() => {
     groupTypeRef.current = groupType;
   }, [groupType]);
-
-  const normalizedValue = useMemo(() => {
-    if (value === undefined || value === null) return [];
-    return Array.isArray(value) ? value : [value];
-  }, [value]);
 
   const valueRef = useRef(value);
   useEffect(() => {
@@ -120,9 +101,7 @@ function GroupSelectInner(
           const allValues = mapped.map((opt) => opt.group_id);
           setTimeout(() => onChangeRef.current?.(allValues), 0);
         } else if (defaultFirst && mapped.length > 0) {
-          const defaultValue =
-            type === "radio" ? mapped[0].group_id : [mapped[0].group_id];
-          setTimeout(() => onChangeRef.current?.(defaultValue), 0);
+          setTimeout(() => onChangeRef.current?.([mapped[0].group_id]), 0);
         }
       }
     } catch (error) {
@@ -130,7 +109,7 @@ function GroupSelectInner(
     } finally {
       setLoading(false);
     }
-  }, [defaultAll, defaultFirst, type]);
+  }, [defaultAll, defaultFirst]);
 
   useEffect(() => {
     didApplyDefault.current = false;
@@ -150,102 +129,13 @@ function GroupSelectInner(
     prevDefaultAllRef.current = defaultAll;
   }, [defaultAll, value, options]);
 
-  const pickerRef = useRef<{ open: () => void; close: () => void }>(null);
-  const open = useCallback(() => {
-    pickerRef.current?.open();
-  }, []);
-  const close = useCallback(() => {
-    pickerRef.current?.close();
-  }, []);
-
   useImperativeHandle(ref, () => ({
     refresh,
-    open,
-    close,
   }));
 
   const handleChange = useCallback((nextValue: number | string | number[] | string[]) => {
     onChangeRef.current?.(nextValue);
   }, []);
-
-  // Render picker type - fully delegate to DeptMemberPicker
-  if (type === "picker") {
-    const pickerValue = Array.isArray(value) ? value as number[] : value ? [value as number] : [];
-    return (
-      <DeptMemberPicker
-        ref={pickerRef}
-        value={pickerValue}
-        onChange={(val) => onChangeRef.current?.(val as number[])}
-        onConfirm={(result) => onConfirmRef.current?.(result.value as number[])}
-        type="group"
-        groupType={groupType}
-        defaultAll={defaultAll}
-        defaultFirst={defaultFirst}
-        simpleValue
-        trigger={children || undefined}
-      />
-    );
-  }
-
-  // Render scope type - delegate to DeptMemberPicker with scope mode
-  if (type === "scope") {
-    return (
-      <DeptMemberPicker
-        ref={pickerRef}
-        value={value as ScopeItem[]}
-        onChange={(val) => onChangeRef.current?.(val as ScopeItem[])}
-        onConfirm={(result) => onConfirmRef.current?.(result.value as ScopeItem[])}
-        type="scope"
-        defaultFirstValue={defaultFirstValue}
-        defaultAll={defaultAll}
-        simpleValue
-        multiple
-        trigger={children || undefined}
-      />
-    );
-  }
-
-  // Render radio type
-  if (type === "radio") {
-    return (
-      <Skeleton className="w-full" active loading={loading}>
-        <Radio.Group
-          value={value as number}
-          onChange={(e) => handleChange(e.target.value)}
-          disabled={disabled}
-          className={className}
-          style={style}
-        >
-          {options.map((opt) => (
-            <Radio key={opt.group_id} value={opt.group_id}>
-              <span className="text-primary">{opt.group_name}</span>
-            </Radio>
-          ))}
-        </Radio.Group>
-      </Skeleton>
-    );
-  }
-
-  // Render checkbox type
-  if (type === "checkbox") {
-    return (
-      <Skeleton className="w-full" active loading={loading}>
-        <Checkbox.Group
-          value={normalizedValue}
-          onChange={(vals) => handleChange(vals as number[])}
-          disabled={disabled}
-          className={className}
-          style={style}
-        >
-          {options.map((opt) => (
-            <Checkbox key={opt.group_id} value={opt.group_id}>
-              <span className="text-primary">{opt.group_name}</span>
-            </Checkbox>
-          ))}
-        </Checkbox.Group>
-      </Skeleton>
-    );
-  }
 
   // Default: render select type
   const selectMode = useMemo(() => {

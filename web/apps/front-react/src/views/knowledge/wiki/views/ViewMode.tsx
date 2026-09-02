@@ -11,7 +11,7 @@ import type { WikiPageDetail } from "@/api/modules/wiki";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
-import { IconButton } from "@/components/IconButton";
+import { IconAction } from "@km/shared-components-react";
 import { useWikiPagePermission } from "@/hooks/useWikiPagePermission";
 import KnowledgeHistoryDrawer, {
   KnowledgeHistoryDrawerRef,
@@ -190,14 +190,14 @@ const ViewMode: React.FC<ViewModeProps> = ({ detail, onEdit, onExport }) => {
             </PermissionWiki>
             <WikiFav resource_id={pageId} />
             {assistantInstall && (
-              <IconButton
+              <IconAction
                 title={t("library.document_chat")}
                 size="medium"
                 onClick={assistantToggle}
                 activeClassName={assistantVisible ? "bg-[#F2F6FE]" : ""}
               >
                 <img className="size-5" src={AI_ICON_URL} alt="" />
-              </IconButton>
+              </IconAction>
             )}
             <FullscreenToggle fullscreen={fullscreen} onToggle={toggleFullscreen} />
             <MoreDropdown items={items} onCommand={handleMore} placement="bottomRight" />

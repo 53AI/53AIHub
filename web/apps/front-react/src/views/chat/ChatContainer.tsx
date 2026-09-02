@@ -24,7 +24,7 @@ import {
 	useConversationStore as useSharedChatConversationStore,
 } from "@km/shared-business/chat";
 import { Setting } from "./components/Setting/Setting";
-import { SidePanel, SvgIcon } from "@km/shared-components-react";
+import { SidePanel, SvgIcon, SafeImage, IconAction } from "@km/shared-components-react";
 import { eventBus } from "@km/shared-utils";
 import { Button, message, Popover, Tooltip } from "antd";
 import {
@@ -56,7 +56,6 @@ import AddAnswerAsMd, {
 } from "@/components/Chat/AddAnswerAsMd";
 import FileViewer from "@/components/FileViewer";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
-import { IconButton } from "@/components/IconButton";
 import { ExpandSidebarButton } from "@/components/Layout/ExpandSidebarButton";
 import MoreDropdown from "@/components/MoreDropdown";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -137,7 +136,6 @@ export interface ChatContainerRef {
 	showShare: () => void;
 }
 
-const DEFAULT_IMG = "/images/default_agent.png";
 const TOPIC_ICON = "/images/vibe/topic.svg";
 const OPENCLAW_CHANNEL_TYPE = 1014;
 const OPENCLAW_CONVERSATION_INVALIDATED_EVENT =
@@ -901,7 +899,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			return historyConversations;
 		}, [isOpenclaw, openClawHistoryVisibleConversations, visibleConversations]);
 
-		const currentAgentLogo = currentAgent?.logo || DEFAULT_IMG;
 		const chatAgentInfo = useMemo(
 			() =>
 				currentAgent
@@ -933,7 +930,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 
 		// ============ Sender 分支:按 agent_usage 注入不同 sender 行为 ============
 		// agent_usage === 1 (KM_AI_SEARCH):复用 knowledge/chat 的发送区(模型 + 知识源 + @)
-		// agent_usage === 4 (WORK_AI):复用 IndexChat 的发送区(@ 增强 + / 技能)
+		// agent_usage === 4 (WORK_AI):work-ai 发送区(@ 增强 + / 技能)
 		// 其它(0/2/3):使用 ChatView 默认 sender(不传 sender feature)
 		const isInLibraryMode = useMemo(
 			() =>
@@ -1792,7 +1789,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			[isOpenclaw],
 		);
 
-		// 非 OpenClaw 模式：outputfile 点击预览（参考 IndexChat）
+		// 非 OpenClaw 模式：outputfile 点击预览
 		// 状态本身在顶部声明，这里只放 useCallback
 		const handlePreviewOutputFile = useCallback(
 			(file: OutputFile) => {
@@ -2078,16 +2075,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			[shortcutsStore, currentAgent],
 		);
 
-		// 图片错误处理
-		const handleImageError = useCallback(
-			(e: React.SyntheticEvent<HTMLImageElement>) => {
-				const target = e.target as HTMLImageElement;
-				const fallback = getPublicPath(DEFAULT_IMG);
-				if (target.src.endsWith(fallback)) return;
-				target.src = fallback;
-			},
-			[],
-		);
+		// 图片错误处理已迁移到 @km/shared-components-react 的 <SafeImage>,自带兜底
 
 		const lockOpenClawEmbeddedPreviewToCurrentAgent =
 			embeddedOpenClawPreview && isOpenclaw;
@@ -2593,7 +2581,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								{isIndexRoute && !showHistory && !isOpenclaw ? (
 									<>
 										<div className="flex-none flex items-center gap-2">
-											<IconButton
+											<IconAction
 												title={t("chat.history")}
 												size="medium"
 												onClick={() => {
@@ -2602,8 +2590,8 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 												}}
 											>
 												<SvgIcon name="history" size={16} />
-											</IconButton>
-											<IconButton
+											</IconAction>
+											<IconAction
 												title={t("chat.new_chat")}
 												size="medium"
 												onClick={() => {
@@ -2613,7 +2601,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 												}}
 											>
 												<SvgIcon name="add-chat" size={16} />
-											</IconButton>
+											</IconAction>
 										</div>
 										<div className="h-4 border-l" />
 									</>
@@ -2633,11 +2621,10 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								)}
 								{isOpenclaw ? (
 									<div className="flex min-w-0 items-center gap-2">
-										<img
+										<SafeImage
 											className="size-5 shrink-0 rounded-full"
-											src={currentAgentLogo}
+											src={currentAgent?.logo}
 											alt={agentInfo?.name || "Agent"}
-											onError={handleImageError}
 										/>
 										<span
 											className="truncate text-base font-medium text-[#2F3136]"
@@ -2820,7 +2807,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								>
 									<SvgIcon name="return" size={18} stroke />
 								</span>
-								{isOpenclaw ? (<IconButton
+								{isOpenclaw ? (<IconAction
 									title={t("openclaw.panel.settings")}
 									size="medium"
 									onClick={() => {
@@ -2831,7 +2818,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 									className="hover:bg-[#E1E2E3]"
 								>
 									<SvgIcon name="equalizer" size={18} className="rotate-90" />
-								</IconButton>) : (<IconButton
+								</IconAction>) : (<IconAction
 									title={t("action.setting")}
 									size="medium"
 									onClick={() => {
@@ -2842,10 +2829,10 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 									className="hover:bg-[#E1E2E3]"
 								>
 									<SvgIcon name="equalizer" size={18} className="rotate-90" />
-								</IconButton>
+								</IconAction>
                 )}
 
-								<IconButton
+								<IconAction
 									title={t("chat.usage_guide")}
 									size="medium"
 									onClick={() => {
@@ -2856,7 +2843,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 									className="hover:bg-[#E1E2E3]"
 								>
 									<SvgIcon name="layout-split" size={18} />
-								</IconButton>
+								</IconAction>
 								<MoreDropdown
 									items={[
 										!isShortcut
@@ -2887,8 +2874,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				handleBack,
 				currentConv,
 				hasSelectedConversationId,
-				currentAgentLogo,
-				handleImageError,
 				navigate,
 				isOpenclaw,
 				openClawHealthy,
@@ -2939,11 +2924,10 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				<AgentTooltip onSelect={handleAgentSelect}>
 					<div className="h-8 px-2 rounded-full flex items-center gap-1.5 bg-[#F1F2F3] cursor-pointer hover:bg-[#E1E2E3]">
 						{!isOpenclaw && (
-							<img
+							<SafeImage
 								className="w-4 h-4 rounded-full"
-								src={agentInfo.logo || DEFAULT_IMG}
+								src={agentInfo.logo}
 								alt={agentInfo.name}
-								onError={handleImageError}
 							/>
 						)}
 						<span className="text-sm text-[#1F2123] line-clamp-1 max-w-[120px]">
@@ -2958,7 +2942,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			lockOpenClawEmbeddedPreviewToCurrentAgent,
 			isOpenclaw,
 			handleAgentSelect,
-			handleImageError,
 		]);
 
 		const authTags = useMemo(
@@ -3082,7 +3065,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					...(workAiSenderConfig?.senderSlots ?? {}),
 					// work-ai 模式:覆盖默认 mentionDropdown 为多入口版本
 					mentionDropdown: workAiMentionDropdownSlot as any,
-					// legacy chip 视觉:复刻 IndexChat.tsx line 2284-2310
+					// legacy chip 视觉
 					linkList: LegacyLinkList as any,
 				};
 			}
@@ -3136,7 +3119,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 				} satisfies SendContext;
 			}
 			if (activeSenderKind === "work-ai" && workAiSenderConfig) {
-				// work-ai 模式:完整参数传递(对齐 IndexChat.tsx sendMessage 调用)
+				// work-ai 模式:完整参数传递
 				return {
 					type: "work-ai",
 					links: workAiSenderConfig.selectedMentionLinks,
@@ -3222,7 +3205,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 							renderHeader={renderHeader as any}
 							// ============ 发送上下文(按 agent_usage 透传给 ChatView.handleSend) ============
 							// - knowledge (agent_usage=1): type / networkSearch / knowledgeGraph / library / modelId / agentInfo
-							// - work-ai   (agent_usage=4): type="work-ai" + minimalParams=false(走完整模式,与 IndexChat 对齐)
+							// - work-ai   (agent_usage=4): type="work-ai" + minimalParams=false(走完整模式)
 							sendContext={sendContext}
 							history={{ enabled: features.history }}
 							newConversation={{ enabled: features.newConversation }}
@@ -3233,7 +3216,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								indexLayout: features.indexWelcomeLayout,
 							}}
 							fileUpload={{
-								// work-ai 模式:原版 IndexChat.tsx 用 enableUpload={userStore.is_login} 强制启用附件,
+								// work-ai 模式:用 enableUpload={userStore.is_login} 强制启用附件,
 								// 不依赖 agent.settings_obj.file_parse(work-ai agent 一般不开 file_parse)。
 								// 其它模式:沿用 features.fileUpload(由 agent.file_parse / image_parse 决定)。
 								enabled:
@@ -3439,25 +3422,25 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 									</span>
 									<div className="flex items-center gap-2 shrink-0">
 										{outputFileBrowserState.currentFile.file_url && (
-											<IconButton
+											<IconAction
 												title={t("action.download")}
 												size="medium"
 												onClick={downloadOutputFileBrowser}
 											>
 												<DownloadOutlined style={{ fontSize: '16px' }} />
-											</IconButton>
+											</IconAction>
 										)}
 										<FullscreenToggle
 											fullscreen={outputFileBrowserFullscreen}
 											onToggle={toggleOutputFileBrowserFullscreen}
 										/>
-										<IconButton
+										<IconAction
 											title={t("action.close")}
 											size="medium"
 											onClick={closeOutputFileBrowser}
 										>
 											<CloseOutlined style={{ fontSize: '16px' }} />
-										</IconButton>
+										</IconAction>
 									</div>
 								</div>
 								<div className="flex-1 overflow-hidden">

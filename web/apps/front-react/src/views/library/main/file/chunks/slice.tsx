@@ -22,10 +22,11 @@ import {
   DeleteOutlined,
   LoadingOutlined,
   ReloadOutlined,
-  SearchOutlined
+  SearchOutlined,
 } from "@ant-design/icons";
 import { useLibraryStore, type FileItem } from "@/stores/modules/library";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
+import { FullscreenToggle } from "@/components/FullscreenToggle";
 import chunksApi, {
   KnowledgeChunk,
   ChunkOperation,
@@ -420,6 +421,17 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
   // Handle edit
   const handleEdit = useCallback((chunk: ChunkItem) => {
     chunkEditDrawerRef.current?.open(chunk as unknown as KnowledgeChunk);
+  }, []);
+
+  // Fullscreen chunk preview
+  const [fullscreenChunk, setFullscreenChunk] = useState<ChunkItem | null>(null);
+  const [fullscreenIndex, setFullscreenIndex] = useState(0);
+  const handleFullscreen = useCallback((chunk: ChunkItem, index: number) => {
+    setFullscreenChunk(chunk);
+    setFullscreenIndex(index);
+  }, []);
+  const handleFullscreenClose = useCallback(() => {
+    setFullscreenChunk(null);
   }, []);
 
   // Handle chunk edit success
@@ -1030,7 +1042,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
       >
         <div className="h-8 flex items-center gap-2">
           <div className="text-xs text-[#2563EB] h-[22px] px-1.5 bg-[#F0F5FF] flex items-center rounded">
-            #{index.toString().padStart(2, "0")}
+            #{(item.chunk_index + 1).toString().padStart(2, "0")}
           </div>
           <div className="w-px h-3 bg-[#E6E8EB] invisible group-hover:visible" />
           <p className="flex-1 text-xs text-[#999999] invisible group-hover:visible">
@@ -1104,10 +1116,25 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
                   <EditOutlined />
                   <span>{t("action.edit")}</span>
                 </Button>
-                <DeleteOutlined
-                  className="hidden group-hover:inline-flex cursor-pointer text-gray-400"
-                  onClick={() => handleDel(item as unknown as KnowledgeChunk)}
+                <FullscreenToggle
+                  fullscreen={false}
+                  expandIcon="amplify"
+                  collapseIcon="shrink"
+                  size="compact"
+                  className="hidden group-hover:inline-flex"
+                  onToggle={() => handleFullscreen(item, index)}
                 />
+                <IconAction
+                  size="compact"
+                  title={t("action.delete")}
+                  danger
+                  className="hidden group-hover:inline-flex"
+                  onClick={() =>
+                    handleDel(item as unknown as KnowledgeChunk)
+                  }
+                >
+                  <DeleteOutlined />
+                </IconAction>
               </div>
             )}
         </div>
@@ -1348,6 +1375,42 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
         file={currentFile}
         onSuccess={handleChunkEditSuccess}
       />
+
+      {/* Chunk Fullscreen Preview */}
+      {fullscreenChunk && (
+        <div className="absolute inset-0 z-50 flex">
+          <div className="relative h-full w-full bg-white flex flex-col">
+            <div className="flex-none px-5 border-b">
+              <div className="flex h-14 items-center gap-3 py-4">
+                <div className="text-xs text-[#2563EB] h-[22px] px-1.5 bg-[#F0F5FF] flex items-center rounded">
+                  #{(fullscreenChunk.chunk_index + 1).toString().padStart(2, "0")}
+                </div>
+                <p className="flex-1 text-xs text-[#999999] truncate">
+                  Token：{fullscreenChunk.token_count} · 命中：{fullscreenChunk.recall_count || 0} · 默认索引：{fullscreenChunk.retrieval_chunk_count || 0}
+                </p>
+                <Button
+                  type="link"
+                  className="px-0"
+                  aria-label={t("action.exit_fullscreen")}
+                  onClick={handleFullscreenClose}
+                >
+                  <SvgIcon name="close" size={16} />
+                </Button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-6 vditor-chunk vditor-reset">
+                {fullscreenChunk.children?.map((child, chunkIndex) => (
+                  <div
+                    key={chunkIndex}
+                    dangerouslySetInnerHTML={{ __html: child.html }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Save Confirmation Modal */}
       <Modal

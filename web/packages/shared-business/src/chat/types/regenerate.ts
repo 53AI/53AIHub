@@ -4,7 +4,7 @@ import type { Message, MessageFile, SpecifiedFile, Skill } from "./message";
  * "重新生成回答"参数契约：把 Message 提取为发送所需的字段
  *
  * 覆盖两个场景：
- * - 工作台（IndexChat）：消费 skill + files + specifiedFiles
+ * - 工作台（work-ai）：消费 skill + files + specifiedFiles
  * - 知识库（knowledge/chat）：消费 networkSearch + knowledgeGraph + files + specifiedFiles
  */
 export interface RegenerateParams {
@@ -22,7 +22,7 @@ export interface RegenerateParams {
   networkSearch?: boolean;
   /** 是否启用知识图谱 */
   knowledgeGraph?: boolean;
-  /** 指定的文件内容（高级场景；当前 IndexChat / knowledge/chat 均不消费，
+  /** 指定的文件内容（高级场景；当前 work-ai / knowledge/chat 均不消费，
    *  保留供未来"按文件内容重生成"等场景使用） */
   specifiedContent?: string;
   /** 原始消息（兜底） */

@@ -5,10 +5,12 @@ import type {
   SpaceListResponse,
   SpaceListRequest,
   SpaceCreateRequest,
-  SpaceItem,
-  SpaceRecycleItem,
-  SpaceRecycleListRequest,
+  SpaceItem, SpaceRecycleListRequest,
   SpaceRecycleListResponse,
+  KnowledgeGraphConfig,
+  KnowledgeGraphUpdateRequest,
+  WikiKnowledgeGraphConfig,
+  WikiKnowledgeGraphUpdateRequest
 } from './types'
 
 export const spacesApi = {
@@ -77,6 +79,79 @@ export const spacesApi = {
       .catch(err =>
         handleError(err, { functionName: window.$t('space.recycle.delete') }),
       )
+  },
+
+  /**
+   * 获取空间图谱配置
+   * GET /api/spaces/{space_id}/knowledge-graph
+   */
+  getKnowledgeGraph(
+    space_id: SpaceItem['id'],
+  ): Promise<KnowledgeGraphConfig> {
+    return service
+      .get(`/api/spaces/${space_id}/knowledge-graph`)
+      .then((res: any) => {
+        const data = res?.data ?? res ?? {}
+        return {
+          enable_knowledge_graph: Boolean(
+            data.enable_knowledge_graph,
+          ),
+          library_ids: Array.isArray(data.library_ids) ? data.library_ids : [],
+        } as KnowledgeGraphConfig
+      })
+      .catch(handleError)
+  },
+
+  /**
+   * 保存空间图谱配置
+   * PUT /api/spaces/{space_id}/knowledge-graph
+   */
+  saveKnowledgeGraph(
+    space_id: SpaceItem['id'],
+    data: KnowledgeGraphUpdateRequest,
+  ): Promise<void> {
+    return service
+      .put(`/api/spaces/${space_id}/knowledge-graph`, data)
+      .then(() => undefined)
+      .catch(handleError)
+  },
+
+  /**
+   * 获取空间 Wiki 知识图谱 + 动态知识配置
+   * GET /api/spaces/{space_id}/wiki-knowledge-graph
+   */
+  getWikiKnowledgeGraph(
+    space_id: SpaceItem['id'],
+  ): Promise<WikiKnowledgeGraphConfig> {
+    return service
+      .get(`/api/spaces/${space_id}/wiki-knowledge-graph`)
+      .then((res: any) => {
+        const data = res?.data ?? res ?? {}
+        return {
+          enable_wiki_knowledge_graph: Boolean(
+            data.enable_wiki_knowledge_graph,
+          ),
+          enable_wiki_dynamic_knowledge: Boolean(
+            data.enable_wiki_dynamic_knowledge,
+          ),
+          library_ids: Array.isArray(data.library_ids) ? data.library_ids : [],
+        } as WikiKnowledgeGraphConfig
+      })
+      .catch(handleError)
+  },
+
+  /**
+   * 保存空间 Wiki 知识图谱 + 动态知识配置
+   * PUT /api/spaces/{space_id}/wiki-knowledge-graph
+   */
+  saveWikiKnowledgeGraph(
+    space_id: SpaceItem['id'],
+    data: WikiKnowledgeGraphUpdateRequest,
+  ): Promise<void> {
+    return service
+      .put(`/api/spaces/${space_id}/wiki-knowledge-graph`, data)
+      .then(() => undefined)
+      .catch(handleError)
   },
 }
 

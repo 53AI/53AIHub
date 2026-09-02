@@ -127,7 +127,7 @@ export interface CompletionFeature {
  * ChatContainer 按 agent_usage 注入的发送上下文。
  *
  * 用于让 ChatView 的 handleSend 在调用 useChatSend.sendMessage 时携带与
- * 原 knowledge/chat.tsx (agent_usage=1) / IndexChat.tsx (agent_usage=4)
+ * 原 knowledge/chat.tsx (agent_usage=1) / work-ai (agent_usage=4)
  * 一致的业务参数(type / networkSearch / knowledgeGraph / library /
  * modelId / agentInfo / minimalParams)。
  */
@@ -168,7 +168,7 @@ export interface SendContext {
   /**
    * @ 提及链接列表(由 ChatContainer 注入,与 Sender 的 atList 合并后传给 useChatSend)。
    * - 包含用户选中的 file / library / space
-   * - 用于构建 messages 中的 specified_files(对齐原版 IndexChat.tsx sendMessage 调用)
+   * - 用于构建 messages 中的 specified_files
    * - 如果未传,ChatView 会优先使用 Sender 透传的 atList
    */
   links?: any[];
@@ -207,7 +207,7 @@ export interface ChatViewSlots {
   /**
    * Sender 下方独立扩展区域 - 渲染在 ChatInput 之外,与 Sender 内部 toolbar 解耦。
    * 用于在工作台入口(work-ai 模式)显示技能 chips / 我的技能弹窗 等与 Sender 内部 toolbar 平级的内容。
-   * 仅在 welcomeIndexLayout 且 messageList 为空时渲染(对齐原版 IndexChat.tsx line 1828 的空态条件)。
+   * 仅在 welcomeIndexLayout 且 messageList 为空时渲染。
    */
   senderBelowExtras?: ReactNode;
   /**
@@ -379,7 +379,7 @@ export interface ChatViewProps {
    * - 其他:                       不传(ChatView 维持默认精简模式)
    *
    * ChatView 的 handleSend 会原样把这些字段转发给 useChatSend().sendMessage(),
-   * 确保共享组件对业务参数的处理与原 knowledge/chat.tsx / IndexChat.tsx 一致。
+   * 确保共享组件对业务参数的处理与原 knowledge/chat.tsx / work-ai 一致。
    */
   sendContext?: SendContext;
 

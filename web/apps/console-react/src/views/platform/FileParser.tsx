@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button, Drawer, Modal, Form, Input, message, Tag, Tooltip } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
@@ -315,19 +315,21 @@ export function PlatformFileParser() {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 ml-2">
-                    <Button
-                      type="text"
-                      icon={<SvgIcon name="edit" />}
-                      className="invisible group-hover:visible hover:!text-brand"
+                    <IconAction
+                      variant="row"
+                      title={t("action_edit")}
                       onClick={() => handleEdit(config.key)}
-                    />
-                    <Button
-                      type="text"
+                    >
+                      <SvgIcon name="edit" />
+                    </IconAction>
+                    <IconAction
+                      variant="row"
+                      title={t("action_delete")}
                       danger
-                      icon={<SvgIcon name="delete" />}
-                      className="invisible group-hover:visible hover:!text-tag-red"
                       onClick={() => handleDelete(config.key)}
-                    />
+                    >
+                      <SvgIcon name="delete" />
+                    </IconAction>
                   </div>
                 )}
               </div>
@@ -408,25 +410,23 @@ export function PlatformFileParser() {
                           <div className="h-4 w-px border-r border-[#E1E2E6]" />
                         </>
                       )}
-                      <Tooltip title={t("action_test")}>
-                        <Button
-                          type="link"
-                          className="!px-0 text-placeholder"
-                          loading={testResult?.loading}
-                          onClick={() => handleModelTest(model)}
-                        >
-                          <SvgIcon name="tool" width="14" />
-                        </Button>
-                      </Tooltip>
-                      <Tooltip title={t("action_delete")}>
-                        <Button
-                          type="link"
-                          className="!px-0 text-placeholder"
-                          onClick={() => handleVoiceModelDelete(model)}
-                        >
-                          <SvgIcon name="delete" width="14" />
-                        </Button>
-                      </Tooltip>
+                      <IconAction
+                        title={t("action_test")}
+                        size="compact"
+                        loading={testResult?.loading}
+                        className="!text-placeholder"
+                        onClick={() => handleModelTest(model)}
+                      >
+                        <SvgIcon name="tool" width="14" />
+                      </IconAction>
+                      <IconAction
+                        title={t("action_delete")}
+                        size="compact"
+                        className="!text-placeholder"
+                        onClick={() => handleVoiceModelDelete(model)}
+                      >
+                        <SvgIcon name="delete" width="14" />
+                      </IconAction>
                     </div>
                   </div>
                 );

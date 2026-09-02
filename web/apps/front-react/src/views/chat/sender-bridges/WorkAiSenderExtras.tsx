@@ -4,9 +4,8 @@
  *
  * 设计要点:
  * - 不要用 senderLeftExtras(slot 会覆盖 Sender 内部 toolbar 的 @/技能/附件 icon)。
- * - ChatView 父级已加空态判断:仅 welcomeIndexLayout + messageList 空 + 非流式时渲染,
- *   对齐原版 IndexChat.tsx line 1828。
- * - 内容与原版 line 1831-1961 一致:技能 chips + 更多按钮 + 我的技能弹窗。
+ * - ChatView 父级已加空态判断:仅 welcomeIndexLayout + messageList 空 + 非流式时渲染。
+ * - 内容:技能 chips + 更多按钮 + 我的技能弹窗。
  *   示例问题卡片由 ChatView.welcomeIndexLayout 接管(数据源 agentInfo.settings_obj.suggested_questions)。
  */
 import { SvgIcon } from "@km/shared-components-react";
@@ -34,7 +33,7 @@ export interface WorkAiSenderExtrasProps {
 }
 
 /**
- * Work-ai 模式下的 extras — 与 IndexChat 一样:技能 chips + 「更多」按钮 + 我的技能弹窗。
+ * Work-ai 模式下的 extras:技能 chips + 「更多」按钮 + 我的技能弹窗。
  * 这是轻量级 UI,只显示主功能(技能选择),复杂的示例问题与建议问题不在 sender extras 内。
  */
 export function WorkAiSenderExtras(props: WorkAiSenderExtrasProps) {

@@ -15,11 +15,10 @@ import {
   useCallback,
 } from "react";
 import { t } from "@/locales";
-import { departmentApi, getRootDepartmentData } from "@/api/modules/department";
 import { groupApi } from "@/api/modules/group";
-import { INTERNAL_USER_STATUS_ALL, userApi } from "@/api/modules/user";
 import { GROUP_TYPE, type GroupType } from "@/constants/group";
 import type { ScopeItem } from "@km/shared-business/agent-create";
+import { loadScopeDictionary } from "@/hooks/useScopeDictionary";
 
 export interface DeptMemberPickerValue {
   value: number | string;
@@ -191,7 +190,7 @@ function DeptMemberPickerInner(
       // value 是 ScopeItem[]，需要转换为显示格式
       return (value as ScopeItem[]).map((item) => {
         if (item.scope_type === 'company') {
-          return { value: 0, label: '全部成员', type: 'company', scope_type: 'company' };
+          return { value: 0, label: t('internal_user.status.all'), type: 'company', scope_type: 'company' };
         }
         // 从树数据或分组数据中查找真实名称
         const node = findNodeInTree(treeData, item.target_id);
@@ -284,36 +283,27 @@ function DeptMemberPickerInner(
     onValueChange?.({ value: newValue });
   };
 
-  // 获取部门树
-  const fetchDepartmentTree = async () => {
-    setLoading(true);
-    try {
-      const data = await departmentApi.fetch_department_tree();
-      setTreeData(data);
-      setRootData(data[0] || {});
-      return data;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 获取内部用户 - 与 Vue 的 fetchInternalUserData 一致
-  const fetchInternalUserData = async () => {
-    const params = {
-      status: INTERNAL_USER_STATUS_ALL,
-      offset: 0,
-      limit: 10000,
+  // 获取部门树 / 用户 / 分组 - 走共享字典加载器,与列表层 / ScopeDisplay 命中同一 cache key
+  const fetchDictionary = async () => {
+    const dict = await loadScopeDictionary();
+    return {
+      deptTree: dict.treeData,
+      users: dict.users.map((item: any) => ({
+        ...item,
+        value: +item.user_id || 0,
+        label: item.nickname || item.name || "",
+        type: "member" as const,
+      })),
+      groups: dict.groups.map((item: any) => ({
+        ...item,
+        value: item.group_id || 0,
+        label: item.group_name || "",
+        type: "group" as const,
+      })),
     };
-    const { list = [] } = await userApi.fetch_internal_user(params);
-    return list.map((item: any) => ({
-      ...item,
-      value: +item.user_id || 0,
-      label: item.nickname || item.name || "",
-      type: "member" as const,
-    }));
   };
 
-  // 获取分组数据
+  // 获取分组数据(仅 group 模式且 groupType 非默认内部用户时需要单独加载)
   const fetchGroupData = async (gType?: GroupType) => {
     const list = await groupApi.list({
       params: { group_type: gType || groupType },
@@ -334,16 +324,12 @@ function DeptMemberPickerInner(
       if (isScopeMode) {
         setLoading(true);
         try {
-          const [deptTree, users, groups] = await Promise.all([
-            fetchDepartmentTree(),
-            fetchInternalUserData(),
-            fetchGroupData(GROUP_TYPE.INTERNAL_USER),
-          ]);
+          const dict = await fetchDictionary();
 
           // 构建包含用户的树（复用现有的 buildTreeWithUsers 逻辑）
           const findData = (data: any = {}): TreeNode => {
             const children = (data.children || []).map((item: any) => findData(item));
-            users.forEach((item: any) => {
+            dict.users.forEach((item: any) => {
               const deptIdList = item.dept_id_list || [];
               if (deptIdList.includes(data.did) || (!deptIdList.length && data.did === 0)) {
                 children.push(JSON.parse(JSON.stringify(item)));
@@ -351,12 +337,10 @@ function DeptMemberPickerInner(
             });
             return { ...data, children };
           };
-          const treeWithUsers = deptTree.map((item: any) => findData(item));
+          const treeWithUsers = dict.deptTree.map((item: any) => findData(item));
           setTreeData(treeWithUsers);
-          setGroupData(groups);
-
-          const root = await getRootDepartmentData();
-          setRootData(root);
+          setGroupData(dict.groups);
+          setRootData(dict.deptTree[0] || {});
 
           // 默认选中全公司（初始化时应用）
           const isEmpty = !valueRef.current || (Array.isArray(valueRef.current) && valueRef.current.length === 0);
@@ -364,7 +348,7 @@ function DeptMemberPickerInner(
             didApplyDefault.current = true;
             const companyNode = {
               value: 0,
-              label: '全部成员',
+              label: t('internal_user.status.all'),
               type: 'company' as const,
               scope_type: 'company' as const,
             };
@@ -430,19 +414,15 @@ function DeptMemberPickerInner(
       }
 
       if (["general", "department", "user"].includes(type)) {
-        const root = await getRootDepartmentData();
+        const dict = await fetchDictionary();
+        const root = dict.deptTree[0] || {};
         setRootData(root);
 
         if (defaultFirstValue && !value.length) {
           setModelValue({ value: [root] });
         }
 
-        const [deptTree, users] = await Promise.all([
-          fetchDepartmentTree(),
-          ["general", "user"].includes(type)
-            ? fetchInternalUserData()
-            : Promise.resolve([]),
-        ]);
+        const users = ["general", "user"].includes(type) ? dict.users : [];
 
         if (["general", "user"].includes(type) && users.length) {
           const findData = (data: any = {}): TreeNode => {
@@ -461,7 +441,7 @@ function DeptMemberPickerInner(
             return { ...data, children };
           };
 
-          setTreeData(deptTree.map((item: any) => findData(item)));
+          setTreeData(dict.deptTree.map((item: any) => findData(item)));
         }
       }
 
@@ -485,7 +465,7 @@ function DeptMemberPickerInner(
       didApplyDefault.current = true;
       const companyNode = {
         value: 0,
-        label: '全部成员',
+        label: t('internal_user.status.all'),
         type: 'company' as const,
         scope_type: 'company' as const,
       };
@@ -520,7 +500,7 @@ function DeptMemberPickerInner(
         if (item.scope_type === 'company') {
           return {
             value: 0,
-            label: '全部成员',
+            label: t('internal_user.status.all'),
             type: 'company' as const,
             scope_type: 'company' as const,
           };

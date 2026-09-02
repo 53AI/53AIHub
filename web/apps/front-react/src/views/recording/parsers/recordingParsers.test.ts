@@ -1,10 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isInsightHTMLPage,
+  parsePageJson,
   parseTranscription,
   parseTranscriptionWithUrl,
   parseTranscriptLines,
   parseVoiceTranscriptJSON,
 } from './recordingParsers'
+
+describe('parsePageJson', () => {
+  it('识别新的 HTML 页面封装', () => {
+    const parsed = parsePageJson(JSON.stringify({
+      format: 'html_v2',
+      version: 1,
+      html: '<!doctype html><html><body><svg /></body></html>',
+    }))
+    expect(isInsightHTMLPage(parsed)).toBe(true)
+    expect(parsed._html).toContain('<svg')
+  })
+
+  it('历史 Markdown 仍然返回旧格式', () => {
+    const parsed = parsePageJson('# 旧版洞察\n\n## 风险\n内容')
+    expect(parsed).toEqual({ _markdown: '# 旧版洞察\n\n## 风险\n内容' })
+    expect(isInsightHTMLPage(parsed)).toBe(false)
+  })
+
+  it('历史 JSON Block 不被误判为 HTML', () => {
+    const parsed = parsePageJson(JSON.stringify({ title: '旧页面', blocks: [] }))
+    expect(parsed).toEqual({ title: '旧页面', blocks: [] })
+    expect(isInsightHTMLPage(parsed)).toBe(false)
+  })
+})
 
 describe('parseTranscriptionWithUrl', () => {
   it('从语音模型 JSON 抽出 file_url 和条目', () => {

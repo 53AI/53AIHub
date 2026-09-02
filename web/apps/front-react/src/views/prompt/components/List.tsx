@@ -8,6 +8,7 @@ import promptApi from "@/api/modules/prompt";
 import { copyToClip } from "@km/shared-utils";
 import { getPublicPath } from "@/utils/config";
 import { SvgIcon } from "@km/shared-components-react";
+import { checkPermissionAsync } from "@/utils/permission";
 
 interface PromptItem {
   prompt_id: string;
@@ -76,10 +77,16 @@ export function PromptList({
   const handleCopy = async (e: React.MouseEvent, item: PromptItem) => {
     e.preventDefault();
     e.stopPropagation();
-    const success = await copyToClip(item.content);
-    if (success) {
-      message.success(t("common.copied"));
-    }
+    checkPermissionAsync({
+      resourceId: item.prompt_id,
+      resourceType: "prompt",
+      onClick: async () => {
+        const success = await copyToClip(item.content);
+        if (success) {
+          message.success(t("common.copied"));
+        }
+      },
+    });
   };
 
   const handleApprove = async (e: React.MouseEvent, item: PromptItem) => {
@@ -136,12 +143,14 @@ export function PromptList({
           key={item.prompt_id}
           className="group flex flex-col p-5 rounded-xl overflow-hidden bg-cover cursor-pointer bg-white border border-[#E6E6E6] hover:shadow-md transition-all duration-300"
           onClick={() => {
-            const params = new URLSearchParams()
+            const params = new URLSearchParams();
             if (groupId && groupId > 0) {
-              params.set('group_id', String(groupId))
+              params.set("group_id", String(groupId));
             }
-            const searchStr = params.toString()
-            navigate(`/prompt/${item.prompt_id}${searchStr ? '?' + searchStr : ''}`)
+            const searchStr = params.toString();
+            navigate(
+              `/prompt/${item.prompt_id}${searchStr ? "?" + searchStr : ""}`,
+            );
           }}
         >
           <div className="flex items-center">

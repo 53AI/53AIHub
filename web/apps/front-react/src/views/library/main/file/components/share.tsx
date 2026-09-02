@@ -4,8 +4,7 @@ import fileSharesApi from "@/api/modules/file-shares";
 import { cacheManager, CacheMode, copyToClip } from "@km/shared-utils";
 import { buildUrl } from "@/utils/router";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
-import { IconButton } from "@/components/IconButton";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import "./share.css";
 
 interface FileShareProps {
@@ -84,9 +83,9 @@ export function FileShare({ fileId, fileName }: FileShareProps) {
       trigger="click"
       onOpenChange={(open) => open && onSharePopoverShow()}
     >
-      <IconButton title={t("action.share")} size="medium">
+      <IconAction title={t("action.share")} size="medium">
         <SvgIcon name="share-two" />
-      </IconButton>
+      </IconAction>
     </Popover>
   );
 }

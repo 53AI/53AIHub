@@ -10,7 +10,7 @@ import {
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { Dropdown, Input, Skeleton, Spin } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
-import { Search, SvgIcon, Tabs } from "@km/shared-components-react";
+import { SafeImage, Search, SvgIcon, Tabs } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import { useUserStore } from "@/stores/modules/user";
 import { useSpaceStore } from "@/stores/modules/space";
@@ -25,12 +25,12 @@ import {
 } from "@/components/KMPermission/constant";
 import permissionsApi from "@/api/modules/permissions";
 import wikiApi from "@/api/modules/wiki";
-import type { WikiStatsResponse } from "@/api/modules/wiki";
+import type { WikiCategory, WikiStatsResponse } from "@/api/modules/wiki";
 import { t } from "@/locales";
 import type { SortOrder } from "../types";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "../library/InfoSaveDialog";
 import List from "../library/List";
-import { getPublicPath, admin_url } from "@/utils/config";
+import { admin_url } from "@/utils/config";
 
 const GlobalSearch = lazy(() =>
   import("@/components/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
@@ -70,6 +70,7 @@ export function KnowledgePanel({
   const [loading, setLoading] = useState(false);
   const [sortOrder, setSortOrder] = useState<SortOrder>("updated_time");
   const [wikiStats, setWikiStats] = useState<WikiStatsResponse | null>(null);
+  const [wikiCategories, setWikiCategories] = useState<WikiCategory[]>([]);
 
   // 用于滚动到选中项
   const selectedSpaceRef = useRef<HTMLDivElement>(null);
@@ -115,15 +116,14 @@ export function KnowledgePanel({
 
   const handleJumpToAdmin = useCallback(() => {
     if (!activeSpaceId) return;
-    const url = buildAdminUrl(`/space/${activeSpaceId}/setting`);
+    const url = buildAdminUrl(`/knowledge?spaceId=${activeSpaceId}&tab=basic-info`);
     window.open(url, "_blank");
   }, [buildAdminUrl, activeSpaceId]);
 
-  // 跳转到空间成员与权限管理页（console-react: #/space/:id/setting/members）
+  // 跳转到空间成员与权限管理页（console-react: #/space?spaceId=...&tab=members）
   const handleJumpToSpaceMembers = useCallback(() => {
-    console.log(activeSpaceId)
     if (!activeSpaceId) return;
-    const url = buildAdminUrl(`/space/${activeSpaceId}/setting/members`);
+    const url = buildAdminUrl(`/knowledge?spaceId=${activeSpaceId}&tab=members`);
     window.open(url, "_blank");
   }, [buildAdminUrl, activeSpaceId]);
 
@@ -193,11 +193,11 @@ export function KnowledgePanel({
   const wikiUrl = activeSpaceId
     ? `/knowledge/wiki?space_id=${activeSpaceId}`
     : "/knowledge/wiki";
-  // 摘要 / 实体 / 概念三个独立跳转链接，落到 wiki 页签上对应类型的列表
-  const wikiTypeUrl = (pageType: "summary" | "entity" | "concept") =>
+  // 分类卡片跳转链接：落到 wiki 页签的分类筛选列表
+  const wikiCategoryUrl = (categoryId: string) =>
     activeSpaceId
-      ? `/knowledge/wiki?space_id=${activeSpaceId}&sub=list&page_type=${pageType}`
-      : `/knowledge/wiki?sub=list&page_type=${pageType}`;
+      ? `/knowledge/wiki?space_id=${activeSpaceId}&sub=list&category_id=${categoryId}`
+      : `/knowledge/wiki?sub=list&category_id=${categoryId}`;
 
   // 数字格式化：>999 加千分位，未加载时显示 0 占位
   const formatStatNumber = (n: number | undefined) => {
@@ -282,6 +282,28 @@ export function KnowledgePanel({
     };
   }, [activeSpaceId, dynamicEnabled]);
 
+  // 加载 wiki 分类列表（仅在开启动态知识时）
+  useEffect(() => {
+    let mounted = true;
+    if (!activeSpaceId || !dynamicEnabled) {
+      setWikiCategories([]);
+      return;
+    }
+    wikiApi
+      .categories(activeSpaceId)
+      .then((data) => {
+        if (mounted) {
+          setWikiCategories(Array.isArray(data) ? data : data?.items ?? []);
+        }
+      })
+      .catch(() => {
+        if (mounted) setWikiCategories([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeSpaceId, dynamicEnabled]);
+
   // 滚动到选中的空间（仅首次加载时）
   useEffect(() => {
     if (
@@ -349,7 +371,7 @@ export function KnowledgePanel({
                 }`}
               >
                 <div className="size-9 rounded-full overflow-hidden bg-white">
-                  <img src={item.icon} alt={item.name} className="size-10" />
+                  <SafeImage src={item.icon} alt={item.name} className="size-10" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1">
@@ -393,58 +415,33 @@ export function KnowledgePanel({
                   {dynamicEnabled && (
                     <div className="mb-8">
                       <div className="text-xl font-medium">{t('dynamic_knowledge.label')}</div>
-                      <div className="border p-4  rounded-xl mt-5 flex items-center gap-3">
-                        <Link
-                          to={wikiTypeUrl('summary')}
-                          className="flex-1 bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden group hover:bg-[#F0F5FF] transition-colors"
-                        >
-                          <div className="size-12 bg-[#E6EEFF] rounded-xl flex-shrink-0 flex items-center justify-center">
-                            <img className="size-[22px]" src={getPublicPath('/images/wiki/summary.png')} />
-                          </div>
-                          <div className="flex-1 overflow-hidden">
-                            <div className="flex items-center justify-between">
-                              <h4 className="flex-1 text-base text-primary truncate">{t('dynamic_knowledge.summary')}
-                                <span className="ml-1.5 bg-[#F2F2F2] px-2 py-0.5 text-xs text-[#9CA3AF] rounded-full">{formatStatNumber(wikiStats?.wiki_summary_count)}</span>
+                      <div className="border p-4 rounded-xl mt-5 flex flex-wrap items-center gap-3">
+                        {wikiCategories.slice(0, 3).map((cat, idx) => {
+                          // 沿用原摘要/实体/概念三张图标，按顺序分配给前三个分类
+                          const icon = ["summary", "entity", "concept"][idx] ?? "summary";
+                          return (
+                            <Link
+                              key={cat.id}
+                              to={wikiCategoryUrl(cat.id)}
+                              className="flex-1 min-w-[200px] bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden group hover:bg-[#F0F5FF] transition-colors"
+                            >
+                              <div className="size-12 bg-[#E6EEFF] rounded-xl flex-shrink-0 flex items-center justify-center">
+                                <SafeImage className="size-[22px]" src={`/images/wiki/${icon}.png`} alt={cat.name} />
+                              </div>
+                              <div className="flex-1 overflow-hidden">
+                                <h4 className="flex-1 text-base text-primary truncate">{cat.name}
+                                  <span className="ml-1.5 bg-[#F2F2F2] px-2 py-0.5 text-xs text-[#9CA3AF] rounded-full">{formatStatNumber(cat.page_count)}</span>
                                 </h4>
-                            </div>
-                            <p className="text-xs text-[#939499] line-clamp-1">{t('dynamic_knowledge.summary_desc')}</p>
-                          </div>
-                        </Link>
-                        <Link
-                          to={wikiTypeUrl('entity')}
-                          className="flex-1 bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden group hover:bg-[#F0F5FF] transition-colors"
-                        >
-                          <div className="size-12 bg-[#E6EEFF] rounded-xl flex-shrink-0 flex items-center justify-center">
-                            <img className="size-[22px]" src={getPublicPath('/images/wiki/entity.png')} />
-                          </div>
-                          <div className="flex-1 overflow-hidden">
-                            <div className="flex items-center justify-between">
-                              <h4 className="flex-1 text-base text-primary truncate">{t('dynamic_knowledge.entity')}
-                                <span className="ml-1.5 bg-[#F2F2F2] px-2 py-0.5 text-xs text-[#9CA3AF] rounded-full">{formatStatNumber(wikiStats?.wiki_entity_count)}</span>
-                                </h4>
-                            </div>
-                            <p className="text-xs text-[#939499] line-clamp-1">{t('dynamic_knowledge.entity_desc')}</p>
-                          </div>
-                        </Link>
-                        <Link
-                          to={wikiTypeUrl('concept')}
-                          className="flex-1 bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden group hover:bg-[#F0F5FF] transition-colors"
-                        >
-                          <div className="size-12 bg-[#E6EEFF] rounded-xl flex-shrink-0 flex items-center justify-center">
-                            <img className="size-[22px]" src={getPublicPath('/images/wiki/concept.png')} />
-                          </div>
-                          <div className="flex-1 overflow-hidden">
-                            <div className="flex items-center justify-between">
-                              <h4 className="flex-1 text-base text-primary truncate">{t('dynamic_knowledge.concept')}
-                                <span className="ml-1.5 bg-[#F2F2F2] px-2 py-0.5 text-xs text-[#9CA3AF] rounded-full">{formatStatNumber(wikiStats?.wiki_concept_count)}</span>
-                                </h4>
-                            </div>
-                            <p className="text-xs text-[#939499] line-clamp-1">{t('dynamic_knowledge.concept_desc')}</p>
-                          </div>
-                        </Link>
+                                {cat.description && (
+                                  <p className="text-xs text-[#939499] line-clamp-1">{cat.description}</p>
+                                )}
+                              </div>
+                            </Link>
+                          );
+                        })}
                         <Link
                           to={wikiUrl}
-                          className="flex-1 bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden hover:bg-[#F0F5FF] transition-colors"
+                          className="flex-1 min-w-[200px] bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden hover:bg-[#F0F5FF] transition-colors"
                         >
                           <div className="flex-1 flex flex-col text-center">
                             <h5 className="text-2xl text-primary">{formatStatNumber(wikiStats?.month_new_docs)}</h5>

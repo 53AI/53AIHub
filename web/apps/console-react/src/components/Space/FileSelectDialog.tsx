@@ -1,17 +1,17 @@
 import {
-    useState,
-    useCallback, forwardRef,
-    useImperativeHandle
+  useState,
+  useCallback, forwardRef,
+  useImperativeHandle
 } from "react";
 import {
-    Modal,
-    Empty,
-    Table,
-    Checkbox,
-    Button,
-    Popover,
-    Spin,
-    message,
+  Modal,
+  Empty,
+  Table,
+  Checkbox,
+  Button,
+  Popover,
+  Spin,
+  message,
 } from "antd";
 import { CloseOutlined, ArrowDownOutlined } from "@ant-design/icons";
 import { spacesApi } from "@/api";
@@ -20,8 +20,8 @@ import { filesApi } from "@/api";
 import { permissionsApi } from "@/api";
 import { buildFileTree, formatFile } from "@/api/modules/files/transform";
 import {
-    RESOURCE_TYPE,
-    PERMISSION_TYPE,
+  RESOURCE_TYPE,
+  PERMISSION_TYPE,
 } from "@/components/Permission/constant";
 import { SvgIcon } from "@km/shared-components-react";
 import type { FileItem } from "@/api/modules/files/types";
@@ -89,7 +89,7 @@ export const FileSelectDialog = forwardRef<
       const list = await librariesApi.list({
         space_id: sid,
         get_recently: 0,
-        limit: 100,
+        limit: 999,
       });
       if (!list || list.length === 0) {
         setLibraryList([]);

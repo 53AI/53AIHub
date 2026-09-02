@@ -1,5 +1,4 @@
-import { MoreOutlined } from "@ant-design/icons";
-import { Dropdown, Search, SvgIcon } from "@km/shared-components-react";
+import { Dropdown, Search, SvgIcon, IconAction } from "@km/shared-components-react";
 import { Button, Modal, message, Select, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -299,22 +298,22 @@ export const UserAccount = forwardRef<AccountRef, AccountProps>(
 				{
 					title: t("operation"),
 					key: "operation",
-					width: 120,
+					width: 100,
 					fixed: "end",
 					render: (_: any, record: AccountUser) => (
-						<div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center">
-							<Button
-								type="link"
-								icon={<SvgIcon name="edit" />}
-								onClick={(e) => {
-									e.stopPropagation();
-									handleEdit(record);
-								}}
-							/>
+						<div className="flex items-center">
+							<IconAction
+								variant="row"
+								title={t("action.edit")}
+								onClick={() => handleEdit(record)}
+							>
+								<SvgIcon name="edit" />
+							</IconAction>
 							{isWorkEnv ? (
 								<Button
 									type="link"
 									danger
+									className="opacity-0 group-hover:opacity-100"
 									icon={<SvgIcon name="delete" />}
 									disabled={record.user_id === userStore.info?.user_id}
 									onClick={(e) => {
@@ -345,11 +344,12 @@ export const UserAccount = forwardRef<AccountRef, AccountProps>(
 									}}
 									trigger={["click"]}
 								>
-									<Button
-										type="link"
-										icon={<MoreOutlined />}
-										onClick={(e) => e.stopPropagation()}
-									/>
+									<IconAction
+										variant="row"
+										title={t("more")}
+									>
+										<SvgIcon name="more-h" />
+									</IconAction>
 								</Dropdown>
 							)}
 						</div>

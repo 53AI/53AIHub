@@ -8,7 +8,7 @@ import { useBasicLayout } from "@/hooks/useBasicLayout";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
-import { checkPermission } from '@/utils/permission';
+import { checkPermissionAsync } from '@/utils/permission';
 import AccountDialog, { AccountDialogRef } from "./AccountDialog";
 import "./List.css";
 
@@ -114,8 +114,10 @@ export function ToolkitList({
   }, [linksStore.categorys, list, keyword, onlyAll, userStore.info.group_ids]);
 
   const handleCardClick = (item: LinkState) => {
-    checkPermission({
+    checkPermissionAsync({
       groupIds: item.user_group_ids,
+      resourceId: item.id,
+      resourceType: 'ai_link',
       onClick: async () => {
         if (isSmScreen && item.has_share_account) {
           setSelectedItem(item);
@@ -128,8 +130,10 @@ export function ToolkitList({
   };
 
   const handleTo = (item: LinkState) => {
-    checkPermission({
+    checkPermissionAsync({
       groupIds: item.user_group_ids,
+      resourceId: item.id,
+      resourceType: 'ai_link',
       onClick: async () => {
         closeMobileModal();
         window.open(item.url, "_blank");
@@ -138,8 +142,10 @@ export function ToolkitList({
   };
 
   const handleVisit = (item: LinkState) => {
-    checkPermission({
+    checkPermissionAsync({
       groupIds: item.user_group_ids,
+      resourceId: item.id,
+      resourceType: 'ai_link',
       onClick: () => {
         closeMobileModal();
         dialogRef.current?.open(item);
@@ -154,8 +160,10 @@ export function ToolkitList({
 
   const handleMoreCommand = (item: LinkState, command: string) => {
     if (command === "add-shortcut") {
-      checkPermission({
+      checkPermissionAsync({
         groupIds: item.user_group_ids,
+        resourceId: item.id,
+        resourceType: 'ai_link',
         onClick: () => {
           shortcutsStore.addShortcut("ai_link", String(item.id));
         }

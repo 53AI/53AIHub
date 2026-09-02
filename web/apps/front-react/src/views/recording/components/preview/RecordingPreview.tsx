@@ -8,7 +8,7 @@ import { MoreDropdown } from '@/components/MoreDropdown'
 import type { MenuItem } from '@/components/MoreDropdown'
 import { FullscreenToggle } from '@/components/FullscreenToggle'
 import { FavoriteToggle } from '@/components/FavoriteToggle'
-import { IconButton } from '@/components/IconButton'
+import { IconAction } from '@km/shared-components-react'
 import {
   useInlineEditLite,
   getDisplayName,
@@ -35,9 +35,10 @@ import { SvgIcon } from '@km/shared-components-react'
 import type { PreviewFile } from '@/views/mine/types'
 import type { RecordingConfig, FileParseStatus } from '@/api/modules/recording/types'
 import type { TemplateItem, TemplateCategory } from '@km/shared-business/recording-template'
-import { AssistantBtn } from '@/views/library/main/file/components/assistant-btn'
+import { AssistantBtn } from '../assistant-btn'
 import DocumentApp from '@/views/library/main/file/components/document-app'
 import { InsightRegeneratePanel } from '@/views/recording/components/insight/InsightRegeneratePanel'
+import { InsightChatModal } from '@/views/recording/components/insight/InsightChatModal'
 import { useLibraryStore } from '@/stores/modules/library'
 import { AGENT_USAGES } from '@/constants/agent'
 import recordingApi from '@/api/modules/recording'
@@ -135,6 +136,8 @@ export function RecordingPreview({
   // 解析整体在跑（宽语义）：任意阶段 loading（pending/parsing/processing）即为 true；
   // 用于「参谋洞察」面板在生成中再次提交时锁住按钮和切换文案。
   const [parseStatusRunning, setParseStatusRunning] = useState(false)
+  // 右上角「参谋洞察」聊天弹窗开关
+  const [chatOpen, setChatOpen] = useState(false)
 
   // 切文件时清空旧菜单（避免下一个文件先展示上一个文件的模板项）
   useEffect(() => {
@@ -471,11 +474,14 @@ export function RecordingPreview({
           }
         }}
       >
-        <IconButton title={t('action.share')} size="medium">
+        <IconAction title={t('action.share')} size="medium">
           <SvgIcon name="share-two" />
-        </IconButton>
+        </IconAction>
       </Popover>
       <AssistantBtn />
+      {/* <IconAction title={t('recording.insight_regenerate')} size="medium" onClick={() => setChatOpen(true)}>
+        <MessageOutlined />
+      </IconAction> */}
       <FullscreenToggle fullscreen={fullscreen} onToggle={onToggleFullscreen} />
       <MoreDropdown
         iconSize={16}
@@ -533,7 +539,6 @@ export function RecordingPreview({
             templates={templates}
             templateCategories={templateCategories}
             recordingConfig={recordingConfig}
-            initialFileData={file.rawData as Record<string, any>}
             parseStatus={parseStatus}
             onDescriptionUpdate={onDescriptionUpdate}
             onMeetingMinutesRename={onMeetingMinutesRename}
@@ -567,6 +572,13 @@ export function RecordingPreview({
           />,
           assistantSiderContainer,
         )}
+
+      {/* 右上角「参谋洞察」聊天弹窗 */}
+      <InsightChatModal
+        fileId={file.id}
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+      />
     </div>
   )
 }

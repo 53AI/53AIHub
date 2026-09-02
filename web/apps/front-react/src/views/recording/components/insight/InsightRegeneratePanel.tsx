@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Spin, Tooltip, message } from 'antd'
+import { Button, Select, Spin, Tooltip, message } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import recordingApi from '@/api/modules/recording'
-import type { InsightBackground } from '@/api/modules/recording/types'
+import type {
+  InsightBackground,
+  InsightPerspective,
+  InsightPerspectiveOption,
+} from '@/api/modules/recording/types'
 import {
   BackgroundCard,
   EMPTY_INSIGHT_BACKGROUND,
@@ -23,6 +27,10 @@ interface InsightRegeneratePanelProps {
 
 /** 当前展开的背景卡片 key。手风琴：一次只展开一张；初始默认展开第一张。 */
 type InsightBackgroundCardKey = (typeof INSIGHT_BACKGROUND_CARDS)[number]['key']
+type EditableInsightBackgroundKey = Exclude<
+  keyof InsightBackground,
+  'conversation' | 'insight_perspective' | 'resolved_insight_perspective'
+>
 
 /**
  * 文档助手侧边栏 → 「参谋洞察」入口对应的内联面板。
@@ -41,6 +49,8 @@ export function InsightRegeneratePanel({
   const [background, setBackground] = useState<InsightBackground>(EMPTY_INSIGHT_BACKGROUND)
   const [loading, setLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [perspectiveOptions, setPerspectiveOptions] = useState<InsightPerspectiveOption[]>([])
+  const [selectedPerspective, setSelectedPerspective] = useState<InsightPerspective>('auto')
   /** 提交成功后到新一轮洞察出炉前的「已提交」状态：禁用按钮、换文案，
    *  避免用户以为没生效而重复点击；主视图的轮询完成后用户可关闭面板或继续微调再次提交。 */
   const [submitted, setSubmitted] = useState(false)
@@ -54,8 +64,13 @@ export function InsightRegeneratePanel({
     if (!fileId) return
     setLoading(true)
     try {
-      const result = await recordingApi.getInsightBackground(fileId)
+      const [result, options] = await Promise.all([
+        recordingApi.getInsightBackground(fileId),
+        recordingApi.getInsightPerspectives(),
+      ])
       setBackground({ ...EMPTY_INSIGHT_BACKGROUND, ...result })
+      setPerspectiveOptions(options)
+      setSelectedPerspective(result.insight_perspective || 'auto')
     } catch (error: any) {
       message.error(error?.message || '读取洞察背景失败')
     } finally {
@@ -83,7 +98,7 @@ export function InsightRegeneratePanel({
     prevInsightGeneratingRef.current = parseStatusRunning
   }, [parseStatusRunning])
 
-  const updateBackground = (key: Exclude<keyof InsightBackground, 'conversation'>, value: string) => {
+  const updateBackground = (key: EditableInsightBackgroundKey, value: string) => {
     setBackground((current) => ({ ...current, [key]: value }))
     // 用户修改背景后，允许再次提交
     if (submitted) setSubmitted(false)
@@ -96,6 +111,7 @@ export function InsightRegeneratePanel({
       await recordingApi.regenerateInsights(fileId, {
         background,
         conversation: [],
+        insight_perspective: selectedPerspective,
       })
       message.success('已确认背景，正在重新生成洞察')
       setSubmitted(true)
@@ -107,12 +123,39 @@ export function InsightRegeneratePanel({
     }
   }
 
+  const appliedPerspectiveName = background.resolved_insight_perspective
+    ? background.resolved_insight_perspective === 'auto'
+      ? '自动场景'
+      : perspectiveOptions.find((option) => option.key === background.resolved_insight_perspective)?.name ||
+        background.resolved_insight_perspective
+    : '尚未记录'
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#fff]">
       {loading ? (
         <div className="flex min-h-0 flex-1 items-center justify-center"><Spin /></div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="mb-3 rounded-xl border border-[#DCE6FF] bg-[#F5F8FF] p-3">
+            <div className="text-xs font-semibold text-[#344054]">洞察场景</div>
+            <div className="mt-1 text-[11px] leading-4 text-[#667085]">
+              当前已应用：{appliedPerspectiveName}
+            </div>
+            <Select
+              className="mt-2 w-full"
+              value={selectedPerspective}
+              loading={perspectiveOptions.length === 0}
+              options={perspectiveOptions.map((option) => ({
+                value: option.key,
+                label: option.key === 'auto' ? '自动场景' : option.name,
+              }))}
+              onChange={(value) => setSelectedPerspective(value as InsightPerspective)}
+              disabled={regenerating || parseStatusRunning}
+            />
+            <div className="mt-1 text-[11px] leading-4 text-[#98A2B3]">
+              选择后点击底部按钮，下一次洞察将按此场景生成。
+            </div>
+          </div>
           <div className="space-y-3">
             {INSIGHT_BACKGROUND_CARDS.map((card) => (
               <BackgroundCard

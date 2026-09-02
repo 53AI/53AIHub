@@ -74,6 +74,7 @@ vi.mock("@km/shared-utils", () => ({
   CacheMode: { LOCAL_STORAGE: "local" },
   eventBus: { on: vi.fn(), off: vi.fn(), emit: vi.fn() },
   formatFileInfo: () => ({ ext: "", mime: "", fname: "", icon: "" }),
+  buildAgentModelOptions: () => [],
 }));
 
 import { useKnowledgeSenderConfig } from "./useKnowledgeSenderConfig";

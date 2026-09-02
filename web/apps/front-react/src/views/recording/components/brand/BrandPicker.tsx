@@ -32,8 +32,8 @@ export function BrandPicker({ options, value, onChange }: BrandPickerProps) {
               selected
                 ? 'border-[#2563EB] bg-[#F2F6FF] '
                 : isEnabled
-                  ? 'border-[#E9EEF7] bg-white text-secondary hover:border-[#2563EB] '
-                  : 'border-[#E9EEF7] bg-[#F2F6FF]  cursor-not-allowed',
+                  ? 'border-[#E9EEF7] bg-white hover:border-[#2563EB] '
+                  : 'border-[#E9EEF7] bg-[#F2F6FF] text-secondary  cursor-not-allowed',
             ].join(' ')}
             onClick={() => {
               if (!isEnabled) return

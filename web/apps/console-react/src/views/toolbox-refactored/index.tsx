@@ -4,7 +4,7 @@
  */
 import { Modal, message, Button, Spin, Empty } from "antd";
 import { HolderOutlined } from "@ant-design/icons";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, SafeImage } from "@km/shared-components-react";
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -263,7 +263,7 @@ export function ToolboxRefactoredPage() {
             </Button>
           </div>
         ) : null}
-        <img
+        <SafeImage
           className="w-10 h-10 object-cover rounded-full overflow-hidden"
           src={item.logo}
           alt={item.name}

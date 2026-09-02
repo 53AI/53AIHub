@@ -8,21 +8,33 @@ import { KnowledgeModel } from "./model";
 import { AssistantPage } from "@/views/assistant";
 import { getPublicPath } from "@/utils/config";
 
+const TAB_KEYS = [
+  "space",
+  "cleaning-pipeline",
+  "model",
+  "assistant",
+] as const;
+
+const resolveTab = (raw: string | null): string => {
+  if (raw && (TAB_KEYS as readonly string[]).includes(raw)) return raw;
+  return TAB_KEYS[0];
+};
+
 export function KnowledgePage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [activeTab, setActiveTab] = useState("space");
+  const [activeTab, setActiveTab] = useState<string>(() =>
+    resolveTab(searchParams.get("tab")),
+  );
 
-  // Handle tab change
   const handleTabChange = (key: string) => {
     setActiveTab(key);
     setSearchParams({ tab: key });
   };
 
+  // URL 上的 tab 缺失或非法时落到第一个 tab
   useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab) {
-      setActiveTab(tab);
-    }
+    const next = resolveTab(searchParams.get("tab"));
+    setActiveTab((prev) => (prev === next ? prev : next));
   }, [searchParams]);
 
   const tabs = [

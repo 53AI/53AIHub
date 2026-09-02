@@ -12,7 +12,6 @@ export { AgentBasicInfo } from './shared/AgentBasicInfo'
 export type { AgentBasicInfoProps, AgentBasicInfoValue } from './shared/AgentBasicInfo'
 export { AgentInfo } from './shared/AgentInfo'
 export { AgentTypeSelector } from './shared/AgentType'
-export { UseScope } from './shared/UseScope'
 export { CollapsibleSection } from './shared/CollapsibleSection'
 export type { CollapsibleSectionProps } from './shared/CollapsibleSection'
 

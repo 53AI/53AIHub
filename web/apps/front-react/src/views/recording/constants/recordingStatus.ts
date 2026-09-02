@@ -23,7 +23,9 @@ export type StageStatusValue = typeof STAGE_STATUS[keyof typeof STAGE_STATUS]
 
 /** 已完成（含旧数据 normal） */
 export function isStageDone(status: string): boolean {
-  return status === STAGE_STATUS.Completed || status === STAGE_STATUS.Normal
+  return status === STAGE_STATUS.Completed
+    || status === STAGE_STATUS.Normal
+    || status === STAGE_STATUS.Skipped
 }
 
 /** 解析中：transcription（pending/parsing）与其他阶段（pending/processing）合并 */

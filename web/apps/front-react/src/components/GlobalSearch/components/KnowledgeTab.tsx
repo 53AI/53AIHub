@@ -5,7 +5,7 @@ import { getPublicPath, api_host } from "@/utils/config";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { GlobalSearchSpace, GlobalSearchLibrary } from "@/api/modules/global-search/types";
 import type { GlobalSearchFile } from "../hooks/useGlobalSearch";
-import { SvgIcon } from '@km/shared-components-react';
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 
 interface KnowledgeTabProps {
   searchQuery: string;
@@ -31,19 +31,10 @@ interface KnowledgeTabProps {
   searchLoading: boolean;
 }
 
-const DEFAULT_AGENT_IMG = "/images/default_agent.png";
-
 const getIconUrl = (icon?: string): string => {
   if (!icon) return getPublicPath("/images/file-default.png");
   if (icon.startsWith("https://") || icon.startsWith("http://")) return icon;
   return `${api_host}${icon.startsWith("/") ? "" : "/"}${icon}`;
-};
-
-const handleIconError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-  const target = e.currentTarget;
-  const fallback = getPublicPath(DEFAULT_AGENT_IMG);
-  if (target.src.endsWith(fallback)) return;
-  target.src = fallback;
 };
 
 const highlightText = (text: string, query: string): string => {
@@ -70,7 +61,7 @@ function ChipLabel({
       className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[#E5E6EB] bg-white cursor-pointer hover:bg-[#F5F6F7] transition-colors"
       onClick={onClick}
     >
-      <img src={icon} className="size-4 flex-shrink-0" alt="" onError={handleIconError} />
+      <SafeImage src={icon} className="size-4 flex-shrink-0" alt="" />
       <span className="text-sm text-[#1D1E1F] whitespace-nowrap">{label}</span>
     </div>
   );
@@ -105,7 +96,7 @@ function DocumentRow({
     >
       <div className="flex items-center gap-2">
         <div className="flex-shrink-0">
-          <img className="size-5" src={icon} alt="" onError={handleIconError} />
+          <SafeImage className="size-5" src={icon} alt="" />
         </div>
         <div className="flex-1 min-w-0">
           {highlighted ? (

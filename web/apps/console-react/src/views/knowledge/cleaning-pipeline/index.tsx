@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { t } from "@/locales";
-import { Button, Spin, Switch } from "antd";
-import { RightOutlined, KeyOutlined, HolderOutlined } from "@ant-design/icons";
+import { Spin, Switch } from "antd";
+import { PlusOutlined, RightOutlined, KeyOutlined, HolderOutlined } from "@ant-design/icons";
 import {
   DndContext,
   closestCenter,
@@ -18,7 +18,7 @@ import {
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { CSS } from "@dnd-kit/utilities";
 import { ragStrategyApi } from "@/api";
 import type { Strategy } from "@/api/modules/rag-strategy";
@@ -165,12 +165,21 @@ function SortableItem({ rule, index, onEdit, onDelete, onToggle }: SortableItemP
 
         {/* Actions */}
         <div className="flex items-center gap-1 pr-5" onClick={(e) => e.stopPropagation()}>
-          <Button
-            type="text"
-            icon={<SvgIcon name="edit" />}
+          <IconAction
+            variant="row"
+            title={t("action.edit")}
             onClick={() => onEdit(rule)}
-            className="px-0 opacity-0 group-hover:opacity-100 transition-opacity"
-          />
+          >
+            <SvgIcon name="edit" />
+          </IconAction>
+          <IconAction
+            variant="row"
+            title={t("action.delete")}
+            danger
+            onClick={() => onDelete(rule)}
+          >
+            <SvgIcon name="delete" />
+          </IconAction>
           <div className="w-px h-4 mr-2 bg-gray-200" />
           <Switch checked={rule.enabled} onChange={(checked) => onToggle({ ...rule, enabled: checked })} />
         </div>
@@ -221,7 +230,13 @@ function DefaultRuleCard({ rule, onEdit }: DefaultRuleCardProps) {
         </div>
 
         <div className="flex items-center justify-end pr-5 w-[146px] bg-purple-50" onClick={(e) => e.stopPropagation()}>
-          <Button type="text" icon={<SvgIcon name="edit" />} onClick={onEdit} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+          <IconAction
+            variant="row"
+            title={t("action.edit")}
+            onClick={onEdit}
+          >
+            <SvgIcon name="edit" />
+          </IconAction>
         </div>
       </div>
     </div>
@@ -372,6 +387,15 @@ export function KnowledgeCleaningPolicy() {
                   ))}
                 </SortableContext>
               </DndContext>
+
+              {/* Add button */}
+              <div
+                className="h-20 border border-dashed border-gray-200 rounded-lg p-4 flex items-center justify-center cursor-pointer bg-gray-50 hover:border-blue-500 text-gray-500 hover:text-blue-500 transition-colors group"
+                onClick={editor.handleAdd}
+              >
+                <PlusOutlined className="mr-2 group-hover:scale-110 transition-transform" />
+                <span className="text-sm">{t("action.add")}</span>
+              </div>
             </div>
 
             {/* Default fallback rule */}

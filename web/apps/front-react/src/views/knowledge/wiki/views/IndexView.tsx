@@ -7,9 +7,8 @@ import { transformWikiInlineMarkup } from "../utils/wiki-markup";
 import wikiApi from "@/api/modules/wiki";
 import type { WikiIndexResponse } from "@/api/modules/wiki";
 import { useNavigate } from "react-router-dom";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { MoreDropdown, MenuItem } from "@/components/MoreDropdown";
-import { IconButton } from "@/components/IconButton";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import { copyToClip } from "@km/shared-utils";
@@ -165,13 +164,13 @@ const IndexView: React.FC = () => {
             {t("wiki.page_type.index")}
           </h1>
           <div className="flex items-center gap-1">
-            <IconButton
+            <IconAction
               title={t("action.share")}
               size="medium"
               onClick={handleShare}
             >
               <SvgIcon name="share-two" />
-            </IconButton>
+            </IconAction>
             {/* 空间维度收藏：resource_type=4 */}
             <WikiFav
               resource_id={spaceId || undefined}

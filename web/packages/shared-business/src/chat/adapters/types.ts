@@ -51,7 +51,7 @@ export interface IConversationApi {
     type?: string,
     documentRef?: ConversationCreateDocumentRef
   ): Promise<any>;
-  list(agentId: string, params?: { conversation_type?: string; offset?: number; limit?: number }): Promise<any>;
+  list(agentId: string, params?: { conversation_type?: string; keyword?: string; offset?: number; limit?: number }): Promise<any>;
   messages(conversationId: string, params?: { offset?: number; limit?: number; fresh?: boolean }): Promise<any>;
   events?(conversationId: string, params?: { offset?: number; limit?: number; after_seq?: number; fresh?: boolean }): Promise<any>;
   snapshot?(conversationId: string, params?: { after_seq?: number; fresh?: boolean }): Promise<any>;

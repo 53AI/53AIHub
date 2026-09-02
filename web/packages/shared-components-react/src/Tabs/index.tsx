@@ -17,6 +17,11 @@ export interface TabsProps {
   activeKey?: string
   defaultActiveKey?: string
   className?: string
+  /**
+   * 透传到每个 tab 项的额外类名（追加在变体样式之后，同名 Tailwind 类后写覆盖先写）。
+   * 用于覆盖默认 text-xl / h-[52px] 等尺寸，例如 `tabClassName="text-base"`。
+   */
+  tabClassName?: string
   onChange?: (key: string) => void
   /**
    * 视觉变体：
@@ -43,6 +48,7 @@ export const Tabs: React.FC<TabsProps> = ({
   activeKey,
   defaultActiveKey,
   className,
+  tabClassName,
   onChange,
   variant = 'default',
   divider,
@@ -131,6 +137,7 @@ export const Tabs: React.FC<TabsProps> = ({
             relative px-4 h-[52px] flex items-center text-xl whitespace-nowrap
             ${item.disabled ? 'cursor-not-allowed text-[#999]' : 'cursor-pointer'}
             ${isActive ? 'text-[#2563EB] font-medium' : 'text-[#4F5052] hover:text-[#2563EB]'}
+            ${tabClassName || ''}
           `}
           onClick={() => handleTabClick(item.key, item.disabled)}
         >
@@ -148,6 +155,7 @@ export const Tabs: React.FC<TabsProps> = ({
           h-8 flex items-center leading-8 px-4 rounded-md transition-colors whitespace-nowrap text-sm
           ${item.disabled ? 'cursor-not-allowed text-[#999]' : 'cursor-pointer'}
           ${isActive ? 'bg-[#EBEFFD] text-[#2563EB]' : 'text-[#333] hover:bg-[#F5F5F5]'}
+          ${tabClassName || ''}
         `}
         onClick={() => handleTabClick(item.key, item.disabled)}
       >

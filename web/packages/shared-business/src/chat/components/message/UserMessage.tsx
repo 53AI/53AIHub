@@ -7,7 +7,11 @@ import { BubbleUser } from "@km/hub-ui-x-react";
 import { MessageMenu } from "../MessageMenu";
 import { SpecifiedFiles } from "../source";
 import type { Message, ChatMessagesFeatures } from "../../types/message";
-import type { FileActionFeature, ChatMessagesSlots } from "../ChatMessages/types";
+import type {
+  FileActionFeature,
+  MessageActionFeature,
+  ChatMessagesSlots,
+} from "../ChatMessages/types";
 
 // === Main Props ===
 
@@ -29,6 +33,8 @@ export interface UserMessageProps {
   // === 回调分组 ===
   /** 文件操作回调 */
   fileAction?: FileActionFeature;
+  /** 消息操作回调（分享模式选择消息） */
+  messageAction?: MessageActionFeature;
 
   // === UI 插槽 ===
   slots?: ChatMessagesSlots;
@@ -81,15 +87,16 @@ function UserMessageInner({
   isShareMode = false,
   isSelected = false,
   fileAction,
+  messageAction,
   slots,
   className,
   style,
 }: UserMessageProps) {
   const handleSelect = useCallback(() => {
-    if (isShareMode && fileAction) {
-      // 分享模式下点击选择消息
+    if (isShareMode && messageAction?.onSelect) {
+      messageAction.onSelect(message);
     }
-  }, [isShareMode, fileAction]);
+  }, [isShareMode, messageAction, message]);
 
   // 解析后的内容
   const parsedContent = useMemo(() => parseMessageContent(message), [message]);

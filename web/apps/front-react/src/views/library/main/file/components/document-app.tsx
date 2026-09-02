@@ -176,13 +176,18 @@ function DocumentApp({
       } else if (map?.enable) {
         setActiveMenu("map");
         setIsCollapsed(true);
+      } else if (showInsightRegenerate) {
+        // insight 独开（无聊天/地图 agent）时也要能自动选到「参谋洞察」，
+        // 否则入口显示但点击后空选中，用户误以为没反应。
+        setActiveMenu("insight-regenerate");
+        setIsCollapsed(true);
       } else if (apps.length > 0) {
         setActiveMenu(apps[0].setting_id);
         setCurAgentInfo(apps[0]);
         setIsCollapsed(true);
       }
     },
-    [],
+    [showInsightRegenerate],
   );
   
   const handleToggleMenu = () => {

@@ -8,6 +8,7 @@ export interface SpaceItem {
   sort: number
   status: number
   library_count: number
+  document_count?: number
   is_default: boolean
   created_time: number
   updated_time: number
@@ -86,5 +87,37 @@ export interface SpaceRecycleListRequest {
 export interface SpaceRecycleListResponse {
   items: SpaceRecycleItem[]
   count: number
+}
+
+/**
+ * 空间图谱配置
+ * - library_ids 为空数组或 null 时表示「全部知识库」
+ */
+export interface KnowledgeGraphConfig {
+  enable_knowledge_graph: boolean
+  library_ids: string[] | null
+}
+
+export interface KnowledgeGraphUpdateRequest {
+  enable_knowledge_graph: boolean
+  /** 省略或 [] 均表示全部知识库 */
+  library_ids?: string[]
+}
+
+/**
+ * 空间 Wiki 知识图谱 + 动态知识 共用配置（单一接口）
+ * - library_ids 为空数组或 null 时表示「全部知识库」
+ */
+export interface WikiKnowledgeGraphConfig {
+  enable_wiki_knowledge_graph: boolean
+  enable_wiki_dynamic_knowledge: boolean
+  library_ids: string[] | null
+}
+
+export interface WikiKnowledgeGraphUpdateRequest {
+  enable_wiki_knowledge_graph: boolean
+  enable_wiki_dynamic_knowledge: boolean
+  /** 省略或 [] 均表示全部知识库 */
+  library_ids?: string[]
 }
 

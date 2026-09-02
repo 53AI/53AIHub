@@ -8,7 +8,7 @@
  */
 
 import type { MentionFeature, SenderSlots } from "@km/hub-ui-x-react";
-import { CacheMode, cacheManager as cache } from "@km/shared-utils";
+import { CacheMode, buildAgentModelOptions, cacheManager as cache } from "@km/shared-utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import agentsApi from "@/api/modules/agents/index";
 import { filesApi } from "@/api/modules/files";
@@ -263,22 +263,13 @@ export function useKnowledgeSenderConfig(
 				const fastConfig = agent?.settings_obj?.fast_reasoning_config || {
 					temperature: 0.5,
 				};
-				const deepValue = `${deepConfig.channel_id}_${deepConfig.channel_type}_${deepConfig.model_name}`;
-				const models = (res.agent_models || []).map((item: any) => {
-					const value = `${item.channel_id}_${item.channel_type}_${item.model}`;
-					const isDeepThinking = value === deepValue;
-						return {
-							...item,
-							type: isDeepThinking ? "deep_reasoning" : "fast_reasoning",
-							icon: isDeepThinking ? "star-link" : "lightning",
-							name: isDeepThinking
-								? t("chat.deep_thinking")
-								: t("chat.fast_response"),
-							temperature: isDeepThinking
-								? deepConfig.temperature
-								: fastConfig.temperature,
-						value,
-						};
+				// 约定第 2 个(index===1)为深度思考模型,与 Vue 版本保持一致
+				const models = buildAgentModelOptions({
+					models: res.agent_models,
+					deepConfig,
+					fastConfig,
+					deepName: t("chat.deep_thinking"),
+					fastName: t("chat.fast_response"),
 				});
 				setAgentModels(models);
 				// 保留用户已选 model;仅当当前值不在新列表中或为空时回退到第一项(finding #2)

@@ -25,7 +25,6 @@ export function PipelineStepNode({ step, size = 14 }: PipelineStepNodeProps) {
         backgroundColor: isSkip ? "#F7F8FA" : "#EEF3FE",
         color: isSkip ? "#999999" : "#2563EB",
       }}
-      title={step.name}
     >
       <SvgIcon
         name={getNodeIcon(step.step_key)}

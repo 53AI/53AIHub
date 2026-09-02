@@ -1,6 +1,7 @@
 import { Suspense, lazy } from "react";
 import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Spin } from "antd";
+import { AppErrorBoundary } from "@km/shared-components-react";
 import { LayoutShell } from "@/layout/Layout";
 import { RequireAuth } from "./guards";
 import { handleChunkLoadError } from "@km/shared-utils";
@@ -66,9 +67,6 @@ const ToolkitCreatePage = lazyWithCatch(() =>
 const SMTPPage = lazyWithCatch(() =>
   import("@/views/smtp/index").then((m) => ({ default: m.SMTPPage })),
 );
-const DomainPage = lazyWithCatch(() =>
-  import("@/views/domain/index").then((m) => ({ default: m.DomainPage })),
-);
 const NavigationPage = lazyWithCatch(() =>
   import("@/views/navigation/index").then((m) => ({
     default: m.NavigationPage,
@@ -130,50 +128,9 @@ const UserRegisterPage = lazyWithCatch(() =>
 const AgentPage = lazyWithCatch(() =>
   import("@/views/agent/index").then((m) => ({ default: m.AgentPage })),
 );
-const AgentCreatePage = lazyWithCatch(() =>
-  import("@/views/agent/create/index").then((m) => ({
-    default: m.AgentCreatePage,
-  })),
-);
 const AgentCreateV2Page = lazyWithCatch(() =>
   import("@/views/agent/create-v2/index").then((m) => ({
     default: m.AgentCreatePageV2,
-  })),
-);
-// 空间设置 (全屏)
-const SpaceSettingLayout = lazy(() =>
-  import("@/views/space/setting").then((m) => ({
-    default: m.SpaceSettingLayout,
-  })),
-);
-const SpaceSettingBasicInfo = lazy(() =>
-  import("@/views/space/setting/pages/basic-info").then((m) => ({
-    default: m.BasicInfoPage,
-  })),
-);
-const SpaceSettingMembers = lazy(() =>
-  import("@/views/space/setting/pages/members").then((m) => ({
-    default: m.MembersPage,
-  })),
-);
-const SpaceSettingKnowledge = lazy(() =>
-  import("@/views/space/setting/pages/knowledge").then((m) => ({
-    default: m.KnowledgePage,
-  })),
-);
-const SpaceSettingKnowledgeGraph = lazy(() =>
-  import("@/views/space/setting/pages/knowledge-graph").then((m) => ({
-    default: m.KnowledgeGraphPage,
-  })),
-);
-const SpaceSettingDynamic = lazy(() =>
-  import("@/views/space/setting/pages/dynamic").then((m) => ({
-    default: m.DynamicPage,
-  })),
-);
-const SpaceSettingRecycle = lazy(() =>
-  import("@/views/space/setting/pages/recycle").then((m) => ({
-    default: m.RecyclePage,
   })),
 );
 const AssistantPage = lazy(() =>
@@ -200,7 +157,6 @@ const TemplateStylePage = lazyWithCatch(() =>
     default: m.TemplateStylePage,
   })),
 );
-const WorkAIPage = lazyWithCatch(() => import("@/views/work-ai/index"));
 const SvgPage = lazyWithCatch(() =>
   import("@/views/svg/index").then((m) => ({ default: m.SvgPage })),
 );
@@ -222,8 +178,11 @@ export function AppRouter() {
         v7_relativeSplatPath: true,
       }}
     >
-      <Suspense fallback={<PageLoading />}>
-        <Routes>
+      {/* 错误边界包住 Routes：<Routes> 为声明式 API，无 data router 的 errorElement，
+          用 React 错误边界捕获懒加载/渲染期异常，替换默认的崩溃白屏。 */}
+      <AppErrorBoundary>
+        <Suspense fallback={<PageLoading />}>
+          <Routes>
           {/* Login routes */}
           <Route
             path="/register"
@@ -268,33 +227,6 @@ export function AppRouter() {
             }
           />
 
-          {/* Full-screen Space Setting routes (outside LayoutShell) */}
-          <Route
-            path="space/:id/setting"
-            element={
-              <RequireAuth>
-                <SpaceSettingLayout />
-              </RequireAuth>
-            }
-          >
-            <Route index element={<Navigate to="basic-info" replace />} />
-            <Route
-              path="basic-info"
-              element={<SpaceSettingBasicInfo />}
-            />
-            <Route path="members" element={<SpaceSettingMembers />} />
-            <Route
-              path="knowledge"
-              element={<SpaceSettingKnowledge />}
-            />
-            <Route
-              path="knowledge-graph"
-              element={<SpaceSettingKnowledgeGraph />}
-            />
-            <Route path="dynamic" element={<SpaceSettingDynamic />} />
-            <Route path="recycle" element={<SpaceSettingRecycle />} />
-          </Route>
-
           {/* Main layout routes */}
           <Route
             path="/"
@@ -312,7 +244,6 @@ export function AppRouter() {
             {/* Config */}
             <Route path="config" element={<ConfigPage />} />
             <Route path="info" element={<InfoPage />} />
-            <Route path="domain" element={<DomainPage />} />
             <Route path="template-style" element={<TemplateStylePage />} />
             <Route path="statistics" element={<StatisticsPage />} />
 
@@ -356,10 +287,6 @@ export function AppRouter() {
 
             {/* Agent */}
             <Route path="agent" element={<AgentPage />} />
-            <Route path="agent/create" element={<AgentCreatePage />} />
-
-            {/* Work AI */}
-            <Route path="work-ai" element={<WorkAIPage />} />
 
             {/* Skills */}
             <Route path="skills" element={<SkillsPage />} />
@@ -387,7 +314,8 @@ export function AppRouter() {
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/404" replace />} />
         </Routes>
-      </Suspense>
+        </Suspense>
+      </AppErrorBoundary>
     </HashRouter>
   );
 }

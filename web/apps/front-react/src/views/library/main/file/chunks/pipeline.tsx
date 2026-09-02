@@ -9,6 +9,7 @@ import { Button, Modal, Radio, message } from "antd";
 import { Dropdown } from "@km/shared-components-react";
 import { CaretDownOutlined } from "@ant-design/icons";
 import { useLibraryStore } from "@/stores/modules/library";
+import { getSimpleDateFormatString } from "@km/shared-utils";
 import { SvgIcon } from "@km/shared-components-react";
 import ragJobApi from "@/api/modules/rag-job";
 import ragPipelineApi from "@/api/modules/rag-pipeline";
@@ -338,6 +339,13 @@ export function ChunksPipeline({
           break;
       }
 
+      if (job.steps && job.steps.length > 0 && job.steps[0].start_time) {
+        config.push({
+          label: "执行时间",
+          value: getSimpleDateFormatString({ date: job.steps[0].start_time }),
+        });
+      }
+
       return config.length > 0 ? { config } : undefined;
     },
     [savedConfigs],
@@ -384,7 +392,8 @@ export function ChunksPipeline({
     if (!jobData?.length) return [];
 
     return jobData
-      .filter(item => item.type !== 'wiki_page_generation').map((job) => {
+      .filter(item => item.type !== 'wiki_page_generation')
+      .filter(item => item.type !== 'graph_generation').map((job) => {
       const stepInfo = STEP_TYPE_MAP[job.type] || {
         name: job.type,
         description: "",
@@ -677,12 +686,18 @@ export function ChunksPipeline({
     }
     try {
       setLoading(true);
-      const batchJobs = jobData.map((job) => ({
-        job_id: job.job_id,
-        step_key: job.type,
-        run_mode: extractRunModeFromJob(job),
-        config: getJobConfig(job.type),
-      }));
+      const batchJobs = jobData.map((job) => {
+        const config = getJobConfig(job.type);
+        return {
+          job_id: job.job_id,
+          step_key: job.type,
+          run_mode: extractRunModeFromJob(job),
+          config:
+            job.type === "document_parsing"
+              ? { ...config, force_reparse: true }
+              : config,
+        };
+      });
       await ragJobApi.batchRetry({
         run: {
           related_id: fileId,
@@ -797,9 +812,13 @@ export function ChunksPipeline({
     }
     try {
       setExecuting(true);
+      const config = getJobConfig(step.type);
       await ragJobApi.retry(step.jobId, {
         continue: executeContinue,
-        config: getJobConfig(step.type),
+        config:
+          step.type === "document_parsing"
+            ? { ...config, force_reparse: true }
+            : config,
       });
       message.success(t("status.submitted"));
       setExecuteDialogVisible(false);

@@ -3,7 +3,7 @@ import filesApi from '@/api/modules/files';
 import recordingApi from '@/api/modules/recording';
 import type { RecordingFileSummary, FileParseStatus, StageStatus } from '@/api/modules/recording/types';
 import { usePoll } from '@/hooks/usePoll';
-import { parsePageJson, parseTranscription } from '../parsers/recordingParsers';
+import { parsePageJson, parseTranscriptLines } from '../parsers/recordingParsers';
 import type { TranscriptItem } from '../parsers/recordingParsers';
 import {
   STAGE_STATUS,
@@ -32,8 +32,6 @@ export interface UseFileParseResult {
   fileSummaries: RecordingFileSummary[]
   fileSummariesLoading: boolean
   isFailed: boolean
-  isEmptyContent: boolean
-  hasContent: boolean
   isBeingParsed: boolean
   /** 首次加载（切文件时重新加载）是否已完成 — 用于避免切换瞬间显示空状态 */
   initialLoadDone: boolean
@@ -58,8 +56,6 @@ export interface UseFileParseResult {
 interface UseFileParseOptions {
   fileId?: string
   shouldPoll?: boolean
-  /** 外部已取到的文件数据，避免重复请求 filesApi.get */
-  initialFileData?: Record<string, any>
   /** 外部已取到的解析状态，避免重复请求 parseStatus */
   initialParseStatus?: FileParseStatus | null
   /**
@@ -72,10 +68,6 @@ interface UseFileParseOptions {
   skipInsight?: boolean
 }
 
-function isCompletedStatus(status: string): boolean {
-  return isStageDone(status)
-}
-
 /**
  * 合并新旧 stage：只对 status 字段做"已完成不被回退"保护，其他字段（error_type/...）直接用新值覆盖。
  * 返回 undefined 表示新值无效，应保留旧值不变。
@@ -84,7 +76,7 @@ function mergeStage(previous: StageStatus | undefined, next: StageStatus | undef
   if (!next) return previous
   const prevStatus = previous?.status ?? ''
   const nextStatus = next.status ?? ''
-  const protectedStatus = isCompletedStatus(prevStatus) && isStageLoading(nextStatus)
+  const protectedStatus = isStageDone(prevStatus) && isStageLoading(nextStatus)
     ? prevStatus
     : nextStatus
   return { ...next, status: protectedStatus }
@@ -126,17 +118,18 @@ function hasAnyStageFailure(
     || isStageFailedOnly(pageStatus)
 }
 
-export function useFileParse({ fileId, shouldPoll = true, initialFileData, initialParseStatus, skipInsight = false }: UseFileParseOptions): UseFileParseResult {
+/** 解析一帧状态的决策：continue 继续轮询，stop 已到终态应停止 */
+type SnapshotDecision = 'continue' | 'stop'
+
+export function useFileParse({ fileId, shouldPoll = true, initialParseStatus, skipInsight = false }: UseFileParseOptions): UseFileParseResult {
   const [transcriptList, setTranscriptList] = useState<TranscriptItem[]>([])
-  const [hasContent, setHasContent] = useState(false)
   const [isFailed, setIsFailed] = useState(false)
-  const [isEmptyContent, setIsEmptyContent] = useState(false)
 
   /** 各阶段完整 stage 状态包（status/error_type 等），按需透传 */
   const [stageStatuses, setStageStatuses] = useState<StageStatusBag>({})
 
-  // 派生：4 个 status 字符串。keepCompletedStatus 的语义已下沉到 mergeStage，
-  // 已完成状态不会被后续轮询回退到 pending/parsing/processing。
+  // 派生：4 个 status 字符串。已完成状态不会被后续轮询回退到 pending/parsing/processing
+  //（防回退语义下沉在 mergeStage）。
   const transcriptionStatus = stageStatuses.transcription?.status ?? ''
   const meetingMinutesStatus = stageStatuses.meetingMinutes?.status ?? ''
   const insightsStatus = stageStatuses.insights?.status ?? ''
@@ -187,19 +180,22 @@ export function useFileParse({ fileId, shouldPoll = true, initialFileData, initi
     })
   }, [])
 
-  /** 拉取转写并写入 transcriptList（兼容新旧两种 JSON 格式） */
+  /** 拉取转写并写入 transcriptList
+   * 改用 /transcription/export 导出接口：后端统一把 DashScope JSON 渲染为
+   * `[hh:mm:ss] 说话人: 内容` 格式的 Markdown，前端用 parseTranscriptLines
+   * 还原为 TranscriptItem 列表。原 getTranscription 偶尔返回空 content
+   * （「状态 normal 但内容空」），导出接口是后端预渲染的稳定产物，能避免空内容。
+   * 复用同一份 Markdown，与「导出转写」按钮同源，解析口径完全一致。
+   */
   const loadTranscription = useCallback(async (id: string) => {
     try {
-      const transcriptionRes = await recordingApi.getTranscription(id)
-      if (transcriptionRes?.content) {
-        setTranscriptList(parseTranscription(transcriptionRes.content))
-        setHasContent(true)
-      } else {
-        setHasContent(false)
+      const exportRes = await recordingApi.exportTranscription(id)
+      if (exportRes?.markdown) {
+        setTranscriptList(parseTranscriptLines(exportRes.markdown))
       }
     } catch (e) {
       // 转写接口失败，不阻塞后续阶段
-      console.warn('[useFileParse] getTranscription failed', e)
+      console.warn('[useFileParse] exportTranscription failed', e)
     }
   }, [])
 
@@ -228,101 +224,25 @@ export function useFileParse({ fileId, shouldPoll = true, initialFileData, initi
     }
   }, [])
 
-  // 加载文件详情（转写、纪要、洞察、总结列表）
   /**
-   * 应用外部传入的 parseStatus 快照：合并 stage 状态 + 加载已完成阶段的数据 + 处理旧数据/失败兜底
+   * 统一处理一次解析状态快照：合并 stage 状态 + 按完成阶段加载对应数据 + 判定失败与是否停止轮询。
+   * 首帧（外部传入的 initialParseStatus / 挂载首次拉取）与轮询帧共用同一套判定，避免两套实现漂移。
+   * 返回 'stop' 表示该帧已到终态（全部完成 / 失败 / 旧数据），应停止轮询。
    */
-  const applyInitialParseStatus = useCallback(async (status: FileParseStatus, fileId: string) => {
-    setStageStatuses((prev) => mergeStageBag(prev, {
-      transcription: status.transcription,
-      meetingMinutes: status.meeting_minutes,
-      insights: status.insights,
-      insightPage: status.insight_page,
-    }))
+  const processSnapshot = useCallback(async (
+    status: FileParseStatus,
+    fileId: string,
+    opts: { summariesPreloaded?: boolean } = {},
+  ): Promise<SnapshotDecision> => {
+    const trans = status.transcription
+    const minutes = status.meeting_minutes
+    const insights = status.insights
+    const page = status.insight_page
 
-    const transStatus = status.transcription?.status ?? ''
-    const minutesStatus = status.meeting_minutes?.status ?? ''
-    const insightStatus = status.insights?.status ?? ''
-    const pageStatus = status.insight_page?.status ?? ''
-
-    // 失败：直接标记，不进入加载分支。
-    // skipInsight 模式下只关心 trans / minutes，insight 相关失败不影响 isFailed。
-    const hasFailure = skipInsight
-      ? isStageFailed(transStatus) || isStageFailed(minutesStatus)
-      : hasAnyStageFailure(transStatus, minutesStatus, insightStatus, pageStatus)
-    if (hasFailure) {
-      setIsFailed(true)
-      shouldStopPollRef.current = true
-      return
-    }
-
-    const transCompleted = isStageDone(transStatus)
-    const insightCompleted = insightStatus === STAGE_STATUS.Completed
-
-    // 一次性预标记已完成的阶段，避免后续轮询重复加载
-    if (transCompleted) loadedStagesRef.current.transcription = true
-    if (minutesStatus === STAGE_STATUS.Completed) loadedStagesRef.current.minutes = true
-    if (insightCompleted) loadedStagesRef.current.insights = true
-
-    // 转录完成 → 拉取转写
-    if (transCompleted) {
-      await loadTranscription(fileId)
-    }
-    // 纪要阶段的数据由 init 顶部的 loadFileSummaries(fileId) 处理
-
-    // skipInsight 模式：不发 filesApi.get 拉 insight_summary，也不调 getInsightPage
-    if (!skipInsight) {
-      // 洞察完成 → 从文件详情降级加载 insight_summary
-      if (insightCompleted) {
-        await loadInsightSummaryFromFile(fileId)
-      }
-
-      // 编排独立请求：完成后不再轮询
-      if (pageStatus === STAGE_STATUS.Completed) {
-        loadedStagesRef.current.insightPage = true
-        await loadInsightPage(fileId)
-        setInsightPageApiDone(true)
-        shouldStopPollRef.current = true
-        return
-      }
-
-      // 我的录音旧数据兼容：转录和洞察都成功，其他阶段都是 pending
-      if (isLegacyCompleteData(transStatus, insightStatus, minutesStatus, pageStatus)) {
-        isOldCompleteRef.current = true
-        shouldStopPollRef.current = true
-      }
-    }
-  }, [loadTranscription, loadInsightSummaryFromFile, loadInsightPage, skipInsight])
-
-  // 轮询函数：获取解析状态，按阶段加载对应接口（仅语音模型调用）
-  const pollParseStatus = useCallback(async () => {
-    if (!fileId) {
-      setTranscriptList([])
-      setHasContent(false)
-      return
-    }
-
-    let parseStatus: FileParseStatus | null
-    try {
-      parseStatus = await recordingApi.getParseStatus(fileId)
-    } catch (e) {
-      console.warn('[useFileParse] getParseStatus failed', e)
-      setTranscriptList([])
-      setHasContent(false)
-      return
-    }
-    if (!parseStatus) return
-
-    const trans = parseStatus.transcription
-    const minutes = parseStatus.meeting_minutes
-    const insights = parseStatus.insights
-    const page = parseStatus.insight_page
-
-    // 合并到 stageStatuses：status 防回退，其他字段覆盖
     setStageStatuses((prev) => mergeStageBag(prev, {
       transcription: trans,
       meetingMinutes: minutes,
-      insights: insights,
+      insights,
       insightPage: page,
     }))
 
@@ -331,110 +251,114 @@ export function useFileParse({ fileId, shouldPoll = true, initialFileData, initi
     const insightStatus = insights?.status ?? ''
     const pageStatus = page?.status ?? ''
 
-    const stopPolling = () => {
-      shouldStopPollRef.current = true
-      stopPollRef.current()
-    }
-
-    // 强制轮询模式下后端可能还没开始处理，取消强制轮询
-    // 只有所有阶段都不是 failed/disabled 才说明后端已响应
+    // 任一阶段失败（含 transcription 的 disabled）。skipInsight 只关心 trans / minutes。
     const failureDetected = skipInsight
       ? isStageFailed(transStatus) || isStageFailed(minutesStatus)
       : hasAnyStageFailure(transStatus, minutesStatus, insightStatus, pageStatus)
+
+    // 失败兜底：forcePoll 期间 / 单次跳过时继续轮询，否则标记失败并停止
+    const decideFailure = (): SnapshotDecision => {
+      if (forcePollRef.current) return 'continue'
+      if (skipFailedCheckRef.current) {
+        skipFailedCheckRef.current = false
+        return 'continue'
+      }
+      setIsFailed(true)
+      return 'stop'
+    }
+
+    // 强制轮询（resetFailed 后）：后端可能还没开始处理，本轮无失败才解除强制
     if (forcePollRef.current && !failureDetected) {
       forcePollRef.current = false
     }
 
-    // 阶段一：转录完成 → 调转写接口
+    // 阶段一：转录完成 → 拉取转写（即使其他阶段失败，已完成的转录也应在转写 tab 正常展示）
     if (isStageDone(transStatus) && !loadedStagesRef.current.transcription) {
       loadedStagesRef.current.transcription = true
       if (isRegenerationRef.current) {
-        // 重新生成流程：转写完成后等 2 秒再获取转写接口
+        // 重新生成流程：转写完成后等 2 秒再获取转写接口（后端就绪窗口）
         isRegenerationRef.current = false
         await new Promise(resolve => setTimeout(resolve, 2000))
       }
       await loadTranscription(fileId)
     }
 
-    // 阶段二：纪要完成 → 调总结列表接口
+    // 阶段二：纪要完成 → 拉取总结列表。
+    // 首帧已由 init 立即 loadFileSummaries 预加载，仅标记不重复请求；其余帧按需加载。
     if (minutesStatus === STAGE_STATUS.Completed && !loadedStagesRef.current.minutes) {
       loadedStagesRef.current.minutes = true
-      await loadFileSummaries(fileId)
-    }
-
-    // skipInsight 模式：跳过以下所有 insight / insightPage 相关分支
-    if (skipInsight) {
-      // 仅 trans / minutes 失败 → 标记失败，停止轮询
-      if (failureDetected) {
-        if (forcePollRef.current) {
-          // 强制轮询模式下后端可能还没开始处理，先不标记失败，继续轮询
-        } else if (skipFailedCheckRef.current) {
-          skipFailedCheckRef.current = false
-        } else {
-          setIsFailed(true)
-          stopPolling()
-          return
-        }
+      if (!opts.summariesPreloaded) {
+        await loadFileSummaries(fileId)
       }
-      return
     }
 
-    // 阶段三：洞察完成 + 编排失败 → 从文件详情降级
-    if (insightStatus === STAGE_STATUS.Completed
-        && !loadedStagesRef.current.insights
-        && pageStatus === STAGE_STATUS.Failed) {
+    // skipInsight 模式：不关心 insight 相关阶段
+    if (skipInsight) {
+      return failureDetected ? decideFailure() : 'continue'
+    }
+
+    // 阶段三：洞察完成 → 拉取 insight_summary 降级数据。
+    // 页面编排中提前缓存、编排失败 / 编排接口返回空时兜底、旧数据无编排时兜底。
+    if (insightStatus === STAGE_STATUS.Completed && !loadedStagesRef.current.insights) {
       loadedStagesRef.current.insights = true
       await loadInsightSummaryFromFile(fileId)
     }
 
-    // 阶段四：编排完成 → 调编排接口，停止轮询
+    // 阶段四：编排完成 → 拉取页面编排结果，停止轮询
     if (pageStatus === STAGE_STATUS.Completed && !loadedStagesRef.current.insightPage) {
       loadedStagesRef.current.insightPage = true
       await loadInsightPage(fileId)
       setInsightPageApiDone(true)
-      stopPolling()
-      return
+      return 'stop'
     }
 
-    // 我的录音旧数据兼容：转录和洞察都成功（normal/completed），其他阶段都是 pending
-    // 旧数据 insight_page 不会完成，需从 insight_summary 加载洞察数据
-    if (isLegacyCompleteData(transStatus, insightStatus, minutesStatus, pageStatus)
-        && !loadedStagesRef.current.insights) {
-      loadedStagesRef.current.insights = true
+    // 我的录音旧数据兼容：转录和洞察都成功，其他阶段都是 pending。
+    // insight_summary 已由阶段三加载，这里只需标记旧数据并停止轮询。
+    if (isLegacyCompleteData(transStatus, insightStatus, minutesStatus, pageStatus)) {
       isOldCompleteRef.current = true
-      await loadInsightSummaryFromFile(fileId)
-      stopPolling()
-      return
+      return 'stop'
     }
 
-    // 有步骤失败 → 标记失败，停止轮询，但已加载的数据不受影响
-    if (hasAnyStageFailure(transStatus, minutesStatus, insightStatus, pageStatus)) {
-      if (forcePollRef.current) {
-        // 强制轮询模式下后端可能还没开始处理，先不标记失败，继续轮询
-      } else if (skipFailedCheckRef.current) {
-        skipFailedCheckRef.current = false
-      } else {
-        setIsFailed(true)
-        stopPolling()
-        return
-      }
+    return failureDetected ? decideFailure() : 'continue'
+  }, [skipInsight, loadTranscription, loadFileSummaries, loadInsightSummaryFromFile, loadInsightPage])
+
+  /** 拉取解析状态（单帧），失败返回 null 由调用方决定兜底 */
+  const fetchParseStatus = useCallback(async (id: string): Promise<FileParseStatus | null> => {
+    try {
+      return await recordingApi.getParseStatus(id)
+    } catch (e) {
+      console.warn('[useFileParse] getParseStatus failed', e)
+      setTranscriptList([])
+      return null
     }
-  }, [fileId, loadFileSummaries, skipInsight])
+  }, [])
+
+  // 轮询帧：拉取解析状态并按统一判定处理
+  const pollParseStatus = useCallback(async () => {
+    if (!fileId) {
+      setTranscriptList([])
+      return
+    }
+    const status = await fetchParseStatus(fileId)
+    if (!status) return
+    const decision = await processSnapshot(status, fileId)
+    if (decision === 'stop') {
+      shouldStopPollRef.current = true
+      stopPollRef.current()
+    }
+  }, [fileId, fetchParseStatus, processSnapshot])
 
   // 首次加载 + 文件切换时重置
   useEffect(() => {
     if (!fileId) {
       setTranscriptList([])
-      setHasContent(false)
       return
     }
 
     shouldStopPollRef.current = false
     loadedStagesRef.current = { transcription: false, minutes: false, insights: false, insightPage: false }
     setInitialLoadDone(false)
-    setHasContent(false)
     setIsFailed(false)
-    setIsEmptyContent(false)
     setInsightSummary({})
     setInsightPageJson(null)
     setFileSummaries([])
@@ -446,14 +370,16 @@ export function useFileParse({ fileId, shouldPoll = true, initialFileData, initi
 
     const init = async () => {
       try {
-        // 切文件时立即获取总结列表（不依赖转录状态）
+        // 切文件时立即获取总结列表（不依赖转录状态），并避免首帧重复拉取
         loadFileSummaries(fileId)
 
-        // 如果外部已传入解析状态，跳过首次轮询请求，直接应用快照
-        if (initialParseStatus) {
-          await applyInitialParseStatus(initialParseStatus, fileId)
-        } else {
-          await pollParseStatus()
+        // 外部已传入解析状态 → 直接应用快照；否则先拉取一次再应用（与轮询共用同一判定）
+        const snapshot = initialParseStatus ?? await fetchParseStatus(fileId)
+        if (snapshot) {
+          const decision = await processSnapshot(snapshot, fileId, { summariesPreloaded: true })
+          if (decision === 'stop') {
+            shouldStopPollRef.current = true
+          }
         }
       } catch (e) {
         // 获取文件详情失败也视为非语音模型
@@ -463,8 +389,8 @@ export function useFileParse({ fileId, shouldPoll = true, initialFileData, initi
       }
     }
     init()
-    // 仅依赖 fileId：initialFileData/initialParseStatus 是 fileId 切换瞬间的快照，
-    // 不希望父组件 re-render 时重启加载；loadFileSummaries/pollParseStatus 由 useCallback 锁定引用。
+    // 仅依赖 fileId：initialParseStatus 是 fileId 切换瞬间的快照，
+    // 不希望父组件 re-render 时重启加载；loadFileSummaries/fetchParseStatus/processSnapshot 由 useCallback 锁定引用。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fileId])
 
@@ -575,8 +501,6 @@ export function useFileParse({ fileId, shouldPoll = true, initialFileData, initi
     fileSummaries,
     fileSummariesLoading,
     isFailed,
-    isEmptyContent,
-    hasContent,
     isBeingParsed,
     initialLoadDone,
     transcriptionStatus,

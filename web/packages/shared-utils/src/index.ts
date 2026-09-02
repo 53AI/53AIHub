@@ -23,6 +23,10 @@ export {
 // 复制工具
 export { copyToClip, copyImageToClip } from './copy.js'
 
+// 智能体模型
+export { buildAgentModelOptions } from './agent-model.js'
+export type { AgentModel, AgentModelOption } from './agent-model.js'
+
 // URL 工具
 export { isUrl, joinUrl, isInternalNetwork } from './url.js'
 
@@ -132,6 +136,7 @@ export {
   isChunkLoadError,
   handleChunkLoadError,
   setupChunkErrorHandler,
+  forceReload,
 } from './chunk-error.js'
 
 // 多账号冲突检测核心

@@ -26,6 +26,8 @@ export interface ConversationState {
   loadingMore: boolean;
   /** 下一页的偏移量（来自后端 nextOffset；无分页时保持 0） */
   nextOffset: number;
+  /** 当前激活的搜索关键词；loadMoreConversations 会沿用它向后端透传 */
+  searchKeyword: string;
 }
 
 export interface ConversationActions {
@@ -41,7 +43,7 @@ export interface ConversationActions {
    */
   loadConversations: (
     agent_id?: string | number,
-    params?: { offset?: number; limit?: number }
+    params?: { offset?: number; limit?: number; keyword?: string }
   ) => Promise<ConversationInfo[]>;
   /**
    * 基于当前 nextOffset 增量加载下一页会话。
@@ -99,6 +101,7 @@ const initialState: ConversationState = {
   hasMore: true,
   loadingMore: false,
   nextOffset: 0,
+  searchKeyword: "",
 };
 
 export const DEFAULT_AGENT_IMG = "/images/default_agent.png";
@@ -188,14 +191,15 @@ export const useConversationStore = create<ConversationState & ConversationActio
         return [];
       }
 
+      const keyword = params?.keyword?.trim() ?? "";
       // 每次全量加载都重置分页，避免 nextOffset 在 agent 切换间泄漏（#2）
-      set({ hasMore: false, loadingMore: false, nextOffset: 0 });
+      set({ hasMore: false, loadingMore: false, nextOffset: 0, searchKeyword: keyword });
 
       try {
         // 标准接口始终走分页（offset/limit），后端响应会带 count 字段供 hasMore 推导
         const offset = params?.offset ?? 0;
         const limit = params?.limit ?? DEFAULT_PAGE_LIMIT;
-        const res = await conversationApi.list(targetAgentId, { offset, limit });
+        const res = await conversationApi.list(targetAgentId, { offset, limit, keyword });
 
         // 丢弃过期请求的响应
         if (requestId !== loadConversationsRequestId) {
@@ -206,7 +210,8 @@ export const useConversationStore = create<ConversationState & ConversationActio
         const conversations = normalizeConversations(rawList);
 
         const currentId = get().current_conversationid;
-        if (currentId && currentId !== 0) {
+        // 搜索场景不兜底"保留当前选中"：用户搜的是标题匹配，未命中的选中项不该被强插进结果头部
+        if (currentId && currentId !== 0 && !keyword) {
           const currentInNew = conversations.find(
             (c: ConversationInfo) => String(c.conversation_id) === String(currentId)
           );
@@ -271,7 +276,8 @@ export const useConversationStore = create<ConversationState & ConversationActio
       try {
         const offset = state.nextOffset;
         const limit = DEFAULT_PAGE_LIMIT;
-        const res = await conversationApi.list(targetAgentId, { offset, limit });
+        const keyword = state.searchKeyword?.trim();
+        const res = await conversationApi.list(targetAgentId, { offset, limit, keyword });
 
         // 已被新一轮 loadMore / loadConversations 超越（loadConversations 会一并递增此计数器）
         if (loadMoreRequestId !== loadMoreConversationsRequestId) return;
@@ -444,6 +450,7 @@ export const useConversationStore = create<ConversationState & ConversationActio
         hasMore: true,
         loadingMore: false,
         nextOffset: 0,
+        searchKeyword: "",
       });
     },
   })

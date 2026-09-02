@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { message } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { useLibraryStore } from "@/stores/modules/library";
 import { useUserStore } from "@/stores/modules/user";
 import { useShortcutsStore } from "@/stores/modules/shortcuts";
 import { LibraryHeader } from "@/views/library/components/header";
 import { LibraryFav } from "@/views/library/components/fav";
 import { MoreDropdown } from "@/components/MoreDropdown";
-import { IconButton } from "@/components/IconButton";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
 import { useFullscreen } from "@/hooks/useFullscreen";
 import LibraryPermission from "@/views/library/components/permission/Library";
@@ -160,13 +159,13 @@ export function LibraryHomeView() {
         footer={
           library && (
             <>
-              <IconButton
+              <IconAction
                 title={t("action.share")}
                 size="medium"
                 onClick={handleShare}
               >
                 <SvgIcon name="share-two" />
-              </IconButton>
+              </IconAction>
 
               <LibraryFav
                 is_favorite={library.is_favorite || false}

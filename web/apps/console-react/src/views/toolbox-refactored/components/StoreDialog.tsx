@@ -8,7 +8,7 @@ import {
     useMemo,
 } from "react";
 import { t } from "@/locales";
-import { Search } from "@km/shared-components-react";
+import { Search, SafeImage } from "@km/shared-components-react";
 import { aiLinkApi } from "@/api/modules/ai-link";
 
 // ============================================================================
@@ -224,7 +224,7 @@ const StoreDialog = forwardRef<StoreDialogRef, StoreDialogProps>(
                         key={index}
                         className="bg-white rounded border p-4 flex items-center gap-2 relative group cursor-pointer"
                       >
-                        <img alt="" src={link.logo} className="w-10 h-10" />
+                        <SafeImage alt="" src={link.logo} className="w-10 h-10" />
                         <div className="flex-1 overflow-hidden">
                           <div className="text-sm text-primary">
                             {link.name}

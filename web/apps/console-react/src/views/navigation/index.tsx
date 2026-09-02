@@ -11,7 +11,7 @@ import { HolderOutlined } from "@ant-design/icons";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { t } from "@/locales";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import { eventBus, sleep } from "@km/shared-utils";
 import { navigationApi } from "@/api/modules/navigation";
 import { transformNavigationList } from "@/api/modules/navigation/transform";
@@ -388,50 +388,34 @@ export function NavigationPage() {
       render: (_, record) => {
         const locked = isVersionLocked(record);
         return (
-          <div
-            className="flex items-center justify-end invisible group-hover:visible"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="flex items-center justify-end gap-1">
             {record.type === NAVIGATION_TYPE.CUSTOM && (
-              <Tooltip title={locked ? t("version.not_support") : t("page_edit")}>
-                <Button
-                  type="text"
-                  size="small"
-                  disabled={locked}
-                  onClick={() => handlePageEdit(record)}
-                >
-                  <SvgIcon name="edit" color={locked ? "#BDC5D8" : "#5A6D9E"} width="16" />
-                </Button>
-              </Tooltip>
-            )}
-            <Tooltip title={locked ? t("version.not_support") : t("action_setting")}>
-              <Button
-                type="text"
-                size="small"
+              <IconAction
+                variant="row"
+                title={locked ? t("version.not_support") : t("page_edit")}
                 disabled={locked}
-                onClick={() => handleEdit(record)}
+                onClick={() => handlePageEdit(record)}
               >
-                <SvgIcon name="setting-web" color={locked ? "#BDC5D8" : "#5A6D9E"} width="16px" />
-              </Button>
-            </Tooltip>
-            <Tooltip title={t("action_delete")}>
-              <Button
-                type="text"
-                size="small"
-                disabled={record.type === NAVIGATION_TYPE.SYSTEM}
-                onClick={() => handleDelete(record)}
-              >
-                <SvgIcon
-                  name="delete"
-                  color={
-                    record.type === NAVIGATION_TYPE.SYSTEM
-                      ? "#BDC5D8"
-                      : "#5A6D9E"
-                  }
-                  width="16px"
-                />
-              </Button>
-            </Tooltip>
+                <SvgIcon name="edit" width="16" />
+              </IconAction>
+            )}
+            <IconAction
+              variant="row"
+              title={locked ? t("version.not_support") : t("action_setting")}
+              disabled={locked}
+              onClick={() => handleEdit(record)}
+            >
+              <SvgIcon name="setting-web" width="16" />
+            </IconAction>
+            <IconAction
+              variant="row"
+              title={t("action_delete")}
+              danger
+              disabled={record.type === NAVIGATION_TYPE.SYSTEM}
+              onClick={() => handleDelete(record)}
+            >
+              <SvgIcon name="delete" width="16" />
+            </IconAction>
           </div>
         );
       },
@@ -474,7 +458,7 @@ export function NavigationPage() {
                     columns={columns}
                     dataSource={navigationList}
                     pagination={false}
-                    className="group"
+                    rowClassName="group"
                     components={{
                       body: {
                         row: SortableRow,
@@ -489,7 +473,7 @@ export function NavigationPage() {
                 columns={columns.filter((col) => col.key !== "drag")}
                 dataSource={navigationList}
                 pagination={false}
-                className="group"
+                rowClassName="group"
               />
             )}
 

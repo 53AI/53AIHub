@@ -3,7 +3,8 @@ import { Modal, Button, Input, Spin, Empty } from "antd";
 import { SearchOutlined, RightOutlined, CheckCircleFilled } from "@ant-design/icons";
 import { useSpaceStore } from "@/stores/modules/space";
 import { useWikiStore } from "@/stores/modules/wiki";
-import type { WikiPageItem, WikiPageType } from "@/api/modules/wiki";
+import type { WikiCategory, WikiPageItem } from "@/api/modules/wiki";
+import wikiApi from "@/api/modules/wiki";
 import recentUsedApi from "@/api/modules/recent-used";
 import type { RecentUsedItem } from "@/api/modules/recent-used/types";
 import { RECENT_USED_RESOURCE_TYPE } from "@/constants/recent-used";
@@ -19,20 +20,14 @@ export interface DynamicKnowledgeDialogProps {
   onConfirm?: (page: WikiPageItem) => void;
 }
 
-const PAGE_TYPE_I18N_KEY: Record<WikiPageType, string> = {
-  concept: "wiki.page_type.concept",
-  entity: "wiki.page_type.entity",
-  index: "wiki.page_type.index",
-  summary: "wiki.page_type.summary",
-};
-
-const KNOWN_PAGE_TYPES: WikiPageType[] = ["concept", "entity", "index", "summary"];
-
 export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, DynamicKnowledgeDialogProps>(
   ({ onConfirm }, ref) => {
     const [visible, setVisible] = useState(false);
     const [searchText, setSearchText] = useState("");
-    const [activePageType, setActivePageType] = useState<WikiPageType>(KNOWN_PAGE_TYPES[0]);
+    const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+    const [categories, setCategories] = useState<WikiCategory[]>([]);
+    const [categoryPages, setCategoryPages] = useState<WikiPageItem[]>([]);
+    const [categoryPagesLoading, setCategoryPagesLoading] = useState(false);
     const [selectedPage, setSelectedPage] = useState<WikiPageItem | RecentUsedItem | null>(null);
     const [activeTab, setActiveTab] = useState<"recent" | "directory">("directory");
     const [recentRefreshKey, setRecentRefreshKey] = useState(0);
@@ -52,25 +47,26 @@ export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, Dyna
       }
     }, [visible, spaceId, pageList.length, loading, loadPages]);
 
-    // 计算标签统计
-    const pageTypeCounts = useMemo(() => {
-      const counts: Record<WikiPageType, number> = { concept: 0, entity: 0, index: 0, summary: 0 };
-      for (const item of pageList) {
-        if (KNOWN_PAGE_TYPES.includes(item.page_type)) {
-          counts[item.page_type]++;
-        }
-      }
-      return counts;
-    }, [pageList]);
-
-    // 标签列表
+    // 分类标签（顶部"全部"表示不过滤）
     const tags = useMemo(() => {
-      return KNOWN_PAGE_TYPES.map((k) => ({
-        name: t(PAGE_TYPE_I18N_KEY[k]),
-        count: pageTypeCounts[k] ?? 0,
-        key: k,
-      }));
-    }, [pageTypeCounts]);
+      const all = { key: null as number | null, name: t("common.all") };
+      return [
+        all,
+        ...categories.map((cat) => ({
+          key: cat.id,
+          name: cat.name,
+        })),
+      ];
+    }, [categories]);
+
+    // 加载分类列表
+    useEffect(() => {
+      if (!visible || !spaceId) return;
+      wikiApi
+        .categories(spaceId)
+        .then((data) => setCategories(Array.isArray(data) ? data : data?.items ?? []))
+        .catch(() => setCategories([]));
+    }, [visible, spaceId]);
 
     // 加载最近使用列表（Wiki 页面，按当前空间过滤）
     useEffect(() => {
@@ -99,14 +95,39 @@ export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, Dyna
         );
     }, [pageList, searchText]);
 
-    // 分类目录列表（无搜索时使用）
+    // 分类目录列表（无搜索时使用）：未选分类用共享全量列表，选中分类用服务端按分类拉取的列表
     const filteredList = useMemo(() => {
-      const list = pageList.filter((item) => item.page_type === activePageType);
-
+      const list = activeCategoryId == null ? pageList : categoryPages;
       return [...list].sort((a, b) =>
         a.title.localeCompare(b.title, "zh-Hans-CN", { sensitivity: "base" }),
       );
-    }, [pageList, activePageType]);
+    }, [pageList, categoryPages, activeCategoryId]);
+
+    // 选中分类时按 category_id 服务端拉取该分类下的页面
+    useEffect(() => {
+      if (!visible || !spaceId) return;
+      if (activeCategoryId == null) {
+        setCategoryPages([]);
+        setCategoryPagesLoading(false);
+        return;
+      }
+      let cancelled = false;
+      setCategoryPagesLoading(true);
+      wikiApi
+        .pages(spaceId, { category_id: activeCategoryId })
+        .then((data) => {
+          if (!cancelled) setCategoryPages(data.items ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setCategoryPages([]);
+        })
+        .finally(() => {
+          if (!cancelled) setCategoryPagesLoading(false);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }, [visible, spaceId, activeCategoryId]);
 
 
     const handleSelectPage = useCallback((page: WikiPageItem | RecentUsedItem) => {
@@ -144,7 +165,7 @@ export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, Dyna
     useImperativeHandle(ref, () => ({
       open: () => {
         setSearchText("");
-        setActivePageType(KNOWN_PAGE_TYPES[0]);
+        setActiveCategoryId(null);
         setSelectedPage(null);
         setActiveTab("directory");
         setRecentRefreshKey((k) => k + 1);
@@ -319,16 +340,16 @@ export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, Dyna
                   {/* 各分类 */}
                   {tags.map((tag) => (
                     <div
-                      key={tag.key}
-                      onClick={() => setActivePageType(tag.key)}
+                      key={String(tag.key)}
+                      onClick={() => setActiveCategoryId(tag.key)}
                       className={`h-9 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] ${
-                        activePageType === tag.key
+                        activeCategoryId === tag.key
                           ? "bg-[#EDF3FF] hover:bg-[#EDF3FF]"
                           : "hover:bg-[#F2F3F5]"
                       }`}
                     >
                       <span className="flex-1 text-sm">{tag.name}</span>
-                      {activePageType === tag.key && (
+                      {activeCategoryId === tag.key && (
                         <RightOutlined className="text-xs text-[#999]" />
                       )}
                     </div>
@@ -342,6 +363,10 @@ export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, Dyna
                   {t("dynamic_knowledge.label")}
                 </div>
                 {loading && pageList.length === 0 ? (
+                  <div className="flex justify-center py-8">
+                    <Spin />
+                  </div>
+                ) : (activeCategoryId != null && categoryPagesLoading) ? (
                   <div className="flex justify-center py-8">
                     <Spin />
                   </div>

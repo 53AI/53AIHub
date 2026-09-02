@@ -1,10 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useOutletContext } from "react-router-dom";
-import { Button, Modal, Table, Tooltip, message } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
+import { Button, Modal, Table, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 
-import { Header } from "@/components/Header";
 import { EntityDisplay } from "@/components/EntityDisplay";
 import { MemberSelector } from "@/components/Permission/member-selector";
 import PermissionSelector from "@/components/Permission/selector";
@@ -17,8 +15,8 @@ import {
 import { permissionsApi } from "@/api/modules/permissions";
 import type { PermissionItem } from "@/api/modules/permissions";
 import { getPublicPath } from "@/utils/config";
+import type { SpaceItem } from "@/api/modules/spaces/types";
 
-import type { SpaceSettingContext } from "../index";
 import { t } from "@/locales";
 
 interface MemberRow {
@@ -28,9 +26,12 @@ interface MemberRow {
   permission: PermissionType;
 }
 
-export function MembersPage() {
-  const { space } = useOutletContext<SpaceSettingContext>();
+export interface MembersTabProps {
+  space: SpaceItem;
+  onRefresh: () => Promise<void>;
+}
 
+export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
   const [rows, setRows] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -194,18 +195,19 @@ export function MembersPage() {
         render: (_, record) => {
           const creatorLocked = isCreator(record.subject_id);
           return (
-            <Tooltip
-              title={creatorLocked ? t("space.members.cannot_delete_creator") : ""}
-              placement="top"
+            <IconAction
+              variant="row"
+              title={
+                creatorLocked
+                  ? t("space.members.cannot_delete_creator")
+                  : t("action_delete")
+              }
+              danger
+              disabled={creatorLocked}
+              onClick={() => handleDelete(record)}
             >
-              <Button
-                type="text"
-                size="small"
-                disabled={creatorLocked}
-                icon={<DeleteOutlined />}
-                onClick={() => handleDelete(record)}
-              />
-            </Tooltip>
+              <SvgIcon name="delete" />
+            </IconAction>
           );
         },
       },
@@ -214,34 +216,33 @@ export function MembersPage() {
   );
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden px-[78px] bg-[#fff]">
-      <Header className="pt-8 pb-5" title={t("space.setting.menu.members")} />
-      <div className="flex-1 gap-6 overflow-y-auto">
-        <Table
-          rowKey={(record) =>
-            `${record.id}-${record.subject_type}-${record.subject_id}`
-          }
-          columns={columns}
-          dataSource={rows}
-          pagination={false}
-          components={{
-            header: {
-              cell: (props: any) => (
-                <th {...props} className="!bg-[#F5F6F7] !text-[#999999]" />
-              ),
-            },
-          }}
-        />
-        <MemberSelector
-          onConfirm={handleMemberConfirm}
-        >
-          <Button type="primary" className="mt-6">
-              {t("space.members.add_member")}
-            </Button>
-        </MemberSelector>
-      </div>
+    <div className="h-full overflow-y-auto py-2">
+      <Table
+        rowKey={(record) =>
+          `${record.id}-${record.subject_type}-${record.subject_id}`
+        }
+        columns={columns}
+        dataSource={rows}
+        loading={loading}
+        pagination={false}
+        rowClassName="group"
+        components={{
+          header: {
+            cell: (props: any) => (
+              <th {...props} className="!bg-[#F5F6F7] !text-[#999999]" />
+            ),
+          },
+        }}
+      />
+      <MemberSelector
+        onConfirm={handleMemberConfirm}
+      >
+        <Button type="primary" className="mt-6">
+            {t("space.members.add_member")}
+          </Button>
+      </MemberSelector>
     </div>
   );
 }
 
-export default MembersPage;
+export default MembersTab;

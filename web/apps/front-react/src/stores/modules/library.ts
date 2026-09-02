@@ -557,7 +557,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   setExpandedKeys: (keys: string[]) => {
-    set({ expandedKeys: keys })
+    // 内容等值守卫：展开态未变化时跳过 set，避免下拉菜单/创建回调每次无差别触发 Tree 重渲染
+    const prev = get().expandedKeys
+    if (keys.length !== prev.length || keys.some((k, i) => k !== prev[i])) {
+      set({ expandedKeys: keys })
+    }
   },
 
   setUploadQueue: (val: UploadItem[]) => {

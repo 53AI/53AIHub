@@ -6,6 +6,27 @@ import type { StageStatusBag, TranscriptItem } from '../../hooks/useFileParse'
 import { ParsingPlaceholder, ParsingUnavailable, PendingPlaceholder, InsightLoadingPlaceholder, hasStageFailed, type ParsingStep } from './ParseStatusPlaceholder'
 import { isStageLoading } from '../../constants/recordingStatus'
 
+/** 说话人头像专属配色：柔和浅底色 + 同色系深文字，保证可读 */
+const SPEAKER_PALETTE: ReadonlyArray<{ backgroundColor: string; textColor: string }> = [
+  { backgroundColor: '#E0EAFF', textColor: '#2563EB' }, // 蓝
+  { backgroundColor: '#EDE9FE', textColor: '#7C3AED' }, // 紫
+  { backgroundColor: '#DCFCE7', textColor: '#15803D' }, // 绿
+  { backgroundColor: '#FFEDD5', textColor: '#C2410C' }, // 橙
+  { backgroundColor: '#FCE7F3', textColor: '#DB2777' }, // 粉
+  { backgroundColor: '#CCFBF1', textColor: '#0F766E' }, // 青
+  { backgroundColor: '#FEF3C7', textColor: '#B45309' }, // 琥珀
+  { backgroundColor: '#E0E7FF', textColor: '#4338CA' }, // 靛
+  { backgroundColor: '#FEE2E2', textColor: '#B91C1C' }, // 红
+  { backgroundColor: '#CFFAFE', textColor: '#0E7490' }, // 湖蓝
+]
+
+/** 按 speakerNum 稳定映射到唯一配色，同一说话人始终同色 */
+function getSpeakerColors(speakerNum: number) {
+  const len = SPEAKER_PALETTE.length
+  const key = ((speakerNum - 1) % len + len) % len
+  return SPEAKER_PALETTE[key] ?? SPEAKER_PALETTE[0]
+}
+
 interface TranscriptPanelProps {
   /** 转写列表 */
   transcriptList: TranscriptItem[]
@@ -115,10 +136,10 @@ export function TranscriptPanel({
                           <VirtualLogo
                             size={22}
                             text={speakerLabel}
-                            textColor="#2563EB"
+                            textColor={getSpeakerColors(item.speakerNum).textColor}
                             round={11}
                             border={false}
-                            backgroundColor="#DEE8FF"
+                            backgroundColor={getSpeakerColors(item.speakerNum).backgroundColor}
                           />
                         </span>
                         <span className="select-none cursor-pointer hover:text-[#2563EB]" onClick={openRename(item)}>

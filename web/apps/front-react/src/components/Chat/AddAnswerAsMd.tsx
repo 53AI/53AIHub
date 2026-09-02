@@ -38,7 +38,7 @@ import {
   cacheManager,
 } from "@km/shared-utils";
 import { useLibraryStore } from "@/stores";
-import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
+import { buildKnowledgeFileUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
 
@@ -305,7 +305,7 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
             return librariesApi.list({
               space_id: spaceId,
               get_recently: 0,
-              limit: 100,
+              limit: 999,
             });
           },
         );

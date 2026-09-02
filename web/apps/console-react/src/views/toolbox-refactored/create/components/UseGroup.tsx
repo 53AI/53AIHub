@@ -1,81 +1,62 @@
-import { memo, useCallback } from 'react'
+import { memo } from 'react'
 
 import { Form } from 'antd'
 
-import { GROUP_TYPE } from '@/constants/group'
 import { useEnterpriseStore } from '@/stores/modules/enterprise'
-import GroupSelect from '@/components/GroupSelect'
+import RegisterUserGroupSelect from '@/components/RegisterUserGroupSelect'
+import type { ScopeItem } from '@/api/modules/agent'
 import { t } from '@/locales'
+
+import UseScope from './UseScope'
 
 // ============================================================================
 // Types
 // ============================================================================
 
 export interface UseGroupProps {
-  /** 内部用户分组 ID 列表 */
-  userGroup: number[]
-  /** 注册用户分组 ID 列表 */
+  /** 内部用户作用域 */
+  scopes: ScopeItem[]
+  /** 注册用户分组 ID 列表（外层受控） */
   subscriptionGroup: number[]
-  /** 是否可编辑 */
-  editable: boolean
-  /** 分组变更回调 */
-  onChange: (payload: { groupType: number; data: number[] }) => void
+  /** 注册用户分组变更 */
+  onSubscriptionGroupChange: (value: number[]) => void
+  /** 内部用户作用域变更 */
+  onScopesChange: (value: ScopeItem[]) => void
+  /** 创建模式：注册用户分组加载后无值时默认全选 */
+  autoFillAll?: boolean
+  /** 是否为新建模式（决定内部用户作用域是否默认"全部成员"） */
+  isNew?: boolean
 }
 
 // ============================================================================
 // Component
 // ============================================================================
 
-function UseGroupInternal({ userGroup, subscriptionGroup, editable, onChange }: UseGroupProps) {
+function UseGroupInternal({
+  scopes,
+  subscriptionGroup,
+  onSubscriptionGroupChange,
+  onScopesChange,
+  autoFillAll = false,
+  isNew = false,
+}: UseGroupProps) {
   const enterprise = useEnterpriseStore()
-
-  // 处理注册用户分组变更
-  const handleSubscriptionGroupChange = useCallback(
-    (value: number[]) => {
-      onChange({ groupType: GROUP_TYPE.USER, data: value })
-    },
-    [onChange],
-  )
-
-  // 处理内部用户分组变更
-  const handleUserGroupChange = useCallback(
-    (value: number[]) => {
-      onChange({ groupType: GROUP_TYPE.INTERNAL_USER, data: value })
-    },
-    [onChange],
-  )
 
   // 判断是否显示注册用户分组
   const showSubscriptionGroup = enterprise.info.is_independent || enterprise.info.is_industry
-
-  // 判断是否显示内部用户分组
-  const showUserGroup = enterprise.info.is_enterprise || enterprise.info.is_industry
 
   return (
     <Form layout="vertical">
       {showSubscriptionGroup && (
         <Form.Item label={t('register_user.title')} style={{ marginBottom: 12 }}>
-          <GroupSelect
+          <RegisterUserGroupSelect
             value={subscriptionGroup}
-            onChange={handleSubscriptionGroupChange}
-            groupType={GROUP_TYPE.USER}
-            multiple
-            type="checkbox"
-            defaultAll={!editable}
+            onChange={onSubscriptionGroupChange}
+            autoFillAll={autoFillAll}
           />
         </Form.Item>
       )}
-      {showUserGroup && (
-        <Form.Item label={t('internal_user.title')} style={{ marginBottom: 0 }}>
-          <GroupSelect
-            value={userGroup}
-            onChange={handleUserGroupChange}
-            groupType={GROUP_TYPE.INTERNAL_USER}
-            multiple
-            type="picker"
-          />
-        </Form.Item>
-      )}
+      <UseScope value={scopes} onChange={onScopesChange} isNew={isNew} />
     </Form>
   )
 }

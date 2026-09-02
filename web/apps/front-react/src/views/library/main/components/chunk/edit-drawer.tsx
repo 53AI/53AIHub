@@ -53,8 +53,7 @@ const defaultKnowledge: KnowledgeChunk = {
 };
 
 const numberToIndex = (num: number): string => {
-  const indices = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-  return indices[num] || String(num + 1);
+  return String(num +1).padStart(2, "0")
 };
 
 export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
