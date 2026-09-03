@@ -264,7 +264,7 @@ func (s *EntityVectorService) SearchEntityFiles(eid int64, name string, topK int
 }
 
 func (s *EntityVectorService) insertWithAutoCreate(ctx context.Context, collection string, record vectorstore.VectorRecord, dimension int) error {
-	err := s.vectorDB.Insert(ctx, collection, []vectorstore.VectorRecord{record})
+	err := s.vectorDB.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record})
 	if err == nil {
 		return nil
 	}
@@ -279,7 +279,7 @@ func (s *EntityVectorService) insertWithAutoCreate(ctx context.Context, collecti
 			if createErr := s.vectorDB.CreateCollection(ctx, collectionConfig); createErr != nil && !vectorstore.IsExistsError(createErr) {
 				return createErr
 			}
-			if insertErr := s.vectorDB.Insert(ctx, collection, []vectorstore.VectorRecord{record}); insertErr != nil {
+			if insertErr := s.vectorDB.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record}); insertErr != nil {
 				return insertErr
 			}
 			return nil

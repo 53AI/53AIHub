@@ -427,14 +427,17 @@ func buildGraphAggregateSource(result *GraphAggregateResult) *SourceReference {
 	}
 
 	return &SourceReference{
-		SourceType:                   "graph",
-		ReferenceID:                  GraphAggregateReferenceID,
-		ChunkID:                      graphAggregateSyntheticChunkID,
-		FileID:                       0,
-		FileName:                     "图谱搜索结果",
-		ChunkType:                    GraphAggregateChunkType,
-		Content:                      result.Content,
-		Score:                        1.0,
+		SourceType:  "graph",
+		ReferenceID: GraphAggregateReferenceID,
+		ChunkID:     graphAggregateSyntheticChunkID,
+		FileID:      0,
+		FileName:    "图谱搜索结果",
+		ChunkType:   GraphAggregateChunkType,
+		Content:     result.Content,
+		// Graph is supplemental structured context, not a text candidate. Keep
+		// it out of score-based fusion instead of letting a sentinel 1.0 score
+		// outrank every document and Wiki passage.
+		Score:                        0,
 		KnowledgeBaseName:            "图谱搜索结果",
 		SourceKey:                    "[Source:G-1]",
 		EntityCount:                  result.EntityCount,

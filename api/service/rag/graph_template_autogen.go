@@ -45,6 +45,8 @@ func (e *graphTemplateAutogenLLMExecutor) Generate(ctx context.Context, systemPr
 			{Role: "user", Content: userPrompt},
 		},
 	}
+	// 图谱模板自动生成默认不深度思考（与 wiki 生成一致）
+	applyInternalRequestControl(request, &internalRequestControl{ReasoningMode: "disabled"})
 
 	resp, err, openaiErr := e.contentService.TestChannel(ctx, e.channel, request)
 	if err != nil {

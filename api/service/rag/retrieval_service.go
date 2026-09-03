@@ -847,10 +847,53 @@ func (s *RetrievalChunkService) storeRetrievalChunkToVectorDB(eid int64, chunk *
 	return vectorID, nil
 }
 
+// storeRetrievalChunkBatchToVectorDB 将同一批检索块按 collection 一次性写入向量库。
+func (s *RetrievalChunkService) storeRetrievalChunkBatchToVectorDB(eid int64, chunks []*model.RetrievalChunk, vectors [][]float64) ([]string, error) {
+	if len(chunks) != len(vectors) || len(chunks) == 0 {
+		return nil, fmt.Errorf("检索块和向量数量不匹配")
+	}
+	store, err := vectorstore.GetGlobalVectorStore()
+	if err != nil {
+		return nil, fmt.Errorf("获取向量存储实例失败: %v", err)
+	}
+	library, err := model.GetLibraryByID(eid, chunks[0].LibraryID)
+	if err != nil {
+		return nil, fmt.Errorf("获取库信息失败: %v", err)
+	}
+	resolver := VectorCollectionResolver{Mode: GetVectorCollectionMode()}
+	collections := resolver.ResolveDocumentWriteCollections(chunks[0].Eid, *library)
+	config := vectorstore.LoadFromEnv()
+	records := make([]vectorstore.VectorRecord, len(chunks))
+	vectorIDs := make([]string, len(chunks))
+	for i, chunk := range chunks {
+		vectorIDs[i] = uuid.New().String()
+		vector32 := make([]float32, len(vectors[i]))
+		for j, value := range vectors[i] {
+			vector32[j] = float32(value)
+		}
+		metadata := buildDocumentVectorMetadata(DocumentVectorMetadataInput{
+			Eid: chunk.Eid, SpaceID: library.SpaceID, LibraryID: chunk.LibraryID,
+			FileID: chunk.FileID, ChunkID: chunk.ID, KnowledgeChunkID: chunk.KnowledgeChunkID,
+			ChunkType: "retrieval", Content: chunk.Content, TokenCount: chunk.TokenCount,
+			Status: "enabled",
+		})
+		metadata["search_weight"] = chunk.SearchWeight
+		records[i] = vectorstore.VectorRecord{ID: vectorIDs[i], Vector: vector32, Metadata: metadata}
+	}
+
+	ctx := context.Background()
+	for _, collection := range collections {
+		if err := s.insertRetrievalVectorsWithAutoCreate(ctx, store, collection, records, len(records[0].Vector), config.DistanceMetric); err != nil {
+			return nil, fmt.Errorf("写入集合 %s 失败: %v", collection, err)
+		}
+	}
+	return vectorIDs, nil
+}
+
 // insertRetrievalVectorWithAutoCreateCollection 插入检索向量，如果集合不存在则自动创建
 func (s *RetrievalChunkService) insertRetrievalVectorWithAutoCreate(ctx context.Context, store vectorstore.VectorStore, collection string, record vectorstore.VectorRecord, dimension int, metric string) error {
 	// 尝试直接插入
-	err := store.Insert(ctx, collection, []vectorstore.VectorRecord{record})
+	err := store.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record})
 	if err == nil {
 		return nil
 	}
@@ -879,7 +922,7 @@ func (s *RetrievalChunkService) insertRetrievalVectorWithAutoCreate(ctx context.
 			}
 
 			// 重新尝试插入
-			if insertErr := store.Insert(ctx, collection, []vectorstore.VectorRecord{record}); insertErr != nil {
+			if insertErr := store.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record}); insertErr != nil {
 				return fmt.Errorf("创建集合后插入向量失败: %v", insertErr)
 			}
 			return nil
@@ -888,6 +931,31 @@ func (s *RetrievalChunkService) insertRetrievalVectorWithAutoCreate(ctx context.
 
 	// 其他错误，使用重试机制
 	return s.insertRetrievalVectorWithRetry(ctx, store, collection, record)
+}
+
+func (s *RetrievalChunkService) insertRetrievalVectorsWithAutoCreate(ctx context.Context, store vectorstore.VectorStore, collection string, records []vectorstore.VectorRecord, dimension int, metric string) error {
+	err := store.BatchInsert(ctx, collection, records)
+	if err == nil {
+		return nil
+	}
+	if vsErr, ok := err.(*vectorstore.VectorStoreError); ok {
+		combined := strings.ToLower(vsErr.Message + " " + vsErr.Details)
+		if vsErr.Code == vectorstore.ErrCodeCollectionNotFound || vsErr.Code == vectorstore.ErrCodeUnknown ||
+			(vsErr.Code == vectorstore.ErrCodeInsertFailed && strings.Contains(combined, "not found")) {
+			if createErr := store.CreateCollection(ctx, vectorstore.CollectionConfig{Name: collection, Dimension: dimension, Metric: metric}); createErr != nil && !vectorstore.IsExistsError(createErr) {
+				return fmt.Errorf("创建集合失败: %v", createErr)
+			}
+			return store.BatchInsert(ctx, collection, records)
+		}
+	}
+	for attempt := 2; attempt <= 3 && isRetrievalRetryableError(err); attempt++ {
+		time.Sleep(time.Duration(attempt) * time.Second)
+		err = store.BatchInsert(ctx, collection, records)
+		if err == nil {
+			return nil
+		}
+	}
+	return err
 }
 
 // insertRetrievalVectorWithRetry 带重试机制的插入
@@ -899,7 +967,7 @@ func (s *RetrievalChunkService) insertRetrievalVectorWithRetry(ctx context.Conte
 			time.Sleep(time.Duration(attempt) * time.Second)
 		}
 
-		err := store.Insert(ctx, collection, []vectorstore.VectorRecord{record})
+		err := store.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record})
 		if err == nil {
 			return nil
 		}

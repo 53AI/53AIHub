@@ -3804,15 +3804,8 @@ agentLoop:
 					var contextBuilder strings.Builder
 					contextBuilder.WriteString("## 知识库检索结果\n\n")
 					contextBuilder.WriteString("以下是与用户问题相关的参考资料，请基于这些内容回答问题：\n\n")
-
-					for i, source := range sources {
-						// Use standard [Source:x-y] format for citations
-						sourceKey := source.SourceKey
-						if sourceKey == "" {
-							sourceKey = fmt.Sprintf("[Source:%d-%d]", 1, i+1)
-						}
-						contextBuilder.WriteString(fmt.Sprintf("%s\n<begin>\n%s\n<end>\n\n", sourceKey, source.Content))
-					}
+					contextBuilder.WriteString(CreateRetrievalContext(sources))
+					appendRAGSourcesForCitationValidation(c, sources)
 
 					// Create system message with RAG context
 					ragContextMsg := relay_model.Message{

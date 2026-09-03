@@ -13,7 +13,7 @@ import (
 )
 
 // Version 硬编码的系统版本号
-var Version = "v0.5.0"
+var Version = "v0.5.1"
 
 var chinaTimeZone = time.FixedZone("UTC+8", 8*60*60)
 
@@ -76,6 +76,14 @@ var SLOW_API_THRESHOLD_MS = env.Int("SLOW_API_THRESHOLD_MS", 1000)
 var SLOW_SQL_THRESHOLD_MS = env.Int("SLOW_SQL_THRESHOLD_MS", 200)
 var DebugEnabled = env.Bool("DEBUG", false)
 var OnlyOneLogFile = env.Bool("ONLY_ONE_LOG_FILE", false)
+
+// RAG source weights are rank-fusion experiment knobs. They are deliberately
+// environment-configurable so relevance can be tuned against a query set
+// without changing the retrieval contract.
+var RAGSourceWeightDocument = env.Float64("RAG_SOURCE_WEIGHT_DOCUMENT", 1.0)
+var RAGSourceWeightWiki = env.Float64("RAG_SOURCE_WEIGHT_WIKI", 0.8)
+var RAGSourceWeightWeb = env.Float64("RAG_SOURCE_WEIGHT_WEB", 1.0)
+var RAGSourceFusionRankConstant = env.Int("RAG_SOURCE_FUSION_RANK_CONSTANT", 60)
 var StartTime = formatChinaTime(time.Now(), "2006-01-02 15:04:05")
 var IS_SAAS = env.Bool("IS_SAAS", false)
 var ENTERPRISE_APPLY_AUTO_APPROVE = env.Bool("ENTERPRISE_APPLY_AUTO_APPROVE", true) // 默认自动批准企业申请
@@ -181,7 +189,6 @@ var RECORDING_SPOOL_FLUSH_DURATION_MS = env.Int("RECORDING_SPOOL_FLUSH_DURATION_
 // Chunk 上传临时存储目录配置（避免多实例跨 tmp 目录互相影响）
 var CHUNK_UPLOAD_TEMP_DIR = env.String("CHUNK_UPLOAD_TEMP_DIR", "")
 
-
 // Keystone 监控上报配置
 var KEYSTONE_ENABLED = env.Bool("KEYSTONE_ENABLED", false)
 var KEYSTONE_ENDPOINT = env.String("KEYSTONE_ENDPOINT", "")
@@ -192,6 +199,7 @@ var KEYSTONE_SERVICE_KEY = env.String("KEYSTONE_SERVICE_KEY", "km-backend")
 var KEYSTONE_ENVIRONMENT_KEY = env.String("KEYSTONE_ENVIRONMENT_KEY", "production")
 var KEYSTONE_TIMEOUT_SECONDS = env.Int("KEYSTONE_TIMEOUT_SECONDS", 5)
 var KEYSTONE_MAX_RETRIES = env.Int("KEYSTONE_MAX_RETRIES", 2)
+
 // getAppDir 获取应用程序所在目录，用于基于可执行文件位置计算数据目录
 func getAppDir() string {
 	if execPath, err := os.Executable(); err == nil {

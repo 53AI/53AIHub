@@ -46,20 +46,35 @@ func GetResourceScopes(resourceID int64, resourceType string) ([]model.ResourceS
 	return model.GetResourceScopesByResource(resourceID, resourceType)
 }
 
+type ResourceScopeAccessResult struct {
+	Accessible   bool
+	MatchedScope *model.ResourceScopeItem
+}
+
 // CheckResourceScopeAccess 判断用户是否有权限访问 resource
 func CheckResourceScopeAccess(userID, eid, resourceID int64, resourceType string) (bool, error) {
+	result, err := GetResourceScopeAccess(userID, eid, resourceID, resourceType)
+	if err != nil {
+		return false, err
+	}
+	return result.Accessible, nil
+}
+
+// GetResourceScopeAccess 判断指定用户是否有权限访问 resource，并返回命中的范围。
+func GetResourceScopeAccess(userID, eid, resourceID int64, resourceType string) (*ResourceScopeAccessResult, error) {
 	logger.SysDebugf("resource-scopes service check: user_id=%d eid=%d resource_id=%d resource_type=%s", userID, eid, resourceID, resourceType)
 	user, userErr := model.GetUserByID(userID)
 	if userErr != nil {
-		return false, userErr
+		return nil, userErr
 	}
 	if user.Eid != eid {
-		return false, nil
+		return &ResourceScopeAccessResult{}, nil
 	}
+	result := &ResourceScopeAccessResult{}
 	scopes, err := model.GetResourceScopesByResource(resourceID, resourceType)
 	if err != nil {
 		logger.SysDebugf("resource-scopes service check db error: user_id=%d eid=%d resource_id=%d resource_type=%s err=%v", userID, eid, resourceID, resourceType, err)
-		return false, err
+		return nil, err
 	}
 	logger.SysDebugf("resource-scopes service check scopes count=%d for user_id=%d eid=%d resource_id=%d resource_type=%s", len(scopes), userID, eid, resourceID, resourceType)
 
@@ -69,7 +84,7 @@ func CheckResourceScopeAccess(userID, eid, resourceID int64, resourceType string
 		if err == nil && agent.GroupID > 0 {
 			userIDs, err := model.GetResourcesByGroupAndType(agent.GroupID, model.ResourceTypeUser)
 			if err != nil {
-				return false, err
+				return nil, err
 			}
 			for _, uid := range userIDs {
 				scopes = append(scopes, model.ResourceScope{ScopeType: model.ScopeTypeUser, TargetID: uid})
@@ -77,7 +92,7 @@ func CheckResourceScopeAccess(userID, eid, resourceID int64, resourceType string
 
 			departmentIDs, err := model.GetResourcesByGroupAndType(agent.GroupID, model.ResourceTypeDepartment)
 			if err != nil {
-				return false, err
+				return nil, err
 			}
 			for _, did := range departmentIDs {
 				scopes = append(scopes, model.ResourceScope{ScopeType: model.ScopeTypeDepartment, TargetID: did})
@@ -88,29 +103,33 @@ func CheckResourceScopeAccess(userID, eid, resourceID int64, resourceType string
 	if len(scopes) == 0 {
 		legacyAccessible, legacyConfigured, legacyErr := checkLegacyResourcePermission(userID, resourceID, resourceType)
 		if legacyErr != nil {
-			return false, legacyErr
+			return nil, legacyErr
 		}
 		if legacyConfigured {
-			return legacyAccessible, nil
+			result.Accessible = legacyAccessible
+			return result, nil
 		}
 		// 旧资源没有任何成员范围配置时，兼容历史语义：企业内全员可见。
-		return checkUserInCompany(userID, eid)
+		result.Accessible, err = checkUserInCompany(userID, eid)
+		return result, err
 	}
 
 	for _, scope := range scopes {
 		accessible, err := checkScopeAccess(userID, eid, scope.ScopeType, scope.TargetID)
 		if err != nil {
 			logger.SysDebugf("resource-scopes service check scope error: user_id=%d eid=%d scope_type=%s target_id=%d err=%v", userID, eid, scope.ScopeType, scope.TargetID, err)
-			return false, err
+			return nil, err
 		}
 		if accessible {
 			logger.SysDebugf("resource-scopes service check result=true: user_id=%d eid=%d matched scope_type=%s target_id=%d", userID, eid, scope.ScopeType, scope.TargetID)
-			return true, nil
+			result.Accessible = true
+			result.MatchedScope = &model.ResourceScopeItem{ScopeType: scope.ScopeType, TargetID: scope.TargetID}
+			return result, nil
 		}
 	}
 
 	logger.SysDebugf("resource-scopes service check result=false: no matching scope for user_id=%d eid=%d resource_id=%d resource_type=%s", userID, eid, resourceID, resourceType)
-	return false, nil
+	return result, nil
 }
 
 func checkLegacyResourcePermission(userID, resourceID int64, resourceType string) (accessible, configured bool, err error) {
@@ -153,7 +172,7 @@ func checkScopeAccess(userID, eid int64, scopeType string, targetID int64) (bool
 	case model.ScopeTypeUser:
 		return userID == targetID, nil
 	case model.ScopeTypeGroup:
-		return checkUserInGroup(userID, targetID)
+		return checkUserInGroup(userID, eid, targetID)
 	default:
 		return false, nil
 	}
@@ -175,11 +194,22 @@ func checkUserInDepartment(userID, eid, departmentID int64) (bool, error) {
 	return count > 0, err
 }
 
-func checkUserInGroup(userID, groupID int64) (bool, error) {
-	var count int64
-	err := model.DB.Model(&model.ResourcePermission{}).
-		Where("resource_type = ? AND resource_id = ? AND group_id = ?",
-			model.ResourceTypeUser, userID, groupID).
-		Count(&count).Error
-	return count > 0, err
+func checkUserInGroup(userID, eid, groupID int64) (bool, error) {
+	user, err := model.GetUserByID(userID)
+	if err != nil {
+		return false, err
+	}
+	if user.Eid != eid {
+		return false, nil
+	}
+	groupIDs, err := user.GetUserGroupIds()
+	if err != nil {
+		return false, err
+	}
+	for _, userGroupID := range groupIDs {
+		if userGroupID == groupID {
+			return true, nil
+		}
+	}
+	return false, nil
 }

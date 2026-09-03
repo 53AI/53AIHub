@@ -410,6 +410,7 @@ func (s *SearchService) SearchBatch(ctx context.Context, eid int64, reqs []*Sear
 
 	logger.SysDebugf("【批量向量检索】开始: eid=%d, query_count=%d, library_count=%d, search_types=%v, queries=%v",
 		eid, len(normalized), len(collections), previewSearchTypesForDebug(normalized), previewQueriesForDebug(normalized, 8))
+	logger.SysLogf("【批量向量检索】拆分问题数: eid=%d, query_count=%d, queries=%v", eid, len(normalized), previewQueriesForDebug(normalized, 8))
 
 	vectorSearchStart := time.Now()
 	embeddingStart := time.Now()
@@ -479,9 +480,7 @@ func (s *SearchService) SearchBatch(ctx context.Context, eid int64, reqs []*Sear
 				Searches:   make([]vectorstore.SearchRequest, len(normalized)),
 			}
 			for i, req := range normalized {
-				scopedReq := cloneSearchRequest(req)
-				scopedReq.LibraryIDs = []int64{target.LibraryID}
-				filter := s.buildVectorFilter(eid, scopedReq)
+				filter := buildBatchQueryFilter(s, eid, target, req)
 				searchReq := vectorstore.SearchRequest{
 					Collection:     target.Collection,
 					Query:          req.Query,
@@ -570,7 +569,29 @@ func (s *SearchService) SearchBatch(ctx context.Context, eid int64, reqs []*Sear
 
 	logger.SysDebugf("【批量向量检索】完成: eid=%d, query_count=%d, library_count=%d, mode=%s",
 		eid, len(results), len(collections), batchSearchModeName(normalized))
+
+	totalHitSlices := 0
+	for _, result := range results {
+		if result.Error == nil {
+			totalHitSlices += len(result.Results)
+		}
+	}
+	logger.SysLogf("【批量向量检索】分片命中统计: eid=%d, query_count=%d, total_hit_slices=%d, per_query=%v",
+		eid, len(results), totalHitSlices, batchHitSlicesPerQuery(results))
 	return results, nil
+}
+
+// batchHitSlicesPerQuery 汇总批量检索每个问题命中的分片数，供永久日志输出。
+func batchHitSlicesPerQuery(results []BatchSearchResult) []int {
+	counts := make([]int, 0, len(results))
+	for _, result := range results {
+		if result.Error != nil {
+			counts = append(counts, 0)
+			continue
+		}
+		counts = append(counts, len(result.Results))
+	}
+	return counts
 }
 
 func (s *SearchService) prepareBatchSearchRequests(eid int64, reqs []*SearchRequest) ([]*SearchRequest, time.Duration) {
@@ -2515,6 +2536,17 @@ func extractLibraryIDFromMetadata(metadata map[string]interface{}) int64 {
 	default:
 		return 0
 	}
+}
+
+// buildBatchQueryFilter 构造批量向量检索中单个查询的过滤条件。
+// 企业级集合 (doc_eid_{eid}) 是全企业共享，target.LibraryID 为 0 时不能覆盖请求的真实
+// 知识库范围，否则过滤条件变成 library_id IN [0] 导致 0 命中；此时保留原始 req.LibraryIDs。
+func buildBatchQueryFilter(s *SearchService, eid int64, target batchVectorCollection, req *SearchRequest) map[string]interface{} {
+	scopedReq := cloneSearchRequest(req)
+	if target.LibraryID > 0 {
+		scopedReq.LibraryIDs = []int64{target.LibraryID}
+	}
+	return s.buildVectorFilter(eid, scopedReq)
 }
 
 func (s *SearchService) buildVectorFilter(eid int64, req *SearchRequest) map[string]interface{} {

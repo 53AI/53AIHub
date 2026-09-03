@@ -7,12 +7,19 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	"github.com/53AI/53AIHub/service/enterpriseinit"
 	mcpsvc "github.com/53AI/53AIHub/service/mcp"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+// isSpaceFeatureAvailable 空间功能可用性检查（可测试替换）
+var isSpaceFeatureAvailable = service.IsFeatureAvailable
 
 type SpaceRequest struct {
 	// 空间名称，必填项
@@ -83,6 +90,14 @@ func CreateSpace(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
+	}
+	if req.EnableWikiKnowledgeGraph {
+		if err := model.DB.Transaction(func(tx *gorm.DB) error {
+			return enterpriseinit.EnsureDefaultWikiPipelineForEnterprise(c.Request.Context(), tx, eid)
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
 	}
 
 	// 记录系统日志
@@ -349,6 +364,14 @@ func UpdateSpace(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
 	}
+	if space.EnableWikiKnowledgeGraph {
+		if err := model.DB.Transaction(func(tx *gorm.DB) error {
+			return enterpriseinit.EnsureDefaultWikiPipelineForEnterprise(c.Request.Context(), tx, eid)
+		}); err != nil {
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
+	}
 
 	space.LoadOwnerInfo(eid)
 	space.LoadLibraryCount(eid)
@@ -469,4 +492,355 @@ func BatchUpdateSpaceSort(c *gin.Context) {
 	LogSpaceBatchSort(c, len(req.Spaces))
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+// KnowledgeGraphConfigRequest 空间图谱管线配置（图谱总开关 + 知识库范围，空=全部）
+type KnowledgeGraphConfigRequest struct {
+	EnableKnowledgeGraph bool     `json:"enable_knowledge_graph" example:"false"`
+	LibraryIDs           []string `json:"library_ids" example:"[\"hashid1\",\"hashid2\"]"`
+}
+
+// KnowledgeGraphConfigResponse 空间图谱管线配置响应（library_ids 为空=全部）
+type KnowledgeGraphConfigResponse struct {
+	EnableKnowledgeGraph bool     `json:"enable_knowledge_graph"`
+	LibraryIDs           []string `json:"library_ids"`
+}
+
+type WikiKnowledgeGraphConfigRequest struct {
+	EnableWikiKnowledgeGraph   *bool    `json:"enable_wiki_knowledge_graph" example:"true"`
+	EnableWikiDynamicKnowledge *bool    `json:"enable_wiki_dynamic_knowledge" example:"true"`
+	WikiGenerationMode         *string  `json:"wiki_generation_mode" example:"lazy"`
+	LibraryIDs                 []string `json:"library_ids" example:"[\"hashid1\",\"hashid2\"]"`
+}
+
+type WikiKnowledgeGraphLibraryInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Icon string `json:"icon"`
+}
+
+type WikiKnowledgeGraphConfigResponse struct {
+	EnableWikiKnowledgeGraph   bool                            `json:"enable_wiki_knowledge_graph"`
+	EnableWikiDynamicKnowledge bool                            `json:"enable_wiki_dynamic_knowledge"`
+	WikiGenerationMode         string                          `json:"wiki_generation_mode"`
+	LibraryIDs                 []string                        `json:"library_ids"`
+	Libraries                  []WikiKnowledgeGraphLibraryInfo `json:"libraries"`
+}
+
+// GetSpaceKnowledgeGraphConfig godoc
+// @Summary 获取空间图谱管线配置
+// @Description 获取空间图谱开关与知识库范围（library_ids 空=全部）
+// @Tags 空间管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param space_id path int true "空间ID"
+// @Success 200 {object} model.CommonResponse{data=KnowledgeGraphConfigResponse}
+// @Router /api/spaces/{space_id}/knowledge-graph [get]
+func GetSpaceKnowledgeGraphConfig(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
+	id := c.Param("space_id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("空间ID不能为空")))
+		return
+	}
+	spaceID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的空间ID")))
+		return
+	}
+
+	// 空间可见性校验（与 GetSpace 一致）
+	sps := service.NewSpacePermissionService(eid)
+	canView, err := sps.CheckSpacePermission(userID, spaceID, model.PERMISSION_PUBLIC_ONLY)
+	if (!canView || err != nil) && !common.IsAdmin(c) {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限访问此空间")))
+		return
+	}
+
+	space, err := model.GetSpaceByID(eid, spaceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+
+	libraryIDs, err := model.GetSpaceKnowledgeGraphLibraryIDs(model.DB, eid, spaceID, model.SpaceKnowledgeGraphScopeNormal)
+	if err != nil {
+		logger.Errorf(c, "读取空间图谱知识库范围失败: space_id=%d err=%v", spaceID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	encoded := make([]string, 0, len(libraryIDs))
+	for _, libraryID := range libraryIDs {
+		if s, encodeErr := hashids.Encode(libraryID); encodeErr == nil {
+			encoded = append(encoded, s)
+		}
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(KnowledgeGraphConfigResponse{
+		EnableKnowledgeGraph: space.EnableKnowledgeGraph,
+		LibraryIDs:           encoded,
+	}))
+}
+
+// UpdateSpaceKnowledgeGraphConfig godoc
+// @Summary 保存空间图谱管线配置
+// @Description 保存空间图谱开关与知识库范围（library_ids 空=全部）
+// @Tags 空间管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param space_id path int true "空间ID"
+// @Param config body KnowledgeGraphConfigRequest true "图谱配置"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/spaces/{space_id}/knowledge-graph [put]
+func UpdateSpaceKnowledgeGraphConfig(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
+	id := c.Param("space_id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("空间ID不能为空")))
+		return
+	}
+	spaceID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的空间ID")))
+		return
+	}
+
+	// 检查功能是否可用
+	params := map[string]interface{}{
+		"from": "space",
+	}
+	if _, featureErr := isSpaceFeatureAvailable(c, "space", params); featureErr != nil {
+		c.JSON(http.StatusForbidden, model.FeatureNotAvailableError.ToResponse(featureErr))
+		return
+	}
+
+	// 空间管理权限（与 UpdateSpace 一致）
+	sps := service.NewSpacePermissionService(eid)
+	canEdit, err := sps.CheckSpacePermission(userID, spaceID, model.PERMISSION_MANAGE)
+	if (!canEdit || err != nil) && !common.IsAdmin(c) {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限修改此空间")))
+		return
+	}
+
+	var req KnowledgeGraphConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	// 知识库范围：hashid 数组解码；空 = 全部
+	libraryIDs, err := middleware.BatchDecodeIDStrings(req.LibraryIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的知识库ID")))
+		return
+	}
+	if len(libraryIDs) > 0 {
+		var count int64
+		if err := model.DB.Model(&model.Library{}).Where("eid = ? AND space_id = ? AND id IN ?", eid, spaceID, libraryIDs).Count(&count).Error; err != nil {
+			logger.Errorf(c, "校验知识库范围失败: eid=%d space_id=%d err=%v", eid, spaceID, err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
+		if count != int64(len(libraryIDs)) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("存在不属于该空间的知识库")))
+			return
+		}
+	}
+
+	space, err := model.GetSpaceByID(eid, spaceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+
+	// 开启图谱总开关时，在同一事务内初始化默认图谱管线与兜底策略（幂等）。
+	// 任一步失败整体回滚，避免出现「开关已开但默认管线缺失」。
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(space).Update("enable_knowledge_graph", req.EnableKnowledgeGraph).Error; err != nil {
+			return err
+		}
+		if err := model.ReplaceSpaceKnowledgeGraphLibraryScope(tx, eid, spaceID, model.SpaceKnowledgeGraphScopeNormal, libraryIDs); err != nil {
+			return err
+		}
+		if req.EnableKnowledgeGraph {
+			if err := enterpriseinit.EnsureDefaultGraphPipelineForEnterprise(c.Request.Context(), tx, eid); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		logger.Errorf(c, "保存空间图谱配置失败: space_id=%d err=%v", spaceID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+// GetSpaceWikiKnowledgeGraphConfig 获取空间 Wiki 生成范围。
+// @Summary 获取空间 Wiki 生成范围
+// @Tags 空间管理
+// @Produce json
+// @Security BearerAuth
+// @Param space_id path int true "空间ID"
+// @Success 200 {object} model.CommonResponse{data=WikiKnowledgeGraphConfigResponse}
+// @Router /api/spaces/{space_id}/wiki-knowledge-graph [get]
+func GetSpaceWikiKnowledgeGraphConfig(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+	spaceID, err := strconv.ParseInt(c.Param("space_id"), 10, 64)
+	if err != nil || spaceID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的空间ID")))
+		return
+	}
+	if canView, checkErr := service.NewSpacePermissionService(eid).CheckSpacePermission(userID, spaceID, model.PERMISSION_VIEW_ONLY); checkErr != nil || !canView {
+		if !common.IsAdmin(c) {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限查看此空间")))
+			return
+		}
+	}
+	space, err := model.GetSpaceByID(eid, spaceID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+	response, err := buildWikiKnowledgeGraphConfigResponse(model.DB, eid, spaceID, space)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(response))
+}
+
+// UpdateSpaceWikiKnowledgeGraphConfig 保存空间 Wiki 开关与生成范围。
+// @Summary 保存空间 Wiki 开关与生成范围
+// @Tags 空间管理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param space_id path int true "空间ID"
+// @Param config body WikiKnowledgeGraphConfigRequest true "Wiki 开关与范围"
+// @Success 200 {object} model.CommonResponse{data=WikiKnowledgeGraphConfigResponse}
+// @Router /api/spaces/{space_id}/wiki-knowledge-graph [put]
+func UpdateSpaceWikiKnowledgeGraphConfig(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+	spaceID, err := strconv.ParseInt(c.Param("space_id"), 10, 64)
+	if err != nil || spaceID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的空间ID")))
+		return
+	}
+	if canEdit, checkErr := service.NewSpacePermissionService(eid).CheckSpacePermission(userID, spaceID, model.PERMISSION_MANAGE); (checkErr != nil || !canEdit) && !common.IsAdmin(c) {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限修改此空间")))
+		return
+	}
+	var req WikiKnowledgeGraphConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	if req.WikiGenerationMode != nil && !model.IsValidWikiGenerationMode(*req.WikiGenerationMode) {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的 Wiki 生成模式")))
+		return
+	}
+	libraryIDs, err := middleware.BatchDecodeIDStrings(req.LibraryIDs)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的知识库ID")))
+		return
+	}
+	if len(libraryIDs) > 0 {
+		var count int64
+		if err := model.DB.Model(&model.Library{}).Where("eid = ? AND space_id = ? AND id IN ?", eid, spaceID, libraryIDs).Count(&count).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
+		if count != int64(len(libraryIDs)) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("存在不属于该空间的知识库")))
+			return
+		}
+	}
+	if _, err := model.GetSpaceByID(eid, spaceID); err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+	if err := model.DB.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{}
+		if req.EnableWikiKnowledgeGraph != nil {
+			updates["enable_wiki_knowledge_graph"] = *req.EnableWikiKnowledgeGraph
+		}
+		if req.EnableWikiDynamicKnowledge != nil {
+			updates["enable_wiki_dynamic_knowledge"] = *req.EnableWikiDynamicKnowledge
+		}
+		if req.WikiGenerationMode != nil {
+			updates["wiki_generation_mode"] = *req.WikiGenerationMode
+		}
+		if len(updates) > 0 {
+			if err := tx.Model(&model.Space{}).Where("eid = ? AND id = ?", eid, spaceID).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if err := model.ReplaceSpaceKnowledgeGraphLibraryScope(tx, eid, spaceID, model.SpaceKnowledgeGraphScopeWiki, libraryIDs); err != nil {
+			return err
+		}
+		return enterpriseinit.EnsureDefaultWikiPipelineForEnterprise(c.Request.Context(), tx, eid)
+	}); err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	space, err := model.GetSpaceByID(eid, spaceID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	response, err := buildWikiKnowledgeGraphConfigResponse(model.DB, eid, spaceID, space)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(response))
+}
+
+func buildWikiKnowledgeGraphConfigResponse(db *gorm.DB, eid, spaceID int64, space *model.Space) (*WikiKnowledgeGraphConfigResponse, error) {
+	libraryIDs, err := model.GetSpaceKnowledgeGraphLibraryIDs(db, eid, spaceID, model.SpaceKnowledgeGraphScopeWiki)
+	if err != nil {
+		return nil, err
+	}
+	query := db.Model(&model.Library{}).Where("eid = ? AND space_id = ?", eid, spaceID)
+	if len(libraryIDs) > 0 {
+		query = query.Where("id IN ?", libraryIDs)
+	}
+	var libraries []model.Library
+	if err := query.Order("sort asc, id asc").Find(&libraries).Error; err != nil {
+		return nil, err
+	}
+	encodedIDs := make([]string, 0, len(libraryIDs))
+	for _, libraryID := range libraryIDs {
+		value, encodeErr := hashids.Encode(libraryID)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		encodedIDs = append(encodedIDs, value)
+	}
+	items := make([]WikiKnowledgeGraphLibraryInfo, 0, len(libraries))
+	for _, library := range libraries {
+		value, encodeErr := hashids.Encode(library.ID)
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		items = append(items, WikiKnowledgeGraphLibraryInfo{ID: value, Name: library.Name, Icon: library.Icon})
+	}
+	return &WikiKnowledgeGraphConfigResponse{
+		EnableWikiKnowledgeGraph:   space.EnableWikiKnowledgeGraph,
+		EnableWikiDynamicKnowledge: space.EnableWikiDynamicKnowledge,
+		WikiGenerationMode:         model.NormalizeWikiGenerationMode(space.WikiGenerationMode),
+		LibraryIDs:                 encodedIDs,
+		Libraries:                  items,
+	}, nil
 }

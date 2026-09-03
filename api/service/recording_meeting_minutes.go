@@ -144,6 +144,13 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 
 每个重要对象必须包含 source_segment_ids，用于回溯逐字稿。
 
+实体、主张和关系必须使用稳定的临时 ID 建立结构化连接：
+- memory_entities 必须有 temp_id；
+- memory_relations 只能引用已输出的 entity temp_id，必须有明确 relation_type 和 source_segment_ids；
+- claim_entity_bindings 只能引用当前 decisions、commitments、actions、risks、issues、viewpoints 的 claim 临时 ID 与 entity temp_id；
+- 只在原文明确表达了关系或归属时建立连接，不能因同段共现、名称相似或模型常识猜测关系；
+- 关系、绑定或证据引用无效时省略该项，不得伪造 ID。
+
 五、实体提取
 
 允许实体类型：
@@ -159,6 +166,13 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 - platform
 
 实体中的 canonical_name 只有在可以高置信度确定时才填写。无法确定时置空，不得自行补全。
+转写每行行首的 speaker 字段来自 ASR 的说话人识别结果：其中具体人物名称是已识别的 person 身份，可以作为 confirmed person；默认说话人标签只能用于发言归属。
+同时为每个 memory_entity 输出 identity_policy_class：
+- person：正文提及的人物需要姓名加组织/职位等身份锚点，或明确人工确认；转写行首由 ASR 直接提供的具体 speaker 名称可直接作为已确认人物。
+- named_object：具体项目、客户、产品或命名事项，通常对应 matter。
+- conceptual_object：风险、原则、主题、技术或泛化事项，不能仅按名称跨会议合并。
+- unknown：无法安全判断时使用，必须按当前会议局部实体处理。
+必须同时输出 identity_policy_confidence 和 identity_policy_evidence_segment_ids。identity_status 不是 confirmed 时，person 不得跨会议自动合并。
 
 六、安心录实体记忆
 
@@ -170,6 +184,8 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 - matter：status(todo|in_progress|completed|shelved)、priority(high|medium|low)、deliverable、dependency；
 - risk：risk_type(compliance|delivery|financial|technical)、risk_level(high|medium|low)、probability、response；
 - principle：principle_type(company_policy|industry_norm|compliance_req|business_principle)、applicable_scope、binding_force(mandatory|recommended|reference)、exceptions。
+
+转写中的"A说话人"、"B说话人"、"说话人 1"、"Speaker 1"、"发言人"、"无说话人"、"未知说话人"是默认说话人标签，只能用于发言归属，绝不能作为 person 的 canonical_name、mention 或 alias。转写行首由 ASR 直接提供的具体人物名称（如"王天一"、"珠江钢琴王总"）可作为 person 实体；正文中其他人名仍需有明确证据，无法确认时宁可不输出。
 
 属性无法由证据确认时不要输出该属性；特别是不得编造联系人、截止日期、概率或人物关系。每条事实必须包含 source_segment_ids。canonical_name 只在身份明确时填写；同名但身份不明的人物不要擅自合并。
 
@@ -205,9 +221,14 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
   ],
   "memory_entities": [
     {
+      "temp_id": "entity_001",
       "entity_type": "person|matter|risk|principle",
       "mention": "",
       "canonical_name": "",
+      "identity_status": "candidate|confirmed|manual_confirmed|unresolved",
+      "identity_policy_class": "person|named_object|conceptual_object|unknown",
+      "identity_policy_confidence": 0,
+      "identity_policy_evidence_segment_ids": [],
       "summary": "",
       "aliases": [],
       "attributes": {},
@@ -218,6 +239,23 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
           "source_segment_ids": []
         }
       ]
+    }
+  ],
+  "memory_relations": [
+    {
+      "from_entity_temp_id": "entity_001",
+      "relation_type": "owns|depends_on|blocks|related_to|reports_to",
+      "to_entity_temp_id": "entity_002",
+      "confidence": 0,
+      "source_segment_ids": []
+    }
+  ],
+  "claim_entity_bindings": [
+    {
+      "claim_temp_id": "decision_001|commitment_001|action_001|risk_001|issue_001|viewpoint_001",
+      "entity_temp_id": "entity_001",
+      "role": "subject|owner|decision_maker|risk|dependency|stakeholder",
+      "source_segment_ids": []
     }
   ],
   "keywords": [],
@@ -357,7 +395,7 @@ func getRecordingContextBudget(ctx context.Context, config *model.RecordingConfi
 	return tokenlimit.DefaultContextBudget
 }
 
-// GenerateMeetingMinutes 转写完成后同步触发，生成会议纪要并执行存储反转。
+// GenerateMeetingMinutes 转写完成后同步触发，生成会议纪要并写入 Summary(template_id=0)。
 //
 // 返回 nil 表示成功（或 skipped），返回 error 表示失败（管线应终止）。
 func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) error {
@@ -369,7 +407,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	}
 
 	// 纪要复用（仅录音文件）：同内容源文件（同 upload_files.hash 或同 upload_file_id）已有
-	// completed 纪要 → 直接拷贝反转布局（FileBody=纪要 + Summary(-1)=转写），跳过 LLM 生成与存储反转。
+	// completed 纪要 → 直接拷贝新布局三份（FileBody=转写Markdown + Summary(0)=纪要 + Summary(-1)=原文），跳过 LLM 生成。
 	// 源无/pending/failed → 走正常生成。template_id>0 自定义总结不拷贝。
 	// 与 SonicNote 预置转写互斥：目标 parse_type=sonicnote_transcript（预置官方转写）时跳过复用，
 	// 走 LLM 生成（反转保留预置转写），避免源转写覆盖预置转写（与 document_parsing 转写复用同一不变量）。
@@ -388,10 +426,9 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 						break
 					}
 					// 复用成功后按会议标题重命名文件（对齐正常生成路径第 8 步；失败不阻塞）
-					if srcBody, berr := model.GetLastFileBodyByFileID(eid, cand.ID); berr == nil {
-						if minutesJSON, cerr := srcBody.GetContent(); cerr == nil {
-							renameFileByMeetingTitle(ctx, eid, fileID, file, minutesJSON)
-						}
+					// 新布局纪要存 Summary(template_id=0)，从源纪要读取会议标题
+					if srcMinutes, merr := model.GetSummaryByTemplateID(cand.ID, 0); merr == nil && srcMinutes != nil {
+						renameFileByMeetingTitle(ctx, eid, fileID, file, string(srcMinutes.SummaryContent))
 					}
 					setMeetingMinutesStatus(fileID, "completed")
 					logger.Infof(ctx, "【纪要】复用完成 fileID=%d src_file_id=%d", fileID, cand.ID)
@@ -527,50 +564,32 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	}
 
 	// 6. transcriptText 已是原始 DashScope JSON（step 2 调用 loadTranscriptTextRaw 获取）
-	// 直接用于存储反转，无需再读 FileBody--重生成时 FileBody 存的是旧纪要 JSON 而非转写原文
+	// 直接作为转写原文输入，无需再读 FileBody。
 
-	// 7. 存储反转（录音文件特有设计，目的是最小改动复用 FileBody 作为"文件当前内容"载体）：
-	//    反转前：FileBody=转写 JSON，Summary(-1) 不存在
-	//    反转后：FileBody=纪要 JSON，Summary(-1)=转写 JSON（供 loadTranscriptTextRaw 读取）
-	//    事务内：新建 Summary(-1) 存转写、新建 FileBody 存纪要、删旧 FileBody、删旧 Summary(0)/Summary(-1)
-	transcriptSummary := &model.RecordingFileSummary{
+	// 7. 纪要写回原表（recording_file_summaries template_id=0）。
+	//    新布局：FileBody=转写 Markdown（ASR/复用完成后写入）、Summary(-1)=转写原文、
+	//    Summary(0)=纪要 JSON。本函数只负责写 Summary(0)，不再做"存储反转"。
+	minutesSummary := &model.RecordingFileSummary{
 		FileID:           fileID,
-		TemplateID:       -1,
-		TemplateName:     "转写原文",
-		InferenceModelID: 0,
-		SummaryContent:   model.LongText(transcriptText),
-	}
-	fileBody := &model.FileBody{
-		Eid:       eid,
-		FileID:    fileID,
-		LibraryID: file.LibraryID,
-		Content:   result,
-		UserID:    userID,
+		TemplateID:       0,
+		TemplateName:     "纪要",
+		InferenceModelID: config.InferenceModelID,
+		SummaryContent:   model.LongText(result),
+		Status:           "completed",
 	}
 
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(transcriptSummary).Error; err != nil {
-			return err
-		}
-		if err := tx.Create(fileBody).Error; err != nil {
-			return err
-		}
-		// 删除旧 FileBody（含旧的转写或旧纪要），避免累积
-		if err := tx.Where("file_id = ? AND id != ?", fileID, fileBody.ID).
-			Delete(&model.FileBody{}).Error; err != nil {
-			return err
-		}
+		// 重新生成场景：删除旧 Summary(0)，保留最新一份
 		if err := tx.Where("file_id = ? AND template_id = 0", fileID).
 			Delete(&model.RecordingFileSummary{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("file_id = ? AND template_id = -1 AND id != ?", fileID, transcriptSummary.ID).
-			Delete(&model.RecordingFileSummary{}).Error; err != nil {
+		if err := tx.Create(minutesSummary).Error; err != nil {
 			return err
 		}
 		return nil
 	}); err != nil {
-		logger.Errorf(ctx, "【纪要】存储反转失败 fileID=%d err=%v", fileID, err)
+		logger.Errorf(ctx, "【纪要】保存纪要失败 fileID=%d err=%v", fileID, err)
 		if client := keystone.GlobalClient; client != nil {
 			client.ReportTaskStageCompleted(keystone.TaskEvent{
 				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
@@ -584,7 +603,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 			})
 		}
 		setMeetingMinutesStatus(fileID, "failed")
-		return fmt.Errorf("存储反转失败: %w", err)
+		return fmt.Errorf("保存纪要失败: %w", err)
 	}
 
 	elapsed := time.Since(startTime)
@@ -679,29 +698,77 @@ func LoadTranscriptText(eid, fileID int64) (string, error) {
 	return loadTranscriptTextRaw(context.Background(), eid, fileID)
 }
 
-// loadMinutesText 双模式读取纪要，并渲染为 Markdown（类似 tingwu 的 contentBuilder 模式）。
-// 已反转：从 FileBody 读 JSON -> 渲染 Markdown；未反转：从 Summary(template_id=0) 读 JSON -> 渲染 Markdown。
+// loadMinutesText 读取会议纪要并渲染为 Markdown（类似 tingwu 的 contentBuilder 模式）。
+// 新布局：纪要在 Summary(template_id=0)；历史布局（已反转）纪要在 FileBody，兜底读取。
 func loadMinutesText(eid, fileID int64) (string, error) {
-	var raw string
-	if model.HasTranscriptSummary(fileID) {
-		// 已反转：纪要在 FileBody
-		fileBody, err := model.GetLastFileBodyByFileID(eid, fileID)
-		if err != nil {
-			return "", fmt.Errorf("读取 FileBody 失败: %w", err)
-		}
-		raw, err = fileBody.GetContent()
-		if err != nil {
-			return "", err
-		}
-	} else {
-		// 未反转：纪要在 Summary(template_id=0)
-		summary, err := model.GetSummaryByTemplateID(fileID, 0)
-		if err != nil {
-			return "", fmt.Errorf("读取纪要失败: %w", err)
-		}
-		raw = string(summary.SummaryContent)
+	// 新布局：纪要回原表 Summary(template_id=0)
+	summary, err := model.GetSummaryByTemplateID(fileID, 0)
+	if err == nil && summary != nil {
+		return BuildMinutesMarkdown(string(summary.SummaryContent)), nil
 	}
-	return BuildMinutesMarkdown(raw), nil
+
+	// 历史布局兜底：纪要在 FileBody（仅当 FileBody 内容是纪要 JSON 时使用，避免把转写 Markdown 当纪要）
+	fileBody, ferr := model.GetLastFileBodyByFileID(eid, fileID)
+	if ferr == nil && fileBody != nil {
+		if content, gerr := fileBody.GetContent(); gerr == nil && classifyRecordingContent(content) == recordingContentMinutesJSON {
+			return BuildMinutesMarkdown(content), nil
+		}
+	}
+	return "", fmt.Errorf("读取纪要失败: %w", err)
+}
+
+// recordingContentKind 判别 FileBody/Summary 内容的布局类型：
+//   - transcript_json：原始转写 JSON（DashScope 对象 / SonicNote 数组）
+//   - minutes_json：纪要 JSON（Prompt 2 结构化输出）
+//   - transcript_md：转写 Markdown（新布局 FileBody 内容）
+//   - unknown：空或无法判别
+type recordingContentKind int
+
+const (
+	recordingContentUnknown recordingContentKind = iota
+	recordingContentTranscriptJSON
+	recordingContentMinutesJSON
+	recordingContentTranscriptMD
+)
+
+// minutesJSONKeys 是 Prompt 2 纪要 JSON 的顶层结构化字段。
+var minutesJSONKeys = []string{
+	"meeting", "executive_summary", "sections", "decisions", "commitments",
+	"actions", "risks", "opportunities", "viewpoints", "issues",
+	"open_questions", "key_quotes", "memory_entities",
+}
+
+// classifyRecordingContent 判别内容布局类型（转写 JSON / 纪要 JSON / 转写 Markdown）。
+func classifyRecordingContent(content string) recordingContentKind {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return recordingContentUnknown
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var arr []map[string]interface{}
+		if err := json.Unmarshal([]byte(trimmed), &arr); err == nil {
+			return recordingContentTranscriptJSON
+		}
+		// 以 [ 开头但非合法 JSON 数组：转写 Markdown（如 [00:00:00] A说话人: 内容）
+		// 而非 unknown，否则已迁移为新布局的文件会被迁移脚本标记为 unknown。
+		return recordingContentTranscriptMD
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+			return recordingContentUnknown
+		}
+		if _, ok := obj["transcripts"]; ok {
+			return recordingContentTranscriptJSON
+		}
+		for _, key := range minutesJSONKeys {
+			if _, ok := obj[key]; ok {
+				return recordingContentMinutesJSON
+			}
+		}
+		return recordingContentUnknown
+	}
+	return recordingContentTranscriptMD
 }
 
 // extractJSON 从 LLM 输出中提取 JSON 内容。
@@ -1029,8 +1096,8 @@ RENDER:
 	return result
 }
 
-// extractTranscriptFromJSON 提取转写纯文本。支持两种来源格式：
-//  1. SonicNote：JSON 数组 [{spokesperson,text,time}, ...]（逐条取 text 拼接）
+// extractTranscriptFromJSON 提取供 LLM 使用的转写文本。支持两种来源格式：
+//  1. SonicNote：JSON 数组 [{spokesperson,text,time}, ...]（保留 speaker 名称）
 //  2. DashScope：{"transcripts":[{"text":...}]}（含外层 text 兜底）
 //
 // 非 JSON 或内容为空返回 ""，调用方维持现有退化行为。
@@ -1040,9 +1107,15 @@ func extractTranscriptFromJSON(raw string) string {
 	if err := json.Unmarshal([]byte(raw), &sonicItems); err == nil && len(sonicItems) > 0 {
 		var texts []string
 		for _, it := range sonicItems {
-			if text, ok := it["text"].(string); ok && strings.TrimSpace(text) != "" {
-				texts = append(texts, strings.TrimSpace(text))
+			text, ok := it["text"].(string)
+			text = strings.TrimSpace(text)
+			if !ok || text == "" {
+				continue
 			}
+			if speaker, ok := it["spokesperson"].(string); ok && strings.TrimSpace(speaker) != "" {
+				text = strings.TrimSpace(speaker) + "：" + text
+			}
+			texts = append(texts, text)
 		}
 		if len(texts) > 0 {
 			return strings.Join(texts, "\n\n")
@@ -1286,8 +1359,12 @@ var callLLMWithRetry = func(ctx context.Context, config *model.RecordingConfig, 
 			}
 		}
 
-		// 获取信号量，限制并发
-		llmSemaphore <- struct{}{}
+		// 获取信号量，限制并发；已取消的生成不应继续排队占用 LLM 槽位。
+		select {
+		case llmSemaphore <- struct{}{}:
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 		request := buildRequest()
 		ctxTimeout, cancel := context.WithTimeout(ctx, 120*time.Second)
 		result, err, openAIErr := generator.TestChannel(ctxTimeout, channel, request)
@@ -1448,6 +1525,18 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 		insights := result["insights"].(map[string]interface{})
 		insights["status"] = ruleInfo.InsightsStatus
 		insights["updated_at"] = file.UpdatedTime
+		if ruleInfo.InsightMode != "" {
+			insights["mode"] = ruleInfo.InsightMode
+		}
+		if ruleInfo.InsightReasonCode != "" {
+			insights["reason_code"] = ruleInfo.InsightReasonCode
+		}
+		if ruleInfo.InsightSkipReason != "" {
+			insights["skip_reason"] = ruleInfo.InsightSkipReason
+		}
+		if ruleInfo.InsightMessage != "" {
+			insights["message"] = ruleInfo.InsightMessage
+		}
 		if ruleInfo.InsightsStatus == "failed" {
 			if ruleInfo.InsightsError != "" {
 				insights["error"] = ruleInfo.InsightsError
@@ -1550,7 +1639,11 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 		case insStat == "completed" || insStat == "processing":
 			// 已完成或正在生成，不需要原因
 		case insStat == "skipped":
-			insights["pending_reason"] = "model_not_configured"
+			if ruleInfo.InsightSkipReason != "" {
+				insights["pending_reason"] = ruleInfo.InsightSkipReason
+			} else {
+				insights["pending_reason"] = "model_not_configured"
+			}
 		case insStat == "pending" && insPipe == "active" && isActive(chunkingJobStatus):
 			insights["pending_reason"] = "waiting_for_entity_extraction"
 		case insStat == "pending" && insPipe == "active" && isActive(parsingJobStatus):

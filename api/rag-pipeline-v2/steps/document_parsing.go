@@ -12,13 +12,14 @@ import (
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
+	"github.com/53AI/53AIHub/common/utils/env"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/document"
 	"github.com/53AI/53AIHub/service/image_asset"
 	"gorm.io/gorm"
 )
 
-// GenerateMeetingMinutesFn 由 service 包注册，转写完成后同步触发纪要生成并执行存储反转。
+// GenerateMeetingMinutesFn 由 service 包注册，转写完成后同步触发纪要生成（纪要写入 Summary(0)）。
 // 返回 nil 表示成功（或 skipped），返回 error 表示失败（管线应终止）。
 // 使用函数变量避免 package 循环依赖。
 var GenerateMeetingMinutesFn func(ctx context.Context, eid, fileID, userID int64) error
@@ -28,6 +29,20 @@ var GenerateMeetingMinutesFn func(ctx context.Context, eid, fileID, userID int64
 // 返回 (是否已复用, 源文件 parse_type, error)；仅录音文件调用；无复用源或源未 completed 返回 (false, "", nil)。
 // 使用函数变量避免 package 循环依赖。
 var ReuseTranscriptFn func(ctx context.Context, eid, dstFileID, userID int64, hash string, uploadFileID int64) (bool, string, error)
+
+// ocrParsingSem 重解析引擎（OCR/语音等非 markitdown）并发上限，
+// 防止多个重任务同时占满解析 worker 拖垮轻文本秒解析。可通过环境变量调整。
+var ocrParsingSem = make(chan struct{}, env.Int("RAG_DOCUMENT_OCR_MAX_CONCURRENT", 5))
+
+// isHeavyParsingEngine 判断解析引擎是否需要限流（非 markitdown 的 OCR/语音等重引擎）。
+func isHeavyParsingEngine(parseType string) bool {
+	return strings.TrimSpace(parseType) != "" && parseType != model.PLATFORM_KEY_MARKITDOWN
+}
+
+// RenderTranscriptMarkdownFn 由 service 包注册：将转写原始 JSON 渲染为带说话人/时间戳的 Markdown。
+// 语音转写的新布局 FileBody 存转写 Markdown，Summary(-1) 存原始 JSON，故需在此渲染。
+// 使用函数变量避免 package 循环依赖。
+var RenderTranscriptMarkdownFn func(raw string, title string) (string, error)
 
 // NewDocumentParsingHandler 创建 document_parsing 步骤处理函数
 func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
@@ -276,7 +291,7 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					}
 					if !forceReparse {
 						var candidateFiles []model.File
-						db.Where("upload_file_id = ? AND eid = ? AND parse_type = ?", uploadFile.ID, eid, parseType).
+						legacyCompatibleParseTypeQuery(db.Where("upload_file_id = ? AND eid = ?", uploadFile.ID, eid), parseType).
 							Order("id DESC").Find(&candidateFiles)
 						for _, cf := range candidateFiles {
 							if content, ok := loadCachedTranscriptionContent(db, eid, cf.ID, parseType); ok {
@@ -291,7 +306,7 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 								Pluck("id", &relatedUploadIDs)
 							if len(relatedUploadIDs) > 0 {
 								var crossFiles []model.File
-								db.Where("upload_file_id IN ? AND eid = ? AND parse_type = ?", relatedUploadIDs, eid, parseType).
+								legacyCompatibleParseTypeQuery(db.Where("upload_file_id IN ? AND eid = ?", relatedUploadIDs, eid), parseType).
 									Order("id DESC").Find(&crossFiles)
 								for _, crossFile := range crossFiles {
 									if content, ok := loadCachedTranscriptionContent(db, eid, crossFile.ID, parseType); ok {
@@ -312,6 +327,15 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 				}
 
 				if cachedBody == nil {
+					// 重引擎（OCR/语音）并发限流：真正外部解析前占信号量，防止多个重任务占满 worker
+					if isHeavyParsingEngine(parseType) {
+						select {
+						case ocrParsingSem <- struct{}{}:
+							defer func() { <-ocrParsingSem }()
+						case <-ctx.Done():
+							return ctx.Err()
+						}
+					}
 					var content []byte
 					if strategy.GetStrategyName() != "docconv" && strategy.GetStrategyName() != model.PLATFORM_KEY_TINGWU && strategy.GetStrategyName() != "voice_model" && strategy.GetStrategyName() != "openai_audio" {
 						content, err = storage.StorageInstance.Load(uploadFile.Key)
@@ -381,6 +405,25 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					}
 				}
 
+				// 语音转写：新布局 FileBody=转写 Markdown，Summary(-1)=转写原文（原始 JSON）。
+				// 普通文档 FileBody 保持原内容，无 Summary(-1)。
+				voiceTranscriptRaw := ""
+				fileBodyContent := processedContent
+				if isVoiceParseType(parseType) {
+					voiceTranscriptRaw = processedContent
+					title := strings.TrimSpace(file.GetAccurateFileName())
+					if title == "" {
+						title = strings.TrimSpace(uploadFile.FileName)
+					}
+					if RenderTranscriptMarkdownFn != nil {
+						if md, mdErr := RenderTranscriptMarkdownFn(voiceTranscriptRaw, title); mdErr == nil {
+							fileBodyContent = md
+						} else {
+							logger.Warnf(ctx, "DocumentParsingStepHandler: 转写渲染 Markdown 失败，降级存原始 JSON fileID=%d: %v", fileID, mdErr)
+						}
+					}
+				}
+
 				// 处理结果保存 (FileBody)
 				// 开启事务
 				err = db.Transaction(func(tx *gorm.DB) error {
@@ -389,7 +432,7 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 						Eid:       eid,
 						FileID:    fileID,
 						LibraryID: file.LibraryID, // 补充 LibraryID
-						Content:   processedContent,
+						Content:   fileBodyContent,
 						UserID:    userID,
 					}
 
@@ -399,6 +442,24 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 
 					if err := tx.Create(fileBody).Error; err != nil {
 						return fmt.Errorf("保存文件体失败: %v", err)
+					}
+
+					// 语音转写：转写原文（原始 JSON）写入 Summary(template_id=-1)
+					if voiceTranscriptRaw != "" {
+						if err := tx.Where("file_id = ? AND template_id = -1", fileID).
+							Delete(&model.RecordingFileSummary{}).Error; err != nil {
+							return fmt.Errorf("清理旧转写原文失败: %v", err)
+						}
+						summary := &model.RecordingFileSummary{
+							FileID:           fileID,
+							TemplateID:       -1,
+							TemplateName:     "转写原文",
+							InferenceModelID: 0,
+							SummaryContent:   model.LongText(voiceTranscriptRaw),
+						}
+						if err := tx.Create(summary).Error; err != nil {
+							return fmt.Errorf("保存转写原文失败: %v", err)
+						}
 					}
 
 					// 更新状态
@@ -548,23 +609,56 @@ func isVoiceParseType(parseType string) bool {
 		strings.HasPrefix(parseType, model.PLATFORM_KEY_OPENAI_AUDIO_PREFIX)
 }
 
-// loadCachedTranscriptionContent 读取文件的原始转写内容，考虑存储反转。
+func legacyCompatibleParseTypeQuery(query *gorm.DB, parseType string) *gorm.DB {
+	if parseType == model.PLATFORM_KEY_MARKITDOWN {
+		return query.Where("parse_type = ? OR parse_type = ''", parseType)
+	}
+	return query.Where("parse_type = ?", parseType)
+}
+
+// isTranscriptJSONContent 判断内容是否为"转写原始 JSON"（秒解析缓存校验用）：
+//   - DashScope 对象：{"file_url":...,"transcripts":[...]}（含 "transcripts" 键）
+//   - SonicNote 数组：[{"speaker":...}]（以 [ 开头且可解析为 JSON 数组）
 //
-// 语音文件经过 GenerateMeetingMinutes 存储反转后：
+// 纪要 JSON（{"minutes_version":...}）与转写 Markdown（[00:00:00] A说话人: ...）均不命中，
+// 避免把纪要/转写 MD 误当转写原文复用。
+// 与 service 层 classifyRecordingContent 的转写 JSON 语义保持一致（本包无法引用 service，内联实现）。
+func isTranscriptJSONContent(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		return strings.Contains(trimmed, `"transcripts"`)
+	}
+	if strings.HasPrefix(trimmed, "[") {
+		var arr []map[string]interface{}
+		// 空数组 "[]" 表示无转写内容，不命中缓存
+		if err := json.Unmarshal([]byte(trimmed), &arr); err == nil && len(arr) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// loadCachedTranscriptionContent 读取文件的原始转写内容。
+//
+// 新布局（语音文件转写完成后由本步骤写入）：
 //   - 原始转写 JSON 在 Summary(template_id=-1)
-//   - 纪要 JSON 在 FileBody
+//   - 转写 Markdown 在 FileBody
 //
-// 秒解析缓存必须读原始转写，而非纪要，否则后续文件的"转写原文"会被污染。
-// 优先读 Summary(-1)，不存在时回退读 FileBody（未反转的文件）。
-// 对 voice_model/voice:* 类型校验内容必须含 "transcripts" 字段，跳过被污染的纪要 JSON。
+// 秒解析缓存必须读原始转写，而非转写 Markdown，否则后续文件无法重建转写原文。
+// 优先读 Summary(-1)，不存在时回退读 FileBody（历史未迁移布局）。
+// 对 voice_model/voice:* 类型按 isTranscriptJSONContent 语义校验（DashScope 对象 / SonicNote 数组），
+// 跳过被污染的纪要 JSON 与转写 Markdown。
 func loadCachedTranscriptionContent(db *gorm.DB, eid, fileID int64, parseType string) (string, bool) {
 	isVoice := isVoiceParseType(parseType)
 
-	// 优先读 Summary(-1)（存储反转后的原始转写位置）
+	// 优先读 Summary(-1)（新布局的原始转写位置）
 	var summary model.RecordingFileSummary
 	if err := db.Where("file_id = ? AND template_id = -1", fileID).First(&summary).Error; err == nil {
 		content := string(summary.SummaryContent)
-		if content != "" && (!isVoice || strings.Contains(content, `"transcripts"`)) {
+		if content != "" && (!isVoice || isTranscriptJSONContent(content)) {
 			return content, true
 		}
 	}
@@ -573,7 +667,7 @@ func loadCachedTranscriptionContent(db *gorm.DB, eid, fileID int64, parseType st
 	var body model.FileBody
 	if err := db.Where("file_id = ? AND eid = ?", fileID, eid).Order("id DESC").First(&body).Error; err == nil {
 		if err := body.LoadContent(); err == nil && body.Content != "" {
-			if !isVoice || strings.Contains(body.Content, `"transcripts"`) {
+			if !isVoice || isTranscriptJSONContent(body.Content) {
 				return body.Content, true
 			}
 		}

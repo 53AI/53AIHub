@@ -105,7 +105,7 @@ func generateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, eid, fileID int
 
 func maybeGenerateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, job *model.RagJob, eid, fileID int64, content string, chunkConfig *rag.ChunkConfig) (string, []string, error) {
 	if isWikiPageGenerationActive(job) {
-		logger.Infof(ctx, "【文件摘要】wiki_page_generation 已启用，跳过旧摘要/问法生成: file_id=%d", fileID)
+		logger.Infof(ctx, "【Wiki生成】 phase=legacy_skip wiki_page_generation 已启用，跳过旧摘要/问法生成: file_id=%d", fileID)
 		if db != nil {
 			if err := model.UpdateFileAIGenerateSQStatus(fileID, model.AIGenerateSQStatusInactive); err != nil {
 				logger.Warnf(ctx, "【文件摘要】更新跳过状态失败(非致命): file_id=%d, err=%v", fileID, err)

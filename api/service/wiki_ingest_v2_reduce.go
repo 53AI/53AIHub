@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
 )
@@ -34,6 +35,9 @@ func (s *WikiIngestV2Service) upsertSummaryPage(ctx context.Context, eid, librar
 
 	changed := false
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.checkFileGenerationAllowed(ctx, tx); err != nil {
+			return err
+		}
 		page, err := loadWikiPageForWrite(tx, eid, libraryID, slug)
 		if err != nil {
 			return err
@@ -123,6 +127,9 @@ func (s *WikiIngestV2Service) upsertSummaryPage(ctx context.Context, eid, librar
 }
 
 func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libraryID, spaceID int64, slug string, folderID int64, updates []WikiSlugUpdate) (bool, error) {
+	if err := s.checkFileGenerationAllowed(ctx, s.db); err != nil {
+		return false, err
+	}
 	additions, retracts := splitWikiSlugUpdateKinds(updates)
 	if len(additions) == 0 && len(retracts) == 0 {
 		return false, nil
@@ -145,6 +152,11 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 	}
 	if s.prompts == nil {
 		s.prompts = NewWikiPromptService()
+	}
+	if snapshotPage != nil &&
+		(firstWikiUpdateFolderID(updates) == 0 || snapshotPage.FolderID == firstWikiUpdateFolderID(updates)) &&
+		wikiCompiledSourcesMatchUpdates(snapshotSources, eid, additions, retracts) {
+		return false, nil
 	}
 
 	primary := pickWikiPrimaryUpdate(additions, retracts)
@@ -198,9 +210,21 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 		return false, err
 	}
 
-	compiled, err := s.llm.Generate(ctx, prompt)
-	if err != nil {
-		return false, err
+	compiled := ""
+	if s.checkpoint != nil {
+		compiled = s.checkpoint.compiledResult(slug)
+	}
+	if compiled == "" {
+		compiled, err = s.llm.Generate(ctx, prompt)
+		if err != nil {
+			return false, err
+		}
+		if s.checkpoint != nil {
+			s.checkpoint.cacheCompiledResult(slug, compiled)
+			if persistErr := persistWikiGenerationCheckpoint(ctx, s.db, s.checkpointJobID, *s.checkpoint); persistErr != nil {
+				logger.Warnf(ctx, "【Wiki生成】 保存 slug 生成结果失败: slug=%s err=%v", slug, persistErr)
+			}
+		}
 	}
 	summaryLine, body := splitSummaryLine(compiled)
 	if body == "" {
@@ -215,6 +239,9 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 
 	changed := false
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := s.checkFileGenerationAllowed(ctx, tx); err != nil {
+			return err
+		}
 		page, err := loadWikiPageForWrite(tx, eid, libraryID, slug)
 		if err != nil {
 			return err
@@ -380,25 +407,27 @@ func loadWikiPageSourcesForWrite(tx *gorm.DB, pageID int64) ([]model.WikiPageSou
 func buildWikiPageSourcesForUpdates(pageID, eid int64, update WikiSlugUpdate, sourceKind string) []model.WikiPageSource {
 	if len(update.SourceChunks) == 0 {
 		return []model.WikiPageSource{{
-			Eid:          eid,
-			PageID:       pageID,
-			SourceKind:   sourceKind,
-			SourceRef:    fmt.Sprintf("file:%d", update.SourceFileID),
-			SourceFileID: update.SourceFileID,
-			CreatorID:    update.Eid,
+			Eid:               eid,
+			PageID:            pageID,
+			SourceKind:        sourceKind,
+			SourceRef:         fmt.Sprintf("file:%d", update.SourceFileID),
+			SourceFileID:      update.SourceFileID,
+			SourceContentHash: update.SourceContentHash,
+			CreatorID:         update.Eid,
 		}}
 	}
 	sources := make([]model.WikiPageSource, 0, len(update.SourceChunks))
 	for _, chunkID := range update.SourceChunks {
 		sources = append(sources, model.WikiPageSource{
-			Eid:           eid,
-			PageID:        pageID,
-			SourceKind:    sourceKind,
-			SourceRef:     fmt.Sprintf("file:%d#%s", update.SourceFileID, chunkID),
-			SourceFileID:  update.SourceFileID,
-			SourceChunkID: parseInt64OrZero(chunkID),
-			SourceSlug:    update.Slug,
-			CreatorID:     update.Eid,
+			Eid:               eid,
+			PageID:            pageID,
+			SourceKind:        sourceKind,
+			SourceRef:         fmt.Sprintf("file:%d#%s", update.SourceFileID, chunkID),
+			SourceFileID:      update.SourceFileID,
+			SourceChunkID:     parseInt64OrZero(chunkID),
+			SourceContentHash: update.SourceContentHash,
+			SourceSlug:        update.Slug,
+			CreatorID:         update.Eid,
 		})
 	}
 	return sources
@@ -1082,7 +1111,7 @@ func wikiPageSourcesEqual(left, right []model.WikiPageSource) bool {
 }
 
 func wikiPageSourceSignature(source model.WikiPageSource) string {
-	return fmt.Sprintf("%d:%d:%s:%s", source.SourceFileID, source.SourceChunkID, strings.TrimSpace(source.SourceRef), strings.TrimSpace(source.SourceKind))
+	return fmt.Sprintf("%d:%d:%s:%s:%s", source.SourceFileID, source.SourceChunkID, strings.TrimSpace(source.SourceRef), strings.TrimSpace(source.SourceKind), strings.TrimSpace(source.SourceContentHash))
 }
 
 func nextWikiPageVersionNo(tx *gorm.DB, pageID int64) (int64, error) {

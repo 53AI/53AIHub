@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
 )
@@ -128,6 +130,8 @@ func (s *WikiIngestV2Service) loadWikiIndexSummaryDocuments(ctx context.Context,
 		return nil, nil
 	}
 
+	start := time.Now()
+	logger.Infof(ctx, "【Wiki生成】 WikiIndexSummaryDocuments 开始 eid=%d library_ids=%d", eid, len(libraryIDs))
 
 	var pages []model.WikiPage
 	if err := s.db.WithContext(ctx).
@@ -155,6 +159,7 @@ func (s *WikiIngestV2Service) loadWikiIndexSummaryDocuments(ctx context.Context,
 		}
 		out = append(out, fmt.Sprintf("SUMMARY: %s\n# %s\n\n%s", summary, title, summary))
 	}
+	logger.Infof(ctx, "【Wiki生成】 WikiIndexSummaryDocuments 完成 summary_pages=%d out=%d 耗时=%s", len(pages), len(out), time.Since(start))
 	return out, nil
 }
 

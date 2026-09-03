@@ -144,6 +144,54 @@ func GetResourcePermissionGroupIDs(resourceID int64, resourceType string) ([]int
 	return groupIDs, nil
 }
 
+// MergeGroupIDs 合并多个 group id 列表并去重（忽略 <=0 的 id），返回非 nil 切片。
+// 用于回显时合并 scope 中的 group 项与旧表 resource_permissions 的 group 列表。
+func MergeGroupIDs(lists ...[]int64) []int64 {
+	seen := make(map[int64]struct{})
+	merged := make([]int64, 0)
+	for _, list := range lists {
+		for _, gid := range list {
+			if gid <= 0 {
+				continue
+			}
+			if _, ok := seen[gid]; ok {
+				continue
+			}
+			seen[gid] = struct{}{}
+			merged = append(merged, gid)
+		}
+	}
+	return merged
+}
+
+// SplitGroupIDsByType 按分组类型拆分 group id：
+// USER_GROUP_TYPE(订阅组) 归 subscriptionIDs，其余（内部成员组等）归 internalIDs。
+// groups 表查询失败或 group 不存在时，该 id 归 internalIDs，保证回显不丢数据。
+func SplitGroupIDsByType(groupIDs []int64) (internalIDs, subscriptionIDs []int64) {
+	internalIDs = []int64{}
+	subscriptionIDs = []int64{}
+	if len(groupIDs) == 0 {
+		return internalIDs, subscriptionIDs
+	}
+	var groups []Group
+	if err := DB.Select("group_id", "group_type").Where("group_id IN (?)", groupIDs).Find(&groups).Error; err != nil {
+		internalIDs = append(internalIDs, groupIDs...)
+		return internalIDs, subscriptionIDs
+	}
+	typeMap := make(map[int64]int64, len(groups))
+	for _, g := range groups {
+		typeMap[g.GroupId] = g.GroupType
+	}
+	for _, gid := range groupIDs {
+		if typeMap[gid] == USER_GROUP_TYPE {
+			subscriptionIDs = append(subscriptionIDs, gid)
+		} else {
+			internalIDs = append(internalIDs, gid)
+		}
+	}
+	return internalIDs, subscriptionIDs
+}
+
 // DeleteResourcePermissionsByResource
 func DeleteResourcePermissionsByResource(resourceID int64, resourceType string) error {
 	return DB.Where("resource_id = ? AND resource_type = ?", resourceID, resourceType).Delete(&ResourcePermission{}).Error

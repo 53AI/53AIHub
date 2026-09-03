@@ -126,6 +126,8 @@ func (s *ContentGeneratorService) GenerateRawPromptWithUsage(ctx context.Context
 			Content: prompt,
 		}},
 	}
+	// wiki 生成默认快速回答（不深度思考），参考对话侧 ThinkingModeQuick；如需深思考由渠道 deep_thinking 另行配置
+	applyInternalRequestControl(req, &internalRequestControl{ReasoningMode: "disabled"})
 
 	resp, usage, err, openaiErr := s.testChannelInternal(ctx, channel, req)
 	if err != nil || openaiErr != nil {
@@ -1295,6 +1297,9 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 	if err != nil {
 		return "", nil, err, nil
 	}
+	thinkingState := inspectThinkingRequest(jsonData)
+	logger.Infof(ctx, "【LLM诊断-思考】请求已序列化 channel_id=%d model=%s thinking_disabled=%t source=%s 覆盖字段=%s",
+		channel.ChannelID, meta.ActualModelName, thinkingState.Disabled, thinkingState.Source, thinkingState.Fields)
 	defer func() {
 		//logContent := fmt.Sprintf("渠道 %s 测试成功，响应：%s", channel.Name, responseMessage)
 		if err != nil || openaiErr != nil {
@@ -1366,6 +1371,9 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 			channel.ChannelID, meta.ActualModelName, summarizeTestChannelResponse(rawResponse))
 		return "", nil, responseError, nil
 	}
+	reasoningOutput, reasoningBytes := inspectReasoningOutput(rawResponse)
+	logger.Infof(ctx, "【LLM诊断-思考】响应检查 channel_id=%d model=%s request_thinking_disabled=%t response_reasoning_content=%t reasoning_bytes=%d",
+		channel.ChannelID, meta.ActualModelName, thinkingState.Disabled, reasoningOutput, reasoningBytes)
 
 	// 统一 token 预算日志
 	usageTokenCfg := tokenlimit.ParseConfig(ctx, channel.ChannelID, channel.Config, meta.ActualModelName)
@@ -1383,6 +1391,58 @@ func (s *ContentGeneratorService) testChannelInternal(ctx context.Context, chann
 		ctxSource, mtSource)
 
 	return responseMessage, usage, nil, nil
+}
+
+type thinkingRequestState struct {
+	Disabled bool
+	Source   string
+	Fields   string
+}
+
+func inspectThinkingRequest(raw []byte) thinkingRequestState {
+	var request map[string]interface{}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return thinkingRequestState{Source: "invalid_request_json"}
+	}
+	inspect := func(values map[string]interface{}, prefix string) thinkingRequestState {
+		if thinking, ok := values["thinking"].(map[string]interface{}); ok {
+			if thinkingType, ok := thinking["type"].(string); ok && strings.EqualFold(strings.TrimSpace(thinkingType), "disabled") {
+				return thinkingRequestState{Disabled: true, Source: prefix + ".thinking.type", Fields: "thinking.type=disabled"}
+			}
+		}
+		if enabled, ok := values["enable_thinking"].(bool); ok {
+			return thinkingRequestState{Disabled: !enabled, Source: prefix + ".enable_thinking", Fields: fmt.Sprintf("enable_thinking=%t", enabled)}
+		}
+		return thinkingRequestState{}
+	}
+	if state := inspect(request, "request"); state.Source != "" {
+		return state
+	}
+	if extraBody, ok := request["extra_body"].(map[string]interface{}); ok {
+		if state := inspect(extraBody, "extra_body"); state.Source != "" {
+			return state
+		}
+	}
+	return thinkingRequestState{Source: "not_present", Fields: "none"}
+}
+
+func inspectReasoningOutput(raw string) (bool, int) {
+	var envelope struct {
+		Choices []struct {
+			Message struct {
+				ReasoningContent json.RawMessage `json:"reasoning_content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil || len(envelope.Choices) == 0 {
+		return false, 0
+	}
+	reasoning := envelope.Choices[0].Message.ReasoningContent
+	trimmed := bytes.TrimSpace(reasoning)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("\"\"")) {
+		return false, 0
+	}
+	return true, len(trimmed)
 }
 
 func GetAdaptor(apiType int) adaptor.Adaptor {
@@ -1444,18 +1504,6 @@ func extractInternalRequestControl(request *relaymodel.GeneralOpenAIRequest) *in
 
 func applyConvertedRequestControl(channel *model.Channel, convertedRequest any, control *internalRequestControl) (any, error) {
 	if control == nil || strings.TrimSpace(control.ReasoningMode) == "" || channel == nil {
-		return convertedRequest, nil
-	}
-	if strings.TrimSpace(channel.Config) == "" {
-		return convertedRequest, nil
-	}
-
-	var configMap map[string]interface{}
-	if err := json.Unmarshal([]byte(channel.Config), &configMap); err != nil {
-		return convertedRequest, nil
-	}
-	deepThinking, _ := configMap["deep_thinking"].(bool)
-	if !deepThinking {
 		return convertedRequest, nil
 	}
 

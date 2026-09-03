@@ -241,8 +241,13 @@ func (s *ChunkerService) CheckContentChanged(eid int64, fileID int64) (bool, err
 	return false, nil
 }
 
-// ReindexDocument 重新索引文档的检索块
+// ReindexDocument 重新索引文档的检索块（使用当前匹配到的分块配置）
 func (s *ChunkerService) ReindexDocument(eid int64, fileID int64) error {
+	return s.ReindexDocumentWithConfig(eid, fileID, nil)
+}
+
+// ReindexDocumentWithConfig 重新索引文档的检索块，支持传入分块配置覆盖（nil 时使用当前匹配到的配置）
+func (s *ChunkerService) ReindexDocumentWithConfig(eid int64, fileID int64, chunkConfig *ChunkConfig) error {
 	// 0. 向量库清理：删除该文件相关的检索块向量（容错，失败仅记录日志）
 	{
 		var vectorIDs []string
@@ -314,9 +319,12 @@ func (s *ChunkerService) ReindexDocument(eid int64, fileID int64) error {
 	}
 
 	libraryID := knowledgeTypeChunks[0].LibraryID
-	chunkConfig, err := s.config.GetConfigWithFileID(eid, &libraryID, &fileID)
-	if err != nil {
-		return fmt.Errorf("获取分块配置失败: %v", err)
+	if chunkConfig == nil {
+		var err error
+		chunkConfig, err = s.config.GetConfigWithFileID(eid, &libraryID, &fileID)
+		if err != nil {
+			return fmt.Errorf("获取分块配置失败: %v", err)
+		}
 	}
 
 	// 4. 开启事务

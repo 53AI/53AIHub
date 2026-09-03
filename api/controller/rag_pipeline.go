@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
@@ -15,11 +16,12 @@ import (
 )
 
 type RagPipelineController struct {
-	DB *gorm.DB
+	DB   *gorm.DB
+	kind string // 业务类型：rag=RAG 管线/策略 graph=图谱管线/策略
 }
 
 func NewRagPipelineController(db *gorm.DB) *RagPipelineController {
-	return &RagPipelineController{DB: db}
+	return &RagPipelineController{DB: db, kind: model.PipelineKindRag}
 }
 
 func normalizeJSONString(raw json.RawMessage) (string, error) {
@@ -64,7 +66,7 @@ type RagPipelineResponse struct {
 func (c *RagPipelineController) ListPipelines(ctx *gin.Context) {
 	eid := config.GetEID(ctx)
 	var pipelines []model.RagPipelineProfile
-	if err := c.DB.Where("eid = ?", eid).Find(&pipelines).Error; err != nil {
+	if err := c.DB.Where("eid = ? AND kind = ?", eid, c.kind).Find(&pipelines).Error; err != nil {
 		logger.Errorf(ctx, "获取流水线列表失败: %v", err)
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
@@ -114,7 +116,7 @@ func (c *RagPipelineController) GetPipeline(ctx *gin.Context) {
 	}
 
 	var pipeline model.RagPipelineProfile
-	if err := c.DB.Where("id = ? AND eid = ?", id, eid).First(&pipeline).Error; err != nil {
+	if err := c.DB.Where("id = ? AND eid = ? AND kind = ?", id, eid, c.kind).First(&pipeline).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("流水线不存在"))
 		} else {
@@ -158,9 +160,24 @@ func (c *RagPipelineController) CreatePipeline(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 		return
 	}
+	// 图谱管线：必须包含 graph_generation 步骤，规范化开关配置并校验模板存在性
+	if c.kind == model.PipelineKindGraph {
+		normalized, err := validateGraphPipelineProfileTemplate(ctx, eid, profileStr)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+			return
+		}
+		profileStr = normalized
+	} else if c.kind == model.PipelineKindWiki {
+		if err := validateWikiPipelineProfile(profileStr); err != nil {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+			return
+		}
+	}
 
 	pipeline := &model.RagPipelineProfile{
 		Eid:         eid,
+		Kind:        c.kind,
 		Name:        req.Name,
 		Icon:        req.Icon,
 		Status:      model.RagPipelineStatusEnabled,
@@ -228,11 +245,24 @@ func (c *RagPipelineController) UpdatePipeline(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 			return
 		}
+		if c.kind == model.PipelineKindGraph {
+			normalized, err := validateGraphPipelineProfileTemplate(ctx, eid, profileStr)
+			if err != nil {
+				ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+				return
+			}
+			profileStr = normalized
+		} else if c.kind == model.PipelineKindWiki {
+			if err := validateWikiPipelineProfile(profileStr); err != nil {
+				ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+				return
+			}
+		}
 		updates["profile_json"] = profileStr
 	}
 
 	if len(updates) > 0 {
-		if err := c.DB.Model(&model.RagPipelineProfile{ID: id}).Where("eid = ?", eid).Updates(updates).Error; err != nil {
+		if err := c.DB.Model(&model.RagPipelineProfile{ID: id}).Where("eid = ? AND kind = ?", eid, c.kind).Updates(updates).Error; err != nil {
 			logger.Errorf(ctx, "更新流水线失败: %v", err)
 			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 			return
@@ -240,7 +270,7 @@ func (c *RagPipelineController) UpdatePipeline(ctx *gin.Context) {
 	}
 
 	var pipeline model.RagPipelineProfile
-	if err := c.DB.Where("id = ? AND eid = ?", id, eid).First(&pipeline).Error; err != nil {
+	if err := c.DB.Where("id = ? AND eid = ? AND kind = ?", id, eid, c.kind).First(&pipeline).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
 	}
@@ -270,7 +300,7 @@ func (c *RagPipelineController) DeletePipeline(ctx *gin.Context) {
 
 	// 1. 验证流水线归属
 	var pipeline model.RagPipelineProfile
-	if err := c.DB.Where("id = ? AND eid = ?", id, eid).First(&pipeline).Error; err != nil {
+	if err := c.DB.Where("id = ? AND eid = ? AND kind = ?", id, eid, c.kind).First(&pipeline).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("流水线不存在"))
 		} else {
@@ -278,14 +308,20 @@ func (c *RagPipelineController) DeletePipeline(ctx *gin.Context) {
 		}
 		return
 	}
-	if pipeline.Name == "默认流水线" {
-		ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("默认流水线不允许删除"))
+	protectedName := "默认流水线"
+	if c.kind == model.PipelineKindGraph {
+		protectedName = "默认图谱管线"
+	} else if c.kind == model.PipelineKindWiki {
+		protectedName = "默认 Wiki 管线"
+	}
+	if pipeline.Name == protectedName {
+		ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("默认管线不允许删除"))
 		return
 	}
 
 	// 2. 检查是否有策略正在使用该流水线
 	var strategyCount int64
-	if err := c.DB.Model(&model.RagRoutingStrategy{}).Where("pipeline_id = ?", id).Count(&strategyCount).Error; err != nil {
+	if err := c.DB.Model(&model.RagRoutingStrategy{}).Where("pipeline_id = ? AND kind = ?", id, c.kind).Count(&strategyCount).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
 	}
@@ -322,7 +358,7 @@ func (c *RagPipelineController) ListStrategies(ctx *gin.Context) {
 	if detail == "1" {
 		// detail 模式：返回完整 pipeline 信息
 		var strategies []model.RagRoutingStrategy
-		if err := c.DB.Where("eid = ?", eid).
+		if err := c.DB.Where("eid = ? AND kind = ?", eid, c.kind).
 			Order("priority ASC, id ASC").
 			Find(&strategies).Error; err != nil {
 			logger.Errorf(ctx, "获取策略列表失败: %v", err)
@@ -373,7 +409,7 @@ func (c *RagPipelineController) ListStrategies(ctx *gin.Context) {
 	err := c.DB.Table("rag_routing_strategies").
 		Select("rag_routing_strategies.*, rag_pipeline_profiles.name as pipeline_name").
 		Joins("JOIN rag_pipeline_profiles ON rag_pipeline_profiles.id = rag_routing_strategies.pipeline_id").
-		Where("rag_routing_strategies.eid = ?", eid).
+		Where("rag_routing_strategies.eid = ? AND rag_routing_strategies.kind = ? AND rag_pipeline_profiles.kind = ?", eid, c.kind, c.kind).
 		Order("rag_routing_strategies.priority ASC, rag_routing_strategies.id ASC").
 		Scan(&strategies).Error
 
@@ -424,7 +460,7 @@ func (c *RagPipelineController) CreateStrategy(ctx *gin.Context) {
 
 	// 验证 Pipeline 是否属于当前企业
 	var count int64
-	if err := c.DB.Model(&model.RagPipelineProfile{}).Where("id = ? AND eid = ?", req.PipelineID, eid).Count(&count).Error; err != nil {
+	if err := c.DB.Model(&model.RagPipelineProfile{}).Where("id = ? AND eid = ? AND kind = ?", req.PipelineID, eid, c.kind).Count(&count).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
 	}
@@ -435,6 +471,7 @@ func (c *RagPipelineController) CreateStrategy(ctx *gin.Context) {
 
 	strategy := &model.RagRoutingStrategy{
 		Eid:            eid,
+		Kind:           c.kind,
 		Name:           req.Name,
 		Icon:           req.Icon,
 		Priority:       req.Priority,
@@ -526,7 +563,7 @@ func (c *RagPipelineController) UpdateStrategy(ctx *gin.Context) {
 
 	// 验证策略归属
 	var existingStrategy model.RagRoutingStrategy
-	if err := c.DB.Where("id = ? AND eid = ?", id, eid).First(&existingStrategy).Error; err != nil {
+	if err := c.DB.Where("id = ? AND eid = ? AND kind = ?", id, eid, c.kind).First(&existingStrategy).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("策略不存在"))
 		} else {
@@ -538,7 +575,7 @@ func (c *RagPipelineController) UpdateStrategy(ctx *gin.Context) {
 	// 如果更新了 PipelineID，验证新 Pipeline 是否属于当前企业
 	if req.PipelineID != nil && *req.PipelineID != existingStrategy.PipelineID {
 		var count int64
-		if err := c.DB.Model(&model.RagPipelineProfile{}).Where("id = ? AND eid = ?", *req.PipelineID, eid).Count(&count).Error; err != nil {
+		if err := c.DB.Model(&model.RagPipelineProfile{}).Where("id = ? AND eid = ? AND kind = ?", *req.PipelineID, eid, c.kind).Count(&count).Error; err != nil {
 			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 			return
 		}
@@ -548,7 +585,7 @@ func (c *RagPipelineController) UpdateStrategy(ctx *gin.Context) {
 		}
 	}
 
-	if err := c.DB.Model(&model.RagRoutingStrategy{ID: id}).Updates(updates).Error; err != nil {
+	if err := c.DB.Model(&model.RagRoutingStrategy{ID: id}).Where("eid = ? AND kind = ?", eid, c.kind).Updates(updates).Error; err != nil {
 		logger.Errorf(ctx, "更新策略失败: %v", err)
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
@@ -601,7 +638,7 @@ func (c *RagPipelineController) ReorderStrategies(ctx *gin.Context) {
 	}
 
 	var count int64
-	if err := c.DB.Model(&model.RagRoutingStrategy{}).Where("eid = ? AND id IN ?", eid, req.StrategyIDs).Count(&count).Error; err != nil {
+	if err := c.DB.Model(&model.RagRoutingStrategy{}).Where("eid = ? AND kind = ? AND id IN ?", eid, c.kind, req.StrategyIDs).Count(&count).Error; err != nil {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
 	}
@@ -613,7 +650,7 @@ func (c *RagPipelineController) ReorderStrategies(ctx *gin.Context) {
 	tx := c.DB.Begin()
 	for index, id := range req.StrategyIDs {
 		priority := index + 1
-		if err := tx.Model(&model.RagRoutingStrategy{}).Where("eid = ? AND id = ?", eid, id).Update("priority", priority).Error; err != nil {
+		if err := tx.Model(&model.RagRoutingStrategy{}).Where("eid = ? AND kind = ? AND id = ?", eid, c.kind, id).Update("priority", priority).Error; err != nil {
 			tx.Rollback()
 			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 			return
@@ -650,7 +687,7 @@ func (c *RagPipelineController) DeleteStrategy(ctx *gin.Context) {
 
 	// 验证策略归属
 	var existingStrategy model.RagRoutingStrategy
-	if err := c.DB.Where("id = ? AND eid = ?", id, eid).First(&existingStrategy).Error; err != nil {
+	if err := c.DB.Where("id = ? AND eid = ? AND kind = ?", id, eid, c.kind).First(&existingStrategy).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("策略不存在"))
 		} else {
@@ -659,16 +696,65 @@ func (c *RagPipelineController) DeleteStrategy(ctx *gin.Context) {
 		return
 	}
 
-	if existingStrategy.IsDefault {
+	// 名称保护：系统默认兜底策略（RAG「默认策略」/图谱「通用文档」）即使 is_default 被改为 false 也不允许删除
+	protectedStrategyName := "默认策略"
+	if c.kind == model.PipelineKindGraph {
+		protectedStrategyName = "通用文档"
+	} else if c.kind == model.PipelineKindWiki {
+		protectedStrategyName = "Wiki 文档"
+	}
+	if existingStrategy.IsDefault || existingStrategy.Name == protectedStrategyName {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("默认策略不允许删除"))
 		return
 	}
 
-	if err := c.DB.Delete(&model.RagRoutingStrategy{}, id).Error; err != nil {
+	if err := c.DB.Where("id = ? AND eid = ? AND kind = ?", id, eid, c.kind).Delete(&model.RagRoutingStrategy{}).Error; err != nil {
 		logger.Errorf(ctx, "删除策略失败: %v", err)
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
 	}
 
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+// validateGraphPipelineProfileTemplate 图谱管线 profile 规范化 + 模板存在性校验。
+// 配置了 graph_template_id 时必须为当前企业存在的图谱模板，避免悬空引用。
+func validateGraphPipelineProfileTemplate(ctx *gin.Context, eid int64, profileStr string) (string, error) {
+	normalized, err := model.NormalizeGraphPipelineProfile(profileStr)
+	if err != nil {
+		return "", err
+	}
+	templateID, err := model.GraphPipelineTemplateIDFromProfile(normalized)
+	if err != nil {
+		return "", err
+	}
+	if templateID > 0 {
+		if _, err := model.GetGraphTemplateByID(eid, templateID); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", errors.New("图谱模板不存在")
+			}
+			return "", err
+		}
+	}
+	return normalized, nil
+}
+
+func validateWikiPipelineProfile(profileStr string) error {
+	if strings.TrimSpace(profileStr) == "" {
+		return errors.New("Wiki 管线配置不能为空")
+	}
+	var profile struct {
+		Steps []struct {
+			StepKey string `json:"step_key"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal([]byte(profileStr), &profile); err != nil {
+		return errors.New("Wiki 管线配置格式无效")
+	}
+	for _, step := range profile.Steps {
+		if strings.TrimSpace(step.StepKey) == "wiki_page_generation" {
+			return nil
+		}
+	}
+	return errors.New("Wiki 管线必须包含 wiki_page_generation 步骤")
 }

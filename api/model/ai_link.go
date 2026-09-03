@@ -71,18 +71,13 @@ func (aiLink *AILink) LoadUserGroupIds() error {
 		return err
 	}
 	aiLink.Scopes = items
-	userGroupIds := scopeGroupIDs(items)
-	if len(items) == 0 {
-		if err := DB.Model(&ResourcePermission{}).
-			Where("resource_id = ? AND resource_type = ?", aiLink.ID, ResourceTypeAILink).
-			Pluck("group_id", &userGroupIds).Error; err != nil {
-			return err
-		}
+
+	// 合并 scope 的 group 项与旧表，避免显式 scopes 时订阅组回显为空。
+	legacyIDs, err := GetResourcePermissionGroupIDs(aiLink.ID, ResourceTypeAILink)
+	if err != nil {
+		return err
 	}
-	if userGroupIds == nil {
-		userGroupIds = []int64{}
-	}
-	aiLink.UserGroupIds = userGroupIds
+	aiLink.UserGroupIds = MergeGroupIDs(scopeGroupIDs(items), legacyIDs)
 	return nil
 }
 

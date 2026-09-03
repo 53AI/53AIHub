@@ -99,7 +99,7 @@ func CreateLibrary(c *gin.Context) {
 // @Param space_id query int false "空间ID"
 // @Param status query int false "知识库状态" Enums(0,1)
 // @Param offset query int false "偏移量" default(0)
-// @Param limit query int false "限制条数(最大100)" default(20)
+// @Param limit query int false "限制条数(最大999)" default(20)
 // @Param get_recently query int false "获取最近访问文件数量" default(5)
 // @Param with_file_count query int false "是否返回未删除文件数量(0关闭,1开启；缓存加速，结果为最终一致)" default(1)
 // @Success 200 {object} model.CommonResponse{data=[]model.Library}
@@ -143,25 +143,8 @@ func GetLibraries(c *gin.Context) {
 		logger.Infof(c.Request.Context(), "GetLibraries: invalid with_file_count '%s', fallback to 0", withFileCountStr)
 	}
 
-	// 解析分页参数（非法输入回退默认并记录日志）
-	offsetStr := c.DefaultQuery("offset", "0")
-	limitStr := c.DefaultQuery("limit", "20")
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil {
-		logger.Infof(c.Request.Context(), "GetLibraries: invalid offset '%s', fallback to 0", offsetStr)
-		offset = 0
-	}
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil {
-		logger.Infof(c.Request.Context(), "GetLibraries: invalid limit '%s', fallback to 20", limitStr)
-		limit = 20
-	}
-	if offset < 0 {
-		offset = 0
-	}
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
+	// 解析分页参数（非法输入回退默认值）
+	offset, limit := parseLibraryPagination(c.DefaultQuery("offset", "0"), c.DefaultQuery("limit", "20"))
 
 	// 前台用户视角：通过权限服务获取用户有权限的知识库
 	lps := service.NewLibraryPermissionService(eid)
@@ -190,6 +173,20 @@ func GetLibraries(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(libraries))
+}
+
+func parseLibraryPagination(offsetStr, limitStr string) (offset, limit int) {
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+	limit, err = strconv.Atoi(limitStr)
+	if err != nil || limit <= 0 {
+		limit = 20
+	} else if limit > 999 {
+		limit = 999
+	}
+	return offset, limit
 }
 
 // GetRecentlyLLibraries godoc
@@ -268,12 +265,7 @@ func GetLibrary(c *gin.Context) {
 		return
 	}
 
-	// 检查知识库可见性，暂时不要求
-	// visible, err := service.IsLibraryVisible(eid, libraryID, userID)
-	// if err != nil || !visible {
-	// 	c.JSON(http.StatusNotFound, model.NotFound.ToResponse("知识库不存在或无权限访问"))
-	// 	return
-	// }
+	// 检查知识库可见性（公开库/公开空间继承库对所有人可见，其余需要实际权限）
 
 	// 先加载库，拿到 SpaceID
 	library, err := model.GetLibraryByID(eid, libraryID)
@@ -282,12 +274,20 @@ func GetLibrary(c *gin.Context) {
 		return
 	}
 
-	// 基于新KM权限进行读取校验（最小权限：仅查看）
+	// 可见性校验：公开知识库/公开空间继承的知识库对所有人可见；
+	// 其余需要实际权限。无权限返回 403（而非 404），避免向无权限用户泄露知识库是否存在。
+	visible, err := service.IsLibraryVisible(eid, libraryID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	if !visible {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限访问此知识库")))
+		return
+	}
+
+	// 基于新KM权限获取用户权限值（用于前端展示）
 	permission, _ := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, library.ID, userID)
-	// if err != nil || permission < model.PERMISSION_VIEW_ONLY {
-	// 	c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(err))
-	// 	return
-	// }
 
 	library.Permission = permission
 

@@ -21,6 +21,7 @@ type SearchQuery struct {
 	Dir        string
 	FileType   string
 	Keyword    string
+	Regex      bool
 	Level      string
 	RequestID  string
 	Line       int
@@ -76,12 +77,16 @@ func SearchLogs(query SearchQuery) (SearchResult, error) {
 	if query.Around > 200 {
 		query.Around = 200
 	}
+	keywordRegexp, err := compileKeyword(query.Keyword, query.Regex)
+	if err != nil {
+		return result, err
+	}
 
 	if strings.TrimSpace(query.AnchorFile) != "" && query.AnchorLine > 0 {
 		return searchAnchorLogs(query)
 	}
 
-	logs, hasMore, err := searchSequentialLogs(query)
+	logs, hasMore, err := searchSequentialLogs(query, keywordRegexp)
 	if err != nil {
 		return result, err
 	}
@@ -109,7 +114,7 @@ func SearchLogs(query SearchQuery) (SearchResult, error) {
 	return result, nil
 }
 
-func searchSequentialLogs(query SearchQuery) ([]LogItem, bool, error) {
+func searchSequentialLogs(query SearchQuery, keywordRegexp *regexp.Regexp) ([]LogItem, bool, error) {
 	files, err := resolveFiles(query.Dir, query.FileType, query.NoArchive)
 	if err != nil {
 		return nil, false, err
@@ -159,7 +164,7 @@ fileLoop:
 				linesRead++
 				lineNo := totalLines - linesRead + 1
 				entry := parseLine(line, filepath.Base(meta.Path), lineNo)
-				if !matches(entry, query) {
+				if !matches(entry, query, keywordRegexp) {
 					continue
 				}
 				logs = append(logs, entry)
@@ -181,7 +186,7 @@ fileLoop:
 			for scanner.Scan() {
 				lineNo++
 				entry := parseLine(scanner.Text(), filepath.Base(meta.Path), lineNo)
-				if !matches(entry, query) {
+				if !matches(entry, query, keywordRegexp) {
 					continue
 				}
 				logs = append(logs, entry)
@@ -440,13 +445,27 @@ func extractRequestID(text string) string {
 	return ""
 }
 
-func matches(item LogItem, query SearchQuery) bool {
+func compileKeyword(keyword string, regexMode bool) (*regexp.Regexp, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" || !regexMode {
+		return nil, nil
+	}
+	return regexp.Compile("(?i)" + keyword)
+}
+
+func matches(item LogItem, query SearchQuery, keywordRegexp *regexp.Regexp) bool {
 	keyword := strings.TrimSpace(strings.ToLower(query.Keyword))
 	if keyword != "" {
-		raw := strings.ToLower(item.Raw)
-		msg := strings.ToLower(item.Message)
-		if !strings.Contains(raw, keyword) && !strings.Contains(msg, keyword) {
-			return false
+		if keywordRegexp != nil {
+			if !keywordRegexp.MatchString(item.Raw) && !keywordRegexp.MatchString(item.Message) {
+				return false
+			}
+		} else {
+			raw := strings.ToLower(item.Raw)
+			msg := strings.ToLower(item.Message)
+			if !strings.Contains(raw, keyword) && !strings.Contains(msg, keyword) {
+				return false
+			}
 		}
 	}
 

@@ -26,7 +26,7 @@ const (
 func NewVectorIndexingHandler(db *gorm.DB) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
 	return func(ctx context.Context, job *model.RagJob, stepConfig json.RawMessage) error {
 		if isWikiPageGenerationActive(job) {
-			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 vector_indexing 的向量化处理")
+			logger.Infof(ctx, "【Wiki生成】 phase=legacy_skip wiki_page_generation 已启用，跳过 vector_indexing 的向量化处理")
 			return nil
 		}
 

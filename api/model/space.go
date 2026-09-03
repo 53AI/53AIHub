@@ -50,23 +50,45 @@ func SetAutoChunkingCallback(callback AutoChunkingCallback) {
 }
 
 type Space struct {
-	ID                         int64          `json:"id" gorm:"primaryKey;autoIncrement"`
-	Name                       string         `json:"name" gorm:"not null;size:255" binding:"required"`
-	Description                string         `json:"description" gorm:"type:text"`
-	Icon                       string         `json:"icon" gorm:"size:255"`
-	Eid                        int64          `json:"eid" gorm:"not null;index"`
-	OwnerID                    int64          `json:"owner_id" gorm:"not null;index"`
-	SpaceKind                  string         `json:"space_kind" gorm:"size:32;not null;default:regular;index"`
-	Status                     int            `json:"status" gorm:"not null;default:0" example:"0"` // 0=active, 1=archived
-	Sort                       int64          `json:"sort" gorm:"not null;default:0" example:"0"`
-	IsDefault                  bool           `json:"is_default" gorm:"not null;default:0" example:"0"`
-	Visibility                 int            `json:"visibility" gorm:"not null;" example:"0"` // 0=private, 1=public
-	EnableWikiKnowledgeGraph   bool           `json:"enable_wiki_knowledge_graph" gorm:"not null;default:false;comment:开启 Wiki 知识图谱(实体/概念提取)"`
-	EnableWikiDynamicKnowledge bool           `json:"enable_wiki_dynamic_knowledge" gorm:"not null;default:false;comment:开启 Wiki 动态知识(摘要/索引/分类)"`
-	OwnerInfo                  SpaceOwnerInfo `json:"owner_info" gorm:"-"`
-	LibraryCount               int64          `json:"library_count" gorm:"-"`
-	Permission                 int            `json:"permission" gorm:"-"`
+	ID                         int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name                       string `json:"name" gorm:"not null;size:255" binding:"required"`
+	Description                string `json:"description" gorm:"type:text"`
+	Icon                       string `json:"icon" gorm:"size:255"`
+	Eid                        int64  `json:"eid" gorm:"not null;index"`
+	OwnerID                    int64  `json:"owner_id" gorm:"not null;index"`
+	SpaceKind                  string `json:"space_kind" gorm:"size:32;not null;default:regular;index"`
+	Status                     int    `json:"status" gorm:"not null;default:0" example:"0"` // 0=active, 1=archived
+	Sort                       int64  `json:"sort" gorm:"not null;default:0" example:"0"`
+	IsDefault                  bool   `json:"is_default" gorm:"not null;default:0" example:"0"`
+	Visibility                 int    `json:"visibility" gorm:"not null;" example:"0"` // 0=private, 1=public
+	EnableWikiKnowledgeGraph   bool   `json:"enable_wiki_knowledge_graph" gorm:"not null;default:false;comment:开启 Wiki 知识图谱(实体/概念提取)"`
+	EnableWikiDynamicKnowledge bool   `json:"enable_wiki_dynamic_knowledge" gorm:"not null;default:false;comment:开启 Wiki 动态知识(摘要/索引/分类)"`
+	WikiGenerationMode         string `json:"wiki_generation_mode" gorm:"not null;size:32;default:lazy;comment:Wiki 正常词条生成模式"`
+	// EnableKnowledgeGraph 图谱总开关（空间级，手动开关，默认关）：开启后该空间文件可触发图谱生成
+	EnableKnowledgeGraph bool `json:"enable_knowledge_graph" gorm:"not null;default:false;comment:开启图谱(知识图谱)生成"`
+	// WikiKnowledgeGraphLibraryIDs 图谱管线的知识库范围（JSON int64 数组，空/[] = 全部）
+	// 对外通过专用接口读写（json:"-"），避免污染 GetSpace 现有响应
+	WikiKnowledgeGraphLibraryIDs string         `json:"-" gorm:"type:text;comment:图谱管线知识库范围(JSON数组,空=全部)"`
+	OwnerInfo                    SpaceOwnerInfo `json:"owner_info" gorm:"-"`
+	LibraryCount                 int64          `json:"library_count" gorm:"-"`
+	Permission                   int            `json:"permission" gorm:"-"`
 	BaseModel
+}
+
+const (
+	WikiGenerationModeLazy   = "lazy"
+	WikiGenerationModeStrict = "strict"
+)
+
+func NormalizeWikiGenerationMode(mode string) string {
+	if mode == WikiGenerationModeStrict {
+		return WikiGenerationModeStrict
+	}
+	return WikiGenerationModeLazy
+}
+
+func IsValidWikiGenerationMode(mode string) bool {
+	return mode == WikiGenerationModeLazy || mode == WikiGenerationModeStrict
 }
 
 type SpaceOwnerInfo struct {

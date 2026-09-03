@@ -49,3 +49,94 @@ var RecordingMemoryEntitySchemas = map[string]RecordingMemoryEntitySchema{
 		},
 	},
 }
+
+// ===== Schema 数组返回形态（GET /api/recordings/memories/schema）=====
+// 顶层 data 为数组、attributes 为数组、枚举 values 为数组，且按约定顺序排列，
+// 便于前端按固定顺序渲染。内部权威仍为上面的 RecordingMemoryEntitySchemas map。
+
+// RecordingMemoryEnumValueSchema 描述一个枚举值（值 -> 中文 label），schema 数组返回时使用。
+type RecordingMemoryEnumValueSchema struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// RecordingMemoryAttributeSchemaView 描述实体一个属性的约束（数组形态）。
+// Values 非空时表示枚举，空表示自由文本。
+type RecordingMemoryAttributeSchemaView struct {
+	Key    string                           `json:"key"`
+	Label  string                           `json:"label"`
+	Values []RecordingMemoryEnumValueSchema `json:"values,omitempty"`
+}
+
+// RecordingMemoryEntitySchemaView 描述一类实体的属性约束（数组形态）。
+type RecordingMemoryEntitySchemaView struct {
+	Type       string                               `json:"type"`
+	Label      string                               `json:"label"`
+	Attributes []RecordingMemoryAttributeSchemaView `json:"attributes"`
+}
+
+// recordingEntityTypeOrder 实体类型在 schema 数组返回中的顺序（与前端约定一致）。
+var recordingEntityTypeOrder = []string{"person", "matter", "risk", "principle"}
+
+// recordingEntityAttrOrder 每类实体属性在 schema 数组返回中的顺序（与前端约定一致）。
+var recordingEntityAttrOrder = map[string][]string{
+	"person":    {"company", "position", "relationship", "demand"},
+	"matter":    {"status", "priority", "dependency", "deliverable"},
+	"risk":      {"risk_type", "risk_level", "probability", "response"},
+	"principle": {"principle_type", "binding_force", "applicable_scope", "exceptions"},
+}
+
+// recordingEnumValueOrder 枚举值在 schema 数组返回中的顺序（保持声明顺序、输出确定性）。
+var recordingEnumValueOrder = map[string][]string{
+	"person.relationship":      {"potential_customer", "customer", "partner", "competitor", "irrelevant"},
+	"matter.status":            {"todo", "in_progress", "completed", "shelved"},
+	"matter.priority":          {"high", "medium", "low"},
+	"risk.risk_type":           {"compliance", "delivery", "financial", "technical"},
+	"risk.risk_level":          {"high", "medium", "low"},
+	"principle.principle_type": {"company_policy", "industry_norm", "compliance_req", "business_principle"},
+	"principle.binding_force":  {"mandatory", "recommended", "reference"},
+}
+
+// RecordingMemoryEntitySchemaArray 返回按约定顺序排列的实体记忆 schema 数组。
+// 顶层 data、attributes、枚举 values 均为数组且带 key/type/value 字段，供前端直接渲染。
+func RecordingMemoryEntitySchemaArray() []RecordingMemoryEntitySchemaView {
+	out := make([]RecordingMemoryEntitySchemaView, 0, len(recordingEntityTypeOrder))
+	for _, typ := range recordingEntityTypeOrder {
+		schema, ok := RecordingMemoryEntitySchemas[typ]
+		if !ok {
+			continue
+		}
+		view := RecordingMemoryEntitySchemaView{Type: typ, Label: schema.Label}
+		attrOrder := recordingEntityAttrOrder[typ]
+		if len(attrOrder) == 0 {
+			for key := range schema.Attributes { // 兜底：未配置顺序时按 map 声明顺序
+				attrOrder = append(attrOrder, key)
+			}
+		}
+		for _, key := range attrOrder {
+			attr, ok := schema.Attributes[key]
+			if !ok {
+				continue
+			}
+			attrView := RecordingMemoryAttributeSchemaView{Key: key, Label: attr.Label}
+			if len(attr.Values) > 0 {
+				valueOrder := recordingEnumValueOrder[typ+"."+key]
+				if len(valueOrder) == 0 {
+					for v := range attr.Values {
+						valueOrder = append(valueOrder, v)
+					}
+				}
+				for _, v := range valueOrder {
+					label, ok := attr.Values[v]
+					if !ok {
+						continue
+					}
+					attrView.Values = append(attrView.Values, RecordingMemoryEnumValueSchema{Value: v, Label: label})
+				}
+			}
+			view.Attributes = append(view.Attributes, attrView)
+		}
+		out = append(out, view)
+	}
+	return out
+}

@@ -26,13 +26,14 @@ func NewWikiSpaceController(db *gorm.DB) *WikiSpaceController {
 }
 
 type WikiSpaceListPagesQuery struct {
-	LibraryID int64  `form:"library_id"`
-	Keyword   string `form:"keyword"`
-	PageType  string `form:"page_type"`
-	Status    string `form:"status"`
-	SortBy    string `form:"sort_by"`
-	Offset    int    `form:"offset"`
-	Limit     int    `form:"limit"`
+	LibraryID  int64  `form:"library_id"`
+	Keyword    string `form:"keyword"`
+	PageType   string `form:"page_type"`
+	Status     string `form:"status"`
+	CategoryID string `form:"category_id"`
+	SortBy     string `form:"sort_by"`
+	Offset     int    `form:"offset"`
+	Limit      int    `form:"limit"`
 }
 
 type WikiSpacePageQuery struct {
@@ -71,6 +72,7 @@ type WikiSpaceProgressQuery struct {
 // @Param keyword query string false "关键词"
 // @Param page_type query string false "页面类型"
 // @Param status query string false "页面状态"
+// @Param category_id query string false "分类ID（hashID）或 other（未分类页面），不传时返回全部页面"
 // @Param sort_by query string false "排序字段：title、created_time、updated_time"
 // @Param offset query int false "分页偏移量"
 // @Param limit query int false "每页条数"
@@ -89,6 +91,11 @@ func (c *WikiSpaceController) ListPages(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
+	categoryID, categoryOther, categoryOK := parseWikiPageCategoryFilter(query.CategoryID)
+	if !categoryOK {
+		ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的分类ID")))
+		return
+	}
 	req.LibraryID = query.LibraryID
 
 	resp, err := c.readSvc.ListPages(ctx.Request.Context(), service.WikiSpaceListPagesRequest{
@@ -96,6 +103,8 @@ func (c *WikiSpaceController) ListPages(ctx *gin.Context) {
 		Keyword:              query.Keyword,
 		PageType:             query.PageType,
 		Status:               query.Status,
+		CategoryID:           categoryID,
+		CategoryOther:        categoryOther,
 		SortBy:               query.SortBy,
 		Offset:               query.Offset,
 		Limit:                query.Limit,

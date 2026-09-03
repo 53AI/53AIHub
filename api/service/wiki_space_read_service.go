@@ -59,12 +59,14 @@ type WikiSpaceBaseRequest struct {
 
 type WikiSpaceListPagesRequest struct {
 	WikiSpaceBaseRequest
-	Keyword  string
-	PageType string
-	Status   string
-	SortBy   string
-	Offset   int
-	Limit    int
+	Keyword       string
+	PageType      string
+	Status        string
+	CategoryID    int64
+	CategoryOther bool
+	SortBy        string
+	Offset        int
+	Limit         int
 }
 
 type WikiSpacePageRequest struct {
@@ -221,12 +223,13 @@ type WikiSpaceProgressDetailResponse struct {
 }
 
 type WikiSpaceStatsResponse struct {
-	WikiSummaryCount int64 `json:"wiki_summary_count"`
-	WikiEntityCount  int64 `json:"wiki_entity_count"`
-	WikiConceptCount int64 `json:"wiki_concept_count"`
-	MonthNewDocs     int64 `json:"month_new_docs"`
-	TotalDocs        int64 `json:"total_docs"`
-	WikiCompiledDocs int64 `json:"wiki_compiled_docs"`
+	WikiSummaryCount int64                 `json:"wiki_summary_count"`
+	WikiEntityCount  int64                 `json:"wiki_entity_count"`
+	WikiConceptCount int64                 `json:"wiki_concept_count"`
+	MonthNewDocs     int64                 `json:"month_new_docs"`
+	TotalDocs        int64                 `json:"total_docs"`
+	WikiCompiledDocs int64                 `json:"wiki_compiled_docs"`
+	WikiCategories   []WikiCategorySummary `json:"wiki_categories"`
 }
 
 type wikiSpaceLibrariesContext struct {
@@ -244,14 +247,16 @@ func (s *wikiSpaceReadService) ListPages(ctx context.Context, req WikiSpaceListP
 	}
 	if req.LibraryID > 0 && len(spaceCtx.libraries) == 1 {
 		items, total, err := s.pageRead.ListPages(ctx, WikiListPagesRequest{
-			Eid:       req.Eid,
-			LibraryID: req.LibraryID,
-			Keyword:   req.Keyword,
-			PageType:  req.PageType,
-			Status:    req.Status,
-			SortBy:    req.SortBy,
-			Offset:    req.Offset,
-			Limit:     req.Limit,
+			Eid:           req.Eid,
+			LibraryID:     req.LibraryID,
+			Keyword:       req.Keyword,
+			PageType:      req.PageType,
+			Status:        req.Status,
+			CategoryID:    req.CategoryID,
+			CategoryOther: req.CategoryOther,
+			SortBy:        req.SortBy,
+			Offset:        req.Offset,
+			Limit:         req.Limit,
 		})
 		if err != nil {
 			return nil, err
@@ -279,7 +284,31 @@ func (s *wikiSpaceReadService) ListPages(ctx context.Context, req WikiSpaceListP
 
 	base := s.db.WithContext(ctx).Model(&model.WikiPage{}).
 		Where("eid = ? AND library_id IN ?", req.Eid, spaceCtx.ids)
-	base = applyWikiPageListFilters(base, req.Keyword, req.PageType, req.Status)
+	keyword := strings.TrimSpace(req.Keyword)
+	base = applyWikiPageListFilters(base, "", req.PageType, req.Status)
+	if req.CategoryOther {
+		base = base.Where("NOT EXISTS (?)", s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+			Select("1").Where("eid = ? AND page_id = wiki_pages.id", req.Eid))
+	} else if req.CategoryID > 0 {
+		base = base.Where("EXISTS (?)", s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+			Select("1").Where("eid = ? AND category_id = ? AND page_id = wiki_pages.id", req.Eid, req.CategoryID))
+	}
+	if keyword != "" {
+		pages, total, err := s.pageRead.listWikiPagesByKeyword(ctx, base, keyword, req.SortBy, offset, limit)
+		if err != nil {
+			return nil, err
+		}
+		folderPaths, err := s.pageRead.loadFolderPathMap(ctx, pages)
+		if err != nil {
+			return nil, err
+		}
+		items := make([]WikiSpacePageSummary, 0, len(pages))
+		for i := range pages {
+			lib := spaceCtx.byID[pages[i].LibraryID]
+			items = append(items, buildWikiSpacePageSummary(&pages[i], lib, folderPaths[pages[i].FolderID]))
+		}
+		return &WikiSpaceListPagesResponse{Items: items, Total: total, Libraries: spaceCtx.refs}, nil
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -1042,6 +1071,10 @@ func (s *wikiSpaceReadService) GetStats(ctx context.Context, req WikiSpaceBaseRe
 	if err != nil {
 		return nil, err
 	}
+	wikiCategories, err := NewWikiCategoryService(s.db).ListVisible(ctx, req.Eid, req.SpaceID, 0)
+	if err != nil {
+		return nil, err
+	}
 
 	return &WikiSpaceStatsResponse{
 		WikiSummaryCount: wikiCounts[model.WikiPageTypeSummary],
@@ -1050,6 +1083,7 @@ func (s *wikiSpaceReadService) GetStats(ctx context.Context, req WikiSpaceBaseRe
 		MonthNewDocs:     monthNewDocs,
 		TotalDocs:        totalDocs,
 		WikiCompiledDocs: wikiCompiledDocs,
+		WikiCategories:   wikiCategories,
 	}, nil
 }
 

@@ -38,8 +38,8 @@ func (p RuntimeProfile) RequiredStepsCount() int {
 
 // ProfileStep 定义管线中的单个步骤配置
 type ProfileStep struct {
-	Enabled       bool            `json:"enabled"` // Deprecated: use RunMode instead
-	RunMode       RunMode         `json:"run_mode"`
+	Enabled       bool            `json:"enabled,omitempty"` // Deprecated: use RunMode instead
+	RunMode       RunMode         `json:"run_mode,omitempty"`
 	StepKey       string          `json:"step_key"`
 	Config        json.RawMessage `json:"config,omitempty"`
 	ParallelGroup bool            `json:"parallel_group,omitempty"` // 是否与下一个任务并行执行

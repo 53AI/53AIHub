@@ -473,7 +473,7 @@ func (s *RecordingAdminService) fillSummaryContent(ctx context.Context, summary 
 }
 
 // ListFileSummaries returns all summaries for a file.
-// 反转后 Summary(0) 被删除，从 FileBody 合成虚拟纪要返回给前端。
+// 新布局纪要存 Summary(0)；历史反转布局（FileBody=纪要 JSON）合成虚拟纪要兜底。
 func (s *RecordingAdminService) ListFileSummaries(ctx context.Context, fileID int64) ([]model.RecordingFileSummary, error) {
 	file, err := model.GetFileByID(s.eid, fileID)
 	if err != nil {
@@ -500,11 +500,12 @@ func (s *RecordingAdminService) ListFileSummaries(ctx context.Context, fileID in
 		result = append(result, summary)
 	}
 
+	// 无纪要且仅剩历史反转布局（FileBody=纪要 JSON）时合成虚拟纪要；新布局 FileBody=转写 Markdown 不合成（纪要未生成就不展示）
 	if !hasMinutes && model.HasTranscriptSummary(fileID) {
 		fileBody, err := model.GetLastFileBodyByFileID(s.eid, fileID)
 		if err == nil && fileBody != nil {
 			content, err := fileBody.GetContent()
-			if err == nil && content != "" {
+			if err == nil && classifyRecordingContent(content) == recordingContentMinutesJSON {
 				markdown := BuildMinutesMarkdown(content)
 				result = append(result, model.RecordingFileSummary{
 					FileID:         fileID,

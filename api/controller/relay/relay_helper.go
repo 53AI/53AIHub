@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1479,7 +1480,7 @@ func extractQuotedSourceIDs(answer string) []string {
 	// 1. Source:A-数字 (知识库搜索)
 	// 2. Source:B-数字 (网页搜索)
 	// 3. Source:数字-数字 (单文件搜索，fileID-chunkIndex)
-	re := `Source:(A|B|W|\d+)-(\d+)`
+	re := `(?i)Source:(A|B|W|G|\d+)-(\d+)`
 	matches := regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 	uniqueIDs := make(map[string]bool)
@@ -1487,7 +1488,7 @@ func extractQuotedSourceIDs(answer string) []string {
 
 	for _, match := range matches {
 		if len(match) == 3 {
-			sourceType := match[1] // A, B, 或者 fileID
+			sourceType := strings.ToUpper(match[1]) // A、B、W、G 或者 fileID
 			id := match[2]
 
 			if sourceType == "A" || sourceType == "B" {
@@ -1557,15 +1558,15 @@ func extractQuotedSourceIDs(answer string) []string {
 	}
 
 	if len(quotedIDs) == 0 {
-		re = `\[(Source:(A|B|W)-(\d+))\]`
+		re = `(?i)\[(Source:(A|B|W|G)-(\d+))\]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 		for _, match := range matches {
 			if len(match) >= 4 {
-				sourceType := match[2] // A、B 或 W
+				sourceType := strings.ToUpper(match[2]) // A、B、W 或 G
 				id := match[3]
 
-				if sourceType == "A" || sourceType == "B" || sourceType == "W" {
+				if sourceType == "A" || sourceType == "B" || sourceType == "W" || sourceType == "G" {
 					refID := fmt.Sprintf("%s-%s", sourceType, id)
 					if !uniqueIDs[refID] {
 						uniqueIDs[refID] = true
@@ -1658,7 +1659,7 @@ func resolveQuotedSourceIDs(
 		if !ok {
 			continue
 		}
-		if info.SourceType == "wiki" {
+		if strings.EqualFold(info.SourceType, "wiki") || strings.EqualFold(info.SourceType, "graph") {
 			continue
 		}
 
@@ -1787,10 +1788,134 @@ func HandleOutOfRangeReply(agent *model.Agent) (bool, string) {
 	return enable, outOfRangeReplyConfig.Reply
 }
 
-func CreateRetrievalContext(sources []rag.SourceReference) string {
-	var contextParts []string
+var (
+	retrievalSourceTokenRegex = regexp.MustCompile(`(?i)\[\s*source\s*[:：]\s*([^\]\r\n]*)\]`)
+	malformedBareSourceRegex  = regexp.MustCompile(`(?i)\[\s*(?:sourcc|sourc\s+e)\s*[-_:：]?\s*[A-Za-z0-9_-]+\s*\]`)
+	retrievalWikiLinkRegex    = regexp.MustCompile(`\[\[([^\]\r\n|]+)(?:\|([^\]\r\n]+))?\]\]`)
+)
+
+type citationValidationStats struct {
+	Detected         int      `json:"detected"`
+	Valid            int      `json:"valid"`
+	Invalid          int      `json:"invalid"`
+	InvalidCitations []string `json:"invalid_citations,omitempty"`
+}
+
+func normalizeCitationID(value string) string {
+	return strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, `\_`, "_")))
+}
+
+func sanitizeWikiLinks(content string) string {
+	return retrievalWikiLinkRegex.ReplaceAllStringFunc(content, func(token string) string {
+		matches := retrievalWikiLinkRegex.FindStringSubmatch(token)
+		if len(matches) < 2 {
+			return token
+		}
+		label := strings.TrimSpace(matches[1])
+		if len(matches) > 2 && strings.TrimSpace(matches[2]) != "" {
+			label = strings.TrimSpace(matches[2])
+		} else if slash := strings.LastIndex(label, "/"); slash >= 0 {
+			label = label[slash+1:]
+		}
+		label = strings.ReplaceAll(label, `\_`, "_")
+		label = strings.ReplaceAll(label, "_", " ")
+		return label
+	})
+}
+
+func sanitizeRetrievalContent(content string) string {
+	content = retrievalSourceTokenRegex.ReplaceAllString(content, "")
+	return sanitizeWikiLinks(content)
+}
+
+func allowedCitationIDs(sources []rag.SourceReference) map[string]string {
+	allowed := make(map[string]string, len(sources))
 	for _, source := range sources {
-		contextParts = append(contextParts, fmt.Sprintf("[Source:%s] \n <begin>  %s <end>", source.ReferenceID, source.Content))
+		if id := strings.TrimSpace(source.ReferenceID); id != "" {
+			allowed[normalizeCitationID(id)] = id
+		}
+	}
+	return allowed
+}
+
+func validateAnswerCitations(answer string, sources []rag.SourceReference) (string, citationValidationStats) {
+	stats := citationValidationStats{}
+	allowed := allowedCitationIDs(sources)
+	cleaned := retrievalSourceTokenRegex.ReplaceAllStringFunc(answer, func(token string) string {
+		stats.Detected++
+		matches := retrievalSourceTokenRegex.FindStringSubmatch(token)
+		if len(matches) < 2 {
+			stats.Invalid++
+			stats.InvalidCitations = append(stats.InvalidCitations, token)
+			return ""
+		}
+		id := strings.TrimSpace(matches[1])
+		canonical, ok := allowed[normalizeCitationID(id)]
+		if !ok {
+			stats.Invalid++
+			stats.InvalidCitations = append(stats.InvalidCitations, id)
+			return ""
+		}
+		stats.Valid++
+		return fmt.Sprintf("[Source:%s]", canonical)
+	})
+	cleaned = malformedBareSourceRegex.ReplaceAllString(cleaned, "")
+	cleaned = sanitizeWikiLinks(cleaned)
+	return cleaned, stats
+}
+
+func sanitizeAndValidateAnswer(c *gin.Context, answer string) (string, citationValidationStats) {
+	if c == nil {
+		return validateAnswerCitations(answer, nil)
+	}
+	sourcesValue, ok := c.Get("rag_sources")
+	if !ok {
+		return validateAnswerCitations(answer, nil)
+	}
+	sources, ok := sourcesValue.([]rag.SourceReference)
+	if !ok {
+		return validateAnswerCitations(answer, nil)
+	}
+	return validateAnswerCitations(answer, sources)
+}
+
+func appendRAGSourcesForCitationValidation(c *gin.Context, sources []rag.SourceReference) {
+	if c == nil || len(sources) == 0 {
+		return
+	}
+	merged := make([]rag.SourceReference, 0, len(sources))
+	seen := make(map[string]struct{}, len(sources))
+	if existingValue, ok := c.Get("rag_sources"); ok {
+		if existing, ok := existingValue.([]rag.SourceReference); ok {
+			merged = append(merged, existing...)
+			for _, source := range existing {
+				seen[fmt.Sprintf("%s:%d:%s", sourceCategory(source), source.ChunkID, source.ReferenceID)] = struct{}{}
+			}
+		}
+	}
+	for _, source := range sources {
+		key := fmt.Sprintf("%s:%d:%s", sourceCategory(source), source.ChunkID, source.ReferenceID)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, source)
+	}
+	c.Set("rag_sources", merged)
+}
+
+func CreateRetrievalContext(sources []rag.SourceReference) string {
+	contextParts := make([]string, 0, len(sources)+1)
+	allowedIDs := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if id := strings.TrimSpace(source.ReferenceID); id != "" {
+			allowedIDs = append(allowedIDs, id)
+		}
+		contextParts = append(contextParts, fmt.Sprintf("[Source:%s] \n <begin>  %s <end>", source.ReferenceID, sanitizeRetrievalContent(source.Content)))
+	}
+	if len(allowedIDs) > 0 {
+		sort.Strings(allowedIDs)
+		contextParts = append(contextParts, fmt.Sprintf("可用引用编号（仅可使用这些编号）：%s", strings.Join(allowedIDs, ", ")))
 	}
 	return strings.Join(contextParts, "\n")
 }

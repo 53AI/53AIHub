@@ -26,12 +26,15 @@ type SSOLoginRequest struct {
 	Username  string `json:"username" binding:"required"`
 	Timestamp string `json:"timestamp"` // 10位秒
 	Sign      string `json:"sign"`      // 加密启用时必须传
+	DeviceID  string `json:"device_id"` // 可选：App 传入则走 app channel（openid=device_id）
+	Platform  string `json:"platform"`  // 可选：App 平台标识（ios/android/...）
 }
 
 // SaasLoginResponse 复用现有返回体格式
 type SaasLoginResponse struct {
 	AccessToken string `json:"access_token"`
 	UserID      int64  `json:"user_id"`
+	ExpiresAt   int64  `json:"expires_at"` // 附加字段，web 客户端忽略
 }
 
 // @Summary API SSO Login
@@ -110,8 +113,14 @@ func ApiSSOSSOLogin(c *gin.Context) {
 		user = u
 	}
 
-	// 查找或创建 UserChannel（channel_type = sso, openid = username）
-	channel, err := getOrCreateSSOUserChannel(eid, user.UserID, req.Username)
+	// 查找或创建 UserChannel：App 传入 device_id 走 app channel（openid=device_id），否则走 sso channel（openid=username）
+	var channel *model.UserChannel
+	var err error
+	if req.DeviceID != "" {
+		channel, err = getOrCreateAppUserChannel(eid, user.UserID, req.DeviceID, req.Platform, "")
+	} else {
+		channel, err = getOrCreateSSOUserChannel(eid, user.UserID, req.Username)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
@@ -127,6 +136,7 @@ func ApiSSOSSOLogin(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(SaasLoginResponse{
 		AccessToken: token.Token,
 		UserID:      user.UserID,
+		ExpiresAt:   token.ExpiresAt,
 	}))
 }
 

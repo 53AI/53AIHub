@@ -19,6 +19,7 @@ import (
 )
 
 const wikiPageVectorizationJobType = "wiki_page_vectorization"
+const wikiPageVectorizationPendingOpKind = "wiki_page_vectorization"
 
 const WikiPageVectorizationJobType = wikiPageVectorizationJobType
 
@@ -111,10 +112,17 @@ func createWikiPageVectorizationJob(ctx context.Context, db *gorm.DB, rdb redis.
 	if err != nil {
 		return nil, err
 	}
-	if err := rdb.LPush(ctx, "rag:job:queue:"+wikiPageVectorizationJobType, wrapper).Err(); err != nil {
+	if err := enqueueWikiPageVectorizationJob(ctx, rdb, job, wrapper); err != nil {
 		return nil, err
 	}
 	return job, nil
+}
+
+func enqueueWikiPageVectorizationJob(ctx context.Context, rdb redis.Cmdable, job *model.RagJob, wrapper []byte) error {
+	if job == nil || rdb == nil {
+		return fmt.Errorf("vectorization job queue is unavailable")
+	}
+	return rdb.LPush(ctx, "rag:job:queue:"+wikiPageVectorizationJobType, wrapper).Err()
 }
 
 // EnqueueWikiPageVectorizationJob 创建并投递一个 Wiki 页面版本的独立向量化任务。
@@ -126,6 +134,9 @@ func enqueueWikiPageVectorizationJobs(ctx context.Context, db *gorm.DB, rdb redi
 	if db == nil || eid <= 0 || libraryID <= 0 || len(slugs) == 0 {
 		return nil
 	}
+	if err := retryWikiVectorizationPendingOps(ctx, db, rdb, eid); err != nil {
+		logger.Warnf(ctx, "【Wiki生成】 补偿任务重试失败，继续处理本轮页面: eid=%d err=%v", eid, err)
+	}
 	var pages []model.WikiPage
 	if err := db.WithContext(ctx).Where("eid = ? AND library_id = ? AND slug IN ? AND status = ?", eid, libraryID, slugs, model.WikiPageStatusActive).Find(&pages).Error; err != nil {
 		return err
@@ -135,7 +146,88 @@ func enqueueWikiPageVectorizationJobs(ctx context.Context, db *gorm.DB, rdb redi
 			continue
 		}
 		if _, err := createWikiPageVectorizationJob(ctx, db, rdb, eid, page.ID, page.CurrentVersionID, false, reason); err != nil {
-			logger.Errorf(ctx, "【Wiki向量化】自动创建任务失败: eid=%d page_id=%d version_id=%d err=%v", eid, page.ID, page.CurrentVersionID, err)
+			logger.Errorf(ctx, "【Wiki生成】 自动创建任务失败: eid=%d page_id=%d version_id=%d err=%v", eid, page.ID, page.CurrentVersionID, err)
+			if pendingErr := recordWikiVectorizationPendingOp(ctx, db, eid, page.ID, page.CurrentVersionID, reason, err); pendingErr != nil {
+				logger.Errorf(ctx, "【Wiki生成】 保存补偿任务失败: eid=%d page_id=%d err=%v", eid, page.ID, pendingErr)
+			}
+		}
+	}
+	return nil
+}
+
+type wikiVectorizationPendingPayload struct {
+	VersionID int64  `json:"version_id"`
+	Force     bool   `json:"force"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+func recordWikiVectorizationPendingOp(ctx context.Context, db *gorm.DB, eid, pageID, versionID int64, reason string, cause error) error {
+	payload, err := json.Marshal(wikiVectorizationPendingPayload{VersionID: versionID, Reason: reason})
+	if err != nil {
+		return err
+	}
+	var op model.WikiPendingOp
+	query := db.WithContext(ctx).Where("eid = ? AND page_id = ? AND op_kind = ? AND status IN ?", eid, pageID, wikiPageVectorizationPendingOpKind, []string{model.WikiPendingOpStatusQueued, model.WikiPendingOpStatusFailed}).Order("id DESC").First(&op)
+	if query.Error == nil {
+		return db.WithContext(ctx).Model(&op).Updates(map[string]any{
+			"status":     model.WikiPendingOpStatusQueued,
+			"payload":    string(payload),
+			"last_error": cause.Error(),
+		}).Error
+	}
+	if !errors.Is(query.Error, gorm.ErrRecordNotFound) {
+		return query.Error
+	}
+	return db.WithContext(ctx).Create(&model.WikiPendingOp{
+		Eid:         eid,
+		PageID:      pageID,
+		OpKind:      wikiPageVectorizationPendingOpKind,
+		Status:      model.WikiPendingOpStatusQueued,
+		Payload:     string(payload),
+		MaxAttempts: 0,
+		LastError:   cause.Error(),
+	}).Error
+}
+
+func retryWikiVectorizationPendingOps(ctx context.Context, db *gorm.DB, rdb redis.Cmdable, eid int64) error {
+	var ops []model.WikiPendingOp
+	if err := db.WithContext(ctx).Where("eid = ? AND op_kind = ? AND status = ?", eid, wikiPageVectorizationPendingOpKind, model.WikiPendingOpStatusQueued).Order("id ASC").Limit(50).Find(&ops).Error; err != nil {
+		return err
+	}
+	for i := range ops {
+		var payload wikiVectorizationPendingPayload
+		if err := json.Unmarshal([]byte(ops[i].Payload), &payload); err != nil {
+			_ = db.WithContext(ctx).Model(&ops[i]).Updates(map[string]any{"status": model.WikiPendingOpStatusFailed, "last_error": err.Error(), "attempt_count": gorm.Expr("attempt_count + ?", 1)}).Error
+			continue
+		}
+		existing, findErr := findRunningWikiPageVectorizationJob(ctx, db, eid, ops[i].PageID, payload.VersionID)
+		if findErr != nil {
+			findErr = fmt.Errorf("find pending vectorization job: %w", findErr)
+		}
+		var err error
+		if findErr != nil {
+			err = findErr
+		} else if existing != nil {
+			wrapper, marshalErr := json.Marshal(v2engines.JobWrapper{
+				JobID: existing.JobID, Eid: existing.Eid, Type: existing.Type, EnqueuedAt: time.Now(),
+			})
+			if marshalErr != nil {
+				err = marshalErr
+			} else {
+				err = enqueueWikiPageVectorizationJob(ctx, rdb, existing, wrapper)
+			}
+		} else {
+			_, err = createWikiPageVectorizationJob(ctx, db, rdb, eid, ops[i].PageID, payload.VersionID, payload.Force, payload.Reason)
+		}
+		updates := map[string]any{"attempt_count": gorm.Expr("attempt_count + ?", 1)}
+		if err != nil {
+			updates["status"] = model.WikiPendingOpStatusFailed
+			updates["last_error"] = err.Error()
+		} else {
+			updates["status"] = model.WikiPendingOpStatusDone
+		}
+		if updateErr := db.WithContext(ctx).Model(&ops[i]).Updates(updates).Error; updateErr != nil {
+			return updateErr
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -130,28 +131,34 @@ func (s *wikiProgressService) ListFiles(ctx context.Context, req WikiProgressLis
 		offset = 0
 	}
 
+	wikiFileIDs := s.db.WithContext(ctx).Model(&model.RagJob{}).
+		Select("DISTINCT related_id").
+		Where("eid = ? AND type IN ?", req.Eid, wikiProgressJobTypes())
 	query := s.db.WithContext(ctx).Model(&model.File{}).
-		Where("eid = ? AND library_id = ? AND is_deleted = ? AND type = ?", req.Eid, req.LibraryID, false, model.FILE_TYPE_FILE)
-	status := strings.ToLower(strings.TrimSpace(req.Status))
-	if status != "" && status != "all" {
-		query = query.Where("run_status = ?", status)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
+		Where("eid = ? AND library_id = ? AND is_deleted = ? AND type = ?", req.Eid, req.LibraryID, false, model.FILE_TYPE_FILE).
+		Where("id IN (?)", wikiFileIDs)
 	var files []model.File
-	if err := query.Order("updated_time DESC, id DESC").Offset(offset).Limit(limit).Find(&files).Error; err != nil {
+	if err := query.Order("updated_time DESC, id DESC").Find(&files).Error; err != nil {
 		return nil, 0, err
 	}
 
-	items := make([]WikiProgressItem, 0, len(files))
+	allItems := make([]WikiProgressItem, 0, len(files))
 	for i := range files {
-		items = append(items, buildWikiProgressItem(ctx, s.db, &files[i]))
+		item := buildWikiProgressItem(ctx, s.db, &files[i])
+		status := strings.ToLower(strings.TrimSpace(req.Status))
+		if status != "" && status != "all" && item.Status != status {
+			continue
+		}
+		allItems = append(allItems, item)
 	}
-	return items, total, nil
+	if offset > len(allItems) {
+		offset = len(allItems)
+	}
+	end := offset + limit
+	if end > len(allItems) {
+		end = len(allItems)
+	}
+	return allItems[offset:end], int64(len(allItems)), nil
 }
 
 func (s *wikiProgressService) GetFile(ctx context.Context, eid, libraryID, fileID int64) (*WikiProgressDetail, error) {
@@ -170,14 +177,12 @@ func (s *wikiProgressService) GetFile(ctx context.Context, eid, libraryID, fileI
 	}
 
 	item := buildWikiProgressItem(ctx, s.db, &file)
-	runID, jobs, stepMap, err := getLatestRunJobsWithStepsByRelatedIDForWikiProgress(ctx, s.db, eid, fileID)
+	runID, jobs, stepMap, err := getLatestWikiRunJobsWithSteps(ctx, s.db, eid, fileID)
 	if err != nil {
 		return nil, err
 	}
 	item.RunID = runID
-	if strings.TrimSpace(runID) != "" {
-		item.TokenUsage = aggregateWikiUsageForRun(ctx, s.db, eid, fileID, runID)
-	} else if item.TokenUsage == (model.RagJobUsageSummary{}) {
+	if strings.TrimSpace(runID) == "" && item.TokenUsage == (model.RagJobUsageSummary{}) {
 		item.TokenUsage = aggregateWikiJobUsage(jobs)
 	}
 
@@ -218,64 +223,125 @@ func buildWikiProgressItem(ctx context.Context, db *gorm.DB, file *model.File) W
 		FileID:      file.ID,
 		FileName:    wikiProgressFileName(db, file),
 		FilePath:    strings.TrimSpace(file.Path),
-		Status:      strings.ToLower(strings.TrimSpace(file.RunStatus)),
 		UpdatedTime: file.UpdatedTime,
 	}
-
-	var info model.FileCleaningRuleInfo
-	if strings.TrimSpace(file.CleaningRuleInfo) != "" {
-		_ = json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+	runID, jobs, _, err := getLatestWikiRunJobsWithSteps(ctx, db, file.Eid, file.ID)
+	if err != nil || len(jobs) == 0 {
+		item.Status = model.RagJobStatusPending
+		return item
 	}
-	if item.Status == "" {
-		item.Status = strings.ToLower(strings.TrimSpace(info.Status))
+	item.RunID = runID
+	item.TotalSteps = len(jobs)
+	for _, job := range jobs {
+		switch job.Status {
+		case model.RagJobStatusSuccess:
+			item.SuccessCount++
+		case model.RagJobStatusFailed, model.RagJobStatusCancelled:
+			item.FailureCount++
+		}
 	}
-	if item.Status == "" {
-		item.Status = model.ResolveFileRunStatus(file.CleaningRuleInfo)
+	item.Progress = item.SuccessCount * 100 / item.TotalSteps
+	item.Status = wikiProgressStatus(jobs)
+	for _, job := range jobs {
+		if job.Status != model.RagJobStatusSuccess {
+			item.CurrentJobType = job.Type
+			item.StepKey = job.Type
+			item.StepName = wikiProgressStepName(job.Type)
+			item.StartTime = job.CreatedTime
+			break
+		}
 	}
-
-	item.RunID = strings.TrimSpace(info.RunID)
-	item.Progress = info.Progress
-	item.SuccessCount = info.SuccessCount
-	item.FailureCount = info.FailureCount
-	item.TotalSteps = info.TotalSteps
-	item.CurrentJobType = firstNonEmptyWikiHelper(strings.TrimSpace(info.CurrentJobType), strings.TrimSpace(info.StepKey))
-	item.StepKey = strings.TrimSpace(info.StepKey)
-	item.StepName = strings.TrimSpace(info.StepName)
-	item.NextStepKey = strings.TrimSpace(info.NextStepKey)
-	item.NextStepName = strings.TrimSpace(info.NextStepName)
-	item.StartTime = info.StartTime
-	item.EndTime = info.EndTime
-	item.DurationMs = 0
-	if info.StartTime > 0 && info.EndTime >= info.StartTime {
-		item.DurationMs = info.EndTime - info.StartTime
+	if item.Status == model.RagJobStatusSuccess {
+		item.Progress = 100
+		item.EndTime = jobs[len(jobs)-1].UpdatedTime
 	}
-	if item.EndTime > 0 && item.CompletionTime == 0 {
-		item.CompletionTime = item.DurationMs
+	if item.StartTime > 0 && item.EndTime >= item.StartTime {
+		item.DurationMs = item.EndTime - item.StartTime
 	}
-	if item.TokenUsage == (model.RagJobUsageSummary{}) && item.RunID != "" {
-		item.TokenUsage = aggregateWikiUsageForRun(ctx, db, file.Eid, file.ID, item.RunID)
-	}
+	item.TokenUsage = aggregateWikiJobUsage(jobs)
 
 	return item
 }
 
-func aggregateWikiUsageForRun(ctx context.Context, db *gorm.DB, eid, fileID int64, runID string) model.RagJobUsageSummary {
-	_, jobs, _, err := getLatestRunJobsWithStepsByRelatedIDForWikiProgress(ctx, db, eid, fileID)
-	if err != nil {
-		return model.RagJobUsageSummary{}
-	}
-	if strings.TrimSpace(runID) == "" {
-		return aggregateWikiJobUsage(jobs)
-	}
+func wikiProgressJobTypes() []string {
+	// File 级进度只统计 Wiki 页面生成；页面向量化使用 page_id 关联，
+	// 不应因为 ID 数值碰撞被误认为文件生成任务。
+	return []string{"wiki_page_generation"}
+}
 
-	summary := model.RagJobUsageSummary{}
-	for _, job := range jobs {
-		if strings.TrimSpace(job.RunID) != strings.TrimSpace(runID) {
-			continue
+func getLatestWikiRunJobsWithSteps(ctx context.Context, db *gorm.DB, eid, relatedID int64) (string, []model.RagJob, map[int64][]model.RagJobStep, error) {
+	var latest model.RagJob
+	if err := db.WithContext(ctx).Where("eid = ? AND related_id = ? AND type IN ?", eid, relatedID, wikiProgressJobTypes()).Order("created_time DESC, job_id DESC").First(&latest).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", []model.RagJob{}, map[int64][]model.RagJobStep{}, nil
 		}
-		summary = addWikiUsage(summary, parseWikiJobUsage(job.Metadata))
+		return "", nil, nil, err
 	}
-	return summary
+	runID := strings.TrimSpace(latest.RunID)
+	query := db.WithContext(ctx).Where("eid = ? AND related_id = ? AND type IN ?", eid, relatedID, wikiProgressJobTypes())
+	if runID != "" {
+		query = query.Where("run_id = ?", runID)
+	} else {
+		query = query.Where("job_id = ?", latest.JobID)
+	}
+	var jobs []model.RagJob
+	if err := query.Order("created_time ASC, job_id ASC").Find(&jobs).Error; err != nil {
+		return "", nil, nil, err
+	}
+	ids := make([]int64, 0, len(jobs))
+	for _, job := range jobs {
+		ids = append(ids, job.JobID)
+	}
+	var steps []model.RagJobStep
+	if len(ids) > 0 {
+		if err := db.WithContext(ctx).Where("job_id IN ?", ids).Order("job_id ASC, step_order ASC").Find(&steps).Error; err != nil {
+			return "", nil, nil, err
+		}
+	}
+	stepMap := make(map[int64][]model.RagJobStep, len(ids))
+	for _, step := range steps {
+		stepMap[step.JobID] = append(stepMap[step.JobID], step)
+	}
+	return runID, jobs, stepMap, nil
+}
+
+func wikiProgressStatus(jobs []model.RagJob) string {
+	hasProcessing, hasPending, hasPaused := false, false, false
+	for _, job := range jobs {
+		switch job.Status {
+		case model.RagJobStatusFailed, model.RagJobStatusCancelled:
+			return model.RagJobStatusFailed
+		case model.RagJobStatusProcessing:
+			hasProcessing = true
+		case model.RagJobStatusPending:
+			hasPending = true
+		case model.RagJobStatusPaused:
+			hasPaused = true
+		case model.RagJobStatusSuccess:
+		default:
+			hasPending = true
+		}
+	}
+	if hasProcessing {
+		return model.RagJobStatusProcessing
+	}
+	if hasPending {
+		return model.RagJobStatusPending
+	}
+	if hasPaused {
+		return "waiting"
+	}
+	return model.RagJobStatusSuccess
+}
+
+func wikiProgressStepName(stepKey string) string {
+	if stepKey == "wiki_page_generation" {
+		return "Wiki 页面生成"
+	}
+	if stepKey == "wiki_page_vectorization" {
+		return "Wiki 页面向量化"
+	}
+	return stepKey
 }
 
 func aggregateWikiJobUsage(jobs []model.RagJob) model.RagJobUsageSummary {

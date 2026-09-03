@@ -13,7 +13,7 @@ import (
 
 const insightPerspectiveDetectionSystemPrompt = `你是录音纪要的活动视角分类器，不是内容摘要助手。
 
-请根据标题和本次录音生成的纪要，判断这次活动最适合采用哪一种决策洞察视角。判断的是“这次录音是什么活动”，不是纪要讨论的行业或主题。
+请根据本次录音生成的纪要，判断这次活动最适合采用哪一种决策洞察视角。判断的是“这次录音是什么活动”，不是纪要讨论的行业或主题。
 
 候选值只能是：
 - external_training：参与外部培训会议
@@ -29,7 +29,8 @@ const insightPerspectiveDetectionSystemPrompt = `你是录音纪要的活动视�
 2. “外部培训”强调参加组织化培训并准备将方法带回组织；“听课”强调一堂课或课程学习本身。无法区分时选择 internal_meeting。
 3. 读书必须有书名、章节、读书分享或围绕书籍内容的明确证据；不要因为出现“学习”就选择 book 或 lecture。
 4. 客户拜访、推介或融资材料介绍，要依据活动实际过程分别选择 sales_visit 或 roadshow；没有明确证据时选择 internal_meeting。
-5. 不要根据个人信息、公司行业或泛化常识猜测。
+5. <source_title> 只是上游根据内容生成的候选标签，不是独立证据；与纪要冲突时以纪要为准。
+6. 不要根据个人信息、公司行业或泛化常识猜测。
 
 只输出 JSON，不要输出 Markdown 或解释：
 {"perspective":"候选值","confidence":0.0}
@@ -55,7 +56,8 @@ func resolveInsightPerspective(ctx context.Context, config *model.RecordingConfi
 	minutes = truncateInsightPerspectiveInput(minutes, insightPerspectiveDetectionMaxRunes)
 	buildRequest := func() *relaymodel.GeneralOpenAIRequest {
 		return &relaymodel.GeneralOpenAIRequest{
-			Model: config.InferenceModelName,
+			Model:     config.InferenceModelName,
+			MaxTokens: 0,
 			Messages: []relaymodel.Message{
 				{Role: "system", Content: insightPerspectiveDetectionSystemPrompt},
 				{Role: "user", Content: fmt.Sprintf("<source_title>\n%s\n</source_title>\n\n<meeting_minutes>\n%s\n</meeting_minutes>", sourceTitle, minutes)},
@@ -65,16 +67,16 @@ func resolveInsightPerspective(ctx context.Context, config *model.RecordingConfi
 
 	raw, err := callLLMWithRetry(ctx, config, buildRequest)
 	if err != nil {
-		logger.Warnf(ctx, "【洞察】自动视角判断失败，回退内部会议: err=%v", err)
+		logger.Warnf(ctx, "【洞察】自动场景判断失败，回退内部会议: err=%v", err)
 		return model.DefaultInsightPerspective
 	}
 
 	perspective, confidence, ok := parseInsightPerspectiveDetection(raw)
 	if !ok {
-		logger.Warnf(ctx, "【洞察】自动视角判断返回无效值，回退内部会议: raw=%q", truncateInsightPerspectiveInput(raw, 256))
+		logger.Warnf(ctx, "【洞察】自动场景判断返回无效值，回退内部会议: raw=%q", truncateInsightPerspectiveInput(raw, 256))
 		return model.DefaultInsightPerspective
 	}
-	logger.Infof(ctx, "【洞察】自动视角判断结果: perspective=%s confidence=%.2f", perspective, confidence)
+	logger.Infof(ctx, "【洞察】自动场景判断结果: perspective=%s confidence=%.2f", perspective, confidence)
 	return perspective
 }
 

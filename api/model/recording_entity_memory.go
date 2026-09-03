@@ -45,6 +45,7 @@ type RecordingMemoryFact struct {
 	AttributesJSON   LongText `json:"attributes" gorm:"type:text"`
 	SourceSegmentIDs LongText `json:"source_segment_ids" gorm:"type:text"`
 	SourceType       string   `json:"source_type" gorm:"size:16;not null;default:'automatic'"`
+	RelatedEntityID  int64    `json:"related_entity_id" gorm:"not null;default:0;index"` // 关联实体 id（0=普通 fact；>0=从其他实体关联过来的 fact，详情按被关联实体回填）
 	OccurredAt       int64    `json:"occurred_at" gorm:"not null;default:0;index:idx_recording_memory_fact_scope,priority:4"`
 	IsDeleted        bool     `json:"is_deleted" gorm:"not null;default:false;index:idx_recording_memory_fact_scope,priority:5"`
 	BaseModel

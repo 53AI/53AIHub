@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -24,28 +25,48 @@ type PipelineResult struct {
 	InsightPage    PipelineStepAction `json:"insight_page"`
 }
 
-func getStageStatuses(fileID int64) (minutes, insights, page string) {
+func getStageStatuses(fileID int64) (minutes, insights, page, pageFormat string) {
 	file, err := model.GetFileByIDOlny(fileID)
 	if err != nil || file.CleaningRuleInfo == "" {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	var info model.FileCleaningRuleInfo
 	json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
-	return info.MeetingMinutesStatus, info.InsightsStatus, info.InsightPageStatus
+	return info.MeetingMinutesStatus, info.InsightsStatus, info.InsightPageStatus, info.InsightPageFormat
+}
+
+func isLegacyInsight(insightSummary, pageFormat string) bool {
+	return strings.TrimSpace(insightSummary) != "" && pageFormat != insightPageHTMLFormat
 }
 
 func RunRecordingPipeline(ctx context.Context, eid, fileID, userID int64) (*PipelineResult, error) {
 	// 权限放开：继续生成管线供其他知识库（团队/共享库）使用，只要求库查看权限，
 	// 不再要求文件创建者是当前用户；非创建者触发时生成函数内部以文件创建者为记忆归属。
-	if _, err := GetViewableRecordingFile(ctx, eid, userID, fileID); err != nil {
+	file, err := GetViewableRecordingFile(ctx, eid, userID, fileID)
+	if err != nil {
 		return nil, fmt.Errorf("文件不存在: %w", err)
 	}
+	if err := requireRecordingOrigin(file); err != nil {
+		return nil, fmt.Errorf("非安心录文件: %w", err)
+	}
 
-	minutesStatus, insightsStatus, pageStatus := getStageStatuses(fileID)
+	minutesStatus, insightsStatus, pageStatus, pageFormat := getStageStatuses(fileID)
+	// An existing insight without the new format marker is historical content.
+	// Keep it on the original renderer and do not let a status repair silently
+	// replace it with a newly generated HTML page. The explicit background
+	// regeneration endpoint sets the marker before starting a new generation.
+	legacyInsight := false
+	if file, err := model.GetFileByIDOlny(fileID); err == nil && file != nil {
+		legacyInsight = isLegacyInsight(string(file.InsightSummary), pageFormat)
+	}
 
 	needMinutes := minutesStatus == "pending" || minutesStatus == "failed" || minutesStatus == ""
 	needInsights := insightsStatus == "pending" || insightsStatus == "failed" || insightsStatus == ""
 	needPage := pageStatus == "pending" || pageStatus == "failed" || pageStatus == ""
+	if legacyInsight {
+		needInsights = false
+		needPage = false
+	}
 
 	result := &PipelineResult{FileID: fileID}
 
@@ -84,7 +105,7 @@ func RunRecordingPipeline(ctx context.Context, eid, fileID, userID int64) (*Pipe
 				logger.Errorf(pipelineCtx, "【管线】纪要生成失败 fileID=%d err=%v", fileID, err)
 				return
 			}
-			mStatus, _, _ := getStageStatuses(fileID)
+			mStatus, _, _, _ := getStageStatuses(fileID)
 			if mStatus != "completed" {
 				logger.Infof(pipelineCtx, "【管线】纪要状态为 %s，不继续 fileID=%d", mStatus, fileID)
 				return
@@ -94,7 +115,7 @@ func RunRecordingPipeline(ctx context.Context, eid, fileID, userID int64) (*Pipe
 		if needInsights {
 			logger.Infof(pipelineCtx, "【管线】开始生成洞察 fileID=%d", fileID)
 			GenerateInsights(pipelineCtx, eid, fileID, userID)
-			iStatus, _, _ := getStageStatuses(fileID)
+			_, iStatus, _, _ := getStageStatuses(fileID)
 			if iStatus != "completed" {
 				logger.Errorf(pipelineCtx, "【管线】洞察生成失败 fileID=%d", fileID)
 				return

@@ -187,20 +187,56 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	prevStatus := strings.ToLower(strings.TrimSpace(info.Status))
 
 	var jobs []RagJob
-	if err := db.Select("status, created_time, related_id, type, pipeline_id, runtime_profile_json").Where("run_id = ?", info.RunID).Order("job_id ASC").Find(&jobs).Error; err != nil {
+	// Wiki jobs use the source RAG run ID for traceability, but their progress
+	// belongs to the standalone Wiki pipeline and must never affect File's RAG
+	// status. Keep this filter here as the single guard for every caller of the
+	// file-status refresh helper (including graph-pipeline triggers).
+	if err := db.Select("status, created_time, related_id, type, pipeline_id, runtime_profile_json").
+		Where("run_id = ?", info.RunID).Order("job_id ASC").Find(&jobs).Error; err != nil {
 		return err
 	}
+	// 独立管线 run（图谱/wiki 独立任务）只含独立管线 job，不应覆盖文件的 RAG 管线状态：
+	// 这类 run 的 status 变化（processing/failed/success）只影响图谱/wiki 自身进度，
+	// 若写入文件的 cleaning_rule_info 会导致前端只显示独立管线信息而丢失 RAG 管线信息。
+	// 基于未过滤的 jobs 判断：纯独立 run 直接返回，避免 processing/failed 覆盖 RAG 状态。
+	if len(jobs) > 0 {
+		allStandalone := true
+		for _, j := range jobs {
+			if !isStandalonePipelineJobType(j.Type) {
+				allStandalone = false
+				break
+			}
+		}
+		if allStandalone {
+			return nil
+		}
+	}
+
+	filteredJobs := jobs[:0]
+	for _, job := range jobs {
+		if IsStandalonePipelineJobType(job.Type) {
+			continue
+		}
+		filteredJobs = append(filteredJobs, job)
+	}
+	jobs = filteredJobs
 
 	successCount := 0
 	failureCount := 0
 	pausedCount := 0
 	pendingCount := 0
 	processingCount := 0
+	countedJobs := 0
 	hasInterrupted := false
 	var earliestStart int64 = 0
 	pipelineID := int64(0)
 
 	for _, job := range jobs {
+		// 独立管线 job（图谱/wiki 独立任务）不参与文件详情统计
+		if isStandalonePipelineJobType(job.Type) {
+			continue
+		}
+		countedJobs++
 		if job.RelatedId > 0 && job.RelatedId != fileID {
 			logger.Warn(context.Background(), fmt.Sprintf("Job %d has RelatedId %d, expected %d (RunID: %s)", job.JobID, job.RelatedId, fileID, info.RunID))
 		}
@@ -229,9 +265,8 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	if info.StartTime == 0 && earliestStart > 0 {
 		info.StartTime = earliestStart
 	}
-	totalJobs := len(jobs)
-	if info.TotalSteps == 0 && totalJobs > 0 {
-		info.TotalSteps = totalJobs
+	if info.TotalSteps == 0 && countedJobs > 0 {
+		info.TotalSteps = countedJobs
 	}
 	if pipelineID == 0 && strings.TrimSpace(info.PipelineID) != "" {
 		if decodedID, err := hashids.TryParseID(strings.TrimSpace(info.PipelineID)); err == nil && decodedID > 0 {
@@ -250,6 +285,9 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	currentIndex := -1
 	for i := range jobs {
 		job := &jobs[i]
+		if isStandalonePipelineJobType(job.Type) {
+			continue
+		}
 		if job.Status != RagJobStatusSuccess {
 			currentJob = job
 			currentIndex = i
@@ -270,6 +308,9 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	if currentIndex >= 0 {
 		for i := currentIndex + 1; i < len(jobs); i++ {
 			job := &jobs[i]
+			if isStandalonePipelineJobType(job.Type) {
+				continue
+			}
 			if job.Status == RagJobStatusPending || job.Status == RagJobStatusProcessing || job.Status == RagJobStatusPaused {
 				nextJob = job
 				break
@@ -409,13 +450,26 @@ func ExtractFileIDFromJob(job *RagJob) int64 {
 	return 0
 }
 
+// isStandalonePipelineJobType 判断是否为独立管线 job 类型（图谱/ Wiki 独立任务）。
+// 独立管线 job 不计入文件详情（cleaning_rule_info）的 RAG 管线统计，避免污染文件 run_status。
+func isStandalonePipelineJobType(jobType string) bool {
+	switch jobType {
+	case "graph_pipeline_generation", "wiki_page_vectorization", "wiki_page_generation":
+		return true
+	}
+	return false
+}
+
 func getStepDisplayName(stepKey string) string {
 	stepNames := map[string]string{
-		"document_parsing":   "文档解析",
-		"content_cleaning":   "内容清洗",
-		"document_chunking":  "文档分块",
-		"vector_indexing":    "向量化索引",
-		"summary_generation": "摘要生成",
+		"document_parsing":          "文档解析",
+		"content_cleaning":          "内容清洗",
+		"document_chunking":         "文档分块",
+		"vector_indexing":           "向量化索引",
+		"summary_generation":        "摘要生成",
+		"graph_generation":          "图谱生成",
+		"graph_pipeline_generation": "图谱生成",
+		"wiki_page_generation":      "Wiki 生成",
 	}
 	if name, ok := stepNames[stepKey]; ok {
 		return name

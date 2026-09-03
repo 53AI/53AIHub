@@ -25,6 +25,7 @@ const (
 	RagJobStepStatusProcessing = "processing" // 处理中
 	RagJobStepStatusSuccess    = "success"    // 成功
 	RagJobStepStatusFailed     = "failed"     // 失败
+	RagJobStepStatusCancelled  = "cancelled"  // 已取消
 )
 
 // TableName 设置表名

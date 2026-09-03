@@ -76,6 +76,12 @@ type eidWorkerPool struct {
 	wg         sync.WaitGroup
 }
 
+const (
+	embeddingObservabilityDailyRetention  = 30 * 24 * time.Hour
+	embeddingObservabilityActiveRetention = 5 * time.Minute
+	embeddingBatchWaitDefault             = 50 * time.Millisecond
+)
+
 // NewEmbeddingQueue constructs a queue with redis client and options
 func NewEmbeddingQueue(rdb redis.Cmdable, opts WorkerOptions) *embeddingRedisQueue {
 	if opts.StreamPrefix == "" {
@@ -210,9 +216,12 @@ func (q *embeddingRedisQueue) recordAPICall(ctx context.Context, eid int64, elap
 	pipe.Incr(ctx, obsCallsKey(eid, today))
 	pipe.IncrBy(ctx, obsLatencyKey(eid, today), elapsedMs)
 	pipe.IncrBy(ctx, obsChunksKey(eid, today), int64(chunkCount))
+	pipe.Expire(ctx, obsCallsKey(eid, today), embeddingObservabilityDailyRetention)
+	pipe.Expire(ctx, obsLatencyKey(eid, today), embeddingObservabilityDailyRetention)
+	pipe.Expire(ctx, obsChunksKey(eid, today), embeddingObservabilityDailyRetention)
 	pipe.ZAdd(ctx, obsCallTimestampsKey(eid), &redis.Z{Score: float64(now), Member: member})
 	pipe.Expire(ctx, obsCallTimestampsKey(eid), 3600*time.Second)
-	pipe.Set(ctx, obsLastCallTsKey(eid), now, 0)
+	pipe.Set(ctx, obsLastCallTsKey(eid), now, embeddingObservabilityDailyRetention)
 	pipe.Exec(ctx)
 }
 
@@ -227,8 +236,9 @@ func (q *embeddingRedisQueue) recordActiveFile(ctx context.Context, eid, fileID 
 		"started_at": time.Now().UnixMilli(),
 	})
 	pipe := q.rdb.Pipeline()
-	pipe.Set(ctx, obsActiveKey(eid, fileID), string(info), 300*time.Second)
+	pipe.Set(ctx, obsActiveKey(eid, fileID), string(info), embeddingObservabilityActiveRetention)
 	pipe.SAdd(ctx, obsActiveSetKey(eid), fileID)
+	pipe.Expire(ctx, obsActiveSetKey(eid), embeddingObservabilityActiveRetention)
 	pipe.Exec(ctx)
 }
 
@@ -459,7 +469,6 @@ func (q *embeddingRedisQueue) Shutdown(ctx context.Context) error {
 }
 
 func (q *embeddingRedisQueue) consumeLoop(ctx context.Context, eid int64, workerName string) {
-	listKey := q.getListKey(eid)
 	batchSize := getEmbeddingBatchSize()
 	for {
 		select {
@@ -467,27 +476,13 @@ func (q *embeddingRedisQueue) consumeLoop(ctx context.Context, eid int64, worker
 			return
 		default:
 		}
-		val, err := q.rdb.BRPop(ctx, q.opts.ReadBlock, listKey).Result()
+		payloads, err := q.collectEmbeddingPayloads(ctx, eid, batchSize, getEmbeddingBatchWait())
 		if err != nil {
 			if err != redis.Nil && !errors.Is(err, context.Canceled) {
 				logger.Warn(context.TODO(), fmt.Sprintf("[embReadFail][eid=%d]%+v", eid, err))
 				time.Sleep(500 * time.Millisecond)
 			}
 			continue
-		}
-		if len(val) < 2 {
-			continue
-		}
-
-		payloads := []string{val[1]}
-		if batchSize > 1 {
-			for i := 1; i < batchSize; i++ {
-				more, err := q.rdb.RPop(ctx, listKey).Result()
-				if err != nil {
-					break
-				}
-				payloads = append(payloads, more)
-			}
 		}
 
 		// 标记当前 worker 正在处理的任务（可观测）
@@ -508,6 +503,46 @@ func (q *embeddingRedisQueue) consumeLoop(ctx context.Context, eid int64, worker
 			q.clearCurrentTask(ctx, eid, workerName, firstTask.RetrievalChunkID)
 		}
 	}
+}
+
+func (q *embeddingRedisQueue) collectEmbeddingPayloads(ctx context.Context, eid int64, batchSize int, wait time.Duration) ([]string, error) {
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+	if wait <= 0 {
+		wait = embeddingBatchWaitDefault
+	}
+	readBlock := q.opts.ReadBlock
+	if readBlock <= 0 {
+		readBlock = wait
+	}
+	listKey := q.getListKey(eid)
+	first, err := q.rdb.BRPop(ctx, readBlock, listKey).Result()
+	if err != nil {
+		return nil, err
+	}
+	if len(first) < 2 {
+		return nil, redis.Nil
+	}
+	payloads := []string{first[1]}
+	deadline := time.Now().Add(wait)
+	for len(payloads) < batchSize {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		more, err := q.rdb.BRPop(ctx, remaining, listKey).Result()
+		if err != nil {
+			if err == redis.Nil {
+				break
+			}
+			return payloads, err
+		}
+		if len(more) >= 2 {
+			payloads = append(payloads, more[1])
+		}
+	}
+	return payloads, nil
 }
 
 func (q *embeddingRedisQueue) handlePayload(ctx context.Context, eid int64, payloadStr string) {
@@ -749,18 +784,20 @@ func (q *embeddingRedisQueue) processFileBatch(ctx context.Context, eid int64, f
 
 	q.updateTaskStep(ctx, eid, workerName, "存储向量")
 
-	// 逐个存储到向量库并更新状态
+	chunks := make([]*model.RetrievalChunk, len(validChunks))
 	for i, vc := range validChunks {
-		if i >= len(vectors) {
-			break
-		}
-		vectorID, storeErr := svc.storeRetrievalChunkToVectorDB(eid, vc.chunk, vectors[i])
-		if storeErr != nil {
+		chunks[i] = vc.chunk
+	}
+	vectorIDs, storeErr := svc.storeRetrievalChunkBatchToVectorDB(eid, chunks, vectors)
+	if storeErr != nil {
+		for _, vc := range validChunks {
 			svc.UpdateRetrievalChunkEmbeddingStatus(vc.chunk.ID, model.RetrievalChunkEmbeddingStatusFailed, "", storeErr.Error())
 			_ = q.rdb.Del(ctx, q.dedupKey(eid, vc.task.RetrievalChunkID)).Err()
-			continue
 		}
-		if err := svc.updateRetrievalChunkVectorInfo(vc.chunk.ID, vectorID); err != nil {
+		return
+	}
+	for i, vc := range validChunks {
+		if err := svc.updateRetrievalChunkVectorInfo(vc.chunk.ID, vectorIDs[i]); err != nil {
 			svc.UpdateRetrievalChunkEmbeddingStatus(vc.chunk.ID, model.RetrievalChunkEmbeddingStatusFailed, "", err.Error())
 			_ = q.rdb.Del(ctx, q.dedupKey(eid, vc.task.RetrievalChunkID)).Err()
 			continue
@@ -784,6 +821,16 @@ func getEmbeddingBatchSize() int {
 		}
 	}
 	return 5
+}
+
+func getEmbeddingBatchWait() time.Duration {
+	value := os.Getenv("EMBEDDING_BATCH_WAIT_MS")
+	if value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			return time.Duration(n) * time.Millisecond
+		}
+	}
+	return embeddingBatchWaitDefault
 }
 
 func (q *embeddingRedisQueue) pendingRecoveryLoop(ctx context.Context, eid int64) {
@@ -937,9 +984,12 @@ func recordVectorStoreCall(eid int64, batchSize int, elapsedMs int64) {
 	pipe.Incr(ctx, obsVSCallsKey(eid, today))
 	pipe.IncrBy(ctx, obsVSLatencyKey(eid, today), elapsedMs)
 	pipe.IncrBy(ctx, obsVSVectorsKey(eid, today), int64(batchSize))
+	pipe.Expire(ctx, obsVSCallsKey(eid, today), embeddingObservabilityDailyRetention)
+	pipe.Expire(ctx, obsVSLatencyKey(eid, today), embeddingObservabilityDailyRetention)
+	pipe.Expire(ctx, obsVSVectorsKey(eid, today), embeddingObservabilityDailyRetention)
 	pipe.ZAdd(ctx, obsVSCallTimestampsKey(eid), &redis.Z{Score: float64(now), Member: member})
 	pipe.Expire(ctx, obsVSCallTimestampsKey(eid), 3600*time.Second)
-	pipe.Set(ctx, obsVSLastCallTsKey(eid), now, 0)
+	pipe.Set(ctx, obsVSLastCallTsKey(eid), now, embeddingObservabilityDailyRetention)
 	pipe.Exec(ctx)
 }
 

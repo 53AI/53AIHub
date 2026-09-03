@@ -24,6 +24,8 @@ const (
 - 如果一句话源自多个上下文，请列出所有相关的引用编号，例如：[Source:x-y][Source:x-y]。切记不要将引用集中在最后返回引用编号，而是在答案对应部分列出。
 - ***引用编号应尽可能地返回***，但请勿重复上下文。
 - 引用编号格式固定为 [Source:x-y]，请勿自行修改。
+- 只能使用当前搜索结果和“可用引用编号”中列出的 Source ID；不得生成、修改或推测不存在的 Source ID。
+- 如果某个判断没有对应的 Source ID，不要自行创建引用标记。
 
 在回答时，请注意以下几点：
 - 你是由 53AI 精心打造。
@@ -177,6 +179,9 @@ type SourceReference struct {
 	ChunkType     string  `json:"chunk_type"`
 	Content       string  `json:"content"`
 	Score         float64 `json:"score"`
+	RawScore      float64 `json:"raw_score,omitempty"`
+	SourceRank    int     `json:"source_rank,omitempty"`
+	FusionScore   float64 `json:"fusion_score,omitempty"`
 	StartPosition int     `json:"start_position,omitempty"`
 	EndPosition   int     `json:"end_position,omitempty"`
 	URL           string  `json:"url,omitempty"`

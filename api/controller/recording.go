@@ -987,6 +987,44 @@ func GetFileInsightBackground(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(background))
 }
 
+// PromoteFileInsightExternalConstraints godoc
+// @Summary 将当前洞察补充背景保存为长期记忆
+// @Description 只有用户明确确认已保存的当前文件补充背景后，才升级为可跨会议召回的用户确认记忆
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Param request body service.PromoteInsightExternalConstraintsRequest true "待升级的补充背景"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/recordings/files/{file_id}/memory-promotions [post]
+func PromoteFileInsightExternalConstraints(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	var req service.PromoteInsightExternalConstraintsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	err = service.PromoteInsightExternalConstraints(c.Request.Context(), config.GetEID(c), config.GetUserId(c), fileID, req.ExternalConstraints)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInsightContextForbidden):
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该洞察背景"))
+		case errors.Is(err, service.ErrInsightContextEmpty), errors.Is(err, service.ErrInsightContextNotSaved):
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		default:
+			logger.SysErrorf("【洞察】升级补充背景记忆失败 fileID=%d err=%v", fileID, err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("保存洞察补充背景失败"))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"ok": true}))
+}
+
 // ChatFileInsightWorkshop godoc
 // @Summary 洞察背景协同对话
 // @Description 基于当前背景与纪要进行补充说明对话，不直接覆盖洞察结果
@@ -1045,8 +1083,8 @@ func GetMyQueuedCount(c *gin.Context) {
 }
 
 // GetFileTranscription godoc
-// @Summary 获取录音文件的转写原文
-// @Description 双模式返回转写：已反转读 Summary(-1)，未反转读 FileBody
+// @Summary 获取录音文件的转写 Markdown
+// @Description 返回带说话人/时间戳的转写 Markdown（复用导出渲染逻辑）；原始 JSON 通过文件摘要接口获取
 // @Tags 录音
 // @Produce json
 // @Security BearerAuth
@@ -1061,7 +1099,8 @@ func GetFileTranscription(c *gin.Context) {
 	}
 	eid := config.GetEID(c)
 
-	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
+	file, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID)
+	if err != nil {
 		if errors.Is(err, service.ErrRecordingFileForbidden) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
 			return
@@ -1075,10 +1114,22 @@ func GetFileTranscription(c *gin.Context) {
 		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 		return
 	}
+	// D3：GET /transcription 保留返回转写 Markdown（与导出接口一致，前端转写展示直接渲染）
+	md, err := service.RenderTranscriptMarkdown(text, file.GetAccurateFileName())
+	if err != nil {
+		logger.SysErrorf("【录音】渲染转写 Markdown 失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+		c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
+			"file_id":   fileID,
+			"content":   text,
+			"file_name": file.GetAccurateFileName(),
+		}))
+		return
+	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
-		"file_id": fileID,
-		"content": text,
+		"file_id":   fileID,
+		"content":   md,
+		"file_name": file.GetAccurateFileName(),
 	}))
 }
 
@@ -1196,6 +1247,10 @@ func RegenerateInsights(c *gin.Context) {
 	if err := service.RegenerateInsightsWithContext(c.Request.Context(), eid, userID, fileID, request); err != nil {
 		if errors.Is(err, service.ErrInsightContextForbidden) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该文件"))
+			return
+		}
+		if errors.Is(err, service.ErrInvalidInsightPerspective) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不支持的洞察场景"))
 			return
 		}
 		if errors.Is(err, service.ErrInsightContextEmpty) {

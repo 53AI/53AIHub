@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
@@ -44,16 +45,17 @@ type AdminSkillListQuery struct {
 
 // AdminUpdateSkillRequest 后台更新技能请求参数
 type AdminUpdateSkillRequest struct {
-	DisplayName          *string `json:"display_name"`           // 技能显示名称
-	Description          *string `json:"description"`            // 技能描述
-	UsageGuide           *string `json:"usage_guide"`            // 使用指南
-	Version              *string `json:"version"`                // 版本号
-	Sort                 *int64  `json:"sort"`                   // 排序权重
-	AdminStatus          *string `json:"admin_status"`           // 管理状态：enabled/disabled
-	GroupIDs             []int64 `json:"group_ids"`              // 权限分组ID列表
-	SubscriptionGroupIDs []int64 `json:"subscription_group_ids"` // 订阅分组ID列表
-	UserGroupIDs         []int64 `json:"user_group_ids"`         // 用户分组ID列表
-	Logo                 *string `json:"logo"`                   // 技能 logo URL
+	DisplayName          *string                    `json:"display_name"`           // 技能显示名称
+	Description          *string                    `json:"description"`            // 技能描述
+	UsageGuide           *string                    `json:"usage_guide"`            // 使用指南
+	Version              *string                    `json:"version"`                // 版本号
+	Sort                 *int64                     `json:"sort"`                   // 排序权重
+	AdminStatus          *string                    `json:"admin_status"`           // 管理状态：enabled/disabled
+	GroupIDs             []int64                    `json:"group_ids"`              // 权限分组ID列表
+	SubscriptionGroupIDs []int64                    `json:"subscription_group_ids"` // 订阅分组ID列表
+	UserGroupIDs         []int64                    `json:"user_group_ids"`         // 用户分组ID列表
+	Scopes               *[]model.ResourceScopeItem `json:"scopes"`
+	Logo                 *string                    `json:"logo"` // 技能 logo URL
 }
 
 type AdminUpdateSkillStatusRequest struct {
@@ -66,6 +68,12 @@ type AdminSkillDetailResponse struct {
 	GitHubURL          string              `json:"github_url,omitempty"`
 	LatestScanJob      *model.SkillScanJob `json:"latest_scan_job,omitempty"`
 	PermissionGroupIDs []int64             `json:"permission_group_ids"`
+}
+
+type AdminSkillAccessResponse struct {
+	UserID       int64                    `json:"user_id"`
+	Accessible   bool                     `json:"accessible"`
+	MatchedScope *model.ResourceScopeItem `json:"matched_scope,omitempty"`
 }
 
 type AdminSkillImportJobResponse struct {
@@ -386,6 +394,50 @@ func AdminGetSkillLibrary(c *gin.Context) {
 	}))
 }
 
+// AdminCheckSkillLibraryAccess godoc
+// @Summary 检查指定用户的技能权限
+// @Description 检查指定企业用户是否有权限访问技能库
+// @Tags 技能库-后台
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "技能ID"
+// @Param target_user_id query int true "目标用户ID"
+// @Success 200 {object} model.CommonResponse{data=AdminSkillAccessResponse}
+// @Router /api/admin/skill-library/{id}/access [get]
+func AdminCheckSkillLibraryAccess(c *gin.Context) {
+	skillID, ok := middleware.MustParseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	targetUserID, err := hashids.TryParseID(c.Query("target_user_id"))
+	if err != nil || targetUserID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	eid := config.GetEID(c)
+	svc := service.NewSkillLibraryService()
+	skillInfo, _, err := svc.GetSkillByIDForAdmin(c.Request.Context(), eid, skillID)
+	if err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+	if skillInfo == nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+		return
+	}
+	result, err := service.GetResourceScopeAccess(targetUserID, eid, skillID, model.ResourceTypeSkillLibrary)
+	if err != nil {
+		toSkillAdminErrorResponse(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(&AdminSkillAccessResponse{
+		UserID:       targetUserID,
+		Accessible:   result.Accessible,
+		MatchedScope: result.MatchedScope,
+	}))
+}
+
 // AdminUpdateSkillLibrary godoc
 // @Summary 后台更新技能信息
 // @Description 更新技能基础信息、排序、启停状态、权限分组配置及环境变量
@@ -412,10 +464,9 @@ func AdminUpdateSkillLibrary(c *gin.Context) {
 
 	eid := config.GetEID(c)
 	svc := service.NewSkillLibraryService()
-	// 只有当至少有一个分组字段不为空时，才更新权限分组
-	// 否则传 nil，表示不更新权限分组（避免误清空）
+	// 只有传入分组或显式 scopes 时才更新权限配置，避免未传权限字段时误清空。
 	var allGroupIDs []int64
-	if len(req.GroupIDs) > 0 || len(req.SubscriptionGroupIDs) > 0 || len(req.UserGroupIDs) > 0 {
+	if len(req.GroupIDs) > 0 || len(req.SubscriptionGroupIDs) > 0 || len(req.UserGroupIDs) > 0 || req.Scopes != nil {
 		allGroupIDs = make([]int64, 0, len(req.GroupIDs)+len(req.SubscriptionGroupIDs)+len(req.UserGroupIDs))
 		allGroupIDs = append(allGroupIDs, req.GroupIDs...)
 		allGroupIDs = append(allGroupIDs, req.SubscriptionGroupIDs...)
@@ -430,6 +481,8 @@ func AdminUpdateSkillLibrary(c *gin.Context) {
 		Version:            req.Version,
 		AdminStatus:        req.AdminStatus,
 		PermissionGroupIDs: allGroupIDs,
+		Scopes:             dereferenceResourceScopes(req.Scopes),
+		ScopesProvided:     req.Scopes != nil,
 	})
 	if err != nil {
 		toSkillAdminErrorResponse(c, err)

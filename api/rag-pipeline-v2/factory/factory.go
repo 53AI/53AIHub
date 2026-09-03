@@ -230,11 +230,25 @@ func (f *JobFactory) CreateJobsForFile(ctx context.Context, eid int64, fileID in
 	}
 
 	jobs, createErr := f.CreateJobsFromProfile(ctx, eid, profile, 0, string(newStartParams), runID)
-	if err := model.UpdateFileCleaningRuleInfoHelper(f.db, fileID, runID, ""); err != nil {
-		fmt.Printf("Warning: Failed to initialize cleaning rule info for file %d: %v\n", fileID, err)
+	if !allJobsAreWikiJobs(jobs) {
+		if err := model.UpdateFileCleaningRuleInfoHelper(f.db, fileID, runID, ""); err != nil {
+			fmt.Printf("Warning: Failed to initialize cleaning rule info for file %d: %v\n", fileID, err)
+		}
 	}
 
 	return jobs, createErr
+}
+
+func allJobsAreWikiJobs(jobs []*model.RagJob) bool {
+	if len(jobs) == 0 {
+		return false
+	}
+	for _, job := range jobs {
+		if job == nil || !model.IsStandalonePipelineJobType(job.Type) {
+			return false
+		}
+	}
+	return true
 }
 
 func (f *JobFactory) CreateJobFromProfileStep(ctx context.Context, eid int64, profile v2model.RuntimeProfile, stepIndex int, startParameters string, runID string) (*model.RagJob, error) {
@@ -368,15 +382,35 @@ func (f *JobFactory) EnqueueNextJob(ctx context.Context, runID string, currentSt
 
 	// 只有自动步骤才入队，手动步骤保持 paused 状态
 	if runMode == v2model.RunModeAuto {
-		// 先更新 DB，再入队 Redis
-		// 若 Redis 入队失败，回滚 DB 状态，避免 job 卡在 pending 但没入队
+		// 摘除单步执行标记：被引擎自动推进入队的步骤，执行完成后必须能继续触发
+		// 下一步。否则批量运行（单步执行）创建的步骤会带着 __single_step_execution
+		// 跑完即止，链条尾部（如 graph_generation）断成孤儿 pending，永远不执行。
 		oldStatus := nextJob.Status
-		if err := f.db.Model(&nextJob).Update("status", model.RagJobStatusPending).Error; err != nil {
+		oldStartParams := nextJob.StartParameters
+		updates := map[string]interface{}{
+			"status": model.RagJobStatusPending,
+		}
+		if _, ok := params["__single_step_execution"]; ok {
+			delete(params, "__single_step_execution")
+			newStartParams, err := json.Marshal(params)
+			if err != nil {
+				return fmt.Errorf("序列化启动参数失败: %w", err)
+			}
+			updates["start_parameters"] = string(newStartParams)
+			nextJob.StartParameters = string(newStartParams)
+		}
+
+		// 先更新 DB，再入队 Redis
+		// 若 Redis 入队失败，回滚 DB 状态与参数，避免 job 卡在 pending 但没入队
+		if err := f.db.Model(&nextJob).Updates(updates).Error; err != nil {
 			return err
 		}
 		if err := f.enqueueJob(ctx, &nextJob); err != nil {
-			// 回滚 DB 状态到原来的 paused
-			f.db.Model(&nextJob).Update("status", oldStatus)
+			rollback := map[string]interface{}{"status": oldStatus}
+			if _, changed := updates["start_parameters"]; changed {
+				rollback["start_parameters"] = oldStartParams
+			}
+			f.db.Model(&nextJob).Updates(rollback)
 			return fmt.Errorf("入队失败: %w", err)
 		}
 		return nil

@@ -334,7 +334,7 @@ func (s *wikiPageEditService) UpdatePage(ctx context.Context, req WikiUpdatePage
 	}
 	if result != nil && result.Page != nil && result.VersionID > 0 {
 		if _, enqueueErr := createWikiPageVectorizationJob(ctx, s.db, common.RDB, req.Eid, result.Page.ID, result.VersionID, false, "manual_update"); enqueueErr != nil {
-			logger.Warnf(ctx, "【Wiki向量化】编辑后创建任务失败: eid=%d page_id=%d version_id=%d err=%v", req.Eid, result.Page.ID, result.VersionID, enqueueErr)
+			logger.Warnf(ctx, "【Wiki生成】 编辑后创建任务失败: eid=%d page_id=%d version_id=%d err=%v", req.Eid, result.Page.ID, result.VersionID, enqueueErr)
 		}
 	}
 	return result, nil
@@ -856,7 +856,7 @@ func (s *wikiPageEditService) PublishVersion(ctx context.Context, req WikiPublis
 	dto.PublishKind = model.WikiPagePublishKindManual
 	dto.PublishedTime = now
 	if _, enqueueErr := createWikiPageVectorizationJob(ctx, s.db, common.RDB, req.Eid, page.ID, version.ID, false, "manual_publish"); enqueueErr != nil {
-		logger.Errorf(ctx, "【Wiki向量化】手动发布后创建任务失败: eid=%d page_id=%d version_id=%d err=%v", req.Eid, page.ID, version.ID, enqueueErr)
+		logger.Errorf(ctx, "【Wiki生成】 手动发布后创建任务失败: eid=%d page_id=%d version_id=%d err=%v", req.Eid, page.ID, version.ID, enqueueErr)
 	}
 	return &dto, nil
 }

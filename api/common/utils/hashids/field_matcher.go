@@ -15,6 +15,7 @@ type IDFieldMatcher struct {
 var DefaultIDFieldMatcher = &IDFieldMatcher{
 	exactPatterns: []string{
 		"id",
+		"related_entity_id",
 		// "user_id",
 		// "userId",
 		"agent_id",

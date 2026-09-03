@@ -180,7 +180,26 @@ func GetLibraryByID(eid int64, id int64) (*Library, error) {
 			return &library, nil
 		}
 	}
-	return nil, gorm.ErrRecordNotFound
+
+	// 快照缓存有 24h TTL，多实例共享同一 DB 时缓存可能滞后（新创建/迁移的知识库缺失）。
+	// 缓存未命中不能直接判定"记录不存在"，回退直查 DB；若 DB 中存在（缓存确实过期），
+	// 触发一次缓存失效让快照重新加载，避免后续查询继续命中过期快照。
+	library, dbErr := getLibraryByIDFromDB(eid, id)
+	if dbErr != nil {
+		return nil, dbErr
+	}
+	invalidateLibraryCache(eid)
+	return library, nil
+}
+
+// getLibraryByIDFromDB 直接按 eid+id 查库，绕过知识库快照缓存
+func getLibraryByIDFromDB(eid int64, id int64) (*Library, error) {
+	var library Library
+	err := DB.Where("eid = ? AND id = ?", eid, id).First(&library).Error
+	if err != nil {
+		return nil, err
+	}
+	return &library, nil
 }
 
 // GetLibrariesByIDs 根据ID列表批量获取知识库
@@ -262,7 +281,15 @@ func GetLibraryByUUID(eid int64, uuid string) (*Library, error) {
 			return &library, nil
 		}
 	}
-	return nil, gorm.ErrRecordNotFound
+
+	// 与 GetLibraryByID 相同：快照缓存可能滞后，未命中时回退直查 DB
+	var library Library
+	err = DB.Where("eid = ? AND uuid = ?", eid, uuid).First(&library).Error
+	if err != nil {
+		return nil, err
+	}
+	invalidateLibraryCache(eid)
+	return &library, nil
 }
 
 // GetLibraryByName 根据名称获取知识库

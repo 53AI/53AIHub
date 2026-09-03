@@ -149,11 +149,11 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 	// 先计算完整内容长度并生成分块列表
 	for i, chunk := range chunks {
 		chunkRefID := fmt.Sprintf("%d-%d", fileID, i+1)
-		chunkWithSource := fmt.Sprintf("[Source:%s]%s", chunkRefID, chunk.Content)
+		chunkWithSource := fmt.Sprintf("[Source:%s]%s", chunkRefID, sanitizeRetrievalContent(chunk.Content))
 		fullContentLength += len(chunkWithSource)
 
 		// 生成分块预览信息
-		contentPreview := chunk.Content
+		contentPreview := sanitizeRetrievalContent(chunk.Content)
 		if len(contentPreview) > 100 {
 			contentPreview = contentPreview[:100] + "..."
 		}
@@ -179,7 +179,7 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 	// 拼接分块内容，确保不超过最大长度
 	for i, chunk := range chunks {
 		chunkRefID := fmt.Sprintf("%d-%d", 1, i+1) // 使用 fileID-index 格式
-		chunkWithSource := fmt.Sprintf("[Source:%s]%s", chunkRefID, chunk.Content)
+		chunkWithSource := fmt.Sprintf("[Source:%s]%s", chunkRefID, sanitizeRetrievalContent(chunk.Content))
 		chunkLength := len(chunkWithSource)
 
 		// 检查是否超过最大长度
@@ -297,6 +297,7 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 		if isUsed {
 			chunkRefID := fmt.Sprintf("%d-%d", 1, i+1) // 永远为 1-索引
 			source := rag.SourceReference{
+				SourceType:        "document",
 				ReferenceID:       chunkRefID,
 				ChunkID:           chunk.ID,
 				FileID:            chunk.FileID,

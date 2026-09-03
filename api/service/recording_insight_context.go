@@ -25,6 +25,7 @@ const (
 var (
 	ErrInsightContextForbidden = errors.New("无权修改该文件的洞察背景")
 	ErrInsightContextEmpty     = errors.New("补充说明不能为空")
+	ErrInsightContextNotSaved  = errors.New("补充背景尚未保存，不能升级为长期记忆")
 	ErrInsightGenerationStale  = errors.New("洞察生成版本已更新")
 )
 
@@ -36,10 +37,11 @@ type InsightBackground struct {
 	HistoricalContext   string `json:"historical_context"`
 	ExternalConstraints string `json:"external_constraints"`
 	// MaterialContext 仅由当前纪要生成，是只读证据而非用户可编辑背景。
-	MaterialContext string `json:"material_context"`
-	// SupplementalContext 是用户直接补充、用于本次及后续重生成判断的上下文。
-	SupplementalContext string                       `json:"supplemental_context"`
-	Conversation        []InsightConversationMessage `json:"conversation,omitempty"`
+	MaterialContext string                       `json:"material_context"`
+	Conversation    []InsightConversationMessage `json:"conversation,omitempty"`
+	// InsightPerspective 是本次重新生成选择的场景模式；ResolvedInsightPerspective 是最近一次洞察实际使用的场景。
+	InsightPerspective         string `json:"insight_perspective,omitempty"`
+	ResolvedInsightPerspective string `json:"resolved_insight_perspective,omitempty"`
 }
 
 type InsightConversationMessage struct {
@@ -48,8 +50,13 @@ type InsightConversationMessage struct {
 }
 
 type InsightRegenerationRequest struct {
-	Background   InsightBackground            `json:"background"`
-	Conversation []InsightConversationMessage `json:"conversation"`
+	Background         InsightBackground            `json:"background"`
+	Conversation       []InsightConversationMessage `json:"conversation"`
+	InsightPerspective string                       `json:"insight_perspective"`
+}
+
+type PromoteInsightExternalConstraintsRequest struct {
+	ExternalConstraints string `json:"external_constraints" binding:"required"`
 }
 
 type InsightWorkshopChatRequest struct {
@@ -72,6 +79,11 @@ func GetInsightBackground(ctx context.Context, eid, userID, fileID int64) (*Insi
 	background := defaultInsightBackground(ctx, eid, userID, file)
 	if saved, ok := loadSavedInsightBackground(file.InsightContext); ok {
 		mergeInsightBackground(&background, saved)
+		background.ResolvedInsightPerspective = saved.ResolvedInsightPerspective
+	}
+	background.InsightPerspective = string(model.NormalizeInsightPerspective(file.InsightPerspective))
+	if background.ResolvedInsightPerspective == "" && background.InsightPerspective != string(model.InsightPerspectiveAuto) {
+		background.ResolvedInsightPerspective = background.InsightPerspective
 	}
 	return &background, nil
 }
@@ -84,9 +96,13 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 	}
 
 	background := InsightBackground{}
+	requestedPerspective := strings.TrimSpace(file.InsightPerspective)
 	if req != nil {
 		background = req.Background
 		background.Conversation = req.Conversation
+		if strings.TrimSpace(req.InsightPerspective) != "" {
+			requestedPerspective = req.InsightPerspective
+		}
 	} else if strings.TrimSpace(string(file.InsightContext)) != "" {
 		// 兼容原有“无请求体重新生成”接口：不应意外清除用户已经确认的背景。
 		_ = json.Unmarshal([]byte(file.InsightContext), &background)
@@ -94,6 +110,10 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 	if err := normalizeInsightBackground(&background); err != nil {
 		return err
 	}
+	if !model.IsValidInsightPerspective(requestedPerspective) {
+		return fmt.Errorf("%w: %s", ErrInvalidInsightPerspective, requestedPerspective)
+	}
+	requestedPerspective = string(model.NormalizeInsightPerspective(requestedPerspective))
 	persisted := persistedInsightBackground(background)
 	serialized, err := json.Marshal(persisted)
 	if err != nil {
@@ -101,10 +121,21 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 	}
 
 	if err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var info model.FileCleaningRuleInfo
+		if file.CleaningRuleInfo != "" {
+			_ = json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+		}
+		info.InsightPageFormat = insightPageHTMLFormat
+		cleaningRuleInfo, marshalErr := json.Marshal(info)
+		if marshalErr != nil {
+			return fmt.Errorf("序列化洞察页面格式失败: %w", marshalErr)
+		}
 		updates := map[string]interface{}{
-			"insight_context":    string(serialized),
-			"insight_generation": gorm.Expr("insight_generation + ?", 1),
-			"insight_summary":    "",
+			"insight_context":     string(serialized),
+			"insight_generation":  gorm.Expr("insight_generation + ?", 1),
+			"insight_summary":     "",
+			"cleaning_rule_info":  string(cleaningRuleInfo),
+			"insight_perspective": requestedPerspective,
 		}
 		// 归属校验已由外层 getInsightContextFile（库 VIEW_ONLY 权限）完成，
 		// 事务内不再限定 user_id，否则其他知识库成员重新生成时 RowsAffected=0 → 仍被拒（403）。
@@ -124,15 +155,32 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 	}); err != nil {
 		return err
 	}
-	if err := CompileRecordingInsightBackgroundMemory(ctx, eid, fileID, userID, persisted); err != nil {
-		logger.Warnf(ctx, "【会议记忆】保存洞察背景记忆失败 fileID=%d err=%v", fileID, err)
-	}
-
 	setInsightsStatus(fileID, "pending")
 	setInsightPageStatus(fileID, "pending")
 	go GenerateInsights(context.Background(), eid, fileID, userID)
 	logger.Infof(ctx, "【洞察】确认背景并触发重新生成: fileID=%d eid=%d userID=%d", fileID, eid, userID)
 	return nil
+}
+
+// PromoteInsightExternalConstraints 将已保存的“补充背景”显式升级为跨会议用户确认记忆。
+// 普通重新生成不会自动执行此操作。
+func PromoteInsightExternalConstraints(ctx context.Context, eid, userID, fileID int64, text string) error {
+	file, err := getInsightContextFile(ctx, eid, userID, fileID)
+	if err != nil {
+		return err
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ErrInsightContextEmpty
+	}
+	var saved InsightBackground
+	if strings.TrimSpace(string(file.InsightContext)) == "" || json.Unmarshal([]byte(file.InsightContext), &saved) != nil {
+		return ErrInsightContextNotSaved
+	}
+	if strings.TrimSpace(saved.ExternalConstraints) != text {
+		return ErrInsightContextNotSaved
+	}
+	return CompileRecordingExternalConstraintsMemory(ctx, eid, fileID, userID, saved)
 }
 
 // ChatInsightWorkshop 根据右侧对话内容帮助用户补充背景，不直接生成最终洞察。
@@ -185,6 +233,12 @@ func getInsightContextFile(ctx context.Context, eid, userID, fileID int64) (*mod
 	if errors.Is(err, ErrRecordingFileForbidden) {
 		return nil, ErrInsightContextForbidden
 	}
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRecordingOrigin(file); err != nil {
+		return nil, ErrInsightContextForbidden
+	}
 	return file, err
 }
 
@@ -204,7 +258,9 @@ func defaultInsightBackground(ctx context.Context, eid, userID int64, file *mode
 	}
 	user, _ := model.GetUserByIDAndEid(eid, userID)
 	if user != nil {
-		_ = user.LoadDepartments(0)
+		if departmentErr := user.LoadDepartments(0); departmentErr != nil {
+			logger.Warnf(ctx, "【洞察-背景】加载部门失败 fileID=%d userID=%d err=%v", file.ID, userID, departmentErr)
+		}
 	}
 	position, style, smartMemory, customMemory := "", "", "", ""
 	if memory, _ := model.GetUserMemory(eid, userID); memory != nil {
@@ -288,9 +344,6 @@ func mergeInsightBackground(target *InsightBackground, saved InsightBackground) 
 	if strings.TrimSpace(saved.ExternalConstraints) != "" {
 		target.ExternalConstraints = saved.ExternalConstraints
 	}
-	if strings.TrimSpace(saved.SupplementalContext) != "" {
-		target.SupplementalContext = saved.SupplementalContext
-	}
 }
 
 // loadSavedInsightBackground 读取文件级保存的用户补充背景。
@@ -317,7 +370,24 @@ func persistedInsightBackground(background InsightBackground) InsightBackground 
 	background.HistoricalContext = ""
 	background.MaterialContext = ""
 	background.Conversation = nil
+	background.InsightPerspective = ""
+	background.ResolvedInsightPerspective = ""
 	return background
+}
+
+func withResolvedInsightPerspective(raw model.LongText, perspective model.InsightPerspective) (string, error) {
+	var background InsightBackground
+	if strings.TrimSpace(string(raw)) != "" {
+		if err := json.Unmarshal([]byte(raw), &background); err != nil {
+			return "", err
+		}
+	}
+	background.ResolvedInsightPerspective = string(perspective)
+	data, err := json.Marshal(background)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func normalizeInsightBackground(background *InsightBackground) error {
@@ -326,7 +396,6 @@ func normalizeInsightBackground(background *InsightBackground) error {
 	background.HistoricalContext = truncateInsightContext(background.HistoricalContext, maxInsightContextText)
 	background.ExternalConstraints = truncateInsightContext(background.ExternalConstraints, maxInsightContextText)
 	background.MaterialContext = truncateInsightContext(background.MaterialContext, maxInsightContextText)
-	background.SupplementalContext = truncateInsightContext(background.SupplementalContext, maxInsightContextText)
 	background.Conversation = normalizeInsightConversation(background.Conversation)
 	if len(background.Conversation) > 0 && strings.TrimSpace(background.PersonalInfo+background.CompanyInfo+background.HistoricalContext+background.ExternalConstraints+background.MaterialContext) == "" {
 		return ErrInsightContextEmpty
@@ -368,26 +437,23 @@ func truncateInsightContext(value string, limit int) string {
 
 func formatInsightBackgroundPrompt(background InsightBackground, material string) string {
 	return fmt.Sprintf(`<insight_supplemental_context>
-以下是用户在本次重新生成前确认或补充的背景。它只用于校准判断，不得替代纪要和转写中的明确事实；若与原始背景冲突，以本次确认内容为准，并在洞察中标记冲突。
-<personal_background>
+以下内容按来源分层。Personal Profile 与 Company Profile 是跨会议 context_only；用户补充默认只适用于当前文件和当前 regeneration chain。任何 L4 内容都不得作为本次会议 evidence。
+<personal_background allowed_usage="context_only">
 %s
 </personal_background>
-<company_background>
+<company_background allowed_usage="context_only">
 %s
 </company_background>
-<historical_background>
+<historical_background allowed_usage="evidence_only_if_source_verified">
 %s
 </historical_background>
 <external_constraints>
 %s
 </external_constraints>
-<supplemental_background>
-%s
-</supplemental_background>
 <current_material>
 %s
 </current_material>
-</insight_supplemental_context>`, background.PersonalInfo, background.CompanyInfo, background.HistoricalContext, background.ExternalConstraints, background.SupplementalContext, material)
+</insight_supplemental_context>`, background.PersonalInfo, background.CompanyInfo, background.HistoricalContext, background.ExternalConstraints, material)
 }
 
 func formatInsightConversation(items []InsightConversationMessage) string {
@@ -407,9 +473,115 @@ func isInsightGenerationCurrent(eid, fileID, generation int64) bool {
 }
 
 func setInsightsStatusIfCurrent(eid, fileID, generation int64, status string) {
-	if isInsightGenerationCurrent(eid, fileID, generation) {
-		setInsightsStatus(fileID, status)
-	}
+	updateInsightStatusIfCurrent(eid, fileID, generation, status, nil)
+}
+
+func markInsightPageFormatIfCurrent(ctx context.Context, eid, fileID, generation int64, format string) error {
+	err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var file model.File
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("insight_generation, cleaning_rule_info").
+			Where("id = ? AND eid = ?", fileID, eid).First(&file).Error; err != nil {
+			return err
+		}
+		if file.InsightGeneration != generation {
+			return ErrInsightGenerationStale
+		}
+		var info model.FileCleaningRuleInfo
+		if file.CleaningRuleInfo != "" {
+			_ = json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+		}
+		// RegenerateInsightsWithContext writes the format marker before starting
+		// the asynchronous worker. Treat a repeated marker write as success.
+		if info.InsightPageFormat == format {
+			return nil
+		}
+		info.InsightPageFormat = format
+		data, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
+		result := tx.Model(&model.File{}).
+			Where("id = ? AND eid = ? AND insight_generation = ?", fileID, eid, generation).
+			Update("cleaning_rule_info", string(data))
+		if result.Error != nil {
+			return result.Error
+		}
+		// The row was locked and its generation was checked above. Some
+		// databases report RowsAffected=0 for an idempotent UPDATE; that is
+		// not evidence that the generation is stale.
+		return nil
+	})
+	return err
+}
+
+// setInsightOutcomeIfCurrent records a normal NO_INSIGHT outcome together
+// with its reason. The generation check and JSON update happen in one locked
+// transaction so an older regeneration cannot overwrite a newer result.
+func setInsightOutcomeIfCurrent(eid, fileID, generation int64, outcome insightGateResult) bool {
+	return updateInsightStatusIfCurrent(eid, fileID, generation, "skipped", &outcome)
+}
+
+func updateInsightStatusIfCurrent(eid, fileID, generation int64, status string, outcome *insightGateResult) bool {
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var file model.File
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("insight_generation, cleaning_rule_info").
+			Where("id = ? AND eid = ?", fileID, eid).First(&file).Error; err != nil {
+			return err
+		}
+		if file.InsightGeneration != generation {
+			return ErrInsightGenerationStale
+		}
+
+		var info model.FileCleaningRuleInfo
+		if file.CleaningRuleInfo != "" {
+			_ = json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+		}
+		info.InsightsStatus = status
+		if outcome != nil {
+			info.InsightMode = outcome.Mode
+			info.InsightReasonCode = outcome.ReasonCode
+			info.InsightSkipReason = outcome.ReasonCode
+			info.InsightMessage = outcome.Message
+			info.InsightsError = ""
+			info.InsightsErrorType = ""
+			if status == "skipped" {
+				info.InsightPageStatus = "skipped"
+			}
+		} else if status == "pending" || status == "processing" {
+			// A new generation must not expose the previous generation's NO
+			// reason while it is running.
+			info.InsightMode = ""
+			info.InsightReasonCode = ""
+			info.InsightSkipReason = ""
+			info.InsightMessage = ""
+			info.InsightsError = ""
+			info.InsightsErrorType = ""
+		}
+		data, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
+		updates := map[string]interface{}{"cleaning_rule_info": string(data)}
+		if status == "skipped" {
+			// A NO result is a new terminal result, so stale insight/page content
+			// from a previous generation must not remain visible.
+			updates["insight_summary"] = ""
+		}
+		if result := tx.Model(&model.File{}).
+			Where("id = ? AND eid = ? AND insight_generation = ?", fileID, eid, generation).
+			Updates(updates); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected != 1 {
+			return ErrInsightGenerationStale
+		}
+		if status == "skipped" {
+			return tx.Where("file_id = ?", fileID).Delete(&model.RecordingFileInsightPage{}).Error
+		}
+		return nil
+	})
+	return err == nil
 }
 
 func upsertInsightPageIfCurrent(eid, fileID, generation int64, pageJSON string) error {
@@ -433,6 +605,10 @@ func upsertInsightPageIfCurrent(eid, fileID, generation int64, pageJSON string) 
 }
 
 func loadRelatedInsightHistory(ctx context.Context, eid, fileID, userID int64, memCfg *model.MemoryExtractionConfig) []historyMeeting {
+	return loadRelatedInsightHistoryWithContext(ctx, eid, fileID, userID, memCfg, nil)
+}
+
+func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, userID int64, memCfg *model.MemoryExtractionConfig, currentContext *CurrentMeetingContext) []historyMeeting {
 	if memCfg == nil || !memCfg.IsEffectivelyEnabled() {
 		logger.Infof(ctx, "【洞察】历史记忆关闭或空类型，跳过历史检索: fileID=%d", fileID)
 		return nil
@@ -450,12 +626,24 @@ func loadRelatedInsightHistory(ctx context.Context, eid, fileID, userID int64, m
 	if err := query.Error; err != nil {
 		logger.Errorf(ctx, "【洞察】查询实体ID失败: %v", err)
 	}
+	currentEntityNames := make([]string, 0)
+	if len(currentEntityIDs) > 0 && currentContext == nil {
+		var genericNames []string
+		if err := model.DB.WithContext(ctx).Model(&model.Entity{}).
+			Where("eid = ? AND id IN ? AND status = ?", eid, currentEntityIDs, model.EntityRelationStatusActive).
+			Pluck("name", &genericNames).Error; err == nil {
+			currentEntityNames = appendUniqueStrings(currentEntityNames, genericNames...)
+		}
+	}
+	if currentContext != nil {
+		currentEntityNames = appendUniqueStrings(currentEntityNames, currentContext.RecallEntityNames()...)
+	}
 
 	rows := make([]historyMeeting, 0, 8)
 	entityOverlapCandidates := 0
 	claimCandidates := 0
 	entityFactCandidates := 0
-	if len(currentEntityIDs) > 0 {
+	if len(currentEntityIDs) > 0 && currentContext == nil {
 		var historyFileIDs []int64
 		if err := model.DB.WithContext(ctx).Table("entity_chunk_relations ecr").
 			Joins("JOIN files f ON f.id = ecr.file_id").
@@ -493,9 +681,12 @@ func loadRelatedInsightHistory(ctx context.Context, eid, fileID, userID int64, m
 			})
 		}
 
-		// 第二路召回：使用当前会议实体名称匹配已编译的结构化记忆。
-		// 这一路不再读取整篇历史纪要，只把高置信、可追溯的 Claim 加入上下文。
-		memoryRows := loadMemoryRecallHistory(ctx, eid, userID, fileID, currentEntityIDs)
+	}
+
+	// 第二路召回：使用当前快照中的安全实体名称匹配已编译的结构化记忆。
+	// 即使通用 Entity 抽取尚未落库，也不会丢失当前会议的 Claim 召回。
+	if len(currentEntityNames) > 0 {
+		memoryRows := loadMemoryRecallHistoryByNames(ctx, eid, userID, fileID, currentEntityNames)
 		claimCandidates = len(memoryRows)
 		for _, memoryRow := range memoryRows {
 			rows = mergeHistoryMeeting(rows, memoryRow, historyRecallClaim)
@@ -574,6 +765,7 @@ func loadMeetingMemoryContexts(ctx context.Context, eid, ownerID, fileID int64, 
 		logger.Warnf(ctx, "【洞察】读取结构化会议记忆失败 fileID=%d err=%v", fileID, err)
 		return nil
 	}
+	claims = selectRecordingMemoryRecallClaims(claims, recordingMemoryDirectRecallLimit, recordingMemoryOneHopRecallLimit)
 	result := make([]meetingMemoryContext, 0, len(claims))
 	for _, claim := range claims {
 		result = append(result, meetingMemoryContext{
@@ -588,6 +780,8 @@ func loadMeetingMemoryContexts(ctx context.Context, eid, ownerID, fileID int64, 
 			SourceConfidence:  claim.SourceConfidence,
 			EvidenceAvailable: claim.EvidenceAvailable,
 			SourceSegmentIDs:  decodeMemorySourceSegmentIDs(claim.SourceSegmentIDs),
+			RecallPath:        recordingMemoryRecallPath(claim.DetailJSON),
+			StructuredLinks:   recordingMemoryStructuredLinks(claim.DetailJSON),
 		})
 	}
 	return result
@@ -601,6 +795,10 @@ func loadMemoryRecallHistory(ctx context.Context, eid, ownerID, currentFileID in
 		logger.Warnf(ctx, "【洞察】读取实体名称失败: %v", err)
 		return nil
 	}
+	return loadMemoryRecallHistoryByNames(ctx, eid, ownerID, currentFileID, entityNames)
+}
+
+func loadMemoryRecallHistoryByNames(ctx context.Context, eid, ownerID, currentFileID int64, entityNames []string) []historyMeeting {
 	entityNames = filterInsightRecallEntityNames(entityNames)
 	if len(entityNames) == 0 {
 		return nil
@@ -611,6 +809,8 @@ func loadMemoryRecallHistory(ctx context.Context, eid, ownerID, currentFileID in
 		Select("c.*").
 		Joins("JOIN files f ON f.id = c.file_id AND f.eid = c.eid").
 		Where("c.eid = ? AND c.owner_id = ? AND c.file_id != ? AND c.is_current = ?", eid, ownerID, currentFileID, true).
+		Where("c.source_item_type NOT IN ?", []string{recordingMemorySourceInsightBackground}).
+		Where("c.source_item_type <> ? OR c.assertion_state = ?", recordingMemorySourceUserConfirmed, "user_confirmed").
 		Where("c.assertion_state NOT IN ?", []string{"rejected"}).
 		Where("(c.review_state = ? OR (c.epistemic_type = ? AND c.evidence_available = ?))", recordingMemoryReviewConfirmed, "explicit", true).
 		Where("f.user_id = ? AND f.origin_type IN ? AND f.parsing_status = ? AND f.is_deleted = ?", ownerID, model.RecordingOriginTypes(), "normal", false)
@@ -627,6 +827,7 @@ func loadMemoryRecallHistory(ctx context.Context, eid, ownerID, currentFileID in
 		logger.Warnf(ctx, "【洞察】结构化记忆召回失败: %v", err)
 		return nil
 	}
+	claims = selectRecordingMemoryRecallClaims(claims, recordingMemoryDirectRecallLimit, recordingMemoryOneHopRecallLimit)
 	if len(claims) == 0 {
 		return nil
 	}
@@ -674,9 +875,46 @@ func loadMemoryRecallHistory(ctx context.Context, eid, ownerID, currentFileID in
 			SourceConfidence:  claim.SourceConfidence,
 			EvidenceAvailable: claim.EvidenceAvailable,
 			SourceSegmentIDs:  decodeMemorySourceSegmentIDs(claim.SourceSegmentIDs),
+			RecallPath:        recordingMemoryRecallPath(claim.DetailJSON),
+			StructuredLinks:   recordingMemoryStructuredLinks(claim.DetailJSON),
 		})
 	}
 	return rows
+}
+
+const (
+	recordingMemoryDirectRecallLimit = 6
+	recordingMemoryOneHopRecallLimit = 2
+)
+
+// selectRecordingMemoryRecallClaims enforces the T09 retrieval budget without
+// requiring relation tables. Claims carrying a verified binding/relation are
+// treated as one-hop candidates; all other claims are direct matches.
+func selectRecordingMemoryRecallClaims(claims []model.RecordingMemoryClaim, directLimit, oneHopLimit int) []model.RecordingMemoryClaim {
+	if directLimit < 0 {
+		directLimit = 0
+	}
+	if oneHopLimit < 0 {
+		oneHopLimit = 0
+	}
+	selected := make([]model.RecordingMemoryClaim, 0, directLimit+oneHopLimit)
+	directCount, oneHopCount := 0, 0
+	for _, claim := range claims {
+		oneHop := len(recordingMemoryRecallPath(claim.DetailJSON)) > 1
+		if oneHop {
+			if oneHopCount >= oneHopLimit {
+				continue
+			}
+			oneHopCount++
+		} else {
+			if directCount >= directLimit {
+				continue
+			}
+			directCount++
+		}
+		selected = append(selected, claim)
+	}
+	return selected
 }
 
 func mergeMeetingMemories(existing, incoming []meetingMemoryContext) []meetingMemoryContext {

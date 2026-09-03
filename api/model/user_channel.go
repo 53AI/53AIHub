@@ -38,6 +38,7 @@ const (
 	ChannelTypeWebEmbed = "h5"
 	ChannelTypeAPI      = "api"
 	ChannelTypeSSO      = "sso"
+	ChannelTypeApp      = "app" // 移动端 App，openid = device_id，每设备一 channel
 
 	UserChannelStatusActive   = 1
 	UserChannelStatusDisabled = 2

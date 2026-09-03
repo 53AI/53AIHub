@@ -406,7 +406,7 @@ func newSkillMessageStatsInfo(agent *model.Agent, relayMode int, requestId strin
 }
 
 // resolveThinkingMode 根据模型名匹配 agent.settings 配置，返回 ThinkingMode
-// 优先级：deep_thinking_config > fast_reasoning_config > 默认 Quick
+// 优先级：deep_thinking_config > fast_reasoning_config > 模型名兜底识别 > 默认 Quick
 func resolveThinkingMode(agent *model.Agent, modelName string) int {
 	if agent == nil {
 		return model.ThinkingModeQuick
@@ -417,7 +417,26 @@ func resolveThinkingMode(agent *model.Agent, modelName string) int {
 	if frCfg, err := agent.GetFastReasoningConfig(); err == nil && frCfg != nil && frCfg.ModelName != nil && *frCfg.ModelName == modelName {
 		return model.ThinkingModeQuick
 	}
+	// 免配置兜底：按模型名识别深度思考模型（如 deepseek-r1 / DeepSeek-R1 等）
+	if isDeepThinkingModelName(modelName) {
+		return model.ThinkingModeDeep
+	}
 	return model.ThinkingModeQuick
+}
+
+// isDeepThinkingModelName 按模型名片段识别深度思考模型，免去 deep_thinking_config 配置。
+// 命名约定见 docs/手册/模型目录迭代SOP.md：R1/Thinking/Reasoner/Z1 归为 Chat(deep_thinking)
+func isDeepThinkingModelName(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	if name == "" {
+		return false
+	}
+	for _, marker := range []string{"r1", "reasoner", "thinking", "z1"} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildSkillRunScope(ctx context.Context, agent *model.Agent, eid int64, defaultCWD string, runID string) skill.RunScope {
@@ -839,6 +858,25 @@ func applyNormalizedQueryToMessages(messages []relay_model.Message, normalizedQu
 	return messages
 }
 
+// applyOutOfRangeContinuePrompt 超纲回复"继续生成"模式下，将拒答提示词追加到最后一条用户消息之后，
+// 保留原始问题，让模型在了解上下文的同时按提示词拒答（如"你是谁"可依据 agent 身份正常回答）。
+// 供 CHITCHAT 分支与 RAG 无来源分支共用，避免两处逻辑发散。
+func applyOutOfRangeContinuePrompt(chatRequest *ChatRequest, prompt string) {
+	if prompt == "" {
+		return
+	}
+	for i := len(chatRequest.Messages) - 1; i >= 0; i-- {
+		if chatRequest.Messages[i].Role == "user" {
+			if existing, ok := chatRequest.Messages[i].Content.(string); ok {
+				chatRequest.Messages[i].Content = existing + "\n\n" + prompt
+			} else {
+				chatRequest.Messages[i].Content = prompt
+			}
+			break
+		}
+	}
+}
+
 // handleChatRequest 处理标准聊天请求
 func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMode int) {
 	if agent != nil && agent.IsOpenClawWSCompatible() {
@@ -1209,15 +1247,29 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		// 处理意图分支
 		switch classificationResult.Intent {
 		case "CHITCHAT":
-			// 修复 BUG #1133244388001005148: 如果闲聊回答为空，使用拒答文案
-			if classificationResult.Answer == "" {
-				outOfRangeConfig, _ := agent.GetOutOfRangeReplyConfig()
-				if outOfRangeConfig != nil && outOfRangeConfig.Enable && outOfRangeConfig.Reply != "" {
+			// 拒答策略优先：分类器 answer 不作为回复，避免无 agent 身份的死板文案。
+			// fixed_reply 对全部闲聊生效；continue 交给真实 agent 模型生成（保留原问题并追加拒答提示词）。
+			outOfRangeConfig, _ := agent.GetOutOfRangeReplyConfig()
+			if outOfRangeConfig != nil && outOfRangeConfig.Enable {
+				if outOfRangeConfig.Mode == "continue" {
+					if outOfRangeConfig.Prompt != "" {
+						applyOutOfRangeContinuePrompt(&chatRequest, outOfRangeConfig.Prompt)
+						logger.Infof(ctx, "启用超纲回复(继续生成模式)，已追加 Prompt")
+					}
+					messageStatus.RouterResult = &RouterResult{
+						IntentClassificationResult: classificationResult,
+					}
+					processChatRequestV2(c, &chatRequest, ctx, messageStatus)
+					return
+				}
+				// fixed_reply 模式：固定文案对全部闲聊生效
+				if outOfRangeConfig.Reply != "" {
 					stepSender.SendOutOfRangeReply()
 					handleOutOfRangeReply(c, &chatRequest, agent, outOfRangeConfig.Reply, requestId, relayMode, messageStatus)
 					return
 				}
 			}
+			// 未开启拒答策略：维持原逻辑（分类器 answer 兜底 / AI 生成）
 			if classificationResult.Answer == "" {
 				messageStatus.RouterResult = &RouterResult{
 					IntentClassificationResult: classificationResult,
@@ -1353,15 +1405,8 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			// 模式：交给模型继续生成
 			// 使用兜底提示词替换用户问题（如果有）
 			if outOfRangeConfig.Prompt != "" {
-				// 找到最后一个用户消息并替换
-				for i := len(chatRequest.Messages) - 1; i >= 0; i-- {
-					if chatRequest.Messages[i].Role == "user" {
-						// 简单的追加，可以根据需要调整格式
-						chatRequest.Messages[i].Content = outOfRangeConfig.Prompt
-						break
-					}
-				}
-				logger.Infof(ctx, "启用超纲回复(继续生成模式)，已替换 Prompt")
+				applyOutOfRangeContinuePrompt(&chatRequest, outOfRangeConfig.Prompt)
+				logger.Infof(ctx, "启用超纲回复(继续生成模式)，已追加 Prompt")
 			}
 			// 不返回，继续执行后续流程（processChatRequestV2）
 		} else {
@@ -1818,7 +1863,7 @@ func splitGraphAggregateSources(sources []rag.SourceReference) ([]rag.SourceRefe
 	graphSources := make([]rag.SourceReference, 0, 1)
 	rerankableSources := make([]rag.SourceReference, 0, len(sources))
 	for _, source := range sources {
-		if source.SourceType == "wiki" || shouldPreserveSourceContent(source) {
+		if sourceCategory(source) == "graph" {
 			graphSources = append(graphSources, source)
 			continue
 		}
@@ -2936,14 +2981,15 @@ func RelayTextHelper(c *gin.Context, messageStatus *MessageStatsInfo) *relay_mod
 		AIHubConversationId:        conversation.ConversationID,
 	}
 
-	if agent.GetDisableThinkingConfig() {
-		if messageStatus.ThinkingMode == model.ThinkingModeQuick {
-			disableVal := true
-			customConfig.DisableThinking = &disableVal
-			logger.Debugf(ctx, "【思考策略】Agent设置关闭思考 eid=%d agent_id=%d thinking_mode=quick", agent.Eid, agent.AgentID)
-		} else {
-			logger.Debugf(ctx, "【思考策略】Agent设置关闭思考但非快速回答模式 eid=%d agent_id=%d thinking_mode=%d", agent.Eid, agent.AgentID, messageStatus.ThinkingMode)
-		}
+	// 深度回答：强制开启思考；快速回答：强制关闭思考（取决于当前选中的模型/模式）
+	if messageStatus.ThinkingMode == model.ThinkingModeDeep {
+		enableVal := true
+		customConfig.EnableThinking = &enableVal
+		logger.Debugf(ctx, "【思考策略】深度回答强制开启思考 eid=%d agent_id=%d thinking_mode=deep", agent.Eid, agent.AgentID)
+	} else if agent.GetDisableThinkingConfig() {
+		disableVal := true
+		customConfig.DisableThinking = &disableVal
+		logger.Debugf(ctx, "【思考策略】快速回答强制关闭思考 eid=%d agent_id=%d thinking_mode=quick", agent.Eid, agent.AgentID)
 	} else {
 		logger.Debugf(ctx, "【思考策略】Agent未设置关闭思考 eid=%d agent_id=%d", agent.Eid, agent.AgentID)
 	}
@@ -3347,6 +3393,7 @@ func postConsumeQuota(c *gin.Context, agent *model.Agent, user_id int64, startTi
 		logger.Warnf(ctx, "保存 RAG 统计数据失败: %v", err)
 		// 不阻断主流程
 	}
+	responseContent = message.Answer
 
 	// 更新消息到数据库
 	if err := model.UpdateMessage(message); err != nil {

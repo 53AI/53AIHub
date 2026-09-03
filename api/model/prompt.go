@@ -23,8 +23,9 @@ type Prompt struct {
 	CustomConfig string              `json:"custom_config" gorm:"not null;type:text"`
 	AILinks      string              `json:"ai_links" gorm:"type:text;comment:关联的AI链接"`
 	AILinksData  []AILinkInfo        `gorm:"-" json:"ai_links_data"`
-	GroupIDs     []int64             `json:"group_ids" gorm:"-"`
-	Scopes       []ResourceScopeItem `json:"scopes" gorm:"-"`
+	GroupIDs              []int64             `json:"group_ids" gorm:"-"`
+	SubscriptionGroupIDs  []int64             `json:"subscription_group_ids" gorm:"-"`
+	Scopes                []ResourceScopeItem `json:"scopes" gorm:"-"`
 	IsLiked      bool                `json:"is_liked" gorm:"-"`
 	BaseModel
 }
@@ -116,7 +117,7 @@ func GetPromptsByEid(eid int) ([]*Prompt, error) {
 	return prompts, nil
 }
 
-func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset int, limit int, visibleGroupIDs []int64) (int64, []*Prompt, error) {
+func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset int, limit int, visibleGroupIDs []int64, userID int64) (int64, []*Prompt, error) {
 	statusArray := []int{PromptStatusNormal, PromptStatusDisable}
 	if status != -1 {
 		statusArray = []int{status}
@@ -146,12 +147,18 @@ func GetPromptList(eid int64, keyword string, groupIDStr string, status, offset 
 				AND rs2.target_id IN ? AND rs2.scope_type = ?
 			)
 			OR EXISTS (
+				SELECT 1 FROM resource_scopes rs3
+				WHERE rs3.resource_id = prompts.prompt_id AND rs3.resource_type = ?
+				AND rs3.scope_type = ? AND rs3.target_id = ?
+			)
+			OR EXISTS (
 				SELECT 1 FROM resource_permissions rp
 				WHERE rp.resource_id = prompts.prompt_id AND rp.resource_type = ?
 				AND rp.group_id IN ? AND rp.permission = ?
 			)`,
 			ResourceTypePrompt, ResourceTypePrompt, eid, ScopeTypeCompany,
 			ResourceTypePrompt, visibleGroupIDs, ScopeTypeGroup,
+			ResourceTypePrompt, ScopeTypeUser, userID,
 			ResourceTypePrompt, visibleGroupIDs, PermissionRead)
 	}
 
@@ -235,16 +242,15 @@ func (p *Prompt) LoadPromptGroups() error {
 		return err
 	}
 	p.Scopes = items
-	p.GroupIDs = scopeGroupIDs(items)
-	if len(items) == 0 {
-		p.GroupIDs, err = GetResourcePermissionGroupIDs(p.PromptID, ResourceTypePrompt)
-		if err != nil {
-			return err
-		}
+
+	// group 列表 = scope 的 group 项 ∪ 旧表 resource_permissions：
+	// 显式传 scopes（如 company 范围）时组只写入旧表，需合并才能完整回显。
+	legacyIDs, err := GetResourcePermissionGroupIDs(p.PromptID, ResourceTypePrompt)
+	if err != nil {
+		return err
 	}
-	if p.GroupIDs == nil {
-		p.GroupIDs = []int64{}
-	}
+	groupIDs := MergeGroupIDs(scopeGroupIDs(items), legacyIDs)
+	p.GroupIDs, p.SubscriptionGroupIDs = SplitGroupIDsByType(groupIDs)
 	return nil
 }
 

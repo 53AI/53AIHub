@@ -32,17 +32,18 @@ type PromptsResponse struct {
 
 // PromptRequest 定义创建或更新提示词的请求参数
 type PromptRequest struct {
-	Name                 string     `json:"name" binding:"required" example:"智能写作助手"`                                                                                                                                                                                                                                                                                                                                                                // 提示词名称
-	Logo                 string     `json:"logo" example:"https://example.com/logo.png"`                                                                                                                                                                                                                                                                                                                                                             // 图标URL
-	Content              string     `json:"content" binding:"required" example:"请帮我总结以下文档的主要内容..."`                                                                                                                                                                                                                                                                                                                                                  // 提示词内容
-	Description          string     `json:"description" example:"用于快速总结文档内容"`                                                                                                                                                                                                                                                                                                                                                                        // 提示词描述
-	GroupIds             []int64    `json:"group_ids" binding:"required" example:"[1, 2]"`                                                                                                                                                                                                                                                                                                                                                           // 所属分组IDs
-	SubscriptionGroupIds []int64    `json:"subscription_group_ids" example:"[3, 4]"`                                                                                                                                                                                                                                                                                                                                                                 // 订阅分组IDs
-	UserGroupIds         []int64    `json:"user_group_ids" example:"[5, 6]"`                                                                                                                                                                                                                                                                                                                                                                         // 用户分组IDs
-	Sort                 int        `json:"sort" example:"0"`                                                                                                                                                                                                                                                                                                                                                                                        // 排序
-	CustomConfig         string     `json:"custom_config"`                                                                                                                                                                                                                                                                                                                                                                                           // 自定义配置
-	Status               *int       `json:"status" example:"1"`                                                                                                                                                                                                                                                                                                                                                                                      // 状态，0未启用，1正常，2删除
-	AILinks              []LinkItem `json:"ai_links" example:"[{\"ai_link\":{\"name\":\"link1\",\"logo\":\"https://example.com/logo1.png\",\"url\":\"https://example.com/link1\",\"description\":\"Description for link1\",\"sort\":0},\"delete\":false},{\"ai_link\":{\"name\":\"link2\",\"logo\":\"https://example.com/logo2.png\",\"url\":\"https://example.com/link2\",\"description\":\"Description for link2\",\"sort\":1},\"delete\":true}]"` // 网站配置列表，支持增删改
+	Name                 string                     `json:"name" binding:"required" example:"智能写作助手"`
+	Logo                 string                     `json:"logo" example:"https://example.com/logo.png"`
+	Content              string                     `json:"content" binding:"required" example:"请帮我总结以下文档的主要内容..."`
+	Description          string                     `json:"description" example:"用于快速总结文档内容"`
+	GroupIds             []int64                    `json:"group_ids" binding:"required" example:"[1, 2]"`
+	SubscriptionGroupIds []int64                    `json:"subscription_group_ids" example:"[3, 4]"`
+	UserGroupIds         []int64                    `json:"user_group_ids" example:"[5, 6]"`
+	Sort                 int                        `json:"sort" example:"0"`
+	CustomConfig         string                     `json:"custom_config"`
+	Status               *int                       `json:"status" example:"1"`
+	AILinks              []LinkItem                 `json:"ai_links"`
+	Scopes               *[]model.ResourceScopeItem `json:"scopes"`
 }
 
 func buildPromptAILinks(defaultLinks []model.AILinkInfo, linkItems []LinkItem) []model.AILinkInfo {
@@ -94,17 +95,11 @@ func GetPrompts(c *gin.Context) {
 	}
 
 	var userId int64
-	var visibleGroupIDs []int64
 	eid := config.GetEID(c)
 	user, err := model.GetLoginUser(c)
 	if err == nil {
 		userId = user.UserID
 		eid = user.Eid
-		visibleGroupIDs, err = user.GetUserGroupIds()
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
 	}
 
 	status := -1
@@ -148,7 +143,8 @@ func GetPrompts(c *gin.Context) {
 		status,
 		promptListRequest.Offset,
 		promptListRequest.Limit,
-		visibleGroupIDs,
+		nil,
+		0,
 	)
 
 	if err != nil {
@@ -284,26 +280,40 @@ func CreatePrompt(c *gin.Context) {
 		return
 	}
 
-	// 添加分组关联
-	allGroupIds := make([]int64, 0)
+	// 构建 scopes：优先使用请求中的 scopes，否则从旧字段推导
+	scopes := dereferenceResourceScopes(promptReq.Scopes)
+	if promptReq.Scopes == nil {
+		for _, gid := range promptReq.GroupIds {
+			if gid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: gid})
+			}
+		}
+		for _, gid := range promptReq.SubscriptionGroupIds {
+			if gid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: gid})
+			}
+		}
+		for _, uid := range promptReq.UserGroupIds {
+			if uid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeUser, TargetID: uid})
+			}
+		}
+	}
 
-	// 添加普通分组
+	// 添加分组关联（用于旧版 resource_permissions）
+	allGroupIds := make([]int64, 0)
 	if len(promptReq.GroupIds) > 0 {
 		allGroupIds = append(allGroupIds, promptReq.GroupIds...)
 	}
-
-	// 添加订阅分组
 	if len(promptReq.SubscriptionGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, promptReq.SubscriptionGroupIds...)
 	}
-
-	// 添加用户分组
 	if len(promptReq.UserGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, promptReq.UserGroupIds...)
 	}
 
 	// 使用通用方法更新资源权限
-	if err := service.UpdateResourcePermissions(c, tx, int64(prompt.PromptID), model.ResourceTypePrompt, allGroupIds); err != nil {
+	if err := service.UpdateResourcePermissions(c, tx, int64(prompt.PromptID), model.ResourceTypePrompt, allGroupIds, scopes, promptReq.Scopes != nil); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
@@ -358,18 +368,6 @@ func GetPrompt(c *gin.Context) {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
 		return
 	}
-	if user != nil {
-		accessible, accessErr := service.CheckResourceScopeAccess(user.UserID, eid, int64(prompt.PromptID), model.ResourceTypePrompt)
-		if accessErr != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
-		if !accessible {
-			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
-			return
-		}
-	}
-
 	// 加载提示词的分组信息
 	if err := prompt.LoadPromptGroups(); err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
@@ -490,26 +488,40 @@ func UpdatePrompt(c *gin.Context) {
 		return
 	}
 
-	// 添加分组关联
-	allGroupIds := make([]int64, 0)
+	// 构建 scopes：优先使用请求中的 scopes，否则从旧字段推导
+	scopes := dereferenceResourceScopes(promptReq.Scopes)
+	if promptReq.Scopes == nil {
+		for _, gid := range promptReq.GroupIds {
+			if gid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: gid})
+			}
+		}
+		for _, gid := range promptReq.SubscriptionGroupIds {
+			if gid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: gid})
+			}
+		}
+		for _, uid := range promptReq.UserGroupIds {
+			if uid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeUser, TargetID: uid})
+			}
+		}
+	}
 
-	// 添加普通分组
+	// 添加分组关联（用于旧版 resource_permissions）
+	allGroupIds := make([]int64, 0)
 	if len(promptReq.GroupIds) > 0 {
 		allGroupIds = append(allGroupIds, promptReq.GroupIds...)
 	}
-
-	// 添加订阅分组
 	if len(promptReq.SubscriptionGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, promptReq.SubscriptionGroupIds...)
 	}
-
-	// 添加用户分组
 	if len(promptReq.UserGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, promptReq.UserGroupIds...)
 	}
 
 	// 使用通用方法更新资源权限
-	if err := service.UpdateResourcePermissions(c, tx, int64(prompt.PromptID), model.ResourceTypePrompt, allGroupIds); err != nil {
+	if err := service.UpdateResourcePermissions(c, tx, int64(prompt.PromptID), model.ResourceTypePrompt, allGroupIds, scopes, promptReq.Scopes != nil); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return

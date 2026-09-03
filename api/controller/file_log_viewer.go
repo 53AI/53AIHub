@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -17,6 +18,7 @@ import (
 type SearchFileLogsRequest struct {
 	FileType        string `form:"file_type"`
 	Keyword         string `form:"keyword"`
+	Regex           bool   `form:"regex"`
 	Level           string `form:"level"`
 	RequestID       string `form:"request_id"`
 	Line            int    `form:"line"`
@@ -45,6 +47,7 @@ type FileLogsSearchResponse struct {
 // @Security BearerAuth
 // @Param file_type query string false "日志文件类型: all/main/error/crash/ragjob" default(all)
 // @Param keyword query string false "关键词（匹配 raw/msg）"
+// @Param regex query bool false "是否将 keyword 按正则表达式匹配（默认 false）"
 // @Param level query string false "日志级别（debug/info/warn/error/crash/fatal）"
 // @Param request_id query string false "请求ID"
 // @Param line query int false "日志行号（精确匹配）"
@@ -67,6 +70,12 @@ func SearchFileLogs(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 		return
 	}
+	if req.Regex {
+		if _, err := regexp.Compile("(?i)" + strings.TrimSpace(req.Keyword)); err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(fmt.Errorf("invalid keyword regex: %v", err)))
+			return
+		}
+	}
 
 	logDir := strings.TrimSpace(config.LogDir)
 	if logDir == "" {
@@ -81,6 +90,7 @@ func SearchFileLogs(c *gin.Context) {
 		Dir:        logDir,
 		FileType:   req.FileType,
 		Keyword:    req.Keyword,
+		Regex:      req.Regex,
 		Level:      req.Level,
 		RequestID:  req.RequestID,
 		Line:       req.Line,
@@ -229,7 +239,20 @@ const fileLogsUIHTML = `<!doctype html>
 <body>
   <div class="wrap">
     <div class="card">
-      <h2 style="margin:0 0 0 0;">53AIHub 单机日志检索</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
+        <h2 style="margin:0;">53AIHub 单机日志检索</h2>
+        <div class="row" style="width:auto; flex-shrink:0;">
+          <a href="/api/system_logs/vectorize/ui" target="_blank" rel="noopener" style="text-decoration:none;">
+            <button type="button" style="width:auto; padding:6px 14px; font-size:13px; background:#e8f0fe; color:#1a5fb4; border:1px solid #a8c7fa; border-radius:8px; cursor:pointer;">向量化日志</button>
+          </a>
+          <a href="/api/system_logs/wiki_generation/ui" target="_blank" rel="noopener" style="text-decoration:none;">
+            <button type="button" style="width:auto; padding:6px 14px; font-size:13px; background:#fff4e5; color:#9a5b00; border:1px solid #f2c078; border-radius:8px; cursor:pointer;">Wiki生成监控</button>
+          </a>
+          <a href="/swagger/index.html#/" target="_blank" rel="noopener" style="text-decoration:none;">
+            <button type="button" style="width:auto; padding:6px 14px; font-size:13px; background:var(--brand); color:#fff; border:1px solid var(--brand); border-radius:8px; cursor:pointer;">API 文档</button>
+          </a>
+        </div>
+      </div>
       <div style="font-size:14px;font-weight:600;color:var(--brand);padding:10px 12px;background:#e6f8f3;border-radius:8px;margin-bottom:10px;">版本: {{VERSION}} | 编译: {{BUILD_TIME}}</div>
       <div style="margin-bottom:10px;">
         <label>鉴权 Token（仅支持 ENV: FILE_LOG_VIEWER_ACCESS_TOKEN）</label>
@@ -238,7 +261,7 @@ const fileLogsUIHTML = `<!doctype html>
       <div class="grid">
         <div><label>文件类型</label><select id="fileType"><option value="all">all</option><option value="main">main</option><option value="error">error</option><option value="crash">crash</option><option value="ragjob">ragjob</option><option value="slow">slow（慢日志）</option></select></div>
         <div><label>级别</label><select id="level"><option value="">全部</option><option>debug</option><option>info</option><option>warn</option><option>error</option><option>crash</option><option>fatal</option></select></div>
-        <div><label>关键词</label><input id="keyword" placeholder="msg/raw 模糊匹配" /></div>
+        <div><label>关键词</label><input id="keyword" placeholder="msg/raw 模糊匹配；正则可用 A|B" /><label><input id="regex" type="checkbox" /> 正则模式</label></div>
         <div><label>request_id</label><input id="requestId" placeholder="精确匹配" /></div>
         <div><label>行号</label><input id="lineNo" type="number" min="1" placeholder="例如 1904" /></div>
         <div><label>开始时间</label><input id="start" type="datetime-local" /></div>
@@ -335,6 +358,7 @@ const fileLogsUIHTML = `<!doctype html>
       p.set('limit', String(limit));
       if (level) p.set('level', level);
       if (keyword) p.set('keyword', keyword);
+      p.set('regex', document.getElementById('regex').checked ? 'true' : 'false');
       if (requestId) p.set('request_id', requestId);
       if (lineNo > 0) p.set('line', String(lineNo));
       if (start) p.set('start_time', start);

@@ -37,13 +37,13 @@ func RecoverWikiPageGeneration(db *gorm.DB, processor WikiPageGenerationProcesso
 		var file model.File
 		if err := db.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				logger.Warnf(ctx, "【流水线恢复】wiki_page_generation: 文件不存在，跳过 (eid=%d, file_id=%d)", eid, fileID)
+				logger.Warnf(ctx, "【Wiki生成】 phase=recovery wiki_page_generation: 文件不存在，跳过 (eid=%d, file_id=%d)", eid, fileID)
 				return nil
 			}
 			return err
 		}
 
-		logger.Infof(ctx, "【流水线恢复】wiki_page_generation: 重做 wiki 页面生成 (file_id=%d)", fileID)
+		logger.Infof(ctx, "【Wiki生成】 phase=recovery wiki_page_generation: 重做 wiki 页面生成 (file_id=%d)", fileID)
 		return NewWikiPageGenerationHandler(processor)(ctx, job, config)
 	}
 }

@@ -2,6 +2,7 @@ package vectorstore
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -197,8 +198,21 @@ type VectorStoreError struct {
 	Details string `json:"details"`
 }
 
+// Error 返回带错误码与详情的信息。
+// Details 常包含供应商原始响应（如维度不匹配的具体数值），
+// 是排查向量写入失败的关键线索，不能只返回 Message。
 func (e *VectorStoreError) Error() string {
-	return e.Message
+	if e.Details == "" {
+		if e.Code != "" && e.Code != ErrCodeUnknown {
+			return fmt.Sprintf("%s [%s]", e.Message, e.Code)
+		}
+		return e.Message
+	}
+	details := e.Details
+	if len(details) > 300 {
+		details = details[:300] + "..."
+	}
+	return fmt.Sprintf("%s [%s]: %s", e.Message, e.Code, details)
 }
 
 // 错误代码常量

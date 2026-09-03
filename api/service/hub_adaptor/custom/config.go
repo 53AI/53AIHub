@@ -7,6 +7,7 @@ type CustomConfig struct {
 	AIHubConversationId        int64                    `json:"53AIHub_conversation_id,omitempty"`
 	WorkflowParams             map[string]WorkflowParam `json:"workflow_params,omitempty"`
 	DisableThinking            *bool                    `json:"disable_thinking,omitempty"`
+	EnableThinking             *bool                    `json:"enable_thinking,omitempty"`
 }
 
 // WorkflowParam 工作流参数配置

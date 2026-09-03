@@ -96,14 +96,18 @@ func ReuseSourceHasMinutes(ctx context.Context, eid, srcFileID int64) (bool, err
 	if fileMeetingMinutesStatus(file) != "completed" {
 		return false, nil
 	}
-	// 反转后纪要内容在 FileBody；Summary(-1) 必须有转写（否则下游把纪要 FileBody 当转写读时缺原文）
+	// 新布局纪要存 Summary(0)、转写原文存 Summary(-1)，缺任一则不可复用
+	if _, err := model.GetSummaryByTemplateID(srcFileID, 0); err != nil {
+		return false, nil
+	}
 	if _, err := model.GetSummaryByTemplateID(srcFileID, -1); err != nil {
 		return false, nil
 	}
 	return true, nil
 }
 
-// ReuseTranscriptForFile 将源文件转写拷贝到目标 FileBody，置转写状态 completed，继承 parse_type。
+// ReuseTranscriptForFile 将源文件转写拷贝到目标，置转写状态 completed，继承 parse_type。
+// 新布局：目标 FileBody=转写 Markdown、目标 Summary(-1)=转写原文（原始 JSON）。
 func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, userID int64) error {
 	transcriptRaw, err := loadTranscriptTextRaw(ctx, eid, srcFileID) // 双模式：Summary(-1) → FileBody
 	if err != nil {
@@ -117,15 +121,37 @@ func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, user
 	if err != nil {
 		return err
 	}
+	title := strings.TrimSpace(dstFile.GetAccurateFileName())
+	if title == "" {
+		title = strings.TrimSpace(srcFile.GetAccurateFileName())
+	}
+	md, err := RenderTranscriptMarkdown(transcriptRaw, title)
+	if err != nil {
+		return fmt.Errorf("渲染转写 Markdown 失败: %w", err)
+	}
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("eid = ? AND file_id = ?", eid, dstFileID).Delete(&model.FileBody{}).Error; err != nil {
 			return err
 		}
-		fb := &model.FileBody{Eid: eid, FileID: dstFileID, LibraryID: dstFile.LibraryID, Content: transcriptRaw, UserID: userID}
+		fb := &model.FileBody{Eid: eid, FileID: dstFileID, LibraryID: dstFile.LibraryID, Content: md, UserID: userID}
 		if err := fb.ProcessContentStorage(); err != nil {
 			return err
 		}
-		return tx.Create(fb).Error
+		if err := tx.Create(fb).Error; err != nil {
+			return err
+		}
+		// 转写原文（原始 JSON）写入 Summary(-1)
+		if err := tx.Where("file_id = ? AND template_id = -1", dstFileID).Delete(&model.RecordingFileSummary{}).Error; err != nil {
+			return err
+		}
+		ts := &model.RecordingFileSummary{
+			FileID:         dstFileID,
+			TemplateID:     -1,
+			TemplateName:   "转写原文",
+			InferenceModelID: 0,
+			SummaryContent: model.LongText(transcriptRaw),
+		}
+		return tx.Create(ts).Error
 	}); err != nil {
 		return fmt.Errorf("拷贝转写 FileBody 失败: %w", err)
 	}
@@ -142,22 +168,19 @@ func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, user
 	return nil
 }
 
-// ReuseMinutesForFile 将源文件纪要拷贝到目标（反转后布局）：
-//   - 目标 FileBody = 源 FileBody（纪要 JSON），替换目标当前（转写）FileBody
+// ReuseMinutesForFile 将源文件纪要拷贝到目标（新布局）：
+//   - 目标 FileBody = 转写 Markdown（源 FileBody 已是 Markdown 时直接拷贝，否则用源转写渲染）
 //   - 目标 Summary(template_id=-1) = 源转写原文
+//   - 目标 Summary(template_id=0) = 源纪要
 //   - template_id>0 自定义总结不拷贝（用户决策：不跨文件复制自定义总结）
 //
-// 置纪要状态 completed。只拷 Summary 行会导致下游把转写当纪要渲染，必须连 FileBody 一起拷。
+// 置纪要状态 completed。三种内容必须一起拷，缺任一则下游读取缺数据。
 func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID int64) error {
-	srcBody, err := model.GetLastFileBodyByFileID(eid, srcFileID) // 反转后：FileBody = 纪要 JSON
+	srcMinutes, err := model.GetSummaryByTemplateID(srcFileID, 0) // 新布局：纪要存 Summary(0)
 	if err != nil {
-		return fmt.Errorf("读源纪要 FileBody 失败: %w", err)
+		return fmt.Errorf("读源纪要 Summary(0) 失败: %w", err)
 	}
-	minutesRaw, err := srcBody.GetContent()
-	if err != nil {
-		return fmt.Errorf("读源纪要内容失败: %w", err)
-	}
-	srcTranscript, err := model.GetSummaryByTemplateID(srcFileID, -1) // 反转后：Summary(-1) = 转写原文
+	srcTranscript, err := model.GetSummaryByTemplateID(srcFileID, -1) // 新布局：转写原文存 Summary(-1)
 	if err != nil {
 		return fmt.Errorf("读源转写 Summary(-1) 失败: %w", err)
 	}
@@ -165,12 +188,27 @@ func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID 
 	if err != nil {
 		return err
 	}
+	// 目标 FileBody = 转写 Markdown；源 FileBody 不是 Markdown（历史布局）时用源转写原文渲染
+	fileBodyMD := ""
+	if srcBody, berr := model.GetLastFileBodyByFileID(eid, srcFileID); berr == nil && srcBody != nil {
+		if content, gerr := srcBody.GetContent(); gerr == nil && classifyRecordingContent(content) == recordingContentTranscriptMD {
+			fileBodyMD = content
+		}
+	}
+	if fileBodyMD == "" {
+		title := strings.TrimSpace(dstFile.GetAccurateFileName())
+		md, mdErr := RenderTranscriptMarkdown(string(srcTranscript.SummaryContent), title)
+		if mdErr != nil {
+			return fmt.Errorf("渲染转写 Markdown 失败: %w", mdErr)
+		}
+		fileBodyMD = md
+	}
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
-		// 目标 FileBody = 纪要（替换转写 FileBody）
+		// 目标 FileBody = 转写 Markdown
 		if err := tx.Where("eid = ? AND file_id = ?", eid, dstFileID).Delete(&model.FileBody{}).Error; err != nil {
 			return err
 		}
-		fb := &model.FileBody{Eid: eid, FileID: dstFileID, LibraryID: dstFile.LibraryID, Content: minutesRaw, UserID: userID}
+		fb := &model.FileBody{Eid: eid, FileID: dstFileID, LibraryID: dstFile.LibraryID, Content: fileBodyMD, UserID: userID}
 		if err := fb.ProcessContentStorage(); err != nil {
 			return err
 		}
@@ -182,14 +220,28 @@ func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID 
 			return err
 		}
 		ts := &model.RecordingFileSummary{
-			FileID:         dstFileID,
-			TemplateID:     -1,
-			TemplateName:   "转写原文",
+			FileID:           dstFileID,
+			TemplateID:       -1,
+			TemplateName:     "转写原文",
 			InferenceModelID: 0,
-			SummaryContent: srcTranscript.SummaryContent,
-			Status:         "completed",
+			SummaryContent:   srcTranscript.SummaryContent,
 		}
-		return tx.Create(ts).Error
+		if err := tx.Create(ts).Error; err != nil {
+			return err
+		}
+		// 目标 Summary(0) = 源纪要
+		if err := tx.Where("file_id = ? AND template_id = 0", dstFileID).Delete(&model.RecordingFileSummary{}).Error; err != nil {
+			return err
+		}
+		ms := &model.RecordingFileSummary{
+			FileID:           dstFileID,
+			TemplateID:       0,
+			TemplateName:     "纪要",
+			InferenceModelID: srcMinutes.InferenceModelID,
+			SummaryContent:   srcMinutes.SummaryContent,
+			Status:           "completed",
+		}
+		return tx.Create(ms).Error
 	}); err != nil {
 		return fmt.Errorf("拷贝纪要失败: %w", err)
 	}

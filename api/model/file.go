@@ -254,10 +254,19 @@ type FileCleaningRuleInfo struct {
 	InsightsStatus          string `json:"insights"`
 	InsightsError           string `json:"insights_error,omitempty"`
 	InsightsErrorType       string `json:"insights_error_type,omitempty"`
-	InsightPageStatus       string `json:"insight_page"`
-	TranscriptionStatus     string `json:"transcription"`
-	TranscriptionError      string `json:"transcription_error,omitempty"`
-	TranscriptionErrorType  string `json:"transcription_error_type,omitempty"`
+	// InsightMode/ReasonCode/SkipReason make a normal NO_INSIGHT result
+	// distinguishable from a failed generation without adding columns.
+	InsightMode       string `json:"insight_mode,omitempty"`
+	InsightReasonCode string `json:"insight_reason_code,omitempty"`
+	InsightSkipReason string `json:"insight_skip_reason,omitempty"`
+	InsightMessage    string `json:"insight_message,omitempty"`
+	InsightPageStatus string `json:"insight_page"`
+	// InsightPageFormat is kept in the existing JSON status blob so legacy
+	// files without a format marker continue using their original renderer.
+	InsightPageFormat      string `json:"insight_page_format,omitempty"`
+	TranscriptionStatus    string `json:"transcription"`
+	TranscriptionError     string `json:"transcription_error,omitempty"`
+	TranscriptionErrorType string `json:"transcription_error_type,omitempty"`
 }
 
 func ResolveFileRunStatus(cleaningRuleInfo string) string {
