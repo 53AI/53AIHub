@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
@@ -70,7 +71,7 @@ func (f *RagJobFactory) CreateJob(ctx context.Context, eid int64, jobType string
 		// 否则尝试填充Metadata字段
 		if err := f.populateJobMetadata(ctx, job); err != nil {
 			// 填充Metadata失败不影响任务创建，只记录日志
-			fmt.Printf("Failed to populate metadata for job %d: %v\n", job.JobID, err)
+			logger.SysWarnf("Failed to populate metadata for job %d: %v", job.JobID, err)
 		}
 	}
 
@@ -263,7 +264,7 @@ func (f *RagJobFactory) CreateJobWithoutQueue(ctx context.Context, eid int64, jo
 		// 否则尝试填充Metadata字段
 		if err := f.populateJobMetadata(ctx, job); err != nil {
 			// 填充Metadata失败不影响任务创建，只记录日志
-			fmt.Printf("Failed to populate metadata for job %d: %v\n", job.JobID, err)
+			logger.SysWarnf("Failed to populate metadata for job %d: %v", job.JobID, err)
 		}
 	}
 

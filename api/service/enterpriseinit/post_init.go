@@ -9,7 +9,6 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
-	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
@@ -1351,10 +1350,6 @@ func createDefaultPromptWithGroup(tx *gorm.DB, eid int64, createdBy int64, group
 	return nil
 }
 
-func ensureDefaultGraphTemplate(tx *gorm.DB, eid int64) (*model.GraphTemplate, error) {
-	return ensureSeededGraphTemplates(tx, eid)
-}
-
 // EnsureDefaultRagPipelineAndStrategy ensures the default pipeline and routing strategy exist.
 func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 	if tx == nil {
@@ -1365,20 +1360,8 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 	const defaultStrategyName = "默认策略"
 	const defaultStrategyPriority = 9999
 
-	defaultGraphTemplateHashID := ""
-	if config.IS_SAAS {
-		defaultGraphTemplate, err := ensureDefaultGraphTemplate(tx, eid)
-		if err != nil {
-			return err
-		}
-		defaultGraphTemplateHashID, err = hashids.Encode(defaultGraphTemplate.ID)
-		if err != nil {
-			return err
-		}
-	}
-
 	var pipeline model.RagPipelineProfile
-	if err := tx.Where("eid = ? AND name = ?", eid, defaultPipelineName).First(&pipeline).Error; err != nil {
+	if err := tx.Where("eid = ? AND name = ? AND kind = ?", eid, defaultPipelineName, model.PipelineKindRag).First(&pipeline).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -1441,17 +1424,6 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 				"config":   map[string]interface{}{},
 			},
 		}
-		if config.IS_SAAS {
-			steps = append(steps, map[string]interface{}{
-				"run_mode": "auto",
-				"step_key": "graph_generation",
-				"config": map[string]interface{}{
-					"graph_template_id":       defaultGraphTemplateHashID,
-					"enable_smart_match":      false,
-					"enable_smart_generation": false,
-				},
-			})
-		}
 
 		profile := map[string]interface{}{
 			"steps": steps,
@@ -1475,7 +1447,7 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 	}
 
 	var strategy model.RagRoutingStrategy
-	if err := tx.Where("eid = ? AND name = ?", eid, defaultStrategyName).First(&strategy).Error; err != nil {
+	if err := tx.Where("eid = ? AND name = ? AND kind = ?", eid, defaultStrategyName, model.PipelineKindRag).First(&strategy).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -1496,8 +1468,13 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 		}
 	}
 
+	// 默认图谱管线 + 兜底策略改为「企业开启图谱开关时懒初始化」，
+	// 由 controller 保存空间图谱开关的事务内调用 EnsureDefaultGraphPipelineForEnterprise，
+	// 存量企业由 kg_pipeline_split 迁移补齐。此处不再无条件创建。
+
 	return nil
 }
+
 
 // defaultContentCleaningProfileConfig 返回默认流水线中 content_cleaning 节点的配置 map。
 // 使用 model.DefaultContentCleaningConfig() 的四开三关默认值，经 JSON 往返转为 map。

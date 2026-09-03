@@ -214,11 +214,8 @@ func GetSkillDetail(c *gin.Context) {
 		return
 	}
 	eid := config.GetEID(c)
-	userID := config.GetUserId(c)
-	userGroupID := config.GetUserGroupID(c)
-
 	svc := service.NewSkillLibraryService()
-	skillInfo, getErr := svc.GetSkillDetailForUser(c.Request.Context(), eid, userID, userGroupID, skillID)
+	skillInfo, getErr := svc.GetSkillDetailForRead(c.Request.Context(), eid, skillID)
 	if getErr != nil {
 		toSkillErrorResponse(c, getErr)
 		return

@@ -59,10 +59,12 @@ export function AuthTagGroup({
   hideLabel = false,
   emptyText = '--',
   mode = 'default',
-  scopes,
+  scopes: scopesProp,
 }: AuthTagGroupProps) {
   // 防御性处理：确保 value 始终是数组
   const value = Array.isArray(valueProp) ? valueProp : [];
+  // 防御性处理：确保 scopes 始终是数组（undefined/缺失时为空数组），用 useMemo 稳定引用以避免 useEffect 无限触发
+  const scopes = useMemo(() => (Array.isArray(scopesProp) ? scopesProp : []), [scopesProp]);
   const { isIndependent, isEnterprise } = useEnterpriseType()
   const [loading, setLoading] = useState(false)
   const [subscriptionList, setSubscriptionList] = useState<SubscriptionItem[]>([])
@@ -90,7 +92,7 @@ export function AuthTagGroup({
         setUserGroupList(groupRes || [])
 
         // 如果有 scopes，加载作用域数据
-        if (scopes && scopes.length > 0) {
+        if (scopes.length > 0) {
           const needsDept = scopes.some(s => s.scope_type === 'department' || s.scope_type === 'company')
           const needsUsers = scopes.some(s => s.scope_type === 'user')
           const needsGroups = scopes.some(s => s.scope_type === 'group')

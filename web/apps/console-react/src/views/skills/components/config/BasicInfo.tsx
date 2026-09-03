@@ -1,12 +1,13 @@
 import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from "react";
 import { Input, Form, message, InputNumber } from "antd";
 import { t } from "@/locales";
-import GroupSelect from "@/components/GroupSelect";
-import { GROUP_TYPE } from "@/constants/group";
+import RegisterUserGroupSelect from "@/components/RegisterUserGroupSelect";
 import { useEnterpriseStore } from "@/stores";
 import { PublishStatus_TYPE } from "@/api/modules/skill/types";
+import type { ScopeItem } from "@/api/modules/agent";
 import UsageGuide from "./UsageGuide";
 import type { UsageGuideRef } from "./UsageGuide";
+import UseScope from "./UseScope";
 
 interface SkillData {
   id: string;
@@ -19,6 +20,7 @@ interface SkillData {
   type: "repo" | "upload";
   subscription_group_ids: number[];
   user_group_ids: number[];
+  scopes: ScopeItem[];
   github_url: string;
   version: string;
   sort: number;
@@ -27,6 +29,8 @@ interface SkillData {
 interface BasicInfoRef {
   getSkill: () => SkillData;
   setSkill: (skill: SkillData) => void;
+  // 更新技能数据但不重置未保存基线（编辑弹窗保存时使用）
+  updateSkill: (skill: SkillData) => void;
   validate: () => Promise<boolean>;
   isUnSaved: () => boolean;
   // UsageGuide 相关方法
@@ -39,6 +43,16 @@ interface BasicInfoProps {
 }
 
 const MAX_DESCRIPTION_LENGTH = 500;
+
+/** 描述超长时截断到上限，避免影响"未保存"比对 */
+function truncateSkill(newSkill: SkillData): SkillData {
+  return {
+    ...newSkill,
+    description: newSkill.description.length > MAX_DESCRIPTION_LENGTH
+      ? newSkill.description.slice(0, MAX_DESCRIPTION_LENGTH)
+      : newSkill.description,
+  };
+}
 
 const BasicInfo = forwardRef<BasicInfoRef, BasicInfoProps>(
   ({ initialSkill, skillId }, ref) => {
@@ -57,6 +71,7 @@ const BasicInfo = forwardRef<BasicInfoRef, BasicInfoProps>(
         type: "repo",
         subscription_group_ids: [],
         user_group_ids: [],
+        scopes: [],
         github_url: "",
         version: "v1.0.0",
         sort: 0,
@@ -78,15 +93,12 @@ const BasicInfo = forwardRef<BasicInfoRef, BasicInfoProps>(
     useImperativeHandle(ref, () => ({
       getSkill: () => skill,
       setSkill: (newSkill: SkillData) => {
-        // 如果描述超过500字符，只展示前500字符
-        const truncatedSkill = {
-          ...newSkill,
-          description: newSkill.description.length > MAX_DESCRIPTION_LENGTH
-            ? newSkill.description.slice(0, MAX_DESCRIPTION_LENGTH)
-            : newSkill.description,
-        };
+        const truncatedSkill = truncateSkill(newSkill);
         setSkillState(truncatedSkill);
         setOriginalSkill(JSON.stringify(truncatedSkill));
+      },
+      updateSkill: (newSkill: SkillData) => {
+        setSkillState(truncateSkill(newSkill));
       },
       validate: async () => {
         try {
@@ -172,32 +184,24 @@ const BasicInfo = forwardRef<BasicInfoRef, BasicInfoProps>(
                 {(enterpriseStore.info.is_independent ||
                   enterpriseStore.info.is_industry) && (
                   <Form.Item label={t("register_user.title")}>
-                    <GroupSelect
+                    <RegisterUserGroupSelect
                       value={skill.subscription_group_ids}
                       onChange={(val: number[]) =>
                         handleSkillChange({ subscription_group_ids: val })
                       }
-                      type="checkbox"
-                      groupType={GROUP_TYPE.USER}
-                      defaultAll={skill.publish_status === PublishStatus_TYPE.draft}
-                      multiple
+                      autoFillAll={
+                        skill.publish_status === PublishStatus_TYPE.draft
+                      }
                     />
                   </Form.Item>
                 )}
                 {(enterpriseStore.info.is_enterprise ||
                   enterpriseStore.info.is_industry) && (
-                  <Form.Item label={t("internal_user.title")}>
-                    <GroupSelect
-                      value={skill.user_group_ids}
-                      onChange={(val: number[]) =>
-                        handleSkillChange({ user_group_ids: val })
-                      }
-                      type="picker"
-                      groupType={GROUP_TYPE.INTERNAL_USER}
-                      defaultAll={skill.publish_status === PublishStatus_TYPE.draft}
-                      multiple
-                    />
-                  </Form.Item>
+                  <UseScope
+                    value={skill.scopes}
+                    onChange={(scopes) => handleSkillChange({ scopes })}
+                    isNew={skill.publish_status === PublishStatus_TYPE.draft}
+                  />
                 )}
               </div>
             </div>

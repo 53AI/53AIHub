@@ -1,5 +1,5 @@
-import type { IAgentCreateAdapter, AgentFormData, GroupOption, AgentFormRef, ChannelOption, ScopeItem } from '@km/shared-business/agent-create'
-import { AgentForm, Chat as SharedChat, buildKnowledgeSourcePayload } from '@km/shared-business/agent-create'
+import type { IAgentCreateAdapter, AgentFormData, GroupOption, AgentFormRef, ChannelOption } from '@km/shared-business/agent-create'
+import { AgentForm, buildKnowledgeSourcePayload } from '@km/shared-business/agent-create'
 import {
   getOpenClawCompatibleChannelType,
   isOpenClawCompatibleAgentType,
@@ -18,16 +18,13 @@ import { GROUP_TYPE } from '@/constants/group'
 import { CHANNEL_TYPE_VALUE_MAP } from '@/constants/platform/channel'
 import { AGENT_USAGES } from '@/constants/agent'
 import { PageLayoutContent } from '@/components/PageLayout'
-import { AgentPreview } from '@/views/agent/create/components/layout/Preview'
 import { ConsoleOpenClawEmbeddedChatWorkspace } from '@/views/agent/create-v2/OpenClawEmbeddedChatWorkspace'
-import { UseScope } from '@/views/agent/create/components/shared/UseScope'
 import { t } from '@/locales'
 import { generateRandomId } from '@/utils'
 import { copyToClip } from '@km/shared-utils'
 import { lib_host, api_host, img_host, isOpLocal, isPrivatePrem } from '@/utils/config'
 import { buildPreviewUrl } from '@/utils/preview'
 import { ImageUpload } from '@/components/Upload/image'
-import { GroupSelect } from '@/components/GroupSelect'
 import { GroupTabs } from '@/components/GroupTabs'
 import { useEnterpriseStore, useConversationStore } from '@/stores'
 import { conversationApi } from '@/api/modules/conversation'
@@ -626,17 +623,7 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
     onChange?: (url: string) => void
   }>,
 
-  PreviewComponent: AgentPreview as React.ComponentType<{
-    ref?: any
-  }>,
-
-  InlinePreviewComponent: SharedChat as React.ComponentType<{
-    className?: string
-  }>,
-
   OpenClawPreviewComponent: ConsoleOpenClawEmbeddedChatWorkspace,
-
-  UseScopeComponent: UseScope as React.ComponentType<{}>,
 
   SkillPickerComponent: SkillPicker as React.ComponentType<{
     value?: any[]
@@ -669,19 +656,7 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
     AGENT: GROUP_TYPE.AGENT,
   },
 
-  // ========== 分组选择组件 ==========
-
-  GroupSelectComponent: GroupSelect as React.ComponentType<{
-    value?: number | number[] | ScopeItem[]
-    onChange?: (value: number | number[] | ScopeItem[]) => void
-    type?: string
-    groupType?: string
-    multiple?: boolean
-    defaultFirstValue?: boolean
-    simpleValue?: boolean
-    onOptionsLoad?: (options: any[]) => void
-    children?: React.ReactNode
-  }>,
+  // ========== 分组标签组件 ==========
 
   GroupTabsComponent: GroupTabs as React.ComponentType<{
     type?: string

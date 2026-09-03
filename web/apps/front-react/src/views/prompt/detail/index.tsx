@@ -21,19 +21,20 @@ import { usePromptStore } from "@/stores/modules/prompt";
 import { useUserStore } from "@/stores/modules/user";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import promptApi from "@/api/modules/prompt";
+import resourceScopesApi from "@/api/modules/resource-scopes";
 import { copyToClip } from "@km/shared-utils";
-import { getPublicPath } from "@/utils/config";
+import type { ScopeItem } from "@km/shared-business/agent-create";
+import { getPublicPath, api_host } from "@/utils/config";
 import { t } from "@/locales";
-import { SvgIcon, SidePanel } from "@km/shared-components-react";
+import { SvgIcon, SidePanel, IconAction } from "@km/shared-components-react";
 import { MdRenderer } from "@km/hub-ui-x-react";
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
 import Footer from "@/components/Layout/Footer";
 import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import PromptInput from "@/components/PromptInput";
 import AuthTagGroup from "@/components/AuthTagGroup";
-import { IconButton } from "@/components/IconButton";
 import "./index.css";
-import { api_host } from '@/utils/config';
+import { checkPermissionAsync } from '@/utils/permission';
 
 interface PromptDetail {
   prompt_id: string;
@@ -58,6 +59,7 @@ interface PromptDetail {
     url: string;
     logo: string;
   }>;
+  scopes?: ScopeItem[];
 }
 
 interface PromptDetailViewProps {
@@ -119,6 +121,8 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
     const [loading, setLoading] = useState(true);
     const [detailData, setDetailData] = useState<PromptDetail | null>(null);
     const [isUseCase, setIsUseCase] = useState(false);
+    // 内容展示的后端权限检测结果（null 表示检测中）
+    const [scopedAccess, setScopedAccess] = useState<boolean | null>(null);
 
     // 从 URL 读取来源分组ID
     const urlGroupId = searchParams.get("group_id");
@@ -148,6 +152,16 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
         }
         data.logo =  data.logo || `${ api_host }/api/images/prompt/logo.png`
         setDetailData(data as unknown as PromptDetail);
+        // 内容展示检测：内部用户走后端 check 接口，外部用户由前端分组判断
+        const { is_internal } = userStore.info || {};
+        if (is_internal) {
+          setScopedAccess(await resourceScopesApi.check({
+            resource_id: prompt_id,
+            resource_type: "prompt",
+          }));
+        } else {
+          setScopedAccess(true);
+        }
       } catch (error) {
         console.error("Failed to fetch prompt detail:", error);
       } finally {
@@ -184,10 +198,13 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
     const hasAccess = useMemo(() => {
       if (!detailData) return false;
       const userGroupIds = userStore.info?.group_ids || [];
-      return (detailData.group_ids || []).some((id) =>
+      const frontendAccess = (detailData.group_ids || []).some((id) =>
         userGroupIds.includes(id),
       );
-    }, [detailData, userStore.info]);
+      // 后端 check 未返回前先用前端分组判断，避免闪烁；返回后再叠加后端结果
+      if (scopedAccess === null) return frontendAccess;
+      return frontendAccess && scopedAccess;
+    }, [detailData, userStore.info, scopedAccess]);
 
     // 计算分组名称
     const groupNames = useMemo(() => {
@@ -223,29 +240,47 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
         .slice(0, 4);
     }, [promptStore.promptList, detailData]);
 
-    const handleCopy = async (text: string) => {
-      const success = await copyToClip(text);
-      if (success) {
-        message.success(t("action.copy_success"));
-      }
+    const handleCopy = async (text: string, resourceId?: string) => {
+      await checkPermissionAsync({
+        resourceId: resourceId ?? prompt_id,
+        resourceType: 'prompt',
+        onClick: async () => {
+          const success = await copyToClip(text);
+          if (success) {
+            message.success(t("action.copy_success"));
+          }
+        }
+      });
     };
 
     const handleShare = async () => {
-      const success = await copyToClip(window.location.href);
-      if (success) {
-        message.success(t("status.copy_link"));
-      }
+      await checkPermissionAsync({
+        resourceId: prompt_id,
+        resourceType: 'prompt',
+        onClick: async () => {
+          const success = await copyToClip(window.location.href);
+          if (success) {
+            message.success(t("status.copy_link"));
+          }
+        }
+      });
     };
 
     const handleClickAiLink = (item: { name: string; url: string }) => {
-      Modal.confirm({
-        title: t("common.allow_to", { name: item.name }),
-        okText: t("action.allow", { name: item.name }),
-        cancelText: t("action.cancel"),
-        centered: true,
-        onOk: () => {
-          window.open(item.url, "_blank");
-        },
+      checkPermissionAsync({
+        resourceId: prompt_id,
+        resourceType: 'prompt',
+        onClick: () => {
+          Modal.confirm({
+            title: t("common.allow_to", { name: item.name }),
+            okText: t("action.allow", { name: item.name }),
+            cancelText: t("action.cancel"),
+            centered: true,
+            onOk: () => {
+              window.open(item.url, "_blank");
+            },
+          });
+        }
       });
     };
 
@@ -273,13 +308,13 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
               border={false}
               breadcrumb={breadcrumbItems}
               right={
-                <IconButton
+                <IconAction
                   title={t("chat.usage_guide")}
                   size="compact"
                   onClick={() => setIsUseCase(true)}
                 >
                   <SvgIcon name="layout-split" size={18} />
-                </IconButton>
+                </IconAction>
               }
             />
           )}
@@ -310,14 +345,14 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
                 <div className="flex-1">
                   <h2 className="text-xl font-medium text-primary mb-2 flex items-center justify-between md:justify-start">
                     <span>{detailData.name}</span>
-                    <IconButton
+                    <IconAction
                       title={t("chat.usage_guide")}
                       size="compact"
                       className="md:hidden"
                       onClick={() => setIsUseCase(true)}
                     >
                       <SvgIcon name="layout-split" size={18} />
-                    </IconButton>
+                    </IconAction>
                   </h2>
                   {/* 分组 */}
                   {groupNames.length > 0 && (
@@ -341,7 +376,7 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
 
               {!isSoftStyle && (
                 <div className="mb-7">
-                  <AuthTagGroup value={detailData.group_ids} />
+                  <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} />
                 </div>
               )}
 
@@ -474,7 +509,7 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
                               className="invisible group-hover:visible !px-2"
                               onClick={(e) => {
                                 e.preventDefault();
-                                handleCopy(item.content);
+                                handleCopy(item.content, item.prompt_id);
                               }}
                             >
                               {t("action.copy")}
@@ -497,7 +532,7 @@ const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
                   <div className="h-28"></div>
                   <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
                     <div className="flex-1 overflow-hidden">
-                      <AuthTagGroup value={detailData.group_ids} mode="compact" />
+                      <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} mode="compact" />
                     </div>
                     {hasAccess && detailData.ai_links_data && detailData.ai_links_data.length > 0 && (
                       <Popover

@@ -3,12 +3,11 @@ import {
   Select,
   Button,
   Tag,
-  Tooltip,
   Modal,
   message,
 } from "antd";
 import { CheckCircleOutlined } from "@ant-design/icons";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import { useEffect, useState, useRef } from "react";
 import { t } from "@/locales";
 import { DateRangeFilter } from "@/components/Filter";
@@ -273,40 +272,29 @@ export function OrderPage() {
           row.status === ORDER_STATUS.NOT_CONFIRM
         ) {
           return (
-            <div className="invisible group-hover:visible flex justify-end gap-1">
-              <Tooltip title={t("action_confirm_payment")} placement="top">
-                <Button
-                  type="link"
-                  className="hover:!text-brand"
-                  icon={<CheckCircleOutlined />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleConfirm({ data: row });
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title={t("action_edit")} placement="top">
-                <Button
-                  type="link"
-                  className="hover:!text-brand"
-                  icon={<SvgIcon name="edit" />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleAdd({ data: row });
-                  }}
-                />
-              </Tooltip>
-              <Tooltip title={t("action_delete")} placement="top">
-                <Button
-                  type="link"
-                  className="hover:!text-tag-red"
-                  icon={<SvgIcon name="delete" />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete({ data: row });
-                  }}
-                />
-              </Tooltip>
+            <div className="flex justify-end gap-1">
+              <IconAction
+                variant="row"
+                title={t("action_confirm_payment")}
+                onClick={() => handleConfirm({ data: row })}
+              >
+                <CheckCircleOutlined />
+              </IconAction>
+              <IconAction
+                variant="row"
+                title={t("action_edit")}
+                onClick={() => handleAdd({ data: row })}
+              >
+                <SvgIcon name="edit" />
+              </IconAction>
+              <IconAction
+                variant="row"
+                title={t("action_delete")}
+                danger
+                onClick={() => handleDelete({ data: row })}
+              >
+                <SvgIcon name="delete" />
+              </IconAction>
             </div>
           );
         }

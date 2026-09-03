@@ -57,10 +57,11 @@ export const conversationApiAdapter: IConversationApi = {
     })
   },
 
-  list: async (agentId: string, params?: { conversation_type?: string; offset?: number; limit?: number }) => {
+  list: async (agentId: string, params?: { conversation_type?: string; keyword?: string; offset?: number; limit?: number }) => {
     const result = await conversationApi.list({
       agent_id: agentId,
       conversation_type: (params?.conversation_type ? Number(params.conversation_type) : undefined) as any,
+      keyword: params?.keyword,
       offset: params?.offset,
       limit: params?.limit,
     })

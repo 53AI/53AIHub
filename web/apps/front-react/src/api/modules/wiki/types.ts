@@ -186,11 +186,33 @@ export type WikiPageSortBy = 'updated_time' | 'created_time' | 'title'
 /** 排序方向 */
 export type WikiSortOrder = 'asc' | 'desc'
 
+/** 空间 Wiki 分类（侧栏标签展示） */
+export interface WikiCategory {
+  id: number
+  name: string
+  description: string
+  /** 是否为虚拟分类（如「其他」——未归入任何分类的页面） */
+  is_virtual: boolean
+  /** 分类下页面数 */
+  page_count: number
+  slug: string
+  /** 越小越靠前 */
+  sort: number
+}
+
+/** 分类列表响应 */
+export interface WikiCategoryListResponse {
+  items: WikiCategory[]
+  total: number
+}
+
 /** 页面列表查询参数 */
 export interface WikiPageListParams {
   offset?: number
   limit?: number
   page_type?: WikiPageType
+  /** 按分类筛选（0 表示「其他」虚拟分类，需传特殊值 other） */
+  category_id?: string | "other"
   keyword?: string
   sort_by?: WikiPageSortBy
   sort_order?: WikiSortOrder
@@ -238,41 +260,23 @@ export interface WikiLogListResponse {
   total: number
 }
 
-/** 文件处理进度状态 */
-export type WikiProgressStatus = 'not_started' | 'running' | 'success' | 'failed'
-
-/** 文件处理进度项 */
-export interface WikiProgressItem {
-  run_id: string
-  file_id: string
-  file_name: string
-  file_path: string
-  library_id: string
-  library_kind: WikiLibraryKind
-  library_name: string
-  status: WikiProgressStatus
-  progress: number
-  current_job_type: string
-  step_key: string
-  step_name: string
-  next_step_key: string
-  next_step_name: string
-  start_time: number
-  end_time: number
-  duration_ms: number
-  completion_time: number
-  total_steps: number
-  success_count: number
-  failure_count: number
-  token_usage: Record<string, unknown>
-  updated_time: number
+/** 单个队列的任务计数 */
+export interface WikiQueueCount {
+  queued: number
+  running: number
+  total: number
 }
 
-/** 空间文件处理进度响应 */
-export interface WikiProgressResponse {
-  items: WikiProgressItem[]
-  libraries: WikiLibrary[]
-  total: number
+/**
+ * Wiki 队列状态响应
+ *
+ * 路由：GET /api/wiki/queue/status
+ * 统计页面生成（generation）与页面向量化（vectorization）两个队列的排队/运行/总数；
+ * 企业范围取当前登录用户上下文，可传 space_id 只看该空间。
+ */
+export interface WikiQueueStatusResponse {
+  generation: WikiQueueCount
+  vectorization: WikiQueueCount
 }
 
 /** 更新页面请求参数 */

@@ -1,6 +1,6 @@
 import { useState, useCallback, forwardRef, useImperativeHandle } from "react";
 import { Drawer, Button, Table, message, Modal } from "antd";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { providerApi } from "@/api/modules/provider";
 import { PROVIDER_VALUES } from "@/constants/platform/config";
@@ -187,24 +187,21 @@ export const AuthListDrawer = forwardRef<
       fixed: "end" as const,
       render: (_: any, row: AgentData) => (
         <div className="flex gap-2 opacity-0 group-hover:opacity-100">
-          <Button
-            type="link"
-            icon={<SvgIcon name="edit" />}
-            className="hover:!text-brand"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleEditProvider(row);
-            }}
-          />
-          <Button
-            type="link"
-            icon={<SvgIcon name="delete" />}
-            className="hover:!text-tag-red"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDeleteProvider(row);
-            }}
-          />
+          <IconAction
+            variant="row"
+            title={t("action.edit")}
+            onClick={() => handleEditProvider(row)}
+          >
+            <SvgIcon name="edit" />
+          </IconAction>
+          <IconAction
+            variant="row"
+            title={t("action_delete")}
+            danger
+            onClick={() => handleDeleteProvider(row)}
+          >
+            <SvgIcon name="delete" />
+          </IconAction>
         </div>
       ),
     },

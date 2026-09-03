@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -71,6 +72,13 @@ func ParseLLMJSONInto(ctx context.Context, content string, target any) error {
 						idx+1, repairErr, previewText(repaired, defaultLLMJSONPreviewChars))
 				}
 			}
+			if normalized, changed := normalizeLLMJSONCandidate(candidate, target); changed {
+				if normalizeErr := strictDecodeJSON(normalized, target); normalizeErr == nil {
+					logger.Debugf(ctx, "【工具执行】LLM JSON 候选经安全类型兼容后解析成功: 候选序号=%d, 候选长度=%d",
+						idx+1, len([]rune(normalized)))
+					return nil
+				}
+			}
 			continue
 		}
 
@@ -85,6 +93,116 @@ func ParseLLMJSONInto(ctx context.Context, content string, target any) error {
 		return fmt.Errorf("LLM JSON 解析失败: %w", truncationErr)
 	}
 	return fmt.Errorf("LLM JSON 解析失败: %w", lastErr)
+}
+
+// normalizeLLMJSONCandidate 仅做明确、安全的类型兼容，不替代严格 JSON 校验。
+// 当前只允许将 string/null 兼容为 []string，避免模型把单个别名误输出成标量时打断业务。
+func normalizeLLMJSONCandidate(candidate string, target any) (string, bool) {
+	var value any
+	decoder := json.NewDecoder(strings.NewReader(candidate))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return "", false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return "", false
+	}
+
+	normalized, changed := normalizeLLMJSONValue(value, reflect.TypeOf(target))
+	if !changed {
+		return "", false
+	}
+	encoded, err := json.Marshal(normalized)
+	if err != nil {
+		return "", false
+	}
+	return string(encoded), true
+}
+
+func normalizeLLMJSONValue(value any, targetType reflect.Type) (any, bool) {
+	for targetType != nil && targetType.Kind() == reflect.Pointer {
+		targetType = targetType.Elem()
+	}
+	if targetType == nil {
+		return value, false
+	}
+
+	if value == nil {
+		if targetType.Kind() == reflect.Slice && targetType.Elem().Kind() == reflect.String {
+			return []any{}, true
+		}
+		return value, false
+	}
+
+	switch targetType.Kind() {
+	case reflect.Slice:
+		if targetType.Elem().Kind() == reflect.String {
+			if scalar, ok := value.(string); ok {
+				return []any{scalar}, true
+			}
+		}
+		items, ok := value.([]any)
+		if !ok {
+			return value, false
+		}
+		changed := false
+		for index := range items {
+			normalized, itemChanged := normalizeLLMJSONValue(items[index], targetType.Elem())
+			items[index] = normalized
+			changed = changed || itemChanged
+		}
+		return items, changed
+	case reflect.Struct:
+		object, ok := value.(map[string]any)
+		if !ok {
+			return value, false
+		}
+		changed := false
+		fieldTypes := jsonFieldTypes(targetType)
+		for key, item := range object {
+			fieldType, exists := fieldTypes[key]
+			if !exists {
+				continue
+			}
+			normalized, itemChanged := normalizeLLMJSONValue(item, fieldType)
+			object[key] = normalized
+			changed = changed || itemChanged
+		}
+		return object, changed
+	case reflect.Map:
+		object, ok := value.(map[string]any)
+		if !ok || targetType.Key().Kind() != reflect.String {
+			return value, false
+		}
+		changed := false
+		for key, item := range object {
+			normalized, itemChanged := normalizeLLMJSONValue(item, targetType.Elem())
+			object[key] = normalized
+			changed = changed || itemChanged
+		}
+		return object, changed
+	default:
+		return value, false
+	}
+}
+
+func jsonFieldTypes(targetType reflect.Type) map[string]reflect.Type {
+	fields := make(map[string]reflect.Type)
+	for index := 0; index < targetType.NumField(); index++ {
+		field := targetType.Field(index)
+		if field.PkgPath != "" {
+			continue
+		}
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "" {
+			name = field.Name
+		}
+		if name != "-" {
+			fields[name] = field.Type
+		}
+	}
+	return fields
 }
 
 // ParseLLMJSON 是 ParseLLMJSONInto 的泛型包装，适合直接获取结构化返回值。

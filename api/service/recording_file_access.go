@@ -9,12 +9,22 @@ import (
 
 var ErrRecordingFileForbidden = errors.New("recording file is not accessible")
 
+func requireRecordingOrigin(file *model.File) error {
+	if file == nil || !file.IsRecordingOriginType() {
+		return ErrRecordingFileForbidden
+	}
+	return nil
+}
+
 // GetAccessibleRecordingFile 是安心录文件的统一访问边界。
 // 当前产品仅支持个人库录音：文件创建者与当前用户必须一致；同时仍校验知识库权限，
 // 为后续协作模型保留明确的升级位置。
 func GetAccessibleRecordingFile(ctx context.Context, eid, userID, fileID int64, requireEdit bool) (*model.File, error) {
 	file, err := model.GetFileByID(eid, fileID)
 	if err != nil || file == nil {
+		return nil, err
+	}
+	if err := requireRecordingOrigin(file); err != nil {
 		return nil, err
 	}
 	if file.UserID != userID {

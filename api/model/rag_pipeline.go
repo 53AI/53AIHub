@@ -15,6 +15,13 @@ const (
 	RagPipelineStatusDisabled = 0
 )
 
+// 管线/策略业务类型（同一张表区分 RAG 与图谱两套配置）
+const (
+	PipelineKindRag   = "rag"   // RAG 管线/策略（存量默认）
+	PipelineKindGraph = "graph" // 图谱管线/策略
+	PipelineKindWiki  = "wiki"  // Wiki 管线/策略
+)
+
 // 路由策略逻辑
 const (
 	RagRoutingLogicAnd = 1
@@ -25,6 +32,7 @@ const (
 type RagPipelineProfile struct {
 	ID          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
 	Eid         int64  `json:"eid" gorm:"not null;index;comment:企业ID"`
+	Kind        string `json:"kind" gorm:"type:varchar(16);not null;default:rag;index;comment:类型 rag=RAG管线 graph=图谱管线 wiki=Wiki管线"`
 	Name        string `json:"name" gorm:"type:varchar(255);not null;comment:流水线名称"`
 	Icon        string `json:"icon" gorm:"type:varchar(255);comment:图标"`
 	Status      int    `json:"status" gorm:"type:smallint;not null;default:1;comment:状态 1:启用 0:禁用"`
@@ -46,6 +54,7 @@ func (RagPipelineProfile) TableName() string {
 type RagRoutingStrategy struct {
 	ID             int64  `json:"id" gorm:"primaryKey;autoIncrement"`
 	Eid            int64  `json:"eid" gorm:"not null;index;comment:企业ID"`
+	Kind           string `json:"kind" gorm:"type:varchar(16);not null;default:rag;index;comment:类型 rag=RAG策略 graph=图谱策略 wiki=Wiki策略"`
 	Name           string `json:"name" gorm:"type:varchar(255);not null;comment:策略名称"`
 	Icon           string `json:"icon" gorm:"type:varchar(255);comment:图标"`
 	Priority       int    `json:"priority" gorm:"not null;comment:优先级(1-99)"`
@@ -75,6 +84,20 @@ type StrategyWithPipelineResponse struct {
 
 // FindHighestPriorityRagRoutingStrategyAndPipelineByFile 根据文件扩展名查找最高优先级的 RAG 路由策略和流水线
 func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *File) (*RagRoutingStrategy, *RagPipelineProfile, error) {
+	return findHighestPriorityRoutingStrategyAndPipelineByFile(db, file, PipelineKindRag)
+}
+
+// FindHighestPriorityGraphRoutingStrategyAndPipelineByFile 根据文件特征查找最高优先级的图谱路由策略和管线（逻辑与 RAG 策略一致）
+func FindHighestPriorityGraphRoutingStrategyAndPipelineByFile(db *gorm.DB, file *File) (*RagRoutingStrategy, *RagPipelineProfile, error) {
+	return findHighestPriorityRoutingStrategyAndPipelineByFile(db, file, PipelineKindGraph)
+}
+
+// FindHighestPriorityWikiRoutingStrategyAndPipelineByFile 根据文件特征查找最高优先级的 Wiki 路由策略和管线。
+func FindHighestPriorityWikiRoutingStrategyAndPipelineByFile(db *gorm.DB, file *File) (*RagRoutingStrategy, *RagPipelineProfile, error) {
+	return findHighestPriorityRoutingStrategyAndPipelineByFile(db, file, PipelineKindWiki)
+}
+
+func findHighestPriorityRoutingStrategyAndPipelineByFile(db *gorm.DB, file *File, kind string) (*RagRoutingStrategy, *RagPipelineProfile, error) {
 	if db == nil {
 		return nil, nil, errors.New("db is nil")
 	}
@@ -127,8 +150,8 @@ func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *F
 	}
 
 	var strategies []RagRoutingStrategy
-	// 直接查询 rag_routing_strategies
-	if err := db.Where("eid = ? AND enabled = ?", file.Eid, true).
+	// 直接查询 rag_routing_strategies（按 kind 隔离 RAG / 图谱两套配置）
+	if err := db.Where("eid = ? AND enabled = ? AND kind = ?", file.Eid, true, kind).
 		Order("priority asc, id asc").
 		Find(&strategies).Error; err != nil {
 		return nil, nil, err
@@ -311,9 +334,9 @@ func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *F
 		return &strategy, &profile, nil
 	}
 
-	// 如果没有任何策略命中，尝试返回标记为 is_default 的兜底策略
+	// 如果没有任何策略命中，尝试返回标记为 is_default 的兜底策略（图谱兜底开关 = 默认策略的 enabled）
 	var defaultStrategy RagRoutingStrategy
-	if err := db.Where("eid = ? AND enabled = ? AND is_default = ?", file.Eid, true, true).
+	if err := db.Where("eid = ? AND enabled = ? AND is_default = ? AND kind = ?", file.Eid, true, true, kind).
 		Order("priority asc, id asc").
 		First(&defaultStrategy).Error; err == nil {
 		var profile RagPipelineProfile
@@ -330,12 +353,26 @@ func FindHighestPriorityRagRoutingStrategyAndPipelineByFile(db *gorm.DB, file *F
 
 func GetRagPipelineProfilesByEidAndName(eid int64, name string) ([]RagPipelineProfile, error) {
 	var pipelines []RagPipelineProfile
-	err := DB.Where("eid = ? AND name = ?", eid, name).Find(&pipelines).Error
+	err := DB.Where("eid = ? AND name = ? AND kind = ?", eid, name, PipelineKindRag).Find(&pipelines).Error
 	return pipelines, err
 }
 
 func GetRagRoutingStrategiesByEidAndName(eid int64, name string) ([]RagRoutingStrategy, error) {
 	var strategies []RagRoutingStrategy
-	err := DB.Where("eid = ? AND name = ?", eid, name).Find(&strategies).Error
+	err := DB.Where("eid = ? AND name = ? AND kind = ?", eid, name, PipelineKindRag).Find(&strategies).Error
+	return strategies, err
+}
+
+// GetGraphPipelineProfilesByEidAndName 查询图谱管线（kind=graph）
+func GetGraphPipelineProfilesByEidAndName(eid int64, name string) ([]RagPipelineProfile, error) {
+	var pipelines []RagPipelineProfile
+	err := DB.Where("eid = ? AND name = ? AND kind = ?", eid, name, PipelineKindGraph).Find(&pipelines).Error
+	return pipelines, err
+}
+
+// GetGraphRoutingStrategiesByEidAndName 查询图谱策略（kind=graph）
+func GetGraphRoutingStrategiesByEidAndName(eid int64, name string) ([]RagRoutingStrategy, error) {
+	var strategies []RagRoutingStrategy
+	err := DB.Where("eid = ? AND name = ? AND kind = ?", eid, name, PipelineKindGraph).Find(&strategies).Error
 	return strategies, err
 }

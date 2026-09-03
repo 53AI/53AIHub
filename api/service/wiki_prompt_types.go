@@ -3,6 +3,7 @@ package service
 type WikiCandidateSlug struct {
 	Name        string   `json:"name"`
 	Slug        string   `json:"slug"`
+	Type        string   `json:"type,omitempty"`
 	Aliases     []string `json:"aliases"`
 	Description string   `json:"description"`
 	Details     string   `json:"details"`
@@ -59,6 +60,7 @@ type WikiSlugUpdate struct {
 	LibraryID         int64    `json:"library_id,omitempty"`
 	SourceFileID      int64    `json:"source_file_id,omitempty"`
 	SourceChunks      []string `json:"source_chunks,omitempty"`
+	SourceContentHash string   `json:"source_content_hash,omitempty"`
 }
 
 type WikiPageModifyInput struct {

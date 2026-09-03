@@ -54,7 +54,6 @@ export function LibraryAudioView({ currentFile }: { currentFile: FileItem }) {
     // 之后若 trans / minutes 任一仍在 loading / 用户点击「开始生成」触发 resetFailed，轮询自动维持；
     // 全部完成或失败后轮询自动停止
     shouldPoll: true,
-    initialFileData: currentFile as any,
     skipInsight: true,
   })
 

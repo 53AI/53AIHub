@@ -1,5 +1,17 @@
 import service from '../config'
 import { handleError } from '../error-handler'
+import type { ScopeItem } from './agent'
+
+export interface PromptListItem {
+  prompt_id: number
+  name: string
+  description: string
+  group_ids: number[]
+  scopes?: ScopeItem[]
+  status: number
+  created_time: string
+  [key: string]: any
+}
 
 export const promptApi = {
   async list({
@@ -16,7 +28,7 @@ export const promptApi = {
     const res: any = await service.get('/api/prompts/admin', { params: cleanParams }).catch(handleError)
     const data = res?.data ?? {}
     const count = data.count ?? 0
-    const prompts = data.prompts ?? []
+    const prompts: PromptListItem[] = data.prompts ?? []
     return { total: +count || 0, list: prompts }
   },
   async detail({ prompt_id }: { prompt_id: number }) {
@@ -32,6 +44,7 @@ export const promptApi = {
     content?: string
     subscription_group_ids?: (string | number)[]
     user_group_ids?: (string | number)[]
+    scopes?: ScopeItem[]
     sort?: number
     status?: 0 | 1 | undefined
     custom_config?: any

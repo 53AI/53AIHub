@@ -49,11 +49,6 @@ const ProfilePopover = lazy(() =>
 )
 
 const ProfileModal = lazy(() => import('@/views/profile'))
-const RecordingFloat = lazy(() =>
-  import('@/components/RecordingFloat').then((m) => ({
-    default: m.RecordingFloat
-  }))
-)
 
 export function Layout() {
   const location = useLocation()
@@ -114,8 +109,6 @@ export function Layout() {
   const showMineMenu =
     userStore.is_login &&
     ((hasKnowledge && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE)) || checkVersion(VERSION_MODULE.AGENT))
-
-  const showRecordingMenu = false
 
   // Computed: navigations with is_internal filter
   const navigations = navigationStore.navigations
@@ -726,22 +719,6 @@ export function Layout() {
                   )
                 })}
 
-                {/* Recording menu */}
-                {showRecordingMenu && (
-                  <Link
-                    to="/recording"
-                    onClick={() => {
-                      isMobile && setSiderVisible(false)
-                    }}
-                    className={`py-2 flex flex-col items-center gap-1 rounded-lg cursor-pointer hover:bg-[#EBF1FF] ${getBlockColor(effectivePath.startsWith('/recording'))}`}
-                  >
-                    <div className="size-5 flex-center">
-                      <SvgIcon name="voice-one" size="20" />
-                    </div>
-                    <p className="text-[10px] truncate">{t('module.recording')}</p>
-                  </Link>
-                )}
-
                 {/* Mine menu */}
                 {showMineMenu && (
                   <Link
@@ -839,7 +816,7 @@ export function Layout() {
                   >
                     <Tooltip title="" placement="right" getPopupContainer={() => document.body}>
                       <div
-                        className={`flex overflow-hidden items-center cursor-pointer ${useCompactMode ? 'flex-col gap-1' : 'flex-1  gap-2'}`}
+                        className={`flex items-center cursor-pointer ${useCompactMode ? 'flex-col gap-1' : 'flex-1  gap-2'}`}
                       >
                         <div className={useCompactMode ? 'relative' : ''}>
                           {/* 紧凑模式下在头像右上角显示红点 */}
@@ -931,10 +908,6 @@ export function Layout() {
               : null
           })()}
 
-        {/* Recording Float - global recording status indicator */}
-        <Suspense fallback={null}>
-          <RecordingFloat />
-        </Suspense>
       </div>
     </SidebarContext.Provider>
   )

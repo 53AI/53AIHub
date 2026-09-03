@@ -6,6 +6,7 @@ import { GROUP_TYPE } from '@/constants/group'
 import { useEnterpriseStore } from '@/stores'
 import { api_host } from '@/utils/config'
 import { t } from '@/locales'
+import type { ScopeItem } from '@/api/modules/agent'
 
 interface AILink {
   ai_link: DefaultLinkItem
@@ -34,7 +35,7 @@ interface PromptFormData {
   logo: string
   content: string
   subscription_group_ids: number[]
-  user_group_ids: number[]
+  scopes: ScopeItem[]
   sort: number
   status: number
   custom_config: CustomConfig
@@ -53,7 +54,7 @@ const DEFAULT_FORM_DATA: PromptFormData = {
   logo: '',
   content: '',
   subscription_group_ids: [],
-  user_group_ids: [],
+  scopes: [],
   sort: 0,
   status: 1,
   custom_config: {
@@ -101,8 +102,6 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
     })
 
     const enterpriseStore = useEnterpriseStore.getState()
-    let subscriptionGroupIds: number[] = []
-    let userGroupIds: number[] = []
     let groupIds: number[] = []
 
     // 获取分组列表，默认选择第一个
@@ -115,14 +114,11 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
       console.error('Load prompt groups error:', error)
     }
 
-    if (enterpriseStore.info.is_enterprise || enterpriseStore.info.is_industry) {
-      const list = await groupApi.list({ params: { group_type: GROUP_TYPE.INTERNAL_USER } })
-      userGroupIds = list.map((item: any) => item.group_id)
-    }
-    if (enterpriseStore.info.is_independent || enterpriseStore.info.is_industry) {
-      const list = await groupApi.list({ params: { group_type: GROUP_TYPE.USER } })
-      subscriptionGroupIds = list.map((item: any) => item.group_id)
-    }
+    // 默认 scopes：企业版/行业版默认全选"全部成员"
+    const defaultScopes: ScopeItem[] =
+      enterpriseStore.info.is_enterprise || enterpriseStore.info.is_industry
+        ? [{ scope_type: 'company', target_id: 0 }]
+        : []
 
     // 更新分组数据
     set({
@@ -131,8 +127,7 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
         logo: defaultLogo,
         name: t('prompt.default_name'),
         group_ids: groupIds,
-        subscription_group_ids: subscriptionGroupIds,
-        user_group_ids: userGroupIds,
+        scopes: defaultScopes,
       },
       loading: false,
     })
@@ -156,12 +151,15 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
   save: async (options = {}) => {
     const { prompt_id, hideToast = false } = options
     const state = get()
+    const { user_group_ids: _omit, ...rest } = state.formData
     const data = {
-      ...state.formData,
+      ...rest,
       prompt_id: prompt_id || state.formData.prompt_id || state.detailData.prompt_id || 0,
       // Allow override with form values
       ...(options.formValues || {}),
     }
+    // 保存时只发送 scopes，不发送 user_group_ids（兼容字段，仅用于派生源）
+    delete (data as any).user_group_ids
     set({ submitting: true })
     try {
       const res = await promptApi.save(data as any)
@@ -180,11 +178,9 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
 
     set({ loading: true })
     try {
-      const [data, promptGroups, userGroups, internalUserGroups] = await Promise.all([
+      const [data, promptGroups] = await Promise.all([
         promptApi.detail({ prompt_id: Number(prompt_id) }),
         groupApi.list({ params: { group_type: GROUP_TYPE.PROMPT } }).catch(() => []),
-        groupApi.list({ params: { group_type: GROUP_TYPE.USER } }).catch(() => []),
-        groupApi.list({ params: { group_type: GROUP_TYPE.INTERNAL_USER } }).catch(() => []),
       ])
 
       // Parse custom_config
@@ -207,17 +203,19 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
       if (!data.custom_config) data.custom_config = {}
       if (!data.custom_config.use_cases) data.custom_config.use_cases = []
 
-      // Filter group IDs
-      const allGroupIds = data.group_ids || []
-      data.group_ids = allGroupIds.filter((id: number) =>
-        (promptGroups as any[]).some((g: any) => g.group_id === id)
-      )
-      data.subscription_group_ids = allGroupIds.filter((id: number) =>
-        (userGroups as any[]).some((g: any) => g.group_id === id)
-      )
-      data.user_group_ids = allGroupIds.filter((id: number) =>
-        (internalUserGroups as any[]).some((g: any) => g.group_id === id)
-      )
+      // 后端已正确分开返回：group_ids = PROMPT 组，subscription_group_ids = 注册用户组。
+      // 不要从 group_ids 派生 subscription_group_ids —— group_ids 只含 PROMPT 组，
+      // 反推会把后端本已正确的注册用户组覆盖成 []。
+      const promptGroupIds = new Set((promptGroups as any[]).map((g: any) => Number(g.group_id)))
+      data.group_ids = (data.group_ids || [])
+        .map(Number)
+        .filter((id: number) => promptGroupIds.has(id))
+      data.subscription_group_ids = (data.subscription_group_ids || []).map(Number)
+
+      // scopes 非数组时视为空(后端可能返回 "" 或 null,不再用 user_group_ids 派生)
+      if (!Array.isArray(data.scopes)) {
+        data.scopes = []
+      }
       data.logo = data.logo || getDefaultLogo()
       set({ detailData: data })
       get().formatFormData(data)
@@ -236,7 +234,7 @@ export const usePromptFormDataStore = create<PromptStore>((set, get) => ({
       logo: data.logo || getDefaultLogo(),
       content: data.content || '',
       subscription_group_ids: data.subscription_group_ids || [],
-      user_group_ids: data.user_group_ids || [],
+      scopes: data.scopes || [],
       sort: data.sort || 0,
       status: data.status,
       custom_config: data.custom_config,

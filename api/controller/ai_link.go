@@ -11,16 +11,16 @@ import (
 )
 
 type AILinkRequest struct {
-	GroupID       int64  `json:"group_id" example:"1"`
-	Name          string `json:"name" example:"ai_link_name"`
-	Logo          string `json:"logo" example:"logo_url"`
-	URL           string `json:"url" example:"ai_link_url"`
-	Description   string `json:"description" example:"ai_link_description"`
-	Sort          int64  `json:"sort" example:"0"`
-	SharedAccount string `json:"shared_account" example:"[{'account':'admin', 'password':'<PASSWORD>', 'remark':''}]"`
-	// 使用范围
-	SubscriptionGroupIds []int64 `json:"subscription_group_ids"`
-	UserGroupIds         []int64 `json:"user_group_ids"`
+	GroupID              int64                      `json:"group_id" example:"1"`
+	Name                 string                     `json:"name" example:"ai_link_name"`
+	Logo                 string                     `json:"logo" example:"logo_url"`
+	URL                  string                     `json:"url" example:"ai_link_url"`
+	Description          string                     `json:"description" example:"ai_link_description"`
+	Sort                 int64                      `json:"sort" example:"0"`
+	SharedAccount        string                     `json:"shared_account" example:"[{'account':'admin', 'password':'<PASSWORD>', 'remark':''}]"`
+	SubscriptionGroupIds []int64                    `json:"subscription_group_ids"`
+	UserGroupIds         []int64                    `json:"user_group_ids"`
+	Scopes               *[]model.ResourceScopeItem `json:"scopes"`
 }
 
 // @Summary Create AI Link
@@ -55,16 +55,26 @@ func CreateAILink(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
+	// 构建 scopes：优先使用请求中的 scopes，否则从旧字段推导
+	scopes := dereferenceResourceScopes(req.Scopes)
+	if req.Scopes == nil {
+		for _, gid := range req.SubscriptionGroupIds {
+			if gid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: gid})
+			}
+		}
+		for _, uid := range req.UserGroupIds {
+			if uid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeUser, TargetID: uid})
+			}
+		}
+	}
 
-	// 添加分组关联
+	// 添加分组关联（用于旧版 resource_permissions）
 	allGroupIds := make([]int64, 0)
-
-	// 添加订阅分组
 	if len(req.SubscriptionGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, req.SubscriptionGroupIds...)
 	}
-
-	// 添加用户分组
 	if len(req.UserGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, req.UserGroupIds...)
 	}
@@ -75,7 +85,7 @@ func CreateAILink(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
 	}
-	if err := service.UpdateResourcePermissions(c, tx, link.ID, model.ResourceTypeAILink, allGroupIds); err != nil {
+	if err := service.UpdateResourcePermissions(c, tx, link.ID, model.ResourceTypeAILink, allGroupIds, scopes, req.Scopes != nil); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
@@ -108,17 +118,6 @@ func GetAILink(c *gin.Context) {
 	if err != nil || link.Eid != config.GetEID(c) {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
 		return
-	}
-	if user, userErr := model.GetLoginUser(c); userErr == nil {
-		accessible, accessErr := service.CheckResourceScopeAccess(user.UserID, link.Eid, link.ID, model.ResourceTypeAILink)
-		if accessErr != nil {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-			return
-		}
-		if !accessible {
-			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
-			return
-		}
 	}
 	err = link.LoadUserGroupIds()
 	if err != nil {
@@ -166,16 +165,26 @@ func UpdateAILink(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
+	// 构建 scopes：优先使用请求中的 scopes，否则从旧字段推导
+	scopes := dereferenceResourceScopes(req.Scopes)
+	if req.Scopes == nil {
+		for _, gid := range req.SubscriptionGroupIds {
+			if gid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: gid})
+			}
+		}
+		for _, uid := range req.UserGroupIds {
+			if uid > 0 {
+				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeUser, TargetID: uid})
+			}
+		}
+	}
 
-	// 更新分组关联
+	// 更新分组关联（用于旧版 resource_permissions）
 	allGroupIds := make([]int64, 0)
-
-	// 添加订阅分组
 	if len(req.SubscriptionGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, req.SubscriptionGroupIds...)
 	}
-
-	// 添加用户分组
 	if len(req.UserGroupIds) > 0 {
 		allGroupIds = append(allGroupIds, req.UserGroupIds...)
 	}
@@ -193,7 +202,7 @@ func UpdateAILink(c *gin.Context) {
 	}()
 
 	// 使用通用方法更新资源权限
-	if err := service.UpdateResourcePermissions(c, tx, link.ID, model.ResourceTypeAILink, allGroupIds); err != nil {
+	if err := service.UpdateResourcePermissions(c, tx, link.ID, model.ResourceTypeAILink, allGroupIds, scopes, req.Scopes != nil); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
@@ -238,7 +247,7 @@ func DeleteAILink(c *gin.Context) {
 	}
 
 	// 使用通用方法删除资源权限
-	if err := service.UpdateResourcePermissions(c, tx, int64(id), model.ResourceTypeAILink, []int64{}); err != nil {
+	if err := service.UpdateResourcePermissions(c, tx, int64(id), model.ResourceTypeAILink, []int64{}, []model.ResourceScopeItem{}, true); err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
@@ -314,21 +323,6 @@ func GetCurrentSiteAILinks(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
-	if user, userErr := model.GetLoginUser(c); userErr == nil {
-		filtered := make([]model.AILink, 0, len(links))
-		for _, link := range links {
-			accessible, accessErr := service.CheckResourceScopeAccess(user.UserID, eid, link.ID, model.ResourceTypeAILink)
-			if accessErr != nil {
-				c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-				return
-			}
-			if accessible {
-				filtered = append(filtered, link)
-			}
-		}
-		links = filtered
-	}
-
 	c.JSON(http.StatusOK, model.Success.ToResponse(links))
 }
 

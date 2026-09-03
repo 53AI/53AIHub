@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Spin, Empty, Checkbox, Tooltip } from "antd";
 import { RightOutlined } from "@ant-design/icons";
 import type { SpaceItem } from "@/api/modules/spaces";
-import type { WikiPageItem, WikiPageType } from "@/api/modules/wiki";
+import type { WikiCategory, WikiPageItem } from "@/api/modules/wiki";
 import { wikiApi } from "@/api/modules/wiki";
 import { spacesApi } from "@/api/modules/spaces";
 import { permissionsApi } from "@/api/modules/permissions";
@@ -13,15 +13,6 @@ import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
 import { useUserStore } from "@/stores/modules/user";
 import type { WikiItem } from "../dialog";
-
-const PAGE_TYPE_I18N_KEY: Record<WikiPageType, string> = {
-  concept: "wiki.page_type.concept",
-  entity: "wiki.page_type.entity",
-  index: "wiki.page_type.index",
-  summary: "wiki.page_type.summary",
-};
-
-const KNOW_PAGE_TYPES: WikiPageType[] = ["concept", "entity", "index", "summary"];
 
 export interface KnowledgeListProps {
   // 外部已选动态知识（空间和页面混合）
@@ -44,7 +35,8 @@ export function KnowledgeList({
   const [spaceList, setSpaceList] = useState<SpaceItem[]>([]);
   const [spaceId, setSpaceId] = useState("");
   const [spaceLoading, setSpaceLoading] = useState(false);
-  const [activePageType, setActivePageType] = useState<WikiPageType>("concept");
+  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null);
+  const [categories, setCategories] = useState<WikiCategory[]>([]);
 
   // 本地页面列表状态（不依赖全局 store）
   const [pageList, setPageList] = useState<WikiPageItem[]>([]);
@@ -62,30 +54,25 @@ export function KnowledgeList({
   const pageLoadingRef = useRef(pageLoading);
   pageLoadingRef.current = pageLoading;
 
-  // 分类统计（从 index 接口获取）
-  const [pageTypeCounts, setPageTypeCounts] = useState<Record<WikiPageType, number>>({
-    concept: 0,
-    entity: 0,
-    index: 0,
-    summary: 0,
-  });
-
-  // 加载分类统计
-  const loadPageTypeCounts = useCallback(async (spaceId: string) => {
-    const data = await wikiApi.index(spaceId);
-    setPageTypeCounts({
-      concept: data.page_type_counts?.concept ?? 0,
-      entity: data.page_type_counts?.entity ?? 0,
-      index: data.page_type_counts?.index ?? 0,
-      summary: data.page_type_counts?.summary ?? 0,
-    });
+  // 分类列表（从 categories 接口获取）
+  const loadCategories = useCallback(async (spaceId: string) => {
+    try {
+      const data = await wikiApi.categories(spaceId);
+      setCategories(Array.isArray(data) ? data : data?.items ?? []);
+    } catch {
+      setCategories([]);
+    }
   }, []);
 
   // 加载页面列表并做权限过滤
-  const loadWikiPages = useCallback(async (spaceId: string, pageType: WikiPageType) => {
+  const loadWikiPages = useCallback(async (spaceId: string, categoryId: number | null) => {
     setPageLoading(true);
     try {
-      const data = await wikiApi.pages(spaceId, { offset: 0, limit: 100, page_type: pageType });
+      const data = await wikiApi.pages(spaceId, {
+        offset: 0,
+        limit: 100,
+        ...(categoryId != null ? { category_id: categoryId } : {}),
+      });
       const allPages = data.items ?? [];
 
       let permissionMap: Record<string, number> = {};
@@ -113,13 +100,17 @@ export function KnowledgeList({
 
   // 加载更多页面(已在内部 setHasMore,外部不需要重复设置)
   // 通过 ref 读取 pageLoadingMore,避免把它放入 deps 引起回调重建
-  const loadMorePages = useCallback(async (spaceId: string, currentOffset: number, currentTotal: number, pageType: WikiPageType) => {
+  const loadMorePages = useCallback(async (spaceId: string, currentOffset: number, currentTotal: number, categoryId: number | null) => {
     if (pageLoadingMoreRef.current) return false;
     if (currentOffset >= currentTotal) return false;
 
     setPageLoadingMore(true);
     try {
-      const data = await wikiApi.pages(spaceId, { offset: currentOffset, limit: 100, page_type: pageType });
+      const data = await wikiApi.pages(spaceId, {
+        offset: currentOffset,
+        limit: 100,
+        ...(categoryId != null ? { category_id: categoryId } : {}),
+      });
       const newItems = data.items ?? [];
 
       // 权限过滤
@@ -208,13 +199,13 @@ export function KnowledgeList({
       if (!initializedRef.current && filteredSpaces.length > 0) {
         initializedRef.current = true;
         setSpaceId(filteredSpaces[0].id);
-        loadWikiPages(filteredSpaces[0].id, activePageType);
-        loadPageTypeCounts(filteredSpaces[0].id);
+        loadWikiPages(filteredSpaces[0].id, null);
+        loadCategories(filteredSpaces[0].id);
       }
     } finally {
       setSpaceLoading(false);
     }
-  }, [loadWikiPages, userEid]);
+  }, [loadWikiPages, loadCategories, userEid]);
 
   // 首次加载空间列表
   useEffect(() => {
@@ -235,15 +226,15 @@ export function KnowledgeList({
     };
   }, [loadWikiSpaceList]);
 
-  // 切换空间时加载页面和统计
+  // 切换空间时加载页面和分类
   useEffect(() => {
     if (!spaceId) return;
     let cancelled = false;
     const run = async () => {
       try {
-        await loadWikiPages(spaceId, activePageType);
+        await loadWikiPages(spaceId, activeCategoryId);
         if (cancelled) return;
-        await loadPageTypeCounts(spaceId);
+        await loadCategories(spaceId);
       } catch {
         // 静默吞掉
       }
@@ -252,16 +243,19 @@ export function KnowledgeList({
     return () => {
       cancelled = true;
     };
-  }, [spaceId, loadWikiPages, loadPageTypeCounts, activePageType]);
+  }, [spaceId, loadWikiPages, loadCategories, activeCategoryId]);
 
-  // 标签列表（去掉"全部"）
+  // 分类标签（顶部"全部"表示不过滤）
   const tags = useMemo(() => {
-    return KNOW_PAGE_TYPES.map((k) => ({
-      name: t(PAGE_TYPE_I18N_KEY[k]),
-      count: pageTypeCounts[k] ?? 0,
-      key: k,
-    }));
-  }, [pageTypeCounts]);
+    const all = { key: null as number | null, name: t("common.all") };
+    return [
+      all,
+      ...categories.map((cat) => ({
+        key: cat.id,
+        name: cat.name,
+      })),
+    ];
+  }, [categories]);
 
   // 过滤列表（API 已按分类过滤，只需排序）
   const filteredList = useMemo(() => {
@@ -290,15 +284,16 @@ export function KnowledgeList({
       const target = e.target as HTMLDivElement;
       const { scrollTop, scrollHeight, clientHeight } = target;
       if (scrollHeight - scrollTop - clientHeight < 50 && hasMore && !pageLoadingMoreRef.current && !pageLoadingRef.current) {
-        loadMorePages(spaceId, pageOffset, pageTotal, activePageType);
+        loadMorePages(spaceId, pageOffset, pageTotal, activeCategoryId);
       }
     },
-    [hasMore, spaceId, loadMorePages, pageOffset, pageTotal, activePageType],
+    [hasMore, spaceId, loadMorePages, pageOffset, pageTotal, activeCategoryId],
   );
 
   // 处理空间选择(组件内部维护 active space,无需回调到外部)
   const handleSpaceSelect = useCallback((id: string) => {
     setSpaceId(id);
+    setActiveCategoryId(null);
   }, []);
 
   return (
@@ -360,13 +355,13 @@ export function KnowledgeList({
           {t("dynamic_knowledge.category_label")}
         </div>
         <div className="flex-1 px-2 space-y-1 overflow-y-auto">
-          {/* 各分类（去掉"全部"） */}
+          {/* 各分类 */}
           {tags.map((tag) => (
             <div
-              key={tag.key}
-              onClick={() => setActivePageType(tag.key)}
+              key={String(tag.key)}
+              onClick={() => setActiveCategoryId(tag.key)}
               className={`h-9 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] ${
-                activePageType === tag.key
+                activeCategoryId === tag.key
                   ? "bg-[#EDF3FF] hover:bg-[#EDF3FF]"
                   : "hover:bg-[#F2F3F5]"
               }`}
@@ -375,7 +370,7 @@ export function KnowledgeList({
                 <SvgIcon name="document-folder" size={14} />
               </div>
               <span className="flex-1 text-sm">{tag.name}</span>
-              {activePageType === tag.key && <RightOutlined className="text-xs text-[#999]" />}
+              {activeCategoryId === tag.key && <RightOutlined className="text-xs text-[#999]" />}
             </div>
           ))}
         </div>

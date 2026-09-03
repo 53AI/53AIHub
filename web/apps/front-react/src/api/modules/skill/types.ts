@@ -1,5 +1,7 @@
 // ========== 枚举类型 ==========
 
+import type { ScopeItem } from '@km/shared-business/agent-create'
+
 /** 发布状态 */
 export const PublishStatus_TYPE = {
   draft: 'draft',
@@ -87,6 +89,8 @@ export interface SkillPublic {
   created_time: number;
   updated_time: number;
   group_ids: number[]
+  /** 权限范围 */
+  scopes?: ScopeItem[]
 }
 
 export interface Skill extends SkillPublic {

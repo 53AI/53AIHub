@@ -247,7 +247,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
   const requestIdRef = useRef(0);
   /**
    * 守护:每次 sendMessage 内最多拉一次 latest run。
-   * 对齐老 IndexChat.tsx 第 207 行的 latestRunFetchedRef —— 在 sendMessage 开头
+   * 对齐早期 work-ai 的 latestRunFetchedRef —— 在 sendMessage 开头
    * 重置为 false,在首次拿到 server 真实 message_id 后置为 true 并触发 latest,
    * 避免重入 + 避免在流式未启动时把上一条消息的 run 当成当前消息的 run。
    */
@@ -335,7 +335,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
       openClawRequestRef.current = openclaw;
       messageListChangeRef.current = onMessageListChange || null;
       // 重置 latest-run 守护:本轮 sendMessage 内首次拿到 server 真实 message_id
-      // 后才会触发一次 latest run 拉取并回填 currentRun(对齐 IndexChat 老版 latestRunFetchedRef)
+      // 后才会触发一次 latest run 拉取并回填 currentRun(对齐早期 work-ai 的 latestRunFetchedRef)
       latestRunFetchedRef.current = false;
 
       if (openclaw && skill && conversationApi.ensureSkill) {
@@ -611,7 +611,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
        * 拉一次 latest run 并显式覆盖 run.message_id,让 handleStop 时 cancel()
        * 能用 currentMessage.id 精确定位当前消息对应的 run。
        *
-       * 对齐老 IndexChat.tsx 第 555-569 行 latestRunFetchedRef + run.message_id = newMessage.id
+       * 对齐早期 work-ai 的 latestRunFetchedRef + run.message_id = newMessage.id
        * 的模式 —— 修复前在 await completions 之前同步触发 latest,此时流式尚未开始,
        * message.id 还是 optimistic(Date.now()),latest run 可能是上一条消息的 run,
        * run.message_id 与当前消息没有强绑定关系。
@@ -818,7 +818,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
         // latest 拉回的 run.message_id 与当前消息没有强绑定关系,且与 handleStop
         // 时 cancel() 所需的 currentMessage.id 也对不上。
         // 现在改为在 onDownloadProgress 内 processStreamData 把 message.id 覆盖为
-        // server 真实 id 后再触发(见 ensureLatestRunFetched),对齐老 IndexChat.tsx
+        // server 真实 id 后再触发(见 ensureLatestRunFetched),对齐早期 work-ai
         // 的 latestRunFetchedRef + run.message_id = newMessage.id 模式。
 
         await conversationApi.completions(completionsPayload, {
@@ -840,7 +840,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
 
             // 流式 chunk 处理后:message.id 可能已被 server 真实 id 覆盖。
             // 若已覆盖且本轮 sendMessage 内尚未拉过 latest,补拉一次并覆盖 run.message_id
-            // (对齐老 IndexChat.tsx 第 555-569 行的 latestRunFetchedRef 模式)。
+            // (对齐早期 work-ai 的 latestRunFetchedRef 模式)。
             ensureLatestRunFetched();
 
             // 节流触发 React 重渲染

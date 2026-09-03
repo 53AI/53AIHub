@@ -16,6 +16,7 @@ import {
   FileSearchParams,
   FileSearchResponse
 } from './types'
+import type { AxiosRequestConfig } from 'axios'
 
 import { PermissionItem } from '../permissions'
 
@@ -37,8 +38,8 @@ export const filesApi = {
     return request.get('/api/files/all/stats', { params }).then((res) => res.data)
   },
 
-  get(id: RawFileItem['id']): Promise<RawFileItem> {
-    return request.get(`/api/files/${id}`).then((res) => res.data)
+  get(id: RawFileItem['id'], config?: AxiosRequestConfig): Promise<RawFileItem> {
+    return request.get(`/api/files/${id}`, config).then((res) => res.data)
   },
 
   create(data: {

@@ -1,8 +1,7 @@
 /**
  * useWorkAiSenderConfig — agent_usage === 4 (WORK_AI) 时,
- * 把 IndexChat.tsx 的 sender 行为(技能选择 + 增强 @ 提及)适配到 ChatContainer。
+ * 把 work-ai sender 行为(技能选择 + 增强 @ 提及)适配到 ChatContainer。
  *
- * 来源:apps/front-react/src/views/index/IndexChat.tsx (lines 357-388, 397-446, 988-1008, 1289-1297, 1795-1825)
  * 限制:
  *   - skill_name 与 display_name 暂时用同一个值(后续 task 3.x 迁移时由消费者提供映射)
  *   - 增强版 @ 下拉的多入口(知识库/上传/AI生成/录音)暂未实装,MVP 用默认 mention
@@ -73,7 +72,7 @@ export interface WorkAiSenderConfig {
   /**
    * 当前选中的 @ 提及链接列表(含 file / library / space)
    * ChatContainer.sendContext 通过它把 selectedMentionLinks 透传给 useChatSend,
-   * 用于构建 messages.specified_files(对齐原版 IndexChat.tsx 的 atList 参数)。
+   * 用于构建 messages.specified_files。
    */
   selectedMentionLinks: Array<any>;
   /**

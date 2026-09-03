@@ -62,7 +62,7 @@ func speakerLabelByIndex(idx int) string {
 }
 
 // RenderTranscriptMarkdown 渲染转写 Markdown。按首字符分流：
-//   - "["：SonicNote 数组格式，说话人统一为字母标签（与 DashScope 分支一致）
+//   - "["：SonicNote 数组格式，默认说话人统一为字母标签，具体人名原样保留
 //   - "{": DashScope JSON，走现有逻辑（speaker_id → A说话人/B说话人…）
 //   - 其他：按非 JSON 处理
 func RenderTranscriptMarkdown(rawJSON string, title string) (string, error) {
@@ -73,7 +73,7 @@ func RenderTranscriptMarkdown(rawJSON string, title string) (string, error) {
 }
 
 // renderSonicNoteTranscriptMarkdown 渲染 SonicNote 数组转写。
-// 每句格式：[HH:MM:SS] A说话人: 内容；说话人统一为字母标签，无说话人/时间时省略对应前缀。
+// 每句格式：[HH:MM:SS] speaker: 内容；只有默认说话人标签转换为 A/B，具体名称原样保留。
 func renderSonicNoteTranscriptMarkdown(rawJSON, title string) (string, error) {
 	var items []sonicNoteTranscriptItem
 	if err := json.Unmarshal([]byte(rawJSON), &items); err != nil {
@@ -87,8 +87,6 @@ func renderSonicNoteTranscriptMarkdown(rawJSON, title string) (string, error) {
 		b.WriteString("\n\n")
 	}
 
-	// 非"说话人N"格式的发言人按出现顺序分配字母标签（同源同标签）
-	var fallbackSeen = map[string]string{}
 	lineCount := 0
 	for _, it := range items {
 		text := strings.TrimSpace(it.Text)
@@ -104,16 +102,13 @@ func renderSonicNoteTranscriptMarkdown(rawJSON, title string) (string, error) {
 				// 说话人N（N 从 1 开始）→ 索引 N-1；N<1（异常命名如"说话人0"）回退按出现顺序分配
 				if n, err := strconv.Atoi(m[1]); err == nil && n >= 1 {
 					label = speakerLabelByIndex(n - 1)
+				} else {
+					label = speakerLabelByIndex(0)
 				}
 			}
 			if label == "" {
-				// 非"说话人N"格式或异常 N：按出现顺序分配字母标签（同源同标签）
-				if seen, ok := fallbackSeen[speaker]; ok {
-					label = seen
-				} else {
-					label = speakerLabelByIndex(len(fallbackSeen))
-					fallbackSeen[speaker] = label
-				}
+				// 非默认标签是转写服务确认过的具体 speaker 名称，必须原样保留。
+				label = speaker
 			}
 		}
 		switch {

@@ -60,121 +60,7 @@ function extractThinkTag(content: string): {
   };
 }
 
-function normalizeWithSourceMap(value: string): { text: string; sourceIndexes: number[] } {
-  const chars: string[] = [];
-  const sourceIndexes: number[] = [];
-  let lastWasSpace = false;
 
-  for (let index = 0; index < value.length; index += 1) {
-    const char = value[index]!;
-    if (/\s/.test(char)) {
-      if (!lastWasSpace && chars.length > 0) {
-        chars.push(" ");
-        sourceIndexes.push(index);
-        lastWasSpace = true;
-      }
-      continue;
-    }
-
-    chars.push(char.toLowerCase());
-    sourceIndexes.push(index);
-    lastWasSpace = false;
-  }
-
-  if (chars.at(-1) === " ") {
-    chars.pop();
-    sourceIndexes.pop();
-  }
-
-  return { text: chars.join(""), sourceIndexes };
-}
-
-function getReasoningOverlapMinLength(value: string): number {
-  // CJK thinking text is often concise, so shorter repeated prefixes should still be treated as leakage.
-  return /[\u3400-\u9fff]/.test(value) ? 6 : 12;
-}
-
-function stripReasoningPrefix(content: string, reasoning: string): string {
-  const answer = content.trimStart();
-  const thought = reasoning.trim();
-  const minOverlapLength = getReasoningOverlapMinLength(`${answer}${thought}`);
-
-  if (!answer || !thought) return content;
-  if (answer.length >= minOverlapLength && thought.includes(answer)) return "";
-  if (answer.startsWith(thought)) return answer.slice(thought.length).trimStart();
-
-  const maxOverlapLength = Math.min(answer.length, thought.length);
-  for (let length = maxOverlapLength; length >= minOverlapLength; length -= 1) {
-    if (thought.endsWith(answer.slice(0, length))) {
-      return answer.slice(length).trimStart();
-    }
-  }
-
-  const normalizedAnswer = normalizeWithSourceMap(answer);
-  const normalizedThought = normalizeWithSourceMap(thought);
-  if (normalizedAnswer.text.length >= minOverlapLength && normalizedThought.text.includes(normalizedAnswer.text)) {
-    return "";
-  }
-
-  const maxNormalizedOverlap = Math.min(normalizedAnswer.text.length, normalizedThought.text.length);
-  for (let length = maxNormalizedOverlap; length >= minOverlapLength; length -= 1) {
-    if (normalizedThought.text.endsWith(normalizedAnswer.text.slice(0, length))) {
-      const rawEndIndex = normalizedAnswer.sourceIndexes[length - 1];
-      return answer.slice(rawEndIndex + 1).trimStart();
-    }
-  }
-
-  return removeReasoningLeakage(content, reasoning);
-}
-
-function splitReasoningCandidates(reasoning: string): string[] {
-  const cleaned = reasoning.trim();
-  if (!cleaned) return [];
-
-  const withoutDefaultPrefix = cleaned.replace(/^正在处理您的请求[.…...]*\s*/u, "").trim();
-  const sentenceParts = cleaned
-    .split(/(?<=[.!?。！？])\s*/u)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  return [...new Set([cleaned, withoutDefaultPrefix, ...sentenceParts])]
-    .filter((part) => part.length >= getReasoningOverlapMinLength(part))
-    .sort((left, right) => right.length - left.length);
-}
-
-function removeReasoningCandidate(content: string, candidate: string): string {
-  if (!content || !candidate) return content;
-  if (content.includes(candidate)) {
-    return content.split(candidate).join("");
-  }
-
-  const normalizedContent = normalizeWithSourceMap(content);
-  const normalizedCandidate = normalizeWithSourceMap(candidate).text;
-  if (normalizedCandidate.length < getReasoningOverlapMinLength(candidate)) return content;
-
-  const matchIndex = normalizedContent.text.indexOf(normalizedCandidate);
-  if (matchIndex === -1) return content;
-
-  const start = normalizedContent.sourceIndexes[matchIndex] ?? 0;
-  const end = normalizedContent.sourceIndexes[matchIndex + normalizedCandidate.length - 1] ?? start;
-  return `${content.slice(0, start)}${content.slice(end + 1)}`;
-}
-
-function removeReasoningLeakage(content: string, reasoning: string): string {
-  let answer = content;
-  for (const candidate of splitReasoningCandidates(reasoning)) {
-    const next = removeReasoningCandidate(answer, candidate);
-    if (next !== answer) {
-      answer = next
-        .replace(/[ \t]{2,}/g, " ")
-        .replace(/\n{3,}/g, "\n\n")
-        .replace(/\s+([，。！？、,.!?;；:：])/g, "$1")
-        .replace(/([，。！？、；：])\s+([\u3400-\u9fff])/g, "$1$2")
-        .trimStart();
-    }
-  }
-  return answer;
-}
 
 interface Suggestion {
   id: string | number;
@@ -267,7 +153,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
     const finalContent = thinkReasoning ? cleanContent : content;
     return {
       extractedReasoning: mergedReasoning,
-      displayContent: stripReasoningPrefix(finalContent, mergedReasoning),
+      displayContent: finalContent,
     };
   }, [content, reasoning]);
 

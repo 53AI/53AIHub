@@ -88,6 +88,8 @@ func SetApiRouter(router *gin.Engine) {
 		commonRoute.POST("/login", controller.Login)
 		commonRoute.POST("/logout", middleware.UserTokenAuth(model.RoleGuestUser), controller.Logout)
 		commonRoute.POST("/sms_login", controller.SmsLogin)
+		commonRoute.POST("/app_login", controller.AppLogin)
+		commonRoute.POST("/app_logout", middleware.UserTokenAuth(model.RoleGuestUser), controller.AppLogout)
 		commonRoute.POST("/check_account", controller.CheckAccountExists)
 		commonRoute.POST("/upload", middleware.UserTokenAuth(model.RoleGuestUser), controller.Upload)
 		commonRoute.GET("/upload/check", middleware.UserTokenAuth(model.RoleGuestUser), controller.CheckUploadHash)
@@ -188,15 +190,13 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.GET("/insight-perspectives", controller.GetInsightPerspectives)
 		recordingRoute.GET("/memories/overview", controller.GetRecordingMemoryOverview)
 		recordingRoute.GET("/memories/entities", controller.ListRecordingMemoryEntities)
+		recordingRoute.POST("/memories/entities", controller.CreateRecordingMemoryEntity)
 		recordingRoute.GET("/memories/schema", controller.GetRecordingMemoryEntitySchema)
 		recordingRoute.POST("/memories/entity-merges", controller.MergeRecordingMemoryEntities)
 		recordingRoute.GET("/memories/entities/:entity_id", controller.GetRecordingMemoryEntity)
 		recordingRoute.PATCH("/memories/entities/:entity_id", controller.UpdateRecordingMemoryEntity)
 		recordingRoute.DELETE("/memories/entities/:entity_id", controller.DeleteRecordingMemoryEntity)
 		recordingRoute.POST("/memories/entities/:entity_id/facts", controller.CreateRecordingMemoryFact)
-		recordingRoute.DELETE("/memories/entities/:entity_id/facts/:fact_id", controller.DeleteRecordingMemoryFact)
-		recordingRoute.POST("/memories/entities/:entity_id/relations", controller.CreateRecordingMemoryRelation)
-		recordingRoute.DELETE("/memories/entities/:entity_id/relations/:relation_id", controller.DeleteRecordingMemoryRelation)
 		recordingRoute.POST("", controller.CreateRecordingJob)
 		recordingRoute.GET("/active", controller.GetActiveRecordingJob)
 		recordingRoute.GET("/:job_id", controller.GetRecordingJob)
@@ -215,6 +215,7 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.POST("/files/:file_id/pipeline", controller.RunRecordingPipeline)
 		recordingRoute.GET("/files/:file_id/insight-page", controller.GetFileInsightPage)
 		recordingRoute.GET("/files/:file_id/insight-context", controller.GetFileInsightBackground)
+		recordingRoute.POST("/files/:file_id/memory-promotions", controller.PromoteFileInsightExternalConstraints)
 		recordingRoute.POST("/files/:file_id/insight-context/chat", controller.ChatFileInsightWorkshop)
 		recordingRoute.POST("/files/:file_id/insights/regenerate", controller.RegenerateInsights)
 		recordingRoute.POST("/files/:file_id/entities/extract", controller.ReExtractEntities)
@@ -365,6 +366,7 @@ func SetApiRouter(router *gin.Engine) {
 		adminSkillLibraryRoute.POST("/reload", controller.AdminReloadSkillManager)
 		adminSkillLibraryRoute.GET("/list", controller.AdminListSkillLibraries)
 		adminSkillLibraryRoute.GET("/:id", controller.AdminGetSkillLibrary)
+		adminSkillLibraryRoute.GET("/:id/access", controller.AdminCheckSkillLibraryAccess)
 		adminSkillLibraryRoute.PUT("/:id", controller.AdminUpdateSkillLibrary)
 		adminSkillLibraryRoute.PATCH("/:id/status", controller.AdminUpdateSkillLibraryStatus)
 		adminSkillLibraryRoute.POST("/:id/publish", controller.AdminPublishSkillLibrary)
@@ -801,6 +803,10 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.POST("/system_logs/slow_logs/:id/ignore", middleware.FileLogViewerAuth(), controller.IgnoreSlowLog)
 	apiRouter.GET("/system_logs/vectorize/ui", controller.GetVectorizeUI)
 	apiRouter.GET("/system_logs/vectorize/stats", controller.GetVectorizeStats)
+	apiRouter.GET("/system_logs/wiki_generation/ui", controller.GetWikiGenerationUI)
+	apiRouter.GET("/system_logs/wiki_generation/stats", middleware.FileLogViewerAuth(), controller.GetWikiGenerationStats)
+	apiRouter.GET("/system_logs/wiki_generation/files", middleware.FileLogViewerAuth(), controller.GetWikiGenerationFiles)
+	apiRouter.GET("/system_logs/wiki_generation/files/:file_id", middleware.FileLogViewerAuth(), controller.GetWikiGenerationFileTrace)
 	systemLogRouter.Use(middleware.UserTokenAuth(model.RoleAdminUser))
 	{
 		systemLogRouter.GET("/modules", controller.GetModules)
@@ -844,10 +850,30 @@ func SetApiRouter(router *gin.Engine) {
 		spaceRoute.PUT("/:space_id", controller.UpdateSpace)
 		spaceRoute.DELETE("/:space_id", controller.DeleteSpace)
 		spaceRoute.POST("/sort", controller.BatchUpdateSpaceSort)
+		// 空间图谱管线配置（开关 + 知识库范围）
+		spaceRoute.GET("/:space_id/knowledge-graph", controller.GetSpaceKnowledgeGraphConfig)
+		spaceRoute.PUT("/:space_id/knowledge-graph", controller.UpdateSpaceKnowledgeGraphConfig)
+		spaceRoute.GET("/:space_id/wiki-knowledge-graph", controller.GetSpaceWikiKnowledgeGraphConfig)
+		spaceRoute.PUT("/:space_id/wiki-knowledge-graph", controller.UpdateSpaceWikiKnowledgeGraphConfig)
+	}
+	graphProgressController := controller.NewGraphProgressController(model.DB)
+	graphProgressRoute := spaceRoute.Group("/:space_id/graph")
+	{
+		graphProgressRoute.GET("/progress", graphProgressController.ListProgress)
+		graphProgressRoute.GET("/progress/:file_id", graphProgressController.GetProgress)
 	}
 	spaceWikiController := controller.NewWikiSpaceController(model.DB)
+	spaceWikiCategoryController := controller.NewWikiCategoryController(model.DB)
 	spaceWikiRoute := spaceRoute.Group("/:space_id/wiki")
 	{
+		spaceWikiRoute.GET("/categories/style-presets", spaceWikiCategoryController.ListStylePresets)
+		spaceWikiRoute.GET("/categories/target-types", spaceWikiCategoryController.ListWikiCategoryTargetTypes)
+		spaceWikiRoute.POST("/category-drafts", spaceWikiCategoryController.GenerateDraft)
+		spaceWikiRoute.GET("/categories", spaceWikiCategoryController.List)
+		spaceWikiRoute.POST("/categories", spaceWikiCategoryController.Create)
+		spaceWikiRoute.GET("/categories/:category_id", spaceWikiCategoryController.Get)
+		spaceWikiRoute.PUT("/categories/:category_id", spaceWikiCategoryController.Update)
+		spaceWikiRoute.DELETE("/categories/:category_id", spaceWikiCategoryController.Delete)
 		spaceWikiRoute.GET("/pages", spaceWikiController.ListPages)
 		spaceWikiRoute.GET("/pages/*slug", spaceWikiController.GetPage)
 		spaceWikiRoute.GET("/index", spaceWikiController.GetIndex)
@@ -913,6 +939,11 @@ func SetApiRouter(router *gin.Engine) {
 	}
 
 	// 独立 Wiki 页面路由（无需知识库路径层级）
+	wikiStandaloneCategoryRoute := apiRouter.Group("/wiki/categories")
+	wikiStandaloneCategoryRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		wikiStandaloneCategoryRoute.GET("", spaceWikiCategoryController.ListVisible)
+	}
 	wikiStandaloneRoute := apiRouter.Group("/wiki/pages")
 	wikiStandaloneRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
@@ -929,6 +960,11 @@ func SetApiRouter(router *gin.Engine) {
 		wikiStandaloneRoute.POST("/:page_id/move", wikiController.MovePageByID)
 		wikiStandaloneRoute.POST("/:page_id/archive", wikiController.ArchivePageByID)
 		wikiStandaloneRoute.DELETE("/:page_id", wikiController.DeletePageByID)
+	}
+	wikiQueueRoute := apiRouter.Group("/wiki/queue")
+	wikiQueueRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		wikiQueueRoute.GET("/status", controller.NewWikiQueueStatusController(model.DB).GetStatus)
 	}
 	vectorizationTaskRoute := apiRouter.Group("/wiki/vectorization-tasks")
 	vectorizationTaskRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
@@ -1213,6 +1249,13 @@ func SetApiRouter(router *gin.Engine) {
 		ragRoute.PUT("/jobs/:job_id/cancel", controller.CancelRAGJob)
 	}
 
+	// 隐藏管理接口：检索块重拆（仅管理员，不在 swagger 文档中展示）
+	ragAdminRoute := apiRouter.Group("/admin/rag")
+	ragAdminRoute.Use(middleware.UserTokenAuth(model.RoleAdminUser))
+	{
+		ragAdminRoute.POST("/reprocess-retrieval-chunks", controller.ReprocessRetrievalChunks)
+	}
+
 	// RAG V2 路由组 - 统一挂载在 /api/rag/v2 下
 	ragV2Route := ragRoute.Group("/v2")
 	ragV2Route.Use(middleware.Logger())
@@ -1234,6 +1277,8 @@ func SetApiRouter(router *gin.Engine) {
 	ragV2AdminRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
 		pc := controller.NewRagPipelineController(model.DB)
+		gc := controller.NewGraphPipelineController(model.DB)
+		wc := controller.NewWikiPipelineController(model.DB)
 
 		ragV2AdminRoute.GET("/pipelines", pc.ListPipelines)
 		ragV2AdminRoute.GET("/pipelines/:id", pc.GetPipeline)
@@ -1246,6 +1291,32 @@ func SetApiRouter(router *gin.Engine) {
 		ragV2AdminRoute.PUT("/strategies/:id", pc.UpdateStrategy)
 		ragV2AdminRoute.POST("/strategies/reorder", pc.ReorderStrategies)
 		ragV2AdminRoute.DELETE("/strategies/:id", pc.DeleteStrategy)
+
+		// 图谱管线/策略管理（kind=graph，与 RAG 配置同表隔离）
+		ragV2AdminRoute.GET("/graph-pipelines", gc.ListPipelines)
+		ragV2AdminRoute.GET("/graph-pipelines/:id", gc.GetPipeline)
+		ragV2AdminRoute.POST("/graph-pipelines", gc.CreatePipeline)
+		ragV2AdminRoute.PUT("/graph-pipelines/:id", gc.UpdatePipeline)
+		ragV2AdminRoute.DELETE("/graph-pipelines/:id", gc.DeletePipeline)
+
+		ragV2AdminRoute.GET("/graph-strategies", gc.ListStrategies)
+		ragV2AdminRoute.POST("/graph-strategies", gc.CreateStrategy)
+		ragV2AdminRoute.PUT("/graph-strategies/:id", gc.UpdateStrategy)
+		ragV2AdminRoute.POST("/graph-strategies/reorder", gc.ReorderStrategies)
+		ragV2AdminRoute.DELETE("/graph-strategies/:id", gc.DeleteStrategy)
+
+		// Wiki 管线/策略管理（kind=wiki，与 RAG/图谱配置同表隔离）
+		ragV2AdminRoute.GET("/wiki-pipelines", wc.ListPipelines)
+		ragV2AdminRoute.GET("/wiki-pipelines/:id", wc.GetPipeline)
+		ragV2AdminRoute.POST("/wiki-pipelines", wc.CreatePipeline)
+		ragV2AdminRoute.PUT("/wiki-pipelines/:id", wc.UpdatePipeline)
+		ragV2AdminRoute.DELETE("/wiki-pipelines/:id", wc.DeletePipeline)
+
+		ragV2AdminRoute.GET("/wiki-strategies", wc.ListStrategies)
+		ragV2AdminRoute.POST("/wiki-strategies", wc.CreateStrategy)
+		ragV2AdminRoute.PUT("/wiki-strategies/:id", wc.UpdateStrategy)
+		ragV2AdminRoute.POST("/wiki-strategies/reorder", wc.ReorderStrategies)
+		ragV2AdminRoute.DELETE("/wiki-strategies/:id", wc.DeleteStrategy)
 	}
 
 	// 外部知识库API路由（用于Dify等外部系统集成）
@@ -1341,7 +1412,6 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		adminPlatformRoute.GET("/global-stats", controller.GetGlobalStats)
 	}
-
 
 	SetKmApiRouter(apiRouter)
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/helper"
+	"github.com/53AI/53AIHub/service/hub_adaptor/bailian"
 	"github.com/songquanpeng/one-api/relay/channeltype"
 	"github.com/songquanpeng/one-api/relay/meta"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
@@ -437,56 +438,43 @@ func (s *OpenAIService) CallOpenAIRerankAPI(ctx context.Context, req *RerankRequ
 
 // CallBailianRerankAPI 调用百炼 rerank API
 func (s *BailianRerankService) CallBailianRerankAPI(ctx context.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
-	// 百炼 API 的具体实现
-	// 这里使用原来的实现逻辑
-	resultContent := make([]string, len(req.Documents))
-	copy(resultContent, req.Documents)
+	bailianReq := &bailian.BailianRerankRequest{
+		Model: bailian.NormalizeRerankModel(req.Model),
+		Input: bailian.BailianRerankInput{
+			Query:     req.Query,
+			Documents: req.Documents,
+		},
+		Parameters: bailian.BailianRerankParameters{
+			TopN:            req.TopN,
+			ReturnDocuments: req.ReturnDocuments,
+		},
+	}
+	bailianResp, err := bailian.CallRerankAPI(ctx, nil, meta.BaseURL, meta.APIKey, bailianReq)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	// 按相关性排序（这里只是一个模拟实现）
-	// 实际实现中应该调用百炼的 API
-	// ...
-
+	usage := &relay_model.Usage{TotalTokens: bailianResp.Usage.TotalTokens}
 	response := &RerankResponse{
 		Object: "list",
-		Data:   make([]RerankResult, len(resultContent)),
+		Data:   make([]RerankResult, 0, len(bailianResp.Output.Results)),
 		Model:  req.Model,
-		Usage:  RerankUsage{TotalTokens: 0}, // 根据实际情况计算
+		Usage:  RerankUsage{TotalTokens: usage.TotalTokens},
 	}
-
-	for i, content := range resultContent {
-		response.Data[i] = RerankResult{
+	for _, result := range bailianResp.Output.Results {
+		item := RerankResult{
 			Object:         "rerank_result",
-			Index:          i,
-			RelevanceScore: 1.0, // 模拟分数
-			Document: &RerankDocument{
-				Text: content,
-			},
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
 		}
+		if req.ReturnDocuments != nil && *req.ReturnDocuments {
+			if result.Document != nil {
+				item.Document = &RerankDocument{Text: result.Document.Text}
+			} else if result.Index >= 0 && result.Index < len(req.Documents) {
+				item.Document = &RerankDocument{Text: req.Documents[result.Index]}
+			}
+		}
+		response.Data = append(response.Data, item)
 	}
-
-	// 计算使用量
-	usage := s.calculateRerankUsage(req, resultContent)
-
 	return response, usage, nil
-}
-
-func (s *BailianRerankService) calculateRerankUsage(req *RerankRequest, resultContent []string) *relay_model.Usage {
-	totalTokens := 0
-	// 计算查询和文档的字符数
-	totalTokens += len(req.Query)
-	for _, doc := range req.Documents {
-		totalTokens += len(doc)
-	}
-
-	// 计算返回结果的字符数
-	for _, content := range resultContent {
-		totalTokens += len(content)
-	}
-
-	usage := &relay_model.Usage{
-		TotalTokens:      totalTokens,
-		PromptTokens:     len(req.Query),
-		CompletionTokens: totalTokens - len(req.Query),
-	}
-	return usage
 }

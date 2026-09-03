@@ -205,6 +205,16 @@ type ReindexDocumentRequest struct {
 	Mode   string `json:"mode" example:"reindex_retrieval"`       // 模式: reindex_retrieval(默认) | rechunk_and_reindex
 }
 
+// ReprocessRetrievalChunksRequest 隐藏接口：检索块重拆请求（仅管理员使用，不在 swagger 文档中展示）
+// 范围三选一，优先级：file_id > library_id > space_id；index_max_length>0 时覆盖检索块长度（如 256）
+type ReprocessRetrievalChunksRequest struct {
+	SpaceID        int64 `json:"space_id" example:"0"`           // 空间ID
+	LibraryID      int64 `json:"library_id" example:"0"`         // 知识库ID
+	FileID         int64 `json:"file_id" example:"0"`            // 文档ID
+	IndexMaxLength int   `json:"index_max_length" example:"256"` // 检索块最大长度，0=沿用当前匹配到的配置
+	Batch          int   `json:"batch" example:"1"`              // 并发文件数，默认 1（串行）
+}
+
 // PreviewChunkingRequest 预览分块请求
 type PreviewChunkingRequest struct {
 	FileID         int64                    `json:"file_id" binding:"required" example:"1"` // 文件ID

@@ -50,9 +50,15 @@ const WikiKnowledgeExtractPrompt = `You are a knowledge extraction system. Analy
 {{.PreviousSlugs}}
 </previous_slugs>
 
+{{if .StrictCategoryScope}}<strict_category_scope>
+{{.StrictCategoryScope}}
+</strict_category_scope>
+{{end}}
+
 <instructions>
 Return a JSON object with two arrays: "entities" and "concepts".
 **IMPORTANT: Write ALL names, descriptions, and details in {{.Language}}**.
+Every entity and concept MUST include all four fields: "name", "slug", "description", and "details". Do not omit "name" under any circumstances; it is the human-readable title used to create the wiki page. If a field cannot be determined, return an empty string for that field instead of omitting the key.
 
 If the <content> block above is empty, contains only image references with no extracted text, or otherwise carries no substantive information, return {"entities": [], "concepts": []}. Do NOT invent entities or concepts from any other source.
 
@@ -64,7 +70,9 @@ If previous slugs are provided above, you MUST follow these rules:
 - This ensures slug stability across document updates.
 
 ### Entities (people, organizations, products, places, technologies, events, etc.)
+{{if .StrictCategoryScope}}In strict mode, use the listed categories as the allowed subject scope. Extract the document's substantively discussed main subjects when they plausibly belong to that scope; do not omit a main subject merely because the later category match is uncertain. Do not extract unrelated named events or concepts.{{end}}
 Each entity should have:
+- "type": a concise entity kind such as person, organization, product, or event
 - "name": The entity name in {{.Language}} (human-readable)
 - "slug": URL-friendly slug, format "entity/<lowercase-hyphenated-name>" (use romanized/pinyin form for non-Latin names). **Reuse previous slug if the entity was extracted before.**
 - "aliases": An array of strings representing names that refer to THE EXACT SAME entity. Only include: official abbreviations, full/short name variants, translations, and well-known alternate names. Do NOT include parent categories, related products, generic terms, or broader concepts. Provide [] if none.
@@ -274,8 +282,14 @@ const WikiCandidateSlugPrompt = `You are a knowledge extraction system. Analyze 
 {{.PreviousSlugs}}
 </previous_slugs>
 
+{{if .StrictCategoryScope}}<strict_category_scope>
+{{.StrictCategoryScope}}
+</strict_category_scope>
+{{end}}
+
 <instructions>
 Return a JSON object with two arrays: "entities" and "concepts".
+Every entity and concept MUST include all four fields: "name", "slug", "description", and "details". Do not omit "name" under any circumstances; it is the human-readable title used to create the wiki page. If a field cannot be determined, return an empty string for that field instead of omitting the key.
 The content above may be a stitched selection of windows from a longer document. Treat it as one document and extract durable wiki topics from the whole thing, not from one local window.
 Use the <source_context> block, when present, to understand the document type and extraction framing, but do not quote it verbatim.
 Write all names, descriptions, and details in {{.Language}}.
@@ -283,6 +297,9 @@ Write all names, descriptions, and details in {{.Language}}.
 {{.GranularityGuidance}}
 
 Rules:
+{{if .StrictCategoryScope}}- 严格模式：<strict_category_scope> 仅用于限定允许的主题范围。文档中被实质性讨论、且合理属于该范围的主要对象都应先作为候选输出；不要因为暂时无法确定具体分类就丢弃主要对象，后续分类匹配步骤负责判断是否命中。分类之外的事件、战役、概念、地点等即使在文档中出现，也不要输出；不要输出“其他”或兜底候选。
+{{end}}
+- When a document discusses multiple distinct named subjects (especially people) in separate sections or paragraphs, output each subject as its own candidate item. Every independently discussed named subject must be listed separately; never combine different entities into one candidate name such as "A与B".
 - Reuse an exact previous slug when the same entity or concept already exists.
 - Entities and concepts must not duplicate each other.
 - "description" should be a self-contained, one-sentence wiki index summary.
@@ -302,7 +319,7 @@ For every slug in <candidate_slugs>, cite only chunk ids from <chunks> that cont
 - Omit candidates that are not meaningfully discussed in this batch.
 - A chunk may support multiple candidates.
 - You may add genuinely new significant slugs under "new_slugs".
-- Each new slug must include: "type", "name", "slug", "aliases", "description", "details", and "source_chunks".
+- Candidate discovery is handled by a previous step. Do not create new slugs in this step.
 - Prefer the smallest set of chunks that really support the page, rather than over-citing every mention.
 - Output only valid JSON and do not use literal newlines inside JSON string values.
 </instructions>
@@ -311,8 +328,7 @@ Output format:
 {
   "citations": {
     "entity/example": ["c001"]
-  },
-  "new_slugs": []
+  }
 }
 
 {{if .SourceContext}}<source_context>

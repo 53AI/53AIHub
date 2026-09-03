@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"gorm.io/gorm"
 )
+
+var ErrJobCancelled = errors.New("job cancelled")
 
 // RagJob RAG任务模型
 type RagJob struct {
@@ -75,6 +78,28 @@ const (
 	RagJobStatusFailed     = "failed"
 	RagJobStatusCancelled  = "cancelled"
 )
+
+// IsWikiJobType reports whether a job belongs to the standalone Wiki pipeline.
+// Wiki jobs have their own progress source and must not overwrite File RAG state.
+func IsWikiJobType(jobType string) bool {
+	switch strings.TrimSpace(jobType) {
+	case "wiki_page_generation", "wiki_page_vectorization":
+		return true
+	default:
+		return false
+	}
+}
+
+// IsStandalonePipelineJobType reports whether a job belongs to an independent
+// pipeline whose progress must not be written into File's RAG status.
+func IsStandalonePipelineJobType(jobType string) bool {
+	switch strings.TrimSpace(jobType) {
+	case "wiki_page_generation", "wiki_page_vectorization", "graph_pipeline_generation":
+		return true
+	default:
+		return false
+	}
+}
 
 // CleanupRelatedJobs 清理相关任务
 // 参数: RelatedId 和 Eid，先查询这些 JobID

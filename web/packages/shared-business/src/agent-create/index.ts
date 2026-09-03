@@ -81,7 +81,6 @@ export {
   AgentBasicInfo,
   AgentInfo,
   AgentTypeSelector,
-  UseScope,
   BaseConfig,
   ExpandConfig,
   FieldInput,

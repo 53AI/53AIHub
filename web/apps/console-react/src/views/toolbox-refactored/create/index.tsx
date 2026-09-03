@@ -21,6 +21,7 @@ import type { SharedAccountItem } from "../types";
 import UseGroup from "./components/UseGroup";
 import SharedAccountDialog from "./components/SharedAccountDialog";
 import SharedAccountTable from "./components/SharedAccountTable";
+import type { ScopeItem } from "@/api/modules/agent";
 
 /** 分组选项 */
 interface GroupOption {
@@ -52,8 +53,8 @@ export function ToolboxCreatePage() {
 
   // 状态
   const [groupOptions, setGroupOptions] = useState<GroupOption[]>([]);
-  const [userGroup, setUserGroup] = useState<number[]>([]);
   const [subscriptionGroup, setSubscriptionGroup] = useState<number[]>([]);
+  const [scopes, setScopes] = useState<ScopeItem[]>([]);
   const [accountList, setAccountList] = useState<SharedAccountItem[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] =
@@ -75,31 +76,10 @@ export function ToolboxCreatePage() {
     return list || [];
   }, []);
 
-  // 获取用户分组 ID
-  const getGroupIds = useCallback(
-    async (groupType: number) => {
-      if (
-        (groupType === GROUP_TYPE.USER &&
-          (enterpriseStore.info.is_independent ||
-            enterpriseStore.info.is_industry)) ||
-        (groupType === GROUP_TYPE.INTERNAL_USER &&
-          (enterpriseStore.info.is_enterprise ||
-            enterpriseStore.info.is_industry))
-      ) {
-        const list = await groupApi.list({ params: { group_type: groupType } });
-        return (list || []).map((item: GroupOption) => item.group_id);
-      }
-      return [];
-    },
-    [enterpriseStore.info],
-  );
-
   // 加载表单数据
   const loadFormData = useCallback(
     async (id?: string, name?: string) => {
       const groups = await loadGroups();
-      const internalGroups = await getGroupIds(GROUP_TYPE.INTERNAL_USER);
-      const subscriptionGroups = await getGroupIds(GROUP_TYPE.USER);
 
       if (id) {
         // 编辑模式
@@ -114,15 +94,18 @@ export function ToolboxCreatePage() {
           ? JSON.parse(data.shared_account)
           : [];
         setAccountList(accounts);
-        // 参考Vue版本：从 user_group_ids 中过滤出对应的分组ID
-        // 因为后端可能将所有ID都放在 user_group_ids 中返回
-        const allGroupIds = data.user_group_ids || [];
-        setUserGroup(
-          allGroupIds.filter((id) => internalGroups.includes(id)),
-        );
-        setSubscriptionGroup(
-          allGroupIds.filter((id) => subscriptionGroups.includes(id)),
-        );
+        // scopes 非数组视为空(后端可能返回 "" 或 null,不再用 user_group_ids 派生)
+        if (Array.isArray(data.scopes) && data.scopes.length > 0) {
+          setScopes(data.scopes);
+        } else {
+          setScopes([]);
+        }
+        // 编辑模式读取 user_group_ids 恢复注册用户勾选：
+        // AI-link 详情接口在读取时把注册用户分组回填到 user_group_ids（而非 subscription_group_ids，
+        // 后者读取时恒为 undefined）。AI-link 模型没有内部用户复选项（内部用户走 scopes），
+        // 因此此模型的 user_group_ids 即注册用户分组。转数字归一化后按外层值点亮选项。
+        const restoredSubscription = (data.user_group_ids || []).map(Number);
+        setSubscriptionGroup(restoredSubscription);
 
         form.setFieldsValue({
           logo: data.logo || "",
@@ -137,9 +120,12 @@ export function ToolboxCreatePage() {
         setIsEditable(false);
         setSort(0);
         setAccountList([]);
-        // 设置默认权限组（新建模式下默认全选）
-        setUserGroup(internalGroups);
-        setSubscriptionGroup(subscriptionGroups);
+        // 企业版/行业版默认全选"全部成员"
+        setScopes(
+          enterpriseStore.info.is_enterprise || enterpriseStore.info.is_industry
+            ? [{ scope_type: 'company', target_id: 0 }]
+            : [],
+        );
 
         const storeData = await toolboxApi.store();
         for (const group of storeData.data || []) {
@@ -164,12 +150,16 @@ export function ToolboxCreatePage() {
         setIsEditable(false);
         setSort(0);
         setAccountList([]);
-        setUserGroup(internalGroups);
-        setSubscriptionGroup(subscriptionGroups);
+        // 企业版/行业版默认全选"全部成员"
+        setScopes(
+          enterpriseStore.info.is_enterprise || enterpriseStore.info.is_industry
+            ? [{ scope_type: 'company', target_id: 0 }]
+            : [],
+        );
         form.setFieldsValue({ group_id: groups[0]?.group_id });
       }
     },
-    [loadGroups, getGroupIds, form],
+    [loadGroups, enterpriseStore.info, form],
   );
 
   // 保存
@@ -185,7 +175,7 @@ export function ToolboxCreatePage() {
         sort,
         shared_account: accountList.length ? JSON.stringify(accountList) : "",
         subscription_group_ids: subscriptionGroup,
-        user_group_ids: userGroup,
+        scopes,
         ai_link_id: searchParams.get("id") || undefined,
       };
 
@@ -204,7 +194,7 @@ export function ToolboxCreatePage() {
     form,
     accountList,
     subscriptionGroup,
-    userGroup,
+    scopes,
     sort,
     isEditable,
     submitting,
@@ -217,17 +207,15 @@ export function ToolboxCreatePage() {
     navigate("/toolbox");
   }, [navigate]);
 
-  // 分组变更
-  const handleGroupChange = useCallback(
-    (payload: { groupType: number; data: number[] }) => {
-      if (payload.groupType === GROUP_TYPE.USER) {
-        setSubscriptionGroup(payload.data);
-      } else {
-        setUserGroup(payload.data);
-      }
-    },
-    [],
-  );
+  // 分组变更（注册用户）
+  const handleSubscriptionGroupChange = useCallback((value: number[]) => {
+    setSubscriptionGroup(value);
+  }, []);
+
+  // 内部用户作用域变更
+  const handleScopesChange = useCallback((value: ScopeItem[]) => {
+    setScopes(value);
+  }, []);
 
   // 账号操作
   const handleAddAccount = useCallback(() => {
@@ -363,10 +351,12 @@ export function ToolboxCreatePage() {
           <div className="font-bold mb-3">{t("tool_config")}</div>
           <div className="p-5 bg-[#F7F8FA] rounded">
             <UseGroup
-              userGroup={userGroup}
+              scopes={scopes}
               subscriptionGroup={subscriptionGroup}
-              editable={isEditable}
-              onChange={handleGroupChange}
+              onSubscriptionGroupChange={handleSubscriptionGroupChange}
+              onScopesChange={handleScopesChange}
+              autoFillAll={!isEditable}
+              isNew={!searchParams.get("id")}
             />
             <div className="mt-4 mb-2 flex items-center justify-between gap-2">
               <div className="text-sm text-secondary">

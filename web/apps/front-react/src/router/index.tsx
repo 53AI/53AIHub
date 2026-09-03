@@ -4,6 +4,7 @@ import {
   createHashRouter,
   Navigate,
   Outlet,
+  type RouteObject,
   useLocation, useBlocker
 } from "react-router-dom";
 import {
@@ -19,10 +20,10 @@ import {
 } from "@/constants/navigation";
 import { handleChunkLoadError } from "@km/shared-utils";
 import { InitGuard } from "@/components/InitGuard";
+import { RouterErrorBoundary } from "@/components/RouterErrorBoundary";
 import { checkVersion } from "@/utils/version";
 import { isOpLocalEnv, isPrivatePrem } from '@/utils/config';
 import { VERSION_MODULE } from "@/constants/enterprise";
-import { useRecordingStore } from "@/stores/modules/recording";
 
 // Loading fallback component
 function LoadingFallback() {
@@ -128,7 +129,6 @@ const ShareChatView = lazyWithSuspense(() =>
 const ShareFileView = lazyWithSuspense(() =>
   import('@/views/share/file').then((m) => ({ default: m.ShareFileView }))
 )
-
 const GuideView = lazyWithSuspense(() =>
   import('@/views/guide').then((m) => ({ default: m.GuideView }))
 )
@@ -343,20 +343,6 @@ function PermissionGuard({ children, auth }: { children: React.ReactNode; auth?:
   if (needsLogin) {
     const redirectTarget = encodeURIComponent(locationToPath(location))
     return <Navigate to={`/?redirect=${redirectTarget}`} replace />
-  }
-
-  return <>{children}</>
-}
-
-/** 录音路由守卫：recordingConfig.enabled 为 false 时重定向到首页 */
-function RecordingGuard({ children }: { children: React.ReactNode }) {
-  const recordingConfig = useRecordingStore((s) => s.recordingConfig)
-
-  // 配置尚未加载完成，先不渲染
-  if (recordingConfig === null) return null
-
-  if (recordingConfig.enabled === false) {
-    return <Navigate to="/" replace />
   }
 
   return <>{children}</>
@@ -828,10 +814,20 @@ export function getBasePath(): string {
   return ''
 }
 
+// 给每个顶级路由挂 errorElement：子路由抛出未处理错误时向上冒泡到最近的
+// errorElement，这里统一用 RouterErrorBoundary 替换 React Router 默认的
+// "Unexpected Application Error!"，给用户一个可点击刷新的友好出口。
+function withErrorBoundary(routes: RouteObject[]): RouteObject[] {
+  return routes.map((route) => ({
+    ...route,
+    errorElement: <RouterErrorBoundary />,
+  }))
+}
+
 // Create router
 export const router = useHashRouter
-  ? createHashRouter(buildRoutes())
-  : createBrowserRouter(buildRoutes())
+  ? createHashRouter(withErrorBoundary(buildRoutes()))
+  : createBrowserRouter(withErrorBoundary(buildRoutes()))
 
 // Setup router function
 export async function setupRouter() {

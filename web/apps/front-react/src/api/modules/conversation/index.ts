@@ -38,7 +38,7 @@ export interface DocumentRefFilter {
 }
 
 export const conversationApi = {
-  list(params: { agent_id?: string, conversation_type?: Conversation_Type, offset?: number, limit?: number } = {}) {
+  list(params: { agent_id?: string, conversation_type?: Conversation_Type, keyword?: string, offset?: number, limit?: number } = {}) {
     return service.get(`/api/conversations`, { params, requiresAuth: true }).catch(handleError)
   },
   create(data: CreateConversationParams) {

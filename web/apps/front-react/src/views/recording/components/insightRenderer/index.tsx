@@ -10,6 +10,8 @@ import { renderContent } from './richText';
 import { parseInsightMarkdown } from './markdownParser';
 import { renderBlock, extractBlockHeader } from './blockRenderers';
 import { renderInlineMarkdown } from './richText';
+import { isInsightHTMLPage } from '@/views/recording/parsers/recordingParsers'
+import { InsightHtmlRenderer } from './InsightHtmlRenderer'
 
 /** 把 hex 颜色 + 透明度转换成 rgba 字符串（用于生成 accent-soft） */
 function hexToRgba(hex: string, alpha: number): string {
@@ -62,6 +64,10 @@ function renderBlockWithHeader(block: DecisionPageBlock, index: number) {
 // ============= 主组件 =============
 
 export function InsightPageRenderer({ pageJson, accentColor }: InsightPageRendererProps) {
+  if (isInsightHTMLPage(pageJson)) {
+    return <InsightHtmlRenderer html={pageJson._html} />
+  }
+
   // 预设主题（兼容旧格式 JSON Block 的 theme 字段）
   const theme = ['blue', 'purple', 'orange', 'red', 'dark'].includes(pageJson?.theme) ? pageJson.theme : ''
 

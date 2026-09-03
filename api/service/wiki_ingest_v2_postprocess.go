@@ -30,13 +30,13 @@ func (s *WikiIngestV2Service) postProcessWikiPages(ctx context.Context, eid, lib
 	for _, slug := range affectedSlugs {
 		if err := s.rewriteSingleWikiPage(ctx, eid, libraryID, slug, refs, liveTitles, liveSlugSet, redirectTargets); err != nil {
 			failed++
-			logger.Warnf(ctx, "wiki ingest v2: postprocess failed for %s: %v", slug, err)
+			logger.Warnf(ctx, "【Wiki生成】 phase=postprocess postprocess failed for %s: %v", slug, err)
 			continue
 		}
 		updated++
 	}
 	if updated > 0 || failed > 0 {
-		logger.Infof(ctx, "wiki ingest v2: postprocessed %d pages (%d failed)", updated, failed)
+		logger.Infof(ctx, "【Wiki生成】 phase=postprocess postprocessed %d pages (%d failed)", updated, failed)
 	}
 	return nil
 }

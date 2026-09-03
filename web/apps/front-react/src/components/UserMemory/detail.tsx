@@ -6,11 +6,10 @@ import {
   DownloadOutlined
 } from '@ant-design/icons';
 import { Button, message, Modal, Skeleton } from 'antd';
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { copyToClip } from "@km/shared-utils";
 import FileViewer from '@/components/FileViewer';
 import { FullscreenToggle } from '@/components/FullscreenToggle';
-import { IconButton } from '@/components/IconButton';
 import ChunkEditor, { ChunkEditorRef } from '@/components/Markdown/ChunkEditor';
 import { t } from '@/locales';
 import memoryApi from '@/api/modules/memory';
@@ -237,53 +236,53 @@ export function UserMemoryDetail({ agentId, file, onBack, onClose, fullscreen, o
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-[#F0F0F0]">
         <div className="flex items-center gap-3">
-          <IconButton
+          <IconAction
             title={t('action.back')}
             size="compact"
             onClick={handleBack}
           >
             <LeftOutlined style={{ fontSize: '16px' }} />
-          </IconButton>
+          </IconAction>
           <span className="text-base">{fileName}</span>
         </div>
         <div className="flex items-center gap-2">
           {!isEditing && (
             <>
-              <IconButton
+              <IconAction
                 title={t('action.edit')}
                 size="compact"
                 onClick={handleEdit}
               >
                 <EditOutlined style={{ fontSize: '16px' }} />
-              </IconButton>
+              </IconAction>
               <div className="h-4 border-r border-[#E6E8EB]" />
-              <IconButton
+              <IconAction
                 title={t('action.download')}
                 size="compact"
                 onClick={handleDownload}
               >
                 <DownloadOutlined style={{ fontSize: '16px' }} />
-              </IconButton>
-              <IconButton
+              </IconAction>
+              <IconAction
                 title={t('action.copy')}
                 size="compact"
                 onClick={handleCopy}
               >
                 <SvgIcon name="copy" size="16" />
-              </IconButton>
+              </IconAction>
             </>
           )}
           <FullscreenToggle
             fullscreen={fullscreen}
             onToggle={onToggle}
           />
-          <IconButton
+          <IconAction
             title={t('action.close')}
             size="compact"
             onClick={handleUnsavedCheck(() => onClose?.())}
           >
             <CloseOutlined style={{ fontSize: '16px' }} />
-          </IconButton>
+          </IconAction>
         </div>
       </div>
 

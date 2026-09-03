@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,15 +57,48 @@ func NewGraphExtractionService(db *gorm.DB) *GraphExtractionService {
 
 // ExtractedGraphEntity 抽取的图谱实体
 type ExtractedGraphEntity struct {
-	EntityName string            `json:"entity_name"` // 实体类型名（来自模板定义）
-	Name       string            `json:"name"`        // 实体实例名（原文中的表述）
-	Properties map[string]string `json:"properties"`  // 属性键值对
+	EntityName string                    `json:"entity_name"` // 实体类型名（来自模板定义）
+	Name       string                    `json:"name"`        // 实体实例名（原文中的表述）
+	Properties GraphExtractionProperties `json:"properties"`  // 属性键值对（LLM 可能输出数字/布尔，统一转字符串）
 
 	// 证据化字段（索引阶段只采集，不强依赖落库；后续查询层可消费）
 	Aliases    []string `json:"aliases,omitempty"`
 	Evidence   string   `json:"evidence,omitempty"`   // 必须来自原文的证据片段
 	Confidence float64  `json:"confidence,omitempty"` // 0~1
 	ChunkIDs   []int64  `json:"chunk_ids,omitempty"`  // 该实体关联的分片ID（LLM 可能返回）
+}
+
+// GraphExtractionProperties 抽取属性集合：LLM 可能把数字/布尔等标量当属性值输出，反序列化时统一转字符串
+// 避免严格的 map[string]string 解析因类型不匹配（如 "错误码": 1）失败
+type GraphExtractionProperties map[string]string
+
+func (p *GraphExtractionProperties) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if *p == nil {
+		*p = make(GraphExtractionProperties, len(raw))
+	}
+	for k, v := range raw {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			(*p)[k] = s
+			continue
+		}
+		var n json.Number
+		if json.Unmarshal(v, &n) == nil {
+			(*p)[k] = n.String()
+			continue
+		}
+		var b bool
+		if json.Unmarshal(v, &b) == nil {
+			(*p)[k] = strconv.FormatBool(b)
+			continue
+		}
+		(*p)[k] = string(v) // null/对象等无法转字符串的，保留原文
+	}
+	return nil
 }
 
 // ExtractedGraphRelation 抽取的图谱关系
@@ -85,9 +119,26 @@ type graphExtractionResponse struct {
 }
 
 const (
-	graphExtractionMaxTokens       = 16384
+	// 不限制输出：AGENTS.md 生成式智能预算规则要求所有 LLM 调用 MaxTokens=0（详见 token-budget-rules.md）。
+	// 推理模型若设上限会把预算烧在思考上，正文被截断（finish_reason=length），导致抽取失败、图谱 0 产出
+	graphExtractionMaxTokens       = 0
 	graphExtractionMaxContentRunes = 16384
 )
+
+// newGraphExtractionChatRequest 构造图谱抽取 LLM 请求。
+// 默认不深度思考（与 wiki 生成一致）：推理模型会把预算烧在思考上导致正文截断，故注入 thinking=disabled / enable_thinking=false。
+func newGraphExtractionChatRequest(model, systemPrompt, userPrompt string) *relaymodel.GeneralOpenAIRequest {
+	req := &relaymodel.GeneralOpenAIRequest{
+		Model:     model,
+		MaxTokens: graphExtractionMaxTokens,
+		Messages: []relaymodel.Message{
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userPrompt},
+		},
+	}
+	applyInternalRequestControl(req, &internalRequestControl{ReasoningMode: "disabled"})
+	return req
+}
 
 // ExtractForChunk 对单个分片进行图谱抽取
 func (s *GraphExtractionService) ExtractForChunk(ctx context.Context, eid int64, template *model.GraphTemplate, chunk *model.DocumentChunk) ([]ExtractedGraphEntity, []ExtractedGraphRelation, error) {
@@ -117,14 +168,7 @@ func (s *GraphExtractionService) ExtractForChunk(ctx context.Context, eid int64,
 	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
-	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     selectedModelName,
-		MaxTokens: graphExtractionMaxTokens,
-		Messages: []relaymodel.Message{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
-	}
+	chatReq := newGraphExtractionChatRequest(selectedModelName, systemPrompt, userPrompt)
 
 	resp, callErr, openaiErr := s.contentService.testChannel(timeoutCtx, selectedChannel, chatReq)
 	if callErr != nil || openaiErr != nil {
@@ -191,14 +235,7 @@ func (s *GraphExtractionService) ExtractForChunks(ctx context.Context, eid int64
 	timeoutCtx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 
-	chatReq := &relaymodel.GeneralOpenAIRequest{
-		Model:     selectedModelName,
-		MaxTokens: graphExtractionMaxTokens,
-		Messages: []relaymodel.Message{
-			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: userPrompt},
-		},
-	}
+	chatReq := newGraphExtractionChatRequest(selectedModelName, systemPrompt, userPrompt)
 
 	resp, callErr, openaiErr := s.contentService.testChannel(timeoutCtx, selectedChannel, chatReq)
 	if callErr != nil || openaiErr != nil {

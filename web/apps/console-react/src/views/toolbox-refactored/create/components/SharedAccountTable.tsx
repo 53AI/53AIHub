@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo } from 'react'
 
 import { Button, Table } from 'antd'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, IconAction } from '@km/shared-components-react'
 import type { ColumnsType } from 'antd/es/table'
 
 import type { SharedAccountItem } from './SharedAccountDialog'
@@ -84,18 +84,23 @@ function SharedAccountTableInternal({
         align: 'left',
         render: (_, record) => (
           <div className="flex gap-2">
-            <Button
-              type="link"
-              icon={<SvgIcon name="edit" />}
-              className="text-secondary hover:!text-brand"
+            <IconAction
+              variant="toolbar"
+              size="compact"
+              title={t('action.edit')}
               onClick={(e) => handleEdit(e, record)}
-            />
-            <Button
-              type="link"
-              icon={<SvgIcon name="delete" />}
-              className="text-secondary hover:!text-tag-red"
+            >
+              <SvgIcon name="edit" />
+            </IconAction>
+            <IconAction
+              variant="toolbar"
+              size="compact"
+              title={t('action_delete')}
+              danger
               onClick={(e) => handleDelete(e, record)}
-            />
+            >
+              <SvgIcon name="delete" />
+            </IconAction>
           </div>
         ),
       },

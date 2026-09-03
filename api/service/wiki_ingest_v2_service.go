@@ -17,25 +17,32 @@ type WikiLLMRunner interface {
 }
 
 type WikiIngestV2Service struct {
-	db       *gorm.DB
-	prompts  *WikiPromptService
-	llm      WikiLLMRunner
-	linkSvc  *WikiLinkService
-	taxonomy *WikiTaxonomyService
-	dedup    *WikiDedupService
-	index    *WikiIndexIntroService
+	db              *gorm.DB
+	prompts         *WikiPromptService
+	llm             WikiLLMRunner
+	fileGuard       wikiFileGenerationGuard
+	checkpoint      *wikiGenerationCheckpoint
+	checkpointJobID int64
+	linkSvc         *WikiLinkService
+	taxonomy        *WikiTaxonomyService
+	dedup           *WikiDedupService
+	index           *WikiIndexIntroService
 }
 
 type WikiIngestV2MapDocumentInput struct {
 	Eid                        int64
 	LibraryID                  int64
 	FileID                     int64
+	JobID                      int64
 	Title                      string
 	Content                    string
 	Language                   string
 	ExtractionGranularity      string
 	EnableWikiKnowledgeGraph   bool
 	EnableWikiDynamicKnowledge bool
+	WikiGenerationMode         string
+	strictCategoryScope        string
+	strictCategoryTypes        map[string]struct{}
 }
 
 type WikiIngestV2MapDocumentResult struct {
@@ -43,6 +50,7 @@ type WikiIngestV2MapDocumentResult struct {
 	SummaryBody     string
 	CandidateSlugs  []string
 	CitationResults []WikiIngestV2CitationResult
+	candidates      []wikiIngestV2Candidate
 }
 
 type WikiIngestV2CitationResult struct {
@@ -54,6 +62,7 @@ type WikiIngestV2CitationResult struct {
 
 type wikiIngestV2Candidate struct {
 	PageType     string
+	EntityType   string
 	Name         string
 	Slug         string
 	Aliases      []string
@@ -102,27 +111,45 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 	var candidates []wikiIngestV2Candidate
 
 	// 知识图谱阶段：实体/概念提取 + 去重
-	if in.EnableWikiKnowledgeGraph {
+	if in.EnableWikiKnowledgeGraph && !(model.NormalizeWikiGenerationMode(in.WikiGenerationMode) == model.WikiGenerationModeStrict && strings.TrimSpace(in.strictCategoryScope) == "") {
 		previousSlugs, err := s.loadWikiCandidatePreviousSlugs(ctx, in.Eid, in.LibraryID)
 		if err != nil {
 			return nil, nil, err
 		}
 
+		fallbackAttempted := false
 		candidates, err = s.extractCandidateSlugs(ctx, in, analysisContent, previousSlugs)
 		if err != nil {
-			logger.Warnf(ctx, "wiki ingest v2: candidate extraction failed, falling back to legacy knowledge extract: eid=%d library_id=%d file_id=%d err=%v",
+			logger.Warnf(ctx, "【Wiki生成】 phase=candidate_extract 候选提取失败，回退到 legacy 知识提取: eid=%d library_id=%d file_id=%d err=%v",
 				in.Eid, in.LibraryID, in.FileID, err)
-			candidates, err = s.extractKnowledgeCandidates(ctx, in, analysisContent, previousSlugs)
-			if err != nil {
-				return nil, nil, err
+			fallbackAttempted = true
+			fallbackCandidates, fallbackErr := s.extractKnowledgeCandidates(ctx, in, analysisContent, previousSlugs)
+			if fallbackErr != nil {
+				logger.Errorf(ctx, "【Wiki生成】 主候选与 legacy 候选均解析失败，降级为仅生成摘要: eid=%d library_id=%d file_id=%d err=%v",
+					in.Eid, in.LibraryID, in.FileID, fallbackErr)
+				candidates = nil
+			} else {
+				candidates = fallbackCandidates
 			}
+			err = nil
 		}
-		if len(candidates) == 0 {
-			logger.Warnf(ctx, "wiki ingest v2: candidate extraction returned 0 items, falling back to legacy knowledge extract: eid=%d library_id=%d file_id=%d",
+		if len(candidates) == 0 && !fallbackAttempted {
+			logger.Warnf(ctx, "【Wiki生成】 主候选提取为空，启用 legacy fallback: eid=%d library_id=%d file_id=%d",
 				in.Eid, in.LibraryID, in.FileID)
-			candidates, err = s.extractKnowledgeCandidates(ctx, in, analysisContent, previousSlugs)
-			if err != nil {
-				return nil, nil, err
+			fallbackCandidates, fallbackErr := s.extractKnowledgeCandidates(ctx, in, analysisContent, previousSlugs)
+			if fallbackErr != nil {
+				logger.Errorf(ctx, "【Wiki生成】 y fallback 解析失败，降级为仅生成摘要: eid=%d library_id=%d file_id=%d err=%v",
+					in.Eid, in.LibraryID, in.FileID, fallbackErr)
+				candidates = nil
+			} else {
+				candidates = fallbackCandidates
+			}
+			if len(candidates) == 0 {
+				logger.Errorf(ctx, "【Wiki生成】 主候选提取与 legacy fallback 均为空，仅继续生成文档简介: eid=%d library_id=%d file_id=%d",
+					in.Eid, in.LibraryID, in.FileID)
+			} else {
+				logger.Infof(ctx, "【Wiki生成】 y fallback 完成 candidates=%d: eid=%d library_id=%d file_id=%d",
+					len(candidates), in.Eid, in.LibraryID, in.FileID)
 			}
 		}
 		candidates, err = s.deduplicateWikiCandidates(ctx, in, candidates)
@@ -138,15 +165,47 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 
 	// 动态知识阶段：摘要生成 + 块分类引用
 	if in.EnableWikiDynamicKnowledge {
-		var err error
-		summaryLine, summaryBody, err = s.generateSummaryPage(ctx, in, analysisContent, candidates)
-		if err != nil {
-			return nil, nil, err
+		chunks = splitWikiIngestContentIntoChunks(analysisContent, wikiIngestV2CitationChunkLimit)
+		type summaryResult struct {
+			line string
+			body string
+			err  error
 		}
-
-		citations, discovered, chunks, err = s.classifyChunkCitations(ctx, in, analysisContent, candidates)
-		if err != nil {
-			return nil, nil, err
+		summaryCh := make(chan summaryResult, 1)
+		citationCh := make(chan struct {
+			citations  map[string][]string
+			discovered []wikiIngestV2Candidate
+			chunks     map[string]wikiIngestV2SyntheticChunk
+			err        error
+		}, 1)
+		go func() {
+			line, body, err := s.generateSummaryPage(ctx, in, analysisContent, candidates)
+			summaryCh <- summaryResult{line: line, body: body, err: err}
+		}()
+		go func() {
+			citationMap, discoveredSlugs, citationChunks, err := s.classifyChunkCitations(ctx, in, analysisContent, candidates)
+			citationCh <- struct {
+				citations  map[string][]string
+				discovered []wikiIngestV2Candidate
+				chunks     map[string]wikiIngestV2SyntheticChunk
+				err        error
+			}{citationMap, discoveredSlugs, citationChunks, err}
+		}()
+		summary := <-summaryCh
+		if summary.err != nil {
+			logger.Errorf(ctx, "【Wiki生成】 文档摘要生成失败，继续生成实体页面: file_id=%d err=%v", in.FileID, summary.err)
+		} else {
+			summaryLine, summaryBody = summary.line, summary.body
+		}
+		citation := <-citationCh
+		if citation.err != nil {
+			logger.Errorf(ctx, "【Wiki生成】 引用识别失败，继续生成页面: file_id=%d err=%v", in.FileID, citation.err)
+		} else {
+			citations, discovered = citation.citations, citation.discovered
+			attachWikiCitationSources(candidates, citations)
+			if len(citation.chunks) > 0 {
+				chunks = citation.chunks
+			}
 		}
 	}
 
@@ -159,9 +218,16 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 		SummaryBody:     summaryBody,
 		CandidateSlugs:  extractWikiCandidateSlugs(candidates),
 		CitationResults: buildWikiCitationResults(candidates, citations),
+		candidates:      candidates,
 	}
 
 	return result, updates, nil
+}
+
+func attachWikiCitationSources(candidates []wikiIngestV2Candidate, citations map[string][]string) {
+	for i := range candidates {
+		candidates[i].SourceChunks = dedupeWikiChunkRefs(append(candidates[i].SourceChunks, citations[candidates[i].Slug]...))
+	}
 }
 
 func (s *WikiIngestV2Service) deduplicateWikiCandidates(ctx context.Context, in WikiIngestV2MapDocumentInput, candidates []wikiIngestV2Candidate) ([]wikiIngestV2Candidate, error) {
@@ -271,6 +337,7 @@ func (s *WikiIngestV2Service) extractCandidateSlugs(ctx context.Context, in Wiki
 		"PreviousSlugs":       previousSlugs,
 		"Granularity":         wikiIngestV2ExtractionGranularity(in.ExtractionGranularity),
 		"GranularityGuidance": wikiIngestV2GranularityGuidance(in.ExtractionGranularity),
+		"StrictCategoryScope": in.strictCategoryScope,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render candidate slug prompt: %w", err)
@@ -286,14 +353,15 @@ func (s *WikiIngestV2Service) extractCandidateSlugs(ctx context.Context, in Wiki
 		return nil, fmt.Errorf("parse candidate slug JSON: %w", err)
 	}
 
-	return flattenWikiCandidateBatch(batch), nil
+	return flattenWikiCandidateBatch(ctx, "candidate_extract", batch), nil
 }
 
 func (s *WikiIngestV2Service) extractKnowledgeCandidates(ctx context.Context, in WikiIngestV2MapDocumentInput, content string, previousSlugs string) ([]wikiIngestV2Candidate, error) {
 	prompt, err := s.prompts.Render(WikiKnowledgeExtractPrompt, map[string]any{
-		"Content":       content,
-		"PreviousSlugs": previousSlugs,
-		"Language":      wikiIngestV2Language(in.Language),
+		"Content":             content,
+		"PreviousSlugs":       previousSlugs,
+		"Language":            wikiIngestV2Language(in.Language),
+		"StrictCategoryScope": in.strictCategoryScope,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render knowledge extract prompt: %w", err)
@@ -309,7 +377,7 @@ func (s *WikiIngestV2Service) extractKnowledgeCandidates(ctx context.Context, in
 		return nil, fmt.Errorf("parse knowledge extract JSON: %w", err)
 	}
 
-	return flattenWikiCandidateBatch(batch), nil
+	return flattenWikiCandidateBatch(ctx, "legacy_knowledge_extract", batch), nil
 }
 
 func (s *WikiIngestV2Service) loadWikiCandidatePreviousSlugs(ctx context.Context, eid, libraryID int64) (string, error) {
@@ -381,21 +449,23 @@ func buildWikiIngestV2SlugUpdates(
 	summaryLine string,
 	summaryBody string,
 ) []WikiSlugUpdate {
+	contentHash := wikiDocumentContentFingerprint(in.Content)
 	updates := make([]WikiSlugUpdate, 0, 1+len(candidates)+len(discovered))
 	if in.EnableWikiDynamicKnowledge {
 		updates = append(updates, WikiSlugUpdate{
-			Slug:         wikiSummarySlug(in.FileID),
-			PageType:     model.WikiPageTypeSummary,
-			Title:        firstNonEmpty(strings.TrimSpace(in.Title), fmt.Sprintf("Document %d Summary", in.FileID)),
-			Summary:      summaryLine,
-			Content:      summaryBody,
-			SummaryLine:  summaryLine,
-			SummaryBody:  summaryBody,
-			DocTitle:     strings.TrimSpace(in.Title),
-			DocSummary:   summaryBody,
-			Eid:          in.Eid,
-			LibraryID:    in.LibraryID,
-			SourceFileID: in.FileID,
+			Slug:              wikiSummarySlug(in.FileID),
+			PageType:          model.WikiPageTypeSummary,
+			Title:             firstNonEmpty(strings.TrimSpace(in.Title), fmt.Sprintf("Document %d Summary", in.FileID)),
+			Summary:           summaryLine,
+			Content:           summaryBody,
+			SummaryLine:       summaryLine,
+			SummaryBody:       summaryBody,
+			DocTitle:          strings.TrimSpace(in.Title),
+			DocSummary:        summaryBody,
+			Eid:               in.Eid,
+			LibraryID:         in.LibraryID,
+			SourceFileID:      in.FileID,
+			SourceContentHash: contentHash,
 		})
 	}
 
@@ -426,18 +496,19 @@ func buildWikiIngestV2SlugUpdates(
 		}
 
 		updates = append(updates, WikiSlugUpdate{
-			Slug:         slug,
-			PageType:     candidate.PageType,
-			Title:        candidate.Name,
-			Aliases:      append([]string(nil), candidate.Aliases...),
-			Summary:      candidate.Description,
-			Content:      content,
-			DocTitle:     strings.TrimSpace(in.Title),
-			DocSummary:   summaryBody,
-			Eid:          in.Eid,
-			LibraryID:    in.LibraryID,
-			SourceFileID: in.FileID,
-			SourceChunks: sourceChunks,
+			Slug:              slug,
+			PageType:          candidate.PageType,
+			Title:             candidate.Name,
+			Aliases:           append([]string(nil), candidate.Aliases...),
+			Summary:           candidate.Description,
+			Content:           content,
+			DocTitle:          strings.TrimSpace(in.Title),
+			DocSummary:        summaryBody,
+			Eid:               in.Eid,
+			LibraryID:         in.LibraryID,
+			SourceFileID:      in.FileID,
+			SourceChunks:      sourceChunks,
+			SourceContentHash: contentHash,
 		})
 	}
 
@@ -522,14 +593,36 @@ func renderWikiIngestV2SourceContext(pageStyle string, in WikiIngestV2MapDocumen
 	return strings.Join(fields, "\n")
 }
 
-func flattenWikiCandidateBatch(batch WikiCandidateSlugBatch) []wikiIngestV2Candidate {
+func wikiCandidateMissingFields(candidate WikiCandidateSlug) []string {
+	missing := make([]string, 0, 4)
+	if strings.TrimSpace(candidate.Name) == "" {
+		missing = append(missing, "name")
+	}
+	if strings.TrimSpace(candidate.Slug) == "" {
+		missing = append(missing, "slug")
+	}
+	if strings.TrimSpace(candidate.Description) == "" {
+		missing = append(missing, "description")
+	}
+	if strings.TrimSpace(candidate.Details) == "" {
+		missing = append(missing, "details")
+	}
+	return missing
+}
+
+func flattenWikiCandidateBatch(ctx context.Context, stage string, batch WikiCandidateSlugBatch) []wikiIngestV2Candidate {
 	candidates := make([]wikiIngestV2Candidate, 0, len(batch.Entities)+len(batch.Concepts))
-	for _, entity := range batch.Entities {
-		if entity.Slug == "" || entity.Name == "" {
+	for index, entity := range batch.Entities {
+		missing := wikiCandidateMissingFields(entity)
+		if len(missing) > 0 {
+			logger.Errorf(ctx, "【Wiki生成】 %s entities[%d] 字段缺失，已记录并%s: missing_fields=%s name=%q slug=%q", stage, index, candidateSkipMessage(entity.Name, entity.Slug), strings.Join(missing, ","), entity.Name, entity.Slug)
+		}
+		if strings.TrimSpace(entity.Slug) == "" || strings.TrimSpace(entity.Name) == "" {
 			continue
 		}
 		candidates = append(candidates, wikiIngestV2Candidate{
 			PageType:     model.WikiPageTypeEntity,
+			EntityType:   firstNonEmpty(entity.Type, model.WikiPageTypeEntity),
 			Name:         entity.Name,
 			Slug:         entity.Slug,
 			Aliases:      append([]string(nil), entity.Aliases...),
@@ -538,12 +631,17 @@ func flattenWikiCandidateBatch(batch WikiCandidateSlugBatch) []wikiIngestV2Candi
 			SourceChunks: nil,
 		})
 	}
-	for _, concept := range batch.Concepts {
-		if concept.Slug == "" || concept.Name == "" {
+	for index, concept := range batch.Concepts {
+		missing := wikiCandidateMissingFields(concept)
+		if len(missing) > 0 {
+			logger.Errorf(ctx, "【Wiki生成】 %s concepts[%d] 字段缺失，已记录并%s: missing_fields=%s name=%q slug=%q", stage, index, candidateSkipMessage(concept.Name, concept.Slug), strings.Join(missing, ","), concept.Name, concept.Slug)
+		}
+		if strings.TrimSpace(concept.Slug) == "" || strings.TrimSpace(concept.Name) == "" {
 			continue
 		}
 		candidates = append(candidates, wikiIngestV2Candidate{
 			PageType:     model.WikiPageTypeConcept,
+			EntityType:   model.WikiPageTypeConcept,
 			Name:         concept.Name,
 			Slug:         concept.Slug,
 			Aliases:      append([]string(nil), concept.Aliases...),
@@ -553,6 +651,13 @@ func flattenWikiCandidateBatch(batch WikiCandidateSlugBatch) []wikiIngestV2Candi
 		})
 	}
 	return candidates
+}
+
+func candidateSkipMessage(name, slug string) string {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(slug) == "" {
+		return "跳过"
+	}
+	return "保留"
 }
 
 func extractWikiCandidateSlugs(candidates []wikiIngestV2Candidate) []string {

@@ -1,5 +1,5 @@
 import { UserOutlined } from "@ant-design/icons";
-import { Search, SvgIcon } from "@km/shared-components-react";
+import { Search, SvgIcon, IconAction } from "@km/shared-components-react";
 import { Button, Modal, message, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -195,16 +195,14 @@ export function UserAdminPage() {
 				render: (_: any, record: AdminUser) => {
 					if (record.is_admin && userInfo?.user_id !== record.user_id) {
 						return (
-							<Button
-								type="link"
+							<IconAction
+								variant="row"
+								title={t("action_delete")}
 								danger
-								icon={<SvgIcon name="delete" />}
-								className="opacity-0 group-hover:opacity-100"
-								onClick={(e) => {
-									e.stopPropagation();
-									handleDelete(record);
-								}}
-							/>
+								onClick={() => handleDelete(record)}
+							>
+								<SvgIcon name="delete" />
+							</IconAction>
 						);
 					}
 					return "--";

@@ -1,7 +1,7 @@
 import { Table, message } from "antd";
 import { useState, useCallback, useMemo, useEffect } from "react";
 import type { ColumnsType } from "antd/es/table";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage, IconAction } from "@km/shared-components-react";
 import { librariesApi } from "@/api/modules/libraries";
 import type { LibraryDisplayItem } from "@/api/modules/libraries/types";
 import { checkKMPermission } from "@/utils/km-permission";
@@ -9,7 +9,6 @@ import { PERMISSION_TYPE } from "@/constants/kmPermission";
 import { useEnv } from "@/hooks/useEnv";
 import { useEnterpriseStore } from "@/stores";
 import { t } from "@/locales";
-import { getPublicPath } from "@/utils/config";
 
 export interface KnowledgeListProps {
   spaceId: string;
@@ -84,14 +83,10 @@ export function KnowledgeList({ spaceId }: KnowledgeListProps) {
         minWidth: 160,
         render: (_, record) => (
           <div className="flex items-center gap-2">
-            <img
+            <SafeImage
               src={record.icon}
               className="size-7 rounded"
               alt={record.name}
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.src = getPublicPath("/images/default_agent.png");
-              }}
             />
             <span>{record.name}</span>
           </div>
@@ -145,11 +140,13 @@ export function KnowledgeList({ spaceId }: KnowledgeListProps) {
         width: 60,
         align: "right",
         render: (_, record) => (
-          <SvgIcon
-            name="setting2"
-            className="cursor-pointer text-[#9CA3AF] hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          <IconAction
+            variant="row"
+            title={t("action.setting")}
             onClick={() => handleManage(record)}
-          />
+          >
+            <SvgIcon name="setting2" />
+          </IconAction>
         ),
       },
     ],

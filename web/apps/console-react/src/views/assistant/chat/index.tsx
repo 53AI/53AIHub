@@ -20,14 +20,12 @@ export function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const settingRef = useRef<any>(null);
 
-  // 录音场景：usage=5、from=recording；知识库场景：默认 KM_FILE_CHAT、from=knowledge
+  // 知识库场景：默认 KM_FILE_CHAT、from=knowledge
   const usageParam = searchParams.get("usage");
-  const fromParam = searchParams.get("from");
   const agentUsage = usageParam ? Number(usageParam) : AGENT_USAGES.KM_FILE_CHAT;
-  const isFromRecording = fromParam === "recording";
 
   const handleBack = () => {
-    navigate(isFromRecording ? "/recording" : "/knowledge?tab=assistant");
+    navigate("/knowledge?tab=assistant");
   };
 
   const handleStatusChange = (enable: boolean) => {
@@ -85,7 +83,7 @@ export function ChatPage() {
   return (
     <PageLayoutContent
       header={{
-        title: isFromRecording ? t("module.recording") : t("module.knowledge_space"),
+        title: t("module.knowledge_space"),
         back: true,
         onBack: handleBack,
       }}

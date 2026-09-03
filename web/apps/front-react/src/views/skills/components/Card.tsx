@@ -12,7 +12,7 @@ import { calculateAverageScore } from '@/api/modules/skill/transform'
 import type { Skill } from '@/api/modules/skill/types'
 import { t } from '@/locales'
 import AddSkillModal from './AddSkillModal'
-import { checkPermission } from "@/utils/permission"
+import { checkPermissionAsync } from "@/utils/permission"
 
 interface SkillCardProps {
   skill: Skill
@@ -77,8 +77,10 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
   }
 
   const handleAddClick = () => {
-    checkPermission({
+    checkPermissionAsync({
       groupIds: skill?.group_ids || [],
+      resourceId: skill.id,
+      resourceType: 'skill_library',
       onClick: async () => {
         setAddModalOpen(true)
       }

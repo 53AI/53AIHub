@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
@@ -15,6 +16,12 @@ import (
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
 	"gorm.io/gorm"
 )
+
+var generatedSpeakerLabelRE = regexp.MustCompile(`(?i)^(?:[a-z]\s*说话人|说话人\s*\d*|发言人\s*\d*|speaker\s*\d+|无说话人|未知说话人)$`)
+
+func isGeneratedSpeakerLabel(name string) bool {
+	return generatedSpeakerLabelRE.MatchString(strings.TrimSpace(name))
+}
 
 type EntityExtractionService struct {
 	db              *gorm.DB
@@ -173,6 +180,7 @@ func (s *EntityExtractionService) buildEntityExtractionSystemPromptWithTypes(typ
 3) 去重：同一 type + name 只能出现一次。
 4) 如果不确定类型，优先用 Concept；不要发明新类型。
 5) 高频基础实体补充：当文本中某个复合实体（例如"火星导弹"）重复出现时，需要补充抽取其基础组成实体（例如"火星""导弹"），基础实体也必须满足规则 1) 和 2)。
+6) 转写中的"A说话人"、"B说话人"、"说话人 1"、"Speaker 1"、"发言人"等默认说话人标签只是元数据，不是实体；只有原文明确出现的具体人物或组织名称才可抽取。
 
 输出要求：
 只输出 JSON，不要 Markdown，不要解释。
@@ -243,6 +251,9 @@ func (s *EntityExtractionService) cleanEntities(entities []ExtractedEntity) []Ex
 		e.Type = strings.TrimSpace(e.Type)
 		e.Name = strings.TrimSpace(e.Name)
 		if e.Type == "" || e.Name == "" {
+			continue
+		}
+		if isGeneratedSpeakerLabel(e.Name) {
 			continue
 		}
 		if _, ok := allowed[e.Type]; !ok {

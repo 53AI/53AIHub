@@ -3,13 +3,13 @@ import { useEffect, useState, useRef } from "react";
 import { t } from "@/locales";
 import { feedbackApi } from "@/api/modules/feedback";
 import {
-    type FeedbackDisplayItem,
-    SEARCH_TYPE,
+  type FeedbackDisplayItem,
+  SEARCH_TYPE,
 } from "@/api/modules/feedback/types";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import Detail, { DetailRef } from "../components/detail";
 import FeedbackConfigDialog, {
-    FeedbackConfigDialogRef,
+  FeedbackConfigDialogRef,
 } from "./FeedbackConfigDialog";
 import { DateRangeFilter } from "@/components/Filter/date-range";
 import { UserFilter } from "@/components/Filter/user";
@@ -268,15 +268,14 @@ export function Feedback({ agentId }: FeedbackProps) {
       key: "operation",
       width: 60,
       render: (_: any, __: FeedbackDisplayItem, index: number) => (
-        <Button
-          type="link"
-          className="invisible group-hover:visible hover:!text-brand"
-          icon={<SvgIcon name="view" />}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenDetail(index);
-          }}
-        />
+        <IconAction
+          variant="row"
+          className="invisible group-hover:visible"
+          title={t("action.view")}
+          onClick={() => handleOpenDetail(index)}
+        >
+          <SvgIcon name="view" />
+        </IconAction>
       ),
     },
   ];

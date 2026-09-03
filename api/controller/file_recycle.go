@@ -227,6 +227,7 @@ func HardDeleteFile(c *gin.Context) {
 		return
 	}
 
+	common.SetFileStop(fileID)
 	if err := model.DeleteFile(eid, fileID); err != nil {
 		logger.SysLogf("管理员彻底删除失败: eid=%d fileID=%d userID=%d err=%v", eid, fileID, userID, err)
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))

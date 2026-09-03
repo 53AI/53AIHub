@@ -10,7 +10,7 @@ import { SEARCH_TYPE } from "@/api/modules/feedback/types";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import FeedbackDetail from "@/views/search/components/detail";
 import FeedbackConfigDialog from "@/views/search/feedback/FeedbackConfigDialog";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 
 interface FeedbackProps {
   agentId?: string | number;
@@ -250,15 +250,13 @@ export default function Feedback({ agentId }: FeedbackProps) {
       title: t("operation"),
       width: 60,
       render: (_: any, __: any, index: number) => (
-        <Button
-          type="text"
-          className="invisible group-hover:visible hover:text-brand"
-          icon={<SvgIcon name="view" />}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenDetail(index);
-          }}
-        />
+        <IconAction
+          variant="row"
+          title={t("action.view")}
+          onClick={() => handleOpenDetail(index)}
+        >
+          <SvgIcon name="view" />
+        </IconAction>
       ),
     },
   ];

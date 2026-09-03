@@ -10,6 +10,7 @@ import React, {
 import { Button, Spin } from "antd";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useLibraryStore } from "@/stores/modules/library";
+import { spacesApi } from "@/api/modules/spaces";
 import { LibraryHeader } from "../../components/header";
 import PermissionSetting from "../components/permission-setting";
 import FileShare from "./components/share";
@@ -58,6 +59,53 @@ export function ChunksV2View() {
   const [showPermission, setShowPermission] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
   const [pipelineRefreshKey, setPipelineRefreshKey] = useState(0);
+
+  // Space knowledge-graph config: controls whether the "知识图谱" tab is shown.
+  const spaceId = useLibraryStore((state) => state.space_id);
+  const libraryId = useLibraryStore((state) => state.library_id);
+  const [graphEnabled, setGraphEnabled] = useState(true);
+  const [graphLibraryIds, setGraphLibraryIds] = useState<string[]>([]);
+  const [graphConfigLoaded, setGraphConfigLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!spaceId) return;
+    let cancelled = false;
+    spacesApi
+      .getKnowledgeGraph(spaceId)
+      .then((config) => {
+        if (cancelled) return;
+        setGraphEnabled(config.enable_knowledge_graph);
+        setGraphLibraryIds(config.library_ids ?? []);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setGraphConfigLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [spaceId]);
+
+  const graphVisible = useMemo(() => {
+    // Keep hidden until the space config arrives, then reveal only if allowed.
+    if (!graphConfigLoaded) return false;
+    return (
+      graphEnabled &&
+      (graphLibraryIds.length === 0 || graphLibraryIds.includes(libraryId))
+    );
+  }, [graphConfigLoaded, graphEnabled, graphLibraryIds, libraryId]);
+
+  const visibleMenuItems = useMemo(
+    () => menuItems.filter((item) => item.value !== "graph" || graphVisible),
+    [graphVisible]
+  );
+
+  // Fall back to another view if the graph tab is no longer allowed
+  useEffect(() => {
+    if (viewType === "graph" && graphConfigLoaded && !graphVisible) {
+      setViewType("metadata");
+    }
+  }, [viewType, graphConfigLoaded, graphVisible]);
 
   const {
     handleClick: handleInlineClick,
@@ -142,7 +190,7 @@ export function ChunksV2View() {
   };
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
+    <div className="flex flex-col flex-1 overflow-hidden relative">
       <LibraryHeader
         footer={
           currentFile ? (
@@ -185,7 +233,7 @@ export function ChunksV2View() {
           {/* View Type Tabs */}
           <div className="flex-none px-5 py-2 border-b flex items-center justify-between">
             <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[#F7F7F9] w-fit">
-              {menuItems.map((item) => (
+              {visibleMenuItems.map((item) => (
                 <div
                   key={item.value}
                   className={`h-8 px-4 rounded-lg flex items-center justify-center gap-1 cursor-pointer ${

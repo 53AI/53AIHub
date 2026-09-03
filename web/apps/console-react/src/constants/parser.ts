@@ -32,18 +32,6 @@ const PARSER_CONFIGS: ParserConfig[] = [
     supportedExts: ['csv', 'doc', 'docx', 'md', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx'],
   },
   {
-    key: 'builtin',
-    name: 'DocReader',
-    desc: '支持复杂格式docx/pdf/xlsx，需单独容器',
-    detailedDesc: '',
-    icon: getPublicPath('/images/tools/builtin.png'),
-    category: 'document',
-    formFields: [],
-    displayFields: [],
-    isSystem: true,
-    supportedExts: ['csv', 'doc', 'docx', 'md', 'pdf', 'ppt', 'pptx', 'xls', 'xlsx'],
-  },
-  {
     key: 'mineru.net',
     name: 'MinerU 云服务',
     icon: getPublicPath('/images/tools/mineru.png'),

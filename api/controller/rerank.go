@@ -242,7 +242,7 @@ func getChannelTypeByModel(modelName string) int {
 	}
 
 	// 如果没有找到，检查是否为百炼模型的特殊前缀
-	if strings.HasPrefix(modelName, "gte-rerank") {
+	if strings.HasPrefix(modelName, "gte-rerank") || strings.HasPrefix(modelName, "qwen-gte-rerank") {
 		return model.ChannelApiBailian
 	}
 
@@ -286,12 +286,7 @@ func executeRerankRequest(c *gin.Context, req *RerankRequest, channel *model.Cha
 
 // executeAliRerankRequest 执行阿里云百炼 rerank 请求
 func executeAliRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta) (*RerankResponse, *relay_model.Usage, error) {
-	// 创建新的 service 实例
 	rerankService := &service.BailianRerankService{}
-	// 如果模型名称是 qwen-开头的，需要把qwen-替换成空
-	if strings.HasPrefix(req.Model, "qwen-") {
-		req.Model = strings.Replace(req.Model, "qwen-", "", 1)
-	}
 
 	// 将 controller 中的 RerankRequest 转换为 service 中的 RerankRequest
 	serviceReq := &service.RerankRequest{

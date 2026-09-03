@@ -97,6 +97,52 @@ func ReindexDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(message))
 }
 
+// ReprocessRetrievalChunks 隐藏接口（仅管理员）：对指定范围（文档/知识库/空间）内已有知识块的文件，
+// 重新生成检索块并异步向量化。document_chunks 保持不变。不添加 swagger 注解，保持隐藏。
+func ReprocessRetrievalChunks(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
+	var req ReprocessRetrievalChunksRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	if req.FileID == 0 && req.LibraryID == 0 && req.SpaceID == 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("必须指定 file_id / library_id / space_id 之一"))
+		return
+	}
+	if req.Batch < 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("batch 不能小于 0"))
+		return
+	}
+	if req.IndexMaxLength < 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("index_max_length 不能小于 0"))
+		return
+	}
+
+	serviceManager := service.GetServiceManager()
+	if serviceManager == nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse("服务管理器未初始化"))
+		return
+	}
+
+	// 后台异步执行，避免阻塞请求
+	go func() {
+		ctx := context.Background()
+		result, err := serviceManager.ReprocessRetrievalChunks(ctx, eid, req.SpaceID, req.LibraryID, req.FileID, req.IndexMaxLength, req.Batch)
+		if err != nil {
+			logger.Errorf(ctx, "重拆检索块任务失败: eid=%d err=%v", eid, err)
+			return
+		}
+		logger.SysLogf("重拆检索块任务完成: eid=%d operator=%d total=%d success=%d failed=%d skipped=%d",
+			eid, userID, result.Total, result.Success, result.Failed, result.Skipped)
+	}()
+
+	c.JSON(http.StatusOK, model.Success.ToResponse("检索块重拆任务已提交，将在后台执行"))
+}
+
 // GenerateQuestionsSummaryAndEntitiesMigration godoc
 // @Summary 迁移生成问答、摘要与实体
 // @Description 对指定文件/知识库/空间批量生成问答、摘要并抽取实体，支持 force 强制重新生成；后台异步执行，单次最多并发3个文件

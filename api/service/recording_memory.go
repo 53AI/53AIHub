@@ -25,6 +25,7 @@ const (
 	recordingMemoryLifecycleDone           = "fulfilled"
 	recordingMemoryLifecycleCancel         = "cancelled"
 	recordingMemorySourceInsightBackground = "insight_background"
+	recordingMemorySourceUserConfirmed     = "user_confirmed_context"
 )
 
 var ErrRecordingMemoryForbidden = errors.New("recording memory is not visible")
@@ -42,6 +43,8 @@ type meetingMemoryContext struct {
 	SourceConfidence  float64
 	EvidenceAvailable bool
 	SourceSegmentIDs  []string
+	RecallPath        []string
+	StructuredLinks   string
 }
 
 // RecordingMemoryOverview 是安心录首页需要的聚合数据。
@@ -97,6 +100,14 @@ func NewRecordingMemoryService(eid int64) *RecordingMemoryService {
 	return &RecordingMemoryService{eid: eid}
 }
 
+func loadRecordingMemorySourceFile(ctx context.Context, eid, fileID int64) (*model.File, error) {
+	var file model.File
+	if err := model.DB.WithContext(ctx).Where("eid = ? AND id = ?", eid, fileID).First(&file).Error; err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 func recordingMemoryExtractionEnabled(config *model.RecordingConfig) bool {
 	if config == nil {
 		return false
@@ -114,6 +125,14 @@ func recordingMemoryExtractionEnabled(config *model.RecordingConfig) bool {
 // CompileRecordingMemory 将当前纪要的显式结构化条目编译为 Claim。
 // 同一纪要哈希重复编译幂等；纪要重生成时旧版本保留但不再是当前版本。
 func CompileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (int, error) {
+	file, err := loadRecordingMemorySourceFile(ctx, eid, fileID)
+	if err != nil {
+		return 0, err
+	}
+	if !file.IsRecordingOriginType() {
+		logger.Infof(ctx, "【会议记忆】跳过非录音来源 fileID=%d originType=%s", fileID, file.OriginType)
+		return 0, nil
+	}
 	if !model.IsRecordingMemoryExtractionEnabled(eid) {
 		return 0, nil
 	}
@@ -121,7 +140,7 @@ func CompileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (in
 }
 
 func compileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (int, error) {
-	raw, err := loadMeetingMinutesJSON(eid, fileID)
+	raw, err := loadRecordingMemorySource(eid, fileID)
 	if err != nil {
 		return 0, err
 	}
@@ -130,14 +149,28 @@ func compileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (in
 		return 0, nil
 	}
 
-	minutes, err := parseRecordingMemoryMinutes(raw)
-	if err != nil {
-		return 0, err
+	var items []recordingMemoryItem
+	switch classifyRecordingContent(raw) {
+	case recordingContentMinutesJSON:
+		// 历史数据：纪要 JSON → 结构化条目编译（决策/行动/风险等）
+		minutes, perr := parseRecordingMemoryMinutes(raw)
+		if perr != nil {
+			return 0, perr
+		}
+		items = buildRecordingMemoryItems(minutes)
+	default:
+		// 新布局：转写 Markdown（或转写 JSON 渲染后）→ 陈述型 Claim（D2，与管线同源）
+		md := raw
+		if classifyRecordingContent(raw) == recordingContentTranscriptJSON {
+			if rendered, rerr := RenderTranscriptMarkdown(raw, ""); rerr == nil && rendered != "" {
+				md = rendered
+			}
+		}
+		items = buildRecordingStatementClaims(md)
 	}
 
 	hashBytes := sha256.Sum256([]byte(raw))
 	minutesHash := hex.EncodeToString(hashBytes[:])
-	items := buildRecordingMemoryItems(minutes)
 
 	result := 0
 	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -149,7 +182,7 @@ func compileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (in
 		}
 
 		if err := tx.Model(&model.RecordingMemoryClaim{}).
-			Where("eid = ? AND owner_id = ? AND file_id = ? AND source_item_type <> ?", eid, ownerID, fileID, recordingMemorySourceInsightBackground).
+			Where("eid = ? AND owner_id = ? AND file_id = ? AND source_item_type NOT IN ?", eid, ownerID, fileID, []string{recordingMemorySourceInsightBackground, recordingMemorySourceUserConfirmed}).
 			Updates(map[string]interface{}{"is_current": false}).Error; err != nil {
 			return err
 		}
@@ -203,6 +236,13 @@ func compileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (in
 // 它不依赖通用 RAG 实体任务，因此手动重跑和自动链路都不会因并发时序丢失会议记忆。
 func ensureRecordingMemoryReady(ctx context.Context, eid, fileID, ownerID int64) (recordingMemoryReadiness, error) {
 	ready := recordingMemoryReadiness{}
+	file, err := loadRecordingMemorySourceFile(ctx, eid, fileID)
+	if err != nil {
+		return ready, err
+	}
+	if !file.IsRecordingOriginType() {
+		return ready, nil
+	}
 	config, err := model.ValidateOrCreateRecordingConfig(eid)
 	if err != nil {
 		return ready, err
@@ -236,43 +276,33 @@ func ensureRecordingMemoryReady(ctx context.Context, eid, fileID, ownerID int64)
 	return ready, nil
 }
 
-// CompileRecordingInsightBackgroundMemory 将用户直接补充的洞察背景作为可追溯记忆保存。
-// 用户已在重新生成动作中明确提供该内容，因此标记为 user_provided/confirmed；它不能替代纪要证据。
-func CompileRecordingInsightBackgroundMemory(ctx context.Context, eid, fileID, ownerID int64, background InsightBackground) error {
-	parts := make([]string, 0, 5)
-	for _, item := range []struct{ label, value string }{
-		{"个人背景", background.PersonalInfo},
-		{"公司背景", background.CompanyInfo},
-		{"历史背景", background.HistoricalContext},
-		{"外部约束", background.ExternalConstraints},
-		{"补充背景", background.SupplementalContext},
-	} {
-		if value := strings.TrimSpace(item.value); value != "" {
-			parts = append(parts, item.label+"："+value)
-		}
+// CompileRecordingExternalConstraintsMemory 将用户显式确认的“补充背景”升级为
+// 可追溯的 user_confirmed_context。普通重生成不会调用它；个人、企业和动态历史
+// 背景不会通过此入口落为长期记忆。
+func CompileRecordingExternalConstraintsMemory(ctx context.Context, eid, fileID, ownerID int64, background InsightBackground) error {
+	text := strings.TrimSpace(background.ExternalConstraints)
+	if text == "" {
+		return nil
+	}
+	content := "补充背景（用户已确认）：" + text
+	hash := sha256.Sum256([]byte(content))
+	detail, err := json.Marshal(persistedInsightBackground(background))
+	if err != nil {
+		return err
 	}
 	return model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.RecordingMemoryClaim{}).
-			Where("eid = ? AND owner_id = ? AND file_id = ? AND source_item_type = ?", eid, ownerID, fileID, recordingMemorySourceInsightBackground).
+			Where("eid = ? AND owner_id = ? AND file_id = ? AND source_item_type = ?", eid, ownerID, fileID, recordingMemorySourceUserConfirmed).
 			Updates(map[string]interface{}{"is_current": false}).Error; err != nil {
-			return err
-		}
-		if len(parts) == 0 {
-			return nil
-		}
-		content := strings.Join(parts, "\n")
-		hash := sha256.Sum256([]byte(content))
-		detail, err := json.Marshal(persistedInsightBackground(background))
-		if err != nil {
 			return err
 		}
 		claim := &model.RecordingMemoryClaim{
 			Eid: eid, OwnerID: ownerID, FileID: fileID,
-			MinutesHash: hex.EncodeToString(hash[:]), SourceItemType: recordingMemorySourceInsightBackground,
-			SourceItemID: "user_supplement", SourceKeyHash: hex.EncodeToString(hash[:]),
+			MinutesHash: hex.EncodeToString(hash[:]), SourceItemType: recordingMemorySourceUserConfirmed,
+			SourceItemID: "external_constraints", SourceKeyHash: hex.EncodeToString(hash[:]),
 			ClaimKind: "background", Content: model.LongText(content), DetailJSON: model.LongText(detail),
-			AssertionState: "user_provided", EpistemicType: "user_context", LifecycleState: recordingMemoryLifecycleOpen,
-			ReviewState: recordingMemoryReviewConfirmed, SourceConfidence: 1, EvidenceAvailable: false,
+			AssertionState: "user_confirmed", EpistemicType: "user_context", LifecycleState: recordingMemoryLifecycleOpen,
+			ReviewState: recordingMemoryReviewConfirmed, SourceConfidence: 1, EvidenceAvailable: true,
 			SourceSegmentIDs: model.LongText("[]"), IsCurrent: true, Version: 1,
 		}
 		return tx.Clauses(clause.OnConflict{
@@ -315,6 +345,41 @@ func parseRecordingMemoryMinutes(raw string) (map[string]interface{}, error) {
 	}
 }
 
+func recordingMemoryStructuredLinks(detail model.LongText) string {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(detail), &payload); err != nil {
+		return "{}"
+	}
+	links, ok := payload["structured_links"]
+	if !ok {
+		return "{}"
+	}
+	encoded, err := json.Marshal(links)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
+}
+
+func recordingMemoryRecallPath(detail model.LongText) []string {
+	var payload map[string]interface{}
+	if err := json.Unmarshal([]byte(detail), &payload); err != nil {
+		return nil
+	}
+	links, ok := payload["structured_links"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	path := []string{"claim"}
+	if bindings, ok := links["claim_entity_bindings"].([]interface{}); ok && len(bindings) > 0 {
+		path = append(path, "claim_entity_binding")
+	}
+	if relations, ok := links["memory_relations"].([]interface{}); ok && len(relations) > 0 {
+		path = append(path, "relation")
+	}
+	return path
+}
+
 func buildRecordingMemoryItems(minutes map[string]interface{}) []recordingMemoryItem {
 	definitions := []struct {
 		key  string
@@ -348,12 +413,7 @@ func buildRecordingMemoryItems(minutes map[string]interface{}) []recordingMemory
 				continue
 			}
 			segmentIDs := memorySourceSegmentIDs(row["source_segment_ids"])
-			itemID := strings.TrimSpace(stringValue(row["id"]))
-			if itemID == "" {
-				seed := definition.kind + "|" + content
-				hash := sha256.Sum256([]byte(seed))
-				itemID = "content-" + hex.EncodeToString(hash[:])[:24]
-			}
+			itemID := recordingMemoryClaimTempID(definition.kind, row)
 			sourceKey := definition.key + "|" + itemID
 			occurrence := seenSourceKeys[sourceKey]
 			seenSourceKeys[sourceKey] = occurrence + 1
@@ -387,7 +447,187 @@ func buildRecordingMemoryItems(minutes map[string]interface{}) []recordingMemory
 			items = append(items, item)
 		}
 	}
+	return attachRecordingMemoryStructuredLinks(items, minutes)
+}
+
+func recordingMemoryClaimTempID(kind string, row map[string]interface{}) string {
+	if id := strings.TrimSpace(stringValue(row["id"])); id != "" {
+		return id
+	}
+	seed := kind + "|" + memoryItemContent(kind, row)
+	hash := sha256.Sum256([]byte(seed))
+	return "content-" + hex.EncodeToString(hash[:])[:24]
+}
+
+// attachRecordingMemoryStructuredLinks keeps Prompt 2 relations and claim
+// bindings inside the existing versioned Claim detail JSON. This is a
+// migration-free compatibility layer: T07 can validate and expose the links
+// now, while a future schema task may promote them to first-class tables.
+func attachRecordingMemoryStructuredLinks(items []recordingMemoryItem, minutes map[string]interface{}) []recordingMemoryItem {
+	claimIDs := make(map[string]struct{}, len(items))
+	claimSegments := make(map[string][]string, len(items))
+	for _, item := range items {
+		claimIDs[item.sourceItemID] = struct{}{}
+		claimSegments[item.sourceItemID] = item.sourceSegmentIDs
+	}
+	bindings, relations := validatedRecordingMemoryLinks(minutes, claimIDs, claimSegments)
+	if len(bindings) == 0 && len(relations) == 0 {
+		return items
+	}
+	for index := range items {
+		var detail map[string]interface{}
+		if err := json.Unmarshal([]byte(items[index].detailJSON), &detail); err != nil {
+			continue
+		}
+		links := map[string]interface{}{}
+		matchingBindings := make([]interface{}, 0)
+		for _, binding := range bindings {
+			if strings.TrimSpace(stringValue(binding["claim_temp_id"])) == items[index].sourceItemID {
+				matchingBindings = append(matchingBindings, binding)
+			}
+		}
+		if len(matchingBindings) > 0 {
+			links["claim_entity_bindings"] = matchingBindings
+		}
+		matchingRelations := make([]interface{}, 0)
+		for _, relation := range relations {
+			relationSegments := memorySourceSegmentIDs(relation["source_segment_ids"])
+			if len(relationSegments) > 0 && hasAnyString(items[index].sourceSegmentIDs, relationSegments...) {
+				matchingRelations = append(matchingRelations, relation)
+			}
+		}
+		if len(matchingRelations) > 0 {
+			links["memory_relations"] = matchingRelations
+		}
+		if len(links) == 0 {
+			continue
+		}
+		detail["structured_links"] = links
+		encoded, err := json.Marshal(detail)
+		if err == nil {
+			items[index].detailJSON = string(encoded)
+		}
+	}
 	return items
+}
+
+// validatedRecordingMemoryLinks is the migration-free schema gate for the
+// relation/binding arrays emitted by Prompt 2. It rejects guessed IDs and
+// dangling evidence before links can enter Claim detail JSON or retrieval.
+func validatedRecordingMemoryLinks(minutes map[string]interface{}, claimIDs map[string]struct{}, claimSegments map[string][]string) (bindings, relations []map[string]interface{}) {
+	entityIDs := recordingMemoryEntityTempIDs(minutes)
+	knownSegments := recordingMemoryKnownSegmentIDs(minutes)
+
+	for _, raw := range interfaceSlice(minutes["claim_entity_bindings"]) {
+		binding, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		claimID := strings.TrimSpace(stringValue(binding["claim_temp_id"]))
+		entityID := strings.TrimSpace(stringValue(binding["entity_temp_id"]))
+		role := strings.TrimSpace(stringValue(binding["role"]))
+		segments := memorySourceSegmentIDs(binding["source_segment_ids"])
+		if claimID == "" || entityID == "" || role == "" || len(segments) == 0 {
+			continue
+		}
+		if _, ok := claimIDs[claimID]; !ok {
+			continue
+		}
+		if _, ok := entityIDs[entityID]; !ok || !allStringsInSet(segments, knownSegments) {
+			continue
+		}
+		if claimEvidence := claimSegments[claimID]; len(claimEvidence) > 0 && !hasAnyString(claimEvidence, segments...) {
+			continue
+		}
+		bindings = append(bindings, binding)
+	}
+
+	for _, raw := range interfaceSlice(minutes["memory_relations"]) {
+		relation, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		fromID := firstNonEmptyString(stringValue(relation["from_entity_temp_id"]), stringValue(relation["from_temp_id"]))
+		toID := firstNonEmptyString(stringValue(relation["to_entity_temp_id"]), stringValue(relation["to_temp_id"]))
+		relationType := strings.TrimSpace(stringValue(relation["relation_type"]))
+		segments := memorySourceSegmentIDs(relation["source_segment_ids"])
+		if fromID == "" || toID == "" || relationType == "" || len(segments) == 0 {
+			continue
+		}
+		if _, ok := entityIDs[fromID]; !ok {
+			continue
+		}
+		if _, ok := entityIDs[toID]; !ok || !allStringsInSet(segments, knownSegments) {
+			continue
+		}
+		relations = append(relations, relation)
+	}
+	return bindings, relations
+}
+
+func recordingMemoryEntityTempIDs(minutes map[string]interface{}) map[string]struct{} {
+	result := make(map[string]struct{})
+	for index, raw := range interfaceSlice(minutes["memory_entities"]) {
+		row, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		tempID := firstNonEmptyString(stringValue(row["temp_id"]), fmt.Sprintf("entity_%d", index+1))
+		result[tempID] = struct{}{}
+	}
+	return result
+}
+
+func recordingMemoryKnownSegmentIDs(minutes map[string]interface{}) map[string]struct{} {
+	known := make(map[string]struct{})
+	for _, key := range []string{"decisions", "commitments", "actions", "risks", "issues", "viewpoints"} {
+		for _, raw := range interfaceSlice(minutes[key]) {
+			if row, ok := raw.(map[string]interface{}); ok {
+				for _, segmentID := range memorySourceSegmentIDs(row["source_segment_ids"]) {
+					known[segmentID] = struct{}{}
+				}
+			}
+		}
+	}
+	for _, raw := range interfaceSlice(minutes["memory_entities"]) {
+		row, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, segmentID := range memorySourceSegmentIDs(row["identity_policy_evidence_segment_ids"]) {
+			known[segmentID] = struct{}{}
+		}
+		for _, rawFact := range interfaceSlice(row["facts"]) {
+			if fact, ok := rawFact.(map[string]interface{}); ok {
+				for _, segmentID := range memorySourceSegmentIDs(fact["source_segment_ids"]) {
+					known[segmentID] = struct{}{}
+				}
+			}
+		}
+	}
+	return known
+}
+
+func allStringsInSet(values []string, set map[string]struct{}) bool {
+	for _, value := range values {
+		if _, ok := set[value]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func hasAnyString(left []string, right ...string) bool {
+	seen := make(map[string]struct{}, len(left))
+	for _, value := range left {
+		seen[value] = struct{}{}
+	}
+	for _, value := range right {
+		if _, ok := seen[value]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func memoryItemContent(kind string, row map[string]interface{}) string {
@@ -508,7 +748,13 @@ func decodeMemorySourceSegmentIDs(raw model.LongText) []string {
 	return ids
 }
 
+// loadMeetingMinutesJSON 读取当前会议快照所需的纪要 JSON（memory_entities/decisions/commitments 等结构化内容）。
+// 新布局：纪要 JSON 存 Summary(template_id=0)（recording_current_context.go 依赖此读取）。
+// 旧布局回退：迁移前纪要 JSON 存 FileBody（有转写摘要时），Summary(0) 缺失则兼容读取。
 func loadMeetingMinutesJSON(eid, fileID int64) (string, error) {
+	if summary, err := model.GetSummaryByTemplateID(fileID, 0); err == nil && summary != nil {
+		return string(summary.SummaryContent), nil
+	}
 	if model.HasTranscriptSummary(fileID) {
 		fileBody, err := model.GetLastFileBodyByFileID(eid, fileID)
 		if err != nil {
@@ -516,11 +762,18 @@ func loadMeetingMinutesJSON(eid, fileID int64) (string, error) {
 		}
 		return fileBody.GetContent()
 	}
-	summary, err := model.GetSummaryByTemplateID(fileID, 0)
+	return "", gorm.ErrRecordNotFound
+}
+
+// loadRecordingMemorySource 读取实体/会议记忆编译的内容源。
+// 新布局：FileBody=转写 Markdown（与 RAG 管线同源，实体/会议记忆从转写抽取，D2）。
+// 历史布局：FileBody=纪要 JSON（已反转），编译函数按内容类型分流兼容。
+func loadRecordingMemorySource(eid, fileID int64) (string, error) {
+	fileBody, err := model.GetLastFileBodyByFileID(eid, fileID)
 	if err != nil {
 		return "", err
 	}
-	return string(summary.SummaryContent), nil
+	return fileBody.GetContent()
 }
 
 // WarmRecentRecordingMemories 为已有历史录音补建 Claim，限制数量避免首次启用时阻塞太久。

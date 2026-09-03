@@ -1344,4 +1344,22 @@ apply.permission_label,申请权限,申請權限,Apply for Permission,権限を�
 apply.permission_required,请选择申请权限,請選擇申請權限,Please select the permission to apply for,申請する権限を選択してください
 apply.reason_label,申请原因,申請原因,Reason for Application,申請理由
 apply.reason_placeholder,请填写权限申请原因,請填寫權限申請原因,Please fill in the reason for the application,申請理由を入力してください
+memory.merge_button,记忆融合,記憶融合,Merge Memory,メモリ融合
+memory.merge_modal_title,记忆融合,記憶融合,Merge Memory,メモリ融合
+memory.merge_hint,合并为一个实体,合併為一個實體,Merge into one entity,1つのエンティティに結合
+memory.merge_confirm,确认,確認,Confirm,確認
+memory.merge_cancel,取消,取消,Cancel,キャンセル
+memory.merge_card_stats,{n} 个关联,{n} 個關聯,{n} related facts,{n} 個の関連事実
+memory.merge_success,记忆融合成功,記憶融合成功,Memories merged,メモリ融合に成功
+memory.merge_failed,记忆融合失败,記憶融合失敗,Merge failed,メモリ融合に失敗
+memory.merge_type_mismatch_tip,仅可融合类型相同的两个实体,僅可融合類型相同的兩個實體,Only entities of the same type can be merged,同じタイプのエンティティのみ融合できます
+memory.add_success,记忆已新增,記憶已新增,Memory added,メモリが追加されました
+memory.add_with_relations_success,记忆与关联已保存,記憶與關聯已保存,Memory and relations saved,メモリと関連が保存されました
+memory.delete_confirm_title,确认删除该记忆?,確認刪除該記憶?,Delete this memory?,このメモリを削除しますか？
+memory.delete_confirm_desc,删除后该实体的描述与关联事实将被移除,不可恢复;同名可重新添加为全新卡片,历史不保留,刪除後該實體的描述與關聯事實將被移除,不可恢復;同名可重新添加為全新卡片,歷史不保留,Deleting will remove the entity's description and related facts, and cannot be undone; the same name can be re-added as a brand-new card with no history,エンティティの描述と関連事実が削除され、元に戻せません; 同じ名前は新しいカードとして再追加でき、履歴は残りません
+memory.delete_confirm_ok,删除,刪除,Delete,削除
+memory.delete_confirm_cancel,取消,取消,Cancel,キャンセル
+memory.delete_success,记忆已删除,記憶已刪除,Memory deleted,メモリが削除されました
+memory.delete_failed,删除失败,请稍后重试,刪除失敗,請稍後重試,Delete failed. Please try again later,削除に失敗しました。後でもう一度お試しください
+memory.picked_relation_saved,已选择 {n} 个关联,提交时将一起保存,已選擇 {n} 個關聯,提交時將一起保存,{n} relations selected, will be saved on submit,{n}個の関連が選択されました。提出時に一緒に保存されます
 apply.approver_label,审批人,審批人,Approver,承認者

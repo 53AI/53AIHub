@@ -5,7 +5,7 @@
 import service from '../config'
 import { handleError } from '../errorHandler'
 
-export type ResourceType = 'agent' | 'space' | 'library'
+export type ResourceType = 'agent' | 'space' | 'library' | 'prompt' | 'ai_link' | 'skill_library'
 
 export interface CheckScopeParams {
   resource_id: string | number

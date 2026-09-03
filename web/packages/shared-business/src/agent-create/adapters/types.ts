@@ -447,23 +447,6 @@ export interface IAgentCreateAdapter {
     AGENT: string
   }
 
-  // ========== 分组选择组件 ==========
-
-  /** 分组选择组件 */
-  GroupSelectComponent?: ComponentType<{
-    value?: number | number[] | ScopeItem[]
-    onChange?: (value: number | number[] | ScopeItem[]) => void
-    type?: 'select' | 'checkbox' | 'picker' | 'radio' | 'scope'
-    groupType?: string
-    multiple?: boolean
-    defaultFirst?: boolean
-    defaultFirstValue?: boolean
-    defaultAll?: boolean
-    simpleValue?: boolean
-    onOptionsLoad?: (options: any[]) => void
-    children?: React.ReactNode
-  }>
-
   // ========== 分组标签组件 ==========
 
   /** 分组标签组件（用于筛选） */
@@ -489,9 +472,6 @@ export interface IAgentCreateAdapter {
   OpenClawPreviewComponent?: ComponentType<{
     className?: string
   }>
-
-  /** 使用范围组件（注册用户/内部用户分组选择，仅管理端需要） */
-  UseScopeComponent?: ComponentType<{}>
 
   /** 技能选择器组件（用于小助理技能配置） */
   SkillPickerComponent?: ComponentType<{

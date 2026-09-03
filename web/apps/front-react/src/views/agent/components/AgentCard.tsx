@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Empty, Modal, message, Button } from 'antd'
 import { Dropdown } from '@km/shared-components-react'
 import { EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react'
 import { useIsSoftStyle } from "@/stores/modules/enterprise"
 import { useAgentStore } from "@/stores/modules/agent"
 import { getPublicPath } from '@/utils/config'
@@ -11,8 +11,6 @@ import { t } from '@/locales'
 import { checkPermission } from '@/utils/permission'
 import agentsApi from '@/api/modules/agents'
 import { createPlatformsByType, isOpenClawCompatibleChannelType } from '@km/shared-business/agent-create'
-
-const DEFAULT_IMG = '/images/default_agent.png'
 
 interface AgentCardProps {
   item: Agent.State
@@ -58,13 +56,6 @@ export function AgentCard({
       agentStore.loadShortcutIds()
     }
   }, [isSoftStyle, selectMode, agentStore.loadShortcutIds])
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const target = e.target as HTMLImageElement
-    const fallback = getPublicPath(DEFAULT_IMG)
-    if (target.src.endsWith(fallback)) return
-    target.src = fallback
-  }
 
   const highlightKeyword = (text: string, kw: string) => {
     if (!kw.trim()) return text
@@ -189,11 +180,10 @@ export function AgentCard({
         className="flex items-center p-3 rounded-lg border bg-white hover:shadow-sm transition-all duration-300 cursor-pointer"
         onClick={handleCardClick}
       >
-        <img
+        <SafeImage
           className="size-12 rounded-lg mr-3 flex-none object-cover"
           src={item.logo}
           alt={item.name}
-          onError={handleImageError}
         />
         <div className="flex-1 min-w-0">
           <h3
@@ -233,11 +223,10 @@ export function AgentCard({
       onClick={handleCardClick}
     >
       <div className="flex items-start flex-1">
-        <img
+        <SafeImage
           className="flex-none size-12 mr-3 rounded-lg object-cover"
           src={item.logo}
           alt={item.name}
-          onError={handleImageError}
         />
         <div className="flex-1 overflow-hidden">
           <div className="flex items-center">

@@ -1,5 +1,4 @@
-import { MoreOutlined } from "@ant-design/icons";
-import { Dropdown, Search, SvgIcon } from "@km/shared-components-react";
+import { Dropdown, Search, SvgIcon, IconAction } from "@km/shared-components-react";
 import { Button, Empty, Modal, message, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -350,17 +349,15 @@ export function UserGroup() {
 			width: 80,
 			fixed: "end",
 			render: (_: any, record: UserItem) => (
-				<Button
-					type="link"
+				<IconAction
+					variant="row"
+					title={t("action_delete")}
 					danger
-					icon={<SvgIcon name="delete" />}
-					className="opacity-0 group-hover:opacity-100"
 					loading={record.deleting}
-					onClick={(e) => {
-						e.stopPropagation();
-						handleUserRemove(record);
-					}}
-				/>
+					onClick={() => handleUserRemove(record)}
+				>
+					<SvgIcon name="delete" />
+				</IconAction>
 			),
 		},
 	];
@@ -436,10 +433,12 @@ export function UserGroup() {
 									}}
 									trigger={["click"]}
 								>
-									<MoreOutlined
-										className="text-gray-400 rotate-90 mr-2 opacity-0 group-hover:opacity-100 cursor-pointer"
-										onClick={(e) => e.stopPropagation()}
-									/>
+									<IconAction
+										variant="row"
+										title={t("more")}
+									>
+										<SvgIcon name="more-v" />
+									</IconAction>
 								</Dropdown>
 							</li>
 						))

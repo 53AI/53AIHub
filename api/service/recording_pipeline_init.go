@@ -159,16 +159,6 @@ func createTingwuPipeline(eid int64) (*model.RagPipelineProfile, error) {
                 "name": "向量索引",
                 "run_mode": "manual",
                 "step_key": "vector_indexing"
-            },
-            {
-                "config": {
-                    "execution_mode": "predefined",
-                    "graph_template_id": "hfNBvQ"
-                },
-                "run_mode": "manual",
-                "step_key": "graph_generation",
-                "name": "图谱生成",
-                "description": "提取信息，用图谱呈现内容关联"
             }
         ]
     }`
@@ -279,13 +269,6 @@ func buildAnxinluProfileJSON(channelID int64, engine string) string {
                 "name": "向量索引",
                 "run_mode": "auto",
                 "step_key": "vector_indexing"
-            },
-            {
-                "config": {},
-                "run_mode": "skip",
-                "step_key": "graph_generation",
-                "name": "图谱生成",
-                "description": "提取信息，用图谱呈现内容关联"
             }
         ]
     }`, engine, channelID)

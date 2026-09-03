@@ -5,10 +5,10 @@ import { Loading3QuartersOutlined, CheckOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { SvgIcon, Search } from "@km/shared-components-react";
 import type {
+  WikiCategory,
+  WikiCategoryListResponse,
   WikiPageSortBy,
-  WikiPageType,
-  WikiPageTypeCounts,
-  WikiProgressResponse,
+  WikiQueueStatusResponse,
   WikiSortOrder,
 } from "@/api/modules/wiki";
 import { useSpaceStore } from "@/stores/modules/space";
@@ -22,7 +22,7 @@ import {
   type PermissionType,
 } from "@/components/KMPermission/constant";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
-import { useUrlEnumState } from "@/hooks/useUrlEnumState";
+import { usePoll } from '@/hooks/usePoll';
 import { useWikiPageList } from "./useWikiPageList";
 import type { ActiveTab } from "./index";
 import Breadcrumb from "@/components/Breadcrumb";
@@ -68,18 +68,6 @@ const buildSortMenuItems = (current: SortType): MenuProps["items"] =>
     ),
   }));
 
-/**
- * 把 page_type 映射到 i18n key（仅展示后端 page_type_counts 返回的四种类型）
- */
-const PAGE_TYPE_I18N_KEY: Record<WikiPageType, string> = {
-  concept: "wiki.page_type.concept",
-  entity: "wiki.page_type.entity",
-  index: "wiki.page_type.index",
-  summary: "wiki.page_type.summary",
-};
-
-const KNOWN_PAGE_TYPES: WikiPageType[] = ["concept", "entity", "index", "summary"];
-
 // 暂时隐藏右侧排序索引条（A-Z 快速定位 + 排序标签），置为 true 可恢复
 const SHOW_SORT_INDEX = false;
 
@@ -92,24 +80,22 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const [searchText, setSearchText] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
   const [sortType, setSortType] = useState<SortType>("updated");
-  // 当前页签类型（URL 序列化，支持外部链接直跳到指定类型列表）
-  const [activePageType, setActivePageType] = useUrlEnumState<WikiPageType>({
-    urlKey: "page_type",
-    validValues: KNOWN_PAGE_TYPES,
-    defaultValue: KNOWN_PAGE_TYPES[0],
+  // 当前选中分类 ID（URL 序列化，支持外部链接直跳到指定分类列表；null=未筛选，0 也是合法分类 id）
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(() => {
+    return searchParams.get("category_id")
   });
-  const [, setSearchParams] = useSearchParams();
 
   const spaceId = useSpaceStore((state) => state.spaceId);
   const currentSpace = useSpaceStore((state) => state.currentSpace);
   // 共享 pagesData 仍供 RightContent（按 slug 查 pageId）/ 选择器弹窗使用
   const loadPages = useWikiStore((state) => state.loadPages);
 
-  // 标签计数来自索引接口
-  const [pageTypeCounts, setPageTypeCounts] = useState<WikiPageTypeCounts | null>(null);
+  // 分类列表（侧栏标签）
+  const [categories, setCategories] = useState<WikiCategory[]>([]);
 
-  // 空间文件处理进度
-  const [progressData, setProgressData] = useState<WikiProgressResponse | null>(null);
+  // 空间页面生成/向量化队列状态
+  const [queueStatusData, setQueueStatusData] = useState<WikiQueueStatusResponse | null>(null);
 
   // 记录上一次的待处理数量
   const prevPendingCountRef = useRef(0);
@@ -139,7 +125,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     reload: reloadPages,
   } = useWikiPageList({
     spaceId,
-    pageType: activePageType,
+    categoryId: activeCategoryId ?? undefined,
     keyword: debouncedKeyword,
     sortBy: SORT_FIELD[sortType].sortBy,
     sortOrder: SORT_FIELD[sortType].sortOrder,
@@ -152,69 +138,75 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     threshold: 120,
   });
 
-  // 加载标签计数（索引接口）
-  const loadCounts = useCallback(async () => {
+  // 加载分类列表（侧栏标签）
+  const loadCategories = useCallback(async () => {
     if (!spaceId) return;
     try {
-      const res = await wikiApi.index(spaceId);
-      setPageTypeCounts(res.page_type_counts);
+      const res: WikiCategoryListResponse = await wikiApi.categories(spaceId);
+      setCategories(Array.isArray(res) ? res : res?.items ?? []);
     } catch (err) {
-      console.error("[LeftSidebar] index error:", err);
+      console.error("[LeftSidebar] categories error:", err);
     }
   }, [spaceId]);
 
   useEffect(() => {
-    loadCounts();
-  }, [loadCounts]);
+    loadCategories();
+  }, [loadCategories]);
 
-  // 计算待处理任务数量（running + not_started），用于显示和轮询
+  // URL ?category_id= 变化（前进/后退/直链）时同步选中分类
+  useEffect(() => {
+    const category_id = searchParams.get("category_id");
+    setActiveCategoryId((prev) => (category_id === prev ? prev : category_id));
+  }, [searchParams]);
+
+  // 计算待处理任务数量（生成 + 向量化两个队列的 total = queued + running），用于显示和轮询
   const pendingCount = useMemo(() => {
-    if (!progressData?.items) return 0;
-    return progressData.items.filter(
-      (item) => item.status === 'running' || item.status === 'not_started'
-    ).length;
-  }, [progressData]);
+    if (!queueStatusData) return 0;
+    return ["generation", "vectorization"].reduce((sum, key) => {
+      return sum + (queueStatusData[key as keyof WikiQueueStatusResponse].total ?? 0);
+    }, 0);
+  }, [queueStatusData]);
 
 
-  // 加载处理进度的函数
+  // 加载队列状态的函数
   const loadProgress = useCallback(async () => {
     if (!spaceId) return;
     try {
-      const res = await wikiApi.progress(spaceId);
-      setProgressData(res);
+      const res = await wikiApi.queueStatus({ space_id: spaceId });
+      setQueueStatusData(res);
     } catch (err) {
-      console.error('[LeftSidebar] progress error:', err);
+      console.error('[LeftSidebar] queue status error:', err);
     }
   }, [spaceId]);
 
   // 使用轮询，每10秒请求一次
-  // const { start: startPolling, stop: stopPolling } = usePoll(loadProgress, 10000);
+  const { start: startPolling, stop: stopPolling } = usePoll(loadProgress, 10000);
 
   // 初始加载一次
-  // useEffect(() => {
-  //   loadProgress();
-  // }, [loadProgress]);
+  useEffect(() => {
+    loadProgress();
+  }, [loadProgress]);
 
   // 根据是否有待处理任务启动/停止轮询
-  // useEffect(() => {
-  //   if (pendingCount > 0) {
-  //     startPolling();
-  //   } else {
-  //     stopPolling();
-  //   }
-  // }, [pendingCount, startPolling, stopPolling]);
+  useEffect(() => {
+    if (pendingCount > 0) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
+  }, [pendingCount, startPolling, stopPolling]);
 
-  // 当待处理数量从 > 0 变为 0 时，刷新列表与标签计数
+  // 当待处理数量从 > 0 变为 0 时，刷新列表与分类
   useEffect(() => {
     if (prevPendingCountRef.current > 0 && pendingCount === 0 && spaceId) {
-      // 刷新共享缓存（供 RightContent / 选择器弹窗），并重查侧栏列表与标签计数
+      // 刷新共享缓存（供 RightContent / 选择器弹窗），并重查侧栏列表与分类
       useWikiStore.setState({ pagesSpaceId: "", pagesData: [] });
       loadPages(spaceId);
       reloadPages();
-      loadCounts();
+      loadCategories();
     }
     prevPendingCountRef.current = pendingCount;
-  }, [pendingCount, spaceId, loadPages, reloadPages, loadCounts]);
+  }, [pendingCount, spaceId, loadPages, reloadPages, loadCategories]);
 
   // 按需批量拉取当前可见页面的权限：无权限时摘要需模糊展示
   // 设计：
@@ -308,14 +300,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     );
   }, [activeTab, selectedItemId, items, loading, setSelectedItemId, setSearchParams]);
 
-  // 标签展示：page_type 计数（来自索引接口 page_type_counts）
+  // 分类标签展示
   const tags = useMemo(() => {
-    return KNOWN_PAGE_TYPES.map((k) => ({
-      name: t(PAGE_TYPE_I18N_KEY[k]),
-      count: pageTypeCounts?.[k] ?? 0,
-      key: k,
+    return categories.map((cat) => ({
+      id: String(cat.id),
+      name: cat.name,
+      count: cat.page_count,
     }));
-  }, [pageTypeCounts]);
+  }, [categories]);
 
   // 搜索态：有关键词时隐藏标签（改为全局搜索）
   const isSearching = searchText.trim().length > 0;
@@ -421,18 +413,25 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       </div>
 
       <div className="border-t m-3"></div>
-      {/* 标签列表（搜索时隐藏） */}
+      {/* 分类标签列表（搜索时隐藏） */}
       {!isSearching && (
         <div className="px-3 flex flex-wrap gap-1.5">
           {tags.map((tag) => {
-            const isActive = activePageType === tag.key;
+            const isActive = activeCategoryId === tag.id;
             return (
               <div
-                key={tag.key}
+                key={tag.id}
                 onClick={() => {
                   setSearchText("");
                   setDebouncedKeyword("");
-                  setActivePageType(tag.key);
+                  setActiveCategoryId(tag.id);
+                  setSearchParams(
+                    (prev) => {
+                      prev.set("category_id", String(tag.id));
+                      return prev;
+                    },
+                    { replace: true },
+                  );
                 }}
                 className={`h-6 px-2 text-xs rounded-xl cursor-pointer flex items-center gap-1 ${
                   isActive
@@ -441,7 +440,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 }`}
               >
                 <span>{tag.name}</span>
-                <span>{tag.count}</span>
+                {tag.count != null && <span>{tag.count}</span>}
               </div>
             );
           })}

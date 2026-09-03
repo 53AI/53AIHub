@@ -538,6 +538,63 @@ func (s *EmbeddingService) callVolcEngineVisionEmbedding(content string, channel
 }
 
 // callOpenAIEmbeddingWithModel 调用OpenAI embedding API (指定模型)
+// applyCatalogDimensions 按模型目录声明的输出维度设置请求的 dimensions 参数。
+// 目录维度与向量集合创建维度一致（见 rag-pipeline-v2 ensureVectorCollectionExists）；
+// 不传该参数时部分供应商（如 SiliconFlow 的 Qwen3-Embedding）会返回模型原生维度，
+// 与按目录维度创建的集合不一致，导致写入失败（维度不匹配）。
+// 目录未收录的模型保持不传，行为与历史版本一致。
+func applyCatalogDimensions(reqBody *EmbeddingRequest, modelName string) {
+	meta, err := common.GetModelCatalogLoader().GetEmbeddingModelMeta(modelName)
+	if err != nil || meta == nil || meta.Dimensions <= 0 {
+		return
+	}
+	reqBody.Dimensions = meta.Dimensions
+}
+
+// sendEmbeddingRequest 序列化嵌入请求并发送 POST，返回响应体与状态码。
+// 若请求携带 dimensions 且供应商以 400/422 拒绝（不支持该参数），自动去除该参数
+// 重试一次并记录告警，保证目录维度注入不会破坏原本可用的渠道。
+// 429 等其余错误与参数无关，不重试、不去参，避免限流放大与维度混用。
+func (s *EmbeddingService) sendEmbeddingRequest(url string, reqBody EmbeddingRequest, applyHeaders func(*http.Request)) ([]byte, int, error) {
+	doOnce := func(body EmbeddingRequest) ([]byte, int, error) {
+		jsonData, err := json.Marshal(body)
+		if err != nil {
+			return nil, 0, fmt.Errorf("序列化请求失败: %v", err)
+		}
+		req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, 0, fmt.Errorf("创建请求失败: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if applyHeaders != nil {
+			applyHeaders(req)
+		}
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, 0, fmt.Errorf("发送请求失败: %v", err)
+		}
+		defer resp.Body.Close()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, resp.StatusCode, fmt.Errorf("读取响应失败: %v", err)
+		}
+		return respBody, resp.StatusCode, nil
+	}
+
+	body, statusCode, err := doOnce(reqBody)
+	if err != nil {
+		return body, statusCode, err
+	}
+	if reqBody.Dimensions > 0 && (statusCode == http.StatusBadRequest || statusCode == http.StatusUnprocessableEntity) {
+		logger.SysLogf("【诊断-嵌入维度】供应商拒绝 dimensions=%d 参数(status=%d)，去除该参数重试: url=%s, model=%s",
+			reqBody.Dimensions, statusCode, url, reqBody.Model)
+		retryBody := reqBody
+		retryBody.Dimensions = 0
+		return doOnce(retryBody)
+	}
+	return body, statusCode, nil
+}
+
 func (s *EmbeddingService) callOpenAIEmbeddingWithModel(content string, channel *model.Channel, modelName string) ([]float64, error) {
 	// 验证必要参数
 	if channel.Key == "" {
@@ -603,57 +660,37 @@ func (s *EmbeddingService) callOpenAIEmbeddingWithModel(content string, channel 
 		Model:          modelName, // 使用chunk_setting中配置的模型名称
 		EncodingFormat: "float",   // 使用float格式
 	}
+	applyCatalogDimensions(&reqBody, modelName)
 
-	jsonData, err := json.Marshal(reqBody)
+	body, statusCode, err := s.sendEmbeddingRequest(url, reqBody, func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+channel.Key)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %v", err)
+		return nil, err
 	}
 
-	logger.SysLogf("OpenAI Embedding API请求: URL=%s, Model=%s, ContentLength=%d", url, modelName, len(content))
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %v", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+channel.Key)
-
-	// 发送请求
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("发送请求失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// 读取响应
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %v", err)
-	}
-
-	logger.SysLogf("OpenAI API响应: StatusCode=%d, BodyLength=%d", resp.StatusCode, len(body))
+	logger.SysLogf("OpenAI API响应: StatusCode=%d, BodyLength=%d", statusCode, len(body))
 
 	// 检查HTTP状态码
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if statusCode < 200 || statusCode >= 300 {
 		logger.SysLogf("OpenAI API错误响应: %s", string(body))
 
 		// 针对404错误提供更详细的信息
-		if resp.StatusCode == 404 {
+		if statusCode == 404 {
 			return nil, fmt.Errorf("API端点不存在 (404): URL=%s, 请检查BaseURL配置和模型名称 %s", url, modelName)
 		}
 
 		// 针对401错误提供更详细的信息
-		if resp.StatusCode == 401 {
+		if statusCode == 401 {
 			return nil, fmt.Errorf("API认证失败 (401): 请检查API密钥是否正确")
 		}
 
 		// 针对429错误提供更详细的信息
-		if resp.StatusCode == 429 {
+		if statusCode == 429 {
 			return nil, fmt.Errorf("API请求频率限制 (429): 请稍后重试")
 		}
 
-		return nil, fmt.Errorf("API请求失败: %s, 响应: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("API请求失败: %d, 响应: %s", statusCode, string(body))
 	}
 
 	// 解析响应
@@ -729,11 +766,7 @@ func (s *EmbeddingService) callAzureEmbeddingWithModel(content string, channel *
 		Model:          modelName, // 使用chunk_setting中配置的模型名称
 		EncodingFormat: "float",   // 使用float格式
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %v", err)
-	}
+	applyCatalogDimensions(&reqBody, modelName)
 
 	// Azure URL格式: https://{resource}.openai.azure.com/openai/deployments/{deployment}/embeddings?api-version=2023-05-15
 	baseURL := strings.TrimSuffix(*channel.BaseURL, "/")
@@ -741,47 +774,35 @@ func (s *EmbeddingService) callAzureEmbeddingWithModel(content string, channel *
 
 	logger.SysLogf("Azure OpenAI Embedding API请求: URL=%s, Model=%s, ContentLength=%d", url, modelName, len(content))
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	body, statusCode, err := s.sendEmbeddingRequest(url, reqBody, func(r *http.Request) {
+		r.Header.Set("api-key", channel.Key)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %v", err)
+		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", channel.Key)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("发送请求失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %v", err)
-	}
-
-	logger.SysLogf("Azure OpenAI API响应: StatusCode=%d, BodyLength=%d", resp.StatusCode, len(body))
+	logger.SysLogf("Azure OpenAI API响应: StatusCode=%d, BodyLength=%d", statusCode, len(body))
 
 	// 检查HTTP状态码
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if statusCode < 200 || statusCode >= 300 {
 		logger.SysLogf("Azure OpenAI API错误响应: %s", string(body))
 
 		// 针对404错误提供更详细的信息
-		if resp.StatusCode == 404 {
+		if statusCode == 404 {
 			return nil, fmt.Errorf("azure API端点不存在 (404): URL=%s, 请检查BaseURL配置和部署名称 %s", url, modelName)
 		}
 
 		// 针对401错误提供更详细的信息
-		if resp.StatusCode == 401 {
+		if statusCode == 401 {
 			return nil, fmt.Errorf("azure API认证失败 (401): 请检查API密钥是否正确")
 		}
 
 		// 针对429错误提供更详细的信息
-		if resp.StatusCode == 429 {
+		if statusCode == 429 {
 			return nil, fmt.Errorf("azure API请求频率限制 (429): 请稍后重试")
 		}
 
-		return nil, fmt.Errorf("azure API请求失败: %s, 响应: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("azure API请求失败: %d, 响应: %s", statusCode, string(body))
 	}
 
 	var embeddingResp EmbeddingResponse
@@ -880,7 +901,7 @@ func (s *EmbeddingService) storeToVectorDB(chunkID int64, vector []float64, chun
 // insertWithAutoCreateCollection 插入向量，如果集合不存在则自动创建
 func (s *EmbeddingService) insertWithAutoCreateCollection(ctx context.Context, collection string, record vectorstore.VectorRecord, dimension int) error {
 	// 尝试直接插入
-	err := s.vectorStore.Insert(ctx, collection, []vectorstore.VectorRecord{record})
+	err := s.vectorStore.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record})
 	if err == nil {
 		return nil
 	}
@@ -908,7 +929,7 @@ func (s *EmbeddingService) insertWithAutoCreateCollection(ctx context.Context, c
 			}
 
 			// 重新尝试插入
-			if insertErr := s.vectorStore.Insert(ctx, collection, []vectorstore.VectorRecord{record}); insertErr != nil {
+			if insertErr := s.vectorStore.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record}); insertErr != nil {
 				return fmt.Errorf("创建集合后插入向量失败: %v", insertErr)
 			}
 			return nil
@@ -929,7 +950,7 @@ func (s *EmbeddingService) insertWithRetry(ctx context.Context, collection strin
 			time.Sleep(time.Duration(attempt) * time.Second)
 		}
 
-		err := s.vectorStore.Insert(ctx, collection, []vectorstore.VectorRecord{record})
+		err := s.vectorStore.BatchInsert(ctx, collection, []vectorstore.VectorRecord{record})
 		if err == nil {
 			return nil
 		}
@@ -1434,11 +1455,7 @@ func (s *EmbeddingService) callOpenAIEmbeddingBatchWithModel(contents []string, 
 		Model:          modelName,
 		EncodingFormat: "float",
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %v", err)
-	}
+	applyCatalogDimensions(&reqBody, modelName)
 
 	var baseURL string
 	if channel.BaseURL != nil && *channel.BaseURL != "" {
@@ -1473,31 +1490,19 @@ func (s *EmbeddingService) callOpenAIEmbeddingBatchWithModel(contents []string, 
 	}
 	logger.SysLogf("OpenAI Batch Embedding API请求: URL=%s, Model=%s, Count=%d", url, modelName, len(contents))
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	body, statusCode, err := s.sendEmbeddingRequest(url, reqBody, func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+channel.Key)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %v", err)
+		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+channel.Key)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("发送请求失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %v", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if statusCode < 200 || statusCode >= 300 {
 		logger.SysLogf("OpenAI API错误响应: %s", string(body))
-		if resp.StatusCode == 429 {
+		if statusCode == 429 {
 			return nil, fmt.Errorf("API请求频率限制 (429): 请稍后重试")
 		}
-		return nil, fmt.Errorf("API请求失败: %s, 响应: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("API请求失败: %d, 响应: %s", statusCode, string(body))
 	}
 
 	var embeddingResp EmbeddingResponse
@@ -1535,39 +1540,23 @@ func (s *EmbeddingService) callAzureEmbeddingBatchWithModel(contents []string, c
 		Model:          modelName,
 		EncodingFormat: "float",
 	}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("序列化请求失败: %v", err)
-	}
+	applyCatalogDimensions(&reqBody, modelName)
 
 	baseURL := strings.TrimSuffix(*channel.BaseURL, "/")
 	url := fmt.Sprintf("%s/openai/deployments/%s/embeddings?api-version=2023-05-15", baseURL, modelName)
 
 	logger.SysLogf("Azure OpenAI Batch Embedding API请求: URL=%s, Model=%s, Count=%d", url, modelName, len(contents))
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	body, statusCode, err := s.sendEmbeddingRequest(url, reqBody, func(r *http.Request) {
+		r.Header.Set("api-key", channel.Key)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("创建请求失败: %v", err)
+		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", channel.Key)
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("发送请求失败: %v", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("读取响应失败: %v", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+	if statusCode < 200 || statusCode >= 300 {
 		logger.SysLogf("Azure OpenAI API错误响应: %s", string(body))
-		return nil, fmt.Errorf("API请求失败: %s, 响应: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("API请求失败: %d, 响应: %s", statusCode, string(body))
 	}
 
 	var embeddingResp EmbeddingResponse

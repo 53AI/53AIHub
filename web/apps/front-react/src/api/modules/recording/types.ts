@@ -98,16 +98,6 @@ export interface FfmpegHealthResponse {
   error?: string
 }
 
-/** 系统状态响应 */
-export interface SystemStatusResponse {
-  ffmpeg_available: boolean
-  ffmpeg_error: string
-  max_segments: number
-  max_total_size_mb: number
-  source_format: string
-  default_format: string
-}
-
 // ============= 请求类型 =============
 
 /** 创建录音任务请求 */
@@ -174,36 +164,6 @@ export interface GetRecordingsParams {
   group_id?: number
 }
 
-/** 创建文件夹请求 */
-export interface CreateFolderRequest {
-  path: string
-}
-
-/** 创建文件夹响应 */
-export interface CreateFolderResponse {
-  folder: {
-    id: number
-    path: string
-    type: 0
-    origin_type: 'recording_folder'
-    origin_source: 'recording'
-    origin_ref_id: number
-  }
-}
-
-/** 重命名文件夹请求 */
-export interface RenameFolderRequest {
-  path: string
-}
-
-/** 重命名文件夹响应 */
-export interface RenameFolderResponse {
-  folder: {
-    id: number
-    path: string
-  }
-}
-
 /** 导入音频文件结构项 */
 export interface ImportFileStructureItem {
   relative_path: string
@@ -242,23 +202,8 @@ export interface RecordingConfig {
   parser_platform: string
   voice_model_name?: string
   recording_agent_enabled?: boolean
+  insight_regenerate_enabled?: boolean
 }
-
-// ============= 录音错误码 =============
-
-/** 录音相关错误码 */
-export const RECORDING_ERROR_CODES = {
-  SEGMENT_PROCESSING: 100401,  // 分段正在处理中，请稍后重试
-  NO_ACTIVE_JOB: 100402,       // 当前没有活跃录音任务
-  ALREADY_HAS_JOB: 100403,     // 用户已有活跃录音任务
-  JOB_NOT_FOUND: 100404,       // 录音任务不存在
-  INVALID_STATE: 100405,       // 任务状态不允许该操作
-  SEGMENT_MISSING: 100406,     // 分段序号缺失或不连续
-  FFMPEG_UNAVAILABLE: 100407,  // FFmpeg 不可用
-  FORMAT_UNSUPPORTED: 100408,  // 文件格式不支持
-  SIZE_EXCEEDED: 100409,       // 文件大小超出限制
-  DURATION_EXCEEDED: 100410,   // 录音时长超出限制
-} as const
 
 // ============= 总结模板 =============
 
@@ -313,6 +258,7 @@ export interface StageStatus {
   pending_reason?: string
   /** 失败错误类型（仅 status = failed 时有值） */
   error_type?: ParseStageErrorType
+  error?: string
   updated_at: number
 }
 
@@ -337,6 +283,22 @@ export interface RecordingFileInsightPage {
 }
 
 /** 洞察协同研讨中的背景快照 */
+export type InsightPerspective =
+  | 'auto'
+  | 'external_training'
+  | 'external_speech'
+  | 'roadshow'
+  | 'sales_visit'
+  | 'internal_meeting'
+  | 'lecture'
+  | 'book'
+
+export interface InsightPerspectiveOption {
+  key: InsightPerspective
+  name: string
+  description: string
+}
+
 export interface InsightConversationMessage {
   role: 'user' | 'assistant'
   content: string
@@ -349,6 +311,8 @@ export interface InsightBackground {
   external_constraints: string
   material_context: string
   conversation?: InsightConversationMessage[]
+  insight_perspective?: InsightPerspective
+  resolved_insight_perspective?: InsightPerspective
 }
 
 export interface InsightWorkshopChatRequest {
@@ -359,6 +323,12 @@ export interface InsightWorkshopChatRequest {
 
 export interface InsightWorkshopChatResponse {
   reply: string
+}
+
+export interface InsightRegenerationRequest {
+  background: InsightBackground
+  conversation: InsightConversationMessage[]
+  insight_perspective: InsightPerspective
 }
 
 /** 页面编排 Block 类型 */
@@ -398,17 +368,6 @@ export interface MermaidFlowDiagram {
   edges: MermaidFlowEdge[]
 }
 
-/** 编排后的决策页面 */
-export interface DecisionPage {
-  schema_version: string
-  document_type: string
-  title: string
-  subtitle: string
-  theme: 'blue' | 'purple' | 'orange' | 'red' | 'dark' | 'neutral'
-  blocks: DecisionPageBlock[]
-  closing: { content: string }
-}
-
 // ============= 排队文件数 =============
 
 /** 排队文件数响应 */
@@ -416,72 +375,30 @@ export interface QueuedCountResponse {
   queued_count: number
 }
 
-// ============= 会议记忆总览 =============
-
-export type RecordingMemoryKind =
-  | 'decision'
-  | 'commitment'
-  | 'action'
-  | 'risk'
-  | 'opportunity'
-  | 'viewpoint'
-  | 'issue'
-  | 'open_question'
-  | 'quote'
-
-export interface RecordingMemoryStats {
-  total_claims: number
-  source_meetings: number
-  confirmed_decisions: number
-  active_commitments: number
-  active_risks: number
-  needs_confirmation: number
-  evidence_coverage: number
-  uncompiled_meetings: number
-}
-
-export interface RecordingMemoryClaimItem {
-  id: string | number
-  file_id: string | number
-  claim_kind: RecordingMemoryKind
-  content: string
-  assertion_state: string
-  epistemic_type: string
-  lifecycle_state: string
-  review_state: string
-  source_confidence: number
-  evidence_available: boolean
-  source_segment_count: number
-  source_file: string
-  updated_time: number
-}
-
-export interface RecordingMemoryOverview {
-  stats: RecordingMemoryStats
-  items: RecordingMemoryClaimItem[]
-  kinds: Array<{ kind: RecordingMemoryKind; count: number }>
-}
+// ============= 会议记忆实体 =============
 
 export type RecordingMemoryEntityType = 'person' | 'matter' | 'risk' | 'principle'
 
 /**
  * 会议记忆实体的单个属性 schema 定义
  * - label：中文展示名（来自后端，前端零硬编码）
- * - values：枚举值映射；缺省即为自由文本字段，值原样展示
+ * - values：枚举候选（value 存库，label 展示）；缺省即为自由文本字段，值原样展示
  */
 export interface RecordingMemoryEntitySchemaAttribute {
+  key: string
   label: string
-  values?: Record<string, string>
+  values?: Array<{ label: string; value: string }>
 }
 
-/** 某类实体的 schema：类型中文名 + 全部属性定义 */
+/** 某类实体的 schema：类型 key + 中文名 + 全部属性定义 */
 export interface RecordingMemoryEntitySchema {
+  type: RecordingMemoryEntityType
   label: string
-  attributes: Record<string, RecordingMemoryEntitySchemaAttribute>
+  attributes: RecordingMemoryEntitySchemaAttribute[]
 }
 
-/** 全量实体 schema：键为 entity_type，值为该类型的定义 */
-export type RecordingMemoryEntitySchemas = Record<RecordingMemoryEntityType, RecordingMemoryEntitySchema>
+/** 全量实体 schema：后端返回数组，键值对类型改为在条目的 type 字段上暴露 */
+export type RecordingMemoryEntitySchemas = RecordingMemoryEntitySchema[]
 
 export interface RecordingMemoryEntityItem {
   id: string | number
@@ -490,6 +407,8 @@ export interface RecordingMemoryEntityItem {
   summary: string
   fact_count: number
   source_meetings: number
+  /** 最近一条事实的来源文件;用于暂存关联卡片的文件名展示 */
+  source_file?: string
   last_fact_at: number
   updated_time: number
 }
@@ -505,6 +424,12 @@ export interface RecordingMemoryEntityFact {
   fact_kind: 'extracted' | 'manual_correction'
   content: string
   attributes: Record<string, string>
+  /** 关联实体的 id（0 表示无关联） */
+  related_entity_id: string | number
+  /** 关联实体的名称 */
+  related_name: string
+  /** 关联实体的类型 */
+  related_type: string
   source_segment_ids: string[]
   source_type: 'automatic' | 'manual'
   occurred_at: number
@@ -521,6 +446,7 @@ export interface RecordingMemoryEntityRelation {
   relation_type: string
 }
 
+
 export interface RecordingMemoryEntityDetail extends RecordingMemoryEntityItem {
   attributes: Record<string, string>
   aliases: string[]
@@ -533,6 +459,28 @@ export interface UpdateRecordingMemoryEntityRequest {
   canonical_name?: string
   summary?: string
   attributes?: Record<string, string>
+  facts?: Array<{ id?: string | number; related_entity_id: string }>
+  deleted_fact_ids?: Array<string | number>
+}
+
+
+export interface CreateRecordingMemoryEntityRequest {
+  entity_type: RecordingMemoryEntityType
+  canonical_name: string
+  summary?: string
+  attributes?: Record<string, string>
+  facts?: Array<{ related_entity_id: string }>
+}
+
+/**
+ * 融合请求体：`source_ids`（多源）为主，旧 `source_id`（单源）保留兼容。
+ * `target_id` 不能出现在 `source_ids` 中。
+ * 文档 §6。
+ */
+export interface MergeMemoryEntitiesRequest {
+  source_ids?: Array<string | number>
+  source_id?: string | number
+  target_id: string | number
 }
 
 // ============= 转写原文 🆕 =============
@@ -650,29 +598,76 @@ export interface RecordingSharedUploadFile {
 
 /**
  * 录音设备品牌类型
- * - 'sonicnote'：当前已对接
- * - 'soninote' / 'ticnote'：UI 占位，待后续接入
+ * - 'sonicnote'：SonicNote（妙记），MCP Key `sk-` 开头
+ * - 'ticnote'：TicNote，AppKey `tncn_sk_` / `tnovs_sk_` 开头
+ * - 'soninote'：UI 占位，待后续接入
  */
 export type RecordingDeviceType = 'sonicnote' | 'soninote' | 'ticnote'
 
-/** 设备配置项（单条） */
+/**
+ * 设备配置项（单条）
+ *
+ * 后端 GET /devices 返回结构（多 key 场景）：
+ * - id：HashID，前端按 id 精确操作单条（更新/删除/设激活/指定同步）
+ * - is_active：当前激活设备标记（首条自动激活，新增不自动切换）
+ * - api_key：脱敏后（前 4 + **** + 后 4），前端不展示明文
+ */
 export interface RecordingDeviceConfig {
+  /** 设备配置 HashID（增量：B 组接口返回，旧接口可能没有） */
+  id?: string
   device_type: RecordingDeviceType
-  /** API Key 明文（用户自己的 Key，前端不做脱敏） */
+  /** API Key（用户自己查看自己的 Key 时是明文；管理/分享场景下后端会脱敏） */
   api_key: string
   enabled: boolean
+  /** 当前激活设备标记（增量：仅 B 组接口返回） */
+  is_active?: boolean
 }
 
 /**
- * 设备配置 PUT 请求
- *
- * - api_key 传空字符串表示"不修改、保留原值"，传具体值则覆盖
- * - enabled 可单独切换；不传则后端视为不修改
+ * 添加设备配置请求（B 组 POST /api/recordings/devices）
+ * - api_key 必填；同企业同类型同 key 已被他人绑定 → 400
+ * - enabled 缺省 true
  */
-export interface RecordingDeviceConfigUpdate {
+export interface CreateDeviceRequest {
   device_type: RecordingDeviceType
+  api_key: string
+  enabled?: boolean
+}
+
+/**
+ * 按 id 更新设备配置请求（B 组 PUT /api/recordings/devices/{id}）
+ * - api_key 为空保留原值
+ * - enabled 缺省保留原值
+ * - device_type 可改
+ */
+export interface UpdateDeviceByIdRequest {
+  device_type?: RecordingDeviceType
   api_key?: string
   enabled?: boolean
+}
+
+/**
+ * 统一同步入口请求（B 组 POST /api/recordings/sync）
+ * - device_type 必填
+ * - device_id 可选：指定单条配置同步；缺省同步该 type 全部启用配置
+ * - force 已弃用（保留兼容）
+ * - limit 调试用
+ */
+export interface SyncDeviceRequest {
+  device_type: RecordingDeviceType
+  device_id?: string
+  force?: boolean
+  limit?: number
+}
+
+/** 统一同步入口响应 */
+export interface SyncDeviceResponse {
+  job_id: string
+}
+
+/** 添加设备配置响应（返回新配置 id） */
+export interface CreateDeviceResponse {
+  id: string
 }
 
 /**
@@ -695,19 +690,6 @@ export interface RecordingDeviceStatusResponse {
   total_recordings: number
   /** 不可用原因：未配置设备 / 设备未启用 / key_invalid / network_error / 探测失败: <详情> */
   reason?: string
-}
-
-/** 触发 SonicNote 同步请求 */
-export interface SyncSonicNoteRequest {
-  /** true 忽略去重标记全量重新导入（会重建文件，谨慎使用） */
-  force?: boolean
-  /** 本次同步最多处理的远端录音条数；0=不限（默认）；负数由后端报 400 */
-  limit?: number
-}
-
-/** 触发 SonicNote 同步响应 */
-export interface SyncSonicNoteResponse {
-  job_id: string
 }
 
 /**
@@ -739,4 +721,6 @@ export interface SyncStatusResponse {
   failed: number
   /** 失败时的错误信息 */
   error_message?: string
+  /** 当前同步任务对应的设备类型（sonicnote / ticnote）；后端透传字段 */
+  provider?: RecordingDeviceType
 }

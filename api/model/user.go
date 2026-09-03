@@ -10,6 +10,7 @@ import (
 	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm/clause"
 )
 
 type User struct {
@@ -519,10 +520,11 @@ func (u *User) LoadDepartments(from int) error {
 		Joins("JOIN member_department_relations ON departments.did = member_department_relations.did AND member_department_relations.eid = departments.eid").
 		Joins(joinBindings). // 使用动态构建的 join 语句
 		Where("member_bindings.mid = ? AND departments.eid = ?", u.UserID, u.Eid).
-		// 3. 将包含 from 的 Where 条件单独提取出来，使用 Map 写法
-		// GORM 会自动处理 "table.column" 格式的转义
-		Where(map[string]interface{}{
-			"member_department_relations.from": from,
+		// 用 clause.Column 表达跨表字段条件。Where map 会把带点的 key
+		// 当成嵌套字段，错误生成 departments.member_department_relations.from。
+		Where(clause.Eq{
+			Column: clause.Column{Table: "member_department_relations", Name: "from"},
+			Value:  from,
 		}).
 		Find(&departments).Error
 

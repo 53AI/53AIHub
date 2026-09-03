@@ -36,13 +36,14 @@ func NewWikiPageController(db *gorm.DB) *WikiPageController {
 }
 
 type WikiListPagesQuery struct {
-	Keyword  string `form:"keyword"`
-	PageType string `form:"page_type"`
-	Status   string `form:"status"`
-	SortBy   string `form:"sort_by"`
-	SpaceID  int64  `form:"space_id"`
-	Offset   int    `form:"offset"`
-	Limit    int    `form:"limit"`
+	Keyword    string `form:"keyword"`
+	PageType   string `form:"page_type"`
+	Status     string `form:"status"`
+	SortBy     string `form:"sort_by"`
+	SpaceID    int64  `form:"space_id"`
+	CategoryID string `form:"category_id"`
+	Offset     int    `form:"offset"`
+	Limit      int    `form:"limit"`
 }
 
 type WikiCreatePageBody struct {
@@ -118,6 +119,7 @@ type WikiProgressQuery struct {
 // @Param keyword query string false "关键词"
 // @Param page_type query string false "页面类型"
 // @Param status query string false "页面状态"
+// @Param category_id query string false "分类ID（hashID）或 other（未分类页面），不传时返回全部页面"
 // @Param offset query int false "分页偏移量"
 // @Param limit query int false "每页条数"
 // @Success 200 {object} model.CommonResponse{data=object{items=[]service.WikiPageSummary,total=int64}}
@@ -140,16 +142,22 @@ func (c *WikiPageController) ListPages(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
+	categoryID, categoryOther, ok := parseWikiPageCategoryFilter(req.CategoryID)
+	if !ok {
+		ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的分类ID")))
+		return
+	}
 
 	items, total, err := c.readSvc.ListPages(ctx.Request.Context(), service.WikiListPagesRequest{
-		Eid:       eid,
-		LibraryID: libraryID,
-		Keyword:   req.Keyword,
-		PageType:  req.PageType,
-		Status:    req.Status,
-		SortBy:    req.SortBy,
-		Offset:    req.Offset,
-		Limit:     req.Limit,
+		Eid:        eid,
+		LibraryID:  libraryID,
+		CategoryID: categoryID, CategoryOther: categoryOther,
+		Keyword:  req.Keyword,
+		PageType: req.PageType,
+		Status:   req.Status,
+		SortBy:   req.SortBy,
+		Offset:   req.Offset,
+		Limit:    req.Limit,
 	})
 	if err != nil {
 		logger.Errorf(ctx.Request.Context(), "wiki list pages failed: %v", err)
@@ -168,6 +176,7 @@ func (c *WikiPageController) ListPages(ctx *gin.Context) {
 // @Param keyword query string false "关键词"
 // @Param page_type query string false "页面类型"
 // @Param status query string false "页面状态"
+// @Param category_id query string false "分类ID（hashID）或 other（未分类页面）"
 // @Param space_id query int false "空间ID"
 // @Param offset query int false "分页偏移量"
 // @Param limit query int false "每页条数"
@@ -184,6 +193,11 @@ func (c *WikiPageController) ListPagesStandalone(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
+	categoryID, categoryOther, ok := parseWikiPageCategoryFilter(req.CategoryID)
+	if !ok {
+		ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的分类ID")))
+		return
+	}
 
 	libraryID := int64(0)
 	if raw := strings.TrimSpace(ctx.Query("library_id")); raw != "" {
@@ -195,15 +209,16 @@ func (c *WikiPageController) ListPagesStandalone(ctx *gin.Context) {
 	}
 
 	items, total, err := c.readSvc.ListPages(ctx.Request.Context(), service.WikiListPagesRequest{
-		Eid:       eid,
-		LibraryID: libraryID,
-		SpaceID:   req.SpaceID,
-		Keyword:   req.Keyword,
-		PageType:  req.PageType,
-		Status:    req.Status,
-		SortBy:    req.SortBy,
-		Offset:    req.Offset,
-		Limit:     req.Limit,
+		Eid:        eid,
+		LibraryID:  libraryID,
+		SpaceID:    req.SpaceID,
+		CategoryID: categoryID, CategoryOther: categoryOther,
+		Keyword:  req.Keyword,
+		PageType: req.PageType,
+		Status:   req.Status,
+		SortBy:   req.SortBy,
+		Offset:   req.Offset,
+		Limit:    req.Limit,
 	})
 	if err != nil {
 		logger.Errorf(ctx.Request.Context(), "wiki list pages failed: %v", err)
@@ -1367,6 +1382,21 @@ func parseWikiLibraryID(ctx *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return libraryID, true
+}
+
+func parseWikiPageCategoryFilter(raw string) (int64, bool, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false, true
+	}
+	if strings.EqualFold(raw, "other") {
+		return 0, true, true
+	}
+	id, err := hashids.TryParseID(raw)
+	if err != nil || id <= 0 {
+		return 0, false, false
+	}
+	return id, false, true
 }
 
 func parseWikiPageID(raw string) (int64, error) {

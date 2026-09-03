@@ -2,15 +2,108 @@ package bailian
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/gin-gonic/gin"
 )
+
+const RerankEndpointPath = "/api/v1/services/rerank/text-rerank/text-rerank"
+
+// NormalizeRerankModel converts the product-facing alias to the model id
+// accepted by DashScope. The alias is kept in our config and response model.
+func NormalizeRerankModel(model string) string {
+	if strings.EqualFold(strings.TrimSpace(model), "qwen-gte-rerank-v2") {
+		return "gte-rerank-v2"
+	}
+	return model
+}
+
+func RerankURL(baseURL string) string {
+	baseURL = strings.TrimSpace(strings.TrimRight(baseURL, "/"))
+	if baseURL == "" {
+		baseURL = "https://dashscope.aliyuncs.com"
+	}
+	if strings.HasSuffix(baseURL, RerankEndpointPath) {
+		return baseURL
+	}
+	// DashScope 的 OpenAI 兼容接口通常配置为
+	// https://dashscope.aliyuncs.com/compatible-mode/v1。重排使用原生
+	// /api/v1 接口，不能把这段兼容模式路径再次拼到原生路径前。
+	if parsed, err := url.Parse(baseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		if strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/compatible-mode/v1") {
+			parsed.Path = strings.TrimSuffix(strings.TrimRight(parsed.Path, "/"), "/compatible-mode/v1")
+			parsed.RawPath = ""
+			parsed.RawQuery = ""
+			parsed.Fragment = ""
+			baseURL = strings.TrimRight(parsed.String(), "/")
+		}
+	}
+	return baseURL + RerankEndpointPath
+}
+
+// CallRerankAPI is the shared DashScope text-rerank transport used by both
+// the channel test and the RAG pipeline. client is injectable for tests.
+func CallRerankAPI(ctx context.Context, client *http.Client, baseURL, apiKey string, request *BailianRerankRequest) (*BailianRerankResponse, error) {
+	if request == nil {
+		return nil, fmt.Errorf("rerank request is nil")
+	}
+	if request.Input.Query == "" {
+		return nil, fmt.Errorf("rerank query is required")
+	}
+	if len(request.Input.Documents) == 0 {
+		return nil, fmt.Errorf("rerank documents are required")
+	}
+
+	requestCopy := *request
+	requestCopy.Model = NormalizeRerankModel(request.Model)
+	body, err := json.Marshal(&requestCopy)
+	if err != nil {
+		return nil, fmt.Errorf("marshal rerank request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, RerankURL(baseURL), bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("create rerank request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	httpReq.Header.Set("X-DashScope-SSE", "disable")
+
+	if client == nil {
+		client = &http.Client{Timeout: 60 * time.Second}
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("execute rerank request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read rerank response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("rerank request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	var result BailianRerankResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("decode rerank response: %w", err)
+	}
+	if len(result.Output.Results) == 0 {
+		return nil, fmt.Errorf("rerank response contains no results")
+	}
+	return &result, nil
+}
 
 // RerankRequest 定义 rerank 请求结构
 type RerankRequest struct {
@@ -32,7 +125,7 @@ func (a *Adaptor) ConvertToRerankRequest(request *RerankRequest) (*BailianRerank
 	}
 
 	rerankRequest := &BailianRerankRequest{
-		Model: a.meta.ActualModelName,
+		Model: NormalizeRerankModel(a.meta.ActualModelName),
 		Input: BailianRerankInput{
 			Query:     request.Query,
 			Documents: request.Documents,
@@ -52,11 +145,7 @@ func (a *Adaptor) ConvertToRerankRequest(request *RerankRequest) (*BailianRerank
 
 // GetRerankURL 获取百炼 rerank API URL
 func (a *Adaptor) GetRerankURL() string {
-	baseUrl := a.meta.BaseURL
-	if baseUrl == "" {
-		baseUrl = "https://dashscope.aliyuncs.com"
-	}
-	return fmt.Sprintf("%s/api/v1/services/rerank/text-rerank/text-rerank", baseUrl)
+	return RerankURL(a.meta.BaseURL)
 }
 
 // DoRerankRequest 执行 rerank 请求

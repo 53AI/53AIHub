@@ -45,6 +45,8 @@ func (e *graphTemplateSelectionLLMExecutor) Generate(ctx context.Context, system
 			{Role: "user", Content: userPrompt},
 		},
 	}
+	// 图谱模板选择默认不深度思考（与 wiki 生成一致）
+	applyInternalRequestControl(request, &internalRequestControl{ReasoningMode: "disabled"})
 
 	resp, err, openaiErr := e.contentService.TestChannel(ctx, e.channel, request)
 	if err != nil {

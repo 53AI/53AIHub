@@ -30,6 +30,7 @@ import { attachDefaultImg } from '@/directive/default-img'
 import { AgentDataTab } from './DataTab'
 import { AgentIntegrateTab } from './IntegrateTab'
 import { AgentFeedbackTab } from './FeedbackTab'
+import { UsageScope } from './UsageScope'
 import { subscriptionApi } from "@/api/modules/subscription"
 import { groupApi, Group } from "@/api/modules/group"
 import { isEqual } from 'lodash-es'
@@ -373,7 +374,7 @@ function AgentCreatePageContent() {
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
       if (hasUnsavedChanges()) {
-        const msg = t('skills.unsaved_confirm_message')
+        const msg = t('common.unsaved_confirm_message')
         event.preventDefault()
         event.returnValue = msg
         return msg
@@ -396,7 +397,7 @@ function AgentCreatePageContent() {
 
     if (hasUnsavedChanges()) {
       Modal.confirm({
-        content: t('skills.unsaved_confirm_message'),
+        content: t('common.unsaved_confirm_message'),
         okText: t('action.confirm'),
         cancelText: t('action.cancel'),
         onOk: doNavigate,
@@ -418,6 +419,7 @@ function AgentCreatePageContent() {
             initializing={initializing}
             channelConfig={channelConfig.current}
             onSuccess={() => eventBus.emit('agent-change')}
+            usageScope={<UsageScope />}
             embedded
           />
         )

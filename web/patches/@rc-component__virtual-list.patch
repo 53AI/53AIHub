@@ -1,0 +1,75 @@
+diff --git a/es/hooks/useScrollDrag.js b/es/hooks/useScrollDrag.js
+index 41ccb25b24f75104a81f8fddd1004d79285de82c..fab352eee635b22fbd8ec765b55ce43e8266401c 100644
+--- a/es/hooks/useScrollDrag.js
++++ b/es/hooks/useScrollDrag.js
+@@ -42,6 +42,13 @@ export default function useScrollDrag(inVirtual, componentRef, onScrollOffset) {
+       };
+       const onMouseMove = e => {
+         if (mouseDownLock) {
++          // Left button released: even if the real mouseup/dragend was
++          // swallowed (e.g. during native DnD re-render), stop the sticky
++          // auto-scroll as soon as the user lets go.
++          if (e.buttons === 0) {
++            mouseDownLock = false;
++            return;
++          }
+           const mouseY = getPageXY(e, false);
+           const {
+             top,
+@@ -60,15 +67,54 @@ export default function useScrollDrag(inVirtual, componentRef, onScrollOffset) {
+           }
+         }
+       };
++      const onDragMove = e => {
++        // `dragover` only fires during an active native DnD drag, so no drag
++        // flag is needed here. Gating on a closure `dragging` breaks because
++        // rc-tree re-renders/remounts the virtual list at dragstart, resetting
++        // the flag to false for the rest of the drag and blocking edge scroll.
++        const mouseY = e.clientY;
++        const {
++          top,
++          bottom
++        } = ele.getBoundingClientRect();
++        if (mouseY <= top) {
++          const diff = top - mouseY;
++          offset = -smoothScrollOffset(diff);
++          continueScroll();
++        } else if (mouseY >= bottom) {
++          const diff = mouseY - bottom;
++          offset = smoothScrollOffset(diff);
++          continueScroll();
++        } else {
++          stopScroll();
++        }
++      };
++      const onDragStart = () => {
++        clearDragState();
++      };
++      const onDragEnd = () => {
++        clearDragState();
++      };
++      const onDragDrop = () => {
++        stopScroll();
++      };
+       ele.addEventListener('mousedown', onMouseDown);
+       ele.ownerDocument.addEventListener('mouseup', clearDragState);
+       ele.ownerDocument.addEventListener('mousemove', onMouseMove);
+-      ele.ownerDocument.addEventListener('dragend', clearDragState);
++      // Capture phase: rc-tree's TreeNode stops propagation on every drag
++      // event, so bubble-phase listeners on document never fire during DnD.
++      ele.ownerDocument.addEventListener('dragstart', onDragStart, true);
++      ele.ownerDocument.addEventListener('dragover', onDragMove, true);
++      ele.ownerDocument.addEventListener('drop', onDragDrop, true);
++      ele.ownerDocument.addEventListener('dragend', onDragEnd, true);
+       return () => {
+         ele.removeEventListener('mousedown', onMouseDown);
+         ele.ownerDocument.removeEventListener('mouseup', clearDragState);
+         ele.ownerDocument.removeEventListener('mousemove', onMouseMove);
+-        ele.ownerDocument.removeEventListener('dragend', clearDragState);
++        ele.ownerDocument.removeEventListener('dragstart', onDragStart, true);
++        ele.ownerDocument.removeEventListener('dragover', onDragMove, true);
++        ele.ownerDocument.removeEventListener('drop', onDragDrop, true);
++        ele.ownerDocument.removeEventListener('dragend', onDragEnd, true);
+         stopScroll();
+       };
+     }

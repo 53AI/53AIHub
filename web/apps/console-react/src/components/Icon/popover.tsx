@@ -1,5 +1,6 @@
-import { Popover, Button, Image } from "antd";
+import { Popover, Button, Image as AntdImage } from "antd";
 import { PlusOutlined, CloseOutlined } from "@ant-design/icons";
+import { SafeImage } from "@km/shared-components-react";
 import { useState, useEffect, useRef, ReactNode } from "react";
 import CropperDialog, { CropperDialogRef } from "@/components/CropperDialog";
 import { t } from "@/locales";
@@ -209,7 +210,7 @@ export function IconPopover({
               }`}
               onClick={() => handleSelectIcon(item)}
             >
-              <Image
+              <AntdImage
                 src={item}
                 width={18}
                 height={18}
@@ -244,14 +245,10 @@ export function IconPopover({
       }}
     >
       {showModelValue ? (
-        <img
+        <SafeImage
           className="w-full h-full object-cover"
           src={value}
           alt="logo"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.src = "/images/default_agent.png";
-          }}
         />
       ) : (
         <img

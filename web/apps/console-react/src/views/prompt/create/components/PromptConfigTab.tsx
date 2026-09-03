@@ -1,8 +1,7 @@
 import { Button, Form, InputNumber, Tooltip } from 'antd'
 import { CloseOutlined } from '@ant-design/icons'
 import { usePromptFormDataStore } from '../store'
-import { GroupSelect } from '@/components/GroupSelect'
-import { GROUP_TYPE } from '@/constants/group'
+import { RegisterUserGroupSelect } from '@/components/RegisterUserGroupSelect'
 import { useEnterpriseStore } from '@/stores'
 import { SvgIcon, PromptInput } from '@km/shared-components-react'
 import GuideView from '../Guide'
@@ -10,12 +9,15 @@ import { t } from '@/locales'
 import PromptPreview from './PromptPreview'
 import { copyToClip } from '@km/shared-utils'
 import { message } from 'antd'
+import UseScope from './UseScope'
 
 interface PromptConfigTabProps {
   form: any
   onOpenLinksDialog: () => void
   onOpenStoreDialog: () => void
   onDeleteLink: (item: any) => void
+  /** 是否为新建模式（决定使用范围是否默认"全部成员"） */
+  isNew?: boolean
 }
 
 export function PromptConfigTab({
@@ -23,6 +25,7 @@ export function PromptConfigTab({
   onOpenLinksDialog,
   onOpenStoreDialog,
   onDeleteLink,
+  isNew = false,
 }: PromptConfigTabProps) {
   const enterpriseStore = useEnterpriseStore()
 
@@ -145,37 +148,29 @@ export function PromptConfigTab({
             {/* 使用范围 */}
             <div className="my-4 border-t"></div>
             <div className="font-bold mb-3">{t('usage_range')}</div>
-            {/* Subscription groups */}
-            <Form.Item
-              label={t('register_user.title')}
-              name="subscription_group_ids"
-              hidden={
-                !(
-                  enterpriseStore.info.is_independent ||
-                  enterpriseStore.info.is_industry
-                )
-              }
-            >
-              <GroupSelect
-                groupType={GROUP_TYPE.USER}
-                type="checkbox"
-                defaultAll={formData.prompt_id === 0}
-              />
-            </Form.Item>
+            {/* 注册用户 */}
+            {(enterpriseStore.info.is_independent ||
+              enterpriseStore.info.is_industry) && (
+              <div className="mb-4">
+                <div className="text-sm text-[var(--ant-form-label-color)] mb-2">
+                  {t('register_user.title')}
+                </div>
+                <RegisterUserGroupSelect
+                  value={formData.subscription_group_ids || []}
+                  onChange={(val) =>
+                    setFormData({ subscription_group_ids: val })
+                  }
+                  autoFillAll={formData.prompt_id === 0}
+                />
+              </div>
+            )}
 
             {/* User groups */}
-            <Form.Item
-              label={t('internal_user.title')}
-              name="user_group_ids"
-              hidden={
-                !(
-                  enterpriseStore.info.is_enterprise ||
-                  enterpriseStore.info.is_industry
-                )
-              }
-            >
-              <GroupSelect groupType={GROUP_TYPE.INTERNAL_USER} type="picker" defaultAll={formData.prompt_id === 0} />
-            </Form.Item>
+            <UseScope
+              value={formData.scopes || []}
+              onChange={(scopes) => setFormData({ scopes })}
+              isNew={isNew}
+            />
           </div>
 
           {/* 第二列：使用指南 */}

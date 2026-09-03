@@ -23,7 +23,7 @@ func NewWikiPageVectorizationHandler(processor WikiPageVectorizationProcessor) f
 		if err != nil {
 			return err
 		}
-		logger.Infof(ctx, "【Wiki向量化】开始处理: job_id=%d page_id=%d version_id=%d force=%t", job.JobID, params.PageID, params.VersionID, params.Force)
+		logger.Infof(ctx, "【Wiki生成】 开始处理: job_id=%d page_id=%d version_id=%d force=%t", job.JobID, params.PageID, params.VersionID, params.Force)
 		return processor.Process(ctx, job.Eid, params.PageID, params.VersionID, params.Force)
 	}
 }

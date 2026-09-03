@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
 	"github.com/songquanpeng/one-api/relay/channeltype"
 )
 
@@ -67,17 +68,7 @@ func ParseVectorModelThresholds(existing string) ([]VectorModelThreshold, error)
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(existing), &obj); err == nil {
 		if raw, ok := obj[vectorModelConfidenceKey]; ok {
-			if len(raw) == 0 || string(raw) == "null" {
-				return []VectorModelThreshold{}, nil
-			}
-			var thresholds []VectorModelThreshold
-			if err := json.Unmarshal(raw, &thresholds); err != nil {
-				return nil, fmt.Errorf("解析 %s 失败: %w", vectorModelConfidenceKey, err)
-			}
-			if thresholds == nil {
-				thresholds = []VectorModelThreshold{}
-			}
-			return thresholds, nil
+			return parseVectorModelThresholdValue(raw)
 		}
 		return []VectorModelThreshold{}, nil
 	}
@@ -90,6 +81,38 @@ func ParseVectorModelThresholds(existing string) ([]VectorModelThreshold, error)
 		thresholds = []VectorModelThreshold{}
 	}
 	return thresholds, nil
+}
+
+// parseVectorModelThresholdValue 兼容渠道配置历史上被前端字符串化的阈值值。
+func parseVectorModelThresholdValue(raw json.RawMessage) ([]VectorModelThreshold, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []VectorModelThreshold{}, nil
+	}
+
+	var thresholds []VectorModelThreshold
+	if err := json.Unmarshal(raw, &thresholds); err == nil {
+		if thresholds == nil {
+			thresholds = []VectorModelThreshold{}
+		}
+		return thresholds, nil
+	}
+
+	var encoded string
+	if err := json.Unmarshal(raw, &encoded); err == nil {
+		trimmed := strings.TrimSpace(encoded)
+		if trimmed == "" || strings.EqualFold(trimmed, "[object object]") {
+			// 兼容旧前端将对象直接转成字符串后的历史脏值；调用方会用新值覆盖它。
+			return []VectorModelThreshold{}, nil
+		}
+		if err := json.Unmarshal([]byte(trimmed), &thresholds); err == nil {
+			if thresholds == nil {
+				thresholds = []VectorModelThreshold{}
+			}
+			return thresholds, nil
+		}
+	}
+
+	return nil, fmt.Errorf("解析 %s 失败: 无法识别阈值配置格式", vectorModelConfidenceKey)
 }
 
 // UpsertVectorModelThreshold 在阈值数组中插入或更新某个模型

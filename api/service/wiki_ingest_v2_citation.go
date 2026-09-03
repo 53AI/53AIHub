@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/53AI/53AIHub/common"
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 )
 
@@ -24,24 +26,25 @@ func (s *WikiIngestV2Service) classifyChunkCitations(
 		return map[string][]string{}, nil, chunks, nil
 	}
 
+	selectedChunks := selectWikiCitationChunks(chunks, candidates)
 	prompt, err := s.prompts.Render(WikiChunkCitationPrompt, map[string]any{
 		"CandidateSlugs": renderWikiCandidateSlugsXML(candidates),
-		"ChunksXML":      renderWikiSyntheticChunksXML(chunks),
+		"ChunksXML":      renderWikiSyntheticChunksXML(selectedChunks),
 		"SourceContext":  renderWikiIngestV2SourceContext("citation_selection", in, len(candidates)),
 		"Language":       wikiIngestV2Language(in.Language),
 	})
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("render wiki citation prompt: %w", err)
+		return nil, nil, chunks, fmt.Errorf("render wiki citation prompt: %w", err)
 	}
 
 	raw, err := s.llm.Generate(ctx, prompt)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("classify chunk citations failed: %w", err)
+		return nil, nil, chunks, fmt.Errorf("classify chunk citations failed: %w", err)
 	}
 
-	var batch WikiCitationBatch
-	if err := decodeWikiLLMJSON(raw, &batch); err != nil {
-		return nil, nil, nil, fmt.Errorf("parse chunk citation JSON: %w", err)
+	batch, warnings := decodeWikiCitationBatch(raw)
+	for _, warning := range warnings {
+		logger.Warnf(ctx, "【Wiki生成】 %s", warning)
 	}
 
 	citations := make(map[string][]string, len(batch.Citations))
@@ -50,6 +53,47 @@ func (s *WikiIngestV2Service) classifyChunkCitations(
 	}
 
 	return citations, flattenWikiDiscoveredSlugs(batch.NewSlugs), chunks, nil
+}
+
+func selectWikiCitationChunks(chunks map[string]wikiIngestV2SyntheticChunk, candidates []wikiIngestV2Candidate) map[string]wikiIngestV2SyntheticChunk {
+	if len(chunks) <= 2 || len(candidates) == 0 {
+		return chunks
+	}
+	terms := make([]string, 0, len(candidates)*3)
+	for _, candidate := range candidates {
+		terms = append(terms, strings.TrimSpace(candidate.Name))
+		terms = append(terms, candidate.Aliases...)
+		if slash := strings.LastIndex(candidate.Slug, "/"); slash >= 0 {
+			terms = append(terms, strings.ReplaceAll(candidate.Slug[slash+1:], "-", " "))
+		}
+	}
+	ids := make([]string, 0, len(chunks))
+	for id := range chunks {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	selected := make(map[string]wikiIngestV2SyntheticChunk)
+	for _, id := range ids {
+		content := strings.ToLower(chunks[id].Content)
+		for _, term := range terms {
+			term = strings.ToLower(strings.TrimSpace(term))
+			if term != "" && strings.Contains(content, term) {
+				selected[id] = chunks[id]
+				break
+			}
+		}
+	}
+	if len(selected) == 0 {
+		fallbackCount := 2
+		if len(ids) < fallbackCount {
+			fallbackCount = len(ids)
+		}
+		for _, id := range ids[:fallbackCount] {
+			selected[id] = chunks[id]
+		}
+	}
+	logger.Debugf(context.Background(), "【Wiki生成】 k 预筛选 total=%d selected=%d", len(chunks), len(selected))
+	return selected
 }
 
 func splitWikiIngestContentIntoChunks(content string, maxRunes int) map[string]wikiIngestV2SyntheticChunk {
@@ -176,6 +220,45 @@ func truncateWikiRunes(s string, maxRunes int) string {
 
 func decodeWikiLLMJSON(raw string, dst any) error {
 	return common.ParseLLMJSONInto(context.Background(), raw, dst)
+}
+
+// decodeWikiCitationBatch 保留可用 citations，并逐条容错 new_slugs。
+// citation 是增强信息，不能因为新增 slug 的单条脏数据阻断整条 Wiki 生成。
+func decodeWikiCitationBatch(raw string) (WikiCitationBatch, []string) {
+	type citationEnvelope struct {
+		Citations map[string][]string `json:"citations"`
+		NewSlugs  json.RawMessage     `json:"new_slugs"`
+	}
+
+	var envelope citationEnvelope
+	if err := decodeWikiLLMJSON(raw, &envelope); err != nil {
+		return WikiCitationBatch{}, []string{fmt.Sprintf("citation 响应整体解析失败，已跳过引用增强: %v", err)}
+	}
+
+	batch := WikiCitationBatch{Citations: envelope.Citations}
+	if len(envelope.NewSlugs) == 0 || string(envelope.NewSlugs) == "null" {
+		return batch, nil
+	}
+
+	var rawSlugs []json.RawMessage
+	if err := decodeWikiLLMJSON(string(envelope.NewSlugs), &rawSlugs); err != nil {
+		return batch, []string{fmt.Sprintf("new_slugs 数组解析失败，已跳过新增 slug: %v", err)}
+	}
+
+	warnings := make([]string, 0)
+	for index, rawSlug := range rawSlugs {
+		var slug WikiDiscoveredSlug
+		if err := decodeWikiLLMJSON(string(rawSlug), &slug); err != nil {
+			var identity struct {
+				Slug string `json:"slug"`
+			}
+			_ = decodeWikiLLMJSON(string(rawSlug), &identity)
+			warnings = append(warnings, fmt.Sprintf("new_slugs[%d] slug=%s 解析失败，已丢弃该条: %v", index, identity.Slug, err))
+			continue
+		}
+		batch.NewSlugs = append(batch.NewSlugs, slug)
+	}
+	return batch, warnings
 }
 
 func renderWikiCandidateSlugsXML(candidates []wikiIngestV2Candidate) string {

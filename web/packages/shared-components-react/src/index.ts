@@ -63,3 +63,15 @@ export type { FileIconProps } from './FileIcon/index'
 // SidePanel
 export { default as SidePanel } from './SidePanel/index'
 export type { SidePanelProps, SidePanelSide } from './SidePanel/index'
+
+// SafeImage
+export { default as SafeImage } from './SafeImage/index'
+export type { SafeImageProps } from './SafeImage/index'
+
+// IconAction
+export { default as IconAction } from './IconAction/index'
+export type { IconActionProps, IconActionVariant } from './IconAction/index'
+
+// ErrorBoundary（错误兜底页 + React 错误边界）
+export { ErrorFallback, AppErrorBoundary } from './ErrorBoundary/index'
+export type { ErrorFallbackProps } from './ErrorBoundary/index'

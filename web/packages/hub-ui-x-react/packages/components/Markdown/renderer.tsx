@@ -19,6 +19,7 @@ import "katex/dist/katex.min.css";
 import { Typewriter } from "../../utils/typewriter";
 import { markdownItFixPlugin } from "../../utils/markdown-fix";
 import { fixTableColumns } from "./markdown-fix-table";
+import { normalizeBlockMathTrailing, splitPendingMath } from "./markdown-math";
 import Code from "./components/code";
 import Mermaid from "./components/mermaid";
 import Mindmap from "./components/mindmap";
@@ -213,47 +214,9 @@ const applySourceReferences = (
   return chunks.join("");
 };
 
-const normalizeSkillRunItem = (it: any) => {
-  if (!it || typeof it !== "object")
-    return { type: "script", title: "", bash: "", output: "" };
-  if (it.type === "skill") {
-    return {
-      type: "skill",
-      title: String(it.title ?? ""),
-      status: it.status ?? "pending",
-      skillName: it.skillName != null ? String(it.skillName) : undefined,
-      intentData:
-        it.intentData && typeof it.intentData === "object"
-          ? it.intentData
-          : undefined,
-      messages: Array.isArray(it.messages) ? it.messages : undefined,
-    };
-  }
-  const type =
-    it.type === "search" || it.type === "web_search" ? "search" : "script";
-  if (type === "search") {
-    const rawSources = Array.isArray(it.sources) ? it.sources : [];
-    return {
-      type: "search",
-      title: String(it.title ?? ""),
-      icon: it.icon != null ? String(it.icon) : "",
-      sourceCount:
-        typeof it.sourceCount === "number" ? it.sourceCount : undefined,
-      tags: Array.isArray(it.tags) ? it.tags : [],
-      sources: rawSources.map((s: any) => ({
-        icon: s.icon != null ? String(s.icon) : "",
-        title: String(s.title ?? ""),
-        url: s.url != null ? String(s.url) : "",
-      })),
-    };
-  }
-  return {
-    type: "script",
-    title: String(it.title ?? ""),
-    bash: String(it.bash ?? ""),
-    output: String(it.output ?? ""),
-  };
-};
+/**
+ * normalizeBlockMathTrailing / splitPendingMath 定义见 ./markdown-math（独立可单测）
+ */
 
 const MdRenderer: React.FC<MdRendererProps> = ({
   content,
@@ -283,6 +246,9 @@ const MdRenderer: React.FC<MdRendererProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const highlightCacheRef = useRef<Map<string, string>>(new Map());
   const displayContentRef = useRef("");
+  // 打字机流式中暂存的未闭合数学尾部（$...$ / $$...$$）。等闭合后再一次性交给渲染，
+  // 避免 KaTeX 渲染残缺公式闪现「解析失败」。
+  const pendingMathRef = useRef("");
 
   // 图片点击处理
   const handleImageClick = useCallback(
@@ -299,18 +265,6 @@ const MdRenderer: React.FC<MdRendererProps> = ({
   // 关闭图片预览
   const closeImagePreview = useCallback(() => {
     setPreviewImage(null);
-  }, []);
-
-  // Simple hash for quick comparison
-  const simpleHash = useCallback((str: string) => {
-    let hash = 0;
-    if (str.length === 0) return hash.toString();
-    for (let i = 0; i < str.length; i += 1) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash.toString();
   }, []);
 
   // Async code highlighting
@@ -378,8 +332,15 @@ const MdRenderer: React.FC<MdRendererProps> = ({
         if (diff) {
           if (!typewriterRef.current) {
             typewriterRef.current = new Typewriter((str) => {
-              displayContentRef.current += str;
-              setDisplayContent((prev) => prev + str);
+              // 合并暂存的未闭合数学尾部后再切分：safe 部分直接渲染，
+              // 未闭合的数学尾巴继续暂存，闭合后随下一段一次性渲染（避免公式闪现）。
+              const combined = pendingMathRef.current + str;
+              const { safe, pending } = splitPendingMath(combined);
+              pendingMathRef.current = pending;
+              if (safe) {
+                displayContentRef.current += safe;
+                setDisplayContent((prev) => prev + safe);
+              }
             });
           }
           lastContentRef.current = content;
@@ -389,6 +350,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
       } else {
         // 内容被重置或不匹配，清空队列并直接替换
         typewriterRef.current?.stop();
+        pendingMathRef.current = "";
         displayContentRef.current = content;
         lastContentRef.current = content;
         setDisplayContent(content);
@@ -396,6 +358,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
     } else {
       // 非流式输出，清理 typewriter 并直接设置
       typewriterRef.current?.stop();
+      pendingMathRef.current = "";
       displayContentRef.current = content;
       lastContentRef.current = content;
       setDisplayContent(content);
@@ -418,6 +381,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
       // 重置引用
       displayContentRef.current = "";
       lastContentRef.current = "";
+      pendingMathRef.current = "";
     };
   }, []);
 
@@ -443,11 +407,9 @@ const MdRenderer: React.FC<MdRendererProps> = ({
   }, [onSourceReferenceClick]);
 
   const processedContent = useMemo(() => {
-    // 流式输出时跳过表格修复（性能优化）
-    if (streaming) {
-      return displayContent;
-    }
-    return fixTableColumns(content);
+    // 流式输出时跳过表格修复（性能优化），数学尾随内容拆分始终执行
+    const base = streaming ? displayContent : fixTableColumns(content);
+    return normalizeBlockMathTrailing(base);
   }, [content, displayContent, streaming]);
 
   // 解析 tokens

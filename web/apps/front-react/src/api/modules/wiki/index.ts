@@ -1,6 +1,8 @@
 import request from '../../index'
 import { handleError } from '../../errorHandler'
 import type {
+  WikiCategory,
+  WikiCategoryListResponse,
   WikiIndexResponse,
   WikiLogListParams,
   WikiLogListResponse,
@@ -10,7 +12,7 @@ import type {
   WikiPageUpdateParams,
   WikiPageUpdateResponse,
   WikiPageVersion,
-  WikiProgressResponse,
+  WikiQueueStatusResponse,
   WikiStatsResponse,
   WikiVersionPublishParams,
   WikiVersionPublishResponse,
@@ -39,8 +41,13 @@ export const wikiApi = {
 
   /** 页面列表 */
   pages(space_id: string, params?: WikiPageListParams): Promise<WikiPageListResponse> {
+    // category_id = 0 表示「其他」虚拟分类，需改传特殊值 other
+    const normalized =
+      params && params.category_id === 0
+        ? { ...params, category_id: "other" as const }
+        : params;
     return request
-      .get(`/api/spaces/${space_id}/wiki/pages`, { params })
+      .get(`/api/spaces/${space_id}/wiki/pages`, { params: normalized })
       .then((res) => res.data)
       .catch(handleError)
   },
@@ -49,6 +56,14 @@ export const wikiApi = {
   search(params: { keyword: string; limit?: number }): Promise<WikiPageListResponse> {
     return request
       .get(`/api/wiki/pages`, { params })
+      .then((res) => res.data)
+      .catch(handleError)
+  },
+
+  /** 空间 Wiki 分类列表（侧栏标签） */
+  categories(space_id: string): Promise<WikiCategoryListResponse> {
+    return request
+      .get(`/api/wiki/categories`, { params: { space_id } })
       .then((res) => res.data)
       .catch(handleError)
   },
@@ -85,10 +100,10 @@ export const wikiApi = {
       .catch(handleError)
   },
 
-  /** 空间文件处理进度 */
-  progress(space_id: string): Promise<WikiProgressResponse> {
+  /** 页面生成/向量化队列状态（space_id 可选，不传返回企业全部队列） */
+  queueStatus(params?: { space_id?: string }): Promise<WikiQueueStatusResponse> {
     return request
-      .get(`/api/spaces/${space_id}/wiki/progress`)
+      .get(`/api/wiki/queue/status`, { params })
       .then((res) => res.data)
       .catch(handleError)
   },
@@ -148,6 +163,8 @@ export default wikiApi
 
 // 重新导出常用类型，方便外部一行 import
 export type {
+  WikiCategory,
+  WikiCategoryListResponse,
   WikiIndexResponse,
   WikiLogItem,
   WikiLogMeta,
@@ -167,9 +184,8 @@ export type {
   WikiPageUpdateResponse,
   WikiPageVersion,
   WikiPageVisibility,
-  WikiProgressItem,
-  WikiProgressResponse,
-  WikiProgressStatus,
+  WikiQueueCount,
+  WikiQueueStatusResponse,
   WikiPublishKind,
   WikiSortOrder,
   WikiStatsResponse,

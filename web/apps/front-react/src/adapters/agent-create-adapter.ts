@@ -435,7 +435,8 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
 
   // ========== 分组选择组件（front-react 不需要） ==========
 
-  // GroupSelectComponent 和 GroupTabsComponent 在 front-react 用户端不需要
+  // front-react 用户端不需要使用范围（个人版），因此不提供使用范围相关组件；
+  // CreatePageLayout 的 usageScope 插槽不传，使用范围区块保持隐藏。
 
   // ========== 公共路径 ==========
 

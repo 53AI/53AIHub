@@ -58,3 +58,20 @@ describe('InsightPageRenderer — test.md 整页渲染（B 范围）', () => {
     expect(blockquotes.some(t => t.includes('改判条件'))).toBe(true)
   })
 })
+
+describe('InsightPageRenderer — generated HTML compatibility', () => {
+  it('新 HTML 页面使用隔离 iframe，旧 Markdown 渲染不受影响', () => {
+    const { container } = render(
+      <InsightPageRenderer
+        pageJson={{
+          _format: 'html_v2',
+          _html: '<!doctype html><html><body><svg viewBox="0 0 10 10"></svg></body></html>',
+        }}
+      />,
+    )
+    const iframe = container.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(iframe?.getAttribute('sandbox')).toBe('allow-same-origin')
+    expect(iframe?.getAttribute('srcdoc')).toContain('<svg')
+  })
+})

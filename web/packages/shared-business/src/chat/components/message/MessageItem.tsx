@@ -111,6 +111,7 @@ function MessageItemInner({
         isShareMode={isShareMode}
         isSelected={isSelected}
         fileAction={fileAction}
+        messageAction={messageAction}
         slots={slots}
       />
 

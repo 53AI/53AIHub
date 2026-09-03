@@ -22,6 +22,12 @@ func SaveRAGStats(
 	responseContent string,
 	eid int64,
 ) error {
+	answerToValidate := responseContent
+	if answerToValidate == "" && message != nil {
+		answerToValidate = message.Answer
+	}
+	hasAnswer := answerToValidate != ""
+
 	// 1. 从 Context 获取 sources
 	sourcesValue, exists := c.Get("rag_sources")
 	if !exists {
@@ -35,9 +41,20 @@ func SaveRAGStats(
 		logger.Warnf(ctx, "sources 类型转换失败或为空")
 		return nil
 	}
+	cleanResponse, citationStats := sanitizeAndValidateAnswer(c, answerToValidate)
+	responseContent = cleanResponse
+	if message != nil && (hasAnswer || message.Answer == "") {
+		message.Answer = responseContent
+	}
 
 	// 2. 生成引用统计数据
 	ragStats := generateRAGStats(ctx, eid, sources, responseContent, message.KnowledgeType)
+	ragStats.CitationStats = &citationStats
+	if observability, ok := c.Get("rag_retrieval_observability"); ok {
+		if values, ok := observability.(map[string]interface{}); ok {
+			ragStats.RetrievalObservability = values
+		}
+	}
 
 	// 3. 更新消息记录
 	message.CitationCount = len(ragStats.FileQuotations) + len(ragStats.WikiPageQuotations)
@@ -55,12 +72,14 @@ func SaveRAGStats(
 
 // RAGStatsData RAG 统计数据结构
 type RAGStatsData struct {
-	DocumentSearch     *DocumentSearchData `json:"document_search"`     // 文档搜索数据
-	DocumentQuotations []string            `json:"document_quotations"` // 实际引用的分片ID列表（hash后）
-	FileQuotations     []string            `json:"file_quotations"`     // 实际引用的文件ID列表（hash后）
-	WikiPageQuotations []string            `json:"wiki_page_quotations,omitempty"`
-	Performance        *PerformanceData    `json:"performance"` // 性能数据
-	Type               string              `json:"type"`        // 统计类型标识
+	DocumentSearch         *DocumentSearchData      `json:"document_search"`     // 文档搜索数据
+	DocumentQuotations     []string                 `json:"document_quotations"` // 实际引用的分片ID列表（hash后）
+	FileQuotations         []string                 `json:"file_quotations"`     // 实际引用的文件ID列表（hash后）
+	WikiPageQuotations     []string                 `json:"wiki_page_quotations,omitempty"`
+	RetrievalObservability map[string]interface{}   `json:"retrieval_observability,omitempty"`
+	CitationStats          *citationValidationStats `json:"citation_stats,omitempty"`
+	Performance            *PerformanceData         `json:"performance"` // 性能数据
+	Type                   string                   `json:"type"`        // 统计类型标识
 }
 
 // DocumentSearchData 文档搜索数据
@@ -72,17 +91,20 @@ type DocumentSearchData struct {
 type ChunkData struct {
 	SourceType                   string  `json:"source_type,omitempty"`
 	WikiPageID                   string  `json:"wiki_page_id,omitempty"`
-	ChunkID                      string  `json:"chunk_id"`                                  // 分片ID（hash后）
-	ChunkType                    string  `json:"chunk_type"`                                // 分片类型
-	Content                      string  `json:"content"`                                   // 内容预览
-	FileID                       string  `json:"file_id"`                                   // 文件ID（hash后）
-	FileName                     string  `json:"file_name"`                                 // 文件名
-	LibraryID                    string  `json:"library_id"`                                // 知识库ID（hash后）
-	LibraryName                  string  `json:"library_name"`                              // 知识库名称
-	LibraryIcon                  string  `json:"library_icon"`                              // 知识库图标
-	SpaceID                      string  `json:"space_id"`                                  // 空间ID（hash后）
-	SpaceName                    string  `json:"space_name"`                                // 空间名称
-	Score                        float64 `json:"score"`                                     // 相关性分数
+	ChunkID                      string  `json:"chunk_id"`     // 分片ID（hash后）
+	ChunkType                    string  `json:"chunk_type"`   // 分片类型
+	Content                      string  `json:"content"`      // 内容预览
+	FileID                       string  `json:"file_id"`      // 文件ID（hash后）
+	FileName                     string  `json:"file_name"`    // 文件名
+	LibraryID                    string  `json:"library_id"`   // 知识库ID（hash后）
+	LibraryName                  string  `json:"library_name"` // 知识库名称
+	LibraryIcon                  string  `json:"library_icon"` // 知识库图标
+	SpaceID                      string  `json:"space_id"`     // 空间ID（hash后）
+	SpaceName                    string  `json:"space_name"`   // 空间名称
+	Score                        float64 `json:"score"`        // 相关性分数
+	RawScore                     float64 `json:"raw_score,omitempty"`
+	SourceRank                   int     `json:"source_rank,omitempty"`
+	FusionScore                  float64 `json:"fusion_score,omitempty"`
 	FilePath                     string  `json:"file_path"`                                 // 文件路径
 	SourceKey                    string  `json:"source_key"`                                // 来源标识
 	EntityCount                  int     `json:"entity_count,omitempty"`                    // 实体数量
@@ -128,6 +150,9 @@ func generateRAGStats(
 			SpaceID:     source.SpaceID,
 			SpaceName:   source.SpaceName,
 			Score:       source.Score,
+			RawScore:    source.RawScore,
+			SourceRank:  source.SourceRank,
+			FusionScore: source.FusionScore,
 			FilePath:    source.FilePath,
 			SourceKey:   source.SourceKey,
 		}
@@ -178,13 +203,14 @@ func determineRAGType(knowledgeType int, sources []rag.SourceReference) string {
 	hasWiki := false
 
 	for _, s := range sources {
-		if s.KnowledgeBaseID > 0 {
+		category := sourceCategory(s)
+		if category == "document" && s.KnowledgeBaseID > 0 {
 			hasKB = true
 		}
-		if strings.HasPrefix(s.ReferenceID, "B-") {
+		if category == "web" || strings.HasPrefix(s.ReferenceID, "B-") {
 			hasWeb = true
 		}
-		if s.SourceType == "wiki" {
+		if category == "wiki" {
 			hasWiki = true
 		}
 	}

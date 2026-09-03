@@ -3,7 +3,10 @@
  * 对齐 mine-audio.md 接口规范
  */
 
-import request, { get as getRequest, post as postRequest } from '../../index'
+import request, { get as getRequest, post as postRequest } from '../../index';
+import service from '../../config';
+import type { AxiosRequestConfig } from 'axios';
+import { handleError } from '../../errorHandler';
 import type {
   ApiResponse,
   JobResponse,
@@ -15,13 +18,8 @@ import type {
   MissingSegmentsResponse,
   FinalizeResponse,
   FfmpegHealthResponse,
-  SystemStatusResponse,
   RecordingsResponse,
   GetRecordingsParams,
-  CreateFolderRequest,
-  CreateFolderResponse,
-  RenameFolderRequest,
-  RenameFolderResponse,
   ImportAudioRequest,
   ImportAudioResponse,
   RecordingConfig,
@@ -31,45 +29,46 @@ import type {
   QueuedCountResponse,
   RecordingFileInsightPage,
   InsightBackground,
+  InsightPerspectiveOption,
   InsightWorkshopChatRequest,
   InsightWorkshopChatResponse,
-  InsightConversationMessage,
+  InsightRegenerationRequest,
   FileTranscriptionResponse,
   TranscriptionExportResponse,
   PipelineResult,
   MoveFileToGroupRequest,
   MoveFileToGroupResponse,
-  RecordingMemoryOverview,
   RecordingMemoryEntityList,
   RecordingMemoryEntityDetail,
   RecordingMemoryEntitySchemas,
   UpdateRecordingMemoryEntityRequest,
+  CreateRecordingMemoryEntityRequest,
+  MergeMemoryEntitiesRequest,
   RecordingShareCreateResponse,
   RecordingSharedContent,
   RecordingDeviceConfig,
-  RecordingDeviceConfigUpdate,
   RecordingDeviceStatusResponse,
   RecordingDeviceType,
-  SyncSonicNoteRequest,
-  SyncSonicNoteResponse,
   SyncStatusResponse,
-} from './types'
+  CreateDeviceRequest,
+  CreateDeviceResponse,
+  UpdateDeviceByIdRequest,
+  SyncDeviceRequest,
+  SyncDeviceResponse,
+} from './types';
 
 /**
- * 断言业务码为成功
+ * 业务错误统一交给 `handleError` 处理：
+ * - HTTP 4xx/5xx：响应拦截器直接 throw，`handleError` 从 `error.response.data.{code, message}`
+ *   提取并 message.warning 提示 + Promise.reject(error) 抛给调用方。
+ * - HTTP 200 + code!=0：当前不拦（调用方需要的话自己处理 res.code）。
+ * 因此调用方通常不要再 catch 里再 message.error，避免重复弹窗。
  *
- * 全局响应拦截器只对 FORBIDDEN 做 reject，其余非 0 业务码都会当成功返回，
- * 分享相关接口的"分享不存在"是 HTTP 200 + code 404，必须在这里显式拦下来，
- * 否则调用方会拿到 data = undefined 却以为请求成功。
+ * 历史：本文件早期各接口未统一接 handleError，错误散落到各调用方 catch 里再 message.error，
+ * 行为不一致、重复弹窗时有发生。本轮统一收口到 API 层：
+ * - `service.X(...)` 直接 `.then(...).catch(handleError)`
+ * - `request.X(...)` 在 await 处链 `.catch(handleError)`
  */
-function assertOk<T>(res: ApiResponse<T>, fallbackMessage: string): T {
-  if (res?.code !== 0) {
-    const error = new Error(res?.message || fallbackMessage)
-    ;(error as Error & { code?: number }).code = res?.code
-    throw error
-  }
-  return res.data
-}
 
 // ============= FFmpeg 健康检查 =============
 
@@ -78,7 +77,7 @@ function assertOk<T>(res: ApiResponse<T>, fallbackMessage: string): T {
  * GET /api/recordings/config
  */
 export async function getConfig(): Promise<RecordingConfig> {
-  const res = await request.get<ApiResponse<RecordingConfig>>('/api/recordings/config')
+  const res = await request.get<ApiResponse<RecordingConfig>>('/api/recordings/config').catch(handleError)
   return res.data
 }
 
@@ -87,16 +86,7 @@ export async function getConfig(): Promise<RecordingConfig> {
  * GET /api/recordings/ffmpeg-health
  */
 export async function getFfmpegHealth(): Promise<FfmpegHealthResponse> {
-  const res = await request.get<ApiResponse<FfmpegHealthResponse>>('/api/recordings/ffmpeg-health')
-  return res.data
-}
-
-/**
- * 获取系统状态
- * GET /api/recordings/system-status
- */
-export async function getSystemStatus(): Promise<SystemStatusResponse> {
-  const res = await request.get<ApiResponse<SystemStatusResponse>>('/api/recordings/system-status')
+  const res = await request.get<ApiResponse<FfmpegHealthResponse>>('/api/recordings/ffmpeg-health').catch(handleError)
   return res.data
 }
 
@@ -106,8 +96,8 @@ export async function getSystemStatus(): Promise<SystemStatusResponse> {
  * 创建录音任务
  * POST /api/recordings
  */
-export async function createRecording(data: CreateRecordingRequest): Promise<RecordingJob> {
-  const res = await request.post<ApiResponse<JobResponse>>('/api/recordings', data)
+async function createRecording(data: CreateRecordingRequest): Promise<RecordingJob> {
+  const res = await request.post<ApiResponse<JobResponse>>('/api/recordings', data).catch(handleError)
   return res.data.job!
 }
 
@@ -115,8 +105,8 @@ export async function createRecording(data: CreateRecordingRequest): Promise<Rec
  * 获取活跃录音任务
  * GET /api/recordings/active
  */
-export async function getActiveRecording(): Promise<RecordingJob | null> {
-  const res = await request.get<ApiResponse<JobResponse>>('/api/recordings/active', {  requiresAuth: true })
+async function getActiveRecording(): Promise<RecordingJob | null> {
+  const res = await request.get<ApiResponse<JobResponse>>('/api/recordings/active', { requiresAuth: true }).catch(handleError)
   return res.data.job
 }
 
@@ -124,8 +114,8 @@ export async function getActiveRecording(): Promise<RecordingJob | null> {
  * 获取录音任务详情
  * GET /api/recordings/{job_id}
  */
-export async function getRecordingById(jobId: string): Promise<RecordingJob> {
-  const res = await request.get<ApiResponse<JobResponse>>(`/api/recordings/${jobId}`)
+async function getRecordingById(jobId: string): Promise<RecordingJob> {
+  const res = await request.get<ApiResponse<JobResponse>>(`/api/recordings/${jobId}`).catch(handleError)
   return res.data.job!
 }
 
@@ -133,11 +123,11 @@ export async function getRecordingById(jobId: string): Promise<RecordingJob> {
  * 更新录音任务状态（暂停/继续/中断/停止）
  * PATCH /api/recordings/{job_id}/state
  */
-export async function updateRecordingState(
+async function updateRecordingState(
   jobId: string,
-  action: UpdateStateRequest['action']
+  action: UpdateStateRequest['action'],
 ): Promise<RecordingJob> {
-  const res = await request.patch<ApiResponse<JobResponse>>(`/api/recordings/${jobId}/state`, { action })
+  const res = await request.patch<ApiResponse<JobResponse>>(`/api/recordings/${jobId}/state`, { action }).catch(handleError)
   return res.data.job!
 }
 
@@ -145,8 +135,8 @@ export async function updateRecordingState(
  * 发送心跳
  * POST /api/recordings/{job_id}/heartbeat
  */
-export async function sendHeartbeat(jobId: string): Promise<RecordingJob> {
-  const res = await request.post<ApiResponse<JobResponse>>(`/api/recordings/${jobId}/heartbeat`)
+async function sendHeartbeat(jobId: string): Promise<RecordingJob> {
+  const res = await request.post<ApiResponse<JobResponse>>(`/api/recordings/${jobId}/heartbeat`).catch(handleError)
   return res.data.job!
 }
 
@@ -181,8 +171,8 @@ export async function uploadSegment(data: UploadSegmentRequest): Promise<Segment
       headers: {
         'Content-Type': 'multipart/form-data',
       },
-    }
-  )
+    },
+  ).catch(handleError)
   return res.data
 }
 
@@ -192,8 +182,8 @@ export async function uploadSegment(data: UploadSegmentRequest): Promise<Segment
  */
 export async function getMissingSegments(jobId: string): Promise<MissingSegmentsResponse> {
   const res = await request.get<ApiResponse<MissingSegmentsResponse>>(
-    `/api/recordings/${jobId}/segments/missing`
-  )
+    `/api/recordings/${jobId}/segments/missing`,
+  ).catch(handleError)
   return res.data
 }
 
@@ -202,8 +192,8 @@ export async function getMissingSegments(jobId: string): Promise<MissingSegments
  * POST /api/recordings/{job_id}/finalize
  * 注意：返回格式已更新，不再返回 job 对象
  */
-export async function finalizeRecording(jobId: string): Promise<FinalizeResponse> {
-  const res = await request.post<ApiResponse<FinalizeResponse>>(`/api/recordings/${jobId}/finalize`)
+async function finalizeRecording(jobId: string): Promise<FinalizeResponse> {
+  const res = await request.post<ApiResponse<FinalizeResponse>>(`/api/recordings/${jobId}/finalize`).catch(handleError)
   return res.data
 }
 
@@ -214,33 +204,7 @@ export async function finalizeRecording(jobId: string): Promise<FinalizeResponse
  * GET /api/my-space/recordings
  */
 export async function getRecordings(params: GetRecordingsParams): Promise<RecordingsResponse> {
-  const res = await request.get<ApiResponse<RecordingsResponse>>('/api/my-space/recordings', { params })
-  return res.data
-}
-
-/**
- * 创建录音文件夹
- * POST /api/my-space/recordings/folders
- */
-export async function createRecordingFolder(
-  data: CreateFolderRequest
-): Promise<CreateFolderResponse> {
-  const res = await request.post<ApiResponse<CreateFolderResponse>>('/api/my-space/recordings/folders', data)
-  return res.data
-}
-
-/**
- * 重命名录音文件夹
- * PUT /api/my-space/recordings/folders/{folder_id}/rename
- */
-export async function renameRecordingFolder(
-  folderId: number,
-  data: RenameFolderRequest
-): Promise<RenameFolderResponse> {
-  const res = await request.put<ApiResponse<RenameFolderResponse>>(
-    `/api/my-space/recordings/folders/${folderId}/rename`,
-    data
-  )
+  const res = await request.get<ApiResponse<RecordingsResponse>>('/api/my-space/recordings', { params }).catch(handleError)
   return res.data
 }
 
@@ -249,8 +213,10 @@ export async function renameRecordingFolder(
  * POST /api/my-space/recordings/import
  */
 export async function importAudio(data: ImportAudioRequest): Promise<ImportAudioResponse> {
-  const res = await request.post<ApiResponse<ImportAudioResponse>>('/api/my-space/recordings/import', data)
-  return res.data
+  return service
+    .post('/api/my-space/recordings/import', data)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
 // ============= 总结模板 =============
@@ -260,7 +226,7 @@ export async function importAudio(data: ImportAudioRequest): Promise<ImportAudio
  * GET /api/recordings/templates
  */
 export async function getTemplates(params?: { group_id?: number }): Promise<RecordingSummaryTemplate[]> {
-  const res = await request.get<ApiResponse<RecordingSummaryTemplate[]>>('/api/recordings/templates', { params })
+  const res = await request.get<ApiResponse<RecordingSummaryTemplate[]>>('/api/recordings/templates', { params }).catch(handleError)
   return res.data
 }
 
@@ -273,7 +239,7 @@ export async function createFileSummary(fileId: string, templateId: string): Pro
     `/api/recordings/files/${fileId}/summarize`,
     null,
     { params: { template_id: templateId } },
-  )
+  ).catch(handleError)
   return res.data
 }
 
@@ -281,8 +247,8 @@ export async function createFileSummary(fileId: string, templateId: string): Pro
  * 获取文件总结列表
  * GET /api/recordings/files/{file_id}/summaries
  */
-export async function getFileSummaries(fileId: string): Promise<RecordingFileSummary[]> {
-  const res = await request.get<ApiResponse<RecordingFileSummary[]>>(`/api/recordings/files/${fileId}/summaries`)
+export async function getFileSummaries(fileId: string, config?: AxiosRequestConfig): Promise<RecordingFileSummary[]> {
+  const res = await request.get<ApiResponse<RecordingFileSummary[]>>(`/api/recordings/files/${fileId}/summaries`, config).catch(handleError)
   return res.data
 }
 
@@ -291,7 +257,7 @@ export async function getFileSummaries(fileId: string): Promise<RecordingFileSum
  * GET /api/recordings/summaries/{summary_id}
  */
 export async function getSummaryDetail(summaryId: string): Promise<RecordingFileSummary> {
-  const res = await request.get<ApiResponse<RecordingFileSummary>>(`/api/recordings/summaries/${summaryId}`)
+  const res = await request.get<ApiResponse<RecordingFileSummary>>(`/api/recordings/summaries/${summaryId}`).catch(handleError)
   return res.data
 }
 
@@ -300,7 +266,7 @@ export async function getSummaryDetail(summaryId: string): Promise<RecordingFile
  * DELETE /api/recordings/summaries/{summary_id}
  */
 export async function deleteSummary(summaryId: string): Promise<void> {
-  await request.delete<ApiResponse<void>>(`/api/recordings/summaries/${summaryId}`)
+  await request.delete<ApiResponse<void>>(`/api/recordings/summaries/${summaryId}`).catch(handleError)
 }
 
 // ============= 解析状态 =============
@@ -309,8 +275,8 @@ export async function deleteSummary(summaryId: string): Promise<void> {
  * 获取文件解析状态
  * GET /api/recordings/files/{file_id}/parse-status
  */
-export async function getParseStatus(fileId: string): Promise<FileParseStatus> {
-  const res = await request.get<ApiResponse<FileParseStatus>>(`/api/recordings/files/${fileId}/parse-status`)
+export async function getParseStatus(fileId: string, config?: AxiosRequestConfig): Promise<FileParseStatus> {
+  const res = await request.get<ApiResponse<FileParseStatus>>(`/api/recordings/files/${fileId}/parse-status`, config).catch(handleError)
   return res.data
 }
 
@@ -321,22 +287,7 @@ export async function getParseStatus(fileId: string): Promise<FileParseStatus> {
  * GET /api/recordings/my-queued-count
  */
 export async function getMyQueuedCount(): Promise<QueuedCountResponse> {
-  const res = await request.get<ApiResponse<QueuedCountResponse>>('/api/recordings/my-queued-count')
-  return res.data
-}
-
-/**
- * 获取当前用户的会议记忆总览
- * GET /api/recordings/memories/overview
- */
-export async function getMemoryOverview(params: {
-  kind?: string
-  keyword?: string
-  limit?: number
-} = {}): Promise<RecordingMemoryOverview> {
-  const res = await request.get<ApiResponse<RecordingMemoryOverview>>('/api/recordings/memories/overview', {
-    params,
-  })
+  const res = await request.get<ApiResponse<QueuedCountResponse>>('/api/recordings/my-queued-count').catch(handleError)
   return res.data
 }
 
@@ -347,7 +298,7 @@ export async function getMemoryEntities(params: {
   limit?: number
   offset?: number
 } = {}): Promise<RecordingMemoryEntityList> {
-  const res = await request.get<ApiResponse<RecordingMemoryEntityList>>('/api/recordings/memories/entities', { params })
+  const res = await request.get<ApiResponse<RecordingMemoryEntityList>>('/api/recordings/memories/entities', { params }).catch(handleError)
   return res.data
 }
 
@@ -356,46 +307,63 @@ export async function getMemoryEntities(params: {
  * 中文名/枚举值全部来源于此接口，前端不硬编码。
  */
 export async function getMemorySchema(): Promise<RecordingMemoryEntitySchemas> {
-  const res = await request.get<ApiResponse<RecordingMemoryEntitySchemas>>('/api/recordings/memories/schema')
+  const res = await request.get<ApiResponse<RecordingMemoryEntitySchemas>>('/api/recordings/memories/schema').catch(handleError)
   return res.data
 }
 
 /** 获取一条安心录实体记忆的属性、事实时间线和关联。 */
 export async function getMemoryEntity(entityId: string | number): Promise<RecordingMemoryEntityDetail> {
-  const res = await request.get<ApiResponse<RecordingMemoryEntityDetail>>(`/api/recordings/memories/entities/${entityId}`)
+  const res = await request.get<ApiResponse<RecordingMemoryEntityDetail>>(`/api/recordings/memories/entities/${entityId}`).catch(handleError)
   return res.data
 }
 
+/**
+ * 编辑实体记忆（PATCH）。
+ * 4xx 业务错误（"同类型同名已存在" / 实体不存在）由 handleError 拦截并提示。
+ */
 export async function updateMemoryEntity(entityId: string | number, data: UpdateRecordingMemoryEntityRequest): Promise<RecordingMemoryEntityDetail> {
-  const res = await request.patch<ApiResponse<RecordingMemoryEntityDetail>>(`/api/recordings/memories/entities/${entityId}`, data)
-  return res.data
+  return service
+    .patch(`/api/recordings/memories/entities/${entityId}`, data)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
-export async function addMemoryEntityFact(entityId: string | number, data: { content: string; attributes?: Record<string, string> }): Promise<RecordingMemoryEntityDetail> {
-  const res = await request.post<ApiResponse<RecordingMemoryEntityDetail>>(`/api/recordings/memories/entities/${entityId}/facts`, data)
-  return res.data
-}
-
-export async function deleteMemoryEntityFact(entityId: string | number, factId: string | number): Promise<void> {
-  await request.delete<ApiResponse<void>>(`/api/recordings/memories/entities/${entityId}/facts/${factId}`)
+/**
+ * 新增实体（POST /api/recordings/memories/entities）。
+ * 4xx 业务错误（"同类型同名已存在" / entity_type 不在 schema / 实体名不能为空）
+ * 由 handleError 拦截并提示。文档 §3。
+ */
+export async function createMemoryEntity(data: CreateRecordingMemoryEntityRequest): Promise<RecordingMemoryEntityDetail> {
+  return service
+    .post('/api/recordings/memories/entities', data)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
 export async function deleteMemoryEntity(entityId: string | number): Promise<void> {
-  await request.delete<ApiResponse<void>>(`/api/recordings/memories/entities/${entityId}`)
+  await request.delete<ApiResponse<void>>(`/api/recordings/memories/entities/${entityId}`).catch(handleError)
 }
 
-export async function mergeMemoryEntities(sourceId: string | number, targetId: string | number): Promise<RecordingMemoryEntityDetail> {
-  const res = await request.post<ApiResponse<RecordingMemoryEntityDetail>>('/api/recordings/memories/entity-merges', { source_id: String(sourceId), target_id: String(targetId) })
-  return res.data
-}
-
-export async function addMemoryEntityRelation(entityId: string | number, relatedEntityId: string | number): Promise<RecordingMemoryEntityDetail> {
-  const res = await request.post<ApiResponse<RecordingMemoryEntityDetail>>(`/api/recordings/memories/entities/${entityId}/relations`, { related_entity_id: String(relatedEntityId) })
-  return res.data
-}
-
-export async function deleteMemoryEntityRelation(entityId: string | number, relationId: string | number): Promise<void> {
-  await request.delete<ApiResponse<void>>(`/api/recordings/memories/entities/${entityId}/relations/${relationId}`)
+/**
+ * 多选融合：把多条同类型实体合并到 target。
+ * 优先使用 `source_ids`（多源），缺失时回退到单源 `source_id` 兼容老调用方。
+ * 4xx/404（"仅支持同类型实体融合" / "基底实体不能同时作为来源实体" / "推理模型未配置" /
+ * 实体不存在）由 handleError 拦截并提示。文档 §6。
+ */
+export async function mergeMemoryEntities(
+  sourceIds: Array<string | number>,
+  targetId: string | number,
+): Promise<RecordingMemoryEntityDetail> {
+  const payload: MergeMemoryEntitiesRequest = { target_id: String(targetId) }
+  if (sourceIds.length > 1) {
+    payload.source_ids = sourceIds.map((id) => String(id))
+  } else if (sourceIds.length === 1) {
+    payload.source_id = String(sourceIds[0])
+  }
+  return service
+    .post('/api/recordings/memories/entity-merges', payload)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
 // ============= 决策页面编排 =============
@@ -404,8 +372,8 @@ export async function deleteMemoryEntityRelation(entityId: string | number, rela
  * 获取编排后的决策页面数据
  * GET /api/recordings/files/{file_id}/insight-page
  */
-export async function getInsightPage(fileId: string): Promise<RecordingFileInsightPage | null> {
-  const res = await request.get<ApiResponse<RecordingFileInsightPage | null>>(`/api/recordings/files/${fileId}/insight-page`)
+export async function getInsightPage(fileId: string, config?: AxiosRequestConfig): Promise<RecordingFileInsightPage | null> {
+  const res = await request.get<ApiResponse<RecordingFileInsightPage | null>>(`/api/recordings/files/${fileId}/insight-page`, config).catch(handleError)
   return res.data
 }
 
@@ -414,7 +382,12 @@ export async function getInsightPage(fileId: string): Promise<RecordingFileInsig
  * GET /api/recordings/files/{file_id}/insight-context
  */
 export async function getInsightBackground(fileId: string): Promise<InsightBackground> {
-  return getRequest<InsightBackground>(`/api/recordings/files/${fileId}/insight-context`)
+  return getRequest<InsightBackground>(`/api/recordings/files/${fileId}/insight-context`).catch(handleError)
+}
+
+/** 获取洞察可选场景 */
+export async function getInsightPerspectives(): Promise<InsightPerspectiveOption[]> {
+  return getRequest<InsightPerspectiveOption[]>('/api/recordings/insight-perspectives').catch(handleError)
 }
 
 /**
@@ -428,7 +401,7 @@ export async function chatInsightWorkshop(
   return postRequest<InsightWorkshopChatResponse>(
     `/api/recordings/files/${fileId}/insight-context/chat`,
     data,
-  )
+  ).catch(handleError)
 }
 
 /**
@@ -437,9 +410,20 @@ export async function chatInsightWorkshop(
  */
 export async function regenerateInsights(
   fileId: string,
-  data: { background: InsightBackground; conversation: InsightConversationMessage[] },
+  data: InsightRegenerationRequest,
 ): Promise<void> {
-  await postRequest<{ ok: boolean }>(`/api/recordings/files/${fileId}/insights/regenerate`, data)
+  await postRequest<{ ok: boolean }>(`/api/recordings/files/${fileId}/insights/regenerate`, data).catch(handleError)
+}
+
+/**
+ * 将当前文件已保存的“补充背景”显式升级为跨会议用户确认记忆。
+ * POST /api/recordings/files/{file_id}/memory-promotions
+ */
+export async function promoteInsightExternalConstraints(fileId: string, externalConstraints: string): Promise<void> {
+  await postRequest<{ ok: boolean }>(
+    `/api/recordings/files/${fileId}/memory-promotions`,
+    { external_constraints: externalConstraints },
+  ).catch(handleError)
 }
 
 // ============= 转写原文 =============
@@ -448,8 +432,8 @@ export async function regenerateInsights(
  * 获取录音文件转写原文
  * GET /api/recordings/files/{file_id}/transcription
  */
-export async function getTranscription(fileId: string): Promise<FileTranscriptionResponse | null> {
-  const res = await request.get<ApiResponse<FileTranscriptionResponse | null>>(`/api/recordings/files/${fileId}/transcription`)
+export async function getTranscription(fileId: string, config?: AxiosRequestConfig): Promise<FileTranscriptionResponse | null> {
+  const res = await request.get<ApiResponse<FileTranscriptionResponse | null>>(`/api/recordings/files/${fileId}/transcription`, config).catch(handleError)
   return res.data
 }
 
@@ -458,7 +442,7 @@ export async function getTranscription(fileId: string): Promise<FileTranscriptio
  * GET /api/recordings/files/{file_id}/transcription/export
  */
 export async function exportTranscription(fileId: string): Promise<TranscriptionExportResponse> {
-  const res = await request.get<ApiResponse<TranscriptionExportResponse>>(`/api/recordings/files/${fileId}/transcription/export`)
+  const res = await request.get<ApiResponse<TranscriptionExportResponse>>(`/api/recordings/files/${fileId}/transcription/export`).catch(handleError)
   return res.data
 }
 
@@ -470,7 +454,7 @@ export async function exportTranscription(fileId: string): Promise<Transcription
  * 返回 200 表示全跳过，202 表示有步骤正在处理
  */
 export async function pipeline(fileId: string): Promise<PipelineResult> {
-  const res = await request.post<ApiResponse<PipelineResult>>(`/api/recordings/files/${fileId}/pipeline`)
+  const res = await request.post<ApiResponse<PipelineResult>>(`/api/recordings/files/${fileId}/pipeline`).catch(handleError)
   return res.data
 }
 
@@ -488,7 +472,7 @@ export async function moveFileToGroup(
   const res = await request.put<ApiResponse<MoveFileToGroupResponse>>(
     `/api/recordings/files/${fileId}/group`,
     data,
-  )
+  ).catch(handleError)
   return res.data
 }
 
@@ -501,23 +485,24 @@ export async function moveFileToGroup(
  * 分享链接永久有效，本迭代无有效期与取消接口；重复调用由后端决定是否复用同一 share_id。
  */
 export async function createFileShare(fileId: string): Promise<RecordingShareCreateResponse> {
-  const res = await request.post<ApiResponse<RecordingShareCreateResponse>>(
-    `/api/recordings/files/${fileId}/share`,
-  )
-  return assertOk(res, '创建分享失败')
+  return service
+    .post(`/api/recordings/files/${fileId}/share`)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
 /**
  * 获取分享内容（匿名，无需登录）
  * GET /api/recordings/shared/{share_id}
  *
- * 分享不存在时后端返回 HTTP 200 + code 404，由 assertOk 转成 reject。
+ * 注意：分享不存在若后端走 HTTP 200 + code 404，响应拦截器不会 throw，
+ * 会被当成正常 data 返回。如要拦截请在调用方按需加 res.code 检查。
  */
 export async function getSharedRecording(shareId: string): Promise<RecordingSharedContent> {
-  const res = await request.get<ApiResponse<RecordingSharedContent>>(
-    `/api/recordings/shared/${shareId}`,
-  )
-  return assertOk(res, '分享不存在')
+  return service
+    .get(`/api/recordings/shared/${shareId}`)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
 // ============= SonicNote 设备与同步 🆕 =============
@@ -530,19 +515,8 @@ export async function getSharedRecording(shareId: string): Promise<RecordingShar
  * 未配置过的设备类型不会出现在返回列表中。
  */
 export async function getDevices(): Promise<RecordingDeviceConfig[]> {
-  const res = await request.get<ApiResponse<RecordingDeviceConfig[]>>('/api/recordings/devices')
+  const res = await request.get<ApiResponse<RecordingDeviceConfig[]>>('/api/recordings/devices').catch(handleError)
   return res.data
-}
-
-/**
- * 保存当前用户的设备配置
- * PUT /api/recordings/devices
- *
- * - api_key 传空字符串表示"保留原值"；传具体值则覆盖
- * - enabled 单独切换，不影响 api_key
- */
-export async function putDevice(data: RecordingDeviceConfigUpdate): Promise<void> {
-  await request.put<ApiResponse<void>>('/api/recordings/devices', data)
 }
 
 /**
@@ -554,26 +528,13 @@ export async function putDevice(data: RecordingDeviceConfigUpdate): Promise<void
  * 失败语义：
  * - HTTP 200 + code 0 + available=false：业务上的"不可用"，由 reason 字段说明原因
  *   （key_invalid / network_error / 设备未启用 / 探测失败: <详情>）
- * - HTTP 失败 / code !== 0：真正的网络/服务异常，axios reject，调用方 catch
+ * - HTTP 失败 / code !== 0：真正的网络/服务异常，由 handleError 拦截
  */
 export async function getDeviceStatus(deviceType: RecordingDeviceType): Promise<RecordingDeviceStatusResponse> {
   const res = await request.get<ApiResponse<RecordingDeviceStatusResponse>>(
     `/api/recordings/devices/${deviceType}/status`,
-  )
+  ).catch(handleError)
   return res.data
-}
-
-/**
- * 触发 SonicNote 同步（异步，立即返回 job_id）
- * POST /api/recordings/sync-sonicnote
- *
- * 防重入：已有同步任务进行中时后端返回 code=4；使用 assertOk 把非 0 业务码
- * 转成带 .code 的 Error，调用方 catch 后按 code 分支处理。
- * 等 sync-status 返回终态后再允许下一次触发。
- */
-export async function syncSonicNote(data: SyncSonicNoteRequest = {}): Promise<SyncSonicNoteResponse> {
-  const res = await request.post<ApiResponse<SyncSonicNoteResponse>>('/api/recordings/sync-sonicnote', data)
-  return assertOk(res, '触发同步失败')
 }
 
 /**
@@ -589,7 +550,7 @@ export async function syncSonicNote(data: SyncSonicNoteRequest = {}): Promise<Sy
  * 适配放在 API 层，避免污染调用端的字段名 / 语义。
  */
 export async function getSyncStatus(): Promise<SyncStatusResponse | null> {
-  const res = await request.get<ApiResponse<Record<string, any> | null>>('/api/recordings/sync-status')
+  const res = await request.get<ApiResponse<Record<string, any> | null>>('/api/recordings/sync-status').catch(handleError)
   const d = res?.data
   if (!d) return null
   return {
@@ -603,7 +564,73 @@ export async function getSyncStatus(): Promise<SyncStatusResponse | null> {
     skipped: d.skipped ?? 0,
     failed: d.failed ?? 0,
     error_message: d.error || undefined,
+    // B 组统一入口 provider（sonicnote / ticnote），用于进入页面时按 type 去重
+    provider: d.provider,
   }
+}
+
+// ============= 设备管理（B 组，多 key 场景） =============
+
+/**
+ * 添加设备配置（多 key 入口）
+ * POST /api/recordings/devices
+ *
+ * - 同企业同类型同 key 已被他人绑定 → 400「该设备 Key 已被绑定」由 handleError 拦截
+ * - 用户首条配置自动 is_active=true；后续新增不自动切换激活
+ */
+export async function createDevice(data: CreateDeviceRequest): Promise<CreateDeviceResponse> {
+  return service
+    .post('/api/recordings/devices', data)
+    .then((res) => res.data)
+    .catch(handleError)
+}
+
+/**
+ * 按 id 更新设备配置
+ * PUT /api/recordings/devices/{id}
+ *
+ * - api_key 为空保留原值；enabled 缺省保留原值
+ * - id 不存在或不属于当前用户 → 404，由 handleError 拦截
+ */
+export async function updateDeviceById(id: string, data: UpdateDeviceByIdRequest): Promise<void> {
+  await request.put<ApiResponse<void>>(`/api/recordings/devices/${id}`, data).catch(handleError)
+}
+
+/**
+ * 按 id 删除设备配置
+ * DELETE /api/recordings/devices/{id}
+ *
+ * - id 不存在或不属于当前用户 → 404，由 handleError 拦截
+ * - 删除激活设备后端不迁移激活，调用方需自行激活新设备
+ */
+export async function deleteDeviceById(id: string): Promise<void> {
+  await request.delete<ApiResponse<void>>(`/api/recordings/devices/${id}`).catch(handleError)
+}
+
+/**
+ * 设置当前激活设备
+ * PUT /api/recordings/devices/{id}/active
+ *
+ * - 同用户其他配置自动取消激活
+ * - id 不存在或不属于当前用户 → 404，由 handleError 拦截
+ */
+export async function setActiveDevice(id: string): Promise<void> {
+  await request.put<ApiResponse<void>>(`/api/recordings/devices/${id}/active`).catch(handleError)
+}
+
+/**
+ * 统一同步入口（推荐新前端使用）
+ * POST /api/recordings/sync
+ *
+ * - device_type 必填（sonicnote / ticnote）
+ * - device_id 可选：缺省同步该 type 全部启用配置（多 key 串行）
+ * - HTTP 失败由 handleError 拦截。
+ */
+export async function syncDevice(data: SyncDeviceRequest): Promise<SyncDeviceResponse> {
+  return service
+    .post('/api/recordings/sync', data)
+    .then((res) => res.data)
+    .catch(handleError)
 }
 
 // ============= 默认导出 =============
@@ -614,9 +641,8 @@ export const recordingApi = {
 
   // FFmpeg
   getFfmpegHealth,
-  getSystemStatus,
 
-  // 任务生命周期
+  // 任务生命周期（命名别名映射）
   create: createRecording,
   getActive: getActiveRecording,
   getById: getRecordingById,
@@ -630,8 +656,6 @@ export const recordingApi = {
 
   // 文件管理
   getRecordings,
-  createFolder: createRecordingFolder,
-  renameFolder: renameRecordingFolder,
   importAudio,
 
   // 总结模板
@@ -644,25 +668,23 @@ export const recordingApi = {
   // 解析状态
   getParseStatus,
 
-  // 排队文件数
+  // 排队文件数 / 实体记忆
   getMyQueuedCount,
-  getMemoryOverview,
   getMemoryEntities,
   getMemorySchema,
   getMemoryEntity,
+  createMemoryEntity,
   updateMemoryEntity,
-  addMemoryEntityFact,
-  deleteMemoryEntityFact,
   deleteMemoryEntity,
   mergeMemoryEntities,
-  addMemoryEntityRelation,
-  deleteMemoryEntityRelation,
 
   // 决策页面编排
   getInsightPage,
   getInsightBackground,
+  getInsightPerspectives,
   chatInsightWorkshop,
   regenerateInsights,
+  promoteInsightExternalConstraints,
   getTranscription,
   exportTranscription,
 
@@ -678,10 +700,15 @@ export const recordingApi = {
 
   // SonicNote 设备与同步
   getDevices,
-  putDevice,
   getDeviceStatus,
-  syncSonicNote,
   getSyncStatus,
+
+  // 设备管理（B 组，多 key + 激活设备）
+  createDevice,
+  updateDeviceById,
+  deleteDeviceById,
+  setActiveDevice,
+  syncDevice,
 }
 
 export default recordingApi

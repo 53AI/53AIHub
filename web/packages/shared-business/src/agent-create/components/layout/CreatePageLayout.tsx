@@ -1,10 +1,9 @@
 import { ReactNode, useRef } from 'react'
-import { Spin, InputNumber } from 'antd'
+import { Spin } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import { Button } from 'antd'
 import { AgentDrawer, AgentDrawerRef } from './Drawer'
 import { AgentGuide } from '../config/Guide'
-import { UseScope } from '../shared/UseScope'
 import ChannelConfigContext from '../../hooks/useChannelConfig'
 import { useAgentCreateAdapter } from '../../adapters'
 import { useAgentFormStore } from '../../store'
@@ -48,6 +47,8 @@ export interface CreatePageLayoutProps {
   cardLayout?: boolean
   /** 是否嵌入式模式（只渲染内容区域），默认 false */
   embedded?: boolean
+  /** 使用范围区块（console 组合本地组件后传入） */
+  usageScope?: ReactNode
 }
 
 /**
@@ -68,20 +69,16 @@ export function CreatePageLayout({
   onSuccess,
   cardLayout = true,
   embedded = false,
+  usageScope,
 }: CreatePageLayoutProps) {
   const adapter = useAgentCreateAdapter()
   const t = adapter.t || ((key: string) => key)
 
   // 从 store 获取当前 agent_type
   const agentType = useAgentFormStore((state) => state.agent_type)
-  const sort = useAgentFormStore((state) => state.form_data.sort)
-  const updateField = useAgentFormStore((state) => state.updateField)
 
   // 从适配器获取平台配置中的 mode，用于选择预览组件
   const agentMode = adapter.getAgentConfig?.(agentType)?.mode || 'chat'
-
-  // 判断是否显示使用范围（只有 console-react 有 GroupSelectComponent）
-  const showUseScope = !!adapter.GroupSelectComponent
 
   // 判断是否是 Openclaw 类型（Openclaw 不显示重新开始按钮）
   const isOpenclaw = isOpenClawCompatibleAgentType(agentType)
@@ -123,36 +120,8 @@ export function CreatePageLayout({
                 />
               )
             }
-            {/* 排序字段 */}
-            {showUseScope && (
-              <>
-                <div className="mt-5 border-b "></div>
-                <div className="h-11 flex items-center gap-2">
-                  <div className="text-sm text-[#373A3D]">{t('agent.frontend_sort')}</div>
-                  <span className="text-xs text-disabled">
-                    {t('module.agent_sort_desc')}
-                  </span>
-                </div>
-                <InputNumber
-                  className="w-full"
-                  controls={false}
-                  precision={0}
-                  min={0}
-                  max={99999999}
-                  value={sort}
-                  onChange={(value) => updateField('sort', value ?? 0)}
-                  placeholder={t('form.input_placeholder')}
-                />
-                  
-              </>
-            )}
-            {showUseScope && (
-              <>
-              <div className="my-5 -mx-5 border-b "></div>
-                <div className="font-bold mb-3">{t('user.use_scope')}</div>
-                <UseScope />
-              </>
-            )}
+            {/* 使用范围区块（由 console 组合本地组件传入） */}
+            {usageScope}
           </div>
 
           {/* 第二列：应用配置区域 + 使用说明 */}

@@ -29,7 +29,7 @@ type WikiPageVectorizationProcessorImpl struct {
 func NewWikiPageVectorizationProcessor(db *gorm.DB) WikiPageVectorizationProcessor {
 	store, err := vectorstore.GetGlobalVectorStore()
 	if err != nil {
-		logger.SysLogf("【Wiki向量化】获取向量库失败: %v", err)
+		logger.SysLogf("【Wiki生成】 获取向量库失败: %v", err)
 	}
 	return &WikiPageVectorizationProcessorImpl{
 		db:        db,
@@ -170,7 +170,7 @@ func (s *WikiPageVectorizationProcessorImpl) deactivatePreviousVersions(ctx cont
 	if err := s.vectorDB.Delete(ctx, wikiVectorCollectionName(eid), ids); err != nil && !vectorstore.IsNotFoundError(err) {
 		return fmt.Errorf("delete previous wiki version vectors: %w", err)
 	}
-	logger.Infof(ctx, "【Wiki向量化】旧版本下线: eid=%d page_id=%d version_id=%d old_chunk_count=%d", eid, pageID, versionID, len(old))
+	logger.Infof(ctx, "【Wiki生成】 旧版本下线: eid=%d page_id=%d version_id=%d old_chunk_count=%d", eid, pageID, versionID, len(old))
 	return nil
 }
 
@@ -214,7 +214,7 @@ func (s *WikiPageVectorizationProcessorImpl) embedChunks(ctx context.Context, ei
 			}).Error; err != nil {
 				return err
 			}
-			logger.Warnf(ctx, "【Wiki向量化】跳过超长特殊 Chunk: eid=%d page_id=%d chunk_id=%s token_count=%d", eid, page.ID, item.ChunkID, item.TokenCount)
+			logger.Warnf(ctx, "【Wiki生成】 跳过超长特殊 Chunk: eid=%d page_id=%d chunk_id=%s token_count=%d", eid, page.ID, item.ChunkID, item.TokenCount)
 			continue
 		}
 		eligible = append(eligible, chunkRow{item: item, row: row})
@@ -294,7 +294,7 @@ func (s *WikiPageVectorizationProcessorImpl) embedChunks(ctx context.Context, ei
 			}
 		}
 	}
-	logger.Infof(ctx, "【Wiki向量化】批量 Chunk 完成: eid=%d page_id=%d version_id=%d count=%d dimension=%d", eid, page.ID, version.ID, len(eligible), vectorDimension)
+	logger.Infof(ctx, "【Wiki生成】 批量 Chunk 完成: eid=%d page_id=%d version_id=%d count=%d dimension=%d", eid, page.ID, version.ID, len(eligible), vectorDimension)
 	return nil
 }
 

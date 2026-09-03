@@ -7,6 +7,8 @@ const CHAT_KEYS: readonly KeyRow[] = [
   // 会话相关
   ['chat.new_conversation', '新建会话', '新建會話', 'New conversation', '新しい会話'],
   ['chat.history_conversation', '历史会话', '歷史會話', 'History', '履歴'],
+  ['chat.search_conversation', '搜索会话标题', '搜索會話標題', 'Search conversation title', '会話タイトルを検索'],
+  ['chat.no_search_results', '无匹配会话', '無匹配會話', 'No matching conversations', '一致する会話がありません'],
   ['chat.edit_conversation', '重命名会话', '重命名會話', 'Rename conversation', '会話名変更'],
   ['chat.conversation_confirm_delete', '确认删除会话？', '確認刪除會話？', 'Confirm delete conversation?', '会話を削除しますか？'],
   ['chat.conversation_deleted', '会话已删除', '會話已刪除', 'Conversation deleted', '会話が削除されました'],

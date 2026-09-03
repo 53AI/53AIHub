@@ -209,6 +209,7 @@ func migrateDB() error {
 		&WecomSuite{},
 		&WecomCorp{},
 		&Space{},
+		&SpaceKnowledgeGraphLibrary{},
 		&Library{},
 		&File{},
 		&RecordingJob{},
@@ -354,6 +355,9 @@ func migrateDB() error {
 		&WikiPageRedirect{},
 		&WikiPageChunk{},
 	); err != nil {
+		return err
+	}
+	if err := DB.AutoMigrate(&WikiCategory{}, &WikiPageCategory{}); err != nil {
 		return err
 	}
 	if err := DB.AutoMigrate(&WikiPageVersion{}); err != nil {

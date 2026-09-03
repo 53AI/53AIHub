@@ -96,7 +96,7 @@ export const List = forwardRef<ListRef, ListProps>(({ spaceId, keyword = "", sor
     const list = await librariesApi.list({
       space_id: spaceId,
       with_file_count: 1,
-      limit: 100,
+      limit: 999,
     });
 
     const realItems: LibraryDisplayItem[] = list.map((item) => ({

@@ -156,6 +156,14 @@ export const formatFile = (file: RawFileItem): FileItem => {
   }
 }
 
+/** 同级显示顺序：先按 sort 升序；sort 相同（如新建默认 0）时按 created_time 降序，新的在前。
+ *  拖拽重排会给每个节点唯一 sort（index+2），因此只有后端下发相同 sort 的节点才会走到 created_time 兜底。 */
+const sortByDisplayOrder = <T extends { sort: number; created_time?: number }>(a: T, b: T): number => {
+  const sortDiff = a.sort - b.sort
+  if (sortDiff !== 0) return sortDiff
+  return (b.created_time ?? 0) - (a.created_time ?? 0)
+}
+
 /**
  * 构建文件树形结构
  * @param files 格式化后的文件列表
@@ -205,12 +213,11 @@ export const buildFileTree = <T extends TreeBuildNode>(files: T[]): TreeNode<T>[
     }
   })
 
-  // 递归排序所有层级的子项，按照 sort 字段排序（sort 越大排越后）
+  // 递归排序所有层级的子项：sort 升序，sort 相同（如新建默认 0）按 created_time 降序，新的在前
   const sortChildren = (nodes: FileItem[]) => {
     nodes.forEach(node => {
       if (node.children && node.children.length > 0) {
-        // 对当前节点的子项按 sort 字段排序
-        node.children.sort((a, b) => a.sort - b.sort)
+        node.children.sort(sortByDisplayOrder)
         // 递归排序子项的子项
         sortChildren(node.children)
       }
@@ -218,7 +225,7 @@ export const buildFileTree = <T extends TreeBuildNode>(files: T[]): TreeNode<T>[
   }
 
   // 对根目录也进行排序
-  tree.sort((a, b) => a.sort - b.sort)
+  tree.sort(sortByDisplayOrder)
   // 递归排序所有子项
   sortChildren(tree)
 
@@ -319,12 +326,20 @@ export const formatFileSearchResult = (
 ): FileSearchResultItem => {
   const isfolder = item.type === 0
   const { fname, icon } = formatFileInfo(item.path, isfolder)
+  // path 为知识库内相对路径，可能带前导/尾随斜杠；取其父目录作为目录前缀，拼在空间/知识库之后形成完整面包屑
+  const parentPath = item.path
+    .split('/')
+    .filter(Boolean)
+    .slice(0, -1)
+    .join('/')
   return {
     ...item,
     name: fname,
     isfolder,
     icon,
-    location: `${item.space_name}/${item.library_name}`,
+    location: [item.space_name, item.library_name, parentPath]
+      .filter(Boolean)
+      .join('/'),
     lastUpdated: getSimpleDateFormatString({ date: item.latest_file_body_update_time }),
   }
 }

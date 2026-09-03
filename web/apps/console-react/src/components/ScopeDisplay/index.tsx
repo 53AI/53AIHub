@@ -1,11 +1,9 @@
 import { Tooltip } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import { useEffect, useRef, useState, useMemo } from 'react'
-import { departmentApi } from '@/api/modules/department'
-import { groupApi } from '@/api/modules/group'
-import { INTERNAL_USER_STATUS_ALL, userApi } from '@/api/modules/user'
-import { GROUP_TYPE } from '@/constants/group'
 import type { ScopeItem } from '@/api/modules/agent'
+import { t } from '@/locales'
+import { loadScopeDictionary } from '@/hooks/useScopeDictionary'
 import './index.css'
 
 export interface ScopeDisplayTreeNode {
@@ -70,7 +68,7 @@ export default function ScopeDisplay({
     if (scope.scope_type === 'company') {
       return {
         value: 0,
-        label: '全部成员',
+        label: t('internal_user.status.all'),
         type: 'company' as const,
       }
     }
@@ -169,40 +167,17 @@ export default function ScopeDisplay({
     if (dataLoadedRef.current) return
     dataLoadedRef.current = true
 
-    const loadData = async () => {
-      const [deptTree, userList, groupList] = await Promise.all([
-        departmentApi.fetch_department_tree(),
-        userApi.fetch_internal_user({
-          status: INTERNAL_USER_STATUS_ALL,
-          offset: 0,
-          limit: 10000,
-        }),
-        groupApi.list({
-          params: { group_type: GROUP_TYPE.INTERNAL_USER },
-        }),
-      ])
-
-      if (!externalTreeData) setTreeData(deptTree)
-      if (!externalUsers) {
-        setUsers(
-          userList.list.map((item: any) => ({
-            value: item.user_id,
-            label: item.nickname || item.name || '',
-            user_id: item.user_id,
-          }))
-        )
-      }
-      if (!externalGroups) {
-        setGroups(
-          groupList.map((item: any) => ({
-            value: item.group_id,
-            label: item.group_name || '',
-          }))
-        )
-      }
-    }
-
-    loadData()
+    // 走共享字典加载器,与列表层 useScopeDictionary() 命中同一 cache key,
+    // 避免每行重复打 3 个网络请求
+    loadScopeDictionary()
+      .then((dict) => {
+        if (!externalTreeData) setTreeData(dict.treeData)
+        if (!externalUsers) setUsers(dict.users)
+        if (!externalGroups) setGroups(dict.groups)
+      })
+      .catch((err) => {
+        console.error('[ScopeDisplay] load dictionary failed', err)
+      })
   }, [])
 
   // 空数据显示 "--"

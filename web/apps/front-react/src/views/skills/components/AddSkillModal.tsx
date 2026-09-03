@@ -6,7 +6,7 @@ import { skillApi } from '@/api/modules/skill';
 import agentShortcutsApi from '@/api/modules/agent-shortcuts';
 import type { AgentShortcutItem } from '@/api/modules/agent-shortcuts/types';
 import { AGENT_USAGES } from '@/constants/agent';
-import { checkPermission } from '@/utils/permission';
+import { checkPermissionAsync } from '@/utils/permission';
 
 interface AddSkillModalProps {
   /** 弹窗是否打开 */
@@ -132,8 +132,10 @@ export function AddSkillModal({
 
     // 延迟执行，避免在 useEffect 同步阶段触发状态更新
     const timer = setTimeout(() => {
-      checkPermission({
+      checkPermissionAsync({
         groupIds,
+        resourceId: skillId,
+        resourceType: 'skill_library',
         onClick: handleConfirm,
       });
     }, 0);
@@ -163,8 +165,10 @@ export function AddSkillModal({
           loading={loading}
           disabled={!selectedAgentId}
           onClick={() => {
-            checkPermission({
+            checkPermissionAsync({
               groupIds,
+              resourceId: skillId,
+              resourceType: 'skill_library',
               onClick: handleConfirm,
             });
           }}

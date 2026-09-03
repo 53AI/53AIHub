@@ -3,7 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { t } from "@/locales";
 import recordApi from "@/api/modules/record";
 import userApi from "@/api/modules/user";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import Detail, { DetailRef } from "../components/detail";
 import { SEARCH_TYPE } from "@/api/modules/feedback/types";
 import {
@@ -279,15 +279,13 @@ export function Record({ agentId, agentType }: RecordProps) {
       key: "operation",
       width: 60,
       render: (_: any, __: RecordDisplayItem, index: number) => (
-        <Button
-          type="link"
-          className="invisible group-hover:visible hover:!text-brand"
-          icon={<SvgIcon name="view" />}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenDetail(index);
-          }}
-        />
+        <IconAction
+          variant="row"
+          title={t("search-record.detail")}
+          onClick={() => handleOpenDetail(index)}
+        >
+          <SvgIcon name="view" />
+        </IconAction>
       ),
     },
   ];

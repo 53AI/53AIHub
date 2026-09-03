@@ -77,7 +77,7 @@ func NewSummaryGenerationHandler(db *gorm.DB) func(ctx context.Context, job *mod
 		logger.Info(ctx, fmt.Sprintf("SummaryGenerationStepHandler: processing job %d for file %d", job.JobID, fileID))
 
 		if isWikiPageGenerationActive(job) {
-			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 summary_generation 的旧摘要/问法/知识图谱生成: file_id=%d", fileID)
+			logger.Infof(ctx, "【Wiki生成】 phase=legacy_skip wiki_page_generation 已启用，跳过 summary_generation 的旧摘要/问法/知识图谱生成: file_id=%d", fileID)
 			if fileID > 0 {
 				if err := model.UpdateFileAIGenerateSQStatus(fileID, model.AIGenerateSQStatusInactive); err != nil {
 					return fmt.Errorf("更新文件生成状态失败: %v", err)

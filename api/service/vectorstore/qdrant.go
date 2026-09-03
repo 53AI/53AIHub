@@ -143,12 +143,14 @@ type CollectionBuffer struct {
 type batchSignal struct {
 	doneChan chan struct{}
 	doneOnce sync.Once
+	err      *batchErrorHolder
 }
 
 // newBatchSignal 创建批量信号
 func newBatchSignal() *batchSignal {
 	return &batchSignal{
 		doneChan: make(chan struct{}),
+		err:      &batchErrorHolder{},
 	}
 }
 
@@ -442,13 +444,36 @@ func (b *VectorInsertBuffer) IsEnabled() bool {
 // 优化：使用单个 batchSignal 处理整个批次，减少大量 channel 创建的开销
 // lazy: 不等待 Qdrant flush 完成，推送即返回。如果 Qdrant 写入失败，向量丢失但 chunk 状态显示 normal
 func (b *VectorInsertBuffer) Insert(ctx context.Context, collection string, vectors []VectorRecord) error {
+	_, err := b.enqueue(ctx, collection, vectors)
+	return err
+}
+
+// InsertAndWait 将向量加入缓冲并等待本批次写入完成，供需要立即确认持久化结果的调用方使用。
+func (b *VectorInsertBuffer) InsertAndWait(ctx context.Context, collection string, vectors []VectorRecord) error {
+	signal, err := b.enqueue(ctx, collection, vectors)
+	if err != nil {
+		return err
+	}
+	select {
+	case <-signal.Done():
+		return signal.err.Get()
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-b.ctx.Done():
+		return errors.New("buffer closed")
+	}
+}
+
+func (b *VectorInsertBuffer) enqueue(ctx context.Context, collection string, vectors []VectorRecord) (*batchSignal, error) {
 	if len(vectors) == 0 {
-		return nil
+		return newBatchSignal(), nil
+	}
+	if !b.enabled.Load() {
+		return nil, errors.New("buffer closed")
 	}
 
 	// 创建批量共享的信号和错误持有者
 	signal := newBatchSignal()
-	batchErrHolder := &batchErrorHolder{}
 
 	// 发送所有向量到缓冲 channel，推完即返回，不等待 flush
 	for _, v := range vectors {
@@ -456,30 +481,20 @@ func (b *VectorInsertBuffer) Insert(ctx context.Context, collection string, vect
 			Collection: collection,
 			Vector:     v,
 			signal:     signal,
-			batchErr:   batchErrHolder,
+			batchErr:   signal.err,
 		}
 
 		select {
 		case b.batchChan <- insert:
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-b.ctx.Done():
-			return errors.New("buffer closed")
+			return nil, errors.New("buffer closed")
 		}
 	}
 
-	// 等待批次完成
-	select {
-	case <-signal.Done():
-		// 批次处理完成
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-b.ctx.Done():
-		return errors.New("buffer closed")
-	}
-
-	// 返回批量错误（如果有）
-	return batchErrHolder.Get()
+	// 只确认请求已进入缓冲队列，不等待 Qdrant flush；写入结果由任务级收尾流程确认。
+	return signal, nil
 }
 
 // Type 返回存储类型

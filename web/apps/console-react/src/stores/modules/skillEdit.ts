@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { skillApi } from '@/api/modules/skill'
 import type { SkillFileItem, AdminStatus } from '@/api/modules/skill/types'
+import type { ScopeItem } from '@/api/modules/agent'
 import { isKKFileViewSupported } from '@km/shared-utils'
 
 /** 获取文件扩展名 */
@@ -85,6 +86,7 @@ interface SkillEditState {
     group_ids?: number[]
     subscription_group_ids?: number[]
     user_group_ids?: number[]
+    scopes?: ScopeItem[]
   }, hasFormDataChanges?: boolean) => Promise<boolean>
 
   // 显示确认弹窗
@@ -328,7 +330,7 @@ export const useSkillEditStore = create<SkillEditState>((set, get) => ({
           admin_status: formData.admin_status,
           group_ids: formData.group_ids,
           subscription_group_ids: formData.subscription_group_ids,
-          user_group_ids: formData.user_group_ids,
+          scopes: formData.scopes,
         })
       }
 

@@ -6,16 +6,15 @@ import { useAgentStore } from "@/stores/modules/agent";
 import { UsageGuide, ChatConfigProvider } from "@km/shared-business/chat";
 import { chatAdapters } from "@/adapters/chat-adapters";
 import { createPlatformsByType } from '@km/shared-business/agent-create';
-import { SvgIcon } from '@km/shared-components-react';
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
 import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import AuthTagGroup from "@/components/AuthTagGroup";
 import agentsApi from "@/api/modules/agents";
 import { checkPermission } from "@/utils/permission";
+import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
 import type { Agent } from "@/types/agent";
-
-const DEFAULT_IMG = "/images/default_agent.png";
 
 interface UseCase {
   type: "case" | "scene" | "channel";
@@ -173,12 +172,6 @@ export function AgentDetailView() {
     }
   }
 
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const target = e.target as HTMLImageElement;
-    if (target.src.endsWith(DEFAULT_IMG)) return;
-    target.src = DEFAULT_IMG;
-  };
-
   // 解析 use_cases 数据
   const useCasesData = useMemo((): UseCase[] => {
     if (!detailData?.use_cases) return [];
@@ -224,11 +217,10 @@ export function AgentDetailView() {
           )}
 
           <div className="flex items-center gap-3">
-            <img
+            <SafeImage
               className="size-14 md:size-12 rounded-lg object-cover flex-none"
-              src={detailData.logo || DEFAULT_IMG}
+              src={detailData.logo}
               alt={detailData.name}
-              onError={handleImageError}
             />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
@@ -262,7 +254,7 @@ export function AgentDetailView() {
           <ChatConfigProvider lang={locale} adapters={chatAdapters}>
             <UsageGuide
               useCases={useCasesData}
-              defaultImage={DEFAULT_IMG}
+              defaultImage={getPublicPath('/images/default_agent.png')}
               plain
             />
           </ChatConfigProvider>

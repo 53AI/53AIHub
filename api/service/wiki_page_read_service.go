@@ -41,15 +41,17 @@ func NewWikiPageReadService(db *gorm.DB) WikiPageReadService {
 }
 
 type WikiListPagesRequest struct {
-	Eid       int64
-	LibraryID int64
-	SpaceID   int64
-	Keyword   string
-	PageType  string
-	Status    string
-	SortBy    string
-	Offset    int
-	Limit     int
+	Eid           int64
+	LibraryID     int64
+	SpaceID       int64
+	CategoryID    int64
+	CategoryOther bool
+	Keyword       string
+	PageType      string
+	Status        string
+	SortBy        string
+	Offset        int
+	Limit         int
 }
 
 type WikiListLogsRequest struct {
@@ -269,14 +271,45 @@ func (s *wikiPageReadService) ListPages(ctx context.Context, req WikiListPagesRe
 		offset = 0
 	}
 
-	base := s.db.WithContext(ctx).Model(&model.WikiPage{}).Where("eid = ?", req.Eid)
+	base := s.db.WithContext(ctx).Model(&model.WikiPage{}).Table("wiki_pages AS wp").Where("wp.eid = ?", req.Eid)
 	if req.LibraryID > 0 {
-		base = base.Where("library_id = ?", req.LibraryID)
+		base = base.Where("wp.library_id = ?", req.LibraryID)
 	}
 	if req.SpaceID > 0 {
-		base = base.Where("space_id = ?", req.SpaceID)
+		base = base.Where("wp.space_id = ?", req.SpaceID)
 	}
-	base = applyWikiPageListFilters(base, req.Keyword, req.PageType, req.Status)
+	keyword := strings.TrimSpace(req.Keyword)
+	base = applyWikiPageListFilters(base, "", req.PageType, req.Status)
+	if req.CategoryOther {
+		categoryQuery := s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+			Select("1").Where("eid = ? AND page_id = wp.id", req.Eid)
+		if req.SpaceID > 0 {
+			categoryQuery = categoryQuery.Where("space_id = ?", req.SpaceID)
+		}
+		base = base.Where("NOT EXISTS (?)", categoryQuery)
+	} else if req.CategoryID > 0 {
+		categoryQuery := s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+			Select("1").Where("eid = ? AND category_id = ? AND page_id = wp.id", req.Eid, req.CategoryID)
+		if req.SpaceID > 0 {
+			categoryQuery = categoryQuery.Where("space_id = ?", req.SpaceID)
+		}
+		base = base.Where("EXISTS (?)", categoryQuery)
+	}
+	if keyword != "" {
+		pages, total, err := s.listWikiPagesByKeyword(ctx, base, keyword, req.SortBy, offset, limit)
+		if err != nil {
+			return nil, 0, err
+		}
+		folderPaths, err := s.loadFolderPathMap(ctx, pages)
+		if err != nil {
+			return nil, 0, err
+		}
+		items := make([]WikiPageSummary, 0, len(pages))
+		for i := range pages {
+			items = append(items, toWikiPageSummary(&pages[i], folderPaths[pages[i].FolderID]))
+		}
+		return items, total, nil
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -1041,6 +1074,66 @@ func applyWikiPageListFilters(db *gorm.DB, keyword, pageType, status string) *go
 		db = db.Where("status = ?", status)
 	}
 	return db
+}
+
+func (s *wikiPageReadService) listWikiPagesByKeyword(ctx context.Context, base *gorm.DB, keyword, sortBy string, offset, limit int) ([]model.WikiPage, int64, error) {
+	like := "%" + keyword + "%"
+	titleQuery := base.Session(&gorm.Session{}).Where("title LIKE ?", like)
+	secondaryQuery := base.Session(&gorm.Session{}).Where("title NOT LIKE ? AND (slug LIKE ? OR aliases LIKE ? OR summary LIKE ?)", like, like, like, like)
+
+	var titleTotal, secondaryTotal int64
+	if err := titleQuery.Count(&titleTotal).Error; err != nil {
+		return nil, 0, err
+	}
+	if err := secondaryQuery.Count(&secondaryTotal).Error; err != nil {
+		return nil, 0, err
+	}
+
+	pages := make([]model.WikiPage, 0, limit)
+	titleOffset := offset
+	if int64(titleOffset) < titleTotal {
+		titleLimit := limit
+		if remaining := int(titleTotal) - titleOffset; remaining < titleLimit {
+			titleLimit = remaining
+		}
+		var titlePages []model.WikiPage
+		titleOrder := gorm.Expr("CASE WHEN title = ? THEN 0 WHEN title LIKE ? THEN 1 ELSE 2 END", keyword, keyword+"%")
+		titleQuery = titleQuery.Order(titleOrder)
+		switch sortBy {
+		case "title":
+			titleQuery = titleQuery.Order("title ASC, id ASC")
+		case "created_time":
+			titleQuery = titleQuery.Order("created_time DESC, id DESC")
+		default:
+			titleQuery = titleQuery.Order("updated_time DESC, id DESC")
+		}
+		if err := titleQuery.Offset(titleOffset).Limit(titleLimit).Find(&titlePages).Error; err != nil {
+			return nil, 0, err
+		}
+		pages = append(pages, titlePages...)
+	} else {
+		titleOffset = int(titleTotal)
+	}
+
+	secondaryLimit := limit - len(pages)
+	if secondaryLimit > 0 {
+		var secondaryPages []model.WikiPage
+		switch sortBy {
+		case "title":
+			secondaryQuery = secondaryQuery.Order("title ASC, id ASC")
+		case "created_time":
+			secondaryQuery = secondaryQuery.Order("created_time DESC, id DESC")
+		default:
+			secondaryQuery = secondaryQuery.Order("updated_time DESC, id DESC")
+		}
+		secondaryQuery = secondaryQuery.Offset(offset - titleOffset).Limit(secondaryLimit)
+		if err := secondaryQuery.Find(&secondaryPages).Error; err != nil {
+			return nil, 0, err
+		}
+		pages = append(pages, secondaryPages...)
+	}
+
+	return pages, titleTotal + secondaryTotal, nil
 }
 
 func normalizeWikiListLimit(limit, defaultLimit, maxLimit int) int {

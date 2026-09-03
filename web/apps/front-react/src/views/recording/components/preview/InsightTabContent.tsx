@@ -10,6 +10,7 @@ import {
 } from '../audio/ParseStatusPlaceholder'
 import type { StageStatusBag } from '../../hooks/useFileParse'
 import { STAGE_STATUS, isStageLoading } from '../../constants/recordingStatus'
+import { isInsightHTMLPage } from '../../parsers/recordingParsers'
 
 interface InsightTabContentProps {
   /** 无语音模型 */
@@ -74,8 +75,7 @@ export function InsightTabContent({
   const insightPageLoading = isStageLoading(insightPageStatus)
   const insightParsing = isBeingParsed && (insightsLoading || insightPageLoading)
 
-  // 洞察阶段（insights + insightPage）失败 → 展示错误态（仅看本组阶段，不被前置阶段拖累）
-  if (hasStageFailed(stages, ['insights', 'insightPage'])) {
+  if (hasStageFailed(stages, ['insights', 'insightPage', 'transcription', 'meetingMinutes'])) {
     return <ParsingPlaceholder stages={stages} onStart={onStartGenerate} loading={generating} />
   }
 
@@ -118,10 +118,14 @@ export function InsightTabContent({
       </div>
     )
   }
-  
+
+  const contentClassName = isInsightHTMLPage(pageJson)
+    ? ''
+    : 'w-4/5 mx-auto pb-8'
+
   return (
     <div className="h-full overflow-y-auto">
-      <div className="w-4/5 mx-auto pb-8">
+      <div className={contentClassName}>
         <InsightPageRenderer pageJson={pageJson} />
       </div>
     </div>

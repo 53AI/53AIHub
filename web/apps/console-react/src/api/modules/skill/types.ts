@@ -1,5 +1,9 @@
 // ========== 枚举类型 ==========
 
+import type { ScopeItem } from '@/api/modules/agent'
+
+export type { ScopeItem }
+
 /** 发布状态 */
 export const PublishStatus_TYPE = {
   draft: 'draft',
@@ -85,6 +89,8 @@ export interface SkillPublic {
   scan_message: string;
   created_time: number;
   updated_time: number;
+  // 服务端把 scopes 放在 skill 对象下(而非顶层),与详情接口 /api/admin/skill-library/{id} 对齐
+  scopes?: ScopeItem[];
 }
 
 /** 探索列表项 */
@@ -184,6 +190,7 @@ export interface AdminImportSkillRequest {
   group_ids?: number[];
   subscription_group_ids?: number[];
   user_group_ids?: number[];
+  scopes?: ScopeItem[];
 }
 
 /** 更新技能请求 */
@@ -197,6 +204,7 @@ export interface AdminUpdateSkillRequest {
   group_ids?: number[];
   subscription_group_ids?: number[];
   user_group_ids?: number[];
+  scopes?: ScopeItem[];
 }
 
 /** 更新状态请求 */

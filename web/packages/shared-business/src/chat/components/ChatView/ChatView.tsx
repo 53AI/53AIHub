@@ -1823,7 +1823,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				// 优先使用 selectedSkills(包含完整 skill_name 与 display_name),回退到 skillList 字符串数组
 				const selectedSkills =
 					typeof data === "string" ? [] : data.selectedSkills;
-				// 合并 ChatContainer.sendContext.links 与 Sender atList(对齐原版 IndexChat.tsx 的 links 参数)
+				// 合并 ChatContainer.sendContext.links 与 Sender atList
 				// 场景:ChatContainer 维护了 selectedMentionLinks 但用户还没在 Sender 看到/触发它时,
 				//     links 仍需正确传给 useChatSend 用于构建 messages.specified_files
 				const senderLinks = Array.isArray(atList) ? atList : [];

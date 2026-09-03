@@ -195,12 +195,24 @@ func decodeSliceIDs(s []interface{}) []interface{} {
 	return result
 }
 
+// tryDecodeSingleID 解析单个 ID 字符串：纯数字（含 "0"）直接返回，否则尝试 HashID 解码。
+// 兼容前端把 related_entity_id 等字段统一按字符串传递，且用 "0" 表示无关联/普通事实。
+func tryDecodeSingleID(idStr string) (int64, bool) {
+	if num, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+		return num, true
+	}
+	if decoded, err := hashids.TryParseID(idStr); err == nil {
+		return decoded, true
+	}
+	return 0, false
+}
+
 // tryDecodeID 尝试解码ID值
 func tryDecodeID(value interface{}) interface{} {
 	switch v := value.(type) {
 	case string:
 		// 尝试解码字符串ID
-		if decoded, err := hashids.TryParseID(v); err == nil {
+		if decoded, ok := tryDecodeSingleID(v); ok {
 			return decoded
 		}
 	case []interface{}:
@@ -210,7 +222,7 @@ func tryDecodeID(value interface{}) interface{} {
 
 		for _, item := range v {
 			if strItem, ok := item.(string); ok {
-				if decoded, err := hashids.TryParseID(strItem); err == nil {
+				if decoded, ok := tryDecodeSingleID(strItem); ok {
 					decodedIDs = append(decodedIDs, decoded)
 				} else {
 					allDecoded = false

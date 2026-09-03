@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useState,
   useRef,
   useEffect,
@@ -9,7 +10,7 @@ import {
 } from "react";
 import { Drawer, Modal, Input, Button, Spin } from "antd";
 import { LoadingOutlined } from "@ant-design/icons";
-import { Dropdown, SvgIcon } from "@km/shared-components-react";
+import { Dropdown, Search as SearchInput, SvgIcon } from "@km/shared-components-react";
 import type { ConversationInfo } from "../types";
 import { isRunRunning, useConversationStore } from "../stores/conversation";
 import { useChatAdapters, useTranslation } from "../i18n";
@@ -96,6 +97,55 @@ const ChatHistory = forwardRef<ChatHistoryRef, ChatHistoryProps>(
 
     const adapters = useChatAdapters();
     const agentRunApi = adapters?.agentRun;
+
+    // 当前 agent_id + 全量加载入口：搜索时调用 loadConversations(agentId, { keyword })
+    // 让 store 把 keyword 落到 searchKeyword，loadMoreConversations 会沿用
+    const currentAgentId = useConversationStore(
+      (state) => state.current_agentid,
+    );
+    const loadConversations = useConversationStore(
+      (state) => state.loadConversations,
+    );
+    const storeSearchKeyword = useConversationStore(
+      (state) => state.searchKeyword,
+    );
+    const [searchKeyword, setSearchKeyword] = useState("");
+
+    // 跟随 store.searchKeyword（agent 切换时 ChatView 会调 loadConversations(agentId)
+    // 不传 keyword，会把 searchKeyword 重置为 ""，借此把搜索框一起清掉）
+    useEffect(() => {
+      setSearchKeyword(storeSearchKeyword);
+    }, [storeSearchKeyword]);
+
+    const handleSearchChange = useCallback(
+      (value: string) => {
+        setSearchKeyword(value);
+        loadConversations(currentAgentId, { keyword: value });
+      },
+      [currentAgentId, loadConversations],
+    );
+
+    // 高亮搜索关键词：对 title 中命中的片段包一层 <mark>，无关键词或无 title 时原样返回
+    const renderHighlightedTitle = useCallback(
+      (title: string, keyword: string) => {
+        const trimmed = keyword.trim();
+        if (!trimmed) return title;
+        // 转义正则元字符，避免用户输入 ".*" 等把正则打爆
+        const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(`(${escaped})`, "gi");
+        const parts = title.split(regex);
+        return parts.map((part, i) =>
+          i % 2 === 1 ? (
+            <mark key={i} className="bg-transparent text-theme">
+              {part}
+            </mark>
+          ) : (
+            <Fragment key={i}>{part}</Fragment>
+          ),
+        );
+      },
+      [],
+    );
 
     // 轮询定时器引用（每个会话独立）
     const pollingTimersRef = useRef<
@@ -388,11 +438,27 @@ const ChatHistory = forwardRef<ChatHistoryRef, ChatHistoryProps>(
           </div>
         )}
 
+        {/* 搜索会话标题 */}
+        <div className="flex-none px-3 pt-2">
+          <SearchInput
+            mode="expanded"
+            value={searchKeyword}
+            placeholder={t("chat.search_conversation")}
+            debounceMs={300}
+            onDebouncedChange={handleSearchChange}
+          />
+        </div>
+
         {/* 对话列表 */}
         <div
-          className={`flex-1 px-3 py-4 overflow-y-auto ${showCreate ? "" : "pt-0"}`}
+          className={`flex-1 px-3 py-4 overflow-y-auto ${showCreate ? "" : "pt-2"}`}
         >
           <div className="space-y-1">
+            {searchKeyword && conversations.length === 0 && !loadingMore && (
+              <div className="py-8 text-center text-sm text-[#999]">
+                {t("chat.no_search_results")}
+              </div>
+            )}
             {groupedConversations.map((group) => {
               if (group.conversations.length === 0) return null;
               return (
@@ -414,7 +480,7 @@ const ChatHistory = forwardRef<ChatHistoryRef, ChatHistoryProps>(
                         onClick={() => handleSelect(item)}
                       >
                         <p className="text-sm text-gray-700 truncate flex-1">
-                          {item.title || t("chat.no_title")}
+                          {renderHighlightedTitle(item.title || t("chat.no_title"), searchKeyword)}
                         </p>
                         {isRunRunning(item.latest_run) ? (
                           <div className="flex items-center justify-center w-5 h-5">

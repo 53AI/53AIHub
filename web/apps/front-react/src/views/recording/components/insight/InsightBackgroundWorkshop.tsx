@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Modal, Spin, message } from 'antd'
+import { Button, Input, Modal, Select, Spin, message } from 'antd'
 import {
   CommentOutlined,
   EditOutlined,
   RobotOutlined,
-  SendOutlined,
 } from '@ant-design/icons'
 import { SvgIcon } from '@km/shared-components-react'
 import recordingApi from '@/api/modules/recording'
 import type {
   InsightBackground,
   InsightConversationMessage,
+  InsightPerspective,
+  InsightPerspectiveOption,
 } from '@/api/modules/recording/types'
-import { stripMarkdownCodeFence } from '../insightRenderer/markdownParser'
-import { renderMarkdownText } from '../insightRenderer/richText'
+import {
+  InsightChatPanel,
+  starterMessage,
+  withoutStarterMessage,
+} from './InsightChatPanel'
 
 interface InsightBackgroundWorkshopProps {
   fileId: string
@@ -29,17 +33,6 @@ export const EMPTY_INSIGHT_BACKGROUND: InsightBackground = {
   external_constraints: '',
   material_context: '',
 }
-
-const starterMessage: InsightConversationMessage = {
-  role: 'assistant',
-  content: '我会先对齐这次洞察真正需要的背景。您可以直接修改左侧卡片，也可以告诉我：哪些事实被遗漏了、您更关心什么结果，或希望我重点检验哪一个判断。',
-}
-
-const quickPrompts = [
-  '补充老板当前最关心的经营目标',
-  '指出纪要里被忽略的风险',
-  '结合公司现状重新校准判断',
-]
 
 export function BackgroundCard({
   title,
@@ -234,9 +227,25 @@ function ListEditor({
   )
 }
 
+type EditableInsightBackgroundKey = Exclude<
+  keyof InsightBackground,
+  'conversation' | 'insight_perspective' | 'resolved_insight_perspective'
+>
+
+type InsightBackgroundCard = {
+  key: EditableInsightBackgroundKey
+  iconName: string
+  iconColor: string
+  title: string
+  description: string
+  readOnly?: boolean
+  collapsible?: boolean
+  kind?: 'text' | 'list'
+}
+
 /** 洞察背景可编辑字段配置：与 InsightBackground 类型字段对齐，
  *  供两个 modal（带对话 / 仅编辑）共享，避免双写。 */
-export const INSIGHT_BACKGROUND_CARDS = [
+export const INSIGHT_BACKGROUND_CARDS: InsightBackgroundCard[] = [
   {
     key: 'external_constraints' as const,
     iconName: 'prescription',
@@ -253,6 +262,7 @@ export const INSIGHT_BACKGROUND_CARDS = [
     description: '关联记忆中的人物、事项、重复问题和已验证教训',
     collapsible: true,
     kind: 'list',
+    readOnly: true,
   },
   {
     key: 'personal_info' as const,
@@ -261,7 +271,7 @@ export const INSIGHT_BACKGROUND_CARDS = [
     title: '个人信息',
     description: '用于确定洞察视角、关注重点与表达方式',
     collapsible: true,
-  },  
+  },
   {
     key: 'company_info' as const,
     iconName: 'building-one',
@@ -269,7 +279,6 @@ export const INSIGHT_BACKGROUND_CARDS = [
     title: '企业信息',
     description: '用于校准建议是否符合企业信息与行业背景',
     collapsible: true,
-    readOnly: true
   },
 ]
 
@@ -289,7 +298,7 @@ export function InsightRegenerationBanner({
             </div>
             <div>
               <div className="text-sm font-semibold">觉得当前洞察和真实的企业现状、老板偏好不符？</div>
-              <div className="mt-1 text-xs leading-5 text-[#B7C3D9]">补充背景并通过多轮对话校准细节，确认后将覆盖当前洞察报告。</div>
+              <div className="mt-1 text-xs leading-5 text-[#B7C3D9]">补充背景并通过多轮对话校准细节，确认后将生成新的当前洞察报告。</div>
             </div>
           </div>
           <Button
@@ -323,16 +332,21 @@ function InsightBackgroundWorkshopModal({
 }: InsightBackgroundWorkshopProps & { open: boolean; onClose: () => void }) {
   const [background, setBackground] = useState<InsightBackground>(EMPTY_INSIGHT_BACKGROUND)
   const [messages, setMessages] = useState<InsightConversationMessage[]>([starterMessage])
-  const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sending, setSending] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [perspectiveOptions, setPerspectiveOptions] = useState<InsightPerspectiveOption[]>([])
+  const [selectedPerspective, setSelectedPerspective] = useState<InsightPerspective>('auto')
 
   const loadBackground = useCallback(async () => {
     setLoading(true)
     try {
-      const result = await recordingApi.getInsightBackground(fileId)
+      const [result, options] = await Promise.all([
+        recordingApi.getInsightBackground(fileId),
+        recordingApi.getInsightPerspectives(),
+      ])
       setBackground({ ...EMPTY_INSIGHT_BACKGROUND, ...result })
+      setPerspectiveOptions(options)
+      setSelectedPerspective(result.insight_perspective || 'auto')
       const savedMessages = result.conversation || []
       setMessages(savedMessages.length > 0 ? savedMessages : [starterMessage])
     } catch (error: any) {
@@ -346,42 +360,18 @@ function InsightBackgroundWorkshopModal({
     if (open) loadBackground()
   }, [open, loadBackground])
 
-  const updateBackground = (key: Exclude<keyof InsightBackground, 'conversation'>, value: string) => {
+  const updateBackground = (key: EditableInsightBackgroundKey, value: string) => {
     setBackground((current) => ({ ...current, [key]: value }))
   }
 
-  const sendMessage = async (content = input) => {
-    const text = content.trim()
-    if (!text || sending || loading) return
-    const nextMessages = [...messages, { role: 'user' as const, content: text }]
-    setMessages(nextMessages)
-    setInput('')
-    setSending(true)
-    try {
-      const result = await recordingApi.chatInsightWorkshop(fileId, {
-        message: text,
-        background,
-        conversation: messages,
-      })
-      if (result.reply?.trim()) {
-        setMessages([...nextMessages, { role: 'assistant', content: result.reply.trim() }])
-      }
-    } catch (error: any) {
-      setMessages(messages)
-      setInput(text)
-      message.error(error?.message || '协同对话失败，请稍后重试')
-    } finally {
-      setSending(false)
-    }
-  }
-
   const confirmRegenerate = async () => {
-    if (regenerating || loading || sending) return
+    if (regenerating || loading) return
     setRegenerating(true)
     try {
       await recordingApi.regenerateInsights(fileId, {
         background,
-        conversation: messages,
+        conversation: withoutStarterMessage(messages),
+        insight_perspective: selectedPerspective,
       })
       message.success('已确认背景，正在重新生成洞察')
       onRegenerateStarted()
@@ -393,6 +383,12 @@ function InsightBackgroundWorkshopModal({
   }
 
   const cards = useMemo(() => INSIGHT_BACKGROUND_CARDS, [])
+  const perspectiveName = (key?: InsightPerspective) => {
+    if (!key) return '尚未记录'
+    if (key === 'auto') return '自动场景'
+    return perspectiveOptions.find((option) => option.key === key)?.name || key
+  }
+  const appliedPerspective = background.resolved_insight_perspective
 
   return (
     <Modal
@@ -409,10 +405,10 @@ function InsightBackgroundWorkshopModal({
         <div className="flex shrink-0 items-center justify-between border-b border-[#E8ECF2] bg-white px-6 py-4">
           <div>
             <div className="flex items-center gap-2 text-base font-semibold text-[#172033]">
-              CEO决策沙盘·二号位背景协同研讨
-              <span className="rounded-full bg-[#E8F8EF] px-2 py-0.5 text-[10px] font-medium text-[#20945A]">数据双向同步</span>
+              决策洞察 · 背景协同研讨
+              <span className="rounded-full bg-[#EEF4FF] px-2 py-0.5 text-[10px] font-medium text-[#3F65B8]">当前会议</span>
             </div>
-            <div className="mt-1 text-xs text-[#98A2B3]">左侧修订生成背景，右侧与二号位对话补充判断依据</div>
+            <div className="mt-1 text-xs text-[#98A2B3]">左侧补充背景，右侧研讨判断；原始纪要和动态历史始终保持只读</div>
           </div>
           <Button type="text" onClick={onClose} className="!text-[#98A2B3]">关闭</Button>
         </div>
@@ -425,8 +421,28 @@ function InsightBackgroundWorkshopModal({
               <div className="mb-4 flex items-center gap-2">
                 <EditOutlined className="text-[#5B7CFF]" />
                 <div>
-                  <div className="text-sm font-semibold">我的可编辑背景看板</div>
-                  <div className="mt-0.5 text-[11px] text-[#98A2B3]">这些内容会作为本次重生成的补充上下文</div>
+                  <div className="text-sm font-semibold">背景与证据</div>
+                  <div className="mt-0.5 text-[11px] text-[#98A2B3]">仅可编辑的补充背景会保存并参与下一次洞察</div>
+                </div>
+              </div>
+              <div className="mb-3 rounded-xl border border-[#DCE6FF] bg-[#F5F8FF] p-3">
+                <div className="text-xs font-semibold text-[#344054]">洞察场景</div>
+                <div className="mt-1 text-[11px] leading-4 text-[#667085]">
+                  当前已应用：{perspectiveName(appliedPerspective)}
+                </div>
+                <Select
+                  className="mt-2 w-full"
+                  value={selectedPerspective}
+                  loading={perspectiveOptions.length === 0}
+                  options={perspectiveOptions.map((option) => ({
+                    value: option.key,
+                    label: option.key === 'auto' ? '自动场景' : option.name,
+                  }))}
+                  onChange={(value) => setSelectedPerspective(value as InsightPerspective)}
+                  disabled={regenerating}
+                />
+                <div className="mt-1 text-[11px] leading-4 text-[#98A2B3]">
+                  选择后点击底部按钮，下一次洞察将按此场景生成。
                 </div>
               </div>
               <div className="space-y-3">
@@ -437,52 +453,31 @@ function InsightBackgroundWorkshopModal({
                     description={card.description}
                     value={background[card.key] || ''}
                     onChange={(value) => updateBackground(card.key, value)}
+                    readOnly={card.readOnly}
                     collapsible={card.collapsible}
                     kind={card.kind}
+                    iconName={card.iconName}
+                    iconColor={card.iconColor}
                   />
                 ))}
               </div>
             </div>
 
-            <div className="flex min-h-0 flex-col bg-white">
-              <div className="flex shrink-0 items-center gap-2 border-b border-[#E8ECF2] px-5 py-4">
-                <RobotOutlined className="text-[#5B7CFF]" />
-                <div>
-                  <div className="text-sm font-semibold">二号位智能对话对准区</div>
-                  <div className="mt-0.5 text-[11px] text-[#98A2B3]">对话内容会随确认一起写入本次洞察上下文</div>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-                {messages.map((item, index) => (
-                  <div key={`${item.role}-${index}`} className={`flex gap-2 ${item.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    {item.role === 'assistant' && <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[#EEF2FF] text-[#5B7CFF]"><RobotOutlined /></div>}
-                    <div className={`max-w-[86%] rounded-2xl px-3 py-2.5 text-xs leading-5 ${item.role === 'user' ? 'rounded-tr-md bg-[#EEF2FF] text-[#3949AB]' : 'rounded-tl-md bg-[#F5F7FA] text-[#475467] insight-richtext !text-xs !leading-5'}`}>
-                      {item.role === 'assistant'
-                        ? renderMarkdownText(stripMarkdownCodeFence(item.content))
-                        : item.content}
-                    </div>
-                  </div>
-                ))}
-                {sending && <div className="flex items-center gap-2 text-xs text-[#98A2B3]"><Spin size="small" /> 正在对齐背景...</div>}
-              </div>
-              <div className="shrink-0 border-t border-[#E8ECF2] px-5 py-3">
-                <div className="mb-2 flex flex-wrap gap-2">
-                  {quickPrompts.map((prompt) => <button key={prompt} type="button" onClick={() => sendMessage(prompt)} className="rounded-full border border-[#DCE3F0] bg-white px-2.5 py-1 text-[11px] text-[#667085] hover:border-[#9AAFFF] hover:text-[#526DDE]">{prompt}</button>)}
-                </div>
-                <div className="flex items-end gap-2 rounded-xl border border-[#DCE3F0] bg-[#FAFBFD] p-2 focus-within:border-[#8EA5FF]">
-                  <Input.TextArea value={input} onChange={(event) => setInput(event.target.value)} onPressEnter={(event) => { if (!event.shiftKey) { event.preventDefault(); sendMessage() } }} autoSize={{ minRows: 1, maxRows: 4 }} bordered={false} placeholder="告诉二号位您希望补充或质疑什么..." className="!resize-none !bg-transparent !text-xs" />
-                  <Button type="primary" shape="circle" icon={<SendOutlined />} loading={sending} onClick={() => sendMessage()} />
-                </div>
-              </div>
-            </div>
+            <InsightChatPanel
+              fileId={fileId}
+              background={background}
+              messages={messages}
+              setMessages={setMessages}
+              disabled={regenerating}
+            />
           </div>
         )}
 
         <div className="flex shrink-0 flex-col gap-3 border-t border-[#E8ECF2] bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-[11px] text-[#98A2B3]">研讨坊就绪：背景已挂载，确认后会覆盖当前洞察报告</div>
+          <div className="text-[11px] text-[#98A2B3]">确认后保存补充背景并生成新的当前洞察报告</div>
           <div className="flex items-center justify-end gap-2">
             <Button onClick={onClose}>返回洞察报告</Button>
-            <Button type="primary" loading={regenerating} disabled={sending} onClick={confirmRegenerate} className="!bg-[#172033] hover:!bg-[#273653]">确认并重新生成洞察</Button>
+            <Button type="primary" loading={regenerating} onClick={confirmRegenerate} className="!bg-[#172033] hover:!bg-[#273653]">确认并重新生成洞察</Button>
           </div>
         </div>
       </div>

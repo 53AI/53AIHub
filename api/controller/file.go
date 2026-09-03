@@ -1170,6 +1170,7 @@ func DeleteFileAsync(c *gin.Context) {
 
 	// 检查是否异步删除
 	async := c.DefaultQuery("async", "false") == "true"
+	common.SetFileStop(file.ID)
 
 	// 执行删除（现在都是级联删除）
 	if err := model.DeleteFile(eid, fileID); err != nil {

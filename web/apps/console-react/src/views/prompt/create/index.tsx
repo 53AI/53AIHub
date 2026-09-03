@@ -199,11 +199,12 @@ export function PromptCreatePage() {
   }, [promptId]);
 
   // Sync form values from formData only when data is loaded
+  // （注册用户分组已改为受控组件直接读 formData，不走 form 字段）
   useEffect(() => {
     // Only sync once when data is ready
-    // - Edit mode: formData.prompt_id matches current promptId
+    // - Edit mode: data is loaded (fetchDetail 完成，formData 已回显)
     // - New mode: formData.prompt_id is 0
-    const isEditModeReady = promptId && String(formData.prompt_id) === promptId;
+    const isEditModeReady = promptId && !loading && formData.prompt_id > 0;
     const isNewModeReady = !promptId && formData.prompt_id === 0;
 
     if (!syncedRef.current && (isEditModeReady || isNewModeReady)) {
@@ -211,17 +212,14 @@ export function PromptCreatePage() {
       form.setFieldsValue({
         content: formData.content || "",
         sort: formData.sort ?? 0,
-        subscription_group_ids: formData.subscription_group_ids || [],
-        user_group_ids: formData.user_group_ids || [],
       });
     }
   }, [
     promptId,
+    loading,
     formData.prompt_id,
     formData.content,
     formData.sort,
-    formData.subscription_group_ids,
-    formData.user_group_ids,
     form,
   ]);
 
@@ -233,6 +231,7 @@ export function PromptCreatePage() {
         onOpenLinksDialog={handleOpenLinksDialog}
         onOpenStoreDialog={handleOpenStoreDialog}
         onDeleteLink={handleDeleteLink}
+        isNew={!promptId}
       />
     );
   };

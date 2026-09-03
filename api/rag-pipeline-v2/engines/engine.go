@@ -3,9 +3,12 @@ package engines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,19 +26,31 @@ import (
 
 // Heartbeat constants
 const (
-	heartbeatKeyPrefix = "rag:job:heartbeat"
-	heartbeatInterval  = 30 * time.Second
-	heartbeatKeyTTL    = 90 * time.Second
-	staleJobCutoff     = 24 * time.Hour
+	heartbeatKeyPrefix     = "rag:job:heartbeat"
+	heartbeatInterval      = 30 * time.Second
+	heartbeatKeyTTL        = 90 * time.Second
+	// staleJobCutoff 无心跳判死阈值：processing/pending job 超过该时长无心跳即被清理（失败文案由 staleJobTimeoutFailureReason 从该常量推导，勿写死）
+	staleJobCutoff         = 30 * time.Minute
+	pendingReclaimInterval = 30 * time.Second
+	pendingReclaimCutoff   = 30 * time.Second
+	// lightQueueSuffix 轻文本（txt/md/markdown）专用解析队列后缀，避免被重 OCR 任务堵住。
+	lightQueueSuffix = "_light"
 )
 
 // StepHandler 定义每个步骤的处理函数
 type StepHandler func(ctx context.Context, job *model.RagJob, config json.RawMessage) error
 
+func jobStatusForError(err error) string {
+	if errors.Is(err, model.ErrJobCancelled) {
+		return model.RagJobStatusCancelled
+	}
+	return model.RagJobStatusFailed
+}
+
 // RecoveryConfig 断点恢复配置
 type RecoveryConfig struct {
 	GracePeriod time.Duration // 恢复窗口，默认 5min
-	JobTimeout  time.Duration // 单 job 恢复超时，默认 10min
+	JobTimeout  time.Duration // 单 job 恢复超时，默认 12h（长任务不应被超时中断）
 	Enabled     bool          // 是否启用恢复，默认 true
 }
 
@@ -44,7 +59,7 @@ func LoadRecoveryConfigFromEnv() RecoveryConfig {
 	return RecoveryConfig{
 		Enabled:     env.Bool("RAG_RECOVERY_ENABLED", true),
 		GracePeriod: time.Duration(env.Int("RAG_RECOVERY_GRACE_PERIOD_SECONDS", 300)) * time.Second,
-		JobTimeout:  time.Duration(env.Int("RAG_RECOVERY_JOB_TIMEOUT_SECONDS", 600)) * time.Second,
+		JobTimeout:  time.Duration(env.Int("RAG_RECOVERY_JOB_TIMEOUT_SECONDS", 43200)) * time.Second,
 	}
 }
 
@@ -129,9 +144,22 @@ func (e *RagJobEngineV2) StartWorkers() {
 		for i := 0; i < e.workers; i++ {
 			e.wg.Add(1)
 			workerID := fmt.Sprintf("v2_%s_%d", stepKey, i)
-			go e.workerLoop(workerID, stepKey)
+			queueName := fmt.Sprintf("%s:queue:%s", e.queuePrefix, stepKey)
+			go e.workerLoop(workerID, stepKey, queueName)
+		}
+		// document_parsing 额外启动轻文本专用 worker，与重任务（OCR/语音）隔离
+		if stepKey == "document_parsing" {
+			for i := 0; i < e.workers; i++ {
+				e.wg.Add(1)
+				workerID := fmt.Sprintf("v2_%s_light_%d", stepKey, i)
+				queueName := fmt.Sprintf("%s:queue:%s%s", e.queuePrefix, stepKey, lightQueueSuffix)
+				go e.workerLoop(workerID, stepKey, queueName)
+			}
 		}
 	}
+
+	// 服务启动即复活孤儿 pending：worker 死亡/重启后立即消费堆积队列，不等 StaleJobCleaner
+	e.reclaimOrphanPending(e.ctx)
 
 	// 这里可以添加重试和死信队列的处理逻辑（略，复用 V1 或独立实现）
 }
@@ -141,10 +169,9 @@ func (e *RagJobEngineV2) Stop() {
 	e.wg.Wait()
 }
 
-func (e *RagJobEngineV2) workerLoop(workerID, stepKey string) {
+func (e *RagJobEngineV2) workerLoop(workerID, stepKey, queueName string) {
 	defer e.wg.Done()
 
-	queueName := fmt.Sprintf("%s:queue:%s", e.queuePrefix, stepKey)
 	processingQueue := fmt.Sprintf("%s:%s", e.processingQueueName, stepKey)
 
 	logger.SysLogf("V2 Worker %s started listening on %s", workerID, queueName)
@@ -213,22 +240,26 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 	// 同步更新 File 的 run_status 为 processing
 	// 显式传 processing 绕过 RunID 共享场景下旧 job 的干扰计算
 	if fileID := model.ExtractFileIDFromJob(&job); fileID > 0 && job.RunID != "" {
-		if err := model.UpdateFileCleaningRuleInfoHelper(e.db, fileID, job.RunID, "processing"); err != nil {
+		statusUpdate := "processing"
+		if model.IsStandalonePipelineJobType(job.Type) {
+			statusUpdate = ""
+		}
+		if err := model.UpdateFileCleaningRuleInfoHelper(e.db, fileID, job.RunID, statusUpdate); err != nil {
 			logger.Warn(e.ctx, fmt.Sprintf("processJob: failed to update cleaning_rule_info for job %d: %v", wrapper.JobID, err))
 		}
 	}
 
-		// 上报 Keystone 阶段开始
-		if client := keystone.GlobalClient; client != nil {
-			client.ReportTaskStageStarted(keystone.TaskEvent{
-				ExternalTaskID: fmt.Sprintf("rag-pipeline-%d-%s", job.RelatedId, job.RunID),
-				TaskType:       "RAG_INDEXING",
-				ServiceKey:     "rag-indexing",
-				StageKey:       job.Type,
-				TraceID:        job.RunID,
-				StartedAt:      time.Now().UTC(),
-			})
-		}
+	// 上报 Keystone 阶段开始
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskStageStarted(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("rag-pipeline-%d-%s", job.RelatedId, job.RunID),
+			TaskType:       "RAG_INDEXING",
+			ServiceKey:     "rag-indexing",
+			StageKey:       job.Type,
+			TraceID:        job.RunID,
+			StartedAt:      time.Now().UTC(),
+		})
+	}
 
 	// 解析 Profile 获取当前步骤配置
 	var profile v2model.RuntimeProfile
@@ -309,10 +340,17 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 		var failedStep model.RagJobStep
 		if errStep := e.db.Where("job_id = ?", job.JobID).First(&failedStep).Error; errStep == nil {
 			failedStep.CompleteWithError(map[string]string{"error": err.Error()})
+			if errors.Is(err, model.ErrJobCancelled) {
+				failedStep.Status = model.RagJobStepStatusCancelled
+			}
 			e.db.Save(&failedStep)
 		}
 
-		e.handleFailure(wrapper, err.Error())
+		if errors.Is(err, model.ErrJobCancelled) {
+			e.handleCancellation(wrapper, err.Error())
+		} else {
+			e.handleFailure(wrapper, err.Error())
+		}
 		// 这里可以添加重试逻辑（推入重试队列），暂时简化为直接移除
 		e.rdb.LRem(e.ctx, processingQueue, 1, payload)
 		return
@@ -342,7 +380,11 @@ func (e *RagJobEngineV2) handleFailure(wrapper JobWrapper, reason string) {
 	if err := e.db.Select("pipeline_id, run_id, related_id, start_parameters, type, created_time, failure_reason").First(&job, wrapper.JobID).Error; err == nil {
 		fileID := model.ExtractFileIDFromJob(&job)
 		if fileID > 0 {
-			if updateErr := model.UpdateFileCleaningRuleInfoHelper(e.db, fileID, job.RunID, "failed"); updateErr != nil {
+			statusUpdate := "failed"
+			if model.IsStandalonePipelineJobType(job.Type) {
+				statusUpdate = ""
+			}
+			if updateErr := model.UpdateFileCleaningRuleInfoHelper(e.db, fileID, job.RunID, statusUpdate); updateErr != nil {
 				logger.Error(e.ctx, fmt.Sprintf("Failed to update cleaning_rule_info for job %d: %v", wrapper.JobID, updateErr))
 			}
 		}
@@ -375,10 +417,25 @@ func (e *RagJobEngineV2) handleFailure(wrapper JobWrapper, reason string) {
 		}
 
 		// 注意：不在此处推进流水线——下游步骤依赖上游输出，上游 failed 意味着
-		// 下游数据不完整。Cleaner 场景（24h 无心跳）由 cleanupStaleProcessingJobs
+		// 下游数据不完整。Cleaner 场景（超过 staleJobCutoff 无心跳）由 cleanupStaleProcessingJobs
 		// 单独取消下游 paused job；正常 handler 出错返回时，流水线保持 paused 状态，
 		// 由用户或恢复机制决定后续处理。
 	}
+}
+
+func (e *RagJobEngineV2) handleCancellation(wrapper JobWrapper, reason string) {
+	e.db.Model(&model.RagJob{}).Where("job_id = ?", wrapper.JobID).Updates(map[string]interface{}{
+		"status":         model.RagJobStatusCancelled,
+		"failure_reason": reason,
+	})
+	e.db.Model(&model.RagJobStep{}).Where("job_id = ? AND status IN ?", wrapper.JobID, []string{
+		model.RagJobStepStatusPending,
+		model.RagJobStepStatusProcessing,
+	}).Updates(map[string]interface{}{
+		"status":   model.RagJobStepStatusCancelled,
+		"end_time": time.Now().UnixMilli(),
+	})
+	e.rdb.Del(e.ctx, fmt.Sprintf("%s:%d", heartbeatKeyPrefix, wrapper.JobID))
 }
 
 // startHeartbeat 启动心跳 goroutine，定期向 Redis 写入心跳标记
@@ -402,13 +459,52 @@ func (e *RagJobEngineV2) startHeartbeat(ctx context.Context, jobID int64) func()
 }
 
 // enqueueJob 将 job 入队到 Redis 步骤队列（从未开始的孤儿 pending 重新入队用）。
+// document_parsing 按原始文件类型分流：txt/md/markdown 走轻文本专用队列，不被重 OCR 任务堵住。
 // worker 领取时校验 DB status（非 pending 跳过），重复入队不会重复执行。
 func (e *RagJobEngineV2) enqueueJob(ctx context.Context, job model.RagJob) error {
 	stepKey := job.Type
 	queueName := fmt.Sprintf("%s:queue:%s", e.queuePrefix, stepKey)
+	if stepKey == "document_parsing" && e.isLightParsingJob(ctx, job) {
+		queueName = fmt.Sprintf("%s:queue:%s%s", e.queuePrefix, stepKey, lightQueueSuffix)
+	}
 	wrapper := JobWrapper{JobID: job.JobID, Eid: job.Eid, Type: stepKey, EnqueuedAt: time.Now()}
 	payload, _ := json.Marshal(wrapper)
 	return e.rdb.LPush(ctx, queueName, string(payload)).Err()
+}
+
+// isLightParsingJob 判断解析任务是否为秒级文本（txt/md/markdown）。
+// 依据原始上传文件名扩展名（files.Path 是转换后的 .md 命名，PDF 也会是 .pdf.md，不可用）。
+func (e *RagJobEngineV2) isLightParsingJob(ctx context.Context, job model.RagJob) bool {
+	fileID := model.ExtractFileIDFromJob(&job)
+	if fileID <= 0 {
+		return false
+	}
+	var file model.File
+	if err := e.db.WithContext(ctx).Where("id = ?", fileID).First(&file).Error; err != nil {
+		return false
+	}
+	name := ""
+	if file.UploadFileID > 0 {
+		var upload model.UploadFile
+		if err := e.db.WithContext(ctx).Where("id = ?", file.UploadFileID).First(&upload).Error; err == nil && strings.TrimSpace(upload.FileName) != "" {
+			name = upload.FileName
+		}
+	}
+	if name == "" {
+		name = file.Path
+	}
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".txt", ".md", ".markdown":
+		return true
+	}
+	return false
+}
+
+// reclaimOrphanPending 服务启动时复活孤儿 pending：worker 死亡后队列堆积的 job 重新入队，
+// 由启动的 worker 立即消费（重复入队安全：worker 校验 DB status 非 pending 跳过）。
+func (e *RagJobEngineV2) reclaimOrphanPending(ctx context.Context) {
+	cutoff := time.Now().Add(-10 * time.Minute).UnixMilli()
+	e.reclaimPendingJobs(ctx, cutoff)
 }
 
 // StartStaleJobCleaner 启动定时清理死 job 的任务
@@ -430,9 +526,37 @@ func (e *RagJobEngineV2) StartStaleJobCleaner(ctx context.Context, interval time
 	}()
 }
 
-// cleanupStaleProcessingJobs 清理超过 24h 无心跳的 processing/pending job
+// StartPendingJobReclaimer 定期补投创建后未进入 Redis 的 pending 任务。
+// 队列消息丢失时，任务本身仍是 pending，不能等到 staleJobCutoff 死任务清理周期。
+func (e *RagJobEngineV2) StartPendingJobReclaimer(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(pendingReclaimInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				e.reclaimPendingJobs(ctx, time.Now().Add(-pendingReclaimCutoff).UnixMilli())
+			}
+		}
+	}()
+}
+
+// staleJobTimeoutFailureReason 生成 stale job 清理的失败原因文案（阈值取自 staleJobCutoff，保证与常量一致）
+func staleJobTimeoutFailureReason() string {
+	return fmt.Sprintf("超时未完成: 超过%d分钟无心跳", int(staleJobCutoff/time.Minute))
+}
+
+// staleJobTimeoutKeystoneMessage 生成 keystone 上报的流水线超时说明（阈值取自 staleJobCutoff）
+func staleJobTimeoutKeystoneMessage() string {
+	return fmt.Sprintf("%d分钟无心跳，流水线超时终止", int(staleJobCutoff/time.Minute))
+}
+
+// cleanupStaleProcessingJobs 清理超过 staleJobCutoff（当前 30 分钟）无心跳的 processing/pending job
 //   - processing：worker 已死，标记失败
 //   - pending：孤儿（从未入队/从未被领取），重新入队复活（从未开始，走正常 worker 消费）
+//
 // 避免孤儿永久卡 pending 污染排队统计。
 func (e *RagJobEngineV2) cleanupStaleProcessingJobs(ctx context.Context) {
 	cutoff := time.Now().Add(-staleJobCutoff).UnixMilli()
@@ -487,7 +611,7 @@ func (e *RagJobEngineV2) cleanupStaleProcessingJobs(ctx context.Context) {
 			JobID: job.JobID,
 			Eid:   job.Eid,
 			Type:  job.Type,
-		}, "超时未完成: 超过24小时无心跳")
+		}, staleJobTimeoutFailureReason())
 		// 上报 Keystone 任务超时
 		if client := keystone.GlobalClient; client != nil {
 			client.ReportTaskFailed(
@@ -499,7 +623,7 @@ func (e *RagJobEngineV2) cleanupStaleProcessingJobs(ctx context.Context) {
 					TraceID:        job.RunID,
 				},
 				"RAG_STEP_TIMEOUT",
-				"24小时无心跳，流水线超时终止",
+				staleJobTimeoutKeystoneMessage(),
 			)
 		}
 
@@ -521,6 +645,25 @@ func (e *RagJobEngineV2) cleanupStaleProcessingJobs(ctx context.Context) {
 
 	if markedCount > 0 || reclaimedCount > 0 {
 		logger.Infof(ctx, "【StaleJobCleaner】清理完成: 标记 %d 个死 processing job 为失败, 重新入队 %d 个孤儿 pending job", markedCount, reclaimedCount)
+	}
+}
+
+func (e *RagJobEngineV2) reclaimPendingJobs(ctx context.Context, cutoff int64) {
+	var jobs []model.RagJob
+	if err := e.db.Where("status = ? AND updated_time < ?", model.RagJobStatusPending, cutoff).
+		Limit(500).Find(&jobs).Error; err != nil {
+		logger.Errorf(ctx, "【流水线恢复】查询 pending job 失败: %v", err)
+		return
+	}
+	for _, job := range jobs {
+		if !e.HasHandler(job.Type) {
+			continue
+		}
+		if err := e.enqueueJob(ctx, job); err != nil {
+			logger.Warnf(ctx, "【流水线恢复】补投 pending job %d 失败: %v", job.JobID, err)
+			continue
+		}
+		logger.Infof(ctx, "【流水线恢复】补投 pending job %d (type=%s)", job.JobID, job.Type)
 	}
 }
 
@@ -596,7 +739,6 @@ func (e *RagJobEngineV2) finalizeJob(ctx context.Context, job model.RagJob, curr
 			TraceID:        job.RunID,
 			FinishedAt:     time.Now().UTC(),
 		})
-
 
 		// 如果是最后一个步骤，上报任务成功
 		if isLastStep {
@@ -793,7 +935,11 @@ func (e *RagJobEngineV2) recoverOneJob(ctx context.Context, job model.RagJob) bo
 
 	if err := handler(ctx, &job, profile.Steps[currentIndex].Config); err != nil {
 		logger.Errorf(ctx, "【流水线恢复】job %d 恢复失败: %v", job.JobID, err)
-		e.handleFailure(makeWrapper(), "recovery_failed: "+err.Error())
+		if errors.Is(err, model.ErrJobCancelled) {
+			e.handleCancellation(makeWrapper(), err.Error())
+		} else {
+			e.handleFailure(makeWrapper(), "recovery_failed: "+err.Error())
+		}
 		return false
 	}
 

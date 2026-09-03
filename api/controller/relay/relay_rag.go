@@ -181,6 +181,11 @@ func HandleWikiSearchRag(c *gin.Context, queries []string, chatRequest *ChatRequ
 	}
 
 	query := queryText
+	wikiRecallTopK := calculateRecallTopK(
+		wikiTopK(chatRequest),
+		len(queries),
+		shouldRerank(messageStatus.AgentModel, chatRequest),
+	)
 	results, err := servicepkg.NewWikiSearchService(model.DB).Search(ctx, servicepkg.WikiSearchRequest{
 		Eid:         messageStatus.AgentModel.Eid,
 		UserID:      config.GetUserId(c),
@@ -188,7 +193,7 @@ func HandleWikiSearchRag(c *gin.Context, queries []string, chatRequest *ChatRequ
 		SpaceIDs:    enabledSpaceIDs,
 		LibraryIDs:  libraryIDs,
 		WikiPageIDs: pageIDs,
-		TopK:        wikiTopK(chatRequest),
+		TopK:        wikiRecallTopK,
 	})
 	if err != nil {
 		logger.Warnf(ctx, "【Wiki检索】搜索失败：查询=%q，错误=%v", query, err)
@@ -205,9 +210,12 @@ func HandleWikiSearchRag(c *gin.Context, queries []string, chatRequest *ChatRequ
 }
 
 func wikiSourceReference(result servicepkg.WikiSearchResult, index int) rag.SourceReference {
-	content := strings.TrimSpace(result.Body)
+	// Vector retrieval returns the matched chunk in Content. Use the page body
+	// only as a compatibility fallback; injecting the whole page makes a
+	// single Wiki hit dominate both context size and answer grounding.
+	content := strings.TrimSpace(result.Content)
 	if content == "" {
-		content = strings.TrimSpace(result.Content)
+		content = strings.TrimSpace(result.Body)
 	}
 	if content == "" {
 		content = strings.TrimSpace(result.Summary)
@@ -242,55 +250,205 @@ func wikiTopK(chatRequest *ChatRequest) int {
 	return 20
 }
 
+type retrievalStageCounts struct {
+	Recalled    int
+	AfterFusion int
+	AfterRerank int
+	Selected    int
+}
+
+type retrievalObservability struct {
+	Document retrievalStageCounts
+	Wiki     retrievalStageCounts
+	Graph    retrievalStageCounts
+	Web      retrievalStageCounts
+}
+
+func (o retrievalObservability) asMap() map[string]interface{} {
+	return map[string]interface{}{
+		"document": retrievalStageCountMap(o.Document),
+		"wiki":     retrievalStageCountMap(o.Wiki),
+		"graph":    retrievalStageCountMap(o.Graph),
+		"web":      retrievalStageCountMap(o.Web),
+	}
+}
+
+func retrievalStageCountMap(counts retrievalStageCounts) map[string]int {
+	return map[string]int{
+		"recalled":     counts.Recalled,
+		"after_fusion": counts.AfterFusion,
+		"after_rerank": counts.AfterRerank,
+		"selected":     counts.Selected,
+	}
+}
+
+func sourceCategory(source rag.SourceReference) string {
+	sourceType := strings.ToLower(strings.TrimSpace(source.SourceType))
+	switch {
+	case sourceType == "wiki":
+		return "wiki"
+	case sourceType == "graph" || source.ChunkType == rag.GraphAggregateChunkType || source.ReferenceID == rag.GraphAggregateReferenceID:
+		return "graph"
+	case sourceType == "web" || strings.HasPrefix(strings.ToUpper(strings.TrimSpace(source.ReferenceID)), "B-"):
+		return "web"
+	default:
+		return "document"
+	}
+}
+
+func sourceWeight(category string) float64 {
+	switch category {
+	case "wiki":
+		return config.RAGSourceWeightWiki
+	case "document":
+		return config.RAGSourceWeightDocument
+	case "web":
+		return config.RAGSourceWeightWeb
+	default:
+		return 1
+	}
+}
+
+func fusionRankConstant() int {
+	if config.RAGSourceFusionRankConstant <= 0 {
+		return 60
+	}
+	return config.RAGSourceFusionRankConstant
+}
+
+func addSourceCounts(counts map[string]int, sources []rag.SourceReference) {
+	for _, source := range sources {
+		counts[sourceCategory(source)]++
+	}
+}
+
+func updateRetrievalObservability(observability *retrievalObservability, stage string, sources []rag.SourceReference) {
+	counts := map[string]int{}
+	addSourceCounts(counts, sources)
+	for category, count := range counts {
+		var target *retrievalStageCounts
+		switch category {
+		case "document":
+			target = &observability.Document
+		case "wiki":
+			target = &observability.Wiki
+		case "graph":
+			target = &observability.Graph
+		case "web":
+			target = &observability.Web
+		}
+		if target == nil {
+			continue
+		}
+		switch stage {
+		case "recalled":
+			target.Recalled = count
+		case "after_fusion":
+			target.AfterFusion = count
+		case "after_rerank":
+			target.AfterRerank = count
+		case "selected":
+			target.Selected = count
+		}
+	}
+}
+
 func mergeSearchSources(ragSources, wikiSources []rag.SourceReference, topK int) []rag.SourceReference {
-	merged := make([]rag.SourceReference, 0, len(ragSources)+len(wikiSources))
-	seen := make(map[string]struct{}, len(ragSources)+len(wikiSources))
-	for _, source := range append(append([]rag.SourceReference{}, ragSources...), wikiSources...) {
-		key := source.SourceType + ":" + source.ReferenceID
-		if source.SourceType == "wiki" {
-			key = fmt.Sprintf("wiki:%d:%s", source.WikiPageID, source.ReferenceID)
+	merged, _ := mergeSearchSourcesWithStats(ragSources, wikiSources, topK, false)
+	return merged
+}
+
+func mergeSearchSourcesWithStats(ragSources, wikiSources []rag.SourceReference, topK int, keepRerankCandidates bool) ([]rag.SourceReference, retrievalObservability) {
+	observability := retrievalObservability{}
+	allRecalled := make([]rag.SourceReference, 0, len(ragSources)+len(wikiSources))
+	allRecalled = append(allRecalled, ragSources...)
+	allRecalled = append(allRecalled, wikiSources...)
+	updateRetrievalObservability(&observability, "recalled", allRecalled)
+
+	seen := make(map[string]struct{}, len(allRecalled))
+	graphSources := make([]rag.SourceReference, 0, 1)
+	byCategory := make(map[string][]rag.SourceReference)
+	for _, source := range allRecalled {
+		category := sourceCategory(source)
+		key := fmt.Sprintf("%s:%d:%s", category, source.ChunkID, source.ReferenceID)
+		if category == "wiki" {
+			key = fmt.Sprintf("wiki:%d:%d:%s", source.WikiPageID, source.ChunkID, source.ReferenceID)
 		}
 		if _, ok := seen[key]; ok {
 			continue
 		}
 		seen[key] = struct{}{}
-		merged = append(merged, source)
-	}
-	sort.SliceStable(merged, func(i, j int) bool { return merged[i].Score > merged[j].Score })
-	usedReferences := make(map[string]struct{}, len(merged))
-	for _, source := range merged {
-		if source.SourceType != "wiki" && source.ReferenceID != "" {
-			usedReferences[source.ReferenceID] = struct{}{}
-		}
-	}
-	nextWikiReference := 0
-	for i := range merged {
-		if merged[i].SourceType != "wiki" {
+		if category == "graph" {
+			source.RawScore = source.Score
+			source.Score = 0
+			source.FusionScore = 0
+			graphSources = append(graphSources, source)
 			continue
 		}
-		referenceID := merged[i].ReferenceID
+		byCategory[category] = append(byCategory[category], source)
+	}
+
+	fused := make([]rag.SourceReference, 0, len(allRecalled))
+	for _, category := range []string{"document", "wiki", "web"} {
+		candidates := byCategory[category]
+		sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].Score > candidates[j].Score })
+		for index := range candidates {
+			candidates[index].RawScore = candidates[index].Score
+			candidates[index].SourceRank = index + 1
+			candidates[index].FusionScore = sourceWeight(category) / float64(index+1+fusionRankConstant())
+		}
+		fused = append(fused, candidates...)
+	}
+	sort.SliceStable(fused, func(i, j int) bool { return fused[i].FusionScore > fused[j].FusionScore })
+
+	if topK <= 0 {
+		topK = 20
+	}
+	if !keepRerankCandidates && len(fused) > topK {
+		fused = fused[:topK]
+	}
+	afterFusion := make([]rag.SourceReference, 0, len(graphSources)+len(fused))
+	afterFusion = append(afterFusion, graphSources...)
+	afterFusion = append(afterFusion, fused...)
+	updateRetrievalObservability(&observability, "after_fusion", afterFusion)
+
+	// Graph is supplemental structured context. It remains visible but is not
+	// allowed to consume the text candidate TopK or compete by a sentinel score.
+	return ensureWikiReferenceIDs(afterFusion), observability
+}
+
+func ensureWikiReferenceIDs(sources []rag.SourceReference) []rag.SourceReference {
+	used := make(map[string]struct{}, len(sources))
+	for _, source := range sources {
+		if !strings.EqualFold(source.SourceType, "wiki") && source.ReferenceID != "" {
+			used[source.ReferenceID] = struct{}{}
+		}
+	}
+	nextIndex := 0
+	for index := range sources {
+		if !strings.EqualFold(sources[index].SourceType, "wiki") {
+			continue
+		}
+		referenceID := sources[index].ReferenceID
 		if referenceID == "" {
-			referenceID = wikiReferenceID(nextWikiReference)
+			referenceID = wikiReferenceID(nextIndex)
 		}
 		for {
-			if _, exists := usedReferences[referenceID]; !exists {
+			if _, exists := used[referenceID]; !exists {
 				break
 			}
-			nextWikiReference++
-			referenceID = wikiReferenceID(nextWikiReference)
+			nextIndex++
+			referenceID = wikiReferenceID(nextIndex)
 		}
-		merged[i].ReferenceID = referenceID
-		merged[i].SourceKey = fmt.Sprintf("[Source:%s]", referenceID)
-		usedReferences[referenceID] = struct{}{}
+		sources[index].ReferenceID = referenceID
+		sources[index].SourceKey = fmt.Sprintf("[Source:%s]", referenceID)
+		used[referenceID] = struct{}{}
 	}
-	if topK <= 0 || len(merged) <= topK {
-		return merged
-	}
-	return merged[:topK]
+	return sources
 }
 
 func sourceResourceKey(source rag.SourceReference) string {
-	switch source.SourceType {
+	switch strings.ToLower(strings.TrimSpace(source.SourceType)) {
 	case "wiki":
 		if source.WikiPageID > 0 {
 			return fmt.Sprintf("wiki:%d", source.WikiPageID)
@@ -301,7 +459,7 @@ func sourceResourceKey(source rag.SourceReference) string {
 		if source.URL != "" {
 			return "wiki:url:" + source.URL
 		}
-	case "file", "knowledge", "":
+	case "document", "file", "knowledge", "":
 		if source.FileID > 0 {
 			return fmt.Sprintf("file:%d", source.FileID)
 		}
@@ -524,6 +682,7 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 	var sources []rag.SourceReference
 	var wikiSources []rag.SourceReference
 	var wikiErr error
+	rerankEnabled := shouldRerank(messageStatus.AgentModel, chatRequest)
 	wikiSearchEnabled := shouldRunWikiSearch(ctx, chatRequest, messageStatus.AgentModel)
 	if wikiSearchEnabled {
 		// Wiki 与原有知识库共用 knowledge_search 步骤，且步骤必须在实际检索前发出。
@@ -678,8 +837,8 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			// 2. 如果 KB 失败，Web 成功，降级为 Web 搜索
 			// 3. 如果都失败，返回 KB 的错误（或者合并错误）
 
-			// 开启重排时，将 KB 和 Web 候选完整合并后统一重排一次；
-			// 未开启重排时保持原有 KB 优先、Web 补足 TopK 的语义。
+			// KB 和 Web 候选完整保留，交由后续跨来源 rank fusion 统一截断；
+			// 开启重排时再对融合候选执行一次最终重排。
 			availableKBSources := []rag.SourceReference(nil)
 			availableWebSources := []rag.SourceReference(nil)
 			if kbErr == nil {
@@ -692,7 +851,7 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 				availableKBSources,
 				availableWebSources,
 				topK,
-				shouldRerank(messageStatus.AgentModel, chatRequest),
+				rerankEnabled,
 			)
 
 			// 如果最终没有结果，且有错误发生，返回错误
@@ -735,13 +894,14 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 	if wikiErr != nil {
 		searchErrors = append(searchErrors, rootErrorMessage(wikiErr))
 	}
-	sources = mergeSearchSources(sources, wikiSources, wikiTopK(chatRequest))
+	var retrievalObs retrievalObservability
+	sources, retrievalObs = mergeSearchSourcesWithStats(sources, wikiSources, wikiTopK(chatRequest), rerankEnabled)
 	if len(sources) > 0 {
 		hasWiki, hasFile := false, false
 		for _, source := range sources {
 			if source.SourceType == "wiki" {
 				hasWiki = true
-			} else if source.SourceType == "file" || source.FileID > 0 {
+			} else if sourceCategory(source) == "document" {
 				hasFile = true
 			}
 		}
@@ -762,8 +922,8 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			}
 		}
 	}
-	// 所有召回来源（KB、Web、图谱）完成合并后，只在这里执行一次最终重排。
-	if len(sources) > 0 && shouldRerank(messageStatus.AgentModel, chatRequest) {
+	// 所有召回来源（KB、Wiki、Web、图谱）完成合并后，只在这里执行一次最终重排。
+	if len(sources) > 0 && rerankEnabled {
 		query := messageStatus.RewrittenQuestion
 		if query == "" {
 			query = messageStatus.OriginalQuestion
@@ -774,6 +934,9 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			logger.Warnf(ctx, "最终重排序失败: %v，使用 TopK 截断后的原始合并结果", rerankErr)
 		}
 	}
+	updateRetrievalObservability(&retrievalObs, "after_rerank", sources)
+	updateRetrievalObservability(&retrievalObs, "selected", sources)
+	c.Set("rag_retrieval_observability", retrievalObs.asMap())
 	sources = renumberSourceReferences(sources)
 
 	stepData := map[string]interface{}{
@@ -781,6 +944,14 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 		"wiki_result_count":        len(wikiSources), // 兼容旧客户端
 		"wiki_search_result_count": len(wikiSources),
 		"solo_wiki_chunk_count":    0,
+		"retrieval_observability":  retrievalObs.asMap(),
+		"retrieval_fusion": map[string]interface{}{
+			"method":          "weighted_rrf",
+			"document_weight": config.RAGSourceWeightDocument,
+			"wiki_weight":     config.RAGSourceWeightWiki,
+			"web_weight":      config.RAGSourceWeightWeb,
+			"rank_constant":   fusionRankConstant(),
+		},
 	}
 	if chatRequest.DatasetIsSoloWiki() {
 		stepData["solo_wiki_chunk_count"] = len(sources)
@@ -821,29 +992,13 @@ func knowledgeSearchStepStarted(c *gin.Context) bool {
 	return value
 }
 
-func mergeKnowledgeAndWebSources(kbSources, webSources []rag.SourceReference, topK int, rerankEnabled bool) []rag.SourceReference {
-	if rerankEnabled {
-		merged := make([]rag.SourceReference, 0, len(kbSources)+len(webSources))
-		merged = append(merged, kbSources...)
-		return append(merged, webSources...)
-	}
-
-	if topK <= 0 {
-		topK = 20
-	}
-	merged := make([]rag.SourceReference, 0, topK)
-	if len(kbSources) > topK {
-		kbSources = kbSources[:topK]
-	}
+func mergeKnowledgeAndWebSources(kbSources, webSources []rag.SourceReference, _ int, _ bool) []rag.SourceReference {
+	// Keep both source lists intact. Cross-source rank fusion owns the only
+	// final TopK cutoff, otherwise a full KB list can consume the window before
+	// Wiki/Web candidates are compared.
+	merged := make([]rag.SourceReference, 0, len(kbSources)+len(webSources))
 	merged = append(merged, kbSources...)
-	remaining := topK - len(merged)
-	if remaining > len(webSources) {
-		remaining = len(webSources)
-	}
-	if remaining > 0 {
-		merged = append(merged, webSources[:remaining]...)
-	}
-	return merged
+	return append(merged, webSources...)
 }
 
 // ExecuteRAGQuery performs RAG search independently without gin.Context dependency.
@@ -1180,7 +1335,7 @@ func HandleSoloFileSearchRag(c *gin.Context, queries []string, chatRequest *Chat
 
 		chunkRefID := fmt.Sprintf("%d-%d", 1, i+1) // 永远为 1-索引
 		source := rag.SourceReference{
-			SourceType:        "file",
+			SourceType:        "document",
 			ReferenceID:       chunkRefID,
 			ChunkID:           chunk.ID,
 			FileID:            chunk.FileID,
@@ -1559,7 +1714,7 @@ func convertToSourceReferences(
 		extInfo := extendedInfos[item.ChunkID]
 
 		source := rag.SourceReference{
-			SourceType:        "file",
+			SourceType:        "document",
 			ReferenceID:       chunkRefID,
 			ChunkID:           item.ChunkID,
 			FileID:            item.FileID,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Table, Button, Tooltip } from "antd";
 import { t } from "@/locales";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import FilterDateRange from "@/components/Filter/date-range";
 import { getLastTimeAsDay } from "@km/shared-utils";
 import recordApi from "@/api/modules/record/index";
@@ -173,15 +173,13 @@ export default function Statistic({ agentId }: StatisticProps) {
       title: t("search-record.operation"),
       width: 60,
       render: (_: any, __: any, index: number) => (
-        <Button
-          type="text"
-          className="invisible group-hover:visible hover:text-brand"
-          icon={<SvgIcon name="view" />}
-          onClick={(e) => {
-            e.stopPropagation();
-            handleOpenDetail(index);
-          }}
-        />
+        <IconAction
+          variant="row"
+          title={t("action.view")}
+          onClick={() => handleOpenDetail(index)}
+        >
+          <SvgIcon name="view" />
+        </IconAction>
       ),
     },
   ];

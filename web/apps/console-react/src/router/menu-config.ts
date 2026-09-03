@@ -154,11 +154,6 @@ export const menuTree: MenuItemConfig[] = [
 
 export const hiddenRoutes: MenuItemConfig[] = [
   {
-    path: '/agent/create',
-    name: 'AgentCreate',
-    hidden: true,
-  },
-  {
     path: '/prompt/create',
     name: 'PromptCreate',
     title: 'prompt.title',
@@ -184,11 +179,6 @@ export const hiddenRoutes: MenuItemConfig[] = [
   {
     path: '/info',
     name: 'Info',
-    hidden: true,
-  },
-  {
-    path: '/domain',
-    name: 'Domain',
     hidden: true,
   },
   {
@@ -267,12 +257,6 @@ export const hiddenRoutes: MenuItemConfig[] = [
           path: '/assistant/app-setting',
           name: 'AssistantAppSetting',
           title: '文档应用设置',
-          hidden: true,
-        },
-        {
-          path: '/graph',
-          name: 'Graph',
-          title: '图谱模板',
           hidden: true,
         },
         {

@@ -27,7 +27,6 @@ import VirtualLogo from "@/components/VirtualLogo";
 import { FileSearch } from "@/components/FileSearch";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { ProfileModal } from "@/views/profile";
-import { RecordingFloat } from "@/components/RecordingFloat";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { LibraryPermission } from "../components/permission";
 import { eventBus, copyToClip } from "@km/shared-utils";
@@ -540,7 +539,14 @@ export function LibraryMainView() {
 
 
               {/* 文件搜索 */}
-              <FileSearch className="mt-4" libraryId={libraryId} />
+              <FileSearch
+                className="mt-4"
+                libraryId={libraryId}
+                onSelect={(item) => {
+                  // 选中后让目录树展开并滚动定位到该节点（与首次进入的行为一致）。
+                  catalogRef.current?.scrollToNode(String(item.file_id));
+                }}
+              />
 
               {/* 导航菜单 */}
               <div className="flex flex-col gap-1 py-3">
@@ -682,9 +688,6 @@ export function LibraryMainView() {
 
             {/* 权限申请对话框 */}
             <ApplyDialog ref={applyRef} onSubmit={handleApplySubmit} />
-
-            {/* 录音浮层 */}
-            <RecordingFloat />
           </div>
         </div>
 

@@ -26,24 +26,44 @@ type RecordingMemoryEntityQuery struct {
 	Offset     int    `form:"offset"`
 }
 
+type CreateRecordingMemoryEntityRequest struct {
+	EntityType    string                             `json:"entity_type" binding:"required"`
+	CanonicalName string                             `json:"canonical_name" binding:"required"`
+	Summary       string                             `json:"summary"`
+	Attributes    map[string]string                  `json:"attributes"`
+	Facts         []CreateRecordingMemoryFactRequest `json:"facts"`
+}
+
 type UpdateRecordingMemoryEntityRequest struct {
-	CanonicalName *string           `json:"canonical_name"`
-	Summary       *string           `json:"summary"`
-	Attributes    map[string]string `json:"attributes"`
+	CanonicalName  *string                            `json:"canonical_name"`
+	Summary        *string                            `json:"summary"`
+	Attributes     map[string]string                  `json:"attributes"`
+	Facts          []UpdateRecordingMemoryFactRequest `json:"facts"`
+	DeletedFactIDs []string                           `json:"deleted_fact_ids"`
 }
 
 type CreateRecordingMemoryFactRequest struct {
-	Content    string            `json:"content" binding:"required"`
+	RelatedEntityID int64             `json:"related_entity_id"` // 被关联实体 id（HashID 已解码）；>0 = 从其他实体关联过来的 fact（内容由详情回填）
+	Content         string            `json:"content"`           // 普通人工事实内容（RelatedEntityID=0 时必填）
+	Attributes      map[string]string `json:"attributes"`
+}
+
+type AddRecordingMemoryFactRequest struct {
+	Content    string            `json:"content" binding:"required"` // 人工修正事实内容（必填）
 	Attributes map[string]string `json:"attributes"`
 }
 
-type MergeRecordingMemoryEntitiesRequest struct {
-	SourceID string `json:"source_id" binding:"required"`
-	TargetID string `json:"target_id" binding:"required"`
+type UpdateRecordingMemoryFactRequest struct {
+	ID              int64             `json:"id"`                // 记录 id（>0 修改既有事实，仅人工可改）
+	RelatedEntityID int64             `json:"related_entity_id"` // 被关联实体 id（HashID 已解码）；>0 = 修改关联目标
+	Content         string            `json:"content"`           // 普通人工事实内容（RelatedEntityID=0 时用于修改内容）
+	Attributes      map[string]string `json:"attributes"`
 }
 
-type CreateRecordingMemoryRelationRequest struct {
-	RelatedEntityID string `json:"related_entity_id" binding:"required"`
+type MergeRecordingMemoryEntitiesRequest struct {
+	SourceID  string   `json:"source_id"` // 兼容旧契约：单源融合
+	TargetID  string   `json:"target_id" binding:"required"`
+	SourceIDs []string `json:"source_ids"` // 多源融合：选定多个来源，融为 target_id
 }
 
 // GetRecordingMemoryOverview godoc
@@ -135,6 +155,39 @@ func GetRecordingMemoryEntity(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(data))
 }
 
+// CreateRecordingMemoryEntity godoc
+// @Summary 新增安心录实体记忆
+// @Description 手工创建一条实体记忆（记录 manual 来源标记，内容可被后续会议编译覆盖）；同类型同名已存在时返回错误，请改用融合。
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CreateRecordingMemoryEntityRequest true "新增实体"
+// @Success 200 {object} model.CommonResponse{data=service.RecordingMemoryEntityDetail}
+// @Router /api/recordings/memories/entities [post]
+func CreateRecordingMemoryEntity(c *gin.Context) {
+	var req CreateRecordingMemoryEntityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).Create(
+		c.Request.Context(),
+		config.GetUserId(c),
+		service.CreateRecordingMemoryEntityInput{
+			EntityType:    strings.TrimSpace(req.EntityType),
+			CanonicalName: strings.TrimSpace(req.CanonicalName),
+			Summary:       req.Summary,
+			Attributes:    req.Attributes,
+			Facts:         convertCreateRecordingMemoryFacts(req.Facts),
+		},
+	)
+	if respondRecordingEntityMemoryError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(data))
+}
+
 // UpdateRecordingMemoryEntity godoc
 // @Summary 编辑安心录实体记忆
 // @Tags 录音
@@ -155,11 +208,39 @@ func UpdateRecordingMemoryEntity(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
-	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).Update(c.Request.Context(), config.GetUserId(c), entityID, service.UpdateRecordingMemoryEntityInput{CanonicalName: req.CanonicalName, Summary: req.Summary, Attributes: req.Attributes})
+	input, err := convertUpdateRecordingMemoryEntityInput(req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).Update(c.Request.Context(), config.GetUserId(c), entityID, input)
 	if respondRecordingEntityMemoryError(c, err) {
 		return
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(data))
+}
+
+func convertCreateRecordingMemoryFacts(facts []CreateRecordingMemoryFactRequest) []service.CreateRecordingMemoryFactInput {
+	result := make([]service.CreateRecordingMemoryFactInput, 0, len(facts))
+	for _, fact := range facts {
+		result = append(result, service.CreateRecordingMemoryFactInput{RelatedEntityID: fact.RelatedEntityID, Content: fact.Content, Attributes: fact.Attributes})
+	}
+	return result
+}
+
+func convertUpdateRecordingMemoryEntityInput(req UpdateRecordingMemoryEntityRequest) (service.UpdateRecordingMemoryEntityInput, error) {
+	input := service.UpdateRecordingMemoryEntityInput{CanonicalName: req.CanonicalName, Summary: req.Summary, Attributes: req.Attributes}
+	for _, fact := range req.Facts {
+		input.Facts = append(input.Facts, service.UpdateRecordingMemoryFactInput{ID: fact.ID, RelatedEntityID: fact.RelatedEntityID, Content: fact.Content, Attributes: fact.Attributes})
+	}
+	for _, raw := range req.DeletedFactIDs {
+		id, err := hashids.TryParseID(raw)
+		if err != nil {
+			return input, errors.New("invalid deleted fact id")
+		}
+		input.DeletedFactIDs = append(input.DeletedFactIDs, id)
+	}
+	return input, nil
 }
 
 // DeleteRecordingMemoryEntity godoc
@@ -189,7 +270,7 @@ func DeleteRecordingMemoryEntity(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param entity_id path string true "实体ID（HashID）"
-// @Param request body CreateRecordingMemoryFactRequest true "人工事实"
+// @Param request body AddRecordingMemoryFactRequest true "人工事实"
 // @Success 200 {object} model.CommonResponse{data=service.RecordingMemoryEntityDetail}
 // @Router /api/recordings/memories/entities/{entity_id}/facts [post]
 func CreateRecordingMemoryFact(c *gin.Context) {
@@ -197,7 +278,7 @@ func CreateRecordingMemoryFact(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var req CreateRecordingMemoryFactRequest
+	var req AddRecordingMemoryFactRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
@@ -209,38 +290,14 @@ func CreateRecordingMemoryFact(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(data))
 }
 
-// DeleteRecordingMemoryFact godoc
-// @Summary 删除安心录实体事实
-// @Tags 录音
-// @Produce json
-// @Security BearerAuth
-// @Param entity_id path string true "实体ID（HashID）"
-// @Param fact_id path string true "事实ID（HashID）"
-// @Success 200 {object} model.CommonResponse
-// @Router /api/recordings/memories/entities/{entity_id}/facts/{fact_id} [delete]
-func DeleteRecordingMemoryFact(c *gin.Context) {
-	entityID, ok := parseRecordingMemoryID(c, "entity_id")
-	if !ok {
-		return
-	}
-	factID, ok := parseRecordingMemoryID(c, "fact_id")
-	if !ok {
-		return
-	}
-	err := service.NewRecordingMemoryEntityService(config.GetEID(c)).DeleteFact(c.Request.Context(), config.GetUserId(c), entityID, factID)
-	if respondRecordingEntityMemoryError(c, err) {
-		return
-	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"ok": true}))
-}
-
 // MergeRecordingMemoryEntities godoc
-// @Summary 融合两个安心录实体记忆
+// @Summary 融合安心录实体记忆
+// @Description 支持多源融合：source_ids 中所有实体融为 target_id（仅同类型；描述经 LLM 合并去重，其余字段取基底）。兼容旧单源字段 source_id。
 // @Tags 录音
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body MergeRecordingMemoryEntitiesRequest true "源实体与保留实体"
+// @Param request body MergeRecordingMemoryEntitiesRequest true "来源实体与保留实体"
 // @Success 200 {object} model.CommonResponse{data=service.RecordingMemoryEntityDetail}
 // @Router /api/recordings/memories/entity-merges [post]
 func MergeRecordingMemoryEntities(c *gin.Context) {
@@ -249,78 +306,43 @@ func MergeRecordingMemoryEntities(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
-	sourceID, err := hashids.TryParseID(req.SourceID)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
-		return
-	}
 	targetID, err := hashids.TryParseID(req.TargetID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
-	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).Merge(c.Request.Context(), config.GetUserId(c), sourceID, targetID)
-	if respondRecordingEntityMemoryError(c, err) {
-		return
-	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(data))
-}
+	svc := service.NewRecordingMemoryEntityService(config.GetEID(c))
+	ctx := c.Request.Context()
+	userID := config.GetUserId(c)
 
-// CreateRecordingMemoryRelation godoc
-// @Summary 添加安心录实体关联
-// @Tags 录音
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param entity_id path string true "实体ID（HashID）"
-// @Param request body CreateRecordingMemoryRelationRequest true "关联实体"
-// @Success 200 {object} model.CommonResponse{data=service.RecordingMemoryEntityDetail}
-// @Router /api/recordings/memories/entities/{entity_id}/relations [post]
-func CreateRecordingMemoryRelation(c *gin.Context) {
-	entityID, ok := parseRecordingMemoryID(c, "entity_id")
-	if !ok {
+	if len(req.SourceIDs) > 0 {
+		sourceIDs := make([]int64, 0, len(req.SourceIDs))
+		for _, raw := range req.SourceIDs {
+			id, parseErr := hashids.TryParseID(raw)
+			if parseErr != nil {
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(parseErr))
+				return
+			}
+			sourceIDs = append(sourceIDs, id)
+		}
+		data, err := svc.MergeMany(ctx, userID, sourceIDs, targetID)
+		if respondRecordingEntityMemoryError(c, err) {
+			return
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(data))
 		return
 	}
-	var req CreateRecordingMemoryRelationRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
-		return
-	}
-	relatedID, err := hashids.TryParseID(req.RelatedEntityID)
+
+	sourceID, err := hashids.TryParseID(req.SourceID)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
-	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).AddRelation(c.Request.Context(), config.GetUserId(c), entityID, relatedID)
+	data, err := svc.Merge(ctx, userID, sourceID, targetID)
 	if respondRecordingEntityMemoryError(c, err) {
 		return
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(data))
-}
-
-// DeleteRecordingMemoryRelation godoc
-// @Summary 删除安心录实体关联
-// @Tags 录音
-// @Produce json
-// @Security BearerAuth
-// @Param entity_id path string true "实体ID（HashID）"
-// @Param relation_id path string true "关联ID（HashID）"
-// @Success 200 {object} model.CommonResponse
-// @Router /api/recordings/memories/entities/{entity_id}/relations/{relation_id} [delete]
-func DeleteRecordingMemoryRelation(c *gin.Context) {
-	entityID, ok := parseRecordingMemoryID(c, "entity_id")
-	if !ok {
-		return
-	}
-	relationID, ok := parseRecordingMemoryID(c, "relation_id")
-	if !ok {
-		return
-	}
-	err := service.NewRecordingMemoryEntityService(config.GetEID(c)).DeleteRelation(c.Request.Context(), config.GetUserId(c), entityID, relationID)
-	if respondRecordingEntityMemoryError(c, err) {
-		return
-	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"ok": true}))
 }
 
 func parseRecordingMemoryID(c *gin.Context, key string) (int64, bool) {
@@ -338,10 +360,10 @@ func parseRecordingMemoryID(c *gin.Context, key string) (int64, bool) {
 // @Tags 录音
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} model.CommonResponse{data=map[string]model.RecordingMemoryEntitySchema}
+// @Success 200 {object} model.CommonResponse{data=[]model.RecordingMemoryEntitySchemaView}
 // @Router /api/recordings/memories/schema [get]
 func GetRecordingMemoryEntitySchema(c *gin.Context) {
-	c.JSON(http.StatusOK, model.Success.ToResponse(model.RecordingMemoryEntitySchemas))
+	c.JSON(http.StatusOK, model.Success.ToResponse(model.RecordingMemoryEntitySchemaArray()))
 }
 
 func respondRecordingEntityMemoryError(c *gin.Context, err error) bool {
@@ -355,6 +377,16 @@ func respondRecordingEntityMemoryError(c *gin.Context, err error) bool {
 		c.JSON(http.StatusNotFound, model.ParamError.ToNewErrorResponse("记忆实体或事实不存在"))
 	case errors.Is(err, service.ErrRecordingEntityMemoryHasFacts):
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("请先删除该实体的全部有效事实"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryDuplicate):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("同类型同名实体已存在，请使用融合合并"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryCrossType):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("仅支持同类型实体融合"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryMergeSelf):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("基底实体不能同时作为来源实体"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryModelNotConfigured):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("推理模型未配置，请先配置推理模型"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryRelationSelf):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不能关联自身"))
 	default:
 		logger.SysErrorf("【实体记忆】接口处理失败 eid=%d user_id=%d err=%v", config.GetEID(c), config.GetUserId(c), err)
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("会议记忆操作失败"))

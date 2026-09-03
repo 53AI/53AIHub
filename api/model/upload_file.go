@@ -11,6 +11,7 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/config"
+	"gorm.io/gorm"
 )
 
 type UploadFile struct {
@@ -87,7 +88,7 @@ func GetUploadFileByEidAndPreviewKey(Eid int64, PreviewKey string) (uploadFile U
 	if len(PreviewKey) > 0 && PreviewKey[0] == '/' {
 		PreviewKey = PreviewKey[1:]
 	}
-	err = DB.Model(&UploadFile{}).Where("eid =? AND `preview_key` =?", Eid, PreviewKey).First(&uploadFile).Error
+	err = DB.Where("eid = ?", Eid).Where("preview_key = ?", PreviewKey).First(&uploadFile).Error
 	return uploadFile, err
 }
 
@@ -95,8 +96,12 @@ func GetNoAuthUploadFileByEidAndPreviewKey(PreviewKey string) (uploadFile Upload
 	if len(PreviewKey) > 0 && PreviewKey[0] == '/' {
 		PreviewKey = PreviewKey[1:]
 	}
-	err = DB.Model(&UploadFile{}).Where("`preview_key` =?", PreviewKey).First(&uploadFile).Error
+	err = previewKeyQuery(DB, PreviewKey).First(&uploadFile).Error
 	return uploadFile, err
+}
+
+func previewKeyQuery(db *gorm.DB, previewKey string) *gorm.DB {
+	return db.Model(&UploadFile{}).Where("preview_key = ?", previewKey)
 }
 
 func GetUploadFileByID(id int64) (uploadFile *UploadFile, err error) {

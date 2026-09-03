@@ -10,8 +10,8 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
-	appconfig "github.com/53AI/53AIHub/config"
 	env_util "github.com/53AI/53AIHub/common/utils/env"
+	appconfig "github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
 	"gorm.io/gorm"
@@ -22,9 +22,14 @@ import (
 // 使用函数变量避免 package 循环依赖。
 var GenerateInsightsFn func(ctx context.Context, eid, fileID, userID int64)
 
-// BuildMinutesMarkdownFn 由 service 包注册，将纪要 JSON 渲染为 Markdown。
+func shouldTriggerRecordingInsights(file *model.File) bool {
+	return file != nil && file.IsRecordingOriginType()
+}
+
+// NormalizeRecordingContentForLLMFn 由 service 包注册：按内容类型将录音文件内容规范化为 Markdown。
+// 新布局 FileBody=转写 Markdown（直接用）；历史布局 FileBody=纪要 JSON → 渲染为 Markdown；最老布局 FileBody=转写 JSON → 渲染为转写 Markdown。
 // 用于文件摘要/实体抽取前对语音文件内容做转换，提升 LLM 理解质量。
-var BuildMinutesMarkdownFn func(raw string) string
+var NormalizeRecordingContentForLLMFn func(content string) string
 
 // PipelineCtxFn 由 service 包注册，返回录音管线生命周期 context（recordingPipelineCtx）。
 // 用于异步 goroutine 派生可被服务停止优雅取消的子 context。
@@ -44,7 +49,7 @@ func pipelineCtx() context.Context {
 func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
 	return func(ctx context.Context, job *model.RagJob, stepConfig json.RawMessage) error {
 		if isWikiPageGenerationActive(job) {
-			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 document_chunking 的分块处理")
+			logger.Infof(ctx, "【Wiki生成】 phase=legacy_skip wiki_page_generation 已启用，跳过 document_chunking 的分块处理")
 			return nil
 		}
 
@@ -139,16 +144,16 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			return fmt.Errorf("读取文件内容失败: %v", err)
 		}
 
-		// 对语音文件：将会议纪要 JSON 转为 Markdown，提升 LLM 理解质量
+		// 对语音文件：按内容类型规范化为 Markdown（新布局转写 Markdown 直接用；历史纪要/转写 JSON 渲染）
 		// 只在文件摘要/实体抽取时使用，不影响分块等其他流程
 		contentForLLM := content
-		if file.IsRecordingOriginType() && BuildMinutesMarkdownFn != nil {
-			contentForLLM = BuildMinutesMarkdownFn(content)
-			logger.Infof(ctx, "【诊断-内容转换】纪要 JSON→Markdown 完成: file_id=%d, 原始长度=%d, 转换后长度=%d, 是否发生变化=%v",
+		if file.IsRecordingOriginType() && NormalizeRecordingContentForLLMFn != nil {
+			contentForLLM = NormalizeRecordingContentForLLMFn(content)
+			logger.Infof(ctx, "【诊断-内容转换】录音内容规范化完成: file_id=%d, 原始长度=%d, 转换后长度=%d, 是否发生变化=%v",
 				fileID, len(content), len(contentForLLM), content != contentForLLM)
 		} else {
-			logger.Infof(ctx, "【诊断-内容转换】跳过 Markdown 转换: file_id=%d, origin_type=%s, fn_registered=%v",
-				fileID, file.OriginType, BuildMinutesMarkdownFn != nil)
+			logger.Infof(ctx, "【诊断-内容转换】跳过录音内容规范化: file_id=%d, origin_type=%s, fn_registered=%v",
+				fileID, file.OriginType, NormalizeRecordingContentForLLMFn != nil)
 		}
 
 		var smartMatchResult *SmartMatchResult
@@ -351,14 +356,14 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		// 异步触发洞察生成。通用实体抽取可并行执行；洞察内会确保会议 Claim 和实体事实已就绪。
 		// 实体从纪要中抽取（而非转写原文），因纪要是处理过的价值高、格式稳定的内容。
 		// 洞察生成不阻塞管线，异步执行。
-		if GenerateInsightsFn != nil {
+		if shouldTriggerRecordingInsights(&file) && GenerateInsightsFn != nil {
 			go func() {
 				insightsCtx, insightsCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
 				defer insightsCancel()
 				GenerateInsightsFn(insightsCtx, eid, fileID, userID)
 			}()
 		} else {
-			logger.Infof(ctx, "【洞察】GenerateInsightsFn 未注册，跳过: fileID=%d", fileID)
+			logger.Infof(ctx, "【洞察】非安心录来源或 GenerateInsightsFn 未注册，跳过: fileID=%d", fileID)
 		}
 
 		// 记录结果日志

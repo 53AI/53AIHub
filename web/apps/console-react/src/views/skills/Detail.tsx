@@ -21,6 +21,7 @@ import { EnvDialog, EnvDialogRef } from "./components/Env";
 import BasicInfo from "./components/config/BasicInfo";
 import { SkillBasicInfo } from "./components/config/SkillBasicInfo";
 import type { SkillData, BasicInfoRef } from "./components/config/BasicInfo";
+import type { ScopeItem } from "@/api/modules/agent";
 import type { QualityScore } from "./utils/usageValidation";
 
 const DEFAULT_LOGO = `${api_host}/api/images/skill/logo.png`;
@@ -112,51 +113,46 @@ export default function SkillDetail() {
     if (!skillId) return;
     setLoading(true);
     try {
-      const [detail, skillsGroups, userGroups, internalUserGroups] =
+      const [detail, skillsGroups] =
         await Promise.all([
           skillApi.detail({ skill_id: skillId }),
           groupApi
             .list({ params: { group_type: GROUP_TYPE.SKILLS } })
             .catch(() => []),
-          groupApi
-            .list({ params: { group_type: GROUP_TYPE.USER } })
-            .catch(() => []),
-          groupApi
-            .list({ params: { group_type: GROUP_TYPE.INTERNAL_USER } })
-            .catch(() => []),
+
         ]);
 
-      const skillsGroupIds = new Set(skillsGroups.map((g: any) => g.group_id));
-      const userGroupIds = new Set(userGroups.map((g: any) => g.group_id));
-      const internalUserGroupIds = new Set(
-        internalUserGroups.map((g: any) => g.group_id),
-      );
+      // 分组 id 统一转数字再匹配，避免详情接口返回字符串 id 漏匹配
+      const toNum = (n: any) => Number(n);
+      const skillsGroupIds = new Set(skillsGroups.map((g: any) => toNum(g.group_id)));
 
-      const permissionGroupIds = detail.permission_group_ids || [];
+
+      const permissionGroupIds = (detail.permission_group_ids || []).map((id: any) =>
+        toNum(id),
+      );
       let groups: number[] = [];
-      let subscriptionGroupIds: number[] = [];
-      let userGroupIdsList: number[] = [];
 
       permissionGroupIds.forEach((id: number) => {
-        if (skillsGroupIds.has(id)) {
+        if (skillsGroupIds.has(id)) 
           groups.push(id);
-        } else if (userGroupIds.has(id)) {
-          subscriptionGroupIds.push(id);
-        } else if (internalUserGroupIds.has(id)) {
-          userGroupIdsList.push(id);
-        }
+ 
       });
 
       // 如果是新创建的技能且权限为空，默认添加权限
       if (isNew && permissionGroupIds.length === 0) {
         // 默认选择第一个技能分组
         if (skillsGroups.length > 0) {
-          groups = [skillsGroups[0].group_id];
+          groups = [toNum(skillsGroups[0].group_id)];
         }
-        // 默认选择全部用户分组
-        subscriptionGroupIds = userGroups.map((g: any) => g.group_id);
-        // 默认选择全部内部用户分组
-        userGroupIdsList = internalUserGroups.map((g: any) => g.group_id);
+      }
+
+      // 解析 scopes:服务端把 scopes 放在 skill 对象下,非数组视为空
+      let scopes: ScopeItem[] = Array.isArray(detail.skill.scopes)
+        ? detail.skill.scopes
+        : []
+      // 新建模式下，若 scopes 为空且是企业版/行业版，默认全选"全部成员"
+      if (isNew && scopes.length === 0) {
+        // 由子组件 UseScope 应用默认值
       }
 
       const skillData = detail.skill;
@@ -167,8 +163,9 @@ export default function SkillDetail() {
         description: skillData.description || "",
         logo: skillData.logo || DEFAULT_LOGO,
         groups,
-        subscription_group_ids: subscriptionGroupIds,
-        user_group_ids: userGroupIdsList,
+        subscription_group_ids: detail.skill.subscription_group_ids,
+        user_group_ids: [],
+        scopes,
         admin_status: skillData.admin_status,
         publish_status: skillData.publish_status,
         type: skillData.source_type === "github" ? "repo" : "upload",
@@ -311,7 +308,7 @@ export default function SkillDetail() {
     if (hasAnyChanges || isCurrentFileDirty || isUnSaved()) {
       Modal.confirm({
         title: t("tip"),
-        content: t("skills.unsaved_confirm_message"),
+        content: t("common.unsaved_confirm_message"),
         okText: t("action_confirm"),
         cancelText: t("action.cancel"),
         onOk: doNavigate,
@@ -340,8 +337,8 @@ export default function SkillDetail() {
   const handleEditSave = useCallback(() => {
     const skill = basicInfoRef.current?.getSkill();
     if (skill) {
-      // 更新 BasicInfo 组件的数据
-      basicInfoRef.current?.setSkill({
+      // 更新 BasicInfo 组件的数据（不重置未保存基线，保证分组等修改能被发布接口感知）
+      basicInfoRef.current?.updateSkill({
         ...skill,
         display_name: editBasicInfo.display_name,
         description: editBasicInfo.description,
@@ -434,7 +431,7 @@ export default function SkillDetail() {
               : skill.admin_status,
           group_ids: skill.groups,
           subscription_group_ids: skill.subscription_group_ids,
-          user_group_ids: skill.user_group_ids,
+          scopes: skill.scopes,
         },
         isUnSaved() || skill.publish_status === PublishStatus_TYPE.draft,
       );

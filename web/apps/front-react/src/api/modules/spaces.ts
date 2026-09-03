@@ -33,6 +33,15 @@ export type SpaceListRequest = {
   view: 'user'
 }
 
+/**
+ * 空间图谱配置
+ * - library_ids 为空数组或 null 时表示「全部知识库」
+ */
+export type KnowledgeGraphConfig = {
+  enable_knowledge_graph: boolean
+  library_ids: string[] | null
+}
+
 export type SpaceCreateRequest = {
   name: string
   description: string
@@ -68,7 +77,23 @@ export const spacesApi = {
       .get(`/api/spaces/${space_id}`)
       .then((res) => res.data)
       .catch(handleError)
-  }
+  },
+  /**
+   * 获取空间图谱配置
+   * GET /api/spaces/{space_id}/knowledge-graph
+   */
+  getKnowledgeGraph(space_id: SpaceItem['id']): Promise<KnowledgeGraphConfig> {
+    return service
+      .get(`/api/spaces/${space_id}/knowledge-graph`)
+      .then((res: any) => {
+        const data = res?.data ?? res ?? {}
+        return {
+          enable_knowledge_graph: Boolean(data.enable_knowledge_graph),
+          library_ids: Array.isArray(data.library_ids) ? data.library_ids : [],
+        } as KnowledgeGraphConfig
+      })
+      .catch(handleError)
+  },
 }
 
 export default spacesApi

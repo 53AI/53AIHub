@@ -8,7 +8,8 @@ import (
 
 // UpdateResourcePermissions 更新资源权限的通用方法
 // 该方法会先删除指定资源的所有现有权限，然后添加新的权限
-func UpdateResourcePermissions(c *gin.Context, tx *gorm.DB, resourceID int64, resourceType string, groupIDs []int64) error {
+// scopes 参数为空时，从 groupIDs 自动推导（向后兼容）
+func UpdateResourcePermissions(c *gin.Context, tx *gorm.DB, resourceID int64, resourceType string, groupIDs []int64, scopes []model.ResourceScopeItem, scopesProvided bool) error {
 	// 删除现有权限
 	if err := tx.Where("resource_id = ? AND resource_type = ?", resourceID, resourceType).Delete(&model.ResourcePermission{}).Error; err != nil {
 		return err
@@ -46,13 +47,15 @@ func UpdateResourcePermissions(c *gin.Context, tx *gorm.DB, resourceID int64, re
 		if err != nil {
 			return err
 		}
-		scopes := make([]model.ResourceScopeItem, 0, len(groupIDs))
-		for _, groupID := range groupIDs {
-			if groupID > 0 {
-				scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: groupID})
+		// 未传 scopes 时从 groupIDs 自动推导（兼容旧格式）；显式传空表示清空新 scopes。
+		if !scopesProvided {
+			for _, groupID := range groupIDs {
+				if groupID > 0 {
+					scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeGroup, TargetID: groupID})
+				}
 			}
 		}
-		if len(scopes) == 0 {
+		if !scopesProvided && len(scopes) == 0 {
 			scopes = append(scopes, model.ResourceScopeItem{ScopeType: model.ScopeTypeCompany, TargetID: 0})
 		}
 		if err := ReplaceResourceScopes(tx, resourceID, resourceType, scopes, eid); err != nil {

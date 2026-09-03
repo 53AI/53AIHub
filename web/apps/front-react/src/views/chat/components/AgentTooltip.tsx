@@ -2,13 +2,12 @@ import { useState, useMemo, useRef } from "react";
 import { Tooltip, Empty } from "antd";
 import { SearchOutlined, CloseOutlined } from "@ant-design/icons";
 import { Search } from "@km/shared-components-react";
+import { SafeImage } from "@km/shared-components-react";
 import { useAgentStore } from "@/stores/modules/agent";
 import { useBasicLayout } from "@/hooks/useBasicLayout";
 import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
 import "./AgentTooltip.css";
-
-const DEFAULT_IMG = "/images/default_agent.png";
 
 interface AgentTooltipProps {
   children: React.ReactNode;
@@ -51,13 +50,6 @@ export default function AgentTooltip({
   const handleSelect = (item: Agent.State) => {
     onSelect(item);
     setVisible(false);
-  };
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const target = e.target as HTMLImageElement;
-    const fallback = getPublicPath(DEFAULT_IMG);
-    if (target.src.endsWith(fallback)) return;
-    target.src = fallback;
   };
 
   const content = (
@@ -107,11 +99,10 @@ export default function AgentTooltip({
               className="flex items-center p-3 bg-[#F8F9FA] rounded-lg cursor-pointer"
               onClick={() => handleSelect(item)}
             >
-              <img
+              <SafeImage
                 src={item.logo}
                 className="mr-2 size-8 rounded-md"
                 alt={item.name}
-                onError={handleImageError}
               />
               <div className="flex-1 overflow-hidden">
                 <h3 className="text-base font-medium text-primary mb-1">

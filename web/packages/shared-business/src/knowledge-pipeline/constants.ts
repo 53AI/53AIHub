@@ -47,10 +47,9 @@ export const STEP_KEY_TO_DESCRIPTION_I18N_KEY: Record<string, string> = {
 export const LIST_DISPLAY_NODE_TYPES = [
   'document_parsing',
   'content_cleaning',
-  // 'summary_generation', // TODO: 暂时隐藏
   'document_chunking',
   'vector_indexing',
-  'graph_generation'
+  // 'graph_generation'
 ]
 
 /**
@@ -130,25 +129,8 @@ export const DEFAULT_PIPELINE_STEP: PipelineNode[] = [
     name: STEP_KEY_TO_NAME_I18N_KEY.vector_indexing,
     description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.vector_indexing,
     config: {}
-  },
-  // {
-  //   step_key: 'summary_generation',
-  //   run_mode: 'auto',
-  //   name: STEP_KEY_TO_NAME_I18N_KEY.summary_generation,
-  //   description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.summary_generation,
-  //   config: {
-  //     summary_faq: { enabled: true },
-  //     entity_extraction: { enabled: true },
-  //     knowledge_map: { enabled: false },
-  //   },
-  // }, // TODO: 暂时隐藏
-  {
-    step_key: 'graph_generation',
-    run_mode: 'skip',
-    name: STEP_KEY_TO_NAME_I18N_KEY.graph_generation,
-    description: STEP_KEY_TO_DESCRIPTION_I18N_KEY.graph_generation,
-    config: { graph_template_id: '', enable_smart_match: true, enable_smart_generation: true }
   }
+  // 图谱相关配置已迁移到独立的「图谱管线」标签，RAG 管线不再包含此步骤
 ]
 
 /**

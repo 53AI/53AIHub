@@ -1,3 +1,5 @@
+import type { ScopeItem } from '@km/shared-business/agent-create'
+
 export namespace Prompt {
   export interface State {
     prompt_id: number
@@ -16,5 +18,7 @@ export namespace Prompt {
     updated_time: number
     user_id: number
     views: number
+    /** 权限范围 */
+    scopes?: ScopeItem[]
   }
 }

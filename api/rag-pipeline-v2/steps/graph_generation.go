@@ -114,7 +114,8 @@ func shouldUseSmartMatch(cfg GraphGenerationConfig) bool {
 	case graphGenerationExecutionModeEnableLLMTemplateSelection:
 		return true
 	}
-	return cfg.EnableSmartMatch || cfg.EnableLLMTemplateSelection
+	// 未显式传智能匹配参数时：有模板用模板，无模板自动智能匹配选模板
+	return cfg.EnableSmartMatch || cfg.EnableLLMTemplateSelection || cfg.GraphTemplateID.Int64() <= 0
 }
 
 func shouldUseSmartGeneration(cfg GraphGenerationConfig) bool {
@@ -292,7 +293,7 @@ func NewGraphGenerationHandler(db *gorm.DB) func(ctx context.Context, job *model
 		}
 
 		if isWikiPageGenerationActive(job) {
-			logger.Infof(ctx, "wiki_page_generation 已启用，跳过 graph_generation 的图谱生成: file_id=%d", fileID)
+			logger.Infof(ctx, "【Wiki生成】 phase=legacy_skip wiki_page_generation 已启用，跳过 graph_generation 的图谱生成: file_id=%d", fileID)
 			if db != nil {
 				if err := saveStepResults(db, job.JobID, map[string]interface{}{
 					"entity_count":             0,

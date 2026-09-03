@@ -2,8 +2,10 @@ import type { RecordingDeviceConfig } from '@/api/modules/recording/types'
 
 /**
  * 接入弹窗里的品牌选项数据。
- * 当前仅 SonicNote 可用；SoniNote / TicNote 暂未接入，UI 占位并禁用，
- * hover 显示"敬请期待"提示，避免用户误以为能选。
+ *
+ * - SonicNote：已对接，MCP Key `sk-` 开头
+ * - TicNote：已对接，AppKey `tncn_sk_` / `tnovs_sk_` 开头
+ * - SoniNote：占位，UI 禁用，hover 提示
  */
 export type BrandCardOption = {
   /** 写回表单 brand 字段，对应后端 device_type */
@@ -14,12 +16,21 @@ export type BrandCardOption = {
   disabledHint?: string
 }
 
-export const BRAND_OPTIONS: BrandCardOption[] = [
-  { value: 'sonicnote', label: 'SonicNote', enabled: true },
-  { value: 'soninote', label: 'SoniNote', enabled: false, disabledHint: '敬请期待' },
-  { value: 'ticnote', label: 'TicNote', enabled: false, disabledHint: '敬请期待' },
-]
+/** 设备类型常量：单一来源，避免散落 magic string */
+export const SONICNOTE_DEVICE_TYPE = 'sonicnote' as const
+export const TICNOTE_DEVICE_TYPE = 'ticnote' as const
+export const SONINOTE_DEVICE_TYPE = 'soninote' as const
 
-/** 当前唯一已接入的设备类型——所有设备相关逻辑都围绕它展开 */
-export const SONICNOTE_DEVICE_TYPE: RecordingDeviceConfig['device_type'] =
-  'sonicnote'
+/** 已对接的设备类型（用于多 key / 自动同步 / 探测等核心流程） */
+export type SupportedDeviceType =
+  | typeof SONICNOTE_DEVICE_TYPE
+  | typeof TICNOTE_DEVICE_TYPE
+
+/** 已启用品牌的设备类型联合（排除占位 soninote） */
+export type DeviceType = SupportedDeviceType
+
+export const BRAND_OPTIONS: BrandCardOption[] = [
+  { value: SONICNOTE_DEVICE_TYPE, label: 'SonicNote', enabled: true },
+  { value: TICNOTE_DEVICE_TYPE, label: 'TicNote', enabled: true },
+  { value: SONINOTE_DEVICE_TYPE, label: 'SoniNote', enabled: false, disabledHint: '敬请期待' },
+]

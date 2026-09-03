@@ -71,6 +71,7 @@ export function extractDescriptionFromPageJson(pageJson?: string): string {
   if (pageJson.trimStart().startsWith('{')) {
     try {
       const data = JSON.parse(pageJson)
+      if (data.format.includes('html')) return ''
       return data.title + '。' + data.subtitle
     } catch {
       return ''
@@ -133,7 +134,9 @@ export function extractDescriptionFromSummary(insightSummary?: string): string {
 
 /** 提取描述文本：优先取 page_json（页面编排），其次 insight_summary（决策分析） */
 function extractDescription(item: RecordingFileItem): string {
-  return extractDescriptionFromPageJson(item.insight_page?.page_json) || extractDescriptionFromSummary(item.insight_summary)
+  const pageJson = item.insight_page?.page_json
+  
+  return extractDescriptionFromPageJson(pageJson) || extractDescriptionFromSummary(item.insight_summary)
 }
 
 // 衍生 UI 项：name 取 path 末段去后缀；category 由 origin_type 衍生。

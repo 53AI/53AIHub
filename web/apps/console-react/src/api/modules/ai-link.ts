@@ -34,6 +34,7 @@ export const aiLinkApi = {
       sort: 0,
       user_group_ids: [],
       subscription_group_ids: [],
+      scopes: [],
       shared_account: '',
       ...data,
     }

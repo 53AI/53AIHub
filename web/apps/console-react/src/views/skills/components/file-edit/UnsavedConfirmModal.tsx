@@ -17,7 +17,7 @@ export function UnsavedConfirmModal() {
     confirmModalState.onCancel?.()
   }
 
-  const message = confirmModalState.message || t("skills.unsaved_confirm_message")
+  const message = confirmModalState.message || t("common.unsaved_confirm_message")
   const confirmText = confirmModalState.confirmText || t("action_confirm")
 
   return (

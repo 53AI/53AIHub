@@ -1,19 +1,19 @@
 import { Table, Button, Switch, message, Modal } from "antd";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ColumnsType } from "antd/es/table";
 import { PageLayoutContent } from "@/components/PageLayout";
 import { promptApi } from "@/api/modules/prompt";
-import { groupApi } from "@/api/modules/group";
+import type { ScopeItem } from "@/api/modules/agent";
 import type { Group } from "@/api/modules/group";
-import { subscriptionApi } from "@/api/modules/subscription";
 import { GroupTabs, type GroupTabsRef } from "@/components/GroupTabs";
 import { GROUP_TYPE } from "@/constants/group";
 import { eventBus } from "@km/shared-utils";
 import { t } from "@/locales";
 import { api_host } from "@/utils/config";
-import { useListState } from "@/hooks";
+import { useListState, useScopeDictionary } from "@/hooks";
+import ScopeDisplay from "@/components/ScopeDisplay";
 import { PromptBasicInfo, type PromptBasicInfoRef } from "./create/components/PromptBasicInfo";
 
 const DEFAULT_LOGO = `${api_host}/api/images/prompt/logo.png`;
@@ -31,10 +31,9 @@ interface PromptItem {
   description: string;
   group_ids: number[];
   group_names: string[];
-  user_group_names: string[];
-  internal_members: string[];
   status: number;
   created_time: string;
+  scopes?: ScopeItem[];
 }
 
 interface FilterForm {
@@ -72,10 +71,10 @@ export function PromptPage() {
   const initializedRef = useRef(false);
 
   const groupTabsRef = useRef<GroupTabsRef>(null);
-  const internalGroupOptionsRef = useRef<Record<number, string>>({});
-  const subscriptionListOptionsRef = useRef<Record<number, string>>({});
   const groupListRef = useRef<Group[]>([]);
   const loadingRef = useRef(false);
+  // ScopeDisplay 共享字典:全局 hook 自动 dedup,任意调用方只触发 3 个请求
+  const scopeDict = useScopeDictionary();
 
   // Load data - 使用传入的参数或 ref 中的值
   const loadData = useCallback(async (params?: { group_id?: number[]; keyword?: string; page?: number; pageSize?: number }) => {
@@ -104,19 +103,14 @@ export function PromptPage() {
       groupListRef.current.forEach((item: Group) => {
         groupOpts[item.group_id] = item.group_name;
       });
-      const internalOpts = internalGroupOptionsRef.current;
-      const subscriptionOpts = subscriptionListOptionsRef.current;
 
       const list = (res.list || []).map((item: any) => {
         item.group_ids = item.group_ids || [];
         item.group_names = [];
-        item.internal_members = [];
-        item.user_group_names = [];
+        item.scopes = item.scopes || [];
         item.logo = item.logo || DEFAULT_LOGO;
         item.group_ids.forEach((id: number) => {
           if (groupOpts[id]) item.group_names.push(groupOpts[id]);
-          if (internalOpts[id]) item.internal_members.push(internalOpts[id]);
-          if (subscriptionOpts[id]) item.user_group_names.push(subscriptionOpts[id]);
         });
         return item;
       });
@@ -128,34 +122,6 @@ export function PromptPage() {
     } finally {
       setLoading(false);
       loadingRef.current = false;
-    }
-  }, []);
-
-  // Load subscription list
-  const loadSubscriptionList = useCallback(async () => {
-    try {
-      const list = await subscriptionApi.list({ params: { offset: 0, limit: 1000 } });
-      const options: Record<number, string> = {};
-      list.forEach((item: any) => {
-        options[item.group_id] = item.group_name;
-      });
-      subscriptionListOptionsRef.current = options;
-    } catch (error) {
-      console.error("Load subscription list error:", error);
-    }
-  }, []);
-
-  // Load internal group list
-  const loadInternalGroupList = useCallback(async () => {
-    try {
-      const list = await groupApi.list({ params: { group_type: GROUP_TYPE.INTERNAL_USER } });
-      const options: Record<number, string> = {};
-      list.forEach((item: any) => {
-        options[item.group_id] = item.group_name;
-      });
-      internalGroupOptionsRef.current = options;
-    } catch (error) {
-      console.error("Load internal group list error:", error);
     }
   }, []);
 
@@ -227,7 +193,7 @@ export function PromptPage() {
       width: 180,
       render: (_: any, row) => (
         <div className="flex items-center gap-2 w-full">
-          <img className="flex-none w-8 h-8 rounded-full overflow-hidden" src={row.logo || DEFAULT_LOGO} alt="" />
+          <SafeImage className="flex-none w-8 h-8 rounded-full overflow-hidden" src={row.logo || ""} alt="" />
           <div className="flex-1 w-0 text-sm flex flex-col">
             <div className="text-primary truncate">{row.name || "--"}</div>
             {row.description && <div className="text-xs text-placeholder truncate">{row.description}</div>}
@@ -263,9 +229,12 @@ export function PromptPage() {
       width: 180,
       ellipsis: true,
       render: (_, record) => (
-        <div className={`whitespace-nowrap truncate ${!record.internal_members?.length ? "text-placeholder" : ""}`}>
-          {record.internal_members?.join("、") || "--"}
-        </div>
+        <ScopeDisplay
+          scopes={record.scopes}
+          treeData={scopeDict?.treeData}
+          users={scopeDict?.users}
+          groups={scopeDict?.groups}
+        />
       ),
     },
     {
@@ -287,8 +256,21 @@ export function PromptPage() {
       fixed: "end",
       render: (_, record) => (
         <>
-          <Button type="text" icon={<SvgIcon name="edit" />} className="invisible group-hover:visible hover:!text-brand" onClick={(e) => { e.stopPropagation(); handleEdit(record); }} />
-          <Button type="text" danger icon={<SvgIcon name="delete" />} className="invisible group-hover:visible hover:!text-tag-red" onClick={(e) => { e.stopPropagation(); handleDelete(record); }} />
+          <IconAction
+            variant="row"
+            title={t("action.edit")}
+            onClick={() => handleEdit(record)}
+          >
+            <SvgIcon name="edit" />
+          </IconAction>
+          <IconAction
+            variant="row"
+            title={t("action.delete")}
+            danger
+            onClick={() => handleDelete(record)}
+          >
+            <SvgIcon name="delete" />
+          </IconAction>
         </>
       ),
     },
@@ -307,7 +289,6 @@ export function PromptPage() {
   // 初始化
   useEffect(() => {
     const init = async () => {
-      await Promise.all([loadInternalGroupList(), loadSubscriptionList()]);
       initializedRef.current = true;
       loadData();
     };

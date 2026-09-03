@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/utils"
 	"gorm.io/gorm"
@@ -474,12 +475,10 @@ func (s *ChunkConfigService) CreateDefaultConfig(eid int64, libraryID *int64, ch
 }
 
 // ValidateChannels 验证渠道配置
-// 通过 s.db 查询而非 model.GetChannelByID（全局 DB）：初始化流程中渠道创建于未提交事务内，
-// 全局 DB 不可见会导致初始化误报“渠道不存在”。
 func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, embeddingChannelID *int64) error {
 	if logicChannelID != nil {
-		var channel model.Channel
-		if err := s.db.Where("channel_id = ?", *logicChannelID).First(&channel).Error; err != nil {
+		channel, err := model.GetChannelByID(*logicChannelID)
+		if err != nil {
 			return fmt.Errorf("逻辑推理渠道不存在: %v", err)
 		}
 		if channel.Eid != eid {
@@ -491,8 +490,8 @@ func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, 
 	}
 
 	if embeddingChannelID != nil {
-		var channel model.Channel
-		if err := s.db.Where("channel_id = ?", *embeddingChannelID).First(&channel).Error; err != nil {
+		channel, err := model.GetChannelByID(*embeddingChannelID)
+		if err != nil {
 			return fmt.Errorf("向量嵌入渠道不存在: %v", err)
 		}
 		if channel.Eid != eid {
@@ -674,13 +673,21 @@ func (s *ChunkConfigService) getDefaultConfig(eid int64, chunkType string) (*Chu
 	}
 	s.cacheMu.RUnlock()
 	return s.getCachedConfig(cacheKey, func() (*ChunkConfig, error) {
-		var setting model.ChunkSetting
-		err := s.db.Where("eid = ? AND library_id IS NULL AND type = ? ", eid, chunkType).First(&setting).Error
+		var settings []model.ChunkSetting
+		err := s.db.Where("eid = ? AND library_id IS NULL AND type = ? ", eid, chunkType).
+			Order("id ASC").Limit(2).Find(&settings).Error
 		if err != nil {
 			return nil, err
 		}
+		if len(settings) == 0 {
+			return nil, gorm.ErrRecordNotFound
+		}
+		if len(settings) > 1 {
+			logger.SysLogf("【诊断-分块配置】eid=%d 存在 %d 条 type=%s 且 library_id 为空的企业默认配置，取 id 最小的一条 (id=%d)；请清理冗余配置",
+				eid, len(settings), chunkType, settings[0].ID)
+		}
 
-		return s.convertToChunkConfig(&setting)
+		return s.convertToChunkConfig(&settings[0])
 	})
 }
 

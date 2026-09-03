@@ -1,12 +1,10 @@
 import {
-    Table,
-    Button,
-    Select,
-    Switch,
-    Modal,
-    message,
-    Drawer,
-    Tooltip
+  Table,
+  Button,
+  Select,
+  Switch,
+  Modal,
+  message,
 } from "antd";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { t } from "@/locales";
@@ -18,11 +16,10 @@ import { subscriptionApi } from "@/api/modules/subscription";
 import { groupApi, Group } from "@/api/modules/group";
 import { channelApi } from "@/api/modules/channel";
 import {
-    channels,
-    getProvidersByAuth,
-    getProviderByAgentId, AgentType, BACKEND_AGENT_TYPE
+  channels,
+  getProvidersByAuth,
+  getProviderByAgentId, AgentType, BACKEND_AGENT_TYPE
 } from "@/constants/platform/config";
-import { AGENT_APP_OPTIONS } from "@/constants/platform/agent";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { GROUP_TYPE } from "@/constants/group";
 import { PageLayoutContent } from "@/components/PageLayout";
@@ -31,24 +28,29 @@ import { GroupTabs, type GroupTabsRef } from "@/components/GroupTabs";
 import { useListState, useVersion, useScopeDictionary } from "@/hooks";
 import { eventBus } from "@km/shared-utils";
 import {
-    CreateAgentDialog,
-    AGENT_TYPE_OPTIONS,
-    createPlatformsByType, getOpenClawCompatibleAgentMetadata,
-    isOpenClawCompatibleAgentType
+  CreateAgentDialog,
+  AGENT_TYPE_OPTIONS,
+  createPlatformsByType, getOpenClawCompatibleAgentMetadata,
+  isOpenClawCompatibleAgentType
 } from "@km/shared-business/agent-create";
 import type { AgentPlatformOption, CreateAgentDialogResult } from "@km/shared-business/agent-create";
 import { consoleAgentAdapter } from "@/adapters/agent-create-adapter";
 import ScopeDisplay from "@/components/ScopeDisplay";
-import { SvgIcon, Search } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { img_host, getPublicPath } from "@/utils/config";
 import { buildOpenClawEnterpriseAgentPayload } from "./openclaw-create";
 import {
-    buildAgentListParams,
-    createAgentPlatformFilterOptions,
-    AGENT_USAGE_PLATFORM_VALUES,
+  buildAgentListParams,
+  createAgentPlatformFilterOptions,
+  AGENT_USAGE_PLATFORM_VALUES,
 } from "./platform-filter";
 
 // 获取默认的注册用户和内部用户分组 ID
+interface SubscriptionItem {
+  group_id: number;
+  group_name: string;
+}
+
 const getDefaultGroupIds = async () => {
   const subscriptionRes = await subscriptionApi.list({ params: { offset: 0, limit: 1000 } });
   const subscriptionGroupIds = subscriptionRes.map((item: SubscriptionItem) => item.group_id);
@@ -59,12 +61,6 @@ const getDefaultGroupIds = async () => {
   return { subscriptionGroupIds, internalGroupIds };
 }
 
-interface SubscriptionItem {
-  group_id: number;
-  group_name: string;
-}
-
-type GroupList = Group[];
 
 interface ProviderItem {
   provider_type: string;
@@ -119,7 +115,6 @@ export function AgentPage() {
   const [tableTotal, setTableTotal] = useState(0);
   const [tableLoading, setTableLoading] = useState(false);
   const [addVisible, setAddVisible] = useState(false);
-  const [legacyAddVisible, setLegacyAddVisible] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>(undefined);
   const [groupList, setGroupList] = useState<Group[]>([]);
   const [internalGroupOptions, setInternalGroupOptions] = useState<
@@ -160,8 +155,6 @@ export function AgentPage() {
     authProvidersRef.current = authProviders;
   }, [authProviders]);
 
-  const types = AGENT_TYPE_OPTIONS;
-
   // 使用公共配置，并根据权限过滤
   const platformsByType = useMemo<AgentPlatformOption[]>(() => {
     // 构建权限映射
@@ -186,47 +179,6 @@ export function AgentPage() {
     const basePlatforms = createPlatformsByType(img_host, getPublicPath);
     return filterByAuth(basePlatforms);
   }, [authProviders]);
-
-  // 旧添加 Drawer 的过滤逻辑（按 category 分组）
-  const filteredAgentOptions = useMemo(() => {
-    const authMap = new Map(
-      authProviders.map((provider) => [
-        provider.provider_type,
-        provider.is_auth,
-      ]),
-    );
-    return AGENT_APP_OPTIONS.map((item) => {
-      const filteredChildren = item.children.filter((row) => {
-        const provider = getProviderByAgentId(row.value as AgentType);
-        if (!provider?.auth) {
-          return true;
-        }
-        return authMap.get(provider.id) === true;
-      });
-
-      return {
-        ...item,
-        filteredChildren,
-      };
-    }).filter((item) => {
-      return item.filteredChildren.length > 0;
-    });
-  }, [authProviders]);
-
-  // 旧添加 Drawer 的处理函数
-  const handleAgentPrepare = async (data: {
-    value: string;
-    channel_type: number;
-    label: string;
-  }) => {
-    await checkAuth(data.value as AgentType);
-    navigate({
-      pathname: "/agent/create",
-      search: `?type=${data.value}&group_id=${filterForm.group_id.length > 0 ? filterForm.group_id[0] : ""}&is_new=true&channel_type=${data.channel_type}&title=${data.label}`,
-    } as any);
-    setLegacyAddVisible(false);
-  };
-
 
   const loadGroupList = async () => {
     if (groupLoadedRef.current) return;
@@ -386,36 +338,33 @@ export function AgentPage() {
     setAuthProviders(providers);
   };
 
-  const checkAuth = (value: AgentType): Promise<void> => {
-    return new Promise<void>((resolve, reject) => {
-      const provider = getProviderByAgentId(value);
-      const auth_provider = authProvidersRef.current.find(
-        (row) => row.provider_type === provider?.id,
-      );
+  const checkAuth = (value: AgentType): boolean => {
+    const provider = getProviderByAgentId(value);
+    const auth_provider = authProvidersRef.current.find(
+      (row) => row.provider_type === provider?.id,
+    );
 
-      if (auth_provider && !auth_provider?.is_auth) {
-        reject(new Error("Authentication required"));
-        Modal.confirm({
-          title: t("tip"),
-          content: t("auth_required", {
-            provider_name: t(provider?.label || ""),
-          }),
-          okText: t("action_go"),
-          cancelText: t("action_cancel"),
-          onOk: () => {
-            navigate("/platform");
-          },
-        });
-        return;
-      }
+    if (auth_provider && !auth_provider?.is_auth) {
+      Modal.confirm({
+        title: t("tip"),
+        content: t("auth_required", {
+          provider_name: t(provider?.label || ""),
+        }),
+        okText: t("action_go"),
+        cancelText: t("action_cancel"),
+        onOk: () => {
+          navigate("/platform");
+        },
+      });
+      return false;
+    }
 
-      resolve();
-    });
+    return true;
   };
 
   // 处理创建弹窗确认
   const handleCreateConfirm = async (data: CreateAgentDialogResult) => {
-    await checkAuth(data.agentType as AgentType);
+    if (!checkAuth(data.agentType as AgentType)) return;
 
     // OpenClaw 兼容族：在弹框确定时调用 API 创建
     if (isOpenClawCompatibleAgentType(data.agentType)) {
@@ -480,7 +429,7 @@ export function AgentPage() {
     data: Partial<AgentState> = {},
     is_new = false,
   ) => {
-    await checkAuth(value as AgentType);
+    if (!checkAuth(value as AgentType)) return;
 
     const searchParams = data.agent_id
       ? `?type=${data.agent_type}&agent_id=${data.agent_id}&is_new=${is_new}`
@@ -536,13 +485,10 @@ export function AgentPage() {
       width: 180,
       render: (_: any, row: AgentState) => (
         <div className="flex items-center gap-2 w-full">
-          <img
+          <SafeImage
             className="flex-none w-8 h-8 rounded-full overflow-hidden"
-            src={row.logo || "/images/default_logo.png"}
+            src={row.logo || ""}
             alt=""
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "/images/default_logo.png";
-            }}
           />
           <div className="flex-1 w-0 text-sm flex flex-col">
             <div className="text-primary truncate">{row.name || "--"}</div>
@@ -561,9 +507,9 @@ export function AgentPage() {
       key: "backend_agent_type",
       width: 140,
       render: (backend_agent_type: number) => {
-        if (backend_agent_type === 0) return t("agent_type_chat_v2")
-        if (backend_agent_type === 1) return t("agent_type_completion_v2")
-        if (backend_agent_type === 2) return t("agent_type.assistant")
+        if (backend_agent_type === BACKEND_AGENT_TYPE.AGENT) return t("agent_type_chat_v2")
+        if (backend_agent_type === BACKEND_AGENT_TYPE.WORKFLOW) return t("agent_type_completion_v2")
+        if (backend_agent_type === BACKEND_AGENT_TYPE.ASSISTANT) return t("agent_type.assistant")
         return "--"
       },
     },
@@ -635,28 +581,22 @@ export function AgentPage() {
       fixed: "end",
       render: (_: any, row: AgentState) => (
         <>
-          <Button
-            type="text"
-            icon={<SvgIcon name="edit" />}
-            className="invisible group-hover:visible hover:!text-brand"
-            onClick={(e) => {
-              e.stopPropagation();
-              onAgentAdd(row.agent_type, row);
-            }}
-          />
-          <Tooltip title={row.is_system ? t('agent.builtin_no_delete') : ''}>
-            <Button
-              type="text"
-              danger
-              icon={<SvgIcon name="delete" />}
-              className="invisible group-hover:visible hover:!text-tag-red"
-              disabled={row.is_system}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAgentDelete(row);
-              }}
-            />
-          </Tooltip>
+          <IconAction
+            variant="row"
+            title={t("action.edit")}
+            onClick={() => onAgentAdd(row.agent_type, row)}
+          >
+            <SvgIcon name="edit" />
+          </IconAction>
+          <IconAction
+            variant="row"
+            title={row.is_system ? t("agent.builtin_no_delete") : ""}
+            danger
+            disabled={row.is_system}
+            onClick={() => onAgentDelete(row)}
+          >
+            <SvgIcon name="delete" />
+          </IconAction>
         </>
       ),
     },
@@ -804,7 +744,7 @@ export function AgentPage() {
           setSelectedGroupId(undefined);
         }}
         onConfirm={handleCreateConfirm}
-        types={types}
+        types={AGENT_TYPE_OPTIONS}
         platformsByType={platformsByType}
         groupValue={selectedGroupId}
         onGroupChange={setSelectedGroupId}
@@ -827,50 +767,6 @@ export function AgentPage() {
           </div>
         ) : undefined}
       />
-
-      {/* 旧添加 Drawer */}
-      <Drawer
-        open={legacyAddVisible}
-        title={t("action_add")}
-        onClose={() => setLegacyAddVisible(false)}
-        styles={{ wrapper: { width: 650 } }}
-      >
-        <ul className="w-full min-h-[300px] overflow-y-auto">
-          {filteredAgentOptions.map((item, itemIndex) => (
-            <li key={itemIndex}>
-              <h4 className="text-sm text-hint">{t(item.title)}</h4>
-              <ul className="flex flex-col gap-3 pt-4 pb-6">
-                {item.filteredChildren.map((row) => (
-                  <li
-                    key={row.value}
-                    className="h-[72px] px-6 rounded flex items-center gap-3 bg-[#F8F9FA] cursor-pointer hover:shadow"
-                  >
-                    <img
-                      className="flex-none size-10 rounded-lg"
-                      src={row.icon}
-                      alt=""
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "/images/default_logo.png";
-                      }}
-                    />
-                    <div className="flex-1 text-base text-primary truncate">
-                      {t(row.label)}
-                    </div>
-                    <Button
-                      type="primary"
-                      className="border-none"
-                      onClick={() => handleAgentPrepare(row)}
-                    >
-                      {t("action_add")}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      </Drawer>
 
       <GroupDialog
         ref={dialogRef}

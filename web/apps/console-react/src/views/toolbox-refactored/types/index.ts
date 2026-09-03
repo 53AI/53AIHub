@@ -3,6 +3,8 @@
  * 集中管理所有类型，便于复用和测试
  */
 
+import type { ScopeItem } from '@/api/modules/agent'
+
 /**
  * AI 工具项
  */
@@ -17,6 +19,7 @@ export interface AiLinkItem {
   shared_account?: string
   user_group_ids?: number[]
   subscription_group_ids?: number[]
+  scopes?: ScopeItem[]
 }
 
 /**
@@ -69,6 +72,7 @@ export interface AiLinkDetail {
   shared_account?: string
   user_group_ids?: number[]
   subscription_group_ids?: number[]
+  scopes?: ScopeItem[]
 }
 
 /**

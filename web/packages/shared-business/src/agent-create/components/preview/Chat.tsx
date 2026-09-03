@@ -243,7 +243,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       sendType = 'work-ai'
       // 仅取 Sender 实际选中的技能，不兜底 previewSender.skill.list[0]，
       // 否则未交互状态下 list 是全部技能，会被当作默认选中第一个。
-      // 与 apps/front-react/src/views/index/IndexChat.tsx 行 527 对齐。
+      // 与早期 work-ai sender 的选中逻辑对齐(只取用户实际选中的技能)。
       const s = selectedSkills[0]
       sendSkill = s
         ? { display_name: s.display_name, skill_name: s.skill_name }

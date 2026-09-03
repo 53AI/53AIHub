@@ -69,6 +69,8 @@ type UpdateSkillMetaRequest struct {
 	AdminStatus        *string // 管理状态：enabled/disabled
 	Logo               *string // 技能 logo URL
 	PermissionGroupIDs []int64 // 权限分组ID列表
+	Scopes             []model.ResourceScopeItem
+	ScopesProvided     bool
 }
 
 func resolveRunnableSkillInstallPath(installPath string) (string, bool) {
@@ -133,20 +135,26 @@ func skillMDExists(path string) bool {
 
 func (s *SkillLibraryService) canUserSeeSkill(ctx context.Context, eid, userID, userGroupID, skillID int64) (*model.SkillLibrary, error) {
 	_ = ctx
-	_ = userID
 	_ = userGroupID
 	skillInfo, err := model.GetSkillLibraryByIDForTenant(eid, skillID)
 	if err != nil {
 		return nil, err
 	}
+	// 检查资源范围权限
+	if userID > 0 {
+		accessible, accessErr := CheckResourceScopeAccess(userID, eid, skillID, model.ResourceTypeSkillLibrary)
+		if accessErr != nil {
+			return nil, accessErr
+		}
+		if !accessible {
+			return nil, ErrSkillNotVisible
+		}
+	}
 	return skillInfo, nil
 }
 
 func (s *SkillLibraryService) ListExploreSkills(ctx context.Context, eid, userID int64, keyword string, groupIDs []int64, offset, limit int) (*SkillExploreListResult, error) {
-	visibleGroupIDs, err := s.resolveVisibleSkillGroupIDs(userID)
-	if err != nil {
-		return nil, err
-	}
+	_ = userID
 
 	skillGroupIDs, err := resolveSkillGroupResourceIDs(groupIDs)
 	if err != nil {
@@ -157,7 +165,7 @@ func (s *SkillLibraryService) ListExploreSkills(ctx context.Context, eid, userID
 	}
 
 	skills, count, err := model.ListExploreSkillLibrariesWithFilter(eid, model.SkillLibraryExploreFilter{
-		VisibleGroupIDs: visibleGroupIDs,
+		VisibleGroupIDs: nil,
 		SkillIDs:        skillGroupIDs,
 		Keyword:         keyword,
 		PublishStatuses: []string{model.SkillPublishStatusPublished},
@@ -238,9 +246,23 @@ func (s *SkillLibraryService) GetSkillDetailForUser(ctx context.Context, eid, us
 	if err != nil {
 		return nil, err
 	}
+	return s.loadSkillDetail(eid, skillInfo, skillID)
+}
+
+func (s *SkillLibraryService) GetSkillDetailForRead(ctx context.Context, eid, skillID int64) (*SkillDetailResult, error) {
+	skillInfo, err := model.GetSkillLibraryByIDForTenant(eid, skillID)
+	if err != nil {
+		return nil, err
+	}
+	return s.loadSkillDetail(eid, skillInfo, skillID)
+}
+
+func (s *SkillLibraryService) loadSkillDetail(eid int64, skillInfo *model.SkillLibrary, skillID int64) (*SkillDetailResult, error) {
 
 	result := &SkillDetailResult{SkillLibrary: skillInfo}
-	_ = skillInfo.LoadSkillGroups() // 加载技能所属分组
+	if err := skillInfo.LoadSkillGroups(); err != nil {
+		return nil, err
+	}
 
 	envVars, err := model.GetSkillEnvVarsBySkillID(eid, skillID)
 	if err != nil {
@@ -342,7 +364,7 @@ func (s *SkillLibraryService) ensureSkillNameUnique(tx *gorm.DB, eid int64, sour
 func (s *SkillLibraryService) updateSkillPermissions(ctx context.Context, tx *gorm.DB, skillID int64, permissionGroupIDs []int64) error {
 	_ = ctx
 	groupIDs := normalizePermissionGroupIDs(permissionGroupIDs)
-	return UpdateResourcePermissions(nil, tx, skillID, model.ResourceTypeSkillLibrary, groupIDs)
+	return UpdateResourcePermissions(nil, tx, skillID, model.ResourceTypeSkillLibrary, groupIDs, nil, false)
 }
 
 func (s *SkillLibraryService) ListAdminSkillsWithFilter(ctx context.Context, eid int64, keyword, publishStatus, adminStatus string, filterSkillIDs []int64, offset, limit int) ([]*model.SkillLibrary, int64, error) {
@@ -437,7 +459,7 @@ func (s *SkillLibraryService) UpdateSkillMeta(ctx context.Context, eid, skillID 
 		}
 
 		if req.PermissionGroupIDs != nil {
-			if err := s.updateSkillPermissions(ctx, tx, skillID, resolvedPermissionGroupIDs); err != nil {
+			if err := UpdateResourcePermissions(nil, tx, skillID, model.ResourceTypeSkillLibrary, resolvedPermissionGroupIDs, req.Scopes, req.ScopesProvided); err != nil {
 				return err
 			}
 		}

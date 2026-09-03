@@ -42,6 +42,14 @@ var autoRegistry = map[string]map[string]interface{}{
 	"doubao-seed-2-0": {"thinking.type": "disabled"},
 }
 
+// autoEnableRegistry 深度思考模式强制开启思考时使用的参数，与 autoRegistry 同模型集合
+var autoEnableRegistry = map[string]map[string]interface{}{
+	"deepseek-v4":       {"thinking.type": "enabled"},
+	"deepseek-v4-flash": {"thinking.type": "enabled"},
+	// lazy: doubao-seed-2-0 通过 volcengine OpenAI 兼容 API，参数同 deepseek-v4
+	"doubao-seed-2-0": {"thinking.type": "enabled"},
+}
+
 func ParseChannelThinkingConfig(channelConfigJSON string) *ThinkingConfig {
 	if channelConfigJSON == "" {
 		return nil
@@ -59,7 +67,22 @@ func ApplyDisableThinking(ctx context.Context, channelCfgJSON string, requestJSO
 			channelID, requestModel, actualModel, disableThinking)
 		return requestJSON, false, nil
 	}
+	return applyThinkingParams(ctx, channelCfgJSON, requestJSON, requestModel, actualModel, autoRegistry, channelID)
+}
 
+// ApplyEnableThinking 深度思考模式：为匹配的模型强制注入"开启思考"参数（thinking.type=enabled）
+func ApplyEnableThinking(ctx context.Context, channelCfgJSON string, requestJSON []byte, requestModel string, actualModel string, enableThinking *bool, channelID int) ([]byte, bool, error) {
+	if enableThinking == nil || !*enableThinking {
+		logger.Debugf(ctx, "【思考策略】EnableThinking未启用 channel_id=%d request_model=%s actual_model=%s enable_thinking=%v",
+			channelID, requestModel, actualModel, enableThinking)
+		return requestJSON, false, nil
+	}
+	return applyThinkingParams(ctx, channelCfgJSON, requestJSON, requestModel, actualModel, autoEnableRegistry, channelID)
+}
+
+// applyThinkingParams 按渠道 thinking 配置与模型名匹配，向请求注入开/关思考参数。
+// 共享于快速回答（关闭）与深度回答（开启）两条链路，避免两处逻辑发散。
+func applyThinkingParams(ctx context.Context, channelCfgJSON string, requestJSON []byte, requestModel string, actualModel string, registry map[string]map[string]interface{}, channelID int) ([]byte, bool, error) {
 	thinkingCfg := ParseChannelThinkingConfig(channelCfgJSON)
 	if thinkingCfg == nil {
 		logger.Debugf(ctx, "【思考策略】Channel无thinking配置，隐式auto兜底 channel_id=%d request_model=%s actual_model=%s channel_config=%s",
@@ -74,13 +97,13 @@ func ApplyDisableThinking(ctx context.Context, channelCfgJSON string, requestJSO
 	case "auto":
 		mode = "auto"
 		key := strings.ToLower(strings.TrimSpace(actualModel))
-		if adapter, ok := autoRegistry[key]; ok {
+		if adapter, ok := registry[key]; ok {
 			params = adapter
-			logger.Debugf(ctx, "【思考策略】auto命中 channel_id=%d request_model=%s actual_model=%s disable_thinking=true mode=auto decision=matched paths=%v",
-				channelID, requestModel, actualModel, keys(params))
+			logger.Debugf(ctx, "【思考策略】auto命中 channel_id=%d request_model=%s actual_model=%s thinking_action=%s mode=auto decision=matched paths=%v",
+				channelID, requestModel, actualModel, thinkingActionName(registry), keys(params))
 		} else {
 			// 通用前缀匹配：registry key 是模型名前缀
-			for regKey, regParams := range autoRegistry {
+			for regKey, regParams := range registry {
 				if strings.HasPrefix(key, regKey) {
 					params = regParams
 					logger.Debugf(ctx, "【思考策略】auto前缀命中 channel_id=%d request_model=%s actual_model=%s reg_key=%s paths=%v",
@@ -89,24 +112,24 @@ func ApplyDisableThinking(ctx context.Context, channelCfgJSON string, requestJSO
 				}
 			}
 			if params == nil {
-				logger.Debugf(ctx, "【思考策略】auto未命中 channel_id=%d request_model=%s actual_model=%s disable_thinking=true mode=auto decision=unmatched",
-					channelID, requestModel, actualModel)
+				logger.Debugf(ctx, "【思考策略】auto未命中 channel_id=%d request_model=%s actual_model=%s thinking_action=%s mode=auto decision=unmatched",
+					channelID, requestModel, actualModel, thinkingActionName(registry))
 				return requestJSON, false, nil
 			}
 		}
 	case "custom":
 		mode = "custom"
 		if thinkingCfg.Parameter == nil || len(thinkingCfg.Parameter) == 0 {
-			logger.Warnf(ctx, "【思考策略】custom缺少parameter channel_id=%d request_model=%s actual_model=%s disable_thinking=true mode=custom decision=missing_parameter",
-				channelID, requestModel, actualModel)
+			logger.Warnf(ctx, "【思考策略】custom缺少parameter channel_id=%d request_model=%s actual_model=%s thinking_action=%s mode=custom decision=missing_parameter",
+				channelID, requestModel, actualModel, thinkingActionName(registry))
 			return requestJSON, false, nil
 		}
 		params = thinkingCfg.Parameter
-		logger.Debugf(ctx, "【思考策略】custom命中 channel_id=%d request_model=%s actual_model=%s disable_thinking=true mode=custom paths=%v",
-			channelID, requestModel, actualModel, keys(params))
+		logger.Debugf(ctx, "【思考策略】custom命中 channel_id=%d request_model=%s actual_model=%s thinking_action=%s mode=custom paths=%v",
+			channelID, requestModel, actualModel, thinkingActionName(registry), keys(params))
 	default:
-		logger.Warnf(ctx, "【思考策略】未知模式 channel_id=%d request_model=%s actual_model=%s disable_thinking=true mode=%s",
-			channelID, requestModel, actualModel, thinkingCfg.Mode)
+		logger.Warnf(ctx, "【思考策略】未知模式 channel_id=%d request_model=%s actual_model=%s thinking_action=%s mode=%s",
+			channelID, requestModel, actualModel, thinkingActionName(registry), thinkingCfg.Mode)
 		return requestJSON, false, nil
 	}
 
@@ -213,4 +236,20 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// thinkingActionName 从 registry 参数值推导思考动作（disabled/enabled），仅用于日志可读性
+func thinkingActionName(registry map[string]map[string]interface{}) string {
+	if len(registry) == 0 {
+		return "unknown"
+	}
+	for _, params := range registry {
+		if v, ok := params["thinking.type"]; ok {
+			if s, ok := v.(string); ok {
+				return s
+			}
+		}
+		break
+	}
+	return "unknown"
 }
