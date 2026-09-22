@@ -1,8 +1,0 @@
-export { FileShare } from './share'
-export { FileMore } from './more'
-export { DocumentApp } from './document-app'
-export { EditBtn } from './edit-btn'
-export { FileFav } from './fav'
-export { AssistantBtn } from './assistant-btn'
-export { SidebarAppItem } from './sidebar-app-item'
-export { Parser, type ParserRef } from './parser'

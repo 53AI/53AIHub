@@ -6,11 +6,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/53AI/53AIHub/common"
-	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/service/docconv"
 	"github.com/joho/godotenv"
 )
@@ -20,9 +18,6 @@ func main() {
 	if err := godotenv.Load("../../../.env"); err != nil {
 		log.Fatalf("Failed to load /code/AgentHub/.env: %v", err)
 	}
-	// 同步赋值给 config 包，因 config 变量在包初始化时已读取环境
-	config.REDIS_CONN = os.Getenv("REDIS_CONN")
-
 	// 初始化 Redis 等组件
 	common.Init()
 

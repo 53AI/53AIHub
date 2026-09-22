@@ -15,10 +15,11 @@
  * 不写入 localStorage，避免污染登录态请求。
  *
  * 视觉完全复用 ShareRecordingView 的 export 视觉组件：
- * useMobileLayout / SnapshotHeader / TabsBar / SnapshotTabContent，
+ * SnapshotHeader / SnapshotTabContent（固定走移动端样式，isMobileLayout 恒为 true），
  * 数据组装走 `./recording/buildTabState` 的 live 分支入口。
  *
- * 不渲染 MobileBottomBar：Tab 切换由 Flutter 宿主控制，分享走原生通道。
+ * 不渲染 TabsBar / MobileBottomBar：本页仅面向 Flutter WebView 全屏嵌入，
+ * Tab 切换由 Flutter 宿主控制（postMessage 协议见下），分享走原生通道。
  * 外层容器对应去掉 snapshot 分支的 py-4（Flutter WebView 全屏嵌入，不需要垂直留白），
  * 内层 cardClass 移动端也去掉 pb-[68px]（无 MobileBottomBar，不需要底部留白）。
  *
@@ -64,11 +65,8 @@ import type { RawFileItem } from '@/api/modules/files/types';
 import { decodeRecordingSelection } from '@/views/recording/selection/shareSelection';
 import { t } from '@/locales';
 import { extractClosingQuote } from '@/views/recording/components/insightRenderer/markdownParser';
-import { useUserStore } from '@/stores/modules/user';
 import {
-  useMobileLayout,
   SnapshotHeader,
-  TabsBar,
   SnapshotTabContent,
 } from './recording';
 import { type TabState, buildTabState, stripLastExtension, sumTabKey } from './recording/buildTabState';
@@ -145,10 +143,6 @@ export function ShareRecordingLiveView() {
     insightPage: null,
   });
   const [errors, setErrors] = useState<LiveErrors>({});
-
-  // 当前登录用户的头像（live 分支无"分享人"概念，header 头像用 viewer 自己）
-  // 必须在所有 early return 之前调用，遵守 React Hooks 规则
-  const userAvatar = useUserStore((s) => s.info.avatar);
 
   // 进入页面就开始预加载 MarkdownViewer。sum-* tab 用它渲染，不预加载的话
   // 首次切到 sum-* tab 时 Suspense fallback（小 Spin）会闪一下。
@@ -325,13 +319,10 @@ export function ShareRecordingLiveView() {
     };
   }, [data.file, tabState]);
 
-  // 移动端布局
-  const isMobileLayout = useMobileLayout();
-  const cardClass = isMobileLayout
-    ? 'flex flex-col w-full h-full rounded-none bg-[#F1F4FB]'
-    : 'w-11/12 lg:w-[1200px] rounded-3xl bg-white';
-  const headerClass = isMobileLayout ? 'h-20 px-4' : 'h-[110px] px-10 border-b';
-  const contentPaddingClass = isMobileLayout ? 'px-4' : 'px-10';
+  // 移动端布局：Flutter WebView 全屏嵌入，始终走移动端样式，不做 PC 分支
+  const cardClass = 'flex flex-col w-full h-full rounded-none bg-[#F1F4FB]';
+  const headerClass = 'h-20 px-4';
+  const contentPaddingClass = 'px-4';
 
   if (loading) {
     return (
@@ -352,24 +343,20 @@ export function ShareRecordingLiveView() {
     );
   }
 
-  // 当前登录用户的头像（live 分支无"分享人"概念，header 头像用 viewer 自己）
-  // 已在组件顶部声明过 userAvatar
-
   /**
    * 构造"虚拟 snapshot"对象喂给 SnapshotHeader。
    *
    * SnapshotHeader 的 props 类型是 RecordingSharedContent，live 分支没有完整快照；
-   * 这里只喂 SnapshotHeader 实际读取的字段（title / avatar / created_time），
+   * 这里只喂 SnapshotHeader 实际读取的字段（title / created_time），
    * 其余字段置空。类型断言是因为 RecordingSharedContent 还含 file_id 等必填字段，
    * 但 SnapshotHeader 不会读到，所以这里用 `as unknown as` 一次性绕开。
-   * live 分支没有"分享人"概念，nickname 留空；avatar 走当前登录用户的头像；
+   * live 分支没有"分享人"概念，nickname 留空；移动端不渲染头像；
    * created_time 走文件的更新时间（RawFileItem.updated_time），文案「更新时间」。
    */
   const rawTitle = extractFileNameFromPath(data.file.path);
   const virtualSnapshot = {
     file_id: String(data.file.id),
     title: rawTitle,
-    avatar: userAvatar || undefined,
     nickname: undefined,
     created_time: data.file.updated_time,
   } as unknown as RecordingSharedContent;
@@ -380,24 +367,17 @@ export function ShareRecordingLiveView() {
         <SnapshotHeader
           snapshot={virtualSnapshot}
           headerClass={headerClass}
-          isMobileLayout={isMobileLayout}
-          timeLabelKey="common.updated_time"
+          isMobileLayout
+          timeLabelKey="common.updated_time_form"
         />
         {availableTabs.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-4">
             <Empty description={t('share.no_content')} />
           </div>
         ) : (
-          <div className={`${isMobileLayout ? 'flex-1 flex flex-col overflow-hidden min-h-0  ' : ''} `}>
-            {!isMobileLayout && (
-              <TabsBar
-                activeTab={activeTab}
-                onChange={setActiveTab}
-                tabs={availableTabs}
-              />
-            )}
-            {tabState && <SnapshotTabContent activeTab={activeTab} tabState={tabState} contentPadding={contentPaddingClass} />}
-          </div>
+          <>
+            {tabState && <SnapshotTabContent activeTab={activeTab} scrollable={false} tabState={tabState} contentPadding={contentPaddingClass} />}
+          </>
         )}
       </div>
     </div>

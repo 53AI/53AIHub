@@ -169,6 +169,20 @@ func DeleteGroup(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
+	// 群组删除：曾在该群组的成员群组缓存立即失效。成员分两路：直接用户行 + 部门行（转部门下成员）。
+	var memberUserIDs []int64
+	if err := model.DB.Model(&model.ResourcePermission{}).Where("group_id = ? AND resource_type = ?", id, model.ResourceTypeUser).Pluck("resource_id", &memberUserIDs).Error; err == nil {
+		var memberDeptIDs []int64
+		if err := model.DB.Model(&model.ResourcePermission{}).Where("group_id = ? AND resource_type = ?", id, model.ResourceTypeDepartment).Pluck("resource_id", &memberDeptIDs).Error; err == nil && len(memberDeptIDs) > 0 {
+			var bids []int64
+			if err := model.DB.Model(&model.MemberDepartmentRelation{}).Where("eid = ? AND did IN ?", group.Eid, memberDeptIDs).Pluck("bid", &bids).Error; err == nil {
+				memberUserIDs = append(memberUserIDs, bids...)
+			}
+		}
+		for _, uid := range memberUserIDs {
+			model.InvalidateUserCaches(group.Eid, uid, c.Request.Context())
+		}
+	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 }
@@ -976,6 +990,8 @@ func BatchAddUsersToGroup(c *gin.Context) {
 					c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 					return
 				}
+				// 用户进群组：其群组缓存立即失效（统一入口一行，token 未变无需传）。
+				model.InvalidateUserCaches(group.Eid, userID, c.Request.Context())
 			}
 		}
 	}
@@ -1018,6 +1034,13 @@ func BatchAddUsersToGroup(c *gin.Context) {
 					tx.Rollback()
 					c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 					return
+				}
+				// 部门进群组：该部门下所有成员的群组缓存立即失效（部门→群组是群组计算来源之一）。
+				var bids []int64
+				if err := model.DB.Model(&model.MemberDepartmentRelation{}).Where("eid = ? AND did = ?", group.Eid, deptID).Pluck("bid", &bids).Error; err == nil {
+					for _, bid := range bids {
+						model.InvalidateUserCaches(group.Eid, bid, c.Request.Context())
+					}
 				}
 			}
 		}

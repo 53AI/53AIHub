@@ -8,6 +8,7 @@ import { usePoll } from '@/hooks/usePoll'
 import { checkVersion } from '@/utils/version'
 import { VERSION_MODULE } from '@/constants/enterprise'
 import { useRecordingStore } from '@/stores/modules/recording'
+import { useCognitionStore } from '@/stores/modules/cognition'
 import recordingApi from '@/api/modules/recording'
 import { buildUrl } from '@/utils/router'
 import { t } from '@/locales'
@@ -83,6 +84,7 @@ export function RecordingView() {
   // 不再用组件内 state——列表高亮与右栏内容由同一个 URL 决定，天然一致。
   const previewMatch = useMatch('/recording/preview/:fileId')
   const selectedFileId = previewMatch?.params.fileId ?? null
+  const cognitionMatch = useMatch('/recording/cognition')
   const hasRecording = checkVersion(VERSION_MODULE.RECORDING)
   const recordingStatus = useRecordingStore((s) => s.status)
   const isTransitioning = useRecordingStore((s) => s.isTransitioning)
@@ -91,7 +93,7 @@ export function RecordingView() {
   // 搜索：keywordInput 即时更新，keyword 防抖后驱动取数
   const [keywordInput, setKeywordInput] = useState('')
   const [keyword, setKeyword] = useState('')
-  const [category, setCategory] = useState<RecordingFilter>('all')
+  const [category] = useState<RecordingFilter>('all')
   const [enableSystemAudio, setEnableSystemAudio] = useState(true)
 
   // getDisplayMedia is unsupported on iOS Safari / Android Chrome and on desktop
@@ -372,6 +374,15 @@ export function RecordingView() {
     prevFileListLengthRef.current = fileList.length
   }, [fileList.length, startQueueCountPoll])
 
+  // 认知待确认数：徽标读共享 store（认知页写操作后即时更新）。
+  // 这里再低频轮询 store.refresh() 兜底，覆盖外部会话/设备导致的变动；
+  // 接口请求已收敛到 store，不在此直接调用 getCognitionOverview。轮询常开不停，单次失败由 store 内部吞掉。
+  const cognitionPendingCount = useCognitionStore((s) => s.pendingCount)
+  const { start: startCognitionPendingPoll } = usePoll(() => useCognitionStore.getState().refresh(), 10000)
+  useEffect(() => {
+    startCognitionPendingPoll()
+  }, [startCognitionPendingPoll])
+
   // 录音结束（status 转 idle）刷新列表并提示
   useEffect(() => {
     if (prevRecordingStatusRef.current !== 'idle' && recordingStatus === 'idle') {
@@ -391,9 +402,13 @@ export function RecordingView() {
   // 直接访问 /recording/preview/:fileId 走专用路由（无首页闪烁）。
   // 这里不再需要 URL preview 加载 effect 与 clearPreviewParam。
 
-  // 左栏"首页"入口：回到 /recording 索引路由，右栏渲染 embedded 会议记忆首页
+  // 左栏"经营记忆"入口：回到 /recording 索引路由，右栏渲染经营记忆页
   const goToHome = () => {
     navigate('/recording')
+  }
+
+  const goToCognition = () => {
+    navigate('/recording/cognition')
   }
 
   // 列表更多菜单命令。new-tab 打开预览专用路由的直链
@@ -987,13 +1002,37 @@ export function RecordingView() {
             onClick={goToHome}
             className={[
               'w-full h-9 flex items-center gap-2 px-3 rounded-lg text-left text-[13px] transition-colors',
-              !selectedFileId
+              !selectedFileId && !cognitionMatch
                 ? 'bg-[#E0EAFF] text-[#2563EB]'
                 : 'text-[#334155] hover:bg-[#EEF4FF] hover:text-[#2563EB]',
             ].join(' ')}
           >
             <SvgIcon name="home" size={16} />
-            <span>首页</span>
+            <span>经营记忆</span>
+          </button>
+        </div>
+
+        <div className="px-3 mt-1">
+          <button
+            type="button"
+            onClick={goToCognition}
+            className={[
+              'w-full h-9 flex items-center gap-2 px-3 rounded-lg text-left text-[13px] transition-colors',
+              cognitionMatch
+                ? 'bg-[#E0EAFF] text-[#2563EB]'
+                : 'text-[#334155] hover:bg-[#EEF4FF] hover:text-[#2563EB]',
+            ].join(' ')}
+          >
+            <SvgIcon name="brain" size={16} />
+            <span>认知模型</span>
+            {cognitionPendingCount > 0 && (
+              <span
+                className="ml-auto inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF4D4F] px-1 text-[11px] font-medium leading-none text-white"
+                aria-label={`${cognitionPendingCount} 条待确认认知`}
+              >
+                {cognitionPendingCount > 99 ? '99+' : cognitionPendingCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -1067,7 +1106,7 @@ export function RecordingView() {
         />
       </div>
 
-      {/* 右栏：由子路由决定（index=会议记忆首页 / preview/:fileId=录音预览） */}
+      {/* 右栏：由子路由决定（index=经营记忆 / cognition=认知模型 / preview=录音预览） */}
       <Outlet context={outletContext} />
 
       {/* 隐藏 file input for audio import */}

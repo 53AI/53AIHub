@@ -52,6 +52,12 @@ const (
 	ChannelApiTypeCodexWS = 1016
 	// Manus WebSocket 长连接
 	ChannelApiTypeManusWS = 1017
+	// 智谱 GLM Coding Plan
+	ChannelApiTypeGlmCodingPlan = 1018
+	GlmCodingPlanDefaultBaseURL = "https://open.bigmodel.cn/api/coding/paas/v4"
+	// 腾讯云 TokenHub
+	ChannelApiTypeTencentTokenHub = 1019
+	TencentTokenHubDefaultBaseURL = "https://tokenhub.tencentmaas.com"
 )
 
 // ChannelDescription 渠道描述结构体
@@ -181,7 +187,13 @@ func GetFirstChannelByEidAndProviderId(eid int64, providerId int64) (*Channel, e
 }
 
 func (channel *Channel) GetBaseURL() string {
-	if channel.BaseURL == nil {
+	if channel.BaseURL == nil || *channel.BaseURL == "" {
+		if channel.Type == ChannelApiTypeGlmCodingPlan {
+			return GlmCodingPlanDefaultBaseURL
+		}
+		if channel.Type == ChannelApiTypeTencentTokenHub {
+			return TencentTokenHubDefaultBaseURL
+		}
 		return ""
 	}
 	return *channel.BaseURL
@@ -290,6 +302,10 @@ func GetApiType(channelType int) int {
 		return ChannelApiTypeCustomOpenAI
 	case ChannelApiTypeOpenClaw:
 		return ChannelApiTypeOpenClaw
+	case ChannelApiTypeGlmCodingPlan:
+		return channeltype.OpenAI
+	case ChannelApiTypeTencentTokenHub:
+		return channeltype.OpenAI
 	}
 
 	return apiType

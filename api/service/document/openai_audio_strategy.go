@@ -40,37 +40,52 @@ func (s *OpenAIAudioDocumentStrategy) Process(content []byte, filename string, f
 }
 
 // ProcessWithUploadFile OpenAI 兼容语音转写：
-//   1. 解析 openai:{type}:{model} → channel + model（channel_id/model 名从 RecordingConfig 读取，同 voice 策略）
-//   2. key = channel.Key；base_url = voice_models.{model}.api_domain 或 channel.GetBaseURL()，归一化后拼 /v1/audio/transcriptions
-//   3. 文件：本地版读本地字节 / SaaS 版 URL 下载（ResolveAudioFile）→ multipart 上传
-//   4. 响应归一化为 DashScope transcripts 结构（保证纪要/导出/分享消费端兼容）
+//  1. 解析 openai:{type}:{model} → channel + model（channel_id/model 名从 RecordingConfig 读取，同 voice 策略）
+//  2. key = channel.Key；base_url = voice_models.{model}.api_domain 或 channel.GetBaseURL()，归一化后拼 /v1/audio/transcriptions
+//  3. 文件：本地版读本地字节 / SaaS 版 URL 下载（ResolveAudioFile）→ multipart 上传
+//  4. 响应归一化为 DashScope transcripts 结构（保证纪要/导出/分享消费端兼容）
 func (s *OpenAIAudioDocumentStrategy) ProcessWithUploadFile(fileID int64, content []byte, filename string, fileSize int64, eid, userID int64, uploadFile *model.UploadFile, parseType string) (*DocumentProcessResult, error) {
 	ctx := context.Background()
 
-	// 解析 parseType：openai:{channel_type}:{model_name}（channel_type 路由标识）
-	if !strings.HasPrefix(parseType, model.PLATFORM_KEY_OPENAI_AUDIO_PREFIX) {
-		return nil, fmt.Errorf("无效的 parseType: %s", parseType)
-	}
-	parts := strings.Split(parseType, ":")
-	if len(parts) < 3 {
-		return nil, fmt.Errorf("无效的 parseType 格式: %s（期望 openai:{channel_type}:{model_name}）", parseType)
-	}
-	if _, err := strconv.ParseInt(parts[1], 10, 64); err != nil {
-		return nil, fmt.Errorf("无效的 channel_type: %s", parts[1])
-	}
+	// 解析 channel_id 与模型名：recording_voice 从平台设置读取；openai: 从企业录音配置读取
+	var channelID int64
+	var modelName string
+	if parseType == model.PLATFORM_KEY_RECORDING_VOICE {
+		rv, rerr := model.GetPlatformSettingRecordingVoice(eid)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if !rv.IsOpenAI {
+			return nil, fmt.Errorf("录音解析配置为 DashScope 渠道，应走 voice 策略")
+		}
+		channelID = rv.VoiceModelID
+		modelName = rv.VoiceModelName
+	} else {
+		// openai:{channel_type}:{model_name}（channel_type 路由标识）
+		if !strings.HasPrefix(parseType, model.PLATFORM_KEY_OPENAI_AUDIO_PREFIX) {
+			return nil, fmt.Errorf("无效的 parseType: %s", parseType)
+		}
+		parts := strings.Split(parseType, ":")
+		if len(parts) < 3 {
+			return nil, fmt.Errorf("无效的 parseType 格式: %s（期望 openai:{channel_type}:{model_name}）", parseType)
+		}
+		if _, err := strconv.ParseInt(parts[1], 10, 64); err != nil {
+			return nil, fmt.Errorf("无效的 channel_type: %s", parts[1])
+		}
 
-	// channel_id 与模型名从企业录音配置读取（对齐 voice 策略）
-	rc, err := model.ValidateOrCreateRecordingConfig(eid)
-	if err != nil {
-		return nil, fmt.Errorf("获取录音配置失败: %w", err)
-	}
-	if !rc.Enabled || rc.ParserPlatform == "" {
-		return nil, fmt.Errorf("录音功能未启用或未配置解析平台，请先在后台配置语音模型")
-	}
-	channelID := rc.VoiceModelID
-	modelName := rc.VoiceModelName
-	if channelID <= 0 || modelName == "" {
-		return nil, fmt.Errorf("录音配置中缺少 voice_model_id 或 voice_model_name")
+		// channel_id 与模型名从企业录音配置读取（对齐 voice 策略）
+		rc, err := model.ValidateOrCreateRecordingConfig(eid)
+		if err != nil {
+			return nil, fmt.Errorf("获取录音配置失败: %w", err)
+		}
+		if !rc.Enabled || rc.ParserPlatform == "" {
+			return nil, fmt.Errorf("录音功能未启用或未配置解析平台，请先在后台配置语音模型")
+		}
+		channelID = rc.VoiceModelID
+		modelName = rc.VoiceModelName
+		if channelID <= 0 || modelName == "" {
+			return nil, fmt.Errorf("录音配置中缺少 voice_model_id 或 voice_model_name")
+		}
 	}
 
 	channel, err := model.GetChannelByID(channelID)

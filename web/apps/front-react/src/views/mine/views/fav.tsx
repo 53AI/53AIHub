@@ -10,7 +10,7 @@ import { formatFile } from "@/api/modules/files/transform";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { formatLibrary } from "@/stores/modules/library";
-import { VirtualLogo } from "@/components";
+import { SafeImage } from "@km/shared-components-react";
 import { SvgIcon } from "@km/shared-components-react";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { getPublicPath } from "@/utils/config";
@@ -73,7 +73,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     goToPath,
     refreshDirs,
     refreshFiles,
-  } = useFolderNavigation("全部收藏");
+  } = useFolderNavigation(t("mine.all_favorites"));
 
   // 解析 includes，构建 lookup map
   const parseResponse = useCallback((data: any) => {
@@ -256,14 +256,14 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
         resource_type,
         resource_id: resourceId,
       });
-      message.success("已取消");
+      message.success(t("mine.unfavorite_success"));
       if (currentPath === "/") {
         loadFavorites(keyword, 0, false);
       } else {
         refreshFiles();
       }
     } catch (error) {
-      message.error("操作失败");
+      message.error(t("action.operation_failed"));
     }
   };
 
@@ -328,7 +328,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
   const filterMenuItems: MenuProps["items"] = [
     {
       key: "all",
-      label: "全部",
+      label: t("common.all"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("all");
@@ -336,7 +336,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     },
     {
       key: "library",
-      label: "知识库",
+      label: t("library.name"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("library");
@@ -344,7 +344,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     },,
     {
       key: "wiki",
-      label: "动态知识",
+      label: t("dynamic_knowledge.label"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("wiki");
@@ -352,7 +352,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     },
     {
       key: "space",
-      label: "空间",
+      label: t("space.label"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("space");
@@ -360,7 +360,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
     },
     {
       key: "file",
-      label: "知识",
+      label: t("mine.knowledge"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("file");
@@ -371,15 +371,15 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
   const getFilterLabel = () => {
     switch (filterType) {
       case "library":
-        return "知识库";
+        return t("library.name");
       case "file":
-        return "知识";
+        return t("mine.knowledge");
       case "wiki":
-        return "动态知识";
+        return t("dynamic_knowledge.label");
       case "space":
-        return "空间";
+        return t("space.label");
       default:
-        return "全部";
+        return t("common.all");
     }
   };
 
@@ -428,7 +428,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
             <Empty
               styles={{ image: { height: 100 } }}
               image={getPublicPath("/images/empty.png")}
-              description="暂无内容"
+              description={t("mine.empty_content")}
             />
           </div>
         )}
@@ -491,10 +491,10 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                 >
                   <div className="flex-1 min-w-0 flex items-center gap-2">
                     {item.type === "library" ? (
-                      <VirtualLogo
-                        text={item.name}
-                        src={getPublicPath("/images/default_popover_img.png")}
-                        size={26}
+                      <SafeImage
+                        src="/images/default_popover_img.png"
+                        letter={item.name}
+                        className="size-[26px] object-cover text-sm"
                       />
                     ) : item.type === "space" ? (
                       <div className="size-[26px] rounded bg-[#E6EEFF] flex items-center justify-center text-theme flex-none">
@@ -552,7 +552,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                         {
                           key: "unfavorite",
                           icon: "star-cancel",
-                          label: "取消收藏",
+                          label: t("action.unfavorite"),
                         },
                       ]}
                       onCommand={(cmd) => {
@@ -595,7 +595,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
           <Empty
             styles={{ image: { height: 100 } }}
             image={getPublicPath("/images/empty.png")}
-            description="暂无收藏的文档"
+            description={t("mine.empty_favorites")}
           />
         </div>
       )}

@@ -240,8 +240,11 @@ func GetGroupsByDepartmentID(departmentID int64) ([]int64, error) {
 }
 
 func GetGroupIDsByDepartmentIDs(dids []int64) ([]int64, error) {
-	var groupIDs []int64
+	if len(dids) == 0 {
+		return []int64{}, nil
+	}
 
+	var groupIDs []int64
 	err := DB.Model(&ResourcePermission{}).Where("resource_type = ? AND resource_id IN (?)", ResourceTypeDepartment, dids).Pluck("group_id", &groupIDs).Error
 	if err != nil {
 		return nil, err

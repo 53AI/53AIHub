@@ -979,7 +979,7 @@ func buildFavoriteItemsFromFavorites(eid, userID int64, favs []model.Favorite, k
 				favoriteTime: fav.UpdatedTime,
 			})
 		}
-}
+	}
 
 	return items, nil
 }

@@ -127,6 +127,10 @@ func (c *Client) GetIndexName() string {
 	return c.config.IndexName
 }
 
+func (c *Client) GetWikiIndexName() string {
+	return c.config.IndexName + "_wiki"
+}
+
 // Ping 测试连接
 func (c *Client) Ping() error {
 	if c.IsDisabled() {

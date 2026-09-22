@@ -22,6 +22,10 @@ const (
 	PipelineKindWiki  = "wiki"  // Wiki 管线/策略
 )
 
+// AnxinluPipelineName 是系统内建"安心录"解析管线与路由策略的名称。
+// 安心录来源音频会被强制路由到该名称的策略；改名时只需修改这一处常量。
+const AnxinluPipelineName = "安心录"
+
 // 路由策略逻辑
 const (
 	RagRoutingLogicAnd = 1
@@ -279,6 +283,21 @@ func findHighestPriorityRoutingStrategyAndPipelineByFile(db *gorm.DB, file *File
 			}
 		default:
 			return false, nil
+		}
+	}
+
+	// 安心录来源音频硬路由：安心录来源文件必须命中内建"安心录"策略，
+	// 不受企业自定义策略（如知识库录音解析策略）优先级影响，避免走错管线。
+	if kind == PipelineKindRag && file.IsRecordingOriginType() {
+		for i := range strategies {
+			if strategies[i].Name != AnxinluPipelineName {
+				continue
+			}
+			var preferred RagPipelineProfile
+			if err := db.First(&preferred, strategies[i].PipelineID).Error; err != nil {
+				return nil, nil, err
+			}
+			return &strategies[i], &preferred, nil
 		}
 	}
 

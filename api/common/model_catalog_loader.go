@@ -46,6 +46,7 @@ type Platform struct {
 	PlatformName string     `json:"platform_name"`
 	PlatformID   string     `json:"platform_id"`
 	ChannelType  int        `json:"channel_type"`
+	BaseURL      string     `json:"base_url,omitempty"`
 	CanMultiple  bool       `json:"can_multiple"`
 	Categories   []Category `json:"categories"`
 }
@@ -266,6 +267,8 @@ func (l *ModelCatalogLoader) GetChannelTypeMapping() map[int]string {
 		24:   "Gemini",
 		25:   "月之暗面",
 		1012: "自定义模型",
+		1018: "GLM Coding Plan",
+		1019: "腾讯云 TokenHub",
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 // NormalizeGraphPipelineProfile 规范化图谱管线 profile：
 //   - 必须包含 graph_generation 步骤；
 //   - 步骤 config.enabled 缺失时补 true（管线开关默认开启，兼容旧数据 run_mode=auto 种子）。
+//
 // 图谱管线不再使用 run_mode（skip/manual/auto）控制执行，统一由 config.enabled 开关控制；
 // 智能匹配为服务端自动行为：未配置 graph_template_id 时自动智能匹配选模板（无需传 enable_smart_match 参数）。
 func NormalizeGraphPipelineProfile(raw string) (string, error) {

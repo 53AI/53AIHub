@@ -25,7 +25,7 @@ export interface PermissionItem {
 export type PermissionListResponse = PermissionItem[]
 
 export interface PermissionCreateRequest {
-  permission: {
+  permissions: {
     subject_type: number
     subject_id: number
     permission: number
@@ -63,21 +63,30 @@ const buildPermissionBatchMap = (permissions: PermissionMyBatchItem[]): Permissi
   }, {})
 }
 
+// 后台管理视角标识：权限的增删改查均以管理员视角调用，后端据此放宽/切换校验逻辑
+const ADMIN_VIEW_PARAMS = { view_type: 'admin' } as const
+
 export const permissionsApi = {
   list(params: PermissionListRequest): Promise<PermissionListResponse> {
     return service
-      .get('/api/permissions', { params })
+      .get('/api/permissions', { params: { ...params, ...ADMIN_VIEW_PARAMS } })
       .then((res: any) => res.data)
       .catch(handleError)
   },
   update(permission_id: PermissionItem['id'], data: { permission: number }) {
-    return service.put(`/api/permissions/${permission_id}`, data).catch(handleError)
+    return service
+      .put(`/api/permissions/${permission_id}`, data, { params: ADMIN_VIEW_PARAMS })
+      .catch(handleError)
   },
   delete(permission_id: PermissionItem['id']) {
-    return service.delete(`/api/permissions/${permission_id}`).catch(handleError)
+    return service
+      .delete(`/api/permissions/${permission_id}`, { params: ADMIN_VIEW_PARAMS })
+      .catch(handleError)
   },
   create(resource_type: number, resource_id: string, data: PermissionCreateRequest) {
-    return service.post(`/api/permissions/${resource_type}/${resource_id}`, data).catch(handleError)
+    return service
+      .post(`/api/permissions/${resource_type}/${resource_id}`, data, { params: ADMIN_VIEW_PARAMS })
+      .catch(handleError)
   },
   my(params: PermissionMeRequest): Promise<PermissionMeResponse> {
     return service

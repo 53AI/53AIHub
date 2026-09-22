@@ -3,6 +3,7 @@ package model
 // KM 专属权限
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -28,10 +29,11 @@ func (Permission) TableName() string {
 
 // 资源类型常量
 const (
-	RESOURCE_TYPE_SPACE     = 0 // 空间
-	RESOURCE_TYPE_LIBRARY   = 1 // 知识库
-	RESOURCE_TYPE_FILE      = 2 // 文件/文档
-	RESOURCE_TYPE_WIKI_PAGE = 3 // Wiki 页面
+	RESOURCE_TYPE_SPACE      = 0 // 空间
+	RESOURCE_TYPE_LIBRARY    = 1 // 知识库
+	RESOURCE_TYPE_FILE       = 2 // 文件/文档
+	RESOURCE_TYPE_WIKI_PAGE  = 3 // Wiki 页面
+	RESOURCE_TYPE_WIKI_SPACE = 4 // Wiki 空间级权限：对标 RAG 的 SPACE(0) 但数据独立，resource_id=spaceID
 )
 
 // 权限主体类型常量
@@ -66,19 +68,31 @@ func (p *Permission) Save() error {
 	// 使用数据库唯一约束来避免竞态条件
 	// 如果权限已存在，数据库会返回唯一约束错误
 	result := DB.Create(p)
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+	InvalidateCapabilityLibraryPermsForResource(p.Eid, p.ResourceType, p.ResourceID)
+	return nil
 }
 
 // Update 更新权限
 func (p *Permission) Update() error {
 	result := DB.Model(p).Updates(p)
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+	InvalidateCapabilityLibraryPermsForResource(p.Eid, p.ResourceType, p.ResourceID)
+	return nil
 }
 
 // Delete 删除权限
 func (p *Permission) Delete() error {
 	result := DB.Delete(p)
-	return result.Error
+	if result.Error != nil {
+		return result.Error
+	}
+	InvalidateCapabilityLibraryPermsForResource(p.Eid, p.ResourceType, p.ResourceID)
+	return nil
 }
 
 // GetPermission 获取特定权限
@@ -112,16 +126,16 @@ func GetPermissionByID(id int64) (*Permission, error) {
 }
 
 // GetResourcePermissions 获取资源的所有权限
-func GetResourcePermissions(eid int64, resourceType int, resourceID int64) ([]Permission, error) {
+func GetResourcePermissions(eid int64, resourceType int, resourceID int64, ctxs ...context.Context) ([]Permission, error) {
 	var permissions []Permission
-	err := DB.Where("eid = ? AND resource_type = ? AND resource_id = ?",
+	err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND resource_type = ? AND resource_id = ?",
 		eid, resourceType, resourceID).Find(&permissions).Error
 	return permissions, err
 }
 
-func GetResourcesPermissions(eid int64, resourceType int, resourceIDs []int64) ([]Permission, error) {
+func GetResourcesPermissions(eid int64, resourceType int, resourceIDs []int64, ctxs ...context.Context) ([]Permission, error) {
 	var permissions []Permission
-	err := DB.Where("eid = ? AND resource_type = ? AND resource_id IN ?",
+	err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND resource_type = ? AND resource_id IN ?",
 		eid, resourceType, resourceIDs).Find(&permissions).Error
 	return permissions, err
 }
@@ -173,29 +187,89 @@ func BatchAddPermissions(eid int64, resourceType int, resourceID int64, permissi
 		logger.SysErrorf("Failed to batch create permissions: %v", err)
 		return err
 	}
+	InvalidateCapabilityLibraryPermsForResource(eid, resourceType, resourceID)
 
 	return nil
 }
 
 // DeleteResourcePermissions 删除资源的所有权限
 func DeleteResourcePermissions(eid int64, resourceType int, resourceID int64) error {
-	return DB.Where("eid = ? AND resource_type = ? AND resource_id = ?",
-		eid, resourceType, resourceID).Delete(&Permission{}).Error
+	if err := DB.Where("eid = ? AND resource_type = ? AND resource_id = ?",
+		eid, resourceType, resourceID).Delete(&Permission{}).Error; err != nil {
+		return err
+	}
+	InvalidateCapabilityLibraryPermsForResource(eid, resourceType, resourceID)
+	return nil
 }
 
 // DeletePermissionByID 根据ID删除权限
 func DeletePermissionByID(id int64) error {
-	return DB.Where("id = ?", id).Delete(&Permission{}).Error
+	perm, err := GetPermissionByID(id)
+	if err != nil {
+		return err
+	}
+	if err := DB.Where("id = ?", id).Delete(&Permission{}).Error; err != nil {
+		return err
+	}
+	if perm != nil {
+		InvalidateCapabilityLibraryPermsForResource(perm.Eid, perm.ResourceType, perm.ResourceID)
+	}
+	return nil
 }
 
 // DeletePermissionsBySubject 删除指定主体的所有权限
+// 主体删除波及多库：先查出受影响资源再删，逐库失效（主体删除低频，1 次预查可接受）。
 func DeletePermissionsBySubject(tx *gorm.DB, eid int64, subjectType int, subjectID int64) error {
-	return tx.Where("eid = ? AND subject_type = ? AND subject_id = ?", eid, subjectType, subjectID).Delete(&Permission{}).Error
+	type affectedResource struct {
+		ResourceType int
+		ResourceID   int64
+	}
+	var affected []affectedResource
+	if err := tx.Model(&Permission{}).Select("resource_type, resource_id").
+		Where("eid = ? AND subject_type = ? AND subject_id = ?", eid, subjectType, subjectID).
+		Group("resource_type, resource_id").Find(&affected).Error; err != nil {
+		return err
+	}
+	if err := tx.Where("eid = ? AND subject_type = ? AND subject_id = ?", eid, subjectType, subjectID).Delete(&Permission{}).Error; err != nil {
+		return err
+	}
+	libraryIDs := map[int64]struct{}{}
+	var fileIDs []int64
+	for _, a := range affected {
+		switch a.ResourceType {
+		case RESOURCE_TYPE_LIBRARY:
+			libraryIDs[a.ResourceID] = struct{}{}
+		case RESOURCE_TYPE_FILE:
+			fileIDs = append(fileIDs, a.ResourceID)
+		}
+	}
+	if len(fileIDs) > 0 {
+		files, err := GetFilesByIDs(eid, fileIDs)
+		if err == nil {
+			for _, f := range files {
+				libraryIDs[f.LibraryID] = struct{}{}
+			}
+		}
+	}
+	for libraryID := range libraryIDs {
+		InvalidateCapabilityLibraryPerms(eid, libraryID)
+	}
+	return nil
 }
 
 // UpdatePermissionByID 根据ID更新权限
 func UpdatePermissionByID(id int64, permission int) error {
-	return DB.Model(&Permission{}).Where("id = ?", id).Update("permission", permission).Error
+	perm, err := GetPermissionByID(id)
+	if err != nil {
+		return err
+	}
+	if err := DB.Model(&Permission{}).Where("id = ?", id).Update("permission", permission).Error; err != nil {
+		return err
+	}
+	if perm != nil {
+		InvalidateCapabilityLibraryPermsForResource(perm.Eid, perm.ResourceType, perm.ResourceID)
+	}
+	return nil
 }
 
 // GetAllPermissions 获取所有权限

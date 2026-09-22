@@ -1,11 +1,13 @@
 import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Spin, Empty, Tooltip } from "antd";
+import { t } from "@/locales";
 import { getPublicPath, api_host } from "@/utils/config";
 import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
 import type { GlobalSearchSpace, GlobalSearchLibrary } from "@/api/modules/global-search/types";
-import type { GlobalSearchFile } from "../hooks/useGlobalSearch";
-import { SvgIcon, SafeImage } from '@km/shared-components-react';
+import type { GlobalSearchFile } from "../utils/transform";
+import { sanitizeSearchContent } from "../utils/transform";
+import { SafeImage } from '@km/shared-components-react';
 
 interface KnowledgeTabProps {
   searchQuery: string;
@@ -43,7 +45,7 @@ const highlightText = (text: string, query: string): string => {
     `(${query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
     "gi",
   );
-  return text.replace(regex, '<span class="text-blue-600">$1</span>');
+  return text.replace(regex, '<span style="color:#2563EB">$1</span>');
 };
 
 /** Chip 标签（空间 & 知识库卡片） */
@@ -73,6 +75,8 @@ function DocumentRow({
   name,
   subtitle,
   query,
+  highlight,
+  contentHighlight,
   onClick,
   onMouseEnter,
   itemRef,
@@ -81,11 +85,14 @@ function DocumentRow({
   name: string;
   subtitle?: string;
   query?: string;
+  highlight?: string;
+  contentHighlight?: string;
   onClick?: () => void;
   onMouseEnter?: () => void;
   itemRef?: (el: HTMLDivElement) => void;
 }) {
-  const highlighted = query ? highlightText(name, query) : undefined;
+  const highlighted = query ? highlightText(name, query) : name;
+  const contentNode = sanitizeSearchContent(contentHighlight);
 
   const row = (
     <div
@@ -94,18 +101,20 @@ function DocumentRow({
       onClick={onClick}
       onMouseEnter={onMouseEnter}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
         <div className="flex-shrink-0">
           <SafeImage className="size-5" src={icon} alt="" />
         </div>
         <div className="flex-1 min-w-0">
-          {highlighted ? (
+          <div
+            className="text-sm truncate"
+            dangerouslySetInnerHTML={{ __html: highlighted }}
+          />
+          {contentNode && (
             <div
-              className="text-sm truncate"
-              dangerouslySetInnerHTML={{ __html: highlighted }}
+              className="text-xs text-secondary line-clamp-2 mt-1"
+              dangerouslySetInnerHTML={{ __html: contentNode }}
             />
-          ) : (
-            <div className="text-sm truncate">{name}</div>
           )}
           {subtitle && (
             <div className="text-xs text-secondary mt-1">{subtitle}</div>
@@ -187,13 +196,13 @@ export function KnowledgeTab({
             className={`w-20 h-8 flex-center text-sm rounded-md transition-colors ${mode === "recent_access" ? "bg-[#EBF1FF] text-[#2563EB]" : "text-secondary hover:bg-[#F2F3F5]"}`}
             onClick={() => onModeChange("recent_access")}
           >
-            最近访问
+            {t("common.recently_visit")}
           </button>
           <button
             className={`w-20 h-8 flex-center text-sm rounded-md transition-colors ${mode === "recent_update" ? "bg-[#EBF1FF] text-[#2563EB]" : "text-secondary hover:bg-[#F2F3F5]"}`}
             onClick={() => onModeChange("recent_update")}
           >
-            最近更新
+            {t("common.recently_updated")}
           </button>
         </div>
       )}
@@ -219,7 +228,7 @@ export function KnowledgeTab({
           {displaySpaces.length > 0 && (
             <div className={`mb-2 ${isSearchMode ? 'mt-5' : ''}`}>
               <div className="h-9 px-2 flex items-center text-sm text-secondary">
-                {isSearchMode ? "相关知识空间" : "知识空间"}
+                {isSearchMode ? t("global_search.related_spaces") : t("module.space")}
               </div>
               {isSearchMode ? (
                 // 搜索模式：使用 DocumentRow
@@ -252,7 +261,7 @@ export function KnowledgeTab({
           {displayLibraries.length > 0 && (
             <div className="mb-2">
               <div className="h-9 px-2 flex items-center text-sm text-secondary">
-                {isSearchMode ? "相关知识库" : "知识库"}
+                {isSearchMode ? t("global_search.related_libraries") : t("library.name")}
               </div>
               {isSearchMode ? (
                 // 搜索模式：使用 DocumentRow
@@ -285,7 +294,7 @@ export function KnowledgeTab({
           {files.length > 0 && (
             <div className="mb-2">
               <div className="h-9 px-2 flex items-center text-sm text-secondary">
-                {isSearchMode ? "相关文档" : "知识文档"}
+                {isSearchMode ? t("global_search.related_documents") : t("knowledge.document_file")}
               </div>
               {files.map((file, index) => (
                 <DocumentRow
@@ -293,7 +302,9 @@ export function KnowledgeTab({
                   icon={file.icon}
                   name={file.name}
                   query={isSearchMode ? searchQuery : undefined}
-                  subtitle={`${file.location} · 最近更新: ${file.lastUpdated} · ${file.creator_name}创建`}
+                  highlight={isSearchMode ? file.highlight : undefined}
+                  contentHighlight={isSearchMode ? file.content_highlight : undefined}
+                  subtitle={`${file.location} · ${t("global_search.recently_updated_label", { time: file.lastUpdated })} · ${t("global_search.creator_suffix", { name: file.creator_name })}`}
                   onClick={() => onSelectItem(file)}
                   onMouseEnter={() => onSelectedIndexChange(index)}
                   itemRef={(el) => {
@@ -314,7 +325,7 @@ export function KnowledgeTab({
           {/* 底部提示 */}
           {!loadingMore && files.length > 0 && !hasMore && (
             <div className="w-full h-8 py-6 flex-center text-sm text-secondary">
-              已显示所有结果
+              {t("global_search.all_results_shown")}
             </div>
             )
           }
@@ -325,10 +336,10 @@ export function KnowledgeTab({
               <Empty
                 description={isSearchMode ? (
                   <>
-                    <div className="text-primary">没有搜索结果</div>
-                    <div className="text-xs">尝试修改关键词进行搜索</div>
+                    <div className="text-primary">{t("global_search.no_search_result")}</div>
+                    <div className="text-xs">{t("global_search.try_modify_keywords")}</div>
                   </>
-                ) : "暂无数据"}
+                ) : t("common.no_data")}
                 image={getPublicPath("/images/chat/completion_empty.png")}
               />
             </div>

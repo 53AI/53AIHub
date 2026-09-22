@@ -18,7 +18,7 @@ import { useTemplateTabs } from '../../hooks/useTemplateTabs';
 import { useFileParse } from '../../hooks/useFileParse';
 import { useInsightDescriptionUpdate, useMeetingMinutesRename } from '../../hooks/useInsightCallbacks';
 import { useExport } from '../../hooks/useExport';
-import { STAGE_STATUS, isStageActionable, isStageFailed, isStageDone, isStageLoading, isStageActive } from '../../constants/recordingStatus';
+import { STAGE_STATUS, isStageActionable, isStageFailed, isStageDone, isStageActive } from '../../constants/recordingStatus';
 import { InsightTabContent } from '../preview/InsightTabContent';
 import { SummaryTabContent } from '../preview/SummaryTabContent';
 import { TemplateSummaryTabContent } from '../preview/TemplateSummaryTabContent';
@@ -264,12 +264,15 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
         }))
         try {
           inst.updateMenuItems?.(slideItems, copyItem)
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
       if (detail?.type === 'auto-select-enabled') {
         try { inst.updateAutoSelectEnabled?.(detail.data) } catch {}
+        // 划词开关（v0.4.2 §3.4）：同步 enableManualHighlight，关闭自动选择后
+        // 划词不再触发 selection-change / 文本不再自动带入聊天框。
+        try { inst.updateManualSelectEnabled?.(detail.data) } catch {}
       }
     }
     window.addEventListener('viewer-event', onViewerEvent)
@@ -664,7 +667,6 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
             initialLoadDone={initialLoadDone}
             generating={generating}
             onStartGenerate={readOnly ? undefined : handleStartGenerate}
-            onRegenerateStarted={startInsightRegeneration}
           />
         </div>
       ) : activeTab === 'transcript' ? (

@@ -11,7 +11,6 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
-	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/vectorstore"
@@ -4056,281 +4055,26 @@ func isRegisteredUserInEID(user *model.User, eid int64) bool {
 	return user != nil && user.Eid == eid && user.Type == model.UserTypeRegistered
 }
 
-// getSpacePermission 获取空间权限，包含空间角色检查
-// 复制自service.SpacePermissionService.GetUserPermissionForSpace
+// getSpacePermission 获取空间权限
+// Deprecated: 使用 common.GetUserPermission
 func getSpacePermission(eid int64, spaceID int64, userID int64) (int, error) {
-	// 获取用户对该空间的所有权限记录
-	permissions, err := model.GetResourcePermissions(eid, model.RESOURCE_TYPE_SPACE, spaceID)
-	if err != nil {
-		return 0, err
-	}
-	user, err := model.GetUserByID(userID)
-	if user == nil || err != nil || user.Eid != eid {
-		logger.SysLogf("【空间】无法加载用户 %d", userID)
-		return 0, err
-	}
-	if isRegisteredUserInEID(user, eid) {
-		return model.PERMISSION_NONE, nil
-	}
-	userGroupIDs, _ := user.GetUserGroupIds()
-
-	var maxCompanyPermission *int
-	var maxGroupPermission *int
-	for _, perm := range permissions {
-		// 成员权限第一
-		if perm.SubjectType == model.SUBJECT_TYPE_USER && perm.SubjectID == userID {
-			logger.SysLogf("用户 %d 对空间 %d 的权限为成员权限 %d", userID, spaceID, perm.Permission)
-			return perm.Permission, nil
-		}
-
-		// 判断分组权限
-		if len(userGroupIDs) > 0 && perm.SubjectType == model.SUBJECT_TYPE_GROUP &&
-			helper.Int64InArray(perm.SubjectID, userGroupIDs) {
-			if maxGroupPermission == nil || perm.Permission > *maxGroupPermission {
-				maxGroupPermission = &perm.Permission
-			}
-		}
-
-		// 判断全公司权限
-		if perm.SubjectType == model.SUBJECT_TYPE_COMPANY_ALL {
-			if maxCompanyPermission == nil || perm.Permission > *maxCompanyPermission {
-				maxCompanyPermission = &perm.Permission
-			}
-		}
-	}
-
-	if maxGroupPermission != nil {
-		logger.SysLogf("用户 %d 对空间 %d 的权限为分组权限 %d", userID, spaceID, *maxGroupPermission)
-		return *maxGroupPermission, nil
-	}
-
-	if maxCompanyPermission != nil {
-		logger.SysLogf("用户 %d 对空间 %d 的权限为全公司权限 %d", userID, spaceID, *maxCompanyPermission)
-		return *maxCompanyPermission, nil
-	}
-
-	return model.PERMISSION_NONE, nil
+	return common.GetUserPermission(eid, model.RESOURCE_TYPE_SPACE, spaceID, userID)
 }
 
 // getLibraryPermission 获取知识库权限
-// 复制自service.LibraryPermissionService.GetUserLibraryPermission
+// Deprecated: 使用 common.GetUserPermission
 func getLibraryPermission(eid int64, libraryID int64, userID int64) (int, error) {
-	// 先加载库，拿到 SpaceID
-	library, err := model.GetLibraryByID(eid, libraryID)
-	if err != nil || library == nil {
-		logger.SysLogf("【知识库】无法加载知识库 %d", libraryID)
-		return 0, err
-	}
-
-	user, err := model.GetUserByID(userID)
-	if user == nil || err != nil || user.Eid != eid {
-		logger.SysLogf("【知识库】无法加载用户 %d", userID)
-		return 0, err
-	}
-	if isRegisteredUserInEID(user, eid) {
-		return model.PERMISSION_NONE, nil
-	}
-	userGroupIDs, _ := user.GetUserGroupIds()
-
-	// 步骤1：获取知识库的所有权限记录
-	allLibraryPermissions, err := model.GetResourcePermissions(eid, model.RESOURCE_TYPE_LIBRARY, libraryID)
-	if err != nil {
-		logger.SysLogf("【知识库】无法加载知识库 %d 的权限", libraryID)
-		return 0, err
-	}
-
-	var maxGroupPermission *int
-	var companyPermission *int
-
-	// 判断 allLibraryPermissions 中是否有自己的记录，如果有并且是MANAGE，那么直接返回
-	for _, perm := range allLibraryPermissions {
-		// 就近原则，人是最近的
-		if perm.SubjectType == model.SUBJECT_TYPE_USER && perm.SubjectID == userID {
-			logger.SysLogf("【知识库】直接指定用户权限 %d", perm.Permission)
-			return perm.Permission, nil
-		}
-		// 判断分组
-		if len(userGroupIDs) > 0 && perm.SubjectType == model.SUBJECT_TYPE_GROUP &&
-			helper.Int64InArray(perm.SubjectID, userGroupIDs) {
-			if maxGroupPermission == nil || perm.Permission > *maxGroupPermission {
-				maxGroupPermission = &perm.Permission
-			}
-		}
-		// 判断全公司
-		if perm.SubjectType == model.SUBJECT_TYPE_COMPANY_ALL {
-			companyPermission = &perm.Permission
-		}
-	}
-
-	if maxGroupPermission != nil {
-		logger.SysLogf("【知识库】搜到指定分组最大权限 %d", *maxGroupPermission)
-		return *maxGroupPermission, nil
-	} else if companyPermission != nil {
-		logger.SysLogf("【知识库】搜到全公司最大权限 %d", *companyPermission)
-		return *companyPermission, nil
-	}
-
-	// 步骤2：检查是否存在空间角色权限记录
-	hasSpaceAdminRecord := false // false 默认继承
-	hasSpaceUserRecord := false  // false 默认继承
-	spaceAdminPermission := model.PERMISSION_MANAGE
-	SpaceUserRole := model.PERMISSION_NONE
-	for _, perm := range allLibraryPermissions {
-		if perm.SubjectType == model.SUBJECT_TYPE_SPACE_ADMIN {
-			hasSpaceAdminRecord = true
-			spaceAdminPermission = perm.Permission
-		}
-		if perm.SubjectType == model.SUBJECT_TYPE_SPACE_USER {
-			hasSpaceUserRecord = true
-			SpaceUserRole = perm.Permission
-		}
-	}
-
-	isAdmin, isMember, spacePermission := getUserSpaceRoles(eid, userID, library.SpaceID)
-
-	if isAdmin && !hasSpaceAdminRecord {
-		// 空间管理员势必继承空间管理权限也就继承了知识库权限
-		logger.SysLogf("空间管理员 %d 继承知识库 %d 的权限 %d", userID, libraryID, model.PERMISSION_MANAGE)
-		return spacePermission, nil
-	} else if isAdmin && hasSpaceAdminRecord {
-		// 空间管理员继承空间管理员权限，无需额外判断
-		logger.SysLogf("空间管理员 %d 继承知识库 %d 的权限 %d", userID, libraryID, model.PERMISSION_MANAGE)
-		return spaceAdminPermission, nil
-	}
-
-	if isMember && !hasSpaceUserRecord {
-		// 空间成员继承空间成员权限, 需要查询该成员在空间是什么权限
-		logger.SysLogf("空间成员 %d 继承知识库 %d 的权限 %d", userID, libraryID, SpaceUserRole)
-		// 添加一个虚拟权限用于后续判断最大值
-		return spacePermission, nil
-	} else if isMember && hasSpaceUserRecord {
-		// 空间成员继承空间管理员权限，无需额外判断
-		logger.SysLogf("空间成员 %d 继承知识库 %d 的权限 %d", userID, libraryID, spaceAdminPermission)
-		return SpaceUserRole, nil
-	}
-
-	logger.SysLogf("用户没有找到最近的权限 user %d, library %d, permission %d", userID, libraryID, model.PERMISSION_NONE)
-	return model.PERMISSION_NONE, nil
+	return common.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, libraryID, userID)
 }
 
 // getFilePermission 获取文件权限
-// 复制自service.FilePermissionService.GetUserFilePermission
+// Deprecated: 使用 common.GetUserPermission
 func getFilePermission(eid int64, fileID int64, userID int64) (int, error) {
-	// file
-	// 查出文件和文件的父ID
-	user, err := model.GetUserByID(userID)
-	if user == nil || err != nil || user.Eid != eid {
-		logger.SysLogf("【知识库】无法加载用户 %d", userID)
-		return 0, err
-	}
-	if isRegisteredUserInEID(user, eid) {
-		return model.PERMISSION_NONE, nil
-	}
-	userGroupIDs, _ := user.GetUserGroupIds()
-
-	file, fileList, err := model.GetFileWithParentsByID(eid, fileID)
-	if err != nil {
-		logger.SysLogf("无法获取文件[%d]的信息, err=%v", fileID, err)
-		return 0, err
-	}
-
-	fileIDs := []int64{}
-	for _, f := range fileList {
-		fileIDs = append(fileIDs, f.ID)
-	}
-
-	// 第一层:查看文件直接设置的权限
-	allFilePermissions, err := model.GetResourcesPermissions(eid, model.RESOURCE_TYPE_FILE, fileIDs)
-	if err != nil || len(allFilePermissions) == 0 {
-		logger.SysLogf("无法获取文件[%d]的权限信息, 继承知识库权限 err=%v, len=%d", fileID, err, len(allFilePermissions))
-		// 继承知识库权限
-		return getLibraryPermission(eid, file.LibraryID, userID)
-	}
-
-	var bestPermission *int // 最佳权限
-	var bestLevel *int      // 最佳权限所在层级，数值越小越近（0=当前文件）
-	var bestPriority int    // 权限优先级：用户>组>LIBRARY_USER>公司
-
-	for index, f := range fileList {
-		var currentUserPermission *int
-		var currentGroupPermission *int
-		var currentLibraryUserPermission *int
-		var currentCompanyPermission *int
-
-		logger.SysLogf("开始检查第【%d】层文件[%s]的权限", index, f.Path)
-
-		for _, perm := range allFilePermissions {
-			if perm.ResourceID != f.ID {
-				continue
-			}
-
-			// 收集当前层级的各类权限
-			if perm.SubjectType == model.SUBJECT_TYPE_USER && perm.SubjectID == userID && currentUserPermission == nil {
-				currentUserPermission = &perm.Permission
-			} else if len(userGroupIDs) > 0 && perm.SubjectType == model.SUBJECT_TYPE_GROUP &&
-				helper.Int64InArray(perm.SubjectID, userGroupIDs) {
-				if currentGroupPermission == nil || perm.Permission > *currentGroupPermission {
-					currentGroupPermission = &perm.Permission
-				}
-			} else if perm.SubjectType == model.SUBJECT_TYPE_LIBRARY_USER && currentLibraryUserPermission == nil {
-				currentLibraryUserPermission = &perm.Permission
-			} else if perm.SubjectType == model.SUBJECT_TYPE_COMPANY_ALL && currentCompanyPermission == nil {
-				currentCompanyPermission = &perm.Permission
-			}
-		}
-
-		// 按优先级检查当前层级的权限，并应用就近原则
-		if currentUserPermission != nil {
-			if bestPermission == nil || (bestLevel != nil && index < *bestLevel) || (bestLevel != nil && index == *bestLevel && 1 > bestPriority) {
-				bestPermission = currentUserPermission
-				bestLevel = &index
-				bestPriority = 1
-				logger.SysLogf("第%d层找到更优的用户权限 %d", index, *currentUserPermission)
-			}
-		} else if currentGroupPermission != nil {
-			if bestPermission == nil || (bestLevel != nil && index < *bestLevel) || (bestLevel != nil && index == *bestLevel && 2 > bestPriority) {
-				bestPermission = currentGroupPermission
-				bestLevel = &index
-				bestPriority = 2
-				logger.SysLogf("第%d层找到更优的组权限 %d", index, *currentGroupPermission)
-			}
-		} else if currentLibraryUserPermission != nil {
-			if bestPermission == nil || (bestLevel != nil && index < *bestLevel) || (bestLevel != nil && index == *bestLevel && 3 > bestPriority) {
-				bestPermission = currentLibraryUserPermission
-				bestLevel = &index
-				bestPriority = 3
-				logger.SysLogf("第%d层找到更优的LIBRARY_USER权限 %d", index, *currentLibraryUserPermission)
-			}
-		} else if currentCompanyPermission != nil {
-			if bestPermission == nil || (bestLevel != nil && index < *bestLevel) || (bestLevel != nil && index == *bestLevel && 4 > bestPriority) {
-				bestPermission = currentCompanyPermission
-				bestLevel = &index
-				bestPriority = 4
-				logger.SysLogf("第%d层找到更优的公司权限 %d", index, *currentCompanyPermission)
-			}
-		}
-	}
-
-	// 如果找到文件层级的权限，直接返回
-	if bestPermission != nil {
-		logger.SysLogf("返回最优权限 %d（层级：%d，优先级：%d）", *bestPermission, *bestLevel, bestPriority)
-		return *bestPermission, nil
-	}
-
-	// 如果没有找到文件层级的权限，使用知识库权限
-	librayPermission, err := getLibraryPermission(eid, file.LibraryID, userID)
-	if err != nil {
-		librayPermission = model.PERMISSION_NONE
-	}
-	if librayPermission <= model.PERMISSION_PUBLIC_ONLY {
-		librayPermission = model.PERMISSION_NONE // 仅公开其实只在空间生效，在下层级的这两个对象其实都是无权限
-	}
-
-	return librayPermission, nil
+	return common.GetUserPermission(eid, model.RESOURCE_TYPE_FILE, fileID, userID)
 }
 
 // getUserSpaceRoles 获取用户空间角色信息
-// 复制自service.SpacePermissionService.GetUserSpaceRoles
+// Deprecated: 复制自service.SpacePermissionService.GetUserSpaceRoles
 func getUserSpaceRoles(eid int64, userID int64, spaceID int64) (bool, bool, int) {
 	spacePermission, err := getSpacePermission(eid, spaceID, userID)
 	if err != nil {

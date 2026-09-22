@@ -119,7 +119,7 @@ export function PlatformWebSearch() {
   }, []);
 
   return (
-    <div className="h-full flex flex-col bg-white py-6 px-2">
+    <div className="h-full flex flex-col bg-white py-2 px-2">
       <div className="space-y-4">
         {isLoading ? null : bochaSetting && bochaSetting.id ? (
           <div className="group flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">

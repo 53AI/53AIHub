@@ -13,7 +13,6 @@ import agentsApi from '@/api/modules/agents'
 import channelApi from '@/api/modules/channel'
 import { t } from '@/locales'
 import { img_host } from '@/utils/config'
-import './AddMyList.css'
 import { buildOpenClawPersonalAgentPayload } from './openclaw-create'
 
 interface AddMyListProps {

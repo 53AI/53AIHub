@@ -26,7 +26,7 @@ export function withoutStarterMessage(messages: InsightConversationMessage[]) {
 
 interface InsightChatPanelProps {
   fileId: string
-  /** 发送对话时携带的洞察背景快照；由父级传入（workshop 为可编辑态、独立弹窗为只读态） */
+  /** 发送对话时携带的洞察背景快照；由父级传入（独立弹窗为只读态） */
   background: InsightBackground
   /** 受控对话列表，父级持有以便再生成等后续动作复用 */
   messages: InsightConversationMessage[]
@@ -38,8 +38,7 @@ interface InsightChatPanelProps {
 /**
  * 洞察背景协同研讨的对话区：消息列表 + 快捷提示 + 输入框 + 发送。
  *
- * 与 BackgroundCard 背景编辑解耦，纯负责「聊天」这一件事，供两类宿主复用：
- *  - InsightBackgroundWorkshopModal：左右分栏弹窗的右侧研讨对话
+ * 与 BackgroundCard 背景编辑解耦，纯负责「聊天」这一件事，宿主为：
  *  - InsightChatModal：右上角入口打开的独立聊天弹窗
  */
 export function InsightChatPanel({

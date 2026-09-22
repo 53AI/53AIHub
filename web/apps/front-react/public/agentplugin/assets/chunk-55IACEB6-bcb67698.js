@@ -1,0 +1,1 @@
+import{_ as a,t}from"./index-94585188.js";var g=a((o,e)=>{let n;return e==="sandbox"&&(n=t("#i"+o)),(e==="sandbox"?t(n.nodes()[0].contentDocument.body):t("body")).select(`[id="${o}"]`)},"getDiagramElement");export{g};

@@ -246,16 +246,6 @@ function extractSubSections(body: string): Array<{ label: string; content: strin
 
 // ============= Block 解析函数（供 marker / plain header 两条路径复用） =============
 
-/**
- * 判断 body 是否包含"环绕列表的散文行"（非空、非列表、非标题、非引用）。
- * 用于区分两种语义：
- * - 纯列表（无环绕散文）→ 列表项就是结构化条目，应该提取为 items
- * - 段落 + 列表 + 段落 → 列表项是叙事一部分，应保留为 markdown 渲染
- */
-function hasProseAroundBullets(body: string): boolean {
-  return extractIntroLines(body).some(l => l.length > 0)
-}
-
 /** 解析 risk_list block data。
  *
  * 结构：

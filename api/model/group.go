@@ -93,17 +93,17 @@ func GetGroupsWithAgents(eid int64, groupType int64, offset, limit int) ([]Group
 }
 
 const (
-	USER_GROUP_TYPE            = 1
-	AI_LINKS_TYPE              = 2
-	AGENT_TYPE                 = 3
-	INTERNAL_USER_GROUP_TYPE   = 4
-	SYSTEM_PROMPT_TYPE         = 5
-	PERSONAL_PROMPT_TYPE       = 6
-	GROUP_TYPE_SKILL           = 7
-	RECORDING_FILE_GROUP_TYPE  = 8
+	USER_GROUP_TYPE               = 1
+	AI_LINKS_TYPE                 = 2
+	AGENT_TYPE                    = 3
+	INTERNAL_USER_GROUP_TYPE      = 4
+	SYSTEM_PROMPT_TYPE            = 5
+	PERSONAL_PROMPT_TYPE          = 6
+	GROUP_TYPE_SKILL              = 7
+	RECORDING_FILE_GROUP_TYPE     = 8
 	RECORDING_TEMPLATE_GROUP_TYPE = 9
-	KM_FILE_CHAT_QUICK_COMMAND = 101 // KM AI搜索组
-	KM_FILE_CHAT_SLIDE_COMMAND = 102 // KM 文件聊天组
+	KM_FILE_CHAT_QUICK_COMMAND    = 101 // KM AI搜索组
+	KM_FILE_CHAT_SLIDE_COMMAND    = 102 // KM 文件聊天组
 )
 
 func CreateGroup(group *Group) error {

@@ -90,7 +90,6 @@ func (s *QAChunkStrategy) ProcessChunking(service *ChunkerService, eid int64, fi
 		return defaultStrategy.ProcessChunking(service, eid, fileID, content, config)
 	}
 
-
 	// 为每个QA对创建一个分块
 	currentPos := 0
 	for _, qa := range qas {

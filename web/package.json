@@ -1,6 +1,6 @@
 {
   "name": "km-monorepo",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "53AI KM Monorepo - front, console & mobile",
   "author": "53aihub",

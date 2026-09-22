@@ -39,56 +39,6 @@ function formatTimestamp(ts: string | number): string {
   return ts
 }
 
-/** 状态标签颜色 */
-const statusColorMap: Record<string, string> = {
-  confirmed: 'text-[#16A34A]',
-  proposed: 'text-[#D97706]',
-  rejected: 'text-[#EF4444]',
-  deferred: 'text-[#6B7280]',
-  uncertain: 'text-[#9CA3AF]',
-  open: 'text-[#D97706]',
-  resolved: 'text-[#16A34A]',
-  new: 'text-[#2563EB]',
-  ongoing: 'text-[#D97706]',
-  completed: 'text-[#16A34A]',
-  unknown: 'text-[#9CA3AF]',
-  unfulfilled: 'text-[#EF4444]',
-  fulfilled: 'text-[#16A34A]',
-  low: 'text-[#6B7280]',
-  medium: 'text-[#D97706]',
-  high: 'text-[#EF4444]',
-  critical: 'text-[#991B1B]',
-}
-
-function getStatusColor(status?: string): string {
-  return statusColorMap[status || ''] || 'text-[#6B7280]'
-}
-
-/** 状态标签显示名 */
-const statusLabelMap: Record<string, string> = {
-  confirmed: '已确认',
-  proposed: '提议',
-  rejected: '已拒绝',
-  deferred: '延期',
-  uncertain: '不确定',
-  open: '未解决',
-  resolved: '已解决',
-  new: '新建',
-  ongoing: '进行中',
-  completed: '已完成',
-  unknown: '未知',
-  unfulfilled: '未兑现',
-  fulfilled: '已兑现',
-  low: '低',
-  medium: '中',
-  high: '高',
-  critical: '严重',
-}
-
-function getStatusLabel(status?: string): string {
-  return statusLabelMap[status || ''] || status || ''
-}
-
 // ============= 子组件 =============
 
 /** 会议基本信息头部（固定头部：主题、时间、参会人、关键实体、关键词） */

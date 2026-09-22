@@ -1,33 +1,16 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { globalSearchApi } from "@/api/modules/global-search";
-import { getSimpleDateFormatString, debounce } from "@km/shared-utils";
-import { formatFileInfo } from "@/api/modules/files/transform";
+import { debounce } from "@km/shared-utils";
 import type {
   GlobalSearchSpace,
   GlobalSearchLibrary,
-  GlobalSearchResultItem,
   GlobalSearchResponse,
 } from "@/api/modules/global-search/types";
 import type { FilterParams } from "../types";
 import { hasFilterConditions } from "../utils/filter";
+import { transformResult, type GlobalSearchFile } from "../utils/transform";
 
 // ==================== 类型定义 ====================
-
-export interface GlobalSearchFile {
-  file_id: string;
-  name: string;
-  icon: string;
-  path: string;
-  library_id: string;
-  library_name: string;
-  space_id: string;
-  space_name: string;
-  creator_id: number;
-  creator_name: string;
-  location: string;
-  lastUpdated: string;
-  isfolder: boolean;
-}
 
 export interface UseGlobalSearchReturn {
   // 显示数据（根据模式自动切换最近/搜索结果）
@@ -64,6 +47,7 @@ const PAGE_SIZE = 20;
 export function useGlobalSearch(
   searchQuery: string,
   filterParams: FilterParams,
+  enabled: boolean = true,
 ): UseGlobalSearchReturn {
   // 当前模式
   const [mode, setMode] = useState<"recent_access" | "recent_update">("recent_access");
@@ -111,31 +95,6 @@ export function useGlobalSearch(
     return searchQuery.trim().length > 0 || hasFilterConditions(filterParams);
   }, [searchQuery, filterParams]);
 
-  // 转换搜索结果
-  const transformResult = useCallback(
-    (item: GlobalSearchResultItem): GlobalSearchFile => {
-      const isfolder = item.isfolder ?? item.type === 0;
-      const { fname, icon } = formatFileInfo(item.file_name, isfolder);
-
-      return {
-        file_id: item.file_id,
-        name: fname,
-        icon: icon,
-        path: item.path,
-        library_id: item.library_id,
-        library_name: item.library_name,
-        space_id: item.space_id,
-        space_name: item.space_name,
-        creator_id: item.creator_id,
-        creator_name: item.creator_name,
-        location: `${item.space_name}/${item.library_name}`,
-        lastUpdated: getSimpleDateFormatString({ date: item.latest_file_body_update_time }),
-        isfolder: isfolder,
-      };
-    },
-    [],
-  );
-
   // ==================== 最近访问/更新数据 ====================
 
   const loadRecentData = useCallback(async (targetMode: "recent_access" | "recent_update", pageNum: number = 1, append: boolean = false) => {
@@ -164,7 +123,7 @@ export function useGlobalSearch(
           size: PAGE_SIZE,
         });
 
-        const newFiles = (searchRes.results || []).map(transformResult);
+        const newFiles = ((searchRes.rag_results?.items) || []).map(transformResult);
         setRecentFiles((prev) => [...prev, ...newFiles]);
         setRecentPage(pageNum);
         setRecentHasMore(newFiles.length >= PAGE_SIZE);
@@ -181,7 +140,7 @@ export function useGlobalSearch(
 
         const newSpaces = quickTagsRes.spaces || [];
         const newLibraries = quickTagsRes.libraries || [];
-        const newFiles = (searchRes.results || []).map(transformResult);
+        const newFiles = ((searchRes.rag_results?.items) || []).map(transformResult);
 
         // 更新缓存
         cacheRef.current[targetMode] = {
@@ -279,8 +238,8 @@ export function useGlobalSearch(
       ];
       const [searchRes, spacesRes, librariesRes] = await Promise.all(tasks);
 
-      const newFiles = (searchRes.results || []).map(transformResult);
-      const total = searchRes.total || 0;
+      const newFiles = ((searchRes.rag_results?.items) || []).map(transformResult);
+      const total = searchRes.rag_results?.total || 0;
 
       if (append) {
         setSearchFiles((prev) => {
@@ -331,15 +290,24 @@ export function useGlobalSearch(
   // ==================== 监听搜索/筛选条件变化 ====================
 
   useEffect(() => {
+    // 未初始化时不处理
     if (!initialized) return;
+
+    // 不在「知识文档」tab 时：取消未触发的防抖搜索，避免切走后仍发出知识文档请求
+    if (!enabled) {
+      debouncedSearch.cancel();
+      return;
+    }
 
     if (isSearchMode) {
       debouncedSearch(searchQuery, filterParams);
     } else {
+      // 清空关键词 / 无筛选条件：取消待执行的防抖搜索并复位搜索态
+      debouncedSearch.cancel();
       setSearchFiles([]);
       setSearchTotal(0);
     }
-  }, [initialized, isSearchMode, searchQuery, filterParams]);
+  }, [initialized, enabled, isSearchMode, searchQuery, filterParams]);
 
   // ==================== 初始化加载 ====================
 

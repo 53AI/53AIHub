@@ -9,6 +9,7 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
@@ -110,12 +111,16 @@ func (c *WikiCategoryController) ListVisible(ctx *gin.Context) {
 			return
 		}
 	}
-	items, err := c.svc.ListVisible(ctx, eid, spaceID, libraryID)
+	// 空间可见性门禁：分类元数据随空间权限收敛（页面计数已在 service 内按页权限过滤）。
+	if !requireWikiSpacePermission(ctx, eid, config.GetUserId(ctx), spaceID, model.PERMISSION_PUBLIC_ONLY, "无权限查看该空间的 Wiki 分类") {
+		return
+	}
+	items, err := c.svc.ListVisible(ctx, eid, spaceID, libraryID, config.GetUserId(ctx))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
-	ctx.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"items": items, "total": len(items)}))
+	ctx.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(gin.H{"items": items, "total": len(items)}, ctx.GetString(helper.RequestIdKey)))
 }
 
 type wikiCategoryBody struct {

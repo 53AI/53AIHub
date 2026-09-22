@@ -8,7 +8,11 @@ type TabKey =
   | "info"
   | "template-style"
   | "navigation"
+  | "password-strength"
   | "statistics";
+
+const loadPasswordStrengthPage = () =>
+  import("@/views/password-strength").then((m) => m.PasswordStrengthPage);
 
 export function ConfigPage() {
   const navigate = useNavigate();
@@ -52,6 +56,13 @@ export function ConfigPage() {
               import("@/views/navigation").then((m) => m.NavigationPage)
             }
           />
+        ),
+      },
+      {
+        key: "password-strength",
+        label: t("module.password_strength") || "密码强度",
+        children: (
+          <LazyPage loader={loadPasswordStrengthPage} />
         ),
       },
       {

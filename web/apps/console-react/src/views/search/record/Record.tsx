@@ -11,6 +11,7 @@ import {
     THINKING_MODE,
     RESPONSE_STATUS,
     KNOWLEDGE_TYPE,
+    KNOWLEDGE_TYPE_FILTER,
 } from "@/api/modules/record/types";
 import { DateRangeFilter } from "@/components/Filter/date-range";
 import { getLastTimeAsDay } from "@km/shared-utils";
@@ -20,7 +21,7 @@ interface RecordProps {
   agentType?: string;
 }
 
-export function Record({ agentId, agentType }: RecordProps) {
+export function Record({ agentId }: RecordProps) {
   // 获取默认日期范围的辅助函数
   const getDefaultDateRange = (): [number, number] => {
     const endDate = new Date();
@@ -48,7 +49,7 @@ export function Record({ agentId, agentType }: RecordProps) {
     keyword: "",
     thinking_mode: 0,
     response_status: 0,
-    knowledge_type: 0,
+    knowledge_type: KNOWLEDGE_TYPE_FILTER.ALL as number | string,
     offset: 0,
     limit: 10,
   });
@@ -457,29 +458,30 @@ export function Record({ agentId, agentType }: RecordProps) {
             }}
             placeholder={`${t("search-record.knowledge_scope")}:`}
           >
-            <Select.Option value={0}>{t("search-record.all")}</Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE_FILTER.ALL}>
+              {t("search-record.all")}
+            </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE_FILTER.SPECIFIED_CONTENT}>
+              {t("search-record.specified_content")}
+            </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE.KNOWLEDGE_BASE}>
+              {t("search-record.knowledge_doc")}
+            </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE.DYNAMIC_KNOWLEDGE}>
+              {t("module.dynamic_knowledge")}
+            </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE.DOC_PLUS_DYNAMIC}>
+              {t("search-record.doc_plus_dynamic")}
+            </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE.DOC_PLUS_GRAPH}>
+              {t("search-record.doc_plus_graph")}
+            </Select.Option>
+            <Select.Option value={KNOWLEDGE_TYPE.DOC_PLUS_DYNAMIC_PLUS_GRAPH}>
+              {t("search-record.doc_plus_dynamic_plus_graph")}
+            </Select.Option>
             <Select.Option value={KNOWLEDGE_TYPE.WEB}>
               {t("search-record.online_search")}
             </Select.Option>
-            <Select.Option value={KNOWLEDGE_TYPE.SPECIFIED_KNOWLEDGE_BASE}>
-              {t("search-record.specified_knowledge_base")}
-            </Select.Option>
-            <Select.Option value={KNOWLEDGE_TYPE.KNOWLEDGE_BASE}>
-              {t("search-record.all_knowledge_base")}
-            </Select.Option>
-            {agentType === 'knowledge' && (
-              <>
-                <Select.Option value={KNOWLEDGE_TYPE.HYBRID_WIKI}>
-                  {t("search-record.hybrid_wiki")}
-                </Select.Option>
-                <Select.Option value={KNOWLEDGE_TYPE.SPECIFIED_WIKI}>
-                  {t("search-record.specified_wiki")}
-                </Select.Option>
-                <Select.Option value={KNOWLEDGE_TYPE.ALL_WIKI}>
-                  {t("search-record.all_wiki")}
-                </Select.Option>
-              </>
-            )}
           </Select>
           <Button
             className="border-none px-3"

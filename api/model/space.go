@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -204,9 +205,9 @@ func (space *Space) Update() error {
 }
 
 // GetSpaceByID 根据ID获取空间
-func GetSpaceByID(eid int64, id int64) (*Space, error) {
+func GetSpaceByID(eid int64, id int64, ctxs ...context.Context) (*Space, error) {
 	var space Space
-	if err := DB.Where("eid = ? AND id = ?", eid, id).First(&space).Error; err != nil {
+	if err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND id = ?", eid, id).First(&space).Error; err != nil {
 		return nil, err
 	}
 	return &space, nil

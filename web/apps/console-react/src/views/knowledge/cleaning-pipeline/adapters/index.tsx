@@ -126,7 +126,7 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
     async getParseMethods(): Promise<ParseMethod[]> {
       const parserConfigs = getSimpleParserConfigs()
 
-      // 检查安心录是否启用，以及语音识别模型是否仍有效
+      // 检查语音识别模型是否已配置，并读取模型名称与图标用于界面展示
       const { showVoice, voiceName, voiceIcon } = await getVoiceParserInfo()
 
       // 获取平台设置
@@ -143,15 +143,15 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
           .filter((pc: any) => {
             // markitdown 始终展示
             if (pc.key === 'markitdown') return true
-            if (pc.key === 'voice_model') return showVoice
+            if (pc.key === 'recording_voice') return showVoice
             // 其他解析方法：需要平台设置
             return pc.isSystem || settingsMap[pc.key]
           })
           .map((pc: any) => ({
             key: pc.key === 'markitdown' ? 'markitdown' : pc.key,
-            name: pc.key === 'voice_model' && voiceName ? voiceName : pc.name,
+            name: pc.key === 'recording_voice' && voiceName ? voiceName : pc.name,
             desc: pc.desc || t('cleaning_policy.system_provided_desc'),
-            icon: pc.key === 'voice_model' && voiceIcon ? voiceIcon : pc.icon,
+            icon: pc.key === 'recording_voice' && voiceIcon ? voiceIcon : pc.icon,
             detailedDesc: pc.detailedDesc,
           })),
       ]

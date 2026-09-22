@@ -18,7 +18,7 @@ type RecordingSyncSource struct {
 	Provider string `json:"provider" gorm:"column:provider;size:32;not null"`
 	RemoteID string `json:"remote_id" gorm:"column:remote_id;size:128;not null"`
 
-	FileID   int64  `json:"file_id" gorm:"column:file_id;not null;default:0"`
+	FileID int64 `json:"file_id" gorm:"column:file_id;not null;default:0"`
 	// JobID 同步该文件的 job（文件↔job 溯源）。
 	JobID int64 `json:"job_id" gorm:"column:job_id;not null;default:0;index"`
 	BaseModel

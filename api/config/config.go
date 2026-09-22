@@ -13,7 +13,7 @@ import (
 )
 
 // Version 硬编码的系统版本号
-var Version = "v0.5.1"
+var Version = "v0.5.2"
 
 var chinaTimeZone = time.FixedZone("UTC+8", 8*60*60)
 
@@ -102,19 +102,23 @@ var ADMIN_EMAIL = env.String("ADMIN_EMAIL", "admin@53ai.com")
 var ADMIN_MOBILE = env.String("ADMIN_MOBILE", "")
 var ADMIN_PASSWORD = env.String("ADMIN_PASSWORD", "admin888")
 
-var REDIS_CONN = env.String("REDIS_CONN", "")
+// Redis 配置通过惰性函数在调用时读取环境变量，而不是包级变量：
+// 包级变量在 import 期求值，晚于 -env/.env 加载（如 cmd/migrate_tool 在
+// main() 中 godotenv.Overload），会导致配置冻结为空。惰性读取与
+// model.GetDbConn 的 os.Getenv 模式一致，任何时点加载的 env 都生效。
+func RedisConn() string { return env.String("REDIS_CONN", "") }
 
 // Redis连接池配置
-var REDIS_POOL_SIZE = env.Int("REDIS_POOL_SIZE", 100)
-var REDIS_MIN_IDLE_CONNS = env.Int("REDIS_MIN_IDLE_CONNS", 10)
-var REDIS_MAX_RETRIES = env.Int("REDIS_MAX_RETRIES", 5)
+func RedisPoolSize() int     { return env.Int("REDIS_POOL_SIZE", 100) }
+func RedisMinIdleConns() int { return env.Int("REDIS_MIN_IDLE_CONNS", 10) }
+func RedisMaxRetries() int   { return env.Int("REDIS_MAX_RETRIES", 5) }
 
 // Redis超时配置（秒）
-var REDIS_DIAL_TIMEOUT_SECONDS = env.Int("REDIS_DIAL_TIMEOUT_SECONDS", 10)
-var REDIS_READ_TIMEOUT_SECONDS = env.Int("REDIS_READ_TIMEOUT_SECONDS", 5)
-var REDIS_WRITE_TIMEOUT_SECONDS = env.Int("REDIS_WRITE_TIMEOUT_SECONDS", 5)
-var REDIS_IDLE_TIMEOUT_MINUTES = env.Int("REDIS_IDLE_TIMEOUT_MINUTES", 10)
-var REDIS_MAX_CONN_AGE_MINUTES = env.Int("REDIS_MAX_CONN_AGE_MINUTES", 30)
+func RedisDialTimeoutSeconds() int  { return env.Int("REDIS_DIAL_TIMEOUT_SECONDS", 10) }
+func RedisReadTimeoutSeconds() int  { return env.Int("REDIS_READ_TIMEOUT_SECONDS", 5) }
+func RedisWriteTimeoutSeconds() int { return env.Int("REDIS_WRITE_TIMEOUT_SECONDS", 5) }
+func RedisIdleTimeoutMinutes() int  { return env.Int("REDIS_IDLE_TIMEOUT_MINUTES", 10) }
+func RedisMaxConnAgeMinutes() int   { return env.Int("REDIS_MAX_CONN_AGE_MINUTES", 30) }
 
 var MAX_UPLOAD_FILE_SIZE_STRING = env.String("MAX_UPLOAD_FILE_SIZE", "30MB")
 var MAX_UPLOAD_FILE_SIZE, _ = helper.ParseSize(MAX_UPLOAD_FILE_SIZE_STRING)
@@ -129,15 +133,117 @@ var IS_TEST_WECOM_SUITE = env.Bool("IS_TEST_WECOM_SUITE", false)
 var HUAWEI_CLOUD_ACCESS_KEY = env.String("HUAWEI_CLOUD_ACCESS_KEY", "")
 var DINGTALK_SUITE_ID = env.String("DINGTALK_SUITE_ID", "")
 
-// SMS短信配置
+// ==================== SMS 短信配置 ====================
+// 短信验证码服务（发送 /api/sms/sendcode，校验 /api/sms/verify）。
+// 修改后需重启服务生效（env 启动时读取一次）。
+
+// SMS_ENABLED：是否启用短信服务。
+//
+//	false=停用（发送接口返回"服务未启用"）；true=启用。
+//	注意：关闭后短信登录/注册/重置密码等依赖验证码的流程将不可用。
 var SMS_ENABLED = env.Bool("SMS_ENABLED", false)
-var SMS_PROVIDER = env.String("SMS_PROVIDER", "")    // 短信提供商 (253chuanglan)
-var SMS_ACCOUNT = env.String("SMS_ACCOUNT", "")      // 短信账户/用户名
-var SMS_PASSWORD = env.String("SMS_PASSWORD", "")    // 短信密码
-var SMS_SIGN_NAME = env.String("SMS_SIGN_NAME", "")  // 短信签名 (如【博思协创】)
-var SMS_TEMPLATE = env.String("SMS_TEMPLATE", "")    // 短信模板，为空使用代码兜底
-var SMS_CODE_LENGTH = env.Int("SMS_CODE_LENGTH", 4)  // 验证码长度
-var SMS_EXPIRY_TIME = env.Int("SMS_EXPIRY_TIME", 15) // 验证码有效期（分钟）
+
+// SMS_PROVIDER：短信提供商，目前支持：
+//
+//	"253chuanglan"   = 创蓝253 标准版（走短信模板 Template）
+//	"253chuanglanV2" = 创蓝253 V2 版（走模板ID TemplateID，需配置 SMS_TEMPLATE_ID）
+//	更换提供商时需同步调整下方账号/模板配置。
+var SMS_PROVIDER = env.String("SMS_PROVIDER", "")
+
+// SMS_ACCOUNT / SMS_PASSWORD：提供商账号与密码（Token），在创蓝控制台申请。
+var SMS_ACCOUNT = env.String("SMS_ACCOUNT", "")
+var SMS_PASSWORD = env.String("SMS_PASSWORD", "")
+
+// SMS_SIGN_NAME：短信签名，如【博思协创】，须在创蓝报备审核通过。
+var SMS_SIGN_NAME = env.String("SMS_SIGN_NAME", "")
+
+// SMS_TEMPLATE：短信模板内容（标准版用），为空时使用代码内置兜底模板。
+//
+//	模板中需包含验证码占位符，创蓝的验证码模板通常自动注入验证码内容。
+var SMS_TEMPLATE = env.String("SMS_TEMPLATE", "")
+
+// SMS_CODE_LENGTH：验证码位数，默认 6 位（防爆破，4 位仅 1 万种组合可穷举）。
+//
+//	调整后需确认短信模板/前端输入框能承载对应位数；位数越大越安全、用户体验越繁琐。
+var SMS_CODE_LENGTH = env.Int("SMS_CODE_LENGTH", 6)
+
+// SMS_EXPIRY_TIME：验证码有效期（分钟），默认 15 分钟。
+//
+//	过短=用户来不及输入；过长=被截获后可利用窗口变大。不建议超过 30。
+var SMS_EXPIRY_TIME = env.Int("SMS_EXPIRY_TIME", 15)
+
+// ==================== 短信防刷配置 ====================
+// 防短信轰炸 / 验证码爆破。维度：手机号（60s冷却 + 每日10次，代码内固定）+
+// IP维度（下方三层，按"窗口内去重手机号数"计数）。
+// 阈值按"客户仅部分员工使用系统、单日最多约 100 人"的业务上限设计；
+// 若客户规模更大，优先把其出口 IP 加入 SMS_IP_WHITELIST，而非调大阈值（调大=削弱防刷）。
+
+// SMS_IP_BURST_LIMIT：主防线。同一IP段 10 分钟内允许出现的不同手机号数（去重计数）。
+//
+//	轰炸脚本 1 分钟内即可发出几十个不同号，此值建议保持 ≤30；
+//	调小=更灵敏但可能误伤集中使用场景，调大=防刷变松。
+var SMS_IP_BURST_LIMIT = env.Int("SMS_IP_BURST_LIMIT", 20)
+
+// SMS_IP_HOURLY_LIMIT：兜底层。同一IP段 1 小时内允许出现的不同手机号数。
+//
+//	防"慢速换号"轰炸；正常客户单小时远达不到。建议 ≥ SMS_IP_BURST_LIMIT。
+var SMS_IP_HOURLY_LIMIT = env.Int("SMS_IP_HOURLY_LIMIT", 40)
+
+// SMS_IP_DAILY_LIMIT：兜底层。同一IP段 1 天内允许出现的不同手机号数。
+//
+//	业务上限参考：客户单日最多约 100 名员工使用验证码，故默认 100。
+//	若某客户一天超过该值（如全员改密日），将其出口IP加入白名单豁免，勿直接调大此值。
+var SMS_IP_DAILY_LIMIT = env.Int("SMS_IP_DAILY_LIMIT", 100)
+
+// SMS_IP_WHITELIST：IP 白名单，逗号分隔。支持两种写法，可混用：
+//
+//  1. CIDR 网段：如 "203.0.113.0/24,10.0.0.0/8"（匹配整段）
+//
+//  2. 纯 IP（无掩码）：如 "203.0.113.9"（自动按单个 IP 匹配，IPv4 即 /32，IPv6 即 /128）
+//
+//     命中白名单的 IP 跳过 IP 维度限流（手机号维度 60s+每日10次 仍生效）。
+//     用于：大客户/公司固定出口 IP，避免同网段多人使用被 IP 维度误杀。空=不启用。
+//     默认值内置 4 个阿里云公网出口 IP（测试/公司办公出口），可按需增删。
+var SMS_IP_WHITELIST = env.String("SMS_IP_WHITELIST", "47.99.46.44,116.62.166.32,121.41.58.215,101.37.170.189")
+
+// SMS_IP_BAN_MINUTES：IP 段超限触发拦截后，对该 IP 段的临时封禁时长（分钟）。
+//
+//	封禁期内该 IP 段发送直接 fail-fast（白名单 IP 豁免）；封禁状态可在 GET /api/sms/security 查看。
+var SMS_IP_BAN_MINUTES = env.Int("SMS_IP_BAN_MINUTES", 60)
+
+// SMS_IP_TOTAL_LIMIT：同一 IP 段 10 分钟内允许的总发送次数（含重复手机号）。
+//
+//	在"去重手机号数"之外补一层，堵"脚本对少量手机号狂发"。
+var SMS_IP_TOTAL_LIMIT = env.Int("SMS_IP_TOTAL_LIMIT", 100)
+
+// SMS_EID_DAILY_LIMIT：同一企业(eid)每日短信发送总量上限（控成本/防企业内被薅）。
+var SMS_EID_DAILY_LIMIT = env.Int("SMS_EID_DAILY_LIMIT", 500)
+
+// SMS_VERIFY_IP_BURST_LIMIT：同一 IP 段 10 分钟内允许的验证码校验请求数（防验证码爆破）。
+var SMS_VERIFY_IP_BURST_LIMIT = env.Int("SMS_VERIFY_IP_BURST_LIMIT", 30)
+
+// SMS_VERIFY_FAIL_COOLDOWN_SECONDS：校验失败后该手机号的冷却秒数（防连续试码）。
+var SMS_VERIFY_FAIL_COOLDOWN_SECONDS = env.Int("SMS_VERIFY_FAIL_COOLDOWN_SECONDS", 2)
+
+// SMS_CAPTCHA_REQUIRED：是否要求发送验证码前通过字符验证码（人机校验）。
+//
+//	true=sendcode 必须带合法 captcha_id/captcha_answer，否则 400；false=可选（带了就校验）。
+//	上线建议：先 false 发布、前端接入图形码后置 true。
+var SMS_CAPTCHA_REQUIRED = env.Bool("SMS_CAPTCHA_REQUIRED", false)
+
+// SMS_TEST_MOBILES：测试手机号列表（逗号分隔，如 "13800138000,13900139000"）。
+//
+//	命中的手机号发送验证码时不调用短信提供商（不产生真实费用/短信），验证码固定为 123456，
+//	且绕过发送限流（60s 冷却、每日次数），便于测试环境反复联调。
+//	验证流程完全不变（仍写入 Redis、TTL、可被 /api/sms/verify 校验）。
+//	仅用于测试环境，生产环境请勿配置。
+var SMS_TEST_MOBILES = env.String("SMS_TEST_MOBILES", "")
+
+// TRUSTED_PROXIES：可信代理 IP/CIDR（逗号分隔）。
+//
+//	仅当应用部署在 nginx/网关之后时配置为代理地址，使 c.ClientIP() 正确解析真实客户端IP
+//	（防伪造 X-Forwarded-For 绕过 IP 维度限流）。空=不设置（Gin 默认信任所有代理，勿直连公网暴露）。
+var TRUSTED_PROXIES = env.String("TRUSTED_PROXIES", "")
 
 // 文档上传配置
 var DOCUMENT_UPLOAD_MAX_CONCURRENT = env.Int("DOCUMENT_UPLOAD_MAX_CONCURRENT", 50)

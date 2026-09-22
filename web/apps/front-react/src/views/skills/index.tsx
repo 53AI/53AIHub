@@ -57,26 +57,6 @@ export function SkillsView() {
               />
             )}
           </div>
-          {/* <div
-            className={`h-8 text-xl font-medium flex items-center cursor-pointer relative ${activeType === "my" ? "text-[#1D1E1F]" : "text-[#999999]"}`}
-            onClick={() => {
-              checkLoginStatus()
-              setActiveType("my");
-              const newParams = new URLSearchParams(searchParams);
-              newParams.set("from", "my");
-              setSearchParams(newParams, { replace: true });
-            }}
-          >
-            {t("module.mine")}
-            {activeType === "my" && (
-              <SvgIcon
-                name="explore"
-                size={20}
-                className="absolute -right-5 -top-2"
-                color="var(--el-color-primary, #2563eb)"
-              />
-            )}
-          </div> */}
         </div>
 
         {activeType === "explore" ? <GroupList enableUrlSync /> : <MyList />}

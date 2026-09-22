@@ -57,6 +57,7 @@ func SetApiRouter(router *gin.Engine) {
 		enterpriseRoute.GET("/homepage", middleware.UserTokenAuth(model.RoleCommonUser), controller.GetHomePage)
 
 		enterpriseRoute.GET("/current", controller.GetCurrentEnterprise)
+		enterpriseRoute.PUT("/current", middleware.UserTokenAuth(model.RoleAdminUser), controller.UpdateCurrentEnterprise)
 
 		enterpriseRoute.GET("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetEnterprise)
 		enterpriseRoute.PUT("/:id", controller.UpdateEnterprise)
@@ -194,9 +195,27 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.GET("/memories/schema", controller.GetRecordingMemoryEntitySchema)
 		recordingRoute.POST("/memories/entity-merges", controller.MergeRecordingMemoryEntities)
 		recordingRoute.GET("/memories/entities/:entity_id", controller.GetRecordingMemoryEntity)
+		recordingRoute.GET("/memories/entities/:entity_id/current-view", controller.GetRecordingCurrentView)
+		recordingRoute.GET("/memories/entities/:entity_id/timeline", controller.GetRecordingMemoryTimeline)
 		recordingRoute.PATCH("/memories/entities/:entity_id", controller.UpdateRecordingMemoryEntity)
 		recordingRoute.DELETE("/memories/entities/:entity_id", controller.DeleteRecordingMemoryEntity)
 		recordingRoute.POST("/memories/entities/:entity_id/facts", controller.CreateRecordingMemoryFact)
+		recordingRoute.GET("/cognitions/overview", controller.GetRecordingCognitionOverview)
+		recordingRoute.GET("/cognitions/core-stats", controller.GetRecordingCognitionCoreStats)
+		recordingRoute.GET("/cognition-domains", controller.ListRecordingCognitionDomains)
+		recordingRoute.POST("/cognition-domains", controller.CreateRecordingCognitionDomain)
+		recordingRoute.PUT("/cognition-domains/:domain_id", controller.UpdateRecordingCognitionDomain)
+		recordingRoute.DELETE("/cognition-domains/:domain_id", controller.DeleteRecordingCognitionDomain)
+		recordingRoute.POST("/cognition-domains/:domain_id/reset", controller.ResetRecordingCognitionDomain)
+		recordingRoute.GET("/cognitions", controller.ListRecordingCognitions)
+		recordingRoute.POST("/cognitions", controller.CreateRecordingCognition)
+		recordingRoute.POST("/cognitions/import", controller.ImportRecordingCognitions)
+		recordingRoute.GET("/cognitions/:cognition_id", controller.GetRecordingCognition)
+		recordingRoute.PATCH("/cognitions/:cognition_id", controller.UpdateRecordingCognition)
+		recordingRoute.DELETE("/cognitions/:cognition_id", controller.ExpireRecordingCognition)
+		recordingRoute.GET("/cognition-candidates", controller.ListRecordingCognitionCandidatesGlobal)
+		recordingRoute.POST("/cognition-candidates/:candidate_id/:action", controller.ReviewRecordingCognitionCandidateGlobal)
+		recordingRoute.PATCH("/cognition-candidates/:candidate_id", controller.UpdateRecordingCognitionCandidate)
 		recordingRoute.POST("", controller.CreateRecordingJob)
 		recordingRoute.GET("/active", controller.GetActiveRecordingJob)
 		recordingRoute.GET("/:job_id", controller.GetRecordingJob)
@@ -216,8 +235,34 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.GET("/files/:file_id/insight-page", controller.GetFileInsightPage)
 		recordingRoute.GET("/files/:file_id/insight-context", controller.GetFileInsightBackground)
 		recordingRoute.POST("/files/:file_id/memory-promotions", controller.PromoteFileInsightExternalConstraints)
+		recordingRoute.GET("/files/:file_id/cognition-candidates", controller.ListRecordingCognitionCandidates)
+		recordingRoute.GET("/files/:file_id/decision-context", controller.GetRecordingDecisionContext)
+		recordingRoute.GET("/files/:file_id/memory-v2-evaluation", controller.GetRecordingMemoryV2Evaluation)
+		recordingRoute.POST("/files/:file_id/cognition-candidates/:candidate_id/confirm", controller.ReviewRecordingCognitionCandidate)
+		recordingRoute.POST("/files/:file_id/cognition-candidates/:candidate_id/conflict", controller.ReviewRecordingCognitionCandidate)
+		recordingRoute.POST("/files/:file_id/cognition-candidates/:candidate_id/reject", controller.ReviewRecordingCognitionCandidate)
+		recordingRoute.POST("/files/:file_id/cognition-candidates/:candidate_id/ignore", controller.ReviewRecordingCognitionCandidate)
 		recordingRoute.POST("/files/:file_id/insight-context/chat", controller.ChatFileInsightWorkshop)
 		recordingRoute.POST("/files/:file_id/insights/regenerate", controller.RegenerateInsights)
+		recordingRoute.POST("/files/:file_id/action-opportunities/detect", controller.DetectActionOpportunities)
+		recordingRoute.GET("/action-opportunities", controller.ListActionOpportunities)
+		recordingRoute.GET("/action-opportunities/:opportunity_id", controller.GetActionOpportunity)
+		recordingRoute.POST("/action-opportunities/:opportunity_id/plans", controller.CreateActionPlan)
+		recordingRoute.GET("/action-plans", controller.ListActionPlans)
+		recordingRoute.GET("/action-plans/:plan_id", controller.GetActionPlan)
+		recordingRoute.PATCH("/action-plans/:plan_id", controller.UpdateActionPlan)
+		recordingRoute.POST("/action-plans/:plan_id/confirm", controller.ConfirmActionPlan)
+		recordingRoute.GET("/action-results", controller.ListActionResultAssets)
+		recordingRoute.GET("/action-results/:result_asset_id", controller.GetActionResultAsset)
+		recordingRoute.GET("/action-runs/:run_id", controller.GetActionRun)
+		recordingRoute.GET("/action-runs/:run_id/replay", controller.GetActionRunReplay)
+		recordingRoute.GET("/action-runs/:run_id/subscribe", controller.SubscribeActionRun)
+		recordingRoute.POST("/action-runs/:run_id/cancel", controller.CancelActionRun)
+		recordingRoute.POST("/action-runs/:run_id/retry", controller.RetryActionRun)
+		recordingRoute.POST("/action-runs/:run_id/accept", controller.AcceptActionRun)
+		recordingRoute.POST("/action-runs/:run_id/refine", controller.RefineActionRun)
+		recordingRoute.GET("/action-runs/:run_id/artifacts/:artifact_id/download", controller.DownloadActionArtifact)
+		recordingRoute.GET("/action-runs/:run_id/artifacts/:artifact_id/preview", controller.PreviewActionArtifact)
 		recordingRoute.POST("/files/:file_id/entities/extract", controller.ReExtractEntities)
 		recordingRoute.GET("/files/:file_id/transcription", controller.GetFileTranscription)
 		recordingRoute.GET("/files/:file_id/transcription/export", controller.ExportTranscript)
@@ -238,6 +283,24 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.POST("/sync", controller.SyncRecording)
 		recordingRoute.POST("/sync-sonicnote", controller.SyncSonicNote)
 		recordingRoute.GET("/sync-status", controller.GetRecordingSyncStatus)
+	}
+
+	// Action System 主 API。录音前缀保留给旧客户端，跨会话/成果入口统一使用 /actions。
+	actionRoute := apiRouter.Group("/actions")
+	actionRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		actionRoute.POST("/opportunities/detect", controller.DetectActionOpportunitiesFromSource)
+		actionRoute.GET("/opportunities", controller.ListActionOpportunities)
+		actionRoute.GET("/opportunities/:opportunity_id", controller.GetActionOpportunity)
+		actionRoute.PATCH("/opportunities/:opportunity_id", controller.PatchActionOpportunity)
+		actionRoute.POST("/opportunities/:opportunity_id/plans", controller.CreateActionPlan)
+		actionRoute.GET("/plans", controller.ListActionPlans)
+		actionRoute.GET("/plans/:plan_id", controller.GetActionPlan)
+		actionRoute.PATCH("/plans/:plan_id", controller.UpdateActionPlan)
+		actionRoute.POST("/plans/:plan_id/confirm", controller.ConfirmActionPlan)
+		actionRoute.GET("/results", controller.ListActionResultAssets)
+		actionRoute.GET("/results/:result_asset_id", controller.GetActionResultAsset)
+		actionRoute.GET("/:action_id", controller.GetAction)
 	}
 
 	// 录音管理接口（管理员权限）— 独立前缀避免与用户路由冲突
@@ -282,7 +345,12 @@ func SetApiRouter(router *gin.Engine) {
 		smsRoute.POST("/sendcode", controller.SendSMSCode)
 		smsRoute.GET("/verify", controller.VerifySMSCode)
 		smsRoute.GET("/status", controller.GetSMSStatus)
+		smsRoute.GET("/captcha", controller.GetCaptcha)
+		smsRoute.GET("/security", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetSMSSecurityStatus)
+		smsRoute.GET("/analytics", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetSMSAnalytics)
 	}
+
+	apiRouter.GET("/captcha", controller.GetCaptcha)
 
 	userRoute := apiRouter.Group("/users")
 	userRoute.GET("/me", middleware.UserTokenAuth(model.RoleCommonUser), controller.GetCurrentUser)
@@ -412,7 +480,8 @@ func SetApiRouter(router *gin.Engine) {
 		settingRoute.DELETE("/:id", middleware.UserTokenAuth(model.RoleGuestUser), controller.DeleteSetting)
 		settingRoute.GET("", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetSettings)
 		settingRoute.GET("/group/:group_name", controller.GetSettingsByGroup)
-		settingRoute.GET("/key/:key", controller.GetSettingByKey)
+		settingRoute.GET("/key/:key", middleware.RequireSettingKeyAuth(), controller.GetSettingByKey)                                // 白名单 key（password_security_policy）免登录，其余需登录
+		settingRoute.GET("/key/public/:key", controller.GetPublicSettingByKey)                                                       // 免登录读取企业公开设置（白名单：password_security_policy）
 		settingRoute.POST("/default_links", middleware.UserTokenAuth(model.RoleGuestUser), controller.BatchUpdateDefaultPromptLinks) // 批量更新默认提示词链接
 		settingRoute.GET("/default_links", middleware.UserTokenAuth(model.RoleGuestUser), controller.GetDefaultPromptLinks)          // 获取默认提示词链接
 		settingRoute.GET("/by-key", middleware.UserTokenAuth(model.RoleGuestUser), controller.GetSettingsByKey)                      // 获取默认提示词链接
@@ -807,6 +876,14 @@ func SetApiRouter(router *gin.Engine) {
 	apiRouter.GET("/system_logs/wiki_generation/stats", middleware.FileLogViewerAuth(), controller.GetWikiGenerationStats)
 	apiRouter.GET("/system_logs/wiki_generation/files", middleware.FileLogViewerAuth(), controller.GetWikiGenerationFiles)
 	apiRouter.GET("/system_logs/wiki_generation/files/:file_id", middleware.FileLogViewerAuth(), controller.GetWikiGenerationFileTrace)
+	apiRouter.GET("/system_logs/chat_debug/ui", controller.GetChatDebugUI)
+	apiRouter.GET("/system_logs/chat_debug/traces", middleware.FileLogViewerAuth(), controller.GetChatDebugTraces)
+	apiRouter.GET("/system_logs/chat_debug/traces/:request_id", middleware.FileLogViewerAuth(), controller.GetChatDebugTraceDetail)
+	apiRouter.GET("/system_logs/api_trace/ui", controller.GetAPITraceUI)
+	apiRouter.GET("/system_logs/api_trace/debug_flags", middleware.FileLogViewerAuth(), controller.GetAPITraceDebugFlags)
+	apiRouter.GET("/system_logs/recording_insight_debug/ui", controller.GetRecordingInsightDebugUI)
+	apiRouter.GET("/system_logs/recording_insight_debug/traces", middleware.FileLogViewerAuth(), controller.GetRecordingInsightDebugTraces)
+	apiRouter.GET("/system_logs/recording_insight_debug/traces/:request_id", middleware.FileLogViewerAuth(), controller.GetRecordingInsightDebugTraceDetail)
 	systemLogRouter.Use(middleware.UserTokenAuth(model.RoleAdminUser))
 	{
 		systemLogRouter.GET("/modules", controller.GetModules)
@@ -907,6 +984,7 @@ func SetApiRouter(router *gin.Engine) {
 		libraryRoute.GET("/recently", controller.GetRecentlyLLibraries)
 		libraryRoute.GET("/search", controller.SearchLibrariesByName) // 搜索全部知识库根据名字
 		libraryRoute.GET("/:library_id", controller.GetLibrary)
+		libraryRoute.GET("/:library_id/capabilities", controller.GetLibraryCapabilities)
 		libraryRoute.PUT("/:library_id", controller.UpdateLibrary)
 		libraryRoute.DELETE("/:library_id", controller.DeleteLibrary)
 		libraryRoute.POST("/sort", controller.BatchUpdateLibrarySort)
@@ -1326,6 +1404,15 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		externalKnowledgeRoute.POST("/retrieval", externalKnowledgeController.Retrieval)
 	}
+	// 外部 Wiki 只读 API：API Key 必须绑定到具体知识库。
+	externalWikiController := controller.NewExternalWikiController(model.DB)
+	externalWikiRoute := apiRouter.Group("/external-wiki")
+	externalWikiRoute.Use(middleware.ExternalAPIKeyAuth())
+	{
+		externalWikiRoute.GET("/pages", externalWikiController.ListPages)
+		externalWikiRoute.GET("/pages/:page_id", externalWikiController.GetPage)
+		externalWikiRoute.GET("/search", externalWikiController.Search)
+	}
 
 	// API密钥管理路由
 	apiKeyController := controller.NewAPIKeyController()
@@ -1348,6 +1435,17 @@ func SetApiRouter(router *gin.Engine) {
 		libraryApiKeyRoute.DELETE("/:key_id", apiKeyController.DeleteAPIKey)
 		libraryApiKeyRoute.POST("/:key_id/disable", apiKeyController.DisableAPIKey)
 		libraryApiKeyRoute.POST("/:key_id/enable", apiKeyController.EnableAPIKey)
+	}
+
+	// 新增：空间相关的API密钥管理路由（供有权限的用户访问特定空间的API密钥）
+	spaceApiKeyRoute := apiRouter.Group("/spaces/:space_id/api-keys")
+	spaceApiKeyRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
+	{
+		spaceApiKeyRoute.POST("", apiKeyController.CreateAPIKey)
+		spaceApiKeyRoute.GET("", apiKeyController.GetAPIKeys)
+		spaceApiKeyRoute.DELETE("/:key_id", apiKeyController.DeleteAPIKey)
+		spaceApiKeyRoute.POST("/:key_id/disable", apiKeyController.DisableAPIKey)
+		spaceApiKeyRoute.POST("/:key_id/enable", apiKeyController.EnableAPIKey)
 	}
 
 	// 快捷方式路由

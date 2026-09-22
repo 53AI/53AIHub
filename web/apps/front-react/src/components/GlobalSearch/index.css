@@ -2,6 +2,12 @@
   margin: 0 !important;
 }
 
+/* 后端高亮 <mark>：统一为蓝字无背景，避免默认黄底与前端高亮风格不一致 */
+.global-search-modal mark {
+  color: #2563eb;
+  background: transparent;
+}
+
 .creator-dept-member-picker .trigger-wrapper {
   width: 100%;
 }

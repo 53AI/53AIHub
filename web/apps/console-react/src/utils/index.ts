@@ -26,6 +26,8 @@ export { generateRandomId, generateUUID } from '@km/shared-utils'
 
 export { isFunction, isObject } from '@km/shared-utils'
 
+export { noSpaceKeydownHandler } from '@km/shared-utils'
+
 export * from './filter'
 export { default as loadLib, LIB_NAME } from './loadLib'
 export { TimerManager, globalTimerManager, useTimerManager } from './timer-manager'

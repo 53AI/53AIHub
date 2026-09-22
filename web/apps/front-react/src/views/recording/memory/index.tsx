@@ -36,7 +36,7 @@ export function RecordingMemoryHomeView() {
   const [addDrawerOpen, setAddDrawerOpen] = useState(false)
   // 主页 tabs: 经营记忆(列表/统计) | 知识图谱(G6 力导向图)。
   // 默认进入经营记忆 tab,符合现有用户路径;切到知识图谱时不需要重新拉 schema/entity 列表。
-  const [activeTab, setActiveTab] = useState<'memory' | 'graph'>('memory')
+  const [activeTab] = useState<'memory' | 'graph'>('memory')
   // 记忆融合:仅当恰好选中 2 个实体时才允许点击。
   // selectedIds 用全量列表的 id 集合跟踪;切页 / 切类型后 Ant Design 自动丢弃不在 dataSource 里的 key,
   // 这里再 defensive 在 activeType / activeTab / keyword 变化时清空,避免跨筛选态的脏选择。
@@ -113,6 +113,12 @@ export function RecordingMemoryHomeView() {
     }
   }
 
+  const closeEntityDrawer = () => {
+    openTokenRef.current += 1
+    setDrawerOpen(false)
+    setSelected(null)
+  }
+
   // 从 table 行 hover 编辑按钮进入：fetch 详情后切到编辑 Drawer。
   const openEditEntity = async (item: RecordingMemoryEntityItem) => {
     const myToken = ++openTokenRef.current
@@ -136,7 +142,7 @@ export function RecordingMemoryHomeView() {
     if (!selected) return
     setEditingEntity(selected)
     setEditDrawerOpen(true)
-    setDrawerOpen(false)
+    closeEntityDrawer()
   }
 
   const removeEntityFromTable = async (item: RecordingMemoryEntityItem) => {
@@ -299,7 +305,7 @@ export function RecordingMemoryHomeView() {
 
   return (
     <div className="flex-1 min-w-0 h-full overflow-auto bg-[#FAFBFD] text-[#1D1E1F]">
-      <Header title={t("library.home")} border={false} />
+      <Header title="经营记忆" border={false} />
       {schemaError ? (
         <div className="mx-auto min-h-full w-11/12 lg:w-4/5 max-w-[1200px] p-6">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={schemaError} />
@@ -499,7 +505,7 @@ export function RecordingMemoryHomeView() {
       </div>
       )}
 
-      <Drawer width={620} placement="right" open={drawerOpen} onClose={() => setDrawerOpen(false)} title="记忆详情" destroyOnClose
+      <Drawer width={620} placement="right" open={drawerOpen} onClose={closeEntityDrawer} title="记忆详情" destroyOnClose
         closable={false}
         extra={
           <div className="flex items-center gap-2">
@@ -511,12 +517,13 @@ export function RecordingMemoryHomeView() {
               size="small"
               icon={<CloseOutlined />}
               aria-label="关闭"
-              onClick={() => setDrawerOpen(false)}
+              onClick={closeEntityDrawer}
             />
           </div>
         }
       >
-        {!selected ? <div className="flex h-64 items-center justify-center"><Spin /></div> : <div className="pb-5">
+        {!selected ? <div className="flex h-64 items-center justify-center"><Spin tip="正在读取实体记忆…" /></div> : <div className="pb-5">
+          <div className="pt-1">
           <h3 className="mb-4 text-base font-medium text-[#1D1E1F]">记忆</h3>
           <div className="bg-[#F7F8FA] p-5 rounded-xl">
             <section className="border-b border-dashed border-slate-200 pb-5">
@@ -560,6 +567,7 @@ export function RecordingMemoryHomeView() {
               </div>
             ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无相关数据" />}
           </section>
+          </div>
         </div>}
       </Drawer>
 

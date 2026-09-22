@@ -43,11 +43,18 @@ func (c *WikiQueueStatusController) GetStatus(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	userID := config.GetUserId(ctx)
 	if spaceID > 0 {
 		var space model.Space
 		if err := c.db.WithContext(ctx.Request.Context()).Where("eid = ? AND id = ?", eid, spaceID).First(&space).Error; err != nil {
 			ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse("空间不存在或无权访问"))
 			return
+		}
+		// 空间维度队列状态需该空间读权限（管理员豁免，与空间 Wiki 读口径一致）。
+		if !common.IsAdmin(ctx) {
+			if !requireWikiSpacePermission(ctx, eid, userID, spaceID, model.PERMISSION_PUBLIC_ONLY, "无权限查看该空间的 Wiki 队列") {
+				return
+			}
 		}
 	}
 

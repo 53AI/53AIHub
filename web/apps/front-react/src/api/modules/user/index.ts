@@ -53,8 +53,8 @@ export const userApi = {
   update(data: { nickname?: string; avatar?: string }) {
     return service.put(`/api/users/me`, data).then((res) => res.data).catch(handleError)
   },
-  updatePassword(data: { password: string; newPassword: string }) {
-    return service.put(`/api/users/password`, data).catch(handleError)
+  updatePassword(data: { password?: string; new_password: string; confirm_password: string }) {
+    return service.put('/api/users/password', data)
   },
   checkUsername(account: string) {
     return service

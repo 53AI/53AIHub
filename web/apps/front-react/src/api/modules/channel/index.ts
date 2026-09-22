@@ -78,8 +78,10 @@ export const getPlatformInfo = (type: number) => {
 export const getModelIcon = (value: string) => {
   const iconPatterns: [RegExp, string][] = [
     [/deepseek/i, 'deepseek'],
+    [/step/i, 'step'],
+    [/minimax/i, 'minimax'],
+    [/doubao/i, 'doubao'],
     [/tongyi|qwen/i, 'tongyi'],
-    [/thudm/i, 'zhipu'],
     [/ai\/yi/i, 'yi'],
     [/internlm/i, 'internlm'],
     [/baai/i, 'baai'],
@@ -87,7 +89,9 @@ export const getModelIcon = (value: string) => {
     [/mistralai/i, 'mistralai'],
     [/llama/i, 'llama'],
     [/ernie/i, 'weixin'],
-    [/kimi|moonshot/i, 'moonshot']
+    [/kimi|moonshot/i, 'moonshot'],
+    [/token.*hub/i, 'tencent_tokenhub'],
+    [/glm/i, 'glm_coding_plan']
   ]
   for (const [pattern, icon] of iconPatterns) {
     if (pattern.test(value)) {

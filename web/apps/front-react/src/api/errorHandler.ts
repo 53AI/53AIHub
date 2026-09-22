@@ -93,7 +93,6 @@ export function handleError(error: ErrorResponse, options?: HandleErrorOptions):
   if (msg === 'feature not available: feature not available') {
     return Promise.reject(message.warning(window.$t('common.feature_not_available', { functionName: options?.functionName })))
   }
-
   const messageMatch = RESPONSE_MESSAGE_MAP.get(msg || '')
   if (messageMatch) {
     if (messageMatch === 'not_tip') msg = ''

@@ -22,6 +22,9 @@
       ],
       "recording-template": [
         "dist/recording-template/index.d.ts"
+      ],
+      "captcha": [
+        "dist/captcha/index.d.ts"
       ]
     }
   },
@@ -49,6 +52,10 @@
     "./recording-template": {
       "import": "./dist/recording-template/index.js",
       "types": "./dist/recording-template/index.d.ts"
+    },
+    "./captcha": {
+      "import": "./dist/captcha/index.js",
+      "types": "./dist/captcha/index.d.ts"
     }
   },
   "scripts": {

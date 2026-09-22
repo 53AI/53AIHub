@@ -53,6 +53,9 @@ const getOperatorLabel = (op: string, t: (key: string) => string) => {
   return keyMap[op] ? t(keyMap[op]) : op;
 };
 
+// 安心录（录音功能）的内置策略由系统维护，不在清洗策略列表中展示
+const HIDDEN_STRATEGY_NAME = "安心录";
+
 // Merge conditions with same type and operator
 const getMergedConditions = (rule: Strategy) => {
   try {
@@ -334,7 +337,8 @@ export function KnowledgeCleaningPolicy() {
       const strategies = await ragStrategyApi.getList();
       const transformed = strategies.map(transformStrategyToRule);
       setDefaultRule(transformed.find((s) => s.is_default) || null);
-      setRules(transformed.filter((s) => !s.is_default));
+      // 后端让我们根据name过滤掉内置策略（安心录），不展示在列表中
+      setRules(transformed.filter((s) => !s.is_default && s.name !== HIDDEN_STRATEGY_NAME));
     } finally {
       setLoading(false);
     }

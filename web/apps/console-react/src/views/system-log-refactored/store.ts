@@ -4,7 +4,7 @@
  * 注意：筛选状态由 useListState hook 管理（URL持久化）
  */
 import { create } from 'zustand'
-import { systemLogApi, transformSystemLogList } from './api/systemLogApi'
+import { systemLogApi, transformSystemLogList } from '@/api/modules/system-log'
 import type {
   SystemLogDisplayItem,
   SystemLogListParams,
@@ -26,7 +26,6 @@ interface SystemLogState {
   loadList: (params: SystemLogListParams) => Promise<void>
   loadActions: () => Promise<void>
   loadModules: () => Promise<void>
-  refresh: () => Promise<void>
 }
 
 /**
@@ -75,12 +74,5 @@ export const useSystemLogStore = create<SystemLogState>((set, get) => ({
   loadModules: async () => {
     const data = await systemLogApi.modules()
     set({ modules: data })
-  },
-
-  // 刷新数据（需要外部传入参数）
-  refresh: async () => {
-    // refresh 仅触发 loading 状态，实际数据加载由组件控制
-    set({ loading: true })
-    set({ loading: false })
   },
 }))

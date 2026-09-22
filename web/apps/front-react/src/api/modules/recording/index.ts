@@ -40,10 +40,29 @@ import type {
   MoveFileToGroupResponse,
   RecordingMemoryEntityList,
   RecordingMemoryEntityDetail,
+  RecordingCurrentViewResponse,
+  RecordingMemoryTimeline,
   RecordingMemoryEntitySchemas,
   UpdateRecordingMemoryEntityRequest,
   CreateRecordingMemoryEntityRequest,
   MergeMemoryEntitiesRequest,
+  RecordingCognitionList,
+  RecordingCognitionDetail,
+  RecordingCognitionCandidateList,
+  RecordingCognitionCandidate,
+  UpdateRecordingCognitionCandidateRequest,
+  RecordingCognitionOverview,
+  RecordingCoreStats,
+  RecordingCognitionDomain,
+  CreateRecordingCognitionDomainRequest,
+  UpdateRecordingCognitionDomainRequest,
+  CreateRecordingCognitionRequest,
+  UpdateRecordingCognitionRequest,
+  ReviewRecordingCognitionCandidateRequest,
+  ImportRecordingCognitionsRequest,
+  RecordingCognitionStatus,
+  RecordingDecisionContextPackage,
+  RecordingMemoryV2Evaluation,
   RecordingShareCreateResponse,
   RecordingSharedContent,
   RecordingDeviceConfig,
@@ -317,6 +336,18 @@ export async function getMemoryEntity(entityId: string | number): Promise<Record
   return res.data
 }
 
+/** 获取实体的只读 Current View；服务端按当前有效 Fact/Claim 查询时编译。 */
+export async function getMemoryCurrentView(entityId: string | number): Promise<RecordingCurrentViewResponse> {
+  const res = await request.get<ApiResponse<RecordingCurrentViewResponse>>(`/api/recordings/memories/entities/${entityId}/current-view`).catch(handleError)
+  return res.data
+}
+
+/** 获取实体的历史时间线；保留被替换/失效记录，不写回记忆表。 */
+export async function getMemoryTimeline(entityId: string | number, params: { offset?: number; limit?: number } = {}): Promise<RecordingMemoryTimeline> {
+  const res = await request.get<ApiResponse<RecordingMemoryTimeline>>(`/api/recordings/memories/entities/${entityId}/timeline`, { params }).catch(handleError)
+  return res.data
+}
+
 /**
  * 编辑实体记忆（PATCH）。
  * 4xx 业务错误（"同类型同名已存在" / 实体不存在）由 handleError 拦截并提示。
@@ -364,6 +395,158 @@ export async function mergeMemoryEntities(
     .post('/api/recordings/memories/entity-merges', payload)
     .then((res) => res.data)
     .catch(handleError)
+}
+
+// ============= 老板认知注册与会议校准 =============
+
+/** 获取当前用户的老板认知注册表。 */
+export async function getCognitions(params: {
+  status?: RecordingCognitionStatus | string
+  layer?: 'core' | 'situational' | string
+  cognition_type?: string
+  /** 所属领域 HashID */
+  domain_id?: string
+  /** 来源类型筛选；多值用逗号拼接，如 'boss_confirmed,auto_confirmed' */
+  source_type?: string
+  keyword?: string
+  limit?: number
+  offset?: number
+} = {}): Promise<RecordingCognitionList> {
+  const res = await service.get('/api/recordings/cognitions', { params }).catch(handleError)
+  return res.data
+}
+
+/** 获取认知模型的服务端统计，避免用分页数据估算总量。 */
+export async function getCognitionOverview(): Promise<RecordingCognitionOverview> {
+  const res = await service.get('/api/recordings/cognitions/overview').catch(handleError)
+  return res.data
+}
+
+/** 核心认知 7 大分类数量统计。 */
+export async function getCoreStats(): Promise<RecordingCoreStats> {
+  const res = await service.get('/api/recordings/cognitions/core-stats').catch(handleError)
+  return res.data
+}
+
+/** 获取认知领域 registry；包含系统预置领域、当前登录人重写的领域和个人自建领域。 */
+export async function getCognitionDomains(): Promise<RecordingCognitionDomain[]> {
+  const res = await service.get('/api/recordings/cognition-domains').catch(handleError)
+  return res.data
+}
+
+/** 新增个人专属自建领域。 */
+export async function createCognitionDomain(body: CreateRecordingCognitionDomainRequest): Promise<RecordingCognitionDomain> {
+  const res = await service.post('/api/recordings/cognition-domains', body).catch(handleError)
+  return res.data
+}
+
+/** 修改领域（支持重写系统项，写时复制仅对当前登录人生效）。 */
+export async function updateCognitionDomain(domainId: string, body: UpdateRecordingCognitionDomainRequest): Promise<RecordingCognitionDomain> {
+  const res = await service.put(`/api/recordings/cognition-domains/${domainId}`, body).catch(handleError)
+  return res.data
+}
+
+/** 删除/屏蔽领域：自建=软删除；预置=生成个人屏蔽遮罩，仅对当前登录人隐藏。 */
+export async function deleteCognitionDomain(domainId: string): Promise<null> {
+  const res = await service.delete(`/api/recordings/cognition-domains/${domainId}`).catch(handleError)
+  return res.data
+}
+
+/** 获取一条老板认知及其版本证据。 */
+export async function getCognition(cognitionId: string | number): Promise<RecordingCognitionDetail> {
+  const res = await service.get(`/api/recordings/cognitions/${cognitionId}`).catch(handleError)
+  return res.data
+}
+
+/** 由老板主动补充一条认知。 */
+export async function createCognition(data: CreateRecordingCognitionRequest): Promise<RecordingCognitionDetail> {
+  const res = await service.post('/api/recordings/cognitions', data).catch(handleError)
+  return res.data
+}
+
+/** 将外部认知导入为待老板确认的候选，不会直接进入认知注册表。 */
+export async function importCognitions(data: ImportRecordingCognitionsRequest): Promise<RecordingCognitionCandidateList> {
+  const res = await service.post('/api/recordings/cognitions/import', data).catch(handleError)
+  return res.data
+}
+
+/** 修改认知并创建新版本。 */
+export async function updateCognition(cognitionId: string | number, data: UpdateRecordingCognitionRequest): Promise<RecordingCognitionDetail> {
+  const res = await service.patch(`/api/recordings/cognitions/${cognitionId}`, data).catch(handleError)
+  return res.data
+}
+
+/** 废止认知（退役）：状态置为 expired，立即退出总览与统计，历史版本保留。 */
+export async function expireCognition(cognitionId: string | number): Promise<null> {
+  const res = await service.delete(`/api/recordings/cognitions/${cognitionId}`).catch(handleError)
+  return res.data
+}
+
+/** 获取当前用户从外部来源导入、等待确认的认知候选。file_id 存在时可按文件收敛展示。 */
+export async function getCognitionCandidates(params: {
+  /** 归属文件 HashID；传入则只返回该文件的待确认候选 */
+  file_id?: string
+  status?: 'candidate' | 'confirmed' | 'rejected' | 'ignored' | string
+  limit?: number
+  offset?: number
+  source_type?: string
+  layer?: 'core' | 'situational' | string
+  domain_id?: string
+  cognition_type?: string
+} = {}): Promise<RecordingCognitionCandidateList> {
+  const res = await service.get('/api/recordings/cognition-candidates', { params }).catch(handleError)
+  return res.data
+}
+
+/** 确认、修改确认、拒绝或忽略会议认知候选。 */
+export async function reviewCognitionCandidate(
+  fileId: string | number,
+  candidateId: string | number,
+  action: 'confirm' | 'conflict' | 'reject' | 'ignore',
+  data: ReviewRecordingCognitionCandidateRequest = {},
+): Promise<RecordingCognitionDetail | { ok: boolean } | null> {
+  const res = await service.post(
+    `/api/recordings/files/${fileId}/cognition-candidates/${candidateId}/${action}`,
+    data,
+  ).catch(handleError)
+  return res.data
+}
+
+/** 审核外部导入候选。 */
+export async function reviewImportedCognitionCandidate(
+  candidateId: string | number,
+  action: 'confirm' | 'conflict' | 'reject' | 'ignore',
+  data: ReviewRecordingCognitionCandidateRequest = {},
+): Promise<RecordingCognitionDetail | { ok: boolean } | null> {
+  const res = await service.post(
+    `/api/recordings/cognition-candidates/${candidateId}/${action}`,
+    data,
+  ).catch(handleError)
+  return res.data
+}
+
+/** 在确认前修正 AI 提炼的待确认候选内容（仅 status=candidate 可编辑；已转正/驳回/忽略返回 400）。 */
+export async function updateCognitionCandidate(
+  candidateId: string | number,
+  data: UpdateRecordingCognitionCandidateRequest,
+): Promise<RecordingCognitionCandidate | { ok: boolean } | null> {
+  const res = await service.patch(
+    `/api/recordings/cognition-candidates/${candidateId}`,
+    data,
+  ).catch(handleError)
+  return res.data
+}
+
+/** 获取当前会议的事实、认知、业务记忆和证据策略。知识库范围必须显式传入 HashID。 */
+export async function getDecisionContext(fileId: string | number, params?: { knowledge_library_id?: string[]; knowledge_query?: string }): Promise<RecordingDecisionContextPackage> {
+  const res = await service.get(`/api/recordings/files/${fileId}/decision-context`, { params }).catch(handleError)
+  return res.data
+}
+
+/** 获取当前文件最近一次 Memory V2 shadow 对照结果。 */
+export async function getMemoryV2Evaluation(fileId: string | number): Promise<RecordingMemoryV2Evaluation | null> {
+  const res = await service.get(`/api/recordings/files/${fileId}/memory-v2-evaluation`).catch(handleError)
+  return res.data
 }
 
 // ============= 决策页面编排 =============
@@ -673,10 +856,32 @@ export const recordingApi = {
   getMemoryEntities,
   getMemorySchema,
   getMemoryEntity,
+  getMemoryCurrentView,
+  getMemoryTimeline,
   createMemoryEntity,
   updateMemoryEntity,
   deleteMemoryEntity,
   mergeMemoryEntities,
+
+  // 老板认知注册与会议校准
+  getCognitions,
+  getCognitionOverview,
+  getCoreStats,
+  getCognitionDomains,
+  createCognitionDomain,
+  updateCognitionDomain,
+  deleteCognitionDomain,
+  getCognition,
+  createCognition,
+  importCognitions,
+  updateCognition,
+  expireCognition,
+  getCognitionCandidates,
+  reviewCognitionCandidate,
+  reviewImportedCognitionCandidate,
+  updateCognitionCandidate,
+  getDecisionContext,
+  getMemoryV2Evaluation,
 
   // 决策页面编排
   getInsightPage,

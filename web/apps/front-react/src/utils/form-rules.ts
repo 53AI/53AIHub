@@ -64,13 +64,6 @@ const validators = {
       : '请输入有效的手机号或邮箱'
   },
 
-  // 密码验证
-  password: (value: string, message: string) => {
-    if (!value) return message
-    if (value.length < 8 || value.length > 20) return '密码长度为8-20位'
-    return null
-  },
-
   // URL验证
   url: (value: string, message: string) => {
     if (!value) return message
@@ -117,7 +110,6 @@ export const linkValidator = createValidator(validators.link)
 export const mobileValidator = createValidator(validators.mobile)
 export const emailValidator = createValidator(validators.email)
 export const mobileOrEmailValidator = createValidator(validators.mobileOrEmail)
-export const passwordValidator = createValidator(validators.password)
 export const urlValidator = createValidator(validators.url)
 export const pathValidator = createValidator(validators.path)
 export const imageValidator = createValidator(validators.image)
@@ -159,21 +151,6 @@ export const generateFormRules = ({
 }
 
 
-
-export const getPasswordRules = () => {
-  return {
-    validator: (rule: any, value: string) => {
-      if (!value || value.length < 8 || value.length > 20) {
-        return Promise.reject('密码长度为8-20位')
-      }
-      if (/[\u4e00-\u9fa5]/.test(value)) {
-        return Promise.reject('密码不能包含中文')
-      }
-      return Promise.resolve()
-    },
-    trigger: 'blur'
-  }
-}
 
 export const getMobileRules = () => {
   return {

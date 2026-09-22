@@ -97,26 +97,3 @@ func getLatestRunJobsWithStepsByRelatedIDForWikiProgress(ctx context.Context, db
 
 	return runID, jobs, stepMap, nil
 }
-
-func getWikiSpaceReadPermission(eid int64, resourceType int, resourceID int64, userID int64) (int, error) {
-	var permission model.Permission
-	if err := model.DB.Where(
-		"eid = ? AND resource_type = ? AND resource_id = ? AND subject_type = ? AND subject_id = ?",
-		eid, resourceType, resourceID, model.SUBJECT_TYPE_USER, userID,
-	).First(&permission).Error; err == nil {
-		return permission.Permission, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.PERMISSION_NONE, err
-	}
-
-	if err := model.DB.Where(
-		"eid = ? AND resource_type = ? AND resource_id = ? AND subject_type = ?",
-		eid, resourceType, resourceID, model.SUBJECT_TYPE_COMPANY_ALL,
-	).First(&permission).Error; err == nil {
-		return permission.Permission, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return model.PERMISSION_NONE, err
-	}
-
-	return model.PERMISSION_NONE, nil
-}

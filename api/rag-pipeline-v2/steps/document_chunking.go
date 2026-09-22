@@ -10,7 +10,6 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
-	env_util "github.com/53AI/53AIHub/common/utils/env"
 	appconfig "github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
@@ -23,6 +22,8 @@ import (
 var GenerateInsightsFn func(ctx context.Context, eid, fileID, userID int64)
 
 func shouldTriggerRecordingInsights(file *model.File) bool {
+	// 安心录来源（recording_audio/recording_folder/recording_imported）才生成洞察；
+	// 知识库音频（personal_upload 等来源）走音频管线但不出洞察。
 	return file != nil && file.IsRecordingOriginType()
 }
 
@@ -327,24 +328,21 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			db.Save(&jobStep)
 		}
 
-		// 异步执行文件摘要和实体抽取（不阻塞后续向量化步骤，错误仅记录日志）
-		// 生成文件级摘要和常见问法（通过环境变量 RAG_GENERATE_SUMMARY 控制，默认开启）
-		if env_util.Bool("RAG_GENERATE_SUMMARY", true) {
-			go func() {
-				summaryCtx, summaryCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
-				defer summaryCancel()
-				if _, _, err := maybeGenerateFileSummaryAndFAQ(summaryCtx, db, job, eid, fileID, contentForLLM, chunkConfig); err != nil {
-					logger.Error(summaryCtx, fmt.Sprintf("生成文件摘要和问法失败(非致命): file_id=%d, err=%v", fileID, err))
-					updateParsingStatus(model.FileParsingStatusFail)
-				}
-			}()
-		}
-		// 实体抽取/文档标签（通过环境变量 RAG_EXTRACT_ENTITIES 控制，默认开启）
-		if env_util.Bool("RAG_EXTRACT_ENTITIES", true) && !isWikiPageGenerationActive(job) {
+		// 异步执行文件摘要、问题和实体抽取（不阻塞后续向量化步骤，错误仅记录日志）。
+		// 文件级摘要和问题不受分块配置开关影响，流水线始终生成。
+		go func() {
+			summaryCtx, summaryCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
+			defer summaryCancel()
+			if _, _, err := GenerateFileSummaryAndFAQForced(summaryCtx, db, eid, fileID, contentForLLM, chunkConfig); err != nil {
+				logger.Error(summaryCtx, fmt.Sprintf("生成文件摘要和问法失败(非致命): file_id=%d, err=%v", fileID, err))
+				updateParsingStatus(model.FileParsingStatusFail)
+			}
+		}()
+		if !isWikiPageGenerationActive(job) {
 			go func() {
 				entityCtx, entityCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
 				defer entityCancel()
-				if err := extractEntities(entityCtx, db, eid, fileID, contentForLLM); err != nil {
+				if err := ExtractFileEntities(entityCtx, db, eid, fileID, contentForLLM); err != nil {
 					logger.Error(entityCtx, fmt.Sprintf("实体抽取失败(非致命): file_id=%d, err=%v", fileID, err))
 					updateParsingStatus(model.FileParsingStatusFail)
 				}
@@ -357,11 +355,7 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		// 实体从纪要中抽取（而非转写原文），因纪要是处理过的价值高、格式稳定的内容。
 		// 洞察生成不阻塞管线，异步执行。
 		if shouldTriggerRecordingInsights(&file) && GenerateInsightsFn != nil {
-			go func() {
-				insightsCtx, insightsCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
-				defer insightsCancel()
-				GenerateInsightsFn(insightsCtx, eid, fileID, userID)
-			}()
+			GenerateInsightsFn(pipelineCtx(), eid, fileID, userID)
 		} else {
 			logger.Infof(ctx, "【洞察】非安心录来源或 GenerateInsightsFn 未注册，跳过: fileID=%d", fileID)
 		}

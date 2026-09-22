@@ -1,5 +1,5 @@
 import { Dropdown, Search, SvgIcon, IconAction } from "@km/shared-components-react";
-import { Button, Empty, Modal, message, Table } from "antd";
+import { Button, Empty, Modal, Table, Tag, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { groupApi } from "@/api/modules/group";
@@ -13,7 +13,6 @@ import {
 } from "@/constants/group";
 import { useListState } from "@/hooks";
 import { t } from "@/locales";
-import { useEnterpriseStore } from "@/stores";
 import GroupAddDialog from "../components/GroupAddDialog";
 
 // Types
@@ -53,8 +52,6 @@ const getAvailableBtns = () => [
 ];
 
 export function UserGroup() {
-	const enterpriseStore = useEnterpriseStore();
-
 	// 列表相关状态（URL 持久化）
 	const defaultUrlState = useMemo<GroupListState>(
 		() => ({
@@ -312,36 +309,39 @@ export function UserGroup() {
 	// User table columns
 	const userColumns: ColumnsType<UserItem> = [
 		{
-			title: t("internal_user.account.name"),
+			title: t("common.name"),
 			dataIndex: "nickname",
 			key: "nickname",
-			render: (value: string, record) => (
-				<div className="flex items-center gap-2">
-					<SvgIcon
-						name={
-							record.resource_type === "department" ? "department" : "member"
-						}
-						width="16px"
-						height="16px"
-						color="#999"
-					/>
-					<span>{value || record.name || "--"}</span>
-				</div>
-			),
+			render: (value: string, record) => {
+				const isDept = record.resource_type === "department";
+				return (
+					<div className="flex items-center gap-2">
+						<SvgIcon
+							name={isDept ? "department" : "member"}
+							width="16px"
+							height="16px"
+							color={isDept ? "#1677ff" : "#999"}
+						/>
+						{isDept ? (
+							<span className="text-blue-600 font-medium">{record.name}</span>
+						) : (
+							<span>{value || record.name || "--"}</span>
+						)}
+					</div>
+				);
+			},
 		},
 		{
-			title: t("internal_user.account.mobile"),
-			dataIndex: "mobile",
-			key: "mobile",
-			render: (value: string) => (
-				<span className={!value ? "text-gray-400" : ""}>{value || "--"}</span>
-			),
-		},
-		{
-			title: t("internal_user.account.department"),
-			dataIndex: "dept_names",
-			key: "department",
-			render: (value: string) => value || enterpriseStore.info?.name || "--",
+			title: t("type"),
+			dataIndex: "resource_type",
+			key: "type",
+			width: 100,
+			render: (resourceType: string, record) =>
+				resourceType === "department" ? (
+					<Tag color="blue">{t("internal_user.account.department")}</Tag>
+				) : (
+					<Tag>{t("internal_user.group.member")}</Tag>
+				),
 		},
 		{
 			title: t("operation"),
@@ -482,7 +482,7 @@ export function UserGroup() {
 
 				{/* Tab content: Member */}
 				{activeTabIndex === 0 && (
-					<div className="flex-1 overflow-hidden px-4">
+					<div className="flex-1 min-h-0 px-4 flex flex-col">
 						<div className="flex items-center justify-between h-10 gap-4">
 							<h1
 								className="truncate text-base"
@@ -508,32 +508,32 @@ export function UserGroup() {
 								</DeptMemberPicker>
 							</div>
 						</div>
-
-						<Table
-							className="mt-4"
-							rowKey="id"
-							columns={userColumns}
-							dataSource={userTableData}
-							loading={userLoading}
-							pagination={{
-								current: state.userPage,
-								pageSize: state.userPageSize,
-								total: userTableTotal,
-								showSizeChanger: true,
-								showTotal: (total) => t("table_footer_text", { total }),
-								onChange: (page, pageSize) => {
-									updateState({ userPage: page, userPageSize: pageSize });
-								},
-							}}
-							rowClassName="group cursor-pointer hover:bg-gray-50"
-							scroll={{ x: "max-content" }}
-						/>
+						<div className="flex-1 overflow-y-auto mt-4">
+							<Table
+								rowKey="id"
+								columns={userColumns}
+								dataSource={userTableData}
+								loading={userLoading}
+								pagination={{
+									current: state.userPage,
+									pageSize: state.userPageSize,
+									total: userTableTotal,
+									showSizeChanger: true,
+									showTotal: (total) => t("table_footer_text", { total }),
+									onChange: (page, pageSize) => {
+										updateState({ userPage: page, userPageSize: pageSize });
+									},
+								}}
+								rowClassName="group cursor-pointer hover:bg-gray-50"
+								scroll={{ x: "max-content" }}
+							/>
+						</div>
 					</div>
 				)}
 
 				{/* Tab content: Available */}
 				{activeTabIndex === 1 && (
-					<div className="flex-1 overflow-auto px-4">
+					<div className="flex-1 overflow-y-auto px-4">
 						<div className="flex items-center gap-3 mt-2">
 							{availableBtns.map((item) => (
 								<Button

@@ -1,9 +1,8 @@
 import { useState, useEffect, useMemo, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button, Empty, Spin, Tooltip } from "antd";
-import { Dropdown } from "@km/shared-components-react";
-import type { MenuProps } from "antd";
+import { Button, Empty, Spin } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
+import { MoreDropdown, type MenuItem } from "@/components/MoreDropdown";
 import { useLibraryStore } from "@/stores/modules/library";
 import { getPublicPath } from "@/utils/config";
 import { LibraryHeader } from "../../components/header";
@@ -19,7 +18,7 @@ import { canEdit, useInlineEdit } from "../../composables/useInlineEdit";
 import { CatalogDropdown } from "../components/catalog/dropdown";
 import LibraryFav from "../../components/fav";
 import { t } from "@/locales";
-import type { FileItem } from "@/api/modules/files";
+import type { FileItem } from "@/api/modules/files/types";
 import { CatalogRefContext } from "../index";
 
 export function LibraryFolderView() {
@@ -144,10 +143,6 @@ export function LibraryFolderView() {
     }
   };
 
-  const handleMouseEnter = (item: FileItem) => {
-    libraryStore.loadFilePermissions(item.id);
-  };
-
   const handleCommand = (command: string) => {
     catalogRefContext?.current?.command(command, currentFile as FileItem);
   };
@@ -161,49 +156,82 @@ export function LibraryFolderView() {
     }
   };
 
-  // 获取更多菜单项（当前文件夹）
-  const getCurrentFileMoreMenuItems = (): MenuProps["items"] => [
+  // 获取更多菜单项（当前文件夹），按权限收起重命名/权限/删除
+  const getCurrentFileMoreMenuItems = (): MenuItem[] => [
     {
       key: "new-tab",
+      icon: "arrow-right-up",
       label: t("action.tab_open"),
-      icon: <SvgIcon name="arrow-right-up" />,
     },
     {
       key: "rename",
+      icon: "edit",
       label: t("action.rename"),
-      icon: <SvgIcon name="edit" />,
+      wrapper: (children) => (
+        <FilePermission required={PERMISSION_TYPE.edit_all}>
+          {children}
+        </FilePermission>
+      ),
     },
     {
       key: "permission",
+      icon: "peoples",
       label: "成员与权限",
-      icon: <SvgIcon name="peoples" />,
+      wrapper: (children) => (
+        <FilePermission required={PERMISSION_TYPE.manage}>
+          {children}
+        </FilePermission>
+      ),
     },
     {
       key: "delete",
-      label: <span className="text-[#FA5151]">{t("action.del")}</span>,
-      icon: <SvgIcon name="del" className="text-[#FA5151]" />,
+      icon: "del",
+      iconClass: "text-[#FA5151]",
+      label: t("action.del"),
       danger: true,
+      wrapper: (children) => (
+        <FilePermission required={PERMISSION_TYPE.edit_all}>
+          {children}
+        </FilePermission>
+      ),
     },
   ];
 
-  // 获取子项的更多菜单
-  const getChildMoreMenuItems = (item: FileItem): MenuProps["items"] => [
+  // 获取子项的更多菜单，重命名/删除按子项自身权限收起
+  const getChildMoreMenuItems = (item: FileItem): MenuItem[] => [
     {
       key: "new-tab",
+      icon: "arrow-right-up",
       label: t("action.tab_open"),
-      icon: <SvgIcon name="arrow-right-up" />,
     },
-    { type: "divider" },
+    { key: "divider", divided: true },
     {
       key: "rename",
+      icon: "edit",
       label: t("action.rename"),
-      icon: <SvgIcon name="edit" />,
+      wrapper: (children) => (
+        <FilePermission
+          permission={item.permission}
+          required={PERMISSION_TYPE.edit_all}
+        >
+          {children}
+        </FilePermission>
+      ),
     },
     {
       key: "delete",
-      label: <span className="text-[#FA5151]">{t("action.del")}</span>,
-      icon: <SvgIcon name="del" className="text-[#FA5151]" />,
+      icon: "del",
+      iconClass: "text-[#FA5151]",
+      label: t("action.del"),
       danger: true,
+      wrapper: (children) => (
+        <FilePermission
+          permission={item.permission}
+          required={PERMISSION_TYPE.edit_all}
+        >
+          {children}
+        </FilePermission>
+      ),
     },
   ];
 
@@ -241,12 +269,6 @@ export function LibraryFolderView() {
           footer={
             !loading && currentFile ? (
               <div className="flex items-center gap-2">
-                <Tooltip title={t("action.search")}>
-                  <div className="size-[34px] rounded-lg flex items-center justify-center cursor-pointer hover:bg-[#f0f0f0]">
-                    <SvgIcon name="search" />
-                  </div>
-                </Tooltip>
-
                 {currentFile && (
                   <LibraryFav
                     is_favorite={currentFile.is_favorite || false}
@@ -256,18 +278,12 @@ export function LibraryFolderView() {
                   />
                 )}
 
-                <Dropdown
-                  menu={{
-                    items: getCurrentFileMoreMenuItems(),
-                    onClick: ({ key }) => handleCurrentFileMoreClick(key),
-                  }}
-                  trigger={["click"]}
+                <MoreDropdown
                   placement="bottomRight"
-                >
-                  <div className="size-[34px] rounded-lg flex items-center justify-center cursor-pointer hover:bg-[#f0f0f0]">
-                    <SvgIcon name="more-v" size={18} />
-                  </div>
-                </Dropdown>
+                  trigger={["click"]}
+                  items={getCurrentFileMoreMenuItems()}
+                  onCommand={(key) => handleCurrentFileMoreClick(String(key))}
+                />
               </div>
             ) : null
           }
@@ -319,24 +335,34 @@ export function LibraryFolderView() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <CatalogDropdown filter="create" onCommand={handleCommand}>
-                    <Button
-                      color="primary"
-                      variant="filled"
-                      className="!border-none"
-                    >
-                      <SvgIcon name="plus" className="mr-1" /> 新建
-                    </Button>
-                  </CatalogDropdown>
-                  <CatalogDropdown filter="upload" onCommand={handleCommand}>
-                    <Button
-                      color="primary"
-                      variant="filled"
-                      className="!border-none"
-                    >
-                      <SvgIcon name="download" className="mr-1" /> 导入
-                    </Button>
-                  </CatalogDropdown>
+                  <FilePermission
+                    permission={currentFile?.permission}
+                    required={PERMISSION_TYPE.edit_knowledge}
+                  >
+                    <CatalogDropdown filter="create" onCommand={handleCommand}>
+                      <Button
+                        color="primary"
+                        variant="filled"
+                        className="!border-none"
+                      >
+                        <SvgIcon name="plus" className="mr-1" /> 新建
+                      </Button>
+                    </CatalogDropdown>
+                  </FilePermission>
+                  <FilePermission
+                    permission={currentFile?.permission}
+                    required={PERMISSION_TYPE.edit_knowledge}
+                  >
+                    <CatalogDropdown filter="upload" onCommand={handleCommand}>
+                      <Button
+                        color="primary"
+                        variant="filled"
+                        className="!border-none"
+                      >
+                        <SvgIcon name="download" className="mr-1" /> 导入
+                      </Button>
+                    </CatalogDropdown>
+                  </FilePermission>
                 </div>
               </div>
 
@@ -359,35 +385,25 @@ export function LibraryFolderView() {
                         key={item.id}
                         className="flex items-center gap-2 h-11 px-1.5 rounded-lg cursor-pointer group hover:bg-[#eeeff0]"
                         onClick={() => handleView(item)}
-                        onMouseEnter={() => handleMouseEnter(item)}
                       >
                         <div className="flex-1 flex items-center gap-2 overflow-hidden">
                           <img className="size-6" src={item.icon} alt="" />
                           <span className="flex-1 text-sm text-[#1D1E1F] truncate">
                             {item.name}
                           </span>
-                          <FilePermission
-                            permission={item.permission}
-                            required={PERMISSION_TYPE.edit_all}
-                          >
-                            <Dropdown
-                              menu={{
-                                items: getChildMoreMenuItems(item),
-                                onClick: ({ key, domEvent }) => {
-                                  domEvent.stopPropagation();
-                                  handleMore(key, item);
-                                },
-                              }}
-                              trigger={["click"]}
-                            >
+                          <MoreDropdown
+                            trigger={["click"]}
+                            triggerElement={
                               <div
                                 className="size-6 rounded bg-[#f5f5f5] flex items-center justify-center cursor-pointer invisible group-hover:visible"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <SvgIcon name="more-h" />
                               </div>
-                            </Dropdown>
-                          </FilePermission>
+                            }
+                            items={getChildMoreMenuItems(item)}
+                            onCommand={(key) => handleMore(String(key), item)}
+                          />
                         </div>
                         <div className="w-20 text-center text-sm text-[#9A9A9A]">
                           <EntityDisplay type="user" id={item.user_id} mode="name" />

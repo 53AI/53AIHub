@@ -2,7 +2,7 @@ import { Table, Drawer, Button, Spin, message } from "antd";
 import { EyeOutlined } from "@ant-design/icons";
 import { useState, useEffect, useMemo } from "react";
 import { t } from "@/locales";
-import { FilterDateRange } from "@/components/Filter";
+import { DateRangeFilter } from "@/components/Filter/date-range";
 import type { ColumnsType } from "antd/es/table";
 import { conversationApi } from "@/api/modules/conversation";
 import { messageApi } from "@/api/modules/message";
@@ -321,8 +321,9 @@ export function DialogueRecord({
       {/* Filter bar */}
       <div className="flex items-center gap-2">
         <div className="flex-none w-[250px]">
-          <FilterDateRange
+          <DateRangeFilter
             value={filterForm.date}
+            valueFormat={(date) => getSimpleDateFormatString({ date, format: "YYYY-MM-DD hh:mm" })}
             onChange={(date) =>
               setFilterForm((prev) => ({ ...prev, date, page: 1 }))
             }

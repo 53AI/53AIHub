@@ -222,21 +222,6 @@ const LibrarySettingRecycle = lazyWithSuspense(() =>
     default: m.LibraryRecycleSettingsView
   }))
 )
-const LibrarySettingChunk = lazyWithSuspense(() =>
-  import('@/views/library/setting/chunk').then((m) => ({
-    default: m.LibraryChunkSettingsView
-  }))
-)
-const LibrarySettingDocument = lazyWithSuspense(() =>
-  import('@/views/library/setting/document-setting').then((m) => ({
-    default: m.LibraryDocumentSettingsView
-  }))
-)
-const LibrarySettingEmbedded = lazyWithSuspense(() =>
-  import('@/views/library/setting/embedded').then((m) => ({
-    default: m.LibraryEmbeddedSettingsView
-  }))
-)
 
 // 把 pathname+search+hash 序列化成相对 URL，供 ?redirect= 使用
 function locationToPath(location: { pathname: string; search: string; hash: string }): string {
@@ -649,12 +634,6 @@ const buildRoutes = () => {
                           { path: "permission", element: <LibrarySettingPermission /> },
                           { path: "api", element: <LibrarySettingApi /> },
                           { path: "recycle", element: <LibrarySettingRecycle /> },
-                          { path: "chunk", element: <LibrarySettingChunk /> },
-                          {
-                            path: "document-setting",
-                            element: <LibrarySettingDocument />,
-                          },
-                          { path: "embedded", element: <LibrarySettingEmbedded /> },
                         ],
                       },
                     ],
@@ -713,13 +692,7 @@ const buildRoutes = () => {
                       { path: 'info', element: <LibrarySettingInfo /> },
                       { path: 'permission', element: <LibrarySettingPermission /> },
                       { path: 'api', element: <LibrarySettingApi /> },
-                      { path: 'recycle', element: <LibrarySettingRecycle /> },
-                      { path: 'chunk', element: <LibrarySettingChunk /> },
-                      {
-                        path: 'document-setting',
-                        element: <LibrarySettingDocument />
-                      },
-                      { path: 'embedded', element: <LibrarySettingEmbedded /> }
+                      { path: 'recycle', element: <LibrarySettingRecycle /> }
                     ]
                   }
                 ]

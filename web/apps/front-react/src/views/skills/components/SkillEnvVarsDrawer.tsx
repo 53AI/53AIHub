@@ -7,8 +7,6 @@ interface SkillEnvVarsDrawerProps {
   open: boolean
   skillId: string
   skillDisplayName?: string
-  /** 外部已提供的 env_vars 模板，若提供则跳过 getDetail 调用 */
-  envTemplates?: SkillEnvVarTemplate[]
   onClose: () => void
 }
 
@@ -18,7 +16,6 @@ const SkillEnvVarsDrawer: React.FC<SkillEnvVarsDrawerProps> = ({
   open,
   skillId,
   skillDisplayName,
-  envTemplates: externalEnvTemplates,
   onClose,
 }) => {
   const [loading, setLoading] = useState(false)
@@ -37,19 +34,12 @@ const SkillEnvVarsDrawer: React.FC<SkillEnvVarsDrawerProps> = ({
 
     setLoading(true)
     try {
-      // 如果外部已提供 envTemplates，只获取用户环境变量
-      if (externalEnvTemplates) {
-        setEnvTemplates(externalEnvTemplates)
-        const userVars = await skillApi.getMyEnvVars(skillId)
-        setUserEnvVars(userVars)
-      } else {
-        const [detail, userVars] = await Promise.all([
-          skillApi.getDetail(skillId),
-          skillApi.getMyEnvVars(skillId),
-        ])
-        setEnvTemplates(detail.env_vars || [])
-        setUserEnvVars(userVars)
-      }
+      const [detail, userVars] = await Promise.all([
+        skillApi.getDetail(skillId),
+        skillApi.getMyEnvVars(skillId),
+      ])
+      setEnvTemplates(detail.env_vars || [])
+      setUserEnvVars(userVars)
     } catch (error) {
       message.error('获取环境变量失败，请重试')
       console.error('获取技能环境变量失败:', error)
@@ -70,7 +60,7 @@ const SkillEnvVarsDrawer: React.FC<SkillEnvVarsDrawerProps> = ({
       return
     }
     void loadData()
-  }, [open, skillId, externalEnvTemplates])
+  }, [open, skillId])
 
   const handleStartEdit = (key: string) => {
     const current = userEnvMap.get(key)

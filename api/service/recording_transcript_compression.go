@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/53AI/53AIHub/model"
+	recordingdebug "github.com/53AI/53AIHub/service/recording_debug"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -513,7 +514,7 @@ func compressTranscriptSegment(ctx context.Context, config *model.RecordingConfi
 		}
 	}
 
-	result, err := callLLMWithRetry(ctx, config, buildRequest)
+	result, err := callLLMWithRetry(recordingdebug.WithLLMStage(ctx, recordingdebug.LLMStage(ctx, "transcript_compression_llm")), config, buildRequest)
 	if err != nil {
 		if isFatalError(err) {
 			return "", err
@@ -783,7 +784,7 @@ func compressTranscriptSemantic(ctx context.Context, config *compressionConfig, 
 				}
 			}
 
-			result, err := callLLMWithRetry(gCtx, actualCfg, buildRequest)
+			result, err := callLLMWithRetry(recordingdebug.WithLLMStage(gCtx, recordingdebug.LLMStage(gCtx, "transcript_compression_llm")), actualCfg, buildRequest)
 			if err != nil {
 				if isFatalError(err) {
 					return err

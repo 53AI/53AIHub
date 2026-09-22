@@ -20,7 +20,7 @@ func invalidatePermissionCacheForResources(eid int64, resourceType int, resource
 }
 
 func invalidatePermissionCacheForFile(eid, fileID int64) {
-	if err := invalidatePermissionCacheForResources(eid, model.RESOURCE_TYPE_FILE, []int64{fileID}); err != nil {
+	if err := invalidateFilePermissionCacheHierarchy(eid, fileID); err != nil {
 		logger.SysWarnf("Failed to clear permission cache: eid=%d resource_type=%d resource_ids=%v err=%v",
 			eid, model.RESOURCE_TYPE_FILE, []int64{fileID}, err)
 	}

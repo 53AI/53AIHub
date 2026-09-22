@@ -126,6 +126,10 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 }
 
 func IsValidParserPlatform(platform string) bool {
+	// 录音解析能力（recording_voice）只能作为管线解析引擎，不能作为录音配置的 parser_platform（来源隔离）
+	if platform == model.PLATFORM_KEY_RECORDING_VOICE {
+		return false
+	}
 	if strings.HasPrefix(platform, "voice:") || strings.HasPrefix(platform, "openai:") {
 		parts := strings.Split(platform, ":")
 		if len(parts) < 2 {

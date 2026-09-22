@@ -26,7 +26,7 @@ import {
 import { Setting } from "./components/Setting/Setting";
 import { SidePanel, SvgIcon, SafeImage, IconAction } from "@km/shared-components-react";
 import { eventBus } from "@km/shared-utils";
-import { Button, message, Popover, Tooltip } from "antd";
+import { Button, message, Popover } from "antd";
 import {
 	forwardRef,
 	useCallback,
@@ -78,7 +78,7 @@ import {
 	checkPermission as checkUserPermission,
 	checkPermissionAsync as checkUserPermissionAsync,
 } from "@/utils/permission";
-import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
+import { buildUrl } from "@/utils/router";
 import { checkVersion } from "@/utils/version";
 import AgentTooltip from "./components/AgentTooltip";
 import OpenClawPanel from "./components/OpenClawPanel";
@@ -623,7 +623,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			(state: any) => state.setCurrentState,
 		);
 		const shortcutsStore = useShortcutsStore();
-		const enterpriseStore = useEnterpriseStore();
 		const isSoftStyle = useIsSoftStyle();
 		const navigationStore = useNavigationStore();
 		const accessToken = useUserStore((state) => state.info.access_token);
@@ -1917,17 +1916,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 			},
 			[hasKnowledgeBase],
 		);
-
-		// 文件点击处理：跳转到知识库文件详情页
-		const handleFileClick = useCallback((file: any) => {
-			if (file.isfolder) return;
-			const libraryId = file.library_id;
-			const fileId = file.file_id || file.id;
-			if (libraryId && fileId) {
-				const url = buildKnowledgeFileUrl(libraryId, fileId);
-				window.open(url, "_blank", "noopener,noreferrer");
-			}
-		}, []);
 
 		// ProcessFlow 知识面板点击处理（打开右侧 ThinkKnowledge 抽屉）
 		const handleOpenKnowledgePanel = useCallback((data: KnowledgePanelData) => {

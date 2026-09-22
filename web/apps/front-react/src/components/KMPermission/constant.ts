@@ -3,6 +3,8 @@ export const RESOURCE_TYPE = {
   library: 1,
   file: 2,
   wiki_page: 3,
+  /** 空间级 Wiki（权限域），后端 resource_type=4；resource_id 为空间 id */
+  wiki: 4,
   /** 收藏系统专用：与权限系统的 RESOURCE_TYPE.space(=0) 区分，用于把空间加入收藏/快捷方式 */
   favorite_space: 4,
 } as const

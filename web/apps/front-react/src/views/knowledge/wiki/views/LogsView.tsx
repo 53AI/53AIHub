@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Spin } from "antd";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useSpaceStore } from "@/stores/modules/space";
@@ -25,6 +25,8 @@ const LogsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const hasMore = items.length < total;
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // 加载初始数据
   useEffect(() => {
@@ -69,11 +71,12 @@ const LogsView: React.FC = () => {
     hasMore,
     loadingMore,
     onLoadMore: handleLoadMore,
+    rootRef: scrollRef,
   });
 
   return (
     <div className="flex h-full relative">
-      <div className="flex-1 overflow-y-auto px-8 pt-5">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 pt-5">
         <h1 className="text-2xl font-medium text-main">{t("logs.title")}</h1>
         <div className="space-y-4 mt-6">
           {loading && items.length === 0 ? (

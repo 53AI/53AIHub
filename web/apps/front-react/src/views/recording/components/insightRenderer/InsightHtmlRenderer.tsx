@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type React from 'react'
 
 interface InsightHtmlRendererProps {
   html: string
@@ -17,7 +16,7 @@ export function InsightHtmlRenderer({ html }: InsightHtmlRendererProps) {
       const document = frameRef.current?.contentDocument
       if (!document) return
       const contentHeight = document.body?.clientHeight || 0
-      if (contentHeight > 0) setHeight(Math.max(640, contentHeight + 8))
+      if (contentHeight > 0) setHeight(Math.max(640, contentHeight + 68))
   }, [])
 
   useEffect(() => {
@@ -25,7 +24,7 @@ export function InsightHtmlRenderer({ html }: InsightHtmlRendererProps) {
     return () => window.removeEventListener('resize', measureHeight)
   }, [measureHeight])
 
-  const handleLoad = useCallback((event: React.SyntheticEvent<HTMLIFrameElement>) => {
+  const handleLoad = useCallback(() => {
     measureHeight()
     frameRef.current?.contentDocument?.querySelector('body')?.style.setProperty('overflow-y', 'hidden')
   }, [measureHeight])

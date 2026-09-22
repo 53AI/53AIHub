@@ -76,6 +76,13 @@ describe('MermaidFlowRenderer — TB 基础结构', () => {
     expect(container.querySelectorAll('.insight-mermaid-flow .insight-flow-node')).toHaveLength(3)
   })
 
+  it('flow 的 viewport 带 insight-mermaid-viewport-flow 类（超宽时居中溢出的 CSS 钩子）', () => {
+    const { container } = render(<MermaidFlowRenderer diagram={tbDiagram} />)
+    const vp = container.querySelector('.insight-mermaid-viewport')
+    expect(vp).not.toBeNull()
+    expect(vp!.className).toContain('insight-mermaid-viewport-flow')
+  })
+
   it('SVG 是边层，pointer-events: none, z-index: 1', () => {
     const { container } = render(<MermaidFlowRenderer diagram={tbDiagram} />)
     const svg = container.querySelector('svg.insight-flow-lines')!

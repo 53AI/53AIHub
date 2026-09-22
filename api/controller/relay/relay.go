@@ -28,6 +28,7 @@ import (
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
 	agentexec "github.com/53AI/53AIHub/service/agent"
+	chatdebug "github.com/53AI/53AIHub/service/chat_debug"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
 	Custom_openai "github.com/53AI/53AIHub/service/hub_adaptor/custom_openai"
 	Hub_openai "github.com/53AI/53AIHub/service/hub_adaptor/openai"
@@ -218,9 +219,28 @@ func Relay(c *gin.Context) {
 		c.JSON(400, model.ParamError.ToOpenAIErrorRespone(err))
 		return
 	}
+	_, trace := chatdebug.InitTrace(c, config.GetEID(c), helper.GetRequestID(c.Request.Context()))
+	defer func() {
+		if trace.RequestID == "" {
+			trace.RequestID = helper.GetRequestID(c.Request.Context())
+		}
+		if trace.RequestID == "" {
+			trace.RequestID = c.GetString(helper.RequestIdKey)
+		}
+		trace.SetSummary(trace.Model, c.Writer.Status(), 0, nil)
+		trace.FlushAsync()
+	}()
 
 	// 处理请求参数（包括参数解析、验证和转换）
 	processedBody, agent, err := ProcessRequestParams(c, body)
+	if agent != nil {
+		if trace.EID <= 0 {
+			trace.EID = agent.Eid
+		}
+		if trace.Model == "" {
+			trace.Model = agent.Model
+		}
+	}
 	if err != nil {
 		// 根据错误类型返回不同的HTTP状态码和错误信息
 		if err.Error() == "agent not found" {
@@ -393,7 +413,7 @@ func newSkillMessageStatsInfo(agent *model.Agent, relayMode int, requestId strin
 		ResponseStatus:    model.ResponseStatusNormal,
 		ThinkingMode:      model.ThinkingModeQuick,
 		KnowledgeScope:    "",
-		KnowledgeType:     model.KnowledgeTypeDatabase,
+		KnowledgeType:     model.KnowledgeTypeNone,
 		OriginalQuestion:  originalQuestion,
 		RewrittenQuestion: rewrittenQuestion,
 		AgentModel:        agent,
@@ -529,6 +549,7 @@ const (
 	maxHistoryMessageRuneLimit = 2000
 	maxIntentConversationItems = 2
 	maxIntentMessageRuneLimit  = 200
+	maxIntentAnswerRuneLimit   = 800
 )
 
 func runeCount(s string) int {
@@ -825,7 +846,7 @@ func buildIntentConversationFromMessages(messages []relay_model.Message, current
 		}
 
 		query = truncateToRunes(query, maxIntentMessageRuneLimit)
-		answer = truncateToRunes(answer, maxIntentMessageRuneLimit)
+		answer = truncateToRunes(answer, maxIntentAnswerRuneLimit)
 		pairs = append(pairs, rag.ConversationItem{
 			Query:  query,
 			Answer: answer,
@@ -858,20 +879,15 @@ func applyNormalizedQueryToMessages(messages []relay_model.Message, normalizedQu
 	return messages
 }
 
-// applyOutOfRangeContinuePrompt 超纲回复"继续生成"模式下，将拒答提示词追加到最后一条用户消息之后，
-// 保留原始问题，让模型在了解上下文的同时按提示词拒答（如"你是谁"可依据 agent 身份正常回答）。
-// 供 CHITCHAT 分支与 RAG 无来源分支共用，避免两处逻辑发散。
+// applyOutOfRangeContinuePrompt 超纲回复"继续生成"模式下，用兜底提示词替换最后一条用户消息。
+// 供 CHITCHAT 空回答分支与 RAG 无来源分支共用，避免两处逻辑发散。
 func applyOutOfRangeContinuePrompt(chatRequest *ChatRequest, prompt string) {
 	if prompt == "" {
 		return
 	}
 	for i := len(chatRequest.Messages) - 1; i >= 0; i-- {
 		if chatRequest.Messages[i].Role == "user" {
-			if existing, ok := chatRequest.Messages[i].Content.(string); ok {
-				chatRequest.Messages[i].Content = existing + "\n\n" + prompt
-			} else {
-				chatRequest.Messages[i].Content = prompt
-			}
+			chatRequest.Messages[i].Content = prompt
 			break
 		}
 	}
@@ -898,6 +914,29 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	}
 
 	requestCtx, execCtx, requestID := prepareDetachedExecutionContext(c, helper.GetRequestID(c.Request.Context()))
+	var eid int64
+	if agent != nil {
+		eid = agent.Eid
+	} else {
+		eid = config.GetEID(c)
+	}
+	trace := chatdebug.GetTrace(execCtx)
+	if trace == nil {
+		_, trace = chatdebug.InitTrace(c, eid, requestID)
+	} else {
+		trace.EID = eid
+		trace.RequestID = requestID
+	}
+	if agent != nil && trace.Model == "" {
+		trace.Model = agent.Model
+	}
+	execCtx = chatdebug.WithTrace(execCtx, trace)
+	defer func() {
+		if trace != nil {
+			trace.SetSummary(trace.Model, c.Writer.Status(), 0, nil)
+			trace.FlushAsync()
+		}
+	}()
 	executionCtx := execCtx
 	if config.AGENT_MAX_WALL_CLOCK_SECONDS > 0 {
 		var executionDeadlineCancel context.CancelFunc
@@ -910,7 +949,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	runCtx, runCancel := startAgentRunCancelWatcher(executionCtx, agent.Eid, requestID, time.Second)
 	defer runCancel()
 	if c != nil && c.Request != nil {
-		c.Request = c.Request.WithContext(runCtx)
+		c.Request = c.Request.WithContext(chatdebug.WithTrace(runCtx, trace))
 	}
 	ctx := c.Request.Context()
 	var runEventSink *service.AgentRunEventSink
@@ -975,6 +1014,9 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	var originalQuestion, rewrittenQuestion string
 
 	originalQuestion = getLastUserMessageText(chatRequest.Messages)
+	if trace != nil && originalQuestion != "" {
+		trace.SetQuery(originalQuestion)
+	}
 
 	currentUserID := config.GetUserId(c)
 	maxTurns := effectiveAgentMaxTurns(config.AGENT_MAX_TURNS, config.AGENT_MAX_TURNS_HARD_LIMIT)
@@ -1148,8 +1190,8 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			},
 		}
 	} else {
+		intentStartTime := time.Now()
 		messageStatus.StepSender.SendStartStep(STEP_INTENT_CLASSIFICATION, "正在识别意图...", nil)
-
 		// 意图识别，传入可用技能
 		contentGenerator := rag.NewContentGeneratorService(model.DB)
 		query := messageStatus.RewrittenQuestion
@@ -1226,9 +1268,8 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		} else {
 			routingSpan.End(agentexec.StatusCompleted, nil)
 		}
-
 		messageStatus.StepSender.SendEndStep(STEP_INTENT_CLASSIFICATION, "意图识别完成", buildIntentClassificationStepData(classificationResult))
-
+		chatdebug.RecordIntent(ctx, intentReq, classificationResult, autoMatchSkills, time.Since(intentStartTime).Milliseconds(), routingErr)
 		if classificationResult.Intent == "COMPLEX_AGENT" {
 			messageStatus.StepSender.SendStartStep(STEP_QUERY_EXPANSION, "正在拆解复杂问题...", nil)
 			expansionResult := queryExpansionResultFromIntent(classificationResult)
@@ -1247,26 +1288,18 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 		// 处理意图分支
 		switch classificationResult.Intent {
 		case "CHITCHAT":
-			// 拒答策略优先：分类器 answer 不作为回复，避免无 agent 身份的死板文案。
-			// fixed_reply 对全部闲聊生效；continue 交给真实 agent 模型生成（保留原问题并追加拒答提示词）。
-			outOfRangeConfig, _ := agent.GetOutOfRangeReplyConfig()
-			if outOfRangeConfig != nil && outOfRangeConfig.Enable {
-				if outOfRangeConfig.Mode == "continue" {
-					if outOfRangeConfig.Prompt != "" {
-						applyOutOfRangeContinuePrompt(&chatRequest, outOfRangeConfig.Prompt)
-						logger.Infof(ctx, "启用超纲回复(继续生成模式)，已追加 Prompt")
-					}
-					messageStatus.RouterResult = &RouterResult{
-						IntentClassificationResult: classificationResult,
-					}
-					processChatRequestV2(c, &chatRequest, ctx, messageStatus)
-					return
-				}
-				// fixed_reply 模式：固定文案对全部闲聊生效
-				if outOfRangeConfig.Reply != "" {
+			// 修复 BUG #1133244388001005148: 如果闲聊回答为空，使用拒答文案。
+			// 仅在固定回复模式下直接返回固定文案；continue 模式交给模型继续生成（带兜底提示词）。
+			if classificationResult.Answer == "" {
+				outOfRangeConfig, _ := agent.GetOutOfRangeReplyConfig()
+				if outOfRangeConfig != nil && outOfRangeConfig.Enable && outOfRangeConfig.Mode != "continue" && outOfRangeConfig.Reply != "" {
 					stepSender.SendOutOfRangeReply()
 					handleOutOfRangeReply(c, &chatRequest, agent, outOfRangeConfig.Reply, requestId, relayMode, messageStatus)
 					return
+				}
+				if outOfRangeConfig != nil && outOfRangeConfig.Mode == "continue" && outOfRangeConfig.Prompt != "" {
+					applyOutOfRangeContinuePrompt(&chatRequest, outOfRangeConfig.Prompt)
+					logger.Infof(ctx, "启用超纲回复(继续生成模式)，已替换 Prompt")
 				}
 			}
 			// 未开启拒答策略：维持原逻辑（分类器 answer 兜底 / AI 生成）
@@ -1336,6 +1369,16 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			sendSkillUnavailableReply(c, &chatRequest, agent, relayMode, messageStatus.OriginalQuestion)
 			return
 
+		case "STATS_COUNT":
+			// 统计计数类问题：ES 全库全文计数，跳过 RAG 检索与 LLM 生成
+			if tryHandleStatsCount(c, &chatRequest, ctx, messageStatus, classificationResult, agent, requestId) {
+				return
+			}
+			// 统计失败，降级走 RAG
+			messageStatus.RouterResult = &RouterResult{
+				IntentClassificationResult: classificationResult,
+			}
+
 		default: // SIMPLE_RAG, COMPLEX_AGENT
 			// Continue to RAG flow
 			messageStatus.RouterResult = &RouterResult{
@@ -1379,12 +1422,33 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 	if agent.AgentUsage != model.AgentUsageHub {
 		logger.Infof(ctx, "【网络搜索】智能体允许进入 RAG：agent_usage=%d，开始判定知识库与网络搜索分支", agent.AgentUsage)
 		retrievalSpan := requestExecutionContext.BeginStage(agentexec.StageRetrieval, nil)
+		ragStartTime := time.Now()
 		sources, err = HandleRAG(c, &chatRequest, ctx, messageStatus)
 		if err != nil {
 			retrievalSpan.End(agentexec.StatusFailed, err)
 		} else {
 			retrievalSpan.End(agentexec.StatusCompleted, nil)
 		}
+		ragDuration := time.Since(ragStartTime).Milliseconds()
+		var retrievalObsMap map[string]interface{}
+		if obs, ok := c.Get("rag_retrieval_observability"); ok {
+			if m, ok := obs.(map[string]interface{}); ok {
+				// 复制一份再注入 debug 数据（search_config 等），避免修改到
+				// c 中共享的 map——否则后续 SaveRAGStats 落库 rag_stats 会读到
+				// 被 debug 数据污染的值（曾因 dropped_sources 完整内容超 TEXT 上限截断）。
+				retrievalObsMap = make(map[string]interface{}, len(m))
+				for k, v := range m {
+					retrievalObsMap[k] = v
+				}
+			}
+		}
+		if retrievalObsMap == nil {
+			retrievalObsMap = make(map[string]interface{})
+		}
+		if cfg, ok := c.Get("rag_search_config_snapshot"); ok {
+			retrievalObsMap["search_config"] = cfg
+		}
+		chatdebug.RecordRAG(ctx, messageStatus.RewrittenQuestion, sources, nil, ragDuration, retrievalObsMap, err)
 		if err != nil {
 			if chatRequest.Stream {
 				writeStreamOpenAIError(c, 500, model.ParamError.ToOpenAIErrorRespone(err))
@@ -1406,7 +1470,7 @@ func handleChatRequest(c *gin.Context, body []byte, agent *model.Agent, relayMod
 			// 使用兜底提示词替换用户问题（如果有）
 			if outOfRangeConfig.Prompt != "" {
 				applyOutOfRangeContinuePrompt(&chatRequest, outOfRangeConfig.Prompt)
-				logger.Infof(ctx, "启用超纲回复(继续生成模式)，已追加 Prompt")
+				logger.Infof(ctx, "启用超纲回复(继续生成模式)，已替换 Prompt")
 			}
 			// 不返回，继续执行后续流程（processChatRequestV2）
 		} else {
@@ -1761,14 +1825,15 @@ func resolveExecutionChannel(ctx context.Context, agent *model.Agent, requestMod
 // ... existing code ...
 
 // rerankSources 对 SourceReference 列表进行重排序
-func rerankSources(ctx context.Context, agent *model.Agent, chatRequest *ChatRequest, query string, sources []rag.SourceReference) ([]rag.SourceReference, error) {
+func rerankSources(ctx context.Context, agent *model.Agent, chatRequest *ChatRequest, query string, sources []rag.SourceReference) ([]rag.SourceReference, []rag.SourceReference, error) {
 	finalTopK := 20
 	if chatRequest != nil && chatRequest.SearchConfig != nil && chatRequest.SearchConfig.TopK > 0 {
 		finalTopK = chatRequest.SearchConfig.TopK
 	}
 	rerankConfig, err := agent.GetRerankConfig()
 	if err != nil || rerankConfig == nil || !rerankConfig.RerankingEnable {
-		return limitSourceReferencesTopK(sources, finalTopK), err
+		selected, dropped := splitTopKSourcesWithDropped(sources, finalTopK)
+		return selected, dropped, err
 	}
 	// 请求级 TopK 是本次检索的最终数量契约；其余模型、渠道和阈值仍沿用 Agent 配置。
 	effectiveRerankConfig := *rerankConfig
@@ -1776,16 +1841,21 @@ func rerankSources(ctx context.Context, agent *model.Agent, chatRequest *ChatReq
 
 	graphSources, rerankableSources := splitGraphAggregateSources(sources)
 	if len(rerankableSources) == 0 {
-		return graphSources, nil
+		return graphSources, nil, nil
 	}
 
-	// 转换为 SearchResultItem。Web 来源可能没有 ChunkID，或和其他来源冲突，
-	// 因此为本次重排分配唯一的内部候选 ID，映射回响应时恢复原始来源字段。
+	for i := range rerankableSources {
+		if rerankableSources[i].RawScore == 0 {
+			rerankableSources[i].RawScore = rerankableSources[i].Score
+		}
+		rerankableSources[i].SourceRank = i + 1
+	}
+
 	ragItems, sourceMap := buildFinalRerankItems(rerankableSources)
 
 	// 执行重排
 	rerankService := rag.NewRerankService(model.DB)
-	rerankedItems, err := rerankService.PerformRerank(
+	rerankedItems, fullScoredItems, err := rerankService.PerformRerankWithFullScores(
 		ctx,
 		agent.Eid,
 		query,
@@ -1793,12 +1863,52 @@ func rerankSources(ctx context.Context, agent *model.Agent, chatRequest *ChatReq
 		&effectiveRerankConfig,
 	)
 	if err != nil {
-		return limitSourceReferencesTopK(append(graphSources, rerankableSources...), finalTopK), err
+		selected, dropped := splitTopKSourcesWithDropped(append(graphSources, rerankableSources...), finalTopK)
+		return selected, dropped, err
+	}
+
+	selectedIDSet := make(map[int64]bool, len(rerankedItems))
+	for _, item := range rerankedItems {
+		selectedIDSet[item.ChunkID] = true
+	}
+
+	// 全量重排分数表（TopK 截断前），用于给被淘汰切片回填重排相关性终分，
+	// 支撑 chat_debug「被淘汰切片」排查：区分"重排分数确实低"与"仅因排名超 TopK 被截断"。
+	fullScoreMap := make(map[int64]float64, len(fullScoredItems))
+	for _, item := range fullScoredItems {
+		fullScoreMap[item.ChunkID] = item.Score
+	}
+
+	var droppedSources []rag.SourceReference
+	for _, item := range ragItems {
+		if !selectedIDSet[item.ChunkID] {
+			orig := sourceMap[item.ChunkID]
+			if score, ok := fullScoreMap[item.ChunkID]; ok {
+				orig.Score = score
+			}
+			droppedSources = append(droppedSources, orig)
+		}
+	}
+
+	// 淘汰切片调试日志（不落库）：摘要走 SysLogf 供 chat_debug 按 request_id 查询，
+	// 逐条走 Debugf。重排分已回填，可直接区分"重排分低（确实不相关）"与"排名超 TopK 被截断（疑似误杀）"。
+	if len(droppedSources) > 0 {
+		topRef, topScore := "", 0.0
+		for _, ds := range droppedSources {
+			if ds.Score > topScore {
+				topScore, topRef = ds.Score, ds.ReferenceID
+			}
+		}
+		logger.SysLogf("【重排】淘汰切片: 共 %d 条，最高重排分 %.4f（reference_id=%s），逐条见 Debug 日志",
+			len(droppedSources), topScore, topRef)
+		for _, ds := range droppedSources {
+			logger.Debugf(ctx, "【重排】淘汰切片: reference_id=%s 初检第%d位 初检分=%.4f 重排分=%.4f 预览=%s",
+				ds.ReferenceID, ds.SourceRank, ds.RawScore, ds.Score, truncateContent(ds.Content, 50))
+		}
 	}
 
 	newSources := restoreFinalRerankSources(rerankedItems, sourceMap)
-
-	return append(graphSources, newSources...), nil
+	return append(graphSources, newSources...), droppedSources, nil
 }
 
 func buildFinalRerankItems(sources []rag.SourceReference) ([]rag.SearchResultItem, map[int64]rag.SourceReference) {
@@ -1838,21 +1948,31 @@ func restoreFinalRerankSources(items []rag.SearchResultItem, originals map[int64
 		if !ok {
 			continue
 		}
+		if original.RawScore == 0 {
+			original.RawScore = original.Score
+		}
 		original.Score = item.Score
 		restored = append(restored, original)
 	}
 	return restored
 }
 
-func limitSourceReferencesTopK(sources []rag.SourceReference, topK int) []rag.SourceReference {
-	if topK <= 0 {
-		return sources
+func splitTopKSourcesWithDropped(sources []rag.SourceReference, topK int) ([]rag.SourceReference, []rag.SourceReference) {
+	if topK <= 0 || len(sources) <= topK {
+		return sources, nil
 	}
 	graphSources, rerankableSources := splitGraphAggregateSources(sources)
-	if len(rerankableSources) > topK {
-		rerankableSources = rerankableSources[:topK]
+	if len(rerankableSources) <= topK {
+		return append(graphSources, rerankableSources...), nil
 	}
-	return append(graphSources, rerankableSources...)
+	selected := rerankableSources[:topK]
+	dropped := rerankableSources[topK:]
+	return append(graphSources, selected...), dropped
+}
+
+func limitSourceReferencesTopK(sources []rag.SourceReference, topK int) []rag.SourceReference {
+	selected, _ := splitTopKSourcesWithDropped(sources, topK)
+	return selected
 }
 
 func splitGraphAggregateSources(sources []rag.SourceReference) ([]rag.SourceReference, []rag.SourceReference) {
@@ -3394,7 +3514,14 @@ func postConsumeQuota(c *gin.Context, agent *model.Agent, user_id int64, startTi
 		// 不阻断主流程
 	}
 	responseContent = message.Answer
-
+	llmDuration := time.Since(startTime).Milliseconds()
+	llmParams := map[string]interface{}{
+		"temperature": textRequest.Temperature,
+		"top_p":       textRequest.TopP,
+		"max_tokens":  textRequest.MaxTokens,
+		"stream":      meta.IsStream,
+	}
+	chatdebug.RecordLLM(ctx, textRequest.Model, textRequest.Messages, responseContent, int64(promptTokens), int64(completionTokens), llmDuration, nil, llmParams)
 	// 更新消息到数据库
 	if err := model.UpdateMessage(message); err != nil {
 		logger.Errorf(ctx, "UpdateMessage failed: %s", err.Error())
@@ -3537,11 +3664,15 @@ func GetByContext(c *gin.Context) *relay_meta.Meta {
 		meta.Config = cfg.(oneapi_model.ChannelConfig)
 	}
 	if meta.BaseURL == "" {
-		if meta.ChannelType >= 0 && meta.ChannelType < len(channeltype.ChannelBaseURLs) {
+		if meta.ChannelType >= 0 && meta.ChannelType < len(channeltype.ChannelBaseURLs) && channeltype.ChannelBaseURLs[meta.ChannelType] != "" {
 			meta.BaseURL = channeltype.ChannelBaseURLs[meta.ChannelType]
+		} else if meta.ChannelType == model.ChannelApiTypeGlmCodingPlan {
+			meta.BaseURL = model.GlmCodingPlanDefaultBaseURL
+		} else if meta.ChannelType == model.ChannelApiTypeTencentTokenHub {
+			meta.BaseURL = model.TencentTokenHubDefaultBaseURL
 		}
 	}
-	meta.APIType = channeltype.ToAPIType(meta.ChannelType)
+	meta.APIType = model.GetApiType(meta.ChannelType)
 	return &meta
 }
 

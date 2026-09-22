@@ -93,12 +93,16 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
   try {
     const data = await result.handler(req, result.params, body)
+    // 允许 handler 通过 { __status, __body } 指定 HTTP 状态码（例如对齐后端的 400 校验失败）
+    const hasStatus = !!data && typeof data === 'object' && typeof (data as any).__status === 'number'
+    const payload = hasStatus ? (data as any).__body : data
+
     res.setHeader('Content-Type', 'application/json')
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS')
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    res.statusCode = 200
-    res.end(JSON.stringify(data))
+    res.statusCode = hasStatus ? (data as any).__status : 200
+    res.end(JSON.stringify(payload))
   } catch (err: any) {
     res.setHeader('Content-Type', 'application/json')
     res.statusCode = 500

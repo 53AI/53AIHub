@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react'
+import { useState, forwardRef, useImperativeHandle, useRef } from 'react'
 import { Form, Input, Button, Radio, message } from 'antd'
 import { useUserStore } from '@/stores/modules/user'
 import { useEmail } from '@/hooks/useEmail'
@@ -6,6 +6,9 @@ import { useMobile } from '@/hooks/useMobile'
 import { useEnv } from '@/hooks/useEnv'
 import userApi from '@/api/modules/user'
 import { t } from '@/locales'
+import { noSpaceKeydownHandler } from '@km/shared-utils'
+import { usePasswordRules } from '@/hooks/usePasswordPolicy'
+import VerifyCodeField from '@/components/VerifyCodeField'
 
 type VerifyWay = 'email_verify' | 'mobile_verify'
 
@@ -28,11 +31,11 @@ export const ForgetPassword = forwardRef<ForgetPasswordRef, ForgetPasswordProps>
     const [form] = Form.useForm()
     const userStore = useUserStore()
     const { isOpLocalEnv } = useEnv()
-    const { emailCodeCount, sendEmailCode } = useEmail()
-    const { codeCount, sendcode } = useMobile()
+    const { emailCodeCount, emailCodeRule, sendEmailCode, emailSending } = useEmail()
+    const { codeCount, codeRule, sendcode, sending } = useMobile()
+    const { passwordRule } = usePasswordRules()
 
     const [verifyWay, setVerifyWay] = useState<VerifyWay>('email_verify')
-    const [isSending, setIsSending] = useState(false)
     const [existingAccount, setExistingAccount] = useState(true)
     const [isRegister, setIsRegister] = useState(true)
 
@@ -150,10 +153,6 @@ export const ForgetPassword = forwardRef<ForgetPasswordRef, ForgetPasswordProps>
       onClose?.()
     }
 
-    useEffect(() => {
-      setIsSending(emailCodeCount > 0 || codeCount > 0)
-    }, [emailCodeCount, codeCount])
-
     return (
       <div>
         {!isOpLocalEnv && (
@@ -199,40 +198,25 @@ export const ForgetPassword = forwardRef<ForgetPasswordRef, ForgetPasswordProps>
             />
           </Form.Item>
 
-          <Form.Item
-            label={t('form.verify_code')}
+          <VerifyCodeField
             name="verify_code"
-            rules={[
-              { required: true, message: t('form.input_placeholder') + t('form.verify_code') },
-              { pattern: /^\d{6}$/, message: t('form.verify_code_format') }
-            ]}
-          >
-            <Input
-              size="large"
-              placeholder={t('form.input_placeholder') + t('form.verify_code')}
-              addonAfter={
-                <Button
-                  type="link"
-                  disabled={isRegister || isSending}
-                  onClick={handleGetCode}
-                >
-                  <span className={isRegister || isSending ? 'text-[#9A9A9A]' : 'text-[#2563EB]'}>
-                    {getCodeCount > 0 ? `${getCodeCount}s` : t('form.get_verify_code')}
-                  </span>
-                </Button>
-              }
-            />
-          </Form.Item>
+            rule={verifyWay === 'email_verify' ? emailCodeRule : codeRule}
+            count={getCodeCount}
+            disabled={isRegister}
+            loading={verifyWay === 'email_verify' ? emailSending : sending}
+            onClick={handleGetCode}
+            size="large"
+          />
 
           <Form.Item
             label={t('form.new_password')}
             name="new_password"
             rules={[
               { required: true, message: t('form.new_password_placeholder') },
-              { min: 8, max: 20, message: t('form.password_length') }
+              passwordRule
             ]}
           >
-            <Input.Password size="large" placeholder={t('form.new_password_placeholder')} />
+            <Input.Password size="large" placeholder={t('form.new_password_placeholder')} onKeyDown={noSpaceKeydownHandler} />
           </Form.Item>
 
           <Form.Item
@@ -246,12 +230,12 @@ export const ForgetPassword = forwardRef<ForgetPasswordRef, ForgetPasswordProps>
                   if (!value || getFieldValue('new_password') === value) {
                     return Promise.resolve()
                   }
-                  return Promise.reject(new Error(t('form.password_mismatch')))
+                  return Promise.reject(new Error(t('form.password_not_match')))
                 }
               })
             ]}
           >
-            <Input.Password size="large" placeholder={t('form.new_password_confirm_placeholder')} />
+            <Input.Password size="large" placeholder={t('form.new_password_confirm_placeholder')} onKeyDown={noSpaceKeydownHandler} />
           </Form.Item>
 
           <Button type="primary" size="large" block shape="round" className="mt-3 h-10" htmlType="submit">

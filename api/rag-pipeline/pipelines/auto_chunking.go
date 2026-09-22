@@ -82,12 +82,6 @@ func (p *AutoChunkingPipeline) Initialize() error {
 		return err
 	}
 
-	// 添加触发生成知识地图任务步骤
-	triggerKMStep := steps.NewTriggerGenerateKnowledgeMapStep(p.DB)
-	if err := p.AddStep("trigger_generate_knowledge_map", triggerKMStep); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -164,12 +158,6 @@ func (p *AutoChunkingPipeline) PrepareStepParameters(order int) interface{} {
 			FileID:         fileID,
 			UserID:         userID,
 			RunAIIndexTask: true,
-		}
-	case 8:
-		return steps.TriggerGenerateKnowledgeMapParameters{
-			Eid:    eid,
-			FileID: fileID,
-			UserID: userID,
 		}
 	default:
 		return nil

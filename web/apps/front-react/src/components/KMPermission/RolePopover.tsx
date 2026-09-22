@@ -7,6 +7,7 @@ import {
   type PermissionType,
   type ResourceType,
 } from "./constant";
+import { PERMISSION_LABEL, PERMISSION_DESC } from "./permission-label";
 import "./RolePopover.css";
 
 interface RoleOption {
@@ -46,45 +47,47 @@ export function RolePopover({
   const [open, setOpen] = useState(false);
 
   const roleOptions = useMemo<RoleOption[]>(() => {
+    const inheritLabel =
+      resourceType === RESOURCE_TYPE.space
+        ? "继承团队空间权限"
+        : PERMISSION_LABEL[PERMISSION_TYPE.inherit];
     let options: RoleOption[] = [
       {
-        title:
-          resourceType === RESOURCE_TYPE.space
-            ? "继承团队空间权限"
-            : "继承上级权限",
-        desc:
-          resourceType === RESOURCE_TYPE.space
-            ? "继承团队空间权限"
-            : "继承上级权限",
+        title: inheritLabel,
+        desc: inheritLabel,
         value: PERMISSION_TYPE.inherit,
       },
       {
-        title: "可管理",
-        desc: "可编辑/下载/导出，添加成员",
+        title: PERMISSION_LABEL[PERMISSION_TYPE.manage],
+        desc: PERMISSION_DESC[PERMISSION_TYPE.manage],
         value: PERMISSION_TYPE.manage,
       },
       {
-        title: "可编辑知识&语料",
-        desc: "可编辑知识和语料",
+        title: PERMISSION_LABEL[PERMISSION_TYPE.edit_all],
+        desc: PERMISSION_DESC[PERMISSION_TYPE.edit_all],
         value: PERMISSION_TYPE.edit_all,
       },
       {
-        title: "可编辑知识",
-        desc: "编辑知识，不可编辑语料",
+        title: PERMISSION_LABEL[PERMISSION_TYPE.edit_knowledge],
+        desc: PERMISSION_DESC[PERMISSION_TYPE.edit_knowledge],
         value: PERMISSION_TYPE.edit_knowledge,
       },
       {
-        title: "可查看/导出",
-        desc: "可查看及下载导出",
+        title: PERMISSION_LABEL[PERMISSION_TYPE.view_and_export],
+        desc: PERMISSION_DESC[PERMISSION_TYPE.view_and_export],
         value: PERMISSION_TYPE.view_and_export,
       },
       {
-        title: "仅查看",
-        desc: "仅查看，不可下载导出",
+        title: PERMISSION_LABEL[PERMISSION_TYPE.viewer],
+        desc: PERMISSION_DESC[PERMISSION_TYPE.viewer],
         value: PERMISSION_TYPE.viewer,
       },
-      { title: "无权限", desc: "无权限，不可见", value: PERMISSION_TYPE.none },
-      { title: "移除", value: PERMISSION_TYPE.remove },
+      {
+        title: PERMISSION_LABEL[PERMISSION_TYPE.none],
+        desc: PERMISSION_DESC[PERMISSION_TYPE.none],
+        value: PERMISSION_TYPE.none,
+      },
+      { title: PERMISSION_LABEL[PERMISSION_TYPE.remove], value: PERMISSION_TYPE.remove },
     ];
 
     if (!inherit) {
@@ -95,6 +98,9 @@ export function RolePopover({
     }
     if (!remove) {
       options = options.filter((o) => o.value !== PERMISSION_TYPE.remove);
+    }
+    if (resourceType === RESOURCE_TYPE.wiki_page) {
+      options = options.filter((o) => o.value !== PERMISSION_TYPE.edit_all);
     }
 
     const removeOption = options.find(

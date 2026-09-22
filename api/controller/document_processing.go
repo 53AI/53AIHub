@@ -56,6 +56,11 @@ func ReindexDocument(c *gin.Context) {
 		return
 	}
 
+	// 验证文件权限
+	if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限重新索引此文档"); !ok {
+		return
+	}
+
 	if req.Mode == "" {
 		req.Mode = "reindex_retrieval"
 	}
@@ -120,6 +125,23 @@ func ReprocessRetrievalChunks(c *gin.Context) {
 	if req.IndexMaxLength < 0 {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("index_max_length 不能小于 0"))
 		return
+	}
+
+	// 验证权限
+	if req.FileID > 0 {
+		if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限重拆此文件检索块"); !ok {
+			return
+		}
+	} else if req.LibraryID > 0 {
+		if _, ok := requireLibraryPermission(c, eid, userID, req.LibraryID, model.PERMISSION_EDIT_ALL, "无权限重拆此知识库检索块"); !ok {
+			return
+		}
+	} else if req.SpaceID > 0 {
+		perm, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_SPACE, req.SpaceID, userID)
+		if err != nil || perm < model.PERMISSION_MANAGE {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限重拆此空间检索块")))
+			return
+		}
 	}
 
 	serviceManager := service.GetServiceManager()
@@ -187,6 +209,23 @@ func GenerateQuestionsSummaryAndEntitiesMigration(c *gin.Context) {
 	if scopeCount != 1 {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("必须且只能指定一个范围：file_id / library_id / space_id"))
 		return
+	}
+
+	// 验证权限
+	if req.FileID > 0 {
+		if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限迁移此文件"); !ok {
+			return
+		}
+	} else if req.LibraryID > 0 {
+		if _, ok := requireLibraryPermission(c, eid, userID, req.LibraryID, model.PERMISSION_EDIT_ALL, "无权限迁移此知识库"); !ok {
+			return
+		}
+	} else if req.SpaceID > 0 {
+		perm, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_SPACE, req.SpaceID, userID)
+		if err != nil || perm < model.PERMISSION_MANAGE {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限迁移此空间")))
+			return
+		}
 	}
 
 	runForFileID := func(fileID int64) error {
@@ -419,21 +458,17 @@ func PreviewChunking(c *gin.Context) {
 	req.ChunkingConfig.KnowledgeChunk.ResetBySystemDefault()
 	req.ChunkingConfig.IndexChunk.ResetBySystemDefault()
 
-	// 获取文件信息
-	var file model.File
-	err := model.DB.Where("eid = ? AND id = ?", eid, req.FileID).First(&file).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, model.NotFound.ToResponse("文件不存在"))
-		} else {
-			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
-		}
+	// 获取文件信息并验证权限
+	userID := config.GetUserId(c)
+	filePtr, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限预览此文档分块")
+	if !ok {
 		return
 	}
+	file := *filePtr
 
 	// 获取文件内容
 	var fileBody model.FileBody
-	err = model.DB.Where("file_id = ?", req.FileID).Last(&fileBody).Error
+	err := model.DB.Where("file_id = ?", req.FileID).Last(&fileBody).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, model.NotFound.ToResponse("文件内容不存在"))

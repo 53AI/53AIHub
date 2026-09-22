@@ -22,9 +22,7 @@ func encodeInsightHTMLPage(rawHTML, sourceMarkdown string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if insightMarkdownNeedsInlineSVG(sourceMarkdown) && !strings.Contains(strings.ToLower(html), "<svg") {
-		return "", fmt.Errorf("第一步包含 Mermaid 图，但第二步 HTML 未生成内联 SVG")
-	}
+	// Prompt 5 规范允许在简单流程时用 div 布局模拟流程图，因此不强制拦截无 <svg 的 HTML
 	payload, err := json.Marshal(insightHTMLPage{
 		Format:  insightPageHTMLFormat,
 		Version: 1,
@@ -36,26 +34,15 @@ func encodeInsightHTMLPage(rawHTML, sourceMarkdown string) (string, error) {
 	return string(payload), nil
 }
 
-func insightMarkdownNeedsInlineSVG(markdown string) bool {
-	lower := strings.ToLower(markdown)
-	return strings.Contains(lower, "```mermaid") || strings.Contains(lower, "~~~mermaid")
-}
-
 func normalizeInsightHTML(rawHTML string) (string, error) {
 	html := strings.TrimSpace(rawHTML)
 	html = strings.TrimPrefix(html, "\ufeff")
-	if strings.HasPrefix(html, "```") {
-		lines := strings.Split(html, "\n")
-		if len(lines) >= 3 && strings.HasPrefix(strings.TrimSpace(lines[len(lines)-1]), "```") {
-			html = strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n"))
-		}
-	}
 	if html == "" {
 		return "", fmt.Errorf("洞察 HTML 页面为空")
 	}
-	if !strings.HasPrefix(strings.ToLower(html), "<!doctype html>") ||
-		!strings.Contains(strings.ToLower(html), "<html") ||
-		!strings.Contains(strings.ToLower(html), "</html>") {
+
+	html = extractInsightHTMLDocument(html)
+	if html == "" {
 		return "", fmt.Errorf("洞察 HTML 页面不是完整 HTML 文档")
 	}
 
@@ -85,4 +72,79 @@ func normalizeInsightHTML(rawHTML string) (string, error) {
 		}
 	}
 	return html, nil
+}
+
+func extractInsightHTMLDocument(rawHTML string) string {
+	if fenced := extractFencedInsightHTML(rawHTML); fenced != "" {
+		rawHTML = fenced
+	}
+
+	lower := strings.ToLower(rawHTML)
+	start := indexHTMLTag(lower, "<html")
+	if start < 0 {
+		return ""
+	}
+
+	closingStart := indexHTMLTag(lower[start:], "</html")
+	if closingStart < 0 {
+		return ""
+	}
+	closingStart += start
+	closingEnd := strings.IndexByte(rawHTML[closingStart:], '>')
+	if closingEnd < 0 {
+		return ""
+	}
+	closingEnd += closingStart + 1
+
+	documentStart := start
+	prefix := rawHTML[:start]
+	if doctypeStart := strings.LastIndex(strings.ToLower(prefix), "<!doctype html>"); doctypeStart >= 0 && strings.TrimSpace(prefix[doctypeStart+len("<!doctype html>"):]) == "" {
+		documentStart = doctypeStart
+	}
+
+	document := strings.TrimSpace(rawHTML[documentStart:closingEnd])
+	if !strings.HasPrefix(strings.ToLower(document), "<!doctype html>") {
+		document = "<!doctype html>\n" + document
+	}
+	return document
+}
+
+func extractFencedInsightHTML(rawHTML string) string {
+	lines := strings.Split(rawHTML, "\n")
+	for start, line := range lines {
+		fence := strings.TrimSpace(line)
+		if !strings.HasPrefix(fence, "```") {
+			continue
+		}
+		language := strings.TrimSpace(strings.TrimPrefix(fence, "```"))
+		if language != "" && !strings.EqualFold(language, "html") {
+			continue
+		}
+		for end := start + 1; end < len(lines); end++ {
+			if strings.HasPrefix(strings.TrimSpace(lines[end]), "```") {
+				candidate := strings.TrimSpace(strings.Join(lines[start+1:end], "\n"))
+				if indexHTMLTag(strings.ToLower(candidate), "<html") >= 0 {
+					return candidate
+				}
+				break
+			}
+		}
+	}
+	return ""
+}
+
+func indexHTMLTag(input, tag string) int {
+	for offset := 0; offset < len(input); {
+		index := strings.Index(input[offset:], tag)
+		if index < 0 {
+			return -1
+		}
+		index += offset
+		end := index + len(tag)
+		if end == len(input) || strings.ContainsRune(" \t\r\n>", rune(input[end])) {
+			return index
+		}
+		offset = end
+	}
+	return -1
 }

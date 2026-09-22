@@ -29,23 +29,27 @@ export function PageLayoutTabs({
 
   // 受控/非受控模式
   const activeKey = controlledActiveKey ?? internalActiveKey;
+  // 只依赖 tab 参数的值，而不是整个 searchParams。
+  // 兄弟 tab 的 useListState 会持续改写共享 query（intl_acc_*/intl_grp_* 等），
+  // 若把整个 searchParams 作为依赖，会在切换瞬间被其状态波动带偏，误把激活 tab 弹回上一项。
+  const urlTabParam = searchParams.get(urlParamName);
 
-  // 从 URL 初始化
+  // 从 URL 同步 tab：仅在 tab 参数真正变化时执行，忽略无关参数改动
   useEffect(() => {
-    if (syncUrl) {
-      const urlTab = searchParams.get(urlParamName);
-      if (urlTab && visibleTabs.some((t) => t.key === urlTab)) {
-        setInternalActiveKey(urlTab);
-      }
-    }
-  }, [searchParams, urlParamName, visibleTabs]);
+    if (!syncUrl) return;
+    if (!urlTabParam || !visibleTabs.some((t) => t.key === urlTabParam)) return;
+    setInternalActiveKey((prev) => (prev === urlTabParam ? prev : urlTabParam));
+  }, [urlTabParam, syncUrl, visibleTabs]);
 
   const handleTabChange = (key: string) => {
     setInternalActiveKey(key);
     onTabChange?.(key);
 
     if (syncUrl) {
-      setSearchParams({ [urlParamName]: key });
+      // 保留其他 query 参数，避免清空兄弟 tab 的 listState 参数而触发其反向重同步
+      const params = new URLSearchParams(searchParams);
+      params.set(urlParamName, key);
+      setSearchParams(params);
     }
   };
 

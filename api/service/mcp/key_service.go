@@ -48,8 +48,8 @@ func (s *APIKeyService) DeleteOwnedAPIKey(ctx context.Context, eid, userID, keyI
 	return model.DeleteAPIKeyByCreatorID(eid, userID, keyID)
 }
 
-func (s *APIKeyService) CreateAPIKey(ctx context.Context, eid, userID int64, role int64, name, description string, libraryID *int64) (*model.APIKey, string, error) {
-	spaceID, err := s.resolveAPIKeyScope(eid, userID, role, libraryID)
+func (s *APIKeyService) CreateAPIKey(ctx context.Context, eid, userID int64, role int64, name, description string, libraryID, spaceID *int64) (*model.APIKey, string, error) {
+	boundSpaceID, err := s.resolveAPIKeyScope(eid, userID, role, libraryID, spaceID)
 	if err != nil {
 		return nil, "", err
 	}
@@ -62,7 +62,7 @@ func (s *APIKeyService) CreateAPIKey(ctx context.Context, eid, userID int64, rol
 		Eid:         eid,
 		CreatorID:   userID,
 		LibraryID:   libraryID,
-		SpaceID:     spaceID,
+		SpaceID:     boundSpaceID,
 		Status:      model.APIKeyStatusActive,
 	}
 
@@ -73,12 +73,18 @@ func (s *APIKeyService) CreateAPIKey(ctx context.Context, eid, userID int64, rol
 	return apiKey, keyValue, nil
 }
 
-func (s *APIKeyService) ListAPIKeys(ctx context.Context, eid, userID int64, role int64, keyType string, libraryID *int64) ([]model.APIKey, error) {
+func (s *APIKeyService) ListAPIKeys(ctx context.Context, eid, userID int64, role int64, keyType string, libraryID, spaceID *int64) ([]model.APIKey, error) {
 	if libraryID != nil {
-		if _, err := s.resolveAPIKeyScope(eid, userID, role, libraryID); err != nil {
+		if _, err := s.resolveAPIKeyScope(eid, userID, role, libraryID, spaceID); err != nil {
 			return nil, err
 		}
 		return model.GetAPIKeysByEidAndLibraryID(eid, *libraryID)
+	}
+	if spaceID != nil {
+		if _, err := s.resolveAPIKeyScope(eid, userID, role, nil, spaceID); err != nil {
+			return nil, err
+		}
+		return model.GetAPIKeysByEidAndSpaceID(eid, *spaceID)
 	}
 
 	if role < model.RoleAdminUser {
@@ -95,7 +101,7 @@ func (s *APIKeyService) ListAPIKeys(ctx context.Context, eid, userID int64, role
 	}
 }
 
-func (s *APIKeyService) DeleteAPIKey(ctx context.Context, eid, userID int64, role int64, keyID int64, libraryID *int64) error {
+func (s *APIKeyService) DeleteAPIKey(ctx context.Context, eid, userID int64, role int64, keyID int64, libraryID, spaceID *int64) error {
 	apiKey, err := model.GetAPIKeyByID(keyID)
 	if err != nil {
 		return err
@@ -110,6 +116,14 @@ func (s *APIKeyService) DeleteAPIKey(ctx context.Context, eid, userID int64, rol
 		}
 		if *apiKey.LibraryID != *libraryID {
 			return errors.New("路径中的知识库ID与API密钥关联的知识库ID不匹配")
+		}
+	}
+	if spaceID != nil {
+		if apiKey.SpaceID == nil {
+			return errors.New("该API密钥未关联任何空间，无法通过空间路径访问")
+		}
+		if *apiKey.SpaceID != *spaceID {
+			return errors.New("路径中的空间ID与API密钥关联的空间ID不匹配")
 		}
 	}
 
@@ -120,7 +134,7 @@ func (s *APIKeyService) DeleteAPIKey(ctx context.Context, eid, userID int64, rol
 	return model.DeleteAPIKey(keyID)
 }
 
-func (s *APIKeyService) SetAPIKeyStatus(ctx context.Context, eid, userID int64, role int64, keyID int64, libraryID *int64, enabled bool) error {
+func (s *APIKeyService) SetAPIKeyStatus(ctx context.Context, eid, userID int64, role int64, keyID int64, libraryID, spaceID *int64, enabled bool) error {
 	apiKey, err := model.GetAPIKeyByID(keyID)
 	if err != nil {
 		return err
@@ -135,6 +149,14 @@ func (s *APIKeyService) SetAPIKeyStatus(ctx context.Context, eid, userID int64, 
 		}
 		if *apiKey.LibraryID != *libraryID {
 			return errors.New("路径中的知识库ID与API密钥关联的知识库ID不匹配")
+		}
+	}
+	if spaceID != nil {
+		if apiKey.SpaceID == nil {
+			return errors.New("该API密钥未关联任何空间，无法通过空间路径访问")
+		}
+		if *apiKey.SpaceID != *spaceID {
+			return errors.New("路径中的空间ID与API密钥关联的空间ID不匹配")
 		}
 	}
 
@@ -148,32 +170,50 @@ func (s *APIKeyService) SetAPIKeyStatus(ctx context.Context, eid, userID int64, 
 	return model.DisableAPIKey(keyID)
 }
 
-func (s *APIKeyService) resolveAPIKeyScope(eid, userID int64, role int64, libraryID *int64) (*int64, error) {
-	if libraryID == nil {
-		if role < model.RoleAdminUser {
-			return nil, errors.New("您没有权限创建全局API密钥，请指定知识库ID")
+func (s *APIKeyService) resolveAPIKeyScope(eid, userID int64, role int64, libraryID, spaceID *int64) (*int64, error) {
+	if libraryID != nil {
+		hasPerm, err := s.hasLibraryManagementPermission(eid, userID, *libraryID)
+		if err != nil {
+			return nil, err
 		}
-		return nil, nil
+		if !hasPerm {
+			return nil, errors.New("您没有权限为此知识库创建API密钥")
+		}
+
+		library, err := model.GetLibraryByID(eid, *libraryID)
+		if err != nil {
+			return nil, fmt.Errorf("获取知识库信息失败: %w", err)
+		}
+		if library == nil {
+			return nil, errors.New("知识库不存在")
+		}
+
+		boundSpaceID := library.SpaceID
+		return &boundSpaceID, nil
 	}
 
-	hasPerm, err := s.hasLibraryManagementPermission(eid, userID, *libraryID)
-	if err != nil {
-		return nil, err
-	}
-	if !hasPerm {
-		return nil, errors.New("您没有权限为此知识库创建API密钥")
+	if spaceID != nil {
+		hasPerm, err := s.hasSpaceManagementPermission(eid, userID, *spaceID)
+		if err != nil {
+			return nil, err
+		}
+		if !hasPerm {
+			return nil, errors.New("您没有权限为此空间创建API密钥")
+		}
+		space, err := model.GetSpaceByID(eid, *spaceID)
+		if err != nil {
+			return nil, fmt.Errorf("获取空间信息失败: %w", err)
+		}
+		if space == nil {
+			return nil, errors.New("空间不存在")
+		}
+		return spaceID, nil
 	}
 
-	library, err := model.GetLibraryByID(eid, *libraryID)
-	if err != nil {
-		return nil, fmt.Errorf("获取知识库信息失败: %w", err)
+	if role < model.RoleAdminUser {
+		return nil, errors.New("您没有权限创建全局API密钥，请指定知识库或空间ID")
 	}
-	if library == nil {
-		return nil, errors.New("知识库不存在")
-	}
-
-	spaceID := library.SpaceID
-	return &spaceID, nil
+	return nil, nil
 }
 
 func (s *APIKeyService) ensureAPIKeyManagePermission(eid, userID int64, role int64, apiKey *model.APIKey) error {
@@ -183,6 +223,17 @@ func (s *APIKeyService) ensureAPIKeyManagePermission(eid, userID int64, role int
 
 	if apiKey.LibraryID != nil {
 		hasPerm, err := s.hasLibraryManagementPermission(eid, userID, *apiKey.LibraryID)
+		if err != nil {
+			return err
+		}
+		if !hasPerm {
+			return errors.New("您没有权限管理此API密钥")
+		}
+		return nil
+	}
+
+	if apiKey.SpaceID != nil {
+		hasPerm, err := s.hasSpaceManagementPermission(eid, userID, *apiKey.SpaceID)
 		if err != nil {
 			return err
 		}
@@ -204,4 +255,19 @@ func (s *APIKeyService) hasLibraryManagementPermission(eid, userID, libraryID in
 		return false, err
 	}
 	return permission >= model.PERMISSION_MANAGE, nil
+}
+
+func (s *APIKeyService) hasSpaceManagementPermission(eid, userID, spaceID int64) (bool, error) {
+	permission, err := core.GetUserPermission(eid, model.RESOURCE_TYPE_SPACE, spaceID, userID)
+	if err != nil {
+		return false, err
+	}
+	if permission >= model.PERMISSION_MANAGE {
+		return true, nil
+	}
+	isAdmin, err := core.NewSpacePermissionService(eid).IsSpaceAdmin(userID, spaceID)
+	if err != nil {
+		return false, err
+	}
+	return isAdmin, nil
 }

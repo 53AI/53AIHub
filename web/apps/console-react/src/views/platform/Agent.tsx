@@ -4,19 +4,19 @@ import { t } from "@/locales";
 import { agentApi } from "@/api/modules/agent";
 import { providerApi } from "@/api/modules/provider";
 import {
-    getProvidersByAuth,
-    type ProviderConfig,
+  getProvidersByAuth,
+  type ProviderConfig,
 } from "@/constants/platform/config";
 import { PROVIDER_VALUE } from "@/constants/platform/provider";
 import { isInternalNetwork } from "@km/shared-utils";
 import { ProviderCard } from "./components/ProviderCard";
 import {
-    AuthListDrawer,
-    type AuthListDrawerRef,
+  AuthListDrawer,
+  type AuthListDrawerRef,
 } from "./components/AuthListDrawer";
 import {
-    AgentListDrawer,
-    type AgentListDrawerRef,
+  AgentListDrawer,
+  type AgentListDrawerRef,
 } from "./components/AgentListDrawer";
 
 interface ProviderOption extends ProviderConfig {
@@ -167,7 +167,7 @@ export function PlatformAgent() {
   }, []);
 
   return (
-    <div className="h-full flex flex-col bg-white py-6 px-2">
+    <div className="h-full flex flex-col bg-white py-2 px-2">
       {providerGroupList.map((group) => (
         <div key={group.label}>
           <h2 className="font-semibold text-base text-primary mb-6">

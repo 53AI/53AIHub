@@ -65,7 +65,13 @@ type SearchConfigData struct {
 	TopK                  int           `json:"top_k"`
 	ScoreThreshold        float64       `json:"score_threshold"`
 	ScoreThresholdEnabled bool          `json:"score_threshold_enabled"`
-	Weights               SearchWeights `json:"weights"` // 权重配置
+	// RerankScoreThreshold 重排相关性分数下限（0 表示不启用）。
+	// 与 ScoreThreshold 不同：ScoreThreshold 作用于召回阶段向量/全文原始分，
+	// 该阈值作用于重排后的相关性分数，用于「按相关性自适应决定注入数量」，
+	// 避免固定 TopK 截断在候选较多时误杀相关切片（回答不完整）或在候选较少时注入噪声。
+	RerankScoreThreshold        float64       `json:"rerank_score_threshold"`
+	RerankScoreThresholdEnabled bool          `json:"rerank_score_threshold_enabled"`
+	Weights                     SearchWeights `json:"weights"` // 权重配置
 }
 
 // ModelConfigData 模型设置JSON结构

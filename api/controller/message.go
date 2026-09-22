@@ -57,12 +57,18 @@ type MessageListRequest struct {
 	Keyword        string `json:"keyword" form:"keyword" example:"gpt"`
 	FileKeyword    string `json:"file_keyword" form:"file_keyword" example:"report"`
 	FileID         int64  `json:"file_id" form:"file_id"`
+	DocumentType   string `json:"document_type" form:"document_type" example:"file"`
+	DocumentID     int64  `json:"document_id" form:"document_id" example:"0"`
 	Offset         int    `json:"offset" form:"offset" example:"0"`
 	Limit          int    `json:"limit" form:"limit" example:"10"`
 	Direction      string `json:"direction" form:"direction" example:"desc"`
 	ThinkingMode   *int   `json:"thinking_mode" form:"thinking_mode" example:"1"`
 	ResponseStatus *int   `json:"response_status" form:"response_status" example:"1"`
-	KnowledgeType  *int   `json:"knowledge_type" form:"knowledge_type" example:"1"`
+	// KnowledgeTypes 知识类型筛选，多选逗号分隔（如 3,4,5）。前端筛选选项与取值映射：
+	// 全部=不传；指定内容=3,4,7；知识文档=1；动态知识=6；知识文档+动态知识=5；
+	// 知识文档+知识图谱=8；知识文档+动态知识+知识图谱=9；联网搜索=2。
+	// 取值语义见 model/message.go 的 KnowledgeType* 常量注释。
+	KnowledgeTypes  []int  `json:"knowledge_type" form:"knowledge_type" collection_format:"csv" example:"3,4,5"`
 	StartDate      *int64 `json:"start_date" form:"start_date" example:"1640995200"`
 	EndDate        *int64 `json:"end_date" form:"end_date" example:"1641081600"`
 	AgentID        *int64 `json:"agent_id" example:"1"`
@@ -270,7 +276,9 @@ func parseConversationIDParam(rawID string) (int64, error) {
 // @Security BearerAuth
 // @Param agent_id path int true "Agent ID"
 // @Param keyword query string false "Search keyword"
-// @Param file_id query int false "File ID filter"
+// @Param file_id query int false "Legacy file ID filter"
+// @Param document_type query string false "Document type filter" Enums(file,wiki)
+// @Param document_id query int false "Document ID filter"
 // @Param offset query int false "Pagination offset" default(0)
 // @Param limit query int false "Pagination limit" default(10)
 // @Success 200 {object} model.CommonResponse{data=MessagesResponse} "Success"
@@ -290,9 +298,18 @@ func GetMessagesByUserAndAgent(c *gin.Context) {
 
 	userId := config.GetUserId(c)
 	eid := config.GetEID(c)
-	count, messages, err := model.GetMessagesByUserAndAgentWithVisitor(
-		eid, userId, agent_id,
-		messageListRequest.Keyword, messageListRequest.FileID, session.GetVisitorID(c), messageListRequest.Limit, messageListRequest.Offset)
+	var count int64
+	var messages []*model.Message
+	if messageListRequest.DocumentID > 0 && messageListRequest.DocumentType != "" {
+		count, messages, err = model.GetMessagesByUserAndAgentWithDocument(
+			eid, userId, agent_id,
+			messageListRequest.Keyword, messageListRequest.DocumentType, messageListRequest.DocumentID,
+			session.GetVisitorID(c), messageListRequest.Limit, messageListRequest.Offset)
+	} else {
+		count, messages, err = model.GetMessagesByUserAndAgentWithVisitor(
+			eid, userId, agent_id,
+			messageListRequest.Keyword, messageListRequest.FileID, session.GetVisitorID(c), messageListRequest.Limit, messageListRequest.Offset)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
@@ -619,7 +636,7 @@ func GetMessageStatsSum(c *gin.Context) {
 // @Param direction query string false "排序方向" Enums(desc,asc) default("desc") "desc=从新到旧，asc=从旧到新"
 // @Param thinking_mode query int false "思考方式" Enums(1,2) "1=快速回答，2=深度思考"
 // @Param response_status query int false "回答状态" Enums(1,2) "1=正常回答，2=拒答/超纲回复"
-// @Param knowledge_type query int false "知识类型" Enums(1,2,3,4,5,6,7) "1=知识库搜索，2=Web搜索，3=指定知识库，4=单文件，5=站内知识组合，6=全部Wiki，7=指定Wiki"
+// @Param knowledge_type query int false "知识类型，多选用逗号分隔（如 3,4,5）" Enums(1,2,3,4,5,6,7,8,9,10) "1=知识文档(全部知识库)，2=联网搜索，3=指定知识库/空间，4=单文件，5=知识文档+动态知识，6=动态知识(全部Wiki)，7=指定Wiki，8=知识文档+知识图谱，9=知识文档+动态知识+知识图谱，10=其他组合"
 // @Param start_date query int64 false "开始日期时间戳（秒或毫秒）"
 // @Param end_date query int64 false "结束日期时间戳（秒或毫秒）"
 // @Param agent_id query int64 false "Agent ID 筛选"
@@ -707,7 +724,7 @@ func GetMessagesList(c *gin.Context) {
 		messageListRequest.Keyword,
 		messageListRequest.ThinkingMode,
 		messageListRequest.ResponseStatus,
-		messageListRequest.KnowledgeType,
+		messageListRequest.KnowledgeTypes,
 		messageListRequest.StartDate,
 		messageListRequest.EndDate,
 		messageListRequest.Direction,
@@ -928,7 +945,7 @@ func DownloadAIUploadFile(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(nil))
 		return
 	}
-	user, tokenEid, err := middleware.HandleTokenAuth(token, model.RoleGuestUser)
+	user, tokenEid, err := middleware.HandleTokenAuth(token, model.RoleGuestUser, c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(err))
 		return

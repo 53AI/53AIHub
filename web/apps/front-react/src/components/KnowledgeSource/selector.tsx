@@ -194,6 +194,26 @@ export const KnowledgeSourceSelector = forwardRef<
 		handleOpenFileDialog,
 	]);
 
+	// 兜底:所有知识来源都被取消时,默认勾选「知识文档」(全部知识),
+	// 避免出现无任何来源的空态(触发按钮无从显示)。
+	const defaultAllKnowledgeIfNothingSelected = useCallback(
+		(state: KnowledgeSourceState): KnowledgeSourceState => {
+			const hasActive =
+				state.allKnowledge ||
+				state.knowledgeGraph ||
+				state.networkSearch ||
+				state.wiki ||
+				(state.selectedFiles?.length ?? 0) > 0 ||
+				(state.selectedLibraries?.length ?? 0) > 0 ||
+				(state.selectedSpaces?.length ?? 0) > 0 ||
+				(state.selectedWikiSpaces?.length ?? 0) > 0 ||
+				(state.selectedWikiPages?.length ?? 0) > 0;
+			if (hasActive) return state;
+			return { ...state, mode: "all", allKnowledge: true };
+		},
+		[],
+	);
+
 	// 从知识库选择文件/知识库/空间和动态知识
 	const handleSelectFiles = useCallback(
 		(
@@ -222,7 +242,7 @@ export const KnowledgeSourceSelector = forwardRef<
 					selectedWikiPages: [],
 					networkSearch: false,
 				};
-				onChange(newState);
+				onChange(defaultAllKnowledgeIfNothingSelected(newState));
 				return;
 			}
 			// 确定模式：动态知识优先 → 文件 → 知识库 → 空间
@@ -290,9 +310,9 @@ export const KnowledgeSourceSelector = forwardRef<
 						wikiType: 'page' as const,
 					})) ?? [],
 			};
-			onChange(newState);
+			onChange(defaultAllKnowledgeIfNothingSelected(newState));
 		},
-		[value, onChange, allowSelectLibrary, allowSelectSpace],
+		[value, onChange, allowSelectLibrary, allowSelectSpace, defaultAllKnowledgeIfNothingSelected],
 	);
 
 	// 切换全部知识
@@ -306,7 +326,7 @@ export const KnowledgeSourceSelector = forwardRef<
 				allKnowledge: false,
 				knowledgeGraph: false,
 			};
-			onChange(newState);
+			onChange(defaultAllKnowledgeIfNothingSelected(newState));
 		} else {
 			// 选中全部知识
 			const newState: KnowledgeSourceState = {
@@ -318,9 +338,9 @@ export const KnowledgeSourceSelector = forwardRef<
 				selectedLibraries: [],
 				selectedSpaces: [],
 			};
-			onChange(newState);
+			onChange(defaultAllKnowledgeIfNothingSelected(newState));
 		}
-	}, [value, onChange]);
+	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
 	// 切换知识图谱（与联网搜索互斥，与动态知识可同时启用）
 	const handleToggleKnowledgeGraph = useCallback(() => {
@@ -336,8 +356,8 @@ export const KnowledgeSourceSelector = forwardRef<
 			selectedLibraries: [],
 			selectedSpaces: [],
 		};
-		onChange(newState);
-	}, [value, onChange]);
+		onChange(defaultAllKnowledgeIfNothingSelected(newState));
+	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
 	// 切换联网搜索（与动态知识、知识图谱互斥）
 	const handleToggleNetworkSearch = useCallback(() => {
@@ -355,8 +375,8 @@ export const KnowledgeSourceSelector = forwardRef<
 			selectedWikiSpaces: [],
 			selectedWikiPages: [],
 		};
-		onChange(newState);
-	}, [value, onChange]);
+		onChange(defaultAllKnowledgeIfNothingSelected(newState));
+	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
 	// 切换动态知识（与联网搜索互斥，与全部知识/知识图谱可同时启用）
 	const handleToggleWiki = useCallback(() => {
@@ -367,8 +387,8 @@ export const KnowledgeSourceSelector = forwardRef<
 			networkSearch: newWiki ? false : value.networkSearch,
 			wiki: newWiki,
 		};
-		onChange(newState);
-	}, [value, onChange]);
+		onChange(defaultAllKnowledgeIfNothingSelected(newState));
+	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
 	// 下拉菜单项
 	const menuItems: MenuProps["items"] = useMemo(() => {
@@ -452,6 +472,20 @@ export const KnowledgeSourceSelector = forwardRef<
 					</div>
 				),
 				onClick: () => {
+					if (isCurrentLibSelected) {
+						// 已勾选再点 → 取消勾选当前知识库,回到全部知识
+						// (对齐 handleToggleAllKnowledge 的「切回全部知识」语义)
+						onChange({
+							...value,
+							mode: "all",
+							allKnowledge: true,
+							networkSearch: false,
+							selectedFiles: [],
+							selectedLibraries: [],
+							selectedSpaces: [],
+						});
+						return;
+					}
 					onChange({
 						...value,
 						mode: "libraries",

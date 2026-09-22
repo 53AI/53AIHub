@@ -58,7 +58,7 @@ type ConversationItem struct {
 
 // IntentClassificationResult 意图分类结果
 type IntentClassificationResult struct {
-	Intent          string   `json:"intent"`           // CHITCHAT, SIMPLE_RAG, COMPLEX_AGENT, USE_SKILL
+	Intent          string   `json:"intent"`           // CHITCHAT, SIMPLE_RAG, COMPLEX_AGENT, USE_SKILL, STATS_COUNT
 	SkillName       string   `json:"skill_name"`       // 当 Intent="USE_SKILL" 时必填
 	Confidence      float64  `json:"confidence"`       // 置信度 0-1
 	Reasoning       string   `json:"reasoning"`        // 分类原因
@@ -1606,16 +1606,19 @@ func (s *ContentGeneratorService) buildFastIntentRouteSystemPrompt(availableSkil
 - SIMPLE_RAG: 单一事实、单一对象、单一制度、单一记录、单一产品信息查询，通常一次检索即可回答。
 - COMPLEX_AGENT: 需要比较、总结、归因、评估、规划、多步推理或跨文档整合的问题。
 - USE_SKILL: 用户明确要求执行某个技能操作。
+- STATS_COUNT: 统计/计数/列举类问题——询问数量、份数、个数，或哪些/多少文档、文件与某对象相关、涉及、提到（如"一共有几份检验质量例会纪要"、"与基金相关的文档有哪些"、"多少个文件提到了黑翼5号"）。需全库检索计数/列举，非单条事实查询。
 
 分类优先级:
-USE_SKILL > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
+USE_SKILL > STATS_COUNT > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
 
 判定规则:
 1. 涉及企业信息、制度、人员、记录、产品事实、业务数据的问题，不判为 CHITCHAT。
 2. 只有明确要求执行技能操作时才判为 USE_SKILL。
-3. 需要比较、总结、归因、评估、规划、方案生成、跨文档整合时判为 COMPLEX_AGENT。
-4. 其他需要知识库检索但目标单一的问题判为 SIMPLE_RAG。
-5. 不确定时优先判为 SIMPLE_RAG。
+3. 询问数量、份数、个数，或"哪些文件/记录提到了某对象"时判为 STATS_COUNT。
+4. 如果当前问题是在追问上一轮统计结果中的某个具体对象或结果，应结合上下文按单对象查询判为 SIMPLE_RAG，不得判为 STATS_COUNT。
+5. 需要比较、总结、归因、评估、规划、方案生成、跨文档整合时判为 COMPLEX_AGENT。
+6. 其他需要知识库检索但目标单一的问题判为 SIMPLE_RAG。
+7. 不确定时优先判为 SIMPLE_RAG。
 
 字段规则:
 1. keywords:
@@ -1652,7 +1655,7 @@ Available Skills:
 6. confidence 为 0 到 1 的数字。
 
 {
-  "intent": "CHITCHAT" | "SIMPLE_RAG" | "COMPLEX_AGENT" | "USE_SKILL",
+  "intent": "CHITCHAT" | "SIMPLE_RAG" | "COMPLEX_AGENT" | "USE_SKILL" | "STATS_COUNT",
   "skill_name": "",
   "confidence": 0.0,
   "reasoning": "分类理由简要说明",
@@ -1709,18 +1712,21 @@ func (s *ContentGeneratorService) buildIntentClassificationSystemPrompt(availabl
 - SIMPLE_RAG: 单一事实、单一对象、单一制度、单一记录、单一产品信息查询，通常一次检索即可回答。
 - COMPLEX_AGENT: 需要比较、总结、归因、评估、规划、多步推理或跨文档整合的问题。
 - USE_SKILL: 用户明确要求执行某个技能操作。
+- STATS_COUNT: 统计/计数/列举类问题——询问数量、份数、个数，或哪些/多少文档、文件与某对象相关、涉及、提到（如"一共有几份检验质量例会纪要"、"与基金相关的文档有哪些"、"多少个文件提到了黑翼5号"）。需全库检索计数/列举，非单条事实查询。
 
 
 分类优先级:
-USE_SKILL > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
+USE_SKILL > STATS_COUNT > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
 
 判定规则:
 1. 涉及企业信息、制度、人员、记录、产品事实、业务数据的问题，不判为 CHITCHAT。
-2. 只有明确要求执行技能操作时才判为 USE_SKILL。
-3. 需要比较、总结、归因、评估、规划、方案生成、跨文档整合时判为 COMPLEX_AGENT。
-4. 其他需要知识库检索但目标单一的问题判为 SIMPLE_RAG。
-5. 不确定时优先判为 SIMPLE_RAG。
-
+2. 凡属于对前序事实、人物、属性、对比结果的追问、质疑、反驳或深入探究（例如"为什么没有XX"、"单看XX呢"、"那YY呢"），必须结合上下文补全指代对象并判为 SIMPLE_RAG 或 COMPLEX_AGENT，严禁误判为 CHITCHAT。
+3. 只有明确要求执行技能操作时才判为 USE_SKILL。
+4. 询问数量、份数、个数，或"哪些文件/记录提到了某对象"时判为 STATS_COUNT。
+5. 如果当前问题是在追问上一轮统计结果中的某个具体对象或结果，应结合上下文按单对象查询判为 SIMPLE_RAG，不得判为 STATS_COUNT。
+6. 需要比较、总结、归因、评估、规划、方案生成、跨文档整合时判为 COMPLEX_AGENT。
+7. 其他需要知识库检索但目标单一的问题判为 SIMPLE_RAG。
+8. 不确定时优先判为 SIMPLE_RAG。
 字段规则:
 1. keywords:
 - 提取核心检索词，保留原词，不做同义改写
@@ -1734,7 +1740,7 @@ USE_SKILL > COMPLEX_AGENT > SIMPLE_RAG > CHITCHAT
 
 3. normalized_query:
 - 只做上下文消解，不扩展用户意图。
-- 补全代词、省略对象、必要时间范围。
+- 补全代词、省略对象、必要时间范围；追问与限定性提问必须结合上一轮主题补齐主谓宾（严禁留空）。
 - 相对时间按 Current Time 转成明确时间。
 - 去掉寒暄和语气词。
 - 原问题已清晰时，保持原文。
@@ -1767,7 +1773,7 @@ Output Format:
 只输出 JSON，所有字段必须返回，无内容时返回 "" 或 []。
 
 {
-  "intent": "CHITCHAT" | "SIMPLE_RAG" | "COMPLEX_AGENT" | "USE_SKILL",
+  "intent": "CHITCHAT" | "SIMPLE_RAG" | "COMPLEX_AGENT" | "USE_SKILL" | "STATS_COUNT",
   "skill_name": "",
   "confidence": 0.0,
   "reasoning": "分类理由简要说明",
@@ -1897,6 +1903,7 @@ func normalizeIntentClassificationResult(result *IntentClassificationResult, all
 		"SIMPLE_RAG":    true,
 		"COMPLEX_AGENT": true,
 		"USE_SKILL":     true,
+		"STATS_COUNT":   true,
 	}
 
 	if !validIntents[result.Intent] {

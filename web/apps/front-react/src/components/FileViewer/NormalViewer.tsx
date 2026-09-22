@@ -215,6 +215,9 @@ export default function NormalViewer({ url, content, extension }: NormalViewerPr
 
     if (detail.type === 'auto-select-enabled') {
       highlighterInstanceRef.current.updateAutoSelectEnabled(detail.data)
+      // 划词开关（v0.4.2 §3.4）：同步 enableManualHighlight，关闭自动选择后
+      // 划词不再触发 selection-change / 文本不再自动带入聊天框。
+      highlighterInstanceRef.current.updateManualSelectEnabled(detail.data)
     }
   }, [handleMenuClick])
 

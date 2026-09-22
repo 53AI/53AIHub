@@ -43,7 +43,6 @@ export function SkillDetailView() {
   const isSoftStyle = useIsSoftStyle();
 
   const [skill, setSkill] = useState<SkillDetail | null>(null);
-  const [loading, setLoading] = useState(false);
   const [activeFaq, setActiveFaq] = useState("0");
   const [envDrawerOpen, setEnvDrawerOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -152,7 +151,6 @@ export function SkillDetailView() {
       return;
     }
 
-    setLoading(true);
     try {
       const data = await skillApi.getDetail(id);
       data.logo = data.logo || `${ api_host }/api/images/prompt/logo.png`
@@ -161,8 +159,6 @@ export function SkillDetailView() {
       message.error(t('skill.fetch_detail_failed'));
       console.error("获取技能详情失败:", error);
       navigate("/skills");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -170,17 +166,6 @@ export function SkillDetailView() {
     fetchSkillDetail();
     skillsStore.loadCategorys(); // 加载分组列表
   }, [id]);
-
-  const handleBack = () => {
-    if (isSoftStyle) {
-      navigate(-1);
-    } else {
-      navigate({
-        pathname: "/skills",
-        search: type === "my" ? "?from=my" : "",
-      });
-    }
-  };
 
   const handleUse = () => {
     if (!skill) return;

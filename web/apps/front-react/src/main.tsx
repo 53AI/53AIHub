@@ -7,6 +7,7 @@ import { setupRouter } from "./router";
 import { setupGlobalMethods } from "./global/methods";
 import { getEnvConfig } from "./api/modules/env-config";
 import { setupChunkErrorHandler } from "@km/shared-utils";
+import { fetchPasswordStrength } from "./hooks/usePasswordPolicy";
 import "./locales";
 
 // Styles
@@ -57,6 +58,9 @@ async function fetchEnvConfig(): Promise<void> {
 async function bootstrap() {
   // 先获取环境配置
   await fetchEnvConfig()
+
+  // 预取密码强度策略（不 await，不拖慢首屏；失败静默走兑底档位）
+  void fetchPasswordStrength()
 
   // Setup router and wait for it to be ready
   await setupRouter();

@@ -125,7 +125,6 @@ export function AgentList({
                 type={type}
                 groupId={groupId}
                 canView={canView}
-                fixedType={type === 'my' ? 'Openclaw' : undefined}
                 onRefresh={onRefresh}
                 selectMode={selectMode}
                 flatMode={flatMode}

@@ -32,6 +32,8 @@ export const filesApi = {
   allStats(params: { library_id: string }): Promise<{
     completed_count: number
     queued_count: number
+    waiting_count: number
+    processing_count: number
     failed_interrupted_count: number
     avg_completion_time: number
   }> {

@@ -40,17 +40,27 @@ export function WikiPermissionSetting({ onClose, className, pageId }: WikiPermis
     return subject_id === userStore.info?.user_id
   }
 
-  // Check if this is the last manage permission
+  // 是否已是最后一个可管理者：
+  // 空间管理员组（团队空间的管理员）本身也可管理，需要一并计入，
+  // 否则只有空间管理员时，降级最后一个自定义成员会被误拦。
   const isLastManagePermission = (member: PermissionItem) => {
     if (member.permission !== PERMISSION_TYPE.manage) {
       return false
     }
 
+    // 该组权限由后端下发且面板不可改（index 0 disabled），仅在它确实是
+    // 可管理时才把组内成员算作可管理者。
+    const spaceAdminManageCount =
+      defaultPermissions[0]?.permission === PERMISSION_TYPE.manage ? spaceAdminList.length : 0
+
     const otherManageCount = permissions.filter(
-      other => other.subject_id !== member.subject_id && other.permission === PERMISSION_TYPE.manage
+      other =>
+        other.permission === PERMISSION_TYPE.manage &&
+        // 同一 subject_id 可能同时存在于 user 与 group，需连 subject_type 一起比
+        !(other.subject_id === member.subject_id && other.subject_type === member.subject_type)
     ).length
 
-    return otherManageCount === 0
+    return otherManageCount + spaceAdminManageCount === 0
   }
 
   const loadPermission = () => {
@@ -263,6 +273,7 @@ export function WikiPermissionSetting({ onClose, className, pageId }: WikiPermis
                 <div className="flex items-center gap-2">
                   <RolePopover
                     value={member.permission}
+                    resourceType={RESOURCE_TYPE.wiki_page}
                     none
                     remove
                     disabled={isSelf(member.subject_id)}
@@ -276,6 +287,7 @@ export function WikiPermissionSetting({ onClose, className, pageId }: WikiPermis
 
         <div className="mt-2">
           <MemberSelector
+            resourceType={RESOURCE_TYPE.wiki_page}
             trigger={<Button type="primary">{t("permission.add_member")}</Button>}
             onConfirm={handleMemberConfirm}
           />

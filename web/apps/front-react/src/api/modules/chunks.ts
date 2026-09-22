@@ -39,6 +39,7 @@ export interface RetrievalChunk {
   is_manual_edited: boolean
   embedding_status: EmbeddingStatus
   vector_id: string
+  error_reason: string
   search_keywords: string
   search_weight: number
   created_time: number
@@ -200,6 +201,10 @@ const chunksApi = {
 
     create(chunk_id: KnowledgeChunk['id'], data: { content: KnowledgeChunk['content'] }) {
       return request.post(`/api/chunks/knowledge/${chunk_id}/retrieval`, data).then((res) => res.data)
+    },
+
+    reindex(chunk_id: RetrievalChunk['id']) {
+      return request.post('/api/embedding/process', { chunk_id }).then((res) => res.data)
     }
   },
 

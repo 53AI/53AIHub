@@ -1,5 +1,5 @@
-import { Tooltip } from 'antd'
-import { SvgIcon, PromptInput } from '@km/shared-components-react'
+import { Tooltip, Input } from 'antd'
+import { SvgIcon } from '@km/shared-components-react'
 import { useAgentCreateAdapter } from '../../adapters'
 import { useAgentForm } from '../../hooks'
 import { useAgentFormStore } from '../../store'
@@ -87,18 +87,16 @@ export function RoleInstruction(props: InstrucationProps) {
           </Tooltip>
         </div>
       </div>
-      <div className="flex-1 border rounded-xl bg-white overflow-y-auto">
-        <PromptInput
+      <div className="flex-1 overflow-y-auto">
+        <Input.TextArea
           value={prompt}
-          onChange={onPromptChange}
+          onChange={(e) => onPromptChange(e.target.value)}
           style={{
             height: '100%',
             minHeight: '200px',
             borderRadius: 4,
           }}
           placeholder={t('agent.role_instruction_placeholder')}
-          wordWrap
-          t={t}
         />
       </div>
     </div>

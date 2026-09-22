@@ -278,6 +278,27 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					}
 				}
 
+				// 录音解析能力（recording_voice）：从平台设置读取语音模型渠道，按渠道类型分派
+				// DashScope（type=17）→ voice 策略；OpenAI 兼容（type=1012）→ openai 策略
+				if parseType == model.PLATFORM_KEY_RECORDING_VOICE {
+					rv, rerr := model.GetPlatformSettingRecordingVoice(eid)
+					if rerr != nil {
+						// 配置失败必须落库转写错误状态，供前端 parse-status 查询（不静默吞掉）
+						model.SetFileTranscriptionError(fileID, "failed", rerr.Error(), model.ErrorTypeModelUnavailable)
+						return fmt.Errorf("录音解析配置无效: %w", rerr)
+					}
+					if rv.IsOpenAI {
+						strategy = document.NewOpenAIAudioDocumentStrategy()
+					} else {
+						strategy = document.NewVoiceModelDocumentStrategy(file.LibraryID)
+					}
+					logger.Infof(ctx, "DocumentParsingStepHandler: 使用录音解析策略, fileID=%d isOpenAI=%v", fileID, rv.IsOpenAI)
+
+					if err := clearVoiceModelDataIfNeeded(ctx, db, eid, fileID); err != nil {
+						return fmt.Errorf("清理旧 voice_model 数据失败: %w", err)
+					}
+				}
+
 				// 秒解析缓存检查：同企业相同 hash 文件的已有解析结果复用
 				var cachedBody *model.FileBody
 				if hasUploadFile && uploadFile.Hash != "" && parseType != "" {
@@ -606,7 +627,8 @@ func normalizeDocumentParsingEngine(engine string) string {
 func isVoiceParseType(parseType string) bool {
 	return strings.HasPrefix(parseType, model.PLATFORM_KEY_VOICE_MODEL_PREFIX) ||
 		parseType == "voice_model" ||
-		strings.HasPrefix(parseType, model.PLATFORM_KEY_OPENAI_AUDIO_PREFIX)
+		strings.HasPrefix(parseType, model.PLATFORM_KEY_OPENAI_AUDIO_PREFIX) ||
+		parseType == model.PLATFORM_KEY_RECORDING_VOICE
 }
 
 func legacyCompatibleParseTypeQuery(query *gorm.DB, parseType string) *gorm.DB {

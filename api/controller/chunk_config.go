@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 
@@ -10,7 +9,6 @@ import (
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/53AI/53AIHub/service/utils"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // DocumentExtensionResponse 文档扩展名映射响应结构体
@@ -112,6 +110,13 @@ func GetChunkSettings(c *gin.Context) {
 	if libraryIDStr != "" {
 		if id, err := strconv.ParseInt(libraryIDStr, 10, 64); err == nil {
 			libraryID = &id
+		}
+	}
+
+	userID := config.GetUserId(c)
+	if libraryID != nil {
+		if _, ok := requireLibraryPermission(c, eid, userID, *libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看知识库配置"); !ok {
+			return
 		}
 	}
 
@@ -344,6 +349,11 @@ func GetLibraryChunkingConfig(c *gin.Context) {
 		return
 	}
 
+	userID := config.GetUserId(c)
+	if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看知识库分块配置"); !ok {
+		return
+	}
+
 	// 获取type参数，默认为default
 	chunkType := c.DefaultQuery("type", model.ChunkTypeDefault)
 
@@ -398,6 +408,11 @@ func UpdateLibraryChunkingConfig(c *gin.Context) {
 	libraryID, err := strconv.ParseInt(libraryIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	userID := config.GetUserId(c)
+	if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_EDIT_ALL, "无权限修改知识库分块配置"); !ok {
 		return
 	}
 
@@ -495,21 +510,13 @@ func GetDocumentChunkingConfig(c *gin.Context) {
 		return
 	}
 
-	// 获取文件信息
-	var file model.File
-	err = model.DB.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, model.CommonResponse{
-				Code:    http.StatusNotFound,
-				Message: "文件不存在",
-				Data:    nil,
-			})
-		} else {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
-		}
+	// 获取文件信息并验证权限
+	userID := config.GetUserId(c)
+	filePtr, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_VIEW_ONLY, "无权限查看文档分块配置")
+	if !ok {
 		return
 	}
+	file := *filePtr
 
 	// 创建配置服务
 	configService := rag.NewChunkConfigService(model.DB)
@@ -585,21 +592,13 @@ func UpdateDocumentChunkingConfig(c *gin.Context) {
 		}
 	}
 
-	// 获取文件信息
-	var file model.File
-	err = model.DB.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, model.CommonResponse{
-				Code:    http.StatusNotFound,
-				Message: "文件不存在",
-				Data:    nil,
-			})
-		} else {
-			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
-		}
+	// 获取文件信息并验证权限
+	userID := config.GetUserId(c)
+	filePtr, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_EDIT_ALL, "无权限修改文档分块配置")
+	if !ok {
 		return
 	}
+	file := *filePtr
 
 	// 创建配置服务
 	configService := rag.NewChunkConfigService(model.DB)

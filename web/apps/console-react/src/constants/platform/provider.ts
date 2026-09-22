@@ -6,7 +6,3 @@ export const PROVIDER_VALUE = Object.fromEntries(
 )
 
 export type ProviderValueType = (typeof PROVIDER_VALUE)[keyof typeof PROVIDER_VALUE]
-
-export const PROVIDER_VALUE_LABEL_MAP = new Map(
-  Object.entries(providers).map(([id, provider]) => [Number(id), provider.name]),
-)

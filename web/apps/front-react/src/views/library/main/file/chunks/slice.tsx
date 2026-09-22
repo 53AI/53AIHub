@@ -51,6 +51,21 @@ import "./slice.css";
 
 const POLLING_INTERVAL = 5000;
 
+// 切片序号展示（badge 与 #N 定位共用同一编号定义，必须保持一致）
+const formatChunkNo = (chunkIndex: number): string =>
+  (chunkIndex + 1).toString().padStart(2, "0");
+
+// markdownPreview 异步渲染的图表块：全部标记 data-processed 后才算渲染完成
+const UNPROCESSED_BLOCK_SELECTOR = [
+  "mermaid",
+  "echarts",
+  "flowchart",
+  "graphviz",
+  "mindmap",
+]
+  .map((lang) => `.language-${lang}:not([data-processed="true"])`)
+  .join(",");
+
 interface ChunkItem extends Omit<KnowledgeChunk, "id"> {
   id: string | number;
   origin_id?: string;
@@ -91,6 +106,9 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
   // True between a save submit and server-side batch completion. Gates split/merge
   // buttons so user actions cannot race with the polling refresh.
   const [isServerProcessing, setIsServerProcessing] = useState(false);
+
+  // 「#N」定位：输入 #N（badge 编号）时只展示该切片
+  const [locateNo, setLocateNo] = useState<number | null>(null);
 
   // Refs for filter params - ensures reloadChunks gets latest values
   const filterRef = useRef({ status: "", keyword: "" });
@@ -144,6 +162,15 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
   const isSearching = useMemo(
     () => status !== "" || keyword !== "",
     [status, keyword],
+  );
+
+  // 不改动 chunks 全量，避免打断合并/拆分依赖的索引；展示层过滤，搜索态下合并/拆分已被 isSearching 关闭
+  const displayedChunks = useMemo(
+    () =>
+      locateNo == null
+        ? chunks
+        : chunks.filter((item) => item.chunk_index + 1 === locateNo),
+    [chunks, locateNo],
   );
 
   const chunkStats = useMemo(
@@ -244,31 +271,12 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
             const waitForRender = () => {
               if (resolved) return;
 
-              const unprocessedMermaid = node.querySelectorAll(
-                '.language-mermaid:not([data-processed="true"])',
+              const unprocessed = node.querySelectorAll(
+                UNPROCESSED_BLOCK_SELECTOR,
               );
-              const unprocessedEcharts = node.querySelectorAll(
-                '.language-echarts:not([data-processed="true"])',
-              );
-              const unprocessedFlowchart = node.querySelectorAll(
-                '.language-flowchart:not([data-processed="true"])',
-              );
-              const unprocessedGraphviz = node.querySelectorAll(
-                '.language-graphviz:not([data-processed="true"])',
-              );
-              const unprocessedMindmap = node.querySelectorAll(
-                '.language-mindmap:not([data-processed="true"])',
-              );
-
-              const totalUnprocessed =
-                unprocessedMermaid.length +
-                unprocessedEcharts.length +
-                unprocessedFlowchart.length +
-                unprocessedGraphviz.length +
-                unprocessedMindmap.length;
 
               if (
-                totalUnprocessed === 0 ||
+                unprocessed.length === 0 ||
                 Date.now() - startTime > maxWaitTime
               ) {
                 resolved = true;
@@ -329,13 +337,15 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
       processChunkMarkdown(chunkItem)
         .then((res) => {
           setChunks((prev) => {
-            // Verify the element at index is still the same chunk (prevent index misalignment from merge)
-            if (prev[index]?.id.toString() === chunkId) {
-              const newChunks = [...prev];
-              newChunks[index] = res;
-              return newChunks;
-            }
-            return prev;
+            // 按 id 回填渲染结果：列表可能是搜索/定位过滤后的子集，index 与全量数组不对齐
+            const idx =
+              prev[index]?.id.toString() === chunkId
+                ? index
+                : prev.findIndex((c) => c.id.toString() === chunkId);
+            if (idx === -1) return prev;
+            const newChunks = [...prev];
+            newChunks[idx] = res;
+            return newChunks;
           });
           done();
         })
@@ -552,10 +562,6 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
     reloadChunksRef.current = reloadChunks;
   }, [reloadChunks]);
 
-  // Auto-polling effect - poll while pending chunks exist or forcePolling is true
-  // Use setInterval with ref to ensure continuous polling even when pendingChunks.length doesn't change
-  const pollingEnabledRef = useRef(false);
-
   // Track when forcePolling started so we don't close it prematurely while
   // server is asynchronously processing the batch (list may return normal chunks
   // before server has actually applied the operations).
@@ -570,25 +576,17 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
     }
   }, [forcePolling]);
 
+  // 有待处理切片或服务端批处理中即持续轮询；用布尔值作依赖，
+  // 避免 pendingChunks 数量变化时重置定时器、中断轮询节奏
+  const shouldPoll = pendingChunks.length > 0 || forcePolling;
+
   useEffect(() => {
-    const shouldPoll = pendingChunks.length > 0 || forcePolling;
-
-    if (shouldPoll && !pollingEnabledRef.current) {
-      // Start polling
-      pollingEnabledRef.current = true;
-      const intervalId = setInterval(() => {
-        reloadChunksRef.current?.(false);
-      }, POLLING_INTERVAL);
-
-      return () => {
-        pollingEnabledRef.current = false;
-        clearInterval(intervalId);
-      };
-    } else if (!shouldPoll && pollingEnabledRef.current) {
-      // Stop polling - let the cleanup from above handle it by triggering a re-render
-      pollingEnabledRef.current = false;
-    }
-  }, [pendingChunks.length, forcePolling]);
+    if (!shouldPoll) return;
+    const intervalId = setInterval(() => {
+      reloadChunksRef.current?.(false);
+    }, POLLING_INTERVAL);
+    return () => clearInterval(intervalId);
+  }, [shouldPoll]);
 
   // Handle retry indexing
   const handleRetryIndexing = useCallback(
@@ -905,77 +903,43 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
     setSaveModalVisible(true);
   }, []);
 
-  // Handle save with reindex (update)
-  const handleSaveWithReindex = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      const data: ChunkOperationsData = {
-        update_retrieval_chunk: true,
-        content_updates: contentUpdates,
-        operations,
-      };
+  // 提交待保存的合并/拆分操作；withReindex 决定是否同时触发重索引
+  const runSave = useCallback(
+    async (withReindex: boolean) => {
+      setIsSaving(true);
+      try {
+        const data: ChunkOperationsData = {
+          update_retrieval_chunk: withReindex,
+          content_updates: contentUpdates,
+          operations,
+        };
 
-      await chunksApi.files.batch(currentFile?.id || 0, data);
+        await chunksApi.files.batch(currentFile?.id || 0, data);
 
-      setOperations([]);
-      setContentUpdates({});
-      setSaveModalVisible(false);
-      message.success(t("status.save_success"));
+        setOperations([]);
+        setContentUpdates({});
+        setSaveModalVisible(false);
+        message.success(t("status.save_success"));
 
-      // Force polling to start immediately after save.
-      // Use reRender=true to fully reset local chunks to the server's current
-      // state. Server processes batches asynchronously, so without a full reset
-      // the local chunks would still hold stale ids from the previous render,
-      // causing subsequent split/merge operations to send ids the server no
-      // longer recognises.
-      setIsServerProcessing(true);
-      setForcePolling(true);
-      reloadChunks();
-    } catch (error) {
-      console.error("保存操作失败:", error);
-      message.error(t("status.save_fail"));
-    } finally {
-      setIsSaving(false);
-    }
-  }, [contentUpdates, operations, currentFile?.id, reloadChunks, t]);
+        // 服务端异步批处理：reloadChunks 默认整体重置本地切片为服务端当前状态，
+        // 否则本地仍持有上一轮的旧 id，后续合并/拆分会把服务端已不存在的 id 提交上去。
+        setIsServerProcessing(true);
+        if (withReindex) setForcePolling(true);
+        reloadChunks();
+      } catch (error) {
+        console.error("保存操作失败:", error);
+        message.error(t("status.save_fail"));
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [contentUpdates, operations, currentFile?.id, reloadChunks, t],
+  );
 
-  // Handle save without reindex
-  const handleSaveWithoutReindex = useCallback(async () => {
-    setIsSaving(true);
-    try {
-      const data: ChunkOperationsData = {
-        update_retrieval_chunk: false,
-        content_updates: contentUpdates,
-        operations,
-      };
+  const handleSaveWithReindex = useCallback(() => runSave(true), [runSave]);
+  const handleSaveWithoutReindex = useCallback(() => runSave(false), [runSave]);
 
-      await chunksApi.files.batch(currentFile?.id || 0, data);
-
-      setOperations([]);
-      setContentUpdates({});
-      setSaveModalVisible(false);
-      message.success(t("status.save_success"));
-      setIsServerProcessing(true);
-      reloadChunks();
-    } catch (error) {
-      console.error("保存操作失败:", error);
-      message.error(t("status.save_fail"));
-    } finally {
-      setIsSaving(false);
-    }
-  }, [contentUpdates, operations, currentFile?.id, reloadChunks, t]);
-
-  // Handle modal cancel - distinguish close button vs cancel button
-  const handleSaveModalCancel = useCallback((e: React.MouseEvent) => {
-    // Check if user clicked close button (X) vs "取消" button
-    const target = e.target as HTMLElement;
-    const isCloseButton = target?.closest?.(".ant-modal-close");
-    // If clicked close button (X), just close without saving
-    if (isCloseButton) {
-      setSaveModalVisible(false);
-      return;
-    }
-    // If clicked "取消" button, also just close without saving
+  const handleSaveModalCancel = useCallback(() => {
     setSaveModalVisible(false);
   }, []);
 
@@ -1042,7 +1006,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
       >
         <div className="h-8 flex items-center gap-2">
           <div className="text-xs text-[#2563EB] h-[22px] px-1.5 bg-[#F0F5FF] flex items-center rounded">
-            #{(item.chunk_index + 1).toString().padStart(2, "0")}
+            #{formatChunkNo(item.chunk_index)}
           </div>
           <div className="w-px h-3 bg-[#E6E8EB] invisible group-hover:visible" />
           <p className="flex-1 text-xs text-[#999999] invisible group-hover:visible">
@@ -1208,6 +1172,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
               onChange={(val) => {
                 const newStatus = val ?? "";
                 setStatus(newStatus);
+                setLocateNo(null);
                 filterRef.current.status = newStatus;
                 reloadChunks(true);
               }}
@@ -1220,21 +1185,43 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
               ]}
             />
           </div>
-          <div className="flex-none w-60">
+          <div className="flex-none w-80">
             <Input.Search
               value={keyword}
               onChange={(e) => {
                 const newKeyword = e.target.value;
                 setKeyword(newKeyword);
-                filterRef.current.keyword = newKeyword;
-                if (newKeyword === "") {
-                  reloadChunks(true);
+                // 任何输入都退出定位态，定位以回车（onSearch）为准
+                setLocateNo(null);
+                if (newKeyword.startsWith("#")) {
+                  // # 开头是定位意图，不当关键字传给后端（轮询会读 filterRef）
+                  const hadKeyword = filterRef.current.keyword !== "";
+                  filterRef.current.keyword = "";
+                  // 此前若有关键字过滤，先拉回全量，保证 # 序号能在完整列表里查找
+                  if (hadKeyword) reloadChunks(true);
+                } else {
+                  filterRef.current.keyword = newKeyword;
                 }
+                if (newKeyword === "") reloadChunks(true);
               }}
-              placeholder="搜索"
+              placeholder="输入搜索内容或#序号定位切片"
               allowClear
               enterButton="搜索"
-              onSearch={() => reloadChunks(true)}
+              onSearch={() => {
+                const matched = keyword.trim().match(/^#(\d+)$/);
+                if (matched) {
+                  const no = Number(matched[1]);
+                  if (chunks.some((item) => item.chunk_index + 1 === no)) {
+                    setLocateNo(no);
+                  } else {
+                    setLocateNo(null);
+                    message.warning(`未找到 #${formatChunkNo(no - 1)} 切片`);
+                  }
+                  return;
+                }
+                setLocateNo(null);
+                reloadChunks(true);
+              }}
               prefix={<SearchOutlined />}
             />
           </div>
@@ -1353,11 +1340,11 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
           <div className="h-full flex items-center justify-center">
             <Spin size="large" />
           </div>
-        ) : chunks.length > 0 ? (
+        ) : displayedChunks.length > 0 ? (
           <VirtualList
-            items={chunks}
+            items={displayedChunks}
             itemHeight={100}
-            resetKey={renderVersion}
+            resetKey={`${renderVersion}-${locateNo ?? "all"}`}
             className="pb-5"
             wrapperClass="max-w-4xl mx-auto py-5"
             onItemVisible={handleItemVisible}
@@ -1383,7 +1370,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
             <div className="flex-none px-5 border-b">
               <div className="flex h-14 items-center gap-3 py-4">
                 <div className="text-xs text-[#2563EB] h-[22px] px-1.5 bg-[#F0F5FF] flex items-center rounded">
-                  #{(fullscreenChunk.chunk_index + 1).toString().padStart(2, "0")}
+                  #{formatChunkNo(fullscreenChunk.chunk_index)}
                 </div>
                 <p className="flex-1 text-xs text-[#999999] truncate">
                   Token：{fullscreenChunk.token_count} · 命中：{fullscreenChunk.recall_count || 0} · 默认索引：{fullscreenChunk.retrieval_chunk_count || 0}

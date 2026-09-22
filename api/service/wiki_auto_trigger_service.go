@@ -125,73 +125,98 @@ func (s *WikiAutoTriggerService) MaybeEnqueueWikiGeneration(ctx context.Context,
 		return err
 	}
 
-	jobFactory := model.NewRagJobFactory(s.db, common.RDB)
-	startParameters := map[string]any{
-		"file_id":        in.FileID,
-		"library_id":     file.LibraryID,
-		"language":       normalizeWikiAutoTriggerLanguage(in.Language),
-		"trigger_source": firstNonEmpty(strings.TrimSpace(in.TriggerSource), "auto_after_pipeline"),
-		"source_run_id":  sourceRunID,
-	}
-	startBytes, _ := json.Marshal(startParameters)
-
-	pipelineID, runtimeProfileJSON, err := s.resolveSourceRuntimeProfile(ctx, in.Eid, file.ID)
+	job, err := s.createWikiGenerationJob(ctx, in.Eid, in.FileID, file.LibraryID, in.Language, in.TriggerSource, sourceRunID)
 	if err != nil {
-		logger.Warnf(ctx, "【Wiki生成】 解析 Wiki 管线失败 file_id=%d run_id=%s err=%v", in.FileID, sourceRunID, err)
+		logger.Warnf(ctx, "【Wiki生成】 创建 Wiki 管线任务失败 file_id=%d run_id=%s err=%v", in.FileID, sourceRunID, err)
 		return nil
 	}
-	if pipelineID <= 0 || strings.TrimSpace(runtimeProfileJSON) == "" {
+	if job == nil {
 		logger.Warnf(ctx, "【Wiki生成】 跳过自动 Wiki: 未找到 Wiki 管线 file_id=%d run_id=%s", in.FileID, sourceRunID)
 		return nil
-	}
-
-	normalizedProfileJSON, _, normalizeErr := ensureWikiPageGenerationStep(runtimeProfileJSON)
-	if normalizeErr != nil {
-		return normalizeErr
-	}
-	job, err := jobFactory.CreateJobWithoutQueue(ctx, in.Eid, wikiAutoTriggerJobType, string(startBytes))
-	if err != nil {
-		return err
-	}
-	result := s.db.WithContext(ctx).Model(&model.RagJob{}).Where("job_id = ?", job.JobID).Updates(map[string]interface{}{
-		"pipeline_id":          pipelineID,
-		"runtime_profile_json": normalizedProfileJSON,
-	})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("wiki auto trigger runtime profile update affected %d jobs, want 1", result.RowsAffected)
-	}
-	job.PipelineID = pipelineID
-	job.RuntimeProfile = normalizedProfileJSON
-	if err := s.persistWikiStepIndex(ctx, job, normalizedProfileJSON); err != nil {
-		return err
-	}
-
-	job.RunID = sourceRunID
-	result = s.db.WithContext(ctx).Model(&model.RagJob{}).Where("job_id = ?", job.JobID).Update("run_id", sourceRunID)
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected != 1 {
-		return fmt.Errorf("wiki auto trigger run id update affected %d jobs, want 1", result.RowsAffected)
 	}
 
 	if err := s.enqueueWikiJob(ctx, job); err != nil {
 		logger.Warnf(ctx, "【Wiki生成】 Wiki 任务入队失败 file_id=%d run_id=%s job_id=%d err=%v", in.FileID, sourceRunID, job.JobID, err)
 	} else {
-		logger.Infof(ctx, "【Wiki生成】 Wiki 任务已入队 file_id=%d run_id=%s job_id=%d pipeline_id=%d", in.FileID, sourceRunID, job.JobID, pipelineID)
+		logger.Infof(ctx, "【Wiki生成】 Wiki 任务已入队 file_id=%d run_id=%s job_id=%d pipeline_id=%d", in.FileID, sourceRunID, job.JobID, job.PipelineID)
 	}
 	refreshFileRAGStatus(ctx, s.db, file.ID, sourceRunID)
 
 	return nil
 }
 
+func (s *WikiAutoTriggerService) createWikiGenerationJob(ctx context.Context, eid, fileID, libraryID int64, language, triggerSource, runID string) (*model.RagJob, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("wiki auto trigger db is required")
+	}
+
+	pipelineID, runtimeProfileJSON, err := s.resolveSourceRuntimeProfile(ctx, eid, fileID)
+	if err != nil {
+		return nil, err
+	}
+	if pipelineID <= 0 || strings.TrimSpace(runtimeProfileJSON) == "" {
+		return nil, nil
+	}
+
+	normalizedProfileJSON, _, err := ensureWikiPageGenerationStep(runtimeProfileJSON)
+	if err != nil {
+		return nil, err
+	}
+	startParameters := map[string]any{
+		"file_id":        fileID,
+		"library_id":     libraryID,
+		"language":       normalizeWikiAutoTriggerLanguage(language),
+		"trigger_source": firstNonEmpty(strings.TrimSpace(triggerSource), "auto_after_pipeline"),
+		"source_run_id":  runID,
+	}
+	startBytes, err := json.Marshal(startParameters)
+	if err != nil {
+		return nil, err
+	}
+
+	jobFactory := model.NewRagJobFactory(s.db, common.RDB)
+	job, err := jobFactory.CreateJobWithoutQueue(ctx, eid, wikiAutoTriggerJobType, string(startBytes))
+	if err != nil {
+		return nil, err
+	}
+	cleanup := func(cause error) (*model.RagJob, error) {
+		if deleteErr := s.db.WithContext(ctx).Delete(&model.RagJob{}, "job_id = ?", job.JobID).Error; deleteErr != nil {
+			return nil, fmt.Errorf("%w; cleanup wiki job %d failed: %v", cause, job.JobID, deleteErr)
+		}
+		return nil, cause
+	}
+
+	result := s.db.WithContext(ctx).Model(&model.RagJob{}).Where("job_id = ?", job.JobID).Updates(map[string]interface{}{
+		"pipeline_id":          pipelineID,
+		"runtime_profile_json": normalizedProfileJSON,
+	})
+	if result.Error != nil {
+		return cleanup(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return cleanup(fmt.Errorf("wiki auto trigger runtime profile update affected %d jobs, want 1", result.RowsAffected))
+	}
+	job.PipelineID = pipelineID
+	job.RuntimeProfile = normalizedProfileJSON
+	if err := s.persistWikiStepIndex(ctx, job, normalizedProfileJSON); err != nil {
+		return cleanup(err)
+	}
+
+	job.RunID = strings.TrimSpace(runID)
+	result = s.db.WithContext(ctx).Model(&model.RagJob{}).Where("job_id = ?", job.JobID).Update("run_id", job.RunID)
+	if result.Error != nil {
+		return cleanup(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return cleanup(fmt.Errorf("wiki auto trigger run id update affected %d jobs, want 1", result.RowsAffected))
+	}
+	return job, nil
+}
+
 func refreshFileRAGStatus(ctx context.Context, db *gorm.DB, fileID int64, runID string) {
 	var ragJobCount int64
 	if err := db.WithContext(ctx).Model(&model.RagJob{}).
-		Where("related_id = ? AND run_id = ? AND type NOT IN ?", fileID, runID, []string{"wiki_page_generation", "wiki_page_vectorization", "graph_pipeline_generation"}).
+		Where("related_id = ? AND run_id = ? AND type NOT IN ?", fileID, runID, []string{"wiki_page_generation", "wiki_page_vectorization", "graph_pipeline_generation", "generate_knowledge_map"}).
 		Count(&ragJobCount).Error; err != nil || ragJobCount == 0 {
 		return
 	}

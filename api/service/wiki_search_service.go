@@ -14,34 +14,62 @@ import (
 )
 
 type WikiSearchRequest struct {
-	Eid         int64
-	UserID      int64
-	Query       string
-	SpaceIDs    []int64
-	LibraryIDs  []int64
-	WikiPageIDs []int64
-	TopK        int
+	Eid           int64
+	UserID        int64
+	Query         string
+	SpaceIDs      []int64
+	LibraryIDs    []int64
+	WikiPageIDs   []int64
+	CategoryIDs   []int64
+	CategoryOther bool
+	Page          int
+	Size          int
+	TopK          int
+}
+
+type WikiSearchPage struct {
+	Items []WikiSearchResult `json:"items"`
+	Total int64              `json:"total"`
+	Page  int                `json:"page"`
+	Size  int                `json:"size"`
 }
 
 type WikiSearchResult struct {
-	PageID      int64
-	SpaceID     int64
-	LibraryID   int64
-	ChunkDBID   int64
-	Title       string
-	Summary     string
-	Body        string
-	Content     string
-	ChunkID     string
-	HeadingPath string
-	ChunkType   string
-	Slug        string
-	PageType    string
-	CreatedTime int64
-	Score       float64
-	LibraryName string
-	LibraryIcon string
-	SpaceName   string
+	PageID      int64                `json:"page_id"`
+	SpaceID     int64                `json:"space_id"`
+	LibraryID   int64                `json:"library_id"`
+	ChunkDBID   int64                `json:"chunk_db_id"`
+	Title       string               `json:"title"`
+	Summary     string               `json:"summary"`
+	Body        string               `json:"body"`
+	Content     string               `json:"content"`
+	ChunkID     string               `json:"chunk_id"`
+	HeadingPath string               `json:"heading_path"`
+	ChunkType   string               `json:"chunk_type"`
+	Slug        string               `json:"slug"`
+	PageType    string               `json:"page_type"`
+	CreatedTime int64                `json:"created_time"`
+	UpdatedTime int64                `json:"updated_time"`
+	Score       float64              `json:"score"`
+	LibraryName string               `json:"library_name"`
+	LibraryIcon string               `json:"library_icon"`
+	SpaceName   string               `json:"space_name"`
+	Categories  []WikiSearchCategory `json:"categories"`
+}
+
+type WikiSearchCategory struct {
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	Slug    string `json:"slug"`
+	SpaceID int64  `json:"space_id"`
+}
+
+type wikiSearchCategoryRow struct {
+	PageID  int64
+	ID      int64
+	Name    string
+	Slug    string
+	SpaceID int64
 }
 
 type WikiSearchService struct {
@@ -62,7 +90,54 @@ type WikiVectorSearcher interface {
 	Search(ctx context.Context, req vectorstore.SearchRequest) (*vectorstore.SearchResponse, error)
 }
 
-var batchGetWikiPermissions = common.BatchGetUserPermissions
+// batchGetWikiPermissions WIKI_PAGE 批量权限走按库快照：先批量定位页面所属库，
+// 按库分组加载快照注入 resolver；跨库/快照失败降级 DB 路径（resolver 内同样有 Source 交集）。
+// lazy: 每库一次 loadCapabilityWiki（Redis 命中 0 DB）；测试可整变量替换（沿用旧模式）。
+var batchGetWikiPermissions = func(eid int64, resourceType int, resourceIDs []int64, userID int64, ctxs ...context.Context) (map[int64]int, error) {
+	if resourceType != model.RESOURCE_TYPE_WIKI_PAGE {
+		return common.BatchGetUserPermissions(eid, resourceType, resourceIDs, userID, ctxs...)
+	}
+	ctx := context.Background()
+	if len(ctxs) > 0 && ctxs[0] != nil {
+		ctx = ctxs[0]
+	}
+	pages, err := model.GetWikiPagesByIDs(eid, resourceIDs)
+	if err != nil || len(pages) == 0 {
+		return common.BatchGetUserPermissions(eid, resourceType, resourceIDs, userID, ctxs...)
+	}
+	perLibrary := make(map[int64][]int64)
+	for _, p := range pages {
+		perLibrary[p.LibraryID] = append(perLibrary[p.LibraryID], p.ID)
+	}
+	result := make(map[int64]int, len(resourceIDs))
+	for libraryID, pageIDs := range perLibrary {
+		wiki, perms, loadErr := loadCapabilityWiki(ctx, eid, libraryID)
+		if loadErr != nil {
+			m, batchErr := common.BatchGetUserPermissions(eid, resourceType, pageIDs, userID, ctxs...)
+			if batchErr != nil {
+				return nil, batchErr
+			}
+			for id, perm := range m {
+				result[id] = perm
+			}
+			continue
+		}
+		m, batchErr := common.BatchGetUserPermissionsWithWikiSnapshot(eid, resourceType, pageIDs, userID, wiki, perms, ctxs...)
+		if batchErr != nil {
+			return nil, batchErr
+		}
+		for id, perm := range m {
+			result[id] = perm
+		}
+	}
+	// 非 active 页面（不在 pages 内）保持原批量语义：NONE。
+	for _, id := range resourceIDs {
+		if _, ok := result[id]; !ok {
+			result[id] = model.PERMISSION_NONE
+		}
+	}
+	return result, nil
+}
 
 func NewWikiSearchService(db *gorm.DB) *WikiSearchService {
 	store, _ := vectorstore.GetGlobalVectorStore()
@@ -77,7 +152,7 @@ func (s *WikiSearchService) Search(ctx context.Context, req WikiSearchRequest) (
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("wiki search database is nil")
 	}
-	if req.Eid <= 0 || req.UserID <= 0 || strings.TrimSpace(req.Query) == "" {
+	if req.Eid <= 0 || req.UserID <= 0 {
 		return []WikiSearchResult{}, nil
 	}
 	if req.TopK <= 0 {
@@ -88,14 +163,21 @@ func (s *WikiSearchService) Search(ctx context.Context, req WikiSearchRequest) (
 	}
 	// 新表尚未由应用启动时 AutoMigrate 时，保留兼容读取路径，避免旧实例在升级窗口完全不可用。
 	// 正常运行且 wiki_page_chunks 已存在时，Wiki 检索只走企业级 Wiki 向量集合。
-	if s.vectorDB != nil && s.db.Migrator().HasTable((&model.WikiPageChunk{}).TableName()) {
-		return s.searchVectors(ctx, req)
+	if strings.TrimSpace(req.Query) != "" && s.vectorDB != nil && s.db.Migrator().HasTable((&model.WikiPageChunk{}).TableName()) {
+		results, err := s.searchVectors(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		s.enrichSearchCategories(ctx, req.Eid, results)
+		return results, nil
 	}
 
-	keyword := "%" + strings.ToLower(strings.TrimSpace(req.Query)) + "%"
 	query := s.db.WithContext(ctx).Model(&model.WikiPage{}).
-		Where("eid = ? AND status = ?", req.Eid, model.WikiPageStatusActive).
-		Where("lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(body) LIKE ? OR lower(aliases) LIKE ?", keyword, keyword, keyword, keyword)
+		Where("eid = ? AND status = ?", req.Eid, model.WikiPageStatusActive)
+	if keyword := strings.TrimSpace(req.Query); keyword != "" {
+		keyword = "%" + strings.ToLower(keyword) + "%"
+		query = query.Where("lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(body) LIKE ? OR lower(aliases) LIKE ?", keyword, keyword, keyword, keyword)
+	}
 	if len(req.SpaceIDs) > 0 {
 		query = query.Where("space_id IN ?", req.SpaceIDs)
 	}
@@ -105,6 +187,7 @@ func (s *WikiSearchService) Search(ctx context.Context, req WikiSearchRequest) (
 	if len(req.WikiPageIDs) > 0 {
 		query = query.Where("id IN ?", req.WikiPageIDs)
 	}
+	query = applyWikiCategoryFilter(query, req)
 
 	var pages []model.WikiPage
 	if err := query.Order("sort ASC").Order("id ASC").Limit(req.TopK * 3).Find(&pages).Error; err != nil {
@@ -156,14 +239,131 @@ func (s *WikiSearchService) Search(ctx context.Context, req WikiSearchRequest) (
 		results = append(results, WikiSearchResult{
 			PageID: page.ID, SpaceID: page.SpaceID, LibraryID: page.LibraryID,
 			Title: page.Title, Summary: page.Summary, Body: page.Body, Slug: page.Slug,
-			PageType: page.PageType, CreatedTime: page.CreatedTime, Score: wikiSearchScore(page, req.Query),
+			PageType: page.PageType, CreatedTime: page.CreatedTime, UpdatedTime: page.UpdatedTime, Score: wikiSearchScore(page, req.Query),
 			LibraryName: library.Name, LibraryIcon: library.Icon, SpaceName: space.Name,
 		})
 		if len(results) >= req.TopK {
 			break
 		}
 	}
+	s.enrichSearchCategories(ctx, req.Eid, results)
 	return results, nil
+}
+
+func (s *WikiSearchService) enrichSearchCategories(ctx context.Context, eid int64, results []WikiSearchResult) {
+	if s.db == nil || len(results) == 0 {
+		return
+	}
+	pageIDs := make([]int64, 0, len(results))
+	for _, result := range results {
+		pageIDs = append(pageIDs, result.PageID)
+	}
+	var rows []wikiSearchCategoryRow
+	if err := s.db.WithContext(ctx).Table("wiki_page_categories AS wpc").
+		Select("wpc.page_id, wc.id, wc.name, wc.slug, wc.space_id").
+		Joins("JOIN wiki_categories AS wc ON wc.id = wpc.category_id AND wc.eid = wpc.eid").
+		Where("wpc.eid = ? AND wpc.page_id IN ? AND wc.status = ?", eid, pageIDs, model.WikiCategoryStatusEnabled).
+		Order("wpc.page_id ASC, wc.sort ASC, wc.id ASC").Find(&rows).Error; err != nil {
+		return
+	}
+	categoryMap := groupWikiSearchCategories(rows)
+	for i := range results {
+		results[i].Categories = categoryMap[results[i].PageID]
+		if results[i].Categories == nil {
+			results[i].Categories = []WikiSearchCategory{}
+		}
+	}
+}
+
+func groupWikiSearchCategories(rows []wikiSearchCategoryRow) map[int64][]WikiSearchCategory {
+	result := make(map[int64][]WikiSearchCategory)
+	for _, row := range rows {
+		result[row.PageID] = append(result[row.PageID], WikiSearchCategory{
+			ID: row.ID, Name: row.Name, Slug: row.Slug, SpaceID: row.SpaceID,
+		})
+	}
+	return result
+}
+
+func (s *WikiSearchService) SearchPage(ctx context.Context, req WikiSearchRequest) (*WikiSearchPage, error) {
+	if req.Page <= 0 {
+		req.Page = 1
+	}
+	if req.Size <= 0 {
+		req.Size = 20
+	}
+	if req.Size > 100 {
+		req.Size = 100
+	}
+	req.TopK = req.Page * req.Size
+	results, err := s.Search(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	total, err := s.countAccessibleWikiPages(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	start := (req.Page - 1) * req.Size
+	if start >= len(results) {
+		results = []WikiSearchResult{}
+	} else {
+		end := start + req.Size
+		if end > len(results) {
+			end = len(results)
+		}
+		results = results[start:end]
+	}
+	return &WikiSearchPage{Items: results, Total: total, Page: req.Page, Size: req.Size}, nil
+}
+
+func applyWikiCategoryFilter(query *gorm.DB, req WikiSearchRequest) *gorm.DB {
+	if len(req.CategoryIDs) == 0 && !req.CategoryOther {
+		return query
+	}
+	categoryExists := "EXISTS (SELECT 1 FROM wiki_page_categories wpc WHERE wpc.eid = ? AND wpc.page_id = wiki_pages.id AND wpc.category_id IN ?)"
+	categoryArgs := []interface{}{req.Eid, req.CategoryIDs}
+	otherExists := "NOT EXISTS (SELECT 1 FROM wiki_page_categories wpc WHERE wpc.eid = ? AND wpc.page_id = wiki_pages.id)"
+	if len(req.CategoryIDs) > 0 && req.CategoryOther {
+		return query.Where("("+categoryExists+") OR ("+otherExists+")", append(categoryArgs, req.Eid)...)
+	}
+	if len(req.CategoryIDs) > 0 {
+		return query.Where(categoryExists, categoryArgs...)
+	}
+	return query.Where(otherExists, req.Eid)
+}
+
+func (s *WikiSearchService) countAccessibleWikiPages(ctx context.Context, req WikiSearchRequest) (int64, error) {
+	query := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Where("eid = ? AND status = ?", req.Eid, model.WikiPageStatusActive)
+	if len(req.SpaceIDs) > 0 {
+		query = query.Where("space_id IN ?", req.SpaceIDs)
+	}
+	if len(req.LibraryIDs) > 0 {
+		query = query.Where("library_id IN ?", req.LibraryIDs)
+	}
+	if len(req.WikiPageIDs) > 0 {
+		query = query.Where("id IN ?", req.WikiPageIDs)
+	}
+	query = applyWikiCategoryFilter(query, req)
+	var pageIDs []int64
+	if err := query.Pluck("id", &pageIDs).Error; err != nil {
+		return 0, err
+	}
+	if len(pageIDs) == 0 {
+		return 0, nil
+	}
+	permissions, err := batchGetWikiPermissions(req.Eid, model.RESOURCE_TYPE_WIKI_PAGE, pageIDs, req.UserID)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, pageID := range pageIDs {
+		if permissions[pageID] >= model.PERMISSION_VIEW_ONLY {
+			total++
+		}
+	}
+	return total, nil
 }
 
 func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchRequest) ([]WikiSearchResult, error) {
@@ -206,6 +406,7 @@ func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchReq
 	if len(req.WikiPageIDs) > 0 {
 		pageScopeQuery = pageScopeQuery.Where("id IN ?", req.WikiPageIDs)
 	}
+	pageScopeQuery = applyWikiCategoryFilter(pageScopeQuery, req)
 	var scopedPageIDs []int64
 	if err := pageScopeQuery.Pluck("id", &scopedPageIDs).Error; err != nil {
 		return nil, err
@@ -324,7 +525,7 @@ func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchReq
 		returned[pageID] = struct{}{}
 		library, space := libraryMap[page.LibraryID], spaceMap[page.SpaceID]
 		chunkID := wikiMetadataString(hit.Metadata, "chunk_id")
-		results = append(results, WikiSearchResult{PageID: page.ID, SpaceID: page.SpaceID, LibraryID: page.LibraryID, ChunkDBID: chunkDBIDs[chunkID], Title: page.Title, Summary: page.Summary, Body: page.Body, Content: wikiMetadataString(hit.Metadata, "content"), ChunkID: chunkID, HeadingPath: wikiMetadataString(hit.Metadata, "heading_path"), ChunkType: wikiMetadataString(hit.Metadata, "chunk_type"), Slug: page.Slug, PageType: page.PageType, CreatedTime: page.CreatedTime, Score: float64(hit.Score), LibraryName: library.Name, LibraryIcon: library.Icon, SpaceName: space.Name})
+		results = append(results, WikiSearchResult{PageID: page.ID, SpaceID: page.SpaceID, LibraryID: page.LibraryID, ChunkDBID: chunkDBIDs[chunkID], Title: page.Title, Summary: page.Summary, Body: page.Body, Content: wikiMetadataString(hit.Metadata, "content"), ChunkID: chunkID, HeadingPath: wikiMetadataString(hit.Metadata, "heading_path"), ChunkType: wikiMetadataString(hit.Metadata, "chunk_type"), Slug: page.Slug, PageType: page.PageType, CreatedTime: page.CreatedTime, UpdatedTime: page.UpdatedTime, Score: float64(hit.Score), LibraryName: library.Name, LibraryIcon: library.Icon, SpaceName: space.Name})
 		if len(results) >= req.TopK {
 			break
 		}

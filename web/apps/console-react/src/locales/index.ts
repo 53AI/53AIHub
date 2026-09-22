@@ -3,6 +3,7 @@ import { useLocaleStore } from '@/stores/modules/locale'
 import { agentCreateMessages } from '@km/shared-business/agent-create'
 import { chatMessages } from '@km/shared-business/chat'
 import { dataPipelineMessages } from '@km/shared-business/knowledge-pipeline'
+import { captchaMessages } from '@km/shared-business/captcha'
 
 // 直接复用 console 的 CSV 源，保证 key 与文案完全一致
 // eslint-disable-next-line import/no-relative-packages
@@ -36,6 +37,7 @@ const messages = {
     agentCreateMessages['zh-cn'],
     chatMessages['zh-cn'],
     dataPipelineMessages['zh-cn'],
+    captchaMessages['zh-cn'],
     localeMessages['zh-cn']
   ),
   'zh-tw': deepMerge(
@@ -43,6 +45,7 @@ const messages = {
     agentCreateMessages['zh-tw'],
     chatMessages['zh-tw'],
     dataPipelineMessages['zh-tw'],
+    captchaMessages['zh-tw'],
     localeMessages['zh-tw']
   ),
   en: deepMerge(
@@ -50,6 +53,7 @@ const messages = {
     agentCreateMessages.en,
     chatMessages.en,
     dataPipelineMessages.en,
+    captchaMessages.en,
     localeMessages.en
   ),
   ja: deepMerge(
@@ -57,6 +61,7 @@ const messages = {
     agentCreateMessages.ja,
     chatMessages.ja,
     dataPipelineMessages.ja,
+    captchaMessages.ja,
     localeMessages.ja
   ),
 }

@@ -18,12 +18,12 @@ import LibraryPermission from "../components/permission/Library";
 import FilePermission from "../components/permission/File";
 import {
   PERMISSION_TYPE,
-  RESOURCE_TYPE,
+  type PermissionType,
 } from "@/components/KMPermission/constant";
+import { checkKMPermission } from "@/utils/km-permission";
 import { buildUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { filesApi } from "@/api/modules/files";
-import { permissionsApi } from "@/api/modules/permissions";
 import { generateUniqueName } from "@/utils/uniqueName";
 import {
   MoveToModal,
@@ -94,7 +94,6 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     const findNodeInPath = useLibraryStore((s) => s.findNodeInPath);
     const findNodeInBasePath = useLibraryStore((s) => s.findNodeInBasePath);
     const loadFilesAll = useLibraryStore((s) => s.loadFilesAll);
-    const loadFilePermissions = useLibraryStore((s) => s.loadFilePermissions);
     const renameFileAction = useLibraryStore((s) => s.rename);
     const deleteFileAction = useLibraryStore((s) => s.deleteFile);
     const createFolderAction = useLibraryStore((s) => s.createFolder);
@@ -395,6 +394,13 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
           loadFilesAll().then(() => {
             // Restore expanded state
             setKeys(expandParent(parentFolder, currentExpandedKeys));
+            // 根目录新建时，若当前滚动停留在别处（如底部选中了文件），树不会自动回到顶部，
+            // 新项目可能在视口外 —— 延迟到节点渲染后滚动定位（与内联编辑同一时机）
+            if (!path) {
+              setTimeout(() => {
+                treeRef.current?.scrollTo?.({ key: res.id, align: "auto" });
+              }, 100);
+            }
             // Start inline editing for the new folder
             setTimeout(() => {
               startInlineEdit(res.id, name);
@@ -430,6 +436,13 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
             loadFilesAll().then(() => {
               // Restore expanded state
               setKeys(expandParent(parentFolder, currentExpandedKeys));
+              // 根目录新建时，若当前滚动停留在别处（如底部选中了文件），树不会自动回到顶部，
+              // 新项目可能在视口外 —— 延迟到节点渲染后滚动定位（与内联编辑同一时机）
+              if (!path) {
+                setTimeout(() => {
+                  treeRef.current?.scrollTo?.({ key: res.id, align: "auto" });
+                }, 100);
+              }
               // Start inline editing for the new file
               setTimeout(() => {
                 startInlineEdit(res.id, baseName);
@@ -538,7 +551,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     //   非根时直接透传 '/xxx'，由后端按前缀匹配。
     // - type 参数：MoveToModal 内部传 'dir' / 'file'，filesApi.all 返回的
     //   RawFileItem.type 是 0/1，这里按 targetType 过滤后映射成 TreeNode 形状。
-    // - 权限校验：调 permissionsApi.myBatch 一次性拿当前用户对这些 file/folder 的权限，
+    // - 权限校验：filesApi.all 每条记录已随接口下发 permission（当前用户最高权限），
     //   权限 < edit_knowledge 的项标记 disabled（tooltip 由 MoveToModal 渲染），
     //   这样用户无法把文件搬到自己没有写权限的目录下。
     // 关键词搜索暂未在 library 维度实现，遇到 keyword 时返回空（保持弹窗可用）。
@@ -562,22 +575,6 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
           (item: any) => item.type === targetType,
         )
 
-        // 批量查权限：用于决定哪些目录不能作为移动目标（无编辑权限）。
-        // 文件行本身在 MoveToModal 内已默认禁用，这里也一并查以便展示 tooltip 文案统一。
-        let permMap: Record<string, number> = {}
-        if (filtered.length > 0) {
-          try {
-            permMap = await permissionsApi.myBatch({
-              resource_type: RESOURCE_TYPE.file,
-              resource_ids: filtered.map((item: any) => String(item.id)),
-            })
-          } catch (e) {
-            // 权限接口失败时降级为不禁用，让 MoveToModal 仍可使用；
-            // 真实场景下后端会兜底拒绝无权限的写入，所以前端不强阻塞。
-            permMap = {}
-          }
-        }
-
         const noPermissionReason =
           t("move_to.no_permission") || "当前用户没有操作权限"
         const data = filtered.map((item: any) => {
@@ -591,7 +588,9 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
             ? segment
             : item.upload_file?.file_name || segment
           const maxPerm =
-            permMap[`${RESOURCE_TYPE.file}:${item.id}`] ?? PERMISSION_TYPE.none
+            typeof item.permission === "number"
+              ? item.permission
+              : PERMISSION_TYPE.none
           // 文件夹：无 edit_knowledge 权限视为不可作为目标（即便能看到）。
           // 文件行始终 disabled（MoveToModal 内已默认），这里仍写入 reason 用于 tooltip 文案。
           const disabled =
@@ -723,14 +722,6 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
         }
       },
       [createMd, createFolder, onUpload],
-    );
-
-    // Handle mouse enter to load permissions
-    const handleMouseEnter = useCallback(
-      (data: FileItem) => {
-        loadFilePermissions(data.id);
-      },
-      [loadFilePermissions],
     );
 
     // Sort files - accepts array of file ids and their sort values
@@ -913,30 +904,14 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
       return true;
     };
 
-    // Handle node title click - custom expand/navigate logic
+    // Handle node title click —— 文件夹与文件一致：单击即选中并导航进入。
+    // 展开/收起子节点仅由左侧箭头（onExpand）负责，不再"首次点击只展开"。
     const handleNodeTitleClick = useCallback(
       (file: FileItem, e: React.MouseEvent) => {
         e.stopPropagation();
-
-        if (file.isfolder) {
-          // Check if folder is expanded
-          const isExpanded = expandedKeys.includes(file.id);
-          if (!isExpanded) {
-            // Folder not expanded - expand it (don't navigate)
-            setExpandedKeys([
-              ...expandedKeys,
-              file.id,
-            ]);
-          } else {
-            // Folder already expanded - navigate to folder page
-            handleView(file);
-          }
-        } else {
-          // File - navigate to file page
-          handleView(file);
-        }
+        handleView(file);
       },
-      [expandedKeys, setExpandedKeys, handleView],
+      [handleView],
     );
 
     // 注：不在 onSelect 中处理导航 —— 让 handleNodeTitleClick 负责，
@@ -1014,7 +989,6 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
             title: (
               <div
                 className={`catalog-tree-node group${dragOverFolderId === file.id && file.isfolder ? " drag-over-folder" : ""}`}
-                onMouseEnter={() => handleMouseEnter(file)}
                 onClick={(e) => handleNodeTitleClick(file, e)}
                 onDragOver={(e) => {
                   // 仅���节点中心区域设置蓝色背景（用于放入文件夹）
@@ -1063,6 +1037,23 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
                     </p>
                   </Tooltip>
                 )}
+                {/* 语料视图：权限未达「可编辑知识&语料」的节点上锁，提示无法编辑语料 */}
+                {fileViewType === "chunk" &&
+                  file.permission < PERMISSION_TYPE.edit_all && (
+                    <Tooltip
+                      title={
+                        checkKMPermission(
+                          file.permission as PermissionType,
+                          PERMISSION_TYPE.edit_all,
+                        ).message
+                      }
+                      placement="right"
+                    >
+                      <span className="flex-none ml-1 flex items-center text-[#979799]">
+                        <SvgIcon name="lock" size={14} />
+                      </span>
+                    </Tooltip>
+                  )}
                 {file.permission >= PERMISSION_TYPE.viewer && !isEditing && (
                   <div
                     className="node-actions hidden group-hover:flex"
@@ -1155,13 +1146,13 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
         dragOverFolderId,
         setDragOverFolderId,
         stopInlineEdit,
-        handleMouseEnter,
         handleInlineEditSave,
         handleTreeCommand,
         createMd,
         createFolder,
         onUpload,
         handleNodeTitleClick,
+        fileViewType,
       ],
     );
 

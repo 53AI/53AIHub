@@ -143,7 +143,7 @@ const MODULE_KEYS = [
   ['module.web_search', '联网搜索', '聯網搜索', 'Web Search', 'Web検索'],
   ['module.knowledge_scope', '知识范围', '知識範圍', 'Knowledge Scope', 'ナレッジ範囲'],
   ['module.knowledge_scope_desc', '选择知识库范围', '選擇知識庫範圍', 'Select knowledge base scope', 'ナレッジベース範囲を選択'],
-  ['module.dynamic_knowledge', '动态知识', '動態知識', 'Dynamic Knowledge', 'ダイナミックナレッジ'],
+  ['module.dynamic_knowledge', 'Wiki', 'Wiki', 'Wiki', 'Wiki'],
   ['setting.all_knowledge_base', '全部知识库', '全部知識庫', 'All Knowledge Bases', 'すべてのナレッジベース'],
   ['module.knowledge_graph', '知识图谱', '知識圖譜', 'Knowledge Graph', 'ナレッジグラフ'],
   // 模型名称
@@ -180,7 +180,7 @@ const MODULE_KEYS = [
   ['knowledge.deep_thinking_tip', '先思考后回答，复杂问题破解', '先思考後回答，複雜問題破解', 'Think before answering for complex problems', '複雑な問題に対して思考してから回答'],
   ['knowledge.question_rewrite_tip', '开启后，在多轮对话中，会根据上下文内容对问题进行改写，提升对话连续性', '開啟後，在多輪對話中，會根據上下文內容對問題進行改寫，提升對話連續性', 'Enable to rewrite questions based on context for better dialogue continuity', '有効にすると、マルチターン対話でコンテキストに基づいて質問を書き換え'],
   ['knowledge.answer_preference_tip', '开启后，支持自定义回答输出的要求', '開啟後，支持自定義回答輸出的要求', 'Enable to customize answer output requirements', '有効にすると回答出力の要件をカスタマイズ可能'],
-  ['knowledge.wiki_search_tip', '启用后将进行动态知识检索', '啟用後將進行動態知識檢索', 'Enable to search dynamic knowledge for relevant information', '有効にするとダイナミックナレッジから関連情報を検索'],
+  ['knowledge.wiki_search_tip', '启用后将进行 Wiki 检索', '啟用後將進行 Wiki 檢索', 'Enable to search Wiki for relevant information', '有効にするとWikiから関連情報を検索'],
   ['knowledge.graph_search_tip', '启用后将从知识图谱查找相关知识', '啟用後將從知識圖譜查找相關知識', 'Enable to search knowledge graph for relevant information', '有効にするとナレッジグラフから関連情報を検索'],
   ['knowledge.bocha_api', '博查（API）', '博查（API）', 'Bocha (API)', '博查（API）'],
 ] as const

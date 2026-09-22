@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 interface UseFilterItemOptions<T, IdType extends string | number> {
   getId: (item: T) => IdType;
+  /** 初始已添加（并勾选）的项，用于从受控 value 恢复内部状态 */
+  initialItems?: T[];
 }
 
 interface UseFilterItemReturn<T, IdType extends string | number> {
@@ -22,10 +24,12 @@ interface UseFilterItemReturn<T, IdType extends string | number> {
 export function useFilterItem<T, IdType extends string | number>(
   options: UseFilterItemOptions<T, IdType>
 ): UseFilterItemReturn<T, IdType> {
-  const { getId } = options;
+  const { getId, initialItems = [] } = options;
 
-  const [addedItems, setAddedItems] = useState<T[]>([]);
-  const [checkedIds, setCheckedIds] = useState<Set<IdType>>(new Set());
+  const [addedItems, setAddedItems] = useState<T[]>(initialItems);
+  const [checkedIds, setCheckedIds] = useState<Set<IdType>>(
+    () => new Set(initialItems.map((item) => getId(item)))
+  );
 
   // 添加单项
   const addItem = useCallback(

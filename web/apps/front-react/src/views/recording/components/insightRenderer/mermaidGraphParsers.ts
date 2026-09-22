@@ -10,6 +10,7 @@ import type {
   MermaidFlowEdge,
   MermaidFlowNode,
 } from '@/api/modules/recording/types'
+import { toLines } from './mermaidText'
 import { splitNodeLabel } from './mermaidFlowchartParser'
 
 interface DraftNode {
@@ -105,13 +106,6 @@ class GraphBuilder {
   }
 }
 
-function normalizeLines(source: string): string[] {
-  return String(source || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map(l => l.replace(/%%.*$/, ''))
-}
-
 function readDirection(line: string, fallback: 'TB' | 'LR'): 'TB' | 'LR' {
   const m = line.match(/^direction\s+(TB|TD|BT|LR|RL)\s*$/i)
   if (!m) return fallback
@@ -133,7 +127,7 @@ const STATE_DESCRIBE_RE = new RegExp(`^(${ID})\\s*:\\s*(.+)$`)
 const STATE_BARE_RE = new RegExp(`^(${ID})$`)
 
 export function isStateDiagram(source: string): boolean {
-  return normalizeLines(source).some(l => STATE_HEADER_RE.test(l))
+  return toLines(source).some(l => STATE_HEADER_RE.test(l))
 }
 
 /**
@@ -143,7 +137,7 @@ export function isStateDiagram(source: string): boolean {
  *       composite state（state X { ... } 拍平成普通节点）、direction。
  */
 export function parseStateDiagram(source: string): MermaidFlowDiagram {
-  const lines = normalizeLines(source)
+  const lines = toLines(source)
   const headerIndex = lines.findIndex(l => STATE_HEADER_RE.test(l))
   if (headerIndex < 0) throw new Error('not a stateDiagram')
 
@@ -210,7 +204,7 @@ const CLASS_DECL_RE = new RegExp(`^class\\s+(${CLASS_ID})\\s*(\\{)?$`, 'i')
 const CLASS_MEMBER_RE = new RegExp(`^(${CLASS_ID})\\s*:\\s*(.+)$`)
 
 export function isClassDiagram(source: string): boolean {
-  return normalizeLines(source).some(l => CLASS_HEADER_RE.test(l))
+  return toLines(source).some(l => CLASS_HEADER_RE.test(l))
 }
 
 /**
@@ -220,7 +214,7 @@ export function isClassDiagram(source: string): boolean {
  * 箭头朝左的关系（<|--、<--、<..）反向建边，保证箭头语义一致。
  */
 export function parseClassDiagram(source: string): MermaidFlowDiagram {
-  const lines = normalizeLines(source)
+  const lines = toLines(source)
   const headerIndex = lines.findIndex(l => CLASS_HEADER_RE.test(l))
   if (headerIndex < 0) throw new Error('not a classDiagram')
 
@@ -286,7 +280,7 @@ const MINDMAP_SHAPES: Array<[RegExp, number]> = [
 ]
 
 export function isMindmap(source: string): boolean {
-  return normalizeLines(source).some(l => MINDMAP_HEADER_RE.test(l))
+  return toLines(source).some(l => MINDMAP_HEADER_RE.test(l))
 }
 
 /** 剥掉 mindmap 节点外形与前缀 id，取出展示文本 */
@@ -309,7 +303,7 @@ function mindmapText(raw: string): string {
  * Tab 记 2 空格，兼容混排缩进。
  */
 export function parseMindmap(source: string): MermaidFlowDiagram {
-  const lines = normalizeLines(source)
+  const lines = toLines(source)
   const headerIndex = lines.findIndex(l => MINDMAP_HEADER_RE.test(l))
   if (headerIndex < 0) throw new Error('not a mindmap')
 

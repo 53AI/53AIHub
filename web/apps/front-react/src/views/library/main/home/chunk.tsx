@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type Key } from "react";
+import { useState, useMemo, type Key } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Table, Tooltip, Modal, Pagination, Button, message } from "antd";
 import { Dropdown } from "@km/shared-components-react";
@@ -6,10 +6,10 @@ import { MoreOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { MenuProps, TableColumnsType } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { useLibraryStore } from "@/stores/modules/library";
-import { filesApi } from "@/api/modules/files";
 import type { FileItem } from "@/api/modules/files/types";
+import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
+import { checkHasKMPermission } from "@/utils/km-permission";
 import { RUN_STATUS } from "@/constants/chunk";
-import { usePoll } from "@/hooks/usePoll";
 import { EntityDisplay } from "@/components/EntityDisplay/index";
 import { STEP_KEY_TO_NAME } from "@/views/library/main/components/status/file";
 import { ragJobApi } from "@/api/modules/rag-job";
@@ -20,6 +20,7 @@ import ragPipelineApi from "@/api/modules/rag-pipeline";
 interface FileStats {
   completed_count: number;
   queued_count: number;
+  waiting_count: number;
   failed_interrupted_count: number;
   processing_count: number;
 }
@@ -31,13 +32,6 @@ export function ChunkHomeView() {
   // Subscribe to files state for reactive updates
   const files = useLibraryStore((state) => state.files);
 
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<FileStats>({
-    completed_count: 0,
-    queued_count: 0,
-    failed_interrupted_count: 0,
-    processing_count: 0,
-  });
   const [activeTab, setActiveTab] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -50,47 +44,93 @@ export function ChunkHomeView() {
     { key: "all", label: "全部" },
     { key: RUN_STATUS.SUCCESS, label: "已完成" },
     { key: RUN_STATUS.PENDING, label: "排队中" },
-    { key: RUN_STATUS.WAITING, label: "等待处理" },
     { key: RUN_STATUS.PROCESSING, label: "处理中" },
     { key: RUN_STATUS.FAILED, label: "失败/中断" },
+    { key: RUN_STATUS.WAITING, label: "待人工处理" },
   ];
 
-  // Load stats
-  const loadStats = async () => {
-    if (!libraryId) return;
+  // 语料视图仅展示/统计当前用户可编辑语料（>= PERMISSION_EDIT_ALL）的文件
+  const manageableFiles = useMemo(
+    () =>
+      files.filter(
+        (item) =>
+          item.isfile &&
+          checkHasKMPermission(item.permission, PERMISSION_TYPE.edit_all),
+      ),
+    [files],
+  );
 
-    try {
-      const res = await filesApi.allStats({ library_id: libraryId });
-      setStats(res as FileStats);
-    } catch (error) {
-      console.error("获取统计数据失败:", error);
+  // 数据统计：与知识列表同源（/api/files/all），口径与 manageableFiles 保持一致
+  const stats: FileStats = useMemo(() => {
+    const result: FileStats = {
+      completed_count: 0,
+      queued_count: 0,
+      waiting_count: 0,
+      failed_interrupted_count: 0,
+      processing_count: 0,
+    };
+    for (const file of manageableFiles) {
+      switch (file.cleaning_info?.status) {
+        case RUN_STATUS.SUCCESS:
+          result.completed_count++;
+          break;
+        case RUN_STATUS.PENDING:
+          result.queued_count++;
+          break;
+        case RUN_STATUS.PROCESSING:
+          result.processing_count++;
+          break;
+        case RUN_STATUS.FAILED:
+          result.failed_interrupted_count++;
+          break;
+        case RUN_STATUS.WAITING:
+          result.waiting_count++;
+          break;
+      }
     }
-  };
+    return result;
+  }, [manageableFiles]);
 
   // Filter files by tab, sorted by updated_at descending
   const filteredFiles = useMemo(() => {
-    let filteredFiles = files.filter((item) => item.isfile);
-    if (activeTab !== "all") {
-      filteredFiles = filteredFiles.filter((file) => file.cleaning_info?.status === activeTab);
-    }
+    const scoped =
+      activeTab === "all"
+        ? manageableFiles
+        : manageableFiles.filter((file) => file.cleaning_info?.status === activeTab);
     // 按 updated_at 倒序排列
-    filteredFiles = filteredFiles.sort((a, b) => {
-      if (!a.updated_at && !b.updated_at) return 0;
-      if (!a.updated_at) return 1;
-      if (!b.updated_at) return -1;
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-    return filteredFiles.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  }, [files, activeTab, currentPage, pageSize]);
+    return [...scoped]
+      .sort((a, b) => {
+        if (!a.updated_at && !b.updated_at) return 0;
+        if (!a.updated_at) return 1;
+        if (!b.updated_at) return -1;
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      })
+      .slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [manageableFiles, activeTab, currentPage, pageSize]);
 
   // Total files count
   const totalFiles = useMemo(() => {
-    let filteredFiles = files.filter((item) => item.isfile);
-    if (activeTab !== "all") {
-      filteredFiles = filteredFiles.filter((file) => file.cleaning_info?.status === activeTab);
-    }
-    return filteredFiles.length;
-  }, [files, activeTab]);
+    // 与 filteredFiles 保持同一过滤口径，否则分页总数与列表条数不一致
+    if (activeTab === "all") return manageableFiles.length;
+    return manageableFiles.filter(
+      (file) => file.cleaning_info?.status === activeTab,
+    ).length;
+  }, [manageableFiles, activeTab]);
+
+  // 选中文件的清洗状态分布，决定批量操作按钮的展示与文案
+  const selectedStatuses = useMemo(() => {
+    const selected = files.filter(
+      (f) => selectedRowKeys.includes(f.id) && f.isfile,
+    );
+    return {
+      successCount: selected.filter(
+        (f) => f.cleaning_info?.status === RUN_STATUS.SUCCESS,
+      ).length,
+      failedCount: selected.filter(
+        (f) => f.cleaning_info?.status === RUN_STATUS.FAILED,
+      ).length,
+    };
+  }, [files, selectedRowKeys]);
 
   // Get duration
   const getDuration = (file: FileItem) => {
@@ -138,7 +178,6 @@ export function ChunkHomeView() {
       cancelText: "取消",
       onOk: async () => {
         await libraryStore.deleteFile(file);
-        loadStats();
       },
     });
   };
@@ -155,7 +194,6 @@ export function ChunkHomeView() {
       onOk: async () => {
         await Promise.all(targets.map((file) => libraryStore.deleteFile(file)));
         setSelectedRowKeys([]);
-        loadStats();
       },
     });
   };
@@ -335,7 +373,64 @@ export function ChunkHomeView() {
     }
     await Promise.all(targets.map((file) => runReClean(file, ctx)));
     setSelectedRowKeys([]);
-    loadStats();
+    libraryStore.loadFilesAll();
+  };
+
+  // 单文件「继续清洗」：定位失败节点，复用流水线详情页「执行」的 retry 语义，
+  // 从该节点起「执行当前与后续节点」，不重跑失败前的已成功步骤
+  const runContinueClean = async (file: FileItem) => {
+    try {
+      const res = await ragJobApi.getByRelatedId(file.id);
+      // 接口声明返回 RagJobItem，实际是带 current_step_order 的完整任务，按运行时结构断言
+      const jobs = (res.jobs || []) as unknown as RagJobWithSteps[];
+      const failedStepKey = file.cleaning_info?.step_key;
+      const failedJobs = jobs.filter((j) => j.status === RUN_STATUS.FAILED);
+      // 优先取与已知失败步骤名一致的任务，取不到再退化为「按步骤顺序的第一个失败节点」
+      const target =
+        failedJobs.find((j) => j.type === failedStepKey) ??
+        [...failedJobs].sort(
+          (a, b) => (a.current_step_order || 0) - (b.current_step_order || 0),
+        )[0];
+      if (!target) {
+        message.warning("未找到可继续执行的任务节点");
+        return;
+      }
+      const { config } = parseJobRunModeAndConfig(target);
+      await ragJobApi.retry(target.job_id, {
+        continue: true,
+        config:
+          target.type === "document_parsing"
+            ? { ...config, force_reparse: true }
+            : config,
+      });
+      message.success("已提交");
+    } catch (error) {
+      console.error("继续清洗失败:", error);
+      message.error("继续清洗失败");
+    }
+  };
+
+  // 单文件入口：调一次刷新
+  const handleContinueClean = async (file: FileItem) => {
+    await runContinueClean(file);
+    libraryStore.loadFilesAll();
+  };
+
+  // 批量继续清洗：逐个从失败节点续跑，结束时统一刷新一次
+  const handleBatchContinueClean = async (keys: Key[]) => {
+    if (keys.length === 0) return;
+    const targets = files.filter(
+      (f) =>
+        keys.includes(f.id) &&
+        f.isfile &&
+        f.cleaning_info?.status === RUN_STATUS.FAILED,
+    );
+    if (targets.length === 0) {
+      message.warning("已选文件中没有失败状态的文件");
+      return;
+    }
+    await Promise.all(targets.map((file) => runContinueClean(file)));
+    setSelectedRowKeys([]);
     libraryStore.loadFilesAll();
   };
 
@@ -385,7 +480,7 @@ export function ChunkHomeView() {
       case "waiting":
         return (
           <span className="px-2 py-1.5 whitespace-nowrap rounded text-[#f59e0b] text-sm bg-[#FFFBEB]">
-            等待处理{stepSuffix}
+            待人工处理{stepSuffix}
           </span>
         );
       case "failed":
@@ -405,7 +500,7 @@ export function ChunkHomeView() {
       title: "文档名称",
       dataIndex: "name",
       key: "name",
-      minWidth: 200,
+      minWidth: 250,
       ellipsis: true,
       render: (name: string, record: FileItem) => (
         <div className="flex items-center gap-3">
@@ -430,7 +525,6 @@ export function ChunkHomeView() {
       title: "清洗策略",
       dataIndex: "cleaning_info",
       key: "strategy",
-      width: 130,
       render: (cleaning_info: FileItem["cleaning_info"]) =>
         cleaning_info?.strategy_name ? (
           <div className="bg-[#F3F4F6] py-2 h-6 rounded text-[#4F5052] text-sm inline-flex items-center justify-center gap-1 max-w-[130px] px-2">
@@ -445,7 +539,6 @@ export function ChunkHomeView() {
       title: "状态",
       dataIndex: "cleaning_info",
       key: "status",
-      width: 200,
       render: (cleaning_info: FileItem["cleaning_info"]) =>
         getStatusTag(cleaning_info),
     },
@@ -453,7 +546,6 @@ export function ChunkHomeView() {
       title: "耗时",
       dataIndex: "last_body_time",
       key: "duration",
-      width: 100,
       render: (_: any, record: FileItem) => (
         <span className="text-sm text-[#999999]">{getDuration(record)}</span>
       ),
@@ -462,7 +554,6 @@ export function ChunkHomeView() {
       title: "大小",
       dataIndex: "file_size",
       key: "size",
-      width: 120,
       render: (size: string) => (
         <span className="text-sm text-[#999999]">{size || "--"}</span>
       ),
@@ -473,6 +564,9 @@ export function ChunkHomeView() {
       width: 120,
       align: "right",
       render: (_: any, record: FileItem) => {
+        const status = record.cleaning_info?.status;
+        const isSuccess = status === RUN_STATUS.SUCCESS;
+        const isFailed = status === RUN_STATUS.FAILED;
         const menuItems: MenuProps["items"] = [
           {
             key: "metadata",
@@ -515,22 +609,31 @@ export function ChunkHomeView() {
 
         return (
           <div className="flex items-center justify-end gap-2 invisible group-hover:visible transition-colors">
-            {record.cleaning_info?.status === RUN_STATUS.SUCCESS && (
-              <Tooltip title="重新清洗" placement="top">
+            {(isSuccess || isFailed) && (
+              <Tooltip title={isSuccess ? "重新清洗" : "继续清洗"} placement="top">
                 <span
                   className="cursor-pointer"
                   onClick={(e) => {
                     e.stopPropagation();
                     Modal.confirm({
                       title: "提示",
-                      content: "确定重新清洗该文件吗？",
+                      content: isSuccess
+                        ? "确定重新清洗该文件吗？"
+                        : "确定从失败节点继续清洗该文件吗？",
                       okText: "确定",
                       cancelText: "取消",
-                      onOk: () => handleReClean(record),
+                      onOk: () =>
+                        isSuccess
+                          ? handleReClean(record)
+                          : handleContinueClean(record),
                     });
                   }}
                 >
-                  <SvgIcon name="retry-get" size={16} color="#B1B9C9" />
+                  <SvgIcon
+                    name={isSuccess ? "retry-get" : "play-one-fill"}
+                    size={16}
+                    color="#B1B9C9"
+                  />
                 </span>
               </Tooltip>
             )}
@@ -557,28 +660,6 @@ export function ChunkHomeView() {
     },
   ];
 
-  // Poll for updates
-  usePoll(() => {
-    loadStats();
-  }, 5000);
-
-  // Extract file status changes to trigger stats refresh
-  const fileStatuses = useMemo(() => {
-    return files
-      .filter((f) => f.isfile)
-      .map((f) => f.cleaning_info?.status)
-      .sort()
-      .join(",");
-  }, [files]);
-
-  // Initial load and auto-refresh when file status changes
-  useEffect(() => {
-    if (!libraryId) return;
-
-    setLoading(true);
-    loadStats().finally(() => setLoading(false));
-  }, [libraryId, fileStatuses]);
-
   return (
     <div className="pb-6">
       {/* Stats Header */}
@@ -587,7 +668,7 @@ export function ChunkHomeView() {
       </div>
 
       {/* Statistics Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
         <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
           <div className="flex-none size-12 rounded-xl bg-[#ecfdf5] text-[#10b981] flex items-center justify-center text-xl">
             <SvgIcon name="success" size={24} />
@@ -618,12 +699,13 @@ export function ChunkHomeView() {
           </div>
         </div>
 
+
         <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
           <div className="flex-none size-12 rounded-xl bg-[#fff7ed] text-[#f97316] flex items-center justify-center text-xl">
             <SvgIcon name="time" size={24} />
           </div>
           <div className="flex-1">
-            <p className="text-[#94a3b8] text-sm mb-1 font-medium">清洗中</p>
+            <p className="text-[#94a3b8] text-sm mb-1 font-medium">处理中</p>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-[#1e293b]">
                 {stats.processing_count}
@@ -642,6 +724,27 @@ export function ChunkHomeView() {
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-[#1e293b]">
                 {stats.failed_interrupted_count}
+              </span>
+              <span className="text-sm text-[#1D1E1F]">个</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
+          <div className="flex-none size-12 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+              <path fill="#F6F2FF" d="M0 36L0 12C0 5.37258 5.37258 0 12 0L36 0C42.6274 0 48 5.37258 48 12L48 36C48 42.6274 42.6274 48 36 48L12 48C5.37258 48 0 42.6274 0 36Z" />
+              <circle cx="24" cy="17.5" r="3.5" stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+              <path stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" d="M14 32.5C14 28.0817 18.0294 24.5 23 24.5" />
+              <circle cx="29" cy="29" r="4.5" stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" />
+              <path stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" d="M28.5 27.5L28.5 29.5L30.5 29.5" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="text-[#94a3b8] text-sm mb-1 font-medium">待人工处理</p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-bold text-[#1e293b]">
+                {stats.waiting_count}
               </span>
               <span className="text-sm text-[#1D1E1F]">个</span>
             </div>
@@ -677,22 +780,40 @@ export function ChunkHomeView() {
           </div>
           {selectedRowKeys.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button
-                color="primary"
-                variant="outlined"
-                onClick={() => {
-                  if (selectedRowKeys.length === 0) return;
-                  Modal.confirm({
-                    title: "提示",
-                    content: `确定对已选中的 ${selectedRowKeys.length} 个文件重新清洗吗？`,
-                    okText: "确定",
-                    cancelText: "取消",
-                    onOk: () => handleBatchReClean(selectedRowKeys),
-                  });
-                }}
-              >
-                重新清洗
-              </Button>
+              {selectedStatuses.successCount > 0 && (
+                <Button
+                  color="primary"
+                  variant="outlined"
+                  onClick={() => {
+                    Modal.confirm({
+                      title: "提示",
+                      content: `确定对已选中的 ${selectedStatuses.successCount} 个已完成文件重新清洗吗？`,
+                      okText: "确定",
+                      cancelText: "取消",
+                      onOk: () => handleBatchReClean(selectedRowKeys),
+                    });
+                  }}
+                >
+                  重新清洗({selectedStatuses.successCount})
+                </Button>
+              )}
+              {selectedStatuses.failedCount > 0 && (
+                <Button
+                  color="primary"
+                  variant="outlined"
+                  onClick={() => {
+                    Modal.confirm({
+                      title: "提示",
+                      content: `确定对已选中的 ${selectedStatuses.failedCount} 个失败文件从失败节点继续清洗吗？`,
+                      okText: "确定",
+                      cancelText: "取消",
+                      onOk: () => handleBatchContinueClean(selectedRowKeys),
+                    });
+                  }}
+                >
+                  继续清洗({selectedStatuses.failedCount})
+                </Button>
+              )}
               <Button
                 color="danger"
                 variant="outlined"
@@ -710,7 +831,6 @@ export function ChunkHomeView() {
           dataSource={filteredFiles}
           columns={columns}
           rowKey="id"
-          loading={loading}
           pagination={false}
           rowSelection={{
             selectedRowKeys,
@@ -726,7 +846,7 @@ export function ChunkHomeView() {
         />
 
         {/* Footer Pagination */}
-        <div className="py-4 border-t border-[#f1f5f9]">
+        <div className="flex justify-end py-4 ">
           <Pagination
             total={totalFiles}
             current={currentPage}

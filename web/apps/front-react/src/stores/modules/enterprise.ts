@@ -26,10 +26,12 @@ interface EnterpriseState extends Enterprise.State {
   loadVersionInfo: () => Promise<void>
   loadSaasInfo: () => Promise<void>
   loadInfo: () => Promise<Enterprise.State>
+  /** 失效企业信息缓存后重新拉取：供企业信息被修改后调用，避免拿到旧缓存。 */
+  refreshInfo: () => Promise<Enterprise.State>
 }
 
 const initialState: Enterprise.State = {
-  id: 0,
+  id: '',
   type: '',
   banner: '',
   timezone: '',
@@ -42,6 +44,8 @@ const initialState: Enterprise.State = {
   updated_time: 0,
   logo: getDefaultLogo(),
   ico: getDefaultLogo(),
+  industry: '',
+  full_name: '',
   display_name: '',
   language: 'zh-cn',
   copyright: '',
@@ -200,6 +204,11 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
     }
   },
 
+  refreshInfo: async () => {
+    await cache.delete(CACHE_KEYS.ENTERPRISE_INFO)
+    return get().loadInfo()
+  },
+
   loadInfo: async () => {
     const fetchInfo = async () => {
       const res = await enterpriseApi.current()
@@ -212,6 +221,9 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
     try {
       const info = await cache.getOrFetch(CACHE_KEYS.ENTERPRISE_INFO, fetchInfo)
       const {
+        id,
+        full_name,
+        industry,
         display_name,
         logo,
         language,
@@ -270,9 +282,12 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
       const is_industry = type === 'industry'
 
       set({
+        id,
         version: info.version,
         logo: parsedLogo,
         ico: parsedIco,
+        full_name,
+        industry,
         display_name,
         copyright,
         description: description || '',

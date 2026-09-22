@@ -342,6 +342,7 @@ func (s *LibraryPermissionService) GetUserLibraries(userID int64, name string, s
 }
 
 // GetUserLibraries_Old 保留旧方法以备回滚
+// Deprecated: 请使用 GetUserLibraries
 func (s *LibraryPermissionService) GetUserLibraries_Old(userID int64, name string, status *int, spaceID *int64, offset, limit int) (count int64, libraries []model.Library, err error) {
 	if spaceID == nil {
 		return 0, []model.Library{}, nil
@@ -412,27 +413,10 @@ func (s *LibraryPermissionService) AddLibraryCreatorPermission(libraryID int64, 
 	return err
 }
 
-// 获取用户对知识库的权限
-// 就近原则，先找到什么权限就是什么权限
+// GetUserLibraryPermission 获取用户对知识库的权限
+// Deprecated: 请使用 service.GetUserPermission 或 common.GetUserPermission
 func (s *LibraryPermissionService) GetUserLibraryPermission(userID int64, libraryID int64) (int, error) {
-	user, err := model.GetUserByID(userID)
-	if user == nil || err != nil || user.Eid != s.Eid {
-		logger.SysLogf("【知识库】无法加载用户 %d", userID)
-		return 0, err
-	}
-
-	// 如果用户类型是注册用户，则直接返回无权限
-	if user.Type == model.UserTypeRegistered {
-		return model.PERMISSION_NONE, nil
-	}
-
-	// 先加载库，拿到 SpaceID
-	library, err := model.GetLibraryByID(s.Eid, libraryID)
-	if err != nil || library == nil {
-		logger.SysLogf("【知识库】无法加载知识库 %d", libraryID)
-		return 0, err
-	}
-	return s.getUserLibraryPermissionForLoadedLibrary(userID, library, user)
+	return common.GetUserPermission(s.Eid, model.RESOURCE_TYPE_LIBRARY, libraryID, userID)
 }
 
 func (s *LibraryPermissionService) getUserLibraryPermissionForLoadedLibrary(userID int64, library *model.Library, user *model.User) (int, error) {

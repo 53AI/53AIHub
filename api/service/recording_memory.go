@@ -26,6 +26,7 @@ const (
 	recordingMemoryLifecycleCancel         = "cancelled"
 	recordingMemorySourceInsightBackground = "insight_background"
 	recordingMemorySourceUserConfirmed     = "user_confirmed_context"
+	recordingMemoryMinSourceConfidence     = 0.6
 )
 
 var ErrRecordingMemoryForbidden = errors.New("recording memory is not visible")
@@ -35,6 +36,7 @@ type meetingMemoryContext struct {
 	MemoryID          int64
 	Kind              string
 	Content           string
+	RecallReason      string
 	AssertionState    string
 	LifecycleState    string
 	ReviewState       string
@@ -256,6 +258,9 @@ func ensureRecordingMemoryReady(ctx context.Context, eid, fileID, ownerID int64)
 	if _, err := CompileRecordingEntityMemory(ctx, eid, fileID, ownerID); err != nil {
 		return ready, err
 	}
+	if _, err := CompileRecordingCognitionCandidates(ctx, eid, fileID, ownerID); err != nil {
+		logger.Warnf(ctx, "【老板认知】候选编译失败，继续使用现有会议记忆: fileID=%d err=%v", fileID, err)
+	}
 	if err := model.DB.WithContext(ctx).Model(&model.RecordingMemoryClaim{}).
 		Where("eid = ? AND owner_id = ? AND file_id = ? AND is_current = ?", eid, ownerID, fileID, true).
 		Count(&ready.Claims).Error; err != nil {
@@ -419,9 +424,16 @@ func buildRecordingMemoryItems(minutes map[string]interface{}) []recordingMemory
 			seenSourceKeys[sourceKey] = occurrence + 1
 			keyHash := sha256.Sum256([]byte(fmt.Sprintf("%s|%d", sourceKey, occurrence)))
 			detail, _ := json.Marshal(row)
-			confidence, _ := row["confidence"].(float64)
+			rawConfidence, hasConfidence := row["confidence"]
+			confidence, _ := rawConfidence.(float64)
 			if confidence == 0 {
-				confidence, _ = row["source_confidence"].(float64)
+				if sourceConfidence, ok := row["source_confidence"]; ok {
+					rawConfidence, hasConfidence = sourceConfidence, true
+					confidence, _ = rawConfidence.(float64)
+				}
+			}
+			if hasConfidence && confidence < recordingMemoryMinSourceConfidence {
+				continue
 			}
 			status := strings.ToLower(strings.TrimSpace(stringValue(row["status"])))
 			assertion := memoryAssertionState(definition.kind, status)

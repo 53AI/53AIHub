@@ -1,13 +1,11 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import { Tooltip, Empty } from "antd";
-import { SearchOutlined, CloseOutlined } from "@ant-design/icons";
-import { Search } from "@km/shared-components-react";
-import { SafeImage } from "@km/shared-components-react";
+import { CloseOutlined } from "@ant-design/icons";
+import { Search, SafeImage } from "@km/shared-components-react";
 import { useAgentStore } from "@/stores/modules/agent";
 import { useBasicLayout } from "@/hooks/useBasicLayout";
 import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
-import "./AgentTooltip.css";
 
 interface AgentTooltipProps {
   children: React.ReactNode;
@@ -19,7 +17,6 @@ export default function AgentTooltip({
   onSelect,
 }: AgentTooltipProps) {
   const { isSmScreen } = useBasicLayout();
-  const tooltipRef = useRef<any>(null);
   const [visible, setVisible] = useState(false);
   const [keyword, setKeyword] = useState("");
   const [groupId, setGroupId] = useState(0);
@@ -127,7 +124,6 @@ export default function AgentTooltip({
 
   return (
     <Tooltip
-      ref={tooltipRef}
       open={visible}
       color="white"
       trigger="click"

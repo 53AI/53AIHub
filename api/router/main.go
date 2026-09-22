@@ -8,7 +8,7 @@ import (
 
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/controller"
-	_ "github.com/53AI/53AIHub/docs"
+	_ "github.com/53AI/53AIHub/docs/swagger"
 	"github.com/53AI/53AIHub/middleware"
 
 	"github.com/gin-contrib/gzip"

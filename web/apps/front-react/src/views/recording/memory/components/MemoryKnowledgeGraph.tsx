@@ -85,7 +85,7 @@ export interface MemoryKnowledgeGraphRef {
 export const MemoryKnowledgeGraph = forwardRef<MemoryKnowledgeGraphRef>((_, ref) => {
   const widgetRef = useRef<GraphViewerWidgetRef>(null);
   const [keyword, setKeyword] = useState('');
-  const [data, setData] = useState<MemoryGraphData>(MOCK_GRAPH_DATA);
+  const [data] = useState<MemoryGraphData>(MOCK_GRAPH_DATA);
 
   useEffect(() => {
     widgetRef.current?.setGraphData(data);

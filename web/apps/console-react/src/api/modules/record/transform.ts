@@ -1,9 +1,9 @@
 import {
-  type RecordItem,
-  type RecordDisplayItem,
-  THINKING_MODE,
-  RESPONSE_STATUS,
-  KNOWLEDGE_TYPE,
+    type RecordItem,
+    type RecordDisplayItem,
+    THINKING_MODE,
+    RESPONSE_STATUS,
+    KNOWLEDGE_TYPE,
 } from './types'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 
@@ -18,12 +18,15 @@ export const ResponseStatusContent = {
 }
 
 export const KnowledgeTypeContent = {
-  [KNOWLEDGE_TYPE.KNOWLEDGE_BASE]: window.$t('search-record.all_knowledge_base'),
+  [KNOWLEDGE_TYPE.KNOWLEDGE_BASE]: window.$t('search-record.knowledge_doc'),
   [KNOWLEDGE_TYPE.WEB]: window.$t('search-record.online_search'),
-  [KNOWLEDGE_TYPE.SPECIFIED_KNOWLEDGE_BASE]: window.$t('search-record.specified_knowledge_base'),
-  [KNOWLEDGE_TYPE.HYBRID_WIKI]: window.$t('search-record.hybrid_wiki'),
-  [KNOWLEDGE_TYPE.ALL_WIKI]: window.$t('search-record.all_wiki'),
-  [KNOWLEDGE_TYPE.SPECIFIED_WIKI]: window.$t('search-record.specified_wiki'),
+  [KNOWLEDGE_TYPE.SPECIFIED_KNOWLEDGE_BASE]: window.$t('search-record.specified_content'),
+  [KNOWLEDGE_TYPE.SPECIFIED_CONTENT]: window.$t('search-record.specified_content'),
+  [KNOWLEDGE_TYPE.DOC_PLUS_DYNAMIC]: window.$t('search-record.doc_plus_dynamic'),
+  [KNOWLEDGE_TYPE.DYNAMIC_KNOWLEDGE]: window.$t('module.dynamic_knowledge'),
+  [KNOWLEDGE_TYPE.SPECIFIED_WIKI]: window.$t('search-record.specified_content'),
+  [KNOWLEDGE_TYPE.DOC_PLUS_GRAPH]: window.$t('search-record.doc_plus_graph'),
+  [KNOWLEDGE_TYPE.DOC_PLUS_DYNAMIC_PLUS_GRAPH]: window.$t('search-record.doc_plus_dynamic_plus_graph'),
 }
 
 export const transformRecordItem = (item: RecordItem): RecordDisplayItem => {
@@ -37,9 +40,6 @@ export const transformRecordItem = (item: RecordItem): RecordDisplayItem => {
 
   infos.forEach((info: any) => {
     const infoContent = JSON.parse(info.content)
-    if (infoContent.type === 'specified_files') {
-      knowledge_type_value = infoContent.list.map((row: any) => row.name).join(',')
-    }
     if (infoContent.type === 'specified_content') {
       specified_content = infoContent.content
     }

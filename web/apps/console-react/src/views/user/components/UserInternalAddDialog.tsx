@@ -1,9 +1,11 @@
 import { Modal, Form, Input, Button, message } from "antd";
 import { t } from "@/locales";
 import { useState, useEffect } from "react";
-import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
+import { MinusCircleOutlined } from "@ant-design/icons";
 import { userApi } from "@/api/modules/user";
+import { settingApi } from "@/api/modules/setting";
 import { SvgIcon } from "@km/shared-components-react";
+import { noSpaceKeydownHandler, passwordStrengthRule } from "@/utils";
 
 interface UserInternalAddDialogProps {
   open: boolean;
@@ -21,10 +23,11 @@ export default function UserInternalAddDialog({
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
   const [allUserList, setAllUserList] = useState<any[]>([]);
-
+  const [passwordStrength, setPasswordStrength] = useState<"weak" | "medium" | "strong">("weak");
   useEffect(() => {
     if (open) {
       fetchAllUser();
+      fetchPasswordPolicy();
       form.setFieldsValue({
         users: [
           {
@@ -49,6 +52,21 @@ export default function UserInternalAddDialog({
       console.error(e);
     }
   };
+  const fetchPasswordPolicy = async () => {
+    try {
+      const res: any = await settingApi.get("password_security_policy");
+      const val = res?.data?.value || res?.value;
+      if (val) {
+        const policy = JSON.parse(val);
+        if (policy?.strength) {
+          setPasswordStrength(policy.strength);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
 
   const handleConfirm = async () => {
     try {
@@ -230,7 +248,7 @@ export default function UserInternalAddDialog({
                           "internal_user.account.password_placeholder",
                         ),
                       },
-                      { min: 8, max: 20, message: t("login.password_length") },
+                      passwordStrengthRule(passwordStrength),
                     ]}
                     className="flex-1"
                   >
@@ -238,6 +256,7 @@ export default function UserInternalAddDialog({
                       placeholder={t(
                         "internal_user.account.password_placeholder",
                       )}
+                      onKeyDown={noSpaceKeydownHandler}
                     />
                   </Form.Item>
 

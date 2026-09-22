@@ -9,6 +9,8 @@ import type {
   GlobalSearchSpace,
   LibrarySearchParams,
   GlobalSearchLibrary,
+  DynamicSearchParams,
+  DynamicSearchResponse,
 } from './types';
 
 export const globalSearchApi = {
@@ -28,6 +30,19 @@ export const globalSearchApi = {
    * @param params - 搜索参数
    */
   search(params: GlobalSearchParams): Promise<GlobalSearchResponse> {
+    return request
+      .post('/api/global-search/search', params)
+      .then((res) => res.data)
+      .catch(handleError);
+  },
+
+  /**
+   * 动态知识搜索（wiki 源）
+   * @param params.sources - 数据源，当前仅 ["wiki"]
+   * @param params.query - 搜索关键词
+   * @param params.wiki - wiki 源分页
+   */
+  dynamicSearch(params: DynamicSearchParams): Promise<DynamicSearchResponse> {
     return request
       .post('/api/global-search/search', params)
       .then((res) => res.data)

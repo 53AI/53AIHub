@@ -13,7 +13,6 @@ import (
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
-	"github.com/53AI/53AIHub/rag-pipeline-v2/steps"
 	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -23,6 +22,7 @@ type WikiPageController struct {
 	readSvc     service.WikiPageReadService
 	editSvc     service.WikiPageEditService
 	progressSvc service.WikiProgressService
+	rebuildSvc  *service.WikiRebuildService
 	db          *gorm.DB
 }
 
@@ -31,6 +31,7 @@ func NewWikiPageController(db *gorm.DB) *WikiPageController {
 		readSvc:     service.NewWikiPageReadService(db),
 		editSvc:     service.NewWikiPageEditService(db),
 		progressSvc: service.NewWikiProgressService(db),
+		rebuildSvc:  service.NewWikiRebuildService(db),
 		db:          db,
 	}
 }
@@ -129,11 +130,12 @@ type WikiProgressQuery struct {
 // @Router /api/libraries/{library_id}/wiki/pages [get]
 func (c *WikiPageController) ListPages(ctx *gin.Context) {
 	eid := config.GetEID(ctx)
+	userID := config.GetUserId(ctx)
 	libraryID, ok := parseWikiLibraryID(ctx)
 	if !ok {
 		return
 	}
-	if _, ok := requireLibraryPermission(ctx, eid, config.GetUserId(ctx), libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看此知识库的 Wiki"); !ok {
+	if _, ok := requireLibraryPermission(ctx, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看此知识库的 Wiki"); !ok {
 		return
 	}
 
@@ -164,6 +166,17 @@ func (c *WikiPageController) ListPages(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
+
+	// 页面级权限过滤：库级 VIEW_ONLY 不等于页面可见（页面 ACL ∩ 来源文档）。
+	before := len(items)
+	items, err = service.FilterWikiPageSummariesByPermission(ctx.Request.Context(), eid, userID, items)
+	if err != nil {
+		logger.Errorf(ctx.Request.Context(), "wiki list pages permission filter failed: %v", err)
+		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	// lazy: 分页下 total 按当前页丢弃数近似（精确需在查询层过滤）。
+	total -= int64(before - len(items))
 
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
 		"items": items,
@@ -187,6 +200,7 @@ func (c *WikiPageController) ListPages(ctx *gin.Context) {
 // @Router /api/wiki/pages [get]
 func (c *WikiPageController) ListPagesStandalone(ctx *gin.Context) {
 	eid := config.GetEID(ctx)
+	userID := config.GetUserId(ctx)
 
 	var req WikiListPagesQuery
 	if err := ctx.ShouldBindQuery(&req); err != nil {
@@ -204,6 +218,19 @@ func (c *WikiPageController) ListPagesStandalone(ctx *gin.Context) {
 		parsed, err := hashids.TryParseID(raw)
 		if err != nil || parsed <= 0 {
 			ctx.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的知识库ID")))
+			return
+		}
+		libraryID = parsed
+	}
+
+	// 显式限定的范围先做可见性门禁（页面级过滤在下方兜底，二者不可互相替代）。
+	if libraryID > 0 {
+		if _, ok := requireLibraryPermission(ctx, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看此知识库的 Wiki"); !ok {
+			return
+		}
+	}
+	if req.SpaceID > 0 {
+		if !requireWikiSpacePermission(ctx, eid, userID, req.SpaceID, model.PERMISSION_VIEW_ONLY, "无权限查看该空间的 Wiki") {
 			return
 		}
 	}
@@ -225,6 +252,17 @@ func (c *WikiPageController) ListPagesStandalone(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
+
+	// 页面级权限过滤：无查看权限（含来源文档约束）的页面不返回，并回填实测权限。
+	before := len(items)
+	items, err = service.FilterWikiPageSummariesByPermission(ctx.Request.Context(), eid, userID, items)
+	if err != nil {
+		logger.Errorf(ctx.Request.Context(), "wiki list pages permission filter failed: %v", err)
+		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
+	// lazy: 分页下 total 按当前页丢弃数近似（精确需在查询层过滤）。
+	total -= int64(before - len(items))
 
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
 		"items": items,
@@ -260,6 +298,11 @@ func (c *WikiPageController) GetPage(ctx *gin.Context) {
 		logger.Errorf(ctx.Request.Context(), "wiki get page failed: %v", err)
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
+	}
+	if storedPage, lookupErr := model.GetWikiPageBySlug(eid, libraryID, slug); lookupErr == nil {
+		recordWikiPageAccess(ctx.Request.Context(), eid, config.GetUserId(ctx), storedPage.ID, storedPage.SpaceID)
+	} else {
+		logger.Warnf(ctx.Request.Context(), "读取 Wiki 页面访问记录元数据失败: eid=%d libraryID=%d slug=%s err=%v", eid, libraryID, slug, lookupErr)
 	}
 
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(page))
@@ -435,6 +478,15 @@ func (c *WikiPageController) GetProgress(ctx *gin.Context) {
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(detail))
 }
 
+// @Security BearerAuth
+// @Param library_id path string true "知识库ID（hashid）"
+// @Param request body controller.WikiRebuildBody false "可选：只重建指定文件"
+// @Success 202 {object} model.CommonResponse{data=service.WikiRebuildEnqueueResult}
+// @Failure 400 {object} model.CommonResponse
+// @Failure 404 {object} model.CommonResponse
+// @Failure 409 {object} model.CommonResponse
+// @Failure 500 {object} model.CommonResponse
+// @Router /api/libraries/{library_id}/wiki/rebuild [post]
 func (c *WikiPageController) Rebuild(ctx *gin.Context) {
 	eid := config.GetEID(ctx)
 	libraryID, ok := parseWikiLibraryID(ctx)
@@ -451,51 +503,35 @@ func (c *WikiPageController) Rebuild(ctx *gin.Context) {
 		return
 	}
 
-	ctxReq := ctx.Request.Context()
-	language := strings.TrimSpace(req.Language)
-	if req.FileID != nil && *req.FileID > 0 {
-		if err := service.NewWikiPageGenerationProcessor(c.db).ProcessFile(ctxReq, steps.WikiPageGenerationInput{
-			Eid:       eid,
-			LibraryID: libraryID,
-			FileID:    *req.FileID,
-			Language:  language,
-		}); err != nil {
-			logger.Errorf(ctxReq, "wiki rebuild single file failed: %v", err)
-			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
-			return
-		}
-		ctx.JSON(http.StatusOK, model.Success.ToResponse(gin.H{"processed_files": 1}))
-		return
-	}
-
-	files, err := model.GetFilesByLibraryID(eid, libraryID)
+	result, err := c.rebuildSvc.Enqueue(ctx.Request.Context(), service.WikiRebuildRequest{
+		Eid:       eid,
+		LibraryID: libraryID,
+		FileID:    valueOrZero(req.FileID),
+		Language:  strings.TrimSpace(req.Language),
+	})
 	if err != nil {
-		logger.Errorf(ctxReq, "wiki rebuild list files failed: %v", err)
-		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		switch {
+		case errors.Is(err, service.ErrWikiRebuildInvalidRequest):
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("wiki 重建参数无效"))
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			ctx.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("wiki 文件不存在"))
+		case errors.Is(err, service.ErrWikiRebuildAlreadyRunning):
+			ctx.JSON(http.StatusConflict, model.OperateTooFast.ToNewErrorResponse("该知识库的 Wiki 重建正在入队，请稍后查看进度"))
+		default:
+			logger.Errorf(ctx.Request.Context(), "wiki rebuild enqueue failed: %v", err)
+			ctx.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("wiki 重建任务入队失败"))
+		}
 		return
 	}
 
-	processor := service.NewWikiPageGenerationProcessor(c.db)
-	processed := 0
-	for _, file := range files {
-		if file.IsDeleted {
-			continue
-		}
-		if err := processor.ProcessFile(ctxReq, steps.WikiPageGenerationInput{
-			Eid:       eid,
-			LibraryID: libraryID,
-			FileID:    file.ID,
-			Language:  language,
-		}); err != nil {
-			logger.Warnf(ctxReq, "wiki rebuild skipped file_id=%d err=%v", file.ID, err)
-			continue
-		}
-		processed++
-	}
+	ctx.JSON(http.StatusAccepted, model.Success.ToResponse(result))
+}
 
-	ctx.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
-		"processed_files": processed,
-	}))
+func valueOrZero(value *int64) int64 {
+	if value == nil {
+		return 0
+	}
+	return *value
 }
 
 // @Security BearerAuth
@@ -820,6 +856,7 @@ func (c *WikiPageController) GetPageByID(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
+	recordWikiPageAccess(ctx.Request.Context(), eid, userID, page.ID, page.SpaceID)
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(detail))
 }
 

@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,9 +15,9 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils"
 	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
-	v2model "github.com/53AI/53AIHub/rag-pipeline-v2/model"
 	"github.com/53AI/53AIHub/service"
 	"github.com/53AI/53AIHub/service/elasticsearch"
 	mcpsvc "github.com/53AI/53AIHub/service/mcp"
@@ -598,8 +597,13 @@ func GetFileList(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, model.Success.ToResponse(files))
+	filteredFiles, err := filterFilesByPermission(c.Request.Context(), eid, userID, files)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+		return
+	}
 
+	c.JSON(http.StatusOK, model.Success.ToResponse(filteredFiles))
 }
 
 // GetAllFileList godoc
@@ -632,10 +636,19 @@ func GetAllFileList(c *gin.Context) {
 		return
 	}
 
-	library, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限访问此知识库")
-	if !ok {
+	library, err := model.GetLibraryByID(eid, libraryID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("知识库不存在")))
 		return
 	}
+	// 个人库完全私有：非 owner 一律 403（无文件级分享语义），保持既有验收。
+	if library.IsPersonalLibrary() {
+		if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限访问此知识库", c.Request.Context()); !ok {
+			return
+		}
+	}
+	// 普通库无库级 VIEW_ONLY 不硬拒：文件级 ACL 独立（库级只是文件级匹配不到的 fallback），
+	// 由下方 filterFilesByPermission 逐文件过滤兜底；库不存在/已删除仍拒绝。
 	if !library.IsPersonalLibrary() {
 		params := map[string]interface{}{
 			"from": "document",
@@ -676,12 +689,18 @@ func GetAllFileList(c *gin.Context) {
 		runStatusValues = strings.Split(runStatus, ",")
 	}
 
-	files, err := model.GetAllFilesByLibrary(eid, libraryID, parentPath, sort, fileType, runStatusValues)
+	files, err := model.GetAllFilesByLibrary(eid, libraryID, parentPath, sort, fileType, runStatusValues, c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
 	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(files))
+
+	filteredFiles, err := filterFilesByPermission(c.Request.Context(), eid, userID, files)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(filteredFiles, c.GetString(helper.RequestIdKey)))
 }
 
 // GetFileChildrenList godoc
@@ -779,8 +798,14 @@ func GetFileChildrenList(c *gin.Context) {
 		return
 	}
 
+	filteredFiles, err := filterFilesByPermission(c.Request.Context(), eid, userID, files)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+		return
+	}
+
 	response := FileChildrenResponse{
-		Entries: files,
+		Entries: filteredFiles,
 	}
 	if offset+limit < int(total) {
 		response.NextPageToken = encodePageToken(offset + limit)
@@ -826,7 +851,7 @@ func encodePageToken(offset int) string {
 // @Router /api/files/all/stats [get]
 func GetRagFileRunStats(c *gin.Context) {
 	eid := config.GetEID(c)
-
+	userID := config.GetUserId(c)
 	libraryIDStr := c.Query("library_id")
 	if libraryIDStr == "" {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("知识库ID不能为空")))
@@ -839,6 +864,9 @@ func GetRagFileRunStats(c *gin.Context) {
 		return
 	}
 
+	if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限访问此知识库"); !ok {
+		return
+	}
 	summary, err := model.GetRagFileRunStatsSummary(eid, &libraryID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
@@ -867,6 +895,27 @@ func BatchUpdateSort(c *gin.Context) {
 		return
 	}
 
+	userID := config.GetUserId(c)
+	fileIDs := make([]int64, 0, len(fileRequst.Files))
+	for _, file := range fileRequst.Files {
+		if file.ID > 0 {
+			fileIDs = append(fileIDs, file.ID)
+		}
+	}
+	if len(fileIDs) > 0 {
+		permissions, err := common.BatchGetUserPermissions(eid, model.RESOURCE_TYPE_FILE, fileIDs, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
+		for _, id := range fileIDs {
+			if perm, ok := permissions[id]; !ok || perm < model.PERMISSION_EDIT_ALL {
+				c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限更新文件排序")))
+				return
+			}
+		}
+	}
+
 	tx := model.DB.Begin()
 	for _, file := range fileRequst.Files {
 		if err := tx.Model(&model.File{}).Where("eid = ? AND id = ?", eid, file.ID).Update("sort", file.Sort).Error; err != nil {
@@ -876,7 +925,6 @@ func BatchUpdateSort(c *gin.Context) {
 		}
 	}
 	tx.Commit()
-
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 }
 
@@ -992,6 +1040,7 @@ func RenameFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
 	}
+	model.InvalidateCapabilityFiletree(eid, file.LibraryID)
 
 	// 同步到 Elasticsearch
 	elasticsearch.SyncFileToES(file, "update")
@@ -1333,6 +1382,12 @@ func GetRecentlyFileList(c *gin.Context) {
 			trimPersonalLibraryFilePath(&files[i], lib)
 		}
 	}
+	filteredFiles, err := filterFilesByPermission(c.Request.Context(), eid, userID, files)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
+		return
+	}
+	files = filteredFiles
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(files))
 }
@@ -2045,6 +2100,12 @@ func GetFileStats(c *gin.Context) {
 			return
 		}
 	}
+	if libraryID > 0 {
+		userID := config.GetUserId(c)
+		if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限访问此知识库"); !ok {
+			return
+		}
+	}
 
 	var stats FileStatsResponse
 
@@ -2117,6 +2178,13 @@ func GetDocumentChunkStats(c *gin.Context) {
 		libraryID, err = strconv.ParseInt(libraryIDStr, 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("无效的知识库ID")))
+			return
+		}
+	}
+
+	userID := config.GetUserId(c)
+	if libraryID > 0 {
+		if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看此知识库分块统计"); !ok {
 			return
 		}
 	}
@@ -2212,6 +2280,13 @@ func GetRetrievalChunkStats(c *gin.Context) {
 		}
 	}
 
+	userID := config.GetUserId(c)
+	if libraryID > 0 {
+		if _, ok := requireLibraryPermission(c, eid, userID, libraryID, model.PERMISSION_VIEW_ONLY, "无权限查看此知识库检索块统计"); !ok {
+			return
+		}
+	}
+
 	var stats RetrievalChunkStatsResponse
 
 	// 优化：使用单个查询获取所有检索块统计信息
@@ -2263,13 +2338,14 @@ func GetRetrievalChunkStats(c *gin.Context) {
 
 // GenerateQuestionsAndSummary godoc
 // @Summary 生成问题和简介
-// @Description 为指定文件生成相关问题和简介，使用 GenerateQuestionsAndSummaryPipeline 流水线处理
+// @Description 为指定文件直接异步生成相关问题、简介和实体，不创建 RAG 任务
 // @Tags 文件管理
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param file_id path int true "文件ID"
-// @Success 200 {object} model.CommonResponse{data=model.RagJob} "任务创建成功，返回任务信息"
+// @Param force query bool false "是否强制覆盖已有摘要和问题，默认 false"
+// @Success 200 {object} model.CommonResponse{data=map[string]string} "生成任务已启动或已完成"
 // @Failure 400 {object} model.CommonResponse "参数错误"
 // @Failure 403 {object} model.CommonResponse "权限不足"
 // @Failure 404 {object} model.CommonResponse "文件不存在"
@@ -2279,6 +2355,7 @@ func GetRetrievalChunkStats(c *gin.Context) {
 func GenerateQuestionsAndSummary(c *gin.Context) {
 	eid := config.GetEID(c)
 	userID := config.GetUserId(c)
+	force := c.DefaultQuery("force", "false") == "true"
 
 	// 获取文件ID
 	fileIDStr := c.Param("file_id")
@@ -2306,101 +2383,43 @@ func GenerateQuestionsAndSummary(c *gin.Context) {
 		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("没有权限访问该文件")))
 		return
 	}
+	logger.Infof(c.Request.Context(), "直接生成摘要接口: eid=%d, file_id=%d, force=%t, current_status=%s", eid, fileID, force, file.AIGenerateSQStatus)
 
-	// 1. 幂等检查：已有任务或已有结果则直接返回
-	jobTypes := []string{"summary_generation", "generate_questions_and_summary"}
-	var existingJob model.RagJob
-	if err := model.DB.Where("eid = ? AND related_id = ? AND type IN ?",
-		eid, fileID, jobTypes).Order("job_id DESC").First(&existingJob).Error; err == nil {
-		if existingJob.Status == model.RagJobStatusPending || existingJob.Status == model.RagJobStatusProcessing {
-			c.JSON(http.StatusOK, model.Success.ToResponse(existingJob))
-			return
-		}
-		if existingJob.Status == model.RagJobStatusSuccess {
-			c.JSON(http.StatusOK, model.Success.ToResponse(existingJob))
-			return
-		}
-	}
-
-	// 文件已生成成功，直接返回（避免重复创建任务）
-	if file.AIGenerateSQStatus == model.AIGenerateSQStatusNormal &&
+	// 文件已生成成功，直接返回（避免重复触发）
+	if !force && file.AIGenerateSQStatus == model.AIGenerateSQStatusNormal &&
 		(strings.TrimSpace(file.Summary) != "" || strings.TrimSpace(file.Questions) != "" || strings.TrimSpace(file.KnowledgeMap) != "") {
-		c.JSON(http.StatusOK, model.Success.ToResponse(model.RagJob{
-			Eid:       eid,
-			Type:      "summary_generation",
-			Status:    model.RagJobStatusSuccess,
-			RelatedId: fileID,
-		}))
+		logger.Infof(c.Request.Context(), "直接生成摘要接口跳过：已有生成内容且未强制覆盖: file_id=%d", fileID)
+		c.JSON(http.StatusOK, model.Success.ToResponse(map[string]string{"status": "success"}))
 		return
 	}
 
 	// 如果文件状态显示正在处理中，直接返回 processing
 	if file.AIGenerateSQStatus == model.AIGenerateSQStatusPending || file.AIGenerateSQStatus == model.AIGenerateSQStatusParsing {
-		c.JSON(http.StatusOK, model.Success.ToResponse(model.RagJob{
-			Eid:       eid,
-			Type:      "summary_generation",
-			Status:    model.RagJobStatusProcessing,
-			RelatedId: fileID,
-		}))
+		logger.Infof(c.Request.Context(), "直接生成摘要接口跳过：文件正在生成: file_id=%d", fileID)
+		c.JSON(http.StatusOK, model.Success.ToResponse(map[string]string{"status": "processing"}))
 		return
 	}
 
-	// 2. 增加短时并发锁，防止瞬时重复触发
+	// 增加短时并发锁，防止瞬时重复触发
 	lockKey := fmt.Sprintf("generate_questions_and_summary:%d", fileID)
 	if !common.LOCKER.TryLock(lockKey, 5*time.Second) {
-		time.Sleep(300 * time.Millisecond)
-		if err := model.DB.Where("eid = ? AND related_id = ? AND type IN ? AND status IN ?",
-			eid, fileID, jobTypes, []string{model.RagJobStatusPending, model.RagJobStatusProcessing}).
-			Order("job_id DESC").First(&existingJob).Error; err == nil {
-			c.JSON(http.StatusOK, model.Success.ToResponse(existingJob))
-			return
-		}
-		c.JSON(http.StatusOK, model.Success.ToResponse(model.RagJob{
-			Eid:       eid,
-			Type:      "summary_generation",
-			Status:    model.RagJobStatusProcessing,
-			RelatedId: fileID,
-		}))
+		logger.Infof(c.Request.Context(), "直接生成摘要接口跳过：获取并发锁失败: file_id=%d", fileID)
+		c.JSON(http.StatusOK, model.Success.ToResponse(map[string]string{"status": "processing"}))
 		return
 	}
 	// 注意：锁由 Redis TTL 自动过期，无需手动释放
 
-	// 构造 summary_generation 步骤的 RuntimeProfile
-	profile := v2model.RuntimeProfile{
-		Steps: []v2model.ProfileStep{
-			{
-				StepKey: "summary_generation",
-				RunMode: v2model.RunModeAuto,
-				Enabled: true,
-				Config:  json.RawMessage(`{"summary_faq":{"enabled":true},"entity_extraction":{"enabled":true}}`),
-			},
-		},
-	}
-
-	jobFactory := service.GetRagJobFactoryV2()
-	if jobFactory == nil {
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(errors.New("RAG Job Engine not initialized")))
-		return
-	}
-
-	params := fmt.Sprintf(`{"file_id":%d, "eid":%d}`, fileID, eid)
-	// 使用空 runID 让工厂生成
-	jobs, err := jobFactory.CreateJobsFromProfile(context.Background(), eid, profile, 0, params, "")
-	if err != nil {
+	if err := service.GenerateQuestionsAndSummaryDirect(c.Request.Context(), eid, fileID); err != nil {
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
-
-	if len(jobs) > 0 {
-		c.JSON(http.StatusOK, model.Success.ToResponse(jobs[0]))
-	} else {
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(errors.New("failed to create job")))
-	}
+	logger.Infof(c.Request.Context(), "直接生成摘要接口已启动两个异步任务: file_id=%d, force=%t", fileID, force)
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]string{"status": "processing"}))
 }
 
 // GenerateKnowledgeMap godoc
 // @Summary 生成知识地图
-// @Description 为指定文件生成知识地图，使用 GenerateKnowledgeMapPipeline 流水线处理
+// @Description 为指定文件创建独立的异步知识地图任务，结果写入文件和消息记录，不创建 RAG 流水线任务
 // @Tags 文件管理
 // @Accept json
 // @Produce json
@@ -2443,86 +2462,26 @@ func GenerateKnowledgeMap(c *gin.Context) {
 		return
 	}
 
-	// 检查知识地图功能是否开启
-	kmSetting, err := model.ValidateOrCreateKmKnowledgeMapSetting(eid)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(fmt.Errorf("获取知识地图配置失败: %v", err)))
-		return
-	}
-
-	if !kmSetting.Enabled {
-		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("知识地图功能未开启")))
-		return
-	}
-
-	// 1. 检查是否已有同类型任务
 	var existingJob model.RagJob
-	err = model.DB.Where("eid = ? AND type = ? AND related_id = ?",
-		eid, "generate_knowledge_map", fileID).
-		Order("job_id DESC").
-		First(&existingJob).Error
-	if err == nil {
-		// 如果找到正在运行的任务，直接返回该任务信息
-		if existingJob.Status == model.RagJobStatusPending || existingJob.Status == model.RagJobStatusProcessing {
-			c.JSON(http.StatusOK, model.Success.ToResponse(existingJob))
-			return
-		}
-
-		// 如果任务已成功，且没有强制重生成的参数，则直接返回（幂等处理）
-		// 除非有 force=true 参数（暂未实现，可作为后续扩展）
-		if existingJob.Status == model.RagJobStatusSuccess {
+	if err := model.DB.Where("eid = ? AND type = ? AND related_id = ?", eid, "generate_knowledge_map", fileID).
+		Order("job_id DESC").First(&existingJob).Error; err == nil {
+		if existingJob.Status == model.RagJobStatusPending || existingJob.Status == model.RagJobStatusProcessing || existingJob.Status == model.RagJobStatusSuccess {
 			c.JSON(http.StatusOK, model.Success.ToResponse(existingJob))
 			return
 		}
 	}
 
-	// 2. 增加 5 秒并发锁，防止极短时间内重复触发
-	lockKey := fmt.Sprintf("generate_knowledge_map:%d", fileID)
-	if !common.LOCKER.TryLock(lockKey, 5*time.Second) {
-		// 锁失败也不报错，尝试再次查询数据库（处理并发创建的间隙）
-		time.Sleep(500 * time.Millisecond)
-		if err := model.DB.Where("eid = ? AND type = ? AND related_id = ? AND status IN ?",
-			eid, "generate_knowledge_map", fileID, []string{model.RagJobStatusPending, model.RagJobStatusProcessing}).
-			First(&existingJob).Error; err == nil {
-			c.JSON(http.StatusOK, model.Success.ToResponse(existingJob))
-			return
-		}
-		// 如果依然没有，返回一个模拟的 processing 状态，不报错
-		c.JSON(http.StatusOK, model.Success.ToResponse(model.RagJob{
-			Eid:       eid,
-			Type:      "generate_knowledge_map",
-			Status:    model.RagJobStatusProcessing,
-			RelatedId: fileID,
-		}))
+	job, err := service.EnqueueKnowledgeMapDirect(c.Request.Context(), eid, userID, fileID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}
-	// 注意：分布式锁由 Redis 自动过期，无需手动释放，以保证 5 秒内不会有第二个请求进入查询环节
 
 	if err := model.IncrementKmKnowledgeMapField(eid, model.KmKnowledgeMapStatFieldGenerateCount, 1); err != nil {
 		logger.Errorf(c.Request.Context(), "记录知识地图生成次数失败: %v", err)
-		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(errors.New("记录知识地图生成次数失败")))
-		return
 	}
 
-	// 构建启动参数
-	startParams := map[string]interface{}{
-		"eid":     eid,
-		"file_id": fileID,
-		"user_id": userID,
-	}
-	startParamsJSON, _ := json.Marshal(startParams)
-
-	jobs, err := service.GetRagJobFactoryV2().CreateJobsForFile(c.Request.Context(), eid, fileID, string(startParamsJSON))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(fmt.Errorf("创建任务失败: %v", err)))
-		return
-	}
-	if len(jobs) == 0 {
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(errors.New("未创建任务")))
-		return
-	}
-
-	c.JSON(http.StatusOK, model.Success.ToResponse(jobs[0]))
+	c.JSON(http.StatusOK, model.Success.ToResponse(job))
 }
 
 // RecordKnowledgeMapQuery godoc

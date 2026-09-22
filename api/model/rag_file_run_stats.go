@@ -40,6 +40,7 @@ func (RagFileRunStats) TableName() string {
 type RagFileRunStatsSummary struct {
 	CompletedCount         int64 `json:"completed_count"`
 	QueuedCount            int64 `json:"queued_count"`
+	WaitingCount           int64 `json:"waiting_count"`
 	ProcessingCount        int64 `json:"processing_count"`
 	FailedInterruptedCount int64 `json:"failed_interrupted_count"`
 	AvgCompletionTime      int64 `json:"avg_completion_time"`
@@ -118,8 +119,10 @@ func GetRagFileRunStatsSummary(eid int64, libraryID *int64) (*RagFileRunStatsSum
 		switch c.Status {
 		case "success":
 			summary.CompletedCount += c.Count
-		case "pending", "waiting", "not_started":
+		case "pending", "not_started":
 			summary.QueuedCount += c.Count
+		case "waiting":
+			summary.WaitingCount += c.Count
 		case "processing", "running":
 			summary.ProcessingCount += c.Count
 		case "failed", "interrupted":
@@ -466,7 +469,6 @@ func getStepDisplayName(stepKey string) string {
 		"content_cleaning":          "内容清洗",
 		"document_chunking":         "文档分块",
 		"vector_indexing":           "向量化索引",
-		"summary_generation":        "摘要生成",
 		"graph_generation":          "图谱生成",
 		"graph_pipeline_generation": "图谱生成",
 		"wiki_page_generation":      "Wiki 生成",

@@ -29,7 +29,7 @@ export interface ChatCompletionParams {
 }
 
 export interface ConversationControlParams {
-  action: "stop" | "respond_interruption" | "submit_answer" | "resolve_interruption";
+  action: "stop" | "respond_interruption" | "submit_answer" | "resolve_interruption" | "respond_interaction";
   [key: string]: any;
 }
 

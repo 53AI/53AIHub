@@ -4,6 +4,7 @@ import type { Message, OutputFile, ChunkItem } from "../../types";
 import type { Lang } from "../../i18n";
 import type { AgentRecommendFeature, AuthTagsSlotProps } from "../../types/features";
 import type { OpenClawFeature } from "../ChatMessages/types";
+export type { OpenClawFeature };
 import type {
   MentionFeature,
   SkillFeature,
@@ -83,7 +84,7 @@ export interface MessageFeature {
   /** 输出文件收藏/取消收藏回调 */
   onOutputFileFavorite?: (file: OutputFile, message: Message) => void;
   /** 输出文件收藏状态检查回调（进入视野时触发） */
-  onOutputFileCheckFavorite?: (fileIds: string[], message: Message) => void;
+  onOutputFileCheckFavorite?: (fileIds: string[], msg?: Message) => void;
   /** 添加回答到知识库回调 */
   onSaveToKnowledge?: (message: Message) => void;
   /** 源文件点击回调（知识库引用片段） */

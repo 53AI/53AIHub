@@ -291,7 +291,7 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
               variant="filled"
               onClick={handleOpenLibrary}
             >
-              { isWikiSearch ? '查看动态知识' : t("source.view_document") }
+              { isWikiSearch ? '查看 Wiki' : t("source.view_document") }
               <SvgIcon name="share"></SvgIcon>
             </Button>
           </div>

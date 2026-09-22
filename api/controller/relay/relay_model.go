@@ -48,6 +48,8 @@ const (
 	STEP_ANSWER_GENERATION = "answer_generation"
 	// 引用分析步骤
 	STEP_REF_ANALYSIS = "ref_analysis"
+	// 统计计数步骤
+	STEP_STATS_COUNT = "stats_count"
 	// 技能路由步骤
 	STEP_SKILL_ROUTING = "skill_routing"
 	// 工具执行步骤

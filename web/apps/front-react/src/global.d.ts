@@ -38,7 +38,7 @@ declare namespace Navigation {
 // Enterprise types
 declare namespace Enterprise {
   interface State {
-    id: number
+    id: string
     type: string
     banner: string
     timezone: string
@@ -51,6 +51,8 @@ declare namespace Enterprise {
     updated_time: number
     logo: string
     ico: string
+    full_name: string
+    industry: string
     display_name: string
     language: string
     copyright: string

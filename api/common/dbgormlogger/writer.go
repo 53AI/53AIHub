@@ -7,6 +7,7 @@ import (
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/env"
+	"github.com/53AI/53AIHub/config"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -51,16 +52,16 @@ func buildWithWriter(writer gormlogger.Writer, level gormlogger.LogLevel, slowTh
 	if slowThresholdMs <= 0 {
 		slowThresholdMs = 200
 	}
-	return gormlogger.New(
+	return withRequestID(gormlogger.New(
 		sanitizingWriter{writer: writer},
 		gormlogger.Config{
 			SlowThreshold:             time.Duration(slowThresholdMs) * time.Millisecond,
 			LogLevel:                  level,
 			IgnoreRecordNotFoundError: true,
-			ParameterizedQueries:      true,
+			ParameterizedQueries:      !config.DebugSQLEnabled,
 			Colorful:                  false,
 		},
-	)
+	))
 }
 
 // ParseLevel maps string to gorm logger level.

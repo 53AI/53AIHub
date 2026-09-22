@@ -78,9 +78,11 @@ type File struct {
 	LastBodyTime int64 `json:"last_body_time,omitempty" gorm:"-"`
 
 	BaseModel
-	UploadFile   *UploadFile `json:"upload_file" gorm:"-"`
-	IsFavorite   bool        `json:"is_favorite" gorm:"-"`
-	UploadSource string      `json:"upload_source" gorm:"-"`
+	UploadFile *UploadFile `json:"upload_file" gorm:"-"`
+	IsFavorite bool        `json:"is_favorite" gorm:"-"`
+	// 非持久化：回传用户对该文件/文件夹的实测权限（与KM权限体系一致）；恒返回，0 表示无权限（骨架节点）。
+	Permission   int    `json:"permission" gorm:"-"`
+	UploadSource string `json:"upload_source" gorm:"-"`
 }
 
 func (f *File) AfterFind(tx *gorm.DB) (err error) {
@@ -580,6 +582,7 @@ func (file *File) Save() error {
 	if file.Type == FILE_TYPE_FILE && !file.IsDeleted {
 		invalidateLibraryFileCountCache(file.Eid, file.LibraryID)
 	}
+	InvalidateCapabilityFiletree(file.Eid, file.LibraryID)
 	return nil
 }
 
@@ -601,9 +604,9 @@ func (file *File) NormalizePath() {
 	}
 }
 
-func GetFileByID(eid int64, id int64) (*File, error) {
+func GetFileByID(eid int64, id int64, ctxs ...context.Context) (*File, error) {
 	var file File
-	if err := DB.Where("eid = ? AND id =?", eid, id).First(&file).Error; err != nil {
+	if err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND id =?", eid, id).First(&file).Error; err != nil {
 		return nil, err
 	}
 	return &file, nil
@@ -635,12 +638,12 @@ func GetFileByPathAndLibrary(eid int64, libraryID int64, filePath string) (*File
 }
 
 // GetFilesByPathsAndLibrary 根据多个路径和知识库ID批量获取文件
-func GetFilesByPathsAndLibrary(eid int64, libraryID int64, filePaths []string) ([]File, error) {
+func GetFilesByPathsAndLibrary(eid int64, libraryID int64, filePaths []string, ctxs ...context.Context) ([]File, error) {
 	var files []File
 	if len(filePaths) == 0 {
 		return files, nil
 	}
-	if err := DB.Where("eid = ? AND library_id = ? AND path IN ?", eid, libraryID, filePaths).Find(&files).Error; err != nil {
+	if err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND library_id = ? AND path IN ?", eid, libraryID, filePaths).Find(&files).Error; err != nil {
 		return nil, err
 	}
 	return files, nil
@@ -706,13 +709,14 @@ func RestoreFile(eid int64, fileID int64) error {
 		return err
 	}
 	invalidateLibraryFileCountCache(eid, file.LibraryID)
+	InvalidateCapabilityFiletree(eid, file.LibraryID)
 	return nil
 }
 
 // GetFilesByLibraryID 获取知识库下的所有文件
-func GetFilesByLibraryID(eid int64, libraryID int64) ([]File, error) {
+func GetFilesByLibraryID(eid int64, libraryID int64, ctxs ...context.Context) ([]File, error) {
 	var files []File
-	if err := DB.Where("eid = ? AND library_id = ?", eid, libraryID).Find(&files).Error; err != nil {
+	if err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND library_id = ?", eid, libraryID).Find(&files).Error; err != nil {
 		return nil, err
 	}
 
@@ -794,9 +798,10 @@ func CountNotDeletedFilesByLibraryIDs(eid int64, libraryIDs []int64) (map[int64]
 }
 
 // GetAllFilesByLibrary 获取知识库下的所有文件和文件夹（递归获取所有层级）
-func GetAllFilesByLibrary(eid int64, libraryID int64, parentPath string, sort string, fileType *int, runStatusValues []string) ([]File, error) {
+// lazy: variadic-ctx，request_id 归因；老调用点可不传 ctx。
+func GetAllFilesByLibrary(eid int64, libraryID int64, parentPath string, sort string, fileType *int, runStatusValues []string, ctxs ...context.Context) ([]File, error) {
 	var files []File
-	query := DB.Where("eid = ? AND library_id = ? AND is_deleted = ?", eid, libraryID, false)
+	query := dbWithOptionalCtx(ctxs...).Where("eid = ? AND library_id = ? AND is_deleted = ?", eid, libraryID, false)
 
 	if parentPath != "" {
 		if parentPath == "/" {
@@ -843,7 +848,7 @@ func GetAllFilesByLibrary(eid int64, libraryID int64, parentPath string, sort st
 
 		if len(uploadFileIDs) > 0 {
 			var uploadFiles []UploadFile
-			if err := DB.Where("id IN ?", uploadFileIDs).Find(&uploadFiles).Error; err == nil {
+			if err := dbWithOptionalCtx(ctxs...).Where("id IN ?", uploadFileIDs).Find(&uploadFiles).Error; err == nil {
 				uploadFileMap := make(map[int64]*UploadFile)
 				for i := range uploadFiles {
 					uploadFileMap[uploadFiles[i].ID] = &uploadFiles[i]
@@ -1027,6 +1032,7 @@ func (file *File) Update() error {
 	if result.Error != nil {
 		return result.Error
 	}
+	InvalidateCapabilityFiletree(file.Eid, file.LibraryID)
 	return nil
 }
 
@@ -1101,6 +1107,8 @@ func DeleteFile(eid int64, id int64) error {
 			return err
 		}
 		invalidateLibraryFileCountCache(eid, file.LibraryID)
+		InvalidateCapabilityFiletree(eid, file.LibraryID)
+		InvalidateCapabilityLibraryPerms(eid, file.LibraryID)
 		return nil
 	}
 
@@ -1109,6 +1117,8 @@ func DeleteFile(eid int64, id int64) error {
 		return err
 	}
 	invalidateLibraryFileCountCache(eid, file.LibraryID)
+	InvalidateCapabilityFiletree(eid, file.LibraryID)
+	InvalidateCapabilityLibraryPerms(eid, file.LibraryID)
 	return nil
 }
 
@@ -1923,9 +1933,9 @@ func (file *File) LoadUploadFile() error {
 // GetFileWithParentsByID 根据文件ID查询文件及其所有父级文件
 // 返回当前文件对象和按深度倒序排列的文件列表（包含当前文件）
 // 示例：对于路径 /1/2/3/file.md，返回顺序为 [/1/2/3/file.md, /1/2/3, /1/2, /1]
-func GetFileWithParentsByID(eid int64, fileID int64) (*File, []File, error) {
+func GetFileWithParentsByID(eid int64, fileID int64, ctxs ...context.Context) (*File, []File, error) {
 	// 1. 查询当前文件
-	currentFile, err := GetFileByID(eid, fileID)
+	currentFile, err := GetFileByID(eid, fileID, ctxs...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1934,7 +1944,7 @@ func GetFileWithParentsByID(eid int64, fileID int64) (*File, []File, error) {
 	parentPaths := splitPathLevels(currentFile.Path)
 
 	// 3. 批量查询所有父级文件，避免逐层 N+1 查询
-	parentFiles, err := GetFilesByPathsAndLibrary(eid, currentFile.LibraryID, parentPaths)
+	parentFiles, err := GetFilesByPathsAndLibrary(eid, currentFile.LibraryID, parentPaths, ctxs...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2077,6 +2087,7 @@ func SoftDeleteFile(eid int64, fileID int64, userID int64) error {
 		return err
 	}
 	invalidateLibraryFileCountCache(eid, file.LibraryID)
+	InvalidateCapabilityFiletree(eid, file.LibraryID)
 
 	// 使用独立的向量清理方法
 	return CleanupVectorDataForFile(eid, fileID)
@@ -2196,6 +2207,7 @@ func RestoreDeletedFile(eid int64, fileID int64, restoreToRoot bool, userID int6
 		return err
 	}
 	invalidateLibraryFileCountCache(eid, file.LibraryID)
+	InvalidateCapabilityFiletree(eid, file.LibraryID)
 	return nil
 }
 

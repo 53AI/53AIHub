@@ -12,6 +12,7 @@ var UsingSQLite = false
 var UsingPostgreSQL = false
 var UsingMySQL = false
 var DebugSQLEnabled = env.Bool("DEBUG_SQL", false)
+var DebugRedisEnabled = env.Bool("DEBUG_REDIS", false)
 
 var SQLitePath = "53ai-hub.db"
 var SQLiteBusyTimeout = env.Int("SQLITE_BUSY_TIMEOUT", 3000)

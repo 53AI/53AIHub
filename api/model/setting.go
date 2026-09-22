@@ -42,11 +42,28 @@ const (
 	SETTING_DOCUMENT_APPLICATION     = "document_application"     // 文档应用设置
 	SETTING_RECORDING_CONFIG         = "recording_config"         // 录音配置
 	SETTING_RECORDING_APPLICATION    = "recording_application"    // 录音应用设置
+	SETTING_PASSWORD_SECURITY_POLICY = "password_security_policy" // 密码强度与账号安全策略配置
 )
 
 const (
 	FeedbackConfigKey = "message_feedback_config" // 反馈配置
 )
+
+// publicSettingKeys 免登录可读取的企业设置 key 白名单。
+// 注意：新增 key 前确认其不包含敏感数据，否则未登录用户可读取企业配置。
+var publicSettingKeys = []string{
+	SETTING_PASSWORD_SECURITY_POLICY, // 密码强度与账号安全策略：登录/注册页未登录时需读取
+}
+
+// IsPublicSettingKey 判断设置 key 是否在免登录白名单中。
+func IsPublicSettingKey(key string) bool {
+	for _, k := range publicSettingKeys {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
 
 type SettingGroup []SettingKey
 

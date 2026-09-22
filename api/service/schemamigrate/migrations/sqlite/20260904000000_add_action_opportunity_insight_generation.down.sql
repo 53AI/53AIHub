@@ -1,0 +1,1 @@
+-- SQLite does not support portable column removal across supported versions.

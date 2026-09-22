@@ -418,7 +418,10 @@ function DeptMemberPickerInner(
         const root = dict.deptTree[0] || {};
         setRootData(root);
 
-        if (defaultFirstValue && !value.length) {
+        // 用 valueRef.current 而非闭包 value: 编辑场景下组件挂载时 value=[],
+        // 父组件 (如 UserInternalEditDrawer) 随后 setFieldsValue 写入真实部门,
+        // 字典异步加载完成后闭包 value 仍是旧的 [], 会把真实部门覆盖为根节点
+        if (defaultFirstValue && !(valueRef.current || []).length) {
           setModelValue({ value: [root] });
         }
 
@@ -442,6 +445,11 @@ function DeptMemberPickerInner(
           };
 
           setTreeData(dict.deptTree.map((item: any) => findData(item)));
+        } else {
+          // department 模式(或 general/user 无成员数据时)直接使用部门树
+          // 修复: 此前缺少该分支, type="department" 时 treeData 永远为 [],
+          // 导致编辑抽屉点"修改"打开弹窗后部门树不显示
+          setTreeData(dict.deptTree);
         }
       }
 

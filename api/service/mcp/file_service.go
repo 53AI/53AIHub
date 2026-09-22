@@ -283,6 +283,7 @@ func (s *FileService) RenameFileOrDirectory(ctx context.Context, eid, userID int
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+	model.InvalidateCapabilityFiletree(eid, file.LibraryID)
 
 	elasticsearch.SyncFileToES(file, "update")
 	asyncExtraction := RenameFileAsyncEntityExtraction

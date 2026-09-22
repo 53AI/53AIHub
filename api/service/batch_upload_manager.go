@@ -349,14 +349,18 @@ func (m *BatchUploadManager) processUploadTask(task *UploadTask) {
 		fileUpload.Status = "failed"
 		fileUpload.Error = err.Error()
 		fileUpload.Progress = 0
+		batch.mu.Lock()
 		batch.FailedFiles++
+		batch.mu.Unlock()
 		m.updateFileProgress(task.BatchID, task.FileID, &fileUpload)
 	} else {
 		if m.IsBatchCancelled(task.BatchID) {
 			return
 		}
 		// executeUpload已经处理了所有状态更新，这里只需要更新批次计数
+		batch.mu.Lock()
 		batch.UploadedFiles++
+		batch.mu.Unlock()
 	}
 
 	fileUpload.UpdateTime = time.Now()
@@ -411,7 +415,7 @@ func (m *BatchUploadManager) updateBatchStatus(batch *BatchUpload) {
 	if batch == nil {
 		return
 	}
-	m.mu.Lock()
+	batch.mu.Lock()
 	if batch.Status != "cancelled" {
 		if batch.UploadedFiles+batch.FailedFiles >= batch.TotalFiles {
 			if batch.FailedFiles == 0 {
@@ -424,7 +428,7 @@ func (m *BatchUploadManager) updateBatchStatus(batch *BatchUpload) {
 		}
 	}
 	batch.UpdatedAt = time.Now()
-	m.mu.Unlock()
+	batch.mu.Unlock()
 
 	m.progressStorage.SaveBatch(batch)
 }
@@ -436,10 +440,10 @@ func (m *BatchUploadManager) CancelBatch(batchID string) error {
 		return err
 	}
 
-	m.mu.Lock()
+	batch.mu.Lock()
 	batch.Status = "cancelled"
 	batch.UpdatedAt = time.Now()
-	m.mu.Unlock()
+	batch.mu.Unlock()
 
 	m.progressStorage.SaveBatch(batch)
 	return nil
@@ -453,12 +457,13 @@ func (m *BatchUploadManager) IsBatchCancelled(batchID string) bool {
 
 	m.mu.RLock()
 	batch, exists := m.batches[batchID]
+	m.mu.RUnlock()
 	if !exists {
-		m.mu.RUnlock()
 		return false
 	}
+	batch.mu.RLock()
 	cancelled := batch.Status == "cancelled"
-	m.mu.RUnlock()
+	batch.mu.RUnlock()
 	return cancelled
 }
 
@@ -536,8 +541,10 @@ func (m *BatchUploadManager) CompleteBatch(batchID string) error {
 		return err
 	}
 
+	batch.mu.Lock()
 	batch.Status = "completed"
 	batch.UpdatedAt = time.Now()
+	batch.mu.Unlock()
 
 	m.progressStorage.SaveBatch(batch)
 	return nil
@@ -574,7 +581,9 @@ func (m *BatchUploadManager) HandleInstantUpload(task *UploadTask, existingUploa
 		m.updateFileProgress(task.BatchID, task.FileID, &updated)
 	}
 
+	batch.mu.Lock()
 	batch.UploadedFiles++
+	batch.mu.Unlock()
 	m.updateBatchStatus(batch)
 
 	space, _ := model.GetSpaceByID(task.EID, library.SpaceID)
@@ -599,23 +608,82 @@ func (m *BatchUploadManager) HandleInstantUpload(task *UploadTask, existingUploa
 
 // 以下为对 BatchUpload 的并发安全访问器，避免包外直接访问未导出字段 mu
 
-// GetFileUpload 安全地获取单个文件的副本（只读取指针，不深拷贝 FileUpload）
+// GetFileUpload 安全地获取单个文件的副本
 func (b *BatchUpload) GetFileUpload(fileID string) (*FileUpload, bool) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	fu, ok := b.Files[fileID]
-	return fu, ok
+	if !ok || fu == nil {
+		return fu, ok
+	}
+	return cloneFileUpload(fu), true
 }
 
-// GetFilesCopy 返回一份 batch.Files 的浅拷贝（map 副本），以便在其它包中安全遍历
+// GetFilesCopy 返回一份 batch.Files 的深拷贝，以便在其它包中安全遍历
 func (b *BatchUpload) GetFilesCopy() map[string]*FileUpload {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	cpy := make(map[string]*FileUpload, len(b.Files))
 	for k, v := range b.Files {
-		cpy[k] = v
+		cpy[k] = cloneFileUpload(v)
 	}
 	return cpy
+}
+
+func (b *BatchUpload) snapshot() *BatchUpload {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return cloneBatch(b)
+}
+
+func cloneBatch(b *BatchUpload) *BatchUpload {
+	copyBatch := &BatchUpload{
+		ID:            b.ID,
+		LibraryID:     b.LibraryID,
+		UserID:        b.UserID,
+		EID:           b.EID,
+		Status:        b.Status,
+		TotalFiles:    b.TotalFiles,
+		UploadedFiles: b.UploadedFiles,
+		FailedFiles:   b.FailedFiles,
+		UploadToken:   b.UploadToken,
+		BasePath:      b.BasePath,
+		OriginType:    b.OriginType,
+		OriginSource:  b.OriginSource,
+		OriginRefID:   b.OriginRefID,
+		GroupID:       b.GroupID,
+		CreatedAt:     b.CreatedAt,
+		UpdatedAt:     b.UpdatedAt,
+		Files:         make(map[string]*FileUpload, len(b.Files)),
+	}
+	for fileID, fileUpload := range b.Files {
+		copyBatch.Files[fileID] = cloneFileUpload(fileUpload)
+	}
+	return copyBatch
+}
+
+func cloneFileUpload(fileUpload *FileUpload) *FileUpload {
+	if fileUpload == nil {
+		return nil
+	}
+	copyFile := *fileUpload
+	copyFile.SpeedHistory = append([]int64(nil), fileUpload.SpeedHistory...)
+	if fileUpload.ChunkInfo != nil {
+		copyFile.ChunkInfo = &ChunkUploadInfo{
+			TotalChunks:     fileUpload.ChunkInfo.TotalChunks,
+			CompletedChunks: fileUpload.ChunkInfo.CompletedChunks,
+			ChunkSize:       fileUpload.ChunkInfo.ChunkSize,
+			Chunks:          make(map[int]*Chunk, len(fileUpload.ChunkInfo.Chunks)),
+		}
+		for index, chunk := range fileUpload.ChunkInfo.Chunks {
+			if chunk == nil {
+				continue
+			}
+			chunkCopy := *chunk
+			copyFile.ChunkInfo.Chunks[index] = &chunkCopy
+		}
+	}
+	return &copyFile
 }
 
 // SetFileUpload 安全地写入或替换某个文件上传信息

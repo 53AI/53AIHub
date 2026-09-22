@@ -121,11 +121,11 @@ func MigrateRecordingStorageLayout(ctx context.Context, eid, fileID int64) (Reco
 				return err
 			}
 			ms := &model.RecordingFileSummary{
-				FileID:           fileID,
-				TemplateID:       0,
-				TemplateName:     "纪要",
-				SummaryContent:   model.LongText(minutesJSON),
-				Status:           "completed",
+				FileID:         fileID,
+				TemplateID:     0,
+				TemplateName:   "纪要",
+				SummaryContent: model.LongText(minutesJSON),
+				Status:         "completed",
 			}
 			if err := tx.Create(ms).Error; err != nil {
 				return err

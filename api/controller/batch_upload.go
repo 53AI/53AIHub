@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/utils"
 	"github.com/53AI/53AIHub/config"
@@ -50,9 +52,32 @@ func (ctrl *BatchUploadController) InitBatchUpload(c *gin.Context) {
 	eid := config.GetEID(c)
 	userID := config.GetUserId(c)
 
-	library, ok := requireLibraryPermission(c, eid, userID, req.LibraryID, model.PERMISSION_EDIT_KNOWLEDGE, "无权限上传到此知识库")
-	if !ok {
+	library, err := model.GetLibraryByID(eid, req.LibraryID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("知识库不存在")))
 		return
+	}
+
+	basePath := strings.TrimSpace(req.BasePath)
+	if basePath == "" || basePath == "/" {
+		permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, req.LibraryID, userID)
+		if err != nil || permission < model.PERMISSION_EDIT_KNOWLEDGE {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限上传到此知识库")))
+			return
+		}
+	} else {
+		basePath = path.Clean("/" + strings.TrimPrefix(basePath, "/"))
+		targetFolder, err := model.GetFileByPathAndLibraryNotDeleted(eid, req.LibraryID, basePath)
+		if err != nil || targetFolder == nil || targetFolder.Type != model.FILE_TYPE_DIR {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("目标文件夹不存在")))
+			return
+		}
+
+		permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_FILE, targetFolder.ID, userID)
+		if err != nil || permission < model.PERMISSION_EDIT_KNOWLEDGE {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限上传到目标文件夹")))
+			return
+		}
 	}
 
 	// 验证文件结构
@@ -67,7 +92,7 @@ func (ctrl *BatchUploadController) InitBatchUpload(c *gin.Context) {
 			"from": "document",
 			"op":   "add",
 		}
-		_, err := service.IsFeatureAvailable(c, "knowledge_base", params)
+		_, err := knowledgeBaseFeatureAvailable(c, "knowledge_base", params)
 		if err != nil {
 			c.JSON(http.StatusForbidden, model.FeatureNotAvailableError.ToResponse(err))
 			return

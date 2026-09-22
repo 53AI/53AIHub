@@ -3,24 +3,24 @@ import { message } from "antd";
 import { t } from "@/locales";
 import PaymentCard from "./PaymentCard";
 import WechatSettingDialog, {
-    WechatSettingDialogRef,
+  WechatSettingDialogRef,
 } from "./WechatSettingDialog";
 import AlipaySettingDialog, {
-    AlipaySettingDialogRef,
+  AlipaySettingDialogRef,
 } from "./AlipaySettingDialog";
 import ManualSettingDialog, {
-    ManualSettingDialogRef,
+  ManualSettingDialogRef,
 } from "./ManualSettingDialog";
 
 import { paymentApi } from "@/api/modules/payment";
 import {
-    transformPaymentSettingList,
-    transformToPaymentSettingMap,
+  transformPaymentSettingList,
+  transformToPaymentSettingMap,
 } from "@/api/modules/payment/transform";
 import { PAYMENT_COMMAND, PAYMENT_STATUS } from "@/constants/payment";
 import type {
-    PaymentSettingMap,
-    PaymentSetting,
+  PaymentSettingMap,
+  PaymentSetting,
 } from "@/api/modules/payment/types";
 import TipConfirm from "@/components/TipConfirm";
 import { isInternalNetwork } from "@km/shared-utils";
@@ -141,7 +141,7 @@ export function PaymentPage() {
   }, []);
 
   return (
-    <div className="h-full bg-white py-6 px-2">
+    <div className="h-full bg-white py-2 px-2">
       <div className="flex-1 flex flex-col bg-white">
         <h1 className="font-semibold text-base text-primary">CNY</h1>
         <div className="mt-5 grid grid-cols-2 gap-5">

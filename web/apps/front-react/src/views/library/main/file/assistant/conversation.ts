@@ -47,7 +47,12 @@ export const useFileConversationStore = create<ConversationState>((set, get) => 
     )
 
     if (conversation) {
-      return conversation
+      // 兜底：列表项可能只有 id 没有 conversation_id（agentList 原始返回），
+      // 统一补齐，否则 Chat.createConversation 会误判"无当前会话"而每次发送都新建。
+      return {
+        ...conversation,
+        conversation_id: conversation.conversation_id ?? conversation.id,
+      }
     }
 
     // 新建会话：返回默认对象，不在此处触发状态更新
@@ -82,6 +87,10 @@ export const useFileConversationStore = create<ConversationState>((set, get) => 
     const conversations = res.data.items.map((item) => {
       return {
         ...item,
+        // agentList 列表项主键是 id（无 conversation_id 字段），统一补齐，
+        // 保证 currentConversation getter / createConversation 判断 / 分享、
+        // 加载更多等消费方拿到的 conversation_id 可用。
+        conversation_id: item.conversation_id ?? item.id,
         created_date: getSimpleDateFormatString({
           date: item.created_time,
           format: 'YYYY.MM.DD hh:mm'

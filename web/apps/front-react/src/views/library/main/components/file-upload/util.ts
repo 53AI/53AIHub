@@ -6,6 +6,8 @@ import { sha256 } from 'js-sha256'
 
 import type { FileStructureItem } from '@/api/modules/files/types'
 
+import { FILE_SIZE_EXCEEDED_MESSAGE } from './constants'
+
 /**
  * 是否支持 Web Crypto API 的 SHA-256 digest。
  * 浏览器在 HTTPS / localhost 安全上下文中可用；HTTP 站点或极旧浏览器返回 false。
@@ -26,55 +28,6 @@ export const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
 
   return `${parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`
-}
-
-/**
- * 计算上传速度
- */
-export const calculateUploadSpeed = (
-  uploadedBytes: number,
-  totalBytes: number,
-  startTime: number
-): number => {
-  const elapsed = Date.now() - startTime
-  if (elapsed === 0) return 0
-
-  return (uploadedBytes / elapsed) * 1000 // bytes per second
-}
-
-/**
- * 格式化上传速度
- */
-export const formatUploadSpeed = (bytesPerSecond: number): string => {
-  if (bytesPerSecond < 1024) {
-    return `${bytesPerSecond.toFixed(1)} B/s`
-  }
-  if (bytesPerSecond < 1024 * 1024) {
-    return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`
-  }
-  return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`
-}
-
-/**
- * 计算剩余时间
- */
-export const calculateRemainingTime = (
-  uploadedBytes: number,
-  totalBytes: number,
-  speed: number
-): string => {
-  if (speed === 0) return '计算中...'
-
-  const remainingBytes = totalBytes - uploadedBytes
-  const remainingSeconds = remainingBytes / speed
-
-  if (remainingSeconds < 60) {
-    return `${Math.ceil(remainingSeconds)}秒`
-  }
-  if (remainingSeconds < 3600) {
-    return `${Math.ceil(remainingSeconds / 60)}分钟`
-  }
-  return `${Math.ceil(remainingSeconds / 3600)}小时`
 }
 
 /**
@@ -111,26 +64,134 @@ export const validateFileSize = (file: File, maxSize: number): boolean => {
 }
 
 /**
- * 创建文件分片
+ * 取文件适用的单文件大小上限：按扩展名覆盖优先，否则用默认上限
  */
-export const createFileChunks = (file: File, chunkSize: number): Blob[] => {
-  const chunks: Blob[] = []
-  const totalChunks = Math.ceil(file.size / chunkSize)
-
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * chunkSize
-    const end = Math.min(start + chunkSize, file.size)
-    chunks.push(file.slice(start, end))
-  }
-
-  return chunks
+export const resolveMaxSizeBytes = (
+  fileName: string,
+  options: Pick<ValidateUploadFileOptions, 'maxSizeBytes' | 'maxSizeBytesByExtension'>
+): number => {
+  const extension = fileName.split('.').pop()?.toLowerCase() || ''
+  return options.maxSizeBytesByExtension?.[extension] ?? options.maxSizeBytes
 }
 
 /**
- * 计算文件分片数量
+ * 临时文件 / 系统文件判定。
+ * 这类文件由调用方静默过滤，不打扰用户。
  */
-export const calculateChunkCount = (fileSize: number, chunkSize: number): number => {
-  return Math.ceil(fileSize / chunkSize)
+export const isTempFile = (file: File): boolean => {
+  const fileName = file.name.toLowerCase()
+  const baseName = file.name
+
+  const tempFilePatterns = [
+    '.ds_store',
+    'thumbs.db',
+    'desktop.ini',
+    '.tmp',
+    '.temp',
+    '.swp',
+    '.swo',
+    '.bak',
+    '~'
+  ]
+
+  for (const pattern of tempFilePatterns) {
+    if (fileName === pattern || fileName.endsWith(pattern)) {
+      return true
+    }
+  }
+
+  if (baseName.startsWith('~$')) {
+    return true
+  }
+
+  if (
+    fileName.startsWith('.') &&
+    !fileName.includes('.md') &&
+    !fileName.includes('.txt') &&
+    !fileName.includes('.html')
+  ) {
+    const parts = fileName.split('.')
+    if (parts.length === 2) {
+      return true
+    }
+  }
+
+  return false
+}
+
+/**
+ * 文件校验失败原因：
+ * - temp：临时/系统文件，静默过滤
+ * - type / size：需要显式告知用户
+ */
+export type FileValidationErrorCode = 'temp' | 'type' | 'size'
+
+export type FileValidationResult =
+  | { valid: true }
+  | { valid: false; code: FileValidationErrorCode; message: string }
+
+export interface ValidateUploadFileOptions {
+  /** 允许的扩展名（可带点）或 mime 片段 */
+  allowedTypes: string[]
+  /** 默认单文件大小上限（字节） */
+  maxSizeBytes: number
+  /** 按扩展名覆盖的单文件大小上限（字节），key 为不带点的小写扩展名 */
+  maxSizeBytesByExtension?: Record<string, number>
+}
+
+/**
+ * 单文件校验：临时文件 → 类型 → 大小。
+ * 返回结构化 code，调用方据此决定「静默过滤」还是「提示用户」。
+ */
+export const validateUploadFile = (
+  file: File,
+  options: ValidateUploadFileOptions
+): FileValidationResult => {
+  if (isTempFile(file)) {
+    return { valid: false, code: 'temp', message: '临时文件或系统文件，已自动过滤' }
+  }
+
+  if (!validateFileType(file, options.allowedTypes)) {
+    const supported = options.allowedTypes.map((type) => type.replace(/^\./, '')).join('、')
+    return { valid: false, code: 'type', message: `不支持的文件类型，仅支持：${supported}` }
+  }
+
+  if (!validateFileSize(file, resolveMaxSizeBytes(file.name, options))) {
+    return { valid: false, code: 'size', message: FILE_SIZE_EXCEEDED_MESSAGE }
+  }
+
+  return { valid: true }
+}
+
+/** 未通过校验、需要提示用户的文件（临时文件不在其中） */
+export interface InvalidUploadFile {
+  name: string
+  message: string
+}
+
+/** 提示文案里最多列出的文件名个数 */
+const INVALID_FILE_NAMES_PREVIEW = 5
+
+/**
+ * 组装「未通过校验」提示文案，返回 null 表示无需提示。
+ * 只要有不合格文件就要提示：混选场景下不提示等于把文件静默丢弃。
+ */
+export const buildInvalidFilesMessage = (
+  invalid: readonly InvalidUploadFile[],
+  validCount: number
+): string | null => {
+  if (invalid.length === 0) return null
+  if (invalid.length === 1) return `${invalid[0].name}：${invalid[0].message}`
+
+  const preview = invalid
+    .slice(0, INVALID_FILE_NAMES_PREVIEW)
+    .map((item) => item.name)
+    .join('、')
+  const names =
+    invalid.length > INVALID_FILE_NAMES_PREVIEW ? `${preview} 等 ${invalid.length} 个` : preview
+  const suffix = validCount > 0 ? `，其余 ${validCount} 个文件继续上传` : ''
+
+  return `${invalid.length} 个文件未通过校验，已跳过：${names}${suffix}`
 }
 
 /**
@@ -144,14 +205,6 @@ export const sha256Hex = async (data: ArrayBuffer): Promise<string> => {
     return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
   return sha256(new Uint8Array(data))
-}
-
-/**
- * 生成分片哈希
- */
-export const generateChunkHash = async (chunk: Blob): Promise<string> => {
-  const arrayBuffer = await chunk.arrayBuffer()
-  return sha256Hex(arrayBuffer)
 }
 
 /**
@@ -220,20 +273,6 @@ export const scanDirectoryStructure = (files: File[]): FileStructureItem[] => {
 }
 
 /**
- * 计算文件夹总大小
- */
-export const calculateFolderSize = (structure: FileStructureItem[]): number => {
-  return structure.filter((item) => !item.is_directory).reduce((sum, item) => sum + item.size, 0)
-}
-
-/**
- * 计算文件夹总文件数
- */
-export const calculateFolderFileCount = (structure: FileStructureItem[]): number => {
-  return structure.filter((item) => !item.is_directory).length
-}
-
-/**
  * 防抖函数
  */
 export const debounce = <T extends (...args: any[]) => any>(
@@ -284,35 +323,5 @@ export const retry = async <T>(
 
     await new Promise((resolve) => setTimeout(resolve, delay))
     return retry(fn, retries - 1, delay * 2)
-  }
-}
-
-/**
- * 生成进度条样式
- */
-export const generateProgressStyle = (progress: number): string => {
-  return `linear-gradient(to right, #1890ff ${progress}%, #f0f0f0 ${progress}%)`
-}
-
-/**
- * 检查网络状态
- */
-export const checkNetworkStatus = (): boolean => {
-  return navigator.onLine
-}
-
-/**
- * 监听网络状态变化
- */
-export const onNetworkStatusChange = (callback: (isOnline: boolean) => void): (() => void) => {
-  const handleOnline = () => callback(true)
-  const handleOffline = () => callback(false)
-
-  window.addEventListener('online', handleOnline)
-  window.addEventListener('offline', handleOffline)
-
-  return () => {
-    window.removeEventListener('online', handleOnline)
-    window.removeEventListener('offline', handleOffline)
   }
 }

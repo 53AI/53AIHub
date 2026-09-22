@@ -26,7 +26,6 @@ interface ToolboxState {
   setSaving: (saving: boolean) => void
   updateGroupOptions: (options: RawGroupOption[]) => void
   updateSortOrder: (groups: GroupOption[]) => void
-  refresh: () => Promise<void>
 }
 
 export const useToolboxStore = create<ToolboxState>((set, get) => ({
@@ -109,11 +108,4 @@ export const useToolboxStore = create<ToolboxState>((set, get) => ({
 
   // 更新排序顺序
   updateSortOrder: (groups) => set({ groupOptions: groups }),
-
-  // 刷新数据（需要外部传入参数）
-  refresh: async () => {
-    // refresh 仅触发 loading 状态，实际数据加载由组件控制
-    set({ loading: true })
-    set({ loading: false })
-  },
 }))

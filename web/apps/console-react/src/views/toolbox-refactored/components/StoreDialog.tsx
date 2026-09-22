@@ -9,24 +9,13 @@ import {
 } from "react";
 import { t } from "@/locales";
 import { Search, SafeImage } from "@km/shared-components-react";
-import { aiLinkApi } from "@/api/modules/ai-link";
+
+import { toolboxApi } from "../api/toolboxApi";
+import type { AiLinkItem, StoreItem } from "../types";
 
 // ============================================================================
 // Types
 // ============================================================================
-
-/** 商店分组项 */
-interface StoreItem {
-  group_id: number;
-  group_name: string;
-  links: AI_LINK.State[];
-}
-
-/** 商店 API 响应项 */
-interface StoreApiResponse {
-  group_name: string;
-  links: AI_LINK.State[];
-}
 
 /** Ref 方法 */
 export interface StoreDialogRef {
@@ -41,7 +30,7 @@ interface StoreDialogProps {
   /** 是否显示手动添加按钮 */
   showAddManual?: boolean;
   /** 添加回调 */
-  onAdd?: (data: { data?: AI_LINK.State }) => void;
+  onAdd?: (data: { data?: AiLinkItem }) => void;
 }
 
 // ============================================================================
@@ -59,8 +48,7 @@ const StoreDialog = forwardRef<StoreDialogRef, StoreDialogProps>(
     // 加载商店列表
     const loadList = useCallback(async () => {
       try {
-        const res = await aiLinkApi.store();
-        const data = (res as { data?: StoreApiResponse[] })?.data || [];
+        const { data = [] } = await toolboxApi.store();
         const list: StoreItem[] = data.map((item, index) => ({
           group_id: index + 1,
           group_name: item.group_name,
@@ -81,7 +69,7 @@ const StoreDialog = forwardRef<StoreDialogRef, StoreDialogProps>(
 
     // 处理添加
     const handleAdd = useCallback(
-      (data?: AI_LINK.State) => {
+      (data?: AiLinkItem) => {
         onAdd?.({ data });
         setVisible(false);
       },
@@ -89,7 +77,7 @@ const StoreDialog = forwardRef<StoreDialogRef, StoreDialogProps>(
     );
 
     // 处理访问
-    const handleVisit = useCallback((link: AI_LINK.State) => {
+    const handleVisit = useCallback((link: AiLinkItem) => {
       window.open(link.url, "_blank");
     }, []);
 

@@ -49,77 +49,101 @@ export interface FormConfig {
   showWhen?: (form: any) => boolean
 }
 
-// 深度搜索表单配置
-export const DEEPSEEK_FORM_CONFIG: FormConfig[] = [
-  {
-    label: window.$t('module.platform_model_api_endpoint'),
-    prop: 'base_url',
-    type: 'url',
-    placeholder: window.$t('module.platform_model_api_endpoint_placeholder'),
-    required: true,
-    default: 'https://api.deepseek.com',
-  },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-    required: true,
-  },
-  {
-    label: window.$t('module.platform_model_models'),
-    prop: 'models',
-    type: 'select',
-    multiple: true,
-    placeholder: window.$t('module.platform_model_models_placeholder'),
-    required: true,
-  },
-]
+// ============ 共享字段 / 辅助 ====
+
+// base_url 两种 i18n 文案：api endpoint 风格 / base url 风格
+const API_ENDPOINT_LABEL = 'module.platform_model_api_endpoint'
+const API_ENDPOINT_PLACEHOLDER = 'module.platform_model_api_endpoint_placeholder'
+const BASE_URL_LABEL = 'module.platform_model_base_url'
+const BASE_URL_PLACEHOLDER = 'module.platform_model_base_url_placeholder'
+
+// Key（API 密钥）字段，多平台复用
+const KEY_FIELD: FormConfig = {
+  label: window.$t('module.platform_tool_api_key'),
+  prop: 'key',
+  type: 'input',
+  placeholder: window.$t('module.platform_tool_api_key_placeholder'),
+  required: true,
+}
+
+// Models（模型列表）字段，多平台复用
+const MODELS_FIELD: FormConfig = {
+  label: window.$t('module.platform_model_models'),
+  prop: 'models',
+  type: 'select',
+  multiple: true,
+  placeholder: window.$t('module.platform_model_models_placeholder'),
+  required: true,
+}
+
+// 「支持 / 不支持」布尔选项，Azure 与类 OpenAI 的开关字段复用
+const SUPPORT_OPTIONS = [
+  { label: '支持', value: true },
+  { label: '不支持', value: false },
+] satisfies FormConfig['options']
+
+const isReasoningModel = (form: any) => form.model_type === '1'
+const isNotVoiceModel = (form: any) => form.model_type !== '4'
+
+/**
+ * 构建「BaseURL + Key + Models」通用配置；
+ * baseUrl 缺省（undefined）时仅返回 Key + Models（如 siliconflow 无 API 地址）。
+ */
+const createEndpointConfig = (baseUrl?: {
+  defaultUrl: string
+  labelKey: string
+  placeholderKey: string
+}): FormConfig[] => {
+  const fields: FormConfig[] = []
+  if (baseUrl) {
+    fields.push({
+      label: window.$t(baseUrl.labelKey),
+      prop: 'base_url',
+      type: 'url',
+      placeholder: window.$t(baseUrl.placeholderKey),
+      required: true,
+      default: baseUrl.defaultUrl,
+    })
+  }
+  return [...fields, KEY_FIELD, MODELS_FIELD]
+}
+
+// ============ 各平台表单配置 ====
+
+export const DEEPSEEK_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'https://api.deepseek.com',
+  labelKey: API_ENDPOINT_LABEL,
+  placeholderKey: API_ENDPOINT_PLACEHOLDER,
+})
+
+export const TENCENT_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'https://tokenhub.tencentmaas.com',
+  labelKey: API_ENDPOINT_LABEL,
+  placeholderKey: API_ENDPOINT_PLACEHOLDER,
+})
+
+export const GLM_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  labelKey: API_ENDPOINT_LABEL,
+  placeholderKey: API_ENDPOINT_PLACEHOLDER,
+})
 
 // OpenAI表单配置
-export const OPENAI_FORM_CONFIG: FormConfig[] = [
-  {
-    label: window.$t('module.platform_model_base_url'),
-    prop: 'base_url',
-    type: 'url',
-    placeholder: window.$t('module.platform_model_base_url_placeholder'),
-    required: true,
-    default: 'https://api.openai.com/v1'
-  },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-    required: true,
-  },
-  {
-    label: window.$t('module.platform_model_models'),
-    prop: 'models',
-    type: 'select',
-    multiple: true,
-    placeholder: window.$t('module.platform_model_models_placeholder'),
-    required: true,
-  },
-]
-// 硅基流动表单配置
-export const SILICONFLOW_FORM_CONFIG: FormConfig[] = [
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-    required: true,
-  },
-  {
-    label: window.$t('module.platform_model_models'),
-    prop: 'models',
-    type: 'select',
-    multiple: true,
-    placeholder: window.$t('module.platform_model_models_placeholder'),
-    required: true,
-  },
-]
+export const OPENAI_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'https://api.openai.com/v1',
+  labelKey: BASE_URL_LABEL,
+  placeholderKey: BASE_URL_PLACEHOLDER,
+})
+
+export const COMMON_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: '',
+  labelKey: BASE_URL_LABEL,
+  placeholderKey: BASE_URL_PLACEHOLDER,
+})
+
+
+// 硅基流动表单配置（无 base_url，仅 Key + Models）
+export const SILICONFLOW_FORM_CONFIG = createEndpointConfig()
 
 // Azure表单配置
 export const AZURE_FORM_CONFIG: FormConfig[] = [
@@ -148,12 +172,7 @@ export const AZURE_FORM_CONFIG: FormConfig[] = [
     placeholder: window.$t('module.platform_model_base_url_azure_placeholder'),
     required: true,
   },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-  },
+  KEY_FIELD,
   {
     label: window.$t('module.platform_model_version'),
     prop: 'other',
@@ -173,10 +192,7 @@ export const AZURE_FORM_CONFIG: FormConfig[] = [
     label: 'Vision Support',
     prop: 'config.vision',
     type: 'select',
-    options: [
-      { label: '支持', value: true },
-      { label: '不支持', value: false },
-    ],
+    options: SUPPORT_OPTIONS,
     default: false,
   },
 ]
@@ -210,12 +226,7 @@ export const CUSTOM_OPENAI_FORM_CONFIG: FormConfig[] = [
     type: 'input',
     placeholder: window.$t('module.platform_model_display_name_placeholder'),
   },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-  },
+  KEY_FIELD,
   {
     label: window.$t('module.platform_model_base_url_azure'),
     prop: 'base_url',
@@ -233,142 +244,66 @@ export const CUSTOM_OPENAI_FORM_CONFIG: FormConfig[] = [
     default: DEFAULT_CONTEXT_LENGTH,
     min: 1,
     max: CONTEXT_LENGTH_LIMIT,
-    showWhen: (form: any) => form.model_type !== '4',
+    showWhen: isNotVoiceModel,
   },
-  // // 最大token上限
-  // {
-  //   label: window.$t('module.platform_model_max_tokens'),
-  //   prop: 'config.max_tokens',
-  //   type: 'input_number',
-  //   placeholder: window.$t('module.platform_model_max_tokens_placeholder'),
-  //   default: DEFAULT_MAX_TOKENS,
-  //   min: 1,
-  //   max: MAX_TOKENS_LIMIT,
-  //   showWhen: (form: any) => form.model_type === '1',
-  // },
   // Agent Thought
   {
     label: 'Agent Thought',
     prop: 'config.agent_thought',
     type: 'select',
-    options: [
-      { label: '支持', value: true },
-      { label: '不支持', value: false },
-    ],
+    options: SUPPORT_OPTIONS,
     default: false,
-    showWhen: (form: any) => form.model_type === '1',
+    showWhen: isReasoningModel,
   },
   {
     label: 'Deep Thinking',
     prop: 'config.deep_thinking',
     type: 'select',
-    options: [
-      { label: '支持', value: true },
-      { label: '不支持', value: false },
-    ],
+    options: SUPPORT_OPTIONS,
     default: false,
-    showWhen: (form: any) => form.model_type === '1',
+    showWhen: isReasoningModel,
   },
   // vision
   {
     label: window.$t('module.platform_model_vision_support'),
     prop: 'config.vision',
     type: 'select',
-    options: [
-      { label: '支持', value: true },
-      { label: '不支持', value: false },
-    ],
+    options: SUPPORT_OPTIONS,
     default: false,
-    showWhen: (form: any) => form.model_type === '1',
+    showWhen: isReasoningModel,
   },
 ]
 
-// 百炼表单配置
-export const BAILIAN_FORM_CONFIG: FormConfig[] = [
-  {
-    label: window.$t('module.platform_model_api_endpoint'),
-    prop: 'base_url',
-    type: 'url',
-    placeholder: window.$t('module.platform_model_base_url_placeholder'),
-    required: true,
-    default: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-    required: true,
-  },
-  {
-    label: window.$t('module.platform_model_models'),
-    prop: 'models',
-    type: 'select',
-    multiple: true,
-    placeholder: window.$t('module.platform_model_models_placeholder'),
-    required: true,
-  },
-]
+// 百炼表单配置（volcengine / qianfan 共用）
+export const BAILIAN_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  labelKey: BASE_URL_LABEL,
+  placeholderKey: BASE_URL_PLACEHOLDER,
+})
 
 // 月之暗面（Moonshot/Kimi）表单配置
-export const MOONSHOT_FORM_CONFIG: FormConfig[] = [
-  {
-    label: window.$t('module.platform_model_api_endpoint'),
-    prop: 'base_url',
-    type: 'url',
-    placeholder: window.$t('module.platform_model_api_endpoint_placeholder'),
-    required: true,
-    default: 'https://api.moonshot.cn',
-  },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-    required: true,
-  },
-  {
-    label: window.$t('module.platform_model_models'),
-    prop: 'models',
-    type: 'select',
-    multiple: true,
-    placeholder: window.$t('module.platform_model_models_placeholder'),
-    required: true,
-  },
-]
+export const MOONSHOT_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'https://api.moonshot.cn',
+  labelKey: API_ENDPOINT_LABEL,
+  placeholderKey: API_ENDPOINT_PLACEHOLDER,
+})
 
 // Gemini 表单配置
-export const GEMINI_FORM_CONFIG: FormConfig[] = [
-  {
-    label: window.$t('module.platform_model_base_url'),
-    prop: 'base_url',
-    type: 'url',
-    placeholder: window.$t('module.platform_model_base_url_placeholder'),
-    required: true,
-    default: 'http://agent.gemini.53ai.com',
-  },
-  {
-    label: window.$t('module.platform_tool_api_key'),
-    prop: 'key',
-    type: 'input',
-    placeholder: window.$t('module.platform_tool_api_key_placeholder'),
-    required: true,
-  },
-  {
-    label: window.$t('module.platform_model_models'),
-    prop: 'models',
-    type: 'select',
-    multiple: true,
-    placeholder: window.$t('module.platform_model_models_placeholder'),
-    required: true,
-  },
-]
+export const GEMINI_FORM_CONFIG = createEndpointConfig({
+  defaultUrl: 'http://agent.gemini.53ai.com',
+  labelKey: BASE_URL_LABEL,
+  placeholderKey: BASE_URL_PLACEHOLDER,
+})
 
 // 获取表单配置
 export const getFormConfig = (channel_type: number): FormConfig[] => {
   switch (channel_type) {
     case MODEL_VALUES.DEEPSEEK:
       return DEEPSEEK_FORM_CONFIG
+    case MODEL_VALUES.TENCENT:
+      return TENCENT_FORM_CONFIG
+    case MODEL_VALUES.GLM:
+      return GLM_FORM_CONFIG
     case MODEL_VALUES.OPENAI:
       return OPENAI_FORM_CONFIG
     case MODEL_VALUES.AZURE:
@@ -386,6 +321,6 @@ export const getFormConfig = (channel_type: number): FormConfig[] => {
     case MODEL_VALUES.CUSTOM_OPENAI:
       return CUSTOM_OPENAI_FORM_CONFIG
     default:
-      return []
+      return COMMON_FORM_CONFIG
   }
 }

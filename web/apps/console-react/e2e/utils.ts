@@ -38,8 +38,19 @@ export async function setupAuth(context: BrowserContext) {
 
 // 导航到页面
 export async function navigateTo(page: Page, path: string) {
-  await page.goto(path)
-  await page.waitForLoadState('domcontentloaded')
+  // 首次导航会触发 vite 冷启动按需编译，可能中断（ERR_ABORTED），重试一次即可稳定
+  let lastError: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto(path)
+      await page.waitForLoadState('domcontentloaded')
+      lastError = undefined
+      break
+    } catch (err) {
+      lastError = err
+    }
+  }
+  if (lastError) throw lastError
   // 等待页面内容加载
   await page.waitForTimeout(1000)
 }

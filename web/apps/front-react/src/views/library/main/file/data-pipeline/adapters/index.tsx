@@ -24,6 +24,7 @@ import { transformPlatformSetting } from '@/api/modules/platform-settings/transf
 import { chunkSettingApi } from '@/api/modules/chunk-setting'
 import { graphTemplatesApi } from '@/api/modules/graph-templates'
 import channelApi from '@/api/modules/channel'
+import { getVoiceParserInfo } from '../utils/voiceParser'
 
 /**
  * 将 API Pipeline 转换为前端 Pipeline
@@ -118,6 +119,9 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
     async getParseMethods(): Promise<ParseMethod[]> {
       const parserConfigs = getSimpleParserConfigs()
 
+      // 检查是否配置了录音识别模型，并读取模型名称与图标用于界面展示
+      const { showVoice, voiceName, voiceIcon } = await getVoiceParserInfo()
+
       // 获取平台设置
       const res = await platformSettingsApi.find()
       const settingsMap: Record<string, any> = {}
@@ -126,7 +130,8 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
           settingsMap[item.platform_key] = transformPlatformSetting(item)
         }
       })
-      return parserConfigs
+
+      const methods: ParseMethod[] = parserConfigs
         .filter((pc: any) => pc.isSystem || settingsMap[pc.key])
         .map((pc: any) => ({
           key: pc.key,
@@ -135,6 +140,19 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
           icon: pc.icon,
           detailedDesc: pc.detailedDesc,
         }))
+
+      // 语音解析：配置了录音识别模型时展示，名称与图标使用实际语音模型
+      if (showVoice) {
+        methods.push({
+          key: 'recording_voice',
+          name: voiceName || '语音解析',
+          desc: '语音识别模型解析',
+          icon: voiceIcon || getPublicPath('/images/tools/voice.png'),
+          detailedDesc: '使用语音识别模型解析录音文件，自动转写音频文本。',
+        })
+      }
+
+      return methods
     },
 
     async getVectorEmbedding(): Promise<VectorEmbeddingConfig | null> {

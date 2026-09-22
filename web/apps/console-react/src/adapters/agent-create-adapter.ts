@@ -648,6 +648,9 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
   // 本地版（op-local）与私有化版（VITE_PRIVATE_PREM=true）隐藏知识图谱入口
   get hideKnowledgeGraph() { return isOpLocal || isPrivatePrem },
 
+  // 本地版（op-local）与私有化版（VITE_PRIVATE_PREM=true）隐藏动态知识（Wiki）入口，并强制关闭
+  get hideWiki() { return isOpLocal || isPrivatePrem },
+
   // ========== 分组类型常量 ==========
 
   GROUP_TYPE: {

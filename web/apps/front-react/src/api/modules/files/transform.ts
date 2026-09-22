@@ -132,7 +132,7 @@ export const formatFile = (file: RawFileItem): FileItem => {
     base_path,
     file_ext,
     file_mime,
-    permission: PERMISSION_TYPE.loading,
+    permission: file.permission ?? PERMISSION_TYPE.loading,
     file_type: isfolder ? 'folder' : 'file',
     icon: file_icon,
     file_url: isfolder ? '' : `${api_host}/api/files/${file.id}/preview/knowledge_file_${file.id}_${truncateEncodedFileName(urlFileName)}`,

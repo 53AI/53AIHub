@@ -5,7 +5,6 @@
  * 解析器已经把源码归一化成结构化数据，这里只负责排版。
  * 配色沿用 insight 卡片的浅色系，保证同一页面里观感一致。
  */
-import React from 'react'
 import type {
   MermaidGanttDiagram,
   MermaidPieDiagram,

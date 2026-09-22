@@ -35,6 +35,7 @@ action.preview,预览,預覽,Preview,プレビュー
 action.reupload,重新上传,重新上傳,Re-upload,再アップロード
 action.reset_success,重置成功,重置成功,Reset successful,リセット成功
 action.save_failed,保存失败,保存失敗,Saving failed,保存失敗
+action.save_success,保存成功,保存成功,Saved successfully,保存に成功しました
 action.success,操作成功,操作成功,Operation successful,操作成功
 action.setting,设置,設置,Setting,設定
 action.view,查看,查看,View,表示
@@ -903,8 +904,11 @@ login.new_user_tip,你的初始密码是“{password}”，请及时修改,"你�
 login.password_format,密码必须包含大小写字母和数字,密碼必須包含大小寫字母和數字,Password must contain uppercase and lowercase letters and numbers,パスワードは大文字と小文字の英字と数字を含める必要があります
 login.password_length,密码长度需在 8-20 个字符之间，可以是字母、数字、符号组合,密碼長度需在 8-20 個字元之間，可以是字母、數字、符號組合,"Password length must be between 8-20 characters and can include letters, numbers, and symbols",パスワードの長さは8～20文字で、英字、数字、記号の組み合わせが可能です
 login.password_length_v2,密码长度需在 8-20 个字符之间,密碼長度需在 8-20 個字元之間,Password length must be between 8-20 characters,パスワードの長さは8～20文字で
+login.password_length_range,密码长度需在 {min}-{max} 个字符之间,密碼長度需在 {min}-{max} 個字元之間,Password length must be between {min}-{max} characters,パスワードの長さは{min}〜{max}文字である必要があります
+login.password_mix_classes,密码需至少包含大写字母、小写字母、数字、符号中的 {count} 种,密碼需至少包含大寫字母、小寫字母、數字、符號中的 {count} 種,"Password must contain at least {count} of uppercase letters, lowercase letters, digits, and symbols",パスワードは大文字・小文字・数字・記号のうち少なくとも{count}種類を含める必要があります
 login.password_login,密码登录,密碼登錄,Password Login,パスワードログイン
 login.password_login_v2,使用密码登录,使用密碼登錄,Password Login,パスワードログイン
+login.password_no_space,密码不能包含空格,密碼不能包含空格,Password cannot contain spaces,パスワードにスペースを含めることはできません
 login.password_not_match,两次输入的密码不一致,兩次輸入的密碼不一致,The two passwords you entered do not match,2回入力したパスワードが一致しません
 login.password_placeholder,请输入密码,請輸入密碼,Please enter your password,パスワードを入力してください
 login.policy,隐私政策,隱私政策,Privacy Policy,プライバシーポリシー
@@ -1036,6 +1040,7 @@ module.document_map_desc,智能提炼文档核心内容，生成结构化层级�
 module.document_parse,解析能力,解析能力,Parsing Capabilities,解析能力
 module.document_view_and_edit,文档能力,文檔能力,Document Capabilities,文書能力
 module.domain,站点域名,站點域名,Site Domain,サイトドメイン
+module.password_strength,密码强度,密碼強度,Password Strength,パスワード強度
 module.domain_exclusive,专属域名,專屬域名,Exclusive Domain,専用ドメイン
 module.domain_exclusive_label,自定义你的专属域名,自定義你的專屬域名,Customize your exclusive domain,自分の専用ドメインをカスタマイズします
 module.domain_exclusive_validator_1,"请使用小写字母或数字，且不少于5个字符不超过20个字符","請使用小寫字母或數字，且不少於5個字符不超過20個字符","Please use lowercase letters or numbers, with at least 5 characters and no more than 20 characters","小文字の英字または数字を使用してください。5文字以上20文字以下で入力してください"
@@ -1446,6 +1451,11 @@ platform.delete_config_confirm,确定删除{name}配置吗？,確定刪除{name}
 platform.delete_wps_config_confirm,确定删除WPS WebOffice配置吗？,確定刪除WPS WebOffice配置嗎？,Are you sure to delete the WPS WebOffice config?,WPS WebOffice設定を削除してもよろしいですか？
 platform.select_access,选择接入,選擇接入,Select Access,選択アクセス
 platform.standard_parse,标准解析,標準解析,Standard Parse,標準解析
+platform.voice_config_model,配置模型,配置模型,Configure Model,モデル設定
+platform.voice_not_configured,未配置录音解析模型,未配置錄音解析模型,No recording model configured,録音解析モデルが未設定
+platform.voice_parse,录音解析,錄音解析,Recording Parse,録音解析
+platform.voice_parse_desc,选择录音解析的语音识别模型,選擇錄音解析的語音識別模型,Select the voice recognition model for recording,録音解析の音声認識モデルを選択
+platform.voice_recognition_label,语音识别,語音識別,Voice Recognition,音声認識
 platform.parser_health_available,可用,可用,Available,利用可能
 platform.parser_health_unavailable,不可用,不可用,Unavailable,利用不可
 platform.parser_health_unchecked,未检测,未檢測,Not checked,未検出
@@ -1642,10 +1652,10 @@ search-feedback.unsatisfied_count,截止到统计日期，对AI搜索的点踩�
 search-feedback.unstatisfied_type,不满意类型,,Unstatisfied Type,不滿意類型
 search-feedback.user,反馈人,反饋人,User,反饋人
 search-record.all,全部,全部,All,全部
-search-record.all_knowledge_base,全部知识库,全部知識庫,All Knowledge Base,全部知識庫
-search-record.all_wiki,全部WIKI,全部WIKI,All Wiki,全部WIKI
-search-record.hybrid_wiki,混合知识库 WIKI,混合知識庫 WIKI,Hybrid Wiki,混合知識庫 WIKI
-search-record.specified_wiki,指定 WIKI,指定 WIKI,Specified Wiki,指定 WIKI
+search-record.doc_plus_dynamic,知识文档+Wiki,知識文檔+Wiki,Knowledge Document + Wiki,知識文書+Wiki
+search-record.doc_plus_dynamic_plus_graph,知识文档+Wiki+知识图谱,知識文檔+Wiki+知識圖譜,Knowledge Document + Wiki + Knowledge Graph,知識文書+Wiki+知識グラフ
+search-record.doc_plus_graph,知识文档+知识图谱,知識文檔+知識圖譜,Knowledge Document + Knowledge Graph,知識文書+知識グラフ
+search-record.knowledge_doc,知识文档,知識文檔,Knowledge Document,知識文書
 search-record.answer,回答,回答,Answer,回答
 search-record.answer_status,回答状态,回答狀態,Answer Status,回答状態
 search-record.status,状态,狀態,Status,状態
@@ -1676,7 +1686,7 @@ search-record.rewrite,问题改写,問題改寫,Question Rewrite,問題改寫
 search-record.search_count_tip,截止到统计日期，AI搜索的使用次数（1次对话计为1次使用）,截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）,Number of AI Search uses up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的使用次數（1次對話計為1次使用）
 search-record.search_document,搜索文档名称,搜索文档名称,Search Document Name,搜索文档名称
 search-record.search_question,搜索提问内容,搜索提問內容,Search Question Content,搜索提問內容
-search-record.specified_knowledge_base,指定知识库,指定知識庫,Specified Knowledge Base,指定知識庫
+search-record.specified_content,指定内容,指定內容,Specified Content,指定コンテンツ
 search-record.statistics,问答统计,問答統計,Question and Answer Statistics,問答統計
 search-record.statistics_time,数据统计时间：,數據統計時間：,Data Statistics Time: ,數據統計時間：
 search-record.thinking_way,思考方式,思考方式,Thinking Way,思考方式
@@ -1867,6 +1877,7 @@ variable_type.textarea,多行文本,多行文本,Textarea,テキストエリア
 variable_type.video,视频,视频,Video,ビデオ
 verification_code,验证码,驗證碼,Verification Code,検証コード
 verification_code_placeholder,请输入验证码,請輸入驗證碼,Please enter verification code,検証コードを入力してください
+verification_code_format,请输入正确的验证码,請輸入正確的驗證碼,Please enter a valid verification code,正しい認証コードを入力してください
 version.agent_limit,智能体添加数量达上限，请升级后尝试添加,智能體添加數量達上限，請升級後嘗試添加,The number of agents added has reached the upper limit. Please Upgrade to Add,アジェント追加制限、アップグレードして追加してください
 version.internal_user_limit,内部用户添加数量达上限，请升级后尝试添加,內部用戶添加數量達上限，請升級後嘗試添加,The number of internal users added has reached the upper limit. Please Upgrade to Add,内部ユーザー追加制限、アップグレードして追加してください
 version.knowledge_limit,知识空间添加数量达上限，请升级后尝试添加,知識庫添加數量達上限，請升級後嘗試添加,The number of knowledge bases added has reached the upper limit. Please Upgrade to Add,知識ベース追加制限、アップグレードして追加してください
@@ -2026,7 +2037,6 @@ space.setting.menu.basicInfo,基础信息,基礎資訊,Basic Info,基本情報
 space.setting.menu.members,成员与权限,成員與權限,Members & Permissions,メンバーと権限
 space.setting.menu.knowledge,知识库管理,知識庫管理,Knowledge Management,ナレッジ管理
 space.setting.menu.knowledgeGraph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
-space.setting.menu.dynamic,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
 space.setting.menu.recycle,回收站,回收站,Recycle Bin,ごみ箱
 space.basicInfo.danger_zone,删除空间,刪除空間,Delete Space,スペースを削除
 space.basicInfo.delete_tip,将这个空间彻底删除，知识空间下的所有数据将会删除,將這個空間徹底刪除，知識空間下的所有資料將會刪除,Permanently delete this space. All data under the knowledge space will be removed,このスペースを完全に削除します。ナレッジスペース下のすべてのデータが削除されます
@@ -2050,7 +2060,6 @@ space.knowledge_graph.ai_generate,AI生成,AI生成,AI Generate,AI生成
 space.knowledge_graph.select_entity_placeholder,请选择实体,請選擇實體,Please select entity,エンティティを選択してください
 space.knowledge_graph.relation_type_placeholder,请输入关系类型，例如：包含,請輸入關係類型，例如：包含,"Please enter relation type, e.g.: contains",関係タイプを入力してください（例：含む）
 space.knowledge_graph.entity_type_placeholder,请输入实体类型,請輸入實體類型,Please enter entity type,エンティティタイプを入力してください
-space.dynamic.placeholder,动态知识功能开发中,動態知識功能開發中,Dynamic Knowledge is under development,動的ナレッジは開発中です
 space.dynamic.knowledge_type,知识类型,知識類型,Knowledge Type,知識タイプ
 space.dynamic.page_config,页面配置,頁面配置,Page Config,ページ設定
 space.dynamic.new_config,新建配置,新建配置,New Config,新規設定
@@ -2069,7 +2078,6 @@ space.dynamic.empty_form_tip,请选择或添加页面配置,請選擇或添加�
 space.dynamic.enable_label,启用,啟用,Enable,有効化
 space.dynamic.set_range,设置范围,設置範圍,Set Range,範囲を設定
 space.dynamic.category_config,分类配置,分類配置,Category Config,分類設定
-space.dynamic.add_category,添加,添加,Add,追加
 space.dynamic.ai_generate,AI生成,AI生成,AI Generate,AI生成
 space.dynamic.data_mode,数据模式,數據模式,Data Mode,データモード
 space.dynamic.ai_generate_empty,未生成任何分类草稿，请调整空间名称/简介后重试,未生成任何分類草稿，請調整空間名稱/簡介後重試,No category drafts generated. Please adjust the space name/description and retry,分類ドラフトが生成されていません。スペース名・説明を調整して再試行してください
@@ -2125,9 +2133,14 @@ action.saving,保存中,保存中,Saving...,保存中...
 common.tip,提示,提示,Notice,ヒント
 space.members.col_user,用户,用戶,User,ユーザー
 space.members.col_permission,权限,權限,Permission,権限
-space.members.add_member,添加成员,添加成員,Add Member,メンバーを追加
 space.members.delete_confirm,确定删除该成员吗？,確定刪除該成員嗎？,Are you sure to remove this member?,このメンバーを削除してもよろしいですか？
 space.members.cannot_delete_creator,创建者不可删,創建者不可刪,Creator cannot be deleted,作成者は削除できません
+space.members.tab_space,空间权限,空間權限,Space Permissions,スペース権限
+space.members.tab_wiki,Wiki 权限,Wiki 權限,Wiki Permissions,Wiki権限
+space.members.col_knowledge_permission,知识库权限,知識庫權限,Knowledge Permission,ナレッジ権限
+space.members.col_wiki_permission,Wiki 权限,Wiki 權限,Wiki Permission,Wiki権限
+space.members.unselected,未选择,未選擇,Not Selected,未選択
+space.members.unselect_confirm,确定删除该权限吗？删除后将恢复为未选择状态,確定刪除該權限嗎？刪除後將恢復為未選擇狀態,Delete this permission? It will revert to "Not Selected".,この権限を削除しますか？削除後は「未選択」に戻ります
 space.recycle.retention_tip,文档删除后，将在回收站内保存30天，逾期后将永久删除文档,文檔刪除后，將在回收站內保存30天，逾期後將永久刪除文檔,Deleted documents are kept in the recycle bin for 30 days and permanently deleted afterwards,削除されたドキュメントは30日間ごみ箱に保存され、その後完全に削除されます
 space.recycle.selected_prefix,已选中:,已選中:,Selected:,選択済み:
 space.recycle.selected_suffix,,,,
@@ -2137,9 +2150,9 @@ space.recycle.batch_delete_content,是否彻底删除这{count}个文档，删�
 space.recycle.delete_single_content,确定彻底删除该文件吗？删除后将无法恢复,確定徹底刪除該文件嗎？刪除後將無法恢復,Permanently delete this file? It cannot be recovered.,このファイルを完全に削除しますか？復元できません
 space.recycle.batch_recover_title,恢复文档,恢復文檔,Recover document,ドキュメントを復元
 space.recycle.batch_recover_content,确定将 {count}个文档恢复到原有位置，若父级节点不存在，将直接恢复到根目录,確定將 {count}個文檔恢復到原有位置，若父級節點不存在，將直接恢復到根目錄,Restore {count} documents; files whose parent no longer exists will be placed at the root,{count}件のドキュメントを復元します。親が存在しない場合はルートに復元されます
-space.enable_dynamic_knowledge_tip,请先启用知识图谱，再打开动态知识,請先啟用知識圖譜，再打開動態知識,Please enable the knowledge graph before turning on dynamic knowledge,ナレッジグラフを有効にしてから動的ナレッジをオンにしてください
+space.enable_dynamic_knowledge_tip,请先启用知识图谱，再打开 Wiki,請先啟用知識圖譜，再打開 Wiki,Please enable the knowledge graph before turning on Wiki,ナレッジグラフを有効にしてからWikiをオンにしてください
 space.knowledge_graph_desc,基于知识图谱实体关系进行知识检索和提取，提升回答的场景贴合度,基於知識圖譜實體關係進行知識檢索和提取，提升回答的場景貼合度,"Based on knowledge graph entity relationships, retrieve and extract knowledge to improve scenario relevance of answers",ナレッジグラフのエンティティ関係に基づくナレッジ検索と抽出により、回答のシナリオ適合性を向上させます
-module.dynamic_knowledge,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+module.dynamic_knowledge,Wiki,Wiki,Wiki,Wiki
 module.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
 common.dept,系,系,Dept,部署
 common.system_avatar,系,系,S,S

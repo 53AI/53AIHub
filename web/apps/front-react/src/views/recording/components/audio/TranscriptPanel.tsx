@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Checkbox, Empty, Input, Modal, message } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
-import { VirtualLogo } from '@/components/VirtualLogo'
+import { SafeImage } from "@km/shared-components-react"
 import type { StageStatusBag, TranscriptItem } from '../../hooks/useFileParse'
 import { ParsingPlaceholder, ParsingUnavailable, PendingPlaceholder, InsightLoadingPlaceholder, hasStageFailed, type ParsingStep } from './ParseStatusPlaceholder'
 import { isStageLoading } from '../../constants/recordingStatus'
@@ -133,13 +133,14 @@ export function TranscriptPanel({
                           className="mr-2.5 shrink-0 inline-flex cursor-pointer"
                           onClick={openRename(item)}
                         >
-                          <VirtualLogo
-                            size={22}
-                            text={speakerLabel}
+                          <SafeImage
+                            src=""
+                            letter={speakerLabel}
                             textColor={getSpeakerColors(item.speakerNum).textColor}
                             round={11}
                             border={false}
                             backgroundColor={getSpeakerColors(item.speakerNum).backgroundColor}
+                            className="size-[22px] text-xs"
                           />
                         </span>
                         <span className="select-none cursor-pointer hover:text-[#2563EB]" onClick={openRename(item)}>

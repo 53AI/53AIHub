@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "antd": "^5.22.0",
+    "antd": "^6.0.0",
     "@ant-design/icons": "^5.5.0",
     "@km/shared-utils": "workspace:*",
     "sortablejs": "^1.15.0",

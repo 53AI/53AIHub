@@ -789,6 +789,13 @@ func UpdateSpaceWikiKnowledgeGraphConfig(c *gin.Context) {
 		if err := model.ReplaceSpaceKnowledgeGraphLibraryScope(tx, eid, spaceID, model.SpaceKnowledgeGraphScopeWiki, libraryIDs); err != nil {
 			return err
 		}
+		// 开启 Wiki 且该空间尚无任何 Wiki 空间级权限（resource_type=4）记录时，初始化
+		// 全体成员仅查看 + 操作人管理员；关闭或已有记录时不重复添加、不删除权限。
+		if req.EnableWikiKnowledgeGraph != nil && *req.EnableWikiKnowledgeGraph {
+			if err := service.EnsureWikiSpacePermissionsWhenEnabled(tx, eid, spaceID, userID); err != nil {
+				return err
+			}
+		}
 		return enterpriseinit.EnsureDefaultWikiPipelineForEnterprise(c.Request.Context(), tx, eid)
 	}); err != nil {
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))

@@ -245,7 +245,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 
 		// Feedback 业务逻辑(配置加载 + 5 个 handler + timeout 自清理)已抽到 ./hooks/useChatFeedback
 		const { feedbackHandlers } = useChatFeedback({
-			chatAdapters,
+			chatAdapters: chatAdapters ?? null,
 			agentUsage: agentInfo?.agent_usage,
 			agentType: agentInfo?.agent_type,
 			openclawEnabled,
@@ -1827,9 +1827,10 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 				// 场景:ChatContainer 维护了 selectedMentionLinks 但用户还没在 Sender 看到/触发它时,
 				//     links 仍需正确传给 useChatSend 用于构建 messages.specified_files
 				const senderLinks = Array.isArray(atList) ? atList : [];
-				const contextLinks = Array.isArray(sendContext?.links)
-					? sendContext.links
-					: [];
+				const contextLinks =
+					sendContext && Array.isArray(sendContext.links)
+						? sendContext.links
+						: [];
 				const links = contextLinks.length > 0 ? contextLinks : senderLinks;
 				const hasSelectedSkills =
 					Array.isArray(selectedSkills) && selectedSkills.length > 0;
@@ -2044,7 +2045,6 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 								created_time: Date.now(),
 								updated_time: Date.now(),
 							};
-							onOpenClawConversationResolved?.(resolvedConversation);
 							addConversation({
 								...resolvedConversation,
 								virtual_id: OPENCLAW_OPTIMISTIC_RESOLVED_VIRTUAL_ID,

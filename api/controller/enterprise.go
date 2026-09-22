@@ -100,6 +100,16 @@ type UpdateEnterpriseRequest struct {
 	Industry     string `json:"industry"`
 }
 
+// UpdateCurrentEnterpriseRequest 前台管理员更新当前企业站点资料请求。
+// 字段用 *string 以区分「不传」与「传空」：不传(nil)不改，传空字符串则清空。
+type UpdateCurrentEnterpriseRequest struct {
+	DisplayName *string `json:"display_name" example:"Enterprise Name"`
+	Logo        *string `json:"logo" example:"http://a.com/a.jpg"`
+	FullName    *string `json:"full_name" example:"53AI (北京)科技有限公司"`
+	Description *string `json:"description" example:"Description Test"`
+	Industry    *string `json:"industry" example:"信息传输、软件和信息技术服务业"`
+}
+
 // @Summary Update enterprise information
 // @Description Update enterprise information
 // @Tags Enterprise
@@ -258,6 +268,111 @@ func UpdateEnterprise(c *gin.Context) {
 		*enterprise,
 		utils.GetClientIP(c),
 		fieldMap,
+	)
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(enterprise))
+}
+
+// UpdateCurrentEnterprise 更新当前登录管理员所属企业的站点资料（前台接口，仅管理员）。
+// 语义：字段不传 → 保持原值不变；字段传空字符串 → 清空该字段。
+// @Summary      更新当前企业站点资料（前台·管理员）
+// @Description  更新当前登录管理员所属企业的站点资料。字段不传则保持原值，传空字符串则清空该字段。
+// @Tags         Enterprise
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body UpdateCurrentEnterpriseRequest true "站点资料"
+// @Success      200  {object}  model.CommonResponse{data=model.Enterprise}  "更新后的企业信息"
+// @Router       /api/enterprises/current [put]
+func UpdateCurrentEnterprise(c *gin.Context) {
+	var req UpdateCurrentEnterpriseRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	eid := config.GetEID(c)
+	if eid <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
+		return
+	}
+
+	enterprise, err := model.GetEnterpriseModel(eid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.NotFound.ToResponse(nil))
+		return
+	}
+
+	// 校验仅对「传入」的字段生效
+	if req.Description != nil && len([]rune(*req.Description)) > 1000 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("企业介绍不能超过1000字")))
+		return
+	}
+	if req.FullName != nil && len([]rune(*req.FullName)) > 50 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("企业全称不能超过50字")))
+		return
+	}
+	if req.Industry != nil && *req.Industry != "" {
+		valid := false
+		for _, cat := range model.IndustryCategories {
+			if cat == *req.Industry {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("不支持的行业: %s", *req.Industry)))
+			return
+		}
+	}
+
+	oldEnterprise := *enterprise
+
+	// 传了(非 nil)才更新：nil=不传(不改)，非 nil 含空串=置空
+	updateData := make(map[string]interface{})
+	if req.DisplayName != nil {
+		updateData["display_name"] = *req.DisplayName
+		enterprise.DisplayName = *req.DisplayName
+	}
+	if req.Logo != nil {
+		updateData["logo"] = *req.Logo
+		enterprise.Logo = *req.Logo
+	}
+	if req.FullName != nil {
+		updateData["full_name"] = *req.FullName
+		enterprise.FullName = *req.FullName
+	}
+	if req.Description != nil {
+		updateData["description"] = *req.Description
+		enterprise.Description = *req.Description
+	}
+	if req.Industry != nil {
+		updateData["industry"] = *req.Industry
+		enterprise.Industry = *req.Industry
+	}
+
+	if err := enterprise.PartialUpdateEnterprise(updateData); err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+
+	// 站点信息变更日志（与 UpdateEnterprise 一致）
+	model.LogEntityChange(
+		"站点信息",
+		model.SystemLogActionUpdate,
+		eid,
+		config.GetUserId(c),
+		config.GetUserNickname(c),
+		model.SystemLogModuleSiteInfo,
+		oldEnterprise,
+		*enterprise,
+		utils.GetClientIP(c),
+		map[string]string{
+			"DisplayName": "站点名称",
+			"FullName":    "企业全称",
+			"Description": "企业介绍",
+			"Industry":    "行业",
+		},
 	)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(enterprise))

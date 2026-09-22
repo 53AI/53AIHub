@@ -27,6 +27,50 @@ interface ChunkItem {
 // footer 占位项的哨兵 id，使用 Number.MIN_SAFE_INTEGER 避免与真实 id 冲突
 const FOOTER_CHUNK_ID = Number.MIN_SAFE_INTEGER;
 
+// 目录跟随滚动时，在可视区上下留出的余量（px）
+const OUTLINE_FOLLOW_GAP = 16;
+
+// 正文滚动容器：VirtualList 内部的 .virtual-list-container
+function findScrollContainer(root: HTMLElement | null): HTMLElement | null {
+  return root?.querySelector(".virtual-list-container") ?? null;
+}
+
+/**
+ * 在指定滚动容器内部定位元素。
+ *
+ * 不用 `Element.scrollIntoView`：它会连带滚动「所有」可滚动祖先（包括
+ * overflow-hidden 的外层容器、Drawer body、页面本身），点一次目录会把
+ * 整个预览区拖动一次；容器内部的相对定位才是我们想要的语义。
+ */
+function scrollIntoContainer(
+  container: HTMLElement,
+  el: Element,
+  behavior: ScrollBehavior = "smooth",
+) {
+  const top =
+    container.scrollTop +
+    el.getBoundingClientRect().top -
+    container.getBoundingClientRect().top;
+  container.scrollTo({ top: Math.max(0, top), behavior });
+}
+
+// 轮询等待异步渲染出来的元素（markdown 的标题 id 由渲染回调写入）
+function waitForElement(
+  find: () => Element | null,
+  timeout = 1500,
+): Promise<Element | null> {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const el = find();
+      if (el) return resolve(el);
+      if (Date.now() - start >= timeout) return resolve(null);
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
 interface ChunkViewProps {
   className?: string;
   chunks?: ChunkItem[];
@@ -186,6 +230,9 @@ export default function ChunkView({
     mode || PREVIEW_MODE.web,
   );
   const [activeHeadingId, setActiveHeadingId] = useState<string>("");
+  // 供滚动监听读取当前高亮 id：把 activeHeadingId 放进 effect 依赖，会让
+  // 监听器在每次高亮变化时解绑/重挂并重跑一次计算，滚动中变成高频抖动。
+  const activeHeadingIdRef = useRef<string>("");
 
   const finalChunks = useMemo(() => {
     let next: ChunkItem[];
@@ -210,14 +257,31 @@ export default function ChunkView({
       return rootRef.current?.querySelector(`#${CSS.escape(data.id)}`) || null;
     };
 
-    // 如果标题已渲染，直接滚动
+    // 如果标题已渲染，直接在正文容器内滚动
     const heading = findHeading();
     if (heading) {
-      heading.scrollIntoView({ behavior: "smooth", block: "start" });
+      const container = findScrollContainer(rootRef.current);
+      if (container) scrollIntoContainer(container, heading);
       return;
     }
 
-    // 标题未渲染，使用 finder 函数在加载完成后自动定位
+    // 标题未渲染：分片已经挂载（只是 markdown 还没解析完）时等标题出现再滚。
+    // 若直接走 virtualListRef.scrollToIndex，单分片场景会先跳到分片顶部，
+    // 再二次滚动到标题 —— 视觉上就是点一下抖一下。
+    const chunkId = finalChunks[data.chunkIndex]?.id;
+    const chunkRendered =
+      chunkId != null && !!rootRef.current?.querySelector(`.preview-${chunkId}`);
+    if (chunkRendered) {
+      const appeared = await waitForElement(findHeading);
+      const container = findScrollContainer(rootRef.current);
+      if (!container) return; // 组件已卸载
+      if (appeared) {
+        scrollIntoContainer(container, appeared);
+        return;
+      }
+    }
+
+    // 分片还没渲染，交给虚拟列表滚动到对应分片，再由 finder 精确定位
     await virtualListRef.current?.scrollToIndex(data.chunkIndex, "auto", findHeading);
   };
 
@@ -259,6 +323,13 @@ export default function ChunkView({
           inst.updateAutoSelectEnabled?.(detail.data);
         } catch (e) {
           console.error("更新自动划词状态失败:", e);
+        }
+        // 划词开关（v0.4.2 §3.4）：同步 enableManualHighlight，关闭自动选择后
+        // 划词不再触发 selection-change / 文本不再自动带入聊天框。
+        try {
+          inst.updateManualSelectEnabled?.(detail.data);
+        } catch (e) {
+          console.error("更新手动划词状态失败:", e);
         }
       });
     }
@@ -462,15 +533,14 @@ export default function ChunkView({
 
 
   // 滚动时高亮当前可见的标题
+  // 监听只挂一次（依赖 outlineMode / outlineVisible），当前高亮 id 通过 ref 读取，
+  // 避免每次高亮变化都解绑→重挂监听并重跑一次计算。
   useEffect(() => {
     if (outlineMode !== "simple" || !outlineVisible) return;
 
-    // VirtualList 的滚动容器在其内部的 .virtual-list-container
-    const findScrollContainer = () => {
-      return rootRef.current?.querySelector('.virtual-list-container') as HTMLDivElement | null;
-    };
+    const scrollEl = findScrollContainer(rootRef.current);
+    if (!scrollEl) return;
 
-    let scrollEl: HTMLDivElement | null = null;
     let animationFrameId: number | null = null;
 
     const handleScroll = () => {
@@ -479,20 +549,22 @@ export default function ChunkView({
       }
 
       animationFrameId = requestAnimationFrame(() => {
-        const headings = rootRef.current?.querySelectorAll(
+        const containerRect = scrollEl.getBoundingClientRect();
+        const headings = rootRef.current?.querySelectorAll<HTMLElement>(
           "h1, h2, h3, h4, h5, h6"
         );
         if (!headings || headings.length === 0) return;
 
-        // 找到当前可见区域最上方的标题
-        const containerRect = scrollEl?.getBoundingClientRect();
-        if (!containerRect) return;
-
+        // 找到当前可见区域最上方的标题。
+        // 只认「已渲染」的标题：footer 里的标题没有 id；被折叠/隐藏的标题
+        // rect 全为 0，会被误判成在容器上方。
         let activeId = "";
 
         for (let i = headings.length - 1; i >= 0; i--) {
           const heading = headings[i];
+          if (!heading.id) continue;
           const rect = heading.getBoundingClientRect();
+          if (rect.width === 0 && rect.height === 0) continue;
           // 标题顶部在容器上方或刚进入可见区域
           if (rect.top <= containerRect.top + 100) {
             activeId = heading.id;
@@ -500,33 +572,32 @@ export default function ChunkView({
           }
         }
 
-        if (activeId && activeId !== activeHeadingId) {
+        if (activeId && activeId !== activeHeadingIdRef.current) {
+          activeHeadingIdRef.current = activeId;
           setActiveHeadingId(activeId);
         }
       });
     };
 
-    // 等待 VirtualList 渲染后找到滚动容器
-    const timer = setTimeout(() => {
-      scrollEl = findScrollContainer();
-      if (scrollEl) {
-        scrollEl.addEventListener("scroll", handleScroll);
-        handleScroll(); // 初始调用
-      }
-    }, 100);
+    scrollEl.addEventListener("scroll", handleScroll);
+    handleScroll(); // 初始调用
 
     return () => {
-      clearTimeout(timer);
       if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
       }
-      if (scrollEl) {
-        scrollEl.removeEventListener("scroll", handleScroll);
-      }
+      scrollEl.removeEventListener("scroll", handleScroll);
     };
-  }, [outlineMode, outlineVisible, activeHeadingId]);
+  }, [outlineMode, outlineVisible]);
 
   // activeHeadingId 变化时，让目录容器跟随滚动，保证高亮项始终可见
+  //
+  // 两个刻意为之的点：
+  // 1) 只用目录容器自己滚动，不用 scrollIntoView —— 后者会连带滚动所有
+  //    可滚动祖先（外层页面 / Drawer body 等），点目录会把正文一起拖走；
+  // 2) 用即时定位（behavior: auto）—— 正文滚动时高亮会随每一帧连续变化，
+  //    平滑动画会被反复重启（每次都从当前半途位置重新计算目标，越算越近），
+  //    目录列表就会出现「一直抖」。跟随只要求高亮项可见，即时定位最稳。
   useEffect(() => {
     if (outlineMode !== "simple" || !outlineVisible || !activeHeadingId) return;
 
@@ -544,7 +615,14 @@ export default function ChunkView({
       itemRect.top >= containerRect.top && itemRect.bottom <= containerRect.bottom;
     if (inView) return;
 
-    activeItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    // 目标位置按「目录项在滚动内容中的绝对位置」算，与当前滚到哪里无关
+    const itemTop = container.scrollTop + itemRect.top - containerRect.top;
+    const top =
+      itemRect.top < containerRect.top
+        ? itemTop - OUTLINE_FOLLOW_GAP
+        : itemTop + itemRect.height + OUTLINE_FOLLOW_GAP - container.clientHeight;
+
+    container.scrollTo({ top: Math.max(0, top), behavior: "auto" });
   }, [activeHeadingId, outlineMode, outlineVisible]);
 
   return (

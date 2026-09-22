@@ -4,15 +4,15 @@ import { useState, useMemo } from 'react';
 import { UpOutlined, RightOutlined, LinkOutlined } from '@ant-design/icons';
 import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation, useChatConfig, buildLibraryUrl } from '../../../i18n';
-import type { FileItem } from '../../../types/message';
+import type { ChunkItem } from '../../../types/message';
 import RagPill from '../RagPill';
 
 interface QuotationProps {
   type?: string;
-  files?: FileItem[];
+  files?: ChunkItem[];
 }
 
-export function Quotation({ type, files = [] }: QuotationProps) {
+export function Quotation({ files = [] }: QuotationProps) {
   const { t } = useTranslation();
   const config = useChatConfig();
   const [showFiles, setShowFiles] = useState(false);
@@ -48,11 +48,11 @@ export function Quotation({ type, files = [] }: QuotationProps) {
   const quotationText = useMemo(() => {
     if (docCount > 0 && wikiCount > 0) {
       return t("chat.quotation_mixed", { docCount, wikiCount })
-        || `引用了 ${docCount} 篇知识文档、${wikiCount} 篇动态知识`;
+        || `引用了 ${docCount} 篇知识文档、${wikiCount} 篇 Wiki`;
     }
     if (wikiCount > 0) {
       return t("chat.quotation_wiki", { count: wikiCount })
-        || `引用了 ${wikiCount} 篇动态知识`;
+        || `引用了 ${wikiCount} 篇 Wiki`;
     }
     return t("chat.quotation_doc", { count: docCount })
       || `引用了 ${docCount} 篇知识文档`;
@@ -60,7 +60,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
 
   if (!files.length) return null;
 
-  const handleFileClick = (item: FileItem) => {
+  const handleFileClick = (item: ChunkItem) => {
     // 使用配置构建 URL
     const url = buildLibraryUrl(config, item.library_id, item.file_id, item);
     if (url) {
@@ -69,7 +69,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
   };
 
   // 拼出 `/空间名/知识库名` 后缀；任一为空则跳过对应段
-  const buildPathSuffix = (space_name: string, library_name?: string): string => {
+  const buildPathSuffix = (space_name?: string, library_name?: string): string => {
     const parts = [space_name, library_name].filter(
       (s) => typeof s === 'string' && s.trim().length > 0
     ) as string[];
@@ -102,7 +102,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
             if (item.chunk_type === ('web_search' as const)) {
               return (
                 <a
-                  key={item.id || index}
+                  key={item.chunk_id || item.file_id || index}
                   href={item.file_path || item.url}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -113,7 +113,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
                   </div>
                   <LinkOutlined className="text-[#939499]" />
                   <div className="flex-1 text-sm text-[#1D1E1F] truncate">
-                    {item.name || item.file_name}
+                    {item.file_name}
                   </div>
                 </a>
               );
@@ -124,7 +124,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
               const pathSuffix = buildPathSuffix(item?.space_name);
               return (
                 <div
-                  key={item.id || index}
+                  key={item.chunk_id || item.file_id || index}
                   onClick={() => handleFileClick(item)}
                   className="flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F5] rounded px-1 py-0.5 -mx-1 group"
                 >
@@ -135,7 +135,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
                     <SvgIcon name="doc-detail" size={12} />
                   </span>
                   <div className="flex-1 text-sm text-[#1D1E1F] truncate">
-                    {item.title}
+                    {item.file_name}
                     {pathSuffix && (
                       <span className="text-[#939499] ml-1 invisible group-hover:visible">{pathSuffix}</span>
                     )}
@@ -148,7 +148,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
             const pathSuffix = buildPathSuffix(item?.space_name, item?.library_name);
             return (
               <div
-                key={item.id || index}
+                key={item.chunk_id || item.file_id || index}
                 className="flex items-center gap-2 cursor-pointer hover:bg-[#F5F5F5] rounded px-1 py-0.5 -mx-1 group"
                 onClick={() => handleFileClick(item)}
               >
@@ -157,7 +157,7 @@ export function Quotation({ type, files = [] }: QuotationProps) {
                 </div>
                 {item.file_icon && <img src={item.file_icon} className="size-5" alt="" />}
                 <div className="flex-1 text-sm text-[#1D1E1F] truncate">
-                  {item.name || item.file_name}
+                  {item.file_name}
                   {pathSuffix && (
                     <span className="text-[#939499] ml-1 invisible group-hover:visible">{pathSuffix}</span>
                   )}

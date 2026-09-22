@@ -27,7 +27,7 @@ import {
   BubbleAssistant,
   BubbleListRef,
 } from "@km/hub-ui-x-react";
-import { Sender, SenderRef } from "@/components/Chat/Sender";
+import { Sender } from "@/components/Chat/Sender";
 
 interface ChatMessage {
   question: {
@@ -61,7 +61,6 @@ export const PreviewPanel = forwardRef<PreviewPanelRef>((_, ref) => {
   const activeChatIndexRef = useRef(-1);
   const abortControllerRef = useRef<AbortController | null>(null);
   const bubbleListRef = useRef<BubbleListRef>(null);
-  const senderRef = useRef<SenderRef>(null);
 
   const chatLoading = useMemo(() => {
     return (
@@ -394,7 +393,6 @@ export const PreviewPanel = forwardRef<PreviewPanelRef>((_, ref) => {
       {/* 发送区域 */}
       <div className="px-6 py-3">
         <Sender
-          ref={senderRef}
           showAt={false}
           enableUpload={enableUpload}
           acceptTypes={uploadAccept}

@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Button, Drawer, Modal, Form, Input, message, Tag, Tooltip } from "antd";
 import { SvgIcon, IconAction } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
+import channelApi from "@/api/modules/channel";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
 import type {
   PlatformSetting,
@@ -11,14 +12,11 @@ import type {
 import {
   PARSER_CONFIGS, getAvailableKeys
 } from "@/constants/parser";
-import { useEnv } from "@/hooks/useEnv";
-import { useModelTest, getTestKey } from "./hooks/useModelTest";
+import { loadModels, ModelSelect } from "@/components/Model";
+import { MODEL_USE_TYPE } from "@/constants/platform/config";
+import { MODEL_VALUE_SEPARATOR, parseModelValue } from "@/constants/platform/model";
 
-const formatSecret = (value: string) => {
-  if (!value) return "";
-  if (value.length <= 8) return "****";
-  return `${value.slice(0, 4)}****${value.slice(-4)}`;
-};
+
 
 const formatLatency = (ms: number) => {
   if (ms === undefined || ms === null) return "";
@@ -51,13 +49,39 @@ const HealthTag = ({ health }: { health: ParserHealth | undefined }) => {
   );
 };
 
+const VoiceHealthTag = ({
+  health,
+}: {
+  health: { usable: boolean; message?: string; loading?: boolean } | null;
+}) => {
+  if (!health) return null;
+  if (health.loading) {
+    return (
+      <Tag color="processing" className="mr-0">
+        {t("platform.parser_health_unchecked")}
+      </Tag>
+    );
+  }
+  const label = t(
+    health.usable ? "platform.parser_health_available" : "platform.parser_health_unavailable",
+  );
+  const color = health.usable ? "success" : "error";
+  const tipParts = [label];
+  if (health.message) tipParts.push(health.message);
+  return (
+    <Tooltip title={tipParts.join(" · ")}>
+      <Tag color={color} className="mr-0">
+        {label}
+      </Tag>
+    </Tooltip>
+  );
+};
+
 export function PlatformFileParser() {
-  const { isRcEnv, isDevEnv } = useEnv();
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [showDocumentDrawer, setShowDocumentDrawer] = useState(false);
-  const [showAudioDrawer, setShowAudioDrawer] = useState(false);
   const [showConfigDialog, setShowConfigDialog] = useState(false);
   const [currentEditKey, setCurrentEditKey] = useState<string>("");
   const [settingsMap, setSettingsMap] = useState<
@@ -76,10 +100,15 @@ export function PlatformFileParser() {
   const [form] = Form.useForm();
   const formRef = useRef<any>(null);
   const availableKeys = getAvailableKeys();
-  const { voiceModels, loadVoiceModels } = useVoiceModels();
-  const [addedVoiceIds, setAddedVoiceIds] = useState<Set<string>>(new Set());
-  const { testMap, handleModelTest } = useModelTest();
+  const [voiceModels, setVoiceModels] = useState<any[]>([]);
   const [healthMap, setHealthMap] = useState<Record<string, ParserHealth>>({});
+  const [recordingVoice, setRecordingVoice] = useState<PlatformSetting | null>(null);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
+  const [savingVoice, setSavingVoice] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState<string>("");
+  const [voiceHealth, setVoiceHealth] = useState<
+    { usable: boolean; message?: string; loading?: boolean } | null
+  >(null);
 
   const documentConfigs = useMemo(
     () => PARSER_CONFIGS.filter((config) => config.category === "document"),
@@ -89,6 +118,18 @@ export function PlatformFileParser() {
   const currentConfig = useMemo(() => {
     return PARSER_CONFIGS.find((config) => config.key === currentEditKey);
   }, [currentEditKey]);
+
+  const selectedRecordingModel = useMemo(() => {
+    const channelId = recordingVoice?.setting?.voice_model_id;
+    const modelName = recordingVoice?.setting?.voice_model_name;
+    if (!channelId || !modelName) return null;
+    const target = `${channelId}${MODEL_VALUE_SEPARATOR}${modelName}`;
+    for (const channel of voiceModels) {
+      const opt = (channel.options || []).find((o: any) => o.value === target);
+      if (opt) return { label: opt.label || opt.value, icon: opt.icon || "" };
+    }
+    return null;
+  }, [recordingVoice, voiceModels]);
 
   
   const loadAllSettings = async () => {
@@ -111,6 +152,52 @@ export function PlatformFileParser() {
     });
     setSettingsMap(map);
   };
+
+  const loadRecordingVoice = async () => {
+    try {
+      const list = await platformSettingsApi.find({
+        platform_key: "recording_voice",
+      });
+      const item =
+        list.find((s) => s.platform_key === "recording_voice") || list[0];
+      const next = item ? transformPlatformSetting(item) : null;
+      setRecordingVoice(next);
+      return next;
+    } catch (error) {
+      console.error("Load recording voice error:", error);
+      return null;
+    }
+  };
+
+  const loadRecordingVoiceHealth = async (
+    recordingVoice: PlatformSetting | null,
+  ) => {
+    const channelId = recordingVoice?.setting?.voice_model_id;
+    const modelName = recordingVoice?.setting?.voice_model_name;
+    if (!channelId || !modelName) {
+      setVoiceHealth(null);
+      return;
+    }
+    setVoiceHealth({ usable: false, loading: true });
+    try {
+      const res = await channelApi.testVoice(Number(channelId), modelName);
+      setVoiceHealth({
+        usable: res?.success ?? false,
+        message: res?.message || "",
+      });
+    } catch (error) {
+      console.error("Test recording voice error:", error);
+      setVoiceHealth({ usable: false, message: String(error) });
+    }
+  };
+
+  const refreshVoiceModels = useCallback(async () => {
+    try {
+      setVoiceModels(await loadModels(MODEL_USE_TYPE.VOICE));
+    } catch (error) {
+      console.error("Load voice models error:", error);
+    }
+  }, []);
 
   const loadHealth = async () => {
     try {
@@ -137,35 +224,12 @@ export function PlatformFileParser() {
     }
   };
 
-  // 合并所有渠道已添加的语音模型（model_type=4），按 model_id 去重
-  const openAudioDrawer = async () => {
-    await loadVoiceModels();
-    setShowAudioDrawer(true);
-  };
-
-  const handleVoiceModelAdd = async (model: VoiceModelItem) => {
-    // TODO: 保存接口暂未提供，待后端支持后接入；已添加列表初始也应从后端拉取
-    setAddedVoiceIds((prev) => new Set(prev).add(model.model_id));
-    message.success(t("action_add_success"));
-  };
-
-  const handleVoiceModelDelete = (model: VoiceModelItem) => {
-    // TODO: 删除接口暂未提供，临时只做本地状态更新
-    setAddedVoiceIds((prev) => {
-      const next = new Set(prev);
-      next.delete(model.model_id);
-      return next;
-    });
-    message.success(t("action_delete_success"));
-  };
-
   const openConfigDialog = (key: string) => {
     const config = PARSER_CONFIGS.find((c) => c.key === key);
     if (!config) return;
 
     setCurrentEditKey(key);
     setShowDocumentDrawer(false);
-    setShowAudioDrawer(false);
 
     const formData: Record<string, string> = {};
     config.formFields.forEach((field) => {
@@ -250,17 +314,70 @@ export function PlatformFileParser() {
     });
   };
 
+  const openVoiceModal = () => {
+    const setting = recordingVoice?.setting || {};
+    const channelId = setting.voice_model_id;
+    const modelName = setting.voice_model_name;
+    setSelectedVoice(
+      channelId && modelName
+        ? `${channelId}${MODEL_VALUE_SEPARATOR}${modelName}`
+        : "",
+    );
+    setShowVoiceModal(true);
+  };
+
+  const handleSaveVoice = async () => {
+    if (!selectedVoice) {
+      message.warning(t("recording_voice_required"));
+      return;
+    }
+    const parsed = parseModelValue(selectedVoice);
+    if (!parsed) return;
+    const setting = {
+      voice_model_id: Number(parsed.modelType),
+      voice_model_name: parsed.modelId,
+    };
+    setSavingVoice(true);
+    try {
+      if (recordingVoice?.id) {
+        await platformSettingsApi.update(recordingVoice.id, {
+          platform_key: "recording_voice",
+          setting: JSON.stringify(setting),
+        });
+      } else {
+        await platformSettingsApi.create({
+          platform_key: "recording_voice",
+          setting: JSON.stringify(setting),
+        });
+      }
+      message.success(t("action_save_success"));
+      setShowVoiceModal(false);
+      const next = await loadRecordingVoice();
+      await loadRecordingVoiceHealth(next);
+    } catch (error) {
+      console.error("Save recording voice error:", error);
+    } finally {
+      setSavingVoice(false);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
       setLoading(true);
-      await Promise.all([loadAllSettings(), loadVoiceModels(), loadHealth()]);
+      await Promise.all([
+        loadAllSettings(),
+        refreshVoiceModels(),
+        loadHealth(),
+      ]);
+      const voice = await loadRecordingVoice();
+      await loadRecordingVoiceHealth(voice);
       setLoading(false);
     };
     init();
   }, []);
 
   return (
-    <div className="h-full flex flex-col  py-6 px-2to">
+    <div className="h-full flex flex-col  py-2 px-2">
       {/* 文档解析模块 */}
       <div className="mb-8">
         <div className="flex items-center gap-2.5 mb-4">
@@ -350,101 +467,64 @@ export function PlatformFileParser() {
       </div>
 
       {/* 语音解析模块 */}
-      <div className="hidden">
+      <div>
         <div className="flex items-center gap-2.5 mb-4">
-          <h3 className="text-base font-medium text-primary">语音解析</h3>
+          <h3 className="text-base font-medium text-primary">
+            {t("platform.voice_parse")}
+          </h3>
           <p className="text-xs text-placeholder">
-            设置音视频文件的解析模型
+            {t("platform.voice_parse_desc")}
           </p>
         </div>
 
-          {/* 已添加的语音模型列表-抽屉中已添加的模型 */}
-          {voiceModels.length > 0 && (
-            <div className="w-full border border-gray-200 rounded-lg overflow-hidden">
-              {voiceModels.map((model) => {
-                const testKey = getTestKey(model.channel_id, model.model_id);
-                const testResult = testMap[testKey];
-                return (
-                  <div
-                    key={model.model_id}
-                    className="flex items-center justify-between px-5 py-4 bg-white border-b border-gray-100 last:border-b-0 hover:bg-[#FAFBFC] transition-colors"
-                  >
-                    {/* 左侧：图标 + 名称 + model_id */}
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      {model.icon && (
-                        <img
-                          src={model.icon}
-                          alt={model.model_name}
-                          className="w-8 h-8 object-contain flex-none"
-                        />
-                      )}
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-sm font-medium text-primary">
-                          {model.model_name}
-                        </span>
-                        {model.model_name !== model.model_id && (
-                          <>
-                            <span className="text-placeholder text-xs">|</span>
-                            <span className="text-placeholder text-xs truncate">
-                              {model.model_id}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 右侧：操作按钮 */}
-                    <div className="flex items-center gap-3 ml-4">
-                      {/* 测试结果标签 */}
-                      {testResult && !testResult.loading && (
-                        <>
-                          { testResult.success ? (
-                            <Tag color="success" className="!ml-2">
-                              {t("action_test_success")}
-                            </Tag>
-                          ) : (
-                            <Tag color="error" className="!ml-2">
-                              {t("action_test_failed")}
-                            </Tag>
-                          )}
-                          <div className="h-4 w-px border-r border-[#E1E2E6]" />
-                        </>
-                      )}
-                      <IconAction
-                        title={t("action_test")}
-                        size="compact"
-                        loading={testResult?.loading}
-                        className="!text-placeholder"
-                        onClick={() => handleModelTest(model)}
-                      >
-                        <SvgIcon name="tool" width="14" />
-                      </IconAction>
-                      <IconAction
-                        title={t("action_delete")}
-                        size="compact"
-                        className="!text-placeholder"
-                        onClick={() => handleVoiceModelDelete(model)}
-                      >
-                        <SvgIcon name="delete" width="14" />
-                      </IconAction>
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="group flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
+          {/* 左侧：图标和名称 */}
+          <div className="flex-shrink-0 w-[300px] flex items-center gap-3">
+            {selectedRecordingModel?.icon ? (
+              <img
+                src={selectedRecordingModel.icon}
+                alt={selectedRecordingModel.label}
+                className="w-8 h-8 object-contain"
+              />
+            ) : (
+              <div className="size-8 flex-center bg-[#EBECF2] rounded-lg">
+                <SvgIcon name="voice-one" color="#9CA3AF" />
+              </div>
+            )}
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-medium text-primary">
+                  {selectedRecordingModel?.label ||
+                    t("platform.voice_not_configured")}
+                </h4>
+                {recordingVoice && <VoiceHealthTag health={voiceHealth} />}
+              </div>
+              <p className="text-xs text-placeholder">
+                语音识别模型解析
+              </p>
             </div>
-          )}
+            <div className="flex-1"></div>
+            <div className="border-r h-3 w-px"></div>
+          </div>
 
-          <div className="mt-4">
-            <Button
-              className="border-none"
-              color="primary"
-              variant="filled"
-              onClick={openAudioDrawer}
+          {/* 中间：配置信息 */}
+          { recordingVoice && (
+          <div className="flex-1 px-6 flex items-center gap-2 overflow-hidden text-secondary truncate">
+            支持格式：mp3、wav、m4a、wma、aac、ogg、amr、flac、aiff
+          </div>
+          ) }
+
+          {/* 右侧：操作按钮 */}
+          <div className="flex items-center gap-2 ml-2">
+            <IconAction
+              title={t("action_edit")}
+              onClick={openVoiceModal}
             >
-              +{t("action_add")}
-            </Button>
+              <SvgIcon name="edit" />
+            </IconAction>
           </div>
         </div>
+      </div>
 
       {/* 文档解析工具抽屉 */}
       <Drawer
@@ -548,6 +628,40 @@ export function PlatformFileParser() {
               />
             </Form.Item>
           ))}
+        </Form>
+      </Modal>
+
+      {/* 录音识别模型选择弹窗 */}
+      <Modal
+        open={showVoiceModal}
+        width={500}
+        onCancel={() => setShowVoiceModal(false)}
+        getContainer={false}
+        title={t("platform.voice_config_model")}
+        footer={
+          <>
+            <Button onClick={() => setShowVoiceModal(false)}>
+              {t("action_cancel")}
+            </Button>
+            <Button
+              type="primary"
+              loading={savingVoice}
+              onClick={handleSaveVoice}
+            >
+              {t("action_save")}
+            </Button>
+          </>
+        }
+      >
+        <Form>
+          <Form.Item label={t("platform.voice_recognition_label")}>
+            <ModelSelect
+              value={selectedVoice || undefined}
+              onChange={(val) => setSelectedVoice(val || "")}
+              type={MODEL_USE_TYPE.VOICE}
+              placeholder={t("recording_voice_required")}
+            />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

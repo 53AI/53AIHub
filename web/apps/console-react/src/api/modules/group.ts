@@ -134,7 +134,6 @@ export const groupApi = {
           }
           return item
         })
-        .filter((item = {}) => item.user?.user_id),
     }
   },
 

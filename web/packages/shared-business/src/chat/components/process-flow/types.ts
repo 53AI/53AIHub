@@ -33,7 +33,7 @@ export interface KnowledgeSource {
   score?: number;
   source_key?: string;
   source_id?: string;
-  source_type?: string;   // 'wiki'
+  source_type?: string;   // 'document' | 'wiki' | 'graph' | 'web'（兼容历史 file）
   space_id?: string;
   space_name?: string;
   url?: string;

@@ -332,29 +332,21 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
       setLoading((prev) => ({ ...prev, folder: true }));
       try {
         const list = await filesApi.all({ library_id: libraryId });
+        // /api/files/all 只返回当前用户可访问的文件，无需再按权限过滤
         const folders = list.filter((item) => item.type === 0);
         if (folders.length === 0) {
           setFolderTree([]);
           setExpandedKeys([]);
           return;
         }
-        const permissionMap = await permissionsApi.myBatch({
-          resource_type: RESOURCE_TYPE.file,
-          resource_ids: folders.map((item) => item.id),
+        const newList: CheckedFileItem[] = folders.map((item) => {
+          const file = formatFile(item);
+          return {
+            ...file,
+            checked: false,
+            isEditing: false,
+          };
         });
-        const newList: CheckedFileItem[] = folders
-          .filter((item) => {
-            const key = `${RESOURCE_TYPE.file}:${item.id}`;
-            return permissionMap[key] >= PERMISSION_TYPE.viewer;
-          })
-          .map((item) => {
-            const file = formatFile(item);
-            return {
-              ...file,
-              checked: false,
-              isEditing: false,
-            };
-          });
         const tree = buildFileTree(newList);
         setFolderTree(tree);
         // 默认展开所有文件夹

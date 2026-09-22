@@ -145,11 +145,11 @@ func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, user
 			return err
 		}
 		ts := &model.RecordingFileSummary{
-			FileID:         dstFileID,
-			TemplateID:     -1,
-			TemplateName:   "转写原文",
+			FileID:           dstFileID,
+			TemplateID:       -1,
+			TemplateName:     "转写原文",
 			InferenceModelID: 0,
-			SummaryContent: model.LongText(transcriptRaw),
+			SummaryContent:   model.LongText(transcriptRaw),
 		}
 		return tx.Create(ts).Error
 	}); err != nil {

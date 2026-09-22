@@ -2,6 +2,8 @@ export const RESOURCE_TYPE = {
   space: 0,
   library: 1,
   file: 2,
+  /** 空间级 Wiki，后端 resource_type=4 */
+  wiki: 4,
 } as const
 
 export const SUBJECT_TYPE = {

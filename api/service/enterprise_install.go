@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/53AI/53AIHub/model"
@@ -96,9 +97,11 @@ func InitializeEnterpriseInstallation(ctx context.Context, eid int64, req Initia
 	if req.Channel != nil {
 		channel, err := enterprise_init.EnsureInstallationChannel(tx, eid, req.Channel.Type, req.Channel.BaseURL, req.Channel.Key)
 		if err != nil {
-			return nil, err
+			// 渠道填写失败不阻断初始化：企业/用户已就绪，渠道可后续在后台补配
+			logger.SysLogf("【企业初始化】默认渠道配置失败（不阻断初始化）: eid=%d, channel_type=%d, err=%v", eid, req.Channel.Type, err)
+		} else {
+			channelID = channel.ChannelID
 		}
-		channelID = channel.ChannelID
 	}
 
 	if err := enterprise_init.EnsureEnterprisePostInit(tx, enterprise, user); err != nil {

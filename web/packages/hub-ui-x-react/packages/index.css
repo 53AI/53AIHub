@@ -325,10 +325,14 @@ html {
 }
 
 /* ========== 表格 ========== */
+/* display:block + overflow-x 让宽表格（列多 / 单元格长）在所有屏宽下都能横向滚动，
+   而不是内容超出容器被截断；与 GitHub markdown 处理一致。 */
 .markdown-body table {
   border-collapse: collapse;
+  display: block;
   width: 100%;
   margin: 8px 0;
+  overflow-x: auto;
 }
 
 .markdown-body table th,
@@ -603,11 +607,6 @@ html {
 
 /* ========== 响应式布局 ========== */
 @media (max-width: 768px) {
-  .markdown-body table {
-    display: block;
-    width: 100%;
-    overflow: auto;
-  }
 
 }
 

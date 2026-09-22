@@ -21,10 +21,10 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
     custom_memory: "",
     position: "",
     style: "",
+    nickname: "",
   });
   const [showButtons, setShowButtons] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [nickname, setNickname] = useState("");
   const [department, setDepartment] = useState("");
 
   // 暴露 hasUnsavedChanges 方法给父组件
@@ -52,8 +52,7 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
     try {
       const data = await memoryApi.user.get();
       if (data) {
-        // 优先使用接口返回的昵称和部门
-        setNickname(data.nickname || "");
+        // 优先使用接口返回的部门
         setDepartment(data.department || "");
 
         const values = {
@@ -61,6 +60,7 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
           custom_memory: parseMemoryContent(data.custom_memory || ""),
           position: data.position || "",
           style: data.style || "",
+          nickname: data.nickname || userStore.info.nickname || "",
         };
         setInitialValues(values);
         form.setFieldsValue(values);
@@ -84,7 +84,8 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
       currentValues.smart_memory !== initialValues.smart_memory ||
       currentValues.custom_memory !== initialValues.custom_memory ||
       currentValues.position !== initialValues.position ||
-      currentValues.style !== initialValues.style;
+      currentValues.style !== initialValues.style ||
+      currentValues.nickname !== initialValues.nickname;
     setShowButtons(hasChanges);
   };
 
@@ -95,7 +96,8 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
       currentValues.smart_memory !== initialValues.smart_memory ||
       currentValues.custom_memory !== initialValues.custom_memory ||
       currentValues.position !== initialValues.position ||
-      currentValues.style !== initialValues.style
+      currentValues.style !== initialValues.style ||
+      currentValues.nickname !== initialValues.nickname
     );
   };
 
@@ -104,9 +106,13 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
     custom_memory: string;
     position?: string;
     style?: string;
+    nickname?: string;
   }) => {
     setSaving(true);
     try {
+      // 昵称走账号接口（userStore.update），记忆内容走认知画像接口
+      const name = (values.nickname || "").trim();
+      if (name) await userStore.update({ nickname: name });
       await memoryApi.user.replace({
         smart_memory: values.smart_memory,
         custom_memory: values.custom_memory,
@@ -114,7 +120,13 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
         style: values.style,
       });
       message.success(t("profile.save_success"));
-      setInitialValues(values);
+      setInitialValues({
+        smart_memory: values.smart_memory,
+        custom_memory: values.custom_memory,
+        position: values.position || "",
+        style: values.style || "",
+        nickname: values.nickname || "",
+      });
       setShowButtons(false);
     } catch (error) {
       console.error("Failed to save memory:", error);
@@ -175,12 +187,13 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
             onValuesChange={handleValuesChange}
         >
           <div className="flex gap-6">
-            <Form.Item label={t("form.nickname")} className="flex-1">
-              <Input
-                value={nickname || userStore.info.nickname || "-"}
-                disabled
-                className="bg-[#F5F5F5] h-10"
-              />
+            <Form.Item
+              label={t("form.nickname")}
+              name="nickname"
+              className="flex-1"
+              rules={[{ required: true, whitespace: true, message: "请输入昵称" }]}
+            >
+              <Input maxLength={30} showCount placeholder={t("form.nickname")} className="h-10" />
             </Form.Item>
             <Form.Item label={t("form.department")} className="flex-1">
               <Input

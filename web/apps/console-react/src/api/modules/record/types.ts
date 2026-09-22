@@ -22,15 +22,24 @@ export const RESPONSE_STATUS = {
 export type RESPONSE_STATUS_VALUE = (typeof RESPONSE_STATUS)[keyof typeof RESPONSE_STATUS]
 
 export const KNOWLEDGE_TYPE = {
-  KNOWLEDGE_BASE: 1,
-  WEB: 2,
-  SPECIFIED_KNOWLEDGE_BASE: 3,
-  HYBRID_WIKI: 5,
-  ALL_WIKI: 6,
-  SPECIFIED_WIKI: 7,
+  KNOWLEDGE_BASE: 1,               // 知识文档
+  WEB: 2,                          // 联网搜索
+  SPECIFIED_KNOWLEDGE_BASE: 3,     // 指定内容
+  SPECIFIED_CONTENT: 4,            // 指定内容
+  DOC_PLUS_DYNAMIC: 5,             // 知识文档+动态知识
+  DYNAMIC_KNOWLEDGE: 6,            // 动态知识
+  SPECIFIED_WIKI: 7,               // 指定内容
+  DOC_PLUS_GRAPH: 8,               // 知识文档+知识图谱
+  DOC_PLUS_DYNAMIC_PLUS_GRAPH: 9,  // 知识文档+动态知识+知识图谱
 } as const
 
 export type KNOWLEDGE_TYPE_VALUE = (typeof KNOWLEDGE_TYPE)[keyof typeof KNOWLEDGE_TYPE]
+
+// 筛选下拉专用：值 3/4/7 同属「指定内容」，选中时合并传 "3,4,7"
+export const KNOWLEDGE_TYPE_FILTER = {
+  ALL: 0,
+  SPECIFIED_CONTENT: '3,4,7',
+} as const
 
 export interface RecordListRequest {
   start_date: number | null
@@ -42,7 +51,7 @@ export interface RecordListRequest {
   direction?: string | null
   thinking_mode?: number | null
   response_status?: number | null
-  knowledge_type?: number | null
+  knowledge_type?: number | string | null
   file_keyword?: string
   source?: string | null
 }

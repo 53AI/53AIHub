@@ -17,6 +17,9 @@
   min-width: 0;
   overflow-wrap: anywhere;
   word-break: break-word;
+
+  /* 底部留白 60px，避免内容贴底 */
+  padding-bottom: 60px;
 }
 
 /* ── Block wrapper ── */
@@ -274,6 +277,13 @@
   /* 仿 meeting-recorder：当内容宽度小于视口时撑满视口，让节点自然居中 */
   min-width: 100%;
   box-sizing: border-box;
+}
+/* 仅 flow（用专属 viewport 类隔离，不影响 sequence/pie/gantt/timeline）：
+   未超宽时 flow 撑满视口宽度、节点自然居中；超宽时左锚定，保留横向滚动，起点（根节点）始终可达。
+   注意：不能用 justify-content:center 居中超宽内容 —— 那会让左端溢出处滚动不到（scrollLeft 最小为 0），
+   根节点被裁出可视区。块级 + margin-inline:auto 才能兼顾「未超宽居中」与「超宽可滚到起点」。 */
+.insight-mermaid-viewport-flow > .insight-mermaid-flow {
+  margin-inline: auto;
 }
 .insight-mermaid-flow .insight-flow-lines {
   position: absolute;

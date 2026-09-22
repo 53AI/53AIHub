@@ -13,7 +13,7 @@ import {
 import { LIST_DISPLAY_NODE_TYPES, NODE_ICONS_MAP } from '../../constants'
 import { usePipelineTranslation } from '../../context'
 import type { ConfigComponentProps, Pipeline, PipelineNodeRunMode, PipelineStep } from '../../types'
-import { ChunkConfig } from '../configs/ChunkConfig'
+import { ChunkConfig, resetPageChunkingConfig } from '../configs/ChunkConfig'
 import { CleanConfig } from '../configs/CleanConfig'
 import { GraphConfig } from '../configs/GraphConfig'
 // Import node config components
@@ -212,12 +212,33 @@ export const Editor = forwardRef<EditorRef, EditorProps>(({ pipeline, onChange }
 
   const handleConfigUpdate = (newConfig: Record<string, unknown>) => {
     if (!activeNode) return
-    const newSteps = localPipeline.profile_json.steps.map((step: PipelineStep) => {
+    let newSteps = localPipeline.profile_json.steps.map((step: PipelineStep) => {
       if (step.step_key === activeNode.step_key) {
         return { ...step, config: newConfig }
       }
       return step
     })
+
+    // 解析引擎从 textin 切走时，「按页」分块随之失效（仅 textin 返回分页符）。
+    // 若语料拆分仍为按页，自动重置为默认并提示，避免保存非法的 page 配置。
+    if (activeNode.step_key === 'document_parsing') {
+      const prevEngine = (activeNode.config as { engine?: string } | undefined)?.engine
+      const nextEngine = (newConfig as { engine?: string } | undefined)?.engine
+      if (prevEngine === 'textin' && nextEngine !== 'textin') {
+        let reset = false
+        newSteps = newSteps.map((step: PipelineStep) => {
+          if (step.step_key !== 'document_chunking') return step
+          const resetConfig = resetPageChunkingConfig(step.config)
+          if (!resetConfig) return step
+          reset = true
+          return { ...step, config: resetConfig }
+        })
+        if (reset) {
+          message.warning(t('data_pipeline.chunk_page_reset_tip'))
+        }
+      }
+    }
+
     const updated = {
       ...localPipeline,
       profile_json: { ...localPipeline.profile_json, steps: newSteps }
@@ -256,7 +277,20 @@ export const Editor = forwardRef<EditorRef, EditorProps>(({ pipeline, onChange }
       return <div className="text-gray-400">{t('data_pipeline.no_config_available')}</div>
     }
 
-    return <ConfigComponent config={activeNode.config} onChange={handleConfigUpdate} />
+    // 解析引擎(document_parsing 节点的 config.engine)供 ChunkConfig 判断「按页」是否可用
+    const parseEngine = (
+      localPipeline?.profile_json?.steps.find(
+        (s: PipelineStep) => s.step_key === 'document_parsing',
+      )?.config as { engine?: string } | undefined
+    )?.engine
+
+    return (
+      <ConfigComponent
+        config={activeNode.config}
+        onChange={handleConfigUpdate}
+        {...(activeNode.step_key === 'document_chunking' ? { engine: parseEngine } : {})}
+      />
+    )
   }
 
   return (

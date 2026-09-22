@@ -3,15 +3,23 @@ import { Button, Select, Spin, Tooltip, message } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import recordingApi from '@/api/modules/recording'
 import type {
+  CanonicalInsightPerspective,
   InsightBackground,
   InsightPerspective,
   InsightPerspectiveOption,
 } from '@/api/modules/recording/types'
 import {
+  getInsightPerspectiveDisplayName,
+  resolveInsightPerspectiveForSubmit,
+  toCanonicalInsightPerspective,
+} from '@/api/modules/recording/types'
+import {
   BackgroundCard,
   EMPTY_INSIGHT_BACKGROUND,
   INSIGHT_BACKGROUND_CARDS,
+  RelatedHistoryViewer,
 } from './InsightBackgroundWorkshop'
+import { DecisionContextSourcesPanel } from './DecisionContextSourcesPanel'
 
 interface InsightRegeneratePanelProps {
   fileId?: string
@@ -29,7 +37,13 @@ interface InsightRegeneratePanelProps {
 type InsightBackgroundCardKey = (typeof INSIGHT_BACKGROUND_CARDS)[number]['key']
 type EditableInsightBackgroundKey = Exclude<
   keyof InsightBackground,
-  'conversation' | 'insight_perspective' | 'resolved_insight_perspective'
+  | 'conversation'
+  | 'insight_perspective'
+  | 'resolved_insight_perspective'
+  | 'perspective_confidence'
+  | 'perspective_reason_codes'
+  | 'perspective_evidence'
+  | 'perspective_abstained'
 >
 
 /**
@@ -50,7 +64,9 @@ export function InsightRegeneratePanel({
   const [loading, setLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [perspectiveOptions, setPerspectiveOptions] = useState<InsightPerspectiveOption[]>([])
-  const [selectedPerspective, setSelectedPerspective] = useState<InsightPerspective>('auto')
+  const [selectedPerspective, setSelectedPerspective] = useState<CanonicalInsightPerspective>('management_meeting')
+  const [originalPerspective, setOriginalPerspective] = useState<InsightPerspective>('auto')
+  const [perspectiveChanged, setPerspectiveChanged] = useState(false)
   /** 提交成功后到新一轮洞察出炉前的「已提交」状态：禁用按钮、换文案，
    *  避免用户以为没生效而重复点击；主视图的轮询完成后用户可关闭面板或继续微调再次提交。 */
   const [submitted, setSubmitted] = useState(false)
@@ -70,7 +86,9 @@ export function InsightRegeneratePanel({
       ])
       setBackground({ ...EMPTY_INSIGHT_BACKGROUND, ...result })
       setPerspectiveOptions(options)
-      setSelectedPerspective(result.insight_perspective || 'auto')
+      setOriginalPerspective(result.insight_perspective || 'auto')
+      setPerspectiveChanged(false)
+      setSelectedPerspective(toCanonicalInsightPerspective(result.insight_perspective))
     } catch (error: any) {
       message.error(error?.message || '读取洞察背景失败')
     } finally {
@@ -111,7 +129,7 @@ export function InsightRegeneratePanel({
       await recordingApi.regenerateInsights(fileId, {
         background,
         conversation: [],
-        insight_perspective: selectedPerspective,
+        insight_perspective: resolveInsightPerspectiveForSubmit(originalPerspective, selectedPerspective, perspectiveChanged),
       })
       message.success('已确认背景，正在重新生成洞察')
       setSubmitted(true)
@@ -123,12 +141,10 @@ export function InsightRegeneratePanel({
     }
   }
 
-  const appliedPerspectiveName = background.resolved_insight_perspective
-    ? background.resolved_insight_perspective === 'auto'
-      ? '自动场景'
-      : perspectiveOptions.find((option) => option.key === background.resolved_insight_perspective)?.name ||
-        background.resolved_insight_perspective
-    : '尚未记录'
+  const appliedPerspectiveName = getInsightPerspectiveDisplayName(
+    background.resolved_insight_perspective,
+    perspectiveOptions,
+  )
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#fff]">
@@ -147,9 +163,12 @@ export function InsightRegeneratePanel({
               loading={perspectiveOptions.length === 0}
               options={perspectiveOptions.map((option) => ({
                 value: option.key,
-                label: option.key === 'auto' ? '自动场景' : option.name,
+                label: option.name,
               }))}
-              onChange={(value) => setSelectedPerspective(value as InsightPerspective)}
+              onChange={(value) => {
+                setSelectedPerspective(value as CanonicalInsightPerspective)
+                setPerspectiveChanged(true)
+              }}
               disabled={regenerating || parseStatusRunning}
             />
             <div className="mt-1 text-[11px] leading-4 text-[#98A2B3]">
@@ -171,6 +190,14 @@ export function InsightRegeneratePanel({
                 collapsible={card.collapsible}
                 expanded={expandedKey === card.key}
                 onExpandedChange={(open) => setExpandedKey(open ? card.key : null)}
+                expandedContent={card.key === 'historical_context' ? (
+                  <DecisionContextSourcesPanel
+                    fileId={fileId || ''}
+                    refreshKey={String(parseStatusRunning)}
+                    embedded
+                    fallback={<RelatedHistoryViewer value={background[card.key] || ''} />}
+                  />
+                ) : undefined}
               />
             ))}
           </div>

@@ -398,16 +398,25 @@ func NewContentCleaningHandler(db *gorm.DB) func(ctx context.Context, job *model
 // newContentCleaningHandlerWithInvoker 支持注入 LLM invoker，测试传入 fake invoker。
 func newContentCleaningHandlerWithInvoker(db *gorm.DB, invoker contentCleaningLLMInvoker) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
 	return func(ctx context.Context, job *model.RagJob, stepConfig json.RawMessage) error {
-		params, err := parseContentCleaningParams(job)
-		if err != nil {
-			return err
-		}
-
 		cfg := model.DefaultContentCleaningConfig()
 		if len(stepConfig) > 0 && string(stepConfig) != "null" {
 			if err := json.Unmarshal(stepConfig, &cfg); err != nil {
 				return fmt.Errorf("解析内容清洗配置失败: %v", err)
 			}
+		}
+		if job == nil {
+			return fmt.Errorf("job 不能为空")
+		}
+		if len(cfg.EnabledFeatureKeys()) == 0 {
+			return completeContentCleaningStep(db, job.JobID, map[string]interface{}{
+				"skipped": true,
+				"reason":  "未选择内容清洗能力",
+			})
+		}
+
+		params, err := parseContentCleaningParams(job)
+		if err != nil {
+			return err
 		}
 
 		// 生产环境注入基于 ContentGeneratorService 的真实 invoker

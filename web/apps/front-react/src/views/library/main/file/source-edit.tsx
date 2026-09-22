@@ -16,6 +16,7 @@ import chunksApi, { type KnowledgeChunk } from "@/api/modules/chunks";
 import filesApi from "@/api/modules/files";
 import { debounce, isOfficeFile } from "@km/shared-utils";
 import { api_host } from "@/utils/config";
+import { FileMetaLine } from "./components/file-meta";
 import { LibraryHeader } from "../../components/header";
 
 // Lazy load editors
@@ -431,9 +432,7 @@ export function SourceEditView() {
             <h3 className="text-base text-[#1D1E1F] truncate">
               {currentFile.name}
             </h3>
-            <p className="text-xs text-[#9A9A9A]">
-              {t("common.recently_edit")}：{currentFile.updated_at}
-            </p>
+            <FileMetaLine file={currentFile} />
           </div>
         )}
       </LibraryHeader>

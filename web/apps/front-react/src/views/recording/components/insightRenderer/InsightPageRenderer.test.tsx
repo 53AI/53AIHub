@@ -12,7 +12,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { InsightPageRenderer } from './index'
-import { parseInsightMarkdown, stripMarkdownCodeFence } from './markdownParser'
+import { stripMarkdownCodeFence } from './markdownParser'
 
 const REAL_FIXTURE_MD = readFileSync(
   resolve(__dirname, '__fixtures__/test.md'),

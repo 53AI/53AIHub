@@ -8,25 +8,25 @@ import (
 
 // Prompt 提示词表
 type Prompt struct {
-	PromptID     int64               `json:"prompt_id" gorm:"primaryKey;autoIncrement;comment:自增id"`
-	Name         string              `json:"name" gorm:"size:255;not null;default:'';comment:名称"`
-	Logo         string              `json:"logo" gorm:"size:500;default:'';comment:图标URL"`
-	Content      string              `json:"content" gorm:"size:5000;not null;default:'';comment:技能提示语"`
-	Description  string              `json:"description" gorm:"type:text;comment:描述"`
-	Type         int                 `json:"type" gorm:"not null;default:1;comment:类型。1个人；2系统"`
-	Status       int                 `json:"status" gorm:"not null;default:1;comment:状态。；0未启用；1正常；2删除"`
-	UserID       int64               `json:"user_id" gorm:"not null;default:0;comment:creator user id"`
-	Eid          int64               `json:"eid" gorm:"not null;default:0;comment:团队id"`
-	Views        int64               `json:"views" gorm:"not null;default:0;comment:查看次数"`
-	Likes        int64               `json:"likes" gorm:"not null;default:0;comment:点赞次数"`
-	Sort         int                 `json:"sort" gorm:"not null;default:0;comment:排序"`
-	CustomConfig string              `json:"custom_config" gorm:"not null;type:text"`
-	AILinks      string              `json:"ai_links" gorm:"type:text;comment:关联的AI链接"`
-	AILinksData  []AILinkInfo        `gorm:"-" json:"ai_links_data"`
-	GroupIDs              []int64             `json:"group_ids" gorm:"-"`
-	SubscriptionGroupIDs  []int64             `json:"subscription_group_ids" gorm:"-"`
-	Scopes                []ResourceScopeItem `json:"scopes" gorm:"-"`
-	IsLiked      bool                `json:"is_liked" gorm:"-"`
+	PromptID             int64               `json:"prompt_id" gorm:"primaryKey;autoIncrement;comment:自增id"`
+	Name                 string              `json:"name" gorm:"size:255;not null;default:'';comment:名称"`
+	Logo                 string              `json:"logo" gorm:"size:500;default:'';comment:图标URL"`
+	Content              string              `json:"content" gorm:"size:5000;not null;default:'';comment:技能提示语"`
+	Description          string              `json:"description" gorm:"type:text;comment:描述"`
+	Type                 int                 `json:"type" gorm:"not null;default:1;comment:类型。1个人；2系统"`
+	Status               int                 `json:"status" gorm:"not null;default:1;comment:状态。；0未启用；1正常；2删除"`
+	UserID               int64               `json:"user_id" gorm:"not null;default:0;comment:creator user id"`
+	Eid                  int64               `json:"eid" gorm:"not null;default:0;comment:团队id"`
+	Views                int64               `json:"views" gorm:"not null;default:0;comment:查看次数"`
+	Likes                int64               `json:"likes" gorm:"not null;default:0;comment:点赞次数"`
+	Sort                 int                 `json:"sort" gorm:"not null;default:0;comment:排序"`
+	CustomConfig         string              `json:"custom_config" gorm:"not null;type:text"`
+	AILinks              string              `json:"ai_links" gorm:"type:text;comment:关联的AI链接"`
+	AILinksData          []AILinkInfo        `gorm:"-" json:"ai_links_data"`
+	GroupIDs             []int64             `json:"group_ids" gorm:"-"`
+	SubscriptionGroupIDs []int64             `json:"subscription_group_ids" gorm:"-"`
+	Scopes               []ResourceScopeItem `json:"scopes" gorm:"-"`
+	IsLiked              bool                `json:"is_liked" gorm:"-"`
 	BaseModel
 }
 

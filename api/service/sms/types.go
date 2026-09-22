@@ -23,13 +23,9 @@ type SMSConfig struct {
 
 // SMSManager 短信管理器
 type SMSManager struct {
-	provider     SMSProvider
-	config       SMSConfig
-	rateLimitMap map[string]*RateLimit // 发送限制
+	provider SMSProvider
+	config   SMSConfig
 }
 
-// RateLimit 速率限制信息
-type RateLimit struct {
-	LastSendTime int64 // 最后发送时间戳（毫秒）
-	DailyCount   int   // 今日发送次数
-}
+// MaxVerifyAttempts 验证码最大尝试次数，超过即作废
+const MaxVerifyAttempts = 5

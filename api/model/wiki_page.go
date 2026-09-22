@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
@@ -322,4 +323,32 @@ func GetWikiPagesByIDs(eid int64, pageIDs []int64) ([]WikiPage, error) {
 		return nil, err
 	}
 	return pages, nil
+}
+
+// GetWikiPageSourceFileIDs 批量取 pageID → 去重 SourceFileID 映射（Wiki Page Source Security 用）。
+// SourceFileID<=0 的行跳过；返回的切片不保证排序（调用方只取 min）。
+func GetWikiPageSourceFileIDs(eid int64, pageIDs []int64, ctxs ...context.Context) (map[int64][]int64, error) {
+	result := make(map[int64][]int64)
+	if len(pageIDs) == 0 {
+		return result, nil
+	}
+	var sources []WikiPageSource
+	if err := dbWithOptionalCtx(ctxs...).
+		Select("page_id, source_file_id").
+		Where("eid = ? AND page_id IN ? AND source_file_id > 0", eid, pageIDs).
+		Find(&sources).Error; err != nil {
+		return nil, err
+	}
+	seen := make(map[int64]map[int64]struct{})
+	for _, s := range sources {
+		if seen[s.PageID] == nil {
+			seen[s.PageID] = make(map[int64]struct{})
+		}
+		if _, ok := seen[s.PageID][s.SourceFileID]; ok {
+			continue
+		}
+		seen[s.PageID][s.SourceFileID] = struct{}{}
+		result[s.PageID] = append(result[s.PageID], s.SourceFileID)
+	}
+	return result, nil
 }

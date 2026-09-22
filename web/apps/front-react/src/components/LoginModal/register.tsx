@@ -6,6 +6,9 @@ import { useMobile } from '@/hooks/useMobile'
 import { useEnv } from '@/hooks/useEnv'
 import userApi from '@/api/modules/user'
 import { t } from '@/locales'
+import { noSpaceKeydownHandler } from '@km/shared-utils'
+import { usePasswordRules } from '@/hooks/usePasswordPolicy'
+import VerifyCodeField from '@/components/VerifyCodeField'
 
 type RegisterWay = 'mobile' | 'email'
 
@@ -24,8 +27,9 @@ export function Register({ openSMTP = false, onSuccess, onClose }: RegisterProps
   const [form] = Form.useForm()
   const userStore = useUserStore()
   const { isOpLocalEnv } = useEnv()
-  const { emailCodeCount, emailCodeRule, sendEmailCode } = useEmail()
-  const { codeCount, codeRule, sendcode } = useMobile()
+  const { emailCodeCount, emailCodeRule, sendEmailCode, emailSending } = useEmail()
+  const { codeCount, codeRule, sendcode, sending } = useMobile()
+  const { passwordRule } = usePasswordRules()
 
   const [registerWay, setRegisterWay] = useState<RegisterWay>(isOpLocalEnv ? 'email' : 'mobile')
   const [existingAccount, setExistingAccount] = useState(false)
@@ -46,6 +50,8 @@ export function Register({ openSMTP = false, onSuccess, onClose }: RegisterProps
   const getCodeCount = registerWay === 'email' ? emailCodeCount : codeCount
 
   const getCodeRule = () => registerWay === 'email' ? emailCodeRule : codeRule
+
+  const getCodeSending = () => registerWay === 'email' ? emailSending : sending
 
   const isFormatCorrect = useCallback((username: string) => {
     const patterns = {
@@ -210,30 +216,15 @@ export function Register({ openSMTP = false, onSuccess, onClose }: RegisterProps
         </Form.Item>
 
         {(!isOpLocalEnv || (isOpLocalEnv && openSMTP)) && (
-          <Form.Item
-            label={t('form.verify_code')}
+          <VerifyCodeField
             name="verify_code"
-            rules={[
-              { required: true, message: t('form.input_placeholder') + t('form.verify_code') },
-              getCodeRule()
-            ]}
-          >
-            <Input
-              size="large"
-              placeholder={t('form.input_placeholder') + t('form.verify_code')}
-              addonAfter={
-                <Button
-                  type="link"
-                  disabled={!isRegister || getCodeCount > 0}
-                  onClick={handleGetCode}
-                >
-                  <span className={isRegister && getCodeCount === 0 ? 'text-[#2563EB]' : 'text-[#9A9A9A]'}>
-                    {getCodeCount > 0 ? `${getCodeCount}s` : t('form.get_verify_code')}
-                  </span>
-                </Button>
-              }
-            />
-          </Form.Item>
+            rule={getCodeRule()}
+            count={getCodeCount}
+            disabled={!isRegister}
+            loading={getCodeSending()}
+            onClick={handleGetCode}
+            size="large"
+          />
         )}
 
         {/* 隐藏字段：op-local 无 SMTP 时不需要验证码，添加空值默认 */}
@@ -248,12 +239,13 @@ export function Register({ openSMTP = false, onSuccess, onClose }: RegisterProps
           name="password"
           rules={[
             { required: true, message: t('form.input_placeholder') + t('form.password') },
-            { min: 8, max: 20, message: t('form.password_length') }
+            passwordRule
           ]}
         >
           <Input.Password
             size="large"
             placeholder={t('form.input_placeholder') + t('form.password')}
+            onKeyDown={noSpaceKeydownHandler}
           />
         </Form.Item>
 

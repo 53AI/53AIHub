@@ -64,7 +64,6 @@ export function DeviceListPopover({
               return (
                 <DeviceRow
                   key={d.id ?? `${d.device_type}-${d.api_key}`}
-                  device={d}
                   brandLabel={opt.label}
                   status={deviceStatusMap[d.device_type as DeviceType] ?? null}
                   isActive={isActive}
@@ -92,7 +91,6 @@ export function DeviceListPopover({
 }
 
 interface DeviceRowProps {
-  device: RecordingDeviceConfig
   brandLabel: string
   status: RecordingDeviceStatusResponse | null
   isActive: boolean
@@ -101,7 +99,7 @@ interface DeviceRowProps {
   onRemove: () => void
 }
 
-function DeviceRow({ device, brandLabel, status, isActive, onEdit, onSetActive, onRemove }: DeviceRowProps) {
+function DeviceRow({ brandLabel, status, isActive, onEdit, onSetActive, onRemove }: DeviceRowProps) {
   return (
     <div
       className={[

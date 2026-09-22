@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"runtime/debug"
@@ -10,7 +11,9 @@ import (
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/session"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const maxLogBodyBytes = 64 * 1024
@@ -49,6 +52,8 @@ func Logger() gin.HandlerFunc {
 		}
 		c.Set(session.SESSION_REQUEST_DOMAIN, c.Request.Host)
 
+		requestID := ensureRequestID(c)
+
 		// 记录请求开始时间
 		start := time.Now()
 
@@ -74,7 +79,7 @@ func Logger() gin.HandlerFunc {
 		duration := time.Since(start)
 		status := c.Writer.Status()
 		if !shouldSkipAccessLog(c.Request.Method, c.Request.URL.Path, status) {
-			logger.SysLogf("请求完成: method=%s path=%s status=%d cost=%s", c.Request.Method, c.Request.URL.Path, status, duration.String())
+			logger.Infof(c.Request.Context(), "请求完成: method=%s path=%s status=%d cost=%s request_id=%s", c.Request.Method, c.Request.URL.Path, status, duration.String(), requestID)
 		}
 
 		if status >= http.StatusInternalServerError {
@@ -87,6 +92,30 @@ func Logger() gin.HandlerFunc {
 				c.Request.Method, c.Request.URL.Path, status, duration.String(), ip, query, headers, reqBody, respBody)
 		}
 	}
+}
+
+// ensureRequestID 复用调用方传入的 X-Request-ID，缺失时生成 UUID。
+// 双写 gin keys 与 request context：gin keys 供 relay 等旧代码 c.GetString 读取，
+// request context 供 logger.Infof/WithContext(ctx) 透传到 SQL 日志。
+func ensureRequestID(c *gin.Context) string {
+	requestID := strings.TrimSpace(c.GetHeader(helper.RequestIdKey))
+	if requestID == "" {
+		requestID = strings.TrimSpace(c.GetString(helper.RequestIdKey))
+	}
+	if requestID == "" && c.Request != nil {
+		requestID = helper.GetRequestID(c.Request.Context())
+	}
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	c.Set(helper.RequestIdKey, requestID)
+	if c.Request != nil {
+		if helper.GetRequestID(c.Request.Context()) == "" {
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), helper.RequestIdKey, requestID))
+		}
+		c.Header("X-Request-ID", requestID)
+	}
+	return requestID
 }
 
 func shouldSkipAccessLog(method, path string, status int) bool {

@@ -20,6 +20,7 @@ import { Typewriter } from "../../utils/typewriter";
 import { markdownItFixPlugin } from "../../utils/markdown-fix";
 import { fixTableColumns } from "./markdown-fix-table";
 import { normalizeBlockMathTrailing, splitPendingMath } from "./markdown-math";
+import { applySourceReferences } from "./source-markup";
 import Code from "./components/code";
 import Mermaid from "./components/mermaid";
 import Mindmap from "./components/mindmap";
@@ -60,6 +61,7 @@ export interface MdRendererProps {
   renderSource?: (sourceType: string, sourceNumber: string) => string;
   sourceEnabled?: boolean;
   sourceRegex?: RegExp | string;
+  sourceIds?: readonly string[];
   mermaidClickable?: boolean;
   viewerClass?: string;
   viewerStyle?: React.CSSProperties;
@@ -72,10 +74,6 @@ export interface MdRendererProps {
   onMermaidClick?: (data: any) => void;
   onRendered?: () => void;
 }
-
-const tolerantSourceRegex =
-  /\[\s*(?:source|引用|ref)\s*[:：]+\s*(\d+)\s*[-–—~]\s*(\d+)\s*\]/gi;
-const legacySourceRegex = /\[Source[:_]([A-Za-z0-9]+)[_-]([A-Za-z0-9-]+)\]/g;
 
 // 图片预览弹窗样式常量（避免每次渲染创建新对象）
 const PREVIEW_OVERLAY_STYLE: React.CSSProperties = {
@@ -146,74 +144,6 @@ const TAG_MAP: Record<string, string> = {
 // 灾难性回溯，让 chat 渲染 test.txt 类的内容时主线程死锁 15+ 秒。
 // 见 markdown-fix-table.test.ts 的回归测试。
 
-const buildSourceRegex = (sourceRegex?: RegExp | string) => {
-  if (!sourceRegex) return tolerantSourceRegex;
-  if (sourceRegex instanceof RegExp) {
-    const flags = sourceRegex.flags.includes("g")
-      ? sourceRegex.flags
-      : `${sourceRegex.flags}g`;
-    return new RegExp(sourceRegex.source, flags);
-  }
-  return new RegExp(sourceRegex, "g");
-};
-
-const renderSourceMarkup = (
-  text: string,
-  renderSource?: (sourceType: string, sourceNumber: string) => string,
-  sourceRegex?: RegExp | string,
-) => {
-  const regex = buildSourceRegex(sourceRegex);
-
-  const replaceWithMarkup = (input: string, matcher: RegExp) => {
-    return input.replace(matcher, (...args) => {
-      const matchGroups = args.slice(1, -2);
-      const sourceType = String(matchGroups[0] ?? "").trim();
-      const sourceNumberRaw = String(matchGroups[1] ?? "").trim();
-      const sourceNumber = sourceNumberRaw.includes("-")
-        ? sourceNumberRaw.split("-").pop() || sourceNumberRaw
-        : sourceNumberRaw;
-      const display = renderSource
-        ? renderSource(sourceType, sourceNumberRaw)
-        : sourceType;
-      const content = display == null ? sourceType : String(display);
-
-      return content ? `<span class="source-reference" data-source-type="${sourceType}" data-source-number="${sourceNumberRaw}">${content}</span>` : '';
-    });
-  };
-
-  // 先用 tolerantSourceRegex（或传入的 sourceRegex）替换
-  let result = replaceWithMarkup(text, regex);
-  // 再用 legacySourceRegex 替换（处理未被第一种正则匹配的格式，如 [Source:G-1])
-  result = replaceWithMarkup(result, legacySourceRegex);
-  return result;
-};
-
-const applySourceReferences = (
-  content: string,
-  renderSource?: (sourceType: string, sourceNumber: string) => string,
-  sourceRegex?: RegExp | string,
-) => {
-  const fenceRegex = /```[\s\S]*?```/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  const chunks: string[] = [];
-
-  while ((match = fenceRegex.exec(content)) !== null) {
-    const before = content.slice(lastIndex, match.index);
-    chunks.push(renderSourceMarkup(before, renderSource, sourceRegex));
-    chunks.push(match[0]);
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < content.length) {
-    chunks.push(
-      renderSourceMarkup(content.slice(lastIndex), renderSource, sourceRegex),
-    );
-  }
-
-  return chunks.join("");
-};
-
 /**
  * normalizeBlockMathTrailing / splitPendingMath 定义见 ./markdown-math（独立可单测）
  */
@@ -225,6 +155,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
   renderSource,
   sourceEnabled = false,
   sourceRegex,
+  sourceIds,
   viewerClass = "",
   viewerStyle,
   mermaidClickable = false,
@@ -675,6 +606,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
             token.content,
             renderSource,
             sourceRegex,
+            sourceIds,
           );
           const vnode = (
             <span
@@ -764,6 +696,7 @@ const MdRenderer: React.FC<MdRendererProps> = ({
       tokens,
       sourceEnabled,
       sourceRegex,
+      sourceIds,
       renderSource,
       mermaidClickable,
       viewerClass,

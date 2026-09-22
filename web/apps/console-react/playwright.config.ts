@@ -3,8 +3,9 @@
  */
 import { defineConfig, devices } from '@playwright/test'
 
-// 前端应用地址
-const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:8003/console'
+// 前端应用地址。默认是 E2E 专用 mock 端口（webServer 会自动起 dev:mock）；
+// 设 E2E_BASE_URL 则指向外部服务（如真实后端）。需含 /console-react base 路径。
+const BASE_URL = process.env.E2E_BASE_URL || 'http://localhost:8163/console-react/'
 
 export default defineConfig({
   testDir: './e2e',
@@ -36,11 +37,13 @@ export default defineConfig({
       },
     },
   ],
-  // 不自动启动服务器，使用已运行的服务器
-  // webServer: {
-  //   command: 'pnpm dev',
-  //   url: 'http://localhost:8004/console',
-  //   reuseExistingServer: true,
-  //   timeout: 120 * 1000,
-  // },
+  // 默认自动启动 mock 模式 dev server（VITE_MOCK=true，无需真实后端），端口 8163。
+  // 显式给了 E2E_BASE_URL 时视为外部已提供服务，不再自起，避免双开。
+  webServer: process.env.E2E_BASE_URL
+    ? undefined
+    : {
+        command: 'pnpm dev:mock --port 8163 --strictPort',
+        url: BASE_URL,
+        timeout: 120 * 1000,
+      },
 })

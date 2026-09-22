@@ -40,12 +40,12 @@ export const getDisplayName = (name: string, isFile: boolean, fileExt?: string) 
 }
 
 /**
- * 构建完整路径，保留父目录
+ * 构建重命名后的完整路径，保留父目录
  * @param originalPath 原始完整路径，如 "/ai-generated/test.md"
  * @param newName 新文件名，如 "new.md"
  * @returns 新的完整路径，如 "/ai-generated/new.md"
  */
-export const buildNewPath = (originalPath: string, newName: string): string => {
+export const buildRenamePath = (originalPath: string, newName: string): string => {
   const fullPath = originalPath || ''
   const basePath = fullPath.startsWith('/') ? fullPath.substring(1) : fullPath
   const parentDir = basePath.includes('/') ? basePath.substring(0, basePath.lastIndexOf('/')) : ''

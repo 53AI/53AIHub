@@ -41,6 +41,13 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 	messageStatus.SaveFileID = fileID
 	logger.Infof(ctx, "单文件模式 - 解析到文件ID: %d", fileID)
 
+	// 文件级权限：单文件聊天需对该文件有查看权限（与单页 Wiki 检索口径一致）。
+	if err := requireFileViewPermission(c, agent.Eid, fileID); err != nil {
+		logger.Warnf(ctx, "单文件模式 - 无文件查看权限: 文件ID=%d 用户ID=%d", fileID, config.GetUserId(c))
+		sendSoloFileRejectReply(c, chatRequest, agent, "无权限查看该文件", messageStatus)
+		return err
+	}
+
 	// 步骤1：正在读取文件
 	if chatRequest.EnableProcessSteps && chatRequest.Stream {
 		step1 := ProcessStep{
@@ -438,10 +445,11 @@ func sendStreamRejectReply(c *gin.Context, requestId, model, content string, mes
 	}
 
 	contentPayload := map[string]interface{}{
-		"id":      requestId,
-		"object":  "chat.completion.chunk",
-		"created": time.Now().Unix(),
-		"model":   model,
+		"id":         requestId,
+		"request_id": requestId,
+		"object":     "chat.completion.chunk",
+		"created":    time.Now().Unix(),
+		"model":      model,
 		"choices": []map[string]interface{}{
 			{
 				"index": 0,
@@ -470,10 +478,11 @@ func sendStreamRejectReply(c *gin.Context, requestId, model, content string, mes
 // sendNonStreamRejectReply 发送非流式拒答回复
 func sendNonStreamRejectReply(c *gin.Context, content, requestId, model string) {
 	response := map[string]interface{}{
-		"id":      requestId,
-		"object":  "chat.completion",
-		"created": time.Now().Unix(),
-		"model":   model,
+		"id":         requestId,
+		"request_id": requestId,
+		"object":     "chat.completion",
+		"created":    time.Now().Unix(),
+		"model":      model,
 		"choices": []map[string]interface{}{
 			{
 				"index": 0,

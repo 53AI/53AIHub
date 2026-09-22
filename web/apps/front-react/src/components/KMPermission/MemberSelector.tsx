@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Modal } from 'antd'
 import { DeptMemberPicker } from '../DeptMemberPicker'
 import { RolePopover } from './RolePopover'
-import { PERMISSION_TYPE, SUBJECT_TYPE, type PermissionType, type SubjectType } from './constant'
+import { PERMISSION_TYPE, RESOURCE_TYPE, SUBJECT_TYPE, type PermissionType, type ResourceType, type SubjectType } from './constant'
 import './MemberSelector.css'
 
 interface PickerItem {
@@ -22,9 +22,10 @@ interface MemberResult {
 interface MemberSelectorProps {
   trigger?: React.ReactNode
   onConfirm?: (result: { list: MemberResult[] }) => void
+  resourceType?: ResourceType
 }
 
-export function MemberSelector({ trigger, onConfirm }: MemberSelectorProps) {
+export function MemberSelector({ trigger, onConfirm, resourceType = RESOURCE_TYPE.space }: MemberSelectorProps) {
   const [memberList, setMemberList] = useState<PickerItem[]>([])
   const [visible, setVisible] = useState(false)
 
@@ -117,6 +118,7 @@ export function MemberSelector({ trigger, onConfirm }: MemberSelectorProps) {
               <p className="member-name">{item.label}</p>
               <RolePopover
                 value={item.permission}
+                resourceType={resourceType}
                 none
                 onChange={(permission) => handlePermissionChange(index, permission)}
               />

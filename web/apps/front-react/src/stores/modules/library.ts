@@ -1,12 +1,11 @@
 import { create } from 'zustand'
 import { CHUNK_STATUS, RUN_STATUS, type RunStatus } from '@/constants/chunk'
-import { RESOURCE_TYPE } from '@/components/KMPermission/constant'
 
 import filesApi, { type FileItem } from '@/api/modules/files'
 import { type SpaceItem, spacesApi } from '@/api/modules/spaces'
 import chunksApi, { type KnowledgeChunk } from '@/api/modules/chunks'
 import { LibraryItem, librariesApi } from '@/api/modules/libraries'
-import permissionsApi, { type PermissionItem, type PermissionMeResponse } from '@/api/modules/permissions'
+import { type PermissionItem } from '@/api/modules/permissions'
 import { formatFile, buildFileTree } from '@/api/modules/files/transform'
 
 import { getSimpleDateFormatString, cacheManager as cache, CacheMode } from '@km/shared-utils'
@@ -67,6 +66,8 @@ interface LibraryState {
   currentFileId: string
   space: SpaceItem | null
   library: LibraryItem | null
+  /** 库能力：是否具备“可编辑知识+语料”范围（驱动语料视图切换展示） */
+  hasEditCorpusScope: boolean
   chunks: KnowledgeChunk[]
   isRestore: boolean
   restoreContent: string
@@ -99,6 +100,7 @@ interface LibraryState {
   setLibraryType: (fileViewType: 'preview' | 'chunk' | '') => Promise<void>
   setLibraryId: (library_id: string) => Promise<void>
   loadLibrary: () => Promise<void>
+  loadCapabilities: () => Promise<void>
   loadChunks: (file_id: string) => Promise<void>
   deleteChunk: (chunk: KnowledgeChunk) => Promise<void>
   updateChunkContent: (chunk: KnowledgeChunk) => void
@@ -116,7 +118,6 @@ interface LibraryState {
   loadFile: (file_id: string, force?: boolean) => Promise<FileItem | null>
   updateFile: (file: Partial<FileItem>) => void
   setCurrentFileId: (file_id: string) => Promise<FileItem | undefined>
-  loadFilePermissions: (file_id: string) => void
   createFile: (data: { path: string; name: string; permissions: PermissionItem[] }) => Promise<any>
   findNodesInPath: (path: string, files: FileItem[]) => FileItem[]
   findNodeInPath: (path: string, files: FileItem[]) => FileItem | null
@@ -145,6 +146,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   currentFileId: '',
   space: null,
   library: null,
+  hasEditCorpusScope: false,
   chunks: [],
   isRestore: false,
   restoreContent: '',
@@ -185,9 +187,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
   uploadingUploads: () => {
     const state = get()
-    return state.uploadQueue.filter(
-      (item) => item.status === 'uploading' || item.status === 'waiting'
-    )
+    // 严格只统计正在上传的文件：waiting 属于“待上传”（手动开始上传后才会转为 uploading），
+    // 混在一起会把待上传文件误报为“正在上传”
+    return state.uploadQueue.filter((item) => item.status === 'uploading')
   },
 
   completedUploads: () => {
@@ -221,11 +223,27 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await get().loadLibrary()
   },
 
-  loadLibrary: () => {
+  loadLibrary: async () => {
     const state = get()
-    return librariesApi.get(state.library_id).then((data) => {
-      set({ library: data, space_id: data.space_id })
-      get().loadSpace()
+    await Promise.all([
+      librariesApi.get(state.library_id).then((data) => {
+        set({ library: data, space_id: data.space_id })
+        get().loadSpace()
+      }),
+      // 能力查询为非关键路径：失败已由 handleError 提示，不应阻断库/文件加载
+      // （handleError 恒 reject，若不在此吞掉会把整个 loadLibrary 带崩）
+      get().loadCapabilities().catch(() => {}),
+    ])
+  },
+
+  loadCapabilities: () => {
+    const state = get()
+    const library_id = state.library_id
+    if (!library_id) return Promise.resolve()
+    return librariesApi.capabilities(library_id).then((data) => {
+      // 库切换竞态守卫：晚返回的旧库响应不得覆盖当前库能力
+      if (get().library_id !== library_id) return
+      set({ hasEditCorpusScope: Boolean(data?.has_edit_corpus_scope) })
     })
   },
 
@@ -328,7 +346,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           return {
             ...item,
             last_body_time: file.last_body_time,
-            permission: file.permission,
             is_favorite: file.is_favorite,
             file_url: file.file_url
           }
@@ -402,10 +419,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         return { files }
       })
 
-      const currentState = get()
-      if (force) {
-        currentState.loadFilePermissions(file.id)
-      }
       return file
     })
   },
@@ -429,32 +442,12 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     if (state.currentFileId === file_id) return state.currentFile()
     try {
       const file = await get().loadFile(file_id)
-      get().loadFilePermissions(file_id)
       set({ currentFileId: file_id })
       return file || undefined
     } catch (error) {
       set({ currentFileId: file_id })
       return undefined
     }
-  },
-
-  loadFilePermissions: (file_id: string) => {
-    cache.getOrFetch(`file_permissions_${file_id}`, () => {
-      return permissionsApi.my({
-        resource_type: RESOURCE_TYPE.file,
-        resource_id: file_id
-      })
-    }).then((data: PermissionMeResponse) => {
-      set((state) => {
-        const files = [...state.files]
-        const file = files.find((item) => item.id === file_id)
-        if (file) {
-          file.permission = data.max_permission
-        }
-        return { files }
-      })
-      return data
-    })
   },
 
   createFile: (data: { path: string; name: string; permissions: PermissionItem[] }) => {
@@ -595,6 +588,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       space_id: '',
       library: null,
       space: null,
+      hasEditCorpusScope: false,
       siderVisible: true,
       sidebarCollapsed: false,
       fileViewType: 'preview',

@@ -34,3 +34,12 @@ export const factEntityTypeLabel = (
   type: RecordingMemoryEntityType | string,
   schema: RecordingMemoryEntitySchemas | null,
 ) => findSchemaType(type, schema)?.label ?? type
+
+/** 事实来源的展示文案（后端 source_type → 用户能看懂的说法） */
+export function sourceTypeLabel(sourceType?: string) {
+  if (!sourceType) return ''
+  if (sourceType === 'user_confirmed_context') return '你已确认'
+  if (sourceType === 'manual') return '人工补充'
+  if (sourceType === 'automatic' || sourceType === 'meeting') return '会议记录'
+  return sourceType
+}

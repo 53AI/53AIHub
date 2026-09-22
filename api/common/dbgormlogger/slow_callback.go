@@ -117,7 +117,8 @@ func normalizeSQL(sql string) string {
 
 // getCallerInfo 获取调用栈中第一个非 dbgormlogger/gorm 包的调用位置
 func getCallerInfo() string {
-	for i := 3; i < 15; i++ {
+	// 从 i=2 开始：0 是本函数，1 是直接调用方（Trace 或慢日志回调），过滤器负责跳过框架层。
+	for i := 2; i < 15; i++ {
 		_, file, line, ok := runtime.Caller(i)
 		if !ok {
 			break
@@ -125,9 +126,19 @@ func getCallerInfo() string {
 		if strings.Contains(file, "gorm.io") || strings.Contains(file, "dbgormlogger") {
 			continue
 		}
+		// 取路径末两段（包名/文件:行）：同名文件可区分，SQL trace 后缀与慢查询 Feature 共用。
 		short := file
 		if idx := strings.LastIndex(file, "/"); idx >= 0 {
-			short = file[idx+1:]
+			base := file[idx+1:]
+			if parent := file[:idx]; parent != "" {
+				if d := strings.LastIndex(parent, "/"); d >= 0 {
+					short = parent[d+1:] + "/" + base
+				} else {
+					short = parent + "/" + base
+				}
+			} else {
+				short = base
+			}
 		}
 		return short + ":" + strconv.Itoa(line)
 	}

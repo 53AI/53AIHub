@@ -35,6 +35,9 @@ func InitGlobalClient() error {
 		if err := indexManager.CreateFilesIndex(); err != nil {
 			logger.SysLogf("创建 Elasticsearch 索引失败: %v", err)
 		}
+		if err := indexManager.CreateWikiIndex(); err != nil {
+			logger.SysLogf("创建 Wiki Elasticsearch 索引失败: %v", err)
+		}
 	}
 	return err
 }

@@ -149,7 +149,7 @@ export const KnowledgeWikiDrawer = forwardRef<WikiViewDrawerRef, WikiViewDrawerP
             </div>
             {page?.slug && (
               <Button type="link" onClick={handleViewWiki}>
-                查看动态知识
+                查看 Wiki
                 <ExportOutlined className="ml-1.5" />
               </Button>
             )}

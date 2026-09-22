@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -14,29 +15,30 @@ import (
 )
 
 type User struct {
-	UserID         int64           `json:"user_id" gorm:"primaryKey;autoIncrement"`
-	Username       string          `json:"username" gorm:"not null;index" binding:"required" example:"john_doe"`
-	Nickname       string          `json:"nickname" gorm:"not null" example:"John Doe"`
-	Avatar         string          `json:"avatar" gorm:"not null" example:"http://avatar.cc/a.jpg"`
-	Mobile         string          `json:"mobile" gorm:"size:20" example:"13800138000"`
-	Email          string          `json:"email" gorm:"size:100" example:"john@example.com"`
-	Eid            int64           `json:"eid" gorm:"not null;index" example:"123"`
-	Role           int64           `json:"role" gorm:"type:int;default:1;not null" example:"1"`
-	GroupId        int64           `json:"group_id" gorm:"type:int;default:0;not null" example:"0"`
-	Status         int             `json:"status" gorm:"type:int;default:1;not null;comment:'User status: 0-Not joined, 1-Joined, 2-Disabled'" example:"1"`
-	Password       string          `json:"-" gorm:"not null;default:''"`
-	Salt           string          `json:"-" gorm:"size:10;not null"`
-	ExpiredTime    int64           `json:"expired_time" gorm:"not null" example:"1672502400"`
-	LastLoginTime  int64           `json:"last_login_time" gorm:"not null" example:"1672502400"`
-	AccessToken    string          `json:"access_token" gorm:"type:varchar(512);column:access_token"`
-	RelatedId      int64           `json:"related_id" gorm:"type:int;default:0;not null;index:idx_users_related_id" example:"0"`
-	Type           int             `json:"type" gorm:"type:int;default:1;not null;comment:'User type: 1-Registered user, 2-Internal user'" example:"1"`
-	AddAdminTime   int64           `json:"add_admin_time" gorm:"type:bigint;default:0;not null;comment:'Time when user was added as admin'" example:"1672502400"`
-	OpenID         string          `json:"openid" gorm:"type:varchar(512);column:openid"`
-	UnionID        string          `json:"unionid" gorm:"type:varchar(512);column:unionid"`
-	Departments    []Department    `json:"departments" gorm:"-"`
-	MemberBindings []MemberBinding `json:"memberbindings" gorm:"-"`
-	GroupIds       []int64         `json:"group_ids" gorm:"-"`
+	UserID            int64           `json:"user_id" gorm:"primaryKey;autoIncrement"`
+	Username          string          `json:"username" gorm:"not null;index" binding:"required" example:"john_doe"`
+	Nickname          string          `json:"nickname" gorm:"not null" example:"John Doe"`
+	Avatar            string          `json:"avatar" gorm:"not null" example:"http://avatar.cc/a.jpg"`
+	Mobile            string          `json:"mobile" gorm:"size:20" example:"13800138000"`
+	Email             string          `json:"email" gorm:"size:100" example:"john@example.com"`
+	Eid               int64           `json:"eid" gorm:"not null;index" example:"123"`
+	Role              int64           `json:"role" gorm:"type:int;default:1;not null" example:"1"`
+	GroupId           int64           `json:"group_id" gorm:"type:int;default:0;not null" example:"0"`
+	Status            int             `json:"status" gorm:"type:int;default:1;not null;comment:'User status: 0-Not joined, 1-Joined, 2-Disabled'" example:"1"`
+	Password          string          `json:"-" gorm:"not null;default:''"`
+	Salt              string          `json:"-" gorm:"size:10;not null"`
+	PasswordUpdatedAt int64           `json:"password_updated_at" gorm:"column:password_updated_at;default:0;not null" example:"1672502400"`
+	ExpiredTime       int64           `json:"expired_time" gorm:"not null" example:"1672502400"`
+	LastLoginTime     int64           `json:"last_login_time" gorm:"not null" example:"1672502400"`
+	AccessToken       string          `json:"access_token" gorm:"type:varchar(512);column:access_token"`
+	RelatedId         int64           `json:"related_id" gorm:"type:int;default:0;not null;index:idx_users_related_id" example:"0"`
+	Type              int             `json:"type" gorm:"type:int;default:1;not null;comment:'User type: 1-Registered user, 2-Internal user'" example:"1"`
+	AddAdminTime      int64           `json:"add_admin_time" gorm:"type:bigint;default:0;not null;comment:'Time when user was added as admin'" example:"1672502400"`
+	OpenID            string          `json:"openid" gorm:"type:varchar(512);column:openid"`
+	UnionID           string          `json:"unionid" gorm:"type:varchar(512);column:unionid"`
+	Departments       []Department    `json:"departments" gorm:"-"`
+	MemberBindings    []MemberBinding `json:"memberbindings" gorm:"-"`
+	GroupIds          []int64         `json:"group_ids" gorm:"-"`
 	BaseModel
 }
 
@@ -83,6 +85,12 @@ func CreateVisitorUser(eid int64, nickname string) (*User, error) {
 	user.AccessToken = accessToken
 	return user, DB.Model(user).Update("access_token", user.AccessToken).Error
 }
+func (user *User) GetPasswordBaseTime() int64 {
+	if user.PasswordUpdatedAt > 0 {
+		return user.PasswordUpdatedAt
+	}
+	return user.CreatedTime
+}
 
 func (user *User) Create() error {
 	var err error
@@ -123,6 +131,9 @@ func (user *User) Create() error {
 	} else {
 		return errors.New("password is empty")
 	}
+	if user.PasswordUpdatedAt == 0 {
+		user.PasswordUpdatedAt = time.Now().UnixMilli()
+	}
 
 	result := DB.Create(user)
 	if result.Error != nil {
@@ -161,19 +172,30 @@ func (user *User) Update(updatePassword bool) error {
 		}
 
 		updateMap["password"] = user.Password
+		now := time.Now().UnixMilli()
+		updateMap["password_updated_at"] = now
+		user.PasswordUpdatedAt = now
 	}
 
-	return DB.Model(user).Updates(updateMap).Error
+	err := DB.Model(user).Updates(updateMap).Error
+	if err == nil {
+		// 用户行被改：统一清该用户全部缓存（行+群组+token），0 延迟。
+		InvalidateUserCaches(user.Eid, user.UserID, context.Background(), user.AccessToken)
+	}
+	return err
 }
 
 func (user *User) Delete() error {
 	err := DB.Delete(user).Error
+	if err == nil {
+		InvalidateUserCaches(user.Eid, user.UserID, context.Background(), user.AccessToken)
+	}
 	return err
 }
 
-func GetUserByID(userID int64) (*User, error) {
+func GetUserByID(userID int64, ctxs ...context.Context) (*User, error) {
 	var user User
-	err := DB.First(&user, userID).Error
+	err := dbWithOptionalCtx(ctxs...).First(&user, userID).Error
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +265,7 @@ func GetUserByUserName(eid int64, username string) (*User, error) {
 }
 
 func (user *User) RefreshAccessToken() error {
+	oldToken := user.AccessToken
 	var err error
 	user.AccessToken, err = jwt.UserGenerateJWT(user.UserID, user.Eid)
 	if err != nil {
@@ -256,6 +279,11 @@ func (user *User) RefreshAccessToken() error {
 
 	user.LastLoginTime = time.Now().UTC().UnixMilli()
 	err = DB.Model(user).Updates(user).Error
+	if err == nil {
+		// 旧 token 已轮换：清短时缓存，否则旧 token 在 TTL 内仍可通过鉴权。
+		// 行缓存同时失效：新 token/登录时间已写库。
+		InvalidateUserCaches(user.Eid, user.UserID, context.Background(), oldToken)
+	}
 	return err
 }
 
@@ -264,19 +292,41 @@ func (user *User) UpdateStatusToJoin() error {
 	if user.Status == UserStatusNotJoined {
 		user.Status = UserStatusJoined
 		err = DB.Model(user).Updates(user).Error
+		if err == nil {
+			InvalidateUserCaches(user.Eid, user.UserID, context.Background(), user.AccessToken)
+		}
 	}
 	return err
 }
 
-func ValidateAccessToken(token string) (user *User) {
+func ValidateAccessToken(token string, ctxs ...context.Context) (user *User) {
 	if token == "" {
 		return nil
 	}
 	user = &User{}
-	if DB.Where("access_token = ?", token).First(user).RowsAffected == 1 {
+	if dbWithOptionalCtx(ctxs...).Where("access_token = ?", token).First(user).RowsAffected == 1 {
 		return user
 	}
 	return nil
+}
+
+// userAccessTokenCacheInvalidator 由鉴权层注册：access_token 轮换/清空时清短时缓存。
+// model 不能直接依赖 common（common 依赖 model 会循环），沿用 capability 快照失效的注册范式。
+var userAccessTokenCacheInvalidator func(ctx context.Context, token string)
+
+// SetUserAccessTokenCacheInvalidator 注册 access_token 短时缓存失效函数，幂等覆盖。
+func SetUserAccessTokenCacheInvalidator(fn func(ctx context.Context, token string)) {
+	userAccessTokenCacheInvalidator = fn
+}
+
+func invalidateUserAccessTokenCache(ctx context.Context, token string) {
+	if token == "" || userAccessTokenCacheInvalidator == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	userAccessTokenCacheInvalidator(ctx, token)
 }
 
 func GetUserList(eid int64, keyword string, group_id int64, offset int, limit int) (count int64, users []*User, err error) {
@@ -340,7 +390,9 @@ func DeleteUser(eid int64, user_id int64) error {
 		return err
 	}
 
-	return tx.Commit().Error
+	// 用户硬删：统一清该用户全部缓存（行+群组+token），0 延迟。
+	InvalidateUserCaches(eid, user_id, context.Background(), user.AccessToken)
+	return nil
 }
 
 func UpdateUserPassword(eid int64, userID int64, newPassword string) error {
@@ -352,8 +404,15 @@ func UpdateUserPassword(eid int64, userID int64, newPassword string) error {
 	if user.Password != "" {
 		user.Password, _ = helper.PasswordHash(newPassword, user.Salt)
 	}
-
-	return DB.Model(&user).Update("password", user.Password).Error
+	now := time.Now().UnixMilli()
+	err := DB.Model(&user).Updates(map[string]interface{}{
+		"password":            user.Password,
+		"password_updated_at": now,
+	}).Error
+	if err == nil {
+		InvalidateUserCaches(eid, userID, context.Background(), user.AccessToken)
+	}
+	return err
 }
 
 // UpdateAllUsersPasswordByRelatedID updates password for all enterprise users whose related_id equals the platform UserID.
@@ -363,11 +422,13 @@ func UpdateAllUsersPasswordByRelatedID(relatedId int64, newSalt string, hashedPa
 		return errors.New("invalid relatedId")
 	}
 	// 批量更新所有 related_id 命中的记录的 salt 与 password
+	now := time.Now().UnixMilli()
 	return DB.Model(&User{}).
 		Where("related_id = ?", relatedId).
 		Updates(map[string]interface{}{
-			"salt":     newSalt,
-			"password": hashedPassword,
+			"salt":                newSalt,
+			"password":            hashedPassword,
+			"password_updated_at": now,
 		}).Error
 }
 
@@ -553,19 +614,19 @@ func (u *User) LoadUserInfo(from int) {
 	_ = u.LoadGroupIds()
 }
 
-func (u *User) GetUserGroupIds() ([]int64, error) {
+func (u *User) GetUserGroupIds(ctxs ...context.Context) ([]int64, error) {
 	switch u.Type {
 	case UserTypeRegistered:
 		return []int64{u.GroupId}, nil
 	case UserTypeInternal:
 		var groupIDs, userGroupIds []int64
-		err := DB.Model(&ResourcePermission{}).Where("resource_type = ? AND resource_id = ?", ResourceTypeUser, u.UserID).Pluck("group_id", &userGroupIds).Error
+		err := dbWithOptionalCtx(ctxs...).Model(&ResourcePermission{}).Where("resource_type = ? AND resource_id = ?", ResourceTypeUser, u.UserID).Pluck("group_id", &userGroupIds).Error
 		if err != nil {
 			return nil, err
 		}
 
 		var dids []int64
-		err = DB.Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid = ?", u.Eid, u.UserID).Pluck("did", &dids).Error
+		err = dbWithOptionalCtx(ctxs...).Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid = ?", u.Eid, u.UserID).Pluck("did", &dids).Error
 		if err != nil {
 			return nil, err
 		}
@@ -600,6 +661,11 @@ func GetLoginUser(c *gin.Context) (*User, error) {
 	if authHeader != "" {
 		user := ValidateAccessToken(authHeader)
 		if user != nil {
+			return user, nil
+		}
+
+		user, _, _, err := ValidateUserChannelToken(authHeader)
+		if err == nil {
 			return user, nil
 		}
 	}
@@ -650,10 +716,16 @@ func GetUserCountByEIDAndType(eid int64, theType int) (int64, error) {
 
 // InvalidateAccessToken 使用户的访问令牌失效
 func (user *User) InvalidateAccessToken() error {
+	oldToken := user.AccessToken
 	// 清空用户的访问令牌
 	user.AccessToken = ""
 	// 更新数据库中的用户记录
-	return DB.Model(user).Update("access_token", "").Error
+	if err := DB.Model(user).Update("access_token", "").Error; err != nil {
+		return err
+	}
+	// 登出不清缓存会导致已登出 token 在 TTL 内仍有效，必须主动失效；行缓存同步清。
+	InvalidateUserCaches(user.Eid, user.UserID, context.Background(), oldToken)
+	return nil
 }
 
 func IsAdmin(role int64) bool {

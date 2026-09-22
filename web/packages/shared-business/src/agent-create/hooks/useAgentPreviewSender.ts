@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { SkillFeature } from '@km/hub-ui-x-react'
 import { AdapterContext } from '../adapters'
+import type { AgentFormData } from '../adapters/types'
 import {
   buildKnowledgeSourcePayload as buildPayload,
   type KnowledgeSourcePayloadConfig,
@@ -101,8 +102,8 @@ interface AgentPreviewSenderParams {
   /** 智能体 ID，用于拉 agent_models（仅 knowledge 场景） */
   agent_id?: string | number
   agent_type?: string
-  /** 表单数据（实时响应配置变更） */
-  form_data?: {
+  /** 表单数据（实时响应配置变更）：完整 AgentFormData 或仅含 settings 视图的部分对象 */
+  form_data?: AgentFormData | {
     settings?: {
       skills?: Array<{ skill_id: string; display_name?: string; skill_name?: string }>
       fast_reasoning_config?: { channel_id?: number; channel_type?: number; model_name?: string }
@@ -140,11 +141,11 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
   // ============ workbench: 单选技能 ============
   // 状态机：'idle'（未交互，列出全部供选择） → 'selected'（已选一条） → 'cleared'（清空，留空数组）
   const [selectedSkillId, setSelectedSkillId] = useState<string | null>(null)
-  const [interacted, setInteracted] = useState(false)
+  const [, setInteracted] = useState(false)
 
   const skillConfig = useMemo<SkillFeature | undefined>(() => {
     if (agent_type !== 'workbench') return undefined
-    const skills = settings?.skills || []
+    const skills: Array<{ skill_id: string; display_name?: string; skill_name?: string }> = settings?.skills || []
     const enabledSkills = skills.filter((s) => s.skill_id)
     const allOptions: Array<{ id: string; label: string; display_name: string; skill_name?: string }> = enabledSkills.map((s) => ({
       id: s.skill_id,

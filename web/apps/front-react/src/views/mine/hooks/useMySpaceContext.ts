@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { message } from 'antd'
+import { t } from '@/locales'
 import mySpaceApi from '@/api/modules/my-space'
 
 export interface UseMySpaceContextReturn {
@@ -19,8 +20,12 @@ export function useMySpaceContext(): UseMySpaceContextReturn {
   const fetchingRef = useRef(false)
   const retryTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
+  const [libraryId, setLibraryId] = useState('')
   const [contextReady, setContextReady] = useState(false)
   const [contextInitializing, setContextInitializing] = useState(false)
+
+  // 卸载时清理 429 重试定时器，避免卸载后 setState
+  useEffect(() => () => clearTimeout(retryTimerRef.current), [])
 
   const fetchContext = useCallback(async () => {
     // 已经有 libraryId 或正在请求中，直接返回
@@ -33,6 +38,7 @@ export function useMySpaceContext(): UseMySpaceContextReturn {
     try {
       const ctx = await mySpaceApi.getContext()
       libraryIdRef.current = ctx.library_id
+      setLibraryId(ctx.library_id)
       setContextReady(true)
       setContextInitializing(false)
     } catch (error: any) {
@@ -45,7 +51,7 @@ export function useMySpaceContext(): UseMySpaceContextReturn {
           fetchContext()
         }, 3000)
       } else {
-        message.error('获取个人空间信息失败')
+        message.error(t('mine.fetch_space_failed'))
         setContextReady(false)
         setContextInitializing(false)
       }
@@ -59,18 +65,10 @@ export function useMySpaceContext(): UseMySpaceContextReturn {
   }, [fetchContext])
 
   return {
-    libraryId: libraryIdRef.current,
+    libraryId,
     contextReady,
     contextInitializing,
     ensureLibraryId,
     fetchContext
   }
-}
-
-/**
- * 清理重试定时器
- * 用于组件卸载时清理
- */
-export function clearRetryTimer(hookReturn: UseMySpaceContextReturn): void {
-  // 此函数保留用于扩展，当前定时器在 hook 内部管理
 }

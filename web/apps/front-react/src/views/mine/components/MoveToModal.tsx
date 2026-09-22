@@ -307,7 +307,7 @@ export function MoveToModal({
 					) : rootHasError ? (
 						<div className="text-sm text-[#9A9A9A] flex items-center gap-2 py-2">
 							{t('move_to.folder_load_failed') || MOVE_TO_LOAD_FAILED_FALLBACK}
-							<a onClick={() => { tree.reloadDir(ROOT_PATH); tree.reloadFile(ROOT_PATH) }}>{t('move_to.retry') || MOVE_TO_RETRY_FALLBACK}</a>
+							<a onClick={() => { tree.reloadDir(ROOT_PATH); tree.reloadFile(ROOT_PATH) }}>{t('action.retry') || MOVE_TO_RETRY_FALLBACK}</a>
 						</div>
 					) : rootIsEmpty ? (
 						<div className="text-sm text-[#9A9A9A] py-2">{t('move_to.empty') || MOVE_TO_EMPTY_FALLBACK}</div>

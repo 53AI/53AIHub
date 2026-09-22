@@ -27,7 +27,7 @@ import {
   type ApplyDialogRef,
 } from "@/views/library/components/apply";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "./InfoSaveDialog";
-import VirtualLogo from "@/components/VirtualLogo";
+import { SafeImage } from "@km/shared-components-react";
 import { EntityDisplay } from "@/components/EntityDisplay";
 import { useAbortController } from "@/hooks/useAbortController";
 import { checkVersion } from "@/utils/version";
@@ -238,7 +238,7 @@ export const List = forwardRef<ListRef, ListProps>(({ spaceId, keyword = "", sor
                   className={`flex-none h-9 flex items-center justify-between ${item.permission === PERMISSION_TYPE.none ? "blur-[2px]" : ""}`}
                 >
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <VirtualLogo text={item.name} src={item.icon} size={48} />
+                    <SafeImage src={item.icon} letter={item.name} className="size-[48px] object-cover text-2xl" />
                     <div className="flex-1 overflow-hidden">
                       <p className="whitespace-nowrap text-base text-primary truncate">
                         {item.name}

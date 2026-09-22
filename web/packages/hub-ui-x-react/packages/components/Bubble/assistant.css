@@ -11,10 +11,12 @@
   margin-bottom: 16px;
   display: flex;
   align-items: flex-start;
+  min-width: 0;
 }
 
 .x-assistant-bubble__content {
   width: 100%;
+  min-width: 0;
 }
 
 .x-assistant-bubble__message {

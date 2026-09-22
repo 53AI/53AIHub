@@ -35,6 +35,11 @@ func MergeChunks(c *gin.Context) {
 		return
 	}
 
+	// 验证文件权限
+	if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限管理此文件分块"); !ok {
+		return
+	}
+
 	// 验证分块ID数量
 	if len(req.ChunkIDs) < 2 {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("至少需要2个分块才能合并")))
@@ -84,6 +89,11 @@ func SplitChunk(c *gin.Context) {
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	// 验证分块权限
+	if _, _, ok := requireChunkPermission(c, eid, userID, id, model.PERMISSION_EDIT_ALL, "无权限管理此分块"); !ok {
 		return
 	}
 

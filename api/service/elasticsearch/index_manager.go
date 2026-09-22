@@ -72,6 +72,64 @@ func (m *IndexManager) CreateFilesIndex() error {
 	return nil
 }
 
+func (m *IndexManager) CreateWikiIndex() error {
+	if m.client.IsDisabled() {
+		return nil
+	}
+	mapping := m.buildWikiIndexMapping()
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(mapping); err != nil {
+		return fmt.Errorf("编码 Wiki 索引映射失败: %v", err)
+	}
+	exists, err := m.wikiIndexExists()
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+	res, err := (esapi.IndicesCreateRequest{Index: m.client.GetWikiIndexName(), Body: &buf}).Do(context.Background(), m.client)
+	if err != nil {
+		return fmt.Errorf("创建 Wiki 索引失败: %v", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("创建 Wiki 索引响应错误: %s", res.Status())
+	}
+	logger.SysLogf("成功创建 Wiki 索引: %s", m.client.GetWikiIndexName())
+	return nil
+}
+
+func (m *IndexManager) buildWikiIndexMapping() map[string]interface{} {
+	return map[string]interface{}{
+		"mappings": map[string]interface{}{"properties": map[string]interface{}{
+			"page_id":      map[string]interface{}{"type": "long"},
+			"eid":          map[string]interface{}{"type": "long"},
+			"space_id":     map[string]interface{}{"type": "long"},
+			"library_id":   map[string]interface{}{"type": "long"},
+			"title":        map[string]interface{}{"type": "text"},
+			"summary":      map[string]interface{}{"type": "text"},
+			"body":         map[string]interface{}{"type": "text"},
+			"aliases":      map[string]interface{}{"type": "text"},
+			"slug":         map[string]interface{}{"type": "keyword"},
+			"page_type":    map[string]interface{}{"type": "keyword"},
+			"status":       map[string]interface{}{"type": "keyword"},
+			"created_time": map[string]interface{}{"type": "long"},
+			"updated_time": map[string]interface{}{"type": "long"},
+		}},
+		"settings": map[string]interface{}{"number_of_shards": 1, "number_of_replicas": 0},
+	}
+}
+
+func (m *IndexManager) wikiIndexExists() (bool, error) {
+	res, err := (esapi.IndicesExistsRequest{Index: []string{m.client.GetWikiIndexName()}}).Do(context.Background(), m.client)
+	if err != nil {
+		return false, fmt.Errorf("检查 Wiki 索引存在性失败: %v", err)
+	}
+	defer res.Body.Close()
+	return res.StatusCode == 200, nil
+}
+
 func (m *IndexManager) buildFilesIndexMapping() map[string]interface{} {
 	return map[string]interface{}{
 		"mappings": map[string]interface{}{
@@ -157,6 +215,12 @@ func (m *IndexManager) buildFilesIndexMapping() map[string]interface{} {
 						},
 					},
 				},
+				"summary": map[string]interface{}{
+					"type": "text",
+				},
+				"content": map[string]interface{}{
+					"type": "text",
+				},
 				"type": map[string]interface{}{
 					"type": "integer",
 				},
@@ -219,6 +283,12 @@ func (m *IndexManager) updateFilesIndexMapping() error {
 			},
 			"file_extension": map[string]interface{}{
 				"type": "keyword",
+			},
+			"summary": map[string]interface{}{
+				"type": "text",
+			},
+			"content": map[string]interface{}{
+				"type": "text",
 			},
 		},
 	}
@@ -340,5 +410,20 @@ func (m *IndexManager) RefreshIndex() error {
 		return fmt.Errorf("刷新索引响应错误: %s", res.Status())
 	}
 
+	return nil
+}
+
+func (m *IndexManager) RefreshWikiIndex() error {
+	if m.client.IsDisabled() {
+		return nil
+	}
+	res, err := (esapi.IndicesRefreshRequest{Index: []string{m.client.GetWikiIndexName()}}).Do(context.Background(), m.client)
+	if err != nil {
+		return fmt.Errorf("刷新 Wiki 索引失败: %v", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("刷新 Wiki 索引响应错误: %s", res.Status())
+	}
 	return nil
 }

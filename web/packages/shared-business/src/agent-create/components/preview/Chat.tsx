@@ -232,7 +232,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
     const isKnowledge = previewSender.agentKind === 'knowledge'
     const isAgent = previewSender.agentKind === 'none'
 
-    let sendType: 'work-ai' | '' = ''
+    let sendType: 'work-ai' | 'agent' | '' = ''
     let sendSkill: { display_name?: string; skill_name?: string } | undefined
     let sendModelId: string | undefined
     let sendAgentInfo: any
@@ -656,7 +656,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
           {...(previewSender.skill ? { skill: previewSender.skill } : {})}
           {...(previewSender.skill && !previewSender.model ? { ui: { actionPosition: 'extras' as const } } : {})}
           slots={{
-            extrasLeft: (previewSender.model || previewSender.source)
+            extrasLeft: (previewSender.model)
               ? (
                   <div className="flex items-center gap-2">
                     {previewSender.model && (

@@ -85,11 +85,14 @@ export interface ChunkConfigProps {
   getPublicPath?: (path: string) => string;
   /** i18n namespace prefix. Defaults to 'data_pipeline' */
   i18nPrefix?: string;
+  /** 解析引擎 (document_parsing 节点的 config.engine)。
+   *  仅 engine === 'textin' 时「按页」分块可用(返回分页符)，其余引擎禁用。 */
+  engine?: string;
 }
 
 // "切片类型 = DEFAULT" 时重置的 chunk 配置。knowledge 与 index 复用这里的常量，
 // 既用于 useEffect 的初始化，也用于 radio onChange 的重置。
-const DEFAULT_KNOWLEDGE_CHUNK = {
+export const DEFAULT_KNOWLEDGE_CHUNK = {
   mode: "custom",
   strategy: CHUNK_MODE.IDENTIFIER,
   identifier_level: "h2",
@@ -100,13 +103,51 @@ const DEFAULT_KNOWLEDGE_CHUNK = {
   append_subtitle: true,
 } as const;
 
-const DEFAULT_INDEX_CHUNK = {
+export const DEFAULT_INDEX_CHUNK = {
   mode: "custom",
   strategy: CHUNK_MODE.LENGTH,
   identifier_level: "h3",
   max_length: 512,
   overlap_size: 20,
 } as const;
+
+/**
+ * 解析引擎从 textin 切走后，「按页」分块不再可用（仅 textin 返回分页符）。
+ * 检查语料拆分配置中知识点 / 检索块两侧是否仍为按页，是则重置为默认。
+ *
+ * @returns 无需重置时返回 null；否则返回重置后的 chunk 配置
+ *   （与 applyChunkTypeChange(DEFAULT) 写入的值一致，避免 parseAndSync 二次纠偏）。
+ */
+export function resetPageChunkingConfig(
+  chunkConfig: unknown,
+): ChunkConfigData | null {
+  const config = chunkConfig as ChunkConfigData | undefined;
+  const parent = config?.parent_chunk;
+  const child = config?.child_chunk;
+  const parentIsPage =
+    parent?.chunking_type === CHUNK_TYPE.PAGE || parent?.mode === "page";
+  const childIsPage =
+    child?.chunking_type === CHUNK_TYPE.PAGE || child?.mode === "page";
+  if (!parentIsPage && !childIsPage) return null;
+
+  return {
+    ...config,
+    ...(parentIsPage && {
+      parent_chunk: {
+        ...parent,
+        ...DEFAULT_KNOWLEDGE_CHUNK,
+        chunking_type: CHUNK_TYPE.DEFAULT,
+      },
+    }),
+    ...(childIsPage && {
+      child_chunk: {
+        ...child,
+        ...DEFAULT_INDEX_CHUNK,
+        chunking_type: CHUNK_TYPE.DEFAULT,
+      },
+    }),
+  };
+}
 
 // 特殊字符映射表
 const ESCAPE_MAP: Record<string, string> = {
@@ -150,7 +191,7 @@ interface LabeledSliderProps {
    * 一般在 overlap > chunk_length 等异常情况下使用原生 popup
    * 展示告警，位置在 slider 上方。
    */
-  sliderTooltip?: import("antd").SliderProps["tooltip"];
+  sliderTooltip?: import("react").ComponentProps<typeof import("antd").Slider>["tooltip"];
   value: number | undefined;
   min: number;
   max: number;
@@ -224,10 +265,22 @@ export function ChunkConfig({
   chunkTypes: providedChunkTypes,
   getPublicPath: getPublicPathProp,
   i18nPrefix = "data_pipeline",
+  engine,
 }: ChunkConfigProps) {
   const { t } = usePipelineTranslation();
   const tKey = (key: string) => `${i18nPrefix}.${key}`;
   const adapter = usePipelineAdapter();
+
+  // 「按页」分块仅 textin 解析引擎返回分页符，其余引擎禁用。
+  // 未指定引擎(engine 为空)时同样禁用，保证不出现"选不了也用不了"的空态。
+  const isPageByTextin = engine === "textin";
+  const pageTooltipTitle = t(
+    tKey(
+      isPageByTextin
+        ? "chunk_page_textin_only_tip"
+        : "chunk_page_require_textin_tip",
+    ),
+  );
 
   // 优先使用 props 中的 getPublicPath，否则使用 adapter 中的
   const getPublicPath = getPublicPathProp ?? adapter?.getPublicPath;
@@ -351,7 +404,8 @@ export function ChunkConfig({
       const mode = targetConfig?.mode;
       // 优先使用显式的 chunking_type（DEFAULT/CUSTOM/WHOLE/PAGE），
       // 避免 DEFAULT 与 CUSTOM 在 identifier_level='h2'/'h3' 时被反向解析为 CUSTOM。
-      const explicitType = targetConfig?.chunking_type;
+      const explicitType = (targetConfig as { chunking_type?: string } | undefined)
+        ?.chunking_type;
 
       let newChunkingType: string;
       // 由 CUSTOM 分支按 identifier_level 内容决定是否包含 HEADING；
@@ -960,9 +1014,11 @@ export function ChunkConfig({
                   <Radio value={CHUNK_TYPE.CUSTOM}>
                     {t(tKey("chunk_custom"))}
                   </Radio>
-                  <Radio value={CHUNK_TYPE.PAGE}>
-                    {t(tKey("chunk_by_page"))}
-                  </Radio>
+                  <Tooltip title={pageTooltipTitle}>
+                    <Radio value={CHUNK_TYPE.PAGE} disabled={!isPageByTextin}>
+                      {t(tKey("chunk_by_page"))}
+                    </Radio>
+                  </Tooltip>
                   <Radio value={CHUNK_TYPE.WHOLE}>
                     {t(tKey("chunk_none"))}
                   </Radio>
@@ -1248,9 +1304,11 @@ export function ChunkConfig({
                   <Radio value={CHUNK_TYPE.CUSTOM}>
                     {t(tKey("chunk_custom"))}
                   </Radio>
-                  <Radio value={CHUNK_TYPE.PAGE}>
-                    {t(tKey("chunk_by_page"))}
-                  </Radio>
+                  <Tooltip title={pageTooltipTitle}>
+                    <Radio value={CHUNK_TYPE.PAGE} disabled={!isPageByTextin}>
+                      {t(tKey("chunk_by_page"))}
+                    </Radio>
+                  </Tooltip>
                   <Radio value={CHUNK_TYPE.WHOLE}>
                     {t(tKey("chunk_none"))}
                   </Radio>

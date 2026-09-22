@@ -231,6 +231,7 @@ func (s *wikiPageEditService) CreatePage(ctx context.Context, req WikiCreatePage
 	if err != nil {
 		return nil, err
 	}
+	model.InvalidateCapabilityWiki(req.Eid, req.LibraryID)
 	if err := s.refreshWikiCrossLinks(ctx, req.Eid, req.LibraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after create failed: %v", err)
 	}
@@ -329,6 +330,7 @@ func (s *wikiPageEditService) UpdatePage(ctx context.Context, req WikiUpdatePage
 	if err != nil {
 		return nil, err
 	}
+	model.InvalidateCapabilityWiki(req.Eid, req.LibraryID)
 	if err := s.refreshWikiCrossLinks(ctx, req.Eid, req.LibraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after update failed: %v", err)
 	}
@@ -505,6 +507,7 @@ func (s *wikiPageEditService) archiveOrDeletePage(ctx context.Context, eid, libr
 	if err != nil {
 		return nil, err
 	}
+	model.InvalidateCapabilityWiki(eid, libraryID)
 	if err := s.refreshWikiCrossLinks(ctx, eid, libraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after %s failed: %v", action, err)
 	}

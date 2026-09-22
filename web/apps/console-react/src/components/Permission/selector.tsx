@@ -14,7 +14,13 @@ export interface PermissionSelectorProps {
   inherit?: boolean
   none?: boolean
   remove?: boolean
+  /** 在菜单顶部显示“未选择”项，点击后触发 onUnselected（用于删除该维度权限记录） */
+  unselected?: boolean
+  /** 点击“未选择”项时触发 */
+  onUnselected?: () => void
   disabled?: boolean
+  /** 无值时展示的占位文案（如“未选择”） */
+  placeholder?: string
   /** 是否将弹出层传送至 body，默认 true */
   teleported?: boolean
   /** 弹出层挂载位置 */
@@ -38,7 +44,10 @@ export function PermissionSelector({
   inherit = false,
   none = false,
   remove = false,
+  unselected = false,
+  onUnselected,
   disabled = false,
+  placeholder,
   teleported = true,
   appendTo = 'body',
 }: PermissionSelectorProps) {
@@ -68,6 +77,10 @@ export function PermissionSelector({
     if (!remove) {
       options = options.filter((o) => o.value !== PERMISSION_TYPE.remove)
     }
+    // Wiki 资源不支持“可编辑知识&语料”权限
+    if (resourceType === RESOURCE_TYPE.wiki) {
+      options = options.filter((o) => o.value !== PERMISSION_TYPE.edit_all)
+    }
 
     // Set color for remove/none options
     const removeOption = options.find((o) => o.value === PERMISSION_TYPE.remove)
@@ -84,8 +97,11 @@ export function PermissionSelector({
 
   // Display label
   const displayLabel = useMemo(() => {
+    if (value === undefined || value === null || value === '') {
+      return placeholder || ''
+    }
     return roleOptions.find((o) => o.value === value)?.title || ''
-  }, [roleOptions, value])
+  }, [roleOptions, value, placeholder])
 
   // Handle select
   const handleSelect = (item: RoleItem) => {
@@ -126,8 +142,33 @@ export function PermissionSelector({
       })
     })
 
+    // 底部“未选择”项：用于清除该维度的权限记录
+    if (unselected) {
+      const isEmptyValue = value === undefined || value === null || value === ''
+      items.push({
+        key: 'permission-unselected',
+        label: (
+          <div
+            className={`relative px-3 py-2 rounded hover:bg-[#2563EB14] text-left ${
+              isEmptyValue ? 'bg-[#2563EB14]' : ''
+            }`}
+          >
+            {/* 左侧选中指示条 */}
+            {isEmptyValue && (
+              <div className="absolute top-1/2 left-0 -translate-y-1/2 w-1 h-4 rounded-full bg-[#2563EB]" />
+            )}
+            <div className="text-sm" >
+              {placeholder || '未选择'}
+            </div>
+            <div className="text-xs text-hint">沿用上层权限，不单独设置</div>
+          </div>
+        ),
+        onClick: () => onUnselected?.(),
+      })
+    }
+
     return items
-  }, [roleOptions, value])
+  }, [roleOptions, value, unselected, onUnselected, placeholder])
 
   // 获取 getPopupContainer 配置
   const getPopupContainer = useMemo(() => {
@@ -150,6 +191,9 @@ export function PermissionSelector({
       trigger={['click']}
       placement="bottomRight"
       getPopupContainer={getPopupContainer}
+      classNames={{
+        item: '!p-0'
+      }}
     >
       <Button type={link ? 'link' : buttonType} disabled={disabled}>
         <span className="text-sm">{displayLabel}</span>

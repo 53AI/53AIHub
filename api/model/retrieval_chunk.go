@@ -250,6 +250,17 @@ func UpdateRetrievalChunkEmbeddingStatus(eid int64, chunkID int64, status string
 		Updates(updates).Error
 }
 
+// ResetRetrievalChunkEmbeddingStatus 将检索块重置为待向量化状态
+func ResetRetrievalChunkEmbeddingStatus(eid int64, chunkID int64) error {
+	return DB.Model(&RetrievalChunk{}).
+		Where("eid = ? AND id = ?", eid, chunkID).
+		Updates(map[string]interface{}{
+			"embedding_status": RetrievalChunkEmbeddingStatusPending,
+			"vector_id":        "",
+			"error_reason":     "",
+		}).Error
+}
+
 // GetPendingEmbeddingRetrievalChunks 获取待向量化的检索块
 func GetPendingEmbeddingRetrievalChunks(eid int64, limit int) ([]RetrievalChunk, error) {
 	var chunks []RetrievalChunk

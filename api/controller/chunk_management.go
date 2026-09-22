@@ -58,11 +58,8 @@ func CreateFileChunks(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
-
-	// 获取文件信息
-	_, err = model.GetFileByID(eid, fileID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+	// 验证文件权限
+	if _, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_EDIT_ALL, "无权限管理此文件分块"); !ok {
 		return
 	}
 
@@ -153,6 +150,11 @@ func GetFileChunks(c *gin.Context) {
 		return
 	}
 
+	userID := config.GetUserId(c)
+	if _, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_EDIT_ALL, "无权限访问此文件分块"); !ok {
+		return
+	}
+
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	if limit == 0 {
@@ -209,10 +211,10 @@ func GetChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取分块信息
-	chunk, err := model.GetDocumentChunkByID(eid, id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+	// 获取分块信息并验证文件权限
+	userID := config.GetUserId(c)
+	chunk, _, ok := requireChunkPermission(c, eid, userID, id, model.PERMISSION_EDIT_ALL, "无权限访问此分块")
+	if !ok {
 		return
 	}
 
@@ -254,10 +256,9 @@ func UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取原分块信息
-	chunk, err := model.GetDocumentChunkByID(eid, id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+	// 获取原分块信息并验证文件权限
+	chunk, _, ok := requireChunkPermission(c, eid, userID, id, model.PERMISSION_EDIT_ALL, "无权限管理此分块")
+	if !ok {
 		return
 	}
 
@@ -392,6 +393,11 @@ func DeleteChunk(c *gin.Context) {
 		return
 	}
 
+	userID := config.GetUserId(c)
+	if _, _, ok := requireChunkPermission(c, eid, userID, id, model.PERMISSION_EDIT_ALL, "无权限管理此分块"); !ok {
+		return
+	}
+
 	// 删除分块
 	err = model.DeleteDocumentChunk(eid, id)
 	if err != nil {
@@ -443,6 +449,17 @@ func BatchGetChunks(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
+	}
+
+	userID := config.GetUserId(c)
+	fileIDs := make(map[int64]struct{})
+	for _, ch := range chunks {
+		fileIDs[ch.FileID] = struct{}{}
+	}
+	for fID := range fileIDs {
+		if _, ok := requireFilePermission(c, eid, userID, fID, model.PERMISSION_EDIT_ALL, "无权限访问分块"); !ok {
+			return
+		}
 	}
 
 	response := &BatchGetChunksResponse{

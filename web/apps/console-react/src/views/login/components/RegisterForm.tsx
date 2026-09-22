@@ -5,6 +5,8 @@ import { useUserStore, useEnterpriseStore } from '@/stores'
 import { authApi } from '@/api/modules/auth'
 import { VerificationCodeInput } from '@/components/VerificationCodeInput'
 import { validateEmail, validateMobile } from '@/utils/form-validator'
+import { noSpaceKeydownHandler, passwordNoSpaceRule } from '@/utils'
+import { verifyCodePatternRule } from '@/utils/form-rule'
 
 interface RegisterFormProps {
   onLogin?: () => void
@@ -172,14 +174,16 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
         label={<span className="text-primary">{t('verification_code')}</span>}
         name="verification_code"
         className="relative mt-6"
-        rules={[{ required: true, message: t('verification_code_placeholder') }]}
+        rules={[
+          { required: true, message: t('verification_code_placeholder') },
+          verifyCodePatternRule(t('verification_code_format')),
+        ]}
       >
         <VerificationCodeInput
           ref={verificationCodeRef}
           account={form.getFieldValue('username') || ''}
           accountType={form.getFieldValue('username_type') || 'mobile'}
           disabled={accountExists || !isAccountValid}
-          maxlength={form.getFieldValue('username_type') === 'mobile' ? 4 : 6}
         />
       </Form.Item>
 
@@ -191,6 +195,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
         rules={[
           { required: true, message: t('login.password_placeholder') },
           { min: 8, max: 20, message: t('login.password_length') },
+          passwordNoSpaceRule(),
         ]}
       >
         <Input.Password
@@ -199,6 +204,7 @@ export function RegisterForm({ onLogin }: RegisterFormProps) {
           placeholder={t('login.password_placeholder')}
           autoComplete="new-password"
           allowClear
+          onKeyDown={noSpaceKeydownHandler}
         />
       </Form.Item>
 

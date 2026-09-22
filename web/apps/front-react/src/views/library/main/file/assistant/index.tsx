@@ -75,7 +75,9 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
     const [visible, setVisible] = useState(false);
     const [showChat, setShowChat] = useState(false);
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [autoSelectEnabled, setAutoSelectEnabled] = useState(false);
+    // 划词开关默认开启：与查看器 highlighter 初始 enableManualHighlight=true 对齐，
+    // 保证「未点击开关时默认能划词」且图标高亮（蓝）状态与行为一致。
+    const [autoSelectEnabled, setAutoSelectEnabled] = useState(true);
     const pendingMessageRef = useRef<{ textContent: string; from: string } | null>(null);
 
     const chatAppRef = useRef<ChatRef>(null);

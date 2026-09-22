@@ -9,7 +9,6 @@ import { resolve } from 'node:path'
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { parseInsightMarkdown, stripMarkdownCodeFence } from './markdownParser';
-import { renderMarkdownText } from './richText';
 import { renderBlock } from './blockRenderers';
 
 /** 读取 insightRenderer/__fixtures__/test.md（接口真实返回的洞察样本） */

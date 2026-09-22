@@ -42,10 +42,12 @@ export function Member({
   }
 
   const handleMemberConfirm = (data: {
-    list: { subject_id: number; subject_type: SubjectType; permission: PermissionType }[]
+    list: { subject_id: number; subject_type: SubjectType; permission?: PermissionType }[]
   }) => {
     const newPermissions = [...formData.permissions]
     data.list.forEach((member) => {
+      // 未选择权限的成员不加入列表
+      if (member.permission === undefined) return
       const existIndex = newPermissions.findIndex(
         (item) => item.subject_id === member.subject_id && item.subject_type === member.subject_type
       )

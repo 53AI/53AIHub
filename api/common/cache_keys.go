@@ -1,6 +1,10 @@
 package common
 
-import "fmt"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+)
 
 // GetPermissionCacheKey 生成权限缓存 Key
 // Key 格式: Cache:permission:user:{userID}:resource:{eid}:{resourceType}:{resourceID}
@@ -118,4 +122,47 @@ func GetOpenClawProjectionSyncedCacheKey(eid int64, agentID int64, userID int64,
 // fingerprint 为配置内容的 SHA-256 摘要，不包含明文凭证。
 func GetParserHealthCacheKey(eid int64, fingerprint string) string {
 	return fmt.Sprintf("Cache:docconv:health:eid:%d:fp:%s", eid, fingerprint)
+}
+
+// GetCapabilityFiletreeCacheKey 生成 capabilities 接口文件骨架快照 Key
+// Key 格式: Cache:cap:filetree:eid:{eid}:library:{libraryID}
+func GetCapabilityFiletreeCacheKey(eid int64, libraryID int64) string {
+	return fmt.Sprintf("Cache:cap:filetree:eid:%d:library:%d", eid, libraryID)
+}
+
+// GetCapabilityLibraryPermsCacheKey 生成 capabilities 接口库权限快照 Key
+// Key 格式: Cache:cap:libperms:eid:{eid}:library:{libraryID}
+func GetCapabilityLibraryPermsCacheKey(eid int64, libraryID int64) string {
+	return fmt.Sprintf("Cache:cap:libperms:eid:%d:library:%d", eid, libraryID)
+}
+
+// GetCapabilityWikiCacheKey 生成 Wiki 页面结构快照 Key（pages 轻字段 + page→sourceFile 映射）。
+// Key 格式: Cache:cap:wiki:eid:{eid}:library:{libraryID}
+func GetCapabilityWikiCacheKey(eid int64, libraryID int64) string {
+	return fmt.Sprintf("Cache:cap:wiki:eid:%d:library:%d", eid, libraryID)
+}
+
+// GetCapabilityWikiPermsCacheKey 生成 Wiki 页面显式 ACL 快照 Key。
+// Key 格式: Cache:cap:wikiperms:eid:{eid}:library:{libraryID}
+func GetCapabilityWikiPermsCacheKey(eid int64, libraryID int64) string {
+	return fmt.Sprintf("Cache:cap:wikiperms:eid:%d:library:%d", eid, libraryID)
+}
+
+// GetUserAccessTokenCacheKey 生成 access_token 短时缓存 Key。
+// Key 格式: Cache:user:token:sha256:{hex}，token 本身只存哈希不存明文。
+func GetUserAccessTokenCacheKey(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return "Cache:user:token:sha256:" + hex.EncodeToString(sum[:])
+}
+
+// GetUserRowCacheKey 生成用户行短时缓存 Key（NewPermissionResolver 读路径）。
+// Key 格式: Cache:user:row:user:{userID}，失效走 model.InvalidateUserCaches 统一入口。
+func GetUserRowCacheKey(userID int64) string {
+	return fmt.Sprintf("Cache:user:row:user:%d", userID)
+}
+
+// GetUserGroupsCacheKey 生成用户群组短时缓存 Key（NewPermissionResolver 读路径）。
+// Key 格式: Cache:user:groups:eid:{eid}:user:{userID}，失效走 model.InvalidateUserCaches 统一入口。
+func GetUserGroupsCacheKey(eid, userID int64) string {
+	return fmt.Sprintf("Cache:user:groups:eid:%d:user:%d", eid, userID)
 }

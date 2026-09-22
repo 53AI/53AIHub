@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { message } from 'antd'
 import { post } from '@/api/config'
 import { debounce } from '@/directive/debounce'
+import { runWithCaptcha, isCaptchaCanceled } from '@km/shared-business/captcha'
 
 export type MobileForm = {
   mobile: string
@@ -38,7 +39,7 @@ export function useMobile() {
     code: [
       {
         validator: (_rule: unknown, value: string, callback: (err?: Error) => void) => {
-          if (/^\d{4}$/.test(value)) callback()
+          if (/^\d{4,}$/.test(value)) callback()
           else callback(new Error('请输入正确的验证码'))
         },
         trigger: ['blur', 'change'],
@@ -75,11 +76,20 @@ export function useMobile() {
   const handleSendCode = useCallback(
     debounce(async () => {
       try {
-        await post<unknown>('/api/sms/sendcode', { mobile: mobileRef.current })
+        // 发送短信前强制图形人机校验：
+        // 弹窗保持打开，只有发送成功才关闭；发送失败时原地换图并提示
+        await runWithCaptcha(async ({ captcha_id, captcha_answer }) => {
+          await post<unknown>('/api/sms/sendcode', {
+            mobile: mobileRef.current,
+            captcha_id,
+            captcha_answer,
+          })
+        })
         startCountdown(60)
         message.success('已发送')
-      } catch (_e) {
-        // 错误由 api 统一处理
+      } catch (e) {
+        // 用户取消校验：静默返回；其他错误由 api 统一处理
+        if (isCaptchaCanceled(e)) return
       }
     }, 1000, true),
     [startCountdown],

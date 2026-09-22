@@ -161,6 +161,12 @@ export function KKFileView({ url }: KKFileViewProps) {
         { type: "auto-select-enabled", data: customEvent.detail.data },
         "*",
       );
+      // 划词开关（v0.4.2 §3.4）：pdf.html 已支持 manual-select-enabled，
+      // 同步关闭后 iframe 内划词不再触发 selection-change / 文本不再自动带入聊天框。
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: "manual-select-enabled", data: customEvent.detail.data },
+        "*",
+      );
     }
   }, []);
 

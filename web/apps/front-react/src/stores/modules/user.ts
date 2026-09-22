@@ -8,6 +8,7 @@ import { getSimpleDateFormatString } from '@km/shared-utils'
 import { EVENT_NAMES } from '@/constants/events'
 import { isOpLocalEnv, isPrivatePrem } from '@/utils/config'
 import { t } from '@/locales'
+import { resetPasswordPolicyCache } from '@/hooks/usePasswordPolicy'
 
 export const DEFAULT_GROUP_NAME = '免费版'
 export const DEFAULT_GROUP_ICON = 'vip-1'
@@ -20,7 +21,7 @@ export interface UserState {
   is_login: boolean
   subscriptions: Subscription.State[]
   // Actions
-  login: (data: User.LoginForm) => Promise<void>
+  login: (data: User.LoginForm) => Promise<any>
   sms_login: (data: User.SmsLoginForm) => Promise<void>
   wechat_login: (params: { unionid?: string }) => Promise<any>
   sso_login: (query: any) => Promise<void>
@@ -73,6 +74,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       await get().getUserInfo()
       eventBus.emit(EVENT_NAMES.LOGIN_SUCCESS)
       message.success(t("status.login_success"));
+      return res.data
     } catch (error) {
       throw error
     }
@@ -150,13 +152,20 @@ export const useUserStore = create<UserState>((set, get) => ({
     await get().getUserInfo()
   },
 
+  // userApi.update 走 PUT /api/users/me，是整体覆盖语义：
+  // 未传的字段会被后端清空（例如只改昵称会丢头像）。
+  // 这里用当前 store 的值补齐 nickname / avatar，调用方只需传要改的字段。
   update: async (data: Partial<RawUserInfo>) => {
-    await userApi.update(data)
+    const current = get().info
+    const payload = {
+      nickname: data.nickname ?? current.nickname,
+      avatar: data.avatar ?? current.avatar,
+    }
+    await userApi.update(payload)
     set((state) => ({
       info: {
         ...state.info,
-        nickname: data.nickname,
-        avatar: data.avatar,
+        ...payload,
       }
     }))
   },
@@ -292,6 +301,8 @@ export const useUserStore = create<UserState>((set, get) => ({
     }
     localStorage.removeItem(TOKEN_KEY)
     eventBus.clearCache(EVENT_NAMES.LOGIN_SUCCESS)
+    // 密码强度策略随登录态失效，避免换账号/换企业后用旧强度校验
+    resetPasswordPolicyCache()
 
     setTimeout(() => {
       if (!redirectDisabled) {
@@ -300,3 +311,7 @@ export const useUserStore = create<UserState>((set, get) => ({
     }, 800)
   }
 }))
+
+// 是否为管理员（角色 > 1），与 KnowledgePanel / ProfilePopover 的判断保持一致，集中避免各处重复
+export const useIsAdmin = () =>
+  useUserStore((state) => Boolean(state.info.role) && state.info.role > 1)

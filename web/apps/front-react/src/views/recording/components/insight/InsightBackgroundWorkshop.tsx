@@ -1,30 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Modal, Select, Spin, message } from 'antd'
-import {
-  CommentOutlined,
-  EditOutlined,
-  RobotOutlined,
-} from '@ant-design/icons'
+import { useMemo, useState, type ReactNode } from 'react'
+import { Input, Tooltip } from 'antd'
+import { EditOutlined } from '@ant-design/icons'
 import { SvgIcon } from '@km/shared-components-react'
-import recordingApi from '@/api/modules/recording'
-import type {
-  InsightBackground,
-  InsightConversationMessage,
-  InsightPerspective,
-  InsightPerspectiveOption,
-} from '@/api/modules/recording/types'
-import {
-  InsightChatPanel,
-  starterMessage,
-  withoutStarterMessage,
-} from './InsightChatPanel'
+import type { InsightBackground } from '@/api/modules/recording/types'
 
-interface InsightBackgroundWorkshopProps {
-  fileId: string
-  onRegenerateStarted: () => void
-}
-
-/** 洞察背景的空值，跨 InsightBackgroundWorkshopModal 与 InsightRegeneratePanel 复用，
+/** 洞察背景的空值，跨 InsightRegeneratePanel 与 InsightChatModal 复用，
  *  避免新增字段时遗漏其一造成行为不一致。 */
 export const EMPTY_INSIGHT_BACKGROUND: InsightBackground = {
   personal_info: '',
@@ -46,6 +26,7 @@ export function BackgroundCard({
   iconColor,
   expanded: controlledExpanded,
   onExpandedChange,
+  expandedContent,
 }: {
   title: string
   description: string
@@ -57,7 +38,7 @@ export function BackgroundCard({
   collapsible?: boolean
   /** 'list' 时渲染成"行式列表"：每项一个输入框 + 删除按钮，底部一个「添加」按钮。
    *  列表状态用 '\n' 分隔串到 value 里，与 string 字段契约保持一致。 */
-  kind?: 'text' | 'list'
+  kind?: 'text' | 'list' | 'history'
   /** 折叠卡片标题前的图标名；缺省时不渲染图标 */
   iconName?: string
   /** 图标颜色（仅在 iconName 存在时生效） */
@@ -66,6 +47,8 @@ export function BackgroundCard({
   expanded?: boolean
   /** 受控模式下的展开状态变更回调；与 expanded 配套使用。 */
   onExpandedChange?: (expanded: boolean) => void
+  /** 替换展开区默认编辑器，用于把只读数据源嵌入现有卡片。 */
+  expandedContent?: ReactNode
 }) {
   const [internalExpanded, setInternalExpanded] = useState(true)
   const isControlled = controlledExpanded !== undefined
@@ -102,14 +85,16 @@ export function BackgroundCard({
             {expanded ? <SvgIcon name="up" /> : <SvgIcon name="down" />}
           </span>
         </div>
-        {expanded && kind === 'list' && (
+        {expanded && expandedContent}
+        {expanded && !expandedContent && kind === 'list' && (
           <ListEditor
             value={value}
             onChange={onChange}
             readOnly={readOnly}
           />
         )}
-        {expanded && kind === 'text' && (
+        {expanded && !expandedContent && kind === 'history' && <RelatedHistoryViewer value={value} />}
+        {expanded && !expandedContent && kind === 'text' && (
           <div className="pt-3">
             <Input.TextArea
               value={value}
@@ -229,8 +214,172 @@ function ListEditor({
 
 type EditableInsightBackgroundKey = Exclude<
   keyof InsightBackground,
-  'conversation' | 'insight_perspective' | 'resolved_insight_perspective'
+  | 'conversation'
+  | 'insight_perspective'
+  | 'resolved_insight_perspective'
+  | 'perspective_confidence'
+  | 'perspective_reason_codes'
+  | 'perspective_evidence'
+  | 'perspective_abstained'
 >
+
+type RelatedMemory = {
+  memory_id?: number
+  type?: string
+  content?: string
+  recall_reason?: string
+  assertion_state?: string
+  source_file?: string
+  confidence?: number
+  evidence_available?: boolean
+}
+
+type RelatedMeeting = {
+  file_id?: number
+  title?: string
+  minutes?: string
+}
+
+type RelatedHistory = {
+  memories: RelatedMemory[]
+  meetings: RelatedMeeting[]
+}
+
+const MIN_RELATED_MEMORY_CONFIDENCE = 0.6
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+/** 解析历史关联上下文；解析失败时由界面降级为旧版纯文本。 */
+export function parseRelatedHistory(value: string): RelatedHistory | null {
+  if (!value.trim()) return { memories: [], meetings: [] }
+  try {
+    const parsed = asRecord(JSON.parse(value))
+    if (!parsed) return null
+    return {
+      memories: Array.isArray(parsed.related_memories)
+        ? parsed.related_memories.map(asRecord).filter(Boolean).filter((memory) => {
+          const confidence = (memory as RelatedMemory).confidence
+          return typeof confidence !== 'number' || confidence >= MIN_RELATED_MEMORY_CONFIDENCE
+        }) as RelatedMemory[]
+        : [],
+      meetings: Array.isArray(parsed.related_meetings)
+        ? parsed.related_meetings.map(asRecord).filter(Boolean) as RelatedMeeting[]
+        : [],
+    }
+  } catch {
+    return null
+  }
+}
+
+const historyTypeLabels: Record<string, string> = {
+  decision: '决策',
+  commitment: '承诺',
+  risk: '风险',
+  fact: '事实',
+  person: '人物',
+  matter: '事项',
+  principle: '原则',
+  viewpoint: '观点',
+  action: '行动',
+  opportunity: '机会',
+  issue: '问题',
+  open_question: '待解问题',
+  quote: '原话',
+}
+
+const historyStateLabels: Record<string, string> = {
+  confirmed: '已确认',
+  open: '进行中',
+  superseded: '已被替代',
+  pending: '待确认',
+  proposed: '待确认',
+  inferred: '推测',
+  uncertain: '不确定',
+  rejected: '已排除',
+}
+
+function historyLabel(value?: string, labels?: Record<string, string>) {
+  if (!value) return ''
+  return labels?.[value] || value.replaceAll('_', ' ')
+}
+
+export function RelatedHistoryViewer({ value }: { value: string }) {
+  const history = parseRelatedHistory(value)
+  if (!history) {
+    return (
+      <div className="pt-3 whitespace-pre-wrap rounded-lg bg-[#F8FAFC] px-3 py-2 text-xs leading-5 text-[#667085]">
+        {value || '暂无关联记忆'}
+      </div>
+    )
+  }
+
+  if (history.memories.length === 0 && history.meetings.length === 0) {
+    return <div className="pt-3 text-xs text-[#98A2B3]">暂无关联记忆</div>
+  }
+
+  return (
+    <div className="space-y-3 pt-3">
+      {history.memories.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-[#98A2B3]">
+            <span>关联记忆</span>
+            <span>{history.memories.length} 条</span>
+          </div>
+          {history.memories.map((memory, index) => {
+            const chips = [
+              historyLabel(memory.type, historyTypeLabels),
+              historyLabel(memory.assertion_state, historyStateLabels),
+              memory.evidence_available ? '有证据' : '',
+            ].filter(Boolean)
+            return (
+              <div key={memory.memory_id || index} className="rounded-lg border border-[#E8ECF2] bg-[#FBFCFE] px-3 py-2.5">
+                <div className="flex flex-wrap gap-1.5">
+                  {chips.map((chip) => (
+                    <span key={chip} className="rounded-full bg-[#EEF4FF] px-2 py-0.5 text-[10px] text-[#526DDE]">
+                      {chip}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-2 whitespace-pre-wrap text-xs leading-5 text-[#344054]">
+                  {memory.content || '暂无记忆内容'}
+                </div>
+                {(memory.source_file || memory.recall_reason || typeof memory.confidence === 'number') && (
+                  <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] leading-4 text-[#98A2B3]">
+                    {memory.source_file && <span>来源：{memory.source_file}</span>}
+                    {memory.recall_reason && <span>关联：{memory.recall_reason}</span>}
+                    {typeof memory.confidence === 'number' && (
+                      <Tooltip title="来源可信度：模型对这条记忆来自原始材料、表达是否明确的判断，不等同于事实真伪。低于 60% 的自动记忆不会参与新的历史召回。">
+                        <span className="cursor-help border-b border-dotted border-[#98A2B3]">来源可信度：{Math.round(memory.confidence * 100)}%</span>
+                      </Tooltip>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {history.meetings.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-[11px] text-[#98A2B3]">相关会议 · {history.meetings.length} 场</div>
+          {history.meetings.map((meeting, index) => (
+            <details key={meeting.file_id || index} className="rounded-lg border border-[#E8ECF2] bg-[#FBFCFE] px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-[#475467]">
+                {meeting.title || '未命名会议'}
+              </summary>
+              {meeting.minutes && <div className="mt-2 whitespace-pre-wrap border-t border-[#F1F2F4] pt-2 text-xs leading-5 text-[#667085]">{meeting.minutes}</div>}
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 type InsightBackgroundCard = {
   key: EditableInsightBackgroundKey
@@ -240,11 +389,11 @@ type InsightBackgroundCard = {
   description: string
   readOnly?: boolean
   collapsible?: boolean
-  kind?: 'text' | 'list'
+  kind?: 'text' | 'list' | 'history'
 }
 
 /** 洞察背景可编辑字段配置：与 InsightBackground 类型字段对齐，
- *  供两个 modal（带对话 / 仅编辑）共享，避免双写。 */
+ *  供「参谋洞察」面板与独立聊天弹窗共享，避免双写。 */
 export const INSIGHT_BACKGROUND_CARDS: InsightBackgroundCard[] = [
   {
     key: 'external_constraints' as const,
@@ -261,7 +410,7 @@ export const INSIGHT_BACKGROUND_CARDS: InsightBackgroundCard[] = [
     title: '关联记忆',
     description: '关联记忆中的人物、事项、重复问题和已验证教训',
     collapsible: true,
-    kind: 'list',
+    kind: 'history',
     readOnly: true,
   },
   {
@@ -271,6 +420,7 @@ export const INSIGHT_BACKGROUND_CARDS: InsightBackgroundCard[] = [
     title: '个人信息',
     description: '用于确定洞察视角、关注重点与表达方式',
     collapsible: true,
+    readOnly: true,
   },
   {
     key: 'company_info' as const,
@@ -281,206 +431,3 @@ export const INSIGHT_BACKGROUND_CARDS: InsightBackgroundCard[] = [
     collapsible: true,
   },
 ]
-
-export function InsightRegenerationBanner({
-  fileId,
-  onRegenerateStarted,
-}: InsightBackgroundWorkshopProps) {
-  const [open, setOpen] = useState(false)
-
-  return (
-    <>
-      <div className="my-8 overflow-hidden rounded-2xl border border-[#283858] bg-[linear-gradient(110deg,#111B33_0%,#182B51_60%,#253967_100%)] px-5 py-4 text-white shadow-[0_12px_30px_rgba(17,27,51,0.16)]">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-[#BBD4FF]">
-              <RobotOutlined />
-            </div>
-            <div>
-              <div className="text-sm font-semibold">觉得当前洞察和真实的企业现状、老板偏好不符？</div>
-              <div className="mt-1 text-xs leading-5 text-[#B7C3D9]">补充背景并通过多轮对话校准细节，确认后将生成新的当前洞察报告。</div>
-            </div>
-          </div>
-          <Button
-            type="primary"
-            icon={<CommentOutlined />}
-            className="!h-9 !shrink-0 !border-0 !bg-[#5B7CFF] !px-4 !text-xs !font-medium shadow-[0_5px_16px_rgba(91,124,255,0.32)]"
-            onClick={() => setOpen(true)}
-          >
-            补充背景并多轮对齐
-          </Button>
-        </div>
-      </div>
-      <InsightBackgroundWorkshopModal
-        fileId={fileId}
-        open={open}
-        onClose={() => setOpen(false)}
-        onRegenerateStarted={() => {
-          setOpen(false)
-          onRegenerateStarted()
-        }}
-      />
-    </>
-  )
-}
-
-function InsightBackgroundWorkshopModal({
-  fileId,
-  open,
-  onClose,
-  onRegenerateStarted,
-}: InsightBackgroundWorkshopProps & { open: boolean; onClose: () => void }) {
-  const [background, setBackground] = useState<InsightBackground>(EMPTY_INSIGHT_BACKGROUND)
-  const [messages, setMessages] = useState<InsightConversationMessage[]>([starterMessage])
-  const [loading, setLoading] = useState(false)
-  const [regenerating, setRegenerating] = useState(false)
-  const [perspectiveOptions, setPerspectiveOptions] = useState<InsightPerspectiveOption[]>([])
-  const [selectedPerspective, setSelectedPerspective] = useState<InsightPerspective>('auto')
-
-  const loadBackground = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [result, options] = await Promise.all([
-        recordingApi.getInsightBackground(fileId),
-        recordingApi.getInsightPerspectives(),
-      ])
-      setBackground({ ...EMPTY_INSIGHT_BACKGROUND, ...result })
-      setPerspectiveOptions(options)
-      setSelectedPerspective(result.insight_perspective || 'auto')
-      const savedMessages = result.conversation || []
-      setMessages(savedMessages.length > 0 ? savedMessages : [starterMessage])
-    } catch (error: any) {
-      message.error(error?.message || '读取洞察背景失败')
-    } finally {
-      setLoading(false)
-    }
-  }, [fileId])
-
-  useEffect(() => {
-    if (open) loadBackground()
-  }, [open, loadBackground])
-
-  const updateBackground = (key: EditableInsightBackgroundKey, value: string) => {
-    setBackground((current) => ({ ...current, [key]: value }))
-  }
-
-  const confirmRegenerate = async () => {
-    if (regenerating || loading) return
-    setRegenerating(true)
-    try {
-      await recordingApi.regenerateInsights(fileId, {
-        background,
-        conversation: withoutStarterMessage(messages),
-        insight_perspective: selectedPerspective,
-      })
-      message.success('已确认背景，正在重新生成洞察')
-      onRegenerateStarted()
-    } catch (error: any) {
-      message.error(error?.message || '重新生成洞察失败，请稍后重试')
-    } finally {
-      setRegenerating(false)
-    }
-  }
-
-  const cards = useMemo(() => INSIGHT_BACKGROUND_CARDS, [])
-  const perspectiveName = (key?: InsightPerspective) => {
-    if (!key) return '尚未记录'
-    if (key === 'auto') return '自动场景'
-    return perspectiveOptions.find((option) => option.key === key)?.name || key
-  }
-  const appliedPerspective = background.resolved_insight_perspective
-
-  return (
-    <Modal
-      open={open}
-      onCancel={onClose}
-      title={null}
-      footer={null}
-      width={1180}
-      centered
-      destroyOnClose={false}
-      styles={{ body: { padding: 0 } }}
-    >
-      <div className="flex h-[min(760px,calc(100vh-80px))] min-h-0 flex-col overflow-hidden rounded-xl bg-[#F8FAFC] text-[#1F2937]">
-        <div className="flex shrink-0 items-center justify-between border-b border-[#E8ECF2] bg-white px-6 py-4">
-          <div>
-            <div className="flex items-center gap-2 text-base font-semibold text-[#172033]">
-              决策洞察 · 背景协同研讨
-              <span className="rounded-full bg-[#EEF4FF] px-2 py-0.5 text-[10px] font-medium text-[#3F65B8]">当前会议</span>
-            </div>
-            <div className="mt-1 text-xs text-[#98A2B3]">左侧补充背景，右侧研讨判断；原始纪要和动态历史始终保持只读</div>
-          </div>
-          <Button type="text" onClick={onClose} className="!text-[#98A2B3]">关闭</Button>
-        </div>
-
-        {loading ? (
-          <div className="flex min-h-0 flex-1 items-center justify-center"><Spin /></div>
-        ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-            <div className="min-h-0 overflow-y-auto border-b border-[#E8ECF2] p-5 md:border-b-0 md:border-r">
-              <div className="mb-4 flex items-center gap-2">
-                <EditOutlined className="text-[#5B7CFF]" />
-                <div>
-                  <div className="text-sm font-semibold">背景与证据</div>
-                  <div className="mt-0.5 text-[11px] text-[#98A2B3]">仅可编辑的补充背景会保存并参与下一次洞察</div>
-                </div>
-              </div>
-              <div className="mb-3 rounded-xl border border-[#DCE6FF] bg-[#F5F8FF] p-3">
-                <div className="text-xs font-semibold text-[#344054]">洞察场景</div>
-                <div className="mt-1 text-[11px] leading-4 text-[#667085]">
-                  当前已应用：{perspectiveName(appliedPerspective)}
-                </div>
-                <Select
-                  className="mt-2 w-full"
-                  value={selectedPerspective}
-                  loading={perspectiveOptions.length === 0}
-                  options={perspectiveOptions.map((option) => ({
-                    value: option.key,
-                    label: option.key === 'auto' ? '自动场景' : option.name,
-                  }))}
-                  onChange={(value) => setSelectedPerspective(value as InsightPerspective)}
-                  disabled={regenerating}
-                />
-                <div className="mt-1 text-[11px] leading-4 text-[#98A2B3]">
-                  选择后点击底部按钮，下一次洞察将按此场景生成。
-                </div>
-              </div>
-              <div className="space-y-3">
-                {cards.map((card) => (
-                  <BackgroundCard
-                    key={card.key}
-                    title={card.title}
-                    description={card.description}
-                    value={background[card.key] || ''}
-                    onChange={(value) => updateBackground(card.key, value)}
-                    readOnly={card.readOnly}
-                    collapsible={card.collapsible}
-                    kind={card.kind}
-                    iconName={card.iconName}
-                    iconColor={card.iconColor}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <InsightChatPanel
-              fileId={fileId}
-              background={background}
-              messages={messages}
-              setMessages={setMessages}
-              disabled={regenerating}
-            />
-          </div>
-        )}
-
-        <div className="flex shrink-0 flex-col gap-3 border-t border-[#E8ECF2] bg-white px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-[11px] text-[#98A2B3]">确认后保存补充背景并生成新的当前洞察报告</div>
-          <div className="flex items-center justify-end gap-2">
-            <Button onClick={onClose}>返回洞察报告</Button>
-            <Button type="primary" loading={regenerating} onClick={confirmRegenerate} className="!bg-[#172033] hover:!bg-[#273653]">确认并重新生成洞察</Button>
-          </div>
-        </div>
-      </div>
-    </Modal>
-  )
-}

@@ -152,6 +152,8 @@ export {
   numberInputKeydownHandler,
   restrictToNumberInput,
   removeNumberInputRestrict,
+  noSpaceKeydownHandler,
+  type KeydownLike,
 } from './input.js'
 
 // 默认图片处理
@@ -186,3 +188,17 @@ export {
   decodeJsonToken,
   appendJsonTokenToUrl,
 } from './json-token.js'
+
+// 密码强度策略（weak / medium / strong 门槛的唯一权威定义）
+export {
+  PASSWORD_STRENGTH_RULES,
+  PASSWORD_STRENGTHS,
+  isPasswordStrength,
+  passwordHasChinese,
+  passwordHasSpace,
+  countPasswordClasses,
+  validatePasswordByStrength,
+  type PasswordStrength,
+  type PasswordStrengthRule,
+  type PasswordFailure,
+} from './password.js'

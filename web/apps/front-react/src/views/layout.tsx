@@ -1,4 +1,4 @@
-import { SvgIcon } from '@km/shared-components-react'
+import { SafeImage, SvgIcon } from '@km/shared-components-react'
 import { eventBus } from '@km/shared-utils'
 import { Avatar, Badge, Button, Menu, Skeleton, Tooltip } from 'antd'
 import {
@@ -14,7 +14,7 @@ import {
 import { Link, Outlet, useLocation, useMatches, useNavigate } from 'react-router-dom'
 import notificationsApi from '@/api/modules/notifications'
 import { MoreDropdown } from '@/components/MoreDropdown'
-import { UserAvatar } from '@/components/UserAvatar'
+import { DEFAULT_USER_AVATAR } from '@/constants/user'
 import { VERSION_MODULE } from '@/constants/enterprise'
 import { EVENT_NAMES } from '@/constants/events'
 import { NAVIGATION_TARGET, NAVIGATION_TYPE } from '@/constants/navigation'
@@ -512,7 +512,7 @@ export function Layout() {
                 <Suspense fallback={<Avatar size={26} />}>
                   <ProfilePopover onProfile={handleProfile}>
                     <div className="flex items-center gap-1.5 cursor-pointer max-md:hidden">
-                      <UserAvatar src={userStore.info.avatar} size={26} shape="circle" />
+                      <SafeImage src={userStore.info.avatar || ""} round={13} fallback={DEFAULT_USER_AVATAR} className="size-[26px] object-cover" />
                     </div>
                   </ProfilePopover>
                 </Suspense>
@@ -821,11 +821,15 @@ export function Layout() {
                         <div className={useCompactMode ? 'relative' : ''}>
                           {/* 紧凑模式下在头像右上角显示红点 */}
                           <Badge dot={useCompactMode && unreadCount > 0 && hasKnowledge}>
-                            <UserAvatar
-                              src={userStore.info.avatar}
-                              size={useCompactMode ? 32 : 34}
-                              shape="circle"
-                              className="border border-white"
+                            <SafeImage
+                              src={userStore.info.avatar || ""}
+                              round={(useCompactMode ? 32 : 34) / 2}
+                              fallback={DEFAULT_USER_AVATAR}
+                              className={
+                                useCompactMode
+                                  ? "border border-white size-8 object-cover"
+                                  : "border border-white size-[34px] object-cover"
+                              }
                             />
                           </Badge>
                         </div>
@@ -854,10 +858,15 @@ export function Layout() {
                 placement="right"
                 getPopupContainer={() => document.body}
               >
-                <UserAvatar
-                  size={useCompactMode ? 32 : 34}
-                  shape="circle"
-                  className="cursor-pointer"
+                <SafeImage
+                  src=""
+                  round={(useCompactMode ? 32 : 34) / 2}
+                  fallback={DEFAULT_USER_AVATAR}
+                  className={
+                    useCompactMode
+                      ? "cursor-pointer size-8 object-cover"
+                      : "cursor-pointer size-[34px] object-cover"
+                  }
                   onClick={handleLogin}
                 />
               </Tooltip>

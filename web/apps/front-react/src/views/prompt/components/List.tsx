@@ -2,9 +2,7 @@ import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Empty, Button, message } from "antd";
 import { useUserStore } from "@/stores/modules/user";
-import { usePromptStore } from "@/stores/modules/prompt";
 import { t } from "@/locales";
-import promptApi from "@/api/modules/prompt";
 import { copyToClip } from "@km/shared-utils";
 import { getPublicPath } from "@/utils/config";
 import { SvgIcon } from "@km/shared-components-react";
@@ -18,8 +16,6 @@ interface PromptItem {
   description: string;
   group_ids?: string[];
   group_names?: string[];
-  is_liked?: boolean;
-  likes?: number;
   views?: number;
 }
 
@@ -63,7 +59,6 @@ export function PromptList({
 }: PromptListProps) {
   const navigate = useNavigate();
   const userGroupIds = useUserStore((state) => state.info.group_ids || []);
-  const updatePromptLike = usePromptStore((state) => state.updatePromptLike);
 
   const highlightedName = useCallback(
     (name: string) => {
@@ -87,21 +82,6 @@ export function PromptList({
         }
       },
     });
-  };
-
-  const handleApprove = async (e: React.MouseEvent, item: PromptItem) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      const newIsLiked = !item.is_liked;
-      await promptApi.approve(item.prompt_id);
-      updatePromptLike(item.prompt_id, newIsLiked);
-      message.success(
-        t(newIsLiked ? "status.approve_success" : "status.approve_cancel"),
-      );
-    } catch {
-      // Error handling
-    }
   };
 
   const canCopy = (item: PromptItem) => {

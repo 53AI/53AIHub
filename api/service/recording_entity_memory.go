@@ -13,6 +13,7 @@ import (
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
+	recordingdebug "github.com/53AI/53AIHub/service/recording_debug"
 	"gorm.io/gorm"
 )
 
@@ -27,6 +28,30 @@ const (
 	recordingEntityIdentityEvidenceKey   = "_identity_policy_evidence"
 	recordingEntityIdentityDiscriminator = "_identity_discriminator"
 )
+
+var recordingMemoryScopeMarkers = []string{"项目", "客户", "产品", "公司", "系统", "平台", "服务", "合同", "订单", "方案", "功能", "模块", "版本", "制度", "团队", "部门"}
+
+var recordingMemoryGenericNames = map[string]map[string]struct{}{
+	"person": {
+		"技术研发人员": {}, "研发人员": {}, "技术人员": {}, "业务人员": {}, "工作人员": {}, "负责人": {},
+		"管理人员": {}, "销售人员": {}, "开发人员": {}, "采购人员": {}, "客服人员": {}, "用户": {},
+		"客户": {}, "业务方": {}, "研发团队": {}, "技术团队": {},
+	},
+	"matter": {
+		"评审问题清单": {}, "问题清单": {}, "会议事项": {}, "待办事项": {}, "优化升级项目": {}, "需求变更": {}, "需求变化": {},
+	},
+	"risk": {
+		"风险": {}, "落地使用风险": {}, "进度延期风险": {}, "需求变更风险": {}, "落地风险": {}, "使用风险": {},
+		"延期风险": {}, "交付风险": {}, "技术风险": {}, "财务风险": {}, "合规风险": {},
+	},
+	"principle": {
+		"原则": {}, "业务适配原则": {}, "风险可控原则": {}, "落地可行原则": {}, "业务原则": {}, "风险原则": {}, "适配原则": {},
+	},
+}
+
+var recordingMemoryLowInformationFacts = map[string]struct{}{
+	"嗯": {}, "哦": {}, "好的": {}, "知道了": {}, "收到": {}, "谢谢": {}, "是的": {}, "没问题": {}, "大家好": {}, "欢迎参加": {}, "开始吧": {},
+}
 
 var ErrRecordingEntityMemoryNotFound = errors.New("recording entity memory not found")
 var ErrRecordingEntityMemoryHasFacts = errors.New("recording entity memory has active facts")
@@ -265,7 +290,7 @@ func CompileRecordingEntityMemory(ctx context.Context, eid, fileID, ownerID int6
 	} else if strings.TrimSpace(transcriptMD) != "" {
 		// 最新 FileBody 没有 Summary(0) 时，直接用同一套 Prompt 2 从转写抽取语义记忆。
 		// Summary(0) 存在时不走该路径，避免合法空 memory_entities 被转写正文覆盖。
-		semanticRaw, err = callMeetingMinutesLLM(ctx, config, fileID, transcriptMD, 0, 0)
+		semanticRaw, err = callMeetingMinutesLLM(recordingdebug.WithLLMStage(ctx, "entity_memory_llm"), config, eid, ownerID, fileID, transcriptMD, 0, 0)
 		if err != nil {
 			return 0, fmt.Errorf("从最新转写抽取会议记忆失败: %w", err)
 		}
@@ -457,23 +482,84 @@ func buildRecordingEntityMemoryItems(minutes map[string]interface{}, allowedType
 				continue
 			}
 			content := strings.TrimSpace(stringValue(fact["content"]))
-			if content == "" {
+			if !isUsefulRecordingMemoryFact(content) {
+				continue
+			}
+			sourceSegmentIDs := memorySourceSegmentIDs(fact["source_segment_ids"])
+			if len(sourceSegmentIDs) == 0 {
 				continue
 			}
 			item.facts = append(item.facts, recordingEntityMemoryFactItem{
 				content:          content,
 				attributes:       sanitizeRecordingMemoryAttributes(kind, stringMapValue(fact["attributes"])),
-				sourceSegmentIDs: memorySourceSegmentIDs(fact["source_segment_ids"]),
+				sourceSegmentIDs: sourceSegmentIDs,
 			})
 		}
-		if len(item.facts) == 0 && item.summary != "" {
-			item.facts = append(item.facts, recordingEntityMemoryFactItem{content: item.summary})
-		}
-		if len(item.facts) > 0 {
+		if len(item.facts) > 0 && isUsefulRecordingMemoryItem(item) {
 			items = append(items, item)
 		}
 	}
 	return items
+}
+
+func isUsefulRecordingMemoryItem(item recordingEntityMemoryItem) bool {
+	if isGenericRecordingMemoryName(item.entityType, item.canonicalName) || !hasRecordingMemoryScope(item.entityType, item.canonicalName, item.attributes) {
+		return false
+	}
+	if item.entityType == "person" {
+		return true
+	}
+	return hasRecordingMemoryTypeAttribute(item.entityType, item.attributes)
+}
+
+func isGenericRecordingMemoryName(entityType, name string) bool {
+	name = strings.Join(strings.Fields(strings.TrimSpace(name)), "")
+	if _, ok := recordingMemoryGenericNames[entityType][name]; ok {
+		return true
+	}
+	if entityType == "person" && (strings.HasSuffix(name, "人员") || strings.HasSuffix(name, "团队")) {
+		return true
+	}
+	return false
+}
+
+func hasRecordingMemoryScope(entityType, name string, attributes map[string]string) bool {
+	if entityType == "person" {
+		return true
+	}
+	for _, marker := range recordingMemoryScopeMarkers {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	for _, r := range name {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return true
+		}
+	}
+	return entityType == "principle" && strings.TrimSpace(attributes["applicable_scope"]) != ""
+}
+
+func hasRecordingMemoryTypeAttribute(entityType string, attributes map[string]string) bool {
+	schema, ok := model.RecordingMemoryEntitySchemas[entityType]
+	if !ok {
+		return false
+	}
+	for key := range schema.Attributes {
+		if strings.TrimSpace(attributes[key]) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func isUsefulRecordingMemoryFact(content string) bool {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return false
+	}
+	_, lowInformation := recordingMemoryLowInformationFacts[content]
+	return !lowInformation
 }
 
 // mergeRecordingEntityMemoryItems 合并 ASR speaker 与纪要抽取的同名实体。
@@ -1637,6 +1723,7 @@ func loadRecordingEntityMemoryRecallHistory(ctx context.Context, eid, ownerID, c
 			MemoryID:          -fact.ID,
 			Kind:              "entity_" + entity.EntityType,
 			Content:           content,
+			RecallReason:      "当前会议实体对应的历史事实",
 			AssertionState:    "confirmed",
 			LifecycleState:    "open",
 			ReviewState:       recordingMemoryReviewConfirmed,

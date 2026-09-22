@@ -16,6 +16,7 @@ import (
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	chatdebug "github.com/53AI/53AIHub/service/chat_debug"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
@@ -295,6 +296,22 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 	ctx := c.Request.Context()
 
 	logger.Infof(ctx, "发送超纲回复: reply_chars=%d", len(replyContent))
+	modelName := ""
+	if agent != nil {
+		modelName = agent.Model
+	}
+	var msgs interface{}
+	if chatRequest != nil {
+		msgs = chatRequest.Messages
+	}
+	chatdebug.RecordLLM(ctx, modelName, msgs, replyContent, 0, 0, 0, nil, map[string]interface{}{
+		"is_refusal":    true,
+		"refusal_type":  "out_of_range",
+		"refusal_reply": replyContent,
+	})
+	if trace := chatdebug.GetTrace(ctx); trace != nil {
+		trace.SetResponse(replyContent)
+	}
 
 	// 增加未搜索到内容统计
 	go func() {
@@ -889,10 +906,11 @@ func buildSearchRequest(query string, searchType string, topK int, chunkTypes []
 func sendNonStreamOutOfRangeReply(c *gin.Context, content string, requestId string, model string) {
 	// 构造响应格式
 	response := map[string]interface{}{
-		"id":      requestId,
-		"object":  "chat.completion",
-		"created": time.Now().Unix(),
-		"model":   model,
+		"id":         requestId,
+		"request_id": requestId,
+		"object":     "chat.completion",
+		"created":    time.Now().Unix(),
+		"model":      model,
 		"choices": []map[string]interface{}{
 			{
 				"index": 0,
@@ -986,6 +1004,7 @@ type ChunkExtendedInfo struct {
 	FileCreatedAt     int64  `json:"file_created_at"`
 	SpaceID           int64  `json:"space_id"`
 	SpaceName         string `json:"space_name"`
+	FileName          string `json:"file_name,omitempty"`
 }
 
 func uniqueInt64IDsInOrder(ids []int64) []int64 {
@@ -1042,6 +1061,7 @@ func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]C
 				FileCreatedAt:     result.FileCreatedAt,
 				SpaceID:           result.SpaceID,
 				SpaceName:         result.SpaceName,
+				FileName:          result.FileName,
 			}
 		}
 		return extendedInfos
@@ -1160,9 +1180,10 @@ func getExtendedChunkInfo(eid int64, results []rag.SearchResultItem) map[int64]C
 				}
 			}
 
-			// 获取文件创建时间
-			if file, fileExists := fileMap[chunk.FileID]; fileExists {
+			// 获取文件创建时间和文件名
+			if file, fileExists := fileMap[chunk.FileID]; fileExists && file != nil {
 				info.FileCreatedAt = file.CreatedTime
+				info.FileName = file.GetAccurateFileName()
 			}
 		}
 
@@ -1510,7 +1531,7 @@ func extractQuotedSourceIDs(answer string) []string {
 	}
 
 	if len(quotedIDs) == 0 {
-		re = `\[(Source:(\d+)-(\d+))\]`
+		re = `[\[【](Source:(\d+)-(\d+))[\]】]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 		for _, match := range matches {
@@ -1526,8 +1547,8 @@ func extractQuotedSourceIDs(answer string) []string {
 
 	// 如果仍然没有匹配到，尝试匹配简单的数字引用格式，如 [1]、[2] 等
 	if len(quotedIDs) == 0 {
-		// Wiki/知识库答案也可能只保留数字-数字形式，如 [1-1]。
-		re = `\[(\d+-\d+)\]`
+		// Wiki/知识库答案也可能只保留数字-数字形式，如 [1-1] / 【1-1】。
+		re = `[\[【](\d+-\d+)[\]】]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 		for _, match := range matches {
@@ -1543,7 +1564,7 @@ func extractQuotedSourceIDs(answer string) []string {
 
 	if len(quotedIDs) == 0 {
 		// 匹配 [数字] 格式的引用
-		re = `\[(\d+)\]`
+		re = `[\[【](\d+)[\]】]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 		for _, match := range matches {
@@ -1558,7 +1579,7 @@ func extractQuotedSourceIDs(answer string) []string {
 	}
 
 	if len(quotedIDs) == 0 {
-		re = `(?i)\[(Source:(A|B|W|G)-(\d+))\]`
+		re = `(?i)[\[【](Source:(A|B|W|G)-(\d+))[\]】]`
 		matches = regexp.MustCompile(re).FindAllStringSubmatch(answer, -1)
 
 		for _, match := range matches {
@@ -1789,9 +1810,12 @@ func HandleOutOfRangeReply(agent *model.Agent) (bool, string) {
 }
 
 var (
-	retrievalSourceTokenRegex = regexp.MustCompile(`(?i)\[\s*source\s*[:：]\s*([^\]\r\n]*)\]`)
-	malformedBareSourceRegex  = regexp.MustCompile(`(?i)\[\s*(?:sourcc|sourc\s+e)\s*[-_:：]?\s*[A-Za-z0-9_-]+\s*\]`)
-	retrievalWikiLinkRegex    = regexp.MustCompile(`\[\[([^\]\r\n|]+)(?:\|([^\]\r\n]+))?\]\]`)
+	// 半角/全角括号均可：模型输出引用可能用 [Source:1-1] 或 【Source:1-1】
+	retrievalSourceTokenRegex = regexp.MustCompile(`(?i)[\[【]\s*source\s*[:：]\s*([^\]】\r\n]*)[\]】]`)
+	// 裸引用编号：模型可能只写 [1-1] / 【1-1】而不带 Source: 前缀
+	bareCitationRegex        = regexp.MustCompile(`[\[【](\d+-\d+)[\]】]`)
+	malformedBareSourceRegex = regexp.MustCompile(`(?i)[\[【]\s*(?:sourcc|sourc\s+e)\s*[-_:：]?\s*[A-Za-z0-9_-]+\s*[\]】]`)
+	retrievalWikiLinkRegex   = regexp.MustCompile(`\[\[([^\]\r\n|]+)(?:\|([^\]\r\n]+))?\]\]`)
 )
 
 type citationValidationStats struct {
@@ -1860,8 +1884,57 @@ func validateAnswerCitations(answer string, sources []rag.SourceReference) (stri
 		return fmt.Sprintf("[Source:%s]", canonical)
 	})
 	cleaned = malformedBareSourceRegex.ReplaceAllString(cleaned, "")
+	// 裸引用编号归一化：模型可能只写【1-1】/[1-1]（不带 Source: 前缀），
+	// 命中来源编号表则统一转为半角 [Source:N-M]，前端固定使用 [] 格式。
+	cleaned = bareCitationRegex.ReplaceAllStringFunc(cleaned, func(token string) string {
+		matches := bareCitationRegex.FindStringSubmatch(token)
+		if len(matches) < 2 {
+			return token
+		}
+		id := strings.TrimSpace(matches[1])
+		canonical, ok := allowed[normalizeCitationID(id)]
+		if !ok {
+			stats.Invalid++
+			stats.InvalidCitations = append(stats.InvalidCitations, id)
+			return token // 不在来源编号表，保留原样，避免误伤文档内容中的【N-M】形状文本
+		}
+		stats.Detected++
+		stats.Valid++
+		return fmt.Sprintf("[Source:%s]", canonical)
+	})
 	cleaned = sanitizeWikiLinks(cleaned)
+
+	// 无引用兜底：回答完全未标注引用（如被回答偏好"不要提来源"等表述干扰导致模型省略引用），
+	// 在末尾挂上最相关来源编号，保证前端来源卡片可用；仅在有来源且无任何有效引用时触发，不编造内容。
+	if stats.Valid == 0 && len(sources) > 0 {
+		cleaned = appendTopSourceReferences(cleaned, sources, 3)
+	}
 	return cleaned, stats
+}
+
+// appendTopSourceReferences 在回答末尾追加最相关来源的引用编号（兜底用途）。
+// sources 按最终入选排名传入，取前 maxSources 个不重复编号；不修改答案正文，不编造内容。
+func appendTopSourceReferences(answer string, sources []rag.SourceReference, maxSources int) string {
+	seen := make(map[string]struct{}, len(sources))
+	refs := make([]string, 0, maxSources)
+	for _, source := range sources {
+		id := strings.TrimSpace(source.ReferenceID)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		refs = append(refs, fmt.Sprintf("[Source:%s]", id))
+		if len(refs) >= maxSources {
+			break
+		}
+	}
+	if len(refs) == 0 {
+		return answer
+	}
+	return answer + "\n\n参考来源：" + strings.Join(refs, "")
 }
 
 func sanitizeAndValidateAnswer(c *gin.Context, answer string) (string, citationValidationStats) {

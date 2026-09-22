@@ -42,8 +42,10 @@ func InitRAGJobEngine() {
 	// 注册转写复用回调（同内容文件已有 completed 转写 → 拷贝跳过 ASR）
 	v2steps.ReuseTranscriptFn = reuseTranscriptForFile
 
-	// 注册洞察生成回调（在 document_chunking 步骤中实体抽取完成后触发）
-	v2steps.GenerateInsightsFn = GenerateInsights
+	// 注册洞察生成回调（在 document_chunking 步骤中实体抽取完成后触发，接入有界调度池）
+	v2steps.GenerateInsightsFn = func(ctx context.Context, eid, fileID, userID int64) {
+		EnqueueRecordingInsights(eid, fileID, userID)
+	}
 
 	// 注册录音内容规范化回调（document_chunking 步骤中文件摘要/实体抽取前按类型转 Markdown）
 	v2steps.NormalizeRecordingContentForLLMFn = NormalizeRecordingContentForLLM
@@ -183,10 +185,21 @@ func registerRagJobEngineV2Handlers(engine *v2engines.RagJobEngineV2) {
 	// 注册 V2 Handler
 	engine.RegisterHandler("document_parsing", v2steps.NewDocumentParsingHandler(model.DB))
 	engine.RegisterHandler("content_cleaning", v2steps.NewContentCleaningHandler(model.DB))
-	engine.RegisterHandler("summary_generation", v2steps.NewSummaryGenerationHandler(model.DB))
 	engine.RegisterHandler("document_chunking", v2steps.NewDocumentChunkingHandler(model.DB))
 	engine.RegisterHandler("vector_indexing", v2steps.NewVectorIndexingHandler(model.DB))
 	engine.RegisterHandler("graph_generation", v2steps.NewGraphGenerationHandler(model.DB))
+	engine.RegisterHandler("generate_knowledge_map", func(ctx context.Context, job *model.RagJob, _ json.RawMessage) error {
+		var params struct {
+			Eid    int64 `json:"eid"`
+			FileID int64 `json:"file_id"`
+			UserID int64 `json:"user_id"`
+		}
+		if err := json.Unmarshal([]byte(job.StartParameters), &params); err != nil {
+			return fmt.Errorf("解析知识地图任务参数失败: %w", err)
+		}
+		_, err := GenerateKnowledgeMapDirect(ctx, params.Eid, params.UserID, params.FileID)
+		return err
+	})
 	// 图谱管线独立任务 type（复用同一图谱生成 handler，但幂等/队列/恢复独立）
 	engine.RegisterHandler(graphPipelineJobType, v2steps.NewGraphGenerationHandler(model.DB))
 	engine.RegisterHandler("wiki_page_generation", v2steps.NewWikiPageGenerationHandler(NewWikiPageGenerationProcessor(model.DB)))
@@ -195,10 +208,21 @@ func registerRagJobEngineV2Handlers(engine *v2engines.RagJobEngineV2) {
 	// 注册 V2 Recovery Handler
 	engine.RegisterRecoveryHandler("document_parsing", v2steps.RecoverDocumentParsing(model.DB))
 	engine.RegisterRecoveryHandler("content_cleaning", v2steps.RecoverContentCleaning(model.DB))
-	engine.RegisterRecoveryHandler("summary_generation", v2steps.RecoverSummaryGeneration(model.DB))
 	engine.RegisterRecoveryHandler("document_chunking", v2steps.RecoverDocumentChunking(model.DB))
 	engine.RegisterRecoveryHandler("vector_indexing", v2steps.RecoverVectorIndexing(model.DB))
 	engine.RegisterRecoveryHandler("graph_generation", v2steps.RecoverGraphGeneration(model.DB))
+	engine.RegisterRecoveryHandler("generate_knowledge_map", func(ctx context.Context, job *model.RagJob, _ json.RawMessage) error {
+		var params struct {
+			Eid    int64 `json:"eid"`
+			FileID int64 `json:"file_id"`
+			UserID int64 `json:"user_id"`
+		}
+		if err := json.Unmarshal([]byte(job.StartParameters), &params); err != nil {
+			return fmt.Errorf("解析知识地图恢复任务参数失败: %w", err)
+		}
+		_, err := GenerateKnowledgeMapDirect(ctx, params.Eid, params.UserID, params.FileID)
+		return err
+	})
 	engine.RegisterRecoveryHandler(graphPipelineJobType, v2steps.RecoverGraphGeneration(model.DB))
 	engine.RegisterRecoveryHandler("wiki_page_generation", v2steps.RecoverWikiPageGeneration(model.DB, NewWikiPageGenerationProcessor(model.DB)))
 	engine.RegisterRecoveryHandler(wikiPageVectorizationJobType, RecoverWikiPageVectorization(model.DB, NewWikiPageVectorizationProcessor(model.DB)))
@@ -1029,7 +1053,7 @@ func GetLatestRunJobsWithStepsByRelatedID(ctx context.Context, eid int64, relate
 	// 独立管线 job（图谱/wiki 独立任务）使用独立 run_id，不参与 RAG 批次聚合：
 	// 排除后 latestJob 始终是 RAG 管线 job，避免以其独立 run_id 为基准导致 RAG 步骤丢失。
 	if err := query.Where("related_id = ?", relatedID).
-		Where("type NOT IN ?", []string{graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType}).
+		Where("type NOT IN ?", []string{graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType, "generate_knowledge_map"}).
 		Order("created_time DESC").First(&latestJob).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil, map[int64][]model.RagJobStep{}, nil
@@ -1057,7 +1081,7 @@ func GetLatestRunJobsWithStepsByRelatedID(ctx context.Context, eid int64, relate
 	// 历史图谱 job 曾复用 RAG 的 source_run_id，若按 run_id 查回会混入 RAG 批次，
 	// 需在此一并排除，保证 by-related 只返回 RAG 管线 job。
 	jobQuery = jobQuery.Where("related_id = ?", relatedID).
-		Where("type NOT IN ?", []string{graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType}).
+		Where("type NOT IN ?", []string{graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType, "generate_knowledge_map"}).
 		Order("created_time ASC")
 
 	var jobs []model.RagJob

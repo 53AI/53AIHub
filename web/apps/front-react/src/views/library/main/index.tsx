@@ -23,7 +23,7 @@ import { ProfilePopover, MessageCenter } from "@/components/Layout";
 import { Catalog, type CatalogRef } from "./catalog";
 import { FileUpload } from "./components/file-upload";
 import { ApplyDialog, type ApplyDialogRef } from "../components/apply";
-import VirtualLogo from "@/components/VirtualLogo";
+import { SafeImage } from "@km/shared-components-react";
 import { FileSearch } from "@/components/FileSearch";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { ProfileModal } from "@/views/profile";
@@ -506,7 +506,7 @@ export function LibraryMainView() {
 
               {/* 库名称和更多操作 */}
               <div className="flex-none h-7 flex items-center gap-2.5 mt-4 group">
-                <VirtualLogo text={libraryStore.library?.name} src={libraryStore.library?.icon} size={26} />
+                <SafeImage src={libraryStore.library?.icon || ""} letter={libraryStore.library?.name} className="size-[26px] rounded object-cover text-sm" />
                 <h2 className="flex-1 text-lg text-[#1D1E1F] truncate">
                   {libraryStore.library?.name}
                 </h2>
@@ -605,8 +605,8 @@ export function LibraryMainView() {
                 <div className="flex-1" />
               )}
 
-              {/* 视图切换 */}
-              {libraryStore.library?.permission >= PERMISSION_TYPE.edit_all && (
+              {/* 视图切换：是否展示“知识语料”Tab 由库能力 has_edit_corpus_scope 决定 */}
+              {libraryStore.hasEditCorpusScope && (
                 <div className="px-2 py-3 flex-none">
                   <div className="flex items-center gap-2 rounded p-0.5 bg-[#EDEEF0]">
                     <div

@@ -11,7 +11,7 @@ import (
 // 唯一键: eid + resource_type + resource_id + subject_type + subject_id
 // 参数说明：
 //   - eid: 企业ID
-//   - resourceType: 资源类型（0-空间，1-知识库，2-文件）
+//   - resourceType: 资源类型（0-空间，1-知识库，2-文件，3-Wiki页面，4-Wiki空间级权限）
 //   - resourceID: 资源ID
 //   - subjectType: 主体类型（0-用户，1-分组，2-全公司等）
 //   - subjectID: 主体ID
@@ -60,7 +60,7 @@ func UpsertPermission(eid int64, resourceType int, resourceID int64, subjectType
 // UpsertBatchPermissions 批量保存唯一权限，对每个权限项应用 Upsert 逻辑
 // 参数说明：
 //   - eid: 企业ID
-//   - resourceType: 资源类型（0-空间，1-知识库，2-文件）
+//   - resourceType: 资源类型（0-空间，1-知识库，2-文件，3-Wiki页面，4-Wiki空间级权限）
 //   - resourceID: 资源ID
 //   - perms: 权限数据切片，每个元素包含主体信息和权限级别
 //
