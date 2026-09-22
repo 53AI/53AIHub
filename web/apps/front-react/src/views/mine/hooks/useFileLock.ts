@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback } from 'react'
 import filesApi from '@/api/modules/files'
 import { api_host } from '@/utils/config'
+import { t } from '@/locales'
 
 interface UseFileLockOptions {
   fileId: string
@@ -38,7 +39,7 @@ export function useFileLock({ fileId, enabled = true }: UseFileLockOptions): Use
       const err = error as { response?: { data?: { data?: { message?: string } } } }
       return {
         success: false,
-        message: err?.response?.data?.data?.message || '添加文件锁失败'
+        message: err?.response?.data?.data?.message || t('mine.add_lock_failed')
       }
     }
   }, [fileId])

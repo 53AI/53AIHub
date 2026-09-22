@@ -3,22 +3,11 @@ import { memo, useCallback, useMemo } from 'react'
 import { Form, Input, Modal, message } from 'antd'
 
 import { t } from '@/locales'
+import type { SharedAccountItem } from '../../types'
 
 // ============================================================================
-// Types
+// Props
 // ============================================================================
-
-/** 共享账号项 */
-export interface SharedAccountItem {
-  /** 账号 */
-  account: string
-  /** 密码 */
-  password: string
-  /** 备注 */
-  remark?: string
-}
-
-/** Props */
 export interface SharedAccountDialogProps {
   /** 是否打开 */
   open: boolean
@@ -128,13 +117,13 @@ function SharedAccountDialogInternal({
           name="password"
           rules={[{ required: true, message: t('form_input_placeholder') }]}
         >
-          <Input placeholder={t('form_input_placeholder')} />
+          <Input.Password placeholder={t('form_input_placeholder')} />
         </Form.Item>
         <Form.Item label={t('remark')} name="remark">
           <Input.TextArea
             rows={3}
-            resize="none"
             maxLength={200}
+            style={{ resize: 'none' }}
             showCount
             placeholder={t('form_input_placeholder')}
           />

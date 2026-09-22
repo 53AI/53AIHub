@@ -114,7 +114,6 @@ function ChatMessagesInner({
   const t = externalT || internalT;
   const bubbleListRef = useRef<BubbleListRef>(null);
 
-  const mergedFeatures = { ...DEFAULT_FEATURES, ...features };
   const shouldShowWelcome = showWelcome && messageList.length === 0 && !isConversationLoading;
   const lastMessageId = messageList.length > 0 ? messageList[messageList.length - 1]?.id : undefined;
   const translatedLoadingMessages = t("chat.loading_messages");

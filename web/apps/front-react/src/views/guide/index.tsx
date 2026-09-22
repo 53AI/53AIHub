@@ -3,7 +3,9 @@ import { Steps, Form, Input, Select, Button, Spin } from "antd";
 import { LoadingOutlined } from "@ant-design/icons";
 import enterpriseApi, { type InitRequest } from "@/api/modules/enterprise";
 import { t } from "@/locales";
-import { getEmailRules, getPasswordRules } from "@/utils/form-rules";
+import { getEmailRules } from "@/utils/form-rules";
+import { usePasswordRules } from "@/hooks/usePasswordPolicy";
+import { noSpaceKeydownHandler } from "@km/shared-utils";
 import { getPublicPath } from "@/utils/config";
 
 const COUNTDOWN_DURATION = 3;
@@ -43,6 +45,8 @@ const PLATFORM_CONFIG = {
 type PlatformKey = keyof typeof PLATFORM_CONFIG;
 
 function StepAccount() {
+  const { passwordRule } = usePasswordRules();
+
   return (
     <>
       <Form.Item
@@ -71,21 +75,20 @@ function StepAccount() {
       <Form.Item
         label={t("form.password")}
         name="password"
-        rules={[getPasswordRules()]}
-        required
+        rules={[{ required: true, message: t("form.password_placeholder") }, passwordRule]}
       >
         <Input.Password
           size="large"
           placeholder={t("form.password_placeholder")}
+          onKeyDown={noSpaceKeydownHandler}
         />
       </Form.Item>
       <Form.Item
         label={t("guide.confirm_password")}
         name="confirm_password"
         dependencies={["password"]}
-        required
         rules={[
-          getPasswordRules(),
+          { required: true, message: t("guide.confirm_password_placeholder") },
           ({ getFieldValue }) => ({
             validator(_, value) {
               if (!value || getFieldValue("password") === value) {
@@ -99,6 +102,7 @@ function StepAccount() {
         <Input.Password
           size="large"
           placeholder={t("guide.confirm_password_placeholder")}
+          onKeyDown={noSpaceKeydownHandler}
         />
       </Form.Item>
     </>

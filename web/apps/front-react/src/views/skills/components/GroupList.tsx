@@ -82,9 +82,7 @@ export function GroupList({
     };
   }, []);
 
-  const showSkillList = useMemo(() => {
-    return skillsStore.skillList;
-  }, [skillsStore.skillList]);
+  const showSkillList = skillsStore.skillList;
 
   // 分页模式：与 SkillList 内部 keyword 过滤保持一致，用于计算总页数
   const filteredCount = useMemo(() => {

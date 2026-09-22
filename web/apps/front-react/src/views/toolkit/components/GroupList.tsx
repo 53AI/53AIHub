@@ -120,7 +120,6 @@ export function GroupList({
         className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${isSoftStyle ? "mt-3 mb-16" : "my-3"}`}
         keyword={state.keyword}
         list={links}
-        groupId={state.group_id}
         loading={loading}
       />
     </>

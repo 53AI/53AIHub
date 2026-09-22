@@ -407,7 +407,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
             id: item.id,
             name: item.title,
             icon: item.icon,
-            type: 'wiki',
+            type: 'wiki' as const,
             space_id: item.space_id,
             ...(item.wikiType === 'space' && { isspace: true }),
             ...(item.wikiType === 'page' && { ispage: true }),
@@ -636,7 +636,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
           if (!run) return;
           const currentMessage = currentMessageRef.current;
           if (currentMessage?.id && currentMessage.id !== messageIdAtFetch) return;
-          run.message_id = messageIdAtFetch;
+          run.message_id = String(messageIdAtFetch);
           agentRun.setCurrentRun(run);
           // 同步到 conversation store,让 ChatHistory 在历史列表里对这个会话显示 loading。
           // 只在 run 真实归属于当前消息时写,避免被中途被覆盖的旧请求污染 store。

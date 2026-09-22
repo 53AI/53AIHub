@@ -5,19 +5,28 @@ import {
   useImperativeHandle,
   useEffect,
 } from "react";
-import { Form, Input, Button, Radio, Space, message } from "antd";
+import { Form, Input, Button, Radio, message } from "antd";
 import { useUserStore } from "@/stores/modules/user";
 import { useEmail } from "@/hooks/useEmail";
 import { useMobile } from "@/hooks/useMobile";
 import userApi from "@/api/modules/user";
 import { t } from "@/locales";
+import { noSpaceKeydownHandler } from "@km/shared-utils";
+import { usePasswordRules } from "@/hooks/usePasswordPolicy";
+import VerifyCodeField from "@/components/VerifyCodeField";
 
 interface ResetPasswordProps {
   onSuccess: () => void;
+  /** 是否显示表单内的「更新密码」提交按钮（默认显示；放入弹窗 footer 时传 false） */
+  showSubmitButton?: boolean;
+  /** 提交中状态变化回调（供外部 footer 按钮同步 loading） */
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export interface ResetPasswordRef {
   resetForm: () => void;
+  /** 触发表单校验并提交（供外部 footer 按钮调用） */
+  submit: () => void;
 }
 
 const VERIFY_WAY = {
@@ -28,17 +37,19 @@ const VERIFY_WAY = {
 type VerifyWay = (typeof VERIFY_WAY)[keyof typeof VERIFY_WAY];
 
 const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(
-  ({ onSuccess }, ref) => {
+  ({ onSuccess, showSubmitButton = true, onLoadingChange }, ref) => {
     const [form] = Form.useForm();
     const userStore = useUserStore();
+    const { passwordRule } = usePasswordRules();
 
     // 两个独立的 hook 实例，分别用于邮箱和手机验证
-    const { emailCodeCount, emailCodeRule, sendEmailCode } = useEmail();
+    const { emailCodeCount, emailCodeRule, sendEmailCode, emailSending } = useEmail();
 
     const {
       codeCount: mobileCodeCount,
       codeRule: mobileCodeRule,
       sendcode: sendMobileCode,
+      sending: mobileSending,
     } = useMobile();
 
     const [verifyWay, setVerifyWay] = useState<VerifyWay>(
@@ -49,6 +60,9 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(
     useImperativeHandle(ref, () => ({
       resetForm: () => {
         form.resetFields();
+      },
+      submit: () => {
+        form.submit();
       },
     }));
 
@@ -74,6 +88,7 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(
       confirm_password: string;
     }) => {
       setLoading(true);
+      onLoadingChange?.(true);
       try {
         const data: any = {
           verify_code: values.verify_code,
@@ -95,6 +110,7 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(
         console.error("Failed to reset password:", error);
       } finally {
         setLoading(false);
+        onLoadingChange?.(false);
       }
     };
 
@@ -126,55 +142,32 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(
         </div>
 
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
-          <Form.Item
+          <VerifyCodeField
             name="verify_code"
-            label={t("form.verify_code")}
-            rules={[
+            rule={
               verifyWay === VERIFY_WAY.email_verify
                 ? emailCodeRule
-                : mobileCodeRule,
-            ]}
-          >
-            <Space.Compact className="w-full">
-              <Input
-                className="flex-1"
-                placeholder={
-                  t("form.input_placeholder") + t("form.verify_code")
-                }
-              />
-              <Button
-                disabled={!!codeCount}
-                className="w-28"
-                onClick={handleGetCode}
-              >
-                <span
-                  className={codeCount ? "text-[#9A9A9A]" : "text-[#2563EB]"}
-                >
-                  {codeCount ? `${codeCount}s` : t("form.get_verify_code")}
-                </span>
-              </Button>
-            </Space.Compact>
-          </Form.Item>
+                : mobileCodeRule
+            }
+            count={codeCount}
+            loading={
+              verifyWay === VERIFY_WAY.email_verify ? emailSending : mobileSending
+            }
+            onClick={handleGetCode}
+          />
 
           <Form.Item
             name="new_password"
             label={t("form.new_password")}
             rules={[
               { required: true, message: t("form.new_password_placeholder") },
-              { min: 8, max: 20, message: t("form.password_length") },
-              {
-                validator: (_, value) => {
-                  if (value && /[\u4e00-\u9fa5]/.test(value)) {
-                    return Promise.reject(
-                      new Error(t("form.password_no_chinese")),
-                    );
-                  }
-                  return Promise.resolve();
-                },
-              },
+              passwordRule,
             ]}
           >
-            <Input.Password placeholder={t("form.new_password_placeholder")} />
+            <Input.Password
+              placeholder={t("form.new_password_placeholder")}
+              onKeyDown={noSpaceKeydownHandler}
+            />
           </Form.Item>
 
           <Form.Item
@@ -200,18 +193,21 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(
           >
             <Input.Password
               placeholder={t("form.new_password_confirm_placeholder")}
+              onKeyDown={noSpaceKeydownHandler}
             />
           </Form.Item>
 
-          <Button
-            type="primary"
-            block
-            className="!h-10 !rounded-full mt-3"
-            htmlType="submit"
-            loading={loading}
-          >
-            {t("action.update_password")}
-          </Button>
+          {showSubmitButton && (
+            <Button
+              type="primary"
+              block
+              className="!h-10 !rounded-full mt-3"
+              htmlType="submit"
+              loading={loading}
+            >
+              {t("action.update_password")}
+            </Button>
+          )}
         </Form>
       </div>
     );

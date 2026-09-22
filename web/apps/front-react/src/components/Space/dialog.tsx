@@ -79,6 +79,10 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
     // 动态知识搜索状态（独立搜索词）
     const [wikiSearchText, setWikiSearchText] = useState('');
 
+    // 动态知识面板是否已挂载：首次进入后保持挂载，切换 Tab 不重新请求
+    // （对齐"知识文档"用已加载/缓存数据的行为）
+    const [wikiPaneMounted, setWikiPaneMounted] = useState(false);
+
     // 切换单个动态知识页面
     const handleToggleWikiPage = useCallback((page: WikiPageItem) => {
       setSelectedWikis((prev) => {
@@ -245,17 +249,8 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
           return []
         }
 
-        const permissionMap = await permissionsApi.myBatch({
-          resource_type: RESOURCE_TYPE.file,
-          resource_ids: list.map((item: any) => item.id),
-        })
-
-        const newList: FileItem[] = list
-          .filter((item: any) => {
-            const key = `${RESOURCE_TYPE.file}:${item.id}`
-            return permissionMap[key] >= PERMISSION_TYPE.viewer
-          })
-          .map((item: any) => formatFile(item))
+        // /api/files/all 只返回当前用户可访问的文件，无需再按权限过滤
+        const newList: FileItem[] = list.map((item: any) => formatFile(item))
 
         if (parentPath && parentPath !== '/') {
           // 懒加载子目录：将子项合并到树结构中
@@ -568,7 +563,11 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
                 <div
                   key={tab.key}
                   className={`px-4 h-[30px] flex-center text-sm cursor-pointer transition-colors ${activeTab === tab.key ? 'text-[#1D1E1F] font-medium bg-white rounded-md' : 'text-[#9A9A9A] hover:text-[#666]'}`}
-                  onClick={() => setActiveTab(tab.key as 'recent' | 'directory' | 'dynamicKnowledge')}
+                  onClick={() => {
+                    const key = tab.key as 'recent' | 'directory' | 'dynamicKnowledge'
+                    setActiveTab(key)
+                    if (key === 'dynamicKnowledge') setWikiPaneMounted(true)
+                  }}
                 >
                   {tab.label}
                 </div>
@@ -584,6 +583,25 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               />
             </div>
           </div>
+          {/* 动态知识面板：首次进入后保持挂载并隐藏，切换 Tab 复用已加载数据（不再重新请求） */}
+          {(wikiPaneMounted || activeTab === 'dynamicKnowledge') && (
+            <div className={activeTab === 'dynamicKnowledge' && !searchQuery.trim() ? '' : 'hidden'}>
+              {wikiSearchText.trim() ? (
+                <KnowledgeSearch
+                  searchText={wikiSearchText}
+                  selectedWikis={selectedWikis}
+                  onTogglePage={handleToggleWikiPage}
+                />
+              ) : (
+                <KnowledgeList
+                  selectedWikis={selectedWikis}
+                  allowSelectSpace={allowSelectSpace}
+                  onToggleSpace={handleToggleWikiSpace}
+                  onTogglePage={handleToggleWikiPage}
+                />
+              )}
+            </div>
+          )}
           {searchQuery.trim() ? (
             <SearchResult
               searchSpaces={searchSpaces}
@@ -612,22 +630,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               onToggleLibrary={handleToggleLibrary}
               onToggleFile={handleSelectFile}
             />
-          ) : activeTab === 'dynamicKnowledge' ? (
-            wikiSearchText.trim() ? (
-              <KnowledgeSearch
-                searchText={wikiSearchText}
-                selectedWikis={selectedWikis}
-                onTogglePage={handleToggleWikiPage}
-              />
-            ) : (
-              <KnowledgeList
-                selectedWikis={selectedWikis}
-                allowSelectSpace={allowSelectSpace}
-                onToggleSpace={handleToggleWikiSpace}
-                onTogglePage={handleToggleWikiPage}
-              />
-            )
-          ) : (
+          ) : activeTab === 'dynamicKnowledge' ? null : (
             <KnowledgeDirectory
               spaceList={spaceList}
               libraryList={libraryList}

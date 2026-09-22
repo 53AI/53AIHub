@@ -1,57 +1,52 @@
-import { transformChannelData } from '@/api/modules/channel'
+import platformSettingsApi from '@/api/modules/platform-settings'
+import { transformPlatformSetting } from '@/api/modules/platform-settings/transform'
+import channelApi, { transformChannelData } from '@/api/modules/channel'
 import { MODEL_USE_TYPE } from '@/constants/platform/config'
-import recordingApi from '@/api/modules/recording'
-import channelApi from '@/api/modules/channel'
 
 export interface VoiceParserInfo {
   showVoice: boolean
+  /** 语音识别模型名称 */
   voiceName: string
+  /** 语音识别模型图标 */
   voiceIcon: string
 }
 
 /**
- * 检查安心录是否启用，语音识别模型是否仍有效，并获取语音模型名称和图标
- * parser_platform 格式为 voice:{channel_type}:{model_name}
+ * 检查是否配置了录音识别模型，并返回语音模型名称与图标。
+ * 语音识别配置来自平台设置 /api/platform-settings 的 recording_voice（setting 为
+ * { voice_model_id: 渠道ID, voice_model_name: 模型ID }）。
  */
 export async function getVoiceParserInfo(): Promise<VoiceParserInfo> {
-  let recordingEnabled = false
-  let parserPlatformValid = false
+  let showVoice = false
   let voiceName = ''
   let voiceIcon = ''
-
   try {
-    const config = await recordingApi.getConfig()
-    recordingEnabled = config?.enabled ?? false
+    const list = await platformSettingsApi.find({ platform_key: 'recording_voice' })
+    const item = list.find((s) => s.platform_key === 'recording_voice') || list[0]
+    const setting = item ? transformPlatformSetting(item).setting : {}
+    const modelName = setting.voice_model_name || ''
+    const channelId = setting.voice_model_id
+    showVoice = !!(modelName && channelId)
 
-    if (recordingEnabled && config?.parser_platform) {
-      const modelName = config.parser_platform.split(':').pop() || ''
-      const list = await channelApi.listv2()
-      const seen = new Set<string>()
-
-      list.forEach((raw: any) => {
-        const channel = transformChannelData(raw)
-        const voiceModelsConfig = channel.custom_config?.voice_models || {}
-        channel.options.forEach((opt: any) => {
-          if (String(opt.modelType) === MODEL_USE_TYPE.VOICE) {
-            seen.add(opt.value)
-            if (opt.value === modelName) {
-              const voiceCfg = voiceModelsConfig[opt.value]
-              voiceName = voiceCfg?.display_name || opt.label || opt.value
-              voiceIcon = opt.icon || ''
-            }
-          }
-        })
-      })
-
-      parserPlatformValid = seen.has(modelName)
+    if (showVoice) {
+      const channelList = await channelApi.listv2()
+      const matched = channelList.find((raw: any) => String(raw.channel_id) === String(channelId))
+      if (matched) {
+        const channel = transformChannelData(matched)
+        const voiceModel = channel.options.find(
+          (opt: any) => String(opt.modelType) === MODEL_USE_TYPE.VOICE && opt.value === modelName,
+        )
+        if (voiceModel) {
+          const voiceCfg = channel.custom_config?.voice_models?.[modelName]
+          voiceName = voiceCfg?.display_name || voiceModel.label || modelName
+          voiceIcon = voiceModel.icon || ''
+        }
+      }
+      // 未匹配到模型时，至少回退展示模型ID
+      if (!voiceName) voiceName = modelName
     }
   } catch {
     // 获取失败时默认不展示语音解析
   }
-
-  return {
-    showVoice: recordingEnabled && parserPlatformValid,
-    voiceName,
-    voiceIcon,
-  }
+  return { showVoice, voiceName, voiceIcon }
 }

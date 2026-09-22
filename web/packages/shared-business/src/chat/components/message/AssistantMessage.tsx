@@ -138,6 +138,12 @@ function AssistantMessageInner({
   }, [message.rag_stats, message.process_records, (message as any).rag_temp, formatRagStats]);
 
   const ragStats = computedRagStats || message.rag_stats;
+  const citationSourceIds = useMemo(
+    () => (ragStats?.chunks || ragStats?.document_search?.chunks || [])
+      .map((chunk: any) => chunk.source_key || chunk.source || chunk.reference_id || chunk.source_id)
+      .filter(Boolean),
+    [ragStats?.chunks, ragStats?.document_search?.chunks],
+  );
 
   // 反馈状态 - 支持外部控制或内部状态
   const feedbackVisible = message.feedbackVisible ?? false;
@@ -629,6 +635,7 @@ function AssistantMessageInner({
           className={className}
           style={style}
           sourceEnabled={true}
+          sourceIds={citationSourceIds}
           renderSource={handleRenderSource}
           onSourceReferenceClick={handleSourceReferenceClick}
           showError={message.error}

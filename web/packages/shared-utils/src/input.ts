@@ -46,3 +46,20 @@ export function restrictToNumberInput(input: HTMLInputElement | HTMLTextAreaElem
 export function removeNumberInputRestrict(input: HTMLInputElement | HTMLTextAreaElement): void {
   input.removeEventListener('keydown', numberInputKeydownHandler as unknown as EventListener)
 }
+
+/**
+ * 键盘事件最小结构：DOM KeyboardEvent 与 React 合成事件都满足，
+ * 因此同一个处理器可直接用于 onKeyDown，无需类型断言
+ */
+export interface KeydownLike {
+  key: string
+  preventDefault: () => void
+}
+
+/**
+ * 禁止空格输入的键盘事件处理器
+ * 拦截空格键键入；粘贴 / 自动填充等非键击路径需由表单校验规则兜底
+ */
+export function noSpaceKeydownHandler(e: KeydownLike): void {
+  if (e.key === ' ') e.preventDefault()
+}

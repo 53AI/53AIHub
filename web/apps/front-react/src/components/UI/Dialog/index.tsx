@@ -77,10 +77,9 @@ export const UIDialog = forwardRef<UIDialogRef, UIDialogProps>(
           <Form.Item
             label={label}
             name="content"
-            rules={[
-              { required: true, message: `请输入${label}` },
-              { validator: validateContent },
-            ]}
+            required
+            // 空值由 validateContent 统一给「请输入xxx」，不再挂 required 规则，避免同一字段弹两条提示
+            rules={[{ validator: validateContent }]}
           >
             <Input
               placeholder={`请输入${label}`}

@@ -744,13 +744,27 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
     if (step.type === "knowledge_search") {
       const data = step.data as any;
       const allSources = Array.isArray(data?.sources) ? data.sources : [];
-      const graphResults = allSources.filter((s: any) => s.chunk_type === ("graph_result" as const));
-      // 联网搜索结果的 chunk_type 为 "web_page"
-      const webPageResults = allSources.filter((s: any) => s.chunk_type === ("web_page" as const));
-      // 知识库检索结果
-      const knowledgeSources = allSources.filter((s: any) => s.chunk_type === ("knowledge" as const));
-      // 动态知识检索结果
-      const wikiSources = allSources.filter((s: any) => s.chunk_type === ("wiki" as const));
+      const sourceType = (source: any) => String(source?.source_type || "").toLowerCase();
+      const graphResults = allSources.filter((s: any) =>
+        sourceType(s) === "graph" || s.chunk_type === ("graph_result" as const),
+      );
+      // 来源类型优先于 chunk_type；chunk_type 只描述来源内部的分块形态。
+      const webPageResults = allSources.filter((s: any) =>
+        sourceType(s) === "web" || s.chunk_type === ("web_page" as const),
+      );
+      const wikiSources = allSources.filter((s: any) =>
+        sourceType(s) === "wiki" || s.chunk_type === ("wiki" as const),
+      );
+      const knowledgeSources = allSources.filter((s: any) => {
+        const type = sourceType(s);
+        if (type === "graph" || type === "wiki" || type === "web" || s.chunk_type === "graph_result") {
+          return false;
+        }
+        if (type === "document" || type === "file" || type === "knowledge") {
+          return true;
+        }
+        return Boolean(s.file_id) || ["knowledge", "summary", "knowledge_map"].includes(s.chunk_type);
+      });
       const wikiPages = dedupeWikiPages(wikiSources as any);
 
       return isExpanded ? (

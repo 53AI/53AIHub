@@ -18,6 +18,7 @@ import { useAgentStore } from "@/stores/modules/agent";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { useMobile } from "@/hooks/useMobile";
 import { useEnv } from "@/hooks/useEnv";
+import VerifyCodeField from "@/components/VerifyCodeField";
 import { getPublicPath } from "@/utils/config";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -28,6 +29,7 @@ import ForgetPassword, { ForgetPasswordRef } from "./forgetPassword";
 import WechatLogin from "./wechat";
 import WecomLogin from "./wecom";
 import Policy from "./policy";
+import { openChangePasswordModal } from "../ChangePasswordModal";
 import "./LoginModal.css";
 
 type LoginWay =
@@ -79,7 +81,7 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
     const userStore = useUserStore();
     const agentStore = useAgentStore();
     const enterpriseStore = useEnterpriseStore();
-    const { sendcode, codeCount } = useMobile();
+    const { sendcode, codeRule, codeCount, sending } = useMobile();
     const { isOpLocalEnv, isPrivatePremEnv } = useEnv();
 
     const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -199,9 +201,10 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
     const handleSubmit = async () => {
       try {
         const values = await form.validateFields();
+        let loginResult: any = null;
 
         if (loginWay === LOGIN_WAY.bind_mobile) {
-          await userStore.bind_wechat({
+          loginResult = await userStore.bind_wechat({
             mobile: values.username,
             verify_code: values.verify_code,
             openid: oauthData.openid,
@@ -209,12 +212,12 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
             nickname: oauthData.nickname,
           });
         } else if (loginWay === LOGIN_WAY.message_login) {
-          await userStore.sms_login({
+          loginResult = await userStore.sms_login({
             mobile: values.username,
             verify_code: values.verify_code,
           });
         } else {
-          await userStore.login({
+          loginResult = await userStore.login({
             username: values.username,
             password: values.password,
           });
@@ -222,6 +225,24 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
 
         agentStore.loadAgentList();
         close();
+
+        // 密码安全策略检测：强制修改或安全提醒
+        if (loginResult?.must_change_password) {
+          openChangePasswordModal({
+            mustChange: true,
+            reason: loginResult.change_reason || "first_login",
+          });
+        } else if (loginResult?.need_change_password_tip) {
+          openChangePasswordModal({
+            mustChange: false,
+            reason: "expiring",
+          });
+        } else if (loginResult?.weak_password_tip) {
+          openChangePasswordModal({
+            mustChange: false,
+            reason: "weak",
+          });
+        }
       } catch (error: any) {
         await handleLoginError(error);
       }
@@ -230,7 +251,12 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
     const handleLoginError = async (error: any) => {
       const response = error.response || {};
       const data = response.data || {};
-      const errorMessage = data.message || "";
+      const errorMessage = data.message || error.message || "";
+
+      if (response.status === 403) {
+        message.error(errorMessage || "密码错误次数过多，账号已被锁定");
+        return;
+      }
 
       if (errorMessage.includes("record not found")) {
         if (isOpLocalEnv && !openSMTP) {
@@ -416,44 +442,16 @@ export const LoginModal = forwardRef<LoginModalRef, LoginModalProps>(
                 )}
 
                 {showVerifyCode && (
-                  <Form.Item
-                    label={getVerifyCodeLabel()}
+                  <VerifyCodeField
                     name="verify_code"
-                    rules={[
-                      {
-                        required: true,
-                        message:
-                          t("form.input_placeholder") + t("form.verify_code"),
-                      },
-                    ]}
-                  >
-                    <Input
-                      size="large"
-                      placeholder={
-                        t("form.input_placeholder") + t("form.verify_code")
-                      }
-                      addonAfter={
-                        <Button
-                          type="link"
-                          disabled={isSending || !isMobile}
-                          onClick={handleGetCode}
-                          className="!bg-[#f5f5f5] border-0 w-29 no-left-radius"
-                        >
-                          <span
-                            className={
-                              isSending || !isMobile
-                                ? "text-[#9A9A9A]"
-                                : "text-[#2563EB]"
-                            }
-                          >
-                            {codeCount
-                              ? `${codeCount}s`
-                              : t("form.get_verify_code")}
-                          </span>
-                        </Button>
-                      }
-                    />
-                  </Form.Item>
+                    label={getVerifyCodeLabel()}
+                    rule={codeRule}
+                    count={codeCount}
+                    disabled={isSending || !isMobile}
+                    loading={sending}
+                    onClick={handleGetCode}
+                    size="large"
+                  />
                 )}
 
                 {loginWay !== LOGIN_WAY.bind_mobile && (

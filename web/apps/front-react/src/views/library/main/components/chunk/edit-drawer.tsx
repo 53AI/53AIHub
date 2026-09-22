@@ -1,19 +1,25 @@
 import { useState, useCallback, forwardRef, useImperativeHandle, useRef } from "react";
 import { Button, Input, Tag, Spin, message, Space } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
+import { DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import { MarkdownEditor, type MarkdownEditorRef } from "@/components/Markdown/editor";
 import { EditorSection } from "./editor-section";
-import { SvgIcon } from "@km/shared-components-react";
 import { t } from "@/locales";
 import chunksApi, {
   type KnowledgeChunk,
   type RetrievalChunk,
   type KnowledgeChunkRequestData,
 } from "@/api/modules/chunks";
-import { CHUNK_TYPE, AI_GENERATE_CHUNK_STATUS } from "@/constants/chunk";
+import {
+  CHUNK_TYPE,
+  AI_GENERATE_CHUNK_STATUS,
+  EMBEDDING_STATUS,
+} from "@/constants/chunk";
 import { useLibraryStore, type FileItem } from "@/stores/modules/library";
 import { usePoll } from "@/hooks/usePoll";
-import { LibraryQueue, QueueType } from "@/views/library/components/queue";
+import {
+  getRetrievalChunkStatusMeta,
+  isRetrievalChunkEmbeddingInProgress,
+} from "./retrieval-status";
 
 const { TextArea } = Input;
 
@@ -72,6 +78,8 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
     const [retrievalChunks, setRetrievalChunks] = useState<RetrievalChunk[]>(
       [],
     );
+    const [retryingRetrievalChunkId, setRetryingRetrievalChunkId] =
+      useState<number | null>(null);
     const [commonQuestions, setCommonQuestions] = useState<SimpleChunk[]>([]);
     const [summary, setSummary] = useState<SimpleChunk[]>([]);
 
@@ -84,55 +92,89 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
     // Update refs when values change
     currentFileRef.current = currentFile;
 
-    const isShowView = false; // Disabled for now
-    const isPending =
-      currentFile?.ai_generate_chunk_status ===
-      AI_GENERATE_CHUNK_STATUS.PENDING;
-
-    const loadChunkDetail = useCallback(async (chunk: KnowledgeChunk) => {
-      setLoading(true);
-      try {
-        const res = await chunksApi.retrieval.get(chunk.id);
-        setKnowledge(res.knowledge_chunk);
-        setRetrievalChunks(
-          res.retrieval_chunks.filter(
+    const loadChunkDetail = useCallback(
+      async (chunk: KnowledgeChunk): Promise<RetrievalChunk[] | null> => {
+        setLoading(true);
+        try {
+          const res = await chunksApi.retrieval.get(chunk.id);
+          const defaultRetrievalChunks = res.retrieval_chunks.filter(
             (item) => item.chunk_type === CHUNK_TYPE.RETRIEVAL,
-          ),
-        );
-        setSummary(
-          res.retrieval_chunks.filter(
-            (item) => item.chunk_type === CHUNK_TYPE.SUMMARY,
-          ),
-        );
-        setCommonQuestions(
-          res.retrieval_chunks.filter(
-            (item) => item.chunk_type === CHUNK_TYPE.QUESTION,
-          ),
-        );
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    }, []);
+          );
+          setKnowledge(res.knowledge_chunk);
+          setRetrievalChunks(defaultRetrievalChunks);
+          setSummary(
+            res.retrieval_chunks.filter(
+              (item) => item.chunk_type === CHUNK_TYPE.SUMMARY,
+            ),
+          );
+          setCommonQuestions(
+            res.retrieval_chunks.filter(
+              (item) => item.chunk_type === CHUNK_TYPE.QUESTION,
+            ),
+          );
+          return defaultRetrievalChunks;
+        } catch (error) {
+          console.error(error);
+          return null;
+        } finally {
+          setLoading(false);
+        }
+      },
+      [],
+    );
 
     const { start: startPoll, stop: stopPoll } = usePoll(async () => {
       const file = currentFileRef.current;
       if (!file?.id) return;
       await libraryStore.loadFile(file.id, true);
       const updatedFile = currentFileRef.current;
-      if (
-        updatedFile?.ai_generate_chunk_status !==
-          AI_GENERATE_CHUNK_STATUS.PENDING &&
-        updatedFile?.ai_generate_chunk_status !==
-          AI_GENERATE_CHUNK_STATUS.PARSING
-      ) {
+      const isAIGenerating = [
+        AI_GENERATE_CHUNK_STATUS.PENDING,
+        AI_GENERATE_CHUNK_STATUS.PARSING,
+      ].includes(updatedFile?.ai_generate_chunk_status || "");
+      const loadedRetrievalChunks = curChunkRef.current
+        ? await loadChunkDetail(curChunkRef.current)
+        : [];
+      const isEmbedding =
+        loadedRetrievalChunks === null ||
+        loadedRetrievalChunks.some((item) =>
+          isRetrievalChunkEmbeddingInProgress(item.embedding_status),
+        );
+
+      if (!isAIGenerating && !isEmbedding) {
         stopPoll();
-        if (curChunkRef.current) {
-          loadChunkDetail(curChunkRef.current);
-        }
       }
     });
+
+    const handleRetryEmbedding = useCallback(
+      async (retrievalChunk: RetrievalChunk) => {
+        if (retryingRetrievalChunkId !== null) return;
+
+        setRetryingRetrievalChunkId(retrievalChunk.id);
+        try {
+          await chunksApi.retrieval.reindex(retrievalChunk.id);
+          setRetrievalChunks((prev) =>
+            prev.map((item) =>
+              item.id === retrievalChunk.id
+                ? {
+                    ...item,
+                    embedding_status: EMBEDDING_STATUS.PENDING,
+                    error_reason: "",
+                  }
+                : item,
+            ),
+          );
+          message.success("已重新加入索引队列");
+          startPoll();
+        } catch (error) {
+          console.error(error);
+          message.error("重新索引失败，请稍后重试");
+        } finally {
+          setRetryingRetrievalChunkId(null);
+        }
+      },
+      [retryingRetrievalChunkId, startPoll],
+    );
 
     const handleAddSummary = useCallback(() => {
       setSummary((prev) => [...prev, { id: Date.now(), content: "" }]);
@@ -153,6 +195,7 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
     const handleCancel = useCallback(() => {
       setKnowledge({ ...defaultKnowledge });
       setRetrievalChunks([]);
+      setRetryingRetrievalChunkId(null);
       setCommonQuestions([]);
       setSummary([]);
       setVisible(false);
@@ -264,53 +307,73 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
                   {t("chunk.default_index")}
                 </div>
                 <div className="flex flex-col gap-3 mt-3">
-                  {retrievalChunks.map((item) => (
-                    <div
-                      key={item.id}
-                      className="border rounded p-4 bg-[#F8F9FB] group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-[#182B5099]">
-                          #{numberToIndex(knowledge.chunk_index)}-
-                          {numberToIndex(item.chunk_index)} |{" "}
-                          {item.content.length} {t("common.string")}
+                  {retrievalChunks.map((item) => {
+                    const isRetrying = retryingRetrievalChunkId === item.id;
+                    const status = getRetrievalChunkStatusMeta(
+                      isRetrying
+                        ? EMBEDDING_STATUS.PENDING
+                        : item.embedding_status,
+                    );
+                    const failureReason =
+                      item.embedding_status === EMBEDDING_STATUS.FAILED &&
+                      item.error_reason
+                        ? `失败原因：${item.error_reason}`
+                        : undefined;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="border rounded p-4 bg-[#F8F9FB] group"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 truncate text-xs text-[#182B5099]">
+                            #{numberToIndex(knowledge.chunk_index)}-
+                            {numberToIndex(item.chunk_index)} |{" "}
+                            {item.content.length} {t("common.string")}
+                          </div>
+                          {item.embedding_status === EMBEDDING_STATUS.FAILED ? (
+                            <Button
+                              type="text"
+                              size="small"
+                              loading={isRetrying}
+                              disabled={
+                                retryingRetrievalChunkId !== null && !isRetrying
+                              }
+                              icon={!isRetrying ? <ReloadOutlined /> : undefined}
+                              onClick={() => void handleRetryEmbedding(item)}
+                              className={`flex-none !inline-flex !h-auto items-center gap-1 rounded px-2 py-1 text-xs !border-none ${status.className}`}
+                              title={failureReason}
+                              aria-label="重新索引"
+                            >
+                              {isRetrying ? "排队中" : "重新索引"}
+                            </Button>
+                          ) : (
+                            <div
+                              className={`flex-none inline-flex items-center gap-1 rounded px-2 py-1 text-xs ${status.className}`}
+                              aria-label={status.label}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${status.dotClassName}`}
+                              />
+                              {status.label}
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-2">
+                          <EditorSection
+                            value={item.content}
+                            split={false}
+                            disabled={true}
+                          />
                         </div>
                       </div>
-                      <EditorSection
-                        value={item.content}
-                        split={false}
-                        disabled={true}
-                        className="mt-2"
-                      />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Summary Section */}
                 <div className="text-sm text-[#1D1E1F] font-semibold mt-6 flex justify-between">
                   {t("chunk.summary")}
-                  {isShowView && (
-                    <div className="flex items-center">
-                      <div className="font-normal flex items-center mr-1">
-                        {isPending ? (
-                          <>
-                            <SvgIcon name="queue" className="mr-1" size={14} />
-                            <span className="text-[#999999]">
-                              {t("queue.pending")}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="inline-block size-3 border border-t-[#2563EB] rounded-[50%] animate-spin mr-1" />
-                            <span className="text-[#2563EB]">
-                              {t("queue.generating")}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <LibraryQueue type={QueueType.AI_GENERATE_INDEX} />
-                    </div>
-                  )}
                 </div>
                 <div className="w-full flex flex-col gap-3 mt-3">
                   {summary.map((item, index) => (
@@ -351,28 +414,6 @@ export const EditDrawer = forwardRef<EditDrawerRef, EditDrawerProps>(
                 {/* Questions Section */}
                 <div className="text-sm text-[#1D1E1F] font-semibold mt-6 flex justify-between">
                   {t("chunk.question")}
-                  {isShowView && (
-                    <div className="flex items-center">
-                      <div className="font-normal flex items-center mr-1">
-                        {isPending ? (
-                          <>
-                            <SvgIcon name="queue" className="mr-1" size={14} />
-                            <span className="text-[#999999]">
-                              {t("queue.pending")}
-                            </span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="inline-block size-3 border border-t-[#2563EB] rounded-[50%] animate-spin mr-1" />
-                            <span className="text-[#2563EB]">
-                              {t("queue.generating")}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                      <LibraryQueue type={QueueType.AI_GENERATE_INDEX} />
-                    </div>
-                  )}
                 </div>
                 <div className="w-full flex flex-col gap-3 mt-3">
                   {commonQuestions.map((item, index) => (

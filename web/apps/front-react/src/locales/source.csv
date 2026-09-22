@@ -64,7 +64,6 @@ action.more,更多,更多,More,もっと見る
 action.move_to,移动到,移動到,Move to,移動
 move_to.root_dir,根目录,根目錄,Root,ルート
 move_to.folder_load_failed,文件夹加载失败,文件夾載入失敗,Failed to load folders,フォルダーの読み込みに失敗しました
-move_to.retry,重试,重試,Retry,再試行
 move_to.empty,暂无子项,暫無子項,No items,子項目なし
 move_to.no_match,无匹配目录,無匹配目錄,No matching folders,一致するフォルダーはありません
 move_to.cannot_move_to_file,不支持移动到当前类型下,不支持移動到當前類型下,Cannot move to this type,このタイプには移動できません
@@ -86,6 +85,7 @@ action.renew,续费,續費,Renew,更新
 action.replace,更换,更換,Replace,置換
 action.reset,重置,重置,Reset,リセット
 action.restart_generation,重新生成,重新生成,Regenerate,再生成
+action.retry,重试,重試,Retry,再試行
 action.reupload,重新上传,重新上傳,Re-upload,再アップロード
 action.save,保存,保存,Save,保存
 action.save_and_exit,保存并退出,保存並退出,Save and Exit,保存して終了
@@ -385,6 +385,7 @@ common.unsaved_changes,您有未保存的更改，确定要离开吗？,您有�
 common.update_time,更新时间,更新時間,Update Time,更新日時
 common.updated_at,更新于,更新於,Updated at,更新日時
 common.updated_time,更新时间,更新時間,Updated time,更新日時
+common.updated_time_form,更新时间: {time},更新時間: {time},Updated time: {time},更新日時: {time}
 common.usual,常用,常用,Frequently Used,よく使う
 common.view_more,查看更多,查看更多,View More,もっと見る
 el.breadcrumb.label,面包屑,面包屑,Breadcrumb,Breadcrumb
@@ -577,8 +578,10 @@ form.old_mobile,旧手机号,,Previous mobile number,
 form.optional,选填项,選填項,Optional,任意項目
 form.password,密码,密碼,Password,パスワード
 form.password_format,密码必须包含大小写字母和数字,密碼必須包含大小寫字母和數字,"Password must contain uppercase, lowercase letters and numbers",パスワードは大文字、小文字、数字を含む必要があります
-form.password_length,密码长度必须在 8-20 个字符之间,密碼長度必須在 8-20 個字符之間,Password must be between 8-20 characters,パスワードは8〜20文字である必要があります
+form.password_length_range,密码长度必须在 {min}-{max} 个字符之间,密碼長度必須在 {min}-{max} 個字符之間,Password must be between {min}-{max} characters,パスワードは{min}〜{max}文字である必要があります
+form.password_mix_classes,密码需至少包含大写字母、小写字母、数字、符号中的 {count} 种,密碼需至少包含大寫字母、小寫字母、數字、符號中的 {count} 種,"Password must contain at least {count} of uppercase letters, lowercase letters, digits, and symbols",パスワードは大文字・小文字・数字・記号のうち少なくとも{count}種類を含む必要があります
 form.password_no_chinese,密码不能包含中文,密碼不能包含中文,Password cannot contain Chinese characters,パスワードには中国語の文字を含めることができません
+form.password_no_space,密码不能包含空格,密碼不能包含空格,Password cannot contain spaces,パスワードにスペースを含めることはできません
 form.password_not_match,两次输入的密码不一致,兩次輸入的密碼不一致,The two passwords do not match,入力されたパスワードが一致しません
 form.password_placeholder,请输入密码,請輸入密碼,Please enter password,パスワードを入力してください
 form.password_validator,请输入密码,請輸入密碼,Please enter the password,パスワードを入力してください
@@ -874,26 +877,6 @@ prompt.let_use_prompt,去使用这个提示词,去使用这个提示词,Use this
 prompt.not_found,提示词不存在,提示詞不存在,Prompt not found,プロンプトが見つかりません
 prompt.likes_sort,按最多点赞排序,按最多點讚排序,Likes Sort,いいね順
 prompt.views_sort,按最多浏览排序,按最多瀏覽排序,Views Sort,閲覧順
-queue.ai_generate_queue_title,生成队列,生成佇列,AI Generation Queue,AI生成キュー
-queue.cancelled,已取消,已取消,Cancelled,キャンセル済み
-queue.chunk_failed,拆分失败,拆分失敗,Chunking Failed,分割失敗
-queue.chunk_successful,拆分成功,拆分成功,Chunking Successful,分割成功
-queue.chunking,拆分中,拆分中,Chunking,分割中
-queue.confirm_cancel,确定取消吗,確定取消嗎,Are you sure you want to cancel?,キャンセルしてもよろしいですか？
-queue.convert_failed,解析失败,解析失敗,Conversion Failed,解析失敗
-queue.convert_queue_title,解析队列,解析佇列,Conversion Queue,解析キュー
-queue.convert_successful,解析成功,解析成功,Conversion Successful,解析成功
-queue.converting,解析中,解析中,Converting,解析中
-queue.generate_failed,生成失败,生成失敗,Generation Failed,生成失敗
-queue.generate_successful,生成成功,生成成功,Generation Successful,生成成功
-queue.generating,生成中,生成中,Generating,生成中
-queue.index_failed,索引失败,索引失敗,Indexing Failed,インデックス作成失敗
-queue.index_queue_title,索引队列,索引佇列,Indexing Queue,インデックスキュー
-queue.index_successful,索引成功,索引成功,Indexing Successful,インデックス作成成功
-queue.indexing,索引中,索引中,Indexing,インデックス作成中
-queue.pending,排队中,排队中,Pending,待機中
-queue.retry,重试,重試,Retry,再試行
-queue.view,查看,查看,View,表示
 recall.input_placeholder,请输入文本，建议使用简短的陈述句.,請輸入文本，建議使用簡短的陳述句,Please enter text (short declarative sentences recommended),テキストを入力してください（短い平叙文が推奨されます）
 recall.match,匹配度Top{count},匹配度前{count}名,Top {count} matches,マッチ度トップ{count}
 recall.query,提问,提問,Query,質問
@@ -940,6 +923,7 @@ response_message.username_already_exists,用户名已存在,用戶名已存在,U
 response_message.username_or_password_is_incorrect,用户名或密码错误,用戶名或密碼錯誤,Username or password is incorrect,ユーザー名またはパスワードが間違っています
 response_message.wechat_already_bind,微信号已被其他用户绑定,微信號已被其他用戶綁定,WeChat account has been bound to another user,WeChatアカウントはすでに他のユーザーに登録されています
 response_message.name_already_exists,名称已存在,名稱已存在,Name already exists,名前はすでに存在します
+response_message.param_error,参数错误,參數錯誤,Parameter Error,パラメータエラー
 response_status.400,请求参数错误,請求參數錯誤,Request parameter error,リクエストパラメータエラー
 response_status.401,未授权，请登录,未授權，請登入,"Unauthorized, please login",認証されていません、ログインしてください
 response_status.403,拒绝访问,拒絕訪問,Access denied,アクセス拒否
@@ -994,6 +978,7 @@ status.save_success,已保存,已保存,Saved Successfully,保存しました
 status.sent,已发送,已發送,Sent,送信済み
 status.submitted,已提交,已提交,Submitted,送信済み
 status.success,成功,成功,Success,成功
+status.update_fail,更改失败,更改失敗,Update failed,更新に失敗しました
 status.update_success,更改成功,更改成功,Update successful,更新成功
 status.updated,已更新,已更新,Updated,更新済み
 status.use,已使用：36.00 MB,已使用：36.00 MB,Used: 36.00 MB,使用済み：36.00 MB
@@ -1289,18 +1274,21 @@ wiki.sort.alphabetical,字母顺序,字母順序,Alphabetical,アルファベッ
 wiki.sort.updated,更新时间,更新時間,Updated Time,更新時間
 wiki.sort.created,创建时间,創建時間,Created Time,作成時間
 wiki.apply_page_permission,申请页面权限,申請頁面權限,Apply for Page Permission,ページ権限を申請
+wiki.your_permission,我的权限：,我的權限：,My permission:,あなたの権限：
+wiki.permission_direct,页面直接授权,頁面直接授權,Direct page grant,ページ直接付与
+wiki.permission_inherited,继承自团队空间,繼承自團隊空間,Inherited from team space,チームスペースから継承
 dynamic_knowledge.category_label,分类,分類,Category,分類
 dynamic_knowledge.current_space,空间,空間,Space,スペース
 dynamic_knowledge.empty_data,暂无数据,暫無資料,No Data,データなし
-dynamic_knowledge.empty_desc,在空间管理中开启后，空间内知识库将自动生成动态知识,在空間管理中開啟後，空間內知識庫將自動生成動態知識,"Once enabled in space management, the knowledge base within the space will automatically generate dynamic knowledge",スペース管理で有効にすると、スペース内のナレッジベースが自動的に動的ナレッジを生成します
+dynamic_knowledge.empty_desc,在空间管理中开启后，空间内知识库将自动生成 Wiki,在空間管理中開啟後，空間內知識庫將自動生成 Wiki,"Once enabled in space management, the knowledge base within the space will automatically generate Wiki",スペース管理で有効にすると、スペース内のナレッジベースが自動的にWikiを生成します
 dynamic_knowledge.empty_graph_desc,在空间设置里启用知识图谱，即可查看知识关系网络,在空間設置裡啟用知識圖譜，即可查看知識關係網絡,"Enable Knowledge Graph in space settings to view the knowledge relationship network",スペース設定でナレッジグラフを有効にすると、ナレッジ関係ネットワークを表示できます
 dynamic_knowledge.empty_graph_title,暂无知识图谱,暫無知識圖譜,No Knowledge Graph,ナレッジグラフがありません
-dynamic_knowledge.empty_title,暂无动态知识,暫無動態知識,No Dynamic Knowledge,動的ナレッジがありません
-dynamic_knowledge.label,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+dynamic_knowledge.empty_title,暂无 Wiki,暫無 Wiki,No Wiki,Wikiがありません
+dynamic_knowledge.label,Wiki,Wiki,Wiki,Wiki
 dynamic_knowledge.no_match_results,无匹配结果,無匹配結果,No matching results,一致する結果がありません
 dynamic_knowledge.no_recent_records,暂无最近使用记录,暫無最近使用記錄,No recent usage records,最近使用記録がありません
 dynamic_knowledge.queue_pending_tip,队列中 {count} 个待处理,佇列中 {count} 個待處理,"{count} pending tasks in queue",キューに{count}件の未処理タスクがあります
-dynamic_knowledge.search_placeholder,搜索动态知识,搜索動態知識,Search dynamic knowledge,動的ナレッジを検索
+dynamic_knowledge.search_placeholder,搜索 Wiki,搜索 Wiki,Search Wiki,Wikiを検索
 dynamic_knowledge.tab_recent,最近使用,最近使用,Recently Used,最近使用
 dynamic_knowledge.select_space_first,请先选择一个空间,请先選擇一個空間,Please select a space first,最初にスペースを選択してください
 dynamic_knowledge.summary,摘要,摘要,Summary,サマリー
@@ -1312,7 +1300,7 @@ dynamic_knowledge.summary_desc,单文档生成的知识浓缩总结页,單文檔
 dynamic_knowledge.entity_desc,跨文档生成的专有名词聚合页,跨文檔生成的專有名詞聚合頁,Cross-document aggregation of proper nouns,複数文書にまたがる固有名詞の集約ページ
 dynamic_knowledge.concept_desc,跨文档生成的通用理论聚合页,跨文檔生成的通用理論聚合頁,Cross-document aggregation of general concepts,複数文書にまたがる一般理論の集約ページ
 dynamic_knowledge.view,查看,查看,View,表示
-module.dynamic_knowledge,动态知识,動態知識,Dynamic Knowledge,動的ナレッジ
+module.dynamic_knowledge,Wiki,Wiki,Wiki,Wiki
 knowledge.document_file,知识文档,知識文檔,Knowledge Documents,ナレッジドキュメント
 module.knowledge_graph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
 permission.add_member,添加成员,新增成員,Add Member,メンバーを追加
@@ -1324,7 +1312,7 @@ permission.request_submitted,已提交申请,已提交申請,Application Submitt
 permission.team_space_admin,团队空间的管理员({count}),團隊空間的管理員({count}),Team Space Admins ({count}),チームスペースの管理者({count})
 permission.team_space_member,团队空间的成员({count}),團隊空間的成員({count}),Team Space Members ({count}),チームスペースのメンバー({count})
 space.all_selected_count,全部已选（{count}）,全部已選（{count}）,All Selected ({count}),すべて選択済み（{count}）
-space.enable_dynamic_knowledge,启用动态知识,啟用動態知識,Enable Dynamic Knowledge,動的ナレッジを有効化
+space.enable_dynamic_knowledge,启用 Wiki,啟用 Wiki,Enable Wiki,Wikiを有効化
 space.enable_knowledge_graph,启用知识图谱,啟用知識圖譜,Enable Knowledge Graph,ナレッジグラフを有効化
 space.knowledge_directory,知识目录,知識目錄,Knowledge Directory,ナレッジディレクトリ
 space.knowledge_graph_desc,基于知识图谱实体关系进行知识检索和提取，提升回答的场景贴合度,基於知識圖譜實體關係進行知識檢索和提取，提升回答的場景貼合度,"Based on knowledge graph entity relationships, retrieve and extract knowledge to improve scenario relevance of answers",ナレッジグラフのエンティティ関係に基づくナレッジ検索と抽出により、回答のシナリオ適合性を向上させます
@@ -1363,3 +1351,38 @@ memory.delete_success,记忆已删除,記憶已刪除,Memory deleted,メモリ�
 memory.delete_failed,删除失败,请稍后重试,刪除失敗,請稍後重試,Delete failed. Please try again later,削除に失敗しました。後でもう一度お試しください
 memory.picked_relation_saved,已选择 {n} 个关联,提交时将一起保存,已選擇 {n} 個關聯,提交時將一起保存,{n} relations selected, will be saved on submit,{n}個の関連が選択されました。提出時に一緒に保存されます
 apply.approver_label,审批人,審批人,Approver,承認者
+mine.all_files,全部文件,全部文件,All Files,すべてのファイル
+mine.no_document,暂无文档,暫無文檔,No documents,ドキュメントがありません
+mine.fetch_space_failed,获取个人空间信息失败,獲取個人空間信息失敗,Failed to get personal space info,個人空間情報の取得に失敗しました
+mine.all_favorites,全部收藏,全部收藏,All Favorites,すべてのお気に入り
+mine.empty_content,暂无内容,暫無內容,No content,コンテンツがありません
+mine.empty_favorites,暂无收藏的文档,暫無收藏的文檔,No favorited documents,お気に入りのドキュメントがありません
+mine.empty_recent,暂无最近访问文档,暫無最近訪問文檔,No recently visited documents,最近アクセスしたドキュメントがありません
+mine.content_empty,内容为空,內容為空,Content is empty,コンテンツが空です
+mine.audio_format_skip,文件 {name} 格式不支持，已跳过,檔案 {name} 格式不支援，已跳過,"File {name} format not supported, skipped",ファイル {name} の形式はサポートされていません、スキップしました
+mine.no_audio_to_import,没有有效的音频文件可导入,沒有有效的音頻文件可導入,No valid audio files to import,インポートする有効なオーディオファイルがありません
+mine.imported,已导入,已導入,Imported,インポート済み
+mine.import_failed,导入失败,導入失敗,Import failed,インポート失敗
+global_search.clear,清除,清除,Clear,クリア
+global_search.dynamic_tab,Wiki,Wiki,Wiki,Wiki
+global_search.related_spaces,相关知识空间,相關知識空間,Related Knowledge Spaces,関連ナレッジスペース
+global_search.related_libraries,相关知识库,相關知識庫,Related Knowledge Bases,関連ナレッジベース
+global_search.related_documents,相关文档,相關文檔,Related Documents,関連ドキュメント
+global_search.related_dynamic_knowledge,相关 Wiki,相關 Wiki,Related Wiki,関連Wiki
+global_search.recently_updated_label,最近更新: {time},最近更新: {time},Recently updated: {time},最近更新: {time}
+global_search.creator_suffix,{name}创建,{name}創建,Created by {name},{name}が作成
+global_search.all_results_shown,已显示所有结果,已顯示所有結果,All results shown,すべての結果を表示しました
+global_search.no_search_result,没有搜索结果,沒有搜索結果,No search results,検索結果がありません
+global_search.try_modify_keywords,尝试修改关键词进行搜索,嘗試修改關鍵詞進行搜索,Try modifying your keywords,キーワードを変更してお試しください
+global_search.search_space_name,搜索空间名称,搜索空間名稱,Search space name,スペース名を検索
+global_search.search_library_name,搜索知识库名称,搜索知識庫名稱,Search library name,ナレッジベース名を検索
+global_search.select_time_range,选择时间范围,選擇時間範圍,Select time range,時間範囲を選択
+global_search.doc_type,文档类型,文檔類型,Document Type,ドキュメントタイプ
+global_search.select_doc_type,选择文档类型,選擇文檔類型,Select document type,ドキュメントタイプを選択
+global_search.time_7d,7天内,7天內,Within 7 days,7日以内
+global_search.time_30d,30天内,30天內,Within 30 days,30日以内
+global_search.time_180d,半年内,半年內,Within half a year,半年以内
+global_search.time_365d,一年内,一年內,Within a year,1年以内
+global_search.type_webpage,网页文件,網頁文件,Web Page,Webページ
+global_search.type_audio,音频文件,音頻文件,Audio File,オーディオファイル
+global_search.other,其他,其他,Other,その他

@@ -14,42 +14,24 @@ export const UPLOAD_STATUS = {
 
 export type UploadStatus = (typeof UPLOAD_STATUS)[keyof typeof UPLOAD_STATUS]
 
-// 文件大小限制常量
+// 文件大小阈值
+// 单文件上限全库只此一处定义（validateUploadFile 读它）；需要按扩展名放宽/收紧时
+// 用 FileUpload 的 maxSize prop（单位 MB）覆盖
 export const FILE_SIZE_LIMITS = {
-  // 默认分片大小 (5MB)
-  DEFAULT_CHUNK_SIZE: 5 * 1024 * 1024,
-  // 最大分片大小 (10MB)
-  MAX_CHUNK_SIZE: 10 * 1024 * 1024,
-  // 最小分片大小 (1MB)
-  MIN_CHUNK_SIZE: 1 * 1024 * 1024,
-  // 单文件最大大小 (2GB)
-  MAX_SINGLE_FILE_SIZE: 2 * 1024 * 1024 * 1024,
-  // 超出此大小的文件跳过前端 hash 预检（避免一次性读取占用过多内存）
-  MAX_HASH_FILE_SIZE: 500 * 1024 * 1024,
-  // 批量上传最大文件数
-  MAX_BATCH_FILES: 1000,
-  // 批量上传最大总大小 (10GB)
-  MAX_BATCH_TOTAL_SIZE: 10 * 1024 * 1024 * 1024
+  // 单文件大小上限 (100MB)
+  MAX_SINGLE_FILE_SIZE: 100 * 1024 * 1024,
+  // 分片大小 (1MB)
+  MIN_CHUNK_SIZE: 1 * 1024 * 1024
 } as const
+
+// 单文件超限的统一文案：失败原因、列表行、重试提示共用同一份
+export const FILE_SIZE_EXCEEDED_MESSAGE = '文件大小超过上限'
+
+// 单次上传的文件数上限（队列总量与文件夹选择共用同一上限）
+export const MAX_UPLOAD_FILES = 1000
 
 // 上传配置常量
 export const UPLOAD_CONFIG = {
   // 默认并发数
-  DEFAULT_MAX_CONCURRENT: 3,
-  // 最大并发数
-  MAX_CONCURRENT: 10,
-  // 最小并发数
-  MIN_CONCURRENT: 1,
-  // 默认重试次数
-  DEFAULT_RETRY_TIMES: 3,
-  // 最大重试次数
-  MAX_RETRY_TIMES: 10,
-  // 重试延迟基数 (毫秒)
-  RETRY_DELAY_BASE: 1000,
-  // 进度更新间隔 (毫秒)
-  PROGRESS_UPDATE_INTERVAL: 200,
-  // WebSocket 重连间隔 (毫秒)
-  WS_RECONNECT_INTERVAL: 3000,
-  // 心跳间隔 (毫秒)
-  HEARTBEAT_INTERVAL: 30000
+  DEFAULT_MAX_CONCURRENT: 3
 } as const

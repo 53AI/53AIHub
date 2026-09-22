@@ -113,6 +113,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   // 防竞态：仅采纳最新一次请求的响应
   const permissionReqIdRef = useRef(0);
+  const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
 
   // 搜索关键词防抖由 Search 组件的 onDebouncedChange 提供
 
@@ -136,6 +137,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     loadingMore: loading,
     onLoadMore: loadMore,
     threshold: 120,
+    rootRef: sidebarScrollRef,
   });
 
   // 加载分类列表（侧栏标签）
@@ -449,7 +451,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
       {/* 列表容器 (含A-Z) */}
       <div className="flex-1 overflow-hidden relative flex flex-col mt-3 min-h-0 bg-white">
-        <div className="flex-1 px-3 space-y-1 overflow-y-auto">
+        <div ref={sidebarScrollRef} className="flex-1 px-3 space-y-1 overflow-y-auto">
           {loading && items.length === 0 ? (
             <div className="h-full flex items-center justify-center py-10">
               <Spin />

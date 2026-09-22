@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { Avatar, Button, Input, Modal, message } from 'antd'
 import { RightOutlined, CloseOutlined, WarningFilled } from '@ant-design/icons'
+import { SafeImage } from '@km/shared-components-react'
 import { useUserStore } from '@/stores/modules/user'
+import { DEFAULT_USER_AVATAR } from '@/constants/user'
 import { useEnv } from '@/hooks/useEnv'
 import { CropperDialog, CropperDialogRef } from '@/components/CropperDialog'
 import ChangeMobile, { ChangeMobileRef } from './change-mobile'
@@ -173,7 +175,12 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
         className="flex items-center gap-2 w-full p-4 box-border cursor-pointer mt-4 rounded-lg overflow-hidden bg-[#F7F7F7]"
         onClick={handleEdit}
       >
-        <Avatar size={48} src={userStore.info.avatar} className="flex-none" style={{ backgroundColor: 'transparent' }} />
+        <SafeImage
+          src={userStore.info.avatar || ''}
+          fallback={DEFAULT_USER_AVATAR}
+          round={24}
+          className="size-12 flex-none rounded-full object-cover"
+        />
         <div className="flex-1 w-0">
           <div className="text-primary font-semibold">{userStore.info.nickname}</div>
           <p className="text-sm text-secondary mt-1 flex items-center gap-1">

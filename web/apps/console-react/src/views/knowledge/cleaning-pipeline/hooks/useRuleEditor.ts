@@ -5,6 +5,7 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import { ragPipelineApi, ragStrategyApi, uploadApi } from '@/api'
 import type { Strategy, UpdateStrategyRequest } from '@/api/modules/rag-strategy'
 import { t } from '@/locales'
+import { hasMatcherValue } from '@/utils/matcher'
 import { buildPreviewUrl } from '@/utils/preview'
 
 // Default rule template
@@ -356,7 +357,7 @@ export function useRuleEditor({ rules, onSuccess }: UseRuleEditorOptions) {
     // Validate conditions (skip for default rule)
     if (!isEditingDefault) {
       const matchers = editingRule.conditions_json?.matchers || []
-      const validMatchers = matchers.filter((m) => m.value?.trim())
+      const validMatchers = matchers.filter(hasMatcherValue)
       if (validMatchers.length === 0) {
         message.warning(t('cleaning_policy.condition_required'))
         return

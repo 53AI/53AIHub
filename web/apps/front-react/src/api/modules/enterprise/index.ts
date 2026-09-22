@@ -4,6 +4,8 @@ export interface RawEnterpriseInfo {
   enterprise: {
     id: number
     display_name: string
+    full_name: string
+    industry: string
     logo: string
     ico: string
     keywords: string
@@ -124,12 +126,30 @@ export const enterpriseApi = {
     id: number,
     data: {
       display_name: string
+      full_name?: string
+      industry?: string
+      description?: string
       logo: string
       language: string
       template_type: string
     }
   ) {
     return request.put(`/api/enterprises/${id}`, data)
+  },
+
+  /**
+   * 更新当前企业站点基础资料（前台管理员）
+   * PUT /api/enterprises/current
+   * 部分更新：未传字段保持不变，空串清空该字段；仅按需传 display_name/logo/full_name/description/industry。
+   */
+  updateCurrent(data: {
+    display_name?: string
+    full_name?: string
+    description?: string
+    industry?: string
+    logo?: string
+  }) {
+    return request.put('/api/enterprises/current', data).then((res: any) => res.data)
   },
 
   saasList(info: EnterpriseListParams): Promise<EnterpriseList> {

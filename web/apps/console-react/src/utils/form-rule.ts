@@ -1,3 +1,5 @@
+import { validatePasswordByStrength, type PasswordStrength } from '@km/shared-utils'
+
 type ValidatorOpts = {
   rule?: unknown
   value?: unknown
@@ -7,8 +9,10 @@ type ValidatorOpts = {
   max?: number
 }
 
-const t = (key: string) =>
-  (typeof window !== 'undefined' && (window as any).$t ? (window as any).$t(key) : key)
+const t = (key: string, params?: Record<string, unknown>) =>
+  typeof window !== 'undefined' && (window as any).$t
+    ? (window as any).$t(key, params)
+    : key
 
 export function textValidator(opts: ValidatorOpts = {} as ValidatorOpts) {
   const { value, callback, message = 'form_input_placeholder' } = opts
@@ -73,6 +77,54 @@ export function passwordValidator(opts: ValidatorOpts = {} as ValidatorOpts) {
   callback()
 }
 
+/**
+ * 密码禁止空格的表单校验规则
+ * 键入路径已由 noSpaceKeydownHandler 拦截，此处兜住粘贴 / 自动填充 / 校验脚本
+ */
+export function passwordNoSpaceRule(message = 'login.password_no_space') {
+  return {
+    validator: (_: unknown, value: unknown) =>
+      /\s/.test(String(value ?? ''))
+        ? Promise.reject(new Error(t(message)))
+        : Promise.resolve(),
+  }
+}
+
+/**
+ * 按企业密码强度配置生成的校验规则
+ *
+ * 门槛表（长度 / 字符类数）来自 @km/shared-utils，与前台同一份；本函数只负责把失败原因映射成文案。
+ * 空值放行，交给 required 规则提示。
+ */
+export function passwordStrengthRule(strength: PasswordStrength = 'weak') {
+  return {
+    validator: (_: unknown, value: unknown) => {
+      const failure = validatePasswordByStrength(String(value ?? ''), strength)
+      if (!failure) return Promise.resolve()
+      switch (failure.type) {
+        case 'length':
+          return Promise.reject(
+            new Error(
+              t('login.password_length_range', {
+                min: failure.min,
+                max: failure.max,
+              }),
+            ),
+          )
+        case 'classes':
+          return Promise.reject(
+            new Error(t('login.password_mix_classes', { count: failure.required })),
+          )
+        case 'space':
+          return Promise.reject(new Error(t('login.password_no_space')))
+        case 'chinese':
+          return Promise.reject(new Error(t('form_password_validator')))
+      }
+    },
+    trigger: 'blur' as const,
+  }
+}
+
 export function urlValidator(opts: ValidatorOpts = {} as ValidatorOpts) {
   const { value, callback, message = 'form_input_placeholder' } = opts
   const v = String(value ?? '').trim()
@@ -85,7 +137,6 @@ export function urlValidator(opts: ValidatorOpts = {} as ValidatorOpts) {
     return callback(new Error(t('form_url_validator')))
   callback()
 }
-
 export function pathValidator(opts: ValidatorOpts = {} as ValidatorOpts) {
   const { value, callback, message = 'form_input_placeholder' } = opts
   const v = String(value ?? '').trim()
@@ -232,3 +283,12 @@ export function generateInputRules(opts: {
     })
   return rules
 }
+
+/** 短信/邮箱验证码格式：大于等于 4 位数字（前台/后台统一规则） */
+export const VERIFY_CODE_PATTERN = /^\d{4,}$/
+
+/** 验证码位数校验规则（配合 Form.Item rules 使用），message 传 t('verification_code_format') */
+export const verifyCodePatternRule = (message: string) => ({
+  pattern: VERIFY_CODE_PATTERN,
+  message,
+})

@@ -12,7 +12,7 @@ import { Dropdown, Input, Skeleton, Spin } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { SafeImage, Search, SvgIcon, Tabs } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
-import { useUserStore } from "@/stores/modules/user";
+import { useUserStore, useIsAdmin } from "@/stores/modules/user";
 import { useSpaceStore } from "@/stores/modules/space";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { EntityDisplay } from "@/components/EntityDisplay";
@@ -26,6 +26,7 @@ import {
 import permissionsApi from "@/api/modules/permissions";
 import wikiApi from "@/api/modules/wiki";
 import type { WikiCategory, WikiStatsResponse } from "@/api/modules/wiki";
+import { checkHasKMPermission } from "@/utils/km-permission";
 import { t } from "@/locales";
 import type { SortOrder } from "../types";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "../library/InfoSaveDialog";
@@ -71,6 +72,12 @@ export function KnowledgePanel({
   const [sortOrder, setSortOrder] = useState<SortOrder>("updated_time");
   const [wikiStats, setWikiStats] = useState<WikiStatsResponse | null>(null);
   const [wikiCategories, setWikiCategories] = useState<WikiCategory[]>([]);
+  // 权限与所属空间绑定：spaceId 不匹配当前空间时视为无权限，
+  // 避免切换空间瞬间沿用旧空间权限，导致 stats/categories 请求被误发
+  const [wikiPermission, setWikiPermission] = useState<{
+    spaceId: string;
+    permission: PermissionType;
+  }>({ spaceId: "", permission: PERMISSION_TYPE.none });
 
   // 用于滚动到选中项
   const selectedSpaceRef = useRef<HTMLDivElement>(null);
@@ -127,8 +134,8 @@ export function KnowledgePanel({
     window.open(url, "_blank");
   }, [buildAdminUrl, activeSpaceId]);
 
-  // 是否为管理员（与 ProfilePopover 中的判断保持一致）
-  const isAdmin = Boolean(userStore.info.role) && userStore.info.role > 1;
+  // 是否为管理员（与 ProfilePopover 中的判断保持一致，集中到 userStore.useIsAdmin）
+  const isAdmin = useIsAdmin();
 
   // MoreDropdown 菜单项：仅管理员可见
   const moreItems: MenuItem[] = [
@@ -190,6 +197,11 @@ export function KnowledgePanel({
 
   // 动态知识开关：开启时在列表上方显示 wiki 入口
   const dynamicEnabled = currentSpace?.enable_wiki_dynamic_knowledge === true;
+  // 除开关外，还需当前用户对空间级 Wiki（resource_type=4）具备查看权限
+  const showDynamicEntry =
+    dynamicEnabled &&
+    wikiPermission.spaceId === activeSpaceId &&
+    checkHasKMPermission(wikiPermission.permission, PERMISSION_TYPE.viewer);
   const wikiUrl = activeSpaceId
     ? `/knowledge/wiki?space_id=${activeSpaceId}`
     : "/knowledge/wiki";
@@ -262,10 +274,42 @@ export function KnowledgePanel({
     }
   }, [activeSpaceId, isSoftStyle, setSpaceId, loadSpacePermission]);
 
+  // 动态知识入口查看权限：请求当前用户对空间级 Wiki（resource_type=4，resource_id=空间 id）的最大权限
+  // fail-closed：权限只在与 spaceId 匹配时生效，新空间权限返回前 showDynamicEntry 恒为 false
+  useEffect(() => {
+    let mounted = true;
+    if (!activeSpaceId) {
+      setWikiPermission({ spaceId: "", permission: PERMISSION_TYPE.none });
+      return;
+    }
+    permissionsApi
+      .my({
+        resource_type: RESOURCE_TYPE.wiki,
+        resource_id: activeSpaceId,
+      })
+      .then((res) => {
+        if (mounted)
+          setWikiPermission({
+            spaceId: activeSpaceId,
+            permission: res.max_permission,
+          });
+      })
+      .catch(() => {
+        if (mounted)
+          setWikiPermission({
+            spaceId: activeSpaceId,
+            permission: PERMISSION_TYPE.none,
+          });
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeSpaceId]);
+
   // 加载 wiki 统计（仅在开启动态知识时）
   useEffect(() => {
     let mounted = true;
-    if (!activeSpaceId || !dynamicEnabled) {
+    if (!activeSpaceId || !showDynamicEntry) {
       setWikiStats(null);
       return;
     }
@@ -280,12 +324,12 @@ export function KnowledgePanel({
     return () => {
       mounted = false;
     };
-  }, [activeSpaceId, dynamicEnabled]);
+  }, [activeSpaceId, showDynamicEntry]);
 
   // 加载 wiki 分类列表（仅在开启动态知识时）
   useEffect(() => {
     let mounted = true;
-    if (!activeSpaceId || !dynamicEnabled) {
+    if (!activeSpaceId || !showDynamicEntry) {
       setWikiCategories([]);
       return;
     }
@@ -302,7 +346,7 @@ export function KnowledgePanel({
     return () => {
       mounted = false;
     };
-  }, [activeSpaceId, dynamicEnabled]);
+  }, [activeSpaceId, showDynamicEntry]);
 
   // 滚动到选中的空间（仅首次加载时）
   useEffect(() => {
@@ -341,59 +385,63 @@ export function KnowledgePanel({
 
   // 软件模式：两列布局（左侧空间侧边栏 + 右侧内容）
   if (isSoftStyle) {
+    // 只有一个空间时没有可切换项，整列不占位。
+    const showSpaceSidebar = spaceList.length > 1;
     return (
       <div className="flex h-full">
         {/* 左侧：空间侧边栏 */}
-        <div className="w-[280px] h-full py-3 bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">
-          <div className="h-9 px-5 flex items-center">
-            <div className="flex-1 text-sm text-[#1D1E1F]">
-              {t("module.space")}
-            </div>
-          </div>
-          {userStore.info.is_internal && (
-            <div className="px-2 mt-2">
-              <Suspense fallback={<Skeleton.Input active size="small" block />}>
-                <GlobalSearch />
-              </Suspense>
-            </div>
-          )}
-
-          <nav className="p-2 space-y-1 flex-1 overflow-y-auto">
-            {spaceList.map((item) => (
-              <div
-                key={item.id}
-                ref={activeSpaceId === item.id ? selectedSpaceRef : null}
-                onClick={() => handleSpaceClick(item.id)}
-                className={`flex items-center gap-2.5 p-3 rounded-xl cursor-pointer transition-colors ${
-                  activeSpaceId === item.id
-                    ? "bg-[#F0F5FF]"
-                    : "hover:bg-[#F0F5FF] "
-                }`}
-              >
-                <div className="size-9 rounded-full overflow-hidden bg-white">
-                  <SafeImage src={item.icon} alt={item.name} className="size-10" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1">
-                    <p className="flex-1 text-sm text-primary truncate">
-                      {item.name}
-                    </p>
-                    <span className="text-xs text-[#9CA3AF]">
-                      {item.library_count}
-                    </span>
-                  </div>
-                  <p className="text-xs text-[#888994]  mt-0.5">
-                    {item.owner_id ? (
-                      <EntityDisplay type="user" id={item.owner_id} mode="name" />
-                    ) : (
-                      t("common.system")
-                    )}
-                  </p>
-                </div>
+        {showSpaceSidebar && (
+          <div className="w-[280px] h-full py-3 bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">
+            <div className="h-9 px-5 flex items-center">
+              <div className="flex-1 text-sm text-[#1D1E1F]">
+                {t("module.space")}
               </div>
-            ))}
-          </nav>
-        </div>
+            </div>
+            {userStore.info.is_internal && (
+              <div className="px-2 mt-2">
+                <Suspense fallback={<Skeleton.Input active size="small" block />}>
+                  <GlobalSearch />
+                </Suspense>
+              </div>
+            )}
+
+            <nav className="p-2 space-y-1 flex-1 overflow-y-auto">
+              {spaceList.map((item) => (
+                <div
+                  key={item.id}
+                  ref={activeSpaceId === item.id ? selectedSpaceRef : null}
+                  onClick={() => handleSpaceClick(item.id)}
+                  className={`flex items-center gap-2.5 p-3 rounded-xl cursor-pointer transition-colors ${
+                    activeSpaceId === item.id
+                      ? "bg-[#F0F5FF]"
+                      : "hover:bg-[#F0F5FF] "
+                  }`}
+                >
+                  <div className="size-9 rounded-full overflow-hidden bg-white">
+                    <SafeImage src={item.icon} alt={item.name} className="size-10" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <p className="flex-1 text-sm text-primary truncate">
+                        {item.name}
+                      </p>
+                      <span className="text-xs text-[#9CA3AF]">
+                        {item.library_count}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#888994]  mt-0.5">
+                      {item.owner_id ? (
+                        <EntityDisplay type="user" id={item.owner_id} mode="name" />
+                      ) : (
+                        t("common.system")
+                      )}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        )}
         {/* 右侧：知识库列表 */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white overflow-y-auto">
           {isSoftStyle && (
@@ -412,7 +460,7 @@ export function KnowledgePanel({
                 </div>
               ) : (
                 <div className="w-11/12 md:w-4/5 max-w-[1200px] mx-auto py-4">
-                  {dynamicEnabled && (
+                  {showDynamicEntry && (
                     <div className="mb-8">
                       <div className="text-xl font-medium">{t('dynamic_knowledge.label')}</div>
                       <div className="border p-4 rounded-xl mt-5 flex flex-wrap items-center gap-3">
@@ -535,7 +583,7 @@ export function KnowledgePanel({
       </div>
 
       <div className="flex-1 min-h-0">
-        {dynamicEnabled && (
+        {showDynamicEntry && (
           <div className="px-6 pt-4">
             <Link
               to={wikiUrl}

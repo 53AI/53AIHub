@@ -86,7 +86,6 @@ function UserMessageInner({
   features,
   isShareMode = false,
   isSelected = false,
-  fileAction,
   messageAction,
   slots,
   className,

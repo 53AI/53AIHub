@@ -56,6 +56,17 @@ const REASONING_MODE = {
   DEEP: 'deep',
 } as const
 
+export const AGENT_CATEGORIES = {
+  INTELLIGENT_AGENT_PLATFORM: 'intelligent_agent_platform',
+  CLOUD_COMPUTING_PLATFORM: 'cloud_computing_platform',
+  MODEL_PLATFORM: 'model_platform',
+} as const
+
+export const PROVIDER_CATEGORIES = {
+  INTELLIGENT_AGENT_PLATFORM: 'intelligent_agent_platform',
+  CLOUD_COMPUTING_PLATFORM: 'cloud_computing_platform',
+} as const
+
 // 统一的平台配置
 const PLATFORM_CONFIG = {
   prompt: {
@@ -64,7 +75,7 @@ const PLATFORM_CONFIG = {
     // 渠道ID
     channelValue: 0,
     // 分类
-    category: 'model_platform',
+    category: AGENT_CATEGORIES.MODEL_PLATFORM,
     // 需不需要授权
     auth: false,
     // 智能体列表
@@ -80,7 +91,7 @@ const PLATFORM_CONFIG = {
   coze_cn: {
     providerValue: 1,
     channelValue: 34,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: true,
     label: window.$t('provider_platform.coze_cn'),
     agents: [
@@ -100,7 +111,7 @@ const PLATFORM_CONFIG = {
   coze_osv: {
     providerValue: 5,
     channelValue: 1010,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: true,
     label: window.$t('provider_platform.coze_osv'),
     agents: [
@@ -121,7 +132,7 @@ const PLATFORM_CONFIG = {
   app_builder: {
     providerValue: 3,
     channelValue: 1005,
-    category: 'cloud_computing_platform',
+    category: AGENT_CATEGORIES.CLOUD_COMPUTING_PLATFORM,
     auth: true,
     label: window.$t('provider_platform.app_builder'),
     agents: [
@@ -135,7 +146,7 @@ const PLATFORM_CONFIG = {
   '53ai': {
     providerValue: 4,
     channelValue: 1002,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: true,
     label: window.$t('provider_platform.53ai'),
     agents: [
@@ -156,7 +167,7 @@ const PLATFORM_CONFIG = {
   dify: {
     channelValue: 1001,
     providerValue: 1001,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.dify'),
     agents: [
@@ -177,7 +188,7 @@ const PLATFORM_CONFIG = {
   bailian: {
     channelValue: 1003,
     providerValue: 1003,
-    category: 'cloud_computing_platform',
+    category: AGENT_CATEGORIES.CLOUD_COMPUTING_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.bailian'),
     agents: [
@@ -191,7 +202,7 @@ const PLATFORM_CONFIG = {
   volcengine: {
     channelValue: 1004,
     providerValue: 1004,
-    category: 'cloud_computing_platform',
+    category: AGENT_CATEGORIES.CLOUD_COMPUTING_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.volcengine'),
     agents: [
@@ -205,7 +216,7 @@ const PLATFORM_CONFIG = {
   yuanqi: {
     channelValue: 1006,
     providerValue: 1006,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.yuanqi'),
     agents: [
@@ -219,7 +230,7 @@ const PLATFORM_CONFIG = {
   fastgpt: {
     channelValue: 22,
     providerValue: 22,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.fastgpt'),
     agents: [
@@ -240,7 +251,7 @@ const PLATFORM_CONFIG = {
   maxkb: {
     channelValue: 1008,
     providerValue: 1008,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.maxkb'),
     agents: [
@@ -254,7 +265,7 @@ const PLATFORM_CONFIG = {
   n8n: {
     providerValue: 1009,
     channelValue: 1009,
-    category: 'intelligent_agent_platform',
+    category: AGENT_CATEGORIES.INTELLIGENT_AGENT_PLATFORM,
     auth: false,
     label: window.$t('provider_platform.n8n'),
     agents: [
@@ -269,7 +280,7 @@ const PLATFORM_CONFIG = {
   tencent: {
     providerValue: 6,
     channelValue: 1011,
-    category: 'cloud_computing_platform',
+    category: AGENT_CATEGORIES.CLOUD_COMPUTING_PLATFORM,
     auth: true,
     label: window.$t('provider_platform.tencent'),
     agents: [
@@ -284,7 +295,7 @@ const PLATFORM_CONFIG = {
   openclaw: {
     providerValue: 1014,
     channelValue: 1014,
-    category: 'model_platform',
+    category: AGENT_CATEGORIES.MODEL_PLATFORM,
     auth: false,
     label: 'OpenClaw',
     agents: [
@@ -392,20 +403,23 @@ const MODEL_CONFIG = {
     multiple: true,
     label: window.$t('provider_platform.custom_openai'),
   },
+  tencent: {
+    name: 'tencent',
+    owner: 'tencent',
+    channelType: 1019,
+    multiple: false,
+    label: window.$t('provider_platform.tencent'),
+  },
+  glm: {
+    name: 'glm',
+    owner: 'glm',
+    channelType: 1018,
+    multiple: false,
+    label: window.$t('provider_platform.glm'),
+  }
 } as const
 
 export { AGENT_MODES, BACKEND_AGENT_TYPE, MODEL_USE_TYPE, REASONING_MODE }
-
-export const AGENT_CATEGORIES = {
-  INTELLIGENT_AGENT_PLATFORM: 'intelligent_agent_platform',
-  CLOUD_COMPUTING_PLATFORM: 'cloud_computing_platform',
-  MODEL_PLATFORM: 'model_platform',
-} as const
-
-export const PROVIDER_CATEGORIES = {
-  INTELLIGENT_AGENT_PLATFORM: 'intelligent_agent_platform',
-  CLOUD_COMPUTING_PLATFORM: 'cloud_computing_platform',
-} as const
 
 // 类型定义
 export type ProviderId = number
@@ -431,35 +445,15 @@ type ModelKeys = keyof typeof MODEL_CONFIG
 
 // 创建值类型映射
 export type ProviderValuesType = Record<Uppercase<ConfigKeys & string>, number>
-export type ChannelValuesType = Record<Uppercase<ConfigKeys & string>, number>
-export type AgentValuesType = Record<Uppercase<ConfigKeys & string>, string>
 export type ModelValuesType = Record<Uppercase<ModelKeys & string>, number>
 
 // 导出常量
 export const AGENT_TYPES = AGENT_TYPE
 
-export const CHANNEL_TYPES = Object.fromEntries(
-  Object.entries(PLATFORM_CONFIG).map(([key]) => [key.toUpperCase(), key])
-) as Record<Uppercase<ConfigKeys & string>, string>
-export const PROVIDER_TYPES = Object.fromEntries(
-  Object.entries(PLATFORM_CONFIG).map(([key]) => [key.toUpperCase(), key])
-) as Record<Uppercase<ConfigKeys & string>, string>
-export const MODEL_TYPES = Object.fromEntries(
-  Object.entries(MODEL_CONFIG).map(([key]) => [key.toUpperCase(), key])
-) as Record<Uppercase<ModelKeys & string>, string>
-
 // 创建常量并指定类型
 export const PROVIDER_VALUES = Object.fromEntries(
   Object.entries(PLATFORM_CONFIG).map(([key, config]) => [key.toUpperCase(), config.providerValue])
 ) as ProviderValuesType
-
-export const CHANNEL_VALUES = Object.fromEntries(
-  Object.entries(PLATFORM_CONFIG).map(([key, config]) => [key.toUpperCase(), config.channelValue])
-) as ChannelValuesType
-
-export const AGENT_VALUES = Object.fromEntries(
-  Object.entries(PLATFORM_CONFIG).map(([key, config]) => [key.toUpperCase(), config.agents[0].name])
-) as AgentValuesType
 
 export const MODEL_VALUES = Object.fromEntries(
   Object.entries(MODEL_CONFIG).map(([key, config]) => [key.toUpperCase(), config.channelType])
@@ -508,39 +502,36 @@ export interface ModelConfig {
   multiple: boolean
 }
 
-// 通用配置生成函数
-const createConfig = <T>(type: string, template: (type: string) => T): T => template(type)
-
 // 配置数据生成
 export const providers: Record<ProviderId, ProviderConfig> = Object.fromEntries(
   Object.entries(PLATFORM_CONFIG)
     .filter(([, config]) => config.providerValue > 0 && config.providerValue !== 1014)
     .map(([key, config]) => [
       config.providerValue,
-      createConfig(key, type => ({
+      {
         id: config.providerValue,
-        name: type,
-        icon: type,
+        name: key,
+        icon: key,
         label: config.label,
         provider_type: config.providerValue,
-        channelId: type as ChannelType,
+        channelId: key as ChannelType,
         agentId: config.agents[0].name as AgentType,
         auth: config.auth,
         category: config.category as ProviderCategory,
-      })),
+      },
     ])
 ) as Record<ProviderId, ProviderConfig>
 
 export const channels: Record<ChannelType, ChannelConfig> = Object.fromEntries(
   Object.entries(PLATFORM_CONFIG).map(([key, config]) => [
     key,
-    createConfig(key, type => ({
-      id: type as ChannelType,
-      name: type,
+    {
+      id: key as ChannelType,
+      name: key,
       label: config.label,
-      icon: type,
+      icon: key,
       channelType: config.channelValue,
-    })),
+    },
   ])
 ) as Record<ChannelType, ChannelConfig>
 
@@ -550,18 +541,18 @@ export const agents: Record<AgentType, AgentConfig> = Object.fromEntries(
       return config.agents.map(agent => {
         return [
           agent.name,
-          createConfig(agent.name, type => ({
-            id: type as AgentType,
-            name: type as AgentType,
+          {
+            id: agent.name as AgentType,
+            name: agent.name as AgentType,
             label: agent.label,
-            icon: `${img_host}/agent/${type.toLowerCase()}.png`,
+            icon: `${img_host}/agent/${agent.name.toLowerCase()}.png`,
             channelName: key as ChannelType,
             channelType: ('channelValue' in agent ? agent.channelValue : config.channelValue) as ChannelValue,
             providerId: config.providerValue as ProviderValue,
             mode: agent.mode || AGENT_MODES.CHAT,
             category: config.category as AgentCategory,
             visible: 'visible' in agent ? agent.visible : true,
-          })),
+          },
         ]
       })
     })
@@ -571,95 +562,27 @@ export const agents: Record<AgentType, AgentConfig> = Object.fromEntries(
 export const models = Object.fromEntries(
   Object.entries(MODEL_CONFIG).map(([key, config]) => [
     key,
-    createConfig(key, type => ({
-      id: type as ModelType,
-      name: type,
+    {
+      id: key as ModelType,
+      name: key,
       label: config.label,
-      icon: type,
+      icon: key,
       owner: config.owner,
       channelType: config.channelType,
       multiple: config.multiple,
-    })),
+    },
   ])
 ) as Record<ModelType, ModelConfig>
 
-// 渠道类型映射
-const CHANNEL_MAPPINGS = [
-  ['openai', 1],
-  ['API2D', 2],
-  ['Azure', 3],
-  ['azure', 3],
-  ['CloseAI', 4],
-  ['OpenAISB', 5],
-  ['OpenAIMax', 6],
-  ['OhMyGPT', 7],
-  ['Custom', 8],
-  ['Ails', 9],
-  ['AIProxy', 10],
-  ['PaLM', 11],
-  ['API2GPT', 12],
-  ['AIGC2D', 13],
-  ['Anthropic', 14],
-  ['Baidu', 15],
-  ['Zhipu', 16],
-  ['zhipu', 16],
-  ['Ali', 17],
-  ['Xunfei', 18],
-  ['AI360', 19],
-  ['OpenRouter', 20],
-  ['AIProxyLibrary', 21],
-  ['FastGPT', 22],
-  ['Tencent', 23],
-  ['Gemini', 24],
-  ['Moonshot', 25],
-  ['dark_moon', 25],
-  ['Baichuan', 26],
-  ['Minimax', 27],
-  ['Mistral', 28],
-  ['Groq', 29],
-  ['Ollama', 30],
-  ['LingYiWanWu', 31],
-  ['StepFun', 32],
-  ['AwsClaude', 33],
-  ['coze', 34],
-  ['Cohere', 35],
-  ['deepseek', 36],
-  ['deep_seek', 36],
-  ['Cloudflare', 37],
-  ['DeepL', 38],
-  ['TogetherAI', 39],
-  ['Doubao', 40],
-  ['Novita', 41],
-  ['VertextAI', 42],
-  ['Proxy', 43],
-  ['siliconflow', 44],
-  ['silicon_flow', 44],
-  ['XAI', 45],
-  ['Replicate', 46],
-  ['Dummy', 47],
-  // ['dify', 1001],
-  // ['53ai', 1002],
-  // ['n8n', 1009],
-] as const
 
 export const CHANNEL_TYPE_VALUE_MAP = new Map([
-  ...CHANNEL_MAPPINGS,
   ...Object.entries(PLATFORM_CONFIG).map(([key, value]) => [key, value.channelValue] as const),
   ...Object.entries(models).map(([key, value]) => [key, value.channelType] as const),
   ...Object.entries(agents).map(([key, value]) => [key, value.channelType] as const),
 ])
 // 工具函数
-export const getProviderByProviderType = (providerType: ProviderType): ProviderConfig =>
-  providers[providerType] || ({} as ProviderConfig)
-
 export const getProviderByAgentId = (agentId: AgentType) =>
   agents[agentId]?.providerId && providers[agents[agentId].providerId]
-
-export const getAgentsByCategory = (category: AgentConfig['category']) =>
-  Object.values(agents).filter(agent => agent.category === category)
-
-export const getAgentsByProvider = (providerId: ProviderId) =>
-  Object.values(agents).filter(agent => agent.providerId === providerId)
 
 export const getAgentByAgentType = (agentType: AgentType): AgentConfig =>
   agents[agentType] || ({} as AgentConfig)
@@ -672,11 +595,3 @@ export const getAgentByChannelType = (channelType: ChannelValue): AgentConfig =>
 
 export const getProvidersByAuth = (auth: boolean): ProviderConfig[] =>
   Object.values(providers).filter(provider => provider.auth === auth)
-
-// 获取所有 models 中的channleType
-export const getModelChannelTypes = () => {
-  return Object.values(models).map(model => model.channelType)
-}
-
-export const getModelByChannelType = (channelType: ModelValue): ModelConfig =>
-  Object.values(models).find(model => model.channelType === channelType) || ({} as ModelConfig)

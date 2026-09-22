@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { SvgIcon } from "@km/shared-components-react";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { t } from "@/locales";
@@ -6,12 +5,8 @@ import Footer from "@/components/Layout/Footer";
 import Header from "@/components/Layout/Header";
 import GroupList from "./components/GroupList";
 
-
 export function PromptView() {
   const isSoftStyle = useIsSoftStyle();
-
-  const [activeType, setActiveType] = useState("explore");
-
 
   return (
     <>
@@ -23,10 +18,7 @@ export function PromptView() {
           className="sticky z-[101] bg-white w-full py-4 flex items-center"
           style={{ top: isSoftStyle ? "56px" : "0px" }}
         >
-          <div
-            className="h-8 text-xl font-medium flex items-center text-[#1D1E1F] cursor-pointer relative"
-            onClick={() => setActiveType("explore")}
-          >
+          <div className="h-8 text-xl font-medium flex items-center text-[#1D1E1F] cursor-pointer relative">
             {t("prompt.explore")}
             <SvgIcon
               name="explore"
@@ -38,7 +30,7 @@ export function PromptView() {
         </div>
 
         {/* Content */}
-        {activeType === "explore" && (<GroupList enableUrlSync></GroupList>)}
+        <GroupList enableUrlSync />
       </div>
       <Footer />
     </>

@@ -6,16 +6,12 @@ import { t } from "@/locales";
 import linksApi from "@/api/modules/links";
 import "./AccountDialog.css";
 
-interface AccountDialogProps {
-  onVisit?: () => void;
-}
-
 export interface AccountDialogRef {
   open: (item: { id: number | string; url: string }) => Promise<void>;
   close: () => void;
 }
 
-const AccountDialog = forwardRef<AccountDialogRef, AccountDialogProps>(
+const AccountDialog = forwardRef<AccountDialogRef>(
   (_, ref) => {
     const [visible, setVisible] = useState(false);
     const [loading, setLoading] = useState(false);

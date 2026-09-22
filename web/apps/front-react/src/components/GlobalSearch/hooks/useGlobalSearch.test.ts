@@ -41,7 +41,7 @@ const FILTER_PARAMS_WITH_CREATOR_AND_TIME: FilterParams = {
 };
 
 function makeSearchResponse() {
-  return { results: [], total: 0, page: 1, size: 20 };
+  return { rag_results: { items: [], total: 0, page: 1, size: 20 } };
 }
 
 beforeEach(() => {
@@ -110,5 +110,57 @@ describe("useGlobalSearch - spaces/libraries params forwarding", () => {
       created_time_from: -604800000,
       updated_time_from: -2592000000,
     });
+  });
+});
+
+describe("useGlobalSearch - enabled 门控（只在知识文档 tab 搜索）", () => {
+  it("enabled=false 时不触发知识搜索（如处于动态知识 tab）", async () => {
+    const { result } = renderHook(() =>
+      useGlobalSearch("foo", FILTER_PARAMS_EMPTY, false),
+    );
+    act(() => result.current.refresh());
+
+    // 即便初始化后有关键词，也不应发请求
+    await vi.waitFor(() => expect(result.current.isSearchMode).toBe(true), { timeout: 1000 });
+    expect(spacesMock).not.toHaveBeenCalled();
+    expect(librariesMock).not.toHaveBeenCalled();
+    expect(searchMock).not.toHaveBeenCalled();
+  });
+
+  it("切换为 enabled=true 后按当前关键词搜索", async () => {
+    const { result, rerender } = renderHook(
+      ({ q, enabled }: { q: string; enabled: boolean }) =>
+        useGlobalSearch(q, FILTER_PARAMS_EMPTY, enabled),
+      { initialProps: { q: "foo", enabled: false } },
+    );
+    act(() => result.current.refresh());
+    await vi.waitFor(() => expect(result.current.isSearchMode).toBe(true), { timeout: 1000 });
+    expect(spacesMock).not.toHaveBeenCalled();
+
+    // 切回知识文档 tab
+    rerender({ q: "foo", enabled: true });
+
+    await waitFor(() => expect(searchMock).toHaveBeenCalled(), { timeout: 1500 });
+    expect(searchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "foo", page: 1 }),
+    );
+  });
+
+  it("防抖窗口内切出 tab：待执行的搜索被取消，不发请求", async () => {
+    const { result, rerender } = renderHook(
+      ({ q, enabled }: { q: string; enabled: boolean }) =>
+        useGlobalSearch(q, FILTER_PARAMS_EMPTY, enabled),
+      { initialProps: { q: "foo", enabled: true } },
+    );
+    act(() => result.current.refresh());
+
+    // 在 300ms 防抖窗口内切到动态知识 tab（enabled=false）
+    rerender({ q: "foo", enabled: false });
+
+    // 等待超过防抖窗口，确认被取消的搜索没有发出
+    await vi.waitFor(() => expect(result.current.isSearchMode).toBe(true), { timeout: 1000 });
+    expect(searchMock).not.toHaveBeenCalled();
+    expect(spacesMock).not.toHaveBeenCalled();
+    expect(librariesMock).not.toHaveBeenCalled();
   });
 });

@@ -283,7 +283,19 @@ export interface RecordingFileInsightPage {
 }
 
 /** 洞察协同研讨中的背景快照 */
+export type CanonicalInsightPerspective =
+  | 'management_meeting'
+  | 'customer_communication'
+  | 'project_review'
+  | 'business_cooperation'
+  | 'business_innovation'
+  | 'employee_conversation'
+  | 'industry_exchange'
+  | 'management_course'
+
+/** 包含存量数据的历史场景值；新选择器只使用 CanonicalInsightPerspective。 */
 export type InsightPerspective =
+  | CanonicalInsightPerspective
   | 'auto'
   | 'external_training'
   | 'external_speech'
@@ -292,9 +304,77 @@ export type InsightPerspective =
   | 'internal_meeting'
   | 'lecture'
   | 'book'
+  | 'one_on_one'
+  | 'hiring'
+  | 'general'
+
+export const DEFAULT_INSIGHT_PERSPECTIVE: CanonicalInsightPerspective = 'management_meeting'
+
+export function toCanonicalInsightPerspective(value?: InsightPerspective | string): CanonicalInsightPerspective {
+  switch (value) {
+    case 'external_training':
+    case 'lecture':
+      return 'management_course'
+    case 'sales_visit':
+      return 'customer_communication'
+    case 'internal_meeting':
+    case 'general':
+    case 'auto':
+    case 'external_speech':
+    case 'roadshow':
+    case 'book':
+    case 'hiring':
+    case 'one_on_one':
+    case undefined:
+      return DEFAULT_INSIGHT_PERSPECTIVE
+    case 'management_meeting':
+    case 'customer_communication':
+    case 'project_review':
+    case 'business_cooperation':
+    case 'business_innovation':
+    case 'employee_conversation':
+    case 'industry_exchange':
+    case 'management_course':
+      return value
+    default:
+      return DEFAULT_INSIGHT_PERSPECTIVE
+  }
+}
+
+export function resolveInsightPerspectiveForSubmit(
+  original: InsightPerspective | undefined,
+  selected: CanonicalInsightPerspective,
+  changed: boolean,
+): InsightPerspective {
+  return changed ? selected : original || 'auto'
+}
+
+const LEGACY_INSIGHT_PERSPECTIVE_NAMES: Record<string, string> = {
+  auto: '自动判断',
+  external_training: '参与外部培训会议',
+  external_speech: '去别人公司演讲',
+  roadshow: '路演会议',
+  sales_visit: '销售拜访',
+  internal_meeting: '公司内部会议',
+  lecture: '听一堂课',
+  book: '读一本书',
+  one_on_one: '一对一',
+  hiring: '招聘',
+  general: '通用',
+}
+
+export function getInsightPerspectiveDisplayName(
+  value: InsightPerspective | string | undefined,
+  options: InsightPerspectiveOption[],
+): string {
+  if (!value) return '尚未记录'
+  const option = options.find((item) => item.key === value)
+  if (option) return option.name
+  return `历史场景：${LEGACY_INSIGHT_PERSPECTIVE_NAMES[value] || value}`
+}
 
 export interface InsightPerspectiveOption {
-  key: InsightPerspective
+  key: CanonicalInsightPerspective
   name: string
   description: string
 }
@@ -313,6 +393,10 @@ export interface InsightBackground {
   conversation?: InsightConversationMessage[]
   insight_perspective?: InsightPerspective
   resolved_insight_perspective?: InsightPerspective
+  perspective_confidence?: number
+  perspective_reason_codes?: string[]
+  perspective_evidence?: string[]
+  perspective_abstained?: boolean
 }
 
 export interface InsightWorkshopChatRequest {
@@ -455,6 +539,117 @@ export interface RecordingMemoryEntityDetail extends RecordingMemoryEntityItem {
   relations: RecordingMemoryEntityRelation[]
 }
 
+// ============= Current View / Timeline =============
+
+export type RecordingCurrentViewState = 'resolved' | 'unknown' | 'conflicted' | 'degraded' | 'unsupported'
+
+export interface RecordingCurrentViewEvidence {
+  file_id?: string | number
+  source_file?: string
+  source_segments?: string[]
+  source_type?: string
+  confidence?: number
+}
+
+export interface RecordingCurrentViewItem {
+  id: string | number
+  kind: string
+  content: string
+  status?: string
+  source_type?: string
+  confidence?: number
+  evidence_refs?: RecordingCurrentViewEvidence[]
+  source_file?: string
+  source_segments?: string[]
+  timestamp?: number
+  current_validity?: string
+  lifecycle?: string
+}
+
+export interface RecordingCurrentViewValue {
+  state: RecordingCurrentViewState
+  support: string
+  value?: string
+  candidate_refs?: Array<string | number>
+  evidence_refs?: RecordingCurrentViewEvidence[]
+}
+
+export interface RecordingCurrentViewList {
+  state: RecordingCurrentViewState
+  support: string
+  items?: RecordingCurrentViewItem[]
+  uncertain_items?: RecordingCurrentViewItem[]
+  candidate_refs?: Array<string | number>
+  evidence_refs?: RecordingCurrentViewEvidence[]
+}
+
+export interface RecordingCurrentViewRisk extends RecordingCurrentViewList {}
+
+export interface RecordingCurrentViewFacets {
+  current_status: RecordingCurrentViewValue
+  current_position: RecordingCurrentViewValue
+  current_demands: RecordingCurrentViewList
+  current_risks: RecordingCurrentViewRisk
+  current_opportunities: RecordingCurrentViewList
+  open_loops: RecordingCurrentViewList
+  recent_updates: RecordingCurrentViewList
+  recent_changes: RecordingCurrentViewList
+  evidence_refs: RecordingCurrentViewEvidence[]
+}
+
+export interface RecordingCurrentViewEntity {
+  id: string | number
+  entity_type: string
+  canonical_name: string
+  matter_kind?: RecordingCurrentViewValue
+}
+
+export interface RecordingCurrentViewConflict {
+  facet: string
+  reason: string
+  candidates: RecordingCurrentViewItem[]
+}
+
+export interface RecordingCurrentViewResponse {
+  entity: RecordingCurrentViewEntity
+  current_view: RecordingCurrentViewFacets
+  conflicts?: RecordingCurrentViewConflict[]
+  compiled_at: string
+}
+
+export interface RecordingMemoryTimelineItem {
+  id: string | number
+  timestamp: number
+  entity: RecordingCurrentViewEntity
+  record_type: 'fact' | 'claim' | string
+  fact_kind?: string
+  claim_kind?: string
+  event_type: string
+  content: string
+  previous_value?: string
+  new_value?: string
+  source_file?: string
+  source_segments?: string[]
+  source_type?: string
+  epistemic_type?: string
+  confidence?: number
+  current_validity: 'active' | 'invalid' | 'compiler_replaced' | 'unknown' | string
+  lifecycle?: string
+  status?: string
+  due_at?: number
+  evidence_refs?: RecordingCurrentViewEvidence[]
+}
+
+export interface RecordingMemoryTimeline {
+  entity: RecordingCurrentViewEntity
+  items: RecordingMemoryTimelineItem[]
+  total: number
+  offset: number
+  limit: number
+  has_more: boolean
+  compiled_at: string
+}
+
 export interface UpdateRecordingMemoryEntityRequest {
   canonical_name?: string
   summary?: string
@@ -481,6 +676,346 @@ export interface MergeMemoryEntitiesRequest {
   source_ids?: Array<string | number>
   source_id?: string | number
   target_id: string | number
+}
+
+// ============= 老板认知注册与会议校准 =============
+
+export type RecordingCognitionCanonicalType =
+  | 'principle'
+  | 'priority'
+  | 'criterion'
+  | 'preference'
+  | 'boundary'
+  | 'assumption'
+  | 'trigger'
+
+/** @deprecated Only retained for legacy payload compatibility. */
+export type RecordingCognitionLegacyType =
+  | 'principle'
+  | 'preference'
+  | 'risk_preference'
+  | 'decision_style'
+  | 'red_line'
+  | 'assumption'
+
+/** @deprecated Use RecordingCognitionCanonicalType for all new semantics. */
+export type RecordingCognitionType = RecordingCognitionLegacyType
+
+export type RecordingCognitionLayer = 'core' | 'situational'
+export type RecordingCognitionStatus = 'candidate' | 'confirmed' | 'conflicted' | 'expired' | 'rejected'
+
+export interface RecordingCognitionEvidenceRef {
+  source_file_id: string | number
+  /** Current recording filename resolved from source_file_id; absent when the source was removed or unavailable. */
+  source_file_name?: string
+  source_file_time?: number
+  source_segment_ids: string[]
+  source_type?: string
+}
+
+export interface RecordingCognition {
+  /** 认知 HashID */
+  id: string | number
+  title: string
+  statement: string
+  /** 7 大认知分类（principle / priority / criterion / preference / boundary / assumption / trigger） */
+  cognition_type: RecordingCognitionCanonicalType | string
+  layer: RecordingCognitionLayer | string
+  /** 所属领域 HashID（core 认知通常为空） */
+  domain_id?: string
+  /** 领域中文名称 */
+  domain_name?: string
+  status: RecordingCognitionStatus | string
+  source_type: string
+  confidence: number
+  /** 关联的录音文件 */
+  source_file_id?: string | number
+  source_file_name?: string
+  source_file_time?: number
+  current_version: number
+  evidence_refs?: RecordingCognitionEvidenceRef[]
+  created_time?: number
+  updated_time?: number
+}
+
+export interface RecordingCognitionVersion {
+  id: string | number
+  cognition_id: string | number
+  version: number
+  title: string
+  statement?: string
+  cognition_type?: string
+  layer?: RecordingCognitionLayer | string
+  domain_id?: string
+  domain_name?: string
+  change_type: string
+  source_file_id?: string | number
+  source_file_name?: string
+  source_file_time?: number
+  source_segment_ids?: string[]
+  evidence_refs?: RecordingCognitionEvidenceRef[]
+  created_at_unix: number
+}
+
+export interface RecordingCognitionDetail extends RecordingCognition {
+  versions: RecordingCognitionVersion[]
+}
+
+export interface RecordingCognitionList {
+  items: RecordingCognition[]
+  total: number
+}
+
+export interface RecordingCognitionCandidate {
+  id: string | number
+  eid: string | number
+  owner_id: string | number
+  file_id: string | number
+  title: string
+  statement: string
+  cognition_type: string
+  legacy_type?: string
+  canonical_type?: RecordingCognitionCanonicalType | string
+  canonical_type_status?: 'candidate' | 'confirmed' | 'not_classified' | string
+  type_schema_version?: string
+  layer: RecordingCognitionLayer | string
+  domain_code?: string
+  scope: string[]
+  source_type: string
+  confidence: number
+  source_file_id: string | number
+  source_file_name?: string
+  source_segment_ids: string[]
+  status: 'candidate' | 'confirmed' | 'rejected' | 'ignored' | string
+  review_reason?: string
+  target_cognition_id?: string | number
+  reviewed_by?: string | number
+  reviewed_at?: number
+  evidence_refs?: RecordingCognitionEvidenceRef[]
+  external_source?: string
+  external_ref?: string
+  observed_at?: number
+  created_time?: number
+  updated_time?: number
+}
+
+export interface RecordingCognitionCandidateList {
+  items: RecordingCognitionCandidate[]
+  total: number
+}
+
+export interface RecordingCognitionOverview {
+  core_count: number
+  situational_count: number
+  pending_count: number
+  core_type_count: number
+  domain_count: number
+}
+
+export interface RecordingCoreStats {
+  principle: number
+  priority: number
+  criterion: number
+  preference: number
+  boundary: number
+  assumption: number
+  trigger: number
+  total: number
+}
+
+export interface RecordingCognitionDomain {
+  id: string
+  code: string
+  name: string
+  description: string
+  logo: string
+  sort: number
+  /** true=系统预置，false=个人自建 */
+  is_default: boolean
+  /** 是否被当前登录人重写（写时复制）
+   */
+  is_overridden: boolean
+  /** 该领域下已生效的认知条数 */
+  cognition_count: number
+  /** 该领域下待确认的认知条数 */
+  pending_count: number
+  /** 最后更新时间戳(毫秒) */
+  last_updated_time?: number
+}
+
+export interface CreateRecordingCognitionDomainRequest {
+  name: string
+  description?: string
+  logo?: string
+  sort?: number
+}
+
+export interface UpdateRecordingCognitionDomainRequest {
+  name?: string
+  description?: string
+  logo?: string
+  sort?: number
+}
+
+export interface CreateRecordingCognitionRequest {
+  title: string
+  statement: string
+  cognition_type: RecordingCognitionCanonicalType
+  layer: RecordingCognitionLayer
+  /** 所属领域 HashID（situational 必传） */
+  domain_id?: string
+  source_type: string
+  confidence: number
+}
+
+export interface ImportRecordingCognitionItemRequest {
+  title: string
+  statement: string
+  cognition_type?: RecordingCognitionLegacyType
+  canonical_type: RecordingCognitionCanonicalType
+  canonical_type_status?: 'candidate' | 'confirmed' | 'not_classified'
+  domain_code?: string
+  layer: RecordingCognitionLayer
+  scope?: string[]
+  confidence?: number
+  external_source: string
+  external_ref: string
+  observed_at?: number
+  evidence_refs?: RecordingCognitionEvidenceRef[]
+}
+
+export interface ImportRecordingCognitionsRequest {
+  items: ImportRecordingCognitionItemRequest[]
+}
+
+export interface UpdateRecordingCognitionRequest {
+  title?: string
+  statement?: string
+  cognition_type?: RecordingCognitionCanonicalType
+  /** 状态流转，供正式候选确认/拒绝流程使用 */
+  status?: RecordingCognitionStatus
+}
+
+export interface ReviewRecordingCognitionCandidateRequest {
+  title?: string
+  statement?: string
+  scope?: string[]
+  cognition_type?: RecordingCognitionLegacyType
+  canonical_type?: RecordingCognitionCanonicalType
+  canonical_type_status?: 'candidate' | 'confirmed' | 'not_classified'
+  domain_code?: string
+  layer?: RecordingCognitionLayer
+  reason?: string
+}
+
+/**
+ * 编辑待确认候选请求（PATCH /api/recordings/cognition-candidates/:candidate_id）。
+ * 在确认前修正 AI 提炼的内容；仅 status=candidate 的候选可编辑，
+ * confirmed/rejected/ignored 返回 400。未传字段保持原值。
+ */
+export interface UpdateRecordingCognitionCandidateRequest {
+  title?: string
+  statement?: string
+  cognition_type?: RecordingCognitionCanonicalType
+  layer?: RecordingCognitionLayer
+  domain_id?: string
+  scope?: string[]
+}
+
+export interface RecordingDecisionCurrentContext {
+  file_id: string | number
+  generation: number
+  minutes_hash: string
+  primary_scene?: string
+  secondary_domains?: string[]
+  topics?: string[]
+  segment_ids: string[]
+  claims: Array<{ temp_id: string; kind: string; content: string; evidence_segment_ids: string[] }>
+  entities: Array<{ temp_id: string; entity_type: string; mention: string; canonical_name: string; evidence_segment_ids: string[] }>
+  relations: Array<{ from_temp_id: string; relation_type: string; to_temp_id: string; evidence_segment_ids: string[] }>
+  claim_entity_bindings: Array<{ claim_temp_id: string; entity_temp_id: string; role: string; evidence_segment_ids: string[] }>
+}
+
+export interface RecordingDecisionMemoryItem {
+  memory_id: string | number
+  kind: string
+  content: string
+  assertion_state: string
+  lifecycle_state: string
+  review_state: string
+  source_file_id: string | number
+  source_file: string
+  source_confidence: number
+  evidence_available: boolean
+  source_segment_ids: string[]
+  recall_path: string[]
+  structured_links?: string
+}
+
+export interface RecordingDecisionContextPackage {
+  current_context: RecordingDecisionCurrentContext
+  cognitions: {
+    core: Array<Pick<RecordingCognition, 'id' | 'title' | 'statement' | 'cognition_type' | 'layer' | 'domain_id' | 'domain_name' | 'confidence' | 'source_type' | 'evidence_refs' | 'current_version' | 'created_time' | 'updated_time'>>
+    situational: Array<Pick<RecordingCognition, 'id' | 'title' | 'statement' | 'cognition_type' | 'layer' | 'domain_id' | 'domain_name' | 'confidence' | 'source_type' | 'evidence_refs' | 'current_version' | 'created_time' | 'updated_time'>>
+    conflicts: Array<Pick<RecordingCognition, 'id' | 'title' | 'statement' | 'cognition_type' | 'layer' | 'domain_id' | 'domain_name' | 'confidence' | 'source_type' | 'evidence_refs' | 'current_version' | 'created_time' | 'updated_time'>>
+  }
+  business_memory: { items: RecordingDecisionMemoryItem[] }
+  evidence_policy: {
+    current_facts_first: boolean
+    require_source_segments: boolean
+    max_relation_hops: number
+    memory_v2_shadow_only: boolean
+  }
+  omitted_reasons: string[]
+  retrieval_reasons?: string[]
+  query_plan?: {
+    version: string
+    question?: string
+    claim_anchors?: string[]
+    entity_anchors?: string[]
+    primary_scene?: string
+    secondary_domains?: string[]
+    topics?: string[]
+    priority: string[]
+    reasons?: string[]
+    degraded: boolean
+    degrade_reason?: string
+  }
+  runtime_context?: RecordingDecisionRuntimeContext
+  built_at_unix: number
+}
+
+export interface RecordingDecisionRuntimeItem {
+  audit_item_id: string
+  source_id: string
+  content: string
+  evidence_refs?: string[]
+}
+
+export interface RecordingDecisionRuntimeContext {
+  context_version: string
+  current_context: RecordingDecisionRuntimeItem[]
+  boss_cognition: RecordingDecisionRuntimeItem[]
+  business_memory: RecordingDecisionRuntimeItem[]
+  enterprise_knowledge: RecordingDecisionRuntimeItem[]
+  evidence_refs: string[]
+  degraded: boolean
+  degradation_reasons?: string[]
+}
+
+export interface RecordingMemoryV2Evaluation {
+  insight_generation: number
+  projection_version: string
+  baseline_count: number
+  v2_count: number
+  overlap_count: number
+  baseline_only_count: number
+  v2_only_count: number
+  baseline_evidence_count: number
+  v2_evidence_count: number
+  duration_ms: number
+  status: string
+  created_at_unix: number
 }
 
 // ============= 转写原文 🆕 =============

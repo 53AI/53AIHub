@@ -46,6 +46,68 @@ describe("KnowledgeSourceSelector — 动态菜单项", () => {
     });
   });
 
+  it("已勾选「当前知识库」再点击 → 取消勾选,回到全部知识", async () => {
+    // 复现需求:勾选状态可点击取消(不能只选不能退)
+    const onChange = vi.fn();
+    render(
+      <KnowledgeSourceSelector
+        value={{
+          ...baseValue,
+          mode: "libraries",
+          allKnowledge: false,
+          selectedLibraries: [{ id: "7", name: "测试库" }],
+        }}
+        onChange={onChange}
+        library={{ name: "测试库", value: ["7"] }}
+        allowSelectLibrary
+      />,
+    );
+
+    fireEvent.click(document.querySelector(".knowledge-source-trigger")!);
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/current\s*library/i);
+    });
+    const menuItem = Array.from(document.querySelectorAll(".ant-dropdown-menu-item"))
+      .find((el) => /current\s*library/i.test(el.textContent || ""))!;
+    act(() => {
+      fireEvent.click(menuItem);
+    });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const next = onChange.mock.calls[0]![0] as KnowledgeSourceState;
+    expect(next.allKnowledge).toBe(true);
+    expect(next.mode).toBe("all");
+    expect(next.selectedLibraries).toHaveLength(0);
+  });
+
+  it("仅勾选「知识文档」时取消它 → 兜底仍勾选「知识文档」，不出现无来源空态", async () => {
+    // 复现需求:全部来源取消时,默认仍勾选「知识文档」
+    const onChange = vi.fn();
+    render(
+      <KnowledgeSourceSelector
+        value={baseValue} // allKnowledge:true,其余全空(未传 agentInfo,故仅渲染「知识文档」toggle)
+        onChange={onChange}
+        allowSelectLibrary
+      />,
+    );
+
+    fireEvent.click(document.querySelector(".knowledge-source-trigger")!);
+    await waitFor(() => {
+      expect(document.querySelector(".ant-dropdown-menu")).toBeTruthy();
+    });
+    // 0=@从知识库选择,1=知识文档(全部知识);无 library 故无「当前知识库」项
+    const allKnowledgeItem = Array.from(
+      document.querySelectorAll(".ant-dropdown-menu-item"),
+    )[1]! as HTMLElement;
+    act(() => {
+      fireEvent.click(allKnowledgeItem);
+    });
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const next = onChange.mock.calls[0]![0] as KnowledgeSourceState;
+    expect(next.allKnowledge).toBe(true);
+  });
+
   it("library.value 为空时,菜单不包含「当前知识库」项", async () => {
     const onChange = vi.fn();
     render(

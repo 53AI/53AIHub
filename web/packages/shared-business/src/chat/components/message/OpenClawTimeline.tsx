@@ -153,6 +153,9 @@ function TimelineAnswerBubble({
   menu?: ReactNode;
 }) {
   const displayedContent = useGradualText(content, active);
+  const sourceIds = ((message as any).rag_stats?.chunks || (message as any).rag_stats?.document_search?.chunks || [])
+    .map((chunk: any) => chunk.source_key || chunk.source || chunk.reference_id || chunk.source_id)
+    .filter(Boolean);
 
   return (
     <BubbleAssistant
@@ -161,6 +164,7 @@ function TimelineAnswerBubble({
       alwaysShowMenu={Boolean(menu)}
       avatar={avatar}
       sourceEnabled
+      sourceIds={sourceIds}
       renderSource={(type: string, number: number) => renderSource?.(type, number, message) || `${type}-${number}`}
       onSourceReferenceClick={(data) => onSourceReferenceClick?.(data, message)}
       menu={menu}
@@ -628,6 +632,9 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
           streaming
           avatar={agentInfo?.logo}
           sourceEnabled
+          sourceIds={((message as any).rag_stats?.chunks || (message as any).rag_stats?.document_search?.chunks || [])
+            .map((chunk: any) => chunk.source_key || chunk.source || chunk.reference_id || chunk.source_id)
+            .filter(Boolean)}
           renderSource={(type: string, number: number) => renderSource?.(type, number, message) || `${type}-${number}`}
           onSourceReferenceClick={(data) => onSourceReferenceClick?.(data, message)}
         />

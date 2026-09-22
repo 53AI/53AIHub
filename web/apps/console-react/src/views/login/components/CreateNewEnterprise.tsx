@@ -7,6 +7,8 @@ import { VerificationCodeInput } from "@/components/VerificationCodeInput";
 import { authApi } from "@/api/modules/auth";
 import { DOMAIN_SUFFIX } from "@/constants/domain";
 import { t } from "@/locales";
+import { noSpaceKeydownHandler, passwordNoSpaceRule } from "@/utils";
+import { verifyCodePatternRule } from "@/utils/form-rule";
 
 interface CreateNewEnterpriseProps {
   onLogin: () => void;
@@ -329,13 +331,13 @@ export function CreateNewEnterprise(props: CreateNewEnterpriseProps) {
                     required: true,
                     message: t("verification_code_placeholder"),
                   },
+                  verifyCodePatternRule(t("verification_code_format")),
                 ]}
               >
                 <VerificationCodeInput
                   account={form.getFieldValue("username")}
                   accountType="mobile"
                   disabled={!isAccountValid}
-                  maxLength={4}
                   bgColor="#fff"
                 />
               </Form.Item>
@@ -353,11 +355,13 @@ export function CreateNewEnterprise(props: CreateNewEnterpriseProps) {
                       message: t("login.password_placeholder"),
                     },
                     { min: 8, max: 20, message: t("login.password_length_v2") },
+                    passwordNoSpaceRule(),
                   ]}
                 >
                   <Input.Password
                     size="large"
                     placeholder={t("login.password_placeholder")}
+                    onKeyDown={noSpaceKeydownHandler}
                   />
                 </Form.Item>
               )}

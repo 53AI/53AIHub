@@ -10,7 +10,7 @@ import { formatFile } from "@/api/modules/files/transform";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { formatLibrary } from "@/stores/modules/library";
-import { VirtualLogo } from "@/components";
+import { SafeImage } from "@km/shared-components-react";
 import { SvgIcon } from "@km/shared-components-react";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { getPublicPath } from "@/utils/config";
@@ -175,10 +175,10 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
         resource_type: type === "library" ? 1 : 2,
         resource_id: resourceId,
       });
-      message.success(isFavorite ? '已取消' : '已收藏')
+      message.success(isFavorite ? t('mine.unfavorite_success') : t('mine.favorited'))
       loadRecently(keyword, 0, false);
     } catch (error) {
-      message.error("操作失败");
+      message.error(t('action.operation_failed'));
     }
   };
 
@@ -231,7 +231,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
   const filterMenuItems: MenuProps["items"] = [
     {
       key: "all",
-      label: "全部",
+      label: t("common.all"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("all");
@@ -239,7 +239,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
     },
     {
       key: "library",
-      label: "知识库",
+      label: t("library.name"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("library");
@@ -247,7 +247,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
     },
     {
       key: "file",
-      label: "知识",
+      label: t("mine.knowledge"),
       onClick: (e) => {
         e.domEvent.stopPropagation();
         setFilterType("file");
@@ -258,11 +258,11 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
   const getFilterLabel = () => {
     switch (filterType) {
       case "library":
-        return "知识库";
+        return t("library.name");
       case "file":
-        return "知识";
+        return t("mine.knowledge");
       default:
-        return "全部";
+        return t("common.all");
     }
   };
 
@@ -348,10 +348,10 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
                     {/* 名称列 */}
                     <div className="flex-1 min-w-0 flex items-center gap-2">
                       {item.type === "library" ? (
-                        <VirtualLogo
-                          text={item.name}
-                          src={getPublicPath("/images/default_popover_img.png")}
-                          size={26}
+                        <SafeImage
+                          src="/images/default_popover_img.png"
+                          letter={item.name}
+                          className="size-[26px] object-cover text-sm"
                         />
                       ) : (
                         <img
@@ -405,7 +405,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
                           {
                             key: "favorite",
                             icon: item.isFavorite ? "star-cancel" : "star",
-                            label: item.isFavorite ? "取消收藏" : "收藏",
+                            label: item.isFavorite ? t("action.unfavorite") : t("action.favorite"),
                           },
                         ]}
                         onCommand={(cmd) => {
@@ -457,7 +457,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
           <Empty
             styles={{ image: { height: 100 } }}
             image={getPublicPath("/images/empty.png")}
-            description="暂无最近访问文档"
+            description={t("mine.empty_recent")}
           />
         </div>
       )}

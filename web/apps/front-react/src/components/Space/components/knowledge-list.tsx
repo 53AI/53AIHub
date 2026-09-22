@@ -175,21 +175,16 @@ export function KnowledgeList({
             return [];
           }
 
-          // 权限过滤
-          const privateSpaces = enabledSpaces.filter((item: SpaceItem) => !item.visibility);
-          let permissionMap: Record<string, number> = {};
-          if (privateSpaces.length > 0) {
-            permissionMap = await permissionsApi.myBatch({
-              resource_type: RESOURCE_TYPE.space,
-              resource_ids: privateSpaces.map((item: SpaceItem) => item.id),
-            });
-          }
+          // 权限过滤：按空间级 Wiki（resource_type=4）查看权限判断，公开空间同样走 batch
+          const permissionMap = await permissionsApi.myBatch({
+            resource_type: RESOURCE_TYPE.wiki,
+            resource_ids: enabledSpaces.map((item: SpaceItem) => item.id),
+          });
 
-          return enabledSpaces.filter((item: SpaceItem) => {
-            if (item.visibility) return true;
-            const key = `${RESOURCE_TYPE.space}:${item.id}`;
-            return permissionMap[key] >= PERMISSION_TYPE.viewer;
-          })
+          return enabledSpaces.filter(
+            (item: SpaceItem) =>
+              permissionMap[`${RESOURCE_TYPE.wiki}:${item.id}`] >= PERMISSION_TYPE.viewer
+          )
         }
       );
 

@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Spin } from "antd";
+import { Spin, Tag } from "antd";
 import { useNavigate } from "react-router-dom";
 import { SvgIcon, OverflowTooltip } from "@km/shared-components-react";
 import { useSpaceStore } from "@/stores/modules/space";
+import { useUserStore } from "@/stores/modules/user";
 import { t } from "@/locales";
 import { formatFileInfo } from "@/api/modules/files/transform";
 import type { WikiPageVersion } from "@/api/modules/wiki";
+import { permissionsApi } from "@/api/modules/permissions";
+import { getPermissionLabel } from "@/components/KMPermission/permission-label";
+import { RESOURCE_TYPE, SUBJECT_TYPE } from "@/components/KMPermission/constant";
+import { useWikiPagePermission } from "@/hooks/useWikiPagePermission";
 import { getFormatTimeStamp } from "@km/shared-utils";
 import {
   buildFileIdToSourceMetaResolver,
@@ -26,10 +31,12 @@ interface WikiPagePreviewProps {
   loading?: boolean;
   /** 是否启用正文文本选择 */
   enableTextSelection?: boolean;
+  /** 是否展示"你的权限"标签（历史版本预览不展示），默认展示 */
+  showPermission?: boolean;
 }
 
 /**
- * 共享预览布局：标题 → 别名 → page_type + 版本号 + 更新时间 → 反向链接 → 正文 + 来源文档 / 相关知识 footer。
+ * 共享预览布局：标题 → 别名 → page_type + 版本号 + 更新时间 → 反向链接 → 你的权限 → 正文 + 来源文档 / 相关知识 footer。
  *
  * ViewMode（带标题右侧操作）与 KnowledgeHistoryDrawer（不带右侧操作）共用此组件，避免布局代码重复。
  */
@@ -38,11 +45,16 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
   headerActions,
   loading = false,
   enableTextSelection = false,
+  showPermission = true,
 }) => {
   const navigate = useNavigate();
   const spaceId = useSpaceStore((state) => state.spaceId);
   const markdownContainerRef = useRef<HTMLDivElement>(null);
+  // 标题栏：用于量“元信息区”占了多高（收起时会释放多少高度）
+  const headerRef = useRef<HTMLDivElement>(null);
   const [isMetadataHidden, setIsMetadataHidden] = useState(false);
+  // 权限是否来自"页面直接授权"（direct 中存在当前用户）；否则视为继承团队空间
+  const [isDirectGrant, setIsDirectGrant] = useState(false);
 
   // 监听正文滚动：滚离顶部时收起别名/类型/反向链接，保留标题始终可见
   useEffect(() => {
@@ -56,15 +68,44 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
     const SHOW_AT = 4;
     let hidden = false;
 
+    // 元信息区（别名/类型/反向链接/权限）当前占用的高度。
+    // 它就是「收起后会释放给正文容器」的高度：正文容器是 flex-1，
+    // 元信息矮多少，它长多少。用真实几何量，不用 max-h 类名去估。
+    const getMetaHeight = () => {
+      const header = headerRef.current;
+      const container = markdownContainerRef.current;
+      if (!header || !container) return 0;
+      const gap =
+        container.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+      return Math.max(0, gap);
+    };
+
     const apply = () => {
       rafId = null;
       if (!scrollEl) return;
       const top = scrollEl.scrollTop;
-      const next = hidden ? top > SHOW_AT : top > HIDE_AT;
-      if (next !== hidden) {
-        hidden = next;
-        setIsMetadataHidden(next);
+
+      if (hidden) {
+        // 展开只会让滚动范围变大，不可能夹住 scrollTop，无副作用
+        if (top <= SHOW_AT) {
+          hidden = false;
+          setIsMetadataHidden(false);
+        }
+        return;
       }
+
+      if (top <= HIDE_AT) return;
+
+      // 收起会让正文容器变高、滚动范围变小；若剩下的范围装不下当前
+      // scrollTop，浏览器会把 scrollTop 夹回去（短文档直接夹到 0），
+      // 于是又落回「展开」条件 → 收起/展开互相触发，顶部持续抖动。
+      // 只有收起后仍能把 top 保持在 SHOW_AT 以上，收起才是稳定的。
+      const maxScrollAfterHide =
+        scrollEl.scrollHeight - scrollEl.clientHeight - getMetaHeight();
+      if (maxScrollAfterHide <= SHOW_AT) return;
+
+      hidden = true;
+      setIsMetadataHidden(true);
     };
 
     const handleScroll = () => {
@@ -96,6 +137,39 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
       scrollEl?.removeEventListener("scroll", handleScroll);
     };
   }, []);
+
+  // 不展示权限标签时不传 pageId，顺带跳过权限请求
+  const pageId =
+    showPermission && version.page_id ? String(version.page_id) : undefined;
+  const myPermission = useWikiPagePermission(pageId);
+  const currentUserId = useUserStore((state) => state.info?.user_id);
+
+  // 权限来源：detail.direct 中直接授权给当前用户即"页面直接授权"，否则继承自团队空间
+  useEffect(() => {
+    if (!pageId) return;
+    let cancelled = false;
+    permissionsApi
+      .detail({ resource_type: RESOURCE_TYPE.wiki_page, resource_id: pageId })
+      .then((res) => {
+        if (!cancelled) {
+          setIsDirectGrant(
+            res.direct.some(
+              (item) =>
+                item.subject_type === SUBJECT_TYPE.user &&
+                item.subject_id === currentUserId,
+            ),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIsDirectGrant(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pageId, currentUserId]);
+
+  const permissionLabel = getPermissionLabel(myPermission);
 
   const aliases = version.aliases ?? [];
   const backlinks = version.backlinks ?? [];
@@ -133,7 +207,7 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
   return (
     <div className="flex-1 min-h-0 flex flex-col px-8 pt-5 overflow-hidden">
       {/* 标题 + 右侧操作区 */}
-      <div className="flex justify-between items-center overflow-hidden">
+      <div ref={headerRef} className="flex justify-between items-center overflow-hidden">
         <OverflowTooltip>
           <h1 className="flex-1 text-2xl font-medium text-primary truncate">
             {version.title}
@@ -213,6 +287,26 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* 你的权限 */}
+      {permissionLabel && (
+        <div
+          className={`flex items-center overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${
+            isMetadataHidden ? "max-h-0 opacity-0" : "mt-3 max-h-8 opacity-100"
+          }`}
+        >
+          <Tag color="blue" className="m-0">
+            {t("wiki.your_permission")}
+            <b>{permissionLabel}</b>
+            <span className="text-[#7c8db5]">
+              {" "}·{" "}
+              {isDirectGrant
+                ? t("wiki.permission_direct")
+                : t("wiki.permission_inherited")}
+            </span>
+          </Tag>
         </div>
       )}
 

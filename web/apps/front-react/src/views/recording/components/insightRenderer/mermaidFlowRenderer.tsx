@@ -9,7 +9,7 @@
  *
  * 算法：rank 分层 → 同层均匀分布 → 正交折线。
  */
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   MermaidFlowDiagram,
   MermaidFlowNode,
@@ -27,8 +27,6 @@ const NARROW_MIN_NODE_W = 132
 // = 2*X + 16 + 28 = 330 → X ≤ 143；3 节点更小，会被自然溢出，让 viewport 提供横向滚动条）
 const NARROW_MAX_NODE_W = 143
 const NODE_MIN_H = 68
-const NODE_PAD_X = 12
-const NODE_PAD_Y = 11
 
 const COL_GAP = 16 // TB 同 rank 内节点水平间距
 const RANK_GAP_TB = 38 // TB 不同 rank 之间的纵向间距
@@ -350,6 +348,20 @@ export function MermaidFlowRenderer({ diagram, className }: MermaidFlowRendererP
     [sortedNodes, isTB, nodeWidth, measuredHeights, availableWidth],
   )
 
+  // 首屏居中：仅当 flow 超宽时，把横向滚动设到中段，让初始视图中图居中。
+  // 用 margin-inline:auto 保持左锚定，scrollLeft ∈ [0, 超宽量]，故起点（根节点）在 scrollLeft=0 时仍能滚回。
+  // centeredOnceRef 保证只生效一次（mount 后那次真实测量布局），窗口缩放/侧栏折叠时不打扰用户的滚动。
+  const centeredOnceRef = useRef(false)
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el || !safeDiagram) return
+    if (centeredOnceRef.current) return
+    if (measuredHeights.size === 0) return
+    if (el.scrollWidth <= el.clientWidth) return
+    el.scrollLeft = (el.scrollWidth - el.clientWidth) / 2
+    centeredOnceRef.current = true
+  }, [layout, safeDiagram, measuredHeights])
+
   if (!safeDiagram) return null
 
   // 边标签
@@ -383,7 +395,7 @@ export function MermaidFlowRenderer({ diagram, className }: MermaidFlowRendererP
   }
 
   return (
-    <div ref={containerRef} className="insight-mermaid-viewport">
+    <div ref={containerRef} className="insight-mermaid-viewport insight-mermaid-viewport-flow">
       <div
         className={`insight-mermaid-flow ${className || ''}`}
         style={{ position: 'relative', width: layout.width, height: layout.height }}

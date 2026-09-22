@@ -1,9 +1,7 @@
 import { useCallback } from "react";
-import type { ChunkItem, ChunkType, RagStats } from "../types";
+import type { ChunkType, RagStats } from "../types";
 import { parseJson } from "./useChatStream";
 import { formatFileInfo } from '@km/shared-utils';
-
-type RagChunk = ChunkItem;
 
 /** ChunkType 的运行时 source of truth：所有合法 chunk 类型字面量 */
 export const validChunkTypes: ChunkType[] = [
@@ -38,14 +36,27 @@ export function formatRagStats(
   let file_quotations: any[] = ragStats ? ragStats.file_quotations || [] : [];
   const wiki_quotations: any[] = ragStats ? ragStats.wiki_page_quotations || [] : [];
 
-  // 补充 wiki sources：后端只把 wiki 数据放在 processRecords[knowledge_search].data.sources，
-  // 不会写进 rag_stats.document_search.chunks，所以这里从 processRecords 补回来（去重）。
+  // 兼容旧消息：Wiki 可能只在 processRecords 中。新消息已写入
+  // document_search.chunks，因此只补充尚未存在的 Wiki 分块，避免重复来源。
   const wikiSourcesFromRecords = (knowledgeSearchData?.sources || []).filter(
     (s: any) => s?.chunk_type === ("wiki" as const)
   );
 
   if (wikiSourcesFromRecords.length > 0) {
-    chunks = [...(chunks as any[]), ...wikiSourcesFromRecords] as any;
+    const existingWikiKeys = new Set(
+      chunks
+        .filter((chunk: any) => chunk?.chunk_type === ("wiki" as const))
+        .map((chunk: any) => chunk.source_key || chunk.wiki_page_id || chunk.chunk_id),
+    );
+    chunks = [
+      ...(chunks as any[]),
+      ...wikiSourcesFromRecords.filter((source: any) => {
+        const key = source.source_key || source.wiki_page_id || source.chunk_id;
+        if (!key || existingWikiKeys.has(key)) return false;
+        existingWikiKeys.add(key);
+        return true;
+      }),
+    ] as any;
   }
 
   const filesSearch = chunks
@@ -64,7 +75,7 @@ export function formatRagStats(
         library_id: String(chunk.library_id ?? chunk.knowledge_base_id ?? ""),
         file_id: String(chunk.file_id ?? chunk.wiki_page_id ?? ""),
         file_name: isWiki
-          ? chunk.title
+          ? chunk.title || chunk.file_name || chunk.library_name
           : file.fname || chunk.file_name,
         file_icon: file.icon,
       };

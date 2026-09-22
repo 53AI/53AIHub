@@ -211,7 +211,8 @@ export function ChunksPipeline({
       switch (job.type) {
         case "document_parsing":
           if (stepConfig.engine) {
-            const parserConfig = getParserConfig(stepConfig.engine);
+            const isVoice = stepConfig.engine ===  'recording_voice'
+            const parserConfig = isVoice ? { name: '语音解析' } : getParserConfig(stepConfig.engine);
             config.push({
               label: "解析方法",
               value: parserConfig?.name || stepConfig.engine,
@@ -1292,6 +1293,9 @@ export function ChunksPipeline({
                 React.createElement(getConfigComponent(currentSettingStep.type)!, {
                   config: currentSettingConfig,
                   onChange: handleConfigChange,
+                  ...(currentSettingStep.type === "document_chunking"
+                    ? { engine: getJobConfig("document_parsing")?.engine }
+                    : {}),
                 })}
             </div>
           </Modal>

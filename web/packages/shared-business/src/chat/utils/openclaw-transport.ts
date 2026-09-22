@@ -74,11 +74,9 @@ export function decodeOutputFile(transport: unknown): OutputFile | null {
   const downloadUrl = pickString(record, 'download_url', 'downloadUrl');
   const signedDownloadUrl = pickString(record, 'signed_download_url', 'signedDownloadUrl');
   const rawUrl = pickString(record, 'url', 'href');
-  const url = previewUrl ?? (rawUrl?.startsWith('data:') ? rawUrl : undefined);
 
   return {
     id,
-    name,
     file_name: name,
     url: rawUrl,
     preview_url: previewUrl,

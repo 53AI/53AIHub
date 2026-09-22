@@ -306,7 +306,6 @@ describe('InsightPageRenderer — 散文 + mermaid + ### 对比表格，全部�
     const text = container.textContent || ''
 
     // 关键：只有一张 assumption_chain 卡片，**没有**独立的 mermaid / flow_diagram 卡片
-    const assumptionCards = container.querySelectorAll('.insight-assumption-chain, .insight-assumption-claims')
     // assumption_chain 渲染时外层是 .insight-card 包裹 step 链；本场景没有 claim steps，只渲染 evidence 链
     // 我们只关心：没有"独立的 mermaid 卡片"——也就是 .insight-card 数量应当等于 1（封面 + assumption_chain 各一）
     const insightCards = container.querySelectorAll('.insight-schema > *')

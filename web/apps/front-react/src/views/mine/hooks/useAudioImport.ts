@@ -70,7 +70,7 @@ export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn 
         for (const file of Array.from(files)) {
           const ext = file.name.split('.').pop()?.toLowerCase()
           if (!ext || !AUDIO_EXTENSIONS.includes(ext)) {
-            message.warning(`文件 ${file.name} 格式不支持，已跳过`)
+            message.warning(t('mine.audio_format_skip', { name: file.name }))
             continue
           }
           if (file.size >= maxSize) {
@@ -90,7 +90,7 @@ export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn 
         }
 
         if (fileStructure.length === 0) {
-          message.error('没有有效的音频文件可导入')
+          message.error(t('mine.no_audio_to_import'))
           setImporting(false)
           return
         }
@@ -129,11 +129,11 @@ export function useAudioImport(config: AudioImportConfig): UseAudioImportReturn 
         // 等待批量上传完成（使用公共 hook）
         await waitForComplete(batch_id, fileUploadIds)
 
-        message.success('已导入')
+        message.success(t('mine.imported'))
         onSuccess()
       } catch (error: any) {
         const errorMsg =
-          error?.response?.data?.message || error?.message || '导入失败'
+          error?.response?.data?.message || error?.message || t('mine.import_failed')
         message.error(errorMsg)
       } finally {
         setImporting(false)

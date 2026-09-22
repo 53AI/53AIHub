@@ -21,6 +21,7 @@ import { CatalogRefContext, useFileViewFullscreen } from "../index";
 import agentsApi from "@/api/modules/agents";
 import { AGENT_USAGES } from "@/constants/agent";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
+import { FileMetaLine } from "./components/file-meta";
 
 const FileViewer = lazy(() => import("@/components/FileViewer/view"));
 const LibraryAudioView = lazy(() => import("./views/library-audio"));
@@ -209,9 +210,7 @@ export function LibraryFileView() {
                 >
                   {getDisplayName(currentFile.name, true, currentFile.file_ext)}
                 </h3>
-                <p className="text-xs text-[#9A9A9A]">
-                  {t("common.recently_edit")} ：{currentFile.updated_at}
-                </p>
+                <FileMetaLine file={currentFile} />
               </div>
             </div>
           )}

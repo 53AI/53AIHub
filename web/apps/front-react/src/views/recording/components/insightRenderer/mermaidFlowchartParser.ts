@@ -20,6 +20,7 @@ import type {
   MermaidFlowEdge,
   MermaidFlowNode,
 } from '@/api/modules/recording/types'
+import { unquote } from './mermaidText'
 
 // ============= 类型 =============
 
@@ -94,14 +95,6 @@ function extractShapeText(shape: string): string {
   return doubleWrapped ? s.slice(2, -2) : s.slice(1, -1)
 }
 
-/** 去掉首尾配对的引号（Mermaid 里 "..." 只是转义手段，不是内容） */
-function stripQuotes(raw: string): string {
-  const s = (raw || '').trim()
-  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1).trim()
-  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1).trim()
-  return s
-}
-
 /**
  * 把节点标签拆成 title / content：
  *   - <br> → 换行，其余 HTML 标签直接剥离（不信任模型输出的 HTML）
@@ -117,7 +110,7 @@ export function splitNodeLabel(raw: string): { title: string; content: string } 
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
-  label = stripQuotes(label).replace(/\\"/g, '"').trim()
+  label = unquote(label).replace(/\\"/g, '"').trim()
 
   const sepIndex = label.search(/[|｜]/)
   if (sepIndex >= 0) {

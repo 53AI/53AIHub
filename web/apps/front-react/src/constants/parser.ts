@@ -165,39 +165,6 @@ const PARSER_CONFIGS: ParserConfig[] = [
     ],
     supportedExts: ['pdf'],
   },
-  {
-    key: 'tingwu',
-    name: '通义听悟',
-    icon: getPublicPath('/images/tools/tingwu.png'),
-    desc: '语音解析服务',
-    detailedDesc:
-      '阿里云通义听悟，支持音视频转文字、会议记录、字幕生成等场景，准确率高，支持多种语言。',
-    description: `
-      <ol class="list-decimal list-inside space-y-1">
-        <li>
-          如何获取 AccessKey ID 和 AccessKey Secret：登录 RAM 访问控制台，使用阿里云账号创建 AccessKey。具体操作，请参见<a
-            href="https://help.aliyun.com/zh/tingwu/getting-started-1?spm=a2c4g.11186623.help-menu-454189.d_1.475631527aKt0n#c34213b07edk5"
-            target="_blank"
-            class="text-[#2563EB]"
-            >阿里云文档</a
-          >。
-        </li>
-        <li>Endpoint 默认为 tingwu.cn-beijing.aliyuncs.com，一般无需修改</li>
-      </ol>
-    `,
-    formFields: [
-      { key: 'app_key', label: 'AppKey' },
-      { key: 'access_key_id', label: 'AccessKey ID' },
-      { key: 'access_key_secret', label: 'AccessKey Secret' },
-      { key: 'endpoint', label: 'Endpoint', defaultValue: 'tingwu.cn-beijing.aliyuncs.com' },
-    ],
-    displayFields: [
-      { key: 'app_key', label: 'AppKey' },
-      { key: 'access_key_id', label: 'AccessKey ID', isSecret: true },
-      { key: 'access_key_secret', label: 'AccessKey Secret', isSecret: true },
-    ],
-    supportedExts: ['mp3'],
-  },
 ] as const
 
 export type ParserKeys = (typeof PARSER_CONFIGS)[number]['key']

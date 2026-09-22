@@ -17,7 +17,7 @@ import { formatFile } from "@/api/modules/files/transform";
 import { debounce, getFormatTimeStamp, isOfficeFile } from "@km/shared-utils";
 import { t } from "@/locales";
 import { LibraryHeader } from "@/views/library/components/header";
-import { useInlineEditLite, getDisplayName, buildNewPath } from "../useInlineEditLite";
+import { useInlineEditLite, getDisplayName, buildRenamePath } from "../useInlineEditLite";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import type { PreviewFile } from "../types";
 
@@ -170,7 +170,7 @@ export function SourceEditView({ onBack, onRefresh, onRename }: SourceEditViewPr
             }
             const html = await ueditorRef.current.getHtml();
             if (!html) {
-              message.error("内容为空");
+              message.error(t('mine.content_empty'));
               return;
             }
             await filesApi.raw(currentFileId, { content: html });
@@ -206,7 +206,7 @@ export function SourceEditView({ onBack, onRefresh, onRename }: SourceEditViewPr
       isFile: true,
       permission: PERMISSION_TYPE.edit_knowledge,
       onRename: async (id, newName) => {
-        await onRename(id, buildNewPath(originalPath, newName));
+        await onRename(id, buildRenamePath(originalPath, newName));
       },
     });
   };
@@ -324,7 +324,7 @@ export function SourceEditView({ onBack, onRefresh, onRename }: SourceEditViewPr
 
       } catch (error) {
         console.error("初始化失败:", error);
-        message.error("加载文件失败");
+        message.error(t('common.load_file_failed'));
         onBack();
       }
     };
@@ -399,7 +399,7 @@ export function SourceEditView({ onBack, onRefresh, onRename }: SourceEditViewPr
       <LibraryHeader
         footer={
           <div className="flex items-center gap-2">
-            <Button onClick={handleCancel}>退出编辑</Button>
+            <Button onClick={handleCancel}>{t("action.exit_edit")}</Button>
             <Button type="primary" loading={isSaving} onClick={handleSave}>
               {t("action.save")}
             </Button>

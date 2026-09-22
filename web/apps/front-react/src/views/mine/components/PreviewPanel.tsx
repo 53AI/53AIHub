@@ -4,7 +4,7 @@ import { LibraryHeader } from '@/views/library/components/header'
 import { MoreDropdown } from '@/components/MoreDropdown'
 import { FavoriteToggle } from '@/components/FavoriteToggle'
 import { t } from '@/locales'
-import { useInlineEditLite, getDisplayName, buildNewPath } from '../useInlineEditLite'
+import { useInlineEditLite, getDisplayName, buildRenamePath } from '../useInlineEditLite'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
 import type { PreviewFile } from '../types'
 import FileEditBtn from './FileEditBtn'
@@ -69,7 +69,7 @@ export function PreviewPanel({ file, content, loading, onBack, onCommand, onEdit
       isFile: !isFolder,
       permission: PERMISSION_TYPE.edit_knowledge,
       onRename: async (id, newName) => {
-        await onRename(id, buildNewPath(originalPath, newName));
+        await onRename(id, buildRenamePath(originalPath, newName));
       },
       onSave: () => {
         onCommand?.("rename-save");

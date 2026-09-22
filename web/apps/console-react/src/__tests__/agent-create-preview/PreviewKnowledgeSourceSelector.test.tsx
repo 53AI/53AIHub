@@ -24,7 +24,7 @@ const tMap: Record<string, string> = {
   'library.all_knowledge': '全部知识',
   'chat.knowledge_graph': '知识图谱',
   'chat.online_search': '联网搜索',
-  'chat.wiki': '动态知识',
+  'chat.wiki': 'Wiki',
 }
 const t = (key: string) => tMap[key] ?? key
 
@@ -159,7 +159,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     expect(screen.getByTestId('icon-book-one')).toBeTruthy()
-    expect(screen.getByText('动态知识')).toBeTruthy()
+    expect(screen.getByText('Wiki')).toBeTruthy()
 
     rerender(
       <PreviewKnowledgeSourceSelector

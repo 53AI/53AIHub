@@ -396,6 +396,7 @@ export const KnowledgeHistoryDrawer = forwardRef<
                 key={currentVersion?.version_no ?? "empty"}
                 version={previewDetail ?? currentVersion!}
                 loading={bodyLoading}
+                showPermission={false}
               />
             </div>
           )}

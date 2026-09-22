@@ -134,8 +134,6 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
 
   const isDisabled = skill.admin_status === 'disabled'
   const isGrayscale = type === 'my' && !isEnabled
-  // 判断是否已添加
-  const isAlreadyAdded = addedSkillIds && addedSkillIds.includes(String(skill.id))
 
   return (
     <>

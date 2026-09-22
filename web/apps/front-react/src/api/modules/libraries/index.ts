@@ -22,6 +22,11 @@ export type LibraryItem = {
 
 export type LibraryListResponse = LibraryItem[]
 
+export type LibraryCapabilities = {
+  /** 是否具备“可编辑知识+语料”范围：库下任一未删除资源权限达到 PERMISSION_EDIT_ALL 及以上 */
+  has_edit_corpus_scope: boolean
+}
+
 export type LibraryListRequest = {
   space_id: string
   status?: number
@@ -143,6 +148,10 @@ export const librariesApi = {
 
   get(library_id: string): Promise<LibraryItem> {
     return request.get(`/api/libraries/${library_id}`).then((res) => res.data).catch(handleError)
+  },
+
+  capabilities(library_id: string): Promise<LibraryCapabilities> {
+    return request.get(`/api/libraries/${library_id}/capabilities`).then((res) => res.data).catch(handleError)
   },
 
   recently(): Promise<LibraryItem[]> {

@@ -127,6 +127,11 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
 
     const [agentModels, setAgentModels] = useState<ModelItem[]>([]);
     const [quickCommands, setQuickCommands] = useState<any[]>([]);
+    // 模型列表是否已加载完成（含加载失败）。地图节点点击等场景会在 ChatAssistant 挂载后
+    // 立即自动发送，早于 loadModels 异步返回；发送前据此等待，避免误报"暂无模型"。
+    const modelsLoadedRef = useRef(false);
+    // 镜像最新 currentModel，供发送闭包（可能是挂载首帧的旧闭包）读取
+    const currentModelRef = useRef<any>(null);
 
     const senderRef = useRef<any>(null);
     const addAnswerAsMdRef = useRef<any>(null);
@@ -134,12 +139,22 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
     const chunkSourceRef = useRef<HTMLElement | null>(null);
     const thinkKnowledgeRef = useRef<any>(null);
     const bubbleListRef = useRef<BubbleListRef>(null);
+    // sendMessage 每次渲染重建，而 quick-command 的 window 监听只在挂载时注册一次，
+    // 若直接闭包引用会拿到首帧的旧 sendMessage（currentModel 恒为 undefined）。
+    // 用 ref 中转，保证监听回调始终调用最新一次渲染的 sendMessage。
+    const sendMessageRef = useRef<any>(null);
+    useEffect(() => {
+      sendMessageRef.current = sendMessage;
+    });
 
     const greeting = useMemo(() => getGreetingByTime(), []);
 
     const currentModel = useMemo(() => {
       return agentModels.find((item) => item.value === model);
     }, [agentModels, model]);
+    useEffect(() => {
+      currentModelRef.current = currentModel;
+    });
 
     const currentConv = useMemo(() => {
       return convStore.currentConversation();
@@ -155,7 +170,10 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
     }, [isCollapsed, viewportWidth]);
 
     const loadModels = async () => {
-      if (!agentInfo?.agent_id) return;
+      if (!agentInfo?.agent_id) {
+        modelsLoadedRef.current = true;
+        return;
+      }
 
       try {
         const res = await agentsApi.models.list(agentInfo.agent_id);
@@ -181,6 +199,8 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
         setAgentModels(models);
       } catch (error) {
         console.error("Failed to load models:", error);
+      } finally {
+        modelsLoadedRef.current = true;
       }
     };
 
@@ -267,8 +287,14 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
       overrideOptions?: { networkSearch?: boolean },
     ) => {
       if (isStreaming || !question.trim()) return;
-
-      if (!currentModel) {
+      // 模型列表可能仍在加载（地图节点点击等场景会在 ChatAssistant 挂载后立即自动发送，
+      // 早于 loadModels 异步返回）。先等待加载完成；加载完成后仍无可用模型才提示"暂无模型"。
+      const loadedWaitStart = Date.now();
+      while (!modelsLoadedRef.current && Date.now() - loadedWaitStart < 10000) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const resolvedModel = currentModelRef.current;
+      if (!resolvedModel) {
         message.warning(t("chat.no_model_config"));
         return;
       }
@@ -310,7 +336,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
       // 参考Vue版本：直接从store获取conversation_id，避免useMemo异步更新问题
       const conversation_id = convStore.currentConversation()?.conversation_id;
       const completion_params = agentInfo?.configs?.completion_params;
-      const modelId = currentModel?.id || "";
+      const modelId = resolvedModel?.id || "";
 
       try {
         await sendMessageBase({
@@ -320,7 +346,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
           modelId,
           completion_params: {
             ...completion_params,
-            temperature: currentModel?.temperature,
+            temperature: resolvedModel?.temperature,
             // Wiki 单文档模式：message_file_id 仅对 file 单文档模式有意义；
             // wiki 由 wiki_search_config.wiki_page_ids 携带（§5.4 要求不传 file_ids）。
             ...(isWikiDoc ? { message_file_id: undefined } : {}),
@@ -501,7 +527,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
     const onQuickCommand = useCallback(
       (event: any) => {
         const { name, prompt, text } = event.detail;
-        sendMessage(name, [], {
+        sendMessageRef.current(name, [], {
           prompt: prompt?.replace(/\{划词内容\}/g, text),
           text,
         });
@@ -742,6 +768,9 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
                     renderSource={(type: string, number: number) =>
                       renderSource(type, number, msg)
                     }
+                    sourceIds={(msg.rag_stats?.chunks || msg.rag_stats?.document_search?.chunks || [])
+                      .map((chunk: any) => chunk.source_key || chunk.source || chunk.reference_id || chunk.source_id)
+                      .filter(Boolean)}
                     sourceEnabled
                     showError={msg.error}
                     onSourceReferenceClick={(data: any) =>

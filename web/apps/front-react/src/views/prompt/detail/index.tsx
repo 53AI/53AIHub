@@ -1,10 +1,4 @@
-import {
-  useState,
-  useEffect,
-  useMemo,
-  forwardRef,
-  useImperativeHandle,
-} from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import {
   Button,
@@ -62,17 +56,6 @@ interface PromptDetail {
   scopes?: ScopeItem[];
 }
 
-interface PromptDetailViewProps {
-  showBack?: boolean;
-}
-
-export interface PromptDetailViewRef {
-  detailData: PromptDetail | null;
-  isUseCase: boolean;
-  showUseCase: () => void;
-  hideUseCase: () => void;
-}
-
 const virtualPrompt = `我是一个虚拟助手，我可以回答用户的问题，也可以生成用户需要的内容。
 
 ## 我的能力范围
@@ -95,585 +78,562 @@ const virtualPrompt = `我是一个虚拟助手，我可以回答用户的问题
 - 对于专业领域问题，建议咨询相关专家
 - 我的知识有时效性，最新信息请以官方渠道为准
 
-## 交互方式
-请直接告诉我您的需求，我会：
-1. 仔细理解您的问题
-2. 提供详细且实用的解答
-3. 根据需要提供示例或步骤
-4. 确保回答的准确性和相关性
-
-## 注意事项
-- 我会尽力提供准确信息，但建议您验证重要决策
-- 对于专业领域问题，建议咨询相关专家
-- 我的知识有时效性，最新信息请以官方渠道为准
-
 现在，请告诉我您需要什么帮助？
 `;
 
-const PromptDetailView = forwardRef<PromptDetailViewRef, PromptDetailViewProps>(
-  (props, ref) => {
-    const { showBack = false } = props;
-    const { prompt_id } = useParams();
-    const [searchParams] = useSearchParams();
-    const promptStore = usePromptStore();
-    const userStore = useUserStore();
-    const isSoftStyle = useIsSoftStyle();
-    const [loading, setLoading] = useState(true);
-    const [detailData, setDetailData] = useState<PromptDetail | null>(null);
-    const [isUseCase, setIsUseCase] = useState(false);
-    // 内容展示的后端权限检测结果（null 表示检测中）
-    const [scopedAccess, setScopedAccess] = useState<boolean | null>(null);
+export function PromptDetailView() {
+  const { prompt_id } = useParams();
+  const [searchParams] = useSearchParams();
+  const promptStore = usePromptStore();
+  const userStore = useUserStore();
+  const isSoftStyle = useIsSoftStyle();
+  const [loading, setLoading] = useState(true);
+  const [detailData, setDetailData] = useState<PromptDetail | null>(null);
+  const [isUseCase, setIsUseCase] = useState(false);
+  // 内容展示的后端权限检测结果（null 表示检测中）
+  const [scopedAccess, setScopedAccess] = useState<boolean | null>(null);
 
-    // 从 URL 读取来源分组ID
-    const urlGroupId = searchParams.get("group_id");
+  // 从 URL 读取来源分组ID
+  const urlGroupId = searchParams.get("group_id");
 
-    useImperativeHandle(ref, () => ({
-      detailData,
-      isUseCase,
-      showUseCase: () => setIsUseCase(true),
-      hideUseCase: () => setIsUseCase(false),
-    }));
+  useEffect(() => {
+    promptStore.loadCategorys();
+    promptStore.loadPromptList();
+    fetchPromptDetail();
+  }, [prompt_id]);
 
-    useEffect(() => {
-      promptStore.loadCategorys();
-      promptStore.loadPromptList();
-      fetchPromptDetail();
-    }, [prompt_id]);
-
-    const fetchPromptDetail = async () => {
-      if (!prompt_id) return;
-      setLoading(true);
+  const fetchPromptDetail = async () => {
+    if (!prompt_id) return;
+    setLoading(true);
+    try {
+      const data = await promptApi.get(prompt_id);
       try {
-        const data = await promptApi.get(prompt_id);
-        try {
-          data.custom_config = JSON.parse(data.custom_config || "{}");
-        } catch {
-          data.custom_config = {};
-        }
-        data.logo =  data.logo || `${ api_host }/api/images/prompt/logo.png`
-        setDetailData(data as unknown as PromptDetail);
-        // 内容展示检测：内部用户走后端 check 接口，外部用户由前端分组判断
-        const { is_internal } = userStore.info || {};
-        if (is_internal) {
-          setScopedAccess(await resourceScopesApi.check({
-            resource_id: prompt_id,
-            resource_type: "prompt",
-          }));
-        } else {
-          setScopedAccess(true);
-        }
-      } catch (error) {
-        console.error("Failed to fetch prompt detail:", error);
-      } finally {
-        setLoading(false);
+        data.custom_config = JSON.parse(data.custom_config || "{}");
+      } catch {
+        data.custom_config = {};
       }
-    };
+      data.logo =  data.logo || `${ api_host }/api/images/prompt/logo.png`
+      setDetailData(data as unknown as PromptDetail);
+      // 内容展示检测：内部用户走后端 check 接口，外部用户由前端分组判断
+      const { is_internal } = userStore.info || {};
+      if (is_internal) {
+        setScopedAccess(await resourceScopesApi.check({
+          resource_id: prompt_id,
+          resource_type: "prompt",
+        }));
+      } else {
+        setScopedAccess(true);
+      }
+    } catch (error) {
+      console.error("Failed to fetch prompt detail:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // 新增：构建面包屑数据
-    const breadcrumbItems = useMemo<BreadcrumbItem[]>(() => {
-      if (!detailData) return [];
+  // 新增：构建面包屑数据
+  const breadcrumbItems = useMemo<BreadcrumbItem[]>(() => {
+    if (!detailData) return [];
 
-      const items: BreadcrumbItem[] = [
-        { label: t("module.index"), path: "/index" },
-        { label: t("module.prompt"), path: "/prompt" }
-      ];
+    const items: BreadcrumbItem[] = [
+      { label: t("module.index"), path: "/index" },
+      { label: t("module.prompt"), path: "/prompt" }
+    ];
 
-      // 优先使用 URL 中的 group_id（用户从哪个分类进入），否则使用数据本身的第一个分组
-      const targetGroupId = urlGroupId ? Number(urlGroupId) : (detailData.group_ids && detailData.group_ids[0]);
-      if (targetGroupId) {
+    // 优先使用 URL 中的 group_id（用户从哪个分类进入），否则使用数据本身的第一个分组
+    const targetGroupId = urlGroupId ? Number(urlGroupId) : (detailData.group_ids && detailData.group_ids[0]);
+    if (targetGroupId) {
+      const group = promptStore.categorys.find(
+        (c: any) => c.group_id === targetGroupId
+      );
+      if (group && group.group_id > 0) {
+        items.push({
+          label: group.group_name,
+          path: `/prompt?group_id=${group.group_id}`
+        });
+      }
+    }
+
+    return items;
+  }, [detailData?.group_ids, promptStore.categorys, urlGroupId]);
+
+  const hasAccess = useMemo(() => {
+    if (!detailData) return false;
+    const userGroupIds = userStore.info?.group_ids || [];
+    const frontendAccess = (detailData.group_ids || []).some((id) =>
+      userGroupIds.includes(id),
+    );
+    // 后端 check 未返回前先用前端分组判断，避免闪烁；返回后再叠加后端结果
+    if (scopedAccess === null) return frontendAccess;
+    return frontendAccess && scopedAccess;
+  }, [detailData, userStore.info, scopedAccess]);
+
+  // 计算分组名称
+  const groupNames = useMemo(() => {
+    if (!detailData?.group_ids) return [];
+    // 如果 API 已返回 group_names，直接使用
+    if (detailData.group_names && detailData.group_names.length > 0) {
+      return detailData.group_names;
+    }
+    // 否则从 categorys 映射
+    return detailData.group_ids
+      .map((id) => {
         const group = promptStore.categorys.find(
-          (c: any) => c.group_id === targetGroupId
+          (c: any) => c.group_id === id
         );
-        if (group && group.group_id > 0) {
-          items.push({
-            label: group.group_name,
-            path: `/prompt?group_id=${group.group_id}`
-          });
+        return group?.group_name;
+      })
+      .filter(Boolean);
+  }, [detailData?.group_ids, detailData?.group_names, promptStore.categorys]);
+
+  const useCaseList = useMemo(() => {
+    const useCases = detailData?.custom_config?.use_cases || [];
+    return useCases.filter((item) => item.type === "case");
+  }, [detailData]);
+
+  const useSceneList = useMemo(() => {
+    const useCases = detailData?.custom_config?.use_cases || [];
+    return useCases.filter((item) => item.type === "scene");
+  }, [detailData]);
+
+  const relatedPromptList = useMemo(() => {
+    return promptStore.promptList
+      .filter((item: any) => item.prompt_id !== detailData?.prompt_id)
+      .slice(0, 4);
+  }, [promptStore.promptList, detailData]);
+
+  const handleCopy = async (text: string, resourceId?: string) => {
+    await checkPermissionAsync({
+      resourceId: resourceId ?? prompt_id,
+      resourceType: 'prompt',
+      onClick: async () => {
+        const success = await copyToClip(text);
+        if (success) {
+          message.success(t("action.copy_success"));
         }
       }
+    });
+  };
 
-      return items;
-    }, [detailData?.group_ids, promptStore.categorys, urlGroupId]);
-
-    const hasAccess = useMemo(() => {
-      if (!detailData) return false;
-      const userGroupIds = userStore.info?.group_ids || [];
-      const frontendAccess = (detailData.group_ids || []).some((id) =>
-        userGroupIds.includes(id),
-      );
-      // 后端 check 未返回前先用前端分组判断，避免闪烁；返回后再叠加后端结果
-      if (scopedAccess === null) return frontendAccess;
-      return frontendAccess && scopedAccess;
-    }, [detailData, userStore.info, scopedAccess]);
-
-    // 计算分组名称
-    const groupNames = useMemo(() => {
-      if (!detailData?.group_ids) return [];
-      // 如果 API 已返回 group_names，直接使用
-      if (detailData.group_names && detailData.group_names.length > 0) {
-        return detailData.group_names;
+  const handleShare = async () => {
+    await checkPermissionAsync({
+      resourceId: prompt_id,
+      resourceType: 'prompt',
+      onClick: async () => {
+        const success = await copyToClip(window.location.href);
+        if (success) {
+          message.success(t("status.copy_link"));
+        }
       }
-      // 否则从 categorys 映射
-      return detailData.group_ids
-        .map((id) => {
-          const group = promptStore.categorys.find(
-            (c: any) => c.group_id === id
-          );
-          return group?.group_name;
-        })
-        .filter(Boolean);
-    }, [detailData?.group_ids, detailData?.group_names, promptStore.categorys]);
+    });
+  };
 
-    const useCaseList = useMemo(() => {
-      const useCases = detailData?.custom_config?.use_cases || [];
-      return useCases.filter((item) => item.type === "case");
-    }, [detailData]);
+  const handleClickAiLink = (item: { name: string; url: string }) => {
+    checkPermissionAsync({
+      resourceId: prompt_id,
+      resourceType: 'prompt',
+      onClick: () => {
+        Modal.confirm({
+          title: t("common.allow_to", { name: item.name }),
+          okText: t("action.allow", { name: item.name }),
+          cancelText: t("action.cancel"),
+          centered: true,
+          onOk: () => {
+            window.open(item.url, "_blank");
+          },
+        });
+      }
+    });
+  };
 
-    const useSceneList = useMemo(() => {
-      const useCases = detailData?.custom_config?.use_cases || [];
-      return useCases.filter((item) => item.type === "scene");
-    }, [detailData]);
-
-    const relatedPromptList = useMemo(() => {
-      return promptStore.promptList
-        .filter((item: any) => item.prompt_id !== detailData?.prompt_id)
-        .slice(0, 4);
-    }, [promptStore.promptList, detailData]);
-
-    const handleCopy = async (text: string, resourceId?: string) => {
-      await checkPermissionAsync({
-        resourceId: resourceId ?? prompt_id,
-        resourceType: 'prompt',
-        onClick: async () => {
-          const success = await copyToClip(text);
-          if (success) {
-            message.success(t("action.copy_success"));
-          }
-        }
-      });
-    };
-
-    const handleShare = async () => {
-      await checkPermissionAsync({
-        resourceId: prompt_id,
-        resourceType: 'prompt',
-        onClick: async () => {
-          const success = await copyToClip(window.location.href);
-          if (success) {
-            message.success(t("status.copy_link"));
-          }
-        }
-      });
-    };
-
-    const handleClickAiLink = (item: { name: string; url: string }) => {
-      checkPermissionAsync({
-        resourceId: prompt_id,
-        resourceType: 'prompt',
-        onClick: () => {
-          Modal.confirm({
-            title: t("common.allow_to", { name: item.name }),
-            okText: t("action.allow", { name: item.name }),
-            cancelText: t("action.cancel"),
-            centered: true,
-            onOk: () => {
-              window.open(item.url, "_blank");
-            },
-          });
-        }
-      });
-    };
-
-    if (loading) {
-      return (
-        <div className="h-full flex items-center justify-center">
-          <Spin size="large" />
-        </div>
-      );
-    }
-
-    if (!detailData) {
-      return (
-        <div className="h-full flex items-center justify-center">
-          <Empty description={t("prompt.not_found")} />
-        </div>
-      );
-    }
-
+  if (loading) {
     return (
-      <div className="h-full flex bg-white">
-        <div className="flex-1 flex flex-col min-w-0">
-          {isSoftStyle && (
-            <Header
-              border={false}
-              breadcrumb={breadcrumbItems}
-              right={
-                <IconAction
-                  title={t("chat.usage_guide")}
-                  size="compact"
-                  onClick={() => setIsUseCase(true)}
-                >
-                  <SvgIcon name="layout-split" size={18} />
-                </IconAction>
-              }
-            />
-          )}
+      <div className="h-full flex items-center justify-center">
+        <Spin size="large" />
+      </div>
+    );
+  }
 
-          <div className="flex-1 py-6 overflow-y-auto">
-            <div className="w-11/12 lg:w-4/5 max-w-[1200px] mx-auto">
-              {/* Breadcrumb */}
-              {!isSoftStyle && (
-                <Breadcrumb
-                  module={MODULE_CONFIGS.prompt}
-                  name={detailData.name}
-                  extra={
-                    <Button color="default" variant="link" onClick={() => setIsUseCase(true)}>
-                      <SvgIcon name="layout-split" size={18} />
-                      {t("chat.usage_guide")}
-                    </Button>
-                  }
-                />
-              )}
+  if (!detailData) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Empty description={t("prompt.not_found")} />
+      </div>
+    );
+  }
 
-              {/* 正常内容视图 */}
-              <div className="flex items-center gap-3 mb-5">
-                <img
-                  className="flex-none size-14 rounded-lg object-cover"
-                  src={detailData.logo}
-                  alt={detailData.name}
-                />
-                <div className="flex-1">
-                  <h2 className="text-xl font-medium text-primary mb-2 flex items-center justify-between md:justify-start">
-                    <span>{detailData.name}</span>
-                    <IconAction
-                      title={t("chat.usage_guide")}
-                      size="compact"
-                      className="md:hidden"
-                      onClick={() => setIsUseCase(true)}
-                    >
-                      <SvgIcon name="layout-split" size={18} />
-                    </IconAction>
-                  </h2>
-                  {/* 分组 */}
-                  {groupNames.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {groupNames.map((groupName) => (
-                        <span
-                          key={groupName}
-                          className="h-5 inline-flex items-center px-2 text-xs text-theme bg-[#EBF1FF] rounded-sm"
-                        >
-                          {groupName}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
+  return (
+    <div className="h-full flex bg-white">
+      <div className="flex-1 flex flex-col min-w-0">
+        {isSoftStyle && (
+          <Header
+            border={false}
+            breadcrumb={breadcrumbItems}
+            right={
+              <IconAction
+                title={t("chat.usage_guide")}
+                size="compact"
+                onClick={() => setIsUseCase(true)}
+              >
+                <SvgIcon name="layout-split" size={18} />
+              </IconAction>
+            }
+          />
+        )}
+
+        <div className="flex-1 py-6 overflow-y-auto">
+          <div className="w-11/12 lg:w-4/5 max-w-[1200px] mx-auto">
+            {/* Breadcrumb */}
+            {!isSoftStyle && (
+              <Breadcrumb
+                module={MODULE_CONFIGS.prompt}
+                name={detailData.name}
+                extra={
+                  <Button color="default" variant="link" onClick={() => setIsUseCase(true)}>
+                    <SvgIcon name="layout-split" size={18} />
+                    {t("chat.usage_guide")}
+                  </Button>
+                }
+              />
+            )}
+
+            {/* 正常内容视图 */}
+            <div className="flex items-center gap-3 mb-5">
+              <img
+                className="flex-none size-14 rounded-lg object-cover"
+                src={detailData.logo}
+                alt={detailData.name}
+              />
+              <div className="flex-1">
+                <h2 className="text-xl font-medium text-primary mb-2 flex items-center justify-between md:justify-start">
+                  <span>{detailData.name}</span>
+                  <IconAction
+                    title={t("chat.usage_guide")}
+                    size="compact"
+                    className="md:hidden"
+                    onClick={() => setIsUseCase(true)}
+                  >
+                    <SvgIcon name="layout-split" size={18} />
+                  </IconAction>
+                </h2>
+                {/* 分组 */}
+                {groupNames.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {groupNames.map((groupName) => (
+                      <span
+                        key={groupName}
+                        className="h-5 inline-flex items-center px-2 text-xs text-theme bg-[#EBF1FF] rounded-sm"
+                      >
+                        {groupName}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
+            </div>
 
-              <p className="text-[#939499] mb-7 w-full text-wrap break-words whitespace-pre-wrap">
-                {detailData.description}
-              </p>
+            <p className="text-[#939499] mb-7 w-full text-wrap break-words whitespace-pre-wrap">
+              {detailData.description}
+            </p>
 
-              {!isSoftStyle && (
-                <div className="mb-7">
-                  <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} />
-                </div>
-              )}
+            {!isSoftStyle && (
+              <div className="mb-7">
+                <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} />
+              </div>
+            )}
 
-              <section className="mb-7">
-                <h3 className="text-base font-medium text-gray-900 mb-2 flex items-center justify-between">
-                  <span>{t("prompt.content")}</span>
-                  {isSoftStyle && (
-                    <div className="md:hidden flex gap-2">
-                      {hasAccess && (
-                        <Button
-                          className="h-[36px]"
-                          type="primary"
-                          onClick={() => handleCopy(detailData.content)}
-                        >
-                          {t("action.copy")}
-                        </Button>
-                      )}
+            <section className="mb-7">
+              <h3 className="text-base font-medium text-gray-900 mb-2 flex items-center justify-between">
+                <span>{t("prompt.content")}</span>
+                {isSoftStyle && (
+                  <div className="md:hidden flex gap-2">
+                    {hasAccess && (
                       <Button
-                        className="!bg-[#F9FAFB] h-[36px]"
+                        className="h-[36px]"
+                        type="primary"
+                        onClick={() => handleCopy(detailData.content)}
+                      >
+                        {t("action.copy")}
+                      </Button>
+                    )}
+                    <Button
+                      className="!bg-[#F9FAFB] h-[36px]"
+                      onClick={handleShare}
+                    >
+                      {t("action.share")}
+                    </Button>
+                  </div>
+                )}
+              </h3>
+              <div className="border border-[#E6E8EB] rounded-xl overflow-hidden">
+                {hasAccess ? (
+                  <div className="relative group">
+                    <div className="absolute top-4 right-4 z-[2] invisible md:group-hover:visible flex gap-2">
+                      <Button
+                        className="!bg-[#F9FAFB]"
+                        onClick={() => handleCopy(detailData.content)}
+                      >
+                        {t("action.copy")}
+                      </Button>
+                      <Button
+                        className="!bg-[#F9FAFB]"
                         onClick={handleShare}
                       >
                         {t("action.share")}
                       </Button>
                     </div>
-                  )}
-                </h3>
-                <div className="border border-[#E6E8EB] rounded-xl overflow-hidden">
-                  {hasAccess ? (
-                    <div className="relative group">
-                      <div className="absolute top-4 right-4 z-[2] invisible md:group-hover:visible flex gap-2">
-                        <Button
-                          className="!bg-[#F9FAFB]"
-                          onClick={() => handleCopy(detailData.content)}
-                        >
-                          {t("action.copy")}
-                        </Button>
-                        <Button
-                          className="!bg-[#F9FAFB]"
-                          onClick={handleShare}
-                        >
-                          {t("action.share")}
-                        </Button>
-                      </div>
+                    <PromptInput
+                      value={detailData.content}
+                      disabled
+                      showLine
+                      style={{ minHeight: "max-content" }}
+                    />
+                  </div>
+                ) : (
+                  <div className="relative border rounded">
+                    <div className="blur-md">
                       <PromptInput
-                        value={detailData.content}
+                        value={virtualPrompt}
                         disabled
                         showLine
                         style={{ minHeight: "max-content" }}
                       />
                     </div>
-                  ) : (
-                    <div className="relative border rounded">
-                      <div className="blur-md">
-                        <PromptInput
-                          value={virtualPrompt}
-                          disabled
-                          showLine
-                          style={{ minHeight: "max-content" }}
-                        />
-                      </div>
-                      <div className="absolute inset-0" />
-                      <div className="w-48 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-10 px-5 bg-[#6F7275] rounded-full flex items-center gap-1">
-                        <SvgIcon name="lock" color="#fff" />
-                        <span className="text-sm text-white">
-                          {t("prompt.auth_tip")}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </section>
-
-              {/* AI Links */}
-              {hasAccess && !isSoftStyle && detailData.ai_links_data && detailData.ai_links_data.length > 0 && (
-                <section className="mb-7">
-                  <h2 className="text-base font-medium text-gray-900 mb-4">{t("prompt.let_use_prompt")}</h2>
-                  <div className="border border-[#E6E8EB] p-5 rounded-xl">
-                    <div className="flex items-center justify-center gap-4 flex-wrap">
-                      {detailData.ai_links_data.map((item) => (
-                        <a
-                          key={item.url}
-                          className="w-20 h-16 flex flex-col items-center justify-center gap-2 cursor-pointer"
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleCopy(detailData.content);
-                            handleClickAiLink(item);
-                          }}
-                        >
-                          <div className="size-8 rounded-full border overflow-hidden flex items-center justify-center">
-                            <img
-                              src={item.logo}
-                              className="size-6 rounded-full"
-                              alt={item.name}
-                              onError={(e) => {
-                                (e.target as HTMLImageElement).src = getPublicPath("/images/default_logo.png");
-                              }}
-                            />
-                          </div>
-                          <p className="text-primary text-sm whitespace-nowrap">
-                            {item.name}
-                          </p>
-                        </a>
-                      ))}
+                    <div className="absolute inset-0" />
+                    <div className="w-48 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-10 px-5 bg-[#6F7275] rounded-full flex items-center gap-1">
+                      <SvgIcon name="lock" color="#fff" />
+                      <span className="text-sm text-white">
+                        {t("prompt.auth_tip")}
+                      </span>
                     </div>
                   </div>
-                </section>
-              )}
+                )}
+              </div>
+            </section>
 
-              {/* Related Prompts - only for non-soft style */}
-              {!isSoftStyle && relatedPromptList.length > 0 && (
-                <section className="mb-7">
-                  <h2 className="text-base font-medium text-gray-900 mb-4">{t("common.related_prompt")}</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    {relatedPromptList.map((item: any) => (
-                      <Link
-                        key={item.prompt_id}
-                        className="p-4 rounded-xl cursor-pointer group hover:shadow-md transition-all duration-300 bg-[#F4F6F9] border border-[#E6E8EB]"
-                        to={`/prompt/${item.prompt_id}`}
+            {/* AI Links */}
+            {hasAccess && !isSoftStyle && detailData.ai_links_data && detailData.ai_links_data.length > 0 && (
+              <section className="mb-7">
+                <h2 className="text-base font-medium text-gray-900 mb-4">{t("prompt.let_use_prompt")}</h2>
+                <div className="border border-[#E6E8EB] p-5 rounded-xl">
+                  <div className="flex items-center justify-center gap-4 flex-wrap">
+                    {detailData.ai_links_data.map((item) => (
+                      <a
+                        key={item.url}
+                        className="w-20 h-16 flex flex-col items-center justify-center gap-2 cursor-pointer"
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleCopy(detailData.content);
+                          handleClickAiLink(item);
+                        }}
                       >
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="text-sm text-primary truncate">{item.name}</span>
-                          {(item.group_ids || []).some((id: number) =>
-                            (userStore.info?.group_ids || []).includes(id)
-                          ) && (
-                            <Button
-                              size="small"
-                              className="invisible group-hover:visible !px-2"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                handleCopy(item.content, item.prompt_id);
-                              }}
-                            >
-                              {t("action.copy")}
-                            </Button>
-                          )}
+                        <div className="size-8 rounded-full border overflow-hidden flex items-center justify-center">
+                          <img
+                            src={item.logo}
+                            className="size-6 rounded-full"
+                            alt={item.name}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = getPublicPath("/images/default_logo.png");
+                            }}
+                          />
                         </div>
-                        <p className="text-sm text-[#888994] line-clamp-2" title={item.description}>
-                          {item.description || "--"}
+                        <p className="text-primary text-sm whitespace-nowrap">
+                          {item.name}
                         </p>
-                      </Link>
+                      </a>
                     ))}
                   </div>
-                </section>
-              )}
+                </div>
+              </section>
+            )}
 
-              {isSoftStyle && <Footer />}
-              {/* 软件模式下底部悬浮栏 */}
-              {isSoftStyle && detailData.group_ids && detailData.group_ids.length > 0 && (
-                <>
-                  <div className="h-28"></div>
-                  <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
-                    <div className="flex-1 overflow-hidden">
-                      <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} mode="compact" />
-                    </div>
-                    {hasAccess && detailData.ai_links_data && detailData.ai_links_data.length > 0 && (
-                      <Popover
-                        placement="topRight"
-                        trigger="hover"
-                        content={
-                          <>
+            {/* Related Prompts - only for non-soft style */}
+            {!isSoftStyle && relatedPromptList.length > 0 && (
+              <section className="mb-7">
+                <h2 className="text-base font-medium text-gray-900 mb-4">{t("common.related_prompt")}</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  {relatedPromptList.map((item: any) => (
+                    <Link
+                      key={item.prompt_id}
+                      className="p-4 rounded-xl cursor-pointer group hover:shadow-md transition-all duration-300 bg-[#F4F6F9] border border-[#E6E8EB]"
+                      to={`/prompt/${item.prompt_id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-sm text-primary truncate">{item.name}</span>
+                        {(item.group_ids || []).some((id: number) =>
+                          (userStore.info?.group_ids || []).includes(id)
+                        ) && (
+                          <Button
+                            size="small"
+                            className="invisible group-hover:visible !px-2"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleCopy(item.content, item.prompt_id);
+                            }}
+                          >
+                            {t("action.copy")}
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-sm text-[#888994] line-clamp-2" title={item.description}>
+                        {item.description || "--"}
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
 
-                            <Divider>
-                              <h2 className="text-sm font-medium text-placeholder text-center">{t("prompt.let_use_prompt")}</h2>
-                            </Divider>
-                            <div className="flex items-center gap-4 py-2 mt-4">
-                              {detailData.ai_links_data!.map((item) => (
-                                <a
-                                  key={item.url}
-                                  className="w-20 h-16 flex flex-col items-center justify-center gap-1 cursor-pointer"
-                                  href={item.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleCopy(detailData.content);
-                                    handleClickAiLink(item);
-                                  }}
-                                >
-                                  <div className="size-8 rounded-full border overflow-hidden flex items-center justify-center">
-                                    <img
-                                      src={item.logo}
-                                      className="size-6 rounded-full"
-                                      alt={item.name}
-                                      onError={(e) => {
-                                        (e.target as HTMLImageElement).src = getPublicPath("/images/default_logo.png");
-                                      }}
-                                    />
-                                  </div>
-                                  <p className="text-primary text-sm whitespace-nowrap">
-                                    {item.name}
-                                  </p>
-                                </a>
-                              ))}
-                            </div>
-                          </>
-                        }
-                      >
-                        <Button type="primary">
-                          {t("action.go_use")}
-                        </Button>
-                      </Popover>
-                    )}
+            {isSoftStyle && <Footer />}
+            {/* 软件模式下底部悬浮栏 */}
+            {isSoftStyle && detailData.group_ids && detailData.group_ids.length > 0 && (
+              <>
+                <div className="h-28"></div>
+                <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
+                  <div className="flex-1 overflow-hidden">
+                    <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} mode="compact" />
                   </div>
-                </>
-              )}
-            </div>
+                  {hasAccess && detailData.ai_links_data && detailData.ai_links_data.length > 0 && (
+                    <Popover
+                      placement="topRight"
+                      trigger="hover"
+                      content={
+                        <>
+
+                          <Divider>
+                            <h2 className="text-sm font-medium text-placeholder text-center">{t("prompt.let_use_prompt")}</h2>
+                          </Divider>
+                          <div className="flex items-center gap-4 py-2 mt-4">
+                            {detailData.ai_links_data!.map((item) => (
+                              <a
+                                key={item.url}
+                                className="w-20 h-16 flex flex-col items-center justify-center gap-1 cursor-pointer"
+                                href={item.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleCopy(detailData.content);
+                                  handleClickAiLink(item);
+                                }}
+                              >
+                                <div className="size-8 rounded-full border overflow-hidden flex items-center justify-center">
+                                  <img
+                                    src={item.logo}
+                                    className="size-6 rounded-full"
+                                    alt={item.name}
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).src = getPublicPath("/images/default_logo.png");
+                                    }}
+                                  />
+                                </div>
+                                <p className="text-primary text-sm whitespace-nowrap">
+                                  {item.name}
+                                </p>
+                              </a>
+                            ))}
+                          </div>
+                        </>
+                      }
+                    >
+                      <Button type="primary">
+                        {t("action.go_use")}
+                      </Button>
+                    </Popover>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* 使用指引右侧面板 */}
-        <SidePanel side="right" width={450} open={isUseCase}>
-          <div className="h-full flex flex-col bg-white border-l">
-            <div className="h-16 flex-none flex items-center justify-between px-5 border-b">
-              <h4 className="text-lg text-primary">{t("chat.usage_guide")}</h4>
-              <div
-                className="flex-center size-8 rounded cursor-pointer hover:bg-[#ECEDEE]"
-                onClick={() => setIsUseCase(false)}
-              >
-                <CloseOutlined />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <section className="w-full py-5 px-5 box-border">
-                <h2 className="text-base font-medium text-gray-900 mb-4">{t("chat.usage_case")}</h2>
-                <div className="space-y-5">
-                  {useCaseList.map((item, index) => (
-                    <div
-                      key={index}
-                      className="p-5 bg-[#F7F9FC] rounded relative group cursor-pointer"
-                    >
-                      <div className="bg-white rounded p-5 relative">
-                        <div className="text-sm text-secondary">{t("chat.input")}</div>
-                        <div className="text-sm text-primary break-words mt-4">
-                          <MdRenderer content={item.input_text} />
-                        </div>
-                        <div className="absolute right-8 -bottom-9">
-                          <SvgIcon size={50} name="arrow-down" color="white" />
-                        </div>
-                      </div>
-                      <div className="bg-[#E6EEFF] rounded p-5 mt-4">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm text-secondary">{t("chat.output")}</div>
-                          <Tooltip title={t("action.copy")}>
-                            <div onClick={() => handleCopy(item.output_text)}>
-                              <SvgIcon name="copy" color="#4F5052" className="cursor-pointer" />
-                            </div>
-                          </Tooltip>
-                        </div>
-                        <div className="text-sm text-primary break-words whitespace-pre-wrap mt-4">
-                          <MdRenderer content={item.output_text} />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {useCaseList.length === 0 && (
-                  <div className="flex-center py-10">
-                    <Empty description={t("common.no_data")} />
-                  </div>
-                )}
-
-                <h2 className="text-base font-medium text-gray-900 mb-4 mt-8">{t("chat.usage_scene")}</h2>
-                <div className="space-y-6">
-                  {useSceneList.map((item, index) => (
-                    <div key={index} className="text-center p-6 bg-[#F4F6F9] rounded-xl border border-[#E6E8EB]">
-                      {item.image && (
-                        <img
-                          className="mx-auto max-w-[200px] mb-4"
-                          src={item.image}
-                          alt={item.scene}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      )}
-                      <h6 className="text-base text-primary mb-3">{item.scene}</h6>
-                      <p className="text-sm text-[#888994]">{item.desc}</p>
-                    </div>
-                  ))}
-                </div>
-                {useSceneList.length === 0 && (
-                  <div className="flex-center py-10">
-                    <Empty description={t("common.no_data")} />
-                  </div>
-                )}
-              </section>
+      {/* 使用指引右侧面板 */}
+      <SidePanel side="right" width={450} open={isUseCase}>
+        <div className="h-full flex flex-col bg-white border-l">
+          <div className="h-16 flex-none flex items-center justify-between px-5 border-b">
+            <h4 className="text-lg text-primary">{t("chat.usage_guide")}</h4>
+            <div
+              className="flex-center size-8 rounded cursor-pointer hover:bg-[#ECEDEE]"
+              onClick={() => setIsUseCase(false)}
+            >
+              <CloseOutlined />
             </div>
           </div>
-        </SidePanel>
-      </div>
-    );
-  },
-);
+          <div className="flex-1 overflow-y-auto">
+            <section className="w-full py-5 px-5 box-border">
+              <h2 className="text-base font-medium text-gray-900 mb-4">{t("chat.usage_case")}</h2>
+              <div className="space-y-5">
+                {useCaseList.map((item, index) => (
+                  <div
+                    key={index}
+                    className="p-5 bg-[#F7F9FC] rounded relative group cursor-pointer"
+                  >
+                    <div className="bg-white rounded p-5 relative">
+                      <div className="text-sm text-secondary">{t("chat.input")}</div>
+                      <div className="text-sm text-primary break-words mt-4">
+                        <MdRenderer content={item.input_text} />
+                      </div>
+                      <div className="absolute right-8 -bottom-9">
+                        <SvgIcon size={50} name="arrow-down" color="white" />
+                      </div>
+                    </div>
+                    <div className="bg-[#E6EEFF] rounded p-5 mt-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-secondary">{t("chat.output")}</div>
+                        <Tooltip title={t("action.copy")}>
+                          <div onClick={() => handleCopy(item.output_text)}>
+                            <SvgIcon name="copy" color="#4F5052" className="cursor-pointer" />
+                          </div>
+                        </Tooltip>
+                      </div>
+                      <div className="text-sm text-primary break-words whitespace-pre-wrap mt-4">
+                        <MdRenderer content={item.output_text} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {useCaseList.length === 0 && (
+                <div className="flex-center py-10">
+                  <Empty description={t("common.no_data")} />
+                </div>
+              )}
 
-export { PromptDetailView };
+              <h2 className="text-base font-medium text-gray-900 mb-4 mt-8">{t("chat.usage_scene")}</h2>
+              <div className="space-y-6">
+                {useSceneList.map((item, index) => (
+                  <div key={index} className="text-center p-6 bg-[#F4F6F9] rounded-xl border border-[#E6E8EB]">
+                    {item.image && (
+                      <img
+                        className="mx-auto max-w-[200px] mb-4"
+                        src={item.image}
+                        alt={item.scene}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    )}
+                    <h6 className="text-base text-primary mb-3">{item.scene}</h6>
+                    <p className="text-sm text-[#888994]">{item.desc}</p>
+                  </div>
+                ))}
+              </div>
+              {useSceneList.length === 0 && (
+                <div className="flex-center py-10">
+                  <Empty description={t("common.no_data")} />
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </SidePanel>
+    </div>
+  );
+}
+
 export default PromptDetailView;
 

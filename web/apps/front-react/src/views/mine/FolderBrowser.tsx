@@ -77,10 +77,10 @@ export function FolderBrowser({
         resource_type: 2,
         resource_id: fileId
       })
-      message.success(isFavorite ? '已取消' : '已收藏')
+      message.success(isFavorite ? t('mine.unfavorite_success') : t('mine.favorited'))
       onRefreshFiles()
     } catch (error) {
-      message.error('操作失败')
+      message.error(t('action.operation_failed'))
     }
   }
 
@@ -94,8 +94,8 @@ export function FolderBrowser({
       {/* Table */}
       <div className="bg-white rounded-lg border border-gray-200 mt-4">
         <div className="h-12 flex items-center gap-2 px-4 border-b border-gray-100">
-          <div className="flex-1 min-w-0 text-sm text-[#4F5052] font-medium">名称</div>
-          <div className="w-[140px] flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">更新时间</div>
+          <div className="flex-1 min-w-0 text-sm text-[#4F5052] font-medium">{t("common.file_name")}</div>
+          <div className="w-[140px] flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">{t("common.update_time")}</div>
           <div className="w-[48px] flex-shrink-0"></div>
         </div>
 
@@ -116,16 +116,16 @@ export function FolderBrowser({
         {/* 文件夹错误 */}
         {dirError && !dirLoading && (
           <div className="flex items-center justify-center gap-2 py-4 text-sm text-[#9A9A9A]">
-            文件夹加载失败
-            <Button type="link" size="small" onClick={onRefreshDirs}>重试</Button>
+            {t("move_to.folder_load_failed")}
+            <Button type="link" size="small" onClick={onRefreshDirs}>{t("action.retry")}</Button>
           </div>
         )}
 
         {/* 文件错误 */}
         {fileError && !fileLoading && (
           <div className="flex items-center justify-center gap-2 py-4 text-sm text-[#9A9A9A]">
-            文件加载失败
-            <Button type="link" size="small" onClick={onRefreshFiles}>重试</Button>
+            {t("common.load_file_failed")}
+            <Button type="link" size="small" onClick={onRefreshFiles}>{t("action.retry")}</Button>
           </div>
         )}
 
@@ -153,7 +153,7 @@ export function FolderBrowser({
                 items={[
                   { key: 'new-tab', icon: 'arrow-right-up', label: t('common.new_tab_page') + t('action.open') },
                   { key: 'divider', divided: true },
-                  { key: 'favorite', icon: item.isFavorite ? 'star-cancel' : 'star', label: item.isFavorite ? '取消收藏' : '收藏' },
+                  { key: 'favorite', icon: item.isFavorite ? 'star-cancel' : 'star', label: item.isFavorite ? t('action.unfavorite') : t('action.favorite') },
                 ]}
                 onCommand={(cmd) => {
                   if (cmd === 'new-tab') handleOpenNewTab(buildUrl(`/mine?preview=${item.id}`))

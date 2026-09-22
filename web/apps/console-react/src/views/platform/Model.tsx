@@ -4,10 +4,10 @@ import "./platform.css";
 import { t } from "@/locales";
 import { getRealPath } from "@/utils/config";
 import channelApi, {
-    transformChannelData,
-    type ChannelItem,
-    type ChannelRequestData,
-    type ModelOption,
+  transformChannelData,
+  type ChannelItem,
+  type ChannelRequestData,
+  type ModelOption,
 } from "@/api/modules/channel/index";
 import { useChannelStore, useEnterpriseStore } from "@/stores";
 import { useVersion } from "@/hooks";
@@ -17,12 +17,12 @@ import { clearModelCache } from "@/components/Model";
 import { ModelGroup } from "./components/ModelGroup";
 import { ModelSaveDialog } from "./components/ModelSaveDialog";
 import {
-    ModelSelectDialog,
-    type ModelSelectDialogRef,
+  ModelSelectDialog,
+  type ModelSelectDialogRef,
 } from "./components/ModelSelectDialog";
 import {
-    ModelSettingDialog,
-    type ModelSettingDialogRef,
+  ModelSettingDialog,
+  type ModelSettingDialogRef,
 } from "./components/ModelSettingDialog";
 
 /** 渠道下按模型类型聚合的条目，带 source 便于多配置时区分来源 */
@@ -270,7 +270,7 @@ export function PlatformModel() {
   }, [loadModelList]);
 
   return (
-    <div className="h-full flex flex-col bg-white py-6 px-2">
+    <div className="h-full flex flex-col bg-white py-2 px-2">
       <h2 className="w-full flex items-center justify-between font-semibold text-primary mb-6">
         <div className="flex-1 text-base">{t("module.platform_model")}</div>
         <Button type="primary" onClick={handleModelSelect}>

@@ -77,7 +77,7 @@ const DATA_PIPELINE_KEYS: readonly KeyRow[] = [
     'グラフテンプレートを選択してください'
   ],
   ['data_pipeline.no_config_available', '暂无配置', '暫無配置', 'No config available', '設定なし'],
-  ['data_pipeline.chunk_specified_identifier_tip', '可输入自定义标识符，回车添加,可輸入自訂標識符', 'Enter 添加,Type and press Enter to add a custom identifier', 'カスタム識別子を入力し Enter で追加'],
+  ['data_pipeline.chunk_specified_identifier_tip', '可输入自定义标识符，回车添加', '可輸入自訂標識符，Enter 添加', 'Type and press Enter to add a custom identifier', 'カスタム識別子を入力し Enter で追加'],
 
   // Node 节点
   ['data_pipeline.node_config', '节点配置', '節點配置', 'Node Config', 'ノード設定'],
@@ -280,6 +280,27 @@ const DATA_PIPELINE_KEYS: readonly KeyRow[] = [
     '検索チャンクの最大文字数（0-2048）。デフォルト 512 ≈ 中国語 300 トークン / 英語 100-130 トークン。ナレッジチャンクの長さを超える場合、検索チャンクはそれ以上分割されません。'
   ],
   ['data_pipeline.chunk_by_page', '按页', '按頁', 'By Page', 'ページごと'],
+  [
+    'data_pipeline.chunk_page_require_textin_tip',
+    '请在文档解析步骤选择 Textin，其它解析方式无法返回分页符',
+    '請在文檔解析步驟選擇 Textin，其它解析方式無法返回分頁符',
+    'Please select Textin in the Document Parsing step; other parsers cannot return page breaks',
+    '文書解析ステップで Textin を選択してください。他の解析方式では改ページを返せません'
+  ],
+  [
+    'data_pipeline.chunk_page_reset_tip',
+    '解析方式已切换，「按页」拆分仅支持 Textin，语料拆分已重置为默认',
+    '解析方式已切換，「按頁」拆分僅支持 Textin，語料拆分已重置為預設',
+    'Parser changed. "By Page" chunking requires Textin, so chunking has been reset to default',
+    '解析方式が変更されたため、「ページごと」分割（Textin 専用）のチャンキングをデフォルトに戻しました'
+  ],
+  [
+    'data_pipeline.chunk_page_textin_only_tip',
+    '仅支持 PDF 和 PPT 类型的文档',
+    '僅支持 PDF 和 PPT 類型的文檔',
+    'Only supports PDF and PPT documents',
+    'PDF および PPT タイプの文書のみ対応'
+  ],
   [
     'data_pipeline.chunk_overlap',
     '切片重叠',

@@ -72,6 +72,10 @@ export default function MarkdownViewer({ url, content, containerClass, bgColor =
 
     if (detail.type === 'auto-select-enabled') {
       highlighterInstanceRef.current.updateAutoSelectEnabled(detail.data)
+      // 划词开关（v0.4.2 §3.4）：auto-select 只控制悬停自动高亮（enableAutoHighlight），
+      // 必须同步 enableManualHighlight，否则关闭自动选择后 selection-change 仍会触发、
+      // 选中文本依然自动带入聊天框。与 KnowledgeAssistant / pdf.html 协议保持一致。
+      highlighterInstanceRef.current.updateManualSelectEnabled(detail.data)
     }
   }, [handleMenuClick])
 

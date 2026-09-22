@@ -7,6 +7,7 @@ import { buildUrl } from '@/utils/router'
 import favoritesApi from '@/api/modules/favorites'
 import filesApi from '@/api/modules/files'
 import { getFormatTimeStamp } from '@km/shared-utils'
+import { buildRenamePath } from '../useInlineEditLite'
 import type { FileItem, BreadcrumbItem, FetchParams, PreviewFile } from '../types'
 
 const DEFAULT_PAGE_SIZE = 30
@@ -74,8 +75,8 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
     fetchDirs,
     mapItem,
     pageSize = DEFAULT_PAGE_SIZE,
-    timeLabel = '创建时间',
-    emptyText = '暂无文档',
+    timeLabel = t('common.create_time'),
+    emptyText = t('mine.no_document'),
     enableFavorite = true,
     formatFileName,
     onPreview,
@@ -94,7 +95,7 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
-  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([{ name: '全部文件', path: defaultPath }])
+  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([{ name: t('mine.all_files'), path: defaultPath }])
 
   const [fileOffset, setFileOffset] = useState(0)
   const [dirOffset, setDirOffset] = useState(0)
@@ -341,13 +342,13 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
 
   useEffect(() => {
     if (currentPath === defaultPath) {
-      setBreadcrumb([{ name: '全部文件', path: defaultPath }])
+      setBreadcrumb([{ name: t('mine.all_files'), path: defaultPath }])
     } else {
       const relativePath = currentPath.startsWith(defaultPath)
         ? currentPath.slice(defaultPath.length)
         : currentPath
       const parts = relativePath.split('/').filter(Boolean)
-      const crumbs: BreadcrumbItem[] = [{ name: '全部文件', path: defaultPath }]
+      const crumbs: BreadcrumbItem[] = [{ name: t('mine.all_files'), path: defaultPath }]
       let accumulated = defaultPath
       parts.forEach((part) => {
         accumulated += '/' + part
@@ -405,17 +406,17 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
   const handleDelete = useCallback((item: FileItem) => {
     Modal.confirm({
       title: t('common.tip'),
-      content: item.isfolder ? '确定删除此文件夹？' : t('status.file_del'),
+      content: item.isfolder ? t('mine.delete_folder_confirm') : t('status.file_del'),
       okText: t('action.confirm'),
       cancelText: t('action.cancel'),
       onOk: async () => {
         try {
           await filesApi.delete(item.id)
-          message.success('已删除')
+          message.success(t('action.delete_success'))
           // 根据删除的是文件夹还是文件，只刷新对应的列表
           loadFiles(true, !item.isfolder, item.isfolder)
         } catch (error) {
-          message.error('删除失败')
+          message.error(t('mine.delete_failed'))
         }
       }
     })
@@ -447,21 +448,17 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
       }
     }
 
-    const basePath = renamingFile.rawData.path?.startsWith('/')
-      ? renamingFile.rawData.path.substring(1)
-      : renamingFile.rawData.path || ''
-    const parentDir = basePath.includes('/') ? basePath.substring(0, basePath.lastIndexOf('/')) : ''
-    const newPath = parentDir ? `/${parentDir}/${fullName}` : `/${fullName}`
+    const newPath = buildRenamePath(renamingFile.rawData.path, fullName)
 
     try {
       await filesApi.rename({ id: renamingFile.id, path: newPath })
-      message.success('已重命名')
+      message.success(t('mine.rename_success'))
       // 根据重命名的是文件夹还是文件，只刷新对应的列表
       loadFiles(true, !renamingFile.isfolder, renamingFile.isfolder)
       setRenameModalVisible(false)
       setRenamingFile(null)
     } catch (error) {
-      message.error('重命名失败')
+      message.error(t('mine.rename_failed'))
     }
   }, [renamingFile, renameValue, formatFileName, loadFiles])
 
@@ -478,7 +475,7 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
         resource_type: 2,
         resource_id: fileId
       })
-      message.success(isFavorite ? '已取消' : '已收藏')
+      message.success(isFavorite ? t('mine.unfavorite_success') : t('mine.favorited'))
       setFileList(prev => prev.map(item =>
         item.id === fileId ? { ...item, isFavorite: !isFavorite } : item
       ))
@@ -486,7 +483,7 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
         item.id === fileId ? { ...item, isFavorite: !isFavorite } : item
       ))
     } catch (error) {
-      message.error('操作失败')
+      message.error(t('action.operation_failed'))
     }
   }, [enableFavorite])
 
@@ -549,10 +546,10 @@ export function useFileList<T = any>(config: FileListConfig<T>): UseFileListRetu
 
       // 根据移动的是文件夹还是文件，只刷新对应的列表
       loadFiles(true, !dragFile.isfolder, dragFile.isfolder)
-      message.success('已移动')
+      message.success(t('mine.moved'))
     } catch (error) {
       console.error('移动文件失败:', error)
-      message.error('移动失败')
+      message.error(t('mine.move_failed'))
     } finally {
       setDragItemId(null)
     }

@@ -151,7 +151,9 @@ function KnowledgeAssistant({ selectedItemId }: KnowledgeAssistantProps) {
   // ChunkView（已挂载的）更新 highlighter 状态。KnowledgeAssistant 面板打开
   // 即视为「开启划词」，关闭面板时派发关闭事件，避免 Wiki 页面在关闭面板后
   // 仍能触发 selection-change。
-  const [autoSelectEnabled, setAutoSelectEnabled] = useState(false);
+  // 划词开关默认开启：与查看器 highlighter 初始 enableManualHighlight=true 对齐，
+  // 保证「未点击开关时默认能划词」且图标高亮（蓝）状态与行为一致。
+  const [autoSelectEnabled, setAutoSelectEnabled] = useState(true);
   const handleToggleAutoSelect = () => {
     const next = !autoSelectEnabled;
     setAutoSelectEnabled(next);

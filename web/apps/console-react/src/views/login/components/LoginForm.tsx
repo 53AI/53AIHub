@@ -3,6 +3,7 @@ import { Button, Divider, Form, Input, message } from "antd";
 import { useUserStore } from "@/stores";
 import { VerificationCodeInput } from "@/components/VerificationCodeInput";
 import { SvgIcon } from "@km/shared-components-react";
+import { verifyCodePatternRule } from "@/utils/form-rule";
 import { WeChatLogin } from "./WeChatLogin";
 import { Policy } from "./Policy";
 
@@ -188,13 +189,13 @@ export function LoginForm(props: LoginFormProps) {
                     required: true,
                     message: t("verification_code_placeholder"),
                   },
+                  verifyCodePatternRule(t("verification_code_format")),
                 ]}
               >
                 <VerificationCodeInput
                   account={form.getFieldValue("username")}
                   accountType="mobile"
                   disabled={!isAccountValid}
-                  maxLength={4}
                   bgColor="#fff"
                 />
               </Form.Item>
@@ -302,13 +303,13 @@ export function LoginForm(props: LoginFormProps) {
                     required: true,
                     message: t("verification_code_placeholder"),
                   },
+                  verifyCodePatternRule(t("verification_code_format")),
                 ]}
               >
                 <VerificationCodeInput
                   account={form.getFieldValue("username")}
                   accountType="mobile"
                   disabled={!form.getFieldValue("username")}
-                  maxLength={4}
                   bgColor="#fff"
                 />
               </Form.Item>

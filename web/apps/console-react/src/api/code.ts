@@ -89,6 +89,10 @@ export const RESPONSE_MESSAGE_MAP = new Map<string, string>([
   ['auth failed: verification code expired or invalid', 'response_message.code_expired_or_invalid'],
   ['auth failed: record not found', 'response_message.user_not_found'],
   ['invalid or expired verification code', 'response_code.verification_code_error'],
+  // 图形验证码（人机校验）
+  ['invalid or expired captcha', 'captcha_error'],
+  ['captcha_id and captcha_answer are required', 'captcha_error'],
+  ['captcha required', 'captcha_error'],
   ['param error: wiki category draft must contain at least two categories', 'response_message.wiki_category_draft_at_least_two'],
 ])
 

@@ -252,6 +252,8 @@ export interface FileItem {
   isspace?: boolean;
   islibrary?: boolean;
   iswiki?: boolean;
+  ispage?: boolean;
+  space_id?: string | number;
   title?: string;
   slug?: string;
   is_favorite?: boolean;

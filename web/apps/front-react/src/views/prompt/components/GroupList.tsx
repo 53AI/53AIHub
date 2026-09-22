@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { Input } from "antd";
-import { Dropdown } from "@km/shared-components-react";
 import { SearchOutlined, DownOutlined } from "@ant-design/icons";
-import { Search as SearchInput, Tabs } from "@km/shared-components-react";
-import { SvgIcon } from "@km/shared-components-react";
+import {
+  Dropdown,
+  Search as SearchInput,
+  Tabs,
+  SvgIcon,
+} from "@km/shared-components-react";
 import { usePromptStore } from "@/stores/modules/prompt";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { t } from "@/locales";

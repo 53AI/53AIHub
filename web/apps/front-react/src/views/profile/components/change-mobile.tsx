@@ -1,8 +1,9 @@
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
-import { Form, Input, Button, message, Space } from "antd";
+import { Form, Input, Button, message } from "antd";
 import { useUserStore } from "@/stores/modules/user";
 import { useMobile } from "@/hooks/useMobile";
 import userApi from "@/api/modules/user";
+import VerifyCodeField from "@/components/VerifyCodeField";
 import { t } from "@/locales";
 
 interface ChangeMobileProps {
@@ -24,12 +25,14 @@ const ChangeMobile = forwardRef<ChangeMobileRef, ChangeMobileProps>(
       codeCount: oldCodeCount,
       codeRule: oldCodeRule,
       sendcode: sendOldCode,
+      sending: oldSending,
     } = useMobile();
 
     const {
       codeCount: newCodeCount,
       codeRule: newCodeRule,
       sendcode: sendNewCode,
+      sending: newSending,
     } = useMobile();
 
     const [loading, setLoading] = useState(false);
@@ -44,6 +47,10 @@ const ChangeMobile = forwardRef<ChangeMobileRef, ChangeMobileProps>(
     const isMobileValid = (mobile: string) => {
       return /^1[3-9]\d{9}$/.test(mobile);
     };
+
+    // 新手机号未填写/格式不对时，禁用「获取验证码」按钮
+    const newMobileValue = Form.useWatch("new_mobile", form);
+    const isNewMobileValid = isMobileValid(newMobileValue || "");
 
     // 发送旧手机验证码
     const handleGetOldCode = async () => {
@@ -104,30 +111,13 @@ const ChangeMobile = forwardRef<ChangeMobileRef, ChangeMobileProps>(
       <Form form={form} layout="vertical" onFinish={handleSubmit}>
         {/* 旧手机验证码 - 仅当有旧手机号时显示 */}
         {userStore.info.mobile && (
-          <Form.Item name="old_code" rules={[oldCodeRule]}>
-            <Space.Compact className="w-full">
-              <Input
-                className="flex-1"
-                placeholder={
-                  t("form.input_placeholder") + t("form.verify_code")
-                }
-              />
-
-              <Button
-                disabled={!!oldCodeCount}
-                className="w-28"
-                onClick={handleGetOldCode}
-              >
-                <div
-                  className={oldCodeCount ? "text-[#9A9A9A]" : "text-[#2563EB]"}
-                >
-                  {oldCodeCount
-                    ? `${oldCodeCount}s`
-                    : t("form.get_verify_code")}
-                </div>
-              </Button>
-            </Space.Compact>
-          </Form.Item>
+          <VerifyCodeField
+            name="old_code"
+            rule={oldCodeRule}
+            count={oldCodeCount}
+            loading={oldSending}
+            onClick={handleGetOldCode}
+          />
         )}
 
         {/* 新手机号 */}
@@ -151,30 +141,15 @@ const ChangeMobile = forwardRef<ChangeMobileRef, ChangeMobileProps>(
           />
         </Form.Item>
 
-        {/* 新手机验证码 */}
-        <Form.Item
+        {/* 新手机验证码：新手机号未填写/格式不对时禁用获取按钮 */}
+        <VerifyCodeField
           name="new_code"
-          label={t("form.verify_code")}
-          rules={[newCodeRule]}
-        >
-          <Space.Compact className="w-full">
-            <Input
-              className="flex-1"
-              placeholder={t("form.input_placeholder") + t("form.verify_code")}
-            />
-            <Button
-              disabled={!!newCodeCount}
-              className="w-28"
-              onClick={handleGetNewCode}
-            >
-              <div
-                className={`${newCodeCount ? "text-[#9A9A9A] cursor-not-allowed" : "text-[#2563EB]"}`}
-              >
-                {newCodeCount ? `${newCodeCount}s` : t("form.get_verify_code")}
-              </div>
-            </Button>
-          </Space.Compact>
-        </Form.Item>
+          rule={newCodeRule}
+          count={newCodeCount}
+          disabled={!isNewMobileValid}
+          loading={newSending}
+          onClick={handleGetNewCode}
+        />
 
         <div className="flex justify-end gap-2 mt-7">
           <Button onClick={handleClose}>{t("action.cancel")}</Button>

@@ -144,10 +144,6 @@ export function ParseConfig({
     return parseMethods.find((m) => m.key === config.engine)
   }, [parseMethods, config.engine])
 
-  const getMethodName = (key: string) => {
-    return parseMethods.find((m) => m.key === key)?.name || key
-  }
-
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
       {/* 解析方法选择区域 */}
@@ -220,7 +216,7 @@ export function ParseConfig({
         <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-100 space-y-6">
           <div className="flex items-center gap-2 text-sm font-bold text-gray-700">
             <SvgIcon name="settings" className="text-[#2563EB]" />
-            <span>{config.engine === 'voice_model' ? '语音解析' : getMethodName(config.engine)}{t(tKey('parse_config_suffix'))}</span>
+            <span>{activeMethodInfo.name}{t(tKey('parse_config_suffix'))}</span>
           </div>
 
           {/* Info Box */}

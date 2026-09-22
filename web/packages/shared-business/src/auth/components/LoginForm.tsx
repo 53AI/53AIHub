@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Modal, Form, Input, Button, Divider, Spin, message } from "antd";
 import {
   WechatOutlined,
@@ -6,6 +6,13 @@ import {
   MobileOutlined
 } from "@ant-design/icons";
 import { useTranslation } from "../i18n";
+import {
+  CaptchaModal,
+  createCaptchaT,
+  isCaptchaCanceled,
+  runWithCaptcha,
+  type CaptchaImageData
+} from "../../captcha";
 import "./LoginForm.css";
 
 type LoginWay = "password_login" | "message_login" | "wechat_login";
@@ -37,7 +44,7 @@ export function LoginForm({
   apiHost = "",
   wechatAppId,
 }: LoginFormProps) {
-  const { t } = useTranslation();
+  const { t, lang } = useTranslation();
   const [loginWay, setLoginWay] = useState<LoginWay>(LOGIN_WAY.password_login);
   const [loading, setLoading] = useState(false);
   const [wechatLoading, setWechatLoading] = useState(false);
@@ -49,6 +56,40 @@ export function LoginForm({
 
   const usernameValue = Form.useWatch("username", form);
   const isMobile = /^1[3-9]\d{9}$/.test(usernameValue || "");
+
+  // ===== 图形验证码（人机校验）：复用共享 captcha 模块 =====
+  const captchaT = useMemo(() => createCaptchaT(lang), [lang]);
+
+  /** 拉取一张图形验证码（GET /api/captcha） */
+  const fetchCaptchaImage = useCallback(async (): Promise<CaptchaImageData> => {
+    const res = await fetch(`${apiHost}/api/captcha`);
+    const json = await res.json();
+    const data = json?.data;
+    if (!data?.captcha_id || !data?.image_base64) {
+      throw new Error("invalid captcha response");
+    }
+    return data;
+  }, [apiHost]);
+
+  /** 发送短信验证码，失败时抛出（错误信息里带服务端 message） */
+  const sendSmsCode = useCallback(
+    async (captchaId: string, captchaAnswerValue: string) => {
+      const mobile = form.getFieldValue("username");
+      const res = await fetch(`${apiHost}/api/sms/sendcode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mobile,
+          captcha_id: captchaId,
+          captcha_answer: captchaAnswerValue,
+        }),
+      });
+      const data = await res.json();
+      if (data.code === 0 || data.code === 200 || data.message === "success") return;
+      throw new Error(data.message || "");
+    },
+    [apiHost, form]
+  );
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -109,32 +150,31 @@ export function LoginForm({
     const username = form.getFieldValue("username");
     if (!username || !isMobile) return;
 
+    // 发送短信验证码前强制图形人机校验（共享 captcha 模块）：
+    // 弹窗会一直保持打开，只有发送成功才关闭；发送失败时原地换图并提示，
+    // 用户可直接重新输入
     try {
-      const res = await fetch(`${apiHost}/api/sms/sendcode`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mobile: username }),
+      await runWithCaptcha(async ({ captcha_id, captcha_answer }) => {
+        await sendSmsCode(captcha_id, captcha_answer);
       });
-      const data = await res.json();
-      if (data.code === 0 || data.message === "success") {
-        message.success(t("auth.code_sent"));
-        setCodeCount(60);
-        codeTimerRef.current = setInterval(() => {
-          setCodeCount((prev) => {
-            if (prev <= 1) {
-              if (codeTimerRef.current) clearInterval(codeTimerRef.current);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      } else {
-        message.error(data.message || t("auth.code_send_failed"));
-      }
-    } catch {
-      message.error(t("auth.code_send_failed"));
+    } catch (error) {
+      // 用户取消校验：静默返回，不进入发送倒计时
+      if (!isCaptchaCanceled(error)) throw error;
+      return;
     }
-  }, [form, isMobile, apiHost, t]);
+
+    message.success(t("auth.code_sent"));
+    setCodeCount(60);
+    codeTimerRef.current = setInterval(() => {
+      setCodeCount((prev) => {
+        if (prev <= 1) {
+          if (codeTimerRef.current) clearInterval(codeTimerRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [form, isMobile, t, sendSmsCode]);
 
   const handleSubmit = async (values: { username: string; password?: string; verify_code?: string }) => {
     setLoading(true);
@@ -297,6 +337,9 @@ export function LoginForm({
           </div>
         ))}
       </div>
+
+      {/* 图形验证码（人机校验）：发送短信验证码前强制校验，复用共享 captcha 模块 */}
+      <CaptchaModal fetchCaptcha={fetchCaptchaImage} t={captchaT} />
     </>
   );
 

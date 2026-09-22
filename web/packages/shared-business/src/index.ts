@@ -13,3 +13,7 @@ export * from './knowledge-pipeline'
 
 // Recording Template Module
 export * from './recording-template'
+
+// agent-create 与 chat 都导出了 buildKnowledgeSourcePayload（前者是 agent 场景的包装版），
+// 显式指定根包导出 chat 的共享实现，避免 export * 二义性（TS2308）
+export { buildKnowledgeSourcePayload } from './chat'

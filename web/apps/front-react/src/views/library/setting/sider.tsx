@@ -3,7 +3,7 @@ import { Menu } from "antd";
 import { LeftOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useLibraryStore } from "@/stores/modules/library";
-import { VirtualLogo } from "@/components/VirtualLogo";
+import { SafeImage } from "@km/shared-components-react";
 import { SvgIcon } from "@km/shared-components-react";
 
 const menuItems = [
@@ -49,10 +49,10 @@ export function SettingSider({ className }: SettingSiderProps) {
           <LeftOutlined />
         </div>
         <div className="size-7">
-          <VirtualLogo
-            text={libraryStore.library?.name}
-            src={libraryStore.library?.icon}
-            size={28}
+          <SafeImage
+            src={libraryStore.library?.icon || ""}
+            letter={libraryStore.library?.name}
+            className="size-[28px] object-cover text-sm"
           />
         </div>
         <p className="truncate text-sm">{libraryStore.library?.name}</p>

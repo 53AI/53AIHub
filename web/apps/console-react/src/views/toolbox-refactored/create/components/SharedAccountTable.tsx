@@ -4,7 +4,7 @@ import { Button, Table } from 'antd'
 import { SvgIcon, IconAction } from '@km/shared-components-react'
 import type { ColumnsType } from 'antd/es/table'
 
-import type { SharedAccountItem } from './SharedAccountDialog'
+import type { SharedAccountItem } from '../../types'
 import { t } from '@/locales'
 
 // ============================================================================
@@ -67,7 +67,7 @@ function SharedAccountTableInternal({
         key: 'password',
         minWidth: 140,
         ellipsis: true,
-        render: (value) => value || '--',
+        render: (value) => (value ? '********' : '--'),
       },
       {
         title: t('remark'),

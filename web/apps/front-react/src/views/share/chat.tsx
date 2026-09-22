@@ -357,6 +357,9 @@ export function ShareChatView() {
                   renderSource={(type: string, number: number) =>
                     renderSource(type, number, message)
                   }
+                  sourceIds={(message.rag_stats?.chunks || message.rag_stats?.document_search?.chunks || [])
+                    .map((chunk: any) => chunk.source_key || chunk.source || chunk.reference_id || chunk.source_id)
+                    .filter(Boolean)}
                   sourceEnabled
                   onSourceReferenceHover={(data: any) =>
                     handleSourceReferenceHover(data, message)

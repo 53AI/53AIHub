@@ -17,6 +17,8 @@ export interface RawFileItem {
   path: string
   type: number
   library_id: string
+  /** 文件创建者 id；列表/详情接口均下发，此前类型漏声明 */
+  user_id?: number
   eid: number
   created_time: number
   updated_time: number
@@ -32,6 +34,8 @@ export interface RawFileItem {
   cleaning_rule_info: string
   insight_summary: string
   origin_source?: string
+  /** 当前用户对该文件的最高权限，随 /api/files/all 一并下发 */
+  permission?: PermissionType
   upload_file: {
     id: number
     file_name: string

@@ -85,6 +85,7 @@ export interface BubbleAssistantProps {
   messageClass?: string;
   renderSource?: Function;
   sourceRegex?: RegExp | string;
+  sourceIds?: readonly string[];
   sourceEnabled?: boolean;
   mermaidClickable?: boolean;
   viewerClass?: string;
@@ -117,6 +118,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
   messageClass = "",
   renderSource,
   sourceRegex,
+  sourceIds,
   sourceEnabled = false,
   mermaidClickable = false,
   viewerClass = "",
@@ -208,6 +210,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
                     sourceEnabled={sourceEnabled}
                     renderSource={renderSource}
                     sourceRegex={sourceRegex}
+                    sourceIds={sourceIds}
                     viewerClass={viewerClass}
                     viewerStyle={viewerStyle}
                     onSourceReferenceClick={onSourceReferenceClick}
@@ -227,6 +230,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
               sourceEnabled={sourceEnabled}
               renderSource={renderSource}
               sourceRegex={sourceRegex}
+              sourceIds={sourceIds}
               mermaidClickable={mermaidClickable}
               viewerClass={viewerClass}
               viewerStyle={viewerStyle}

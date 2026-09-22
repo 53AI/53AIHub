@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import mySpaceApi from '@/api/modules/my-space'
 import { formatFile } from '@/api/modules/files/transform'
 import { getFormatTimeStamp } from '@km/shared-utils'
+import { t } from '@/locales'
 import type { BreadcrumbItem as BaseBreadcrumbItem } from './types'
 
 export interface BreadcrumbItem extends BaseBreadcrumbItem {}
@@ -35,7 +36,7 @@ interface UseFolderNavigationReturn {
   refreshFiles: () => void
 }
 
-export function useFolderNavigation(rootLabel: string = '全部'): UseFolderNavigationReturn {
+export function useFolderNavigation(rootLabel: string = t('common.all')): UseFolderNavigationReturn {
   const [currentPath, setCurrentPath] = useState('/')
   const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([{ name: rootLabel, path: '/' }])
   const [dirList, setDirList] = useState<FolderItem[]>([])

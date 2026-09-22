@@ -1,8 +1,9 @@
-import { Modal, Button } from 'antd'
-import { useState, useCallback } from 'react'
+import { Modal, Button, Table } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { useState, useCallback, useMemo } from 'react'
 import DeptMemberPicker from '@/components/DeptMemberPicker'
 import PermissionSelector from './selector'
-import { PERMISSION_TYPE, SUBJECT_TYPE, type PermissionType, type SubjectType } from './constant'
+import { PERMISSION_TYPE, RESOURCE_TYPE, SUBJECT_TYPE, type PermissionType, type SubjectType } from './constant'
 import { t } from '@/locales'
 import { getRealPath } from '@/utils/config'
 
@@ -10,18 +11,30 @@ interface PickerItem {
   label: string
   value: string | number
   type: 'member' | 'group' | 'company'
-  permission: PermissionType
+  /** 知识库权限，未选择时为 undefined */
+  permission?: PermissionType
+  /** Wiki 权限，未选择时为 undefined */
+  wikiPermission?: PermissionType
   avatar: string
 }
 
 export interface MemberSelectorProps {
   onConfirm?: (value: {
-    list: { subject_id: number; subject_type: SubjectType; permission: PermissionType }[]
+    list: {
+      subject_id: number
+      subject_type: SubjectType
+      /** 知识库权限，未选择时为 undefined，不创建该维度权限 */
+      permission?: PermissionType
+      /** 仅在 showWiki 时返回；未选择时为 undefined，不创建该维度权限 */
+      wiki_permission?: PermissionType
+    }[]
   }) => void
+  /** 是否同时选择 Wiki 权限（双权限模式） */
+  showWiki?: boolean
   children?: React.ReactNode
 }
 
-export function MemberSelector({ onConfirm, children }: MemberSelectorProps) {
+export function MemberSelector({ onConfirm, showWiki = false, children }: MemberSelectorProps) {
   const [memberList, setMemberList] = useState<PickerItem[]>([])
   const [visible, setVisible] = useState(false)
 
@@ -69,29 +82,108 @@ export function MemberSelector({ onConfirm, children }: MemberSelectorProps) {
           subject_id: item.value as number,
           subject_type: SUBJECT_TYPE.user,
           permission: item.permission,
+          wiki_permission: showWiki ? item.wikiPermission : undefined,
         })),
         ...groupList.map((item) => ({
           subject_id: item.value as number,
           subject_type: SUBJECT_TYPE.group,
           permission: item.permission,
+          wiki_permission: showWiki ? item.wikiPermission : undefined,
         })),
         ...companyList.map((item) => ({
           subject_id: 0,
           subject_type: SUBJECT_TYPE.company_all,
           permission: item.permission,
+          wiki_permission: showWiki ? item.wikiPermission : undefined,
         })),
       ],
     })
     handleCancel()
-  }, [memberList, onConfirm, handleCancel])
+  }, [memberList, onConfirm, handleCancel, showWiki])
 
-  const handlePermissionChange = useCallback((index: number, permission: PermissionType) => {
-    setMemberList((prev) => {
-      const next = [...prev]
-      next[index] = { ...next[index], permission }
-      return next
-    })
+  const handlePermissionChange = useCallback((record: PickerItem, permission: PermissionType) => {
+    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, permission } : item)))
   }, [])
+
+  const handleWikiPermissionChange = useCallback((record: PickerItem, permission: PermissionType) => {
+    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, wikiPermission: permission } : item)))
+  }, [])
+
+  const handlePermissionUnselected = useCallback((record: PickerItem) => {
+    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, permission: undefined } : item)))
+  }, [])
+
+  const handleWikiPermissionUnselected = useCallback((record: PickerItem) => {
+    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, wikiPermission: undefined } : item)))
+  }, [])
+
+  const columns: ColumnsType<PickerItem> = useMemo(() => {
+    const userColumn = {
+      title: t('space.members.col_user'),
+      key: 'user',
+      render: (_: unknown, record: PickerItem) => (
+        <div className="flex items-center gap-2">
+          <img src={record.avatar} alt="avatar" className="w-5 h-5 rounded-full" />
+          <span className="flex-1 min-w-0 text-sm text-primary truncate">{record.label}</span>
+        </div>
+      ),
+    }
+
+    if (!showWiki) {
+      return [
+        userColumn,
+        {
+          title: t('space.members.col_permission'),
+          key: 'permission',
+          align: 'center',
+          render: (_: unknown, record: PickerItem) => (
+            <PermissionSelector
+              value={record.permission}
+              onChange={(permission) => handlePermissionChange(record, permission)}
+              buttonType="link"
+              none={true}
+              teleported={false}
+            />
+          ),
+        },
+      ]
+    }
+
+    return [
+      userColumn,
+      {
+        title: t('space.members.col_knowledge_permission'),
+        key: 'permission',
+        align: 'center',
+        render: (_: unknown, record: PickerItem) => (
+          <PermissionSelector
+            value={record.permission}
+            placeholder={t('space.members.unselected')}
+            onChange={(permission) => handlePermissionChange(record, permission)}
+            buttonType="link"
+            none={true}
+          />
+        ),
+      },
+      {
+        title: t('space.members.col_wiki_permission'),
+        key: 'wikiPermission',
+        align: 'center',
+        render: (_: unknown, record: PickerItem) => (
+          <PermissionSelector
+            value={record.wikiPermission}
+            placeholder={t('space.members.unselected')}
+            unselected
+            onUnselected={() => handleWikiPermissionUnselected(record)}
+            onChange={(permission) => handleWikiPermissionChange(record, permission)}
+            resourceType={RESOURCE_TYPE.wiki}
+            buttonType="link"
+            none={true}
+          />
+        ),
+      },
+    ]
+  }, [showWiki, handlePermissionChange, handleWikiPermissionChange, handlePermissionUnselected, handleWikiPermissionUnselected])
 
   return (
     <div>
@@ -115,23 +207,21 @@ export function MemberSelector({ onConfirm, children }: MemberSelectorProps) {
             <Button type="primary" onClick={handleConfirm}>{t('action.confirm')}</Button>
           </>
         }
-        width={400}
+        width={showWiki ? 560 : 440}
       >
-        <div className="p-3 bg-[#F7F8FA] rounded-md space-y-1.5">
-          {memberList.map((item, index) => (
-            <div key={item.value} className="h-8 flex items-center justify-between gap-2">
-              <img src={item.avatar} alt="avatar" className="w-5 h-5 rounded-full" />
-              <p className="flex-1 text-sm text-primary truncate">{item.label}</p>
-              <PermissionSelector
-                value={item.permission}
-                onChange={(permission) => handlePermissionChange(index, permission)}
-                buttonType="link"
-                none={true}
-                teleported={false}
-              />
-            </div>
-          ))}
-        </div>
+        <Table
+          rowKey={(record) => `${record.type}-${record.value}`}
+          columns={columns}
+          dataSource={memberList}
+          pagination={false}
+          components={{
+            header: {
+              cell: (props: any) => (
+                <th {...props} className="!bg-[#F5F6F7] !text-[#999999]" />
+              ),
+            },
+          }}
+        />
       </Modal>
     </div>
   )

@@ -153,8 +153,12 @@ export interface VoiceTestResponse {
 export const getModelIcon = (value: string) => {
   let icon = ''
   if (/deepseek/i.test(value)) icon = 'deepseek'
+  else if (/step/i.test(value)) icon = 'step'
+  else if (/minimax/i.test(value)) icon = 'minimax'
+  else if (/^hy/i.test(value)) icon = 'hunyuan'
+  else if (/doubao/i.test(value)) icon = 'doubao'
   else if (/tongyi|qwen/i.test(value)) icon = 'tongyi'
-  else if (/thudm/i.test(value)) icon = 'zhipu'
+  else if (/thudm/i.test(value)) icon = 'glm_coding_plan'
   else if (/ai\/yi/i.test(value)) icon = 'yi'
   else if (/internlm/i.test(value)) icon = 'internlm'
   else if (/baai/i.test(value)) icon = 'baai'
@@ -163,6 +167,8 @@ export const getModelIcon = (value: string) => {
   else if (/llama/i.test(value)) icon = 'llama'
   else if (/ernie/i.test(value)) icon = 'weixin'
   else if (/kimi|moonshot/i.test(value)) icon = 'moonshot'
+  else if (/glm/i.test(value)) icon = 'glm_coding_plan'
+
 
   const w = window as any
   return icon ? (typeof w.$getRealPath === 'function' ? w.$getRealPath({ url: `/images/platform/${icon}.png` }) : '') : ''

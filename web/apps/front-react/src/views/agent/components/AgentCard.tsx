@@ -1,9 +1,8 @@
 import { useMemo, useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Empty, Modal, message, Button } from 'antd'
-import { Dropdown } from '@km/shared-components-react'
+import { Dropdown, SvgIcon, SafeImage } from '@km/shared-components-react'
 import { EditOutlined, DeleteOutlined, MoreOutlined } from '@ant-design/icons'
-import { SvgIcon, SafeImage } from '@km/shared-components-react'
 import { useIsSoftStyle } from "@/stores/modules/enterprise"
 import { useAgentStore } from "@/stores/modules/agent"
 import { getPublicPath } from '@/utils/config'
@@ -12,6 +11,9 @@ import { checkPermission } from '@/utils/permission'
 import agentsApi from '@/api/modules/agents'
 import { createPlatformsByType, isOpenClawCompatibleChannelType } from '@km/shared-business/agent-create'
 
+// 平台配置为纯静态数据，提升到模块级避免每次渲染重建
+const platforms = createPlatformsByType('')
+
 interface AgentCardProps {
   item: Agent.State
   keyword?: string
@@ -19,7 +21,6 @@ interface AgentCardProps {
   groupId?: number              // 当前分组ID（探索模式）
   onRefresh?: () => void
   showTypeTag?: boolean
-  fixedType?: string // 固定类型显示（如 'Openclaw'）
   selectMode?: boolean  // 选择模式：区分已添加/待添加
   flatMode?: boolean    // 扁平渲染模式
   canView?: boolean
@@ -34,7 +35,6 @@ export function AgentCard({
   groupId,
   onRefresh,
   showTypeTag = true,
-  fixedType,
   selectMode = false,
   flatMode = false,
   canView = true,
@@ -44,8 +44,6 @@ export function AgentCard({
   const isSoftStyle = useIsSoftStyle()
   const agentStore = useAgentStore()
   const [adding, setAdding] = useState(false)
-
-  const platforms = createPlatformsByType('')
 
   // 快捷方式相关状态
   const isAdded = agentStore.isShortcutAdded(item.agent_id)
@@ -165,7 +163,7 @@ export function AgentCard({
       icon: agentMode === 'chat' ? 'chat_v2' : agentMode === 'assistant' ? 'agent' : 'app-one',
       label: platform ? platform.label : agentType
     }
-  }, [item.custom_config_obj, fixedType])
+  }, [item.custom_config_obj])
 
   // 获取分组名称
   const groupName = useMemo(() => {

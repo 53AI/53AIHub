@@ -10,6 +10,7 @@ import {
   RESOURCE_TYPE,
   SUBJECT_TYPE,
   type PermissionType,
+  type ResourceType,
   type SubjectType,
 } from "@/components/Permission/constant";
 import { permissionsApi } from "@/api/modules/permissions";
@@ -19,17 +20,33 @@ import type { SpaceItem } from "@/api/modules/spaces/types";
 
 import { t } from "@/locales";
 
-interface MemberRow {
+/** 单个资源维度下已存在的权限记录 */
+interface PermissionRecord {
   id: number;
+  permission: PermissionType;
+}
+
+/** 合并后的成员行：知识库（空间）权限与 Wiki 权限取用户合集 */
+interface MemberRow {
+  key: string;
   subject_type: SubjectType;
   subject_id: number;
-  permission: PermissionType;
+  /** 知识库（空间）权限记录，无则为 undefined（显示“未选择”） */
+  spacePermission?: PermissionRecord;
+  /** Wiki 权限记录，无则为 undefined（显示“未选择”） */
+  wikiPermission?: PermissionRecord;
 }
 
 export interface MembersTabProps {
   space: SpaceItem;
   onRefresh: () => Promise<void>;
 }
+
+/** 过滤掉空间内置角色，仅保留真实成员/分组/全员 */
+const isMemberSubject = (item: PermissionItem) =>
+  item.subject_type !== SUBJECT_TYPE.space_active &&
+  item.subject_type !== SUBJECT_TYPE.space_admin &&
+  item.subject_type !== SUBJECT_TYPE.space_user;
 
 export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
   const [rows, setRows] = useState<MemberRow[]>([]);
@@ -43,31 +60,55 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
   const loadPermissions = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await permissionsApi.list({
-        resource_type: RESOURCE_TYPE.space,
-        resource_id: space.id,
+      const [spaceRes, wikiRes] = await Promise.all([
+        permissionsApi.list({
+          resource_type: RESOURCE_TYPE.space,
+          resource_id: space.id,
+        }),
+        permissionsApi.list({
+          resource_type: RESOURCE_TYPE.wiki,
+          resource_id: space.id,
+        }),
+      ]);
+
+      const rowMap = new Map<string, MemberRow>();
+      const ensureRow = (item: PermissionItem): MemberRow | null => {
+        if (!isMemberSubject(item)) return null;
+        const key = `${item.subject_type}-${item.subject_id}`;
+        let row = rowMap.get(key);
+        if (!row) {
+          row = {
+            key,
+            subject_type: item.subject_type as SubjectType,
+            subject_id: item.subject_id,
+          };
+          rowMap.set(key, row);
+        }
+        return row;
+      };
+
+      // 知识库（空间）权限：同一主体去重，保留首条
+      spaceRes.forEach((item) => {
+        const row = ensureRow(item);
+        if (row && !row.spacePermission) {
+          row.spacePermission = {
+            id: item.id,
+            permission: item.permission as PermissionType,
+          };
+        }
       });
-      const seen = new Set<string>();
-      const list = res
-        .filter((item: PermissionItem) => {
-          const key = `${item.subject_type}-${item.subject_id}`;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-        .filter(
-          (item: PermissionItem) =>
-            item.subject_type !== SUBJECT_TYPE.space_active &&
-            item.subject_type !== SUBJECT_TYPE.space_admin &&
-            item.subject_type !== SUBJECT_TYPE.space_user,
-        )
-        .map((item: PermissionItem) => ({
-          id: item.id,
-          subject_type: item.subject_type as SubjectType,
-          subject_id: item.subject_id,
-          permission: item.permission as PermissionType,
-        }));
-      setRows(list);
+      // Wiki 权限：同一主体去重，保留首条
+      wikiRes.forEach((item) => {
+        const row = ensureRow(item);
+        if (row && !row.wikiPermission) {
+          row.wikiPermission = {
+            id: item.id,
+            permission: item.permission as PermissionType,
+          };
+        }
+      });
+
+      setRows([...rowMap.values()]);
     } catch (error) {
       console.error("Load permissions error:", error);
       setRows([]);
@@ -81,15 +122,59 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
   }, [loadPermissions]);
 
   const handlePermissionSelect = useCallback(
-    async (next: PermissionType, row: MemberRow) => {
+    async (next: PermissionType, row: MemberRow, resourceType: ResourceType) => {
+      const existing =
+        resourceType === RESOURCE_TYPE.space
+          ? row.spacePermission
+          : row.wikiPermission;
       try {
-        if (!row.id) return;
-        await permissionsApi.update(row.id, { permission: next });
+        if (existing?.id) {
+          await permissionsApi.update(existing.id, { permission: next });
+        } else {
+          // 原本“未选择”，选择后创建权限记录
+          await permissionsApi.create(resourceType, space.id, {
+            permissions: [
+              {
+                subject_type: row.subject_type,
+                subject_id: row.subject_id,
+                permission: next,
+              },
+            ],
+          });
+        }
         message.success(t("message_status.save_success"));
         await loadPermissions();
       } catch (error) {
         console.error("Permission select error:", error);
       }
+    },
+    [space.id, loadPermissions],
+  );
+
+  /** 选择“未选择”：二次确认后删除该维度的权限记录 */
+  const handlePermissionUnselected = useCallback(
+    (row: MemberRow, resourceType: ResourceType) => {
+      const existing =
+        resourceType === RESOURCE_TYPE.space
+          ? row.spacePermission
+          : row.wikiPermission;
+      if (!existing?.id) return;
+      Modal.confirm({
+        title: t("common.tip"),
+        content: t("space.members.unselect_confirm"),
+        okText: t("action.confirm"),
+        cancelText: t("action_cancel"),
+        centered: true,
+        onOk: async () => {
+          try {
+            await permissionsApi.delete(existing.id);
+            message.success(t("action_delete_success"));
+            await loadPermissions();
+          } catch (error) {
+            console.error("Delete permission error:", error);
+          }
+        },
+      });
     },
     [loadPermissions],
   );
@@ -104,7 +189,11 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
         centered: true,
         onOk: async () => {
           try {
-            await permissionsApi.delete(row.id);
+            // 同时删除知识库权限与 Wiki 权限两条记录
+            const ids = [row.spacePermission?.id, row.wikiPermission?.id].filter(
+              (id): id is number => !!id,
+            );
+            await Promise.all(ids.map((id) => permissionsApi.delete(id)));
             message.success(t("action_delete_success"));
             await loadPermissions();
           } catch (error) {
@@ -121,18 +210,44 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
       list: {
         subject_id: number;
         subject_type: SubjectType;
-        permission: PermissionType;
+        permission?: PermissionType;
+        wiki_permission?: PermissionType;
       }[];
     }) => {
       if (!data.list.length) return;
       try {
-        await permissionsApi.create(RESOURCE_TYPE.space, space.id, {
-          permissions: data.list.map((m) => ({
-            subject_type: m.subject_type,
-            subject_id: m.subject_id,
-            permission: m.permission,
-          })),
-        });
+        const tasks: Promise<unknown>[] = [];
+        // 知识库权限仅在已选择时创建
+        const spaceList = data.list.filter(
+          (m) => m.permission !== undefined,
+        );
+        if (spaceList.length) {
+          tasks.push(
+            permissionsApi.create(RESOURCE_TYPE.space, space.id, {
+              permissions: spaceList.map((m) => ({
+                subject_type: m.subject_type,
+                subject_id: m.subject_id,
+                permission: m.permission as PermissionType,
+              })),
+            }),
+          );
+        }
+        // Wiki 权限仅在已选择时创建
+        const wikiList = data.list.filter(
+          (m) => m.wiki_permission !== undefined,
+        );
+        if (wikiList.length) {
+          tasks.push(
+            permissionsApi.create(RESOURCE_TYPE.wiki, space.id, {
+              permissions: wikiList.map((m) => ({
+                subject_type: m.subject_type,
+                subject_id: m.subject_id,
+                permission: m.wiki_permission as PermissionType,
+              })),
+            }),
+          );
+        }
+        await Promise.all(tasks);
         message.success(t("message_status.save_success"));
         await loadPermissions();
       } catch (error) {
@@ -176,14 +291,39 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
         },
       },
       {
-        title: t("space.members.col_permission"),
-        dataIndex: "permission",
-        key: "permission",
+        title: t("space.members.col_knowledge_permission"),
+        dataIndex: "spacePermission",
+        key: "space_permission",
         align: "center",
-        render: (permission: PermissionType, record) => (
+        render: (_: PermissionRecord | undefined, record) => (
           <PermissionSelector
-            value={permission}
-            onSelect={(v) => handlePermissionSelect(v, record)}
+            value={record.spacePermission?.permission}
+            placeholder={t("space.members.unselected")}
+            onSelect={(v) =>
+              handlePermissionSelect(v, record, RESOURCE_TYPE.space)
+            }
+            resourceType={RESOURCE_TYPE.space}
+            none
+          />
+        ),
+      },
+      {
+        title: t("space.members.col_wiki_permission"),
+        dataIndex: "wikiPermission",
+        key: "wiki_permission",
+        align: "center",
+        render: (_: PermissionRecord | undefined, record) => (
+          <PermissionSelector
+            value={record.wikiPermission?.permission}
+            placeholder={t("space.members.unselected")}
+            unselected
+            onUnselected={() =>
+              handlePermissionUnselected(record, RESOURCE_TYPE.wiki)
+            }
+            onSelect={(v) =>
+              handlePermissionSelect(v, record, RESOURCE_TYPE.wiki)
+            }
+            resourceType={RESOURCE_TYPE.wiki}
             none
           />
         ),
@@ -212,15 +352,13 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
         },
       },
     ],
-    [t, isCreator, handlePermissionSelect, handleDelete],
+    [t, isCreator, handlePermissionSelect, handlePermissionUnselected, handleDelete],
   );
 
   return (
     <div className="h-full overflow-y-auto py-2">
       <Table
-        rowKey={(record) =>
-          `${record.id}-${record.subject_type}-${record.subject_id}`
-        }
+        rowKey={(record) => record.key}
         columns={columns}
         dataSource={rows}
         loading={loading}
@@ -234,12 +372,14 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
           },
         }}
       />
-      <MemberSelector
-        onConfirm={handleMemberConfirm}
-      >
-        <Button type="primary" className="mt-6">
-            {t("space.members.add_member")}
-          </Button>
+      <MemberSelector showWiki onConfirm={handleMemberConfirm}>
+        <Button
+          type="link"
+          size="small"
+          className="!h-7 !px-0 flex items-center gap-1 my-3"
+          icon={<SvgIcon name="plus" size={14} color="#2563EB" />}>
+          {t("action.add")}
+        </Button>
       </MemberSelector>
     </div>
   );

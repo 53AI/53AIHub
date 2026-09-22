@@ -31,8 +31,6 @@ interface InsightTabContentProps {
   generating: boolean
   /** 开始生成回调；只读模式（分享页）下不传，按钮会被隐藏 */
   onStartGenerate?: () => void
-  /** 带补充背景重新生成后，让父级清空旧结果并开始轮询 */
-  onRegenerateStarted?: () => void
 }
 
 /**
@@ -60,7 +58,6 @@ export function InsightTabContent({
   initialLoadDone,
   generating,
   onStartGenerate,
-  onRegenerateStarted,
 }: InsightTabContentProps) {
   if (noVoiceModel) return <ParsingUnavailable />
 

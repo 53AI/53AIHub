@@ -6,7 +6,7 @@ import {
   LogoutOutlined, RightOutlined, SettingOutlined,
   ArrowUpOutlined
 } from "@ant-design/icons";
-import { useUserStore } from "@/stores/modules/user";
+import { useUserStore, useIsAdmin } from "@/stores/modules/user";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { t } from "@/locales";
 import { getPublicPath, admin_url } from "@/utils/config";
@@ -36,6 +36,7 @@ export function ProfilePopover({
   showMessageCenter = false,
 }: ProfilePopoverProps) {
   const userStore = useUserStore();
+  const isAdmin = useIsAdmin();
   const enterpriseStore = useEnterpriseStore();
 
   const [open, setOpen] = useState(false);
@@ -152,7 +153,7 @@ export function ProfilePopover({
           </div>
         </div>
         <div className="flex items-center gap-2 mt-2">
-          {Boolean(userStore.info.role) && userStore.info.role > 1 && ( <div className="flex-1 h-8 rounded-md bg-white flex items-center justify-center gap-1 cursor-pointer hover:opacity-50" onClick={handleJumpToAdmin}>
+          {isAdmin && ( <div className="flex-1 h-8 rounded-md bg-white flex items-center justify-center gap-1 cursor-pointer hover:opacity-50" onClick={handleJumpToAdmin}>
             <SettingOutlined style={{ fontSize: 14, color: "#1D1E1F" }} />
             <span className="text-sm text-[#1D1E1F]">{t("common.go_admin")}</span>
           </div>

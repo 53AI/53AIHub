@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Empty } from "antd";
+import { Empty, Tag } from "antd";
 import { useLibraryStore } from "@/stores/modules/library";
 import { filesApi } from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
 import { EntityDisplay } from "@/components/EntityDisplay";
-import VirtualLogo from "@/components/VirtualLogo";
+import { PERMISSION_TYPE, getPermissionLabel } from "@/components/KMPermission";
+import { SafeImage } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
 
@@ -27,6 +28,18 @@ export function FileHomeView() {
   const [recentlyFiles, setRecentlyFiles] = useState<FormattedFile[]>([]);
 
   const libraryId = params.id;
+
+  // 当前用户对该知识库的权限标签（来自库详情返回的 permission，无需额外请求）
+  const permissionLabel = getPermissionLabel(libraryStore.library?.permission);
+
+  // 语料权限：全库文件中权限达到 edit_all（可编辑知识&语料）的数量
+  const corpusScopeCount = useMemo(
+    () =>
+      libraryStore.files.filter(
+        (f) => (f.permission ?? 0) >= PERMISSION_TYPE.edit_all,
+      ).length,
+    [libraryStore.files],
+  );
 
   // Filter files that still exist in the library
   const showFiles = useMemo(() => {
@@ -58,18 +71,28 @@ export function FileHomeView() {
       {/* Library Info */}
       <div className="flex items-start gap-5">
         <div className="flex-shrink-0">
-          <VirtualLogo
-            text={libraryStore.library?.name || ""}
+          <SafeImage
             src={libraryStore.library?.icon || ""}
-            size={80}
+            letter={libraryStore.library?.name || ""}
+            className="size-[80px] object-cover rounded-xl text-4xl"
           />
         </div>
         <div className="flex-1 overflow-hidden">
-          <div className="text-2xl text-[#1D1E1F] font-medium truncate mt-1">
-            {libraryStore.library?.name}
+          <div className="flex items-center gap-2 mt-1">
+            <div className="text-2xl text-[#1D1E1F] font-medium truncate min-w-0">
+              {libraryStore.library?.name}
+            </div>
           </div>
-          <div className="text-sm text-[#939499] mt-1 mb-3 break-words whitespace-normal line-clamp-2">
+          <div className="text-sm text-[#939499] mt-1 break-words whitespace-normal line-clamp-1">
             {libraryStore.library?.description}
+          </div>
+          <div className="flex items-center gap-2 mt-1">
+            {permissionLabel && (
+              <Tag className="flex-none m-0">知识库权限：{permissionLabel}</Tag>
+            )}
+            <Tag color="blue" className="flex-none m-0">
+              语料权限：已授权 {corpusScopeCount} 个范围
+            </Tag>
           </div>
         </div>
       </div>

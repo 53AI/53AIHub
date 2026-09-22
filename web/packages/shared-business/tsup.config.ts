@@ -8,6 +8,7 @@ export default defineConfig({
     'auth/index': 'src/auth/index.ts',
     'knowledge-pipeline/index': 'src/knowledge-pipeline/index.ts',
     'recording-template/index': 'src/recording-template/index.ts',
+    'captcha/index': 'src/captcha/index.ts',
   },
   format: ['esm'],
   dts: true,

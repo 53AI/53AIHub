@@ -4,6 +4,7 @@ import {
   CloseOutlined,
   DownOutlined,
   CheckCircleFilled,
+  ExclamationCircleOutlined,
   WarningFilled,
   LoadingOutlined
 } from '@ant-design/icons'
@@ -17,15 +18,25 @@ import { getPublicPath } from '@/utils/config'
 import { SvgIcon } from '@km/shared-components-react'
 import { enableBeforeUnloadProtection } from '@/utils/before-unload-guard'
 import type { UploadStatus } from './constants'
-import { FILE_SIZE_LIMITS, UPLOAD_CONFIG, UPLOAD_STATUS } from './constants'
 import {
+  FILE_SIZE_EXCEEDED_MESSAGE,
+  FILE_SIZE_LIMITS,
+  MAX_UPLOAD_FILES,
+  UPLOAD_CONFIG,
+  UPLOAD_STATUS
+} from './constants'
+import {
+  buildInvalidFilesMessage,
   calculateFileHash,
   formatFileSize,
   generateFileId,
+  resolveMaxSizeBytes,
   scanDirectoryStructure,
   throttle,
   validateFileSize,
-  validateFileType
+  validateUploadFile,
+  type InvalidUploadFile,
+  type ValidateUploadFileOptions
 } from './util'
 import './file-upload.css'
 
@@ -42,6 +53,7 @@ interface FileUploadProps {
   maxSize?: Record<string, number>
   chunkSize?: number
   maxConcurrent?: number
+  /** 选择文件后是否自动开始上传；默认 false，文件入队后需点击“开始上传”按钮才开始上传 */
   autoUpload?: boolean
   maxFileCount?: number
   maxDepth?: number
@@ -58,9 +70,8 @@ export interface FileUploadRef {
   selectFiles: (basePath?: string) => void
   selectFolder: (basePath?: string) => void
   cancelAll: () => void
+  startUpload: () => void
 }
-
-const MAX_FILE_SIZE = 500
 
 // 文件结构项类型（简化版）
 interface FileStructureItem {
@@ -77,13 +88,28 @@ interface FileStructureItem {
   id?: string
 }
 
+/** 超出大小限制的文件记录：不进上传队列、不在待上传列表展示，单独记录供状态栏查看 */
+interface OversizeUploadFile {
+  file: File
+  icon: string
+}
+
+/** 队列条目的公共字段（列表展示 / 定位用），与上传链路（batch / 秒传）无关 */
+const createQueueItemBase = (file: File) => ({
+  id: generateFileId(file),
+  file,
+  progress: 0,
+  icon: formatFileInfo(file.name).icon,
+  folder: (file as any).webkitRelativePath?.split('/')[0]
+})
+
 export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   accept,
   maxSize = {},
   chunkSize = FILE_SIZE_LIMITS.MIN_CHUNK_SIZE,
   maxConcurrent = UPLOAD_CONFIG.DEFAULT_MAX_CONCURRENT,
-  autoUpload = true,
-  maxFileCount = 1000,
+  autoUpload = false,
+  maxFileCount = MAX_UPLOAD_FILES,
   maxDepth = 10,
   libraryId,
   basePath,
@@ -116,14 +142,17 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   }, [activeUploads])
 
   const [isCollapsed, setIsCollapsed] = useState(false)
+  // 是否已点击“开始上传”：false 时新入队文件仅在右下角展示，不自动上传
+  const [uploadStarted, setUploadStarted] = useState(false)
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  // 超出大小限制的文件：不进上传队列，单独记录并在状态栏汇总展示
+  const [oversizeFiles, setOversizeFiles] = useState<OversizeUploadFile[]>([])
+  const [showOversizeModal, setShowOversizeModal] = useState(false)
   const [duplicateFiles, setDuplicateFiles] = useState<(DuplicateFile & { icon: string })[]>([])
   const [pendingBatchData, setPendingBatchData] = useState<{
     files: File[]
     batchResponse: BatchUploadInitResponse
   } | null>(null)
-
-  const MAX_QUEUE_SIZE = 1000
 
   // ==================== 浏览器兼容性检测 ====================
   const browserSupport = useMemo<BrowserSupport>(() => {
@@ -194,12 +223,34 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
     return uploadQueue.some(item => item.status === UPLOAD_STATUS.UPLOADING)
   }, [uploadQueue])
 
+  const waitingUploads = useMemo(() => {
+    return uploadQueue.filter(item => item.status === UPLOAD_STATUS.WAITING)
+  }, [uploadQueue])
+
+  const hasWaitingUploads = waitingUploads.length > 0
+
+  // 待开始上传：有等待文件且当前没有正在上传的文件（此时展示“开始上传”按钮）
+  const isPendingStart = hasWaitingUploads && !hasActiveUploads
+
+  // 队列中是否还有未完成项（等待 / 上传中 / 暂停）
+  const hasPendingUploads = useMemo(() => {
+    return uploadQueue.some(
+      item =>
+        item.status === UPLOAD_STATUS.WAITING ||
+        item.status === UPLOAD_STATUS.UPLOADING ||
+        item.status === UPLOAD_STATUS.PAUSED
+    )
+  }, [uploadQueue])
+
   const hasFailedUploads = useMemo(() => {
     return uploadQueue.some(item => item.status === UPLOAD_STATUS.ERROR)
   }, [uploadQueue])
 
   const everyUploadsCompleted = useMemo(() => {
-    return uploadQueue.every(item => item.status === UPLOAD_STATUS.COMPLETED)
+    // 队列为空（仅剩超限文件记录）时不视为“全部上传成功”
+    return (
+      uploadQueue.length > 0 && uploadQueue.every(item => item.status === UPLOAD_STATUS.COMPLETED)
+    )
   }, [uploadQueue])
 
   const uploadingUploads = useMemo(() => {
@@ -306,78 +357,24 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   }, [uploadQueue, libraryStore, cleanupUploadItem])
 
   // ==================== 文件验证 ====================
-  const isTempFile = useCallback((file: File): boolean => {
-    const fileName = file.name.toLowerCase()
-    const baseName = file.name
-
-    const tempFilePatterns = [
-      '.ds_store',
-      'thumbs.db',
-      'desktop.ini',
-      '.tmp',
-      '.temp',
-      '.swp',
-      '.swo',
-      '.bak',
-      '~'
-    ]
-
-    for (const pattern of tempFilePatterns) {
-      if (fileName === pattern || fileName.endsWith(pattern)) {
-        return true
-      }
+  // maxSize prop 以 MB 为单位（对外契约），校验内部统一用字节
+  const validationOptions = useMemo<ValidateUploadFileOptions>(() => {
+    const maxSizeBytesByExtension: Record<string, number> = {}
+    for (const [extension, maxSizeMB] of Object.entries(maxSize)) {
+      maxSizeBytesByExtension[extension.toLowerCase()] = maxSizeMB * 1024 * 1024
     }
 
-    if (baseName.startsWith('~$')) {
-      return true
+    return {
+      allowedTypes: acceptTypes.map(type => `.${type}`),
+      maxSizeBytes: FILE_SIZE_LIMITS.MAX_SINGLE_FILE_SIZE,
+      maxSizeBytesByExtension
     }
+  }, [acceptTypes, maxSize])
 
-    if (
-      fileName.startsWith('.') &&
-      !fileName.includes('.md') &&
-      !fileName.includes('.txt') &&
-      !fileName.includes('.html')
-    ) {
-      const parts = fileName.split('.')
-      if (parts.length === 2) {
-        return true
-      }
-    }
-
-    return false
-  }, [])
-
-  const validateFile = useCallback(
-    (file: File): { valid: boolean; error?: string } => {
-      if (isTempFile(file)) {
-        return {
-          valid: false,
-          error: '临时文件或系统文件，已自动过滤'
-        }
-      }
-
-      const allowedTypes = acceptTypes.map(type => `.${type}`)
-      if (!validateFileType(file, allowedTypes)) {
-        return {
-          valid: false,
-          error: `不支持的文件类型，仅支持：${acceptTypes.join('、')}`
-        }
-      }
-
-      const fileExtension = file.name.split('.').pop()?.toLowerCase() || ''
-      const maxSizeMB = maxSize[fileExtension] || MAX_FILE_SIZE
-      const maxSizeBytes = maxSizeMB * 1024 * 1024
-
-      if (!validateFileSize(file, maxSizeBytes)) {
-        return {
-          valid: false,
-          error: `文件大小超过限制，${fileExtension} 文件最大支持 ${maxSizeMB}MB`
-        }
-      }
-
-      return { valid: true }
-    },
-    [acceptTypes, maxSize, isTempFile]
+  /** 文件是否超过当前配置的单文件上限（含按扩展名的覆盖） */
+  const isOversizeFile = useCallback(
+    (file: File) => !validateFileSize(file, resolveMaxSizeBytes(file.name, validationOptions)),
+    [validationOptions]
   )
 
   const validateFolder = useCallback((files: FileList): boolean => {
@@ -691,13 +688,40 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   }, [startNextUpload])
 
   // 使用 useEffect 监听队列变化，自动触发上传
+  // autoUpload 为 true 时保持自动上传；默认 false，需点击“开始上传”（uploadStarted）后才开始
   useEffect(() => {
-    if (autoUpload && uploadQueue.some(item => item.status === UPLOAD_STATUS.WAITING)) {
+    if (
+      (autoUpload || uploadStarted) &&
+      uploadQueue.some(item => item.status === UPLOAD_STATUS.WAITING)
+    ) {
       startNextUploadRef.current()
     }
-  }, [uploadQueue, autoUpload])
+  }, [uploadQueue, autoUpload, uploadStarted])
+
+  // 一轮上传全部结束（无等待 / 上传中 / 暂停）后重置标记，之后新选的文件需重新点击“开始上传”
+  useEffect(() => {
+    if (!hasPendingUploads) {
+      setUploadStarted(false)
+    }
+  }, [hasPendingUploads])
 
   // ==================== 队列管理 ====================
+  /**
+   * 队列余量检查：不足时先清掉已结束项再判定，返回 false 表示放不下
+   */
+  const hasQueueCapacity = useCallback(
+    (incoming: number): boolean => {
+      if (uploadQueue.length + incoming <= maxFileCount) return true
+
+      cleanupCompletedItems()
+      if (uploadQueue.length + incoming <= maxFileCount) return true
+
+      message.warning(`上传队列已满，最多支持 ${maxFileCount} 个文件同时上传`)
+      return false
+    },
+    [uploadQueue, maxFileCount, cleanupCompletedItems]
+  )
+
   /**
    * 添加到上传队列（优化版本）
    * @param fileHashes 秒传预检结果：key = file 对象引用，value = { hash, existingFileId? }
@@ -713,24 +737,19 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
       duplicateMode?: 'replace' | 'sequence'
     ) => {
       const newItems: UploadItem[] = files.map(file => {
-        const { icon } = formatFileInfo(file.name)
-        const id = generateFileId(file)
+        const base = createQueueItemBase(file)
         // 新文件入队时清理取消标记，防止 id 复用导致误拦
-        cancelledIdsRef.current.delete(id)
+        cancelledIdsRef.current.delete(base.id)
         const hashInfo = fileHashes?.get(file)
-        const mappedFileUploadId = batchResponse.file_mappings[
-          (file as any).webkitRelativePath ? `/${(file as any).webkitRelativePath}` : file.name
-        ]
+        const relativePath = (file as any).webkitRelativePath
+          ? `/${(file as any).webkitRelativePath}`
+          : file.name
         return {
-          id,
-          file,
+          ...base,
           status: UPLOAD_STATUS.WAITING,
-          progress: 0,
-          icon,
-          folder: (file as any).webkitRelativePath?.split('/')[0],
           batchId: batchResponse.batch_id,
           uploadToken: batchResponse.upload_token,
-          fileUploadId: batchResponse.file_mappings[(file as any).webkitRelativePath ? `/${(file as any).webkitRelativePath}` : file.name],
+          fileUploadId: batchResponse.file_mappings[relativePath],
           // 秒传命中时复用已有 UploadFile id 作为 fileUploadId；未命中走 batch/init 返回的 mapping
           fileId: "",
           hash: hashInfo?.hash,
@@ -739,10 +758,11 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         }
       })
 
-      libraryStore.setUploadQueue([...uploadQueue, ...newItems])
-      // 上传触发由 useEffect 监听队列变化自动处理
+      // 读最新队列再合并：本函数在 batch/init 等异步之后调用，闭包里的 uploadQueue 可能已过期
+      libraryStore.setUploadQueue([...useLibraryStore.getState().uploadQueue, ...newItems])
+      // 上传触发由 useEffect 监听队列变化处理：autoUpload 或用户点击“开始上传”后才会开始
     },
-    [uploadQueue, libraryStore]
+    [libraryStore]
   )
 
   /**
@@ -756,14 +776,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
    */
   const addToQueue = useCallback(
     async (files: File[]) => {
-      if (uploadQueue.length + files.length > MAX_QUEUE_SIZE) {
-        cleanupCompletedItems()
-
-        if (uploadQueue.length + files.length > MAX_QUEUE_SIZE) {
-          message.warning(`上传队列已满，最多支持 ${MAX_QUEUE_SIZE} 个文件同时上传`)
-          return
-        }
-      }
+      if (!hasQueueCapacity(files.length)) return
 
       // 1) 先 init：创建 batch 并获取 file_mappings（命中项后续用 check 返回的 file.id 覆盖）
       const batchTask = await createBatchTask(files)
@@ -789,11 +802,6 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
       const fileHashes = new Map<File, { hash: string; existingFileId?: string }>()
 
       for (const file of files) {
-        // 超大文件跳过 hash 计算（避免一次性读取占用过多内存，由服务端兜底去重）
-        if (file.size > FILE_SIZE_LIMITS.MAX_HASH_FILE_SIZE) {
-          continue
-        }
-
         try {
           const hash = await calculateFileHash(file)
           const checkResult = await filesApi.checkUpload(hash)
@@ -819,7 +827,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         fileHashes
       )
     },
-    [uploadQueue, cleanupCompletedItems, createBatchTask, addFilesToQueue]
+    [createBatchTask, addFilesToQueue, hasQueueCapacity]
   )
 
   /**
@@ -887,6 +895,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
       const queueItem = uploadQueue.find(item => item.id === id)
       if (queueItem && queueItem.status === UPLOAD_STATUS.PAUSED) {
         queueItem.status = UPLOAD_STATUS.WAITING
+        setUploadStarted(true)
         // 触发状态更新
         libraryStore.setUploadQueue([...uploadQueue])
       }
@@ -965,15 +974,22 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   const retryUpload = useCallback(
     (id: string) => {
       const queueItem = uploadQueue.find(item => item.id === id)
-      if (queueItem && queueItem.status === UPLOAD_STATUS.ERROR) {
-        queueItem.status = UPLOAD_STATUS.WAITING
-        queueItem.progress = 0
-        queueItem.error = undefined
-        // 触发状态更新
-        libraryStore.setUploadQueue([...uploadQueue])
+      if (!queueItem || queueItem.status !== UPLOAD_STATUS.ERROR) return
+
+      // 超限文件重传必然再次失败，直接提示原因，不走上传链路
+      if (isOversizeFile(queueItem.file)) {
+        message.error(FILE_SIZE_EXCEEDED_MESSAGE)
+        return
       }
+
+      queueItem.status = UPLOAD_STATUS.WAITING
+      queueItem.progress = 0
+      queueItem.error = undefined
+      setUploadStarted(true)
+      // 触发状态更新
+      libraryStore.setUploadQueue([...uploadQueue])
     },
-    [uploadQueue, libraryStore]
+    [uploadQueue, libraryStore, isOversizeFile]
   )
 
   // ==================== 批量操作 ====================
@@ -996,6 +1012,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
       }
     })
     if (updated) {
+      setUploadStarted(true)
       libraryStore.setUploadQueue([...uploadQueue])
     }
   }, [uploadQueue, libraryStore])
@@ -1134,19 +1151,24 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   const handleFiles = useCallback(
     (files: FileList) => {
       const validFiles: File[] = []
-      const invalidFiles: string[] = []
+      const newOversizeFiles: OversizeUploadFile[] = []
+      const invalidFiles: InvalidUploadFile[] = []
       let tempFilesCount = 0
 
       for (const file of Array.from(files)) {
-        const validation = validateFile(file)
-        if (validation.valid) {
+        const result = validateUploadFile(file, validationOptions)
+        if (result.valid) {
           validFiles.push(file)
+          continue
+        }
+
+        if (result.code === 'temp') {
+          tempFilesCount++
+        } else if (result.code === 'size') {
+          // 超限文件不进上传队列、不在待上传列表展示，单独记录供状态栏汇总查看
+          newOversizeFiles.push({ file, icon: formatFileInfo(file.name).icon })
         } else {
-          if (validation.error?.includes('临时文件')) {
-            tempFilesCount++
-          } else {
-            invalidFiles.push(file.name)
-          }
+          invalidFiles.push({ name: file.name, message: result.message })
         }
       }
 
@@ -1154,15 +1176,24 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         console.log(`已自动过滤 ${tempFilesCount} 个临时文件或系统文件`)
       }
 
-      if (validFiles.length === 0 && invalidFiles.length > 0) {
-        message.error(
-          `上传文件格式不支持，仅支持：${acceptTypes.join('、')} 格式, 单个文件最大支持${maxSize[acceptTypes[0]] || MAX_FILE_SIZE}MB`
-        )
-      } else if (validFiles.length > 0) {
+      // 仅有效文件占用上传队列余量（超限文件不进队列）
+      if (validFiles.length > 0 && !hasQueueCapacity(validFiles.length)) return
+
+      // 类型不符的文件只能提示：混选场景下不提示等于静默丢弃
+      const invalidMessage = buildInvalidFilesMessage(invalidFiles, validFiles.length)
+      if (invalidMessage) {
+        message.error(invalidMessage)
+      }
+
+      if (newOversizeFiles.length > 0) {
+        setOversizeFiles(prev => [...prev, ...newOversizeFiles])
+      }
+
+      if (validFiles.length > 0) {
         addToQueue(validFiles)
       }
     },
-    [validateFile, acceptTypes, maxSize, addToQueue]
+    [validationOptions, hasQueueCapacity, addToQueue]
   )
 
   // ==================== UI 控制 ====================
@@ -1174,29 +1205,47 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   }, [])
 
   /**
+   * 开始上传：手动触发队列中等待文件的上传
+   */
+  const handleStartUpload = useCallback(() => {
+    if (!uploadQueue.some(item => item.status === UPLOAD_STATUS.WAITING)) return
+    setUploadStarted(true)
+    // 立即触发一次，不必依赖 state 更新后的 effect 时序
+    startNextUploadRef.current()
+  }, [uploadQueue])
+
+  /**
    * 关闭上传队列
    */
   const handleClose = useCallback(() => {
-    if (uploadingUploads.length > 0) {
+    const unfinishedCount = uploadQueue.filter(
+      item =>
+        item.status === UPLOAD_STATUS.WAITING ||
+        item.status === UPLOAD_STATUS.UPLOADING ||
+        item.status === UPLOAD_STATUS.PAUSED
+    ).length
+    if (unfinishedCount > 0) {
       Modal.confirm({
         title: '取消上传',
-        content: '文件上传尚未完成，是否取消所有正在上传的文件？',
+        content: `还有 ${unfinishedCount} 个文件未上传完成，是否取消这些文件的上传？`,
         okText: '取消上传',
-        cancelText: '继续上传',
+        cancelText: '暂不取消',
         onOk: () => {
           cancelAll()
           libraryStore.setUploadQueue([])
+          setOversizeFiles([])
         }
       })
     } else {
       libraryStore.setUploadQueue([])
+      setOversizeFiles([])
     }
-  }, [uploadingUploads.length, cancelAll, libraryStore])
+  }, [uploadQueue, cancelAll, libraryStore])
 
   // ==================== 生命周期管理 ====================
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (uploadingUploads.length > 0) {
+      if (uploadingUploads.length > 0 || hasWaitingUploads) {
         const message = t('common.unsaved_changes')
         event.preventDefault()
         event.returnValue = message
@@ -1214,7 +1263,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
       window.removeEventListener('beforeunload', handleBeforeUnload)
       disableProtection()
     }
-  }, [uploadingUploads.length, t])
+  }, [uploadingUploads.length, hasWaitingUploads, t])
 
   useEffect(() => {
     return () => {
@@ -1236,12 +1285,16 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   useImperativeHandle(ref, () => ({
     selectFiles,
     selectFolder,
-    cancelAll
-  }), [selectFiles, selectFolder, cancelAll])
+    cancelAll,
+    startUpload: handleStartUpload
+  }), [selectFiles, selectFolder, cancelAll, handleStartUpload])
 
   // Tree node render
   const renderTreeNode = (node: FileStructureItem) => {
     if (node.type === 'directory') {
+      const children = node.children || []
+      const folderStatus = getFolderStatus(children)
+      const hasUploadingChild = children.some(item => item.status === UPLOAD_STATUS.UPLOADING)
       return (
         <div className="flex-1 h-[50px] pr-2.5 flex items-center gap-2 overflow-hidden">
           <div className="flex-none size-6">
@@ -1255,13 +1308,15 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
           </div>
           <div className="flex items-center gap-1">
             <span className="text-sm text-[#999999]">
-              {getFolderStatus(node.children || []) === UPLOAD_STATUS.ERROR
+              {folderStatus === UPLOAD_STATUS.ERROR
                 ? '部分文件上传失败'
-                : getFolderStatus(node.children || []) === UPLOAD_STATUS.COMPLETED
+                : folderStatus === UPLOAD_STATUS.COMPLETED
                   ? '全部上传成功'
-                  : '上传中'}
+                  : hasUploadingChild
+                    ? '上传中'
+                    : '待上传'}
             </span>
-            {getFolderStatus(node.children || []) === UPLOAD_STATUS.WAITING && (
+            {folderStatus === UPLOAD_STATUS.WAITING && hasUploadingChild && (
               <LoadingOutlined />
             )}
           </div>
@@ -1278,7 +1333,12 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
           <div className="text-sm font-medium text-[#1D1E1F] truncate" title={node.file?.name}>
             {node.file?.name}
           </div>
-          <div className="text-xs text-[#4F5052]">{node.file && formatFileSize(node.file.size)}</div>
+          <div className="text-xs text-[#4F5052]">
+            {node.file &&
+              (isOversizeFile(node.file)
+                ? FILE_SIZE_EXCEEDED_MESSAGE
+                : formatFileSize(node.file.size))}
+          </div>
         </div>
         <div className="flex items-center gap-1">
           {node.status === 'completed' && (
@@ -1317,12 +1377,17 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
             </Button>
           )}
           {node.status === 'error' && (
-            <Tooltip title={node.error}>
-              <div className="flex items-center gap-1">
-                <WarningFilled style={{ color: '#FA5151' }} />
-                <p className="text-sm text-[#939499]">上传失败</p>
-              </div>
-            </Tooltip>
+            <>
+              <Tooltip title={node.error}>
+                <div className="flex items-center gap-1">
+                  <WarningFilled style={{ color: '#FA5151' }} />
+                  <p className="text-sm text-[#939499]">上传失败</p>
+                </div>
+              </Tooltip>
+              <Button type="link" size="small" onClick={() => retryUpload(node.id!)}>
+                重试
+              </Button>
+            </>
           )}
           {node.status === 'uploading' && (
             <>
@@ -1338,7 +1403,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
   return (
     <div>
       {/* 上传队列 */}
-      {uploadQueue.length > 0 && (
+      {(uploadQueue.length > 0 || oversizeFiles.length > 0) && (
         <div className="w-[450px] border shadow-lg rounded-md z-[99] fixed bottom-5 right-5 bg-white">
           {/* 队列头部 */}
           <div className="h-14 px-4 flex items-center gap-2">
@@ -1355,6 +1420,10 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
                   <CheckCircleFilled style={{ color: '#07C160' }} />
                 </div>
                 <h2 className="flex-1 text-base text-[#1D1E1F]">全部上传成功</h2>
+              </>
+            ) : isPendingStart || uploadQueue.length === 0 ? (
+              <>
+                <h2 className="flex-1 text-base text-[#1D1E1F]">上传文件</h2>
               </>
             ) : (
               <>
@@ -1385,13 +1454,32 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
           {!isCollapsed && (
             <div className="h-10 px-4 flex items-center justify-between bg-[#FAFAFA]">
               <h3 className="text-sm text-[#4F5052]">
-                {uploadingUploads.length > 0
-                  ? `正在上传${uploadingUploads.length}个文件`
-                  : `共有${uploadQueue.length}个文件`}
-                ，已成功{completedUploads.length}个，失败{failedUploads.length}个
+                {uploadQueue.length > 0 && (
+                  <>
+                    {uploadingUploads.length > 0
+                      ? `正在上传${uploadingUploads.length}个文件`
+                      : isPendingStart
+                        ? `待上传${waitingUploads.length}个文件`
+                        : `共有${uploadQueue.length}个文件`}
+                    {completedUploads.length > 0 && `，已成功${completedUploads.length}个`}
+                    {failedUploads.length > 0 && `，失败${failedUploads.length}个`}
+                  </>
+                )}
+                {oversizeFiles.length > 0 && (isPendingStart || uploadQueue.length === 0) && (
+                  <>
+                    {uploadQueue.length > 0 && '，'}
+                    <a
+                      className="text-[#2563EB] cursor-pointer hover:underline"
+                      onClick={() => setShowOversizeModal(true)}
+                    >
+                      {oversizeFiles.length}个文件超出大小限制
+                      <ExclamationCircleOutlined className="ml-0.5 text-[#F0A105]" />
+                    </a>
+                  </>
+                )}
               </h3>
               <div className="flex">
-                {hasActiveUploads && (
+                {(hasActiveUploads || isPendingStart) && (
                   <Button type="link" size="small" onClick={cancelAll}>
                     全部取消
                   </Button>
@@ -1401,7 +1489,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
           )}
 
           {/* 上传列表 */}
-          {!isCollapsed && (
+          {!isCollapsed && uploadTreeData.length > 0 && (
             <div className="space-y-1 px-1 py-1 max-h-[300px] overflow-y-auto">
               <Tree
                 treeData={uploadTreeData}
@@ -1410,6 +1498,15 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
                 blockNode
                 titleRender={renderTreeNode}
               />
+            </div>
+          )}
+
+          {/* 开始上传按钮：有等待文件且当前无上传任务时展示在列表下方 */}
+          {!isCollapsed && isPendingStart && (
+            <div className="p-3 border-t border-[#F0F0F0]">
+              <Button type="primary" block onClick={handleStartUpload}>
+                开始上传
+              </Button>
             </div>
           )}
         </div>
@@ -1443,6 +1540,37 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
               </Tooltip>
             </div>
           ))}
+        </div>
+      </Modal>
+
+      {/* 超出大小限制文件列表 */}
+      <Modal
+        open={showOversizeModal}
+        title={`${oversizeFiles.length}个文件超出大小`}
+        width={520}
+        onCancel={() => setShowOversizeModal(false)}
+        footer={
+          <Button type="primary" onClick={() => setShowOversizeModal(false)}>
+            我知道了
+          </Button>
+        }
+      >
+        <div className="space-y-2 max-h-[400px] overflow-y-auto">
+          {oversizeFiles.map((item, index) => {
+            const displayName = (item.file as any).webkitRelativePath || item.file.name
+            return (
+              <div key={`${displayName}-${index}`} className="flex items-center gap-2">
+                <img className="size-5" src={item.icon} alt="" />
+                <Tooltip title={displayName}>
+                  <div className="flex-1 text-sm text-[#1D1E1F] truncate">{displayName}</div>
+                </Tooltip>
+                <div className="text-sm text-[#999999]">
+                  {formatFileSize(item.file.size)} / 上限
+                  {formatFileSize(resolveMaxSizeBytes(item.file.name, validationOptions))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       </Modal>
 

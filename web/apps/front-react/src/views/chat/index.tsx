@@ -15,11 +15,9 @@ import {
   useEffect,
   useRef,
   useMemo,
-  forwardRef,
-  useImperativeHandle,
   useState,
 } from "react";
-import { useSearchParams, Outlet, useLocation } from "react-router-dom";
+import { useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { useAgentStore, useCurrentAgent } from "@/stores/modules/agent";
@@ -37,18 +35,11 @@ import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import ChatContainer, { ChatContainerRef } from "./ChatContainer";
 import { isOpenClawCompatibleChannelType } from "@km/shared-business/agent-create";
 
-export interface ChatViewRef {
-  showUseCase: () => void;
-  hideUseCase: () => void;
-  showShare: () => void;
-}
-
-const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
+const ChatView = () => {
   const [searchParams] = useSearchParams();
   const location = useLocation();
 
   const chatRef = useRef<ChatContainerRef>(null);
-  const boxRef = useRef<HTMLDivElement>(null);
   const [hideBottomActions, setHideBottomActions] = useState(true);
 
   const agentStore = useAgentStore();
@@ -165,33 +156,14 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
   }, [searchParams]);
 
   // 监听 boxHeight 变化
-  useEffect(() => {
-    if (agentStore.boxHeight && boxRef.current) {
-      boxRef.current.scrollTop = agentStore.boxHeight;
-    }
-  }, [agentStore.boxHeight]);
 
   const showUseCase = () => {
     chatRef.current?.showUseCase();
   };
 
-  const hideUseCase = () => {
-    chatRef.current?.hideUseCase();
-  };
-
   const showShare = () => {
     chatRef.current?.showShare();
   };
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      showUseCase,
-      hideUseCase,
-      showShare,
-    }),
-    [],
-  );
 
   useEffect(() => {
     agentStore.loadCategorys();
@@ -226,12 +198,6 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
             name={detailData.name}
             extra={
               <div className="flex items-center gap-2">
-                {/* <div
-                  className={`size-7 cursor-pointer rounded flex items-center justify-center ${showUserMemory ? 'bg-[#F5F5F7]' : 'hover:bg-[#F5F5F7]'}`}
-                  onClick={() => setShowUserMemory(true)}
-                >
-                  <SvgIcon name="brain" />
-                </div> */}
                 {!isCompletion && (
                   <Button className="px-0" type="text" onClick={showShare}>
                     <SvgIcon name="share-two" size={18} color="#4F5052" />
@@ -248,7 +214,6 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
         </div>
       )}
       <div
-        ref={boxRef}
         className={
           isWebsite ? "flex-1 px-4 overflow-y-auto" : "flex-1 overflow-y-auto"
         }
@@ -274,12 +239,8 @@ const ChatView = forwardRef<ChatViewRef, {}>((props, ref) => {
     </section>
     </>
   );
-});
+}
 
 ChatView.displayName = "ChatView";
 
 export default ChatView;
-
-export function ChatLayout() {
-  return <Outlet />;
-}

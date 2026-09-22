@@ -16,6 +16,9 @@ import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
 import type { Agent } from "@/types/agent";
 
+// 平台配置为纯静态数据，提升到模块级避免每次渲染重建
+const platforms = createPlatformsByType("");
+
 interface UseCase {
   type: "case" | "scene" | "channel";
   input_text?: string;
@@ -32,8 +35,6 @@ export function AgentDetailView() {
   const navigate = useNavigate();
   const isSoftStyle = useIsSoftStyle();
   const locale = useEnterpriseStore((state) => state.language);
-
-  const platforms = createPlatformsByType('')
 
   // 新增：获取 agentStore
   const agentStore = useAgentStore();

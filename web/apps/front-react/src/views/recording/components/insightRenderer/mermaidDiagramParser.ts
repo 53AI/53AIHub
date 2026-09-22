@@ -15,6 +15,7 @@
  * 宁可展示源码，也不要把半张错图画给用户。
  */
 import type { MermaidFlowDiagram } from '@/api/modules/recording/types'
+import { toLines, unquote } from './mermaidText'
 import { isMermaidFlowchart, parseMermaidFlowchart } from './mermaidFlowchartParser'
 import {
   isClassDiagram,
@@ -129,23 +130,6 @@ export type ParsedMermaid =
   | MermaidPieDiagram
   | MermaidGanttDiagram
   | MermaidTimelineDiagram
-
-// ============= 通用工具 =============
-
-function toLines(source: string): string[] {
-  return String(source || '')
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map(l => l.replace(/%%.*$/, ''))
-}
-
-/** 去掉成对引号（mermaid 里引号只是转义手段） */
-function unquote(raw: string): string {
-  const s = (raw || '').trim()
-  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) return s.slice(1, -1).trim()
-  if (s.length >= 2 && s.startsWith("'") && s.endsWith("'")) return s.slice(1, -1).trim()
-  return s
-}
 
 // ============= 类型识别 =============
 
@@ -539,9 +523,4 @@ export function parseMermaidDiagram(source: string): ParsedMermaid | null {
   } catch {
     return null
   }
-}
-
-/** 便捷判定：这段源码能不能被我们画出来 */
-export function isSupportedMermaid(source: string): boolean {
-  return parseMermaidDiagram(source) !== null
 }

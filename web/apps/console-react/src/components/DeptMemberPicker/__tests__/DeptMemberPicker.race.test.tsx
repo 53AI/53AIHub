@@ -57,6 +57,70 @@ async function flushMicrotasksOnly() {
   })
 }
 
+/**
+ * 复现 UserInternalEditDrawer 的 bug:
+ * - Drawer destroyOnHidden, 打开时 DeptMemberPicker 随 Form 一起挂载,
+ *   此时 form store 为空, Form.Item 注入 value=[]
+ * - 挂载后父组件 useEffect 调 form.setFieldsValue 写入用户真实部门
+ *   (与挂载同一个 effect flush, 早于字典 promise 的 microtask)
+ * - 字典加载完成后, init 里 `!value.length` 读的是挂载时捕获的旧闭包 value=[]
+ *   → setModelValue([root]) 把真实部门覆盖为根节点
+ */
+describe('DeptMemberPicker race condition (department mode, edit drawer)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('does not overwrite externally set departments with root after dictionary loads', async () => {
+    const onChange = vi.fn()
+    const realDepartments = [
+      { name: '研发部', label: '研发部', value: 5 },
+      { name: '产品部', label: '产品部', value: 6 },
+    ]
+
+    // 1. 挂载: form store 为空, Form.Item 注入 value=[]
+    const { rerender } = render(
+      <DeptMemberPicker type="department" value={[]} onChange={onChange} />
+    )
+
+    // 2. 同一同步栈内模拟父组件 setFieldsValue(真实部门),
+    //    此时字典 promise 的 microtask 尚未执行
+    rerender(
+      <DeptMemberPicker
+        type="department"
+        value={realDepartments}
+        onChange={onChange}
+      />
+    )
+
+    // 3. 字典加载完成, init 继续执行
+    await flushMicrotasksOnly()
+
+    // 关键断言: 不应把外部写入的部门覆盖为根节点(全部成员)
+    expect(onChange).not.toHaveBeenCalledWith([
+      expect.objectContaining({ value: 0, label: '全部成员' }),
+    ])
+  })
+
+  it('still applies root default when value stays empty (new mode)', async () => {
+    const onChange = vi.fn()
+
+    render(<DeptMemberPicker type="department" value={[]} onChange={onChange} />)
+
+    await flushMicrotasksOnly()
+
+    // value 一直为空时, 默认选中根节点(保持 defaultFirstValue 语义)
+    expect(onChange).toHaveBeenCalledWith([
+      expect.objectContaining({ value: 0, label: '全部成员' }),
+    ])
+  })
+})
+
 describe('DeptMemberPicker race condition (edit mode default 全部成员 override)', () => {
   beforeEach(() => {
     vi.useFakeTimers()

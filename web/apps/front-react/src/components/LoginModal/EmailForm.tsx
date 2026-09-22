@@ -1,9 +1,10 @@
-import React, { useState, useMemo } from "react";
+import React, { useMemo } from "react";
 import { Form, Input, Button, message } from "antd";
 import { getEmailRules } from "@/utils/form-rules";
 import commonApi from "@/api/modules/common";
 import { useUserStore } from "@/stores/modules/user";
 import useEmail from "@/hooks/useEmail";
+import VerifyCodeField from "@/components/VerifyCodeField";
 import { t } from "@/locales";
 
 interface EmailFormProps {
@@ -14,8 +15,7 @@ interface EmailFormProps {
 const EmailForm: React.FC<EmailFormProps> = ({ onSuccess, onClose }) => {
   const [form] = Form.useForm();
   const userStore = useUserStore();
-  const { sendEmailCode, emailCodeRule, emailCodeCount } = useEmail();
-  const [isSending, setIsSending] = useState(false);
+  const { sendEmailCode, emailCodeRule, emailCodeCount, emailSending } = useEmail();
 
   const isEmail = useMemo(() => {
     const email = form.getFieldValue("email") || "";
@@ -25,10 +25,7 @@ const EmailForm: React.FC<EmailFormProps> = ({ onSuccess, onClose }) => {
   const handleGetCode = () => {
     const email = form.getFieldValue("email");
     if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email)) return;
-    setIsSending(true);
-    sendEmailCode(email).finally(() => {
-      setIsSending(false);
-    });
+    sendEmailCode(email);
   };
 
   const handleClose = () => {
@@ -76,35 +73,14 @@ const EmailForm: React.FC<EmailFormProps> = ({ onSuccess, onClose }) => {
           allowClear
         />
       </Form.Item>
-      <Form.Item
-        label={t?.("form.verify_code") || "验证码"}
+      <VerifyCodeField
         name="verify_code"
-        rules={[emailCodeRule]}
-      >
-        <Input
-          size="large"
-          placeholder={
-            (t?.("form.input_placeholder") || "请输入") +
-            (t?.("form.verify_code") || "验证码")
-          }
-          addonAfter={
-            <Button
-              type="text"
-              disabled={isSending || !!emailCodeCount}
-              onClick={handleGetCode}
-              className="!bg-[#f5f5f5] border-0"
-            >
-              <span
-                className={emailCodeCount ? "text-[#9A9A9A]" : "text-[#2563EB]"}
-              >
-                {emailCodeCount
-                  ? `${emailCodeCount}s`
-                  : t?.("form.get_verify_code") || "获取验证码"}
-              </span>
-            </Button>
-          }
-        />
-      </Form.Item>
+        rule={emailCodeRule}
+        count={emailCodeCount}
+        loading={emailSending}
+        onClick={handleGetCode}
+        size="large"
+      />
 
       {/* 更换按钮 */}
       <div className="flex justify-end mt-7.5">

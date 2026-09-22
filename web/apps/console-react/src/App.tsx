@@ -10,6 +10,9 @@ import "dayjs/locale/zh-tw";
 import "dayjs/locale/en";
 import "dayjs/locale/ja";
 import { AppRouter } from "./router";
+import { CaptchaModal } from "@km/shared-business/captcha";
+import { commonApi } from "@/api/modules/common";
+import { t } from "@/locales";
 import {
   useChannelStore,
   useEnterpriseStore,
@@ -134,6 +137,7 @@ export function App() {
     >
       <AntApp className="h-full overflow-hidden flex">
         <AppRouter />
+        <CaptchaModal fetchCaptcha={() => commonApi.getCaptcha()} t={t} />
       </AntApp>
     </ConfigProvider>
   );

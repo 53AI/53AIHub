@@ -1,10 +1,13 @@
-import { useState, useEffect, forwardRef, useImperativeHandle } from 'react'
+import { useState, forwardRef, useImperativeHandle } from 'react'
 import { Form, Input, Button, Radio, message } from 'antd'
 import { useUserStore } from '@/stores/modules/user'
 import { useEmail } from '@/hooks/useEmail'
 import { useMobile } from '@/hooks/useMobile'
 import { useEnv } from '@/hooks/useEnv'
 import { t } from '@/locales'
+import { noSpaceKeydownHandler } from '@km/shared-utils'
+import { usePasswordRules } from '@/hooks/usePasswordPolicy'
+import VerifyCodeField from '@/components/VerifyCodeField'
 
 interface ResetPasswordProps {
   onSuccess?: () => void
@@ -18,13 +21,13 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(({ onSucc
   const [form] = Form.useForm()
   const userStore = useUserStore()
   const { isOpLocalEnv } = useEnv()
-  const { emailCodeRule, sendEmailCode, emailCodeCount } = useEmail()
-  const { sendcode, codeRule, codeCount } = useMobile()
+  const { emailCodeRule, sendEmailCode, emailCodeCount, emailSending } = useEmail()
+  const { sendcode, codeRule, codeCount, sending } = useMobile()
+  const { passwordRule } = usePasswordRules()
 
   const [verifyWay, setVerifyWay] = useState<'email_verify' | 'mobile_verify'>(
     userStore.info?.email ? 'email_verify' : 'mobile_verify'
   )
-  const [isSending, setIsSending] = useState(false)
 
   const getCodeRules = () => {
     return verifyWay === 'email_verify' ? emailCodeRule : codeRule
@@ -41,7 +44,6 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(({ onSucc
     } else {
       sendcode(target || '')
     }
-    setIsSending(Boolean(getCodeCount()))
   }
 
   const handleSubmit = async () => {
@@ -92,11 +94,6 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(({ onSucc
     resetForm
   }))
 
-  // Watch code countdown
-  useEffect(() => {
-    setIsSending(emailCodeCount > 0 || codeCount > 0)
-  }, [emailCodeCount, codeCount])
-
   return (
     <>
       {!isOpLocalEnv && (
@@ -118,42 +115,27 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(({ onSucc
         layout="vertical"
         onFinish={handleSubmit}
       >
-        <Form.Item
-          label={t('form.verify_code')}
+        <VerifyCodeField
           name="verify_code"
-          rules={[{ required: true, message: t('form.input_placeholder') + t('form.verify_code') }]}
-        >
-          <div className="flex items-center w-full">
-            <Input
-              size="large"
-              className="md:min-w-80 flex-1"
-              placeholder={t('form.input_placeholder') + t('form.verify_code')}
-              addonAfter={
-                <Button
-                  disabled={isSending}
-                  className="w-29"
-                  onClick={handleGetCode}
-                >
-                  <span className={isSending ? 'text-[#9A9A9A]' : 'text-[#2563EB]'}>
-                    {getCodeCount() ? `${getCodeCount()}s` : t('form.get_verify_code')}
-                  </span>
-                </Button>
-              }
-            />
-          </div>
-        </Form.Item>
+          rule={getCodeRules()}
+          count={getCodeCount()}
+          loading={verifyWay === 'email_verify' ? emailSending : sending}
+          onClick={handleGetCode}
+          size="large"
+        />
 
         <Form.Item
           label={t('form.new_password')}
           name="new_password"
           rules={[
             { required: true, message: t('form.new_password_placeholder') },
-            { min: 8, max: 20, message: t('form.password_length') }
+            passwordRule
           ]}
         >
           <Input.Password
             size="large"
             placeholder={t('form.new_password_placeholder')}
+            onKeyDown={noSpaceKeydownHandler}
           />
         </Form.Item>
 
@@ -168,7 +150,7 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(({ onSucc
                 if (!value || getFieldValue('new_password') === value) {
                   return Promise.resolve()
                 }
-                return Promise.reject(new Error(t('form.password_mismatch')))
+                return Promise.reject(new Error(t('form.password_not_match')))
               }
             })
           ]}
@@ -176,6 +158,7 @@ const ResetPassword = forwardRef<ResetPasswordRef, ResetPasswordProps>(({ onSucc
           <Input.Password
             size="large"
             placeholder={t('form.new_password_confirm_placeholder')}
+            onKeyDown={noSpaceKeydownHandler}
           />
         </Form.Item>
 

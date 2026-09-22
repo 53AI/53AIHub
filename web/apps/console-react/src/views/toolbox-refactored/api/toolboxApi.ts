@@ -2,7 +2,7 @@
  * Toolbox API 封装
  * 提供可测试的 API 层，支持依赖注入
  */
-import { aiLinkApi } from '@/api/modules/ai-link'
+import { aiLinkApi, getFormatAiLinkData } from '@/api/modules/ai-link'
 import groupApi from '@/api/modules/group'
 import type { AiLinkItem, GroupOption, SortItem, AiLinkDetail, GroupApiResponse, AiLinkListParams, RawGroupOption } from '../types'
 
@@ -79,11 +79,17 @@ export const toolboxApi: ToolboxApiInterface = {
   },
 
   /**
-   * 获取商店数据
+   * 获取商店数据（归一化商店项为 AiLinkItem：注入 ai_link_id，保留原字段）
    */
   async store(): Promise<{ data: StoreGroupData[] }> {
     const result = await aiLinkApi.store()
-    return result as { data: StoreGroupData[] }
+    const raw = ((result as { data?: { group_name: string; links?: AiLinkItem[] }[] } | undefined)?.data) || []
+    return {
+      data: raw.map((group) => ({
+        group_name: group.group_name,
+        links: (group.links || []).map(getFormatAiLinkData),
+      })),
+    }
   },
 
   /**

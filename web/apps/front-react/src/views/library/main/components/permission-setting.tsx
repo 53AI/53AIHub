@@ -41,17 +41,27 @@ export function PermissionSetting({ onClose, className }: PermissionSettingProps
     return subject_id === userStore.info?.user_id
   }
 
-  // Check if this is the last manage permission
+  // 是否已是最后一个可管理者：
+  // 空间管理员组（上级知识/团队空间的管理员）本身也可管理，需要一并计入，
+  // 否则只有空间管理员时，降级最后一个自定义成员会被误拦。
   const isLastManagePermission = (member: PermissionItem) => {
     if (member.permission !== PERMISSION_TYPE.manage) {
       return false
     }
 
+    // 该组权限由后端下发且面板不可改（index 0 disabled），仅在它确实是
+    // 可管理时才把组内成员算作可管理者。
+    const spaceAdminManageCount =
+      defaultPermissions[0]?.permission === PERMISSION_TYPE.manage ? spaceAdminList.length : 0
+
     const otherManageCount = permissions.filter(
-      m => m.subject_id !== member.subject_id && m.permission === PERMISSION_TYPE.manage
+      m =>
+        m.permission === PERMISSION_TYPE.manage &&
+        // 同一 subject_id 可能同时存在于 user 与 group，需连 subject_type 一起比
+        !(m.subject_id === member.subject_id && m.subject_type === member.subject_type)
     ).length
 
-    return otherManageCount === 0
+    return otherManageCount + spaceAdminManageCount === 0
   }
 
   const loadPermission = () => {

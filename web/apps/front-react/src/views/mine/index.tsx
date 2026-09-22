@@ -22,7 +22,7 @@ import { useMySpaceContext } from "./hooks/useMySpaceContext";
 import { MineHeader } from "./components/MineHeader";
 import { PreviewPanel } from "./components/PreviewPanel";
 import { CreateFolderModal } from "./components/CreateFolderModal";
-import { extractFileName } from "./useInlineEditLite";
+import { extractFileName, buildRenamePath } from "./useInlineEditLite";
 import "./mine.css";
 
 // Lazy load sub-views
@@ -71,7 +71,6 @@ export function MineView() {
 
   // File preview state
   const [previewMode, setPreviewMode] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [previewFile, setPreviewFile] = useState<PreviewFile | null>(null);
   const [previewContent, setPreviewContent] = useState("");
 
@@ -170,7 +169,7 @@ export function MineView() {
           });
         } catch (error) {
           console.error("加载编辑文件失败:", error);
-          message.error("加载文件失败");
+          message.error(t("common.load_file_failed"));
           // Remove edit param and go back
           const newParams = new URLSearchParams(searchParams);
           newParams.delete("edit");
@@ -224,11 +223,9 @@ export function MineView() {
   // Open preview
   const handleOpenPreview = useCallback((file: PreviewFile, content?: string) => {
     previewModifiedRef.current = false;
-    setPreviewLoading(true);
     setPreviewFile(file);
     setPreviewContent(content || "");
     setPreviewMode(true);
-    setPreviewLoading(false);
   }, []);
 
   // Back to list
@@ -483,11 +480,7 @@ export function MineView() {
       }
 
       // 构建新路径
-      const basePath = fullPath.startsWith('/')
-        ? fullPath.substring(1)
-        : fullPath;
-      const parentDir = basePath.includes('/') ? basePath.substring(0, basePath.lastIndexOf('/')) : '';
-      const newPath = parentDir ? `/${parentDir}/${fullName}` : `/${fullName}`;
+      const newPath = buildRenamePath(fullPath, fullName);
 
       await filesApi.rename({ id: renamingFile.id, path: newPath });
 
@@ -606,7 +599,6 @@ export function MineView() {
         <PreviewPanel
           file={previewFile}
           content={previewContent}
-          loading={previewLoading}
           onBack={handleBackToList}
           onCommand={handlePreviewCommand}
           onEdit={handleOpenEditor}

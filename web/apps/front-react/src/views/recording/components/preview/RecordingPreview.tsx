@@ -12,7 +12,7 @@ import { IconAction } from '@km/shared-components-react'
 import {
   useInlineEditLite,
   getDisplayName,
-  buildNewPath,
+  buildRenamePath,
 } from '@/views/mine/useInlineEditLite'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
 import { AUDIO_DOUBLE_EXT_REGEX } from '@/views/mine/constants'
@@ -223,7 +223,7 @@ export function RecordingPreview({
           ? newName.replace(/\.md$/i, '')
           : newName
         try {
-          await onRename(id, buildNewPath(originalPath, fixedName))
+          await onRename(id, buildRenamePath(originalPath, fixedName))
         } catch (e: any) {
           const msg = e?.response?.data?.message || e?.message || ''
           const displayMsg = msg.includes('目标路径已存在') ? '已有相同文件名' : (msg || '重命名失败')

@@ -69,6 +69,7 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
     const adapter = useAgentCreateAdapter();
     const t = adapter.t || ((key: string) => key);
     const hideKnowledgeGraph = adapter.hideKnowledgeGraph ?? false;
+    const hideWiki = adapter.hideWiki ?? false;
     const [modelOptions, setModelOptions] = useState<ChannelOption[]>([]);
     const [rerankOptions, setRerankOptions] = useState<ChannelOption[]>([]);
     const [modelLoading, setModelLoading] = useState(false);
@@ -130,6 +131,22 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
         });
       }
     }, [showChannelConfig]);
+
+    // 隐藏动态知识（Wiki）时强制关闭其设置（含存量已启用的配置）：
+    // 1. 设置面板不展示开关；2. 保存后 Wiki 检索关闭；3. 预览知识源选择器依据 enable 同步隐藏 Wiki 选项
+    useEffect(() => {
+      if (hideWiki && form.formData.settings?.wiki_search_setting?.enable) {
+        form.updateFields({
+          settings: {
+            ...form.formData.settings,
+            wiki_search_setting: {
+              enable: false,
+              default_enable: false,
+            },
+          },
+        });
+      }
+    }, [hideWiki, form.formData.settings?.wiki_search_setting?.enable]);
 
     const validateForm = async () => {
       try {
@@ -372,7 +389,8 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                     <span className="text-sm text-primary flex items-center gap-1"><SvgIcon name="documents" size={14} />{t('setting.all_knowledge_base')}</span>
                   </div>
 
-                  {/* 动态知识 */}
+                  {/* 动态知识：本地版/私有化版隐藏，并强制关闭其设置 */}
+                  {!hideWiki && (
                   <div className="flex items-start gap-2">
                     <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
                       {t('module.dynamic_knowledge')}
@@ -417,6 +435,7 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                       </Checkbox>
                     )}
                   </div>
+                  )}
 
                   {/* 知识图谱 */}
                   {!hideKnowledgeGraph && (
@@ -619,7 +638,6 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                             },
                           })}
                           placeholder={t('module.answer_preference_placeholder')}
-                          style={{ resize: "none" }}
                         />
                       )}
                     </div>
@@ -657,7 +675,7 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                       {form.formData.settings?.out_of_range_reply?.mode === OUT_REPLY_TYPE.FIXED_REPLY && (
                         <div className="mt-2.5 w-full">
                           <Input.TextArea
-                            rows={4}
+                            rows={8}
                             maxLength={500}
                             showCount
                             value={form.formData.settings?.out_of_range_reply?.reply}
@@ -671,56 +689,27 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                               },
                             })}
                             placeholder={t('module.out_of_range_reply_placeholder')}
-                            style={{ resize: "none" }}
                           />
                         </div>
                       )}
 
                       {form.formData.settings?.out_of_range_reply?.mode === OUT_REPLY_TYPE.CONTINUE && (
-                        <div className="border rounded mt-2.5">
-                          <div className="h-10 flex items-center px-4 text-sm text-secondary border-b">
-                            {t('role_instruction_desc')}
-                          </div>
-                          <div>
-                            {adapter.OtherComponents?.PromptInput ? (
-                              <adapter.OtherComponents.PromptInput
-                                value={form.formData.settings?.out_of_range_reply?.prompt}
-                                onChange={(val: string) => form.updateFields({
-                                  settings: {
-                                    ...form.formData.settings,
-                                    out_of_range_reply: {
-                                      ...form.formData.settings?.out_of_range_reply,
-                                      prompt: val,
-                                    },
-                                  },
-                                })}
-                                showLine
-                                wordWrap
-                                style={{
-                                  flex: "none",
-                                  minHeight: "200px",
-                                  height: "max-content",
-                                }}
-                              />
-                            ) : (
-                              <Input.TextArea
-                                rows={8}
-                                maxLength={500}
-                                value={form.formData.settings?.out_of_range_reply?.prompt}
-                                onChange={(e) => form.updateFields({
-                                  settings: {
-                                    ...form.formData.settings,
-                                    out_of_range_reply: {
-                                      ...form.formData.settings?.out_of_range_reply,
-                                      prompt: e.target.value,
-                                    },
-                                  },
-                                })}
-                                placeholder={t('module.out_of_range_reply_prompt_placeholder')}
-                                style={{ resize: "none" }}
-                              />
-                            )}
-                          </div>
+                        <div className="mt-2.5 w-full">
+                          <Input.TextArea
+                            rows={8}
+                            maxLength={500}
+                            value={form.formData.settings?.out_of_range_reply?.prompt}
+                            onChange={(e) => form.updateFields({
+                              settings: {
+                                ...form.formData.settings,
+                                out_of_range_reply: {
+                                  ...form.formData.settings?.out_of_range_reply,
+                                  prompt: e.target.value,
+                                },
+                              },
+                            })}
+                            placeholder={t('module.out_of_range_reply_prompt_placeholder')}
+                          />
                         </div>
                       )}
                     </div>

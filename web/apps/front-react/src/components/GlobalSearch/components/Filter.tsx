@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Input, Spin, Checkbox, Tooltip, Select, Button } from "antd";
 import { SearchOutlined, CloseOutlined, PlusOutlined } from "@ant-design/icons";
 import { debounce } from "@km/shared-utils";
+import { t } from "@/locales";
 import { DeptMemberPicker } from "@/components/DeptMemberPicker";
 import { globalSearchApi } from "@/api/modules/global-search";
 import type {
@@ -16,28 +17,6 @@ import type { FilterState } from "../types";
 import { DEFAULT_FILTER_STATE, filterStateToParams } from "../utils/filter";
 import "../index.css";
 
-// ==================== 常量定义 ====================
-const TIME_RANGE_OPTIONS: { label: string; value: TimeRangeValue }[] = [
-  { label: "不限", value: "all" },
-  { label: "7天内", value: "7d" },
-  { label: "30天内", value: "30d" },
-  { label: "半年内", value: "180d" },
-  { label: "一年内", value: "365d" },
-];
-
-const DOC_TYPE_OPTIONS: { label: string; value: DocTypeValue }[] = [
-  { label: "不限", value: "all" },
-  { label: "PDF", value: "pdf" },
-  { label: "TXT", value: "txt" },
-  { label: "Markdown", value: "markdown" },
-  { label: "Word", value: "word" },
-  { label: "Excel", value: "excel" },
-  { label: "PowerPoint", value: "powerpoint" },
-  { label: "Epub", value: "epub" },
-  { label: "网页文件", value: "webpage" },
-  { label: "音频文件", value: "audio" },
-];
-
 // ==================== 类型定义 ====================
 
 interface FilterProps {
@@ -47,6 +26,8 @@ interface FilterProps {
   onChange: (state: FilterState) => void;
   /** 用于重置的 key，改变时重置内部状态 */
   resetKey?: number;
+  /** 筛选维度：full=全部维度；compact=仅知识空间/创建时间/更新时间（动态知识） */
+  variant?: "full" | "compact";
 }
 
 // ==================== 工具函数 ====================
@@ -232,7 +213,7 @@ function SearchInput<T, IdType extends string | number>({
               );
             })
           ) : (
-            <div className="px-3 py-4 text-sm text-gray-500 text-center">暂无搜索结果</div>
+            <div className="px-3 py-4 text-sm text-gray-500 text-center">{t("chat.mention.search_no_result")}</div>
           )}
         </div>
       )}
@@ -293,7 +274,7 @@ function CreatorPicker({
           onConfirm={handleConfirm}
           trigger={
             <Input
-              placeholder="添加"
+              placeholder={t("action.add")}
               prefix={<PlusOutlined className="text-gray-400" />}
               className="rounded w-full"
               readOnly
@@ -307,7 +288,7 @@ function CreatorPicker({
 }
 
 // ==================== 主组件 ====================
-export function Filter({ value, onChange, resetKey }: FilterProps) {
+export function Filter({ value, onChange, resetKey, variant = "full" }: FilterProps) {
   // 监听 resetKey 变化，重置内部状态
   useEffect(() => {
     if (resetKey !== undefined && resetKey > 0) {
@@ -323,22 +304,58 @@ export function Filter({ value, onChange, resetKey }: FilterProps) {
   const [selectedUpdatedTime, setSelectedUpdatedTime] = useState<TimeRangeValue>(value.selectedUpdatedTime);
   const [selectedDocType, setSelectedDocType] = useState<DocTypeValue>(value.selectedDocType);
 
+  const timeRangeOptions = useMemo<{ label: string; value: TimeRangeValue }[]>(
+    () => [
+      { label: t("common.all"), value: "all" },
+      { label: t("global_search.time_7d"), value: "7d" },
+      { label: t("global_search.time_30d"), value: "30d" },
+      { label: t("global_search.time_180d"), value: "180d" },
+      { label: t("global_search.time_365d"), value: "365d" },
+    ],
+    [],
+  );
+
+  const docTypeOptions = useMemo<{ label: string; value: DocTypeValue }[]>(
+    () => [
+      { label: t("common.all"), value: "all" },
+      { label: "PDF", value: "pdf" },
+      { label: "TXT", value: "txt" },
+      { label: "Markdown", value: "markdown" },
+      { label: "Word", value: "word" },
+      { label: "Excel", value: "excel" },
+      { label: "PowerPoint", value: "powerpoint" },
+      { label: "Epub", value: "epub" },
+      { label: t("global_search.type_webpage"), value: "webpage" },
+      { label: t("global_search.type_audio"), value: "audio" },
+    ],
+    [],
+  );
+
   // 知识空间筛选
-  const spaceFilter = useFilterItem<GlobalSearchSpace, string>({ getId: getSpaceId });
+  const spaceFilter = useFilterItem<GlobalSearchSpace, string>({
+    getId: getSpaceId,
+    initialItems: value.selectedSpaces,
+  });
   const [spaceOptions, setSpaceOptions] = useState<GlobalSearchSpace[]>([]);
   const [isSpaceLoading, setIsSpaceLoading] = useState(false);
   const [isSpaceDropdownVisible, setIsSpaceDropdownVisible] = useState(false);
   const spaceAbortRef = useRef<AbortController | null>(null);
 
   // 知识库筛选
-  const libraryFilter = useFilterItem<GlobalSearchLibrary, string>({ getId: getLibraryId });
+  const libraryFilter = useFilterItem<GlobalSearchLibrary, string>({
+    getId: getLibraryId,
+    initialItems: value.selectedLibraries,
+  });
   const [libraryOptions, setLibraryOptions] = useState<GlobalSearchLibrary[]>([]);
   const [isLibraryLoading, setIsLibraryLoading] = useState(false);
   const [isLibraryDropdownVisible, setIsLibraryDropdownVisible] = useState(false);
   const libraryAbortRef = useRef<AbortController | null>(null);
 
   // 创建人筛选
-  const creatorFilter = useFilterItem<UserInfo, number>({ getId: getCreatorId });
+  const creatorFilter = useFilterItem<UserInfo, number>({
+    getId: getCreatorId,
+    initialItems: value.selectedCreators as UserInfo[],
+  });
 
   // 搜索知识空间
   const searchSpaces = useCallback(async (query: string) => {
@@ -415,10 +432,10 @@ export function Filter({ value, onChange, resetKey }: FilterProps) {
   return (
     <div className="p-4">
       <div className="mb-4">
-        <div className="text-sm mb-2">知识空间</div>
+        <div className="text-sm mb-2">{t("module.space")}</div>
         <SearchInput
           type="space"
-          placeholder="搜索空间名称"
+          placeholder={t("global_search.search_space_name")}
           addedItems={spaceFilter.addedItems}
           checkedIds={spaceFilter.checkedIds}
           options={spaceOptions}
@@ -435,67 +452,73 @@ export function Filter({ value, onChange, resetKey }: FilterProps) {
         />
       </div>
 
-      <div className="mb-4">
-        <div className="text-sm mb-2">知识库</div>
-        <SearchInput
-          type="library"
-          placeholder="搜索知识库名称"
-          addedItems={libraryFilter.addedItems}
-          checkedIds={libraryFilter.checkedIds}
-          options={libraryOptions}
-          isLoading={isLibraryLoading}
-          isDropdownVisible={isLibraryDropdownVisible}
-          onSearch={debouncedSearchLibraries}
-          onAdd={libraryFilter.addItem}
-          onRemove={libraryFilter.removeItem}
-          onToggleCheck={libraryFilter.toggleCheck}
-          onDropdownVisibleChange={setIsLibraryDropdownVisible}
-          getId={getLibraryId}
-          getLabel={(item) => item.name || ""}
-          getIcon={(item) => item.icon}
-        />
-      </div>
+      {variant === "full" && (
+        <>
+          <div className="mb-4">
+            <div className="text-sm mb-2">{t("library.name")}</div>
+            <SearchInput
+              type="library"
+              placeholder={t("global_search.search_library_name")}
+              addedItems={libraryFilter.addedItems}
+              checkedIds={libraryFilter.checkedIds}
+              options={libraryOptions}
+              isLoading={isLibraryLoading}
+              isDropdownVisible={isLibraryDropdownVisible}
+              onSearch={debouncedSearchLibraries}
+              onAdd={libraryFilter.addItem}
+              onRemove={libraryFilter.removeItem}
+              onToggleCheck={libraryFilter.toggleCheck}
+              onDropdownVisibleChange={setIsLibraryDropdownVisible}
+              getId={getLibraryId}
+              getLabel={(item) => item.name || ""}
+              getIcon={(item) => item.icon}
+            />
+          </div>
+
+          <div className="mb-4">
+            <div className="text-sm mb-2">{t("form.creator")}</div>
+            <CreatorPicker
+              addedItems={creatorFilter.addedItems}
+              checkedIds={creatorFilter.checkedIds}
+              onAdd={creatorFilter.addItems}
+              onRemove={creatorFilter.removeItem}
+              onToggleCheck={creatorFilter.toggleCheck}
+            />
+          </div>
+        </>
+      )}
 
       <div className="mb-4">
-        <div className="text-sm mb-2">创建人</div>
-        <CreatorPicker
-          addedItems={creatorFilter.addedItems}
-          checkedIds={creatorFilter.checkedIds}
-          onAdd={creatorFilter.addItems}
-          onRemove={creatorFilter.removeItem}
-          onToggleCheck={creatorFilter.toggleCheck}
-        />
-      </div>
-
-      <div className="mb-4">
-        <div className="text-sm mb-2">创建时间</div>
+        <div className="text-sm mb-2">{t("common.create_time")}</div>
         <SelectInput
-          placeholder="选择时间范围"
+          placeholder={t("global_search.select_time_range")}
           selectedValue={selectedCreatedTime}
-          options={TIME_RANGE_OPTIONS}
+          options={timeRangeOptions}
           onSelect={(val) => setSelectedCreatedTime(val as TimeRangeValue)}
         />
       </div>
 
       <div className="mb-4">
-        <div className="text-sm mb-2">更新时间</div>
+        <div className="text-sm mb-2">{t("common.update_time")}</div>
         <SelectInput
-          placeholder="选择时间范围"
+          placeholder={t("global_search.select_time_range")}
           selectedValue={selectedUpdatedTime}
-          options={TIME_RANGE_OPTIONS}
+          options={timeRangeOptions}
           onSelect={(val) => setSelectedUpdatedTime(val as TimeRangeValue)}
         />
       </div>
 
-      <div className="mb-4">
-        <div className="text-sm mb-2">文档类型</div>
-        <SelectInput
-          placeholder="选择文档类型"
-          selectedValue={selectedDocType}
-          options={DOC_TYPE_OPTIONS}
-          onSelect={(val) => setSelectedDocType(val as DocTypeValue)}
-        />
-      </div>
+      {variant === "full" && (
+        <div className="mb-4">
+          <div className="text-sm mb-2">{t("global_search.doc_type")}</div>
+          <SelectInput
+            placeholder={t("global_search.select_doc_type")}
+            selectedValue={selectedDocType}
+            options={docTypeOptions}
+            onSelect={(val) => setSelectedDocType(val as DocTypeValue)}
+          />
+        </div>
+      )}
     </div>
   );
 }

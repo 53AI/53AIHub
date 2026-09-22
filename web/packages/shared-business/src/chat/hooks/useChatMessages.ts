@@ -10,7 +10,6 @@ import type {
   OpenClawTurnProjection,
   OpenClawTurnState,
   OpenClawTimelineItem,
-  OpenClawActivityItem,
 } from "../types";
 import { AGENT_RUN_TERMINAL_EVENTS } from "../adapters/types";
 import { parseJson } from "./useChatStream";
@@ -451,10 +450,6 @@ function getOpenClawTurnState(message: Message): OpenClawTurnState | undefined {
   return isOpenClawAssistantMessage(message) ? message.openclawTurn : undefined;
 }
 
-function getOpenClawActivities(message: Message): OpenClawActivityItem[] | undefined {
-  return isOpenClawAssistantMessage(message) ? message.openclawActivities : undefined;
-}
-
 function getMessageArrayValue(message: Message, key: OpenClawMergeArrayKey): unknown[] | undefined {
   return (message as unknown as Record<OpenClawMergeArrayKey, unknown[] | undefined>)[key];
 }
@@ -498,15 +493,18 @@ function hasOpenClawTerminalTurnSignal(message: Message): boolean {
   if (status === "completed" || status === "interrupted" || status === "failed") return true;
   if (getOpenClawProjection(message)?.isStreaming === false) return true;
   return Boolean(
-    turn?.events?.some(
-      (event) =>
+    turn?.events?.some((event) => {
+      const payload = event?.payload as Record<string, unknown> | undefined;
+      const ledger = payload?.openclaw_ledger as Record<string, unknown> | undefined;
+      return (
         event?.kind === "run.completed" ||
         event?.kind === "run.interrupted" ||
         event?.kind === "run.failed" ||
-        event?.payload?.openclaw_ledger?.event_type === "turn.completed" ||
-        event?.payload?.openclaw_ledger?.event_type === "turn.interrupted" ||
-        event?.payload?.openclaw_ledger?.event_type === "turn.failed"
-    )
+        ledger?.event_type === "turn.completed" ||
+        ledger?.event_type === "turn.interrupted" ||
+        ledger?.event_type === "turn.failed"
+      );
+    })
   );
 }
 
@@ -546,7 +544,7 @@ function preserveStrongerOpenClawProjection(target: Record<string, unknown>, exi
   if (scoreOpenClawProjection(existingProjection) <= scoreOpenClawProjection(incomingProjection)) return;
 
   target.openclawProjection = existingProjection;
-  if (!isWeakOpenClawAnswer(existingProjection?.visibleAnswer)) {
+  if (existingProjection && !isWeakOpenClawAnswer(existingProjection.visibleAnswer)) {
     target.answer = existingProjection.visibleAnswer;
   }
   for (const key of ["openclawTimelineItems", "openclawActivities", "outputFiles"] as const) {
@@ -590,10 +588,10 @@ function mergeOpenClawSupportFields(existing: Message, incoming: Message, option
           : existingTurn.events,
     };
   }
-  if (shouldCloseOpenClawLoadingFromIncoming(incoming, merged as Message)) {
+  if (shouldCloseOpenClawLoadingFromIncoming(incoming, merged as unknown as Message)) {
     merged.loading = false;
   }
-  return merged as Message;
+  return merged as unknown as Message;
 }
 
 function messageBelongsToConversation(message: Message, conversationId: string): boolean {

@@ -24,6 +24,7 @@ import {
   useInlineEdit,
 } from "../../composables/useInlineEdit";
 import { t } from "@/locales";
+import { FileMetaLine } from "./components/file-meta";
 import { CatalogRefContext } from "../index";
 
 // Lazy load chunk views
@@ -220,9 +221,7 @@ export function ChunksV2View() {
                 {displayName}
               </h3>
 
-              <p className="text-xs text-[#9A9A9A]">
-                {t("common.recently_edit")}：{currentFile.updated_at}
-              </p>
+              <FileMetaLine file={currentFile} />
             </div>
           </div>
         )}

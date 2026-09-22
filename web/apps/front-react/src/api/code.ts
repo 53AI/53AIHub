@@ -61,9 +61,9 @@ export const ERROR_MESSAGES = new Map([
   [RESPONSE_STATUS.UNAUTHORIZED, 'response_status.401'],
   [RESPONSE_STATUS.FORBIDDEN, 'response_status.403'],
   [RESPONSE_STATUS.NOT_FOUND, 'response_status.404'],
-  [RESPONSE_STATUS.SERVICE_UNAVAILABLE, 'response_status.500'],
+  [RESPONSE_STATUS.INTERNAL_SERVER_ERROR, 'response_status.500'],
   [RESPONSE_STATUS.BAD_GATEWAY, 'response_status.502'],
-  [RESPONSE_STATUS.INTERNAL_SERVER_ERROR, 'response_status.503'],
+  [RESPONSE_STATUS.SERVICE_UNAVAILABLE, 'response_status.503'],
   [RESPONSE_STATUS.GATEWAY_TIMEOUT, 'response_status.504'],
 ])
 
@@ -85,6 +85,11 @@ export const RESPONSE_MESSAGE_MAP = new Map([
   ['operate too fast', 'response_message.operate_too_fast'],
   ['auth failed', 'response_message.auth_failed'],
   ['file error: library name already exists in this space', 'response_message.name_already_exists'],
+  // 图形验证码（人机校验）
+  ['invalid or expired captcha', 'captcha.error'],
+  ['captcha_id and captcha_answer are required', 'captcha.error'],
+  ['captcha required', 'captcha.error'],
+  ['param error', 'response_message.param_error'],
 
 ])
 

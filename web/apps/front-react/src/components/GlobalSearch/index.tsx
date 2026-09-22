@@ -10,9 +10,12 @@ import {
 import { Modal, Input, Tabs, Button } from "antd";
 import { SearchOutlined, CloseOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { t } from "@/locales";
 import { Filter } from "./components/Filter";
 import { KnowledgeTab } from "./components/KnowledgeTab";
-import { useGlobalSearch, type GlobalSearchFile } from "./hooks/useGlobalSearch";
+import { DynamicTab } from "./components/DynamicTab";
+import { useGlobalSearch } from "./hooks/useGlobalSearch";
+import type { GlobalSearchFile } from "./utils/transform";
 import type { FilterState } from "./types";
 import { DEFAULT_FILTER_STATE, filterStateToParams } from "./utils/filter";
 import "./index.css";
@@ -33,7 +36,7 @@ export interface GlobalSearchRef {
 export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
   function GlobalSearch(
     {
-      placeholder = "搜索",
+      placeholder = t("action.search"),
       onSelect,
       className = "",
     }: GlobalSearchProps,
@@ -51,11 +54,15 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
     const [searchQuery, setSearchQuery] = useState("");
     const [filterKey, setFilterKey] = useState(0);  // 用于重置 Filter 组件
 
-    // 筛选状态
-    const [filterState, setFilterState] = useState<FilterState>(DEFAULT_FILTER_STATE);
+    // 筛选状态（按 Tab 独立）
+    const [knowledgeFilter, setKnowledgeFilter] = useState<FilterState>(DEFAULT_FILTER_STATE);
+    const [dynamicFilter, setDynamicFilter] = useState<FilterState>(DEFAULT_FILTER_STATE);
 
-    // 将 FilterState 转换为 FilterParams（用 useMemo 稳定引用）
-    const filterParams = useMemo(() => filterStateToParams(filterState), [filterState]);
+    const activeFilter = activeTab === "dynamic" ? dynamicFilter : knowledgeFilter;
+
+    // 将两个 Tab 的 FilterState 转换为 FilterParams
+    const knowledgeFilterParams = useMemo(() => filterStateToParams(knowledgeFilter), [knowledgeFilter]);
+    const dynamicFilterParams = useMemo(() => filterStateToParams(dynamicFilter), [dynamicFilter]);
 
     // 使用全局搜索 hook（唯一数据层）
     const {
@@ -73,7 +80,7 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
       searchLoading,
       refresh,
       reset,
-    } = useGlobalSearch(searchQuery, filterParams);
+    } = useGlobalSearch(searchQuery, knowledgeFilterParams, activeTab === "knowledge");
 
     // 打开 Modal
     const openModal = useCallback(() => {
@@ -88,7 +95,8 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
       setSelectedIndex(0);
       setActiveTab("knowledge");
       setFilterKey(prev => prev + 1);  // 重置 Filter 组件
-      setFilterState(DEFAULT_FILTER_STATE);  // 重置筛选状态
+      setKnowledgeFilter(DEFAULT_FILTER_STATE);  // 重置两个 Tab 的筛选状态
+      setDynamicFilter(DEFAULT_FILTER_STATE);
       reset(); // 关闭时重置缓存
     }, [reset]);
 
@@ -134,10 +142,14 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
       [isModalOpen, closeModal],
     );
 
-    // 处理筛选状态变化
+    // 处理筛选状态变化（写入当前 Tab 对应的状态）
     const handleFilterChange = useCallback((state: FilterState) => {
-      setFilterState(state);
-    }, []);
+      if (activeTab === "dynamic") {
+        setDynamicFilter(state);
+      } else {
+        setKnowledgeFilter(state);
+      }
+    }, [activeTab]);
 
     // 滚动到选中项
     useEffect(() => {
@@ -209,7 +221,7 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
                     className="text-sm text-secondary bg-transparent pr-[5px] border-none cursor-pointer flex-shrink-0 transition-colors"
                     onClick={handleClear}
                   >
-                    清除
+                    {t("global_search.clear")}
                   </button>
                   <div className="w-px h-4 bg-[#E5E6EB]" />
                 </>
@@ -227,7 +239,10 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
               <Tabs
                 activeKey={activeTab}
                 onChange={setActiveTab}
-                items={[{ key: "knowledge", label: "知识文档" }]}
+                items={[
+                  { key: "knowledge", label: t("knowledge.document_file") },
+                  { key: "dynamic", label: t("global_search.dynamic_tab") },
+                ]}
                 className="global-search-tabs"
               />
             </div>
@@ -261,15 +276,23 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
                     searchLoading={searchLoading}
                   />
                 )}
+                {activeTab === "dynamic" && (
+                  <DynamicTab
+                    searchQuery={searchQuery}
+                    filterParams={dynamicFilterParams}
+                    onCloseModal={closeModal}
+                  />
+                )}
               </div>
 
               {/* 右侧筛选面板 */}
               <div className="w-[287px] flex-shrink-0 border-l border-gray-100 overflow-y-auto">
                 <Filter
-                  key={filterKey}
-                  value={filterState}
+                  key={`${filterKey}-${activeTab}`}
+                  value={activeFilter}
                   onChange={handleFilterChange}
                   resetKey={filterKey}
+                  variant={activeTab === "dynamic" ? "compact" : "full"}
                 />
               </div>
             </div>

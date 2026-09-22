@@ -9,9 +9,6 @@ export const DEFAULT_PAGE_SIZE = 10
 /** 分页大小选项 */
 export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
-/** 日期格式 */
-export const DATE_FORMAT = 'YYYY-MM-DD hh:mm'
-
 /** 空值显示颜色 */
 export const EMPTY_TEXT_COLOR = '#9B9B9B'
 

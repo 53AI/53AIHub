@@ -101,14 +101,6 @@ export interface CreatePageParams {
 }
 
 /**
- * 商店对话框引用方法
- */
-export interface StoreDialogRef {
-  open: () => void
-  close: () => void
-}
-
-/**
  * API 分组响应项（groupApi.list 返回）
  */
 export interface GroupApiResponse {

@@ -61,7 +61,66 @@ export const mockRegister = () => ok({ user_id: 1 })
 
 export const mockResetPassword = () => ok(null)
 
-export const mockSmsSendcode = () => ok({})
+// ==================== 图形验证码（人机校验）====================
+// 对齐后端 /api/captcha 契约：4 位防混淆字符、5 分钟有效、阅后即焚。
+// mock 用 SVG 占位图代替 PNG，图片里直接画出答案，方便本地联调。
+
+const CAPTCHA_TTL = 5 * 60 * 1000
+const CAPTCHA_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+const captchaStore = new Map<string, { code: string; expire: number }>()
+
+function randomCaptchaCode(length = 4): string {
+  let code = ''
+  for (let i = 0; i < length; i++) {
+    code += CAPTCHA_CHARS[Math.floor(Math.random() * CAPTCHA_CHARS.length)]
+  }
+  return code
+}
+
+function buildCaptchaImage(code: string): string {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="112" height="40" viewBox="0 0 112 40">` +
+    `<rect width="112" height="40" fill="#F5F6F7"/>` +
+    `<path d="M4 30 L108 10 M4 12 L108 28" stroke="#D8DCE0" stroke-width="1" fill="none"/>` +
+    `<text x="56" y="28" font-family="monospace" font-size="22" font-weight="700" ` +
+    `letter-spacing="5" text-anchor="middle" fill="#1D1E1F">${code}</text>` +
+    `</svg>`
+  return `data:image/svg+xml;base64,${btoa(svg)}`
+}
+
+function purgeExpiredCaptcha(): void {
+  const nowMs = Date.now()
+  for (const [key, value] of captchaStore) {
+    if (value.expire <= nowMs) captchaStore.delete(key)
+  }
+}
+
+export const mockCaptcha = () => {
+  purgeExpiredCaptcha()
+
+  const code = randomCaptchaCode()
+  const captcha_id = `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`
+  captchaStore.set(captcha_id, { code, expire: Date.now() + CAPTCHA_TTL })
+
+  return ok({ captcha_id, image_base64: buildCaptchaImage(code) })
+}
+
+/** 灰度行为对齐后端：未携带验证码放行；携带了则核验，且本次调用后立即作废 */
+export const mockSmsSendcode = (_req: unknown, _params: unknown, body: any) => {
+  const captchaId = body?.captcha_id
+  if (typeof captchaId === 'string' && captchaId) {
+    const record = captchaStore.get(captchaId)
+    captchaStore.delete(captchaId)
+
+    const answer = String(body?.captcha_answer ?? '').trim().toLowerCase()
+    if (!record || record.expire <= Date.now() || record.code.toLowerCase() !== answer) {
+      return { __status: 400, __body: { code: 400, message: 'invalid or expired captcha', data: null } }
+    }
+  }
+
+  return ok({})
+}
 
 export const mockSmsStatus = () => ok({ enabled: false })
 
@@ -95,6 +154,8 @@ export const commonRoutes: MockRoute[] = [
   { method: 'POST', path: '/api/saas/auth/logout', handler: mockLogout },
   { method: 'POST', path: '/api/saas/auth/sms_login', handler: mockSaasLogin },
   { method: 'POST', path: '/api/saas/auth/reset_password', handler: mockResetPassword },
+  { method: 'GET', path: '/api/captcha', handler: mockCaptcha },
+  { method: 'GET', path: '/api/sms/captcha', handler: mockCaptcha },
   { method: 'POST', path: '/api/sms/sendcode', handler: mockSmsSendcode },
   { method: 'GET', path: '/api/sms/status', handler: mockSmsStatus },
   { method: 'GET', path: '/api/sms/verify', handler: mockSmsVerify },

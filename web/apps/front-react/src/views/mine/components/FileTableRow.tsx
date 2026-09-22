@@ -54,14 +54,14 @@ export function FileTableRow({
           {
             key: 'favorite',
             icon: item.isFavorite ? 'star-cancel' : 'star',
-            label: item.isFavorite ? '取消收藏' : '收藏',
+            label: item.isFavorite ? t('action.unfavorite') : t('action.favorite'),
           },
         ]
       : []),
     { key: 'divider-2', divided: true },
-    { key: 'rename', icon: 'edit', label: '重命名' },
+    { key: 'rename', icon: 'edit', label: t('action.rename') },
     { key: 'divider-3', divided: true },
-    { key: 'delete', icon: 'delete', label: '删除', danger: true },
+    { key: 'delete', icon: 'delete', label: t('action.delete'), danger: true },
   ]
 
   const handleCommand = (cmd: string) => {

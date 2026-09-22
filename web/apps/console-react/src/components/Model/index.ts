@@ -31,4 +31,3 @@ export const loadModels = (type?: ModelUseType, mode?: ReasoningMode): Promise<a
 // 导出组件
 export { default as ModelView } from './view'
 export { default as ModelSelect } from './select'
-export { default as ModelDialog } from './dialog'

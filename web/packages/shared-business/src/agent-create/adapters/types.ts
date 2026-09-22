@@ -438,6 +438,13 @@ export interface IAgentCreateAdapter {
    */
   hideKnowledgeGraph?: boolean
 
+  /**
+   * 是否隐藏动态知识（Wiki）入口（设置面板中的开关 + 预览下拉项），隐藏时强制关闭其设置。
+   * 本地版（VITE_PLATFORM=op-local）与私有化版（VITE_PRIVATE_PREM=true）需要隐藏。
+   * 由消费方根据环境变量在 adapter 中设置。
+   */
+  hideWiki?: boolean
+
   // ========== 分组类型常量 ==========
 
   /** 分组类型常量 */

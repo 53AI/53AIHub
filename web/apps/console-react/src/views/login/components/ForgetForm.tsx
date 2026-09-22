@@ -3,6 +3,8 @@ import { Button, Form, Input, Radio, message } from "antd";
 import { useUserStore } from "@/stores";
 import { VerificationCodeInput } from "@/components/VerificationCodeInput";
 import { authApi } from "@/api/modules/auth";
+import { noSpaceKeydownHandler, passwordNoSpaceRule } from "@/utils";
+import { verifyCodePatternRule } from "@/utils/form-rule";
 
 interface ForgetFormProps {
   onLogin: () => void;
@@ -176,13 +178,13 @@ export function ForgetForm(props: ForgetFormProps) {
           label={t("verification_code")}
           rules={[
             { required: true, message: t("verification_code_placeholder") },
+            verifyCodePatternRule(t("verification_code_format")),
           ]}
         >
           <VerificationCodeInput
             account={username}
             accountType={usernameType}
             disabled={!accountExists || !isAccountValid}
-            maxLength={usernameType === "mobile" ? 4 : 6}
             bgColor="#fff"
           />
         </Form.Item>
@@ -193,11 +195,13 @@ export function ForgetForm(props: ForgetFormProps) {
           rules={[
             { required: true, message: t("login.new_password_placeholder") },
             { min: 8, max: 20, message: t("login.password_length") },
+            passwordNoSpaceRule(),
           ]}
         >
           <Input.Password
             size="large"
             placeholder={t("login.new_password_placeholder")}
+            onKeyDown={noSpaceKeydownHandler}
           />
         </Form.Item>
 
@@ -210,6 +214,7 @@ export function ForgetForm(props: ForgetFormProps) {
               message: t("login.confirm_password_placeholder"),
             },
             { min: 8, max: 20, message: t("login.password_length") },
+            passwordNoSpaceRule(),
             {
               validator: (_, value) => {
                 if (value && value !== form.getFieldValue("password")) {
@@ -225,6 +230,7 @@ export function ForgetForm(props: ForgetFormProps) {
           <Input.Password
             size="large"
             placeholder={t("login.confirm_password_placeholder")}
+            onKeyDown={noSpaceKeydownHandler}
           />
         </Form.Item>
 
