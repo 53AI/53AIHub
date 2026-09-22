@@ -20,7 +20,7 @@ func BatchUploadAuth(role int64) gin.HandlerFunc {
 			return
 		}
 
-		if user, tokenEid, err := HandleTokenAuth(token, role); err == nil {
+		if user, tokenEid, err := HandleTokenAuth(token, role, c.Request.Context()); err == nil {
 			setUserSession(c, user, tokenEid)
 			c.Next()
 			return

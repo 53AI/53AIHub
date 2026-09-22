@@ -20,19 +20,19 @@ type GlobalStatItem struct {
 }
 
 type FileStatItem struct {
-	Today          int64 `json:"today"`
-	Yesterday      int64 `json:"yesterday"`
-	TotalSize      int64 `json:"totalSize"`
-	YesterdaySize  int64 `json:"yesterdaySize"`
+	Today         int64 `json:"today"`
+	Yesterday     int64 `json:"yesterday"`
+	TotalSize     int64 `json:"totalSize"`
+	YesterdaySize int64 `json:"yesterdaySize"`
 }
 type RecordingDetailItem struct {
-	Total     GlobalStatItem `json:"total"`
-	Duration  GlobalStatItem `json:"duration"`
-	FileSize  GlobalStatItem `json:"fileSize"`
-	Parsed    GlobalStatItem `json:"parsed"`
-	Pending   GlobalStatItem `json:"pending"`
-	Failed    GlobalStatItem `json:"failed"`
-	Insights  GlobalStatItem `json:"insights"`
+	Total    GlobalStatItem `json:"total"`
+	Duration GlobalStatItem `json:"duration"`
+	FileSize GlobalStatItem `json:"fileSize"`
+	Parsed   GlobalStatItem `json:"parsed"`
+	Pending  GlobalStatItem `json:"pending"`
+	Failed   GlobalStatItem `json:"failed"`
+	Insights GlobalStatItem `json:"insights"`
 }
 
 type GlobalStatsResponse struct {

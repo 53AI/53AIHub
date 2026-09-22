@@ -89,6 +89,16 @@ func (s *VoiceModelDocumentStrategy) ProcessWithUploadFile(fileID int64, content
 		if channelID <= 0 || modelName == "" {
 			return nil, fmt.Errorf("录音配置中缺少 voice_model_id 或 voice_model_name")
 		}
+	} else if parseType == model.PLATFORM_KEY_RECORDING_VOICE {
+		rv, rerr := model.GetPlatformSettingRecordingVoice(eid)
+		if rerr != nil {
+			return nil, rerr
+		}
+		if rv.IsOpenAI {
+			return nil, fmt.Errorf("录音解析配置为 OpenAI 兼容渠道，应走 openai 策略")
+		}
+		channelID = rv.VoiceModelID
+		modelName = rv.VoiceModelName
 	} else {
 		return nil, fmt.Errorf("无效的 parseType: %s", parseType)
 	}

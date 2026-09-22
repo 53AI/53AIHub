@@ -1,0 +1,1 @@
+ALTER TABLE action_opportunities ADD COLUMN IF NOT EXISTS risk_level VARCHAR(16) NOT NULL DEFAULT 'low';

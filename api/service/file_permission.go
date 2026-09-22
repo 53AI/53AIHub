@@ -2,11 +2,10 @@ package service
 
 import (
 	"errors"
-	"path"
-
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
-	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/model"
+	"path"
 )
 
 type FilePermissionService struct {
@@ -153,120 +152,8 @@ func (s *FilePermissionService) CheckParentPermission(userID int64, filePath str
 	return nil
 }
 
+// GetUserFilePermission 获取用户对文件的权限
+// Deprecated: 请使用 service.GetUserPermission 或 common.GetUserPermission
 func (s *FilePermissionService) GetUserFilePermission(userID int64, fileID int64) (int, error) {
-	// file
-	// 查出文件和文件的父ID
-	user, err := model.GetUserByID(userID)
-	if user == nil || err != nil || user.Eid != s.Eid {
-		logger.SysLogf("【知识库】无法加载用户 %d", userID)
-		return 0, err
-	}
-
-	// 如果用户类型是注册用户，则直接返回无权限
-	if user.Type == model.UserTypeRegistered {
-		return model.PERMISSION_NONE, nil
-	}
-
-	userGroupIDs, _ := user.GetUserGroupIds()
-
-	file, fileList, err := model.GetFileWithParentsByID(s.Eid, fileID)
-	if err != nil {
-		logger.SysLogf("无法获取文件[%d]的信息, err=%v", fileID, err)
-		return 0, err
-	}
-
-	fileIDs := []int64{}
-	for _, f := range fileList {
-		fileIDs = append(fileIDs, f.ID)
-	}
-
-	// 第一层:查看文件直接设置的权限
-	allFilePermissions, err := model.GetResourcesPermissions(s.Eid, model.RESOURCE_TYPE_FILE, fileIDs)
-	if err != nil || len(allFilePermissions) == 0 {
-		logger.SysLogf("无法获取文件[%d]的权限信息, 继承知识库权限 err=%v, len=%d", fileID, err, len(allFilePermissions))
-		lps := NewLibraryPermissionService(file.Eid)
-		return lps.GetUserLibraryPermission(userID, file.LibraryID)
-	}
-
-	var bestPermission *int // 最佳权限
-	var bestLevel *int      // 最佳权限所在层级，数值越小越近（0=当前文件）
-	var bestPriority int    // 权限优先级：用户>组>LIBRARY_USER>公司
-
-	for index, f := range fileList {
-		var currentUserPermission *int
-		var currentGroupPermission *int
-		var currentLibraryUserPermission *int
-		var currentCompanyPermission *int
-
-		logger.SysLogf("开始检查第【%d】层文件[%s]的权限", index, f.Path)
-
-		for _, perm := range allFilePermissions {
-			if perm.ResourceID != f.ID {
-				continue
-			}
-
-			// 收集当前层级的各类权限
-			if perm.SubjectType == model.SUBJECT_TYPE_USER && perm.SubjectID == userID && currentUserPermission == nil {
-				currentUserPermission = &perm.Permission
-			} else if len(userGroupIDs) > 0 && perm.SubjectType == model.SUBJECT_TYPE_GROUP &&
-				helper.Int64InArray(perm.SubjectID, userGroupIDs) {
-				if currentGroupPermission == nil || perm.Permission > *currentGroupPermission {
-					currentGroupPermission = &perm.Permission
-				}
-			} else if perm.SubjectType == model.SUBJECT_TYPE_LIBRARY_USER && currentLibraryUserPermission == nil {
-				currentLibraryUserPermission = &perm.Permission
-			} else if perm.SubjectType == model.SUBJECT_TYPE_COMPANY_ALL && currentCompanyPermission == nil {
-				currentCompanyPermission = &perm.Permission
-			}
-		}
-
-		// 按优先级检查当前层级的权限，并应用就近原则
-		if currentUserPermission != nil {
-			if bestPermission == nil || index < *bestLevel || (index == *bestLevel && 1 > bestPriority) {
-				bestPermission = currentUserPermission
-				bestLevel = &index
-				bestPriority = 1
-				logger.SysLogf("第%d层找到更优的用户权限 %d", index, *currentUserPermission)
-			}
-		} else if currentGroupPermission != nil {
-			if bestPermission == nil || index < *bestLevel || (index == *bestLevel && 2 > bestPriority) {
-				bestPermission = currentGroupPermission
-				bestLevel = &index
-				bestPriority = 2
-				logger.SysLogf("第%d层找到更优的组权限 %d", index, *currentGroupPermission)
-			}
-		} else if currentLibraryUserPermission != nil {
-			if bestPermission == nil || index < *bestLevel || (index == *bestLevel && 3 > bestPriority) {
-				bestPermission = currentLibraryUserPermission
-				bestLevel = &index
-				bestPriority = 3
-				logger.SysLogf("第%d层找到更优的LIBRARY_USER权限 %d", index, *currentLibraryUserPermission)
-			}
-		} else if currentCompanyPermission != nil {
-			if bestPermission == nil || index < *bestLevel || (index == *bestLevel && 4 > bestPriority) {
-				bestPermission = currentCompanyPermission
-				bestLevel = &index
-				bestPriority = 4
-				logger.SysLogf("第%d层找到更优的公司权限 %d", index, *currentCompanyPermission)
-			}
-		}
-	}
-
-	// 如果找到文件层级的权限，直接返回
-	if bestPermission != nil {
-		logger.SysLogf("返回最优权限 %d（层级：%d，优先级：%d）", *bestPermission, *bestLevel, bestPriority)
-		return *bestPermission, nil
-	}
-
-	// 如果没有找到文件层级的权限，使用知识库权限
-	lps := NewLibraryPermissionService(file.Eid)
-	librayPermission, err := lps.GetUserLibraryPermission(userID, file.LibraryID)
-	if err != nil {
-		librayPermission = model.PERMISSION_NONE
-	}
-	if librayPermission <= model.PERMISSION_PUBLIC_ONLY {
-		librayPermission = model.PERMISSION_NONE // 仅公开其实只在空间生效，在下层级的这两个对象其实都是无权限
-	}
-
-	return librayPermission, nil
+	return common.GetUserPermission(s.Eid, model.RESOURCE_TYPE_FILE, fileID, userID)
 }

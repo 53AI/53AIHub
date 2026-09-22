@@ -458,7 +458,7 @@ func (s *SkillLibraryService) UpdateSkillMeta(ctx context.Context, eid, skillID 
 			}
 		}
 
-		if req.PermissionGroupIDs != nil {
+		if req.PermissionGroupIDs != nil || req.ScopesProvided {
 			if err := UpdateResourcePermissions(nil, tx, skillID, model.ResourceTypeSkillLibrary, resolvedPermissionGroupIDs, req.Scopes, req.ScopesProvided); err != nil {
 				return err
 			}

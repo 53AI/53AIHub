@@ -18,34 +18,35 @@ import (
 
 // VectorizeStatsResponse 向量化可观测统计响应
 type VectorizeStatsResponse struct {
-	TodayCalls      int64                `json:"today_calls"`
-	AvgSpeedMs      int64                `json:"avg_speed_ms"`
-	CallsPerMin     float64              `json:"calls_per_min"`
-	ChunksToday     int64                `json:"chunks_today"`
-	ChunksPerMin    float64              `json:"chunks_per_min"`
-	QueuePending    int64                `json:"queue_pending"`
-	QueueRetry      int64                `json:"queue_retry"`
-	LastCallTs      int64                `json:"last_call_ts"`
-	CallTimestamps  []int64              `json:"call_timestamps"`
-	ActiveFiles     []ActiveFileInfo     `json:"active_files"`
-	RunningTasks    []RunningTaskInfo    `json:"running_tasks"`
-	WorkerCount     int                  `json:"worker_count"`
+	TodayCalls     int64             `json:"today_calls"`
+	AvgSpeedMs     int64             `json:"avg_speed_ms"`
+	CallsPerMin    float64           `json:"calls_per_min"`
+	ChunksToday    int64             `json:"chunks_today"`
+	ChunksPerMin   float64           `json:"chunks_per_min"`
+	QueuePending   int64             `json:"queue_pending"`
+	QueueRetry     int64             `json:"queue_retry"`
+	LastCallTs     int64             `json:"last_call_ts"`
+	CallTimestamps []int64           `json:"call_timestamps"`
+	ActiveFiles    []ActiveFileInfo  `json:"active_files"`
+	RunningTasks   []RunningTaskInfo `json:"running_tasks"`
+	WorkerCount    int               `json:"worker_count"`
 	// 向量存储（Qdrant）写入观测
-	VSTodayCalls      int64   `json:"vs_today_calls"`
-	VSTodayVectors    int64   `json:"vs_today_vectors"`
-	VSAvgSpeedMs      int64   `json:"vs_avg_speed_ms"`
-	VSLastCallTs      int64   `json:"vs_last_call_ts"`
-	VSCallTimestamps  []int64 `json:"vs_call_timestamps"`
+	VSTodayCalls     int64   `json:"vs_today_calls"`
+	VSTodayVectors   int64   `json:"vs_today_vectors"`
+	VSAvgSpeedMs     int64   `json:"vs_avg_speed_ms"`
+	VSLastCallTs     int64   `json:"vs_last_call_ts"`
+	VSCallTimestamps []int64 `json:"vs_call_timestamps"`
 }
+
 // RunningTaskInfo 当前正在处理的任务信息
 type RunningTaskInfo struct {
-	WorkerName   string                 `json:"worker_name"`
-	ChunkID      int64                  `json:"chunk_id"`
-	FileID       int64                  `json:"file_id"`
-	Step         string                 `json:"step"`
-	Steps        map[string]interface{} `json:"steps"`
-	StepStartedAt int64                 `json:"step_started_at"`
-	StartedAt    int64                  `json:"started_at"`
+	WorkerName    string                 `json:"worker_name"`
+	ChunkID       int64                  `json:"chunk_id"`
+	FileID        int64                  `json:"file_id"`
+	Step          string                 `json:"step"`
+	Steps         map[string]interface{} `json:"steps"`
+	StepStartedAt int64                  `json:"step_started_at"`
+	StartedAt     int64                  `json:"started_at"`
 }
 
 // ActiveFileInfo 活跃文件信息
@@ -66,7 +67,8 @@ type ActiveFileInfo struct {
 // @Success 200 {string} string "HTML page"
 // @Router /api/system_logs/vectorize/ui [get]
 func GetVectorizeUI(c *gin.Context) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(vectorizeUIHTML))
+	html := strings.Replace(vectorizeUIHTML, "<!--SYSLOG_NAV-->", SystemLogNavHTML("/api/system_logs/vectorize/ui"), 1)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
 // GetVectorizeStats godoc
@@ -332,6 +334,7 @@ const vectorizeUIHTML = `<!doctype html>
 <body>
   <div class="wrap">
     <div class="card">
+      <!--SYSLOG_NAV-->
       <div class="status-bar">
         <h2 style="margin:0;">向量化可观测</h2>
         <div>

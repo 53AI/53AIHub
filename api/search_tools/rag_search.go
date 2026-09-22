@@ -279,13 +279,19 @@ func (r *RagSearcher) convertResults(ragResults []rag.SearchResultItem) []*Searc
 
 	for _, item := range ragResults {
 		searchItem := &SearchItem{
-			ChunkID:   item.ChunkID,
-			FileID:    item.FileID,
-			LibraryID: item.LibraryID,
-			FilePath:  item.FilePath,
-			ChunkType: item.ChunkType,
-			Content:   item.Content,
-			Score:     item.Score,
+			ChunkID:       item.ChunkID,
+			FileID:        item.FileID,
+			LibraryID:     item.LibraryID,
+			FilePath:      item.FilePath,
+			FileName:      item.FileName,
+			LibraryName:   item.LibraryName,
+			LibraryIcon:   item.LibraryIcon,
+			FileCreatedAt: item.FileCreatedAt,
+			SpaceID:       item.SpaceID,
+			SpaceName:     item.SpaceName,
+			ChunkType:     item.ChunkType,
+			Content:       item.Content,
+			Score:         item.Score,
 		}
 		results = append(results, searchItem)
 	}

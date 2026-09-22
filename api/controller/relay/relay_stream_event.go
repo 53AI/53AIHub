@@ -12,6 +12,7 @@ import (
 	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	chatdebug "github.com/53AI/53AIHub/service/chat_debug"
 	"github.com/gin-gonic/gin"
 	relay_meta "github.com/songquanpeng/one-api/relay/meta"
 	relay_model "github.com/songquanpeng/one-api/relay/model"
@@ -68,6 +69,9 @@ func detachExecutionContext(requestCtx context.Context) context.Context {
 	if requestID := helper.GetRequestID(requestCtx); requestID != "" {
 		execCtx = context.WithValue(execCtx, helper.RequestIdKey, requestID)
 	}
+	if trace := chatdebug.GetTrace(requestCtx); trace != nil {
+		execCtx = chatdebug.WithTrace(execCtx, trace)
+	}
 	return execCtx
 }
 
@@ -86,6 +90,15 @@ func prepareDetachedExecutionContext(c *gin.Context, preferredRequestID string) 
 	}
 
 	execCtx := context.WithValue(context.Background(), helper.RequestIdKey, requestID)
+	if trace := chatdebug.GetTrace(requestCtx); trace != nil {
+		trace.RequestID = requestID
+		execCtx = chatdebug.WithTrace(execCtx, trace)
+	} else if c != nil {
+		if trace := chatdebug.GetTraceFromGin(c); trace != nil {
+			trace.RequestID = requestID
+			execCtx = chatdebug.WithTrace(execCtx, trace)
+		}
+	}
 	if c != nil {
 		c.Set(ctxKeyClientRequestContext, requestCtx)
 	}

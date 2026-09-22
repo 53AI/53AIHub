@@ -1,9 +1,10 @@
 package service
 
 import (
+	"context"
+
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
-	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/model"
 )
 
@@ -360,79 +361,39 @@ func (s *SpacePermissionService) GetUserSpaceRoles(userID int64, spaceID int64) 
 	return isAdmin, isMember, spacePermission
 }
 
+// GetUserPermissionForSpace 获取用户对空间的权限
+// Deprecated: 请使用 service.GetUserPermission 或 common.GetUserPermission
 func (s *SpacePermissionService) GetUserPermissionForSpace(userID int64, spaceID int64) (int, error) {
-	user, err := model.GetUserByID(userID)
-	if user == nil || err != nil || user.Eid != s.Eid {
-		logger.SysLogf("【空间】无法加载用户 %d", userID)
-		return 0, err
-	}
-
-	// 如果用户类型是注册用户，则直接返回无权限
-	if user.Type == model.UserTypeRegistered {
-		return model.PERMISSION_NONE, nil
-	}
-
-	if space, loadErr := model.GetSpaceByID(s.Eid, spaceID); loadErr == nil && space != nil && space.OwnerID == userID {
-		logger.SysLogf("用户 %d 是空间 %d 的创建者，直接返回管理权限", userID, spaceID)
-		return model.PERMISSION_MANAGE, nil
-	}
-
-	// 获取用户对该空间的所有权限记录
-	permissions, err := model.GetResourcePermissions(s.Eid, model.RESOURCE_TYPE_SPACE, spaceID)
-	if err != nil {
-		return 0, err
-	}
-	// if space != nil && space.OwnerID == userID {
-	// 	logger.SysLogf("用户 %d 是空间 %d 的所有者，直接返回管理权限", userID, spaceID)
-	// 	return model.PERMISSION_MANAGE, nil
-	// }
-
-	userGroupIDs, _ := user.GetUserGroupIds()
-
-	var maxCompanyPermission *int
-	var maxGroupPermission *int
-	for _, perm := range permissions {
-		// 成员权限第一
-		if perm.SubjectType == model.SUBJECT_TYPE_USER && perm.SubjectID == userID {
-			logger.SysLogf("用户 %d 对空间 %d 的权限为成员权限 %d", userID, spaceID, perm.Permission)
-			return perm.Permission, nil
-		}
-
-		// 判断分组权限
-		if len(userGroupIDs) > 0 && perm.SubjectType == model.SUBJECT_TYPE_GROUP &&
-			helper.Int64InArray(perm.SubjectID, userGroupIDs) {
-			if maxGroupPermission == nil || perm.Permission > *maxGroupPermission {
-				maxGroupPermission = &perm.Permission
-			}
-		}
-
-		// 判断全公司权限
-		if perm.SubjectType == model.SUBJECT_TYPE_COMPANY_ALL {
-			if maxCompanyPermission == nil || perm.Permission > *maxCompanyPermission {
-				maxCompanyPermission = &perm.Permission
-			}
-		}
-
-	}
-
-	if maxGroupPermission != nil {
-		logger.SysLogf("用户 %d 对空间 %d 的权限为分组权限 %d", userID, spaceID, *maxGroupPermission)
-		return *maxGroupPermission, nil
-	}
-
-	if maxCompanyPermission != nil {
-		logger.SysLogf("用户 %d 对空间 %d 的权限为全公司权限 %d", userID, spaceID, *maxCompanyPermission)
-		return *maxCompanyPermission, nil
-	}
-
-	return model.PERMISSION_NONE, nil
-
+	return common.GetUserPermission(s.Eid, model.RESOURCE_TYPE_SPACE, spaceID, userID)
 }
 
 // 获取用户对一个资源的权限
 // 最终确定版方法
-func GetUserPermission(eid int64, resourceType int, resourceID int64, userID int64) (int, error) {
-	return common.GetUserPermission(eid, resourceType, resourceID, userID)
+// lazy: variadic-ctx（老调用方多，待同文件迁完收敛为标准签名）
+func GetUserPermission(eid int64, resourceType int, resourceID int64, userID int64, ctxs ...context.Context) (int, error) {
+	if resourceType == model.RESOURCE_TYPE_WIKI_PAGE {
+		return getUserPermissionWikiSnapshot(eid, resourceID, userID, ctxs...)
+	}
+	return common.GetUserPermission(eid, resourceType, resourceID, userID, ctxs...)
+}
+
+// getUserPermissionWikiSnapshot WIKI_PAGE 单页权限走按库快照：先点查页面定位所属库
+// （1 次 DB，快照不建 page→library 索引），再加载库快照注入 resolver 解析。
+// 页面不存在或快照加载失败时降级到原 DB 路径，语义不缩水。
+func getUserPermissionWikiSnapshot(eid int64, pageID int64, userID int64, ctxs ...context.Context) (int, error) {
+	ctx := context.Background()
+	if len(ctxs) > 0 && ctxs[0] != nil {
+		ctx = ctxs[0]
+	}
+	page, err := model.GetWikiPageByID(eid, pageID)
+	if err != nil {
+		return common.GetUserPermission(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageID, userID, ctxs...)
+	}
+	wiki, perms, err := loadCapabilityWiki(ctx, eid, page.LibraryID)
+	if err != nil {
+		return common.GetUserPermission(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageID, userID, ctxs...)
+	}
+	return common.GetUserPermissionWithWikiSnapshot(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageID, userID, wiki, perms, ctxs...)
 }
 
 // SearchLibrariesByName 根据知识库名搜索企业下有权限的知识库（跨空间）

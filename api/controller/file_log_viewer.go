@@ -129,8 +129,8 @@ func GetFileLogsUI(c *gin.Context) {
 	if len(bt) == 14 {
 		bt = bt[:4] + "-" + bt[4:6] + "-" + bt[6:8] + " " + bt[8:10] + ":" + bt[10:12] + ":" + bt[12:14]
 	}
-	html := strings.Replace(fileLogsUIHTML, "{{VERSION}}", config.Version, 1)
-	html = strings.Replace(html, "{{BUILD_TIME}}", bt, 1)
+	html := strings.Replace(fileLogsUIHTML, "<!--SYSLOG_NAV-->", SystemLogNavHTML("/api/system_logs/file_logs/ui"), 1)
+	html = strings.Replace(html, "{{VERSION}}", config.Version, 1)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
@@ -239,15 +239,10 @@ const fileLogsUIHTML = `<!doctype html>
 <body>
   <div class="wrap">
     <div class="card">
+      <!--SYSLOG_NAV-->
       <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:10px;">
         <h2 style="margin:0;">53AIHub 单机日志检索</h2>
         <div class="row" style="width:auto; flex-shrink:0;">
-          <a href="/api/system_logs/vectorize/ui" target="_blank" rel="noopener" style="text-decoration:none;">
-            <button type="button" style="width:auto; padding:6px 14px; font-size:13px; background:#e8f0fe; color:#1a5fb4; border:1px solid #a8c7fa; border-radius:8px; cursor:pointer;">向量化日志</button>
-          </a>
-          <a href="/api/system_logs/wiki_generation/ui" target="_blank" rel="noopener" style="text-decoration:none;">
-            <button type="button" style="width:auto; padding:6px 14px; font-size:13px; background:#fff4e5; color:#9a5b00; border:1px solid #f2c078; border-radius:8px; cursor:pointer;">Wiki生成监控</button>
-          </a>
           <a href="/swagger/index.html#/" target="_blank" rel="noopener" style="text-decoration:none;">
             <button type="button" style="width:auto; padding:6px 14px; font-size:13px; background:var(--brand); color:#fff; border:1px solid var(--brand); border-radius:8px; cursor:pointer;">API 文档</button>
           </a>

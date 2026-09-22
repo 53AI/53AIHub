@@ -157,6 +157,15 @@ func GetAPIKeysByEidAndCreatorIDWithoutLibrary(eid int64, creatorID int64) ([]AP
 	return apiKeys, nil
 }
 
+// GetAPIKeysByEidAndSpaceID 获取企业下指定空间的所有API密钥
+func GetAPIKeysByEidAndSpaceID(eid int64, spaceID int64) ([]APIKey, error) {
+	var apiKeys []APIKey
+	if err := DB.Where(map[string]interface{}{"eid": eid, "space_id": spaceID}).Order("id desc").Find(&apiKeys).Error; err != nil {
+		return nil, err
+	}
+	return apiKeys, nil
+}
+
 // GetAPIKeysByEidWithLibrary 获取企业下所有关联知识库的API密钥
 func GetAPIKeysByEidWithLibrary(eid int64) ([]APIKey, error) {
 	var apiKeys []APIKey

@@ -8,6 +8,7 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
@@ -113,7 +114,7 @@ func (c *WikiSpaceController) ListPages(ctx *gin.Context) {
 		writeWikiSpaceReadError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, model.Success.ToResponse(resp))
+	ctx.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(resp, ctx.GetString(helper.RequestIdKey)))
 }
 
 // GetPage 获取空间内指定 Wiki 页面详情。
@@ -150,6 +151,7 @@ func (c *WikiSpaceController) GetPage(ctx *gin.Context) {
 		writeWikiSpaceReadError(ctx, err)
 		return
 	}
+	recordWikiPageAccess(ctx.Request.Context(), req.Eid, req.UserID, resp.Page.ID, req.SpaceID)
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(resp))
 }
 
@@ -316,7 +318,7 @@ func (c *WikiSpaceController) GetStats(ctx *gin.Context) {
 		writeWikiSpaceReadError(ctx, err)
 		return
 	}
-	ctx.JSON(http.StatusOK, model.Success.ToResponse(resp))
+	ctx.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(resp, ctx.GetString(helper.RequestIdKey)))
 }
 
 // ListProgress 获取空间 Wiki 生成进度列表。

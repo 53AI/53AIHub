@@ -18,9 +18,9 @@ import (
 
 const (
 	intentClassificationCachePrefix  = "Cache:rag:intent_classification"
-	intentClassificationCacheVersion = "v1"
+	intentClassificationCacheVersion = "v3"
 	fastIntentRouteCachePrefix       = "Cache:rag:fast_intent_route"
-	fastIntentRouteCacheVersion      = "v1"
+	fastIntentRouteCacheVersion      = "v3"
 	queryExpansionCachePrefix        = "Cache:rag:query_expansion"
 	queryExpansionCacheVersion       = "v1"
 	intentClassificationCacheTTL     = 2 * time.Hour

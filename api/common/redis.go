@@ -22,29 +22,32 @@ var ErrRedisNil = redis.Nil
 
 // InitRedisClient
 func InitRedisClient() error {
-	if config.REDIS_CONN == "" {
+	if config.RedisConn() == "" {
 		RedisEnabled = false
 		logger.SysLog("REDIS_CONN not set, Redis is not enabled")
 		return nil
 	}
 
 	logger.SysLog("Redis is enabled")
-	opt, err := redis.ParseURL(config.REDIS_CONN)
+	opt, err := redis.ParseURL(config.RedisConn())
 	if err != nil {
 		logger.FatalLog("Redis connection error: " + err.Error())
 	}
 
 	// 配置连接池参数
-	opt.PoolSize = config.REDIS_POOL_SIZE
-	opt.MinIdleConns = config.REDIS_MIN_IDLE_CONNS
-	opt.MaxRetries = config.REDIS_MAX_RETRIES
-	opt.DialTimeout = time.Duration(config.REDIS_DIAL_TIMEOUT_SECONDS) * time.Second
-	opt.ReadTimeout = time.Duration(config.REDIS_READ_TIMEOUT_SECONDS) * time.Second
-	opt.WriteTimeout = time.Duration(config.REDIS_WRITE_TIMEOUT_SECONDS) * time.Second
-	opt.IdleTimeout = time.Duration(config.REDIS_IDLE_TIMEOUT_MINUTES) * time.Minute
-	opt.MaxConnAge = time.Duration(config.REDIS_MAX_CONN_AGE_MINUTES) * time.Minute
+	opt.PoolSize = config.RedisPoolSize()
+	opt.MinIdleConns = config.RedisMinIdleConns()
+	opt.MaxRetries = config.RedisMaxRetries()
+	opt.DialTimeout = time.Duration(config.RedisDialTimeoutSeconds()) * time.Second
+	opt.ReadTimeout = time.Duration(config.RedisReadTimeoutSeconds()) * time.Second
+	opt.WriteTimeout = time.Duration(config.RedisWriteTimeoutSeconds()) * time.Second
+	opt.IdleTimeout = time.Duration(config.RedisIdleTimeoutMinutes()) * time.Minute
+	opt.MaxConnAge = time.Duration(config.RedisMaxConnAgeMinutes()) * time.Minute
 
 	RDB = redis.NewClient(opt)
+	if client, ok := RDB.(*redis.Client); ok {
+		client.AddHook(redisDebugHook{})
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -58,8 +61,8 @@ func InitRedisClient() error {
 	logger.SysLog(fmt.Sprintf("Redis connection pool configured - PoolSize: %d, MinIdleConns: %d, MaxRetries: %d",
 		opt.PoolSize, opt.MinIdleConns, opt.MaxRetries))
 	logger.SysLog(fmt.Sprintf("Redis timeouts configured - Dial: %ds, Read: %ds, Write: %ds, Idle: %dm, MaxConnAge: %dm",
-		config.REDIS_DIAL_TIMEOUT_SECONDS, config.REDIS_READ_TIMEOUT_SECONDS, config.REDIS_WRITE_TIMEOUT_SECONDS,
-		config.REDIS_IDLE_TIMEOUT_MINUTES, config.REDIS_MAX_CONN_AGE_MINUTES))
+		config.RedisDialTimeoutSeconds(), config.RedisReadTimeoutSeconds(), config.RedisWriteTimeoutSeconds(),
+		config.RedisIdleTimeoutMinutes(), config.RedisMaxConnAgeMinutes()))
 
 	return err
 }
@@ -94,12 +97,97 @@ func RedisGet(key string) (string, error) {
 	return RDB.Get(ctx, key).Result()
 }
 
+// RedisGetWithCtx 与 RedisGet 同语义，但使用调用方 ctx：debug hook 能提取 request_id 归因，
+// capabilities 快照要求 trace 可见，必须走本函数（禁止用 context.Background 的版本）。
+func RedisGetWithCtx(ctx context.Context, key string) (string, error) {
+	if !checkRedisEnabled() {
+		return "", ErrRedisNotEnabled
+	}
+	return RDB.Get(ctx, key).Result()
+}
+
+// RedisSetWithCtx 与 RedisSet 同语义，但使用调用方 ctx（request_id 归因同上）。
+func RedisSetWithCtx(ctx context.Context, key string, value string, expiration time.Duration) error {
+	if !checkRedisEnabled() {
+		return ErrRedisNotEnabled
+	}
+	return RDB.Set(ctx, key, value, expiration).Err()
+}
+
 func RedisDel(key string) error {
 	if !checkRedisEnabled() {
 		return ErrRedisNotEnabled
 	}
 	ctx := context.Background()
 	return RDB.Del(ctx, key).Err()
+}
+
+const luaGetDel = `
+local val = redis.call('get', KEYS[1])
+if val then
+    redis.call('del', KEYS[1])
+end
+return val
+`
+
+// RedisGetDel 原子获取并删除 key（阅后即焚防重放与防爆破）
+// key 不存在时返回 ErrRedisNil
+func RedisGetDel(key string) (string, error) {
+	if !checkRedisEnabled() {
+		return "", ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	res, err := RDB.Eval(ctx, luaGetDel, []string{key}).Result()
+	if err != nil {
+		return "", err
+	}
+	if res == nil {
+		return "", ErrRedisNil
+	}
+	val, ok := res.(string)
+	if !ok {
+		return fmt.Sprintf("%v", res), nil
+	}
+	return val, nil
+}
+
+const luaCompareAndDel = `
+local stored = redis.call('get', KEYS[1])
+if stored and string.lower(stored) == string.lower(ARGV[1]) then
+    redis.call('del', KEYS[1])
+    return 1
+end
+return 0
+`
+
+// RedisCompareAndDelCaseInsensitive 大小写不敏感比对 key 的值，若匹配则原子删除并返回 true；若不匹配或 key 不存在则不删除并返回 false
+func RedisCompareAndDelCaseInsensitive(key, expected string) (bool, error) {
+	if !checkRedisEnabled() {
+		return false, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	res, err := RDB.Eval(ctx, luaCompareAndDel, []string{key}, expected).Result()
+	if err != nil {
+		return false, err
+	}
+	if num, ok := res.(int64); ok {
+		return num == 1, nil
+	}
+	return fmt.Sprintf("%v", res) == "1", nil
+}
+
+// RedisScanKeys 按 pattern 扫描返回所有匹配的 key（无 key 时返回空切片）。
+func RedisScanKeys(pattern string) ([]string, error) {
+	if !checkRedisEnabled() {
+		return nil, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	keys := []string{}
+	iter := RDB.Scan(ctx, 0, pattern, 500).Iterator()
+	for iter.Next(ctx) {
+		keys = append(keys, iter.Val())
+	}
+	return keys, iter.Err()
 }
 
 // RedisDelByPattern deletes keys matched by a Redis SCAN pattern.
@@ -215,22 +303,70 @@ func RedisDecrease(key string, value int64) error {
 	ctx := context.Background()
 	return RDB.DecrBy(ctx, key, value).Err()
 }
-
-// RedisSetInt64 sets an integer value in Redis with expiration
-func RedisSetInt64(key string, value int64, expirationSeconds int64) error {
+func RedisIncrease(key string, value int64) error {
 	if !checkRedisEnabled() {
 		return ErrRedisNotEnabled
 	}
 	ctx := context.Background()
-	return RDB.Set(ctx, key, value, time.Duration(expirationSeconds)*time.Second).Err()
+	return RDB.IncrBy(ctx, key, value).Err()
 }
 
-// RedisGetInt64 gets an integer value from Redis
-func RedisGetInt64(key string) (int64, error) {
+func RedisIncr(key string) (int64, error) {
 	if !checkRedisEnabled() {
 		return 0, ErrRedisNotEnabled
 	}
 	ctx := context.Background()
+	return RDB.Incr(ctx, key).Result()
+}
+
+// RedisSetNX 仅当 key 不存在时设置值并返回是否成功（原子操作）
+func RedisSetNX(key string, value string, expiration time.Duration) (bool, error) {
+	if !checkRedisEnabled() {
+		return false, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	return RDB.SetNX(ctx, key, value, expiration).Result()
+}
+
+// RedisSAdd 向集合添加成员，返回新增成员数
+func RedisSAdd(key string, member string) (int64, error) {
+	if !checkRedisEnabled() {
+		return 0, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	return RDB.SAdd(ctx, key, member).Result()
+}
+
+// RedisSCard 返回集合成员数量
+func RedisSCard(key string) (int64, error) {
+	if !checkRedisEnabled() {
+		return 0, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	return RDB.SCard(ctx, key).Result()
+}
+
+// RedisSetInt64 sets an integer value in Redis with expiration
+func RedisSetInt64(key string, value int64, expirationSeconds int64, ctxs ...context.Context) error {
+	if !checkRedisEnabled() {
+		return ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	if len(ctxs) > 0 {
+		ctx = ctxs[0]
+	}
+	return RDB.Set(ctx, key, value, time.Duration(expirationSeconds)*time.Second).Err()
+}
+
+// RedisGetInt64 gets an integer value from Redis
+func RedisGetInt64(key string, ctxs ...context.Context) (int64, error) {
+	if !checkRedisEnabled() {
+		return 0, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	if len(ctxs) > 0 {
+		ctx = ctxs[0]
+	}
 	result, err := RDB.Get(ctx, key).Result()
 	if err != nil {
 		return 0, err
@@ -239,7 +375,7 @@ func RedisGetInt64(key string) (int64, error) {
 }
 
 // RedisMGetInt64 批量获取 int64 值，不存在或解析失败的 key 会被忽略
-func RedisMGetInt64(keys []string) (map[string]int64, error) {
+func RedisMGetInt64(keys []string, ctxs ...context.Context) (map[string]int64, error) {
 	if !checkRedisEnabled() {
 		return nil, ErrRedisNotEnabled
 	}
@@ -249,6 +385,9 @@ func RedisMGetInt64(keys []string) (map[string]int64, error) {
 	}
 
 	ctx := context.Background()
+	if len(ctxs) > 0 {
+		ctx = ctxs[0]
+	}
 	values, err := RDB.MGet(ctx, keys...).Result()
 	if err != nil {
 		return nil, err
@@ -284,7 +423,7 @@ func RedisMGetInt64(keys []string) (map[string]int64, error) {
 }
 
 // RedisMSetInt64 批量写入 int64 值（统一过期时间）
-func RedisMSetInt64(values map[string]int64, expirationSeconds int64) error {
+func RedisMSetInt64(values map[string]int64, expirationSeconds int64, ctxs ...context.Context) error {
 	if !checkRedisEnabled() {
 		return ErrRedisNotEnabled
 	}
@@ -293,6 +432,9 @@ func RedisMSetInt64(values map[string]int64, expirationSeconds int64) error {
 	}
 
 	ctx := context.Background()
+	if len(ctxs) > 0 {
+		ctx = ctxs[0]
+	}
 	pipe := RDB.Pipeline()
 	exp := time.Duration(expirationSeconds) * time.Second
 	for key, value := range values {
@@ -395,6 +537,13 @@ func RedisExpire(key string, expiration time.Duration) (bool, error) {
 	}
 	ctx := context.Background()
 	return RDB.Expire(ctx, key, expiration).Result()
+}
+func RedisTTL(key string) (time.Duration, error) {
+	if !checkRedisEnabled() {
+		return 0, ErrRedisNotEnabled
+	}
+	ctx := context.Background()
+	return RDB.TTL(ctx, key).Result()
 }
 
 // LogRedisPoolStats 记录Redis连接池状态统计信息

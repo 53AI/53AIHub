@@ -202,7 +202,6 @@ func (e *RagJobEngine) StartWorkers(parentCtx context.Context) error {
 		"rechunk_and_reindex",
 		"generate_questions_and_summary",
 		"ai_generate_index",
-		"generate_knowledge_map",
 		"hello", // 测试类型
 	}
 

@@ -12,9 +12,9 @@ import (
 
 // 默认图谱管线与兜底策略的固定命名/优先级
 const (
-	defaultGraphPipelineName    = "默认图谱管线"
-	defaultGraphStrategyName    = "通用文档"
-	legacyGraphStrategyName     = "默认图谱策略" // 旧默认图谱策略名，重命名迁移兼容
+	defaultGraphPipelineName     = "默认图谱管线"
+	defaultGraphStrategyName     = "通用文档"
+	legacyGraphStrategyName      = "默认图谱策略" // 旧默认图谱策略名，重命名迁移兼容
 	defaultGraphStrategyPriority = 9999
 )
 
@@ -22,6 +22,7 @@ const (
 // 调用时机：
 //   - 企业某空间首次开启图谱开关（enable_knowledge_graph=true）时，在保存开关的同一事务内调用；
 //   - 存量已开启图谱的企业由 kg_pipeline_split 迁移逐个调用。
+//
 // 默认图谱管线不绑定固定模板（graph_template_id 为空）：执行时先智能匹配选模板，匹配不到则智能生成模板兜底；
 // SAAS 场景仍会保证种子模板存在（作为智能匹配候选），但 profile 不写入模板。
 // config 不再写入 enable_smart_match 参数（无模板自动智能匹配）。

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -27,14 +28,18 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	AccessToken string `json:"access_token"`
-	UserID      int64  `json:"user_id"`
+	AccessToken           string `json:"access_token"`
+	UserID                int64  `json:"user_id"`
+	MustChangePassword    bool   `json:"must_change_password,omitempty"`
+	NeedChangePasswordTip bool   `json:"need_change_password_tip,omitempty"`
+	WeakPasswordTip       bool   `json:"weak_password_tip,omitempty"`
+	ChangeReason          string `json:"change_reason,omitempty"`
 }
 
 type PasswordRegisterUserRequest struct {
 	Username   string `json:"username" example:"john_doe"`
 	Nickname   string `json:"nickname" example:"John Doe"`
-	Password   string `json:"password" validate:"min=8,max=20" example:"password123"`
+	Password   string `json:"password" validate:"min=6,max=20" example:"password123"`
 	VerifyCode string `json:"verify_code" example:"123456"` // Add verification code field
 }
 
@@ -71,6 +76,71 @@ type EnterpriseUsersResponse struct {
 // @Tags User
 // @Accept json
 // @Produce json
+func getLoginLockKey(eid int64, username string) string {
+	return fmt.Sprintf("Cache:LoginLock:%d:%s", eid, username)
+}
+
+func getLoginFailCountKey(eid int64, username string) string {
+	return fmt.Sprintf("Cache:LoginFailCount:%d:%s", eid, username)
+}
+
+func checkLoginLock(eid int64, username string, policy *model.PasswordSecurityPolicySetting) (bool, int) {
+	if policy == nil || !policy.BruteForceEnabled {
+		return false, 0
+	}
+	lockKey := getLoginLockKey(eid, username)
+	exists, err := common.RedisExists(lockKey)
+	if err != nil || exists == 0 {
+		return false, 0
+	}
+	ttl, err := common.RedisTTL(lockKey)
+	if err != nil {
+		return true, policy.LockDurationMinutes
+	}
+	minutes := int(math.Ceil(ttl.Minutes()))
+	if minutes <= 0 {
+		minutes = 1
+	}
+	return true, minutes
+}
+
+func recordLoginFailure(eid int64, username string, policy *model.PasswordSecurityPolicySetting) (bool, int) {
+	if policy == nil || !policy.BruteForceEnabled {
+		return false, 0
+	}
+	failKey := getLoginFailCountKey(eid, username)
+	count, err := common.RedisIncr(failKey)
+	if err != nil {
+		return false, 0
+	}
+
+	lockDuration := time.Duration(policy.LockDurationMinutes) * time.Minute
+	if lockDuration <= 0 {
+		lockDuration = 15 * time.Minute
+	}
+	_, _ = common.RedisExpire(failKey, lockDuration)
+
+	limit := policy.LockAfterFailures
+	if limit <= 0 {
+		limit = 3
+	}
+
+	if int(count) >= limit {
+		lockKey := getLoginLockKey(eid, username)
+		_ = common.RedisSet(lockKey, "locked", lockDuration)
+		_ = common.RedisDel(failKey)
+		return true, policy.LockDurationMinutes
+	}
+	return false, 0
+}
+
+func clearLoginFailure(eid int64, username string, policy *model.PasswordSecurityPolicySetting) {
+	if policy == nil || !policy.BruteForceEnabled {
+		return
+	}
+	_ = common.RedisDel(getLoginFailCountKey(eid, username))
+}
+
 // @Param user body LoginRequest true "User Login Request Data"
 // @Success 200 {object} model.CommonResponse{data=LoginResponse} "Success"
 // @Router /api/login [post]
@@ -82,9 +152,16 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	username := loginRequest.Username
+	username := strings.TrimSpace(loginRequest.Username)
 	password := loginRequest.Password
 	eid := config.GetEID(c)
+
+	policy, _ := model.GetPasswordSecurityPolicySetting(eid)
+
+	if locked, remainingMinutes := checkLoginLock(eid, username, policy); locked {
+		c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(fmt.Sprintf("密码连续输错次数过多，账号已被锁定，请 %d 分钟后再试", remainingMinutes)))
+		return
+	}
 
 	isEmail := helper.IsValidEmail(username)
 	isMobile := helper.IsValidPhone(username)
@@ -95,17 +172,53 @@ func Login(c *gin.Context) {
 	} else if isMobile {
 		user, err = model.GetUserByMobile(eid, username)
 	} else {
+		err = errors.New("invalid username")
 	}
 
 	if err != nil {
+		if locked, lockMinutes := recordLoginFailure(eid, username, policy); locked {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(fmt.Sprintf("密码连续输错 %d 次，账号已被锁定 %d 分钟", policy.LockAfterFailures, lockMinutes)))
+			return
+		}
 		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(err))
 		return
 	}
 
 	err = user.VerifyPassword(password)
 	if err != nil {
+		if locked, lockMinutes := recordLoginFailure(eid, username, policy); locked {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(fmt.Sprintf("密码连续输错 %d 次，账号已被锁定 %d 分钟", policy.LockAfterFailures, lockMinutes)))
+			return
+		}
 		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(err))
 		return
+	}
+
+	clearLoginFailure(eid, username, policy)
+
+	// 安全策略检测（在刷新 LastLoginTime 之前记录初次登录状态）
+	isFirstLogin := policy.FirstLoginChangeRequired && user.LastLoginTime == 0
+
+	isExpired := false
+	forceExpired := false
+	if policy.ExpireEnabled {
+		baseTime := user.GetPasswordBaseTime()
+		if baseTime > 0 {
+			expireDuration := time.Duration(policy.GetEffectiveExpireDays()) * 24 * time.Hour
+			if time.Since(time.UnixMilli(baseTime)) > expireDuration {
+				isExpired = true
+				if policy.ForceChangeOnExpired {
+					forceExpired = true
+				}
+			}
+		}
+	}
+
+	weakPasswordTip := false
+	if policy.Strength == helper.PasswordStrengthMedium || policy.Strength == helper.PasswordStrengthStrong {
+		if err := helper.VerifyPasswordStrength(password, policy.Strength); err != nil {
+			weakPasswordTip = true
+		}
 	}
 
 	err = user.RefreshAccessToken()
@@ -120,21 +233,27 @@ func Login(c *gin.Context) {
 	}
 	service.InvalidateInternalUserListCache(eid)
 
-	// log := model.SystemLog{
-	// 	Eid:      eid,
-	// 	UserID:   user.UserID,
-	// 	Nickname: user.Nickname,
-	// 	Module:   model.SystemLogModuleSystem,
-	// 	Action:   model.SystemLogActionLoginOut,
-	// 	Content:  "登录",
-	// 	IP:       utils.GetClientIP(c),
-	// }
-	// model.CreateSystemLog(&log)
-
 	loginResponse := LoginResponse{
 		AccessToken: user.AccessToken,
 		UserID:      user.UserID,
 	}
+
+	if isFirstLogin {
+		loginResponse.MustChangePassword = true
+		loginResponse.ChangeReason = "first_login"
+	} else if forceExpired {
+		loginResponse.MustChangePassword = true
+		loginResponse.ChangeReason = "expired"
+	} else {
+		if isExpired {
+			loginResponse.NeedChangePasswordTip = true
+			loginResponse.ChangeReason = "expired"
+		}
+		if weakPasswordTip {
+			loginResponse.WeakPasswordTip = true
+		}
+	}
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(loginResponse))
 }
 
@@ -239,6 +358,12 @@ func PasswordRegister(c *gin.Context) {
 
 	eid := config.GetEID(c)
 
+	policy, _ := model.GetPasswordSecurityPolicySetting(eid)
+	if err := helper.VerifyPasswordStrength(userRequest.Password, policy.Strength); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
+
 	if isMobile && config.IS_SAAS {
 		if userRequest.VerifyCode == "" {
 			c.JSON(http.StatusBadRequest, model.InvalidVerificationCodeError.ToNewErrorResponse(model.InvalidVerificationCode))
@@ -337,6 +462,13 @@ func EnterpriseAddUser(c *gin.Context) {
 	err := json.NewDecoder(c.Request.Body).Decode(&userRequest)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	eid := config.GetEID(c)
+	policy, _ := model.GetPasswordSecurityPolicySetting(eid)
+	if err := helper.VerifyPasswordStrength(userRequest.Password, policy.Strength); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
 		return
 	}
 
@@ -630,8 +762,8 @@ func GetCurrentUser(c *gin.Context) {
 }
 
 type UpdatePasswordRequest struct {
-	NewPassword     string `json:"new_password" binding:"required,min=8,max=20" example:"newPassword123"`
-	ConfirmPassword string `json:"confirm_password" binding:"required,min=8,max=20" example:"newPassword123"`
+	NewPassword     string `json:"new_password" binding:"required,min=6,max=20" example:"newPassword123"`
+	ConfirmPassword string `json:"confirm_password" binding:"required,min=6,max=20" example:"newPassword123"`
 }
 
 // @Summary Update user password
@@ -662,6 +794,12 @@ func UpdateUserPassword(c *gin.Context) {
 	}
 
 	eid := config.GetEID(c)
+
+	policy, _ := model.GetPasswordSecurityPolicySetting(eid)
+	if err := helper.VerifyPasswordStrength(req.NewPassword, policy.Strength); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
 
 	err := model.UpdateUserPassword(eid, userID, req.NewPassword)
 	if err != nil {
@@ -823,6 +961,8 @@ func SetUserAsAdmin(c *gin.Context) {
 	}
 
 	nicknames := make([]string, 0, len(userIDs))
+	// role 变更必须同步清 token 缓存（否则旧 role 在 TTL 内仍可鉴权）：收集改动用户，commit 后统一失效。
+	changedUsers := make([]*model.User, 0, len(userIDs))
 	for _, userID := range userIDs {
 		user, err := model.GetUserByID(userID)
 		if err != nil {
@@ -853,12 +993,17 @@ func SetUserAsAdmin(c *gin.Context) {
 
 		response.Success = append(response.Success, userID)
 		nicknames = append(nicknames, user.Nickname)
+		changedUsers = append(changedUsers, user)
 	}
 
 	if err := tx.Commit().Error; err != nil {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
+	}
+	// 批量改 role 落库成功：统一清改动用户全部缓存（行+群组+token），0 延迟。
+	for _, u := range changedUsers {
+		model.InvalidateUserCaches(eid, u.UserID, c.Request.Context(), u.AccessToken)
 	}
 
 	log := model.SystemLog{
@@ -920,6 +1065,8 @@ func UnsetUserAsAdmin(c *gin.Context) {
 	}
 
 	nicknames := make([]string, 0, len(userIDs))
+	// role 变更必须同步清 token 缓存（否则旧 role 在 TTL 内仍可鉴权）：收集改动用户，commit 后统一失效。
+	changedUsers := make([]*model.User, 0, len(userIDs))
 	// Process each user ID
 	for _, userID := range userIDs {
 		// Get user information
@@ -955,6 +1102,7 @@ func UnsetUserAsAdmin(c *gin.Context) {
 
 		response.Success = append(response.Success, userID)
 		nicknames = append(nicknames, user.Nickname)
+		changedUsers = append(changedUsers, user)
 	}
 
 	// Commit transaction
@@ -962,6 +1110,10 @@ func UnsetUserAsAdmin(c *gin.Context) {
 		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
+	}
+	// 批量改 role 落库成功：统一清改动用户全部缓存（行+群组+token），0 延迟。
+	for _, u := range changedUsers {
+		model.InvalidateUserCaches(eid, u.UserID, c.Request.Context(), u.AccessToken)
 	}
 
 	log := model.SystemLog{
@@ -1030,6 +1182,18 @@ func BatchAddInternalUsers(c *gin.Context) {
 	if eid <= 0 {
 		c.JSON(http.StatusOK, model.ParamError.ToNewErrorResponse(model.InvalidEnterpriseID))
 		return
+	}
+
+	policy, _ := model.GetPasswordSecurityPolicySetting(eid)
+	for _, u := range batchRequest.Users {
+		if err := helper.VerifyPasswordStrength(u.Password, policy.Strength); err != nil {
+			name := u.Nickname
+			if name == "" {
+				name = u.Username
+			}
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(fmt.Sprintf("用户【%s】密码不符合要求：%s", name, err.Error())))
+			return
+		}
 	}
 
 	nicknames := make([]string, len(batchRequest.Users))
@@ -1509,8 +1673,8 @@ type ResetPasswordRequest struct {
 	Mobile          string `json:"mobile"`                                           // 手机号（与邮箱二选一）
 	Email           string `json:"email"`                                            // 邮箱（与手机号二选一）
 	VerifyCode      string `json:"verify_code" binding:"required"`                   // 验证码
-	NewPassword     string `json:"new_password" binding:"required,min=8,max=20"`     // 新密码（8-20位）
-	ConfirmPassword string `json:"confirm_password" binding:"required,min=8,max=20"` // 确认新密码
+	NewPassword     string `json:"new_password" binding:"required,min=6,max=20"`     // 新密码（6-20位）
+	ConfirmPassword string `json:"confirm_password" binding:"required,min=6,max=20"` // 确认新密码
 }
 
 // Logout 用户登出
@@ -1599,6 +1763,13 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 
+	eid := config.GetEID(c)
+	policy, _ := model.GetPasswordSecurityPolicySetting(eid)
+	if err := helper.VerifyPasswordStrength(req.NewPassword, policy.Strength); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
+	}
+
 	// 判定账号类型：手机号或邮箱（二选一）
 	isMobile := req.Mobile != "" && helper.IsValidPhone(req.Mobile)
 	isEmail := req.Email != "" && helper.IsValidEmail(req.Email)
@@ -1628,7 +1799,6 @@ func ResetPassword(c *gin.Context) {
 	}
 
 	// 查询站点用户
-	eid := config.GetEID(c)
 	var user *model.User
 	query := model.DB.Where("eid = ?", eid)
 	if isMobile {
@@ -1657,6 +1827,7 @@ func ResetPassword(c *gin.Context) {
 	// 更新用户密码
 	user.Password = hashedPassword
 	user.Salt = salt
+	user.PasswordUpdatedAt = time.Now().UnixMilli()
 	err = model.DB.Save(&user).Error
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))

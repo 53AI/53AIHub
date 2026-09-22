@@ -105,7 +105,9 @@ type DocumentChunkingSmartMatchConfig struct {
 	ModelName        string `json:"model_name"`
 }
 
-func buildDocumentParsingSmartMatchCandidates(ctx context.Context, eid int64) ([]SmartMatchCandidate, error) {
+// buildDocumentParsingSmartMatchCandidates 构建文档解析智能匹配候选。
+// fileName 用于媒体判定：recording_voice 只能解析音频/视频，非媒体文件不暴露该候选，避免误选浪费。
+func buildDocumentParsingSmartMatchCandidates(ctx context.Context, eid int64, fileName string) ([]SmartMatchCandidate, error) {
 	platformSettings, err := model.GetEnabledPlatformSettingsByEid(eid)
 	if err != nil {
 		return nil, fmt.Errorf("查询企业启用平台设置失败: %w", err)
@@ -129,6 +131,10 @@ func buildDocumentParsingSmartMatchCandidates(ctx context.Context, eid int64) ([
 			if _, ok := enabledKeys[meta.PlatformKey]; !ok {
 				continue
 			}
+		}
+		// recording_voice 仅能解析音频/视频，非媒体文件不暴露该候选
+		if meta.PlatformKey == model.PLATFORM_KEY_RECORDING_VOICE && !common.IsMediaFile(fileName) {
+			continue
 		}
 		candidates = append(candidates, SmartMatchCandidate{
 			Key:         meta.PlatformKey,
@@ -752,7 +758,7 @@ func mapKeys(values map[string]struct{}) []string {
 }
 
 func selectDocumentParsingSmartMatch(ctx context.Context, db *gorm.DB, eid int64, fileName, fileExt, preferencePrompt string) (*SmartMatchResult, error) {
-	candidates, err := buildDocumentParsingSmartMatchCandidates(ctx, eid)
+	candidates, err := buildDocumentParsingSmartMatchCandidates(ctx, eid, fileName)
 	if err != nil {
 		return nil, err
 	}

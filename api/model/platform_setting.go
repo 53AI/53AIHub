@@ -1,6 +1,8 @@
 package model
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	"gorm.io/gorm"
@@ -17,10 +19,11 @@ const (
 	PLATFORM_KEY_PADDLEPADDLE_PP_STRUCTURE_V3 = "paddlepaddle_pp-structurev3" // 版面分析与结构化识别模型配置
 	PLATFORM_KEY_PADDLEPADDLE_PADDLEOCR_VL    = "paddlepaddle_paddleocr-vl"   // 视觉语言模型配置
 	PLATFORM_KEY_TINGWU                       = "tingwu"
-	PLATFORM_KEY_VOICE_MODEL_PREFIX           = "voice:"                            // 语音模型渠道前缀
-	PLATFORM_KEY_SONICNOTE                    = "sonicnote_transcript"              // SonicNote 同步预置转写（document_parsing 跳过 ASR 的来源标记，非可选引擎）
-	PLATFORM_KEY_BUILTIN                      = "builtin"                           // file-service builtin 本地引擎
-	PLATFORM_KEY_OPENDATALOADER               = "opendataloader"                    // file-service OpenDataLoader 引擎（仅PDF）
+	PLATFORM_KEY_VOICE_MODEL_PREFIX           = "voice:"               // 语音模型渠道前缀
+	PLATFORM_KEY_SONICNOTE                    = "sonicnote_transcript" // SonicNote 同步预置转写（document_parsing 跳过 ASR 的来源标记，非可选引擎）
+	PLATFORM_KEY_BUILTIN                      = "builtin"              // file-service builtin 本地引擎
+	PLATFORM_KEY_OPENDATALOADER               = "opendataloader"       // file-service OpenDataLoader 引擎（仅PDF）
+	PLATFORM_KEY_RECORDING_VOICE              = "recording_voice"      // 录音解析能力（平台设置保存语音模型，管线引擎/parse_type 字面量）
 )
 
 const (
@@ -78,6 +81,10 @@ var defaultPlatformSettingDisplayMetaMap = map[string]PlatformSettingDisplayMeta
 		DisplayName:        "通义听悟",
 		DisplayDescription: "语音文件类型支持的选择器",
 	},
+	PLATFORM_KEY_RECORDING_VOICE: {
+		DisplayName:        "录音解析",
+		DisplayDescription: "录音（音频/视频）文件解析能力，保存用于解析的语音模型渠道与模型",
+	},
 }
 
 var defaultPlatformSettingDisplayMetaOrder = []string{
@@ -89,6 +96,7 @@ var defaultPlatformSettingDisplayMetaOrder = []string{
 	PLATFORM_KEY_PADDLEPADDLE_PP_STRUCTURE_V3,
 	PLATFORM_KEY_PADDLEPADDLE_PADDLEOCR_VL,
 	PLATFORM_KEY_TINGWU,
+	PLATFORM_KEY_RECORDING_VOICE,
 }
 
 type PlatformSetting struct {
@@ -237,3 +245,55 @@ func GetPlatformSettingByExternalID(eid int64, externalID string, platformKey st
 
 // PLATFORM_KEY_OPENAI_AUDIO_PREFIX OpenAI 兼容语音转写 parse_type 前缀（openai:{channel_type}:{model_name}）。
 const PLATFORM_KEY_OPENAI_AUDIO_PREFIX = "openai:"
+
+// RecordingVoiceSetting 录音解析能力的持久化配置（platform_setting.setting JSON）。
+// voice_model_id 存储渠道 channel_id；voice_model_name 存储 voice_models 的 key（同 RecordingConfig.VoiceModelName 语义）。
+type RecordingVoiceSetting struct {
+	VoiceModelID   int64  `json:"voice_model_id"`
+	VoiceModelName string `json:"voice_model_name"`
+}
+
+// PlatformSettingRecordingVoice 录音解析能力的解析结果（含渠道类型判定，供策略分派用）。
+type PlatformSettingRecordingVoice struct {
+	VoiceModelID   int64
+	VoiceModelName string
+	// IsOpenAI 是否为 OpenAI 兼容语音渠道（type=1012）。false 表示阿里百炼 DashScope（type=17）。
+	IsOpenAI bool
+}
+
+// GetPlatformSettingRecordingVoice 读取并校验企业录音解析能力配置。
+// 缺失、未启用或渠道无效时返回中文 error（dispatch 阶段据此落库转写错误状态）。
+func GetPlatformSettingRecordingVoice(eid int64) (*PlatformSettingRecordingVoice, error) {
+	setting, err := GetPlatformSettingByEidAndPlatformKey(eid, PLATFORM_KEY_RECORDING_VOICE)
+	if err != nil {
+		return nil, fmt.Errorf("查询录音解析配置失败: %w", err)
+	}
+	if setting == nil {
+		return nil, fmt.Errorf("未配置录音解析能力（platform_key=recording_voice）")
+	}
+	if setting.Status != PLATFORM_STATUS_ENABLED {
+		return nil, fmt.Errorf("录音解析能力未启用")
+	}
+	var rv RecordingVoiceSetting
+	if err := json.Unmarshal([]byte(setting.Setting), &rv); err != nil {
+		return nil, fmt.Errorf("解析录音解析配置失败: %w", err)
+	}
+	if rv.VoiceModelID <= 0 || rv.VoiceModelName == "" {
+		return nil, fmt.Errorf("录音解析配置缺少 voice_model_id 或 voice_model_name")
+	}
+	channel, err := GetChannelByID(rv.VoiceModelID)
+	if err != nil || channel == nil {
+		return nil, fmt.Errorf("录音解析语音模型渠道不存在: channel_id=%d", rv.VoiceModelID)
+	}
+	if !IsVoiceModelChannel(channel) {
+		return nil, fmt.Errorf("录音解析渠道不是语音模型渠道: channel_id=%d", rv.VoiceModelID)
+	}
+	if !IsModelInChannelModels(rv.VoiceModelName, channel.Models) {
+		return nil, fmt.Errorf("录音解析模型 %s 不在渠道 models(%s) 中", rv.VoiceModelName, channel.Models)
+	}
+	return &PlatformSettingRecordingVoice{
+		VoiceModelID:   rv.VoiceModelID,
+		VoiceModelName: rv.VoiceModelName,
+		IsOpenAI:       IsOpenAIAudioChannel(channel),
+	}, nil
+}

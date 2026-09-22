@@ -47,9 +47,9 @@ func (s *GeneratedContentService) UpsertSummary(ctx context.Context, eid int64, 
 		// 2. 更新摘要分块
 		if strings.TrimSpace(summary) == "" {
 			// 如果摘要为空，可能需要删除旧的分块？目前逻辑是保留空内容更新或者跳过
-			// 参照 summary_generation.go，如果为空则返回 nil (不创建/更新 chunk)
+			// 如果为空则返回 nil (不创建/更新 chunk)
 			// 但如果是手动清空，应该删除对应的 chunk?
-			// 这里保持与 summary_generation.go 一致的逻辑：如果为空，不处理 chunk
+			// 如果为空，不处理 chunk
 			// TODO: 考虑是否需要删除 chunk
 			return nil
 		}
@@ -127,15 +127,9 @@ func (s *GeneratedContentService) upsertSummaryChunks(tx *gorm.DB, eid int64, fi
 	}
 
 	// 查找或创建 retrieval chunk
-	// 注意：summary_generation.go 中是总是创建新的？不，它没有查旧的 retrieval chunk 逻辑，直接 SaveRetrievalChunksWithDB?
+	// 查找或创建 retrieval chunk。
 	// SaveRetrievalChunksWithDB 是批量插入。
 	// 如果已经存在，需要更新。
-	// summary_generation.go 逻辑看起来是：
-	// 1. getOrCreateSummaryDocChunk (DocumentChunk)
-	// 2. Create RetrievalChunk object
-	// 3. SaveRetrievalChunksWithDB
-	// 4. Enqueue
-
 	// SaveRetrievalChunksWithDB 内部如果是 Create，会重复插入吗？
 	// 让我们看看 SaveRetrievalChunksWithDB (在 retrieval_service.go 中?)
 	// 没找到 SaveRetrievalChunksWithDB 定义，应该是 retrieval_service.go 里的 SaveRetrievalChunksWithDB?

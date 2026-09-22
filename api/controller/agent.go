@@ -955,6 +955,21 @@ func GetCurrentAgents(c *gin.Context) {
 				return
 			}
 		}
+
+		// 注册用户可能没有旧版 group_id，但仍应使用企业默认用户组。
+		// 之前直接解引用 theGroup 会在此分支产生 nil pointer，线上表现为 500。
+		if theGroup == nil && user.Type == model.UserTypeRegistered {
+			group, err := model.GetFirstGroupByEid(eid, model.USER_GROUP_TYPE)
+			if err != nil {
+				c.JSON(http.StatusNotFound, model.DBError.ToResponse(err))
+				return
+			}
+			theGroup = &group
+		}
+		if theGroup == nil {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+			return
+		}
 	}
 
 	group, err := model.GetGroupWithAgents(theGroup.GroupId, true)

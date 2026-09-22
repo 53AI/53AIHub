@@ -47,6 +47,13 @@ func InitializeRecordingPipelineForPersonalLibrary(ctx context.Context, eid int6
 			if _, err := createM4aStrategy(eid, pipelineID); err != nil {
 				return fmt.Errorf("创建m4a策略失败: %w", err)
 			}
+		} else {
+			// 兼容旧版本：m4a 策略同步补充个人库限定（听悟已废弃，限定无副作用）
+			wantM4aConditions := buildM4aStrategyConditions()
+			if existingStrategies[0].ConditionsJSON != wantM4aConditions {
+				model.DB.Model(&existingStrategies[0]).Update("conditions_json", wantM4aConditions)
+				logger.Infof(ctx, "【录音配置】更新m4a策略匹配条件（个人库限定）: strategy_id=%d", existingStrategies[0].ID)
+			}
 		}
 
 	} else if strings.HasPrefix(parserPlatform, "voice:") || strings.HasPrefix(parserPlatform, "openai:") {
@@ -178,16 +185,20 @@ func createTingwuPipeline(eid int64) (*model.RagPipelineProfile, error) {
 	return pipeline, nil
 }
 
+// buildM4aStrategyConditions 构建听悟 m4a 策略匹配条件（个人库限定 + m4a 扩展名）。
+func buildM4aStrategyConditions() string {
+	cond := map[string]interface{}{
+		"matchers": []map[string]interface{}{
+			{"type": "library_kind", "operator": "eq", "value": model.LIBRARY_KIND_PERSONAL_USER},
+			{"type": "extension", "operator": "eq", "value": "m4a"},
+		},
+	}
+	conditionsJSON, _ := json.Marshal(cond)
+	return string(conditionsJSON)
+}
+
 func createM4aStrategy(eid int64, pipelineID int64) (*model.RagRoutingStrategy, error) {
-	conditionsJSON := `{
-        "matchers": [
-            {
-                "type": "extension",
-                "operator": "eq",
-                "value": "m4a"
-            }
-        ]
-    }`
+	conditionsJSON := buildM4aStrategyConditions()
 
 	strategy := &model.RagRoutingStrategy{
 		Eid:            eid,
@@ -279,7 +290,7 @@ func createAnxinluPipeline(eid int64, channelID int64, engine string) (*model.Ra
 
 	pipeline := &model.RagPipelineProfile{
 		Eid:         eid,
-		Name:        "安心录",
+		Name:        model.AnxinluPipelineName,
 		Icon:        "",
 		Status:      model.RagPipelineStatusEnabled,
 		ProfileJSON: profileJSON,
@@ -292,19 +303,21 @@ func createAnxinluPipeline(eid int64, channelID int64, engine string) (*model.Ra
 	return pipeline, nil
 }
 
-// buildAnxinluStrategyConditions 构建安心录路由策略匹配条件：
-// 覆盖全部录音格式（对齐 RecordingAudioFormats：m4a/mp3/wav/aac/flac/opus），
-// 避免 .opus/.wav/.aac 等落到默认策略走 docconv 失败。
+// buildAnxinluStrategyConditions 构建安心录路由策略匹配条件（Logic AND）：
+//   - library_kind eq personal_user：仅匹配个人知识库，避免其他库录音文件被抢占路由
+//   - extension in 全部录音格式：对齐 RecordingAudioFormats（m4a/mp3/wav/aac/flac/opus 等），
+//     避免 .opus/.wav/.aac 等落到默认策略走 docconv 失败
 func buildAnxinluStrategyConditions() string {
-	matchers := make([]map[string]interface{}, 0, len(RecordingAudioFormats))
+	exts := make([]string, 0, len(RecordingAudioFormats))
 	for _, ext := range RecordingAudioFormats {
-		matchers = append(matchers, map[string]interface{}{
-			"type":     "extension",
-			"operator": "eq",
-			"value":    strings.TrimPrefix(ext, "."),
-		})
+		exts = append(exts, strings.TrimPrefix(ext, "."))
 	}
-	cond := map[string]interface{}{"matchers": matchers}
+	cond := map[string]interface{}{
+		"matchers": []map[string]interface{}{
+			{"type": "library_kind", "operator": "eq", "value": model.LIBRARY_KIND_PERSONAL_USER},
+			{"type": "extension", "operator": "in", "value": exts},
+		},
+	}
 	conditionsJSON, _ := json.Marshal(cond)
 	return string(conditionsJSON)
 }
@@ -312,13 +325,13 @@ func buildAnxinluStrategyConditions() string {
 func createAnxinluStrategy(eid int64, pipelineID int64) (*model.RagRoutingStrategy, error) {
 	strategy := &model.RagRoutingStrategy{
 		Eid:            eid,
-		Name:           "安心录",
+		Name:           model.AnxinluPipelineName,
 		Icon:           "",
 		Priority:       1,
 		Enabled:        true,
 		IsDefault:      false,
 		PipelineID:     pipelineID,
-		Logic:          model.RagRoutingLogicOr,
+		Logic:          model.RagRoutingLogicAnd,
 		ConditionsJSON: buildAnxinluStrategyConditions(),
 	}
 
@@ -352,7 +365,7 @@ func initializeAnxinluPipeline(ctx context.Context, eid int64, engine string) er
 
 	profileJSON := buildAnxinluProfileJSON(channelID, engine)
 
-	pipelineName := "安心录"
+	pipelineName := model.AnxinluPipelineName
 	existingPipelines, err := model.GetRagPipelineProfilesByEidAndName(eid, pipelineName)
 	if err != nil {
 		return fmt.Errorf("查询安心录pipeline失败: %w", err)
@@ -376,7 +389,7 @@ func initializeAnxinluPipeline(ctx context.Context, eid int64, engine string) er
 
 	pipelineID := existingPipelines[0].ID
 
-	existingStrategies, err := model.GetRagRoutingStrategiesByEidAndName(eid, "安心录")
+	existingStrategies, err := model.GetRagRoutingStrategiesByEidAndName(eid, model.AnxinluPipelineName)
 	if err != nil {
 		return fmt.Errorf("查询安心录策略失败: %w", err)
 	}
@@ -391,12 +404,14 @@ func initializeAnxinluPipeline(ctx context.Context, eid int64, engine string) er
 			logger.Infof(ctx, "【录音配置】更新安心录策略pipeline指向: strategy_id=%d old_pipeline=%d new_pipeline=%d",
 				existingStrategies[0].ID, existingStrategies[0].PipelineID, pipelineID)
 		}
-		// 修复旧版本 matchers 不全（仅 mp3/m4a，导致 .opus/.wav/.aac 落到默认策略走 docconv）：
-		// 条件与全量录音格式不一致时更新
+		// 修复旧版本：matchers 不全/缺少 library_kind 限定/Logic 为 OR（导致其他库文件被抢占路由）时更新
 		wantConditions := buildAnxinluStrategyConditions()
-		if existingStrategies[0].ConditionsJSON != wantConditions {
-			model.DB.Model(&existingStrategies[0]).Update("conditions_json", wantConditions)
-			logger.Infof(ctx, "【录音配置】更新安心录策略匹配条件（补齐录音格式）: strategy_id=%d", existingStrategies[0].ID)
+		if existingStrategies[0].ConditionsJSON != wantConditions || existingStrategies[0].Logic != model.RagRoutingLogicAnd {
+			model.DB.Model(&existingStrategies[0]).Updates(map[string]interface{}{
+				"conditions_json": wantConditions,
+				"logic":           model.RagRoutingLogicAnd,
+			})
+			logger.Infof(ctx, "【录音配置】更新安心录策略匹配条件与逻辑（个人库限定+AND）: strategy_id=%d", existingStrategies[0].ID)
 		}
 	}
 

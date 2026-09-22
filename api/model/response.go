@@ -6,7 +6,7 @@ import "errors"
 // @Description Standard API response structure
 // @Description Code: Status code of the response
 // @Description Message: Human-readable message about the response
-// @Description Data: Actual response data, can be any type
+// @Description RequestID: Request ID for tracing, same value as X-Request-ID header
 type CommonResponse struct {
 	// @Description Status code, see ResponseCode enum for details
 	// @Enum 0:Success - Operation completed successfully
@@ -23,10 +23,11 @@ type CommonResponse struct {
 	// @Enum 11:TokenExpiredError - Token expired, need to re-login
 	// @Enum 12:ChatError - Chat operation failed
 	// @Enum 13:ProviderNoFoundError - Provider not found
-	Code    int         `json:"code" example:"0" enums:"0,1,2,3,4,5,6,7,8,9,10,11,12,13"`
-	Message string      `json:"message" example:"ok" description:"Response message"`
-	Data    interface{} `json:"data" description:"Response data payload"`
-	Warning string      `json:"warning,omitempty" description:"Optional warning message for client"`
+	Code      int         `json:"code" example:"0" enums:"0,1,2,3,4,5,6,7,8,9,10,11,12,13"`
+	Message   string      `json:"message" example:"ok" description:"Response message"`
+	RequestID string      `json:"request_id,omitempty" description:"Request ID for tracing"`
+	Data      interface{} `json:"data" description:"Response data payload"`
+	Warning   string      `json:"warning,omitempty" description:"Optional warning message for client"`
 }
 
 type OpenAIError struct {
@@ -119,6 +120,14 @@ func (c ResponseCode) ToResponse(data interface{}) CommonResponse {
 		Message: c.Message(),
 		Data:    data,
 	}
+}
+
+// ToResponseWithRequestID 与 ToResponse 同语义，额外在顶层回填 request_id（与 data 同级）。
+// 新接口/重构接口统一用它：body 与 X-Request-ID 头同值，前端可直接拿 body 关联 trace。
+func (c ResponseCode) ToResponseWithRequestID(data interface{}, requestID string) CommonResponse {
+	resp := c.ToResponse(data)
+	resp.RequestID = requestID
+	return resp
 }
 
 func (c ResponseCode) ToResponseWithWarning(data interface{}, warning string) CommonResponse {

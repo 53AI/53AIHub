@@ -131,7 +131,7 @@ func autoAssignCozeStudioProvider(channel *model.Channel) error {
 }
 
 type ChannelRequest struct {
-	// gemini 24；月之暗面 25； 自定义模型 1012
+	// gemini 24；月之暗面 25； 自定义模型 1012；GLM Coding Plan 1018
 	Type   int    `json:"type" example:"1"`
 	Key    string `json:"key" example:"channel_key"`
 	Name   string `json:"name" example:"channel_name"`
@@ -233,6 +233,14 @@ func CreateChannel(c *gin.Context) {
 	// Set ProviderID if provided in request
 	if req.ProviderID != nil {
 		channel.ProviderID = *req.ProviderID
+	}
+	if channel.Type == model.ChannelApiTypeGlmCodingPlan && (channel.BaseURL == nil || *channel.BaseURL == "") {
+		defaultURL := model.GlmCodingPlanDefaultBaseURL
+		channel.BaseURL = &defaultURL
+	}
+	if channel.Type == model.ChannelApiTypeTencentTokenHub && (channel.BaseURL == nil || *channel.BaseURL == "") {
+		defaultURL := model.TencentTokenHubDefaultBaseURL
+		channel.BaseURL = &defaultURL
 	}
 
 	// 语音模型 channel 不经过 StandardizationBotId，直接使用原始模型名
@@ -356,6 +364,14 @@ func UpdateChannel(c *gin.Context) {
 	channel.Priority = req.Priority
 	channel.BaseURL = req.BaseURL
 	channel.Other = req.Other
+	if channel.Type == model.ChannelApiTypeGlmCodingPlan && (channel.BaseURL == nil || *channel.BaseURL == "") {
+		defaultURL := model.GlmCodingPlanDefaultBaseURL
+		channel.BaseURL = &defaultURL
+	}
+	if channel.Type == model.ChannelApiTypeTencentTokenHub && (channel.BaseURL == nil || *channel.BaseURL == "") {
+		defaultURL := model.TencentTokenHubDefaultBaseURL
+		channel.BaseURL = &defaultURL
+	}
 
 	// Update ProviderID if provided in request
 	if req.ProviderID != nil {

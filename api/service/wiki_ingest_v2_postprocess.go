@@ -38,6 +38,8 @@ func (s *WikiIngestV2Service) postProcessWikiPages(ctx context.Context, eid, lib
 	if updated > 0 || failed > 0 {
 		logger.Infof(ctx, "【Wiki生成】 phase=postprocess postprocessed %d pages (%d failed)", updated, failed)
 	}
+	// Source 关联在此前 reduce 阶段已落库，快照 page_sources 需失效重建。
+	model.InvalidateCapabilityWiki(eid, libraryID)
 	return nil
 }
 

@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
@@ -78,7 +79,8 @@ func IgnoreSlowLog(c *gin.Context) {
 
 // GetSlowLogsUI 慢日志 UI 页面
 func GetSlowLogsUI(c *gin.Context) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(slowLogsUIHTML))
+	html := strings.Replace(slowLogsUIHTML, "<!--SYSLOG_NAV-->", SystemLogNavHTML("/api/system_logs/slow_logs/ui"), 1)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
 const slowLogsUIHTML = `<!doctype html>
@@ -133,6 +135,7 @@ const slowLogsUIHTML = `<!doctype html>
 <body>
   <div class="wrap">
     <div class="card">
+      <!--SYSLOG_NAV-->
       <h2 style="margin:0 0 10px 0;">53AIHub 慢日志记录</h2>
       <div style="margin-bottom:10px;">
         <label>鉴权 Token（仅支持 ENV: FILE_LOG_VIEWER_ACCESS_TOKEN）</label>

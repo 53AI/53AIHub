@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/utils/hashids"
@@ -52,7 +53,9 @@ type WikiGenerationFailureView struct {
 // @Success 200 {string} string "HTML page"
 // @Router /api/system_logs/wiki_generation/ui [get]
 func GetWikiGenerationUI(c *gin.Context) {
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(wikiGenerationUIHTML))
+	html := strings.Replace(wikiGenerationUIHTML, `<main class="shell">`, `<main class="shell"><!--SYSLOG_NAV-->`, 1)
+	html = strings.Replace(html, "<!--SYSLOG_NAV-->", SystemLogNavHTML("/api/system_logs/wiki_generation/ui"), 1)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
 // GetWikiGenerationStats godoc

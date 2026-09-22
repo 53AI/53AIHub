@@ -99,6 +99,7 @@ type RecentAccessListResponse struct {
 	Items    []RecentAccessItem    `json:"items"`
 	Includes *RecentAccessIncludes `json:"includes,omitempty"`
 }
+
 func parseTabResourceType(raw int) (*int, error) {
 	if raw == 0 {
 		return nil, nil

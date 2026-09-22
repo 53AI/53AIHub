@@ -18,6 +18,7 @@ import (
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/elasticsearch"
 	"github.com/53AI/53AIHub/service/rag"
+	recordingdebug "github.com/53AI/53AIHub/service/recording_debug"
 	jsonrepair "github.com/aichy126/json_repair"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
 	"gorm.io/gorm"
@@ -185,11 +186,32 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 - risk：risk_type(compliance|delivery|financial|technical)、risk_level(high|medium|low)、probability、response；
 - principle：principle_type(company_policy|industry_norm|compliance_req|business_principle)、applicable_scope、binding_force(mandatory|recommended|reference)、exceptions。
 
+memory_entities 不是名词、标签或类别清单，而是可以在未来会议中再次指向并承载事实的长期经营记忆对象。输出前必须确认：它具体关于谁、哪个项目、客户、产品、公司、制度或事项；只有“技术研发人员”“业务人员”“落地使用风险”“进度延期风险”“业务适配原则”这类角色泛称、风险类别和原则标签时，不得升级为 memory_entity。概念可以保留在 topics、claims 或事实内容中，但不要单独建立长期实体。
+当前 memory_entities 没有独立且可持久化的 subject_entity_id；因此 risk、matter、principle 的 canonical_name 必须保留足以定位主体或适用范围的最小完整称谓，不得把“CRM 升级项目的落地使用风险”缩短为“落地使用风险”。已有明确结构化适用范围时，可避免重复堆叠名称，但不能依赖未定义的 identity_subject 或 identity_binding 来掩盖空泛名称。
+person 只能是具体人物，或转写行首由 ASR 直接确认的具体 speaker 名称；“技术研发人员”等角色只能作为具体人物的 position，不能独立成为 person。matter 必须有具体项目、客户、产品、合同、功能或任务，并至少提供 status、priority、deliverable、dependency 之一；risk 必须绑定具体主体或范围，并至少提供 risk_type、risk_level、probability、response 之一；principle 必须有具体适用对象或范围，并至少提供 principle_type、applicable_scope、binding_force、exceptions 之一。
+只有包含状态、责任、动作、时间、风险、约束、依赖、结果、判断、承诺或变化等信息增量的事实才进入 memory_entities。只有 summary 没有 facts，或 facts 缺少 source_segment_ids 时，不输出该长期实体/事实；不要用 summary 代替事实证据。
+
 转写中的"A说话人"、"B说话人"、"说话人 1"、"Speaker 1"、"发言人"、"无说话人"、"未知说话人"是默认说话人标签，只能用于发言归属，绝不能作为 person 的 canonical_name、mention 或 alias。转写行首由 ASR 直接提供的具体人物名称（如"王天一"、"珠江钢琴王总"）可作为 person 实体；正文中其他人名仍需有明确证据，无法确认时宁可不输出。
 
 属性无法由证据确认时不要输出该属性；特别是不得编造联系人、截止日期、概率或人物关系。每条事实必须包含 source_segment_ids。canonical_name 只在身份明确时填写；同名但身份不明的人物不要擅自合并。
 
-七、输出格式
+七、老板认知候选
+
+可以额外输出少量可能反映老板判断方式的认知候选，但候选不是确认后的老板认知，也不是本阶段的经营建议。
+
+- 只提取会议中老板明确表达、反复强调或有明确行为证据支撑的原则、价值排序、判断标准、偏好、边界、前提或触发条件；
+- 单次、含糊、无法确认主体或只是通用管理常识的内容不要输出；
+- 候选必须保留 source_segment_ids；没有证据的候选不要输出；
+- cognition_type 必填，只能是 principle、priority、criterion、preference、boundary、assumption、trigger；
+- domain_code 必须从领域清单中选择：填清单内的英文编码（如 brand），个人自建领域填该领域名称；不得输出括号、解释或清单外的自造领域；
+- 领域认知（layer=situational）必须能归入清单中的某个领域；无法归入任何领域的内容不要输出为领域认知（既不要留空 domain_code，也不要自造领域）；
+- layer 只能是 core 或 situational；layer 为 core 时 domain_code 必须留空（核心认知跨赛道通用，不归属任何业务领域）；
+- source_type 使用 explicit_statement、behavior_observation 或 ai_inference；
+- confidence 必填，取 0 到 1 之间的两位小数（不是百分数，不得省略）：老板明确表述且能直接引用原文支撑时取 0.9 到 1.0；有明确行为或决策证据支撑时取 0.6 到 0.8；
+- 系统按 confidence 处置候选：不低于 0.9 自动转为正式老板认知，0.6 到 0.9 进入待老板确认列表，低于 0.6 直接丢弃；因此证据不足的候选不要输出，也不要为凑数输出低置信度候选；
+- 认知候选追求 precision，不追求覆盖所有可能的老板认知。
+
+八、输出格式
 
 严格输出 JSON，不输出 Markdown，不输出 JSON 之外的说明。
 
@@ -255,6 +277,20 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
       "claim_temp_id": "decision_001|commitment_001|action_001|risk_001|issue_001|viewpoint_001",
       "entity_temp_id": "entity_001",
       "role": "subject|owner|decision_maker|risk|dependency|stakeholder",
+      "source_segment_ids": []
+    }
+  ],
+  "cognition_candidates": [
+    {
+      "id": "cognition_001",
+      "title": "",
+      "statement": "",
+      "cognition_type": "principle|priority|criterion|preference|boundary|assumption|trigger",
+      "domain_code": "{{DOMAIN_OPTIONS}}",
+      "layer": "core|situational",
+      "scope": [],
+      "source_type": "explicit_statement|behavior_observation|ai_inference",
+      "confidence": 0.75,
       "source_segment_ids": []
     }
   ],
@@ -380,7 +416,11 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 5. 纪要主体是否根据内容自由组织，而不是套固定格式；
 6. 是否在纪要阶段做了过度经营推演；
 7. 是否存在原文未出现的人物、预算、权限或截止时间；
-8. memory_entities 的每个属性和事实是否都有对应证据。`
+8. memory_entities 的每个属性和事实是否都有对应证据；
+9. memory_entities 是否都有具体主体或适用范围，而不是角色、类别、风险标签或原则标签；
+10. person 是否为具体人物，matter/risk/principle 是否满足对应类型的最低属性要求；
+11. 每条长期事实是否包含可复用的信息增量，不能只有寒暄、确认或空泛判断；
+12. 是否把只有 summary、没有带 source_segment_ids 的内容错误升级为长期事实。`
 
 // getRecordingContextBudget 获取录音管线的上下文预算（token 数）。
 func getRecordingContextBudget(ctx context.Context, config *model.RecordingConfig) int {
@@ -395,13 +435,76 @@ func getRecordingContextBudget(ctx context.Context, config *model.RecordingConfi
 	return tokenlimit.DefaultContextBudget
 }
 
+// resolveMinutesLLMConfig 解析生成纪要所需的推理模型配置。
+//
+//   - 个人库（安心录）文件 / 非 recording_voice 文件：返回安心录 RecordingConfig（现状，不改变行为）
+//   - 非个人库 + recording_voice 解析的音频：改用 site 级 chunk 配置的 logic_reasoning 推理模型
+//     （/api/chunk-settings/model-config/site 配置）；site 未配置或渠道无效时返回 nil（调用方 skipped，不阻塞）
+func resolveMinutesLLMConfig(ctx context.Context, eid, fileID int64, anxinluCfg *model.RecordingConfig) *model.RecordingConfig {
+	file, err := model.GetFileByID(eid, fileID)
+	if err != nil || file == nil || file.ParseType != model.PLATFORM_KEY_RECORDING_VOICE {
+		return anxinluCfg
+	}
+	library, lerr := model.GetLibraryByID(eid, file.LibraryID)
+	if lerr != nil || library == nil || library.IsPersonalLibrary() {
+		return anxinluCfg
+	}
+
+	cfg, cerr := rag.NewChunkConfigService(model.DB).GetSiteConfig(eid, model.ChunkTypeDefault)
+	if cerr == nil {
+		if ch, modelName, serr := cfg.SelectPipelineLLM(); serr == nil && ch != nil && modelName != "" {
+			minutesCfg := *anxinluCfg
+			minutesCfg.InferenceModelID = ch.ChannelID
+			minutesCfg.InferenceModelName = modelName
+			logger.Infof(ctx, "【纪要】非个人库录音解析文件使用 site 级推理模型: fileID=%d channel_id=%d model=%s", fileID, ch.ChannelID, modelName)
+			return &minutesCfg
+		}
+	}
+	logger.Infof(ctx, "【纪要】非个人库录音解析文件未配置 site 级推理模型，跳过 fileID=%d", fileID)
+	return nil
+}
+
 // GenerateMeetingMinutes 转写完成后同步触发，生成会议纪要并写入 Summary(template_id=0)。
 //
 // 返回 nil 表示成功（或 skipped），返回 error 表示失败（管线应终止）。
-func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) error {
+func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) (returnErr error) {
+	traceFileName := ""
+	traceGeneration := int64(0)
+	if traceFile, traceErr := model.GetFileByID(eid, fileID); traceErr == nil && traceFile != nil {
+		traceFileName = traceFile.Path
+		traceGeneration = traceFile.InsightGeneration
+	}
+	traceCtx, trace, traceOwner := recordingdebug.EnsureTrace(ctx, eid, fileID, traceGeneration, traceFileName)
+	ctx = traceCtx
+	defer func() {
+		if traceOwner {
+			if returnErr != nil {
+				trace.Finish("failed", returnErr)
+			} else {
+				trace.Finish("success", nil)
+			}
+		}
+	}()
+	minutesStartedAt := time.Now()
 	config, err := model.ValidateOrCreateRecordingConfig(eid)
-	if err != nil || config.InferenceModelID == 0 || config.InferenceModelName == "" {
+	if err != nil {
+		logger.Infof(ctx, "【纪要】录音配置读取失败，跳过 fileID=%d err=%v", fileID, err)
+		setMeetingMinutesStatus(fileID, "skipped")
+		return nil
+	}
+
+	// 非个人库 + recording_voice 解析的音频：改用 site 级 logic_reasoning 推理模型
+	// （/api/chunk-settings/model-config/site 配置）；site 未配置时返回 nil → skipped 不阻塞。
+	if resolved := resolveMinutesLLMConfig(ctx, eid, fileID, config); resolved == nil {
+		setMeetingMinutesStatus(fileID, "skipped")
+		return nil
+	} else {
+		config = resolved
+	}
+
+	if config.InferenceModelID == 0 || config.InferenceModelName == "" {
 		logger.Infof(ctx, "【纪要】推理模型未配置，跳过 fileID=%d", fileID)
+		recordingdebug.RecordStage(ctx, "meeting_minutes", "会议纪要生成", "skipped", minutesStartedAt, map[string]interface{}{"reason": "model_not_configured"}, nil)
 		setMeetingMinutesStatus(fileID, "skipped")
 		return nil
 	}
@@ -432,6 +535,10 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 					}
 					setMeetingMinutesStatus(fileID, "completed")
 					logger.Infof(ctx, "【纪要】复用完成 fileID=%d src_file_id=%d", fileID, cand.ID)
+					recordingdebug.RecordStage(ctx, "meeting_minutes", "会议纪要生成", "success", minutesStartedAt, map[string]interface{}{
+						"reused":         true,
+						"source_file_id": cand.ID,
+					}, nil)
 					return nil
 				}
 			}
@@ -467,6 +574,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	// 2. 读取转写原文（原始 JSON，供 step 6 存储反转使用）
 	transcriptText, err := loadTranscriptTextRaw(ctx, eid, fileID)
 	if err != nil {
+		recordingdebug.RecordStage(ctx, "meeting_minutes_source", "读取转写原文", "failed", minutesStartedAt, map[string]interface{}{"file_id": fileID}, err)
 		logger.Errorf(ctx, "【纪要】读取转写文本失败 fileID=%d err=%v", fileID, err)
 		if client := keystone.GlobalClient; client != nil {
 			client.ReportTaskStageCompleted(keystone.TaskEvent{
@@ -483,6 +591,12 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("读取转写文本失败: %w", err)
 	}
+	recordingdebug.RecordStage(ctx, "meeting_minutes_source", "读取转写原文", "success", minutesStartedAt, map[string]interface{}{
+		"input_kind":   classifyRecordingContent(transcriptText),
+		"source_chars": len([]rune(transcriptText)),
+		"started_at":   startedAt,
+		"ended_at":     endedAt,
+	}, nil)
 
 	// 3. 压缩转写文本（通过统一入口，传入原始 JSON 避免重复 DB 查询）
 	prepared, err := getOrCompressTranscript(ctx, TranscriptPrepareRequest{
@@ -499,6 +613,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		InferenceModelName: config.InferenceModelName,
 	})
 	if err != nil {
+		recordingdebug.RecordStage(ctx, "meeting_minutes_compress", "纪要输入压缩", "failed", minutesStartedAt, map[string]interface{}{}, err)
 		logger.Errorf(ctx, "【纪要】转写压缩失败 fileID=%d err=%v", fileID, err)
 		if client := keystone.GlobalClient; client != nil {
 			client.ReportTaskStageCompleted(keystone.TaskEvent{
@@ -515,11 +630,19 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("转写压缩失败: %w", err)
 	}
+	recordingdebug.RecordStage(ctx, "meeting_minutes_compress", "纪要输入压缩", "success", minutesStartedAt, map[string]interface{}{
+		"input_kind":         prepared.InputKind,
+		"source_tokens":      prepared.SourceTokens,
+		"result_tokens":      prepared.ResultTokens,
+		"cache_hit":          prepared.CacheHit,
+		"compression_rounds": prepared.CompressionRounds,
+		"degraded":           prepared.Degraded,
+	}, nil)
 	logger.Infof(ctx, "【纪要】转写压缩完成 fileID=%d inputKind=%s sourceTokens=%d resultTokens=%d cacheHit=%v degraded=%v",
 		fileID, prepared.InputKind, prepared.SourceTokens, prepared.ResultTokens, prepared.CacheHit, prepared.Degraded)
 
 	// 4. 调用 Prompt 2 生成纪要
-	result, err := callMeetingMinutesLLM(ctx, config, fileID, prepared.Text, startedAt, endedAt)
+	result, err := callMeetingMinutesLLM(ctx, config, eid, userID, fileID, prepared.Text, startedAt, endedAt)
 	if err != nil {
 		logger.Errorf(ctx, "【纪要】生成失败 fileID=%d err=%v", fileID, err)
 		if client := keystone.GlobalClient; client != nil {
@@ -589,6 +712,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		}
 		return nil
 	}); err != nil {
+		recordingdebug.RecordStage(ctx, "meeting_minutes_persist", "保存会议纪要", "failed", minutesStartedAt, map[string]interface{}{"template_id": 0}, err)
 		logger.Errorf(ctx, "【纪要】保存纪要失败 fileID=%d err=%v", fileID, err)
 		if client := keystone.GlobalClient; client != nil {
 			client.ReportTaskStageCompleted(keystone.TaskEvent{
@@ -605,6 +729,10 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		setMeetingMinutesStatus(fileID, "failed")
 		return fmt.Errorf("保存纪要失败: %w", err)
 	}
+	recordingdebug.RecordStage(ctx, "meeting_minutes_persist", "保存会议纪要", "success", minutesStartedAt, map[string]interface{}{
+		"template_id":  0,
+		"result_chars": len([]rune(result)),
+	}, nil)
 
 	elapsed := time.Since(startTime)
 	logger.Infof(ctx, "【纪要】生成成功 fileID=%d elapsed=%v", fileID, elapsed)
@@ -612,12 +740,27 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 	// 纪要已经以新版本落库后，编译结构化会议记忆。编译失败不阻断纪要和洞察主链路，
 	// GenerateInsights 仍会使用现有实体+历史纪要 fallback。
 	if recordingMemoryExtractionEnabled(config) {
-		if _, memoryErr := CompileRecordingMemory(ctx, eid, fileID, userID); memoryErr != nil {
+		memoryCount, memoryErr := CompileRecordingMemory(ctx, eid, fileID, userID)
+		if memoryErr != nil {
 			logger.Warnf(ctx, "【会议记忆】当前纪要编译失败，洞察将降级: fileID=%d err=%v", fileID, memoryErr)
 		}
-		if _, entityMemoryErr := CompileRecordingEntityMemory(ctx, eid, fileID, userID); entityMemoryErr != nil {
+		entityMemoryCount, entityMemoryErr := CompileRecordingEntityMemory(ctx, eid, fileID, userID)
+		if entityMemoryErr != nil {
 			logger.Warnf(ctx, "【实体记忆】当前纪要编译失败，洞察将降级: fileID=%d err=%v", fileID, entityMemoryErr)
 		}
+		memoryStatus := "success"
+		if memoryErr != nil || entityMemoryErr != nil {
+			memoryStatus = "degraded"
+		}
+		recordingdebug.RecordStage(ctx, "memory_compile", "编译会议记忆", memoryStatus, minutesStartedAt, map[string]interface{}{
+			"memory_count":        memoryCount,
+			"entity_memory_count": entityMemoryCount,
+			"memory_error":        errorString(memoryErr),
+			"entity_memory_error": errorString(entityMemoryErr),
+		}, nil)
+	}
+	if _, cognitionErr := CompileRecordingCognitionCandidates(ctx, eid, fileID, userID); cognitionErr != nil {
+		logger.Warnf(ctx, "【老板认知】当前纪要候选编译失败，纪要和洞察不受阻断: fileID=%d err=%v", fileID, cognitionErr)
 	}
 
 	// 8. 按会议标题重命名文件（失败不阻塞管线）
@@ -634,8 +777,19 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) erro
 		})
 	}
 	setMeetingMinutesStatus(fileID, "completed")
+	recordingdebug.RecordStage(ctx, "meeting_minutes", "会议纪要生成", "success", minutesStartedAt, map[string]interface{}{
+		"result_chars": len([]rune(result)),
+		"elapsed_ms":   time.Since(minutesStartedAt).Milliseconds(),
+	}, nil)
 
 	return nil
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func resolveRecordingMinutesOwnerID(userID, fileOwnerID int64) int64 {
@@ -1226,8 +1380,33 @@ func splitBySentence(text string) []string {
 	return sentences
 }
 
+// formatUserDomainOptions 将用户当前可用的业务领域格式化为 Prompt 2 中的候选描述。
+func formatUserDomainOptions(ctx context.Context, eid, userID int64) string {
+	domainSvc := NewRecordingCognitionDomainService(eid, userID)
+	domains, err := domainSvc.List(ctx)
+	if err != nil || len(domains) == 0 {
+		return "strategy|growth|market|brand|sales|product|finance|organization|talent|channel|research_and_development"
+	}
+	items := make([]string, 0, len(domains))
+	for _, d := range domains {
+		if d.Code != "" {
+			items = append(items, fmt.Sprintf("%s(%s)", d.Name, d.Code))
+		} else {
+			items = append(items, d.Name)
+		}
+	}
+	return strings.Join(items, "|")
+}
+
+// buildMeetingMinutesSystemPrompt 构造带有当前用户有效业务领域的 Prompt 2 System Prompt。
+func BuildMeetingMinutesSystemPrompt(ctx context.Context, eid, userID int64) string {
+	domainOptions := formatUserDomainOptions(ctx, eid, userID)
+	// 模板里用占位符，避免 prompt 文案调整后替换锚点失配导致领域清单注入静默失效
+	return strings.Replace(prompt2SystemPrompt, "{{DOMAIN_OPTIONS}}", domainOptions, 1)
+}
+
 // callMeetingMinutesLLM 直接调用 Prompt 2 生成会议纪要。
-func callMeetingMinutesLLM(ctx context.Context, config *model.RecordingConfig, fileID int64, transcript string, startedAt, endedAt int64) (string, error) {
+func callMeetingMinutesLLM(ctx context.Context, config *model.RecordingConfig, eid, userID, fileID int64, transcript string, startedAt, endedAt int64) (string, error) {
 	buildRequest := func() *relaymodel.GeneralOpenAIRequest {
 		startedAtStr := ""
 		endedAtStr := ""
@@ -1257,16 +1436,17 @@ func callMeetingMinutesLLM(ctx context.Context, config *model.RecordingConfig, f
 
 严格按照系统要求输出 JSON。`, fileID, startedAtStr, endedAtStr, transcript)
 
+		systemPrompt := BuildMeetingMinutesSystemPrompt(ctx, eid, userID)
 		return &relaymodel.GeneralOpenAIRequest{
 			Model: config.InferenceModelName,
 			Messages: []relaymodel.Message{
-				{Role: "system", Content: prompt2SystemPrompt},
+				{Role: "system", Content: systemPrompt},
 				{Role: "user", Content: userPrompt},
 			},
 		}
 	}
 
-	return callLLMWithRetry(ctx, config, buildRequest)
+	return callLLMWithRetry(recordingdebug.WithLLMStage(ctx, recordingdebug.LLMStage(ctx, "meeting_minutes_llm")), config, buildRequest)
 }
 
 // setStageStatus 更新 FileCleaningRuleInfo 中指定阶段的状态。
@@ -1366,10 +1546,20 @@ var callLLMWithRetry = func(ctx context.Context, config *model.RecordingConfig, 
 			return "", ctx.Err()
 		}
 		request := buildRequest()
+		requestModel := config.InferenceModelName
+		var requestMessages interface{}
+		if request != nil {
+			if request.Model != "" {
+				requestModel = request.Model
+			}
+			requestMessages = request.Messages
+		}
 		ctxTimeout, cancel := context.WithTimeout(ctx, 120*time.Second)
+		llmStartedAt := time.Now()
 		result, err, openAIErr := generator.TestChannel(ctxTimeout, channel, request)
 		cancel()
 		<-llmSemaphore
+		recordingdebug.RecordLLM(ctx, recordingdebug.LLMStage(ctx, "llm"), requestModel, requestMessages, result, time.Since(llmStartedAt).Milliseconds(), attempt+1, err)
 
 		if err == nil {
 			return result, nil
@@ -1766,6 +1956,7 @@ func renameFileByMeetingTitle(ctx context.Context, eid, fileID int64, file *mode
 		logger.Errorf(ctx, "【纪要】重命名失败：DB更新出错 fileID=%d err=%v", fileID, result.Error)
 		return
 	}
+	model.InvalidateCapabilityFiletree(eid, file.LibraryID)
 
 	oldPath := file.Path
 	file.Path = uniquePath

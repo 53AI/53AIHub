@@ -16,6 +16,35 @@ func (m *MemoryExtractionConfig) IsEffectivelyEnabled() bool {
 	return m != nil && m.Enabled && len(m.Types) > 0
 }
 
+// CognitionConfidenceConfig 企业级：智能提炼认知的置信度阈值。
+// 未配置时回落默认值；auto_confirm_threshold 大于 1 表示关闭自动确认，discard_threshold 不大于 0 表示关闭低分丢弃。
+type CognitionConfidenceConfig struct {
+	AutoConfirmThreshold float64 `json:"auto_confirm_threshold"`
+	DiscardThreshold     float64 `json:"discard_threshold"`
+}
+
+// Effective 返回生效阈值：未配置或未设置时回落默认值。
+func (c *CognitionConfidenceConfig) Effective() (autoConfirm, discard float64) {
+	autoConfirm, discard = DefaultCognitionAutoConfirmThreshold, DefaultCognitionDiscardThreshold
+	if c == nil {
+		return
+	}
+	if c.AutoConfirmThreshold > 0 {
+		autoConfirm = c.AutoConfirmThreshold
+	}
+	if c.DiscardThreshold > 0 {
+		discard = c.DiscardThreshold
+	}
+	return
+}
+
+const (
+	// DefaultCognitionAutoConfirmThreshold 智能提炼认知的默认自动确认阈值：置信度不低于该值直接转为正式认知。
+	DefaultCognitionAutoConfirmThreshold = 0.9
+	// DefaultCognitionDiscardThreshold 智能提炼认知的默认丢弃阈值：置信度低于该值不落库。
+	DefaultCognitionDiscardThreshold = 0.6
+)
+
 type RecordingConfig struct {
 	Enabled                 bool                    `json:"enabled"`
 	ParserPlatform          string                  `json:"parser_platform"`
@@ -28,6 +57,8 @@ type RecordingConfig struct {
 	MemoryExtraction        *MemoryExtractionConfig `json:"memory_extraction,omitempty"`
 	// InsightRegenerateEnabled 企业级开关：是否允许重新生成洞察。nil 表示允许（默认，保持存量行为不变）。
 	InsightRegenerateEnabled *bool `json:"insight_regenerate_enabled,omitempty"`
+	// CognitionConfidence 智能提炼认知的置信度阈值（本轮仅预留配置字段，后台写入下轮开放）。
+	CognitionConfidence *CognitionConfidenceConfig `json:"cognition_confidence,omitempty"`
 }
 
 func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {

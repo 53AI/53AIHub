@@ -24,12 +24,14 @@ import (
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/session"
 	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/controller/relay/agentcore"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
 	agentexec "github.com/53AI/53AIHub/service/agent"
+	chatdebug "github.com/53AI/53AIHub/service/chat_debug"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/53AI/53AIHub/service/skill"
 	"github.com/53AI/53AIHub/service/tools"
@@ -1142,7 +1144,6 @@ func (w *LLMDeltaCollector) flushVisibleControlState() {
 }
 
 // GetContent returns the buffered content and assembled tool calls for parsing.
-// GetContent returns the buffered content and assembled tool calls for parsing.
 // In passthrough mode, returns empty values as content was forwarded directly.
 func (w *LLMDeltaCollector) GetContent() (string, string, []relay_model.Tool) {
 	w.mu.Lock()
@@ -1160,6 +1161,14 @@ func (w *LLMDeltaCollector) GetContent() (string, string, []relay_model.Tool) {
 	toolCalls = w.assembledToolCallsLocked()
 	content := w.content.String()
 	reasoning := w.reasoningContent.String()
+	return content, reasoning, toolCalls
+}
+
+func collectAgentLoopResponse(w *LLMDeltaCollector) (string, string, []relay_model.Tool) {
+	content, reasoning, toolCalls := w.GetContent()
+	if w.IsPassthrough() {
+		content, reasoning = w.GetPassthroughContent()
+	}
 	return content, reasoning, toolCalls
 }
 
@@ -3204,7 +3213,7 @@ agentLoop:
 			currentRequest.Messages = append([]relay_model.Message(nil), chatRequest.Messages...)
 			currentRequest.Messages = append(currentRequest.Messages, relay_model.Message{
 				Role:    "system",
-				Content: "现在进入最终答复阶段。只输出给用户的最终答案：不要调用任何工具，不要继续规划，不要复述内部思考过程，也不要输出 <decision> 控制标签。",
+				Content: "现在进入最终答复阶段。只输出给用户的最终答案：不要调用任何工具，不要继续规划，不要复述内部思考过程，也不要输出 <decision> 控制标签。回答必须为信息点标注引用编号，格式固定为半角 [Source:x-y]，即使回答偏好要求口语化，也必须保留引用编号，禁止使用全角括号【】。",
 			})
 		}
 
@@ -3323,7 +3332,7 @@ agentLoop:
 		if streamIntermediate && deltaCollector != nil {
 			// Get buffered content from delta collector
 			var streamedToolCalls []relay_model.Tool
-			contentStr, reasoningStr, streamedToolCalls = deltaCollector.GetContent()
+			contentStr, reasoningStr, streamedToolCalls = collectAgentLoopResponse(deltaCollector)
 			// Keep one compact durable snapshot for every contiguous llm_delta
 			// block that was shown live. AgentRun remains the realtime event log;
 			// MessageProcessStep is the history projection used after reopen.
@@ -3669,7 +3678,7 @@ agentLoop:
 						}
 						finishBytes, _ := json.Marshal(finishChunk)
 						c.Writer.Write([]byte("data: "))
-						c.Writer.Write(finishBytes)
+						c.Writer.Write(injectRequestID(finishBytes, messageStatus.RequestId))
 						c.Writer.Write([]byte("\n\n"))
 						if flusher, ok := c.Writer.(http.Flusher); ok {
 							flusher.Flush()
@@ -4397,6 +4406,7 @@ agentLoop:
 						}
 					}
 				}
+				chatdebug.RecordTool(ctx, functionName, args, output, time.Since(toolStartTime).Milliseconds(), err)
 				if toolStatus == model.ToolCallStatusFailed || resultExitCode != 0 || err != nil {
 					failureCategory, categoryCount := recordRepeatedSandboxToolFailure(
 						toolFailureCount,
@@ -4645,7 +4655,7 @@ agentLoop:
 					}
 					finishBytes, _ := json.Marshal(finishChunk)
 					c.Writer.Write([]byte("data: "))
-					c.Writer.Write(finishBytes)
+					c.Writer.Write(injectRequestID(finishBytes, messageStatus.RequestId))
 					c.Writer.Write([]byte("\n\n"))
 					if flusher, ok := c.Writer.(http.Flusher); ok {
 						flusher.Flush()
@@ -4773,7 +4783,7 @@ agentLoop:
 		runFinalizer.Finalize(hardStopRunStatus, stopCode, stopDetail)
 		return
 	}
-	c.Data(200, "application/json; charset=utf-8", injectOutputFilesToResponse(body, sessionOutputFiles))
+	c.Data(200, "application/json; charset=utf-8", injectRequestID(injectOutputFilesToResponse(body, sessionOutputFiles), finalRequestID))
 	runFinalizer.Finalize(hardStopRunStatus, stopCode, stopDetail)
 }
 
@@ -5170,7 +5180,7 @@ func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoning
 	}
 	finishBytes, _ := json.Marshal(finishChunk)
 	c.Writer.Write([]byte("data: "))
-	c.Writer.Write(finishBytes)
+	c.Writer.Write(injectRequestID(finishBytes, requestId))
 	c.Writer.Write([]byte("\n\n"))
 	if flusher, ok := c.Writer.(http.Flusher); ok {
 		flusher.Flush()
@@ -5242,7 +5252,34 @@ func replayGinResponse(c *gin.Context, recorder *GinResponseRecorder, body []byt
 	c.Writer.Write(body)
 }
 
+// injectRequestID 在非流式 JSON 响应体顶层注入 request_id（与 id/choices 同级），
+// 便于按 request_id 在 api_trace / chat_debug 中追踪一次调用。
+// 非 chat.completion 形状、已存在该字段或解析失败时原样返回（绝不破坏响应）。
+func injectRequestID(body []byte, requestID string) []byte {
+	if len(body) == 0 || requestID == "" {
+		return body
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+	if _, ok := payload["choices"]; !ok {
+		return body
+	}
+	if _, exists := payload["request_id"]; exists {
+		return body
+	}
+	payload["request_id"] = requestID
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return body
+	}
+	return encoded
+}
+
 func replayGinResponseSafe(c *gin.Context, recorder *GinResponseRecorder, body []byte) {
+	// 非流式响应统一回填 request_id（顶层，与 message/id 同级）；SSE 走 X-Request-ID 响应头。
+	body = injectRequestID(body, c.GetString(helper.RequestIdKey))
 	if recorder == nil {
 		c.Writer.Write(body)
 		return

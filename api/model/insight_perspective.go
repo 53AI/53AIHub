@@ -7,7 +7,17 @@ type InsightPerspective string
 
 const (
 	// InsightPerspectiveAuto 表示由企业开关控制，依据本次录音纪要自动判断视角。
-	InsightPerspectiveAuto             InsightPerspective = "auto"
+	InsightPerspectiveAuto                  InsightPerspective = "auto"
+	InsightPerspectiveManagementMeeting     InsightPerspective = "management_meeting"
+	InsightPerspectiveCustomerCommunication InsightPerspective = "customer_communication"
+	InsightPerspectiveProjectReview         InsightPerspective = "project_review"
+	InsightPerspectiveBusinessCooperation   InsightPerspective = "business_cooperation"
+	InsightPerspectiveBusinessInnovation    InsightPerspective = "business_innovation"
+	InsightPerspectiveEmployeeConversation  InsightPerspective = "employee_conversation"
+	InsightPerspectiveIndustryExchange      InsightPerspective = "industry_exchange"
+	InsightPerspectiveManagementCourse      InsightPerspective = "management_course"
+
+	// 兼容历史记录。它们不再通过 InsightPerspectiveOptions 暴露给新用户。
 	InsightPerspectiveExternalTraining InsightPerspective = "external_training"
 	InsightPerspectiveExternalSpeech   InsightPerspective = "external_speech"
 	InsightPerspectiveRoadshow         InsightPerspective = "roadshow"
@@ -15,10 +25,13 @@ const (
 	InsightPerspectiveInternalMeeting  InsightPerspective = "internal_meeting"
 	InsightPerspectiveLecture          InsightPerspective = "lecture"
 	InsightPerspectiveBook             InsightPerspective = "book"
+	InsightPerspectiveOneOnOne         InsightPerspective = "one_on_one"
+	InsightPerspectiveHiring           InsightPerspective = "hiring"
+	InsightPerspectiveGeneral          InsightPerspective = "general"
 )
 
 // DefaultInsightPerspective 是自动判断关闭、判断失败或历史数据需要兼容时的安全回退值。
-const DefaultInsightPerspective = InsightPerspectiveInternalMeeting
+const DefaultInsightPerspective = InsightPerspectiveManagementMeeting
 
 type InsightPerspectiveOption struct {
 	Key         InsightPerspective `json:"key"`
@@ -27,14 +40,14 @@ type InsightPerspectiveOption struct {
 }
 
 var insightPerspectiveOptions = []InsightPerspectiveOption{
-	{Key: InsightPerspectiveAuto, Name: "自动判断", Description: "根据本次录音生成的纪要判断最合适的洞察视角；需要企业开启多视角功能。"},
-	{Key: InsightPerspectiveExternalTraining, Name: "参与外部培训会议", Description: "把外部培训内容转化为适合公司落地的认知、方法和验证行动。"},
-	{Key: InsightPerspectiveExternalSpeech, Name: "去别人公司演讲", Description: "评估分享效果、客户信号、品牌定位和后续关系推进。"},
-	{Key: InsightPerspectiveRoadshow, Name: "路演会议", Description: "评估目标听众、价值主张、证据强度、异议和转化机会。"},
-	{Key: InsightPerspectiveSalesVisit, Name: "销售拜访", Description: "识别客户真实需求、商机质量、决策链、承诺和下一步动作。"},
-	{Key: InsightPerspectiveInternalMeeting, Name: "公司内部会议", Description: "识别决策、权责、依赖、风险、行动和升级条件。"},
-	{Key: InsightPerspectiveLecture, Name: "听一堂课", Description: "提炼课程中可验证的知识，并转化为个人和组织的练习。"},
-	{Key: InsightPerspectiveBook, Name: "读一本书", Description: "把书中思想翻译为老板、公司和行业的判断与行动。"},
+	{Key: InsightPerspectiveManagementMeeting, Name: "管理例会", Description: "聚焦公司内部管理问题、经营安排、责任分工和执行门禁。"},
+	{Key: InsightPerspectiveCustomerCommunication, Name: "客户交流", Description: "识别客户真实问题、关系状态、沟通信号和下一步承诺。"},
+	{Key: InsightPerspectiveProjectReview, Name: "项目复盘", Description: "围绕具体项目或事件分析结果、因果、教训和改进动作。"},
+	{Key: InsightPerspectiveBusinessCooperation, Name: "商业合作", Description: "评估上下游、渠道伙伴和潜在商业机会的合作可能与验证门槛。"},
+	{Key: InsightPerspectiveBusinessInnovation, Name: "业务创新", Description: "分析团队、流程、产品和业务改进的价值、成本与验证方式。"},
+	{Key: InsightPerspectiveEmployeeConversation, Name: "员工谈话", Description: "聚焦绩效沟通、员工状态、成长、关系和管理者承诺。"},
+	{Key: InsightPerspectiveIndustryExchange, Name: "行业交流", Description: "提炼同行经营情况、行业观点、外部信号和对本公司的影响。"},
+	{Key: InsightPerspectiveManagementCourse, Name: "管理课程", Description: "判断销售、产品、品牌和管理课程对个人与企业的实际帮助。"},
 }
 
 // InsightPerspectiveOptions 返回内置视角的副本，避免调用方修改全局配置。
@@ -49,6 +62,22 @@ func IsValidInsightPerspective(raw string) bool {
 	if value == "" {
 		return true
 	}
+	if IsCanonicalInsightPerspective(value) || value == InsightPerspectiveAuto {
+		return true
+	}
+	switch value {
+	case InsightPerspectiveExternalTraining, InsightPerspectiveExternalSpeech,
+		InsightPerspectiveRoadshow, InsightPerspectiveSalesVisit,
+		InsightPerspectiveInternalMeeting, InsightPerspectiveLecture,
+		InsightPerspectiveBook, InsightPerspectiveOneOnOne,
+		InsightPerspectiveHiring, InsightPerspectiveGeneral:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsCanonicalInsightPerspective(value InsightPerspective) bool {
 	for _, option := range insightPerspectiveOptions {
 		if option.Key == value {
 			return true
@@ -57,16 +86,31 @@ func IsValidInsightPerspective(raw string) bool {
 	return false
 }
 
-// NormalizeInsightPerspective 空值表示未设置，统一归一化为自动判断；未知值回退到内部会议。
+// NormalizeInsightPerspective 空值表示未设置，统一归一化为自动判断；历史值保持原样以兼容存量记录。
 func NormalizeInsightPerspective(raw string) InsightPerspective {
 	value := InsightPerspective(strings.ToLower(strings.TrimSpace(raw)))
 	if value == "" {
 		return InsightPerspectiveAuto
 	}
-	for _, option := range insightPerspectiveOptions {
-		if option.Key == value {
-			return value
-		}
+	if IsValidInsightPerspective(string(value)) {
+		return value
 	}
 	return DefaultInsightPerspective
+}
+
+// CanonicalInsightPerspective 将可以无歧义迁移的旧场景映射到正式场景。
+// external_speech、roadshow 和 book 依赖具体内容，保留旧值交给兼容 Prompt 处理。
+func CanonicalInsightPerspective(value InsightPerspective) InsightPerspective {
+	switch value {
+	case InsightPerspectiveExternalTraining, InsightPerspectiveLecture:
+		return InsightPerspectiveManagementCourse
+	case InsightPerspectiveSalesVisit:
+		return InsightPerspectiveCustomerCommunication
+	case InsightPerspectiveInternalMeeting, InsightPerspectiveGeneral:
+		return InsightPerspectiveManagementMeeting
+	case InsightPerspectiveOneOnOne:
+		return InsightPerspectiveEmployeeConversation
+	default:
+		return value
+	}
 }

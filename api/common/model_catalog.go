@@ -646,5 +646,107 @@ const KmModelsJSON = `{
                 }
             ]
         }
+        ,
+        {
+            "platform_name": "GLM Coding Plan",
+            "platform_id": "glm_coding_plan",
+            "channel_type": 1018,
+            "base_url": "https://open.bigmodel.cn/api/coding/paas/v4",
+            "can_multiple": false,
+            "categories": [
+                {
+                    "model_type": 1,
+                    "category_id": "chat",
+                    "models": [
+                        {
+                            "model_id": "glm-5.3",
+                            "model_name": "GLM-5.3",
+                            "deep_thinking": true,
+                            "vision": false
+                        },
+                        {
+                            "model_id": "glm-5.3-flash",
+                            "model_name": "GLM-5.3-Flash",
+                            "deep_thinking": true,
+                            "vision": true
+                        },
+                        {
+                            "model_id": "glm-5.2",
+                            "model_name": "GLM-5.2",
+                            "deep_thinking": true,
+                            "vision": false
+                        },
+                        {
+                            "model_id": "glm-4.7",
+                            "model_name": "GLM-4.7",
+                            "deep_thinking": false,
+                            "vision": false
+                        }
+                    ]
+                }
+            ]
+        }
+        ,
+        {
+            "platform_name": "腾讯云 TokenHub",
+            "platform_id": "tencent_tokenhub",
+            "channel_type": 1019,
+            "base_url": "https://tokenhub.tencentmaas.com",
+            "can_multiple": true,
+            "categories": [
+                {
+                    "model_type": 1,
+                    "models": [
+                        {
+                            "model_id": "hy4-preview",
+                            "model_name": "Hy4-Preview",
+                            "deep_thinking": true,
+                            "vision": false
+                        },
+                        {
+                            "model_id": "hy3",
+                            "model_name": "Hy3",
+                            "deep_thinking": true,
+                            "vision": false
+                        },
+                        {
+                            "model_id": "deepseek-v4-pro",
+                            "model_name": "DeepSeek-V4-Pro",
+                            "deep_thinking": true,
+                            "vision": false
+                        },
+                        {
+                            "model_id": "deepseek-v4-flash",
+                            "model_name": "DeepSeek-V4-Flash",
+                            "deep_thinking": true,
+                            "vision": false
+                        },
+                        {
+                            "model_id": "kimi-k3",
+                            "model_name": "Kimi-K3",
+                            "deep_thinking": true,
+                            "vision": true
+                        }
+                    ]
+                },
+                {
+                    "model_type": 2,
+                    "models": [
+                        {
+                            "model_id": "kinfra-text-embedding-4b",
+                            "model_name": "Kinfra-Text-Embedding-4B",
+                            "dimensions": 2560,
+                            "max_tokens": 32768
+                        },
+                        {
+                            "model_id": "kinfra-text-embedding-0.6b",
+                            "model_name": "Kinfra-Text-Embedding-0.6B",
+                            "dimensions": 1024,
+                            "max_tokens": 32768
+                        }
+                    ]
+                }
+            ]
+        }
     ]
 }`

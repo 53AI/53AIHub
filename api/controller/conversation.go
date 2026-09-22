@@ -64,6 +64,7 @@ type ConversationListRequest struct {
 	Keyword          string `json:"keyword" form:"keyword" example:"搜索关键词"`
 	AgentID          int64  `json:"agent_id" form:"agent_id" example:"1"`
 	ConversationType *int   `json:"conversation_type" form:"conversation_type" example:"0"`
+	DocumentType     string `json:"document_type" form:"document_type" example:"file"`
 	Offset           int    `json:"offset" form:"offset" example:"0"`
 	Limit            int    `json:"limit" form:"limit" example:"10"`
 }
@@ -179,7 +180,7 @@ func GetConversation(c *gin.Context) {
 }
 
 // @Summary 获取会话列表
-// @Description 获取当前用户的会话列表。支持按智能体ID和会话类型筛选。
+// @Description 获取当前用户的会话列表。支持按智能体ID、会话类型和文档类型筛选。
 // @Description 会话类型：0=正式会话（默认查询），1=调试会话。不传conversation_type时默认查询正式会话。
 // @Tags Conversation
 // @Produce json
@@ -187,6 +188,7 @@ func GetConversation(c *gin.Context) {
 // @Param keyword query string false "搜索关键词"
 // @Param agent_id query int false "智能体ID，按智能体筛选会话"
 // @Param conversation_type query int false "会话类型：0=正式会话（默认），1=调试会话"
+// @Param document_type query string false "文档类型：file=会议文档，wiki=知识库文档"
 // @Param offset query int false "偏移量" default(0)
 // @Param limit query int false "每页数量" default(10)
 // @Success 200 {object} model.CommonResponse{data=ConversationResponse} "成功返回会话列表"
@@ -212,7 +214,7 @@ func GetConversations(c *gin.Context) {
 		limit = 20
 	}
 
-	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPaged(config.GetEID(c), config.GetUserId(c), req.AgentID, convType, session.GetVisitorID(c), req.Keyword, offset, limit)
+	conversations, total, err := model.GetConversationsByUserIDAndTypeWithVisitorPagedAndDocumentType(config.GetEID(c), config.GetUserId(c), req.AgentID, convType, session.GetVisitorID(c), req.DocumentType, req.Keyword, offset, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return

@@ -60,10 +60,10 @@ func GetKnowledgeRetrievalChunks(c *gin.Context) {
 		return
 	}
 
-	// 获取知识点分块信息
-	knowledgeChunk, err := model.GetDocumentChunkByID(eid, knowledgeChunkID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("知识点分块不存在"))
+	// 获取知识点分块信息并验证权限
+	userID := config.GetUserId(c)
+	knowledgeChunk, _, ok := requireChunkPermission(c, eid, userID, knowledgeChunkID, model.PERMISSION_EDIT_ALL, "无权限访问此知识点分块")
+	if !ok {
 		return
 	}
 
@@ -167,10 +167,9 @@ func CreateRetrievalChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取知识点分块信息
-	knowledgeChunk, err := model.GetDocumentChunkByID(eid, knowledgeChunkID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("知识点分块不存在"))
+	// 获取知识点分块信息并验证权限
+	knowledgeChunk, _, ok := requireChunkPermission(c, eid, userID, knowledgeChunkID, model.PERMISSION_EDIT_ALL, "无权限管理此知识点分块")
+	if !ok {
 		return
 	}
 
@@ -304,10 +303,9 @@ func UpdateRetrievalChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取检索块信息以检查文档锁定状态
-	retrievalChunk, err := model.GetRetrievalChunkByID(eid, retrievalChunkID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("检索块不存在"))
+	// 获取检索块信息并验证权限
+	retrievalChunk, _, ok := requireRetrievalChunkPermission(c, eid, userID, retrievalChunkID, model.PERMISSION_EDIT_ALL, "无权限管理此检索块")
+	if !ok {
 		return
 	}
 
@@ -391,10 +389,9 @@ func DeleteRetrievalChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取检索块信息以检查文档锁定状态
-	retrievalChunk, err := model.GetRetrievalChunkByID(eid, retrievalChunkID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("检索块不存在"))
+	// 获取检索块信息并验证权限
+	retrievalChunk, _, ok := requireRetrievalChunkPermission(c, eid, userID, retrievalChunkID, model.PERMISSION_EDIT_ALL, "无权限管理此检索块")
+	if !ok {
 		return
 	}
 
@@ -478,6 +475,11 @@ func MergeRetrievalChunks(c *gin.Context) {
 	firstChunk, err := model.GetRetrievalChunkByID(eid, req.ChunkIDs[0])
 	if err != nil {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("检索块不存在"))
+		return
+	}
+
+	// 验证文件权限
+	if _, ok := requireFilePermission(c, eid, userID, firstChunk.FileID, model.PERMISSION_EDIT_ALL, "无权限管理此文件检索块"); !ok {
 		return
 	}
 
@@ -579,10 +581,9 @@ func SplitRetrievalChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取检索块信息以检查文档锁定状态
-	retrievalChunk, err := model.GetRetrievalChunkByID(eid, retrievalChunkID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("检索块不存在"))
+	// 获取检索块信息并验证权限
+	retrievalChunk, _, ok := requireRetrievalChunkPermission(c, eid, userID, retrievalChunkID, model.PERMISSION_EDIT_ALL, "无权限管理此检索块")
+	if !ok {
 		return
 	}
 
@@ -673,12 +674,10 @@ func GetChunkRelationStats(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的文件ID"))
 		return
 	}
-
-	// 获取文件信息
-	var file model.File
-	err = model.DB.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("文件不存在"))
+	// 验证文件权限
+	userID := config.GetUserId(c)
+	file, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_EDIT_ALL, "无权限访问此文件分块统计")
+	if !ok {
 		return
 	}
 
@@ -717,7 +716,7 @@ func GetChunkRelationStats(c *gin.Context) {
 	}
 
 	response := GetChunkRelationStatsResponse{
-		FileInfo:            &file,
+		FileInfo:            file,
 		KnowledgeChunkCount: knowledgeChunkCount,
 		RetrievalChunkCount: retrievalChunkCount,
 		RelationStats:       relationStats,

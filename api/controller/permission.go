@@ -6,12 +6,20 @@ import (
 	"path"
 	"strconv"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
 	"github.com/gin-gonic/gin"
 )
+
+// PermissionViewTypeAdmin 后台权限管理视图标记：管理员携带 view_type=admin 调用权限系列
+// 接口时豁免资源级 MANAGE 校验（供后台控制台对接；参数不授权，仍须管理员角色）。
+const PermissionViewTypeAdmin = "admin"
 
 // PermissionRequest 权限请求结构体
 // @Description 单个权限请求的结构体
@@ -27,6 +35,63 @@ type BatchPermissionRequest struct {
 	Permissions []PermissionRequest `json:"permissions" binding:"required"` // 权限列表
 }
 
+func validateResourceBelongsToEid(eid int64, resourceType int, resourceID int64) error {
+	switch resourceType {
+	case model.RESOURCE_TYPE_SPACE:
+		space, err := model.GetSpaceByID(eid, resourceID)
+		if err != nil || space == nil {
+			return errors.New("空间不存在")
+		}
+	case model.RESOURCE_TYPE_LIBRARY:
+		lib, err := model.GetLibraryByID(eid, resourceID)
+		if err != nil || lib == nil {
+			return errors.New("知识库不存在")
+		}
+	case model.RESOURCE_TYPE_FILE:
+		file, err := model.GetFileByID(eid, resourceID)
+		if err != nil || file == nil {
+			return errors.New("文件不存在")
+		}
+	case model.RESOURCE_TYPE_WIKI_PAGE:
+		page, err := model.GetWikiPageByID(eid, resourceID)
+		if err != nil || page == nil {
+			return errors.New("Wiki页面不存在")
+		}
+	case model.RESOURCE_TYPE_WIKI_SPACE:
+		space, err := model.GetSpaceByID(eid, resourceID)
+		if err != nil || space == nil {
+			return errors.New("空间不存在")
+		}
+	default:
+		return errors.New("不支持的资源类型")
+	}
+	return nil
+}
+
+func requireResourceManagePermission(c *gin.Context, eid int64, userID int64, resourceType int, resourceID int64) bool {
+	if err := validateResourceBelongsToEid(eid, resourceType, resourceID); err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err.Error()))
+		return false
+	}
+
+	// 后台权限管理视图：管理员携带 view_type=admin 时豁免资源级 MANAGE（后台控制台调用）。
+	// 参数本身不授权——必须叠加管理员角色；普通用户伪造 view_type=admin 仍按前台 MANAGE 校验，
+	// 前台（含管理员登录前台、未带参数）行为不变。
+	if common.IsAdmin(c) && c.Query("view_type") == PermissionViewTypeAdmin {
+		return true
+	}
+
+	permission, err := service.GetUserPermission(eid, resourceType, resourceID, userID)
+	if err != nil || permission < model.PERMISSION_MANAGE {
+		// 该接口返回资源的全量 ACL（谁有什么权限），属管理员视图，需 MANAGE。
+		// 仅查"我自己的权限"请用 GET /api/permissions/my（登录即可，无需资源权限）。
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限管理该资源权限（查询自身权限请使用 /api/permissions/my）")))
+		return false
+	}
+
+	return true
+}
+
 // CreatePermissions godoc
 // @Summary 批量创建权限
 // @Description 为指定资源批量创建权限
@@ -34,7 +99,7 @@ type BatchPermissionRequest struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type path int true "资源类型 (0=空间, 1=知识库, 2=文件)"
+// @Param resource_type path int true "资源类型 (0=空间, 1=知识库, 2=文件, 3=Wiki页面, 4=Wiki空间级权限)"
 // @Param resource_id path int true "资源ID"
 // @Param request body BatchPermissionRequest true "权限请求"
 // @Success 200 {object} model.CommonResponse "创建成功"
@@ -43,6 +108,7 @@ type BatchPermissionRequest struct {
 // @Router /api/permissions/{resource_type}/{resource_id} [post]
 func CreatePermissions(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 获取资源类型和资源ID
 	resourceTypeStr := c.Param("resource_type")
@@ -54,9 +120,19 @@ func CreatePermissions(c *gin.Context) {
 		return
 	}
 
-	resourceID, err := strconv.ParseInt(resourceIDStr, 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("invalid resource_id"))
+	// HashidsDecoder 只把解码值存上下文不改写 c.Param，优先取解码值（对外 ID 均为 hashids）。
+	resourceID := int64(0)
+	if decoded, ok := middleware.GetDecodedID(c, "resource_id"); ok {
+		resourceID = decoded
+	} else {
+		resourceID, err = strconv.ParseInt(resourceIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("invalid resource_id"))
+			return
+		}
+	}
+
+	if !requireResourceManagePermission(c, eid, userID, resourceType, resourceID) {
 		return
 	}
 
@@ -91,7 +167,7 @@ func CreatePermissions(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type query int false "资源类型 (0=空间, 1=知识库, 2=文件)"
+// @Param resource_type query int false "资源类型 (0=空间, 1=知识库, 2=文件, 3=Wiki页面, 4=Wiki空间级权限)"
 // @Param resource_id query int false "资源ID"
 // @Param subject_type query int false "主体类型 (0=用户, 1=分组, 2=全公司)"
 // @Param subject_id query int false "主体ID"
@@ -102,12 +178,25 @@ func CreatePermissions(c *gin.Context) {
 // @Router /api/permissions [get]
 func GetPermissions(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 使用公共参数解析函数统一处理所有参数
 	resourceType, resourceID, subjectType, subjectID, permissionLevel, err := parsePermissionQueryParams(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err.Error()))
 		return
+	}
+
+	if resourceType != nil && resourceID != nil {
+		if !requireResourceManagePermission(c, eid, userID, *resourceType, *resourceID) {
+			return
+		}
+	} else {
+		// 未指定具体资源时，普通用户只能查询自己主体相关的权限，防止跨用户或全租户扫描
+		if subjectType == nil || subjectID == nil || *subjectType != model.SUBJECT_TYPE_USER || *subjectID != userID {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("必须指定具体资源ID或仅查询自身权限")))
+			return
+		}
 	}
 
 	// 统一使用 GetPermissionsByFilter 进行动态条件查询
@@ -117,7 +206,7 @@ func GetPermissions(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, model.Success.ToResponse(permissions))
+	c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(permissions, c.GetString(helper.RequestIdKey)))
 }
 
 // UpdatePermission godoc
@@ -135,10 +224,28 @@ func GetPermissions(c *gin.Context) {
 // @Failure 500 {object} model.CommonResponse "服务器错误"
 // @Router /api/permissions/{permission_id} [put]
 func UpdatePermission(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
 	permissionIDStr := c.Param("permission_id")
 	permissionID, err := strconv.ParseInt(permissionIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("invalid permission id"))
+		return
+	}
+
+	existingPerm, err := model.GetPermissionByID(permissionID)
+	if err != nil || existingPerm == nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("permission not found"))
+		return
+	}
+
+	if existingPerm.Eid != eid {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限修改该企业资源权限")))
+		return
+	}
+
+	if !requireResourceManagePermission(c, eid, userID, existingPerm.ResourceType, existingPerm.ResourceID) {
 		return
 	}
 
@@ -159,7 +266,7 @@ func UpdatePermission(c *gin.Context) {
 	// 更新权限（Service层会自动处理缓存清除）
 	if err := service.UpdatePermissionByID(permissionID, *req.Permission); err != nil {
 		if err.Error() == "permission not found" {
-			c.JSON(http.StatusNotFound, model.FileError.ToResponse("permission not found"))
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse("permission not found"))
 			return
 		}
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
@@ -189,6 +296,9 @@ func UpdatePermission(c *gin.Context) {
 // @Failure 500 {object} model.CommonResponse "服务器错误"
 // @Router /api/permissions/{permission_id} [delete]
 func DeletePermission(c *gin.Context) {
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
 	permissionIDStr := c.Param("permission_id")
 	permissionID, err := strconv.ParseInt(permissionIDStr, 10, 64)
 	if err != nil {
@@ -197,9 +307,18 @@ func DeletePermission(c *gin.Context) {
 	}
 
 	// 检查权限是否存在
-	_, err = model.GetPermissionByID(permissionID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.FileError.ToResponse("permission not found"))
+	existingPerm, err := model.GetPermissionByID(permissionID)
+	if err != nil || existingPerm == nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("permission not found"))
+		return
+	}
+
+	if existingPerm.Eid != eid {
+		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限删除该企业资源权限")))
+		return
+	}
+
+	if !requireResourceManagePermission(c, eid, userID, existingPerm.ResourceType, existingPerm.ResourceID) {
 		return
 	}
 
@@ -303,10 +422,11 @@ type BatchMyPermissionResponse struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档, 3=Wiki页面)"
+// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档, 3=Wiki页面, 4=Wiki空间级权限)"
 // @Param resource_id query int true "资源ID"
 // @Success 200 {object} model.CommonResponse{data=DetailPermissionResponse} "详细权限信息"
 // @Failure 400 {object} model.CommonResponse "参数错误"
+// @Failure 404 {object} model.CommonResponse "资源不存在或不属于当前企业"
 // @Failure 500 {object} model.CommonResponse "服务器错误"
 // @Router /api/permissions/detail [get]
 func GetDetailPermissions(c *gin.Context) {
@@ -327,12 +447,23 @@ func GetDetailPermissions(c *gin.Context) {
 		return
 	}
 
-	resourceID, err := strconv.ParseInt(resourceIDStr, 10, 64)
-	if err != nil {
+	// query 参数不走 HashidsDecoder，这里兼容纯数字与 hashids（对外 ID 均为 hashids）。
+	var resourceID int64
+	if decoded, decodeErr := hashids.TryParseID(resourceIDStr); decodeErr == nil {
+		resourceID = decoded
+	} else if parsed, parseErr := strconv.ParseInt(resourceIDStr, 10, 64); parseErr == nil {
+		resourceID = parsed
+	} else {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("invalid resource_id"))
 		return
 	}
 
+	// 产品口径：权限明细对所有登录用户开放（"每个人都可以看到权限"），
+	// 仅校验资源归属本企业（防跨企业探测），不再要求资源 MANAGE。
+	if err := validateResourceBelongsToEid(eid, resourceType, resourceID); err != nil {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err.Error()))
+		return
+	}
 	response := DetailPermissionResponse{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
@@ -343,9 +474,9 @@ func GetDetailPermissions(c *gin.Context) {
 	}
 
 	switch resourceType {
-	case model.RESOURCE_TYPE_SPACE:
-		// 空间：只返回直接权限，无继承
-		if err := handleSpaceDetailPermissions(eid, resourceID, &response); err != nil {
+	case model.RESOURCE_TYPE_SPACE, model.RESOURCE_TYPE_WIKI_SPACE:
+		// 空间（type=0）与 Wiki 空间权限（type=4）都只有直接权限，无继承层。
+		if err := handleDirectDetailPermissions(eid, resourceType, resourceID, &response); err != nil {
 			c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 			return
 		}
@@ -385,7 +516,7 @@ func GetDetailPermissions(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档, 3=Wiki页面)"
+// @Param resource_type query int true "资源类型 (0=空间, 1=知识库, 2=文档, 3=Wiki页面, 4=Wiki空间级权限)"
 // @Param resource_id query int true "资源ID"
 // @Success 200 {object} model.CommonResponse{data=MyPermissionResponse} "我的权限信息"
 // @Failure 400 {object} model.CommonResponse "参数错误"
@@ -410,15 +541,28 @@ func GetMyPermissions(c *gin.Context) {
 		return
 	}
 
-	resourceID, err := strconv.ParseInt(resourceIDStr, 10, 64)
-	if err != nil {
+	// query 参数不走 HashidsDecoder，兼容纯数字与 hashids（对外 ID 均为 hashids）。
+	var resourceID int64
+	if decoded, decodeErr := hashids.TryParseID(resourceIDStr); decodeErr == nil {
+		resourceID = decoded
+	} else if parsed, parseErr := strconv.ParseInt(resourceIDStr, 10, 64); parseErr == nil {
+		resourceID = parsed
+	} else {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("invalid resource_id"))
 		return
 	}
 
 	var maxPermission int
 
-	maxPermission, err = service.GetUserPermission(eid, resourceType, resourceID, userID)
+	// Wiki 空间级权限（type=4）的"我的权限"口径与空间 Wiki 读门禁统一：
+	// type=4 已配置以其为准（未列名/配 0 = 禁止），未配置回退 RAG 空间权限（type=0）。
+	// 不走 ResolvePermission(4) 的 RAG 空间语义，否则配了 type=4 但未列名的用户会被错误放行
+	// （与 GET /api/spaces/:id/wiki/stats 的门禁口径一致）。
+	if resourceType == model.RESOURCE_TYPE_WIKI_SPACE {
+		maxPermission, err = common.GetWikiSpaceReadPermission(eid, resourceID, userID, c.Request.Context())
+	} else {
+		maxPermission, err = service.GetUserPermission(eid, resourceType, resourceID, userID, c.Request.Context())
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
@@ -429,7 +573,7 @@ func GetMyPermissions(c *gin.Context) {
 		MaxPermission: maxPermission,
 	}
 
-	c.JSON(http.StatusOK, model.Success.ToResponse(response))
+	c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(response, c.GetString(helper.RequestIdKey)))
 }
 
 // GetMyPermissionsBatch godoc
@@ -462,7 +606,14 @@ func GetMyPermissionsBatch(c *gin.Context) {
 		return
 	}
 
-	permissions, err := service.BatchGetUserPermissions(eid, *req.ResourceType, req.ResourceIDs, userID)
+	// 与单值 GetMyPermissions 同口径：type=4 走 Wiki 空间读权限解析，其余类型走通用批量解析。
+	var permissions map[int64]int
+	var err error
+	if *req.ResourceType == model.RESOURCE_TYPE_WIKI_SPACE {
+		permissions, err = common.BatchGetWikiSpaceReadPermissions(eid, req.ResourceIDs, userID)
+	} else {
+		permissions, err = service.BatchGetUserPermissions(eid, *req.ResourceType, req.ResourceIDs, userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.FileError.ToResponse(err))
 		return
@@ -484,7 +635,7 @@ func GetMyPermissionsBatch(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, model.Success.ToResponse(response))
+	c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(response, c.GetString(helper.RequestIdKey)))
 }
 
 func uniquePermissionResourceIDs(resourceIDs []int64) []int64 {
@@ -509,11 +660,9 @@ func uniquePermissionResourceIDs(resourceIDs []int64) []int64 {
 	return unique
 }
 
-// handleSpaceDetailPermissions 处理空间的详细权限
-func handleSpaceDetailPermissions(eid int64, spaceID int64, response *DetailPermissionResponse) error {
-	// 空间只有直接权限，无继承
-	resourceType := model.RESOURCE_TYPE_SPACE
-	permissions, err := model.GetPermissionsByFilter(eid, &resourceType, &spaceID, nil, nil, nil)
+// handleDirectDetailPermissions 处理"只有直接权限、无继承层"的资源明细（空间 type=0、Wiki 空间权限 type=4）。
+func handleDirectDetailPermissions(eid int64, resourceType int, resourceID int64, response *DetailPermissionResponse) error {
+	permissions, err := model.GetPermissionsByFilter(eid, &resourceType, &resourceID, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -636,21 +785,33 @@ func handleWikiPageDetailPermissions(eid int64, pageID int64, response *DetailPe
 		return err
 	}
 
-	// 3. 获取所属知识库的直接权限（作为继承权限）
-	libResourceType := model.RESOURCE_TYPE_LIBRARY
-	inheritedPermissions, err := model.GetPermissionsByFilter(eid, &libResourceType, &page.LibraryID, nil, nil, nil)
+	// 3. 继承层：Wiki 空间权限（type=4，页面解析的空间级继承源）+ 所属知识库直接权限（type=1）。
+	// 页面权限解析口径：页面 ACL > Wiki 空间权限(type=4，已配置时) > RAG 空间角色 > 知识库。
+	wikiSpaceResourceType := model.RESOURCE_TYPE_WIKI_SPACE
+	wikiSpacePermissions, err := model.GetPermissionsByFilter(eid, &wikiSpaceResourceType, &page.SpaceID, nil, nil, nil)
 	if err != nil {
 		return err
 	}
-	response.Inherited = inheritedPermissions
+	libResourceType := model.RESOURCE_TYPE_LIBRARY
+	libraryPermissions, err := model.GetPermissionsByFilter(eid, &libResourceType, &page.LibraryID, nil, nil, nil)
+	if err != nil {
+		return err
+	}
+	response.Inherited = append(wikiSpacePermissions, libraryPermissions...)
 
-	// 4. 获取所属空间的团队管理员和成员权限
-	spacePermissionService := service.NewSpacePermissionService(eid)
-
+	// 4. 团队管理员/成员：Wiki 空间权限已配置时它是实际生效的空间层，未配置才回退 RAG 空间权限行
+	// （口径与 resolver.fallbackWikiPermission 一致，避免展示已失效的层）。
 	library, err := model.GetLibraryByID(eid, page.LibraryID)
 	if err != nil || library == nil {
 		return err
 	}
+
+	if len(wikiSpacePermissions) > 0 {
+		response.TeamAdmin, response.TeamMember = splitSpaceRolePermissions(wikiSpacePermissions)
+		return nil
+	}
+
+	spacePermissionService := service.NewSpacePermissionService(eid)
 
 	adminPermissions, err := spacePermissionService.GetSpaceAdminPermissions(library.SpaceID)
 	if err != nil {
@@ -665,6 +826,21 @@ func handleWikiPageDetailPermissions(eid int64, pageID int64, response *DetailPe
 	response.TeamMember = memberPermissions
 
 	return nil
+}
+
+// splitSpaceRolePermissions 按空间层权限行拆分管理员(MANAGE)/成员(其他有效权限)，
+// 过滤口径与 SpacePermissionService.GetSpaceUserPermissions 一致（排除 NONE/MANAGE/PUBLIC_ONLY）。
+func splitSpaceRolePermissions(permissions []model.Permission) (admin []model.Permission, member []model.Permission) {
+	for _, perm := range permissions {
+		switch perm.Permission {
+		case model.PERMISSION_MANAGE:
+			admin = append(admin, perm)
+		case model.PERMISSION_NONE, model.PERMISSION_PUBLIC_ONLY:
+		default:
+			member = append(member, perm)
+		}
+	}
+	return admin, member
 }
 
 // getFileInheritedPermissions 获取文档的继承权限（父路径权限）

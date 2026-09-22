@@ -219,6 +219,16 @@ func GetAvailableAgentList(eid int64, agent_types []int, agent_usages []int, off
 	return count, agents, err
 }
 
+// HasAvailableKnowledgeMapAgent 判断企业是否存在可用的知识地图智能体。
+func HasAvailableKnowledgeMapAgent(eid int64) (bool, error) {
+	var count int64
+	err := DB.Model(&Agent{}).
+		Where("eid = ? AND owner_id = ? AND agent_type = ? AND agent_usage = ? AND enable = ?",
+			eid, AgentOwnerEnterprise, AgentTypeApp, AgentUsageKnowledgeMap, true).
+		Count(&count).Error
+	return count > 0, err
+}
+
 func (a *Agent) GetUserGroupIds() ([]int64, error) {
 	var permissions []ResourcePermission
 	groupIds := make([]int64, 0)

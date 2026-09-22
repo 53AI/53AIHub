@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -355,6 +356,8 @@ func (s *UserService) RegisterUserToInternal(eid int64, mappings []UserDepartmen
 		}
 
 		result.SuccessCount++
+		// 转内部用户改 type/group/部门关联：统一清该用户全部缓存，0 延迟。
+		model.InvalidateUserCaches(eid, mapping.UserID, context.Background(), user.AccessToken)
 	}
 
 	if result.SuccessCount == 0 {
@@ -416,25 +419,25 @@ func (s *UserService) GetInternalUsersWithPagination(
 func (s *UserService) buildInternalUserListQuery(eid int64, keyword string, status int, did int64, from int, notBind int) *gorm.DB {
 	query := model.DB.Model(&model.User{}).
 		Select(
-			"user_id",
-			"username",
-			"nickname",
-			"avatar",
-			"mobile",
-			"email",
+			"users.user_id",
+			"users.username",
+			"users.nickname",
+			"users.avatar",
+			"users.mobile",
+			"users.email",
 			"users.eid",
-			"role",
-			"group_id",
-			"status",
-			"expired_time",
-			"last_login_time",
-			"related_id",
-			"type",
-			"add_admin_time",
-			"openid",
-			"unionid",
-			"created_time",
-			"updated_time",
+			"users.role",
+			"users.group_id",
+			"users.status",
+			"users.expired_time",
+			"users.last_login_time",
+			"users.related_id",
+			"users.type",
+			"users.add_admin_time",
+			"users.openid",
+			"users.unionid",
+			"users.created_time",
+			"users.updated_time",
 		).
 		Where(clause.Eq{Column: clause.Column{Table: "users", Name: "eid"}, Value: eid}).
 		Where(clause.Eq{Column: clause.Column{Table: "users", Name: "type"}, Value: model.UserTypeInternal})
@@ -453,7 +456,11 @@ func (s *UserService) buildInternalUserListQuery(eid int64, keyword string, stat
 	}
 
 	if did > 0 || notBind > 0 {
-		query = query.Joins("LEFT JOIN member_bindings ON member_bindings.mid = users.user_id AND member_bindings.eid = users.eid")
+		if from > 0 {
+			query = query.Joins("LEFT JOIN member_bindings ON member_bindings.mid = users.user_id AND member_bindings.eid = users.eid AND member_bindings.from = ?", from)
+		} else {
+			query = query.Joins("LEFT JOIN member_bindings ON member_bindings.mid = users.user_id AND member_bindings.eid = users.eid")
+		}
 
 		if notBind > 0 {
 			query = query.Where("member_bindings.id IS NULL")

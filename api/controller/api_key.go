@@ -1,7 +1,6 @@
 package controller
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -63,12 +62,14 @@ type APIKeyInfo struct {
 // @Security BearerAuth
 // @Param request body CreateAPIKeyRequest true "创建API密钥请求"
 // @Param library_id path int false "知识库ID（通过路径传递）"
+// @Param space_id path int false "空间ID（通过路径传递，创建空间级API密钥）"
 // @Success 200 {object} model.CommonResponse{data=CreateAPIKeyResponse} "成功创建API密钥"
 // @Failure 400 {object} model.CommonResponse "参数错误"
 // @Failure 403 {object} model.CommonResponse "权限不足"
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
 // @Router /api/api-keys [post]
 // @Router /api/libraries/{library_id}/api-keys [post]  # 知识库相关路由
+// @Router /api/spaces/{space_id}/api-keys [post]  # 空间相关路由
 func (ctrl *APIKeyController) CreateAPIKey(c *gin.Context) {
 	var req CreateAPIKeyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -80,20 +81,13 @@ func (ctrl *APIKeyController) CreateAPIKey(c *gin.Context) {
 	creatorID := config.GetUserId(c)
 	role := config.GetUserRole(c)
 
-	var libraryID *int64
-	libraryIDParam := c.Param("library_id")
-
-	if libraryIDParam != "" {
-		id, err := strconv.ParseInt(libraryIDParam, 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的知识库ID参数"))
-			return
-		}
-		libraryID = &id
+	libraryID, spaceID, ok := parseAPIKeyPathScope(c)
+	if !ok {
+		return
 	}
 
 	apiKeyService := mcpsvc.NewAPIKeyService()
-	apiKey, apiKeyStr, err := apiKeyService.CreateAPIKey(c.Request.Context(), eid, creatorID, role, req.Name, req.Description, libraryID)
+	apiKey, apiKeyStr, err := apiKeyService.CreateAPIKey(c.Request.Context(), eid, creatorID, role, req.Name, req.Description, libraryID, spaceID)
 	if err != nil {
 		if isPermissionRelatedError(err) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
@@ -115,12 +109,14 @@ func (ctrl *APIKeyController) CreateAPIKey(c *gin.Context) {
 // @Security BearerAuth
 // @Param type query string false "筛选类型：personal=个人key，library=知识库key，默认library"
 // @Param library_id path int false "知识库ID（通过路径传递）"
+// @Param space_id path int false "空间ID（通过路径传递，获取空间级API密钥）"
 // @Success 200 {object} model.CommonResponse{data=GetAPIKeysResponse} "成功获取API密钥列表"
 // @Failure 400 {object} model.CommonResponse "参数错误"
 // @Failure 403 {object} model.CommonResponse "权限不足"
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
 // @Router /api/api-keys [get]
 // @Router /api/libraries/{library_id}/api-keys [get]  # 知识库相关路由
+// @Router /api/spaces/{space_id}/api-keys [get]  # 空间相关路由
 func (ctrl *APIKeyController) GetAPIKeys(c *gin.Context) {
 	eid := config.GetEID(c)
 	if eid == 0 {
@@ -136,20 +132,13 @@ func (ctrl *APIKeyController) GetAPIKeys(c *gin.Context) {
 		return
 	}
 
-	libraryIDParam := c.Param("library_id")
-	var libraryID *int64
-
-	if libraryIDParam != "" {
-		parsedID, convErr := strconv.ParseInt(libraryIDParam, 10, 64)
-		if convErr != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的知识库ID参数"))
-			return
-		}
-		libraryID = &parsedID
+	libraryID, spaceID, ok := parseAPIKeyPathScope(c)
+	if !ok {
+		return
 	}
 
 	apiKeyService := mcpsvc.NewAPIKeyService()
-	apiKeys, err := apiKeyService.ListAPIKeys(c.Request.Context(), eid, creatorID, role, keyType, libraryID)
+	apiKeys, err := apiKeyService.ListAPIKeys(c.Request.Context(), eid, creatorID, role, keyType, libraryID, spaceID)
 	if err != nil {
 		if isPermissionRelatedError(err) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
@@ -198,42 +187,17 @@ func (ctrl *APIKeyController) GetAPIKeys(c *gin.Context) {
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
 // @Router /api/api-keys/{id} [delete]
 // @Router /api/libraries/{library_id}/api-keys/{key_id} [delete]  # 知识库相关路由
+// @Router /api/spaces/{space_id}/api-keys/{key_id} [delete]  # 空间相关路由
 func (ctrl *APIKeyController) DeleteAPIKey(c *gin.Context) {
-	// 检查路径中是否包含library_id参数
-	libraryIDParam := c.Param("library_id")
+	libraryID, spaceID, ok := parseAPIKeyPathScope(c)
+	if !ok {
+		return
+	}
+	scoped := libraryID != nil || spaceID != nil
 
-	var keyID int64
-	var err error
-
-	// 根据路径格式确定API密钥ID的参数名
-	if libraryIDParam != "" {
-		// 如果路径中有library_id参数，API密钥ID参数名为key_id
-		keyIDStr := c.Param("key_id")
-		if keyIDStr == "" {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
-			return
-		}
-
-		if decoded, err := hashids.TryParseID(keyIDStr); err == nil {
-			keyID = decoded
-		}
-		if keyID == 0 {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
-			return
-		}
-	} else {
-		// 否则API密钥ID参数名为id
-		id := c.Param("id")
-		if id == "" {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
-			return
-		}
-
-		_, err = fmt.Sscanf(id, "%d", &keyID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
-			return
-		}
+	keyID, ok := resolveAPIKeyPathID(c, scoped)
+	if !ok {
+		return
 	}
 
 	eid := config.GetEID(c)
@@ -241,15 +205,7 @@ func (ctrl *APIKeyController) DeleteAPIKey(c *gin.Context) {
 	role := config.GetUserRole(c)
 	apiKeyService := mcpsvc.NewAPIKeyService()
 
-	var pathLibraryID *int64
-	if libraryIDParam != "" {
-		parsed, err := strconv.ParseInt(libraryIDParam, 10, 64)
-		if err == nil {
-			pathLibraryID = &parsed
-		}
-	}
-
-	if err := apiKeyService.DeleteAPIKey(c.Request.Context(), eid, creatorID, role, keyID, pathLibraryID); err != nil {
+	if err := apiKeyService.DeleteAPIKey(c.Request.Context(), eid, creatorID, role, keyID, libraryID, spaceID); err != nil {
 		if isPermissionRelatedError(err) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
 			return
@@ -276,40 +232,17 @@ func (ctrl *APIKeyController) DeleteAPIKey(c *gin.Context) {
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
 // @Router /api/api-keys/{id}/disable [post]
 // @Router /api/libraries/{library_id}/api-keys/{key_id}/disable [post]  # 知识库相关路由
+// @Router /api/spaces/{space_id}/api-keys/{key_id}/disable [post]  # 空间相关路由
 func (ctrl *APIKeyController) DisableAPIKey(c *gin.Context) {
-	// 检查路径中是否包含library_id参数
-	libraryIDParam := c.Param("library_id")
+	libraryID, spaceID, ok := parseAPIKeyPathScope(c)
+	if !ok {
+		return
+	}
+	scoped := libraryID != nil || spaceID != nil
 
-	var keyID int64
-	var err error
-
-	// 根据路径格式确定API密钥ID的参数名
-	if libraryIDParam != "" {
-		// 如果路径中有library_id参数，API密钥ID参数名为key_id
-		keyIDStr := c.Param("key_id")
-		if keyIDStr == "" {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
-			return
-		}
-
-		keyID, err = strconv.ParseInt(keyIDStr, 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
-			return
-		}
-	} else {
-		// 否则API密钥ID参数名为id
-		id := c.Param("id")
-		if id == "" {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
-			return
-		}
-
-		_, err = fmt.Sscanf(id, "%d", &keyID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
-			return
-		}
+	keyID, ok := resolveAPIKeyPathID(c, scoped)
+	if !ok {
+		return
 	}
 
 	eid := config.GetEID(c)
@@ -317,15 +250,7 @@ func (ctrl *APIKeyController) DisableAPIKey(c *gin.Context) {
 	role := config.GetUserRole(c)
 	apiKeyService := mcpsvc.NewAPIKeyService()
 
-	var pathLibraryID *int64
-	if libraryIDParam != "" {
-		parsed, err := strconv.ParseInt(libraryIDParam, 10, 64)
-		if err == nil {
-			pathLibraryID = &parsed
-		}
-	}
-
-	if err := apiKeyService.SetAPIKeyStatus(c.Request.Context(), eid, creatorID, role, keyID, pathLibraryID, false); err != nil {
+	if err := apiKeyService.SetAPIKeyStatus(c.Request.Context(), eid, creatorID, role, keyID, libraryID, spaceID, false); err != nil {
 		if isPermissionRelatedError(err) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
 			return
@@ -352,40 +277,17 @@ func (ctrl *APIKeyController) DisableAPIKey(c *gin.Context) {
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
 // @Router /api/api-keys/{id}/enable [post]
 // @Router /api/libraries/{library_id}/api-keys/{key_id}/enable [post]  # 知识库相关路由
+// @Router /api/spaces/{space_id}/api-keys/{key_id}/enable [post]  # 空间相关路由
 func (ctrl *APIKeyController) EnableAPIKey(c *gin.Context) {
-	// 检查路径中是否包含library_id参数
-	libraryIDParam := c.Param("library_id")
+	libraryID, spaceID, ok := parseAPIKeyPathScope(c)
+	if !ok {
+		return
+	}
+	scoped := libraryID != nil || spaceID != nil
 
-	var keyID int64
-	var err error
-
-	// 根据路径格式确定API密钥ID的参数名
-	if libraryIDParam != "" {
-		// 如果路径中有library_id参数，API密钥ID参数名为key_id
-		keyIDStr := c.Param("key_id")
-		if keyIDStr == "" {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
-			return
-		}
-
-		keyID, err = strconv.ParseInt(keyIDStr, 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
-			return
-		}
-	} else {
-		// 否则API密钥ID参数名为id
-		id := c.Param("id")
-		if id == "" {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
-			return
-		}
-
-		_, err = fmt.Sscanf(id, "%d", &keyID)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
-			return
-		}
+	keyID, ok := resolveAPIKeyPathID(c, scoped)
+	if !ok {
+		return
 	}
 
 	eid := config.GetEID(c)
@@ -393,15 +295,7 @@ func (ctrl *APIKeyController) EnableAPIKey(c *gin.Context) {
 	role := config.GetUserRole(c)
 	apiKeyService := mcpsvc.NewAPIKeyService()
 
-	var pathLibraryID *int64
-	if libraryIDParam != "" {
-		parsed, err := strconv.ParseInt(libraryIDParam, 10, 64)
-		if err == nil {
-			pathLibraryID = &parsed
-		}
-	}
-
-	if err := apiKeyService.SetAPIKeyStatus(c.Request.Context(), eid, creatorID, role, keyID, pathLibraryID, true); err != nil {
+	if err := apiKeyService.SetAPIKeyStatus(c.Request.Context(), eid, creatorID, role, keyID, libraryID, spaceID, true); err != nil {
 		if isPermissionRelatedError(err) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(err))
 			return
@@ -431,4 +325,56 @@ func isPermissionRelatedError(err error) bool {
 	}
 	message := err.Error()
 	return strings.Contains(message, "权限") || strings.Contains(message, "无权")
+}
+
+// parseAPIKeyPathScope 解析路径中的知识库/空间作用域参数。
+// 路由参数经过 HashidsDecoder 已解码为原始数字字符串，兼容 hashid 与原始 int64。
+func parseAPIKeyPathScope(c *gin.Context) (libraryID, spaceID *int64, ok bool) {
+	if raw := strings.TrimSpace(c.Param("library_id")); raw != "" {
+		id, err := hashids.TryParseID(raw)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的知识库ID参数"))
+			return nil, nil, false
+		}
+		libraryID = &id
+	}
+	if raw := strings.TrimSpace(c.Param("space_id")); raw != "" {
+		id, err := hashids.TryParseID(raw)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的空间ID参数"))
+			return nil, nil, false
+		}
+		spaceID = &id
+	}
+	return libraryID, spaceID, true
+}
+
+// resolveAPIKeyPathID 解析路径中的 API 密钥 ID。
+// scoped 路由使用 key_id（hashid），全局管理路由使用 id（原始 int64）。
+func resolveAPIKeyPathID(c *gin.Context, scoped bool) (int64, bool) {
+	if scoped {
+		raw := strings.TrimSpace(c.Param("key_id"))
+		if raw == "" {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
+			return 0, false
+		}
+		id, err := hashids.TryParseID(raw)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
+			return 0, false
+		}
+		return id, true
+	}
+
+	raw := strings.TrimSpace(c.Param("id"))
+	if raw == "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("缺少API密钥ID参数"))
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("无效的API密钥ID参数"))
+		return 0, false
+	}
+	return id, true
 }

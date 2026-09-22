@@ -1,12 +1,27 @@
 package model
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
 
 	"gorm.io/gorm"
 )
+
+// GetRecentMessagesByConversationID returns the newest messages first so
+// source-driven Action launches can snapshot the latest constraints and
+// judgments without copying conversation content into an identity table.
+func GetRecentMessagesByConversationID(ctx context.Context, eid, conversationID int64, limit int) ([]*Message, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	var messages []*Message
+	err := DB.WithContext(ctx).
+		Where("eid = ? AND conversation_id = ?", eid, conversationID).
+		Order("created_time DESC, id DESC").Limit(limit).Find(&messages).Error
+	return messages, err
+}
 
 type Message struct {
 	ID                     int64  `json:"id" gorm:"column:id;primaryKey;autoIncrement"`
@@ -34,7 +49,7 @@ type Message struct {
 	ThinkingMode           int    `json:"thinking_mode" gorm:"default:1;index"`
 	KnowledgeScope         string `json:"knowledge_scope" gorm:"size:255;default:'';index"`
 	CitationCount          int    `json:"citation_count" gorm:"default:0;index"`
-	KnowledgeType          int    `json:"knowledge_type" gorm:"default:1;index"`
+	KnowledgeType          int    `json:"knowledge_type" gorm:"default:0;index"`
 	RequestSource          string `json:"request_source" gorm:"size:32;not null;default:'console'"`
 	OriginalQuestion       string `json:"original_question" gorm:"type:text"`
 	RewrittenQuestion      string `json:"rewritten_question" gorm:"type:text"`
@@ -64,13 +79,22 @@ const (
 	ResponseStatusReject       = 2
 	ThinkingModeQuick          = 1
 	ThinkingModeDeep           = 2
-	KnowledgeTypeDatabase      = 1
-	KnowledgeTypeWeb           = 2
-	KnowledgeTypeSpecificKB    = 3
-	KnowledgeTypeInternalMixed = 3
-	KnowledgeTypeSingleFile    = 4
-	KnowledgeTypeSpecificWiki  = 5
-	KnowledgeTypeAllWiki       = 6
+
+	// KnowledgeType 按「对话开启的查询范围组合」判定，与消息列表筛选互斥对应：
+	// 0=未启用知识查询，1=知识文档(全部知识库)，2=联网搜索，3=指定知识库/空间，
+	// 4=单文件，5=知识文档+动态知识，6=动态知识(全部Wiki)，7=指定Wiki，
+	// 8=知识文档+知识图谱，9=知识文档+动态知识+知识图谱，10=其他组合(仅全部可见)
+	KnowledgeTypeNone           = 0
+	KnowledgeTypeDatabase       = 1
+	KnowledgeTypeWeb            = 2
+	KnowledgeTypeSpecificKB     = 3
+	KnowledgeTypeSingleFile     = 4
+	KnowledgeTypeKBDynamic      = 5
+	KnowledgeTypeAllWiki        = 6
+	KnowledgeTypeSpecificWiki   = 7
+	KnowledgeTypeKBGraph        = 8
+	KnowledgeTypeKBDynamicGraph = 9
+	KnowledgeTypeOther          = 10
 )
 
 const (
@@ -193,7 +217,6 @@ func GetMessagesByAgentID(eid int64, agentID int64) ([]*Message, error) {
 
 // GetMessagesByUserAndAgent retrieves conversation messages between a user and a specific agent
 func GetMessagesByUserAndAgent(eid int64, userID int64, agentID int64, keyword string, args ...interface{}) (count int64, messages []*Message, err error) {
-	query := DB.Model(&Message{}).Where("eid = ? AND user_id = ? AND agent_id = ?", eid, userID, agentID)
 	fileID, limit, offset := 0, 0, 0
 	if len(args) >= 3 {
 		fileID = intFromMessageArg(args[0])
@@ -204,10 +227,22 @@ func GetMessagesByUserAndAgent(eid int64, userID int64, agentID int64, keyword s
 		offset = intFromMessageArg(args[1])
 	}
 
+	return getMessagesByUserAndAgent(eid, userID, agentID, keyword, fileID, "", 0, limit, offset)
+}
+
+// GetMessagesByUserAndAgentWithDocument retrieves messages filtered by a document reference.
+func GetMessagesByUserAndAgentWithDocument(eid, userID, agentID int64, keyword, documentType string, documentID int64, visitorID string, limit, offset int) (int64, []*Message, error) {
+	return getMessagesByUserAndAgent(eid, userID, agentID, keyword, 0, documentType, documentID, limit, offset)
+}
+
+func getMessagesByUserAndAgent(eid, userID, agentID int64, keyword string, fileID int, documentType string, documentID int64, limit, offset int) (count int64, messages []*Message, err error) {
+	query := DB.Model(&Message{}).Where("eid = ? AND user_id = ? AND agent_id = ?", eid, userID, agentID)
 	if keyword != "" {
 		query = query.Where("message LIKE ? OR answer LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
-	if fileID > 0 {
+	if documentID > 0 && documentType != "" {
+		query = query.Where("document_type = ? AND document_id = ?", documentType, documentID)
+	} else if fileID > 0 {
 		query = query.Where("file_id = ?", fileID)
 	}
 
@@ -342,7 +377,7 @@ func GetMessagesByConversationIDWithDirectionWithVisitor(eid, conversationID, us
 	return GetMessagesByConversationIDWithDirection(eid, conversationID, keyword, limit, offset, direction)
 }
 
-func GetMessagesList(eid int64, keyword string, thinkingMode, responseStatus, knowledgeType *int, startDate, endDate *int64, direction string, limit, offset int, agentID *int64, fileIDs []int64, sources []string) (count int64, messages []*Message, err error) {
+func GetMessagesList(eid int64, keyword string, thinkingMode, responseStatus *int, knowledgeTypes []int, startDate, endDate *int64, direction string, limit, offset int, agentID *int64, fileIDs []int64, sources []string) (count int64, messages []*Message, err error) {
 	query := DB.Model(&Message{}).Where("eid = ?", eid)
 	if keyword != "" {
 		query = query.Where("message LIKE ? OR answer LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
@@ -353,8 +388,8 @@ func GetMessagesList(eid int64, keyword string, thinkingMode, responseStatus, kn
 	if responseStatus != nil {
 		query = query.Where("response_status = ?", *responseStatus)
 	}
-	if knowledgeType != nil {
-		query = query.Where("knowledge_type = ?", *knowledgeType)
+	if len(knowledgeTypes) > 0 {
+		query = query.Where("knowledge_type IN ?", knowledgeTypes)
 	}
 	if startDate != nil && *startDate > 0 {
 		query = query.Where("created_time >= ?", *startDate)

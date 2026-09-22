@@ -54,3 +54,9 @@ data/skills/global/
 .km.pid
 tests/docs/
 .prowl/
+rag-pipeline-v2/steps/static/uploads/
+service/sonicnote/static/uploads/
+service/ticnote/static/
+# wget 在非 tty 环境下产生的下载日志
+wget-log*
+service/static/uploads/

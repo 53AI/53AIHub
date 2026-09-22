@@ -476,8 +476,11 @@ func (s *ChunkConfigService) CreateDefaultConfig(eid int64, libraryID *int64, ch
 
 // ValidateChannels 验证渠道配置
 func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, embeddingChannelID *int64) error {
+	// 使用 s.db 而非全局 model.DB：企业初始化在事务内创建渠道后立即校验，
+	// 全局 DB 看不到未提交的渠道会导致误报「渠道不存在」
 	if logicChannelID != nil {
-		channel, err := model.GetChannelByID(*logicChannelID)
+		var channel model.Channel
+		err := s.db.Where("channel_id = ?", *logicChannelID).First(&channel).Error
 		if err != nil {
 			return fmt.Errorf("逻辑推理渠道不存在: %v", err)
 		}
@@ -490,7 +493,8 @@ func (s *ChunkConfigService) ValidateChannels(eid int64, logicChannelID *int64, 
 	}
 
 	if embeddingChannelID != nil {
-		channel, err := model.GetChannelByID(*embeddingChannelID)
+		var channel model.Channel
+		err := s.db.Where("channel_id = ?", *embeddingChannelID).First(&channel).Error
 		if err != nil {
 			return fmt.Errorf("向量嵌入渠道不存在: %v", err)
 		}
@@ -661,6 +665,13 @@ func (s *ChunkConfigService) getCleaningConfig(eid int64, libraryID, fileID *int
 	}
 
 	return nil
+}
+
+// GetSiteConfig 获取站点级（eid 的 library_id 为 NULL）默认分块配置。
+// 与 GetConfig 不同：不 fallback 系统默认（eid=0），site 未配置时返回 ErrRecordNotFound，
+// 调用方可据此做"未配置即跳过"的决策。
+func (s *ChunkConfigService) GetSiteConfig(eid int64, chunkType string) (*ChunkConfig, error) {
+	return s.getDefaultConfig(eid, chunkType)
 }
 
 // getDefaultConfig 获取站点默认配置

@@ -94,7 +94,7 @@ func IsWikiJobType(jobType string) bool {
 // pipeline whose progress must not be written into File's RAG status.
 func IsStandalonePipelineJobType(jobType string) bool {
 	switch strings.TrimSpace(jobType) {
-	case "wiki_page_generation", "wiki_page_vectorization", "graph_pipeline_generation":
+	case "wiki_page_generation", "wiki_page_vectorization", "graph_pipeline_generation", "generate_knowledge_map":
 		return true
 	default:
 		return false

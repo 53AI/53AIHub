@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-	"sync"
-
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
@@ -18,11 +14,19 @@ import (
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
 )
 
 const (
 	rerankRecallMultiplier = 2
-	rerankRecallMax        = 200
+	// rerankRecallMax 单查询召回上限：限制多问题拆解场景下各子查询独立召回、合并后的候选膨胀
+	// （此前 200 时单查询最多召回 100，多查询合并可达 150+，rerank 成本与淘汰噪声同步放大）。
+	// finalTopK 超过该值时由下方下限保护兜底，保证 rerank 输入不小于最终输出。
+	rerankRecallMax = 50
 )
 
 func calculateRecallTopK(finalTopK int, _ int, rerankEnabled bool) int {
@@ -34,11 +38,12 @@ func calculateRecallTopK(finalTopK int, _ int, rerankEnabled bool) int {
 	}
 
 	recallTopK := finalTopK * rerankRecallMultiplier
-	if recallTopK < finalTopK {
-		recallTopK = finalTopK
-	}
 	if recallTopK > rerankRecallMax {
 		recallTopK = rerankRecallMax
+	}
+	// 下限保护：cap 后仍须保证 rerank 输入不小于最终输出，避免召回不足
+	if recallTopK < finalTopK {
+		recallTopK = finalTopK
 	}
 	return recallTopK
 }
@@ -266,10 +271,14 @@ type retrievalObservability struct {
 
 func (o retrievalObservability) asMap() map[string]interface{} {
 	return map[string]interface{}{
-		"document": retrievalStageCountMap(o.Document),
-		"wiki":     retrievalStageCountMap(o.Wiki),
-		"graph":    retrievalStageCountMap(o.Graph),
-		"web":      retrievalStageCountMap(o.Web),
+		"document":           retrievalStageCountMap(o.Document),
+		"wiki":               retrievalStageCountMap(o.Wiki),
+		"graph":              retrievalStageCountMap(o.Graph),
+		"web":                retrievalStageCountMap(o.Web),
+		"initial_candidates": o.Document.Recalled + o.Wiki.Recalled + o.Graph.Recalled + o.Web.Recalled,
+		"after_fusion":       o.Document.AfterFusion + o.Wiki.AfterFusion + o.Graph.AfterFusion + o.Web.AfterFusion,
+		"after_rerank":       o.Document.AfterRerank + o.Wiki.AfterRerank + o.Graph.AfterRerank + o.Web.AfterRerank,
+		"selected":           o.Document.Selected + o.Wiki.Selected + o.Graph.Selected + o.Web.Selected,
 	}
 }
 
@@ -908,7 +917,7 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 		if hasWiki {
 			switch {
 			case hasFile:
-				messageStatus.KnowledgeType = model.KnowledgeTypeInternalMixed
+				messageStatus.KnowledgeType = model.KnowledgeTypeKBDynamic
 				messageStatus.DocumentType = model.DocumentTypeMixed
 				messageStatus.DocumentID = 0
 			case chatRequest.WikiSearchConfig != nil && len(chatRequest.WikiSearchConfig.WikiPageIDs) > 0:
@@ -923,20 +932,58 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 		}
 	}
 	// 所有召回来源（KB、Wiki、Web、图谱）完成合并后，只在这里执行一次最终重排。
+	var rerankExecutionStatus = "disabled"
+	var rerankExecutionDesc = "未开启重排功能，按初检向量/全文相关度直接截断"
 	if len(sources) > 0 && rerankEnabled {
 		query := messageStatus.RewrittenQuestion
 		if query == "" {
 			query = messageStatus.OriginalQuestion
 		}
 		var rerankErr error
-		sources, rerankErr = rerankSources(ctx, messageStatus.AgentModel, chatRequest, query, sources)
+		var droppedSources []rag.SourceReference
+		rerankStart := time.Now()
+		sources, droppedSources, rerankErr = rerankSources(ctx, messageStatus.AgentModel, chatRequest, query, sources)
+		rerankDuration := time.Since(rerankStart)
 		if rerankErr != nil {
 			logger.Warnf(ctx, "最终重排序失败: %v，使用 TopK 截断后的原始合并结果", rerankErr)
+			rerankExecutionStatus = "failed"
+			rerankExecutionDesc = fmt.Sprintf("重排模型调用失败（%v），已降级为按初筛分数 TopK 截断", rerankErr)
+		} else {
+			rerankExecutionStatus = "success"
+			modelName := ""
+			if messageStatus.AgentModel != nil {
+				if rc, _ := messageStatus.AgentModel.GetRerankConfig(); rc != nil {
+					modelName = rc.RerankModelName
+				}
+			}
+			if modelName == "" {
+				modelName = "配置的重排模型"
+			}
+			rerankExecutionDesc = fmt.Sprintf("已成功调用重排接口（模型: %s，耗时: %.2fs，候选: %d 条，入选: %d 条）",
+				modelName, rerankDuration.Seconds(), len(sources)+len(droppedSources), len(sources))
 		}
 	}
 	updateRetrievalObservability(&retrievalObs, "after_rerank", sources)
 	updateRetrievalObservability(&retrievalObs, "selected", sources)
 	c.Set("rag_retrieval_observability", retrievalObs.asMap())
+	searchConfigSnapshot := map[string]interface{}{
+		"top_k":          wikiTopK(chatRequest),
+		"rerank_enabled": rerankEnabled,
+	}
+	if messageStatus.AgentModel != nil {
+		if rc, _ := messageStatus.AgentModel.GetRerankConfig(); rc != nil {
+			searchConfigSnapshot["rerank_model"] = rc.RerankModelName
+			searchConfigSnapshot["rerank_type"] = rc.RerankModel
+			searchConfigSnapshot["score_threshold_enabled"] = rc.ScoreThresholdEnabled
+			searchConfigSnapshot["score_threshold"] = rc.ScoreThreshold
+			searchConfigSnapshot["rerank_score_threshold_enabled"] = rc.RerankScoreThresholdEnabled
+			searchConfigSnapshot["rerank_score_threshold"] = rc.RerankScoreThreshold
+		}
+	}
+	searchConfigSnapshot["rerank_execution_status"] = rerankExecutionStatus
+	searchConfigSnapshot["rerank_execution_desc"] = rerankExecutionDesc
+	searchConfigSnapshot["retrieval_queries"] = queries
+	c.Set("rag_search_config_snapshot", searchConfigSnapshot)
 	sources = renumberSourceReferences(sources)
 
 	stepData := map[string]interface{}{
@@ -969,6 +1016,9 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 		}
 	}
 	messageStatus.StepSender.SendEndStep(STEP_KNOWLEDGE_SEARCH, "知识查找完成", stepData)
+
+	// 按对话开启的查询范围组合判定知识类型（与消息列表筛选互斥对应）
+	messageStatus.KnowledgeType = ComputeKnowledgeScopeTag(buildScopeSignals(ctx, chatRequest, messageStatus.AgentModel, sources))
 
 	c.Set("rag_sources", sources)
 	return sources, err
@@ -1272,6 +1322,18 @@ func HandleWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatReque
 }
 
 // HandleSoloFileSearchRag 处理单文件搜索RAG
+// requireFileViewPermission 单文件问答需对该文件有查看权限（与单页 Wiki 检索口径一致，避免直读越权）。
+func requireFileViewPermission(c *gin.Context, eid, fileID int64) error {
+	if eid <= 0 || fileID <= 0 {
+		return fmt.Errorf("无效的文件ID")
+	}
+	permission, err := servicepkg.GetUserPermission(eid, model.RESOURCE_TYPE_FILE, fileID, config.GetUserId(c))
+	if err != nil || permission < model.PERMISSION_VIEW_ONLY {
+		return fmt.Errorf("无权限查看该文件")
+	}
+	return nil
+}
+
 func HandleSoloFileSearchRag(c *gin.Context, queries []string, chatRequest *ChatRequest, ctx context.Context, messageStatus *MessageStatsInfo) ([]rag.SourceReference, error) {
 	eid := messageStatus.AgentModel.Eid
 	agent := messageStatus.AgentModel
@@ -1285,6 +1347,12 @@ func HandleSoloFileSearchRag(c *gin.Context, queries []string, chatRequest *Chat
 	if err != nil {
 		logger.Errorf(ctx, "hash解密失败: %v, 原始字符串: %s", err.Error(), fileIdStr)
 		return nil, fmt.Errorf("无效的文件ID格式: %s", fileIdStr)
+	}
+
+	// 文件级权限：单文件问答需对文件有查看权限（页面/单页 Wiki 同口径）。
+	if err := requireFileViewPermission(c, eid, fileID); err != nil {
+		logger.Warnf(ctx, "【文档检索】单文件问答无权限：文件ID=%d，用户ID=%d", fileID, config.GetUserId(c))
+		return nil, err
 	}
 
 	file, err := model.GetFileByID(eid, fileID)
@@ -1713,12 +1781,20 @@ func convertToSourceReferences(
 
 		extInfo := extendedInfos[item.ChunkID]
 
+		fileName := item.FileName
+		if fileName == "" && extInfo.FileName != "" {
+			fileName = extInfo.FileName
+		}
+		if fileName == "" && item.FilePath != "" {
+			fileName = filepath.Base(item.FilePath)
+		}
+
 		source := rag.SourceReference{
 			SourceType:        "document",
 			ReferenceID:       chunkRefID,
 			ChunkID:           item.ChunkID,
 			FileID:            item.FileID,
-			FileName:          item.FileName,
+			FileName:          fileName,
 			FilePath:          item.FilePath,
 			ChunkType:         item.ChunkType,
 			Content:           item.Content,

@@ -30,7 +30,7 @@ var WikiCategoryStylePresets = []StylePreset{
 
 type WikiCategoryService interface {
 	List(ctx context.Context, eid, spaceID int64, status, keyword string, offset, limit int) ([]model.WikiCategory, int64, error)
-	ListVisible(ctx context.Context, eid, spaceID, libraryID int64) ([]WikiCategorySummary, error)
+	ListVisible(ctx context.Context, eid, spaceID, libraryID, userID int64) ([]WikiCategorySummary, error)
 	Get(ctx context.Context, eid, spaceID, id int64) (*model.WikiCategory, error)
 	Create(ctx context.Context, category *model.WikiCategory) (*model.WikiCategory, error)
 	Update(ctx context.Context, category *model.WikiCategory) (*model.WikiCategory, error)
@@ -80,7 +80,7 @@ func (s *wikiCategoryService) List(ctx context.Context, eid, spaceID int64, stat
 	return items, total, err
 }
 
-func (s *wikiCategoryService) ListVisible(ctx context.Context, eid, spaceID, libraryID int64) ([]WikiCategorySummary, error) {
+func (s *wikiCategoryService) ListVisible(ctx context.Context, eid, spaceID, libraryID, userID int64) ([]WikiCategorySummary, error) {
 	if eid <= 0 || spaceID <= 0 {
 		return nil, errors.New("eid and space_id are required")
 	}
@@ -91,36 +91,63 @@ func (s *wikiCategoryService) ListVisible(ctx context.Context, eid, spaceID, lib
 		return nil, err
 	}
 
+	// 取该范围候选页面 id，再按当前用户权限过滤（与列表接口同口径，含 Source 交集+快照缓存）。
+	var pageIDs []int64
+	pageQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Where("eid = ? AND space_id = ? AND status = ?", eid, spaceID, model.WikiPageStatusActive).
+		Select("id")
+	if libraryID > 0 {
+		pageQuery = pageQuery.Where("library_id = ?", libraryID)
+	}
+	if err := pageQuery.Pluck("id", &pageIDs).Error; err != nil {
+		return nil, err
+	}
+	visibleIDs := pageIDs
+	if userID > 0 && len(pageIDs) > 0 {
+		permissions, err := batchGetWikiPermissions(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageIDs, userID, ctx)
+		if err != nil {
+			return nil, err
+		}
+		visibleIDs = make([]int64, 0, len(pageIDs))
+		for _, id := range pageIDs {
+			if permissions[id] >= model.PERMISSION_VIEW_ONLY {
+				visibleIDs = append(visibleIDs, id)
+			}
+		}
+	}
+
 	type categoryCount struct {
 		CategoryID int64
 		Count      int64
 	}
-	countQuery := s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
-		Select("wiki_page_categories.category_id AS category_id, COUNT(DISTINCT wiki_page_categories.page_id) AS count").
-		Joins("JOIN wiki_pages ON wiki_pages.id = wiki_page_categories.page_id").
-		Where("wiki_page_categories.eid = ? AND wiki_page_categories.space_id = ? AND wiki_pages.eid = ? AND wiki_pages.space_id = ? AND wiki_pages.status = ?", eid, spaceID, eid, spaceID, model.WikiPageStatusActive)
-	if libraryID > 0 {
-		countQuery = countQuery.Where("wiki_pages.library_id = ?", libraryID)
-	}
-	var counts []categoryCount
-	if err := countQuery.Group("wiki_page_categories.category_id").Scan(&counts).Error; err != nil {
-		return nil, err
-	}
-	countByCategory := make(map[int64]int64, len(counts))
-	for _, count := range counts {
-		countByCategory[count.CategoryID] = count.Count
-	}
+	countByCategory := make(map[int64]int64)
+	otherCount := int64(0)
+	if len(visibleIDs) > 0 {
+		countQuery := s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+			Select("wiki_page_categories.category_id AS category_id, COUNT(DISTINCT wiki_page_categories.page_id) AS count").
+			Joins("JOIN wiki_pages ON wiki_pages.id = wiki_page_categories.page_id").
+			Where("wiki_page_categories.eid = ? AND wiki_page_categories.space_id = ? AND wiki_pages.eid = ? AND wiki_pages.space_id = ? AND wiki_pages.status = ? AND wiki_page_categories.page_id IN ?", eid, spaceID, eid, spaceID, model.WikiPageStatusActive, visibleIDs)
+		if libraryID > 0 {
+			countQuery = countQuery.Where("wiki_pages.library_id = ?", libraryID)
+		}
+		var counts []categoryCount
+		if err := countQuery.Group("wiki_page_categories.category_id").Scan(&counts).Error; err != nil {
+			return nil, err
+		}
+		for _, count := range counts {
+			countByCategory[count.CategoryID] = count.Count
+		}
 
-	otherQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).Table("wiki_pages AS wp").
-		Where("wp.eid = ? AND wp.space_id = ? AND wp.status = ? AND wp.page_type IN ?", eid, spaceID, model.WikiPageStatusActive, []string{model.WikiPageTypeEntity, model.WikiPageTypeConcept}).
-		Where("NOT EXISTS (?)", s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
-			Select("1").Where("eid = ? AND space_id = ? AND page_id = wp.id", eid, spaceID))
-	if libraryID > 0 {
-		otherQuery = otherQuery.Where("wp.library_id = ?", libraryID)
-	}
-	var otherCount int64
-	if err := otherQuery.Count(&otherCount).Error; err != nil {
-		return nil, err
+		otherQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).Table("wiki_pages AS wp").
+			Where("wp.eid = ? AND wp.space_id = ? AND wp.status = ? AND wp.page_type IN ? AND wp.id IN ?", eid, spaceID, model.WikiPageStatusActive, []string{model.WikiPageTypeEntity, model.WikiPageTypeConcept}, visibleIDs).
+			Where("NOT EXISTS (?)", s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+				Select("1").Where("eid = ? AND space_id = ? AND page_id = wp.id", eid, spaceID))
+		if libraryID > 0 {
+			otherQuery = otherQuery.Where("wp.library_id = ?", libraryID)
+		}
+		if err := otherQuery.Count(&otherCount).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	items := make([]WikiCategorySummary, 0, len(categories)+1)

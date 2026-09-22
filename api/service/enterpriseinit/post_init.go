@@ -248,7 +248,7 @@ func EnsureLocalModelChannels(tx *gorm.DB, eid int64) error {
 		other := t.Model
 		aliasMap, _ := json.Marshal(map[string]string{t.Model: t.Model})
 		customConfig, _ := json.Marshal(map[string]interface{}{
-			t.Model:    t.TypeName,
+			t.Model:     t.TypeName,
 			"alias_map": json.RawMessage(string(aliasMap)),
 		})
 		customConfigStr := string(customConfig)
@@ -505,10 +505,10 @@ func buildDefaultSiteModelConfigFromChannels(channels []model.Channel, selection
 			ScoreThresholdEnabled: false,
 			Weights: model.SearchWeights{
 				KeywordSetting: model.KeywordSetting{
-				KeywordWeight: 0.5,
+					KeywordWeight: 0.5,
 				},
 				VectorSetting: model.VectorSetting{
-				VectorWeight: 0.5,
+					VectorWeight: 0.5,
 				},
 			},
 		},
@@ -1474,7 +1474,6 @@ func EnsureDefaultRagPipelineAndStrategy(tx *gorm.DB, eid int64) error {
 
 	return nil
 }
-
 
 // defaultContentCleaningProfileConfig 返回默认流水线中 content_cleaning 节点的配置 map。
 // 使用 model.DefaultContentCleaningConfig() 的四开三关默认值，经 JSON 往返转为 map。

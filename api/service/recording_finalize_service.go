@@ -398,7 +398,7 @@ func (f *RecordingFinalizeService) repairRecordingJobSegmentsForFinalize(ctx con
 	if segments[0].SegmentIndex != 0 {
 		canonicalSegment.ID = 0
 	}
-	mergedContent := make([]byte, 0)
+	segmentData := make([][]byte, 0, len(segments))
 	var totalDurationMs int64
 	var uploadedAt int64
 	for i := range segments {
@@ -410,12 +410,14 @@ func (f *RecordingFinalizeService) repairRecordingJobSegmentsForFinalize(ctx con
 		if err != nil {
 			return nil, fmt.Errorf("load segment %d failed: %w", segment.SegmentIndex, err)
 		}
-		mergedContent = append(mergedContent, data...)
+		segmentData = append(segmentData, data)
 		totalDurationMs += segment.DurationMs
 		if segment.UploadedAt > uploadedAt {
 			uploadedAt = segment.UploadedAt
 		}
 	}
+	// 音频感知合并：多段 WAV 剥头只拼 data，避免 finalize 后只剩第一段
+	mergedContent := mergeRecordingAudioParts(segmentData...)
 
 	if err := saveRecordingArtifact(canonicalSegment.StorageKey, mergedContent); err != nil {
 		return nil, fmt.Errorf("save canonical segment failed: %w", err)

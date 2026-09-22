@@ -15,12 +15,12 @@ func GetClientIP(c *gin.Context) string {
 		return ip
 	}
 
-	// 尝试从X-Forwarded-For获取（取第一个IP）
+	// 尝试从X-Forwarded-For获取（取最后一个IP：nginx 的 $proxy_add_x_forwarded_for 把真实 IP 追加在链尾，取第一个可被客户端伪造）
 	xForwardedFor := c.GetHeader("X-Forwarded-For")
 	if xForwardedFor != "" {
 		ips := strings.Split(xForwardedFor, ",")
 		if len(ips) > 0 {
-			ip = strings.TrimSpace(ips[0])
+			ip = strings.TrimSpace(ips[len(ips)-1])
 			if ip != "" {
 				return ip
 			}

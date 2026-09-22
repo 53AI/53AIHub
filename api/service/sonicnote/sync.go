@@ -696,6 +696,7 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, tok
 		}
 		return err
 	}
+	model.InvalidateCapabilityFiletree(eid, libraryID)
 
 	// 3. 同步进 ES 索引（keyword 搜索依赖；与 recording_audio/personal_upload 等保持一致）。
 	//    设备导入文件若不索引 ES，keyword 搜索（走 ES）会漏掉它们——必须与新导入文件同步。

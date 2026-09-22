@@ -12,7 +12,7 @@ type UserRecentUsed struct {
 	ID           int64 `json:"id" gorm:"primaryKey;autoIncrement"`
 	Eid          int64 `json:"eid" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:1"`
 	UserID       int64 `json:"user_id" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:2"`
-	ResourceType int   `json:"resource_type" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:3"` // 0=space, 1=knowledge_base, 2=file
+	ResourceType int   `json:"resource_type" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:3"` // 0=space, 1=knowledge_base, 2=file, 3=wiki_page
 	ResourceID   int64 `json:"resource_id" gorm:"not null;uniqueIndex:idx_user_recent_used_uk,priority:4"`
 	SpaceID      int64 `json:"space_id" gorm:"not null;index"`
 	UpdatedTime  int64 `json:"updated_time" gorm:"not null"`

@@ -166,17 +166,19 @@ func (s *ProgressStorage) ensureRedisConnection() *redis.Client {
 
 // SaveBatch 保存批次信息
 func (s *ProgressStorage) SaveBatch(batch *BatchUpload) error {
+	snapshot := batch.snapshot()
+
 	// 保存到内存缓存
-	s.memoryCache.Store(fmt.Sprintf("batch:%s", batch.ID), batch)
+	s.memoryCache.Store(fmt.Sprintf("batch:%s", snapshot.ID), snapshot)
 
 	// 尝试保存到Redis
 	if redisClient := s.ensureRedisConnection(); redisClient != nil {
-		batchJSON, err := json.Marshal(batch)
+		batchJSON, err := json.Marshal(snapshot)
 		if err != nil {
 			return fmt.Errorf("序列化批次信息失败: %v", err)
 		}
 
-		key := fmt.Sprintf("batch_upload:batch:%s", batch.ID)
+		key := fmt.Sprintf("batch_upload:batch:%s", snapshot.ID)
 		err = redisClient.Set(context.Background(), key, batchJSON, s.batchTimeout).Err()
 		if err != nil {
 			// Redis错误不应该阻止操作，只记录警告
@@ -184,7 +186,7 @@ func (s *ProgressStorage) SaveBatch(batch *BatchUpload) error {
 		}
 
 		// 更新最后更新时间
-		lastUpdateKey := fmt.Sprintf("batch_upload:last_update:%s", batch.ID)
+		lastUpdateKey := fmt.Sprintf("batch_upload:last_update:%s", snapshot.ID)
 		redisClient.Set(context.Background(), lastUpdateKey, time.Now().UnixMilli(), s.batchTimeout)
 	}
 
@@ -196,15 +198,7 @@ func (s *ProgressStorage) LoadBatch(batchID string) (*BatchUpload, error) {
 	// 先查内存缓存，返回深拷贝以避免并发修改裸指针内的 map 导致 panic
 	if value, ok := s.memoryCache.Load(fmt.Sprintf("batch:%s", batchID)); ok {
 		if b, ok2 := value.(*BatchUpload); ok2 {
-			// 使用 json 深拷贝（简洁且可靠）
-			if data, err := json.Marshal(b); err == nil {
-				var copyBatch BatchUpload
-				if err2 := json.Unmarshal(data, &copyBatch); err2 == nil {
-					return &copyBatch, nil
-				}
-			}
-			// 若深拷贝失败，回退到返回原始对象（尽量不发生）
-			return b, nil
+			return b.snapshot(), nil
 		}
 	}
 
@@ -228,7 +222,7 @@ func (s *ProgressStorage) LoadBatch(batchID string) (*BatchUpload, error) {
 		// 回填内存缓存
 		s.memoryCache.Store(fmt.Sprintf("batch:%s", batchID), &batch)
 
-		return &batch, nil
+		return batch.snapshot(), nil
 	}
 
 	// Redis不可用时，只能从内存缓存查找
@@ -237,14 +231,15 @@ func (s *ProgressStorage) LoadBatch(batchID string) (*BatchUpload, error) {
 
 // UpdateFileProgress 更新文件进度
 func (s *ProgressStorage) UpdateFileProgress(batchID, fileID string, fileUpload *FileUpload) error {
+	snapshot := cloneFileUpload(fileUpload)
 	// 更新内存缓存
 	key := fmt.Sprintf("file:%s:%s", batchID, fileID)
-	s.memoryCache.Store(key, fileUpload)
+	s.memoryCache.Store(key, snapshot)
 
 	// 尝试异步更新Redis
 	if redisClient := s.ensureRedisConnection(); redisClient != nil {
 		go func() {
-			progressJSON, _ := json.Marshal(fileUpload)
+			progressJSON, _ := json.Marshal(snapshot)
 			redisKey := fmt.Sprintf("batch_upload:file:%s:%s", batchID, fileID)
 			redisClient.Set(context.Background(), redisKey, progressJSON, s.cacheTimeout)
 
@@ -263,7 +258,7 @@ func (s *ProgressStorage) GetFileProgress(batchID, fileID string) (*FileUpload, 
 
 	// 先查内存缓存
 	if value, ok := s.memoryCache.Load(key); ok {
-		return value.(*FileUpload), nil
+		return cloneFileUpload(value.(*FileUpload)), nil
 	}
 
 	// 尝试从Redis获取
@@ -286,7 +281,7 @@ func (s *ProgressStorage) GetFileProgress(batchID, fileID string) (*FileUpload, 
 		// 回填内存缓存
 		s.memoryCache.Store(key, &fileUpload)
 
-		return &fileUpload, nil
+		return cloneFileUpload(&fileUpload), nil
 	}
 
 	// Redis不可用时，只能从内存缓存查找

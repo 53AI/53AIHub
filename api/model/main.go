@@ -335,6 +335,21 @@ func migrateDB() error {
 	if err := DB.AutoMigrate(&AgentRun{}, &AgentRunEvent{}); err != nil {
 		return err
 	}
+	// Action Runtime uses an independent Action/Run/Event/Artifact relation and
+	// must not extend the ordinary chat AgentRun projection.
+	if err := DB.AutoMigrate(&ActionRecord{}, &ActionRunRecord{}, &ActionEventRecord{}, &ActionArtifactRecord{}); err != nil {
+		return err
+	}
+	if err := DB.AutoMigrate(
+		&ActionOpportunityRecord{}, &ActionEvidenceRefRecord{},
+		&ActionPlanRecord{},
+		&CanonicalSourceIdentityRecord{}, &ActionSourceRefRecord{},
+	); err != nil {
+		return err
+	}
+	if err := DB.AutoMigrate(&ActionResultAssetRecord{}); err != nil {
+		return err
+	}
 	if err := DB.AutoMigrate(&RecordingJobAssembly{}); err != nil {
 		return err
 	}
@@ -393,6 +408,14 @@ func migrateDB() error {
 		&RecordingMemoryEntity{},
 		&RecordingMemoryFact{},
 		&RecordingMemoryEntityRelation{},
+		&RecordingCognitionDomain{},
+		&RecordingCognition{},
+		&RecordingCognitionVersion{},
+		&RecordingCognitionCandidate{},
+		&RecordingCognitionExternalEvidence{},
+		&RecordingCognitionApplicability{},
+		&RecordingMemoryV2Shadow{},
+		&RecordingMemoryV2Evaluation{},
 		&RecordingDeviceConfig{},
 		&RecordingSyncSource{},
 		&RecordingSyncJob{},
@@ -510,4 +533,13 @@ func migrateDBWithPGLock(ctx context.Context, sqlDB *sql.DB) error {
 	}()
 
 	return migrateDB()
+}
+
+// lazy: variadic-ctx 渐进迁移天花板。当某函数全部调用点都传 ctx 后，去掉 `...` 收敛为标准 ctx-first。
+// 升级条件：grep 确认该函数所有调用点均传参。无 ctx 时返回全局 DB，行为与原来完全一致，老调用点零改动可编译。
+func dbWithOptionalCtx(ctxs ...context.Context) *gorm.DB {
+	if len(ctxs) == 0 || ctxs[0] == nil {
+		return DB
+	}
+	return DB.WithContext(ctxs[0])
 }

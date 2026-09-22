@@ -95,15 +95,15 @@ func removeTingWuTask(taskID string) {
 
 // Client 文档转换服务客户端
 type Client struct {
-	baseURL      string
-	apiKey       string
-	timeout      time.Duration
-	pollTimeout  time.Duration
-	maxSize      int64
-	retryTimes   int
-	pollInterval time.Duration
-	healthTimeout  time.Duration
-	httpClient   *http.Client
+	baseURL       string
+	apiKey        string
+	timeout       time.Duration
+	pollTimeout   time.Duration
+	maxSize       int64
+	retryTimes    int
+	pollInterval  time.Duration
+	healthTimeout time.Duration
+	httpClient    *http.Client
 }
 
 // NewClient 创建新的文档转换客户端
@@ -122,13 +122,13 @@ func NewClient() *Client {
 	maxSize, _ := helper.ParseSize(maxSizeStr)
 
 	return &Client{
-		baseURL:      env.String("DOC_CONVERT_BASE_URL", ""),
-		apiKey:       env.String("DOC_CONVERT_API_KEY", ""),
-		timeout:      timeout,
-		pollTimeout:  pollTimeout,
-		maxSize:      maxSize,
-		retryTimes:   env.Int("DOC_CONVERT_RETRY_TIMES", 3),
-		pollInterval: time.Duration(env.Int("DOC_CONVERT_POLL_INTERVAL", 5)) * time.Second,
+		baseURL:       env.String("DOC_CONVERT_BASE_URL", ""),
+		apiKey:        env.String("DOC_CONVERT_API_KEY", ""),
+		timeout:       timeout,
+		pollTimeout:   pollTimeout,
+		maxSize:       maxSize,
+		retryTimes:    env.Int("DOC_CONVERT_RETRY_TIMES", 3),
+		pollInterval:  time.Duration(env.Int("DOC_CONVERT_POLL_INTERVAL", 5)) * time.Second,
 		healthTimeout: time.Duration(env.Int("DOC_CONVERT_HEALTH_TIMEOUT", 30)) * time.Second,
 		httpClient: &http.Client{
 			Timeout: timeout,

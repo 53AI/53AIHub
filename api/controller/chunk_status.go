@@ -9,7 +9,6 @@ import (
 
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
-	"github.com/53AI/53AIHub/service"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
 )
@@ -39,17 +38,8 @@ func EnableChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取分块信息
-	chunk, err := model.GetDocumentChunkByID(eid, id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
-		return
-	}
-
-	// 验证权限
-	userPermission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, chunk.LibraryID, userID)
-	if err != nil || userPermission < model.PERMISSION_EDIT_KNOWLEDGE {
-		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限操作此分块")))
+	// 获取分块信息并验证权限
+	if _, _, ok := requireChunkPermission(c, eid, userID, id, model.PERMISSION_EDIT_ALL, "无权限操作此分块"); !ok {
 		return
 	}
 
@@ -96,17 +86,8 @@ func DisableChunk(c *gin.Context) {
 		return
 	}
 
-	// 获取分块信息
-	chunk, err := model.GetDocumentChunkByID(eid, id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
-		return
-	}
-
-	// 验证权限
-	userPermission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, chunk.LibraryID, userID)
-	if err != nil || userPermission < model.PERMISSION_EDIT_KNOWLEDGE {
-		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New("无权限操作此分块")))
+	// 获取分块信息并验证权限
+	if _, _, ok := requireChunkPermission(c, eid, userID, id, model.PERMISSION_EDIT_ALL, "无权限操作此分块"); !ok {
 		return
 	}
 
@@ -239,6 +220,11 @@ func BatchEnableChunks(c *gin.Context) {
 		return
 	}
 
+	// 验证所有分块的文件权限
+	if !requireChunksPermission(c, eid, userID, req.ChunkIDs, model.PERMISSION_EDIT_ALL, "无权限操作此分块") {
+		return
+	}
+
 	// 批量处理分块
 	err := batchUpdateChunkStatus(eid, userID, req.ChunkIDs, "enabled")
 	if err != nil {
@@ -277,6 +263,10 @@ func BatchDisableChunks(c *gin.Context) {
 		return
 	}
 
+	// 验证所有分块的文件权限
+	if !requireChunksPermission(c, eid, userID, req.ChunkIDs, model.PERMISSION_EDIT_ALL, "无权限操作此分块") {
+		return
+	}
 	// 批量处理分块
 	err := batchUpdateChunkStatus(eid, userID, req.ChunkIDs, "disabled")
 	if err != nil {
@@ -294,12 +284,6 @@ func batchUpdateChunkStatus(eid int64, userID int64, chunkIDs []int64, status st
 		chunk, err := model.GetDocumentChunkByID(eid, chunkID)
 		if err != nil {
 			return fmt.Errorf("获取分块 %d 失败: %v", chunkID, err)
-		}
-
-		// 验证权限
-		userPermission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, chunk.LibraryID, userID)
-		if err != nil || userPermission < model.PERMISSION_EDIT_KNOWLEDGE {
-			return fmt.Errorf("无权限操作分块 %d", chunkID)
 		}
 
 		// 更新状态

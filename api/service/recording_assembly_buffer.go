@@ -1,12 +1,12 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,7 +88,7 @@ func (s *RecordingAssemblyService) rebuildAssemblyBufferFromChunks(ctx context.C
 	}
 
 	var (
-		buffer         bytes.Buffer
+		contents       [][]byte
 		lastInputIndex int64 = -1
 		lastInputHash  string
 		totalDuration  int64
@@ -102,14 +102,14 @@ func (s *RecordingAssemblyService) rebuildAssemblyBufferFromChunks(ctx context.C
 		if loadErr != nil {
 			return fmt.Errorf("%w: segment_index=%d err=%v", ErrRecordingAssemblyBufferMissing, chunk.SegmentIndex, loadErr)
 		}
-		if _, err := buffer.Write(content); err != nil {
-			return err
-		}
+		contents = append(contents, content)
 		totalDuration += chunk.DurationMs
 		lastInputIndex = chunk.SegmentIndex
 		hash := sha256.Sum256(content)
 		lastInputHash = hex.EncodeToString(hash[:])
 	}
+	// 音频感知合并：WAV 分片剥头只拼 data，避免多段 RIFF 头截断
+	merged := mergeRecordingAudioParts(contents...)
 
 	if err := ensureRecordingDirectory(filepath.Dir(bufferKey), recordingLocalDirMode, false); err != nil {
 		return err
@@ -117,19 +117,19 @@ func (s *RecordingAssemblyService) rebuildAssemblyBufferFromChunks(ctx context.C
 	if err := ensureRecordingWritableFile(bufferKey, recordingAssemblySpoolFileMode); err != nil {
 		return err
 	}
-	if err := os.WriteFile(bufferKey, buffer.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(bufferKey, merged, 0o644); err != nil {
 		return err
 	}
 	if err := ensureRecordingFileMode(bufferKey, recordingAssemblySpoolFileMode); err != nil {
 		return err
 	}
 
-	updates := recordingAssemblyBufferedUpdates(bufferKey, int64(buffer.Len()), totalDuration, lastInputIndex, lastInputHash)
+	updates := recordingAssemblyBufferedUpdates(bufferKey, int64(len(merged)), totalDuration, lastInputIndex, lastInputHash)
 	if err := model.UpdateRecordingJobAssembly(assembly, updates); err != nil {
 		return err
 	}
 	assembly.BufferKey = bufferKey
-	assembly.BufferSize = int64(buffer.Len())
+	assembly.BufferSize = int64(len(merged))
 	assembly.BufferDurationMs = totalDuration
 	assembly.LastInputIndex = lastInputIndex
 	assembly.LastInputHash = lastInputHash
@@ -149,14 +149,30 @@ func (s *RecordingAssemblyService) appendToBuffer(bufferKey string, content []by
 	if err := ensureRecordingWritableFile(bufferKey, recordingAssemblySpoolFileMode); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(bufferKey, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(bufferKey, os.O_RDWR|os.O_CREATE, 0o644)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	_, err = f.Write(content)
+	if info, statErr := f.Stat(); statErr == nil && info.Size() == 0 {
+		if _, err := f.Write(content); err != nil {
+			return err
+		}
+		return ensureRecordingFileMode(bufferKey, recordingAssemblySpoolFileMode)
+	}
+	// 缓冲已存在：若为 WAV，做 WAV 感知追加（剥离新分片的 RIFF 头，只拼 data 并修正大小字段）；
+	// 否则退回裸追加。
+	merged, err := appendRecordingWAVFile(f, content)
 	if err != nil {
 		return err
+	}
+	if !merged {
+		if _, err := f.Seek(0, io.SeekEnd); err != nil {
+			return err
+		}
+		if _, err := f.Write(content); err != nil {
+			return err
+		}
 	}
 	return ensureRecordingFileMode(bufferKey, recordingAssemblySpoolFileMode)
 }

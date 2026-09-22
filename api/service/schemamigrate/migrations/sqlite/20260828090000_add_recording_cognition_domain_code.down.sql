@@ -1,0 +1,4 @@
+DROP INDEX IF EXISTS idx_recording_cognition_candidates_domain_code;
+ALTER TABLE recording_cognition_candidates DROP COLUMN domain_code;
+DROP INDEX IF EXISTS idx_recording_cognition_versions_domain_code;
+ALTER TABLE recording_cognition_versions DROP COLUMN domain_code;

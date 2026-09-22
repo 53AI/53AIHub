@@ -11,7 +11,7 @@ import (
 )
 
 type SettingRequest struct {
-	// 设置键名，支持的类型: third_party_statistic_header, third_party_statistic_css, default_prompt_links, document_application, document_setting, document_js_sdk_setting, km_agents_setting, message_feedback_config, recording_config, recording_application
+	// 设置键名，支持的类型: third_party_statistic_header, third_party_statistic_css, default_prompt_links, document_application, document_setting, document_js_sdk_setting, km_agents_setting, message_feedback_config, recording_config, recording_application, password_security_policy
 	Key string `json:"key" example:"setting_key"`
 	// 设置值
 	Value string `json:"value" example:"setting_value"`
@@ -212,12 +212,49 @@ func GetSettingsByKey(c *gin.Context) {
 // @Param library_id query int false "Library ID"
 // @Success 200 {object} model.CommonResponse
 // @Router /api/settings/key/{key} [get]
+// @Summary 免登录获取企业公开设置
+// @Description 未登录可读取白名单 key 的企业设置值（当前仅 password_security_policy）
+// @Tags Setting
+// @Produce json
+// @Param key path string true "Setting key"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/settings/key/public/{key} [get]
+// resolveSettingEID 优先取登录用户 eid（token 有效时）；未登录/无效 token 回落 config.GetEID
+// （SaaS 下 SaasEnv 已按 Referer 域名映射 eid，无映射时回落环境变量 EID）。
+func resolveSettingEID(c *gin.Context) int64 {
+	if user, err := model.GetLoginUser(c); err == nil {
+		return user.Eid
+	}
+	return config.GetEID(c)
+}
+
+func GetPublicSettingByKey(c *gin.Context) {
+	key := c.Param("key")
+	if !model.IsPublicSettingKey(key) {
+		c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(nil))
+		return
+	}
+	setting, err := model.GetSettingByEidAndKey(resolveSettingEID(c), key)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(setting))
+}
+
 func GetSettingByKey(c *gin.Context) {
 	key := c.Param("key")
-	user, err := model.GetLoginUser(c)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, model.UnauthorizedError.ToResponse(err))
-		return
+	var eid int64
+	if model.IsPublicSettingKey(key) {
+		// 公开设置 key：未登录也可读取，优先登录用户 eid，无会话回落 config.GetEID（域名映射 → 环境变量 EID）。
+		eid = resolveSettingEID(c)
+	} else {
+		user, err := model.GetLoginUser(c)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.UnauthorizedError.ToResponse(err))
+			return
+		}
+		eid = user.Eid
 	}
 
 	library_id := c.Query("library_id")
@@ -227,7 +264,7 @@ func GetSettingByKey(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 			return
 		}
-		setting, err := model.GetSettingByEidAndLibraryAndKey(user.Eid, libraryID, key)
+		setting, err := model.GetSettingByEidAndLibraryAndKey(eid, libraryID, key)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 			return
@@ -240,7 +277,7 @@ func GetSettingByKey(c *gin.Context) {
 		c.JSON(http.StatusOK, model.Success.ToResponse(setting))
 		return
 	}
-	setting, err := model.GetSettingByEidAndKey(user.Eid, key)
+	setting, err := model.GetSettingByEidAndKey(eid, key)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return

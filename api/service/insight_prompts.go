@@ -17,15 +17,99 @@ const insightPerspectiveCommonPrompt = `# 分析上下文
 本次材料由以下部分组成：
 - personal_info：确定分析对象是谁、能决定什么、需要协调什么。
 - company_info：确定建议要适配什么企业现实，不能堆砌通用行业常识。
-- 当前主要材料：本次录音生成的纪要，是本次判断的主体；读书、听课等活动也先按同一套录音纪要链路处理。
+- 当前主要材料：本次录音生成的纪要，是本次判断的主体；管理课程也先按同一套录音纪要链路处理。
 - related_history：用于发现延续、冲突、重复问题和变化，只有确实相关时引用，不能覆盖最新材料。
 - transcription：在有录音转写时作为事实证据，用于补充遗漏、校验纪要、区分决定和倾向；不要逐句复述。
 
 个人信息和公司信息只能校准判断，不能虚构事实。所有场景都必须遵守下面的统一决策分析方法和 Markdown 输出契约。`
 
-const internalMeetingInsightPrompt = `# 当前场景：内部会议
+const managementMeetingInsightPrompt = `# 当前场景：管理例会
 
-把当前会议作为组织、经营和执行事实来分析，重点识别决策偏移、责任断点、资源取舍、协同成本和执行门禁。区分正式决议、初步倾向、未解决分歧与管理者现在应采取的态度；没有投票或采购不等于没有洞察，但不得写成已批准或已验证。`
+把当前会议作为公司内部管理事实来分析，重点识别经营安排、决策偏移、责任断点、资源取舍、协同成本和开始执行前需要确认的条件。区分正式决议、初步倾向、未解决分歧与管理者现在应采取的态度；没有投票或采购不等于没有洞察，但不得写成已批准或已验证。`
+
+const customerCommunicationInsightPrompt = `# 当前场景：客户交流
+
+把客户拜访、线上客户会议和基础联络电话作为客户关系与需求事实来分析，不只关注成交，也关注关系维护和下一步是否值得推进。
+
+重点分析：
+1. 客户明确提出的问题、真实痛点、现有替代方案和不解决的代价。
+2. 客户所处阶段、决策链、预算、时间、竞争方案和采购门槛；信息不足要标记待确认。
+3. 客户反馈中哪些是明确需求、真实异议、礼貌回应或我方主观判断。
+4. 下一步必须拿到什么事实或承诺，才能继续、协同、升级或止损。
+
+不得把客户的礼貌回应写成承诺，也不得把销售人员的判断写成客户决定。行动必须写明对象、动作和验收条件。`
+
+const projectReviewInsightPrompt = `# 当前场景：项目复盘
+
+把当前材料限定在一个具体项目或事件上，重点回答“结果为什么如此、哪些做法应该保留或改变、下一次如何拿到更好的结果”。
+
+重点分析：
+1. 目标、实际结果和偏差之间的因果链，区分事实、解释和事后推测。
+2. 哪些决策、协作、流程、资源或外部条件造成了结果，避免只归因于个人态度。
+3. 可复用的经验、需要停止的做法和仍未验证的假设。
+4. 下一次具体要改变什么，如何验证改变确实带来更好结果。
+
+不要把一般管理建议包装成复盘结论，也不要在没有证据时追责或制造行动项。`
+
+const businessCooperationInsightPrompt = `# 当前场景：商业合作
+
+把当前交流视为上下游、渠道伙伴或其他潜在合作方之间的商业机会探讨，重点判断合作是否值得进入验证，而不是把意向性表达写成合作承诺。
+
+重点分析：
+1. 双方各自要解决的问题、可交换的资源、角色边界和潜在商业价值。
+2. 合作模式、客户归属、交付责任、投入成本、利益分配和竞争/替代风险。
+3. 哪些是明确共识，哪些只是可能性、试探或礼貌表达。
+4. 下一步最低成本验证、进入下一阶段的门槛和应当止损的条件。
+
+没有书面承诺、明确负责人或验证结果时，不得写成已经达成合作。`
+
+const businessInnovationInsightPrompt = `# 当前场景：业务创新
+
+把当前会议作为让团队、流程、产品或业务变得更好的创新讨论，重点判断哪些改变值得试验，而不是把新想法直接当成战略结论。
+
+重点分析：
+1. 当前做法的具体问题、机会成本和真正想改善的结果。
+2. 新方案改变了什么机制，依赖哪些前提，会增加哪些成本或风险。
+3. 哪些想法只是观点，哪些已经有证据，哪些需要通过小实验验证。
+4. 最小可行试验、验收指标、负责人权限和继续/停止条件。
+
+不要因为观点新颖就判定为创新成功，也不要把头脑风暴内容写成正式决策。`
+
+const employeeConversationInsightPrompt = `# 当前场景：员工谈话
+
+把当前材料作为管理者与员工之间的绩效沟通、谈心或非正式交流来分析，重点关注事实、感受、期望和管理责任，保护员工关系与沟通边界。
+
+重点分析：
+1. 员工实际表现、状态、困难和诉求，区分员工原话与管理者解释。
+2. 目标、反馈、支持、资源和责任是否清楚，是否存在未被说出的组织问题。
+3. 哪些内容需要继续一对一确认，哪些可以形成明确的管理承诺。
+4. 后续沟通动作、观察周期和什么时候需要重新决定。
+
+不要把一次谈话中的情绪或猜测固化为员工事实，也不要越权作出人事结论。`
+
+const industryExchangeInsightPrompt = `# 当前场景：行业交流
+
+把当前材料作为与同行或行业参与者交流行业经营情况、经验与观点的外部信号来分析，重点判断哪些信息会改变公司的行业判断。
+
+重点分析：
+1. 对方描述的是亲历事实、行业观点、传闻还是对未来的预测。
+2. 行业需求、竞争格局、经营压力、技术趋势和客户变化中有哪些可验证信号。
+3. 这些信息对公司战略、产品、客户和资源投入的影响，哪些只是背景噪声。
+4. 需要进一步验证的来源、样本和小范围行动，不要把同行观点写成行业共识。
+
+行业分享本身不等于商业合作；只有出现明确合作可能时才提出合作推进建议。`
+
+const managementCourseInsightPrompt = `# 当前场景：管理课程
+
+把销售、产品、品牌、组织和管理等体系化课程作为学习输入，重点判断课程对当前用户和企业是否真正有帮助，而不是复述课程内容。
+
+重点分析：
+1. 课程试图解决的业务问题、核心方法和成立前提。
+2. 哪些内容可以迁移到当前公司的产品、客户、组织或流程，哪些只是讲师场景经验。
+3. 落地需要哪些能力、资源和改变，最大的误用风险是什么。
+4. 明天可做的一件事、30天可验证的小实验，以及停止或减少的做法。
+
+不要伪造老师原话或课程案例；没有验证的观点必须标记为待验证。`
 
 const externalTrainingInsightPrompt = `# 当前场景：参与外部培训会议
 
@@ -37,7 +121,7 @@ const externalTrainingInsightPrompt = `# 当前场景：参与外部培训会议
 3. 方法落地需要哪些能力、资源和改变；最大的误用风险是什么。
 4. 这次培训带来的新信号是否足以改变已有判断、优先级或投入方向。
 
-在统一 Markdown 输出结构中，优先呈现培训的核心判断、可迁移价值、不宜照搬的边界和验证行动。每条行动都写成“当什么条件出现 → 由谁做什么”，并给出可验收的结果或改判条件。`
+在统一 Markdown 输出结构中，优先呈现培训的核心判断、可迁移价值、不宜照搬的边界和验证行动。每条行动都写成“当什么条件出现 → 由谁做什么”，并给出做到什么才算完成、以及什么时候需要重新决定。`
 
 const externalSpeechInsightPrompt = `# 当前场景：去别人公司演讲
 
@@ -49,7 +133,7 @@ const externalSpeechInsightPrompt = `# 当前场景：去别人公司演讲
 3. 现场出现的客户需求、合作信号、竞争信息和品牌风险，哪些已确认、哪些只是猜测。
 4. 演讲内容如何转化为后续拜访、内容、产品验证或关系推进。
 
-在统一 Markdown 输出结构中，优先呈现演讲产生的核心业务信号、听众反馈的证据强度、公司定位偏差和后续跟进门禁；不要把礼貌反馈或猜测写成客户承诺。`
+在统一 Markdown 输出结构中，优先呈现演讲产生的核心业务信号、听众反馈的证据强度、公司定位偏差和后续跟进前需要确认的条件；不要把礼貌反馈或猜测写成客户承诺。`
 
 const roadshowInsightPrompt = `# 当前场景：路演会议
 
@@ -61,7 +145,7 @@ const roadshowInsightPrompt = `# 当前场景：路演会议
 3. 方案的差异化、商业可行性、交付能力和资源约束是否经得起追问。
 4. 哪些信号足以进入下一阶段，哪些必须先补证据或验证。
 
-在统一 Markdown 输出结构中，优先呈现路演结论、听众信号与证据强度、商业和交付风险、下一轮推进门禁，以及继续推进、协同、升级或止损的条件；不要把热烈反应写成订单、融资或合作承诺。`
+在统一 Markdown 输出结构中，优先呈现路演结论、听众信号与证据强度、商业和交付风险、进入下一轮前需要确认的条件，以及继续推进、协同、升级或停止的条件；不要把热烈反应写成订单、融资或合作承诺。`
 
 const salesVisitInsightPrompt = `# 当前场景：销售拜访
 
@@ -73,7 +157,7 @@ const salesVisitInsightPrompt = `# 当前场景：销售拜访
 3. 我方方案与客户场景的匹配度、价值证据、交付成本和承诺风险。
 4. 商机处于什么阶段，下一步必须拿到什么事实或承诺才能继续。
 
-在统一 Markdown 输出结构中，优先呈现商机定性、客户问题与证据、成交阻力、下一步行动和继续/协同/升级/止损门禁。行动必须写明对象、动作和验收条件。`
+在统一 Markdown 输出结构中，优先呈现商机定性、客户问题与证据、成交阻力、下一步行动和继续/协同/升级/停止前需要确认的条件。行动必须写明对象、动作和做到什么才算完成。`
 
 const lectureInsightPrompt = `# 当前场景：听一堂课
 
@@ -118,11 +202,53 @@ const bookInsightPrompt = `# 当前场景：读一本书
 `
 
 var insightPromptProfiles = map[model.InsightPerspective]insightPromptProfile{
-	model.InsightPerspectiveExternalTraining: {
-		Perspective:       model.InsightPerspectiveExternalTraining,
+	model.InsightPerspectiveManagementMeeting: {
+		Perspective:       model.InsightPerspectiveManagementMeeting,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "培训会议纪要",
-		PerspectivePrompt: externalTrainingInsightPrompt,
+		SourceName:        "管理例会纪要",
+		PerspectivePrompt: managementMeetingInsightPrompt,
+	},
+	model.InsightPerspectiveCustomerCommunication: {
+		Perspective:       model.InsightPerspectiveCustomerCommunication,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "客户交流纪要",
+		PerspectivePrompt: customerCommunicationInsightPrompt,
+	},
+	model.InsightPerspectiveProjectReview: {
+		Perspective:       model.InsightPerspectiveProjectReview,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "项目复盘纪要",
+		PerspectivePrompt: projectReviewInsightPrompt,
+	},
+	model.InsightPerspectiveBusinessCooperation: {
+		Perspective:       model.InsightPerspectiveBusinessCooperation,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "商业合作纪要",
+		PerspectivePrompt: businessCooperationInsightPrompt,
+	},
+	model.InsightPerspectiveBusinessInnovation: {
+		Perspective:       model.InsightPerspectiveBusinessInnovation,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "业务创新纪要",
+		PerspectivePrompt: businessInnovationInsightPrompt,
+	},
+	model.InsightPerspectiveEmployeeConversation: {
+		Perspective:       model.InsightPerspectiveEmployeeConversation,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "员工谈话纪要",
+		PerspectivePrompt: employeeConversationInsightPrompt,
+	},
+	model.InsightPerspectiveIndustryExchange: {
+		Perspective:       model.InsightPerspectiveIndustryExchange,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "行业交流纪要",
+		PerspectivePrompt: industryExchangeInsightPrompt,
+	},
+	model.InsightPerspectiveManagementCourse: {
+		Perspective:       model.InsightPerspectiveManagementCourse,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "管理课程纪要",
+		PerspectivePrompt: managementCourseInsightPrompt,
 	},
 	model.InsightPerspectiveExternalSpeech: {
 		Perspective:       model.InsightPerspectiveExternalSpeech,
@@ -136,23 +262,11 @@ var insightPromptProfiles = map[model.InsightPerspective]insightPromptProfile{
 		SourceName:        "路演会议纪要",
 		PerspectivePrompt: roadshowInsightPrompt,
 	},
-	model.InsightPerspectiveSalesVisit: {
-		Perspective:       model.InsightPerspectiveSalesVisit,
+	model.InsightPerspectiveExternalTraining: {
+		Perspective:       model.InsightPerspectiveExternalTraining,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "销售拜访纪要",
-		PerspectivePrompt: salesVisitInsightPrompt,
-	},
-	model.InsightPerspectiveInternalMeeting: {
-		Perspective:       model.InsightPerspectiveInternalMeeting,
-		SourceTag:         "meeting_minutes",
-		SourceName:        "内部会议纪要",
-		PerspectivePrompt: internalMeetingInsightPrompt,
-	},
-	model.InsightPerspectiveLecture: {
-		Perspective:       model.InsightPerspectiveLecture,
-		SourceTag:         "meeting_minutes",
-		SourceName:        "听课录音纪要",
-		PerspectivePrompt: lectureInsightPrompt,
+		SourceName:        "培训会议纪要",
+		PerspectivePrompt: externalTrainingInsightPrompt,
 	},
 	model.InsightPerspectiveBook: {
 		Perspective:       model.InsightPerspectiveBook,
@@ -164,6 +278,10 @@ var insightPromptProfiles = map[model.InsightPerspective]insightPromptProfile{
 
 func insightPromptProfileFor(perspective model.InsightPerspective) insightPromptProfile {
 	normalized := model.NormalizeInsightPerspective(string(perspective))
+	canonical := model.CanonicalInsightPerspective(normalized)
+	if canonical != normalized {
+		normalized = canonical
+	}
 	if profile, ok := insightPromptProfiles[normalized]; ok {
 		return profile
 	}

@@ -44,6 +44,16 @@ func SaveKnowledgeChunk(c *gin.Context) {
 		return
 	}
 
+	// 验证文件权限
+	file, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限管理此文件知识点")
+	if !ok {
+		return
+	}
+	if file.LibraryID != req.LibraryID {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("文件不属于指定知识库")))
+		return
+	}
+
 	// 如果指定了 ChunkID，验证分块是否存在且属于指定知识库
 	if req.ChunkID != nil {
 		existingChunk, err := model.GetDocumentChunkByID(eid, *req.ChunkID)
@@ -53,6 +63,10 @@ func SaveKnowledgeChunk(c *gin.Context) {
 		}
 		if existingChunk.LibraryID != req.LibraryID {
 			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("指定的分块 %d 不属于指定知识库", *req.ChunkID)))
+			return
+		}
+		if existingChunk.FileID != req.FileID {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(fmt.Errorf("指定的分块 %d 不属于指定文件", *req.ChunkID)))
 			return
 		}
 		if existingChunk.ChunkType != "knowledge" {

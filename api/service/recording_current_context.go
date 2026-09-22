@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // CurrentMeetingContext is the immutable, generation-scoped view shared by
@@ -14,51 +15,54 @@ import (
 // in memory in v1.1; the minutes hash is the compatibility boundary until a
 // future schema task persists a first-class context snapshot.
 type CurrentMeetingContext struct {
-	EID                 int64
-	FileID              int64
-	Generation          int64
-	MinutesHash         string
-	SegmentVersion      string
-	ExtractionVersion   string
-	SegmentIDs          []string
-	Entities            []CurrentMeetingEntity
-	Claims              []CurrentMeetingClaim
-	Relations           []CurrentMeetingRelation
-	ClaimEntityBindings []CurrentMeetingBinding
+	EID                 int64                    `json:"eid"`
+	FileID              int64                    `json:"file_id"`
+	Generation          int64                    `json:"generation"`
+	MinutesHash         string                   `json:"minutes_hash"`
+	SegmentVersion      string                   `json:"segment_version"`
+	ExtractionVersion   string                   `json:"extraction_version"`
+	PrimaryScene        string                   `json:"primary_scene"`
+	SecondaryDomains    []string                 `json:"secondary_domains"`
+	Topics              []string                 `json:"topics"`
+	SegmentIDs          []string                 `json:"segment_ids"`
+	Entities            []CurrentMeetingEntity   `json:"entities"`
+	Claims              []CurrentMeetingClaim    `json:"claims"`
+	Relations           []CurrentMeetingRelation `json:"relations"`
+	ClaimEntityBindings []CurrentMeetingBinding  `json:"claim_entity_bindings"`
 }
 
 type CurrentMeetingEntity struct {
-	TempID              string
-	EntityType          string
-	Mention             string
-	CanonicalName       string
-	IdentityStatus      string
-	IdentityPolicyClass string
-	Confidence          float64
-	EvidenceSegmentIDs  []string
-	Discriminator       string
+	TempID              string   `json:"temp_id"`
+	EntityType          string   `json:"entity_type"`
+	Mention             string   `json:"mention"`
+	CanonicalName       string   `json:"canonical_name"`
+	IdentityStatus      string   `json:"identity_status"`
+	IdentityPolicyClass string   `json:"identity_policy_class"`
+	Confidence          float64  `json:"confidence"`
+	EvidenceSegmentIDs  []string `json:"evidence_segment_ids"`
+	Discriminator       string   `json:"discriminator"`
 }
 
 type CurrentMeetingClaim struct {
-	TempID             string
-	Kind               string
-	Content            string
-	EvidenceSegmentIDs []string
+	TempID             string   `json:"temp_id"`
+	Kind               string   `json:"kind"`
+	Content            string   `json:"content"`
+	EvidenceSegmentIDs []string `json:"evidence_segment_ids"`
 }
 
 type CurrentMeetingRelation struct {
-	FromTempID         string
-	RelationType       string
-	ToTempID           string
-	Confidence         float64
-	EvidenceSegmentIDs []string
+	FromTempID         string   `json:"from_temp_id"`
+	RelationType       string   `json:"relation_type"`
+	ToTempID           string   `json:"to_temp_id"`
+	Confidence         float64  `json:"confidence"`
+	EvidenceSegmentIDs []string `json:"evidence_segment_ids"`
 }
 
 type CurrentMeetingBinding struct {
-	ClaimTempID        string
-	EntityTempID       string
-	Role               string
-	EvidenceSegmentIDs []string
+	ClaimTempID        string   `json:"claim_temp_id"`
+	EntityTempID       string   `json:"entity_temp_id"`
+	Role               string   `json:"role"`
+	EvidenceSegmentIDs []string `json:"evidence_segment_ids"`
 }
 
 func buildCurrentMeetingContext(ctx context.Context, eid, fileID, generation int64) (*CurrentMeetingContext, error) {
@@ -82,6 +86,9 @@ func buildCurrentMeetingContext(ctx context.Context, eid, fileID, generation int
 		MinutesHash:       hex.EncodeToString(hash[:]),
 		SegmentVersion:    firstNonEmptyString(stringValue(minutes["segment_version"]), stringValue(minutes["transcript_version"]), "legacy_text"),
 		ExtractionVersion: firstNonEmptyString(stringValue(minutes["extraction_version"]), "recording-memory-v1"),
+		PrimaryScene:      firstNonEmptyString(stringValue(minutes["primary_scene"]), stringValue(minutes["scene"])),
+		SecondaryDomains:  stringSliceValue(minutes["secondary_domains"]),
+		Topics:            stringSliceValue(minutes["topics"]),
 	}
 
 	if rows, ok := minutes["memory_entities"].([]interface{}); ok {
@@ -219,6 +226,37 @@ func (c *CurrentMeetingContext) RecallEntityNames() []string {
 		}
 	}
 	return filterInsightRecallEntityNames(names)
+}
+
+// RecallClaimTerms returns bounded, searchable anchors from current structured
+// claims. Exact claim text preserves strong matches; extracted keywords make
+// differently worded historical decisions discoverable as well.
+func (c *CurrentMeetingContext) RecallClaimTerms() []string {
+	if c == nil {
+		return nil
+	}
+	terms := make([]string, 0, len(c.Claims)*3)
+	for _, claim := range c.Claims {
+		content := strings.TrimSpace(claim.Content)
+		if utf8.RuneCountInString(content) >= 4 {
+			terms = appendUniqueStrings(terms, content)
+		}
+		for _, keyword := range extractKeywords(content) {
+			terms = appendUniqueStrings(terms, keyword)
+			if !isChinese(keyword) {
+				continue
+			}
+			runes := []rune(keyword)
+			for index := 0; index+4 <= len(runes); index++ {
+				terms = appendUniqueStrings(terms, string(runes[index:index+4]))
+			}
+		}
+	}
+	terms = filterInsightRecallEntityNames(terms)
+	if len(terms) > 24 {
+		terms = terms[:24]
+	}
+	return terms
 }
 
 func (c *CurrentMeetingContext) VerifyCurrentMinutes(eid, fileID int64) error {

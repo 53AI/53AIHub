@@ -573,6 +573,40 @@ func (s *RetrievalChunkService) ProcessEmbeddingForRetrievalChunk(eid int64, chu
 	return s.processEmbeddingForRetrievalChunks(eid, []model.RetrievalChunk{*chunk}, nil)
 }
 
+// RetryRetrievalChunkEmbedding 重置并重新入队单个检索块的 embedding
+func (s *RetrievalChunkService) RetryRetrievalChunkEmbedding(ctx context.Context, eid int64, chunk *model.RetrievalChunk) (*model.RetrievalChunk, error) {
+	if model.IsRetrievalChunkEmbeddingSucceeded(chunk.EmbeddingStatus) {
+		return chunk, nil
+	}
+
+	queue := GetDefaultEmbeddingQueue()
+	if queue == nil {
+		return nil, fmt.Errorf("embedding 队列不可用")
+	}
+
+	if err := model.ResetRetrievalChunkEmbeddingStatus(eid, chunk.ID); err != nil {
+		return nil, fmt.Errorf("重置检索块 embedding 状态失败: %v", err)
+	}
+
+	_, err := queue.EnqueueIfNotExists(ctx, EmbeddingTask{
+		Eid:              eid,
+		RetrievalChunkID: chunk.ID,
+		FileID:           chunk.FileID,
+		LibraryID:        chunk.LibraryID,
+		TraceID:          "",
+		Retries:          0,
+	})
+	if err != nil {
+		_ = model.UpdateRetrievalChunkEmbeddingStatus(eid, chunk.ID, model.RetrievalChunkEmbeddingStatusFailed, "", err.Error())
+		return nil, fmt.Errorf("检索块 embedding 入队失败: %v", err)
+	}
+
+	chunk.EmbeddingStatus = model.RetrievalChunkEmbeddingStatusPending
+	chunk.VectorID = ""
+	chunk.ErrorReason = ""
+	return chunk, nil
+}
+
 // processEmbeddingForRetrievalChunks 为检索块处理 embedding
 func (s *RetrievalChunkService) processEmbeddingForRetrievalChunks(eid int64, chunks []model.RetrievalChunk, config *ChunkConfig) error {
 	if len(chunks) == 0 {

@@ -1,16 +1,16 @@
 package openai
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
-	"context"
 	"errors"
 	"fmt"
+	"github.com/53AI/53AIHub/common/ctxkey"
+	"github.com/53AI/53AIHub/common/thinkingpolicy"
 	"io"
 	"net/http"
 	"strings"
-	"github.com/53AI/53AIHub/common/ctxkey"
-	"github.com/53AI/53AIHub/common/thinkingpolicy"
 
 	"github.com/53AI/53AIHub/common/storage"
 	Hub_model "github.com/53AI/53AIHub/model"

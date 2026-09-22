@@ -39,6 +39,7 @@ const (
 // 收藏专用资源类型常量
 // RESOURCE_TYPE_FAVORITE_SPACE 区别于权限系统的 RESOURCE_TYPE_SPACE = 0，用于收藏空间级别资源
 const RESOURCE_TYPE_FAVORITE_SPACE = 4
+
 // 校验
 func (f *Favorite) Validate() error {
 	if f.UserID <= 0 {

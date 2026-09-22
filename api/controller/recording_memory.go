@@ -3,6 +3,7 @@ package controller
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -150,6 +151,90 @@ func GetRecordingMemoryEntity(c *gin.Context) {
 	}
 	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).Detail(c.Request.Context(), config.GetUserId(c), entityID)
 	if respondRecordingEntityMemoryError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(data))
+}
+
+// GetRecordingCurrentView godoc
+// @Summary 获取实体当前视图
+// @Description 基于当前可见的实体事实、会议 Claim 和证据，在查询时编译只读的 Current View；不会写入记忆或认知数据。
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param entity_id path string true "实体ID（HashID）"
+// @Success 200 {object} model.CommonResponse{data=service.RecordingCurrentView}
+// @Failure 403 {object} model.CommonResponse
+// @Failure 404 {object} model.CommonResponse
+// @Router /api/recordings/memories/entities/{entity_id}/current-view [get]
+func GetRecordingCurrentView(c *gin.Context) {
+	entityID, ok := parseRecordingMemoryID(c, "entity_id")
+	if !ok {
+		return
+	}
+	data, err := service.CompileRecordingCurrentView(c.Request.Context(), config.GetEID(c), config.GetUserId(c), entityID)
+	if err != nil {
+		if errors.Is(err, service.ErrRecordingCurrentViewNotFound) || errors.Is(err, service.ErrRecordingEntityMemoryNotFound) {
+			c.JSON(http.StatusNotFound, model.ParamError.ToNewErrorResponse("记忆实体不存在"))
+			return
+		}
+		if respondRecordingEntityMemoryError(c, err) {
+			return
+		}
+		logger.SysErrorf("【当前视图】查询失败: eid=%d user_id=%d entity_id=%d err=%v", config.GetEID(c), config.GetUserId(c), entityID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("获取当前视图失败"))
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(data))
+}
+
+// GetRecordingMemoryTimeline godoc
+// @Summary 获取实体记忆时间线
+// @Description 返回实体相关 Fact/Claim 的历史时间线，保留被替换和失效记录；接口只读，不生成新的事实。
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param entity_id path string true "实体ID（HashID）"
+// @Param offset query int false "跳过条数，默认0"
+// @Param limit query int false "返回条数，默认50，最大200"
+// @Success 200 {object} model.CommonResponse{data=service.RecordingMemoryTimeline}
+// @Failure 403 {object} model.CommonResponse
+// @Failure 404 {object} model.CommonResponse
+// @Router /api/recordings/memories/entities/{entity_id}/timeline [get]
+func GetRecordingMemoryTimeline(c *gin.Context) {
+	entityID, ok := parseRecordingMemoryID(c, "entity_id")
+	if !ok {
+		return
+	}
+	offset := 0
+	if raw := strings.TrimSpace(c.Query("offset")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("offset 必须是非负整数")))
+			return
+		}
+		offset = parsed
+	}
+	limit := 50
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("limit 必须是正整数")))
+			return
+		}
+		limit = parsed
+	}
+	data, err := service.CompileRecordingMemoryTimeline(c.Request.Context(), config.GetEID(c), config.GetUserId(c), entityID, offset, limit)
+	if err != nil {
+		if errors.Is(err, service.ErrRecordingCurrentViewNotFound) || errors.Is(err, service.ErrRecordingEntityMemoryNotFound) {
+			c.JSON(http.StatusNotFound, model.ParamError.ToNewErrorResponse("记忆实体不存在"))
+			return
+		}
+		if respondRecordingEntityMemoryError(c, err) {
+			return
+		}
+		logger.SysErrorf("【记忆时间线】查询失败: eid=%d user_id=%d entity_id=%d err=%v", config.GetEID(c), config.GetUserId(c), entityID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("获取记忆时间线失败"))
 		return
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(data))

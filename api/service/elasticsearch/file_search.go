@@ -29,6 +29,8 @@ type FileDocument struct {
 	FileName      string `json:"file_name"`       // 完整文件名（含最后一个扩展名）
 	BaseName      string `json:"base_name"`       // 基本名称（去除所有扩展名）
 	LowerBaseName string `json:"lower_base_name"` // 小写基本名称（去除所有扩展名）
+	Summary       string `json:"summary"`         // 文件简介
+	Content       string `json:"content"`         // 文件正文
 	Type          int    `json:"type"`            // 0=目录, 1=文件
 	IsDeleted     bool   `json:"is_deleted"`
 	UserID        int64  `json:"user_id"`
@@ -73,6 +75,7 @@ type FileNameSearchResult struct {
 	Type                     int     `json:"type"`
 	Score                    float64 `json:"score"`
 	Highlight                string  `json:"highlight"`
+	ContentHighlight         string  `json:"content_highlight,omitempty"`
 	LibraryName              string  `json:"library_name"`
 	SpaceID                  int64   `json:"space_id"`
 	SpaceName                string  `json:"space_name"`
@@ -80,6 +83,8 @@ type FileNameSearchResult struct {
 	CreatorName              string  `json:"creator_name"`
 	IsDeleted                bool    `json:"is_deleted"`
 	LatestFileBodyUpdateTime int64   `json:"latest_file_body_update_time"`
+	// 非持久化：当前用户对文件的实测权限，恒返回，0=无权限（调用方在 controller 层回填+过滤）。
+	Permission int `json:"permission"`
 }
 
 // FileNameSearchResponse 文件名搜索响应
@@ -302,11 +307,31 @@ func (s *FileNameSearchService) buildSearchQuery(eid int64, req *FileNameSearchR
 					"pre_tags":  []string{"<mark>"},
 					"post_tags": []string{"</mark>"},
 				},
+				"file_name": map[string]interface{}{
+					"pre_tags":  []string{"<mark>"},
+					"post_tags": []string{"</mark>"},
+				},
+				"summary": map[string]interface{}{
+					"pre_tags":  []string{"<mark>"},
+					"post_tags": []string{"</mark>"},
+				},
+				"content": map[string]interface{}{
+					"pre_tags":            []string{"<mark>"},
+					"post_tags":           []string{"</mark>"},
+					"fragment_size":       120,
+					"number_of_fragments": 1,
+					"no_match_size":       0,
+				},
 			},
 		},
 	}
 
-	if req.SortBy == "recent_update" || req.SortBy == "" {
+	if strings.TrimSpace(req.Query) != "" {
+		query["sort"] = []map[string]interface{}{
+			{"_score": map[string]interface{}{"order": "desc"}},
+			{"updated_time": map[string]interface{}{"order": "desc"}},
+		}
+	} else if req.SortBy == "recent_update" || req.SortBy == "" {
 		query["sort"] = []map[string]interface{}{
 			{"updated_time": map[string]interface{}{"order": "desc"}},
 			{"_score": map[string]interface{}{"order": "desc"}},
@@ -370,34 +395,66 @@ func (s *FileNameSearchService) executeSearch(query map[string]interface{}, from
 		source := hitMap["_source"].(map[string]interface{})
 		score := hitMap["_score"].(float64)
 
-		// 只提取 base_name 高亮
-		highlight := ""
-		if highlightData, exists := hitMap["highlight"]; exists {
-			highlights := highlightData.(map[string]interface{})
-			if fileNameHighlights, exists := highlights["base_name"]; exists {
-				if highlightsList, ok := fileNameHighlights.([]interface{}); ok && len(highlightsList) > 0 {
-					highlight = highlightsList[0].(string)
-				}
-			}
-		}
+		highlight, contentHighlight := extractFileSearchHighlights(hitMap["highlight"])
 
 		result := FileNameSearchResult{
-			FileID:    int64(source["file_id"].(float64)),
-			LibraryID: int64(source["library_id"].(float64)),
-			Path:      source["path"].(string),
-			FileName:  source["file_name"].(string),
-			BaseName:  source["base_name"].(string),
-			Type:      int(source["type"].(float64)),
-			Score:     score,
-			Highlight: highlight,
-			IsDeleted: source["is_deleted"].(bool),
-			CreatorID: int64(source["user_id"].(float64)),
+			FileID:           int64(source["file_id"].(float64)),
+			LibraryID:        int64(source["library_id"].(float64)),
+			Path:             source["path"].(string),
+			FileName:         source["file_name"].(string),
+			BaseName:         source["base_name"].(string),
+			Type:             int(source["type"].(float64)),
+			Score:            score,
+			Highlight:        highlight,
+			ContentHighlight: contentHighlight,
+			IsDeleted:        source["is_deleted"].(bool),
+			CreatorID:        int64(source["user_id"].(float64)),
 		}
-
 		results = append(results, result)
 	}
 
 	return results, total, nil
+}
+
+func extractFileSearchHighlights(highlightData interface{}) (string, string) {
+	if highlightData == nil {
+		return "", ""
+	}
+	highlights, ok := highlightData.(map[string]interface{})
+	if !ok {
+		return "", ""
+	}
+
+	highlight := ""
+	for _, field := range []string{"base_name", "file_name", "summary"} {
+		if fieldHighlights, exists := highlights[field]; exists {
+			if highlightsList, ok := fieldHighlights.([]interface{}); ok && len(highlightsList) > 0 {
+				if str, ok := highlightsList[0].(string); ok && str != "" {
+					highlight = str
+					break
+				}
+			}
+		}
+	}
+
+	contentHighlight := ""
+	if contentHighlights, exists := highlights["content"]; exists {
+		if list, ok := contentHighlights.([]interface{}); ok && len(list) > 0 {
+			var parts []string
+			for _, item := range list {
+				if str, ok := item.(string); ok && str != "" {
+					parts = append(parts, str)
+				}
+			}
+			contentHighlight = strings.Join(parts, " ... ")
+		}
+	}
+
+	if highlight == "" && contentHighlight != "" {
+		highlight = contentHighlight
+	}
+
+	return highlight, contentHighlight
 }
 
 // enrichWithLibraryInfo 丰富知识库信息
@@ -572,7 +629,7 @@ func (s *FileNameSearchService) IndexFile(file *model.File) error {
 		return nil
 	}
 
-	doc := s.convertToFileDocument(file)
+	doc := s.convertToFileDocumentWithContent(file, s.loadFileBodyContent(file))
 	return s.indexDocument(doc)
 }
 
@@ -582,9 +639,10 @@ func (s *FileNameSearchService) IndexFilesBatch(files []model.File) error {
 		return nil
 	}
 
+	contents := s.loadFileBodyContents(files)
 	var docs []FileDocument
 	for _, file := range files {
-		doc := s.convertToFileDocument(&file)
+		doc := s.convertToFileDocumentWithContent(&file, contents[file.ID])
 		docs = append(docs, doc)
 	}
 
@@ -618,6 +676,10 @@ func (s *FileNameSearchService) DeleteFile(fileID int64) error {
 
 // convertToFileDocument 转换为文件文档
 func (s *FileNameSearchService) convertToFileDocument(file *model.File) FileDocument {
+	return s.convertToFileDocumentWithContent(file, "")
+}
+
+func (s *FileNameSearchService) convertToFileDocumentWithContent(file *model.File, content string) FileDocument {
 	// 提取文件名信息 - 使用更简单可靠的方法
 	fileName := model.ExtractSimpleFileName(file.Path)
 	baseName := model.ExtractSimpleBaseName(file.Path)
@@ -668,6 +730,8 @@ func (s *FileNameSearchService) convertToFileDocument(file *model.File) FileDocu
 		FileName:      fileName,
 		BaseName:      baseName,
 		LowerBaseName: lowerBaseName,
+		Summary:       file.Summary,
+		Content:       content,
 		Type:          file.Type,
 		IsDeleted:     file.IsDeleted,
 		UserID:        file.UserID,
@@ -675,6 +739,55 @@ func (s *FileNameSearchService) convertToFileDocument(file *model.File) FileDocu
 		UpdatedTime:   file.UpdatedTime,
 		FileExtension: fileExtension,
 	}
+}
+
+func (s *FileNameSearchService) loadFileBodyContent(file *model.File) string {
+	if s.db == nil || file == nil {
+		return ""
+	}
+	var body model.FileBody
+	err := s.db.Where("eid = ? AND file_id = ?", file.Eid, file.ID).Order("created_time desc").First(&body).Error
+	if err != nil {
+		return ""
+	}
+	content, err := body.GetContent()
+	if err != nil {
+		logger.SysDebugf("读取文件正文失败: eid=%d fileID=%d err=%v", file.Eid, file.ID, err)
+		return body.Content
+	}
+	return content
+}
+
+func (s *FileNameSearchService) loadFileBodyContents(files []model.File) map[int64]string {
+	contents := make(map[int64]string, len(files))
+	if s.db == nil || len(files) == 0 {
+		return contents
+	}
+	fileIDs := make([]int64, 0, len(files))
+	eid := files[0].Eid
+	for _, file := range files {
+		fileIDs = append(fileIDs, file.ID)
+	}
+	var bodies []model.FileBody
+	if err := s.db.Where("eid = ? AND file_id IN ?", eid, fileIDs).Order("created_time desc").Find(&bodies).Error; err != nil {
+		logger.SysDebugf("批量读取文件正文失败: eid=%d file_count=%d err=%v", eid, len(files), err)
+		return contents
+	}
+	seen := make(map[int64]struct{}, len(bodies))
+	for i := range bodies {
+		body := &bodies[i]
+		if _, ok := seen[body.FileID]; ok {
+			continue
+		}
+		seen[body.FileID] = struct{}{}
+		content, err := body.GetContent()
+		if err != nil {
+			logger.SysDebugf("读取文件正文失败: eid=%d fileID=%d err=%v", body.Eid, body.FileID, err)
+			content = body.Content
+		}
+		contents[body.FileID] = content
+	}
+	return contents
 }
 
 // indexDocument 索引单个文档
@@ -731,7 +844,7 @@ func (s *FileNameSearchService) indexDocumentsBatch(docs []FileDocument) error {
 
 	req := esapi.BulkRequest{
 		Body:    &buf,
-		Refresh: "true", // 立即刷新索引确保数据可搜索
+		Refresh: "false",
 	}
 
 	res, err := req.Do(context.Background(), s.client)
@@ -912,30 +1025,12 @@ func (s *FileNameSearchService) buildFileNameQuery(req *FileNameSearchRequest) m
 			},
 		}
 	} else {
-		// 大小写不敏感：使用lower_base_name.keyword字段进行精确匹配和通配符匹配
+		// 默认全文检索：标题/文件名和简介优先，正文作为低权重兜底。
 		fileNameQuery = map[string]interface{}{
-			"bool": map[string]interface{}{
-				"should": []map[string]interface{}{
-					// 精确匹配（最高优先级）
-					{
-						"term": map[string]interface{}{
-							"lower_base_name.keyword": map[string]interface{}{
-								"value": strings.ToLower(req.Query),
-								"boost": 5.5,
-							},
-						},
-					},
-					// 通配符匹配（中等优先级）- 使用lower_base_name.keyword实现忽略大小写的搜索
-					{
-						"wildcard": map[string]interface{}{
-							"lower_base_name.keyword": map[string]interface{}{
-								"value": "*" + strings.ToLower(req.Query) + "*",
-								"boost": 4.5,
-							},
-						},
-					},
-				},
-				"minimum_should_match": 1,
+			"multi_match": map[string]interface{}{
+				"query":  req.Query,
+				"fields": []string{"base_name^6", "file_name^5", "summary^3", "content^1"},
+				"type":   "phrase",
 			},
 		}
 	}

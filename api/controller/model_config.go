@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+
+	"gorm.io/gorm"
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
@@ -36,6 +39,11 @@ func GetSiteModelConfig(c *gin.Context) {
 	// 获取站点配置
 	chunkConfig, err := configService.GetEnterpriseEmbeddingConfig(eid)
 	if err != nil {
+		// 站点配置未创建时视为"未配置"，返回 200 + data=null，而非 db 错误
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+			return
+		}
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}

@@ -58,12 +58,6 @@ func (p *RechunkAndReindexPipeline) Initialize() error {
 		return err
 	}
 
-	// 添加触发生成知识地图任务步骤
-	triggerKMStep := steps.NewTriggerGenerateKnowledgeMapStep(p.DB)
-	if err := p.AddStep("trigger_generate_knowledge_map", triggerKMStep); err != nil {
-		return err
-	}
-
 	return nil
 }
 
@@ -114,12 +108,6 @@ func (p *RechunkAndReindexPipeline) PrepareStepParameters(order int) interface{}
 			FileID:         fileID,
 			UserID:         userID,
 			RunAIIndexTask: true, // 重新分块并索引流水线需要运行AI索引任务
-		}
-	case 4:
-		return steps.TriggerGenerateKnowledgeMapParameters{
-			Eid:    eid,
-			FileID: fileID,
-			UserID: userID,
 		}
 	default:
 		return nil

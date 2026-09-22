@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/model"
 )
 
@@ -51,9 +52,7 @@ func IsLibraryVisible(eid int64, libraryID int64, userID int64) (bool, error) {
 }
 
 // hasLibraryPermission 检查用户是否对知识库有权限
-// 该函数在生产环境中会复用LibraryPermissionService.GetUserLibraryPermission
 func hasLibraryPermission(eid int64, libraryID int64, userID int64) (bool, error) {
-	libraryPermissionService := NewLibraryPermissionService(eid)
-	permission, err := libraryPermissionService.GetUserLibraryPermission(userID, libraryID)
+	permission, err := common.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, libraryID, userID)
 	return permission > model.PERMISSION_NONE, err
 }

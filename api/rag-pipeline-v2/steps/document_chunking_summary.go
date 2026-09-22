@@ -103,6 +103,17 @@ func generateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, eid, fileID int
 	return summaryText, questions, nil
 }
 
+// GenerateFileSummaryAndFAQ 直接生成文件级摘要和常见问法。
+// 该方法既可由文档拆分复用，也可供手动生成接口直接调用。
+func GenerateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, eid, fileID int64, content string, chunkConfig *rag.ChunkConfig) (string, []string, error) {
+	return generateFileSummaryAndFAQ(ctx, db, eid, fileID, content, chunkConfig)
+}
+
+// GenerateFileSummaryAndFAQForced 生成文件级摘要和常见问法，不受分块配置中的生成开关影响。
+func GenerateFileSummaryAndFAQForced(ctx context.Context, db *gorm.DB, eid, fileID int64, content string, chunkConfig *rag.ChunkConfig) (string, []string, error) {
+	return generateFileSummaryAndFAQ(ctx, db, eid, fileID, content, forceFileSummaryAndFAQConfig(chunkConfig))
+}
+
 func maybeGenerateFileSummaryAndFAQ(ctx context.Context, db *gorm.DB, job *model.RagJob, eid, fileID int64, content string, chunkConfig *rag.ChunkConfig) (string, []string, error) {
 	if isWikiPageGenerationActive(job) {
 		logger.Infof(ctx, "【Wiki生成】 phase=legacy_skip wiki_page_generation 已启用，跳过旧摘要/问法生成: file_id=%d", fileID)
@@ -134,6 +145,16 @@ func resolveDocumentChunkGenerativeEnhancements(chunkConfig *rag.ChunkConfig) (g
 	generateSummary = strings.EqualFold(strings.TrimSpace(chunkConfig.SummaryGeneration), "ai")
 	generateQuestions = strings.EqualFold(strings.TrimSpace(chunkConfig.QuestionGeneration), "ai")
 	return generateSummary, generateQuestions
+}
+
+func forceFileSummaryAndFAQConfig(chunkConfig *rag.ChunkConfig) *rag.ChunkConfig {
+	if chunkConfig == nil {
+		return &rag.ChunkConfig{SummaryGeneration: "ai", QuestionGeneration: "ai"}
+	}
+	forced := *chunkConfig
+	forced.SummaryGeneration = "ai"
+	forced.QuestionGeneration = "ai"
+	return &forced
 }
 
 // extractEntities 对文件进行实体抽取（强制执行，无 toggle）
@@ -191,4 +212,9 @@ func extractEntities(ctx context.Context, db *gorm.DB, eid, fileID int64, conten
 
 	logger.Infof(ctx, "【实体抽取】完成: file_id=%d", fileID)
 	return nil
+}
+
+// ExtractFileEntities 直接抽取并保存文件实体，供文档拆分和手动生成接口复用。
+func ExtractFileEntities(ctx context.Context, db *gorm.DB, eid, fileID int64, content string) error {
+	return extractEntities(ctx, db, eid, fileID, content)
 }

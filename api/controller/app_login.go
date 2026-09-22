@@ -75,7 +75,13 @@ func AppLogin(c *gin.Context) {
 	var user model.User
 	var err error
 	if hasPassword {
+		policy, _ := model.GetPasswordSecurityPolicySetting(eid)
 		username := strings.TrimSpace(req.Username)
+		if locked, remainingMinutes := checkLoginLock(eid, username, policy); locked {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(fmt.Sprintf("密码连续输错次数过多，账号已被锁定，请 %d 分钟后再试", remainingMinutes)))
+			return
+		}
+
 		isEmail := helper.IsValidEmail(username)
 		isMobile := helper.IsValidPhone(username)
 		switch {
@@ -88,13 +94,22 @@ func AppLogin(c *gin.Context) {
 			return
 		}
 		if err != nil {
+			if locked, lockMinutes := recordLoginFailure(eid, username, policy); locked {
+				c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(fmt.Sprintf("密码连续输错 %d 次，账号已被锁定 %d 分钟", policy.LockAfterFailures, lockMinutes)))
+				return
+			}
 			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(err))
 			return
 		}
 		if err = user.VerifyPassword(req.Password); err != nil {
+			if locked, lockMinutes := recordLoginFailure(eid, username, policy); locked {
+				c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse(fmt.Sprintf("密码连续输错 %d 次，账号已被锁定 %d 分钟", policy.LockAfterFailures, lockMinutes)))
+				return
+			}
 			c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(err))
 			return
 		}
+		clearLoginFailure(eid, username, policy)
 	} else {
 		mobile := strings.TrimSpace(req.Mobile)
 		if !helper.IsValidPhone(mobile) {

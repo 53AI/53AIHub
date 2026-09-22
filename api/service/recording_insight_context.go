@@ -39,9 +39,13 @@ type InsightBackground struct {
 	// MaterialContext 仅由当前纪要生成，是只读证据而非用户可编辑背景。
 	MaterialContext string                       `json:"material_context"`
 	Conversation    []InsightConversationMessage `json:"conversation,omitempty"`
-	// InsightPerspective 是本次重新生成选择的场景模式；ResolvedInsightPerspective 是最近一次洞察实际使用的场景。
-	InsightPerspective         string `json:"insight_perspective,omitempty"`
-	ResolvedInsightPerspective string `json:"resolved_insight_perspective,omitempty"`
+	// InsightPerspective 是本次重新生成选择的场景模式；ResolvedInsightPerspective 及后续分类字段是最近一次自动判断的只读结果。
+	InsightPerspective         string   `json:"insight_perspective,omitempty"`
+	ResolvedInsightPerspective string   `json:"resolved_insight_perspective,omitempty"`
+	PerspectiveConfidence      float64  `json:"perspective_confidence,omitempty"`
+	PerspectiveReasonCodes     []string `json:"perspective_reason_codes,omitempty"`
+	PerspectiveEvidence        []string `json:"perspective_evidence,omitempty"`
+	PerspectiveAbstained       bool     `json:"perspective_abstained,omitempty"`
 }
 
 type InsightConversationMessage struct {
@@ -80,6 +84,10 @@ func GetInsightBackground(ctx context.Context, eid, userID, fileID int64) (*Insi
 	if saved, ok := loadSavedInsightBackground(file.InsightContext); ok {
 		mergeInsightBackground(&background, saved)
 		background.ResolvedInsightPerspective = saved.ResolvedInsightPerspective
+		background.PerspectiveConfidence = saved.PerspectiveConfidence
+		background.PerspectiveReasonCodes = saved.PerspectiveReasonCodes
+		background.PerspectiveEvidence = saved.PerspectiveEvidence
+		background.PerspectiveAbstained = saved.PerspectiveAbstained
 	}
 	background.InsightPerspective = string(model.NormalizeInsightPerspective(file.InsightPerspective))
 	if background.ResolvedInsightPerspective == "" && background.InsightPerspective != string(model.InsightPerspectiveAuto) {
@@ -107,6 +115,7 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 		// 兼容原有“无请求体重新生成”接口：不应意外清除用户已经确认的背景。
 		_ = json.Unmarshal([]byte(file.InsightContext), &background)
 	}
+	background.PersonalInfo = loadInsightPersonalContext(ctx, eid, userID, fileID).formatted()
 	if err := normalizeInsightBackground(&background); err != nil {
 		return err
 	}
@@ -157,8 +166,8 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 	}
 	setInsightsStatus(fileID, "pending")
 	setInsightPageStatus(fileID, "pending")
-	go GenerateInsights(context.Background(), eid, fileID, userID)
-	logger.Infof(ctx, "【洞察】确认背景并触发重新生成: fileID=%d eid=%d userID=%d", fileID, eid, userID)
+	EnqueueRecordingInsights(eid, fileID, userID)
+	logger.Infof(ctx, "【洞察】确认背景并触发重新生成(已入队): fileID=%d eid=%d userID=%d", fileID, eid, userID)
 	return nil
 }
 
@@ -192,6 +201,7 @@ func ChatInsightWorkshop(ctx context.Context, eid, userID, fileID int64, req Ins
 	if strings.TrimSpace(req.Message) == "" {
 		return nil, ErrInsightContextEmpty
 	}
+	req.Background.PersonalInfo = loadInsightPersonalContext(ctx, eid, userID, fileID).formatted()
 	if err := normalizeInsightBackground(&req.Background); err != nil {
 		return nil, err
 	}
@@ -242,6 +252,35 @@ func getInsightContextFile(ctx context.Context, eid, userID, fileID int64) (*mod
 	return file, err
 }
 
+type insightPersonalContext struct {
+	User         *model.User
+	Position     string
+	Style        string
+	CustomMemory string
+}
+
+func loadInsightPersonalContext(ctx context.Context, eid, userID, fileID int64) insightPersonalContext {
+	personal := insightPersonalContext{}
+	personal.User, _ = model.GetUserByIDAndEid(eid, userID)
+	if personal.User != nil {
+		if err := personal.User.LoadDepartments(0); err != nil {
+			logger.Warnf(ctx, "【洞察-个人背景】加载部门失败 fileID=%d userID=%d err=%v", fileID, userID, err)
+		}
+	}
+	if memory, _ := model.GetUserMemory(eid, userID); memory != nil {
+		personal.Position = memory.Position
+		personal.Style = memory.Style
+		if items, err := memory.GetCustomMemoryItems(); err == nil {
+			personal.CustomMemory = formatMemoryFacts(items)
+		}
+	}
+	return personal
+}
+
+func (personal insightPersonalContext) formatted() string {
+	return formatPersonalBackground(personal.User, personal.Position, personal.Style, personal.CustomMemory)
+}
+
 func defaultInsightBackground(ctx context.Context, eid, userID int64, file *model.File) InsightBackground {
 	background := InsightBackground{
 		MaterialContext: truncateInsightContext(mustLoadMinutesText(eid, file.ID), maxInsightContextText),
@@ -256,23 +295,7 @@ func defaultInsightBackground(ctx context.Context, eid, userID int64, file *mode
 		}
 		background.HistoricalContext = formatInsightHistory(loadRelatedInsightHistory(ctx, eid, file.ID, userID, memoryConfig))
 	}
-	user, _ := model.GetUserByIDAndEid(eid, userID)
-	if user != nil {
-		if departmentErr := user.LoadDepartments(0); departmentErr != nil {
-			logger.Warnf(ctx, "【洞察-背景】加载部门失败 fileID=%d userID=%d err=%v", file.ID, userID, departmentErr)
-		}
-	}
-	position, style, smartMemory, customMemory := "", "", "", ""
-	if memory, _ := model.GetUserMemory(eid, userID); memory != nil {
-		position, style = memory.Position, memory.Style
-		if items, err := memory.GetSmartMemoryItems(); err == nil {
-			smartMemory = formatMemoryFacts(items)
-		}
-		if items, err := memory.GetCustomMemoryItems(); err == nil {
-			customMemory = formatMemoryFacts(items)
-		}
-	}
-	background.PersonalInfo = formatPersonalBackground(user, position, style, smartMemory, customMemory)
+	background.PersonalInfo = loadInsightPersonalContext(ctx, eid, userID, file.ID).formatted()
 	enterprise, _ := model.GetEnterpriseByID(eid)
 	background.CompanyInfo = formatCompanyBackground(enterprise)
 	return background
@@ -286,7 +309,7 @@ func mustLoadMinutesText(eid, fileID int64) string {
 	return content
 }
 
-func formatPersonalBackground(user *model.User, position, style, smartMemory, customMemory string) string {
+func formatPersonalBackground(user *model.User, position, style, customMemory string) string {
 	var lines []string
 	if user != nil && strings.TrimSpace(user.Nickname) != "" {
 		lines = append(lines, "称呼："+user.Nickname)
@@ -299,9 +322,6 @@ func formatPersonalBackground(user *model.User, position, style, smartMemory, cu
 	}
 	if strings.TrimSpace(style) != "" {
 		lines = append(lines, "偏好："+style)
-	}
-	if strings.TrimSpace(smartMemory) != "" {
-		lines = append(lines, "系统记忆："+smartMemory)
 	}
 	if strings.TrimSpace(customMemory) != "" {
 		lines = append(lines, "自定义记忆："+customMemory)
@@ -372,17 +392,25 @@ func persistedInsightBackground(background InsightBackground) InsightBackground 
 	background.Conversation = nil
 	background.InsightPerspective = ""
 	background.ResolvedInsightPerspective = ""
+	background.PerspectiveConfidence = 0
+	background.PerspectiveReasonCodes = nil
+	background.PerspectiveEvidence = nil
+	background.PerspectiveAbstained = false
 	return background
 }
 
-func withResolvedInsightPerspective(raw model.LongText, perspective model.InsightPerspective) (string, error) {
+func withResolvedInsightPerspective(raw model.LongText, resolution insightPerspectiveResolution) (string, error) {
 	var background InsightBackground
 	if strings.TrimSpace(string(raw)) != "" {
 		if err := json.Unmarshal([]byte(raw), &background); err != nil {
 			return "", err
 		}
 	}
-	background.ResolvedInsightPerspective = string(perspective)
+	background.ResolvedInsightPerspective = string(resolution.Perspective)
+	background.PerspectiveConfidence = resolution.Confidence
+	background.PerspectiveReasonCodes = resolution.ReasonCodes
+	background.PerspectiveEvidence = resolution.Evidence
+	background.PerspectiveAbstained = resolution.Abstained
 	data, err := json.Marshal(background)
 	if err != nil {
 		return "", err
@@ -638,12 +666,16 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 	if currentContext != nil {
 		currentEntityNames = appendUniqueStrings(currentEntityNames, currentContext.RecallEntityNames()...)
 	}
+	currentRecallTerms := appendUniqueStrings(nil, currentEntityNames...)
+	if currentContext != nil {
+		currentRecallTerms = appendUniqueStrings(currentRecallTerms, currentContext.RecallClaimTerms()...)
+	}
 
 	rows := make([]historyMeeting, 0, 8)
 	entityOverlapCandidates := 0
 	claimCandidates := 0
 	entityFactCandidates := 0
-	if len(currentEntityIDs) > 0 && currentContext == nil {
+	if len(currentEntityIDs) > 0 {
 		var historyFileIDs []int64
 		if err := model.DB.WithContext(ctx).Table("entity_chunk_relations ecr").
 			Joins("JOIN files f ON f.id = ecr.file_id").
@@ -683,10 +715,11 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 
 	}
 
-	// 第二路召回：使用当前快照中的安全实体名称匹配已编译的结构化记忆。
-	// 即使通用 Entity 抽取尚未落库，也不会丢失当前会议的 Claim 召回。
-	if len(currentEntityNames) > 0 {
-		memoryRows := loadMemoryRecallHistoryByNames(ctx, eid, userID, fileID, currentEntityNames)
+	// 第二路召回：使用当前快照中的安全实体名称和结构化 Claim 锚点
+	// 匹配已编译的历史记忆。即使通用 Entity 抽取尚未落库，也不会丢失
+	// 当前会议的决策、承诺和风险召回。
+	if len(currentRecallTerms) > 0 {
+		memoryRows := loadMemoryRecallHistoryByTerms(ctx, eid, userID, fileID, currentRecallTerms)
 		claimCandidates = len(memoryRows)
 		for _, memoryRow := range memoryRows {
 			rows = mergeHistoryMeeting(rows, memoryRow, historyRecallClaim)
@@ -704,8 +737,15 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 	if len(rows) > 8 {
 		rows = rows[:8]
 	}
-	logger.Infof(ctx, "【洞察-历史召回】fileID=%d generic_entities=%d entity_overlap_candidates=%d claim_candidates=%d entity_fact_candidates=%d selected=%d", fileID, len(currentEntityIDs), entityOverlapCandidates, claimCandidates, entityFactCandidates, len(rows))
+	logger.Infof(ctx, "【洞察-历史召回】fileID=%d generic_entities=%d current_entities=%d current_claims=%d recall_terms=%d entity_overlap_candidates=%d claim_candidates=%d entity_fact_candidates=%d selected=%d", fileID, len(currentEntityIDs), len(currentEntityNames), currentContextClaimCount(currentContext), len(currentRecallTerms), entityOverlapCandidates, claimCandidates, entityFactCandidates, len(rows))
 	return rows
+}
+
+func currentContextClaimCount(currentContext *CurrentMeetingContext) int {
+	if currentContext == nil {
+		return 0
+	}
+	return len(currentContext.Claims)
 }
 
 func mergeHistoryMeeting(rows []historyMeeting, incoming historyMeeting, source uint8) []historyMeeting {
@@ -759,6 +799,7 @@ func loadMeetingMemoryContexts(ctx context.Context, eid, ownerID, fileID int64, 
 	if err := model.DB.WithContext(ctx).
 		Where("eid = ? AND owner_id = ? AND file_id = ? AND is_current = ?", eid, ownerID, fileID, true).
 		Where("assertion_state NOT IN ?", []string{"rejected"}).
+		Where("source_confidence >= ?", recordingMemoryMinSourceConfidence).
 		Where("(review_state = ? OR (epistemic_type = ? AND evidence_available = ?))", recordingMemoryReviewConfirmed, "explicit", true).
 		Order("source_confidence DESC, updated_time DESC, id DESC").
 		Limit(8).Find(&claims).Error; err != nil {
@@ -772,6 +813,7 @@ func loadMeetingMemoryContexts(ctx context.Context, eid, ownerID, fileID int64, 
 			MemoryID:          claim.ID,
 			Kind:              claim.ClaimKind,
 			Content:           string(claim.Content),
+			RecallReason:      "历史结构化会议记忆",
 			AssertionState:    claim.AssertionState,
 			LifecycleState:    claim.LifecycleState,
 			ReviewState:       claim.ReviewState,
@@ -799,8 +841,12 @@ func loadMemoryRecallHistory(ctx context.Context, eid, ownerID, currentFileID in
 }
 
 func loadMemoryRecallHistoryByNames(ctx context.Context, eid, ownerID, currentFileID int64, entityNames []string) []historyMeeting {
-	entityNames = filterInsightRecallEntityNames(entityNames)
-	if len(entityNames) == 0 {
+	return loadMemoryRecallHistoryByTerms(ctx, eid, ownerID, currentFileID, entityNames)
+}
+
+func loadMemoryRecallHistoryByTerms(ctx context.Context, eid, ownerID, currentFileID int64, terms []string) []historyMeeting {
+	terms = filterInsightRecallEntityNames(terms)
+	if len(terms) == 0 {
 		return nil
 	}
 
@@ -812,21 +858,29 @@ func loadMemoryRecallHistoryByNames(ctx context.Context, eid, ownerID, currentFi
 		Where("c.source_item_type NOT IN ?", []string{recordingMemorySourceInsightBackground}).
 		Where("c.source_item_type <> ? OR c.assertion_state = ?", recordingMemorySourceUserConfirmed, "user_confirmed").
 		Where("c.assertion_state NOT IN ?", []string{"rejected"}).
+		Where("c.source_confidence >= ?", recordingMemoryMinSourceConfidence).
 		Where("(c.review_state = ? OR (c.epistemic_type = ? AND c.evidence_available = ?))", recordingMemoryReviewConfirmed, "explicit", true).
 		Where("f.user_id = ? AND f.origin_type IN ? AND f.parsing_status = ? AND f.is_deleted = ?", ownerID, model.RecordingOriginTypes(), "normal", false)
 
-	pattern := insightRecallLikePattern(entityNames[0])
+	pattern := insightRecallLikePattern(terms[0])
 	entityMatch := model.DB.Where("c.content LIKE ? ESCAPE '!' OR c.detail_json LIKE ? ESCAPE '!'", pattern, pattern)
-	for _, name := range entityNames[1:] {
-		pattern := insightRecallLikePattern(name)
+	for _, term := range terms[1:] {
+		pattern := insightRecallLikePattern(term)
 		entityMatch = entityMatch.Or("c.content LIKE ? ESCAPE '!' OR c.detail_json LIKE ? ESCAPE '!'", pattern, pattern)
 	}
 	if err := query.Where(entityMatch).
 		Order("c.source_confidence DESC, c.updated_time DESC, c.id DESC").
-		Limit(24).Find(&claims).Error; err != nil {
+		Limit(48).Find(&claims).Error; err != nil {
 		logger.Warnf(ctx, "【洞察】结构化记忆召回失败: %v", err)
 		return nil
 	}
+	sort.SliceStable(claims, func(i, j int) bool {
+		left, right := insightRecallClaimScore(claims[i], terms), insightRecallClaimScore(claims[j], terms)
+		if left != right {
+			return left > right
+		}
+		return claims[i].ID > claims[j].ID
+	})
 	claims = selectRecordingMemoryRecallClaims(claims, recordingMemoryDirectRecallLimit, recordingMemoryOneHopRecallLimit)
 	if len(claims) == 0 {
 		return nil
@@ -867,6 +921,7 @@ func loadMemoryRecallHistoryByNames(ctx context.Context, eid, ownerID, currentFi
 			MemoryID:          claim.ID,
 			Kind:              claim.ClaimKind,
 			Content:           string(claim.Content),
+			RecallReason:      insightRecallReason(claim, terms),
 			AssertionState:    claim.AssertionState,
 			LifecycleState:    claim.LifecycleState,
 			ReviewState:       claim.ReviewState,
@@ -880,6 +935,40 @@ func loadMemoryRecallHistoryByNames(ctx context.Context, eid, ownerID, currentFi
 		})
 	}
 	return rows
+}
+
+func insightRecallClaimScore(claim model.RecordingMemoryClaim, terms []string) int {
+	content := strings.ToLower(string(claim.Content))
+	text := content + " " + strings.ToLower(string(claim.DetailJSON))
+	score := 0
+	for _, term := range terms {
+		term = strings.ToLower(strings.TrimSpace(term))
+		if term == "" || !strings.Contains(text, term) {
+			continue
+		}
+		score += 10
+		if strings.Contains(content, term) {
+			score += 5
+		}
+	}
+	if claim.ClaimKind == "decision" || claim.ClaimKind == "commitment" || claim.ClaimKind == "risk" {
+		score += 2
+	}
+	if claim.EvidenceAvailable {
+		score++
+	}
+	return score
+}
+
+func insightRecallReason(claim model.RecordingMemoryClaim, terms []string) string {
+	content := strings.ToLower(string(claim.Content))
+	for _, term := range terms {
+		term = strings.ToLower(strings.TrimSpace(term))
+		if term != "" && strings.Contains(content, term) {
+			return "当前会议 Claim/实体与历史记忆匹配"
+		}
+	}
+	return "当前会议 Claim/实体关联的历史记忆"
 }
 
 const (

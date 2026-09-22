@@ -51,7 +51,9 @@ func (s *RecordingAssemblyService) flushAssembly(ctx context.Context, job *model
 	}
 	segmentKey := model.BuildRecordingSegmentLocalStorageKey(s.eid, job.UserID, job.ID, segmentIndex, fmt.Sprintf("segment-%d.webm", segmentIndex))
 	if existingSegmentSnapshot != nil {
-		if err := appendRecordingArtifact(segmentKey, content); err != nil {
+		// 已有分段（恢复重收口）：音频感知合并，避免多段 WAV 头截断
+		merged := mergeRecordingAudioParts(existingSegmentContent, content)
+		if err := saveRecordingArtifact(segmentKey, merged); err != nil {
 			_ = model.UpdateRecordingJobAssembly(assembly, recordingAssemblyFailedStatusUpdates())
 			return nil, err
 		}

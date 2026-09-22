@@ -49,6 +49,12 @@ func RestoreDocument(c *gin.Context) {
 		return
 	}
 
+	// 验证文件权限
+	userID := config.GetUserId(c)
+	if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限还原此文档分块"); !ok {
+		return
+	}
+
 	// 创建分块服务
 	chunkerService := rag.NewChunkerService(model.DB)
 
@@ -89,6 +95,11 @@ func SyncChunksToDocument(c *gin.Context) {
 	var req SyncChunksToDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	// 验证文件权限
+	if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限同步此文档分块"); !ok {
 		return
 	}
 
@@ -147,6 +158,12 @@ func CheckDocumentStatus(c *gin.Context) {
 	var req CheckDocumentStatusRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	// 验证文件权限
+	userID := config.GetUserId(c)
+	if _, ok := requireFilePermission(c, eid, userID, req.FileID, model.PERMISSION_EDIT_ALL, "无权限访问此文档状态"); !ok {
 		return
 	}
 
@@ -214,11 +231,9 @@ func GetChunkEditStatus(c *gin.Context) {
 		return
 	}
 
-	// 检查文件是否存在
-	var file model.File
-	err = model.DB.Where("eid = ? AND id = ?", eid, fileID).First(&file).Error
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse("文件不存在"))
+	// 验证文件权限
+	userID := config.GetUserId(c)
+	if _, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_EDIT_ALL, "无权限访问此文档分块编辑状态"); !ok {
 		return
 	}
 

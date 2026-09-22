@@ -192,6 +192,10 @@ func GetConversationsByUserIDAndTypeWithVisitor(eid, userID, agentID int64, conv
 }
 
 func GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID int64, convType int, visitorID string, keyword string, offset, limit int) ([]*Conversation, int64, error) {
+	return GetConversationsByUserIDAndTypeWithVisitorPagedAndDocumentType(eid, userID, agentID, convType, visitorID, "", keyword, offset, limit)
+}
+
+func GetConversationsByUserIDAndTypeWithVisitorPagedAndDocumentType(eid, userID, agentID int64, convType int, visitorID, documentType, keyword string, offset, limit int) ([]*Conversation, int64, error) {
 	query := DB.Where("eid = ? AND user_id = ?", eid, userID)
 	query = applyVisitorConversationScope(query, visitorID)
 	if convType >= 0 {
@@ -199,6 +203,12 @@ func GetConversationsByUserIDAndTypeWithVisitorPaged(eid, userID, agentID int64,
 	}
 	if agentID > 0 {
 		query = query.Where("agent_id = ?", agentID)
+	}
+	switch strings.ToLower(strings.TrimSpace(documentType)) {
+	case DocumentTypeFile:
+		query = query.Where("file_id > ? OR (document_type = ? AND document_id > ?)", 0, DocumentTypeFile, 0)
+	case DocumentTypeWiki:
+		query = query.Where("document_type = ? AND document_id > ?", DocumentTypeWiki, 0)
 	}
 	if keyword != "" {
 		query = query.Where("title LIKE ?", "%"+keyword+"%")

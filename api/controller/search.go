@@ -6,13 +6,14 @@ import (
 
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
 )
 
-// Search 统一搜索接口
 func Search(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 解析请求体
 	var req rag.SearchRequest
@@ -28,8 +29,8 @@ func Search(c *gin.Context) {
 	// 创建搜索服务
 	searchService := rag.NewSearchService(model.DB)
 
-	// 执行搜索
-	response, err := searchService.Search(eid, &req, nil)
+	// 执行搜索（传入 userID 进行 File ACL 过滤）
+	response, err := searchService.Search(eid, &req, &userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -46,9 +47,9 @@ func Search(c *gin.Context) {
 	})
 }
 
-// VectorSearch 向量搜索
 func VectorSearch(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 解析请求体
 	var req rag.SearchRequest
@@ -67,8 +68,8 @@ func VectorSearch(c *gin.Context) {
 	// 创建搜索服务
 	searchService := rag.NewSearchService(model.DB)
 
-	// 执行搜索
-	response, err := searchService.Search(eid, &req, nil)
+	// 执行搜索（传入 userID 进行 File ACL 过滤）
+	response, err := searchService.Search(eid, &req, &userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -85,9 +86,9 @@ func VectorSearch(c *gin.Context) {
 	})
 }
 
-// FulltextSearch 全文搜索
 func FulltextSearch(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 解析请求体
 	var req rag.SearchRequest
@@ -106,8 +107,8 @@ func FulltextSearch(c *gin.Context) {
 	// 创建搜索服务
 	searchService := rag.NewSearchService(model.DB)
 
-	// 执行搜索
-	response, err := searchService.Search(eid, &req, nil)
+	// 执行搜索（传入 userID 进行 File ACL 过滤）
+	response, err := searchService.Search(eid, &req, &userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -124,9 +125,9 @@ func FulltextSearch(c *gin.Context) {
 	})
 }
 
-// HybridSearch 混合搜索
 func HybridSearch(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 解析请求体
 	var req rag.SearchRequest
@@ -145,8 +146,8 @@ func HybridSearch(c *gin.Context) {
 	// 创建搜索服务
 	searchService := rag.NewSearchService(model.DB)
 
-	// 执行搜索
-	response, err := searchService.Search(eid, &req, nil)
+	// 执行搜索（传入 userID 进行 File ACL 过滤）
+	response, err := searchService.Search(eid, &req, &userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
@@ -248,15 +249,32 @@ func GetSearchHistory(c *gin.Context) {
 	})
 }
 
+// ProcessEmbeddingRequest 向量化任务请求
+type ProcessEmbeddingRequest struct {
+	ChunkID   *int64 `json:"chunk_id" example:"123"`  // 指定单个检索块时使用 retrieval_chunks.id
+	BatchSize int    `json:"batch_size" example:"10"` // 未指定 chunk_id 时的批量处理大小
+}
+
 // ProcessEmbedding 处理向量化任务
+// @Summary 处理向量化任务
+// @Description 指定 chunk_id 时仅重新入队一个检索块；未指定时批量入队待处理检索块
+// @Tags 向量化处理
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body ProcessEmbeddingRequest true "向量化任务请求"
+// @Success 200 {object} model.CommonResponse
+// @Failure 400 {object} model.CommonResponse "参数错误"
+// @Failure 403 {object} model.CommonResponse "无权限操作检索块"
+// @Failure 404 {object} model.CommonResponse "检索块不存在"
+// @Failure 500 {object} model.CommonResponse "向量化任务入队失败"
+// @Router /api/embedding/process [post]
 func ProcessEmbedding(c *gin.Context) {
 	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
 
 	// 解析请求体
-	var req struct {
-		ChunkID   *int64 `json:"chunk_id"`   // 处理特定分块
-		BatchSize int    `json:"batch_size"` // 批量处理大小
-	}
+	var req ProcessEmbeddingRequest
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -270,21 +288,28 @@ func ProcessEmbedding(c *gin.Context) {
 	// 改为入队，由队列消费者异步处理
 	if req.ChunkID != nil {
 		// 查询 chunk 获取 fileID 与 libraryID
-		var chunk model.RetrievalChunk
-		if err := model.DB.Where("eid = ? AND id = ?", eid, *req.ChunkID).First(&chunk).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"success": false,
-				"message": "指定的分块不存在",
-				"error":   err.Error(),
-			})
+		chunk, err := model.GetRetrievalChunkByID(eid, *req.ChunkID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse("指定的检索块不存在"))
 			return
 		}
-		// 入队单个分块
-		rag.EnqueueRetrievalChunk(eid, chunk.FileID, chunk.LibraryID, chunk.ID)
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"message": "分块已入队，等待异步向量化",
-		})
+
+		permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, chunk.LibraryID, userID)
+		if err != nil || permission < model.PERMISSION_EDIT_KNOWLEDGE {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse("无权限重新索引该检索块"))
+			return
+		}
+
+		updatedChunk, err := rag.NewRetrievalChunkService(model.DB).RetryRetrievalChunkEmbedding(
+			c.Request.Context(),
+			eid,
+			chunk,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+			return
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(updatedChunk))
 		return
 	}
 

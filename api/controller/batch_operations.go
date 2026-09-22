@@ -44,6 +44,14 @@ func BatchUpdateChunks(c *gin.Context) {
 		return
 	}
 
+	chunkIDs := make([]int64, 0, len(req.Chunks))
+	for chunkID := range req.Chunks {
+		chunkIDs = append(chunkIDs, chunkID)
+	}
+	if !requireChunksPermission(c, eid, userID, chunkIDs, model.PERMISSION_EDIT_ALL, "无权限管理分块") {
+		return
+	}
+
 	// 使用统一的服务管理器
 	serviceManager := service.GetServiceManager()
 	if serviceManager == nil {
@@ -192,13 +200,17 @@ func BatchUpdateChunks(c *gin.Context) {
 // @Router /api/chunks/files/{file_id}/batch [post]
 func BatchUpdateSegments(c *gin.Context) {
 	eid := config.GetEID(c)
-	// userID := config.GetUserId(c)
+	userID := config.GetUserId(c)
 
 	// 获取文件ID
 	fileIDStr := c.Param("file_id")
 	fileID, err := strconv.ParseInt(fileIDStr, 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	if _, ok := requireFilePermission(c, eid, userID, fileID, model.PERMISSION_EDIT_ALL, "无权限管理此文件分块"); !ok {
 		return
 	}
 

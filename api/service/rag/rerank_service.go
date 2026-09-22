@@ -85,13 +85,28 @@ func (s *RerankService) PerformRerank(
 	initialResults []SearchResultItem,
 	config *model.SearchConfigData,
 ) ([]SearchResultItem, error) {
+	finalResults, _, err := s.PerformRerankWithFullScores(ctx, eid, query, initialResults, config)
+	return finalResults, err
+}
+
+// PerformRerankWithFullScores 与 PerformRerank 等价，额外返回重排后全量排序结果（TopK 截断前）。
+// fullResults 携带每个候选的重排相关性分数，供调用方做被淘汰切片排查（如 chat_debug 展示
+// 「重排分」判断核心知识是否被误过滤）。不启用重排或重排失败时 fullResults 与最终结果一致。
+func (s *RerankService) PerformRerankWithFullScores(
+	ctx context.Context,
+	eid int64,
+	query string,
+	initialResults []SearchResultItem,
+	config *model.SearchConfigData,
+) (finalResults []SearchResultItem, fullResults []SearchResultItem, err error) {
 	if config == nil || !config.RerankingEnable {
 		// 如果未启用重排，直接返回原始结果
-		return initialResults, nil
+		return initialResults, initialResults, nil
 	}
-	logger.Debugf(ctx, "【重排】开始执行: eid=%d, query=%q, initial_results=%d, rerank_model=%s, rerank_model_name=%s, top_k=%d, threshold_enabled=%v, threshold=%.4f",
+	logger.Debugf(ctx, "【重排】开始执行: eid=%d, query=%q, initial_results=%d, rerank_model=%s, rerank_model_name=%s, top_k=%d, threshold_enabled=%v, threshold=%.4f, rerank_threshold_enabled=%v, rerank_threshold=%.4f",
 		eid, truncateForDebug(query, 256), len(initialResults), config.RerankModel, config.RerankModelName, config.TopK,
-		config.ScoreThresholdEnabled, config.ScoreThreshold)
+		config.ScoreThresholdEnabled, config.ScoreThreshold,
+		config.RerankScoreThresholdEnabled, config.RerankScoreThreshold)
 
 	// 1. 文档去重处理 (参考流程图 3.4)
 	deduplicatedResults := s.deduplicateDocuments(initialResults)
@@ -100,7 +115,6 @@ func (s *RerankService) PerformRerank(
 
 	// 2. 根据RerankModel选择重排方式 (参考流程图 3.1)
 	var rerankedResults []SearchResultItem
-	var err error
 
 	switch config.RerankModel {
 	case "reranking_model":
@@ -118,15 +132,17 @@ func (s *RerankService) PerformRerank(
 	if err != nil {
 		// 如果重排过程中发生错误，可以选择返回原始去重结果或报错
 		logger.SysErrorf("重排过程中发生错误: %v，返回去重后的原始结果。", err)
-		return deduplicatedResults, err // 或者直接返回 err
+		return deduplicatedResults, deduplicatedResults, err // 或者直接返回 err
 	}
 
-	// 3. 仅应用TopK限制；分数阈值应在召回阶段完成，不在重排阶段重复过滤
-	finalResults := s.applyTopKLimit(rerankedResults, config)
+	// 3. 先按重排相关性阈值自适应过滤（含下限兜底），再应用 TopK 上限。
+	//    阈值过滤只针对 RerankScoreThreshold（重排相关性分）；
+	//    ScoreThreshold 仍按历史设计仅在召回阶段生效，不在此重复过滤。
+	finalResults = s.applyRerankSelection(rerankedResults, config)
 	logger.Debugf(ctx, "【重排】完成: reranked=%d, final=%d, sample=%v",
 		len(rerankedResults), len(finalResults), previewSearchResultsForDebug(finalResults, 5))
 
-	return finalResults, nil
+	return finalResults, rerankedResults, nil
 }
 
 // modelRerank 执行模型重排 (参考流程图 3.2)
@@ -304,6 +320,46 @@ func (s *RerankService) applyTopKLimit(
 	}
 
 	return results
+}
+
+// rerankMinInjectFloor 重排相关性阈值过滤后的最少注入条数兜底。
+// 防止阈值过滤把候选全部杀光导致 0 条上下文注入（无依据作答）。
+// lazy: 固定值 3, 若后续出现"复杂问题需要更多兜底切片"的场景, 改为按 TopK 比例（如 TopK 的 1/4）计算。
+const rerankMinInjectFloor = 3
+
+// applyRerankSelection 重排后的最终选择：先按重排相关性阈值自适应过滤，再应用 TopK 上限。
+// 阈值模式（RerankScoreThresholdEnabled && RerankScoreThreshold > 0）下，
+// 注入数量由相关性决定而非固定 TopK —— TopK 退化为上限，相关性达标即保留，
+// 解决"固定 TopK 调小导致相关切片被截断、回答不完整"的问题。
+// 阈值过滤后为 0 条时按 rerankMinInjectFloor 兜底保留最高分候选，避免空上下文。
+// 未启用阈值时行为与历史完全一致（纯 TopK 截断）。
+func (s *RerankService) applyRerankSelection(
+	results []SearchResultItem,
+	config *model.SearchConfigData,
+) []SearchResultItem {
+	if config == nil {
+		return results
+	}
+
+	selected := results
+	if config.RerankScoreThresholdEnabled && config.RerankScoreThreshold > 0 {
+		kept := make([]SearchResultItem, 0, len(results))
+		for _, item := range results {
+			if item.Score >= config.RerankScoreThreshold {
+				kept = append(kept, item)
+			}
+		}
+		if len(kept) == 0 {
+			floor := rerankMinInjectFloor
+			if len(results) < floor {
+				floor = len(results)
+			}
+			kept = append(kept, results[:floor]...)
+		}
+		selected = kept
+	}
+
+	return s.applyTopKLimit(selected, config)
 }
 
 // calculateTextScore 简单的文本相关性分数计算 (可复用SearchService中的逻辑)

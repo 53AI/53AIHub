@@ -22,8 +22,4 @@ func init() {
 		return NewGenerateQuestionsAndSummaryPipeline()
 	})
 
-	// 注册 GenerateKnowledgeMap 流水线
-	RegisterPipeline("generate_knowledge_map", func() Pipeline {
-		return NewGenerateKnowledgeMapPipeline()
-	})
 }

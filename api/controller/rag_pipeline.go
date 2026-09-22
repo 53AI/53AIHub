@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -173,6 +174,9 @@ func (c *RagPipelineController) CreatePipeline(ctx *gin.Context) {
 			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
 			return
 		}
+	} else if err := validateRagPipelineProfile(profileStr); err != nil {
+		ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+		return
 	}
 
 	pipeline := &model.RagPipelineProfile{
@@ -257,6 +261,9 @@ func (c *RagPipelineController) UpdatePipeline(ctx *gin.Context) {
 				ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
 				return
 			}
+		} else if err := validateRagPipelineProfile(profileStr); err != nil {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+			return
 		}
 		updates["profile_json"] = profileStr
 	}
@@ -737,6 +744,23 @@ func validateGraphPipelineProfileTemplate(ctx *gin.Context, eid int64, profileSt
 		}
 	}
 	return normalized, nil
+}
+
+func validateRagPipelineProfile(profileStr string) error {
+	var profile struct {
+		Steps []struct {
+			StepKey string `json:"step_key"`
+		} `json:"steps"`
+	}
+	if err := json.Unmarshal([]byte(profileStr), &profile); err != nil {
+		return fmt.Errorf("无效的 RAG 流水线配置: %w", err)
+	}
+	for _, step := range profile.Steps {
+		if step.StepKey == "generate_knowledge_map" {
+			return errors.New("generate_knowledge_map 已不再是 RAG 流水线步骤")
+		}
+	}
+	return nil
 }
 
 func validateWikiPipelineProfile(profileStr string) error {

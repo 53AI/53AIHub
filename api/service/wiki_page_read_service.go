@@ -54,6 +54,31 @@ type WikiListPagesRequest struct {
 	Limit         int
 }
 
+// FilterWikiPageSummariesByPermission 按当前用户页面权限过滤页面摘要列表，并回填 Permission。
+// 权限含页面 ACL ∩ 来源文件 ACL（batchGetWikiPermissions，快照缓存），无查看权限的页面不返回。
+// userID<=0（匿名/内部）时原样返回。与 /files/all、空间 Wiki 列表同口径。
+func FilterWikiPageSummariesByPermission(ctx context.Context, eid, userID int64, items []WikiPageSummary) ([]WikiPageSummary, error) {
+	if userID <= 0 || len(items) == 0 {
+		return items, nil
+	}
+	pageIDs := make([]int64, 0, len(items))
+	for i := range items {
+		pageIDs = append(pageIDs, items[i].ID)
+	}
+	permissions, err := batchGetWikiPermissions(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageIDs, userID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	kept := make([]WikiPageSummary, 0, len(items))
+	for i := range items {
+		items[i].Permission = permissions[items[i].ID]
+		if items[i].Permission != model.PERMISSION_NONE {
+			kept = append(kept, items[i])
+		}
+	}
+	return kept, nil
+}
+
 type WikiListLogsRequest struct {
 	Eid       int64
 	LibraryID int64
@@ -91,6 +116,8 @@ type WikiPageSummary struct {
 	FirstLetter      string   `json:"first_letter"`
 	CreatedTime      int64    `json:"created_time"`
 	UpdatedTime      int64    `json:"updated_time"`
+	// 非持久化：当前用户对页面的实测权限（含 Source 文件交集），恒返回，0=无权限（参考 /files/all）。
+	Permission int `json:"permission"`
 }
 
 type WikiPageDetail struct {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/router"
 	"github.com/53AI/53AIHub/service"
@@ -60,8 +62,21 @@ func main() {
 		logger.SysLogf("Keystone 上报客户端未启用 (设置 KEYSTONE_ENABLED=true 和 KEYSTONE_ENDPOINT/KEYSTONE_SECRET)")
 	}
 	model.InitDB()
+	// 预置业务领域在启动时落库，避免读接口（GET /cognition-domains）承担写库职责
+	if err := service.EnsureDefaultDomainSeeds(context.Background(), model.DB); err != nil {
+		logger.SysWarn(fmt.Sprintf("老板认知预置业务领域初始化失败（不阻塞启动）: %v", err))
+	}
+	service.WarnDuplicateRecordingCognitionDomainSeeds(context.Background(), model.DB)
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
+	service.BindActionRuntimeLifecycle(appCtx)
+	// 崩溃 fail-close：进程重启后，无法续跑的 Run 一律标记失败，等待用户 retry。
+	if err := service.RecoverActionRunsAfterRestart(appCtx); err != nil {
+		logger.SysWarn(fmt.Sprintf("Action Runtime 启动恢复失败: %v", err))
+	} else {
+		logger.SysLog("Action Runtime 启动恢复完成")
+	}
+	service.StartActionRuntimeArtifactCleanupWorker(appCtx)
 	service.StartAgentRunRecoveryWorker(appCtx)
 	model.StartAIUploadFileCleanupWorker(appCtx)
 	if err := service.InitRecordingStorageLayout(); err != nil {
@@ -88,9 +103,12 @@ func main() {
 	service.StartRecordingFinalizeWorker(appCtx)
 	service.InitLibraryFileCountCacheInvalidator()
 	service.InitLibraryCacheInvalidator()
+	service.InitCapabilitySnapshotCache()
+	service.InitCapabilityWikiCache()
+	middleware.InitUserAccessTokenCache()
+	common.InitUserCaches()
 	// 启动全局统计定时推送（推送到 Keystone）
 	controller.StartGlobalStatsPushWorker(appCtx, 5*time.Minute)
-
 
 	// 检查并执行数据迁移
 	// needMigration, err := model.CheckMigrationNeeded()
@@ -236,6 +254,13 @@ func main() {
 	}
 	logger.SysLogf("server started on http://localhost:%s", config.SERVER_PORT)
 	server := gin.New()
+
+	// 配置可信代理（TRUSTED_PROXIES 逗号分隔的 IP/CIDR），使 c.ClientIP() 不被伪造的 X-Forwarded-For 欺骗
+	if tp := config.TRUSTED_PROXIES; tp != "" {
+		if err := server.SetTrustedProxies(strings.Split(tp, ",")); err != nil {
+			logger.FatalLog("failed to set trusted proxies: " + err.Error())
+		}
+	}
 
 	// 设置multipart表单的最大内存限制，支持大文件上传，流式处理可以小点
 	server.MaxMultipartMemory = 64 << 20

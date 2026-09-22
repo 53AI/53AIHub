@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
 )
@@ -116,6 +117,31 @@ type WikiSpacePageSummary struct {
 	SpaceID     int64  `json:"space_id"`
 	LibraryName string `json:"library_name"`
 	LibraryKind string `json:"library_kind"`
+}
+
+// fillPagePermissions 批量回填页面实测权限（含 Source 文件交集），并过滤无权限（Permission==0）页面，
+// 与 /files/all 语义一致（无权限内容不返回）。走 batchGetWikiPermissions 快照包装（库级预加载+请求内缓存）。
+// userID<=0 时跳过（匿名场景无权限语义，原样返回）。
+func (s *wikiSpaceReadService) fillPagePermissions(ctx context.Context, eid, userID int64, items []WikiSpacePageSummary) ([]WikiSpacePageSummary, error) {
+	if len(items) == 0 || userID <= 0 {
+		return items, nil
+	}
+	pageIDs := make([]int64, 0, len(items))
+	for i := range items {
+		pageIDs = append(pageIDs, items[i].ID)
+	}
+	permissions, err := batchGetWikiPermissions(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageIDs, userID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	kept := make([]WikiSpacePageSummary, 0, len(items))
+	for i := range items {
+		items[i].Permission = permissions[items[i].ID]
+		if items[i].Permission != model.PERMISSION_NONE {
+			kept = append(kept, items[i])
+		}
+	}
+	return kept, nil
 }
 
 type WikiSpaceListPagesResponse struct {
@@ -261,8 +287,16 @@ func (s *wikiSpaceReadService) ListPages(ctx context.Context, req WikiSpaceListP
 		if err != nil {
 			return nil, err
 		}
+		spaceItems := wrapWikiSpacePageSummaries(items, spaceCtx.byID[req.LibraryID])
+		before := len(spaceItems)
+		spaceItems, err = s.fillPagePermissions(ctx, req.Eid, req.UserID, spaceItems)
+		if err != nil {
+			return nil, err
+		}
+		// lazy: 分页下 Total 按当前页丢弃数近似（跨页无权限页面可能使 Total 略偏大），精确需查询层过滤。
+		total -= int64(before - len(spaceItems))
 		return &WikiSpaceListPagesResponse{
-			Items:     wrapWikiSpacePageSummaries(items, spaceCtx.byID[req.LibraryID]),
+			Items:     spaceItems,
 			Total:     total,
 			Libraries: spaceCtx.refs,
 		}, nil
@@ -307,6 +341,12 @@ func (s *wikiSpaceReadService) ListPages(ctx context.Context, req WikiSpaceListP
 			lib := spaceCtx.byID[pages[i].LibraryID]
 			items = append(items, buildWikiSpacePageSummary(&pages[i], lib, folderPaths[pages[i].FolderID]))
 		}
+		before := len(items)
+		items, err = s.fillPagePermissions(ctx, req.Eid, req.UserID, items)
+		if err != nil {
+			return nil, err
+		}
+		total -= int64(before - len(items))
 		return &WikiSpaceListPagesResponse{Items: items, Total: total, Libraries: spaceCtx.refs}, nil
 	}
 
@@ -337,12 +377,96 @@ func (s *wikiSpaceReadService) ListPages(ctx context.Context, req WikiSpaceListP
 		lib := spaceCtx.byID[pages[i].LibraryID]
 		items = append(items, buildWikiSpacePageSummary(&pages[i], lib, folderPaths[pages[i].FolderID]))
 	}
+	before := len(items)
+	items, err = s.fillPagePermissions(ctx, req.Eid, req.UserID, items)
+	if err != nil {
+		return nil, err
+	}
+	total -= int64(before - len(items))
 
 	return &WikiSpaceListPagesResponse{
 		Items:     items,
 		Total:     total,
 		Libraries: spaceCtx.refs,
 	}, nil
+}
+
+// filterFilesByPermissionList 按当前用户文件权限过滤（含路径链继承），userID<=0 时原样返回。
+func filterFilesByPermissionList(ctx context.Context, eid, userID int64, files []model.File) ([]model.File, error) {
+	if userID <= 0 || len(files) == 0 {
+		return files, nil
+	}
+	fileIDs := make([]int64, 0, len(files))
+	for i := range files {
+		fileIDs = append(fileIDs, files[i].ID)
+	}
+	permissions, err := BatchGetUserPermissions(eid, model.RESOURCE_TYPE_FILE, fileIDs, userID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	kept := make([]model.File, 0, len(files))
+	for i := range files {
+		if permissions[files[i].ID] >= model.PERMISSION_VIEW_ONLY {
+			kept = append(kept, files[i])
+		}
+	}
+	return kept, nil
+}
+
+// visibleWikiPageIDs 返回范围内当前用户可见（页面 ACL ∩ 来源文档）的页面 id 集合。
+// 返回 nil 表示不做页面级过滤（userID<=0）。userID>0 时返回的集合可能为空（全不可见）。
+func (s *wikiSpaceReadService) visibleWikiPageIDs(ctx context.Context, eid, userID int64, libraryIDs []int64) (map[int64]struct{}, error) {
+	if userID <= 0 || len(libraryIDs) == 0 {
+		return nil, nil
+	}
+	var pageIDs []int64
+	if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Select("id").
+		Where("eid = ? AND library_id IN ? AND status = ?", eid, libraryIDs, model.WikiPageStatusActive).
+		Pluck("id", &pageIDs).Error; err != nil {
+		return nil, err
+	}
+	visible := make(map[int64]struct{}, len(pageIDs))
+	if len(pageIDs) == 0 {
+		return visible, nil
+	}
+	permissions, err := batchGetWikiPermissions(eid, model.RESOURCE_TYPE_WIKI_PAGE, pageIDs, userID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range pageIDs {
+		if permissions[id] >= model.PERMISSION_VIEW_ONLY {
+			visible[id] = struct{}{}
+		}
+	}
+	return visible, nil
+}
+
+// wikiPageIDFilter 可见集合转有序切片（供 SQL IN 使用）；空集合返回空切片（IN () 恒不命中）。
+func wikiPageIDFilter(visible map[int64]struct{}) []int64 {
+	ids := make([]int64, 0, len(visible))
+	for id := range visible {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids
+}
+
+// requireVisiblePage 校验当前用户对该 Wiki 页面有查看权限（含 Source 交集，走快照缓存）。
+// 不可见返回 ErrWikiSpacePageNotFound：与列表过滤口径一致，不泄漏页面存在性。
+// userID<=0（匿名/内部场景）不校验。
+func (s *wikiSpaceReadService) requireVisiblePage(ctx context.Context, eid, userID, pageID int64) error {
+	if userID <= 0 || pageID <= 0 {
+		return nil
+	}
+	permissions, err := batchGetWikiPermissions(eid, model.RESOURCE_TYPE_WIKI_PAGE, []int64{pageID}, userID, ctx)
+	if err != nil {
+		return err
+	}
+	if permissions[pageID] < model.PERMISSION_VIEW_ONLY {
+		return ErrWikiSpacePageNotFound
+	}
+	return nil
 }
 
 func (s *wikiSpaceReadService) GetPage(ctx context.Context, req WikiSpacePageRequest) (*WikiSpacePageDetailResponse, error) {
@@ -363,6 +487,10 @@ func (s *wikiSpaceReadService) GetPage(ctx context.Context, req WikiSpacePageReq
 		lib, ok := spaceCtx.byID[req.LibraryID]
 		if !ok {
 			return nil, ErrWikiSpaceLibraryNotVisible
+		}
+		// 页面级权限：无查看权限（含来源文档约束）按不存在处理。
+		if err := s.requireVisiblePage(ctx, req.Eid, req.UserID, detail.ID); err != nil {
+			return nil, err
 		}
 		return buildWikiSpacePageDetailResponse(detail, lib, spaceCtx.refs), nil
 	}
@@ -402,6 +530,10 @@ func (s *wikiSpaceReadService) GetPage(ctx context.Context, req WikiSpacePageReq
 	if !ok {
 		return nil, ErrWikiSpaceLibraryNotVisible
 	}
+	// 页面级权限：无查看权限（含来源文档约束）按不存在处理（与列表过滤一致）。
+	if err := s.requireVisiblePage(ctx, req.Eid, req.UserID, page.ID); err != nil {
+		return nil, err
+	}
 	detail, err := s.pageRead.GetPage(ctx, req.Eid, page.LibraryID, slug)
 	if err != nil {
 		return nil, err
@@ -414,78 +546,74 @@ func (s *wikiSpaceReadService) GetIndex(ctx context.Context, req WikiSpaceBaseRe
 	if err != nil {
 		return nil, err
 	}
-	if req.LibraryID > 0 && len(spaceCtx.libraries) == 1 {
-		view, err := s.pageRead.GetIndex(ctx, req.Eid, req.LibraryID)
-		if err != nil {
-			return nil, err
-		}
-		return &WikiSpaceIndexView{
-			Eid:                view.Eid,
-			SpaceID:            spaceCtx.space.ID,
-			TotalPages:         view.TotalPages,
-			PageTypeCounts:     view.PageTypeCounts,
-			RecentSummaryPages: wrapWikiSpacePageSummaries(view.RecentSummaryPages, spaceCtx.byID[req.LibraryID]),
-			RecentIndexPages:   wrapWikiSpacePageSummaries(view.RecentIndexPages, spaceCtx.byID[req.LibraryID]),
-			IndexMarkdown:      view.IndexMarkdown,
-			Libraries:          spaceCtx.refs,
-		}, nil
-	}
-
-	if len(spaceCtx.ids) == 0 {
-		return &WikiSpaceIndexView{
-			Eid:            req.Eid,
-			SpaceID:        spaceCtx.space.ID,
-			PageTypeCounts: make(map[string]int64),
-			Libraries:      spaceCtx.refs,
-		}, nil
-	}
-
 	view := &WikiSpaceIndexView{
 		Eid:            req.Eid,
 		SpaceID:        spaceCtx.space.ID,
 		PageTypeCounts: make(map[string]int64),
 		Libraries:      spaceCtx.refs,
 	}
-
-	countQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).
-		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)
-	if err := countQuery.Count(&view.TotalPages).Error; err != nil {
-		return nil, err
+	if len(spaceCtx.ids) == 0 {
+		return view, nil
 	}
 
-	var typeCounts []struct {
-		PageType string
-		Count    int64
-	}
-	typeQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).
-		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)
-	if err := typeQuery.Select("page_type, COUNT(*) AS count").Group("page_type").Scan(&typeCounts).Error; err != nil {
+	// 页面级权限：计数/最近页/索引 markdown 均只基于当前用户可见页面
+	// （页面 ACL ∩ 来源文档），避免通过索引目录泄漏无权限页面标题。
+	visible, err := s.visibleWikiPageIDs(ctx, req.Eid, req.UserID, spaceCtx.ids)
+	if err != nil {
 		return nil, err
 	}
-	for _, row := range typeCounts {
-		view.PageTypeCounts[row.PageType] = row.Count
-	}
-
-	if err := s.loadRecentPagesByTypeAcrossLibraries(ctx, req.Eid, spaceCtx.ids, model.WikiPageTypeSummary, &view.RecentSummaryPages, spaceCtx.byID); err != nil {
-		return nil, err
-	}
-	if err := s.loadRecentPagesByTypeAcrossLibraries(ctx, req.Eid, spaceCtx.ids, model.WikiPageTypeIndex, &view.RecentIndexPages, spaceCtx.byID); err != nil {
-		return nil, err
-	}
-
-	var allPages []model.WikiPage
 	listQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).
 		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)
+	if visible != nil {
+		listQuery = listQuery.Where("id IN ?", wikiPageIDFilter(visible))
+	}
+	var allPages []model.WikiPage
 	if err := listQuery.Order("sort ASC, id ASC").Find(&allPages).Error; err != nil {
 		return nil, err
 	}
-	if len(allPages) > 0 {
-		folderPaths, err := s.pageRead.loadFolderPathMap(ctx, allPages)
-		if err != nil {
-			return nil, err
-		}
-		view.IndexMarkdown = NewWikiIndexService().BuildIndexMarkdownWithFoldersAndIntro(allPages, folderPaths, "")
+	if len(allPages) == 0 {
+		return view, nil
 	}
+
+	view.TotalPages = int64(len(allPages))
+	for i := range allPages {
+		view.PageTypeCounts[allPages[i].PageType]++
+	}
+
+	folderPaths, err := s.pageRead.loadFolderPathMap(ctx, allPages)
+	if err != nil {
+		return nil, err
+	}
+	recentByType := func(pageType string) []WikiSpacePageSummary {
+		candidates := make([]model.WikiPage, 0, len(allPages))
+		for i := range allPages {
+			if allPages[i].PageType == pageType {
+				candidates = append(candidates, allPages[i])
+			}
+		}
+		sort.SliceStable(candidates, func(i, j int) bool {
+			if candidates[i].UpdatedTime != candidates[j].UpdatedTime {
+				return candidates[i].UpdatedTime > candidates[j].UpdatedTime
+			}
+			return candidates[i].ID > candidates[j].ID
+		})
+		if len(candidates) > 10 {
+			candidates = candidates[:10]
+		}
+		items := make([]WikiSpacePageSummary, 0, len(candidates))
+		for i := range candidates {
+			items = append(items, buildWikiSpacePageSummary(&candidates[i], spaceCtx.byID[candidates[i].LibraryID], folderPaths[candidates[i].FolderID]))
+		}
+		return items
+	}
+	view.RecentSummaryPages = recentByType(model.WikiPageTypeSummary)
+	view.RecentIndexPages = recentByType(model.WikiPageTypeIndex)
+
+	intro := ""
+	if req.LibraryID > 0 {
+		intro, _ = s.pageRead.loadIndexIntroMarkdown(ctx, req.Eid, req.LibraryID)
+	}
+	view.IndexMarkdown = NewWikiIndexService().BuildIndexMarkdownWithFoldersAndIntro(allPages, folderPaths, intro)
 
 	return view, nil
 }
@@ -556,6 +684,14 @@ func (s *wikiSpaceReadService) GetGraph(ctx context.Context, req WikiSpaceGraphR
 		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)
 	if len(typeFilter) > 0 {
 		base = base.Where("page_type IN ?", typeFilter)
+	}
+	// 页面级权限：图谱只包含当前用户可见页面（无可见页时 IN () 恒不命中）。
+	visible, err := s.visibleWikiPageIDs(ctx, req.Eid, req.UserID, spaceCtx.ids)
+	if err != nil {
+		return nil, err
+	}
+	if visible != nil {
+		base = base.Where("id IN ?", wikiPageIDFilter(visible))
 	}
 	if err := base.Count(&view.TotalPages).Error; err != nil {
 		return nil, err
@@ -799,48 +935,38 @@ func (s *wikiSpaceReadService) GetHealth(ctx context.Context, req WikiSpaceBaseR
 	if err != nil {
 		return nil, err
 	}
-	if req.LibraryID > 0 && len(spaceCtx.libraries) == 1 {
-		report, err := s.pageRead.GetHealth(ctx, req.Eid, req.LibraryID)
-		if err != nil {
-			return nil, err
-		}
-		return &WikiSpaceHealthReport{
-			Eid:                        report.Eid,
-			SpaceID:                    spaceCtx.space.ID,
-			TotalPages:                 report.TotalPages,
-			PagesMissingCurrentVersion: report.PagesMissingCurrentVersion,
-			DanglingLinks:              report.DanglingLinks,
-			PagesWithoutOutlinks:       report.PagesWithoutOutlinks,
-			PageTypeCounts:             report.PageTypeCounts,
-			Libraries:                  spaceCtx.refs,
-		}, nil
-	}
-	if len(spaceCtx.ids) == 0 {
-		return &WikiSpaceHealthReport{
-			Eid:            req.Eid,
-			SpaceID:        spaceCtx.space.ID,
-			PageTypeCounts: make(map[string]int64),
-			Libraries:      spaceCtx.refs,
-		}, nil
-	}
-
 	report := &WikiSpaceHealthReport{
 		Eid:            req.Eid,
 		SpaceID:        spaceCtx.space.ID,
 		PageTypeCounts: make(map[string]int64),
 		Libraries:      spaceCtx.refs,
 	}
+	if len(spaceCtx.ids) == 0 {
+		return report, nil
+	}
 
-	activePages := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+	// 页面级权限：健康统计只看当前用户可见页面（页面 ACL ∩ 来源文档），避免统计口径泄漏。
+	visible, err := s.visibleWikiPageIDs(ctx, req.Eid, req.UserID, spaceCtx.ids)
+	if err != nil {
+		return nil, err
+	}
+	applyVisible := func(q *gorm.DB) *gorm.DB {
+		if visible != nil {
+			q = q.Where("id IN ?", wikiPageIDFilter(visible))
+		}
+		return q
+	}
+
+	activePages := applyVisible(s.db.WithContext(ctx).Model(&model.WikiPage{}).
 		Select("id").
-		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)
-	if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
-		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive).
+		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive))
+	if err := applyVisible(s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)).
 		Count(&report.TotalPages).Error; err != nil {
 		return nil, err
 	}
-	if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
-		Where("eid = ? AND library_id IN ? AND status = ? AND current_version_id = 0", req.Eid, spaceCtx.ids, model.WikiPageStatusActive).
+	if err := applyVisible(s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Where("eid = ? AND library_id IN ? AND status = ? AND current_version_id = 0", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)).
 		Count(&report.PagesMissingCurrentVersion).Error; err != nil {
 		return nil, err
 	}
@@ -849,8 +975,8 @@ func (s *wikiSpaceReadService) GetHealth(ctx context.Context, req WikiSpaceBaseR
 		PageType string
 		Count    int64
 	}
-	typeQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).
-		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive)
+	typeQuery := applyVisible(s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Where("eid = ? AND library_id IN ? AND status = ?", req.Eid, spaceCtx.ids, model.WikiPageStatusActive))
 	if err := typeQuery.Select("page_type, COUNT(*) AS count").Group("page_type").Scan(&typeCounts).Error; err != nil {
 		return nil, err
 	}
@@ -895,8 +1021,36 @@ func (s *wikiSpaceReadService) ListProgress(ctx context.Context, req WikiSpacePr
 		if err != nil {
 			return nil, err
 		}
+		files := make([]model.File, 0, len(items))
+		for i := range items {
+			fileID := items[i].FileID
+			if fileID <= 0 {
+				var f model.File
+				if err := s.db.WithContext(ctx).Select("id").Where("eid = ? AND library_id = ? AND path = ?", req.Eid, req.LibraryID, items[i].FilePath).First(&f).Error; err == nil {
+					fileID = f.ID
+				}
+			}
+			files = append(files, model.File{ID: fileID})
+		}
+		visibleFiles, err := filterFilesByPermissionList(ctx, req.Eid, req.UserID, files)
+		if err != nil {
+			return nil, err
+		}
+		visibleIDs := make(map[int64]struct{}, len(visibleFiles))
+		for i := range visibleFiles {
+			visibleIDs[visibleFiles[i].ID] = struct{}{}
+		}
+		kept := make([]WikiProgressItem, 0, len(items))
+		for i := range items {
+			if _, ok := visibleIDs[items[i].FileID]; ok {
+				kept = append(kept, items[i])
+			}
+		}
+		if req.UserID > 0 {
+			total -= int64(len(items) - len(kept))
+		}
 		return &WikiSpaceListProgressResponse{
-			Items:     wrapWikiSpaceProgressItems(items, spaceCtx.byID[req.LibraryID]),
+			Items:     wrapWikiSpaceProgressItems(kept, spaceCtx.byID[req.LibraryID]),
 			Total:     total,
 			Libraries: spaceCtx.refs,
 		}, nil
@@ -930,6 +1084,15 @@ func (s *wikiSpaceReadService) ListProgress(ctx context.Context, req WikiSpacePr
 	if err := base.Order("updated_time DESC, id DESC").Offset(offset).Limit(limit).Find(&files).Error; err != nil {
 		return nil, err
 	}
+	// 文件级权限：无查看权限（含路径链继承）的文件进度不返回，与 /files/all 同口径。
+	visibleFiles, err := filterFilesByPermissionList(ctx, req.Eid, req.UserID, files)
+	if err != nil {
+		return nil, err
+	}
+	if req.UserID > 0 {
+		total -= int64(len(files) - len(visibleFiles))
+	}
+	files = visibleFiles
 	items := make([]WikiSpaceProgressItem, 0, len(files))
 	for i := range files {
 		lib := spaceCtx.byID[files[i].LibraryID]
@@ -963,6 +1126,16 @@ func (s *wikiSpaceReadService) GetProgress(ctx context.Context, req WikiSpacePro
 	lib, ok := spaceCtx.byID[file.LibraryID]
 	if !ok {
 		return nil, ErrWikiSpaceLibraryNotVisible
+	}
+	// 文件级权限：无查看权限（含路径链继承）按不存在处理，避免暴露文件名/进度。
+	if req.UserID > 0 {
+		perms, permErr := BatchGetUserPermissions(req.Eid, model.RESOURCE_TYPE_FILE, []int64{file.ID}, req.UserID, ctx)
+		if permErr != nil {
+			return nil, permErr
+		}
+		if perms[file.ID] < model.PERMISSION_VIEW_ONLY {
+			return nil, ErrWikiSpaceFileNotFound
+		}
 	}
 
 	detail, err := s.progress.GetFile(ctx, req.Eid, file.LibraryID, file.ID)
@@ -1000,7 +1173,8 @@ func (s *wikiSpaceReadService) resolveVisibleSpaceLibraries(ctx context.Context,
 	}
 
 	if !req.IsAdmin {
-		spacePerm, err := getWikiSpaceReadPermission(req.Eid, model.RESOURCE_TYPE_SPACE, req.SpaceID, req.UserID)
+		// 空间级读门禁：Wiki 空间权限（type=4）已配置以其为准，未配置回退 RAG 空间权限（type=0）。
+		spacePerm, err := common.GetWikiSpaceReadPermission(req.Eid, req.SpaceID, req.UserID, ctx)
 		if err != nil || spacePerm < model.PERMISSION_PUBLIC_ONLY {
 			return nil, ErrWikiSpaceForbidden
 		}
@@ -1056,7 +1230,7 @@ func (s *wikiSpaceReadService) GetStats(ctx context.Context, req WikiSpaceBaseRe
 		return nil, err
 	}
 
-	wikiCounts, err := model.CountWikiPagesByTypes(req.Eid, req.SpaceID)
+	wikiCounts, err := s.countVisibleWikiPagesByTypes(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -1071,7 +1245,7 @@ func (s *wikiSpaceReadService) GetStats(ctx context.Context, req WikiSpaceBaseRe
 	if err != nil {
 		return nil, err
 	}
-	wikiCategories, err := NewWikiCategoryService(s.db).ListVisible(ctx, req.Eid, req.SpaceID, 0)
+	wikiCategories, err := NewWikiCategoryService(s.db).ListVisible(ctx, req.Eid, req.SpaceID, 0, req.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -1085,6 +1259,39 @@ func (s *wikiSpaceReadService) GetStats(ctx context.Context, req WikiSpaceBaseRe
 		WikiCompiledDocs: wikiCompiledDocs,
 		WikiCategories:   wikiCategories,
 	}, nil
+}
+
+// countVisibleWikiPagesByTypes 统计当前用户可见的 Wiki 页面按类型分布（与列表接口同口径，
+// 含 Source 交集+快照缓存）。userID<=0 时全量计数（兼容匿名/管理）。
+func (s *wikiSpaceReadService) countVisibleWikiPagesByTypes(ctx context.Context, req WikiSpaceBaseRequest) (map[string]int64, error) {
+	result := make(map[string]int64)
+	var pages []model.WikiPage
+	if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+		Select("id, page_type").
+		Where("eid = ? AND space_id = ? AND status = ?", req.Eid, req.SpaceID, model.WikiPageStatusActive).
+		Find(&pages).Error; err != nil {
+		return nil, err
+	}
+	if len(pages) == 0 || req.UserID <= 0 {
+		for _, p := range pages {
+			result[p.PageType]++
+		}
+		return result, nil
+	}
+	pageIDs := make([]int64, 0, len(pages))
+	for _, p := range pages {
+		pageIDs = append(pageIDs, p.ID)
+	}
+	permissions, err := batchGetWikiPermissions(req.Eid, model.RESOURCE_TYPE_WIKI_PAGE, pageIDs, req.UserID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range pages {
+		if permissions[p.ID] >= model.PERMISSION_VIEW_ONLY {
+			result[p.PageType]++
+		}
+	}
+	return result, nil
 }
 
 func (s *wikiSpaceReadService) countSuccessfulWikiCompiledDocs(ctx context.Context, eid int64, libraryIDs []int64) (int64, error) {

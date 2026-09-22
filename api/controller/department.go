@@ -1,9 +1,12 @@
 package controller
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/gin-gonic/gin"
@@ -32,10 +35,31 @@ type DepartmentTreeResponse struct {
 	Tree []*model.DepartmentNode `json:"tree"`
 }
 
+type MemberBindingID int64
+
+func (id *MemberBindingID) UnmarshalJSON(data []byte) error {
+	var encoded string
+	if err := json.Unmarshal(data, &encoded); err == nil {
+		decoded, err := hashids.TryParseID(encoded)
+		if err != nil {
+			return err
+		}
+		*id = MemberBindingID(decoded)
+		return nil
+	}
+
+	var numeric int64
+	if err := json.Unmarshal(data, &numeric); err != nil || numeric <= 0 {
+		return errors.New("invalid member binding ID")
+	}
+	*id = MemberBindingID(numeric)
+	return nil
+}
+
 type BindRequest struct {
-	Bid    int64 `json:"bid"`
-	From   int   `json:"from"`
-	UserID int64 `json:"user_id"`
+	Bid    MemberBindingID `json:"bid"`
+	From   int             `json:"from"`
+	UserID int64           `json:"user_id"`
 }
 type UnBindRequest struct {
 	From   int   `json:"from"`
@@ -274,7 +298,7 @@ func GetDepartmentTree(c *gin.Context) {
 }
 
 // @Summary Bind member to department
-// @Description Bind a member to specific department with given role
+// @Description Bind a member to specific department with given role; bid supports HashID or numeric ID
 // @Tags Department
 // @Accept json
 // @Produce json
@@ -292,7 +316,7 @@ func DepartmentBindMember(c *gin.Context) {
 	}
 
 	// Now use req.Bid, req.From, req.UserID instead of the query params
-	bid := req.Bid
+	bid := int64(req.Bid)
 	from := req.From
 	userID := req.UserID
 
