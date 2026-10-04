@@ -92,7 +92,7 @@ docker compose up -d
 
 ### カスタム設定
 
-`.env.example` を `.env` にコピーし、コメントを参考に必要な値を設定。`docker-compose.yaml`の内容も環境に応じて調整可能です。
+`.env.example` を `.env` にコピーし、コメントを参考に必要な値を設定。`docker-compose.yml`の内容も環境に応じて調整可能です。
 
 ## Star History
 

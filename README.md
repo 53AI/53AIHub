@@ -77,7 +77,7 @@ After the script finishes, follow the prompts to complete the setup and then vis
 
 ### Alternative: Docker Installation
 
-If you prefer Docker, you can still install from our `docker/docker-compose.yaml` file. Before running the installation command, ensure that https://docs.docker.com/get-docker/ and https://docs.docker.com/compose/install/ are installed on your machine.
+If you prefer Docker, you can still install from our `docker/docker-compose.yml` file. Before running the installation command, ensure that https://docs.docker.com/get-docker/ and https://docs.docker.com/compose/install/ are installed on your machine.
 
 1. Clone the repository
 ```bash
@@ -92,7 +92,7 @@ docker compose up -d
 
 ### Custom Configuration
 
-Refer to the comments in `.env.example`, copy and rename it to `.env`, and edit the values. You may also modify `docker-compose.yaml` for things like image versions, port mappings, or volume mounts. After changes, rerun `docker-compose up -d`. You can find the full list of available environment variables here.
+Refer to the comments in `.env.example`, copy and rename it to `.env`, and edit the values. You may also modify `docker-compose.yml` for things like image versions, port mappings, or volume mounts. After changes, rerun `docker-compose up -d`. You can find the full list of available environment variables here.
 
 ## Star History
 
