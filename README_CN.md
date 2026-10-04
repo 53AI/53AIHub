@@ -151,7 +151,7 @@ sudo curl -fsSL https://download.53ai.com/install.sh | bash
 
 ### 备选安装方式：Docker
 
-如果您更习惯使用 Docker，也可以通过我们的 [docker-compose.yml](docker/docker-compose.yaml) 文件安装。在运行安装命令之前，请确保您的机器上安装了 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/)：
+如果您更习惯使用 Docker，也可以通过我们的 [docker-compose.yml](docker/docker-compose.yml) 文件安装。在运行安装命令之前，请确保您的机器上安装了 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/)：
 
 1. 克隆仓库：
 ```bash

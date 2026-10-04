@@ -77,7 +77,7 @@ sudo curl -fsSL https://download.53ai.com/install.sh | bash
 
 ### 代替: Docker インストール
 
-Docker を使いたい場合は、[docker-compose.yml](docker/docker-compose.yaml) からも導入できます。事前に [Docker](https://docs.docker.com/get-docker/) と [Docker Compose](https://docs.docker.com/compose/install/) をインストールしてください。：
+Docker を使いたい場合は、[docker-compose.yml](docker/docker-compose.yml) からも導入できます。事前に [Docker](https://docs.docker.com/get-docker/) と [Docker Compose](https://docs.docker.com/compose/install/) をインストールしてください。：
 
 1. `git clone` でリポジトリをクローン
 ```bash
