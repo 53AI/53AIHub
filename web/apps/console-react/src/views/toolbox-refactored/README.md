@@ -591,5 +591,5 @@ export const errorHandlers = {
 ## 八、相关文档
 
 - [测试完整指南](./__tests__/TESTING_GUIDE.md) - 测试策略和最佳实践
-- [项目重构规范](../../docs/REFACTOR_GUIDE.md) - 通用重构规范
+- [项目重构规范](../../../docs/REFACTOR_GUIDE.md) - 通用重构规范
 - [CLAUDE.md](../../../.claude/CLAUDE.md) - 项目开发约束
