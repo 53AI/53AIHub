@@ -737,4 +737,3 @@ const AgentApp = forwardRef<AgentAppRef, AgentAppProps>(
 AgentApp.displayName = "AgentApp";
 
 export { AgentApp };
-export default AgentApp;

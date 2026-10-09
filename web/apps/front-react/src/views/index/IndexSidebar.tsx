@@ -61,11 +61,14 @@ interface IndexSidebarProps {
    */
   chatRenderKey?: number;
   onChatRenderKeyChange?: (key: number) => void;
+  /** 移动端点击导航项后回调，用于关闭抽屉式侧边栏 */
+  onNavigate?: () => void;
 }
 
 export function IndexSidebar({
   chatRenderKey = 0,
   onChatRenderKeyChange,
+  onNavigate,
 }: IndexSidebarProps = {}) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -321,6 +324,7 @@ export function IndexSidebar({
                 key={item.shortcutId}
                 to={item.path}
                 ref={isActive ? activeItemRef : null}
+                onClick={() => onNavigate?.()}
                 className={() =>
                   `group flex items-center gap-2.5 p-3 rounded-xl transition-colors ${
                     isActive
@@ -384,7 +388,7 @@ export function IndexSidebar({
         destroyOnClose
         maskClosable={false}
       >
-        <div className="h-[732px] flex flex-col">
+        <div className="h-[732px] max-md:h-[70vh] flex flex-col">
           <div
             className="flex items-center gap-5"
           >

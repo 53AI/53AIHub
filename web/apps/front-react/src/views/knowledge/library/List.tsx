@@ -195,7 +195,7 @@ export const List = forwardRef<ListRef, ListProps>(({ spaceId, keyword = "", sor
   }, [spaceId]);
 
   return (
-    <div className="min-h-[60vh]">
+    <div className="min-h-[60vh] library-list-container">
       {loading ? (
         <div className="min-h-[60vh] flex justify-center items-center">
           <Spin size="large" />
@@ -209,7 +209,7 @@ export const List = forwardRef<ListRef, ListProps>(({ spaceId, keyword = "", sor
           </PermissionEmpty>
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-3 gap-4 max-md:grid-cols-2">
+        <div className="mt-3 library-grid">
           {/* Library cards */}
           
           {/* Create library button */}

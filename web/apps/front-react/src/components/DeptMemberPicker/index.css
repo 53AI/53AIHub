@@ -93,6 +93,21 @@
   font-weight: 500;
 }
 
+.selected-header .selected-count {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #3664EF;
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: 400;
+  vertical-align: 1px;
+}
+
 .selected-list {
   flex: 1;
   margin-top: 12px;
@@ -127,4 +142,49 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* 移动端:改为上下堆叠布局,树占主区域,已选列表限高滚动 */
+@media (max-width: 767.98px) {
+  .picker-content {
+    flex-direction: column;
+    height: 62vh;
+  }
+
+  .picker-left {
+    min-height: 0;
+    padding-right: 0;
+    padding-bottom: 12px;
+    border-right: none;
+    border-bottom: 1px solid #E5E5E5;
+  }
+
+  .picker-right {
+    flex: none;
+    padding-left: 0;
+    margin-top: 12px;
+  }
+
+  .selected-header {
+    height: 28px;
+  }
+
+  .selected-list {
+    flex: none;
+    max-height: 96px;
+    margin-top: 8px;
+  }
+
+  .selected-items {
+    padding: 12px;
+  }
+
+  .footer-buttons {
+    gap: 12px;
+  }
+
+  .footer-buttons .ant-btn {
+    flex: 1;
+    height: 38px;
+  }
 }

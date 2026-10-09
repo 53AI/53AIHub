@@ -16,6 +16,7 @@ import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
 import { Search } from "@km/shared-components-react/Search";
 import { SvgIcon } from "@km/shared-components-react";
+import { useResponsive } from "@/hooks/useResponsive";
 import { RecentAccess } from "./components/recent-access";
 import { KnowledgeDirectory } from "./components/knowledge-directory";
 import { SearchResult, type FileSearchResultItem } from "./components/search-result";
@@ -46,6 +47,7 @@ export interface SpaceDialogProps {
 export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
   ({ onConfirm, allowSelectLibrary = true, allowSelectSpace = true, singleSelect = false, allowSelectDynamicKnowledge = false }, ref) => {
     const [visible, setVisible] = useState(false);
+    const { isMobile } = useResponsive();
     const [spaceList, setSpaceList] = useState<SpaceItem[]>([]);
     const [libraryList, setLibraryList] = useState<LibraryItem[]>([]);
     const [fileList, setFileList] = useState<FileItem[]>([]);
@@ -446,7 +448,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               <img src={item.icon} className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
-                className="group-hover:block hidden"
+                className="block md:hidden md:group-hover:block"
                 onClick={(e) => {
                   e.stopPropagation()
                   setSelectedSpaces(selectedSpaces.filter(s => s.id !== item.id))
@@ -463,7 +465,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               <img src={item.icon} className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
-                className="group-hover:block hidden"
+                className="block md:hidden md:group-hover:block"
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedLibraries(selectedLibraries.filter((lib) => lib.id !== item.id));
@@ -480,7 +482,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               <img src={item.icon} className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
-                className="group-hover:block hidden"
+                className="block md:hidden md:group-hover:block"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleRemoveFile(item);
@@ -501,7 +503,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
                 {'title' in item ? item.title : item.name}
               </span>
               <CloseCircleFilled
-                className="group-hover:block hidden"
+                className="block md:hidden md:group-hover:block"
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedWikis(selectedWikis.filter(w => w.id !== item.id));
@@ -517,8 +519,9 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
       <Modal
         open={visible}
         title={t("space.select_more")}
-        width={1006}
+        width={isMobile ? "95%" : 1006}
         onCancel={handleClose}
+        styles={{ body: { maxHeight: "70vh", overflowY: "auto" } }}
         footer={
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -530,7 +533,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
                   trigger="click"
                   placement="topLeft"
                   overlayClassName="!p-0"
-                  overlayStyle={{ width: 360 }}
+                  overlayStyle={{ width: isMobile ? 'min(320px, 86vw)' : 360 }}
                 >
                   <div className={`h-8 px-2 rounded flex items-center gap-1 cursor-pointer ${popoverVisible ? 'bg-[#F2F3F5]' : 'hover:bg-[#F2F3F5]'}`}>
                     <span className="text-sm">
@@ -553,7 +556,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
         }
       >
         <>
-          <div className="mb-2 pt-2 flex items-center justify-between gap-2">
+          <div className="mb-2 pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
             <div className="inline-flex items-center gap-1 bg-[#F5F5F5] p-1 rounded-xl">
               {[
                 { key: 'recent', label: t("dynamic_knowledge.tab_recent") },
@@ -574,7 +577,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               ))}
             </div>
      
-            <div>
+            <div className="w-full sm:w-auto">
               <Search
                 value={activeTab === 'dynamicKnowledge' ? wikiSearchText : searchQuery}
                 onDebouncedChange={activeTab === 'dynamicKnowledge' ? setWikiSearchText : handleSearch}

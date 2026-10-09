@@ -3,16 +3,11 @@ import { Button, Select, Spin, Tooltip, message } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import recordingApi from '@/api/modules/recording'
 import type {
-  CanonicalInsightPerspective,
   InsightBackground,
-  InsightPerspective,
   InsightPerspectiveOption,
+  SceneModeOption,
 } from '@/api/modules/recording/types'
-import {
-  getInsightPerspectiveDisplayName,
-  resolveInsightPerspectiveForSubmit,
-  toCanonicalInsightPerspective,
-} from '@/api/modules/recording/types'
+import { resolveInsightPerspectiveForSubmit } from '@/api/modules/recording/types'
 import {
   BackgroundCard,
   EMPTY_INSIGHT_BACKGROUND,
@@ -38,7 +33,8 @@ type InsightBackgroundCardKey = (typeof INSIGHT_BACKGROUND_CARDS)[number]['key']
 type EditableInsightBackgroundKey = Exclude<
   keyof InsightBackground,
   | 'conversation'
-  | 'insight_perspective'
+  | 'scene'
+  | 'scene_mode'
   | 'resolved_insight_perspective'
   | 'perspective_confidence'
   | 'perspective_reason_codes'
@@ -64,9 +60,15 @@ export function InsightRegeneratePanel({
   const [loading, setLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [perspectiveOptions, setPerspectiveOptions] = useState<InsightPerspectiveOption[]>([])
-  const [selectedPerspective, setSelectedPerspective] = useState<CanonicalInsightPerspective>('management_meeting')
-  const [originalPerspective, setOriginalPerspective] = useState<InsightPerspective>('auto')
+  /** 当前选中场景 key（GET /api/recordings/scenes 下发）；历史值不在列表中时回退第一项 */
+  const [selectedPerspective, setSelectedPerspective] = useState<string>('')
+  const [originalPerspective, setOriginalPerspective] = useState<string>('auto')
   const [perspectiveChanged, setPerspectiveChanged] = useState(false)
+  const [sceneModeOptions, setSceneModeOptions] = useState<SceneModeOption[]>([])
+  /** 当前选中决策模式 key（GET /api/recordings/scene-modes 下发）；无历史值时回退第一项 */
+  const [selectedSceneMode, setSelectedSceneMode] = useState<string>('')
+  const [originalSceneMode, setOriginalSceneMode] = useState<string | undefined>(undefined)
+  const [sceneModeChanged, setSceneModeChanged] = useState(false)
   /** 提交成功后到新一轮洞察出炉前的「已提交」状态：禁用按钮、换文案，
    *  避免用户以为没生效而重复点击；主视图的轮询完成后用户可关闭面板或继续微调再次提交。 */
   const [submitted, setSubmitted] = useState(false)
@@ -80,15 +82,33 @@ export function InsightRegeneratePanel({
     if (!fileId) return
     setLoading(true)
     try {
-      const [result, options] = await Promise.all([
+      const [result, options, modeOptions] = await Promise.all([
         recordingApi.getInsightBackground(fileId),
-        recordingApi.getInsightPerspectives(),
+        recordingApi.getInsightScenes(),
+        recordingApi.getSceneModes(),
       ])
       setBackground({ ...EMPTY_INSIGHT_BACKGROUND, ...result })
       setPerspectiveOptions(options)
-      setOriginalPerspective(result.insight_perspective || 'auto')
+      setOriginalPerspective(result.scene || 'auto')
       setPerspectiveChanged(false)
-      setSelectedPerspective(toCanonicalInsightPerspective(result.insight_perspective))
+      // 已应用场景仍在服务端场景列表中则直接选中；
+      // 历史值（'auto' / 旧场景 key）不在列表中时回退第一项，提交时未改动仍回传原值。
+      const applied = result.scene
+      setSelectedPerspective(
+        applied && options.some((option) => option.key === applied)
+          ? applied
+          : options[0]?.key ?? '',
+      )
+      setSceneModeOptions(modeOptions)
+      setOriginalSceneMode(result.scene_mode)
+      setSceneModeChanged(false)
+      // 决策模式同理：历史值不在列表中时回退第一项，未改动则原样回传（无原值时省略字段）。
+      const appliedMode = result.scene_mode
+      setSelectedSceneMode(
+        appliedMode && modeOptions.some((option) => option.key === appliedMode)
+          ? appliedMode
+          : modeOptions[0]?.key ?? '',
+      )
     } catch (error: any) {
       message.error(error?.message || '读取洞察背景失败')
     } finally {
@@ -129,7 +149,8 @@ export function InsightRegeneratePanel({
       await recordingApi.regenerateInsights(fileId, {
         background,
         conversation: [],
-        insight_perspective: resolveInsightPerspectiveForSubmit(originalPerspective, selectedPerspective, perspectiveChanged),
+        scene: resolveInsightPerspectiveForSubmit(originalPerspective, selectedPerspective, perspectiveChanged),
+        scene_mode: sceneModeChanged ? selectedSceneMode : originalSceneMode,
       })
       message.success('已确认背景，正在重新生成洞察')
       setSubmitted(true)
@@ -141,11 +162,6 @@ export function InsightRegeneratePanel({
     }
   }
 
-  const appliedPerspectiveName = getInsightPerspectiveDisplayName(
-    background.resolved_insight_perspective,
-    perspectiveOptions,
-  )
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#fff]">
       {loading ? (
@@ -154,9 +170,6 @@ export function InsightRegeneratePanel({
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <div className="mb-3 rounded-xl border border-[#DCE6FF] bg-[#F5F8FF] p-3">
             <div className="text-xs font-semibold text-[#344054]">洞察场景</div>
-            <div className="mt-1 text-[11px] leading-4 text-[#667085]">
-              当前已应用：{appliedPerspectiveName}
-            </div>
             <Select
               className="mt-2 w-full"
               value={selectedPerspective}
@@ -166,13 +179,28 @@ export function InsightRegeneratePanel({
                 label: option.name,
               }))}
               onChange={(value) => {
-                setSelectedPerspective(value as CanonicalInsightPerspective)
+                setSelectedPerspective(value)
                 setPerspectiveChanged(true)
               }}
               disabled={regenerating || parseStatusRunning}
             />
+            <div className="mt-3 text-xs font-semibold text-[#344054]">洞察模式</div>
+            <Select
+              className="mt-2 w-full"
+              value={selectedSceneMode}
+              loading={sceneModeOptions.length === 0}
+              options={sceneModeOptions.map((option) => ({
+                value: option.key,
+                label: option.name,
+              }))}
+              onChange={(value) => {
+                setSelectedSceneMode(value)
+                setSceneModeChanged(true)
+              }}
+              disabled={regenerating || parseStatusRunning}
+            />
             <div className="mt-1 text-[11px] leading-4 text-[#98A2B3]">
-              选择后点击底部按钮，下一次洞察将按此场景生成。
+              选择后点击底部按钮，下一次洞察将按此场景与模式生成。
             </div>
           </div>
           <div className="space-y-3">

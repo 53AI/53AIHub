@@ -4,7 +4,6 @@ import { Dropdown } from '@km/shared-components-react'
 import type { MenuProps } from 'antd'
 import { FileItem } from '@/api/modules/files/types'
 import { SvgIcon } from '@km/shared-components-react'
-import './video.css'
 
 interface TranscriptItem {
   id: string

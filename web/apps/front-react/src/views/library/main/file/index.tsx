@@ -16,7 +16,6 @@ import {
   getDisplayName,
   useInlineEdit,
 } from "../../composables/useInlineEdit";
-import { t } from "@/locales";
 import { CatalogRefContext, useFileViewFullscreen } from "../index";
 import agentsApi from "@/api/modules/agents";
 import { AGENT_USAGES } from "@/constants/agent";

@@ -15,6 +15,7 @@ import Footer from "@/components/Layout/Footer";
 import Breadcrumb, { MODULE_CONFIGS } from "@/components/Breadcrumb";
 import { useSkillsStore } from "@/stores/modules/skills";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
+import { useResponsive } from "@/hooks/useResponsive";
 import { t } from "@/locales";
 import { skillApi } from "@/api/modules/skill";
 import type { SkillDetail } from "@/api/modules/skill/types";
@@ -41,6 +42,7 @@ export function SkillDetailView() {
   const [searchParams] = useSearchParams();
   const skillsStore = useSkillsStore();
   const isSoftStyle = useIsSoftStyle();
+  const { isMobile } = useResponsive();
 
   const [skill, setSkill] = useState<SkillDetail | null>(null);
   const [activeFaq, setActiveFaq] = useState("0");
@@ -269,16 +271,16 @@ export function SkillDetailView() {
               src={skill.logo}
               alt={skill.display_name}
             />
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-1">
-                <h1 className="text-xl font-medium text-primary">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-1 overflow-hidden">
+                <h1 className="text-xl font-medium text-primary break-words max-md:truncate max-md:flex-1">
                   {skill.display_name}
                 </h1>
                 <Tag className="text-xs rounded-3xl truncate max-w-[80px]" title={skill.version}>{skill.version}</Tag>
               </div>
               {/* 多分组 */}
               {groupNames.length > 0 && (
-                <div className="flex items-center gap-1 mt-1">
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
                   {groupNames.map((name, index) => (
                     <span
                       key={index}
@@ -290,9 +292,29 @@ export function SkillDetailView() {
                 </div>
               )}
             </div>
+            {/* 软件模式移动端：主操作按钮置于头部右侧（同智能体详情）；桌面端仍用底部悬浮栏 */}
+            {isSoftStyle && isMobile && (
+              skill.added ? (
+                <Button type="primary" className="flex-none" onClick={handleUse}>
+                  {t('skill.workbench_use')}
+                </Button>
+              ) : (
+                <Button type="primary" className="flex-none" onClick={handleAdd}>
+                  {t('action.add')}
+                </Button>
+              )
+            )}
           </div>
           <p className="text-[#939499] mb-6 w-full">{skill.description}</p>
 
+          {/* 非软件模式始终展示；软件模式下移动端也内联展示权限标签 */}
+          {(!isSoftStyle || isMobile) && skill.group_ids && skill.group_ids.length > 0 && (
+            <div className="mb-6">
+              <AuthTagGroup value={skill.group_ids} scopes={skill.scopes} />
+            </div>
+          )}
+
+          {/* 非软件模式（web）展示操作按钮行；软件模式移动端按钮在头部右侧、桌面端在底部悬浮栏 */}
           {!isSoftStyle && <div className="flex items-center gap-3  mb-6">
             {  skill.added ? (
               <Button type="primary" onClick={handleUse}>
@@ -335,11 +357,11 @@ export function SkillDetailView() {
           {qualityItems && qualityItems.length > 0 && (
             <section className="mb-7">
               <h2 className="text-base font-medium text-gray-900 mb-4">{t('skill.quality_score')}</h2>
-              <div className="grid grid-cols-5 gap-4 border border-[#E6E8EB] p-5 rounded-xl">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 border border-[#E6E8EB] p-5 rounded-xl">
                 {qualityItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className="bg-[#F4F6F9] rounded-xl p-6 flex flex-col items-center justify-center gap-2"
+                    className="bg-[#F4F6F9] rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center gap-2"
                   >
                     <div className="size-8 bg-[#e8edf8] rounded-full flex items-center justify-center">
                       <SvgIcon name={item.icon} size={16} color="#2563EB" />
@@ -357,7 +379,7 @@ export function SkillDetailView() {
           {capabilities.length > 0 && (
             <section className="mb-7">
               <h2 className="text-base font-medium text-gray-900 mb-4">{t('skill.capabilities')}</h2>
-              <div className="grid grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
                 {capabilities.map((item, idx) => (
                   <div
                     key={idx}
@@ -383,7 +405,7 @@ export function SkillDetailView() {
                     className="border border-gray-100 rounded-xl overflow-hidden"
                   >
                     <div className="flex items-center justify-between p-4 bg-[#f8faff]">
-                      <h3 className="text-sm">{item.title}</h3>
+                      <h3 className="text-sm min-w-0 break-words">{item.title}</h3>
                       <div
                         onClick={() => handleCopy(item.desc)}
                         className="h-6 rounded flex items-center justify-center cursor-pointer bg-[#eaeef8] hover:bg-[#E1E2E3] text-sm text-[#2563EB] !py-[5px] !px-2"
@@ -410,7 +432,7 @@ export function SkillDetailView() {
           {!!(positiveCases.length || negativeCases.length) && (
             <section className="mb-7">
               <h2 className="text-base font-medium text-gray-900 mb-4">{t('skill.best_practice')}</h2>
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="bg-green-50/50 rounded-xl p-6 border border-[#E6E8EB]">
                   <div className="flex items-center gap-2 mb-4">
                     <CheckOutlined
@@ -464,11 +486,11 @@ export function SkillDetailView() {
                   items={faqs.map((faq, idx) => ({
                     key: String(idx),
                     label: (
-                      <div className="flex items-center gap-3 flex-1 bg-[#f8faff] h-5 text-base">
+                      <div className="flex items-center gap-3 flex-1 min-w-0 bg-[#f8faff] min-h-5 text-base">
                         <QuestionCircleOutlined
                           style={{ fontSize: 20, color: "#2563EB" }}
                         />
-                        <span className="font-medium text-gray-900">{faq.q}</span>
+                        <span className="font-medium text-gray-900 break-words">{faq.q}</span>
                       </div>
                     ),
                     children: (
@@ -483,14 +505,13 @@ export function SkillDetailView() {
           )}
         </div>
           {isSoftStyle && <Footer />}
-          {/* 软件模式下底部悬浮栏 */}
-          {isSoftStyle && (
+          {/* 软件模式下底部悬浮栏：仅桌面显示；移动端操作按钮在头部右侧 */}
+          {isSoftStyle && !isMobile && (
             <>
               <div className="h-28"></div>
-              <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
+              <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-1/2 md:left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
                 <div className="flex-1 overflow-hidden">
-                  {/* 可在此处添加权限标签等信息 */}
-                  { skill.group_ids && skill.group_ids.length > 0 && <AuthTagGroup value={skill.group_ids} scopes={skill.scopes} mode="compact" /> }
+                  {skill.group_ids && skill.group_ids.length > 0 && <AuthTagGroup value={skill.group_ids} scopes={skill.scopes} mode="compact" /> }
                 </div>
                 {skill.added ? (
                   <Button type="primary" onClick={handleUse}>{t('skill.workbench_use')}</Button>

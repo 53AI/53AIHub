@@ -31,6 +31,7 @@ import type { RawNotificationItem } from "@/api/modules/notifications/types";
 import { getFormatTimeStamp } from "@km/shared-utils";
 import "./MessageCenter.css";
 import { SvgIcon } from "@km/shared-components-react";
+import { useResponsive } from "@/hooks/useResponsive";
 
 const APPROVE_STATUS = {
   pending: 0,
@@ -54,6 +55,7 @@ interface MessageCenterProps {
 export function MessageCenter({ externalOpen, onExternalClose, anchor, children }: MessageCenterProps = {}) {
   const navigate = useNavigate();
   const userStore = useUserStore();
+  const { isMobile } = useResponsive();
   const scrollRef = useRef<HTMLDivElement>(null);
   const offsetRef = useRef(0);
 
@@ -576,7 +578,7 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
       </div>
 
       {/* 标签页 */}
-      <div className="flex-none px-5 pb-4 flex gap-2.5 border-gray-100 pt-3">
+      <div className="flex-none px-5 pb-4 flex flex-wrap gap-2.5 border-gray-100 pt-3">
         {tabs.map((tab) => (
           <button
             key={tab.key}
@@ -672,9 +674,10 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
       content={content}
       trigger={externalOpen !== undefined ? [] : "click"}
       placement="rightBottom"
+      arrow={!isMobile}
       getPopupContainer={externalOpen !== undefined ? () => document.body : undefined}
       classNames={{ root: "message-popover" }}
-      styles={{ root: { width: 425 } }}
+      styles={{ root: { width: isMobile ? "calc(100vw - 24px)" : 425 } }}
       onOpenChange={(visible) => {
         if (externalOpen !== undefined) {
           // 外部控制模式

@@ -5,6 +5,8 @@ import {
   useCallback,
   createContext,
   useContext,
+  lazy,
+  Suspense,
 } from "react";
 import {
   Outlet,
@@ -13,18 +15,18 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router-dom";
-import { Avatar, Spin, message } from "antd";
+import { Avatar, Skeleton, Spin, message } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { useLibraryStore } from "@/stores/modules/library";
 import { useUserStore } from "@/stores/modules/user";
 import { useEnterpriseStore, useIsSoftStyle } from "@/stores/modules/enterprise";
 import { useNavigationStore } from "@/stores/modules/navigation";
 import { ProfilePopover, MessageCenter } from "@/components/Layout";
+import { ResponsiveSidebar } from "@/components/Layout/ResponsiveSidebar";
 import { Catalog, type CatalogRef } from "./catalog";
 import { FileUpload } from "./components/file-upload";
 import { ApplyDialog, type ApplyDialogRef } from "../components/apply";
 import { SafeImage } from "@km/shared-components-react";
-import { FileSearch } from "@/components/FileSearch";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { ProfileModal } from "@/views/profile";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
@@ -37,6 +39,10 @@ import { useFullscreen } from "@/hooks/useFullscreen";
 import Breadcrumb from "@/components/Breadcrumb";
 import "./index.css";
 
+const GlobalSearch = lazy(() =>
+  import("@/components/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
+);
+
 interface UploadItem {
   id: string;
   file: File;
@@ -48,10 +54,6 @@ interface UploadItem {
 // Catalog ref context
 export const CatalogRefContext =
   createContext<React.RefObject<CatalogRef | null> | null>(null);
-
-export const useCatalogRef = () => {
-  return useContext(CatalogRefContext);
-};
 
 // 文件预览全屏状态 Context：跨越 LibraryFileLayout 这一中间 Outlet 层，
 // 让 LibraryFileView 能直接消费（useOutletContext 只能读最近一层 Outlet）。
@@ -93,7 +95,6 @@ export function LibraryMainView() {
   const assistantVisible = useLibraryStore((state) => state.assistantVisible);
 
   // Refs
-  const siderRef = useRef<HTMLDivElement>(null);
   const catalogRef = useRef<CatalogRef>(null);
   const fileUploadRef = useRef<{
     selectFiles: () => void;
@@ -198,37 +199,6 @@ export function LibraryMainView() {
       useLibraryStore.getState().clearState();
       eventBus.off("apply-open");
     };
-  }, []);
-
-  // 鼠标进入展开区域 - 展开侧边栏
-  const handleMouseEnter = useCallback(() => {
-    const store = useLibraryStore.getState();
-    if (!store.siderVisible) {
-      store.setSidebarCollapsed(true);
-    }
-  }, []);
-
-  // 鼠标离开侧边栏 - 折叠侧边栏
-  const handleMouseLeave = useCallback(() => {
-    const store = useLibraryStore.getState();
-    if (!store.siderVisible && store.sidebarCollapsed) {
-      store.setSidebarCollapsed(false);
-    }
-  }, []);
-
-  // 点击外部关闭
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const store = useLibraryStore.getState();
-      if (!store.siderVisible && store.sidebarCollapsed && siderRef.current) {
-        if (!siderRef.current.contains(e.target as Node)) {
-          store.setSidebarCollapsed(false);
-        }
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // 拖拽调整侧栏宽度
@@ -466,25 +436,14 @@ export function LibraryMainView() {
           )}
           {/* 内层：白色背景 + 内发光 */}
           <div className="h-full flex relative bg-white">
-            {/* 鼠标悬停展开区域 */}
-            {!libraryStore.siderVisible && !libraryStore.sidebarCollapsed && (
-              <div
-                className="w-4 h-full absolute -left-2 top-0 z-10 hover:bg-gray-100/50 transition-colors"
-                onMouseEnter={handleMouseEnter}
-              />
-            )}
-
-            {/* 左边栏 */}
-            {!fileViewFullscreen && <div
-              ref={siderRef}
-              className={`
-            bg-[#fff] px-4 pt-5  flex flex-col transition-all duration-300 ease-linear absolute top-0 left-0 h-full z-10 border-r
-            ${libraryStore.siderVisible ? "" : "-translate-x-full -ml-2"}
-            ${!libraryStore.siderVisible && libraryStore.sidebarCollapsed ? "translate-x-0 shadow-xl" : ""}
-          `}
-              style={{ width: `${libraryStore.sidebarWidth}px` }}
-              onMouseLeave={handleMouseLeave}
-            >
+            {/* 左边栏：桌面端为常驻 flex 列（宽度可拖拽、页头按钮可隐藏），移动端抽屉化（同 KnowledgePanel） */}
+            {!fileViewFullscreen && libraryStore.siderVisible && (
+              <ResponsiveSidebar
+                width={libraryStore.sidebarWidth}
+                className="relative bg-[#fff] border-r px-4 pt-5"
+              >
+                {({ close }) => (
+                  <>
               <div className="flex items-center gap-1 text-sm text-secondary">
                 <Breadcrumb
                   className="text-sm"
@@ -538,22 +497,30 @@ export function LibraryMainView() {
               </div>
 
 
-              {/* 文件搜索 */}
-              <FileSearch
-                className="mt-4"
-                libraryId={libraryId}
-                onSelect={(item) => {
-                  // 选中后让目录树展开并滚动定位到该节点（与首次进入的行为一致）。
-                  catalogRef.current?.scrollToNode(String(item.file_id));
-                }}
-              />
+              {/* 全局搜索 */}
+              <div className="mt-4">
+                <Suspense
+                  fallback={<Skeleton.Input active size="small" block />}
+                >
+                  <GlobalSearch
+                    defaultLibrary={libraryStore.library ?? undefined}
+                    onSelect={(item) => {
+                      // 选中后让目录树展开并滚动定位到该节点（与首次进入的行为一致）。
+                      catalogRef.current?.scrollToNode(String(item.file_id));
+                    }}
+                  />
+                </Suspense>
+              </div>
 
               {/* 导航菜单 */}
               <div className="flex flex-col gap-1 py-3">
                 {/* 首页 */}
                 <div
                   className={`h-9 flex items-center gap-2.5 pl-2 rounded cursor-pointer hover:bg-[#EEEFF0] ${getBlockColor(routeName === "LibraryHome")}`}
-                  onClick={handleView}
+                  onClick={() => {
+                    handleView();
+                    close();
+                  }}
                 >
                   <div
                     className={`size-4 ${getIconColor(routeName === "LibraryHome")}`}
@@ -567,7 +534,10 @@ export function LibraryMainView() {
                 {libraryStore.fileViewType !== "chunk" && (
                   <div
                     className={`h-9 flex items-center gap-2.5 pl-2 rounded cursor-pointer hover:bg-[#EEEFF0] ${getBlockColor(routeName === "LibraryChat")}`}
-                    onClick={handleNavigateChat}
+                    onClick={() => {
+                      handleNavigateChat();
+                      close();
+                    }}
                   >
                     <div
                       className={`size-4 ${getIconColor(routeName === "LibraryChat")}`}
@@ -582,7 +552,10 @@ export function LibraryMainView() {
                 {libraryStore.fileViewType === "chunk" && (
                   <div
                     className={`h-9 flex items-center gap-2.5 pl-2 rounded cursor-pointer hover:bg-[#EEEFF0] ${getBlockColor(routeName === "LibraryRecallTest")}`}
-                    onClick={handleNavigateRecall}
+                    onClick={() => {
+                      handleNavigateRecall();
+                      close();
+                    }}
                   >
                     <div
                       className={`size-4 ${getIconColor(routeName === "LibraryRecallTest")}`}
@@ -598,7 +571,7 @@ export function LibraryMainView() {
               {libraryStore.library_id ? (
                 <Catalog
                   ref={catalogRef}
-                  className="flex-1 -mx-4 overflow-hidden"
+                  className="flex-1 min-h-0 -mx-4 overflow-hidden"
                   onUpload={handleUpload}
                 />
               ) : (
@@ -653,25 +626,19 @@ export function LibraryMainView() {
                 </div>
               )}
 
-              {/* 拖拽调整器 */}
-              {libraryStore.siderVisible && (
-                <div
-                  ref={resizerRef}
-                  className="absolute right-0 top-0 w-1 h-full bg-transparent hover:bg-blue-300 cursor-col-resize transition-colors duration-200 flex-shrink-0"
-                  onMouseDown={handleResizeStart}
-                />
-              )}
-            </div>}
+              {/* 拖拽调整器（仅桌面端） */}
+              <div
+                ref={resizerRef}
+                className="absolute right-0 top-0 w-1 h-full bg-transparent hover:bg-blue-300 cursor-col-resize transition-colors duration-200 flex-shrink-0 max-md:hidden"
+                onMouseDown={handleResizeStart}
+              />
+                  </>
+                )}
+              </ResponsiveSidebar>
+            )}
 
             {/* 拖拽调整器 */}
-            <div
-              className="flex-1 flex min-h-0 relative  bg-white overflow-hidden"
-              style={{
-                marginLeft: libraryStore.siderVisible && !fileViewFullscreen
-                  ? `${libraryStore.sidebarWidth}px`
-                  : "0",
-              }}
-            >
+            <div className="flex-1 flex min-h-0 relative  bg-white overflow-hidden">
               {loading ? null : <Outlet />}
             </div>
 

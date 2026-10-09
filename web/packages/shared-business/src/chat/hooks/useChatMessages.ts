@@ -80,14 +80,19 @@ export async function loadMessagesData(
         uploaded_files = userContent
           .filter((item: any) => item != null && item.type === "file" && !item.library_id)
           .map((fileItem: any) => {
-            const fileId = fileItem.content?.replace("file_id:", "") || "";
+            const fileId = fileItem.content?.replace("file_id:", "") || fileItem.file_id || "";
             return {
               id: fileId,
+              file_id: fileItem.file_id ?? fileId,
               name: fileItem.filename || `文件 ${fileId}`,
               filename: fileItem.filename || `文件 ${fileId}`,
               size: fileItem.size,
               mime_type: fileItem.mime_type,
               preview_key: fileItem.preview_key,
+              url: fileItem.url,
+              preview_url: fileItem.preview_url,
+              download_url: fileItem.download_url,
+              signed_download_url: fileItem.signed_download_url,
             };
           });
 

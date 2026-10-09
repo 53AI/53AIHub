@@ -4,6 +4,7 @@ import { Dropdown } from "@km/shared-components-react";
 import { useLinksStore } from "@/stores/modules/links";
 import { useShortcutsStore } from "@/stores/modules/shortcuts";
 import { useBasicLayout } from "@/hooks/useBasicLayout";
+import { useMediaQuery } from "@/hooks/useResponsive";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
@@ -53,7 +54,10 @@ export function ToolkitList({
 }: ToolkitListProps) {
   const linksStore = useLinksStore();
   const shortcutsStore = useShortcutsStore();
-  const { isSmScreen } = useBasicLayout();
+  const { isMdScreen, isInMobile } = useBasicLayout();
+  // 触屏设备（无 hover）无法使用 PC 悬停浮层，改用底部操作面板
+  const isTouch = useMediaQuery("(hover: none)");
+  const useActionSheet = isMdScreen || isInMobile || isTouch;
   const dialogRef = useRef<AccountDialogRef>(null);
 
   const [showMobileModal, setShowMobileModal] = useState(false);
@@ -112,7 +116,7 @@ export function ToolkitList({
       resourceId: item.id,
       resourceType: 'ai_link',
       onClick: async () => {
-        if (isSmScreen && item.has_share_account) {
+        if (useActionSheet && item.has_share_account) {
           setSelectedItem(item);
           setShowMobileModal(true);
         } else {
@@ -301,32 +305,57 @@ export function ToolkitList({
         </Fragment>
       ))}
 
-      {/* Mobile Modal */}
-      {showMobileModal && (
+      {/* Mobile Action Sheet */}
+      {showMobileModal && selectedItem && (
         <div
-          className="fixed inset-0 z-50 md:hidden"
+          className="fixed inset-0 z-[1000]"
           onClick={closeMobileModal}
         >
           {/* Background overlay */}
-          <div className="absolute inset-0 bg-black bg-opacity-50" />
+          <div className="absolute inset-0 bg-black bg-opacity-50 animate-overlay-in" />
 
-          {/* Bottom popup */}
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl transform transition-transform duration-300 ease-out">
+          {/* Bottom sheet */}
+          <div
+            className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl animate-sheet-up pb-[env(safe-area-inset-bottom)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="pt-2.5 pb-1 flex justify-center">
+              <div className="w-9 h-1 rounded-full bg-[#E0E0E0]" />
+            </div>
             <div className="flex flex-col">
               <button
-                className="h-8 font-medium text-base hover:bg-gray-200 transition-colors"
-                onClick={() => selectedItem && handleTo(selectedItem)}
+                className="h-12 text-base font-medium text-[#1D1E1F] border-b border-gray-100 active:bg-gray-100 transition-colors"
+                onClick={() => handleTo(selectedItem)}
               >
                 {t("toolbox.direct_access")}
               </button>
+              {selectedItem.has_share_account && (
+                <button
+                  className="h-12 text-base font-medium text-[#1D1E1F] border-b border-gray-100 active:bg-gray-100 transition-colors"
+                  onClick={() => handleVisit(selectedItem)}
+                >
+                  {t("toolbox.account_access")}
+                </button>
+              )}
               <button
-                className="h-8 font-medium text-base hover:bg-gray-200 transition-colors"
-                onClick={() => selectedItem && handleVisit(selectedItem)}
+                className="h-12 text-base font-medium text-[#1D1E1F] border-b border-gray-100 active:bg-gray-100 transition-colors"
+                onClick={() => {
+                  const command = shortcutsStore.getShortcut(
+                    "ai_link",
+                    String(selectedItem.id),
+                  )
+                    ? "remove-shortcut"
+                    : "add-shortcut";
+                  handleMoreCommand(selectedItem, command);
+                  closeMobileModal();
+                }}
               >
-                {t("toolbox.account_access")}
+                {shortcutsStore.getShortcut("ai_link", String(selectedItem.id))
+                  ? t("shortcut.remove")
+                  : t("shortcut.add")}
               </button>
               <button
-                className="h-8 border-t font-medium text-base hover:bg-gray-50 transition-colors"
+                className="h-12 text-base text-[#999999] active:bg-gray-50 transition-colors"
                 onClick={closeMobileModal}
               >
                 {t("action.cancel")}

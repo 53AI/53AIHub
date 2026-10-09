@@ -2563,8 +2563,11 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					<header
 						className={`flex-none h-16 ${isIndexRoute ? "" : "border-b"} sticky top-0 z-10 bg-white ${isIndexRoute && showHistory ? "" : ""}`}
 					>
-						<div className="relative mx-auto flex h-full items-center justify-between px-4">
+						<div className="relative mx-auto flex h-16 items-center justify-between px-4">
 							<div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
+								{/* 对齐 Layout/Header.tsx 的 {expandSidebar && <ExpandSidebarButton />} 模式：
+									展开按钮始终挂载，组件内部依据侧边栏折叠状态自行显隐 */}
+								<ExpandSidebarButton />
 								{/* 工作台入口 + 普通智能体：显示历史/新建按钮 */}
 								{isIndexRoute && !showHistory && !isOpenclaw ? (
 									<>
@@ -2594,10 +2597,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 										<div className="h-4 border-l" />
 									</>
 								) : isIndexRoute ? null : (
-									<>
-										<ExpandSidebarButton />
-										<div className="h-4 border-l" />
-									</>
+									<div className="h-4 border-l" />
 								)}
 								{isSoftStyle && !isIndexRoute && (
 									<div
@@ -2788,13 +2788,6 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								)}
 							</div>
 							<div className="flex flex-none items-center justify-end gap-2">
-								{/* Mobile back button */}
-								<span
-									className="flex items-center gap-1 text-sm cursor-pointer md:hidden"
-									onClick={() => navigate(-1)}
-								>
-									<SvgIcon name="return" size={18} stroke />
-								</span>
 								{isOpenclaw ? (<IconAction
 									title={t("openclaw.panel.settings")}
 									size="medium"

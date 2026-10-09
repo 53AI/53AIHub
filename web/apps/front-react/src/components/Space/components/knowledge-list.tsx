@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Spin, Empty, Checkbox, Tooltip } from "antd";
-import { RightOutlined } from "@ant-design/icons";
+import { LeftOutlined, RightOutlined } from "@ant-design/icons";
 import type { SpaceItem } from "@/api/modules/spaces";
 import type { WikiCategory, WikiPageItem } from "@/api/modules/wiki";
 import { wikiApi } from "@/api/modules/wiki";
@@ -12,6 +12,7 @@ import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
 import { SvgIcon } from "@km/shared-components-react";
 import { useUserStore } from "@/stores/modules/user";
+import { useResponsive } from "@/hooks/useResponsive";
 import type { WikiItem } from "../dialog";
 
 export interface KnowledgeListProps {
@@ -47,6 +48,11 @@ export function KnowledgeList({
 
   const [hasMore, setHasMore] = useState(true);
   const initializedRef = useRef(false);
+  const { isMobile } = useResponsive();
+  // 移动端下钻层级：空间 → 分类 → 动态知识；桌面端仍为三列并排
+  const [drillLevel, setDrillLevel] = useState<"space" | "category" | "page">("space");
+  // 首个空间自动选中后直接落到页面级（与桌面立即可见对齐），返回键逐级上跳
+  const autoJumpedRef = useRef(false);
   // 用 ref 镜像 pageLoadingMore / pageLoading,避免 loadMorePages / handleScroll 把它们纳入 deps
   // 导致每次加载都重建闭包、重新绑定 onScroll。
   const pageLoadingMoreRef = useRef(pageLoadingMore);
@@ -291,10 +297,23 @@ export function KnowledgeList({
     setActiveCategoryId(null);
   }, []);
 
+  // 自动跳转到页面级（仅一次，避免覆盖用户的下钻操作）
+  useEffect(() => {
+    if (!autoJumpedRef.current && spaceId) {
+      autoJumpedRef.current = true;
+      setDrillLevel("page");
+    }
+  }, [spaceId]);
+
+  // 移动端下钻：当前层级只显示对应列
+  const showSpaceCol = !isMobile || drillLevel === "space";
+  const showCategoryCol = !isMobile || drillLevel === "category";
+  const showPageCol = !isMobile || drillLevel === "page";
+
   return (
-    <div className="h-[500px] flex overflow-hidden border rounded-xl">
+    <div className="h-[500px] max-md:h-[55vh] flex flex-col md:flex-row overflow-hidden border rounded-xl">
       {/* 第一列：空间列表 */}
-      <div className="flex-none w-[216px] py-1 border-r flex flex-col overflow-hidden">
+      <div className={`${showSpaceCol ? "flex" : "hidden md:flex"} flex-col overflow-hidden py-1 w-full flex-1 min-h-0 md:flex-none md:w-[216px] md:h-auto md:border-r`}>
         <div className="h-9 px-4 flex items-center text-sm text-secondary">
           {t("space.label")}
         </div>
@@ -318,7 +337,10 @@ export function KnowledgeList({
                     ? "bg-[#EDF3FF] hover:bg-[#EDF3FF]"
                     : "hover:bg-[#F2F3F5]"
                 }`}
-                onClick={() => handleSpaceSelect(item.id)}
+                onClick={() => {
+                  handleSpaceSelect(item.id);
+                  if (isMobile) setDrillLevel("category");
+                }}
               >
                 {allowSelectSpace && (
                   <Checkbox
@@ -345,16 +367,32 @@ export function KnowledgeList({
       </div>
 
       {/* 第二列：分类 */}
-      <div className="flex-none w-[216px] py-1 border-r flex flex-col overflow-hidden">
-        <div className="h-9 px-4 flex items-center text-sm text-secondary">
-          {t("dynamic_knowledge.category_label")}
-        </div>
+      <div className={`${showCategoryCol ? "flex" : "hidden md:flex"} flex-col overflow-hidden py-1 w-full flex-1 min-h-0 md:flex-none md:w-[216px] md:h-auto md:border-r`}>
+        {isMobile ? (
+          <div className="h-9 px-2 flex items-center gap-1" onClick={() => setDrillLevel("space")}>
+            <div
+              className="size-7 flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]"
+            >
+              <LeftOutlined className="text-xs text-[#999]" />
+            </div>
+            <span className="flex-1 text-sm text-secondary truncate">
+              {spaceList.find((s) => s.id === spaceId)?.name || t("space.label")}
+            </span>
+          </div>
+        ) : (
+          <div className="h-9 px-4 flex items-center text-sm text-secondary">
+            {t("dynamic_knowledge.category_label")}
+          </div>
+        )}
         <div className="flex-1 px-2 space-y-1 overflow-y-auto">
           {/* 各分类 */}
           {tags.map((tag) => (
             <div
               key={String(tag.key)}
-              onClick={() => setActiveCategoryId(tag.key)}
+              onClick={() => {
+                setActiveCategoryId(tag.key);
+                if (isMobile) setDrillLevel("page");
+              }}
               className={`h-9 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] ${
                 activeCategoryId === tag.key
                   ? "bg-[#EDF3FF] hover:bg-[#EDF3FF]"
@@ -372,10 +410,23 @@ export function KnowledgeList({
       </div>
 
       {/* 第三列：动态知识列表 */}
-      <div className="flex-1 overflow-y-auto" onScroll={handleScroll}>
-        <div className="h-9 px-4 flex items-center text-sm text-secondary">
-          {t("dynamic_knowledge.label")}
-        </div>
+      <div className={`${showPageCol ? "" : "hidden md:block"} flex-1 min-h-0 overflow-y-auto`} onScroll={handleScroll}>
+        {isMobile ? (
+          <div className="h-9 px-2 flex items-center gap-1" onClick={() => setDrillLevel("category")}>
+            <div
+              className="size-7 flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]"
+            >
+              <LeftOutlined className="text-xs text-[#999]" />
+            </div>
+            <span className="flex-1 text-sm text-secondary truncate">
+              {tags.find((tag) => tag.key === activeCategoryId)?.name || t("dynamic_knowledge.label")}
+            </span>
+          </div>
+        ) : (
+          <div className="h-9 px-4 flex items-center text-sm text-secondary">
+            {t("dynamic_knowledge.label")}
+          </div>
+        )}
         {!spaceId ? (
           <Empty
             image={getPublicPath("/images/empty.png")}

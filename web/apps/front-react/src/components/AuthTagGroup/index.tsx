@@ -394,14 +394,14 @@ export function AuthTagGroup({
             {isIndependent && subscriptionList.map((item) => (
               <li
                 key={item.group_id}
-                className={`flex items-center gap-1 text-sm ${value.includes(item.group_id) ? 'text-primary' : 'hidden'}`}
+                className={`flex items-center gap-1 text-sm text-theme ${value.includes(item.group_id) ? '' : 'hidden'}`}
               >
                 <img
                   src={getLogoSrc(item)}
                   className="flex-none size-6 rounded-full overflow-auto"
                   alt={item.group_name}
                 />
-                {item.group_name}
+                <span className="text-primary">{item.group_name}</span>
               </li>
             ))}
 
@@ -413,13 +413,13 @@ export function AuthTagGroup({
             {isEnterprise && userGroupList.map((item) => (
               <li
                 key={item.group_id}
-                className={`flex items-center gap-1 text-sm ${value.includes(item.group_id) ? 'text-primary' : 'hidden'}`}
+                className={`flex items-center gap-1 text-sm text-theme ${value.includes(item.group_id) ? '' : 'hidden'}`}
               >
                 <SvgIcon
                   name="peoples-filled"
-                  className={`flex-none size-6 ${value.includes(item.group_id) ? 'text-theme' : 'text-placeholder'}`}
+                  className="flex-none size-6"
                 />
-                {item.group_name}
+                <span className="text-primary">{item.group_name}</span>
               </li>
             ))}
           </>

@@ -31,3 +31,29 @@
   display: flex;
   justify-content: flex-end;
 }
+
+/* ===== 列表容器查询：按内容区实际宽度自适应列数 =====
+   软模式下内容区宽度 = 视口 - 应用侧栏(~54px) - 空间侧栏(280px)，
+   视口断点（md/lg）无法准确反映可用宽度，导致 1320px 左右 3 列卡片底部信息换行错位。
+   改用容器查询按实际宽度切换列数：<544px 1 列，544-812px 2 列，≥812px 3 列 */
+.library-list-container {
+  container-type: inline-size;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+}
+
+@container (min-width: 34rem) {
+  .library-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 50.75rem) {
+  .library-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

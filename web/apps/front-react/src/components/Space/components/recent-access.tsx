@@ -79,7 +79,7 @@ export function RecentAccess({
 
   return (
     <Spin spinning={loading}>
-      <div className="h-[500px] overflow-y-auto border px-2 py-1 rounded-xl space-y-3">
+      <div className="h-[500px] max-md:h-[55vh] overflow-y-auto border px-2 py-1 rounded-xl space-y-3">
         <SelectionGroup
           title="空间"
           items={spaceItems}

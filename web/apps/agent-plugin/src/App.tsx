@@ -6,6 +6,7 @@ import { useUserStore } from "./stores/user";
 import { AgentNotFound } from "./components/AgentNotFound";
 import { getFingerprint } from "./utils/fingerprint";
 import { agentAgentApi } from "./adapters/agent";
+import { tApp } from "./i18n";
 
 /** Detect if running inside iframe (embed mode) */
 function useIsEmbedMode(): boolean {
@@ -23,10 +24,10 @@ function useEmbedClose() {
   }, []);
 }
 
-function LoadingScreen({ message = "加载中..." }: { message?: string }) {
+function LoadingScreen({ message }: { message?: string }) {
   return (
     <div className="flex items-center justify-center h-screen bg-gradient-to-b from-[#eaf3ff] to-white">
-      <div className="text-gray-500">{message}</div>
+      <div className="text-gray-500">{message || tApp("app.loading")}</div>
     </div>
   );
 }
@@ -68,7 +69,7 @@ function App() {
       // Must have token parameter
       if (!urlParams.token) {
         if (!cancelled) {
-          setErrorMessage('缺少必要参数');
+          setErrorMessage(tApp('app.missing_params'));
           setAppState('error');
         }
         return;
@@ -99,7 +100,7 @@ function App() {
       } catch (err) {
         if (!cancelled) {
           console.error('获取智能体信息失败:', err);
-          setErrorMessage('智能体不存在');
+          setErrorMessage(tApp('app.agent_not_found'));
           setAppState('error');
         }
         return;
@@ -133,6 +134,13 @@ function App() {
             username: urlParams.username,
             agentId: agentId
           });
+          // SSO 登录后拉取用户信息（group_ids / is_internal 等，供权限判断与展示使用）。
+          // 拉取失败不影响登录态，仅缺少展示信息。
+          try {
+            await getUserInfo(agentId);
+          } catch (err) {
+            console.error('获取用户信息失败:', err);
+          }
         } else {
           // Fingerprint-based visitor login
           const fingerprint = await getFingerprint();
@@ -143,7 +151,7 @@ function App() {
       } catch (err) {
         if (!cancelled) {
           console.error('登录失败:', err);
-          setErrorMessage('登录失败');
+          setErrorMessage(tApp('app.login_failed'));
           setAppState('error');
         }
       }
@@ -181,9 +189,11 @@ function App() {
   }
 
   // Ready state - show chat
+  // lang 不传：由 ChatConfigProvider 按 localStorage > 浏览器语言检测，
+  // 顶部语言切换（setLang 持久化到 agentplugin-lang）后重载可保持。
   return (
     <div className="relative h-screen">
-      <ChatConfigProvider lang="zh-cn" adapters={adapters}>
+      <ChatConfigProvider adapters={adapters}>
         <ChatView agentId={agentInfo?.agent_id} agentInfo={agentInfo} />
       </ChatConfigProvider>
     </div>

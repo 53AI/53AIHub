@@ -191,7 +191,7 @@ export function GroupList({
         groupId={state.group_id}
         page={paginated ? page : undefined}
         pageSize={paginated ? PAGINATED_PAGE_SIZE : undefined}
-        className={`${isSoftStyle ? "mt-2" : "my-3"}`}
+        className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 ${isSoftStyle ? "mt-2" : "my-3"}`}
         onAdd={onAdd}
         addedAgentId={addedAgentId}
         addedSkillIds={addedSkillIds}

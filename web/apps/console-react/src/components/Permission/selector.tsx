@@ -1,7 +1,7 @@
 import { Button } from 'antd'
 import { Dropdown } from '@km/shared-components-react'
 import { DownOutlined } from '@ant-design/icons'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { PERMISSION_TYPE, RESOURCE_TYPE, type PermissionType, type ResourceType } from './constant'
 
 export interface PermissionSelectorProps {
@@ -104,10 +104,16 @@ export function PermissionSelector({
   }, [roleOptions, value, placeholder])
 
   // Handle select
-  const handleSelect = (item: RoleItem) => {
-    onChange?.(item.value)
-    onSelect?.(item.value)
-  }
+  // 必须用 useCallback 稳定引用并纳入 menuItems 依赖：
+  // 否则 menuItems 中的 onClick 会闭包住旧的 onChange/onSelect，
+  // 父组件重渲染（回调引用变化）而 value 未变时，点击仍会调用过期回调
+  const handleSelect = useCallback(
+    (item: RoleItem) => {
+      onChange?.(item.value)
+      onSelect?.(item.value)
+    },
+    [onChange, onSelect],
+  )
 
   // Dropdown menu items
   const menuItems = useMemo(() => {
@@ -168,7 +174,7 @@ export function PermissionSelector({
     }
 
     return items
-  }, [roleOptions, value, unselected, onUnselected, placeholder])
+  }, [roleOptions, value, unselected, onUnselected, placeholder, handleSelect])
 
   // 获取 getPopupContainer 配置
   const getPopupContainer = useMemo(() => {

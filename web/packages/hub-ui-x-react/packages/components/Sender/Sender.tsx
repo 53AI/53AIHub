@@ -576,24 +576,6 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     }
   }, [enableDrag, disabled, processFiles]);
 
-  const handlePaste = useCallback((event: React.ClipboardEvent) => {
-    if (!enablePaste || disabled) return;
-    const items = event.clipboardData?.items;
-    if (!items) return;
-    const files: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === 'file') {
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      }
-    }
-    if (files.length > 0) {
-      event.preventDefault();
-      processFiles(files);
-    }
-  }, [enablePaste, disabled, processFiles]);
-
   // 清理残留样式标签（必须先于 handleEditorInput 声明，否则依赖数组会触发 TDZ）
   const cleanResidualStyles = useCallback(() => {
     const editorEl = editorRef.current;
@@ -682,6 +664,87 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     // 5. 触发 hasText 重新计算
     setContentVersion(v => v + 1);
   }, [mentionHook, skillHook, editor, cleanResidualStyles, mentionConfig, skillConfig]);
+
+  const handlePaste = useCallback((event: React.ClipboardEvent) => {
+    const clipboardData = event.clipboardData;
+    if (!clipboardData) return;
+
+    // 1. 优先检查文件粘贴（图片等）
+    if (enablePaste && !disabled) {
+      const items = clipboardData.items;
+      const files: File[] = [];
+      if (items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          if (item.kind === 'file') {
+            const file = item.getAsFile();
+            if (file) files.push(file);
+          }
+        }
+      }
+      if (files.length > 0) {
+        event.preventDefault();
+        processFiles(files);
+        return;
+      }
+    }
+
+    // 2. 文本/HTML 粘贴：阻止默认行为，手动插入纯文本（保留换行）
+    // 获取纯文本（浏览器会自动剥离 HTML 标签，只保留文字和换行）
+    // 统一换行符：兼容 Windows \r\n 与老 Mac \r
+    const rawText = clipboardData.getData('text/plain');
+    if (!rawText) return;
+    const plainText = rawText.replace(/\r\n?/g, '\n');
+
+    event.preventDefault();
+
+    // 通过 Selection API 在光标位置插入纯文本
+    const sel = document.getSelection();
+    if (!sel || !sel.rangeCount || !editorRef.current?.contains(sel.anchorNode)) return;
+
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+
+    // 将文本按换行拆分，每行插入文本节点，行间用 <br> 保持换行
+    const lines = plainText.split('\n');
+    const fragment = document.createDocumentFragment();
+    lines.forEach((line, index) => {
+      if (index > 0) {
+        fragment.appendChild(document.createElement('br'));
+      }
+      if (line.length > 0) {
+        fragment.appendChild(document.createTextNode(line));
+      }
+    });
+
+    // 如果全部是空行（纯换行），插入一个 <br>
+    if (fragment.childNodes.length === 0) {
+      fragment.appendChild(document.createElement('br'));
+    }
+
+    range.insertNode(fragment);
+
+    // 把光标放到插入内容的末尾
+    const lastChild = fragment.lastChild;
+    if (lastChild) {
+      const newRange = document.createRange();
+      if (lastChild.nodeType === Node.TEXT_NODE) {
+        newRange.setStartAfter(lastChild);
+      } else {
+        // <br> 节点
+        newRange.setStart(lastChild, 0);
+      }
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    }
+
+    // 同步 placeholder / onChange / maxLength 与发送按钮状态。
+    // 注意：这里不能用 handleEditorInput()，它内部的 cleanResidualStyles → normalize()
+    // 会把相邻文本节点合并，导致刚设置好的光标跳位。粘贴内容已是纯文本节点，无需清理。
+    editor.handleInput();
+    setContentVersion(v => v + 1);
+  }, [enablePaste, disabled, processFiles, editorRef, editor]);
 
   // Ref 方法
   useImperativeHandle(ref, () => ({

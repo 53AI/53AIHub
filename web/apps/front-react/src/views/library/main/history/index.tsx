@@ -458,5 +458,3 @@ export const HistoryDrawer = forwardRef<HistoryDrawerRef, HistoryDrawerProps>(
     );
   },
 );
-
-export default HistoryDrawer;

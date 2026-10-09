@@ -1,7 +1,7 @@
 import { useState, useMemo, type Key } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Table, Tooltip, Modal, Pagination, Button, message } from "antd";
-import { Dropdown } from "@km/shared-components-react";
+import { Table, Tooltip, Modal, Pagination, Button, Checkbox, message } from "antd";
+import { Dropdown, Tabs } from "@km/shared-components-react";
 import { MoreOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { MenuProps, TableColumnsType } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
@@ -10,6 +10,7 @@ import type { FileItem } from "@/api/modules/files/types";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { checkHasKMPermission } from "@/utils/km-permission";
 import { RUN_STATUS } from "@/constants/chunk";
+import { useResponsive } from "@/hooks/useResponsive";
 import { EntityDisplay } from "@/components/EntityDisplay/index";
 import { STEP_KEY_TO_NAME } from "@/views/library/main/components/status/file";
 import { ragJobApi } from "@/api/modules/rag-job";
@@ -31,6 +32,7 @@ export function ChunkHomeView() {
   const libraryStore = useLibraryStore();
   // Subscribe to files state for reactive updates
   const files = useLibraryStore((state) => state.files);
+  const { isMobile } = useResponsive();
 
   const [activeTab, setActiveTab] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
@@ -494,6 +496,105 @@ export function ChunkHomeView() {
     }
   };
 
+  // 行操作菜单(桌面表格与移动端卡片共用)
+  const getMenuItems = (): MenuProps["items"] => [
+    {
+      key: "metadata",
+      label: (
+        <span className="flex items-center">
+          <SvgIcon name="file-code" size={16} className="mr-1" />
+          元数据
+        </span>
+      ),
+    },
+    {
+      key: "view",
+      label: (
+        <span className="flex items-center">
+          <SvgIcon name="notes" size={16} className="mr-1" />
+          文档解析
+        </span>
+      ),
+    },
+    {
+      key: "slice",
+      label: (
+        <span className="flex items-center">
+          <SvgIcon name="paragraph-round" size={16} className="mr-1" />
+          语料切片
+        </span>
+      ),
+    },
+    {
+      key: "delete",
+      label: (
+        <span >
+          <DeleteOutlined className="mr-1" />
+          删除
+        </span>
+      ),
+      danger: true,
+    },
+  ];
+
+  // 行操作:重新/继续清洗 + 更多菜单(桌面表格与移动端卡片共用)
+  // 桌面表格由外层 group-hover 控制显隐;移动端卡片无 hover,始终可见
+  const renderRowActions = (record: FileItem) => {
+    const status = record.cleaning_info?.status;
+    const isSuccess = status === RUN_STATUS.SUCCESS;
+    const isFailed = status === RUN_STATUS.FAILED;
+
+    return (
+      <>
+        {(isSuccess || isFailed) && (
+          <Tooltip title={isSuccess ? "重新清洗" : "继续清洗"} placement="top">
+            <span
+              className="cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                Modal.confirm({
+                  title: "提示",
+                  content: isSuccess
+                    ? "确定重新清洗该文件吗？"
+                    : "确定从失败节点继续清洗该文件吗？",
+                  okText: "确定",
+                  cancelText: "取消",
+                  onOk: () =>
+                    isSuccess
+                      ? handleReClean(record)
+                      : handleContinueClean(record),
+                });
+              }}
+            >
+              <SvgIcon
+                name={isSuccess ? "retry-get" : "play-one-fill"}
+                size={16}
+                color="#B1B9C9"
+              />
+            </span>
+          </Tooltip>
+        )}
+        <Dropdown
+          menu={{
+            items: getMenuItems(),
+            onClick: ({ key, domEvent }) => {
+              domEvent.stopPropagation();
+              handleCommand(key, record);
+            },
+          }}
+          trigger={["click"]}
+        >
+          <span
+            className="size-5 flex cursor-pointer text-gray-400"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MoreOutlined />
+          </span>
+        </Dropdown>
+      </>
+    );
+  };
+
   // Table columns
   const columns: TableColumnsType<FileItem> = [
     {
@@ -563,100 +664,11 @@ export function ChunkHomeView() {
       key: "actions",
       width: 120,
       align: "right",
-      render: (_: any, record: FileItem) => {
-        const status = record.cleaning_info?.status;
-        const isSuccess = status === RUN_STATUS.SUCCESS;
-        const isFailed = status === RUN_STATUS.FAILED;
-        const menuItems: MenuProps["items"] = [
-          {
-            key: "metadata",
-            label: (
-              <span className="flex items-center">
-                <SvgIcon name="file-code" size={16} className="mr-1" />
-                元数据
-              </span>
-            ),
-          },
-          {
-            key: "view",
-            label: (
-              <span className="flex items-center">
-                <SvgIcon name="notes" size={16} className="mr-1" />
-                文档解析
-              </span>
-            ),
-          },
-          {
-            key: "slice",
-            label: (
-              <span className="flex items-center">
-                <SvgIcon name="paragraph-round" size={16} className="mr-1" />
-                语料切片
-              </span>
-            ),
-          },
-          {
-            key: "delete",
-            label: (
-              <span >
-                <DeleteOutlined className="mr-1" />
-                删除
-              </span>
-            ),
-            danger: true,
-          },
-        ];
-
-        return (
-          <div className="flex items-center justify-end gap-2 invisible group-hover:visible transition-colors">
-            {(isSuccess || isFailed) && (
-              <Tooltip title={isSuccess ? "重新清洗" : "继续清洗"} placement="top">
-                <span
-                  className="cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    Modal.confirm({
-                      title: "提示",
-                      content: isSuccess
-                        ? "确定重新清洗该文件吗？"
-                        : "确定从失败节点继续清洗该文件吗？",
-                      okText: "确定",
-                      cancelText: "取消",
-                      onOk: () =>
-                        isSuccess
-                          ? handleReClean(record)
-                          : handleContinueClean(record),
-                    });
-                  }}
-                >
-                  <SvgIcon
-                    name={isSuccess ? "retry-get" : "play-one-fill"}
-                    size={16}
-                    color="#B1B9C9"
-                  />
-                </span>
-              </Tooltip>
-            )}
-            <Dropdown
-              menu={{
-                items: menuItems,
-                onClick: ({ key, domEvent }) => {
-                  domEvent.stopPropagation();
-                  handleCommand(key, record);
-                },
-              }}
-              trigger={["click"]}
-            >
-              <span
-                className="size-5 flex cursor-pointer text-gray-400"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreOutlined />
-              </span>
-            </Dropdown>
-          </div>
-        );
-      },
+      render: (_: any, record: FileItem) => (
+        <div className="flex items-center justify-end gap-2 invisible group-hover:visible transition-colors">
+          {renderRowActions(record)}
+        </div>
+      ),
     },
   ];
 
@@ -668,15 +680,15 @@ export function ChunkHomeView() {
       </div>
 
       {/* Statistics Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-6 mb-8">
-        <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
-          <div className="flex-none size-12 rounded-xl bg-[#ecfdf5] text-[#10b981] flex items-center justify-center text-xl">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-6 mb-8 max-md:gap-3 max-md:mb-5">
+        <div className="bg-white rounded-xl px-5 py-6 max-md:px-3 max-md:py-4 flex items-center gap-3 max-md:gap-2">
+          <div className="flex-none size-12 max-md:size-10 rounded-xl bg-[#ecfdf5] text-[#10b981] flex items-center justify-center text-xl">
             <SvgIcon name="success" size={24} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-[#999999] text-sm mb-1 font-medium">已完成</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-[#1D1E1F]">
+              <span className="text-2xl max-md:text-xl font-bold text-[#1D1E1F]">
                 {stats.completed_count}
               </span>
               <span className="text-sm text-[#1D1E1F]">个</span>
@@ -684,14 +696,14 @@ export function ChunkHomeView() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
-          <div className="flex-none size-12 rounded-xl bg-[#eff6ff] text-[#3b82f6] flex items-center justify-center text-xl">
+        <div className="bg-white rounded-xl px-5 py-6 max-md:px-3 max-md:py-4 flex items-center gap-3 max-md:gap-2">
+          <div className="flex-none size-12 max-md:size-10 rounded-xl bg-[#eff6ff] text-[#3b82f6] flex items-center justify-center text-xl">
             <SvgIcon name="list-numbers" size={24} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-[#94a3b8] text-sm mb-1 font-medium">排队中</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-[#1e293b]">
+              <span className="text-2xl max-md:text-xl font-bold text-[#1e293b]">
                 {stats.queued_count}
               </span>
               <span className="text-sm text-[#1D1E1F]">个</span>
@@ -700,14 +712,14 @@ export function ChunkHomeView() {
         </div>
 
 
-        <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
-          <div className="flex-none size-12 rounded-xl bg-[#fff7ed] text-[#f97316] flex items-center justify-center text-xl">
+        <div className="bg-white rounded-xl px-5 py-6 max-md:px-3 max-md:py-4 flex items-center gap-3 max-md:gap-2">
+          <div className="flex-none size-12 max-md:size-10 rounded-xl bg-[#fff7ed] text-[#f97316] flex items-center justify-center text-xl">
             <SvgIcon name="time" size={24} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-[#94a3b8] text-sm mb-1 font-medium">处理中</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-[#1e293b]">
+              <span className="text-2xl max-md:text-xl font-bold text-[#1e293b]">
                 {stats.processing_count}
               </span>
               <span className="text-sm text-[#1D1E1F]">个</span>
@@ -715,14 +727,14 @@ export function ChunkHomeView() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
-          <div className="flex-none size-12 rounded-xl bg-[#fff1f2] text-[#f43f5e] flex items-center justify-center text-xl">
+        <div className="bg-white rounded-xl px-5 py-6 max-md:px-3 max-md:py-4 flex items-center gap-3 max-md:gap-2">
+          <div className="flex-none size-12 max-md:size-10 rounded-xl bg-[#fff1f2] text-[#f43f5e] flex items-center justify-center text-xl">
             <SvgIcon name="file-failed" size={24} />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-[#94a3b8] text-sm mb-1 font-medium">失败/中断</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-[#1e293b]">
+              <span className="text-2xl max-md:text-xl font-bold text-[#1e293b]">
                 {stats.failed_interrupted_count}
               </span>
               <span className="text-sm text-[#1D1E1F]">个</span>
@@ -730,9 +742,9 @@ export function ChunkHomeView() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl px-5 py-6 flex items-center gap-3">
-          <div className="flex-none size-12 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+        <div className="bg-white rounded-xl px-5 py-6 max-md:px-3 max-md:py-4 flex items-center gap-3 max-md:gap-2">
+          <div className="flex-none size-12 max-md:size-10 flex items-center justify-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none" className="max-md:w-10 max-md:h-10">
               <path fill="#F6F2FF" d="M0 36L0 12C0 5.37258 5.37258 0 12 0L36 0C42.6274 0 48 5.37258 48 12L48 36C48 42.6274 42.6274 48 36 48L12 48C5.37258 48 0 42.6274 0 36Z" />
               <circle cx="24" cy="17.5" r="3.5" stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
               <path stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" d="M14 32.5C14 28.0817 18.0294 24.5 23 24.5" />
@@ -740,10 +752,10 @@ export function ChunkHomeView() {
               <path stroke="rgba(121, 72, 234, 1)" strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" d="M28.5 27.5L28.5 29.5L30.5 29.5" />
             </svg>
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="text-[#94a3b8] text-sm mb-1 font-medium">待人工处理</p>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-[#1e293b]">
+              <span className="text-2xl max-md:text-xl font-bold text-[#1e293b]">
                 {stats.waiting_count}
               </span>
               <span className="text-sm text-[#1D1E1F]">个</span>
@@ -758,28 +770,20 @@ export function ChunkHomeView() {
       {/* Main Container - Knowledge List */}
       <div className="bg-white px-5 pt-6 rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-sm">
         {/* Tabs Inside the Card Header */}
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div className="flex bg-[#F9F9FA] p-1 rounded-lg w-fit">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                className={`px-4 h-8 text-base transition-all rounded flex items-center ${
-                  activeTab === tab.key
-                    ? "bg-white text-[#2563EB] shadow-sm"
-                    : "text-[#999999] hover:text-[#1e293b]"
-                }`}
-                onClick={() => {
-                  setActiveTab(tab.key);
-                  setCurrentPage(1);
-                  setSelectedRowKeys([]);
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="mb-6 flex items-center justify-between gap-3 max-md:flex-col max-md:items-stretch">
+          <Tabs
+            variant="segmented"
+            className="max-md:w-full"
+            items={tabs}
+            activeKey={activeTab}
+            onChange={(key) => {
+              setActiveTab(key);
+              setCurrentPage(1);
+              setSelectedRowKeys([]);
+            }}
+          />
           {selectedRowKeys.length > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 max-md:flex-wrap max-md:justify-end">
               {selectedStatuses.successCount > 0 && (
                 <Button
                   color="primary"
@@ -826,34 +830,98 @@ export function ChunkHomeView() {
           )}
         </div>
 
-        {/* Data Table */}
-        <Table
-          dataSource={filteredFiles}
-          columns={columns}
-          rowKey="id"
-          pagination={false}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: setSelectedRowKeys,
-          }}
-          childrenColumnName="__no_children__"
-          onRow={(record) => ({
-            onClick: () => handleView(record),
-            className:
-              "group hover:bg-[#f8fafc] transition-colors cursor-pointer",
-          })}
-          className="custom-table"
-        />
+        {/* 数据列表:移动端用卡片列表(6 列表格窄屏溢出,且行操作依赖 hover 在触屏不可见) */}
+        {isMobile ? (
+          <div className="flex flex-col divide-y divide-[#f1f5f9]">
+            {filteredFiles.map((record) => (
+              <div
+                key={record.id}
+                className="py-3 flex items-start gap-3 cursor-pointer active:bg-[#f8fafc] transition-colors"
+                onClick={() => handleView(record)}
+              >
+                <Checkbox
+                  checked={selectedRowKeys.includes(record.id)}
+                  className="flex-none mt-1"
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(e) =>
+                    setSelectedRowKeys((prev) =>
+                      e.target.checked
+                        ? [...prev, record.id]
+                        : prev.filter((k) => k !== record.id),
+                    )
+                  }
+                />
+                <img
+                  className="size-6 rounded flex-none mt-1"
+                  src={record.icon}
+                  alt=""
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-[#1D1E1F] truncate">{record.name}</p>
+                  <span className="text-xs text-[#999999] mt-1 block truncate">
+                    <EntityDisplay type="user" mode="name" id={record.user_id} /> ·{" "}
+                    {record.updated_at}
+                  </span>
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    {getStatusTag(record.cleaning_info)}
+                    {record.cleaning_info?.strategy_name && (
+                      <span className="bg-[#F3F4F6] rounded text-[#4F5052] text-xs inline-flex items-center gap-1 max-w-[130px] px-2 py-1">
+                        <SvgIcon name="strategy" size={12} />
+                        <span className="truncate">
+                          {record.cleaning_info.strategy_name}
+                        </span>
+                      </span>
+                    )}
+                    {record.cleaning_info?.end_time && (
+                      <span className="text-xs text-[#999999]">
+                        {getDuration(record)}
+                        {record.file_size ? ` · ${record.file_size}` : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex-none flex items-center gap-3 mt-1">
+                  {renderRowActions(record)}
+                </div>
+              </div>
+            ))}
+            {filteredFiles.length === 0 && (
+              <div className="py-12 text-center text-sm text-[#999999]">
+                暂无数据
+              </div>
+            )}
+          </div>
+        ) : (
+          <Table
+            dataSource={filteredFiles}
+            columns={columns}
+            rowKey="id"
+            pagination={false}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: setSelectedRowKeys,
+            }}
+            childrenColumnName="__no_children__"
+            scroll={{ x: 800 }}
+            onRow={(record) => ({
+              onClick: () => handleView(record),
+              className:
+                "group hover:bg-[#f8fafc] transition-colors cursor-pointer",
+            })}
+            className="custom-table"
+          />
+        )}
 
         {/* Footer Pagination */}
-        <div className="flex justify-end py-4 ">
+        <div className="flex justify-end py-4 max-md:justify-center">
           <Pagination
             total={totalFiles}
             current={currentPage}
             pageSize={pageSize}
-            showSizeChanger
-            showQuickJumper
-            showTotal={(total) => `共 ${total} 条`}
+            simple={isMobile}
+            showSizeChanger={!isMobile}
+            showQuickJumper={!isMobile}
+            showTotal={isMobile ? undefined : (total) => `共 ${total} 条`}
             onChange={(page, size) => {
               setCurrentPage(page);
               if (size !== pageSize) {

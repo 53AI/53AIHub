@@ -1,0 +1,42 @@
+/* 内容区启用容器查询：软模式下页面左侧有应用侧栏 + 模块侧栏两列侧边栏，
+   视口断点（md/lg）无法反映实际可用宽度，工具栏改按内容区实际宽度响应。 */
+.memory-content-container {
+  container-type: inline-size;
+}
+
+/* 工具栏：内容区 ≥ 720px 时一行（类型 tab 左、搜索+按钮右）；
+   不足时上下堆叠（类型 tab 在上、搜索+按钮在下）。 */
+.memory-toolbar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* 类型 tab：堆叠态占满整行（可换行），行布局态收缩为内容宽度 */
+.memory-type-tabs {
+  width: 100%;
+}
+
+/* 搜索框：堆叠态占满剩余行宽，行布局态固定 280px */
+.memory-toolbar-search {
+  width: 100%;
+  min-width: 0;
+}
+
+@container (min-width: 45rem) {
+  .memory-toolbar {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .memory-type-tabs {
+    width: fit-content;
+  }
+
+  .memory-toolbar-search {
+    width: 280px;
+    flex: none;
+  }
+}

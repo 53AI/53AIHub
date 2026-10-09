@@ -157,7 +157,7 @@ const IndexView: React.FC = () => {
 
   return (
     <div className={composeClassName("flex h-full relative")}>
-      <div className="flex-1 flex flex-col min-w-0 px-8 pt-5 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 px-8 max-md:px-4 pt-5 overflow-hidden">
         {/* 顶部标题栏：标题 + 右上角分享 / 收藏 / 更多 */}
         <div className="flex items-center justify-between mb-2">
           <h1 className="text-2xl font-medium text-main m-0">

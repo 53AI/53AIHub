@@ -1162,7 +1162,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     );
 
     return (
-      <div className={`py-4 flex flex-col h-full ${className || ""}`}>
+      <div className={`py-4 flex flex-col ${className || ""}`}>
         {/* Header */}
         <div className="flex-none px-4 flex items-center gap-2 mb-1">
           <div className="flex-1 text-xs text-[#4F5052]">
@@ -1272,5 +1272,3 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     );
   },
 );
-
-export default Catalog;

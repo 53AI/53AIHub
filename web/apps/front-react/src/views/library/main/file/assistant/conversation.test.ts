@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 /**
  * 复现"选中历史会话后发送仍新建会话"的回归测试。
  * agentList（/api/agents/{id}/conversations）返回的列表项主键是 id，
- * 没有 conversation_id 字段（与 src/views/index/conversation.ts 的消费方式一致）。
+ * 没有 conversation_id 字段（与旧版首页会话 store 的消费方式一致）。
  */
 vi.mock("@/api/modules/conversation/index", () => ({
   default: {

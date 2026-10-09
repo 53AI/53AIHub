@@ -174,11 +174,22 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
   const aliases = version.aliases ?? [];
   const backlinks = version.backlinks ?? [];
   const links = version.links ?? [];
-  const sources = (version.sources ?? []).map(item => {
-    const file = formatFileInfo(item.file_name)
-    item.file_name = file.fname
-    return item
-  });
+  // 来源引用：格式化文件名，并按 source_file_id 去重（保留首次出现的条目；
+  // 无 source_file_id 的条目无法识别重复，原样保留）
+  const seenSourceFileIds = new Set<string>();
+  const sources = (version.sources ?? [])
+    .map(item => {
+      const file = formatFileInfo(item.file_name)
+      item.file_name = file.fname
+      return item
+    })
+    .filter(item => {
+      const fileId = item.source_file_id ? String(item.source_file_id) : "";
+      if (!fileId) return true;
+      if (seenSourceFileIds.has(fileId)) return false;
+      seenSourceFileIds.add(fileId);
+      return true;
+    });
   const hrefBuilder = useMemo(
     () => (slug: string) => buildWikiPageUrl(spaceId || "", slug),
     [spaceId],
@@ -205,7 +216,7 @@ export const WikiPagePreview: React.FC<WikiPagePreviewProps> = ({
 
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col px-8 pt-5 overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col px-8 max-md:px-4 pt-5 overflow-hidden">
       {/* 标题 + 右侧操作区 */}
       <div ref={headerRef} className="flex justify-between items-center overflow-hidden">
         <OverflowTooltip>

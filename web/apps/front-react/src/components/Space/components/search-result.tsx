@@ -92,9 +92,9 @@ export function SearchResult({
   });
 
   return (
-    <div className="h-[500px] overflow-y-auto border rounded py-1 px-2">
+    <div className="h-[500px] max-md:h-[55vh] overflow-y-auto border rounded py-1 px-2">
       <Spin spinning={searchLoading}>
-        <div className="h-[500px]">
+        <div className="h-[500px] max-md:h-[55vh]">
         <SelectionGroup
           title={`空间 (${searchSpaces.length})`}
           items={spaceItems}

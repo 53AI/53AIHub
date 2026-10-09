@@ -304,4 +304,3 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
 MapAssistant.displayName = "MapAssistant";
 
 export { MapAssistant };
-export default MapAssistant;

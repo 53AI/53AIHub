@@ -4,6 +4,7 @@ import {
   forwardRef,
   useRef,
   useCallback,
+  useEffect,
 } from "react";
 import {
   Modal,
@@ -21,6 +22,8 @@ import {
   CloseOutlined,
   FolderOutlined,
   FileOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
 import spacesApi, { type SpaceItem } from "@/api/modules/spaces";
 import librariesApi, { type LibraryItem } from "@/api/modules/libraries";
@@ -38,6 +41,7 @@ import {
   cacheManager,
 } from "@km/shared-utils";
 import { useLibraryStore } from "@/stores";
+import { useResponsive } from "@/hooks/useResponsive";
 import { buildKnowledgeFileUrl } from "@/utils/router";
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
@@ -228,15 +232,39 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
     const newFolderInputRef = useRef<any>(null);
 
     const libraryStore = useLibraryStore();
+    const { isMobile } = useResponsive();
+
+    // 移动端下钻层级：空间 → 知识库 → 目录；桌面端仍为三列并排（参考 SpaceDialog）
+    const [drillLevel, setDrillLevel] = useState<
+      "space" | "library" | "folder"
+    >("space");
+    // 打开弹窗后会自动选中首个空间/知识库并加载目录，
+    // 移动端随之直接落到目录级（与桌面三列立即可见对齐），返回键逐级上跳
+    const autoJumpedRef = useRef(false);
 
     const curLibrary =
       libraryList.find((item) => item.id === state.libraryId) || null;
     const confirmBtnDisabled =
       !state.libraryId || (!state.selectRoot && !state.selectedFolderPath);
 
+    // 自动跳转到目录级（仅一次，避免覆盖用户的下钻操作）
+    useEffect(() => {
+      if (!autoJumpedRef.current && state.libraryId) {
+        autoJumpedRef.current = true;
+        setDrillLevel("folder");
+      }
+    }, [state.libraryId]);
+
+    // 移动端下钻：当前层级只显示对应列
+    const showSpaceCol = !isMobile || drillLevel === "space";
+    const showLibraryCol = !isMobile || drillLevel === "library";
+    const showFolderCol = !isMobile || drillLevel === "folder";
+
     useImperativeHandle(ref, () => ({
       open: async (data: { answer: string; question: string }) => {
         setVisible(true);
+        autoJumpedRef.current = false;
+        setDrillLevel("space");
         // 过滤掉技能执行过程的 skill-run 代码块，只保留实际内容
         let content = data.answer;
         // 移除 skill-run 代码块
@@ -366,6 +394,8 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
     }, []);
 
     const handleSelectSpace = (item: SpaceItem) => {
+      // 移动端：点击空间下钻到知识库层级（需在去重守卫之前，返回后重选同一空间也能进入）
+      if (isMobile) setDrillLevel("library");
       if (state.spaceId === item.id || loading.space) return;
       setState((prev) => ({
         ...prev,
@@ -386,6 +416,8 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
     };
 
     const handleSelectLibrary = async (item: LibraryItem) => {
+      // 移动端：点击知识库下钻到目录层级
+      if (isMobile) setDrillLevel("folder");
       if (state.libraryId === item.id || loading.library) return;
       setState((prev) => ({
         ...prev,
@@ -477,6 +509,8 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
 
     const handleCreateFolder = () => {
       if (!state.libraryId) return;
+      // 移动端：新建文件夹时切到目录层级，便于看到命名输入框
+      if (isMobile) setDrillLevel("folder");
       if (state.lastSelectedFolderPath === "") {
         removeEmptyNode(folderTree);
       } else {
@@ -665,7 +699,8 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
               ref={newFolderInputRef}
               key={node.id || "new-folder"}
               defaultValue="无标题文件夹"
-              style={{ width: 200 }}
+              className="flex-1 min-w-0"
+              style={{ maxWidth: 200 }}
               onPressEnter={(e) => {
                 const input = e.target as HTMLInputElement;
                 const value = input.value.trim();
@@ -724,13 +759,13 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
             </span>
           </span>
         }
-        width={840}
+        width={isMobile ? "95%" : 840}
         centered
         destroyOnHidden
         onCancel={handleClose}
         mask={{ closable: false }}
         footer={
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <Button
               type="link"
               className="px-0"
@@ -753,9 +788,11 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
           </div>
         }
       >
-        <div className="h-[500px] flex overflow-hidden border rounded-lg">
+        <div className="h-[500px] max-md:h-[55vh] flex flex-col md:flex-row overflow-hidden border rounded-lg">
           {/* Space Panel */}
-          <div className="flex-none w-[170px] p-2 border-r flex flex-col overflow-hidden">
+          <div
+            className={`${showSpaceCol ? "flex" : "hidden md:flex"} flex-col overflow-hidden p-2 w-full flex-1 min-h-0 md:flex-none md:w-[170px] md:h-auto md:border-r`}
+          >
             <div className="h-10 px-4 flex items-center text-sm text-[#999999]">
               {t("library.team_space")}
             </div>
@@ -780,6 +817,9 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
                       <FolderOutlined />
                     </div>
                     <p className="flex-1 text-sm truncate">{item.name}</p>
+                    {state.spaceId === item.id && (
+                      <RightOutlined className="text-xs text-[#999]" />
+                    )}
                   </div>
                 ))
               )}
@@ -787,10 +827,27 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
           </div>
 
           {/* Library Panel */}
-          <div className="flex-none w-[170px] p-2 border-r flex flex-col overflow-hidden">
-            <div className="h-10 px-4 flex items-center text-sm text-[#999999]">
-              {t("library.name")}
-            </div>
+          <div
+            className={`${showLibraryCol ? "flex" : "hidden md:flex"} flex-col overflow-hidden p-2 w-full flex-1 min-h-0 md:flex-none md:w-[170px] md:h-auto md:border-r`}
+          >
+            {isMobile ? (
+              <div
+                className="h-10 px-2 flex items-center gap-1"
+                onClick={() => setDrillLevel("space")}
+              >
+                <div className="size-7 flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]">
+                  <LeftOutlined className="text-xs text-[#999]" />
+                </div>
+                <span className="flex-1 text-sm text-[#999999] truncate">
+                  {spaceList.find((s) => s.id === state.spaceId)?.name ||
+                    t("library.team_space")}
+                </span>
+              </div>
+            ) : (
+              <div className="h-10 px-4 flex items-center text-sm text-[#999999]">
+                {t("library.name")}
+              </div>
+            )}
             <div className="flex-1 space-y-1 overflow-y-auto">
               {loading.library ? (
                 <div className="flex items-center justify-center h-full">
@@ -812,6 +869,9 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
                       <img src={item.icon} className="size-6" alt="" />
                     )}
                     <p className="flex-1 text-sm truncate">{item.name}</p>
+                    {state.libraryId === item.id && (
+                      <RightOutlined className="text-xs text-[#999]" />
+                    )}
                   </div>
                 ))
               )}
@@ -819,30 +879,60 @@ export const AddAnswerAsMd = forwardRef<AddAnswerAsMdRef, AddAnswerAsMdProps>(
           </div>
 
           {/* Folder Tree Panel */}
-          <div className="flex-1 p-2 flex flex-col overflow-hidden">
-            <div
-              className="h-10 px-7 flex items-center text-sm text-[#999999] relative hover:bg-[#F2F3F5] cursor-pointer"
-              onClick={() => handleSelectRoot(!state.selectRoot)}
-            >
-              {curLibrary && (
-                <div className="flex items-center gap-2">
-                  {curLibrary.icon && (
-                    <img src={curLibrary.icon} className="size-6" alt="" />
-                  )}
-                  <span className="text-sm text-[#1D1E1F]">
-                    {curLibrary.name}
-                  </span>
+          <div
+            className={`${showFolderCol ? "flex" : "hidden md:flex"} flex-1 min-h-0 p-2 flex-col overflow-hidden`}
+          >
+            {isMobile ? (
+              // 移动端：返回键 + 当前知识库名 + 根目录选择合并为一行
+              <div
+                className="h-10 px-2 flex items-center gap-1 cursor-pointer"
+                onClick={() => setDrillLevel("library")}
+              >
+                <div className="size-7 flex-none flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]">
+                  <LeftOutlined className="text-xs text-[#999]" />
                 </div>
-              )}
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
-                {t("library.root_folder")}
-                <Radio
-                  className="ml-1"
-                  checked={state.selectRoot}
-                />
+                <span className="flex-1 min-w-0 text-sm text-[#999999] truncate">
+                  {curLibrary?.name || t("library.name")}
+                </span>
+                <div
+                  className="flex-none flex items-center text-sm text-[#999999]"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSelectRoot(!state.selectRoot);
+                  }}
+                >
+                  {t("library.root_folder")}
+                  <Radio
+                    className="ml-1"
+                    checked={state.selectRoot}
+                  />
+                </div>
               </div>
-            </div>
-            <div className="flex-1 overflow-y-auto">
+            ) : (
+              <div
+                className="h-10 px-2 md:px-7 flex items-center justify-between gap-2 text-sm text-[#999999] relative hover:bg-[#F2F3F5] cursor-pointer"
+                onClick={() => handleSelectRoot(!state.selectRoot)}
+              >
+                {curLibrary && (
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    {curLibrary.icon && (
+                      <img src={curLibrary.icon} className="size-6" alt="" />
+                    )}
+                    <span className="text-sm text-[#1D1E1F] truncate">
+                      {curLibrary.name}
+                    </span>
+                  </div>
+                )}
+                <div className="flex-none flex items-center">
+                  {t("library.root_folder")}
+                  <Radio
+                    className="ml-1"
+                    checked={state.selectRoot}
+                  />
+                </div>
+              </div>
+            )}
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {loading.folder ? (
                 <div className="flex items-center justify-center h-full">
                   <Spin />

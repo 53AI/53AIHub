@@ -234,10 +234,10 @@ function CognitionRegistryPanel() {
               <h2 className="text-lg font-medium text-[#1D1E1F]">老板画像</h2>
             </div>
             <section className="grid gap-3 xl:grid-cols-2">
-              <div className="relative overflow-hidden rounded-xl border border-[#E4EAF3] bg-white p-4 shadow-[0_7px_24px_rgba(35,64,108,0.04)] lg:p-5" style={{ background: PROFILE_CARD_BG }}>
+              <div className="relative overflow-hidden rounded-xl border border-[#E4EAF3] bg-white p-4 shadow-[0_7px_24px_rgba(35,64,108,0.04)] lg:p-5 group" style={{ background: PROFILE_CARD_BG }}>
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-medium text-[#1D1E1F]">个人信息</h2>
-                  <Button className="gap-1" size="small" color="default" variant='filled' onClick={openProfileEdit}>
+                  <Button className="gap-1 invisible group-hover:visible hover:!text-[#1677ff] hover:!bg-[#e6f4ff]" size="small" color="default" variant='filled' onClick={openProfileEdit}>
                     <SvgIcon name="edit" size={12} />
                     编辑
                   </Button>
@@ -275,11 +275,11 @@ function CognitionRegistryPanel() {
                 </div>
                 <img className='absolute right-0 -bottom-20' src={getPublicPath('/images/recording/sc.png')}></img>
               </div>
-              <div className="relative overflow-hidden rounded-xl border border-[#E4EAF3] bg-white p-4 shadow-[0_7px_24px_rgba(35,64,108,0.04)] lg:p-5" style={{ background: PROFILE_CARD_BG }}>
+              <div className="relative overflow-hidden rounded-xl border border-[#E4EAF3] bg-white p-4 shadow-[0_7px_24px_rgba(35,64,108,0.04)] lg:p-5 group" style={{ background: PROFILE_CARD_BG }}>
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-medium text-[#1D1E1F]">企业信息</h2>
                   {isAdmin && (
-                    <Button className="gap-1" size="small" color="primary" variant='filled' onClick={() => setEnterpriseOpen(true)}>
+                    <Button className="gap-1 invisible group-hover:visible hover:!text-[#1677ff] hover:!bg-[#e6f4ff]" size="small" color="default" variant='filled' onClick={() => setEnterpriseOpen(true)}>
                       <SvgIcon name="edit" size={12} />
                       编辑
                     </Button>

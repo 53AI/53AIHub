@@ -87,13 +87,11 @@ const getDefaultGroupIds = async () => {
  */
 function AgentCreatePageContent() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const adapter = useAgentCreateAdapter()
 
-  // Tab 状态
-  const [activeTab, setActiveTab] = useState(() => {
-    return searchParams.get('tab') || 'config'
-  })
+  // URL 查询参数是 Tab 的唯一数据源，切换 Tab 与刷新后始终保持同步
+  const activeTab = searchParams.get('tab') || 'config'
 
   // 编辑弹框状态
   const [editVisible, setEditVisible] = useState(false)
@@ -204,10 +202,20 @@ function AgentCreatePageContent() {
     }
   }
 
-  // Tab 切换
-  const handleTabChange = (key: string) => {
-    setActiveTab(key)
-  }
+  // Tab 切换：更新 URL 查询参数（保留 type、agent_id 等其他参数）
+  const handleTabChange = useCallback(
+    (key: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set('tab', key)
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
 
   // 打开编辑弹框
   const handleEditOpen = useCallback(() => {
@@ -473,12 +481,12 @@ function AgentCreatePageContent() {
   }, [backendAgentType, agentType, t])
 
   // 当 tabItems 变化（如 agentType 改变导致反馈 Tab 被隐藏）时，校正 activeTab 到合法 tab
-  // 防止 ?tab=feedback 直接进入 openclaw 智能体导致空白页
+  // 防止 ?tab=feedback 直接进入 openclaw 智能体导致空白页（同时纠正 URL，避免刷新后再次触发）
   useEffect(() => {
     if (agentId && tabItems.length > 0 && !tabItems.some((tab) => tab.key === activeTab)) {
-      setActiveTab(tabItems[0].key)
+      handleTabChange(tabItems[0].key)
     }
-  }, [tabItems, agentId, activeTab])
+  }, [tabItems, agentId, activeTab, handleTabChange])
 
   return (
     <PageLayoutContent

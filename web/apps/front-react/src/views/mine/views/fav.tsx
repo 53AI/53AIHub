@@ -457,13 +457,13 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
               </Dropdown>
             </div>
 
-            <div className="w-[160px] flex-shrink-0 text-sm text-[#4F5052] font-medium">
+            <div className="hidden md:block md:w-[160px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium">
               位置
             </div>
-            <div className="w-[100px] flex-shrink-0 text-sm text-[#4F5052] font-medium">
+            <div className="hidden md:block md:w-[100px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium">
               所有人
             </div>
-            <div className="w-[140px] flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">
+            <div className="hidden md:block md:w-[140px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">
               收藏时间
             </div>
             <div className="w-[48px] flex-shrink-0"></div>
@@ -526,13 +526,13 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                     />
                   </div>
 
-                  <div className="w-[160px] flex-shrink-0 text-sm text-placeholder truncate">
+                  <div className="hidden md:block md:w-[160px] md:flex-shrink-0 text-sm text-placeholder truncate">
                     {item.position}
                   </div>
-                  <div className="w-[100px] flex-shrink-0 text-sm text-placeholder truncate">
+                  <div className="hidden md:block md:w-[100px] md:flex-shrink-0 text-sm text-placeholder truncate">
                     {item.owner}
                   </div>
-                  <div className="w-[140px] flex-shrink-0 text-sm text-placeholder text-right">
+                  <div className="hidden md:block md:w-[140px] md:flex-shrink-0 text-sm text-placeholder text-right">
                     {item.favoriteTime}
                   </div>
 

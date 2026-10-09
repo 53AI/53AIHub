@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Drawer, Empty, Input, Modal, Spin, Tag, message } from 'antd'
+import { useResponsive } from '@/hooks/useResponsive'
 import skillApi from '@/api/modules/skill'
 import type { SkillEnvVarItem, SkillEnvVarTemplate } from '@/api/modules/skill/types'
 
@@ -18,6 +19,7 @@ const SkillEnvVarsDrawer: React.FC<SkillEnvVarsDrawerProps> = ({
   skillDisplayName,
   onClose,
 }) => {
+  const { isMobile } = useResponsive()
   const [loading, setLoading] = useState(false)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [envTemplates, setEnvTemplates] = useState<SkillEnvVarTemplate[]>([])
@@ -140,7 +142,7 @@ const SkillEnvVarsDrawer: React.FC<SkillEnvVarsDrawerProps> = ({
   return (
     <Drawer
       open={open}
-      width={720}
+      width={isMobile ? '100%' : 720}
       title={`环境变量设置${skillDisplayName ? ` · ${skillDisplayName}` : ''}`}
       onClose={onClose}
       destroyOnClose

@@ -8,7 +8,7 @@ import React, {
   useContext,
 } from "react";
 import { Button, Spin } from "antd";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { useLibraryStore } from "@/stores/modules/library";
 import { spacesApi } from "@/api/modules/spaces";
 import { LibraryHeader } from "../../components/header";
@@ -17,13 +17,12 @@ import FileShare from "./components/share";
 import FileFav from "./components/fav";
 import FileMore from "./components/more";
 import FileStatus from "../components/status/file";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, Tabs } from "@km/shared-components-react";
 import {
   canEdit,
   getDisplayName,
   useInlineEdit,
 } from "../../composables/useInlineEdit";
-import { t } from "@/locales";
 import { FileMetaLine } from "./components/file-meta";
 import { CatalogRefContext } from "../index";
 
@@ -40,23 +39,22 @@ const menuItems = [
   { icon: "paragraph-round", label: "语料切片", value: "slice" },
 ];
 
+// Valid view values (for parsing the URL query)
+const validViews = menuItems.map((item) => item.value);
+
 /**
  * Chunks v2 view - main container for chunk views
  * 1:1 migration from chunks.v2.vue
  */
-export function ChunksV2View() {
-  const navigate = useNavigate();
-  const { id, fid } = useParams<{ id: string; fid: string }>();
-  const [searchParams] = useSearchParams();
+function ChunksV2View() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const catalogRef = useContext(CatalogRefContext);
 
   // Subscribe to store state correctly
   const files = useLibraryStore((state) => state.files);
   const currentFileId = useLibraryStore((state) => state.currentFileId);
-  const loadFile = useLibraryStore((state) => state.loadFile);
   const currentFile = files.find((item) => item.id === currentFileId);
 
-  const [viewType, setViewType] = useState("metadata");
   const [showPermission, setShowPermission] = useState(false);
   const [showPipeline, setShowPipeline] = useState(false);
   const [pipelineRefreshKey, setPipelineRefreshKey] = useState(0);
@@ -101,12 +99,33 @@ export function ChunksV2View() {
     [graphVisible]
   );
 
-  // Fall back to another view if the graph tab is no longer allowed
+  // The URL query is the single source of truth for the active view,
+  // so switching tabs and refreshing always stay in sync.
+  const viewParam = searchParams.get("view");
+  const viewType =
+    viewParam && validViews.includes(viewParam) ? viewParam : "metadata";
+
+  // Switch view type by updating the URL query
+  const handleSwitchView = useCallback(
+    (value: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("view", value);
+          return next;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
+
+  // Fall back to metadata if the knowledge graph tab is not enabled
   useEffect(() => {
     if (viewType === "graph" && graphConfigLoaded && !graphVisible) {
-      setViewType("metadata");
+      handleSwitchView("metadata");
     }
-  }, [viewType, graphConfigLoaded, graphVisible]);
+  }, [viewType, graphConfigLoaded, graphVisible, handleSwitchView]);
 
   const {
     handleClick: handleInlineClick,
@@ -115,22 +134,9 @@ export function ChunksV2View() {
     handlePaste: handleInlinePaste,
   } = useInlineEdit();
 
-  // Initialize view type from URL query
-  useEffect(() => {
-    const view = searchParams.get("view");
-    if (view && ["metadata", "view", "slice", "graph"].includes(view)) {
-      setViewType(view);
-    }
-  }, [searchParams]);
-
   // Handle toggle pipeline
   const handleTogglePipeline = () => {
-    setShowPipeline(!showPipeline);
-  };
-
-  // Handle close pipeline
-  const handleClosePipeline = () => {
-    setShowPipeline(false);
+    setShowPipeline((prev) => !prev);
   };
 
   // Handle slice status change
@@ -138,10 +144,17 @@ export function ChunksV2View() {
     setPipelineRefreshKey((prev) => prev + 1);
   }, []);
 
-  // Inline edit handlers
-  const handleClickTitle = (e: React.MouseEvent<HTMLElement>) => {
-    if (!currentFile) return;
-    handleInlineClick(e, {
+  // Shared "查看" trigger for the pipeline panel
+  const pipelineTrigger = (
+    <Button type="link" className="px-0" onClick={handleTogglePipeline}>
+      查看
+    </Button>
+  );
+
+  // Shared inline-edit options for the title element
+  const inlineEditOptions = useMemo(() => {
+    if (!currentFile) return null;
+    return {
       file: {
         id: currentFile.id,
         name: currentFile.name,
@@ -151,35 +164,23 @@ export function ChunksV2View() {
       },
       isFile: true,
       permission: currentFile.permission,
-    });
+    };
+  }, [currentFile]);
+
+  const handleClickTitle = (e: React.MouseEvent<HTMLElement>) => {
+    if (inlineEditOptions) handleInlineClick(e, inlineEditOptions);
   };
 
   const handleBlurTitle = (e: React.FocusEvent<HTMLElement>) => {
-    if (!currentFile) return;
-    handleInlineBlur(e, {
-      file: {
-        id: currentFile.id,
-        name: currentFile.name,
-        base_path: currentFile.base_path || "",
-        isfile: true,
-        file_ext: currentFile.file_ext,
-      },
-      isFile: true,
-      permission: currentFile.permission,
-    });
+    if (inlineEditOptions) handleInlineBlur(e, inlineEditOptions);
   };
-
-  // Get display name
-  const displayName = useMemo(() => {
-    if (!currentFile) return "";
-    return getDisplayName(currentFile.name, true, currentFile.file_ext);
-  }, [currentFile]);
 
   // Render current view component
   const renderView = () => {
-    switch (viewType) {
-      case "metadata":
-        return <MetadataView />;
+    // Never render the graph view unless it is confirmed to be enabled
+    const view =
+      viewType === "graph" && !graphVisible ? "metadata" : viewType;
+    switch (view) {
       case "view":
         return <DocumentView />;
       case "slice":
@@ -218,7 +219,7 @@ export function ChunksV2View() {
                 onKeyDown={handleInlineKeydown}
                 onPaste={handleInlinePaste}
               >
-                {displayName}
+                {getDisplayName(currentFile.name, true, currentFile.file_ext)}
               </h3>
 
               <FileMetaLine file={currentFile} />
@@ -231,22 +232,20 @@ export function ChunksV2View() {
         <div className="flex-1 overflow-hidden flex flex-col">
           {/* View Type Tabs */}
           <div className="flex-none px-5 py-2 border-b flex items-center justify-between">
-            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[#F7F7F9] w-fit">
-              {visibleMenuItems.map((item) => (
-                <div
-                  key={item.value}
-                  className={`h-8 px-4 rounded-lg flex items-center justify-center gap-1 cursor-pointer ${
-                    item.value === viewType
-                      ? "text-[#2563EB] bg-[#FFFFFF]"
-                      : "text-[#999999]"
-                  }`}
-                  onClick={() => setViewType(item.value)}
-                >
-                  <SvgIcon name={item.icon} size={16} />
-                  <div className="text-base">{item.label}</div>
-                </div>
-              ))}
-            </div>
+            <Tabs
+              variant="segmented"
+              items={visibleMenuItems.map((item) => ({
+                key: item.value,
+                label: (
+                  <span className="flex items-center gap-1">
+                    <SvgIcon name={item.icon} size={16} />
+                    {item.label}
+                  </span>
+                ),
+              }))}
+              activeKey={viewType}
+              onChange={handleSwitchView}
+            />
 
             {/* File Status */}
             <div className="flex items-center gap-2">
@@ -254,28 +253,14 @@ export function ChunksV2View() {
                 status={currentFile?.cleaning_info?.status}
                 stepKey={currentFile?.cleaning_info?.step_key}
                 stepMode={currentFile?.cleaning_info?.step_mode}
-                afterSlot={
-                  <Button
-                    type="link"
-                    className="px-0"
-                    onClick={handleTogglePipeline}
-                  >
-                    查看
-                  </Button>
-                }
+                afterSlot={pipelineTrigger}
               >
                 <div className="flex-none h-8 flex items-center gap-2 rounded px-2.5 bg-[#EBFFF4] text-[#07C160]">
                   <div className="flex-none size-4 flex items-center justify-center">
                     <SvgIcon name="check-one" size={16} />
                   </div>
                   <span className="text-sm">已完成</span>
-                  <Button
-                    type="link"
-                    className="px-0"
-                    onClick={handleTogglePipeline}
-                  >
-                    查看
-                  </Button>
+                  {pipelineTrigger}
                 </div>
               </FileStatus>
             </div>
@@ -307,7 +292,7 @@ export function ChunksV2View() {
               cleaningInfo={currentFile.cleaning_info}
               permission={currentFile.permission}
               refreshKey={pipelineRefreshKey}
-              onClose={handleClosePipeline}
+              onClose={() => setShowPipeline(false)}
             />
           </Suspense>
         )}

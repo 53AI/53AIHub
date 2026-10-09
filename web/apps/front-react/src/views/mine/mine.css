@@ -76,6 +76,13 @@
   transition: opacity 0.15s ease;
 }
 
+/* 触屏设备无 hover，操作按钮需常显 */
+@media (hover: none) {
+  .more-actions {
+    opacity: 1;
+  }
+}
+
 .ant-breadcrumb-separator {
   margin: auto;
 }

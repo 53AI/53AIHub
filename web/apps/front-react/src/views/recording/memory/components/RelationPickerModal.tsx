@@ -142,8 +142,8 @@ export function RelationPickerModal({
         </div>
       }
     >
-      <div className="flex shrink-0 items-center justify-between pb-4">
-        <div className="flex gap-1">
+      <div className="flex flex-wrap shrink-0 items-center justify-between gap-2 pb-4">
+        <div className="flex flex-wrap gap-1">
           {typeTabs.map((tab) => (
             <button
               type="button"

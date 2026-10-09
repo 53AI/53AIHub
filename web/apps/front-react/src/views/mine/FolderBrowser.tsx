@@ -95,7 +95,7 @@ export function FolderBrowser({
       <div className="bg-white rounded-lg border border-gray-200 mt-4">
         <div className="h-12 flex items-center gap-2 px-4 border-b border-gray-100">
           <div className="flex-1 min-w-0 text-sm text-[#4F5052] font-medium">{t("common.file_name")}</div>
-          <div className="w-[140px] flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">{t("common.update_time")}</div>
+          <div className="hidden md:block md:w-[140px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">{t("common.update_time")}</div>
           <div className="w-[48px] flex-shrink-0"></div>
         </div>
 
@@ -143,7 +143,7 @@ export function FolderBrowser({
                 <SvgIcon name="star-filled" color="#FFB300" className="text-[#FFB300] flex-shrink-0" size="14" />
               )}
             </div>
-            <div className="w-[140px] flex-shrink-0 text-sm text-placeholder text-right">{item.updatedTime}</div>
+            <div className="hidden md:block md:w-[140px] md:flex-shrink-0 text-sm text-placeholder text-right">{item.updatedTime}</div>
             <div className="w-[48px] flex-shrink-0 flex justify-end more-actions">
               <MoreDropdown
                 size="28px"

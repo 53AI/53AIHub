@@ -1,6 +1,6 @@
 import { PlusOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Select, message } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SvgIcon } from '@km/shared-components-react';
 import { getSimpleDateFormatString } from '@km/shared-utils';
 import recordingApi from '@/api/modules/recording';
@@ -57,18 +57,35 @@ export function EntityFormDrawer({
   const [relationModalOpen, setRelationModalOpen] = useState(false)
   const [stagedPickedEntities, setStagedPickedEntities] = useState<RecordingMemoryEntityItem[]>([])
   const [stagedDeletedFactIds, setStagedDeletedFactIds] = useState<Array<string | number>>([])
+  // 是否打开过抽屉:关闭时只在"打开过→关闭"的转换里清空 form,
+  // 避免首次挂载(open=false、表单尚未连接)就调 form 方法触发 antd 的 unhooked 警告。
+  const hasOpenedRef = useRef(false)
 
   // 打开时同步外部 entity / 重置 form;关闭后清空,避免下次打开看到上次残留输入。
   // 暂存区(stagedPickedEntities / stagedDeletedFactIds)在两种模式下都要清空:
   //   - edit:防止上次打开残留的暂存项污染下一次编辑;新 currentEntity 已就位,旧暂存项已无意义。
   //   - add:同上,且 add 模式不会产生 deleted 项,但保险起见也清。
+  // 【bug 修复】form 实例挂在常驻的 EntityFormDrawer 上,destroyOnClose 只销毁字段组件、
+  // 不清 form store;而 setFieldsValue 内部是深合并(@rc-component/form useForm#setFieldsValue
+  // 走 set.merge)而非整体替换。于是"先编辑属性有值的实体 A,再编辑属性为空(或缺字段)的
+  // 实体 B"时,B 的属性框会残留 A 的旧值,保存时残留值还会被当成 B 的变更提交。
+  // 因此 edit 分支必须先 resetFields() 把 store 整体清空再回填;关闭时也清一次,
+  // 让下次打开瞬间字段挂载读到的就是干净 store,不闪现旧值。
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      // 关闭动画期间字段仍挂载(form 仍 connected),此时清 store 不会有 unhooked 警告。
+      if (hasOpenedRef.current) form.resetFields()
+      return
+    }
+    hasOpenedRef.current = true
     if (mode === 'edit' && entity) {
+      // 先整体重置再回填:resetFields 把 store 替换回 initialValues(本组件未设置,即全空),
+      // 之后 setFieldsValue 的深合并基准是空 store,不会带上一个实体的残留属性。
+      form.resetFields()
       form.setFieldsValue({
         canonical_name: entity.canonical_name,
         summary: entity.summary,
-        attributes: entity.attributes,
+        attributes: entity.attributes ?? {},
       })
       setEntityType(entity.entity_type)
       setCurrentEntity(entity)
@@ -251,7 +268,7 @@ export function EntityFormDrawer({
         {attributeDefs.length > 0 && (
           <div className="mb-6">
             <div className="mb-2 text-sm text-[#1D1E1F]">属性</div>
-            <div className="grid grid-cols-2 gap-3 p-5 bg-[#F9F9F9] rounded-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-5 bg-[#F9F9F9] rounded-xl">
               {attributeDefs.map((field) => (
                 <Form.Item key={field.key} label={field.label} name={['attributes', field.key]} className="!mb-2">
                   {field.options ? (

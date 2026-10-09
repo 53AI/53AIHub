@@ -15,7 +15,7 @@ export function ToolkitView() {
         className={`w-11/12 lg:w-4/5 max-w-[1200px] mx-auto ${isSoftStyle ? "" : "pt-4"}`}
       >
         <div
-          className="sticky z-[101] bg-white w-full py-4 flex items-end"
+          className="sticky z-[9] bg-white w-full py-2.5 md:py-4 flex items-end"
           style={{ top: isSoftStyle ? "56px" : "0px" }}
         >
           <div className="h-8 text-xl font-medium flex items-center text-[#1D1E1F] cursor-pointer relative">

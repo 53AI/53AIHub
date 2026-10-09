@@ -151,7 +151,7 @@ export const ProfileMemory = forwardRef<ProfileMemoryRef>((_, ref) => {
   };
 
   return (
-    <div className="flex flex-col h-full py-[26px] px-[30px] overflow-y-auto">
+    <div className="py-[26px] px-[30px]">
       <h2 className="text-xl font-medium mb-2">
         {t("profile.user_memory")}
       </h2>

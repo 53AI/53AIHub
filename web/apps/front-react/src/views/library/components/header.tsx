@@ -38,7 +38,7 @@ export function LibraryHeader({
 
   if (showHeaderWhenSideHide ? !libraryStore.siderVisible : true) {
     return (
-      <div className="flex-none h-[68px] px-5 flex items-center gap-2 border-b bg-white relative">
+      <div className="flex-none h-16 px-5 max-md:px-3 flex items-center gap-2 border-b bg-white relative">
         {!libraryStore.siderVisible && showSiderButton && (
           <>
             <Tooltip title="展开">
@@ -71,5 +71,3 @@ export function LibraryHeader({
 
   return null;
 }
-
-export default LibraryHeader;

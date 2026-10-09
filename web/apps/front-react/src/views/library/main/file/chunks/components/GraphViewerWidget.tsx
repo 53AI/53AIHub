@@ -543,5 +543,3 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
 );
 
 GraphViewerWidget.displayName = "GraphViewerWidget";
-
-export default GraphViewerWidget;

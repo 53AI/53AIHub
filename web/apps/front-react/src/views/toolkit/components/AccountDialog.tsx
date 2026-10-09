@@ -96,7 +96,7 @@ const AccountDialog = forwardRef<AccountDialogRef>(
                     color="primary"
                     variant="link"
                     onClick={() => handleCopy(item.account)}
-                    className="ml-1 p-0 h-6"
+                    className="ml-1 p-0 h-6 min-w-6"
                   >
                     <SvgIcon name="copy" size={14} />
                   </Button>
@@ -112,7 +112,7 @@ const AccountDialog = forwardRef<AccountDialogRef>(
                     color="primary"
                     variant="link"
                     onClick={() => handleCopy(item.password)}
-                    className="ml-1 p-0 h-6"
+                    className="ml-1 p-0 h-6 min-w-6"
                   >
                     <SvgIcon name="copy" size={14} />
                   </Button>

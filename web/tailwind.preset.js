@@ -21,12 +21,22 @@ module.exports = {
         15: '3.75rem'
       },
       animation: {
-        blink: 'blink 1.2s infinite steps(1, start)'
+        blink: 'blink 1.2s infinite steps(1, start)',
+        'sheet-up': 'sheet-up 0.25s ease-out',
+        'overlay-in': 'overlay-in 0.2s ease-out'
       },
       keyframes: {
         blink: {
           '0%, 100%': { 'background-color': 'currentColor' },
           '50%': { 'background-color': 'transparent' }
+        },
+        'sheet-up': {
+          from: { transform: 'translateY(100%)' },
+          to: { transform: 'translateY(0)' }
+        },
+        'overlay-in': {
+          from: { opacity: '0' },
+          to: { opacity: '1' }
         }
       }
     }

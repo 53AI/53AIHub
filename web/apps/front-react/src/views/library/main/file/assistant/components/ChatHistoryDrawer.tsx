@@ -255,5 +255,3 @@ export function ChatHistoryDrawer({
     </>
   );
 }
-
-export default ChatHistoryDrawer;

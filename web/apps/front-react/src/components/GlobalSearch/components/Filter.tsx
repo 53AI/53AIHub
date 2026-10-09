@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Input, Spin, Checkbox, Tooltip, Select, Button } from "antd";
 import { SearchOutlined, CloseOutlined, PlusOutlined } from "@ant-design/icons";
 import { debounce } from "@km/shared-utils";
+import { SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { DeptMemberPicker } from "@/components/DeptMemberPicker";
 import { globalSearchApi } from "@/api/modules/global-search";
@@ -205,7 +206,7 @@ function SearchInput<T, IdType extends string | number>({
                   className={`h-8 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] ${added ? "bg-[#EDF3FF]" : "hover:bg-[#F2F3F5]"}`}
                   onClick={() => handleAddItem(item)}
                 >
-                  {icon && <img src={icon} className="size-5" alt="" />}
+                  {icon && <SafeImage src={icon} letter={label} className="size-5" alt="" />}
                   <Tooltip title={label}>
                     <span className="flex-1 text-sm truncate">{label}</span>
                   </Tooltip>
@@ -289,9 +290,14 @@ function CreatorPicker({
 
 // ==================== 主组件 ====================
 export function Filter({ value, onChange, resetKey, variant = "full" }: FilterProps) {
-  // 监听 resetKey 变化，重置内部状态
+  // 监听 resetKey 变化，重置内部状态。
+  // 组件随 key（含 resetKey）重挂载时，内部状态已通过 initialItems 从 value 恢复
+  // （含预置的默认筛选），因此仅在 resetKey 于本生命周期内变化时才重置，
+  // 避免挂载即重置把预置筛选（如当前知识库）清掉。
+  const prevResetKeyRef = useRef<number | undefined>(resetKey);
   useEffect(() => {
-    if (resetKey !== undefined && resetKey > 0) {
+    if (resetKey !== undefined && resetKey !== prevResetKeyRef.current) {
+      prevResetKeyRef.current = resetKey;
       spaceFilter.reset();
       libraryFilter.reset();
       creatorFilter.reset();

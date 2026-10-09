@@ -550,8 +550,8 @@ export function ModelSaveDialog({
         vector_dimension: values.vector_dimension
           ? Number(values.vector_dimension)
           : undefined,
-        max_tokens: values.max_tokens ? Number(values.max_tokens) : undefined,
-        context_length: values.context_length ? Number(values.context_length) : undefined,
+        max_tokens: values.max_tokens != null ? Number(values.max_tokens) : undefined,
+        context_length: values.context_length != null ? Number(values.context_length) : undefined,
         is_system: false,
       };
 
@@ -901,7 +901,7 @@ export function ModelSaveDialog({
     });
   };
 
-  // Handle number input change with min/default logic
+  // Handle number input change with min/default/max logic
   const handleNumberChange = (prop: string, value: any, config: FormConfig) => {
     let finalValue = value;
 
@@ -909,6 +909,10 @@ export function ModelSaveDialog({
       finalValue = config.default ?? config.min ?? 1;
     } else if (config.min !== undefined && value < config.min) {
       finalValue = config.default ?? config.min;
+    }
+    // 超过上限时钳制为上限值（默认值回填同样受上限约束）
+    if (config.max !== undefined && Number(finalValue) > config.max) {
+      finalValue = config.max;
     }
     handleFieldChange(prop, finalValue);
   };
@@ -935,13 +939,31 @@ export function ModelSaveDialog({
     }
   };
 
-  // 获取模型的 max_tokens（优先级：config 数组 > 外部 API > 默认值）
+  // 获取当前单模型的 model_id
+  // 注意：models 声明为 string[]，但 input 输入框路径（handleFieldChange）运行时会存成字符串，
+  // 此时 formData.models[0] 取到的是首字符，导致外部接口上限匹配失败、回退默认上限 200000
+  const getCurrentModelId = (): string => {
+    const models = formData.models as unknown as string[] | string;
+    if (typeof models === "string") return models;
+    return models[0] || "";
+  };
+
+  // 获取模型的 max_tokens（优先级：config > custom_config.models > 外部 API > 上限值）
   const getModelMaxTokens = (modelId: string): number => {
-    // 从 config 数组读取
+    // 从 config 读取（数组/对象两种格式）
     if (Array.isArray(formData.config)) {
       const modelConfig = formData.config.find((c) => c.model_id === modelId);
-      if (modelConfig?.max_tokens) return modelConfig.max_tokens;
+      if (modelConfig?.max_tokens != null) return modelConfig.max_tokens;
+    } else if (formData.config && typeof formData.config === "object") {
+      if ((formData.config as Record<string, any>).max_tokens != null) {
+        return (formData.config as Record<string, any>).max_tokens;
+      }
     }
+    // 从 custom_config.models 查找自定义模型的值
+    const customModel = formData.custom_config?.models?.find(
+      (m: any) => m.model_id === modelId,
+    );
+    if (customModel?.max_tokens != null) return customModel.max_tokens;
     // 外部 API
     if (externalModelConfig.maxTokens[modelId]) {
       return externalModelConfig.maxTokens[modelId];
@@ -958,13 +980,22 @@ export function ModelSaveDialog({
     return CONTEXT_LENGTH_LIMIT;
   };
 
-  // 获取模型的 context_length（优先级：config 数组 > 外部 API > 默认值）
+  // 获取模型的 context_length（优先级：config > custom_config.models > 外部 API > 默认值）
   const getModelContextLength = (modelId: string): number => {
-    // 从 config 数组读取
+    // 从 config 读取（数组/对象两种格式）
     if (Array.isArray(formData.config)) {
       const modelConfig = formData.config.find((c) => c.model_id === modelId);
-      if (modelConfig?.context_length) return modelConfig.context_length;
+      if (modelConfig?.context_length != null) return modelConfig.context_length;
+    } else if (formData.config && typeof formData.config === "object") {
+      if ((formData.config as Record<string, any>).context_length != null) {
+        return (formData.config as Record<string, any>).context_length;
+      }
     }
+    // 从 custom_config.models 查找自定义模型的值
+    const customModel = formData.custom_config?.models?.find(
+      (m: any) => m.model_id === modelId,
+    );
+    if (customModel?.context_length != null) return customModel.context_length;
     // 外部 API
     if (externalModelConfig.contextLength[modelId]) {
       return externalModelConfig.contextLength[modelId];
@@ -984,7 +1015,7 @@ export function ModelSaveDialog({
   // 更新 formData 中模型的 max_tokens
   const handleModelMaxTokensChange = (modelId: string, value: number | null) => {
     const limit = getModelMaxTokensLimit(modelId);
-    const finalValue = value ? Math.min(value, limit) : DEFAULT_MAX_TOKENS;
+    const finalValue = value != null ? Math.min(value, limit) : DEFAULT_MAX_TOKENS;
     setFormData((prev) => {
       // 多模型：更新 config 数组
       if (Array.isArray(prev.config)) {
@@ -1000,15 +1031,16 @@ export function ModelSaveDialog({
         return { ...prev, config };
       }
 
-      // 单模型不使用 config 数组存储 max_tokens
-      return prev;
+      // 单模型：更新 config 对象中的 max_tokens
+      const newConfig = { ...prev.config, max_tokens: finalValue };
+      return { ...prev, config: newConfig };
     });
   };
 
   // 更新 formData 中模型的 context_length
   const handleModelContextLengthChange = (modelId: string, value: number | null) => {
     const limit = getModelContextLengthLimit(modelId);
-    const finalValue = value ? Math.min(value, limit) : DEFAULT_CONTEXT_LENGTH;
+    const finalValue = value != null ? Math.min(value, limit) : DEFAULT_CONTEXT_LENGTH;
     setFormData((prev) => {
       // 多模型：更新 config 数组
       if (Array.isArray(prev.config)) {
@@ -1024,8 +1056,9 @@ export function ModelSaveDialog({
         return { ...prev, config };
       }
 
-      // 单模型不使用 config 数组存储 context_length
-      return prev;
+      // 单模型：更新 config 对象中的 context_length
+      const newConfig = { ...prev.config, context_length: finalValue };
+      return { ...prev, config: newConfig };
     });
   };
 
@@ -1080,15 +1113,26 @@ export function ModelSaveDialog({
   );
 
   // Render input number field
-  const renderInputNumber = (config: FormConfig) => (
-    <InputNumber
-      className="w-full"
-      placeholder={config.placeholder || ""}
-      min={config.min}
-      controls={false}
-      onChange={(value) => handleNumberChange(config.prop, value, config)}
-    />
-  );
+  const renderInputNumber = (config: FormConfig) => {
+    // 上下文长度：与下方 max_tokens 输入框保持一致，
+    // 优先用外部 API 返回的模型实际上限（未知模型回退默认值），其余字段用 schema 声明的 max
+    const max =
+      config.prop === "config.context_length"
+        ? getModelContextLengthLimit(getCurrentModelId())
+        : config.max;
+    return (
+      <InputNumber
+        className="w-full"
+        placeholder={config.placeholder || ""}
+        min={config.min}
+        max={max}
+        controls={false}
+        onChange={(value) =>
+          handleNumberChange(config.prop, value, { ...config, max })
+        }
+      />
+    );
+  };
 
   // Render radio group
   const renderRadioGroup = (config: FormConfig) => (
@@ -1105,7 +1149,7 @@ export function ModelSaveDialog({
 
   // Render single model select
   const renderSingleModelSelect = (config: FormConfig) => {
-    const currentModelId = formData.models?.[0] || undefined;
+    const currentModelId = getCurrentModelId() || undefined;
     const isCustomModel =
       currentModelId &&
       !singleModelOptions.some((opt) => opt.model_id === currentModelId);
@@ -1375,17 +1419,17 @@ export function ModelSaveDialog({
                   {renderFormItem(config)}
                 </Form.Item>
                 {/* 单选模型选中后显示 max_tokens 输入框（语音模型不展示） */}
-                {config.prop === "models" && !config.multiple && formData.models[0] && formData.model_type !== MODEL_USE_TYPE.VOICE && (
+                {config.prop === "models" && !config.multiple && getCurrentModelId() && formData.model_type !== MODEL_USE_TYPE.VOICE && (
                   // 只有表单配置中没有 max_tokens 字段时才显示
                   !modelSchemas.some(s => s.prop === "config.max_tokens") && (
                     <Form.Item label={t("module.platform_model_max_tokens")}>
                       <InputNumber
                         className="w-full"
                         min={1}
-                        max={getModelMaxTokensLimit(formData.models[0])}
+                        max={getModelMaxTokensLimit(getCurrentModelId())}
                         controls={false}
-                        value={getModelMaxTokens(formData.models[0])}
-                        onChange={(value) => handleModelMaxTokensChange(formData.models[0], value)}
+                        value={getModelMaxTokens(getCurrentModelId())}
+                        onChange={(value) => handleModelMaxTokensChange(getCurrentModelId(), value)}
                       />
                     </Form.Item>
                   )

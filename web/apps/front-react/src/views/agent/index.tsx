@@ -57,7 +57,7 @@ export function AgentPage() {
         )}
         <div className="w-11/12 lg:w-4/5 max-w-[1200px] mx-auto">
           <div
-            className="sticky z-[101] bg-white w-full py-4 flex items-center gap-5"
+            className="sticky z-[9] bg-white w-full py-4 flex items-center gap-5"
             style={{ top: isSoftStyle ? "56px" : "0px" }}
           >
             <div

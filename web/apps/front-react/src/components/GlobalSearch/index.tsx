@@ -8,9 +8,10 @@ import {
   useImperativeHandle,
 } from "react";
 import { Modal, Input, Tabs, Button } from "antd";
-import { SearchOutlined, CloseOutlined } from "@ant-design/icons";
+import { SearchOutlined, CloseOutlined, FilterOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import { t } from "@/locales";
+import { useResponsive } from "@/hooks/useResponsive";
 import { Filter } from "./components/Filter";
 import { KnowledgeTab } from "./components/KnowledgeTab";
 import { DynamicTab } from "./components/DynamicTab";
@@ -20,10 +21,19 @@ import type { FilterState } from "./types";
 import { DEFAULT_FILTER_STATE, filterStateToParams } from "./utils/filter";
 import "./index.css";
 
+/** 预置选中的知识库（结构对应 FilterState.selectedLibraries 单项） */
+interface GlobalSearchDefaultLibrary {
+  id: string;
+  name: string;
+  icon: string;
+  space_id: string;
+}
+
 interface GlobalSearchProps {
   className?: string;
   placeholder?: string;
-  libraryId?: string;
+  /** 打开时默认选中的知识库（库内入口预置当前库筛选） */
+  defaultLibrary?: GlobalSearchDefaultLibrary;
   onSelect?: (item: GlobalSearchFile) => void;
   onSearch?: (query: string) => void;
 }
@@ -37,6 +47,7 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
   function GlobalSearch(
     {
       placeholder = t("action.search"),
+      defaultLibrary,
       onSelect,
       className = "",
     }: GlobalSearchProps,
@@ -53,12 +64,38 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [searchQuery, setSearchQuery] = useState("");
     const [filterKey, setFilterKey] = useState(0);  // 用于重置 Filter 组件
+    const [filterOpen, setFilterOpen] = useState(false); // 移动端筛选面板展开状态
+
+    const { isMobile } = useResponsive();
+
+    // 默认筛选：传入 defaultLibrary 时预置当前知识库（每次打开默认选中）
+    const defaultKnowledgeFilter = useMemo<FilterState>(() => {
+      if (defaultLibrary?.id) {
+        return {
+          ...DEFAULT_FILTER_STATE,
+          selectedLibraries: [defaultLibrary],
+        };
+      }
+      return DEFAULT_FILTER_STATE;
+    }, [defaultLibrary]);
 
     // 筛选状态（按 Tab 独立）
-    const [knowledgeFilter, setKnowledgeFilter] = useState<FilterState>(DEFAULT_FILTER_STATE);
+    const [knowledgeFilter, setKnowledgeFilter] = useState<FilterState>(defaultKnowledgeFilter);
     const [dynamicFilter, setDynamicFilter] = useState<FilterState>(DEFAULT_FILTER_STATE);
 
     const activeFilter = activeTab === "dynamic" ? dynamicFilter : knowledgeFilter;
+
+    // 已激活的筛选维度数量（移动端筛选按钮徽标）
+    const activeFilterCount = useMemo(() => {
+      let count = 0;
+      if (activeFilter.selectedSpaces.length) count++;
+      if (activeFilter.selectedLibraries.length) count++;
+      if (activeFilter.selectedCreators.length) count++;
+      if (activeFilter.selectedCreatedTime !== "all") count++;
+      if (activeFilter.selectedUpdatedTime !== "all") count++;
+      if (activeFilter.selectedDocType !== "all") count++;
+      return count;
+    }, [activeFilter]);
 
     // 将两个 Tab 的 FilterState 转换为 FilterParams
     const knowledgeFilterParams = useMemo(() => filterStateToParams(knowledgeFilter), [knowledgeFilter]);
@@ -94,11 +131,12 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
       setSearchQuery("");
       setSelectedIndex(0);
       setActiveTab("knowledge");
+      setFilterOpen(false); // 收起移动端筛选面板
       setFilterKey(prev => prev + 1);  // 重置 Filter 组件
-      setKnowledgeFilter(DEFAULT_FILTER_STATE);  // 重置两个 Tab 的筛选状态
+      setKnowledgeFilter(defaultKnowledgeFilter);  // 重置为默认筛选（含预置知识库）
       setDynamicFilter(DEFAULT_FILTER_STATE);
       reset(); // 关闭时重置缓存
-    }, [reset]);
+    }, [reset, defaultKnowledgeFilter]);
 
     // 选择文档并跳转
     const selectItem = useCallback(
@@ -202,9 +240,9 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
           className="global-search-modal"
           styles={{ container: { padding: 0 }, body: { padding: 0 } }}
         >
-          <div className="flex flex-col h-[680px]">
+          <div className="flex flex-col h-[680px] max-md:h-[calc(100vh-120px)]">
             {/* 搜索框 */}
-            <div className="border-b border-gray-200 h-[56px] flex items-center px-6 gap-3 flex-shrink-0">
+            <div className="border-b border-gray-200 h-[56px] flex items-center px-6 max-md:px-4 gap-3 flex-shrink-0">
               <SearchOutlined className="text-gray-400 text-xl" />
               <input
                 ref={modalInputRef}
@@ -212,7 +250,7 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
                 onChange={handleInputChange}
                 onKeyDown={handleKeydown}
                 placeholder={placeholder}
-                className="flex-1 bg-transparent border-none outline-none text-sm text-[#1D1E1F] placeholder:text-secondary"
+                className="flex-1 bg-transparent border-none outline-none text-sm max-md:text-base text-[#1D1E1F] placeholder:text-secondary"
                 autoFocus
               />
               {searchQuery && (
@@ -234,8 +272,8 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
               />
             </div>
 
-            {/* Tab 标签 */}
-            <div className="px-6 flex-shrink-0">
+            {/* Tab 标签 + 移动端筛选入口 */}
+            <div className="px-6 max-md:px-4 flex-shrink-0 flex items-center gap-2">
               <Tabs
                 activeKey={activeTab}
                 onChange={setActiveTab}
@@ -243,14 +281,39 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
                   { key: "knowledge", label: t("knowledge.document_file") },
                   { key: "dynamic", label: t("global_search.dynamic_tab") },
                 ]}
-                className="global-search-tabs"
+                className="global-search-tabs min-w-0 flex-1"
               />
+              {isMobile && (
+                <Button
+                  size="small"
+                  type={filterOpen ? "primary" : "default"}
+                  icon={<FilterOutlined />}
+                  onClick={() => setFilterOpen((v) => !v)}
+                  className="flex-shrink-0"
+                >
+                  {activeFilterCount > 0
+                    ? `${t("global_search.filter")} ${activeFilterCount}`
+                    : t("global_search.filter")}
+                </Button>
+              )}
             </div>
 
-            {/* 内容区：左右布局 */}
-            <div className="flex flex-1 min-h-0">
+            {/* 内容区：桌面左右布局，移动端上下堆叠 */}
+            <div className="flex flex-1 min-h-0 max-md:flex-col">
+              {/* 移动端筛选面板（点击筛选按钮展开，限高内部滚动） */}
+              {isMobile && filterOpen && (
+                <div className="flex-shrink-0 max-h-[45%] overflow-y-auto border-b border-gray-100">
+                  <Filter
+                    key={`${filterKey}-${activeTab}`}
+                    value={activeFilter}
+                    onChange={handleFilterChange}
+                    resetKey={filterKey}
+                    variant={activeTab === "dynamic" ? "compact" : "full"}
+                  />
+                </div>
+              )}
               {/* 左侧内容 */}
-              <div className="flex-1 overflow-y-auto px-5 pb-4">
+              <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-4 max-md:px-2">
                 {activeTab === "knowledge" && (
                   <KnowledgeTab
                     searchQuery={searchQuery}
@@ -285,16 +348,18 @@ export const GlobalSearch = forwardRef<GlobalSearchRef, GlobalSearchProps>(
                 )}
               </div>
 
-              {/* 右侧筛选面板 */}
-              <div className="w-[287px] flex-shrink-0 border-l border-gray-100 overflow-y-auto">
-                <Filter
-                  key={`${filterKey}-${activeTab}`}
-                  value={activeFilter}
-                  onChange={handleFilterChange}
-                  resetKey={filterKey}
-                  variant={activeTab === "dynamic" ? "compact" : "full"}
-                />
-              </div>
+              {/* 桌面端右侧筛选面板 */}
+              {!isMobile && (
+                <div className="w-[287px] flex-shrink-0 border-l border-gray-100 overflow-y-auto">
+                  <Filter
+                    key={`${filterKey}-${activeTab}`}
+                    value={activeFilter}
+                    onChange={handleFilterChange}
+                    resetKey={filterKey}
+                    variant={activeTab === "dynamic" ? "compact" : "full"}
+                  />
+                </div>
+              )}
             </div>
           </div>
         </Modal>

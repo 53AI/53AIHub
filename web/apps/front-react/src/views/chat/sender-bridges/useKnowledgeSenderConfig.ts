@@ -687,6 +687,10 @@ export function useKnowledgeSenderConfig(
 	// /library/:id/chat 路由(指定知识库问答):send 后不应回退到「全部知识」,
 	// 仍以当前知识库为默认知识源,只清掉用户在本次输入中临时勾选的文件 / 空间 /
 	// 动态知识,避免每次发送都被重置回 allKnowledge=true。
+	//
+	// 非 library 路由(AI 搜问主页):send 后只清空本次输入临时勾选的
+	// 文件/知识库/空间/动态知识条目,保留用户手动切换的 知识文档/wiki/知识图谱/
+	// 联网搜索 开关(不回退到智能体默认值),避免每次发送后选择器参数被重置。
 	const reset = useCallback(() => {
 		if (isInLibrary) {
 			const agentSettings = currentAgentRef.current?.settings_obj ?? {};
@@ -719,7 +723,32 @@ export function useKnowledgeSenderConfig(
 			return;
 		}
 		setSelectedMentionLinks([]);
-		setKnowledgeSource(deriveInitialKnowledgeSource(currentAgentRef.current));
+		// 修复(测试反馈:参数会重置):send 后只清空本次输入临时勾选的
+		// 文件/知识库/空间/动态知识条目(与 @ 受控 list 同步清空),
+		// 但保留用户手动切换的 知识文档/wiki/知识图谱/联网搜索 开关,
+		// 不再整体回退到 deriveInitialKnowledgeSource(智能体默认值)。
+		// 对齐 legacy knowledge/chat.tsx:knowledgeSource 跨发送持久。
+		setKnowledgeSource((prev) => {
+			const next: KnowledgeSourceState = {
+				...prev,
+				mode: "all",
+				selectedFiles: [],
+				selectedLibraries: [],
+				selectedSpaces: [],
+				selectedWikiSpaces: [],
+				selectedWikiPages: [],
+			};
+			// 临时选择清空后若无任何激活来源,兜底回「全部知识」,避免空态
+			const hasActive =
+				next.allKnowledge ||
+				next.knowledgeGraph ||
+				next.networkSearch ||
+				next.wiki;
+			if (!hasActive) {
+				next.allKnowledge = true;
+			}
+			return next;
+		});
 	}, [isInLibrary, libraryId, libraryName, libraryIcon]);
 
 	if (!enabled) return null;

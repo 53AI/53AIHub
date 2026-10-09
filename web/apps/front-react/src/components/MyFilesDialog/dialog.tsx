@@ -8,6 +8,7 @@ import recordingApi from '@/api/modules/recording';
 import { formatFile } from '@/api/modules/files/transform';
 import { getPublicPath } from '@/utils/config';
 import { t } from '@/locales';
+import { useResponsive } from '@/hooks/useResponsive';
 import type { FileItem } from '@/api/modules/files/types';
 import type {
   FileSource,
@@ -85,6 +86,9 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
     // 跨 tab 累加池(id → FileItem,3 个 source 全局唯一)
     const [selectedFiles, setSelectedFiles] = useState<Map<string, FileItem>>(new Map());
     const [popoverVisible, setPopoverVisible] = useState(false);
+
+    // 移动端适配:小屏下弹窗宽度 / Popover 宽度收窄(对齐 SpaceDialog)
+    const { isMobile } = useResponsive();
 
     const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const loadingNodesRef = useRef<Set<string>>(new Set());
@@ -627,7 +631,7 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
                 <img src={item.icon} className="size-4" alt="" />
                 <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
                 <CloseOutlined
-                  className="group-hover:block hidden"
+                  className="block md:hidden md:group-hover:block"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRemoveFile(item);
@@ -685,10 +689,11 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
       <Modal
         open={visible}
         title="选择我的"
-        width={1006}
+        width={isMobile ? '95%' : 1006}
         onCancel={handleClose}
+        styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
         footer={
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               {selectedFiles.size > 0 && (
                 <Popover
@@ -698,9 +703,13 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
                   trigger="click"
                   placement="topLeft"
                   overlayClassName="!p-0"
-                  overlayStyle={{ width: 360 }}
+                  overlayStyle={{ width: isMobile ? 'min(320px, 86vw)' : 360 }}
                 >
-                  <div className="h-8 px-2 rounded flex items-center gap-1 text-[#999999] hover:bg-[#F2F3F5] cursor-pointer">
+                  <div
+                    className={`h-8 px-2 rounded flex items-center gap-1 text-[#999999] cursor-pointer ${
+                      popoverVisible ? 'bg-[#F2F3F5]' : 'hover:bg-[#F2F3F5]'
+                    }`}
+                  >
                     <span className="text-sm">已选{selectedFiles.size}个文件</span>
                     <DownOutlined className={popoverVisible ? 'rotate-180' : ''} />
                   </div>
@@ -718,13 +727,13 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
         className="my-files-dialog"
       >
         <div className="p-0">
-          {/* Tab 条 + 搜索框(对齐 SpaceDialog 样式) */}
-          <div className="mb-2 pt-2 flex items-center justify-between gap-2">
-            <div className="inline-flex items-center gap-1 bg-[#F5F5F5] p-1 rounded-xl">
+          {/* Tab 条 + 搜索框(移动端搜索换行到 tabs 下方,断点与 useResponsive 的 isMobile <768 对齐) */}
+          <div className="mb-2 pt-2 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2">
+            <div className="inline-flex items-center gap-1 bg-[#F5F5F5] p-1 rounded-xl overflow-x-auto">
               {enabledSources.map((source) => (
                 <div
                   key={source}
-                  className={`px-4 h-[30px] flex-center text-sm cursor-pointer transition-colors ${
+                  className={`px-4 h-[30px] flex-center text-sm cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
                     activeTab === source
                       ? 'text-[#1D1E1F] font-medium bg-white rounded-md'
                       : 'text-[#9A9A9A] hover:text-[#666]'
@@ -740,10 +749,10 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
               placeholder="搜索"
               value={activeState?.searchKeyword ?? ''}
               onDebouncedChange={handleSearch}
-              className="max-w-[240px]"
+              className="md:max-w-[240px]"
             />
           </div>
-          <div className="h-[450px] overflow-y-auto p-3 border border-[#E5E5E5] rounded-xl">
+          <div className="h-[450px] max-h-[60vh] overflow-y-auto p-3 border border-[#E5E5E5] rounded-xl">
             {activeState?.loading ? (
               <div className="flex justify-center py-8">
                 <Spin />
