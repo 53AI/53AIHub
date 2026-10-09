@@ -466,15 +466,15 @@ func handleOutOfRangeReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 	// 根据是否流式返回不同格式的响应
 	if chatRequest.Stream {
 		// 流式响应
-		sendStreamOutOfRangeReply(c, replyContent, requestId, agent.Model)
+		sendStreamReply(c, replyContent, requestId, agent.Model, nil)
 	} else {
 		// 非流式响应
 		sendNonStreamOutOfRangeReply(c, replyContent, requestId, agent.Model)
 	}
 }
 
-// sendStreamOutOfRangeReply 发送流式超纲回复
-func sendStreamOutOfRangeReply(c *gin.Context, content string, requestId string, model string) {
+// sendStreamReply 发送流式回复，可选附带 RAG 统计信息。
+func sendStreamReply(c *gin.Context, content string, requestId string, model string, ragStats json.RawMessage) {
 	// 设置流式响应头
 	h := c.Writer.Header()
 	h.Set("Content-Type", "text/event-stream; charset=utf-8")
@@ -497,6 +497,9 @@ func sendStreamOutOfRangeReply(c *gin.Context, content string, requestId string,
 				"finish_reason": nil,
 			},
 		},
+	}
+	if len(ragStats) > 0 {
+		response["rag_stats"] = ragStats
 	}
 
 	jsonData, err := json.Marshal(response)

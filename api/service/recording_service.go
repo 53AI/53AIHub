@@ -80,16 +80,18 @@ type UploadRecordingSegmentRequest struct {
 }
 
 type RecordingFileListQuery struct {
-	Path      string
-	Keyword   string
-	Type      *int
-	Offset    int
-	Limit     int
-	GroupID   int64
-	SortBy    string
-	Order     string
-	StartTime int64
-	EndTime   int64
+	Path              string
+	Keyword           string
+	Type              *int
+	Offset            int
+	Limit             int
+	GroupID           int64
+	SortBy            string
+	Order             string
+	StartTime         int64
+	EndTime           int64
+	Scene             string
+	SceneUnrecognized bool
 }
 
 type RecordingJobSegmentManifest struct {

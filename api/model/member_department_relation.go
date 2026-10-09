@@ -15,11 +15,12 @@ const (
 
 // MemberDepartmentRelation represents the relationship between members and departments
 type MemberDepartmentRelation struct {
-	ID   int64 `json:"id" gorm:"column:id;primaryKey;autoIncrement;comment:'Relation ID'"`
-	DID  int64 `json:"did" gorm:"column:did;not null;default:0;index:idx_did_eid_from,priority:1;comment:'Department ID'"`
-	EID  int64 `json:"eid" gorm:"column:eid;not null;default:0;index:idx_bid_eid,priority:2;index:idx_did_eid_from,priority:2;comment:'Enterprise ID'"`
-	BID  int64 `json:"bid" gorm:"column:bid;not null;default:0;index:idx_bid_eid,priority:1;comment:'Member Binding ID'"`
-	From int   `json:"from" gorm:"column:from;not null;default:0;index:idx_did_eid_from,priority:3;comment:'Source: 0-Backend, 1-Enterprise WeChat'"`
+	ID        int64 `json:"id" gorm:"column:id;primaryKey;autoIncrement;comment:'Relation ID'"`
+	DID       int64 `json:"did" gorm:"column:did;not null;default:0;index:idx_did_eid_from,priority:1;comment:'Department ID'"`
+	EID       int64 `json:"eid" gorm:"column:eid;not null;default:0;index:idx_bid_eid,priority:2;index:idx_did_eid_from,priority:2;comment:'Enterprise ID'"`
+	BID       int64 `json:"bid" gorm:"column:bid;not null;default:0;index:idx_bid_eid,priority:1;comment:'Member Binding ID'"`
+	From      int   `json:"from" gorm:"column:from;not null;default:0;index:idx_did_eid_from,priority:3;comment:'Source: 0-Backend, 1-Enterprise WeChat'"`
+	DeletedAt int64 `json:"deleted_at" gorm:"column:deleted_at;not null;default:0;index;comment:'Soft deletion time in Unix milliseconds'"`
 	BaseModel
 }
 
@@ -58,7 +59,7 @@ func validateMemberDepartmentRelation(relation *MemberDepartmentRelation) error 
 // GetMemberDepartmentRelationByID retrieves a relation by its ID
 func GetMemberDepartmentRelationByID(id int64) (*MemberDepartmentRelation, error) {
 	var relation MemberDepartmentRelation
-	result := DB.Where("id = ?", id).First(&relation)
+	result := DB.Where("id = ? AND deleted_at = ?", id, 0).First(&relation)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("relation not found with ID %d", id)
@@ -71,7 +72,7 @@ func GetMemberDepartmentRelationByID(id int64) (*MemberDepartmentRelation, error
 // GetMemberDepartmentRelationsByEID retrieves all relations for a specific enterprise
 func GetMemberDepartmentRelationsByEID(eid int64) ([]*MemberDepartmentRelation, error) {
 	var relations []*MemberDepartmentRelation
-	result := DB.Where("eid = ?", eid).Find(&relations)
+	result := DB.Where("eid = ? AND deleted_at = ?", eid, 0).Find(&relations)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -81,7 +82,7 @@ func GetMemberDepartmentRelationsByEID(eid int64) ([]*MemberDepartmentRelation, 
 // GetMemberDepartmentRelationsByDID retrieves all relations for a specific department
 func GetMemberDepartmentRelationsByDID(eid int64, did int64) ([]*MemberDepartmentRelation, error) {
 	var relations []*MemberDepartmentRelation
-	result := DB.Where("eid = ? AND did = ?", eid, did).Find(&relations)
+	result := DB.Where("eid = ? AND did = ? AND deleted_at = ?", eid, did, 0).Find(&relations)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -91,7 +92,7 @@ func GetMemberDepartmentRelationsByDID(eid int64, did int64) ([]*MemberDepartmen
 // GetMemberDepartmentRelationsByBID retrieves all relations for a specific member binding
 func GetMemberDepartmentRelationsByBID(eid int64, bid int64) ([]*MemberDepartmentRelation, error) {
 	var relations []*MemberDepartmentRelation
-	result := DB.Where("eid = ? AND bid = ?", eid, bid).Find(&relations)
+	result := DB.Where("eid = ? AND bid = ? AND deleted_at = ?", eid, bid, 0).Find(&relations)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -101,7 +102,7 @@ func GetMemberDepartmentRelationsByBID(eid int64, bid int64) ([]*MemberDepartmen
 func GetMemberDidsByBID(eid int64, bid int64) ([]int64, error) {
 	var dids []int64
 	var relations []*MemberDepartmentRelation
-	result := DB.Where("eid = ? AND bid = ?", eid, bid).Find(&relations)
+	result := DB.Where("eid = ? AND bid = ? AND deleted_at = ?", eid, bid, 0).Find(&relations)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -127,10 +128,11 @@ func UpdateMemberDepartmentRelation(relation *MemberDepartmentRelation) error {
 
 	// Update relation in database
 	result := DB.Model(relation).Updates(map[string]interface{}{
-		"did":  relation.DID,
-		"eid":  relation.EID,
-		"bid":  relation.BID,
-		"from": relation.From,
+		"did":        relation.DID,
+		"eid":        relation.EID,
+		"bid":        relation.BID,
+		"from":       relation.From,
+		"deleted_at": relation.DeletedAt,
 	})
 
 	return result.Error
@@ -202,7 +204,7 @@ func GetUsersByDepartmentIDs(eid int64, dids []int64) ([]int64, error) {
 	}
 
 	var relations []*MemberDepartmentRelation
-	err := DB.Where("eid = ? AND did IN ?", eid, dids).Find(&relations).Error
+	err := DB.Where("eid = ? AND did IN ? AND deleted_at = ?", eid, dids, 0).Find(&relations).Error
 	if err != nil {
 		return nil, err
 	}

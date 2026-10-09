@@ -44,8 +44,11 @@ var recordingMemoryGenericNames = map[string]map[string]struct{}{
 		"风险": {}, "落地使用风险": {}, "进度延期风险": {}, "需求变更风险": {}, "落地风险": {}, "使用风险": {},
 		"延期风险": {}, "交付风险": {}, "技术风险": {}, "财务风险": {}, "合规风险": {},
 	},
-	"principle": {
-		"原则": {}, "业务适配原则": {}, "风险可控原则": {}, "落地可行原则": {}, "业务原则": {}, "风险原则": {}, "适配原则": {},
+	"commitment": {
+		"承诺事项": {}, "承诺": {}, "承诺清单": {},
+	},
+	"decision": {
+		"决策": {}, "决策事项": {}, "决策方案": {},
 	},
 }
 
@@ -109,7 +112,7 @@ type RecordingMemoryEntityDetail struct {
 
 type RecordingMemoryEntityFactView struct {
 	ID               int64             `json:"id"`
-	EntityType       string            `json:"entity_type"` // 所属实体类型（person/matter/risk/principle）
+	EntityType       string            `json:"entity_type"` // 所属实体类型（person/matter/risk/commitment/decision）
 	FactKind         string            `json:"fact_kind"`
 	Content          string            `json:"content"`
 	Attributes       map[string]string `json:"attributes"`
@@ -185,8 +188,10 @@ func recordingEntityTypesFromConfig(config *model.RecordingConfig) map[string]bo
 			result["matter"] = true
 		case model.EntityTypeRisk:
 			result["risk"] = true
-		case model.EntityTypePrinciple:
-			result["principle"] = true
+		case model.EntityTypeCommitment:
+			result["commitment"] = true
+		case model.EntityTypeDecision:
+			result["decision"] = true
 		}
 	}
 	return result
@@ -260,7 +265,7 @@ func CompileRecordingEntityMemory(ctx context.Context, eid, fileID, ownerID int6
 		return 0, err
 	}
 	allowedTypes := recordingEntityTypesFromConfig(config)
-	// 叠加 schema 类型限制：schema 外类型（如存量配置含 commitment）不编译
+	// 叠加 schema 类型限制：schema 外类型（如存量配置仍含 principle）不编译
 	for entityType := range allowedTypes {
 		if _, ok := model.RecordingMemoryEntitySchemas[entityType]; !ok {
 			delete(allowedTypes, entityType)
@@ -537,7 +542,13 @@ func hasRecordingMemoryScope(entityType, name string, attributes map[string]stri
 			return true
 		}
 	}
-	return entityType == "principle" && strings.TrimSpace(attributes["applicable_scope"]) != ""
+	switch entityType {
+	case "commitment":
+		return strings.TrimSpace(attributes["due_date"]) != ""
+	case "decision":
+		return strings.TrimSpace(attributes["impact_scope"]) != ""
+	}
+	return false
 }
 
 func hasRecordingMemoryTypeAttribute(entityType string, attributes map[string]string) bool {

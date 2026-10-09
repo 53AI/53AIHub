@@ -71,6 +71,16 @@ func normalizeInsightHTML(rawHTML string) (string, error) {
 			return "", fmt.Errorf("洞察 HTML 页面包含不允许的内容: %s", forbidden)
 		}
 	}
+	// Generated citation CSS is not reliable enough to control the default
+	// state. Keep the detail hidden until the citation is hovered or focused.
+	if (strings.Contains(lower, "insight-citation") || strings.Contains(lower, "memory-citation")) && !strings.Contains(lower, `id="insight-citation-visibility"`) {
+		const citationCSS = `<style id="insight-citation-visibility">.insight-citation .insight-citation-popover,.insight-citation .citation-popover,.memory-citation .memory-popover{display:none!important}.insight-citation:hover .insight-citation-popover,.insight-citation:focus .insight-citation-popover,.insight-citation:focus-within .insight-citation-popover,.insight-citation:hover .citation-popover,.insight-citation:focus .citation-popover,.insight-citation:focus-within .citation-popover,.memory-citation:hover .memory-popover,.memory-citation:focus .memory-popover,.memory-citation:focus-within .memory-popover{display:block!important}</style>`
+		if at := strings.LastIndex(strings.ToLower(html), "</head>"); at >= 0 {
+			html = html[:at] + citationCSS + html[at:]
+		} else if at := strings.LastIndex(strings.ToLower(html), "</body>"); at >= 0 {
+			html = html[:at] + citationCSS + html[at:]
+		}
+	}
 	return html, nil
 }
 

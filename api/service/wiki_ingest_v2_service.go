@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/tokenlimit"
 	"github.com/53AI/53AIHub/model"
-	"github.com/53AI/53AIHub/service/rag"
 	"gorm.io/gorm"
 )
 
@@ -16,17 +16,22 @@ type WikiLLMRunner interface {
 	Generate(ctx context.Context, prompt string) (string, error)
 }
 
+type wikiPromptInputBudgeter interface {
+	InputBudget(ctx context.Context, promptOverhead string) (int, error)
+}
+
 type WikiIngestV2Service struct {
-	db              *gorm.DB
-	prompts         *WikiPromptService
-	llm             WikiLLMRunner
-	fileGuard       wikiFileGenerationGuard
-	checkpoint      *wikiGenerationCheckpoint
-	checkpointJobID int64
-	linkSvc         *WikiLinkService
-	taxonomy        *WikiTaxonomyService
-	dedup           *WikiDedupService
-	index           *WikiIndexIntroService
+	db                     *gorm.DB
+	prompts                *WikiPromptService
+	llm                    WikiLLMRunner
+	fileGuard              wikiFileGenerationGuard
+	checkpoint             *wikiGenerationCheckpoint
+	checkpointJobID        int64
+	linkSvc                *WikiLinkService
+	taxonomy               *WikiTaxonomyService
+	dedup                  *WikiDedupService
+	index                  *WikiIndexIntroService
+	pageUpdateBatchAcquire wikiPageUpdateBatchAcquire
 }
 
 type WikiIngestV2MapDocumentInput struct {
@@ -76,17 +81,16 @@ type wikiIngestV2SyntheticChunk struct {
 	Content string
 }
 
-const wikiIngestV2AnalysisContentLimit = 16000
-
 func NewWikiIngestV2Service(db *gorm.DB, llm WikiLLMRunner) *WikiIngestV2Service {
 	prompts := NewWikiPromptService()
 	return &WikiIngestV2Service{
-		db:       db,
-		prompts:  prompts,
-		llm:      llm,
-		taxonomy: NewWikiTaxonomyService(db, llm),
-		dedup:    NewWikiDedupService(prompts, llm),
-		index:    NewWikiIndexIntroService(prompts, llm),
+		db:                     db,
+		prompts:                prompts,
+		llm:                    llm,
+		taxonomy:               NewWikiTaxonomyService(db, llm),
+		dedup:                  NewWikiDedupService(prompts, llm),
+		index:                  NewWikiIndexIntroService(prompts, llm),
+		pageUpdateBatchAcquire: acquireWikiPageUpdateBatchLease,
 	}
 }
 
@@ -106,7 +110,7 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 		return nil, nil, fmt.Errorf("wiki llm runner is nil")
 	}
 
-	analysisContent := rag.ComposeSummaryInput(content, wikiIngestV2AnalysisContentLimit)
+	analysisContent := content
 
 	var candidates []wikiIngestV2Candidate
 
@@ -117,13 +121,41 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 			return nil, nil, err
 		}
 
+		candidatePrompt, err := s.prompts.Render(WikiCandidateSlugPrompt, map[string]any{
+			"Content":             "",
+			"SourceContext":       renderWikiIngestV2SourceContext("candidate_discovery", in, 0),
+			"Language":            wikiIngestV2Language(in.Language),
+			"PreviousSlugs":       previousSlugs,
+			"Granularity":         wikiIngestV2ExtractionGranularity(in.ExtractionGranularity),
+			"GranularityGuidance": wikiIngestV2GranularityGuidance(in.ExtractionGranularity),
+			"StrictCategoryScope": in.strictCategoryScope,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("render candidate slug budget prompt: %w", err)
+		}
+		candidateBudget, err := s.wikiPromptInputBudget(ctx, candidatePrompt)
+		if err != nil {
+			return nil, nil, err
+		}
+		candidateBatches := splitWikiDocumentContentByTokenBudget(content, candidateBudget)
+		if len(candidateBatches) == 0 {
+			return nil, nil, fmt.Errorf("wiki candidate input budget is not positive")
+		}
+
 		fallbackAttempted := false
-		candidates, err = s.extractCandidateSlugs(ctx, in, analysisContent, previousSlugs)
+		for _, batch := range candidateBatches {
+			batchCandidates, extractErr := s.extractCandidateSlugs(ctx, in, batch, previousSlugs)
+			if extractErr != nil {
+				err = extractErr
+				break
+			}
+			candidates = mergeWikiIngestV2Candidates(candidates, batchCandidates)
+		}
 		if err != nil {
 			logger.Warnf(ctx, "【Wiki生成】 phase=candidate_extract 候选提取失败，回退到 legacy 知识提取: eid=%d library_id=%d file_id=%d err=%v",
 				in.Eid, in.LibraryID, in.FileID, err)
 			fallbackAttempted = true
-			fallbackCandidates, fallbackErr := s.extractKnowledgeCandidates(ctx, in, analysisContent, previousSlugs)
+			fallbackCandidates, fallbackErr := s.extractKnowledgeCandidatesFromBatches(ctx, in, candidateBatches, previousSlugs)
 			if fallbackErr != nil {
 				logger.Errorf(ctx, "【Wiki生成】 主候选与 legacy 候选均解析失败，降级为仅生成摘要: eid=%d library_id=%d file_id=%d err=%v",
 					in.Eid, in.LibraryID, in.FileID, fallbackErr)
@@ -136,7 +168,7 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 		if len(candidates) == 0 && !fallbackAttempted {
 			logger.Warnf(ctx, "【Wiki生成】 主候选提取为空，启用 legacy fallback: eid=%d library_id=%d file_id=%d",
 				in.Eid, in.LibraryID, in.FileID)
-			fallbackCandidates, fallbackErr := s.extractKnowledgeCandidates(ctx, in, analysisContent, previousSlugs)
+			fallbackCandidates, fallbackErr := s.extractKnowledgeCandidatesFromBatches(ctx, in, candidateBatches, previousSlugs)
 			if fallbackErr != nil {
 				logger.Errorf(ctx, "【Wiki生成】 y fallback 解析失败，降级为仅生成摘要: eid=%d library_id=%d file_id=%d err=%v",
 					in.Eid, in.LibraryID, in.FileID, fallbackErr)
@@ -228,6 +260,31 @@ func attachWikiCitationSources(candidates []wikiIngestV2Candidate, citations map
 	for i := range candidates {
 		candidates[i].SourceChunks = dedupeWikiChunkRefs(append(candidates[i].SourceChunks, citations[candidates[i].Slug]...))
 	}
+}
+
+func mergeWikiIngestV2Candidates(existing, incoming []wikiIngestV2Candidate) []wikiIngestV2Candidate {
+	indexes := make(map[string]int, len(existing)+len(incoming))
+	merged := append([]wikiIngestV2Candidate(nil), existing...)
+	for i, candidate := range merged {
+		indexes[strings.TrimSpace(candidate.Slug)] = i
+	}
+	for _, candidate := range incoming {
+		slug := strings.TrimSpace(candidate.Slug)
+		if index, ok := indexes[slug]; ok {
+			merged[index] = mergeWikiIngestV2Candidate(merged[index], candidate)
+			continue
+		}
+		indexes[slug] = len(merged)
+		merged = append(merged, candidate)
+	}
+	return merged
+}
+
+func (s *WikiIngestV2Service) wikiPromptInputBudget(ctx context.Context, promptOverhead string) (int, error) {
+	if budgeter, ok := s.llm.(wikiPromptInputBudgeter); ok {
+		return budgeter.InputBudget(ctx, promptOverhead)
+	}
+	return tokenlimit.DefaultContextBudget, nil
 }
 
 func (s *WikiIngestV2Service) deduplicateWikiCandidates(ctx context.Context, in WikiIngestV2MapDocumentInput, candidates []wikiIngestV2Candidate) ([]wikiIngestV2Candidate, error) {
@@ -380,6 +437,18 @@ func (s *WikiIngestV2Service) extractKnowledgeCandidates(ctx context.Context, in
 	return flattenWikiCandidateBatch(ctx, "legacy_knowledge_extract", batch), nil
 }
 
+func (s *WikiIngestV2Service) extractKnowledgeCandidatesFromBatches(ctx context.Context, in WikiIngestV2MapDocumentInput, batches []string, previousSlugs string) ([]wikiIngestV2Candidate, error) {
+	var candidates []wikiIngestV2Candidate
+	for _, batch := range batches {
+		batchCandidates, err := s.extractKnowledgeCandidates(ctx, in, batch, previousSlugs)
+		if err != nil {
+			return nil, err
+		}
+		candidates = mergeWikiIngestV2Candidates(candidates, batchCandidates)
+	}
+	return candidates, nil
+}
+
 func (s *WikiIngestV2Service) loadWikiCandidatePreviousSlugs(ctx context.Context, eid, libraryID int64) (string, error) {
 	if s == nil || s.db == nil {
 		return "(none — this is a new document)", nil
@@ -415,6 +484,58 @@ func (s *WikiIngestV2Service) loadWikiCandidatePreviousSlugs(ctx context.Context
 }
 
 func (s *WikiIngestV2Service) generateSummaryPage(ctx context.Context, in WikiIngestV2MapDocumentInput, content string, candidates []wikiIngestV2Candidate) (string, string, error) {
+	vars := map[string]any{
+		"Content":        "",
+		"SourceContext":  renderWikiIngestV2SourceContext("document_digest", in, len(candidates)),
+		"Language":       wikiIngestV2Language(in.Language),
+		"ExtractedSlugs": renderWikiSummarySlugListing(candidates),
+	}
+	promptOverhead, err := s.prompts.Render(WikiSummaryPrompt, vars)
+	if err != nil {
+		return "", "", fmt.Errorf("render wiki summary budget prompt: %w", err)
+	}
+	budget, err := s.wikiPromptInputBudget(ctx, promptOverhead)
+	if err != nil {
+		return "", "", err
+	}
+	batches := splitWikiDocumentContentByTokenBudget(content, budget)
+	if len(batches) == 0 {
+		return "", "", fmt.Errorf("wiki summary input budget is not positive")
+	}
+	if len(batches) == 1 {
+		return s.generateSummaryPageForContent(ctx, in, batches[0], candidates)
+	}
+
+	partials := make([]string, 0, len(batches))
+	for _, batch := range batches {
+		line, body, err := s.generateSummaryPageForContent(ctx, in, batch, candidates)
+		if err != nil {
+			return "", "", err
+		}
+		partials = append(partials, "SUMMARY: "+line+"\n\n"+body)
+	}
+
+	for len(partials) > 1 {
+		mergeInput := strings.Join(partials, "\n\n")
+		mergeBatches := splitWikiDocumentContentByTokenBudget(mergeInput, budget)
+		if len(mergeBatches) >= len(partials) {
+			return "", "", fmt.Errorf("wiki summary reduction cannot fit partial results into context budget")
+		}
+		next := make([]string, 0, len(mergeBatches))
+		for _, batch := range mergeBatches {
+			line, body, err := s.generateSummaryPageForContent(ctx, in, batch, candidates)
+			if err != nil {
+				return "", "", err
+			}
+			next = append(next, "SUMMARY: "+line+"\n\n"+body)
+		}
+		partials = next
+	}
+	line, body := splitSummaryLine(partials[0])
+	return line, body, nil
+}
+
+func (s *WikiIngestV2Service) generateSummaryPageForContent(ctx context.Context, in WikiIngestV2MapDocumentInput, content string, candidates []wikiIngestV2Candidate) (string, string, error) {
 	prompt, err := s.prompts.Render(WikiSummaryPrompt, map[string]any{
 		"Content":        content,
 		"SourceContext":  renderWikiIngestV2SourceContext("document_digest", in, len(candidates)),

@@ -1,5 +1,9 @@
 package model
 
+import (
+	"strings"
+)
+
 // RecordingMemoryEntity 是安心录决策洞察专属的实体档案。
 // 它不复用通用 entities 表，避免会议属性污染 RAG 与知识图谱。
 type RecordingMemoryEntity struct {
@@ -68,4 +72,36 @@ type RecordingMemoryEntityRelation struct {
 
 func (RecordingMemoryEntityRelation) TableName() string {
 	return "recording_memory_entity_relations"
+}
+
+// ListActiveRecordingMemoryPersonNames 返回指定 owner 下有效的 person 实体 canonical_name，
+// 按最近事实时间倒序，供语音解析热词使用。
+// 只取 canonical_name（不含 aliases），已融合（merged_into_id != 0）与已删除的不计入。
+func ListActiveRecordingMemoryPersonNames(eid, ownerID int64, limit int) ([]string, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	var entities []RecordingMemoryEntity
+	if err := DB.Model(&RecordingMemoryEntity{}).
+		Where("eid = ? AND owner_id = ? AND entity_type = ? AND merged_into_id = ? AND is_deleted = ? AND normalized_name <> ?",
+			eid, ownerID, "person", 0, false, "").
+		Order("last_fact_at DESC").
+		Limit(limit).
+		Find(&entities).Error; err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entities))
+	seen := make(map[string]struct{}, len(entities))
+	for _, entity := range entities {
+		name := strings.TrimSpace(entity.CanonicalName)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names, nil
 }

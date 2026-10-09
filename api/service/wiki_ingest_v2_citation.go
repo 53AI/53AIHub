@@ -9,10 +9,29 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/tokenlimit"
 	"github.com/53AI/53AIHub/model"
 )
 
 const wikiIngestV2CitationChunkLimit = 6000
+
+func splitWikiDocumentContentByTokenBudget(content string, budget int) []string {
+	if strings.TrimSpace(content) == "" || budget <= 0 {
+		return nil
+	}
+
+	runes := []rune(content)
+	maxRunes := budget * 3
+	batches := make([]string, 0, (len(runes)+maxRunes-1)/maxRunes)
+	for start := 0; start < len(runes); start += maxRunes {
+		end := start + maxRunes
+		if end > len(runes) {
+			end = len(runes)
+		}
+		batches = append(batches, tokenlimit.TruncateContent(string(runes[start:end]), budget))
+	}
+	return batches
+}
 
 func (s *WikiIngestV2Service) classifyChunkCitations(
 	ctx context.Context,
@@ -26,74 +45,87 @@ func (s *WikiIngestV2Service) classifyChunkCitations(
 		return map[string][]string{}, nil, chunks, nil
 	}
 
-	selectedChunks := selectWikiCitationChunks(chunks, candidates)
-	prompt, err := s.prompts.Render(WikiChunkCitationPrompt, map[string]any{
+	promptOverhead, err := s.prompts.Render(WikiChunkCitationPrompt, map[string]any{
 		"CandidateSlugs": renderWikiCandidateSlugsXML(candidates),
-		"ChunksXML":      renderWikiSyntheticChunksXML(selectedChunks),
+		"ChunksXML":      "",
 		"SourceContext":  renderWikiIngestV2SourceContext("citation_selection", in, len(candidates)),
 		"Language":       wikiIngestV2Language(in.Language),
 	})
 	if err != nil {
 		return nil, nil, chunks, fmt.Errorf("render wiki citation prompt: %w", err)
 	}
-
-	raw, err := s.llm.Generate(ctx, prompt)
+	budget, err := s.wikiPromptInputBudget(ctx, promptOverhead)
 	if err != nil {
-		return nil, nil, chunks, fmt.Errorf("classify chunk citations failed: %w", err)
+		return nil, nil, chunks, err
+	}
+	chunkRunes := (budget - 17) * 3
+	if chunkRunes < 3 {
+		chunkRunes = 3
+	}
+	if chunkRunes > wikiIngestV2CitationChunkLimit {
+		chunkRunes = wikiIngestV2CitationChunkLimit
+	}
+	chunks = splitWikiIngestContentIntoChunks(content, chunkRunes)
+	chunkBatches := batchWikiCitationChunks(chunks, budget)
+	citations := make(map[string][]string)
+	var discovered []wikiIngestV2Candidate
+	for _, batch := range chunkBatches {
+		prompt, renderErr := s.prompts.Render(WikiChunkCitationPrompt, map[string]any{
+			"CandidateSlugs": renderWikiCandidateSlugsXML(candidates),
+			"ChunksXML":      renderWikiSyntheticChunksXML(batch),
+			"SourceContext":  renderWikiIngestV2SourceContext("citation_selection", in, len(candidates)),
+			"Language":       wikiIngestV2Language(in.Language),
+		})
+		if renderErr != nil {
+			return nil, nil, chunks, fmt.Errorf("render wiki citation prompt: %w", renderErr)
+		}
+		raw, generateErr := s.llm.Generate(ctx, prompt)
+		if generateErr != nil {
+			return nil, nil, chunks, fmt.Errorf("classify chunk citations failed: %w", generateErr)
+		}
+
+		batchResult, warnings := decodeWikiCitationBatch(raw)
+		for _, warning := range warnings {
+			logger.Warnf(ctx, "【Wiki生成】 %s", warning)
+		}
+		for slug, refs := range batchResult.Citations {
+			citations[slug] = dedupeWikiChunkRefs(append(citations[slug], filterKnownChunkRefs(refs, batch)...))
+		}
+		discovered = mergeWikiIngestV2Candidates(discovered, flattenWikiDiscoveredSlugs(batchResult.NewSlugs))
 	}
 
-	batch, warnings := decodeWikiCitationBatch(raw)
-	for _, warning := range warnings {
-		logger.Warnf(ctx, "【Wiki生成】 %s", warning)
-	}
-
-	citations := make(map[string][]string, len(batch.Citations))
-	for slug, refs := range batch.Citations {
-		citations[slug] = filterKnownChunkRefs(refs, chunks)
-	}
-
-	return citations, flattenWikiDiscoveredSlugs(batch.NewSlugs), chunks, nil
+	return citations, discovered, chunks, nil
 }
 
-func selectWikiCitationChunks(chunks map[string]wikiIngestV2SyntheticChunk, candidates []wikiIngestV2Candidate) map[string]wikiIngestV2SyntheticChunk {
-	if len(chunks) <= 2 || len(candidates) == 0 {
-		return chunks
-	}
-	terms := make([]string, 0, len(candidates)*3)
-	for _, candidate := range candidates {
-		terms = append(terms, strings.TrimSpace(candidate.Name))
-		terms = append(terms, candidate.Aliases...)
-		if slash := strings.LastIndex(candidate.Slug, "/"); slash >= 0 {
-			terms = append(terms, strings.ReplaceAll(candidate.Slug[slash+1:], "-", " "))
-		}
+func batchWikiCitationChunks(chunks map[string]wikiIngestV2SyntheticChunk, budget int) []map[string]wikiIngestV2SyntheticChunk {
+	if len(chunks) == 0 || budget <= 0 {
+		return nil
 	}
 	ids := make([]string, 0, len(chunks))
 	for id := range chunks {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	selected := make(map[string]wikiIngestV2SyntheticChunk)
+
+	const perChunkOverheadTokens = 16
+	batches := make([]map[string]wikiIngestV2SyntheticChunk, 0, 1)
+	current := make(map[string]wikiIngestV2SyntheticChunk)
+	usedTokens := 0
 	for _, id := range ids {
-		content := strings.ToLower(chunks[id].Content)
-		for _, term := range terms {
-			term = strings.ToLower(strings.TrimSpace(term))
-			if term != "" && strings.Contains(content, term) {
-				selected[id] = chunks[id]
-				break
-			}
+		chunk := chunks[id]
+		tokens := (len([]rune(chunk.Content))+2)/3 + perChunkOverheadTokens
+		if len(current) > 0 && usedTokens+tokens > budget {
+			batches = append(batches, current)
+			current = make(map[string]wikiIngestV2SyntheticChunk)
+			usedTokens = 0
 		}
+		current[id] = chunk
+		usedTokens += tokens
 	}
-	if len(selected) == 0 {
-		fallbackCount := 2
-		if len(ids) < fallbackCount {
-			fallbackCount = len(ids)
-		}
-		for _, id := range ids[:fallbackCount] {
-			selected[id] = chunks[id]
-		}
+	if len(current) > 0 {
+		batches = append(batches, current)
 	}
-	logger.Debugf(context.Background(), "【Wiki生成】 k 预筛选 total=%d selected=%d", len(chunks), len(selected))
-	return selected
+	return batches
 }
 
 func splitWikiIngestContentIntoChunks(content string, maxRunes int) map[string]wikiIngestV2SyntheticChunk {
@@ -102,65 +134,13 @@ func splitWikiIngestContentIntoChunks(content string, maxRunes int) map[string]w
 		return map[string]wikiIngestV2SyntheticChunk{}
 	}
 	if maxRunes <= 0 {
-		maxRunes = 6000
+		maxRunes = wikiIngestV2CitationChunkLimit
 	}
-
-	blocks := splitWikiIngestContentBlocks(content)
-	if len(blocks) == 0 {
-		return map[string]wikiIngestV2SyntheticChunk{
-			"c000": {
-				ID:      "c000",
-				Content: content,
-			},
-		}
-	}
-
-	chunks := make(map[string]wikiIngestV2SyntheticChunk)
-	current := make([]string, 0, len(blocks))
-	currentRunes := 0
-	chunkIndex := 0
-
-	flush := func() {
-		if len(current) == 0 {
-			return
-		}
-		id := fmt.Sprintf("c%03d", chunkIndex)
-		chunkIndex++
-		chunks[id] = wikiIngestV2SyntheticChunk{
-			ID:      id,
-			Content: strings.Join(current, "\n\n"),
-		}
-		current = current[:0]
-		currentRunes = 0
-	}
-
-	for _, block := range blocks {
-		blockRunes := len([]rune(block))
-		if len(current) > 0 && currentRunes+2+blockRunes > maxRunes {
-			flush()
-		}
-		if blockRunes > maxRunes {
-			flush()
-			id := fmt.Sprintf("c%03d", chunkIndex)
-			chunkIndex++
-			chunks[id] = wikiIngestV2SyntheticChunk{
-				ID:      id,
-				Content: truncateWikiRunes(block, maxRunes),
-			}
-			continue
-		}
-		current = append(current, block)
-		currentRunes += blockRunes
-	}
-	flush()
-
-	if len(chunks) == 0 {
-		return map[string]wikiIngestV2SyntheticChunk{
-			"c000": {
-				ID:      "c000",
-				Content: content,
-			},
-		}
+	parts := splitWikiDocumentContentByTokenBudget(content, (maxRunes+2)/3)
+	chunks := make(map[string]wikiIngestV2SyntheticChunk, len(parts))
+	for i, part := range parts {
+		id := fmt.Sprintf("c%03d", i)
+		chunks[id] = wikiIngestV2SyntheticChunk{ID: id, Content: part}
 	}
 	return chunks
 }

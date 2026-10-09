@@ -60,7 +60,9 @@ func SyncOrganization(c *gin.Context) {
 	switch from {
 	case model.DepartmentFromWecom:
 		go func() {
-			err := service.WeComRunSyncOrganization(enterprise, params)
+			err := runOrganizationSync(func() error {
+				return service.WeComRunSyncOrganization(enterprise, params)
+			})
 			if err != nil {
 				logger.SysErrorf("sync organization from wecom failed: %v", err)
 			}
@@ -68,16 +70,20 @@ func SyncOrganization(c *gin.Context) {
 	case model.DepartmentFromDingtalk:
 		go func() {
 			params.SuiteID = config.GetDingtalkSuiteID()
-			err := service.DingtalkRunSyncOrganization(enterprise, params)
+			err := runOrganizationSync(func() error {
+				return service.DingtalkRunSyncOrganization(enterprise, params)
+			})
 			if err != nil {
-				// 当同步失败时，删除锁
-				common.LOCKER.Unlock(lockKey)
 				logger.SysErrorf("sync organization from dingtalk failed: %v", err)
 			}
 		}()
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+func runOrganizationSync(run func() error) error {
+	return run()
 }
 
 // GetSyncProgress 获取同步进度

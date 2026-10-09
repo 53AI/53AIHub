@@ -23,13 +23,11 @@ func collectGraphGenerationKnowledgeChunks(chunks []model.DocumentChunk) ([]mode
 	for _, chunk := range chunks {
 		if chunk.ChunkType != "knowledge" {
 			skipped++
-			continue
-		}
-		if len([]rune(strings.TrimSpace(chunk.Content))) < 40 {
+		} else if strings.TrimSpace(chunk.Content) == "" {
 			skipped++
-			continue
+		} else {
+			filtered = append(filtered, chunk)
 		}
-		filtered = append(filtered, chunk)
 	}
 	return filtered, skipped
 }

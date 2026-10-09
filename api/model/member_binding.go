@@ -31,6 +31,7 @@ type MemberBinding struct {
 	BindValue string `json:"bind_value" gorm:"column:bindvalue;size:255;not null;default:'';comment:'WeChat Enterprise, DingTalk unionid'"`
 	Status    int    `json:"status" gorm:"column:status;not null;default:0;comment:'Status'"`
 	From      int    `json:"from" gorm:"column:from;not null;default:0;comment:'Binding source: 0-Default;1-WeChat Enterprise;'"`
+	DeletedAt int64  `json:"deleted_at" gorm:"column:deleted_at;not null;default:0;index;comment:'Soft deletion time in Unix milliseconds'"`
 	BaseModel
 }
 
@@ -86,7 +87,7 @@ func validateMemberBinding(binding *MemberBinding) error {
 // GetMemberBindingByID retrieves a member binding by its ID
 func GetMemberBindingByID(id int64) (*MemberBinding, error) {
 	var binding MemberBinding
-	result := DB.Where("id = ?", id).First(&binding)
+	result := DB.Where("id = ? AND deleted_at = ?", id, 0).First(&binding)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("member binding not found with ID %d", id)
@@ -99,7 +100,7 @@ func GetMemberBindingByID(id int64) (*MemberBinding, error) {
 // GetMemberBindingByMID retrieves member bindings by member ID
 func GetMemberBindingByMID(mid int64) ([]*MemberBinding, error) {
 	var bindings []*MemberBinding
-	result := DB.Where("mid = ?", mid).Find(&bindings)
+	result := DB.Where("mid = ? AND deleted_at = ?", mid, 0).Find(&bindings)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -108,7 +109,7 @@ func GetMemberBindingByMID(mid int64) ([]*MemberBinding, error) {
 
 func GetMemberBindingByMidAndFrom(mid int64, from int) (*MemberBinding, error) {
 	var binding MemberBinding
-	result := DB.Where(map[string]interface{}{"mid": mid, "from": from}).First(&binding)
+	result := DB.Where(map[string]interface{}{"mid": mid, "from": from, "deleted_at": 0}).First(&binding)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -151,6 +152,18 @@ func GetMemberBindingByDepartmentFromBackend(mid int64, tx *gorm.DB) (*MemberBin
 // GetMemberBindingByBindValue retrieves a member binding by bind value and source
 func GetMemberBindingByBindValue(eid int64, bindValue string, from int) (*MemberBinding, error) {
 	var binding MemberBinding
+	result := DB.Where(map[string]interface{}{"eid": eid, "bindvalue": bindValue, "from": from, "deleted_at": 0}).First(&binding)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, result.Error
+	}
+	return &binding, nil
+}
+
+func GetMemberBindingByBindValueIncludingDeleted(eid int64, bindValue string, from int) (*MemberBinding, error) {
+	var binding MemberBinding
 	result := DB.Where(map[string]interface{}{"eid": eid, "bindvalue": bindValue, "from": from}).First(&binding)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
@@ -166,10 +179,10 @@ func GetMemberBindings(eid int64, from int, status int, offset, limit int) ([]*M
 	var bindings []*MemberBinding
 	var count int64
 
-	query := DB.Model(&MemberBinding{}).Where("eid = ?", eid)
+	query := DB.Model(&MemberBinding{}).Where("eid = ? AND deleted_at = ?", eid, 0)
 
 	if from > 0 {
-		query = query.Where("from = ?", from)
+		query = query.Where(map[string]interface{}{"from": from})
 	}
 
 	if status >= 0 {
@@ -208,11 +221,12 @@ func UpdateMemberBinding(binding *MemberBinding) error {
 
 	// Update binding in database
 	result := DB.Model(binding).Updates(map[string]interface{}{
-		"mid":       binding.MID,
-		"name":      binding.Name,
-		"bindvalue": binding.BindValue,
-		"status":    binding.Status,
-		"from":      binding.From,
+		"mid":        binding.MID,
+		"name":       binding.Name,
+		"bindvalue":  binding.BindValue,
+		"status":     binding.Status,
+		"from":       binding.From,
+		"deleted_at": binding.DeletedAt,
 	})
 
 	return result.Error
@@ -268,10 +282,10 @@ func DeactivateMemberBinding(id int64) error {
 // CountMemberBindings counts the number of bindings in an enterprise
 func CountMemberBindings(eid int64, from int) (int64, error) {
 	var count int64
-	query := DB.Model(&MemberBinding{}).Where("eid = ?", eid)
+	query := DB.Model(&MemberBinding{}).Where("eid = ? AND deleted_at = ?", eid, 0)
 
 	if from > 0 {
-		query = query.Where("from = ?", from)
+		query = query.Where(map[string]interface{}{"from": from})
 	}
 
 	result := query.Count(&count)
@@ -281,7 +295,7 @@ func CountMemberBindings(eid int64, from int) (int64, error) {
 // GetMemberBindingsBySource retrieves all bindings from a specific source
 func GetMemberBindingsBySource(eid int64, from int) ([]*MemberBinding, error) {
 	var bindings []*MemberBinding
-	result := DB.Where("eid = ? AND from = ?", eid, from).Find(&bindings)
+	result := DB.Where(map[string]interface{}{"eid": eid, "from": from, "deleted_at": 0}).Find(&bindings)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return nil, nil

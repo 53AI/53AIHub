@@ -24,6 +24,7 @@ const (
 	EntityTypeMatter       = "Matter"       // 事项（讨论或决定的具体事务，提炼核心动作与对象）
 	EntityTypeCommitment   = "Commitment"   // 承诺（明确认领的行动或交付，尽量注明谁和何时）
 	EntityTypePrinciple    = "Principle"    // 原则（决策依据的规则或优先次序，如"安全优先""成本可控"）
+	EntityTypeDecision     = "Decision"     // 决策（会议形成并需长期追踪的决策对象）
 	EntityTypeRedLine      = "RedLine"      // 红线（不可逾越的硬性底线，如"不得低于成本价""禁止使用未授权数据"）
 	EntityTypeDisagreement = "Disagreement" // 分歧（意见不一致的具体观点，需列明争议双方和核心差异）
 	EntityTypeRisk         = "Risk"         // 风险（可能影响目标的不确定性因素，指出来源与可能后果）

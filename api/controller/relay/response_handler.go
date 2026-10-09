@@ -462,6 +462,11 @@ func canAggregateCompactChatPayload(payload map[string]interface{}) (string, str
 	if payload == nil {
 		return "", "", false
 	}
+	for key := range payload {
+		if key != "id" && key != "object" && key != "created" && key != "model" && key != "choices" {
+			return "", "", false
+		}
+	}
 	if payload["object"] == "process.step" {
 		return "", "", false
 	}

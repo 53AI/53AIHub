@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
@@ -134,7 +135,39 @@ func (s *WikiIngestV2Service) rewriteSingleWikiPage(
 	if slug == "" {
 		return nil
 	}
+	rewrite := func(ctx context.Context) error {
+		return s.rewriteSingleWikiPageInTx(ctx, eid, libraryID, slug, refs, liveTitles, liveSlugSet, redirectTargets)
+	}
+	if !common.IsRedisEnabled() || common.RDB == nil {
+		return rewrite(ctx)
+	}
+	for {
+		lease, acquired, err := s.pageUpdateBatchAcquire(ctx, wikiPageUpdateBatchLockKey(eid, libraryID, slug))
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			if err := waitWikiPageUpdateBatch(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+		_, err = runWithWikiPageUpdateBatchLease(ctx, lease, func(ctx context.Context) (bool, error) {
+			return false, rewrite(ctx)
+		})
+		return err
+	}
+}
 
+func (s *WikiIngestV2Service) rewriteSingleWikiPageInTx(
+	ctx context.Context,
+	eid, libraryID int64,
+	slug string,
+	refs []linkRef,
+	liveTitles map[string]string,
+	liveSlugSet map[string]struct{},
+	redirectTargets map[string]string,
+) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		page, err := loadWikiPageForWrite(tx, eid, libraryID, slug)
 		if err != nil {
@@ -174,8 +207,53 @@ func (s *WikiIngestV2Service) rewriteSingleWikiPage(
 		}
 		page.Body = rewritten
 		links := buildWikiPageLinksForContent(page.ID, eid, libraryID, page.Body, s.linkSvc, tx, page.UpdaterID)
-		return persistWikiPageWrite(ctx, tx, page, sources, links, "wiki postprocess")
+		return persistWikiPagePostProcessWrite(ctx, tx, page, sources, links)
 	})
+}
+
+func persistWikiPagePostProcessWrite(ctx context.Context, tx *gorm.DB, page *model.WikiPage, sources []model.WikiPageSource, links []model.WikiPageLink) error {
+	if err := saveWikiPageForWrite(tx, page); err != nil {
+		return err
+	}
+	if err := tx.Where("from_page_id = ?", page.ID).Delete(&model.WikiPageLink{}).Error; err != nil {
+		return err
+	}
+	if len(links) > 0 {
+		for i := range links {
+			links[i].FromPageID = page.ID
+			links[i].Eid = page.Eid
+		}
+		if err := tx.Create(&links).Error; err != nil {
+			return err
+		}
+	}
+	if page.CurrentVersionID == 0 {
+		return persistWikiPageWrite(ctx, tx, page, sources, links, "wiki postprocess")
+	}
+	aliasesJSON, sourcesJSON, linksJSON, backlinksJSON, err := buildWikiPageVersionMetadata(tx, page, sources, links)
+	if err != nil {
+		return err
+	}
+	result := tx.Model(&model.WikiPageVersion{}).
+		Where("id = ? AND eid = ? AND page_id = ?", page.CurrentVersionID, page.Eid, page.ID).
+		Updates(map[string]any{
+			"title":          page.Title,
+			"slug":           page.Slug,
+			"page_type":      page.PageType,
+			"aliases_json":   aliasesJSON,
+			"sources_json":   sourcesJSON,
+			"links_json":     linksJSON,
+			"backlinks_json": backlinksJSON,
+			"body":           page.Body,
+			"body_format":    page.BodyFormat,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return persistWikiPageWrite(ctx, tx, page, sources, links, "wiki postprocess")
+	}
+	return nil
 }
 
 func uniqueWikiUpdateSlugs(updates []WikiSlugUpdate) []string {

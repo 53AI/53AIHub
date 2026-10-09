@@ -9,11 +9,11 @@ type RecordingMemoryAttributeSchema struct {
 
 // RecordingMemoryEntitySchema 描述一类实体的属性约束。
 type RecordingMemoryEntitySchema struct {
-	Label      string                                    `json:"label"` // 类型中文展示名（人物/事项/风险/原则）
+	Label      string                                    `json:"label"` // 类型中文展示名（人物/事项/风险/承诺/决策）
 	Attributes map[string]RecordingMemoryAttributeSchema `json:"attributes"`
 }
 
-// RecordingMemoryEntitySchemas 全局唯一权威 schema：领导要求的 4 类实体及每类属性/枚举。
+// RecordingMemoryEntitySchemas 全局唯一权威 schema：5 类实体及每类属性/枚举。
 // 硬编码不存表；prompt 生成、编译落库、列表/详情接口、前端展示均以此为限。
 var RecordingMemoryEntitySchemas = map[string]RecordingMemoryEntitySchema{
 	"person": {Label: "人物",
@@ -40,12 +40,19 @@ var RecordingMemoryEntitySchemas = map[string]RecordingMemoryEntitySchema{
 			"response":    {Label: "应对措施"},
 		},
 	},
-	"principle": {Label: "原则",
+	"commitment": {Label: "承诺",
 		Attributes: map[string]RecordingMemoryAttributeSchema{
-			"principle_type":   {Label: "类型", Values: map[string]string{"company_policy": "公司制度", "industry_norm": "行业规范", "compliance_req": "合规要求", "business_principle": "商业准则"}},
-			"binding_force":    {Label: "约束力", Values: map[string]string{"mandatory": "强制", "recommended": "建议", "reference": "参考"}},
-			"applicable_scope": {Label: "适用范围"},
-			"exceptions":       {Label: "例外情况"},
+			"fulfillment_status": {Label: "履约状态", Values: map[string]string{"not_started": "未开始", "in_progress": "履行中", "fulfilled": "已履行", "overdue": "已逾期"}},
+			"priority":           {Label: "优先级", Values: map[string]string{"high": "高", "medium": "中", "low": "低"}},
+			"due_date":           {Label: "承诺期限"},
+		},
+	},
+	"decision": {Label: "决策",
+		Attributes: map[string]RecordingMemoryAttributeSchema{
+			"decision_status": {Label: "决策状态", Values: map[string]string{"confirmed": "已确认", "proposed": "提议中", "rejected": "已否决", "deferred": "已搁置", "uncertain": "待定"}},
+			"decision_maker":  {Label: "决策人"},
+			"reason":          {Label: "决策依据"},
+			"impact_scope":    {Label: "影响范围"},
 		},
 	},
 }
@@ -76,25 +83,27 @@ type RecordingMemoryEntitySchemaView struct {
 }
 
 // recordingEntityTypeOrder 实体类型在 schema 数组返回中的顺序（与前端约定一致）。
-var recordingEntityTypeOrder = []string{"person", "matter", "risk", "principle"}
+var recordingEntityTypeOrder = []string{"person", "matter", "risk", "commitment", "decision"}
 
 // recordingEntityAttrOrder 每类实体属性在 schema 数组返回中的顺序（与前端约定一致）。
 var recordingEntityAttrOrder = map[string][]string{
-	"person":    {"company", "position", "relationship", "demand"},
-	"matter":    {"status", "priority", "dependency", "deliverable"},
-	"risk":      {"risk_type", "risk_level", "probability", "response"},
-	"principle": {"principle_type", "binding_force", "applicable_scope", "exceptions"},
+	"person":     {"company", "position", "relationship", "demand"},
+	"matter":     {"status", "priority", "dependency", "deliverable"},
+	"risk":       {"risk_type", "risk_level", "probability", "response"},
+	"commitment": {"fulfillment_status", "priority", "due_date"},
+	"decision":   {"decision_status", "decision_maker", "reason", "impact_scope"},
 }
 
 // recordingEnumValueOrder 枚举值在 schema 数组返回中的顺序（保持声明顺序、输出确定性）。
 var recordingEnumValueOrder = map[string][]string{
-	"person.relationship":      {"potential_customer", "customer", "partner", "competitor", "irrelevant"},
-	"matter.status":            {"todo", "in_progress", "completed", "shelved"},
-	"matter.priority":          {"high", "medium", "low"},
-	"risk.risk_type":           {"compliance", "delivery", "financial", "technical"},
-	"risk.risk_level":          {"high", "medium", "low"},
-	"principle.principle_type": {"company_policy", "industry_norm", "compliance_req", "business_principle"},
-	"principle.binding_force":  {"mandatory", "recommended", "reference"},
+	"person.relationship":           {"potential_customer", "customer", "partner", "competitor", "irrelevant"},
+	"matter.status":                 {"todo", "in_progress", "completed", "shelved"},
+	"matter.priority":               {"high", "medium", "low"},
+	"risk.risk_type":                {"compliance", "delivery", "financial", "technical"},
+	"risk.risk_level":               {"high", "medium", "low"},
+	"commitment.fulfillment_status": {"not_started", "in_progress", "fulfilled", "overdue"},
+	"commitment.priority":           {"high", "medium", "low"},
+	"decision.decision_status":      {"confirmed", "proposed", "rejected", "deferred", "uncertain"},
 }
 
 // RecordingMemoryEntitySchemaArray 返回按约定顺序排列的实体记忆 schema 数组。

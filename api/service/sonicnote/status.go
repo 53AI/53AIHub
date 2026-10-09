@@ -2,6 +2,8 @@ package sonicnote
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 )
 
@@ -55,6 +57,21 @@ func FriendlySyncError(err error) string {
 		}
 	}
 	return "SonicNote 服务暂不可用，请稍后重试"
+}
+
+// HTTPStatusForError 远端错误 → HTTP 状态码：设备 Key 无效 422，超时 504，其余（网络/远端 5xx）502。
+// 不用 401：401 在本系统专指用户登录态失效，前端会全局登出/重定向，设备 Key 无效不能与之混淆。
+func HTTPStatusForError(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout
+	}
+	if classifyAuthError(err) == ReasonKeyInvalid {
+		return http.StatusUnprocessableEntity
+	}
+	return http.StatusBadGateway
 }
 
 // CheckStatus 探测 SonicNote 可用性：用 apiKey 登录验证 Key 有效性，

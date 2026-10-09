@@ -66,7 +66,7 @@ func (q *RecordingFileQueryService) ListMyRecordingFiles(ctx context.Context, us
 	}
 
 	var files []model.File
-	qb := q.buildMyRecordingFilesQuery(library.ID, fileTypes, query.Path, query.GroupID)
+	qb := q.buildMyRecordingFilesQuery(library.ID, fileTypes, query.Path, query.GroupID, query.Scene, query.SceneUnrecognized)
 
 	if query.StartTime > 0 {
 		qb = qb.Where("created_time >= ?", query.StartTime)
@@ -87,7 +87,7 @@ func (q *RecordingFileQueryService) ListMyRecordingFiles(ctx context.Context, us
 	}
 
 	var total int64
-	countQ := q.buildMyRecordingFilesQuery(library.ID, fileTypes, query.Path, query.GroupID)
+	countQ := q.buildMyRecordingFilesQuery(library.ID, fileTypes, query.Path, query.GroupID, query.Scene, query.SceneUnrecognized)
 	if query.StartTime > 0 {
 		countQ = countQ.Where("created_time >= ?", query.StartTime)
 	}
@@ -100,7 +100,7 @@ func (q *RecordingFileQueryService) ListMyRecordingFiles(ctx context.Context, us
 	return files, total, nil
 }
 
-func (q *RecordingFileQueryService) buildMyRecordingFilesQuery(libraryID int64, fileTypes []int, pathFilter string, groupID int64) *gorm.DB {
+func (q *RecordingFileQueryService) buildMyRecordingFilesQuery(libraryID int64, fileTypes []int, pathFilter string, groupID int64, scene string, sceneUnrecognized bool) *gorm.DB {
 	qb := model.DB.Model(&model.File{}).
 		Where("eid = ? AND library_id = ? AND is_deleted = ?", q.eid, libraryID, false).
 		Where("origin_type IN ?", model.RecordingOriginTypes()).
@@ -108,6 +108,13 @@ func (q *RecordingFileQueryService) buildMyRecordingFilesQuery(libraryID int64, 
 
 	if groupID > 0 {
 		qb = qb.Where("group_id = ?", groupID)
+	}
+
+	if sceneUnrecognized {
+		qb = qb.Where("scene = ? AND insight_perspective = ?", "", string(model.InsightPerspectiveAuto))
+	} else if sceneCode := model.RecordingScene(scene); model.IsCanonicalScene(sceneCode) {
+		aliases := append([]string{scene}, model.SceneLegacyCodes(sceneCode)...)
+		qb = qb.Where("(scene = ? OR insight_perspective IN ?)", scene, aliases)
 	}
 
 	if strings.TrimSpace(pathFilter) != "" {

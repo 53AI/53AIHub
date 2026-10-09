@@ -22,7 +22,7 @@ type WikiCategoryGenerationInput struct {
 }
 
 type WikiCategoryMatchInput struct {
-	Category   model.WikiCategory
+	Categories []model.WikiCategory
 	Candidates []wikiIngestV2Candidate
 	Language   string
 }
@@ -32,26 +32,29 @@ type WikiCategoryMatchBatch struct {
 }
 
 type WikiCategoryMatchResult struct {
-	Slug    string `json:"slug"`
-	IsMatch bool   `json:"is_match"`
-	Reason  string `json:"reason"`
+	Slug       string  `json:"slug"`
+	CategoryID int64   `json:"category_id"`
+	Confidence float64 `json:"confidence"`
+	Reason     string  `json:"reason"`
 }
 
-// BuildWikiCategoryMatchPrompt 构造批量分类归属判断 prompt：
-// 一次 LLM 调用判断一批候选实体是否属于该分类（用分类名 + 描述 + 目标大类做语义判断）。
+// BuildWikiCategoryMatchPrompt 一次比较所有启用分类与候选实体。
 func BuildWikiCategoryMatchPrompt(input WikiCategoryMatchInput) (string, error) {
-	if strings.TrimSpace(input.Category.Name) == "" {
-		return "", fmt.Errorf("category name is required")
+	if len(input.Categories) == 0 {
+		return "", fmt.Errorf("categories are required")
 	}
-	var b strings.Builder
+	var categories, candidates strings.Builder
+	for _, category := range input.Categories {
+		fmt.Fprintf(&categories, "- category_id: %d, 名称: %s, 目标类型: %s, 适用范围: %s\n", category.ID, category.Name, category.TargetEntityType, category.Description)
+	}
 	for i, candidate := range input.Candidates {
-		fmt.Fprintf(&b, "%d. slug: %s, name: %s, type: %s, 摘要: %s\n", i+1, candidate.Slug, candidate.Name, firstNonEmpty(candidate.EntityType, "未知"), candidate.Description)
+		fmt.Fprintf(&candidates, "%d. slug: %s, name: %s, type: %s, 摘要: %s, 详情: %s\n", i+1, candidate.Slug, candidate.Name, firstNonEmpty(candidate.EntityType, "未知"), candidate.Description, truncateWikiText(candidate.Details, 400))
 	}
 	language := strings.TrimSpace(input.Language)
 	if language == "" {
 		language = "中文"
 	}
-	return fmt.Sprintf("你是分类器。判断下列候选实体是否属于分类「%s」。\n目标大类：%s\n分类描述：%s\n语言：%s\n仅当候选实体确实属于该分类时 is_match 为 true，否则 false。\n\n候选实体：\n%s\n\nresults 数组中的 slug 必须使用上方候选列表中的原始值，禁止修改、改写或省略。输出 JSON：{\"results\":[{\"slug\":\"候选slug\",\"is_match\":true,\"reason\":\"一句话原因\"}]}。只输出 JSON，不要额外文本。", input.Category.Name, input.Category.TargetEntityType, input.Category.Description, language, b.String()), nil
+	return fmt.Sprintf("你是分类器。请将每个候选实体与所有分类比较，依据实体内容和分类适用范围选最合适的唯一分类。目标类型只是参考，不是必须相同的硬条件；有合理归属时不要遗漏，没有合适分类时 category_id 为 0。不要因为多个分类都相关就重复归类。语言：%s\n\n分类：\n%s\n候选实体：\n%s\nresults 必须为每个候选 slug 恰好返回一项，slug 和 category_id 必须取自上方列表，禁止修改、改写或省略 slug。confidence 为 0 到 1，category_id=0 表示不归类。输出 JSON：{\"results\":[{\"slug\":\"候选slug\",\"category_id\":0,\"confidence\":0.8,\"reason\":\"一句话原因\"}]}。只输出 JSON，不要额外文本。", language, categories.String(), candidates.String()), nil
 }
 
 // CoarseCategoryMatch 粗筛：分类 target 大类与候选 type 的大类比较。

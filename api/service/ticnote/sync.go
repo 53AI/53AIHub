@@ -40,7 +40,14 @@ type SyncResult struct {
 // mu 防止同一实例并发同步（短时间多次点击触发）。
 type SyncService struct {
 	client *Client
-	mu     sync.Mutex
+	// deriveClient 为 true 时表示 singleton 默认客户端：实际请求按 AppKey 前缀新建客户端，
+	// 以正确路由 sit/海外域名；测试/调用方显式注入 client 时为 false，直接复用。
+	deriveClient bool
+	mu           sync.Mutex
+	// previewMu / previewList：预览远端列表的进程内短 TTL 缓存（TicNote 无远端分页，
+	// 避免每翻一页都重新登录 + 全量拉文件树）；跨实例不共享。
+	previewMu   sync.Mutex
+	previewList map[string]ticnotePreviewEntry
 	// createJobsFn 创建 RAG 解析任务；字段可替换便于测试断言管线触发。
 	createJobsFn func(ctx context.Context, eid, fileID int64, paramsJSON string) ([]*model.RagJob, error)
 	// esSyncFn 将新导入文件同步进 ES 索引（keyword 搜索依赖）；字段可替换便于测试断言。
@@ -50,11 +57,14 @@ type SyncService struct {
 
 // NewSyncService 创建 SyncService，client 为 nil 时使用默认客户端（按空 appkey 路由到默认域名）。
 func NewSyncService(client *Client) *SyncService {
+	derive := client == nil
 	if client == nil {
 		client = NewClient("")
 	}
 	return &SyncService{
 		client:       client,
+		deriveClient: derive,
+		previewList:  make(map[string]ticnotePreviewEntry),
 		createJobsFn: service.CreateRagJobsForRecordingFile,
 		esSyncFn:     elasticsearch.SyncFileToES,
 	}
@@ -66,6 +76,15 @@ var defaultSyncService = NewSyncService(nil)
 // GetSyncService 返回包级单例 SyncService。
 func GetSyncService() *SyncService {
 	return defaultSyncService
+}
+
+// clientFor 返回打特定 AppKey 的客户端：默认单例按 AppKey 前缀路由 sit/海外域名；
+// 测试/调用方显式注入的客户端优先（不按前缀重建）。
+func (s *SyncService) clientFor(appkey string) *Client {
+	if !s.deriveClient {
+		return s.client
+	}
+	return NewClient(appkey)
 }
 
 // resolveConfigs 解析同步目标配置：deviceID>0 取指定配置；否则取该 deviceType 全部启用配置（多 key）。
@@ -90,6 +109,10 @@ func finishJob(jobID int64, result *SyncResult, failedDetails []map[string]inter
 	if firstErr != nil && result.Discovered == 0 {
 		status = "failed"
 		errMsg = firstErr.Error()
+	} else if result.Completed == 0 && result.Skipped == 0 && result.Failed > 0 {
+		// 全部条目都失败（例如选中的远端录音都不存在）：不能算 completed
+		status = "failed"
+		errMsg = "全部条目同步失败"
 	}
 	detailsJSON := ""
 	if len(failedDetails) > 0 {
@@ -110,9 +133,13 @@ func finishJob(jobID int64, result *SyncResult, failedDetails []map[string]inter
 // deviceID>0 同步指定配置；deviceID=0 同步该 deviceType 全部启用配置（多 key 串行，单 job 合并计数）。
 // limit>0 时最多处理 limit 条远端录音（调试用，0=不限）。
 // 前端通过 GET /sync-status 轮询 job 进度。
-func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int) (int64, error) {
+func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (int64, error) {
 	if !s.mu.TryLock() {
 		return 0, ErrSyncInProgress
+	}
+	if len(remoteIDs) > 0 && deviceID <= 0 {
+		s.mu.Unlock()
+		return 0, fmt.Errorf("选中同步必须指定 device_id")
 	}
 
 	// 多实例防重入：进程内 mutex 只防同实例；DB 层再查一次 running 任务，
@@ -171,7 +198,7 @@ func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceTy
 			})
 		}
 		for _, cfg := range cfgs {
-			r, details, rErr := s.runSync(bgCtx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, onProgress)
+			r, details, rErr := s.runSync(bgCtx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, onProgress)
 			if r != nil { // runSync 失败时（如登录/列表失败）返回 nil result，需防空指针
 				result.Discovered += r.Discovered
 				result.Completed += r.Completed
@@ -201,11 +228,14 @@ func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceTy
 // Sync 同步执行一次同步（同步入口，供测试/调用方等待结果）。
 // 语义同 StartSync（deviceID 指定单配置 / 缺省该 type 全部配置串行）。
 // 返回合并结果；所有配置均失败（无任何处理）时返回 error。
-func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int) (*SyncResult, error) {
+func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (*SyncResult, error) {
 	if !s.mu.TryLock() {
 		return nil, ErrSyncInProgress
 	}
 	defer s.mu.Unlock()
+	if len(remoteIDs) > 0 && deviceID <= 0 {
+		return nil, fmt.Errorf("选中同步必须指定 device_id")
+	}
 
 	// 多实例防重入（同上）：DB 层查 running，避免跨实例并发同步同一设备（优先于配置查询）。
 	if running, rerr := model.HasRunningRecordingSyncJob(eid, userID, deviceType); rerr == nil && running {
@@ -238,7 +268,7 @@ func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType st
 	var failedDetails []map[string]interface{}
 	var firstErr error
 	for _, cfg := range cfgs {
-		r, details, rErr := s.runSync(ctx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, nil)
+		r, details, rErr := s.runSync(ctx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, nil)
 		if r != nil { // runSync 失败时（如登录/列表失败）返回 nil result，需防空指针
 			result.Discovered += r.Discovered
 			result.Completed += r.Completed
@@ -279,28 +309,49 @@ var getExistingSyncSourceStates = model.GetExistingSyncSourceStates
 // runSync 核心同步执行：Login → 全项目拉录音列表 → 并发去重/下载/落库。
 // 幂等补缺：已同步且文件有效跳过；已同步但文件被删（软删）重导；未同步导入。
 // 同步执行，调用方负责防重入锁；job 状态与进度在此更新。
-func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, provider, appkey string, force bool, limit int, onProgress func(*SyncResult)) (*SyncResult, []map[string]interface{}, error) {
-	token, err := s.client.Login(ctx, appkey)
+func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, provider, appkey string, force bool, limit int, remoteIDs []string, skipDeleted bool, onProgress func(*SyncResult)) (*SyncResult, []map[string]interface{}, error) {
+	client := s.clientFor(appkey)
+	token, err := client.Login(ctx, appkey)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	recordings, err := s.client.ListRecordings(ctx, token)
+	recordings, err := client.ListRecordings(ctx, token)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	result := &SyncResult{}
+	if limit > 0 && len(remoteIDs) > limit {
+		remoteIDs = remoteIDs[:limit]
+	}
+	var selected, pending map[string]struct{}
+	if len(remoteIDs) > 0 {
+		selected = make(map[string]struct{}, len(remoteIDs))
+		pending = make(map[string]struct{}, len(remoteIDs))
+		for _, id := range remoteIDs {
+			selected[id] = struct{}{}
+			pending[id] = struct{}{}
+		}
+	}
 	var failedDetails []map[string]interface{}
 	var resultMu sync.Mutex
 
+	// 选中模式：只保留选中项（命中项从 pending 移除）
+	recordings = selectTicNoteRecordings(recordings, selected, pending)
+
 	// 批量查去重（join files 判文件有效：已同步+文件在→跳过，软删→重导）
-	remoteIDs := make([]string, 0, len(recordings))
+	allRemoteIDs := make([]string, 0, len(recordings))
 	for _, r := range recordings {
-		remoteIDs = append(remoteIDs, r.RecordID)
+		allRemoteIDs = append(allRemoteIDs, r.RecordID)
 	}
-	existing, err := getExistingSyncSourceStates(ctx, eid, userID, provider, remoteIDs)
+	existing, err := getExistingSyncSourceStates(ctx, eid, userID, provider, allRemoteIDs)
 	if err != nil {
+		if selected != nil {
+			// 选中模式条目少：查询失败直接失败（返回 nil result 使 job 置 failed），
+			// 避免把已选中项误判为"远端未找到"，也避免 job 被标成 completed。
+			return nil, nil, fmt.Errorf("查询同步状态失败: %w", err)
+		}
 		// 去重查询失败：整批跳过（宁可不处理，也不误判未同步撞唯一键全失败）
 		logger.Warnf(ctx, "【TicNote】批量去重查询失败，整批跳过: %v", err)
 		for range recordings {
@@ -340,7 +391,7 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 				}
 			}()
 
-			err := s.syncOne(ctx, eid, userID, jobID, token, rec, existing, remoteSem)
+			err := s.syncOne(ctx, eid, userID, jobID, client, token, rec, existing, remoteSem, skipDeleted)
 			if err != nil {
 				if errors.Is(err, ErrSyncSkipped) {
 					resultMu.Lock()
@@ -374,7 +425,7 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 					return
 				}
 				logger.Warnf(ctx, "【TicNote】同步单条失败，重试1次: %v", err)
-				if retryErr := s.syncOne(ctx, eid, userID, jobID, token, rec, existing, remoteSem); retryErr != nil {
+				if retryErr := s.syncOne(ctx, eid, userID, jobID, client, token, rec, existing, remoteSem, skipDeleted); retryErr != nil {
 					resultMu.Lock()
 					if errors.Is(retryErr, ErrSyncSkipped) {
 						result.Skipped++
@@ -409,6 +460,16 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 	// 进度更新（页完成回调一次；DB 写在锁外，避免并发下串行化）
 	if onProgress != nil {
 		onProgress(result)
+	}
+
+	// 选中但远端未枚举到：显式记为失败，保持 completed+skipped+failed==discovered
+	for id := range pending {
+		result.Discovered++
+		result.Failed++
+		failedDetails = append(failedDetails, map[string]interface{}{
+			"audio_id": id, "type": "remote_not_found",
+			"reason": "远端未找到该录音（可能已删除）",
+		})
 	}
 
 	logger.Infof(ctx, "【TicNote】同步完成 eid=%d result=%+v", eid, *result)
@@ -456,9 +517,24 @@ func isTranscriptionNotTriggeredError(err error) bool {
 	return errors.As(err, &te)
 }
 
+// selectTicNoteRecordings 选中模式过滤远端录音；命中项从 pending 移除。selected=nil 时原样返回。
+func selectTicNoteRecordings(recs []Recording, selected, pending map[string]struct{}) []Recording {
+	if selected == nil {
+		return recs
+	}
+	out := make([]Recording, 0, len(recs))
+	for _, r := range recs {
+		if _, ok := selected[r.RecordID]; ok {
+			out = append(out, r)
+			delete(pending, r.RecordID)
+		}
+	}
+	return out
+}
+
 // syncOne 处理单条远端录音：幂等去重 → 详情 → 流式下载 → 存储 → 事务落库 → 触发转写管线。
 // remoteSem 为打设备服务器的限流槽（detail+下载共用）；nil 表示不限流（单测可传 nil 保持原行为）。
-func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, token string, rec Recording, existing map[string]model.SyncSourceState, remoteSem chan struct{}) error {
+func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, client *Client, token string, rec Recording, existing map[string]model.SyncSourceState, remoteSem chan struct{}, skipDeleted bool) error {
 	audioID := rec.RecordID
 	if audioID == "" {
 		return permanentErr("远端录音缺少 recordId")
@@ -475,6 +551,10 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, tok
 	// 幂等去重：已同步且文件有效 → 跳过（不删文件、不重新处理）
 	if state.HasSource && state.FileActive {
 		logger.Infof(ctx, "【TicNote】已同步过，跳过 audio=%s", audioID)
+		return ErrSyncSkipped
+	}
+	if skipDeleted && state.HasSource && !state.FileActive {
+		logger.Infof(ctx, "【TicNote】本地已删除且本次要求不同步已删除文件，跳过 audio=%s", audioID)
 		return ErrSyncSkipped
 	}
 	// state.HasSource && !state.FileActive：已同步但文件被软删 → 重导（把音频同步回来）
@@ -504,7 +584,7 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, tok
 		}
 	}
 
-	detail, err := s.client.GetFileDetail(ctx, token, audioID)
+	detail, err := client.GetFileDetail(ctx, token, audioID)
 	if err != nil {
 		releaseRemoteSlot()
 		return err
@@ -536,7 +616,7 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, tok
 	}
 
 	// 流式下载到临时文件；hash：边写边算 sha256，供同内容转写/纪要复用匹配。
-	tmpPath, size, audioHash, err := s.client.DownloadAudioToFile(ctx, audioURL, maxAudioDownloadBytes)
+	tmpPath, size, audioHash, err := client.DownloadAudioToFile(ctx, audioURL, maxAudioDownloadBytes)
 	releaseRemoteSlot()
 	if err != nil {
 		return err

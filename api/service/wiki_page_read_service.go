@@ -926,6 +926,13 @@ func (s *wikiPageReadService) ListVersions(ctx context.Context, req WikiListVers
 		dto.IsCurrent = req.CurrentVersionID > 0 && versions[i].ID == req.CurrentVersionID
 		items = append(items, dto)
 	}
+	itemPointers := make([]*WikiPageVersionDTO, len(items))
+	for i := range items {
+		itemPointers[i] = &items[i]
+	}
+	if err := s.loadVersionSourceFileInfo(ctx, req.Eid, itemPointers); err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
 }
 
@@ -943,6 +950,9 @@ func (s *wikiPageReadService) GetVersion(ctx context.Context, eid, pageID int64,
 	}
 	dto := toWikiPageVersionDTO(&version)
 	dto.IsCurrent = currentVersionID > 0 && version.ID == currentVersionID
+	if err := s.loadVersionSourceFileInfo(ctx, eid, []*WikiPageVersionDTO{&dto}); err != nil {
+		return nil, err
+	}
 	return &dto, nil
 }
 
@@ -956,6 +966,9 @@ func (s *wikiPageReadService) loadCurrentVersion(ctx context.Context, page *mode
 	if page.CurrentVersionID > 0 {
 		if err := query.Where("id = ?", page.CurrentVersionID).First(&version).Error; err == nil {
 			dto := toWikiPageVersionDTO(&version)
+			if err := s.loadVersionSourceFileInfo(ctx, page.Eid, []*WikiPageVersionDTO{&dto}); err != nil {
+				return nil, err
+			}
 			return &dto, nil
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
@@ -969,7 +982,48 @@ func (s *wikiPageReadService) loadCurrentVersion(ctx context.Context, page *mode
 		return nil, err
 	}
 	dto := toWikiPageVersionDTO(&version)
+	if err := s.loadVersionSourceFileInfo(ctx, page.Eid, []*WikiPageVersionDTO{&dto}); err != nil {
+		return nil, err
+	}
 	return &dto, nil
+}
+
+func (s *wikiPageReadService) loadVersionSourceFileInfo(ctx context.Context, eid int64, versions []*WikiPageVersionDTO) error {
+	fileIDs := make([]int64, 0)
+	seen := make(map[int64]struct{})
+	for _, version := range versions {
+		for _, source := range version.Sources {
+			if source.SourceFileID <= 0 {
+				continue
+			}
+			if _, ok := seen[source.SourceFileID]; ok {
+				continue
+			}
+			seen[source.SourceFileID] = struct{}{}
+			fileIDs = append(fileIDs, source.SourceFileID)
+		}
+	}
+	if len(fileIDs) == 0 {
+		return nil
+	}
+
+	var files []model.File
+	if err := s.db.WithContext(ctx).Select("id", "library_id", "path").Where("eid = ? AND id IN ?", eid, fileIDs).Find(&files).Error; err != nil {
+		return err
+	}
+	fileInfo := make(map[int64]model.File, len(files))
+	for _, file := range files {
+		fileInfo[file.ID] = file
+	}
+	for _, version := range versions {
+		for i := range version.Sources {
+			if file, ok := fileInfo[version.Sources[i].SourceFileID]; ok {
+				version.Sources[i].LibraryID = file.LibraryID
+				version.Sources[i].FileName = filepath.Base(file.Path)
+			}
+		}
+	}
+	return nil
 }
 
 func (s *wikiPageReadService) loadPageSources(ctx context.Context, pageID int64) ([]WikiPageSourceDTO, error) {

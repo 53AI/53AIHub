@@ -32,7 +32,9 @@ type File struct {
 	OriginRefID        int64  `json:"origin_ref_id" gorm:"not null;default:0;index"`
 	OriginSource       string `json:"origin_source" gorm:"size:64;not null;default:'';index"`
 	InsightPerspective string `json:"insight_perspective" gorm:"size:32;not null;default:auto;index"`
-	GroupID            int64  `json:"group_id" gorm:"not null;default:0;index"`
+	// Scene 是识别或用户选择后的生效场景（空表示未识别/待确认）；InsightPerspective 仍是请求视角。
+	Scene   string `json:"scene" gorm:"size:32;not null;default:''"`
+	GroupID int64  `json:"group_id" gorm:"not null;default:0;index"`
 	// 解析类型: default, textin, mineru.net
 	ParseType string `json:"parse_type" gorm:"type:varchar(50);not null;default:''"`
 

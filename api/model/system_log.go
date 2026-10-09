@@ -44,6 +44,7 @@ const (
 	SystemLogModuleLibrary      uint8 = 19 // 知识库管理
 	SystemLogModuleFile         uint8 = 20
 	SystemLogModuleModelConfig  uint8 = 21
+	SystemLogModuleWecom        uint8 = 22 // 企业微信组织
 )
 
 // GetModuleByGroupType 根据分组类型获取对应的系统日志模块
@@ -267,6 +268,7 @@ var moduleTextMap = map[uint8]string{
 	SystemLogModuleSpace:        "空间管理",
 	SystemLogModuleLibrary:      "知识库管理",
 	SystemLogModuleFile:         "文档",
+	SystemLogModuleWecom:        "企微组织",
 }
 
 // GetAllModules 获取所有模块定义

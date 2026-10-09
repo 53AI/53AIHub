@@ -75,10 +75,53 @@ type GraphProgressDetail struct {
 	Steps        []GraphProgressStepView `json:"steps"`
 }
 
+type GraphRelatedJobSummary struct {
+	JobID         int64  `json:"job_id"`
+	Status        string `json:"status"`
+	RunID         string `json:"run_id"`
+	Progress      int    `json:"progress"`
+	FailureReason string `json:"failure_reason"`
+	CreatedTime   int64  `json:"created_time"`
+}
+
+func GetRelatedGraphJobSummaries(ctx context.Context, eid, fileID int64) (*GraphRelatedJobSummary, *GraphRelatedJobSummary, error) {
+	legacy, err := latestGraphJobSummary(ctx, eid, fileID, "graph_generation")
+	if err != nil {
+		return nil, nil, err
+	}
+	pipeline, err := latestGraphJobSummary(ctx, eid, fileID, graphPipelineJobType)
+	if err != nil {
+		return nil, nil, err
+	}
+	return legacy, pipeline, nil
+}
+
+func latestGraphJobSummary(ctx context.Context, eid, fileID int64, jobType string) (*GraphRelatedJobSummary, error) {
+	var job model.RagJob
+	err := model.DB.WithContext(ctx).
+		Where("eid = ? AND related_id = ? AND type = ?", eid, fileID, jobType).
+		Order("created_time DESC, job_id DESC").
+		First(&job).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &GraphRelatedJobSummary{
+		JobID:         job.JobID,
+		Status:        job.Status,
+		RunID:         job.RunID,
+		Progress:      job.Progress,
+		FailureReason: job.FailureReason,
+		CreatedTime:   job.CreatedTime,
+	}, nil
+}
+
 // GraphProgressService 图谱管线进度查询服务
 type GraphProgressService interface {
 	ListFiles(ctx context.Context, req GraphProgressListRequest) ([]GraphProgressItem, int64, error)
-	GetFile(ctx context.Context, eid, libraryID, fileID int64) (*GraphProgressDetail, error)
+	GetFile(ctx context.Context, eid, spaceID, fileID int64) (*GraphProgressDetail, error)
 }
 
 type graphProgressService struct {
@@ -104,48 +147,135 @@ func (s *graphProgressService) ListFiles(ctx context.Context, req GraphProgressL
 		offset = 0
 	}
 
-	// 有图谱管线 job 的文件（图谱 job 的 related_id 即文件 ID）
-	sub := s.db.WithContext(ctx).Model(&model.RagJob{}).
-		Select("DISTINCT related_id").
-		Where("eid = ? AND type = ?", req.Eid, graphPipelineJobType)
-
-	query := s.db.WithContext(ctx).Model(&model.File{}).
-		Where("eid = ? AND library_id = ? AND is_deleted = ? AND type = ? AND id IN (?)",
-			req.Eid, req.LibraryID, false, model.FILE_TYPE_FILE, sub)
-
-	status := strings.ToLower(strings.TrimSpace(req.Status))
-	if status != "" && status != "all" {
-		query = query.Where("run_status = ?", status)
-	}
-
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
+	// 库内全部文档（对齐 RAG 管线口径），未跑过图谱管线的显示 not_started
 	var files []model.File
-	if err := query.Order("updated_time DESC, id DESC").Offset(offset).Limit(limit).Find(&files).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("eid = ? AND library_id = ? AND is_deleted = ? AND type = ?",
+			req.Eid, req.LibraryID, false, model.FILE_TYPE_FILE).
+		Order("updated_time DESC, id DESC").
+		Find(&files).Error; err != nil {
 		return nil, 0, err
 	}
 
 	items := make([]GraphProgressItem, 0, len(files))
-	for i := range files {
-		items = append(items, buildGraphProgressItem(ctx, s.db, &files[i]))
+	if len(files) > 0 {
+		fileIDs := make([]int64, 0, len(files))
+		for i := range files {
+			fileIDs = append(fileIDs, files[i].ID)
+		}
+		jobMap, err := s.latestGraphRunJobsByRelatedIDs(ctx, req.Eid, fileIDs)
+		if err != nil {
+			return nil, 0, err
+		}
+		for i := range files {
+			item := graphProgressItemFromJobs(s.db, &files[i], jobMap[files[i].ID])
+			items = append(items, item)
+		}
 	}
-	return items, total, nil
+
+	status := strings.ToLower(strings.TrimSpace(req.Status))
+	if status != "" && status != "all" {
+		filtered := make([]GraphProgressItem, 0, len(items))
+		for _, item := range items {
+			if item.Status == status {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+	}
+
+	total := int64(len(items))
+	if offset >= len(items) {
+		return []GraphProgressItem{}, total, nil
+	}
+	end := offset + limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[offset:end], total, nil
 }
 
-func (s *graphProgressService) GetFile(ctx context.Context, eid, libraryID, fileID int64) (*GraphProgressDetail, error) {
+// latestGraphRunJobsByRelatedIDs 批量查询每个文件最新一轮图谱管线 job（按 run_id 归集），返回 fileID -> jobs（最新在前）。
+func (s *graphProgressService) latestGraphRunJobsByRelatedIDs(ctx context.Context, eid int64, fileIDs []int64) (map[int64][]model.RagJob, error) {
+	var jobs []model.RagJob
+	if err := s.db.WithContext(ctx).
+		Where("eid = ? AND type = ? AND related_id IN ?", eid, graphPipelineJobType, fileIDs).
+		Order("created_time DESC, job_id DESC").
+		Find(&jobs).Error; err != nil {
+		return nil, err
+	}
+
+	result := make(map[int64][]model.RagJob, len(fileIDs))
+	for _, job := range jobs {
+		existing, ok := result[job.RelatedId]
+		if !ok {
+			result[job.RelatedId] = []model.RagJob{job}
+			continue
+		}
+		// 仅保留最新 run_id 的 job
+		if runID := strings.TrimSpace(existing[0].RunID); runID != "" && job.RunID == runID {
+			result[job.RelatedId] = append(existing, job)
+		}
+	}
+	return result, nil
+}
+
+// normalizeGraphItemStatus 状态口径对齐 RAG 管线：not_started/pending/processing/success/failed（cancelled 归入失败）。
+func normalizeGraphItemStatus(item *GraphProgressItem) {
+	switch item.Status {
+	case "pending", "paused":
+		item.Status = "pending"
+	case "failed", "cancelled":
+		item.Status = "failed"
+	case "":
+		item.Status = "not_started"
+	}
+}
+
+func graphProgressItemFromJobs(db *gorm.DB, file *model.File, jobs []model.RagJob) GraphProgressItem {
+	item := GraphProgressItem{
+		FileID:      file.ID,
+		FileName:    wikiProgressFileName(db, file),
+		FilePath:    strings.TrimSpace(file.Path),
+		UpdatedTime: file.UpdatedTime,
+	}
+	if len(jobs) == 0 {
+		normalizeGraphItemStatus(&item)
+		return item
+	}
+
+	latest := jobs[0]
+	item.RunID = latest.RunID
+	item.Status = strings.ToLower(latest.Status)
+	item.Progress = latest.Progress
+	item.StartTime = latest.CreatedTime
+	item.EndTime = latest.CompletionTime
+	for _, job := range jobs {
+		if job.Status == model.RagJobStatusSuccess {
+			item.SuccessCount++
+		} else if job.Status == model.RagJobStatusFailed {
+			item.FailureCount++
+		}
+	}
+	item.TotalSteps = len(jobs)
+	item.StepKey = "graph_generation"
+	item.StepName = "图谱生成"
+	normalizeGraphItemStatus(&item)
+	return item
+}
+
+func (s *graphProgressService) GetFile(ctx context.Context, eid, spaceID, fileID int64) (*GraphProgressDetail, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("graph progress db is required")
 	}
-	if eid <= 0 || libraryID <= 0 || fileID <= 0 {
-		return nil, fmt.Errorf("eid, library_id and file_id are required")
+	if eid <= 0 || spaceID <= 0 || fileID <= 0 {
+		return nil, fmt.Errorf("eid, space_id and file_id are required")
 	}
 
 	var file model.File
 	if err := s.db.WithContext(ctx).
-		Where("eid = ? AND library_id = ? AND id = ? AND is_deleted = ? AND type = ?", eid, libraryID, fileID, false, model.FILE_TYPE_FILE).
+		Joins("JOIN libraries ON libraries.id = files.library_id AND libraries.eid = files.eid").
+		Where("files.eid = ? AND libraries.space_id = ? AND files.id = ? AND files.is_deleted = ? AND files.type = ?", eid, spaceID, fileID, false, model.FILE_TYPE_FILE).
 		First(&file).Error; err != nil {
 		return nil, err
 	}
@@ -204,6 +334,7 @@ func buildGraphProgressItem(ctx context.Context, db *gorm.DB, file *model.File) 
 		item.TotalSteps = len(jobs)
 		item.StepKey = "graph_generation"
 		item.StepName = "图谱生成"
+		normalizeGraphItemStatus(&item)
 	}
 
 	return item

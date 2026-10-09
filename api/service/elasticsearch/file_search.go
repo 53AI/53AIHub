@@ -316,6 +316,7 @@ func (s *FileNameSearchService) buildSearchQuery(eid int64, req *FileNameSearchR
 					"post_tags": []string{"</mark>"},
 				},
 				"content": map[string]interface{}{
+					"type":                "unified",
 					"pre_tags":            []string{"<mark>"},
 					"post_tags":           []string{"</mark>"},
 					"fragment_size":       120,
@@ -629,7 +630,15 @@ func (s *FileNameSearchService) IndexFile(file *model.File) error {
 		return nil
 	}
 
-	doc := s.convertToFileDocumentWithContent(file, s.loadFileBodyContent(file))
+	files, err := s.excludePersonalLibraryFiles([]model.File{*file})
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return nil
+	}
+
+	doc := s.convertToFileDocumentWithContent(&files[0], s.loadFileBodyContent(&files[0]))
 	return s.indexDocument(doc)
 }
 
@@ -637,6 +646,11 @@ func (s *FileNameSearchService) IndexFile(file *model.File) error {
 func (s *FileNameSearchService) IndexFilesBatch(files []model.File) error {
 	if s.client.IsDisabled() {
 		return nil
+	}
+
+	files, err := s.excludePersonalLibraryFiles(files)
+	if err != nil {
+		return err
 	}
 
 	contents := s.loadFileBodyContents(files)
@@ -647,6 +661,50 @@ func (s *FileNameSearchService) IndexFilesBatch(files []model.File) error {
 	}
 
 	return s.indexDocumentsBatch(docs)
+}
+
+func (s *FileNameSearchService) excludePersonalLibraryFiles(files []model.File) ([]model.File, error) {
+	if len(files) == 0 {
+		return files, nil
+	}
+	if s.db == nil {
+		return nil, fmt.Errorf("校验文件所属知识库类型失败: 数据库不可用")
+	}
+
+	libraryIDs := make([]int64, 0, len(files))
+	seen := make(map[int64]struct{}, len(files))
+	for _, file := range files {
+		if _, ok := seen[file.LibraryID]; ok {
+			continue
+		}
+		seen[file.LibraryID] = struct{}{}
+		libraryIDs = append(libraryIDs, file.LibraryID)
+	}
+
+	var libraries []model.Library
+	if err := s.db.Select("id", "library_kind").Where("eid = ? AND id IN ?", files[0].Eid, libraryIDs).Find(&libraries).Error; err != nil {
+		return nil, fmt.Errorf("查询文件所属知识库类型失败: %w", err)
+	}
+	libraryKinds := make(map[int64]string, len(libraries))
+	for _, library := range libraries {
+		libraryKinds[library.ID] = library.LibraryKind
+	}
+
+	indexable := make([]model.File, 0, len(files))
+	for _, file := range files {
+		libraryKind, ok := libraryKinds[file.LibraryID]
+		if !ok {
+			return nil, fmt.Errorf("文件 %d 所属知识库 %d 不存在", file.ID, file.LibraryID)
+		}
+		if libraryKind == model.LIBRARY_KIND_PERSONAL_USER {
+			if err := s.DeleteFile(file.ID); err != nil {
+				return nil, fmt.Errorf("删除个人知识库文件 %d 的 ES 索引失败: %w", file.ID, err)
+			}
+			continue
+		}
+		indexable = append(indexable, file)
+	}
+	return indexable, nil
 }
 
 // DeleteFile 删除文件索引

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/tokenlimit"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
@@ -124,6 +126,22 @@ func (r *wikiPromptLLMRunner) Generate(ctx context.Context, prompt string) (stri
 		r.usageRecorder.Record(usage)
 	}
 	return response, nil
+}
+
+func (r *wikiPromptLLMRunner) InputBudget(ctx context.Context, promptOverhead string) (int, error) {
+	if r == nil || r.config == nil {
+		return 0, fmt.Errorf("wiki llm config is nil")
+	}
+	channel, modelName, err := r.config.SelectPipelineLLM()
+	if err != nil {
+		return 0, err
+	}
+	if channel == nil {
+		return 0, fmt.Errorf("wiki llm channel is nil")
+	}
+	systemTokens := tokenlimit.EstimateTokens([]relaymodel.Message{{Role: "system", Content: promptOverhead}})
+	budget := tokenlimit.ComputeBudget(ctx, channel.ChannelID, channel.Config, modelName, systemTokens, 0, 0)
+	return budget.InputAvailable, nil
 }
 
 func formatWikiLLMResponseLog(step, modelName, response string) string {
@@ -416,6 +434,7 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 
 	// 分类预判：命中分类的候选只生成分类页，不再生成常规 entity 页。
 	var projections []wikiCategoryProjection
+	categoryMatchSucceeded := false
 	if len(result.candidates) > 0 && in.EnableWikiKnowledgeGraph {
 		projections, err = s.matchWikiCategories(ctx, in, spaceID, result.candidates)
 		if err != nil {
@@ -423,6 +442,8 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 			recordWikiGenerationObservation(ctx, WikiGenerationObservation{Phase: "category_match", Status: "failed", Reason: "category_match_error", Error: err.Error()})
 			logger.Errorf(ctx, "【Wiki生成】 预判失败: %v", err)
 			projections = nil
+		} else {
+			categoryMatchSucceeded = true
 		}
 	} else {
 		recordWikiGenerationObservation(ctx, WikiGenerationObservation{Phase: "category_match", Status: "success", Reason: "no_candidates", Data: map[string]interface{}{"enabled": in.EnableWikiKnowledgeGraph}})
@@ -445,6 +466,17 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 			reason = "strict_mode_filtered_all"
 		}
 		recordWikiGenerationObservation(ctx, WikiGenerationObservation{Phase: "strict_filter", Status: "success", Reason: reason, Data: map[string]interface{}{"before": beforeStrict, "after": len(entityUpdates), "before_items": wikiSlugTraceItems(beforeStrictItems), "after_items": wikiSlugTraceItems(entityUpdates)}})
+		if categoryMatchSucceeded {
+			for _, candidate := range result.candidates {
+				if _, matched := hitSlugs[candidate.Slug]; matched {
+					continue
+				}
+				if err := s.clearWikiPageCategories(ctx, in, spaceID, candidate.Slug); err != nil {
+					partialFailure = true
+					logger.Errorf(ctx, "【Wiki生成】 清理旧分类关联失败: slug=%s err=%v", candidate.Slug, err)
+				}
+			}
+		}
 	}
 	logger.Infof(ctx, "【Wiki生成】 分类预判 命中分类页=%d 过滤常规页 %d->%d 耗时=%s", len(projections), len(updates), len(entityUpdates), time.Since(procStart))
 
@@ -479,6 +511,12 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 		anyChanged := false
 		for _, slug := range slugs {
 			if checkpoint.isSlugCompleted(slug) {
+				if categoryMatchSucceeded {
+					if err := s.clearWikiPageCategories(ctx, in, spaceID, slug); err != nil {
+						partialFailure = true
+						logger.Errorf(ctx, "【Wiki生成】 清理旧分类关联失败: slug=%s err=%v", slug, err)
+					}
+				}
 				logger.Infof(ctx, "【Wiki生成】 跳过已完成 slug=%s file_id=%d", slug, in.FileID)
 				continue
 			}
@@ -489,7 +527,27 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 			if persistErr := persistWikiGenerationCheckpoint(ctx, s.db, in.JobID, *checkpoint); persistErr != nil {
 				logger.Warnf(ctx, "【Wiki生成】 保存 slug processing 状态失败: file_id=%d job_id=%d slug=%s err=%v", in.FileID, in.JobID, slug, persistErr)
 			}
-			changed, err := s.reduceSlugUpdatesWithRetry(ctx, in.Eid, in.LibraryID, spaceID, slug, updatesBySlug[slug], maxWikiCompilationRetries)
+			var changed bool
+			if in.JobID <= 0 && (!common.IsRedisEnabled() || common.RDB == nil) {
+				changed, err = s.reduceSlugUpdatesWithRetry(ctx, in.Eid, in.LibraryID, spaceID, slug, updatesBySlug[slug], maxWikiCompilationRetries)
+			} else {
+				changed, err = processWikiPageUpdateBatch(ctx, s.db, in.Eid, in.JobID, updatesBySlug[slug], s.pageUpdateBatchAcquire, func(batchCtx context.Context, claim *wikiPageUpdateBatchClaim) (bool, error) {
+					previousCheckpoint := s.checkpoint
+					previousCheckpointJobID := s.checkpointJobID
+					for _, op := range claim.Ops {
+						var payload wikiPageUpdatePendingPayload
+						if json.Unmarshal([]byte(op.Payload), &payload) == nil && payload.SourceJobID > 0 && payload.SourceJobID != in.JobID {
+							s.checkpoint = nil
+							break
+						}
+					}
+					defer func() {
+						s.checkpoint = previousCheckpoint
+						s.checkpointJobID = previousCheckpointJobID
+					}()
+					return s.reduceSlugUpdatesWithRetry(batchCtx, in.Eid, in.LibraryID, spaceID, slug, claim.Updates, maxWikiCompilationRetries)
+				})
+			}
 			if err != nil {
 				partialFailure = true
 				checkpoint.markSlugFailed(slug, err)
@@ -506,6 +564,12 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 				recordWikiGenerationObservation(ctx, WikiGenerationObservation{Phase: "page_save", Status: "success", Reason: "page_saved", Slug: slug, PagesSucceeded: 1, Data: data})
 			}
 			checkpoint.markSlugCompleted(slug)
+			if categoryMatchSucceeded {
+				if err := s.clearWikiPageCategories(ctx, in, spaceID, slug); err != nil {
+					partialFailure = true
+					logger.Errorf(ctx, "【Wiki生成】 清理旧分类关联失败: slug=%s err=%v", slug, err)
+				}
+			}
 			if persistErr := persistWikiGenerationCheckpoint(ctx, s.db, in.JobID, *checkpoint); persistErr != nil {
 				logger.Warnf(ctx, "【Wiki生成】 保存 slug 进度失败: file_id=%d job_id=%d slug=%s err=%v", in.FileID, in.JobID, slug, persistErr)
 			}
@@ -540,6 +604,10 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 			categoryPages += len(projection.Candidates)
 		}
 		recordWikiGenerationObservation(ctx, WikiGenerationObservation{Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "page_generation", Status: "success", PagesSucceeded: int64(len(categorySlugs)), PagesFailed: int64(categoryPages - len(categorySlugs))})
+		if err := s.publishWikiPageSlugs(ctx, in.Eid, in.LibraryID, categorySlugs); err != nil {
+			partialFailure = true
+			logger.Errorf(ctx, "【Wiki生成】 分类页发布失败，不阻断其他页面: file_id=%d err=%v", in.FileID, err)
+		}
 		if err := enqueueWikiPageVectorizationJobs(ctx, s.db, common.RDB, in.Eid, in.LibraryID, categorySlugs, "auto_after_wiki_category_generation"); err != nil {
 			partialFailure = true
 			logger.Errorf(ctx, "【Wiki生成】 页面向量化任务创建失败: file_id=%d err=%v", in.FileID, err)
@@ -621,40 +689,55 @@ func (s *WikiIngestV2Service) resolveLibrarySpaceID(ctx context.Context, eid, li
 }
 
 func (s *WikiIngestV2Service) publishDraftWikiPages(ctx context.Context, eid, libraryID int64, updates []WikiSlugUpdate) error {
-	if s == nil || s.db == nil || len(updates) == 0 {
+	return s.publishWikiPageSlugs(ctx, eid, libraryID, uniqueWikiUpdateSlugs(updates))
+}
+
+func (s *WikiIngestV2Service) publishWikiPageSlugs(ctx context.Context, eid, libraryID int64, slugs []string) error {
+	if s == nil || s.db == nil || len(slugs) == 0 {
 		return nil
 	}
 
-	slugs := uniqueWikiUpdateSlugs(updates)
-	if len(slugs) == 0 {
-		return nil
-	}
+	seen := make(map[string]struct{}, len(slugs))
 
 	var failures []string
-	for _, slug := range slugs {
+	for _, rawSlug := range slugs {
+		slug := strings.TrimSpace(rawSlug)
+		if slug == "" {
+			continue
+		}
+		if _, ok := seen[slug]; ok {
+			continue
+		}
+		seen[slug] = struct{}{}
 		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			page, err := loadWikiPageForWrite(tx, eid, libraryID, slug)
 			if err != nil {
 				return err
 			}
-			if page == nil || page.Status != model.WikiPageStatusDraft {
+			if page == nil || page.CurrentVersionID <= 0 {
 				return nil
 			}
-			page.Status = model.WikiPageStatusActive
-			if err := tx.Model(page).Update("status", model.WikiPageStatusActive).Error; err != nil {
+
+			var version model.WikiPageVersion
+			if err := tx.Where("eid = ? AND page_id = ? AND id = ?", eid, page.ID, page.CurrentVersionID).First(&version).Error; err != nil {
 				return err
 			}
-			if page.CurrentVersionID > 0 {
-				now := time.Now().UnixMilli()
-				if err := tx.Model(&model.WikiPageVersion{}).
-					Where("id = ?", page.CurrentVersionID).
-					Updates(map[string]any{
-						"is_published":   true,
-						"publish_kind":   model.WikiPagePublishKindSync,
-						"published_time": now,
-					}).Error; err != nil {
+			if version.IsPublished && page.Status == model.WikiPageStatusActive {
+				return nil
+			}
+
+			if err := tx.Model(&version).Updates(map[string]any{
+				"is_published":   true,
+				"publish_kind":   model.WikiPagePublishKindSync,
+				"published_time": time.Now().UnixMilli(),
+			}).Error; err != nil {
+				return err
+			}
+			if page.Status != model.WikiPageStatusActive {
+				if err := tx.Model(page).Update("status", model.WikiPageStatusActive).Error; err != nil {
 					return err
 				}
+				page.Status = model.WikiPageStatusActive
 			}
 			return upsertWikiPageLog(tx, page, page.CurrentVersionID, page.UpdaterID, "publish", "", map[string]any{
 				"publish_kind": model.WikiPagePublishKindSync,

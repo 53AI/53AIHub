@@ -444,7 +444,7 @@ func resetRecordingConfigForDeletedChannel(channelID int64, eid int64) {
 	}
 
 	if needsUpdate {
-		if err := model.UpdateRecordingConfig(eid, config.Enabled, config.ParserPlatform, config.VoiceModelID, config.VoiceModelName, config.InferenceModelID, config.InferenceModelName, config.RecordingAgentEnabled, config.MultiPerspectiveEnabled, config.MemoryExtraction, config.InsightRegenerateEnabled); err != nil {
+		if err := model.UpdateRecordingConfig(eid, config.Enabled, config.ParserPlatform, config.VoiceModelID, config.VoiceModelName, config.InferenceModelID, config.InferenceModelName, config.RecordingAgentEnabled, config.MultiPerspectiveEnabled, config.MemoryExtraction, config.InsightRegenerateEnabled, config.ActionOpportunityAutoDetectEnabled); err != nil {
 			logger.SysErrorf("【录音配置】删除语音渠道后重置配置失败: eid=%d channel_id=%d err=%v", eid, channelID, err)
 		}
 	}

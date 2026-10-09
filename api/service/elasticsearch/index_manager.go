@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
@@ -45,10 +47,7 @@ func (m *IndexManager) CreateFilesIndex() error {
 	}
 
 	if exists {
-		logger.SysLogf("索引 %s 已存在，尝试补充字段映射", m.client.GetIndexName())
-		if err := m.updateFilesIndexMapping(); err != nil {
-			return fmt.Errorf("更新索引映射失败: %v", err)
-		}
+		logger.SysLogf("索引 %s 已存在，跳过 mapping 更新；如需升级 mapping，请执行 es_reindex -eid=-1", m.client.GetIndexName())
 		return nil
 	}
 
@@ -65,6 +64,10 @@ func (m *IndexManager) CreateFilesIndex() error {
 	defer res.Body.Close()
 
 	if res.IsError() {
+		body, readErr := io.ReadAll(res.Body)
+		if readErr == nil && len(body) > 0 {
+			return fmt.Errorf("创建索引响应错误: %s: %s", res.Status(), strings.TrimSpace(string(body)))
+		}
 		return fmt.Errorf("创建索引响应错误: %s", res.Status())
 	}
 
@@ -219,7 +222,8 @@ func (m *IndexManager) buildFilesIndexMapping() map[string]interface{} {
 					"type": "text",
 				},
 				"content": map[string]interface{}{
-					"type": "text",
+					"type":          "text",
+					"index_options": "offsets",
 				},
 				"type": map[string]interface{}{
 					"type": "integer",
@@ -244,6 +248,7 @@ func (m *IndexManager) buildFilesIndexMapping() map[string]interface{} {
 		"settings": map[string]interface{}{
 			"number_of_shards":   1,
 			"number_of_replicas": 0,
+			"max_ngram_diff":     8,
 			"analysis": map[string]interface{}{
 				"analyzer": map[string]interface{}{
 					"filename_analyzer": map[string]interface{}{
@@ -267,54 +272,6 @@ func (m *IndexManager) buildFilesIndexMapping() map[string]interface{} {
 			},
 		},
 	}
-}
-
-func (m *IndexManager) updateFilesIndexMapping() error {
-	mapping := map[string]interface{}{
-		"properties": map[string]interface{}{
-			"origin_type": map[string]interface{}{
-				"type": "keyword",
-			},
-			"origin_ref_id": map[string]interface{}{
-				"type": "long",
-			},
-			"origin_source": map[string]interface{}{
-				"type": "keyword",
-			},
-			"file_extension": map[string]interface{}{
-				"type": "keyword",
-			},
-			"summary": map[string]interface{}{
-				"type": "text",
-			},
-			"content": map[string]interface{}{
-				"type": "text",
-			},
-		},
-	}
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(mapping); err != nil {
-		return fmt.Errorf("编码索引映射失败: %v", err)
-	}
-
-	req := esapi.IndicesPutMappingRequest{
-		Index: []string{m.client.GetIndexName()},
-		Body:  &buf,
-	}
-
-	res, err := req.Do(context.Background(), m.client)
-	if err != nil {
-		return fmt.Errorf("更新索引映射失败: %v", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		return fmt.Errorf("更新索引映射响应错误: %s", res.Status())
-	}
-
-	logger.SysLogf("成功更新索引映射: %s", m.client.GetIndexName())
-	return nil
 }
 
 // IndexExists 检查索引是否存在

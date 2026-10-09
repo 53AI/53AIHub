@@ -102,6 +102,48 @@ func convertToWikiDocument(page *model.WikiPage) WikiDocument {
 
 func wikiDocumentID(pageID int64) string { return fmt.Sprintf("wiki:%d", pageID) }
 
+// DeleteWikiLibraryDocuments removes stale ES Wiki documents scoped to one tenant library.
+func DeleteWikiLibraryDocuments(ctx context.Context, client *Client, eid, libraryID int64) (int64, error) {
+	if client == nil || client.IsDisabled() {
+		return 0, nil
+	}
+	if eid <= 0 || libraryID <= 0 {
+		return 0, fmt.Errorf("eid and library_id are required")
+	}
+	body, err := json.Marshal(map[string]interface{}{"query": map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{
+		map[string]interface{}{"term": map[string]interface{}{"eid": eid}},
+		map[string]interface{}{"term": map[string]interface{}{"library_id": libraryID}},
+	}}}})
+	if err != nil {
+		return 0, err
+	}
+	refresh := true
+	ignoreUnavailable := true
+	res, err := (esapi.DeleteByQueryRequest{Index: []string{client.GetWikiIndexName()}, Body: bytes.NewReader(body), Conflicts: "proceed", Refresh: &refresh, IgnoreUnavailable: &ignoreUnavailable}).Do(ctx, client)
+	if err != nil {
+		return 0, fmt.Errorf("delete wiki library from Elasticsearch: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode == 404 {
+		return 0, nil
+	}
+	if res.IsError() {
+		return 0, fmt.Errorf("delete wiki library Elasticsearch response: %s", res.Status())
+	}
+	var result struct {
+		Deleted  int64             `json:"deleted"`
+		TimedOut bool              `json:"timed_out"`
+		Failures []json.RawMessage `json:"failures"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("decode wiki Elasticsearch delete result: %w", err)
+	}
+	if result.TimedOut || len(result.Failures) > 0 {
+		return result.Deleted, fmt.Errorf("Elasticsearch delete incomplete: timed_out=%t failures=%d", result.TimedOut, len(result.Failures))
+	}
+	return result.Deleted, nil
+}
+
 func (s *WikiSearchService) IndexWikiPagesBatch(pages []model.WikiPage) error {
 	if s == nil || s.client == nil || s.client.IsDisabled() || len(pages) == 0 {
 		return nil

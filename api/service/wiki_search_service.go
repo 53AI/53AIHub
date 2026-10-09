@@ -383,7 +383,7 @@ func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchReq
 	for i, value := range queryVector {
 		vector[i] = float32(value)
 	}
-	logicalCollection := wikiVectorCollectionName(req.Eid)
+	logicalCollection := WikiVectorCollectionName(req.Eid)
 	physicalCollection := wikiSearchPhysicalCollectionName(logicalCollection)
 	collectionDimension := 0
 	if infoReader, ok := s.vectorDB.(wikiCollectionInfoReader); ok {
