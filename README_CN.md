@@ -151,7 +151,7 @@ sudo curl -fsSL https://download.53ai.com/install.sh | bash
 
 ### 备选安装方式：Docker
 
-如果您更习惯使用 Docker，也可以通过我们的 [docker-compose.yml](docker/docker-compose.yaml) 文件安装。在运行安装命令之前，请确保您的机器上安装了 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/)：
+如果您更习惯使用 Docker，也可以通过我们的 [docker-compose.yml](docker/docker-compose.yml) 文件安装。在运行安装命令之前，请确保您的机器上安装了 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/)：
 
 1. 克隆仓库：
 ```bash
@@ -167,7 +167,7 @@ docker compose up -d
 ### 自定义配置
 
 如果您需要自定义配置，请参考 `.env.example`文件中的注释，复制一个改名为 `.env`并更新文件中对应的值。
-此外，您可能需要根据您的具体部署环境和需求对 `docker-compose.yaml`文件本身进行调整，例如更改镜像版本、端口映射或卷挂载。完成任何更改后，请重新运行 `docker-compose up -d`。您可以在此处找到可用环境变量的完整列表。
+此外，您可能需要根据您的具体部署环境和需求对 `docker-compose.yml`文件本身进行调整，例如更改镜像版本、端口映射或卷挂载。完成任何更改后，请重新运行 `docker-compose up -d`。您可以在此处找到可用环境变量的完整列表。
 
 ## Star History
 
