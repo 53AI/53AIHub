@@ -26,6 +26,10 @@ type UploadDelegateClaims struct {
 
 // GenerateUploadDelegateJWT creates a fresh delegated JWT for one upload task.
 func GenerateUploadDelegateJWT(userID int64, eid int64, apiKeyID int64, scope string, ttl time.Duration) (string, error) {
+	if len(secretKey) == 0 {
+		return "", ErrSecretNotConfigured
+	}
+
 	if ttl <= 0 {
 		ttl = time.Hour
 	}
@@ -48,6 +52,10 @@ func GenerateUploadDelegateJWT(userID int64, eid int64, apiKeyID int64, scope st
 
 // ParseUploadDelegateJWT validates and parses a delegated batch upload token.
 func ParseUploadDelegateJWT(tokenString string) (*UploadDelegateClaims, error) {
+	if len(secretKey) == 0 {
+		return nil, ErrSecretNotConfigured
+	}
+
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
 		return nil, jwt.ErrTokenMalformed
