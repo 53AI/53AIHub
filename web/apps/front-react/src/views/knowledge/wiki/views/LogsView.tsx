@@ -76,7 +76,7 @@ const LogsView: React.FC = () => {
 
   return (
     <div className="flex h-full relative">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 pt-5">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 max-md:px-4 pt-5">
         <h1 className="text-2xl font-medium text-main">{t("logs.title")}</h1>
         <div className="space-y-4 mt-6">
           {loading && items.length === 0 ? (

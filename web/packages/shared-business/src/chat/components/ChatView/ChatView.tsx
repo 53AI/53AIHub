@@ -2950,7 +2950,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 										<div className="text-sm text-[#1D1E1F] mt-10 mb-3">
 											{t("chat.suggested_questions")}
 										</div>
-										<div className="grid grid-cols-4 gap-3">
+										<div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
 											{agentInfo.settings_obj.suggested_questions.map(
 												(item, index) => (
 													<div

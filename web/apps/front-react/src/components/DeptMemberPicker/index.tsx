@@ -18,6 +18,7 @@ import userApi from "@/api/modules/user";
 import { groupApi } from "@/api/modules/group";
 import { GROUP_TYPE } from "@/constants/group";
 import { SvgIcon } from "@km/shared-components-react";
+import { useResponsive } from "@/hooks/useResponsive";
 import "./index.css";
 
 interface SelectItem {
@@ -77,6 +78,7 @@ export const DeptMemberPicker = forwardRef<
       name: "",
     });
     const [loading, setLoading] = useState(false);
+    const { isMobile } = useResponsive();
 
     const treeRef = useRef<any>(null);
     const treeGroupRef = useRef<any>(null);
@@ -353,7 +355,8 @@ export const DeptMemberPicker = forwardRef<
           title={t("action.select")}
           onCancel={close}
           footer={null}
-          width={650}
+          width={isMobile ? "95%" : 650}
+          centered={isMobile}
           destroyOnHidden
         >
           <div className="picker-content">
@@ -428,7 +431,12 @@ export const DeptMemberPicker = forwardRef<
 
             <div className="picker-right">
               <div className="selected-header">
-                <h4>{t("internal_user.scope.selected_title")}</h4>
+                <h4>
+                  {t("internal_user.scope.selected_title")}
+                  {selectedValue.length > 0 && (
+                    <span className="selected-count">{selectedValue.length}</span>
+                  )}
+                </h4>
               </div>
               <div className="selected-list">
                 {selectedValue.length === 0 ? (
@@ -459,7 +467,7 @@ export const DeptMemberPicker = forwardRef<
                           variant="filled"
                           size="small"
                           shape="circle"
-                          style={{ zoom: 0.6 }}
+                          style={{ zoom: isMobile ? 0.8 : 0.6 }}
                           icon={<CloseOutlined />}
                           onClick={() => handleRemove(item)}
                         />

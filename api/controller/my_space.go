@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path"
@@ -57,7 +58,13 @@ type RecordingFolderResponse struct {
 
 type RecordingFileListItem struct {
 	model.File
-	InsightPage *model.RecordingFileInsightPage `json:"insight_page,omitempty"`
+	InsightPage     *model.RecordingFileInsightPage `json:"insight_page,omitempty"`
+	SceneMode       string                          `json:"scene_mode,omitempty"`
+	SceneConfidence float64                         `json:"scene_confidence,omitempty"`
+	SceneAbstained  bool                            `json:"scene_abstained,omitempty"`
+	SceneReason     string                          `json:"scene_reason,omitempty"`
+	SceneSource     string                          `json:"scene_source,omitempty"`
+	SceneModeSource string                          `json:"scene_mode_source,omitempty"`
 }
 
 type RecordingListResponse struct {
@@ -434,16 +441,18 @@ func GetMySpaceRecordings(c *gin.Context) {
 	userID := config.GetUserId(c)
 
 	var req struct {
-		Path      string `form:"path"`
-		Keyword   string `form:"keyword"`
-		Type      string `form:"type" binding:"required"`
-		Offset    int    `form:"offset"`
-		Limit     int    `form:"limit"`
-		GroupID   int64  `form:"group_id"`
-		SortBy    string `form:"sort_by"`
-		Order     string `form:"order"`
-		StartTime int64  `form:"start_time"`
-		EndTime   int64  `form:"end_time"`
+		Path        string `form:"path"`
+		Keyword     string `form:"keyword"`
+		Type        string `form:"type" binding:"required"`
+		Offset      int    `form:"offset"`
+		Limit       int    `form:"limit"`
+		GroupID     int64  `form:"group_id"`
+		SortBy      string `form:"sort_by"`
+		Order       string `form:"order"`
+		StartTime   int64  `form:"start_time"`
+		EndTime     int64  `form:"end_time"`
+		Scene       string `form:"scene"`
+		SceneStatus string `form:"scene_status"`
 	}
 	if err := c.ShouldBindQuery(&req); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
@@ -457,7 +466,8 @@ func GetMySpaceRecordings(c *gin.Context) {
 	}
 
 	svc := service.NewMySpaceRecordingService(eid)
-	files, total, err := svc.ListEntries(c.Request.Context(), userID, req.Path, fileType, req.Keyword, req.Offset, req.Limit, req.GroupID, req.SortBy, req.Order, req.StartTime, req.EndTime)
+	sceneUnrecognized := req.SceneStatus == "unrecognized" || req.SceneStatus == "pending"
+	files, total, err := svc.ListEntries(c.Request.Context(), userID, req.Path, fileType, req.Keyword, req.Offset, req.Limit, req.GroupID, req.SortBy, req.Order, req.StartTime, req.EndTime, strings.TrimSpace(req.Scene), sceneUnrecognized)
 	if err != nil {
 		logger.SysErrorf("【录音】获取我的录音列表失败: eid=%d user_id=%d err=%v", eid, userID, err)
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
@@ -477,6 +487,18 @@ func GetMySpaceRecordings(c *gin.Context) {
 		if p, ok := insightPages[f.ID]; ok {
 			item.InsightPage = p
 		}
+		if strings.TrimSpace(string(f.InsightContext)) != "" {
+			var bg service.InsightBackground
+			if err := json.Unmarshal([]byte(f.InsightContext), &bg); err == nil {
+				item.SceneMode = bg.SceneMode
+				item.SceneConfidence = bg.SceneConfidence
+				item.SceneAbstained = bg.SceneAbstained
+				item.SceneReason = bg.SceneReason
+				item.SceneSource = bg.SceneSource
+				item.SceneModeSource = bg.SceneModeSource
+			}
+		}
+		item.Scene = displayScene(item.Scene, f.InsightPerspective)
 		items = append(items, item)
 	}
 

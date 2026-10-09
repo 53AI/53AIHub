@@ -24,10 +24,11 @@ func NewExternalWikiController(db *gorm.DB) *ExternalWikiController {
 }
 
 type ExternalWikiListQuery struct {
-	Keyword  string `form:"keyword"`
-	PageType string `form:"page_type"`
-	Offset   int    `form:"offset"`
-	Limit    int    `form:"limit"`
+	Keyword    string `form:"keyword"`
+	PageType   string `form:"page_type"`
+	CategoryID string `form:"category_id"`
+	Offset     int    `form:"offset"`
+	Limit      int    `form:"limit"`
 }
 
 type ExternalWikiSearchQuery struct {
@@ -36,24 +37,69 @@ type ExternalWikiSearchQuery struct {
 }
 
 type ExternalWikiPageResponse struct {
-	ID            string   `json:"id"`
-	SpaceID       string   `json:"space_id"`
-	LibraryID     string   `json:"library_id"`
-	FolderID      string   `json:"folder_id,omitempty"`
-	Title         string   `json:"title"`
-	Slug          string   `json:"slug"`
-	PageType      string   `json:"page_type"`
-	Summary       string   `json:"summary"`
-	Aliases       []string `json:"aliases,omitempty"`
-	Status        string   `json:"status"`
-	Visibility    string   `json:"visibility"`
-	CreatedTime   int64    `json:"created_time"`
-	UpdatedTime   int64    `json:"updated_time"`
-	VersionNo     int64    `json:"version_no"`
-	VersionTag    string   `json:"version_tag,omitempty"`
-	PublishedTime int64    `json:"published_time"`
-	Body          string   `json:"body,omitempty"`
-	BodyFormat    string   `json:"body_format,omitempty"`
+	ID            string                         `json:"id"`
+	SpaceID       string                         `json:"space_id"`
+	LibraryID     string                         `json:"library_id"`
+	FolderID      string                         `json:"folder_id,omitempty"`
+	Title         string                         `json:"title"`
+	Slug          string                         `json:"slug"`
+	PageType      string                         `json:"page_type"`
+	Summary       string                         `json:"summary"`
+	Aliases       []string                       `json:"aliases,omitempty"`
+	Status        string                         `json:"status"`
+	Visibility    string                         `json:"visibility"`
+	CreatedTime   int64                          `json:"created_time"`
+	UpdatedTime   int64                          `json:"updated_time"`
+	VersionNo     int64                          `json:"version_no"`
+	VersionTag    string                         `json:"version_tag,omitempty"`
+	PublishedTime int64                          `json:"published_time"`
+	Body          string                         `json:"body,omitempty"`
+	BodyFormat    string                         `json:"body_format,omitempty"`
+	Categories    []ExternalWikiCategoryResponse `json:"categories"`
+	Sources       []ExternalWikiSourceResponse   `json:"sources,omitempty"`
+	Links         []ExternalWikiLinkResponse     `json:"links,omitempty"`
+	Backlinks     []ExternalWikiLinkResponse     `json:"backlinks,omitempty"`
+}
+
+type ExternalWikiCategoryResponse struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Slug             string `json:"slug"`
+	Description      string `json:"description,omitempty"`
+	TargetEntityType string `json:"target_entity_type,omitempty"`
+	Sort             int64  `json:"sort,omitempty"`
+	PageCount        int64  `json:"page_count,omitempty"`
+	IsVirtual        bool   `json:"is_virtual,omitempty"`
+}
+
+type ExternalWikiSourceResponse struct {
+	ID             string `json:"id"`
+	SourceKind     string `json:"source_kind"`
+	SourceRef      string `json:"source_ref"`
+	SourceFileID   string `json:"source_file_id,omitempty"`
+	SourceChunkID  string `json:"source_chunk_id,omitempty"`
+	SourceSlug     string `json:"source_slug,omitempty"`
+	SourceLocation string `json:"source_location,omitempty"`
+	SourceURL      string `json:"source_url,omitempty"`
+	ExternalID     string `json:"external_id,omitempty"`
+	LastSyncedTime int64  `json:"last_synced_time,omitempty"`
+	FileLibraryID  string `json:"file_library_id,omitempty"`
+	FileName       string `json:"file_name,omitempty"`
+}
+
+type ExternalWikiLinkResponse struct {
+	ID         string `json:"id"`
+	PageID     string `json:"page_id,omitempty"`
+	PageSlug   string `json:"page_slug,omitempty"`
+	PageTitle  string `json:"page_title,omitempty"`
+	PageType   string `json:"page_type,omitempty"`
+	LinkKind   string `json:"link_kind"`
+	AnchorText string `json:"anchor_text,omitempty"`
+	TargetSlug string `json:"target_slug,omitempty"`
+}
+
+type ExternalWikiCategoryListResponse struct {
+	Items []ExternalWikiCategoryResponse `json:"items"`
 }
 
 type ExternalWikiListResponse struct {
@@ -62,22 +108,61 @@ type ExternalWikiListResponse struct {
 }
 
 type ExternalWikiSearchItemResponse struct {
-	PageID        string `json:"page_id"`
-	SpaceID       string `json:"space_id"`
-	LibraryID     string `json:"library_id"`
-	Title         string `json:"title"`
-	Slug          string `json:"slug"`
-	Summary       string `json:"summary"`
-	Snippet       string `json:"snippet"`
-	PageType      string `json:"page_type"`
-	VersionNo     int64  `json:"version_no"`
-	VersionTag    string `json:"version_tag,omitempty"`
-	PublishedTime int64  `json:"published_time"`
+	PageID        string                         `json:"page_id"`
+	SpaceID       string                         `json:"space_id"`
+	LibraryID     string                         `json:"library_id"`
+	Title         string                         `json:"title"`
+	Slug          string                         `json:"slug"`
+	Summary       string                         `json:"summary"`
+	Snippet       string                         `json:"snippet"`
+	PageType      string                         `json:"page_type"`
+	VersionNo     int64                          `json:"version_no"`
+	VersionTag    string                         `json:"version_tag,omitempty"`
+	PublishedTime int64                          `json:"published_time"`
+	Categories    []ExternalWikiCategoryResponse `json:"categories"`
 }
 
 type ExternalWikiSearchResponse struct {
 	Items []ExternalWikiSearchItemResponse `json:"items"`
 	Total int64                            `json:"total"`
+}
+
+// ListCategories returns enabled categories visible in the API key's scope.
+// @Summary 外部 Wiki 分类列表
+// @Description 使用知识库/空间级 API Key 获取当前 Key 作用域内公开 Wiki 页面使用到的分类，并返回分类下的页面数量。
+// @Tags 外部 Wiki
+// @Produce json
+// @Security ExternalAPIKeyAuth
+// @Param library_ids query string false "知识库 hashid 列表（逗号分隔），仅在 Key 作用域内筛选，默认返回全部作用域"
+// @Success 200 {object} model.CommonResponse{data=controller.ExternalWikiCategoryListResponse}
+// @Failure 400 {object} controller.ExternalWikiErrorResponse
+// @Failure 401 {object} controller.ExternalWikiErrorResponse
+// @Failure 403 {object} controller.ExternalWikiErrorResponse
+// @Failure 500 {object} controller.ExternalWikiErrorResponse
+// @Router /api/external-wiki/categories [get]
+func (c *ExternalWikiController) ListCategories(ctx *gin.Context) {
+	eid, libraryID, spaceID, ok := externalWikiScope(ctx)
+	if !ok {
+		return
+	}
+	libraryIDs, ok := c.resolveExternalWikiLibraries(ctx, eid, libraryID, spaceID)
+	if !ok {
+		return
+	}
+	libraryIDs, ok = narrowExternalWikiLibraries(ctx, libraryIDs)
+	if !ok {
+		return
+	}
+	items, err := c.readSvc.ListCategories(ctx.Request.Context(), eid, libraryIDs)
+	if err != nil {
+		externalWikiInternalError(ctx, err)
+		return
+	}
+	response := ExternalWikiCategoryListResponse{Items: make([]ExternalWikiCategoryResponse, 0, len(items))}
+	for _, item := range items {
+		response.Items = append(response.Items, encodeExternalWikiCategory(item))
+	}
+	ctx.JSON(http.StatusOK, model.Success.ToResponse(response))
 }
 
 // ListPages returns active, non-private Wiki pages from the API key's scope.
@@ -89,6 +174,7 @@ type ExternalWikiSearchResponse struct {
 // @Security ExternalAPIKeyAuth
 // @Param keyword query string false "标题、slug 或摘要关键词"
 // @Param page_type query string false "页面类型"
+// @Param category_id query string false "分类 hashid，或 other（未分类页面）"
 // @Param library_ids query string false "知识库 hashid 列表（逗号分隔），仅在 Key 作用域内筛选，默认返回全部作用域"
 // @Param offset query int false "分页偏移量，默认 0"
 // @Param limit query int false "每页数量，默认 20，最大 100"
@@ -118,14 +204,21 @@ func (c *ExternalWikiController) ListPages(ctx *gin.Context) {
 	if !ok {
 		return
 	}
+	categoryID, categoryOther, ok := parseExternalWikiCategoryFilter(query.CategoryID)
+	if !ok {
+		externalWikiError(ctx, http.StatusBadRequest, "无效的分类 ID")
+		return
+	}
 
 	result, err := c.readSvc.ListPages(ctx.Request.Context(), service.ExternalWikiListRequest{
-		Eid:        eid,
-		LibraryIDs: libraryIDs,
-		Keyword:    query.Keyword,
-		PageType:   query.PageType,
-		Offset:     query.Offset,
-		Limit:      query.Limit,
+		Eid:           eid,
+		LibraryIDs:    libraryIDs,
+		CategoryID:    categoryID,
+		CategoryOther: categoryOther,
+		Keyword:       query.Keyword,
+		PageType:      query.PageType,
+		Offset:        query.Offset,
+		Limit:         query.Limit,
 	})
 	if err != nil {
 		externalWikiInternalError(ctx, err)
@@ -144,7 +237,7 @@ func (c *ExternalWikiController) ListPages(ctx *gin.Context) {
 
 // GetPage returns the current published version of a Wiki page in the API key's scope.
 // @Summary 外部 Wiki 页面详情
-// @Description 使用知识库/空间级 API Key 获取页面当前已发布版本。页面必须属于当前 Key 作用域。
+// @Description 使用知识库/空间级 API Key 获取页面当前已发布版本、分类、来源文档、出链和反向链接。页面必须属于当前 Key 作用域。
 // @Tags 外部 Wiki
 // @Produce json
 // @Security ExternalAPIKeyAuth
@@ -254,6 +347,7 @@ func (c *ExternalWikiController) Search(ctx *gin.Context) {
 			VersionNo:     item.VersionNo,
 			VersionTag:    item.VersionTag,
 			PublishedTime: item.PublishedTime,
+			Categories:    encodeExternalWikiCategories(item.Categories),
 		})
 	}
 	ctx.JSON(http.StatusOK, model.Success.ToResponse(response))
@@ -344,6 +438,7 @@ func encodeExternalWikiPage(page service.ExternalWikiPage, includeBody bool) Ext
 		VersionNo:     page.VersionNo,
 		VersionTag:    page.VersionTag,
 		PublishedTime: page.PublishedTime,
+		Categories:    encodeExternalWikiCategories(page.Categories),
 	}
 	if page.FolderID > 0 {
 		response.FolderID = encodeExternalWikiID(page.FolderID)
@@ -351,8 +446,72 @@ func encodeExternalWikiPage(page service.ExternalWikiPage, includeBody bool) Ext
 	if includeBody {
 		response.Body = page.Body
 		response.BodyFormat = page.BodyFormat
+		response.Sources = encodeExternalWikiSources(page.Sources)
+		response.Links = encodeExternalWikiLinks(page.Links)
+		response.Backlinks = encodeExternalWikiLinks(page.Backlinks)
 	}
 	return response
+}
+
+func encodeExternalWikiCategory(category service.ExternalWikiCategory) ExternalWikiCategoryResponse {
+	id := encodeExternalWikiID(category.ID)
+	if category.IsVirtual {
+		id = category.Slug
+	}
+	return ExternalWikiCategoryResponse{
+		ID: id, Name: category.Name, Slug: category.Slug, Description: category.Description,
+		TargetEntityType: category.TargetEntityType, Sort: category.Sort,
+		PageCount: category.PageCount, IsVirtual: category.IsVirtual,
+	}
+}
+
+func encodeExternalWikiCategories(categories []service.ExternalWikiCategory) []ExternalWikiCategoryResponse {
+	items := make([]ExternalWikiCategoryResponse, 0, len(categories))
+	for _, category := range categories {
+		items = append(items, encodeExternalWikiCategory(category))
+	}
+	return items
+}
+
+func encodeExternalWikiSources(sources []service.ExternalWikiSource) []ExternalWikiSourceResponse {
+	items := make([]ExternalWikiSourceResponse, 0, len(sources))
+	for _, source := range sources {
+		items = append(items, ExternalWikiSourceResponse{
+			ID: encodeExternalWikiID(source.ID), SourceKind: source.SourceKind, SourceRef: source.SourceRef,
+			SourceFileID: encodeExternalWikiID(source.SourceFileID), SourceChunkID: encodeExternalWikiID(source.SourceChunkID),
+			SourceSlug: source.SourceSlug, SourceLocation: source.SourceLocation, SourceURL: source.SourceURL,
+			ExternalID: source.ExternalID, LastSyncedTime: source.LastSyncedTime,
+			FileLibraryID: encodeExternalWikiID(source.FileLibraryID), FileName: source.FileName,
+		})
+	}
+	return items
+}
+
+func encodeExternalWikiLinks(links []service.ExternalWikiLink) []ExternalWikiLinkResponse {
+	items := make([]ExternalWikiLinkResponse, 0, len(links))
+	for _, link := range links {
+		items = append(items, ExternalWikiLinkResponse{
+			ID: encodeExternalWikiID(link.ID), PageID: encodeExternalWikiID(link.RelatedPageID),
+			PageSlug: link.RelatedPageSlug, PageTitle: link.RelatedPageTitle, PageType: link.RelatedPageType,
+			LinkKind: link.LinkKind, AnchorText: link.AnchorText, TargetSlug: link.TargetSlug,
+		})
+	}
+	return items
+}
+
+func parseExternalWikiCategoryFilter(raw string) (int64, bool, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, false, true
+	}
+	if strings.EqualFold(raw, "other") {
+		return 0, true, true
+	}
+	id, err := hashids.TryParseID(raw)
+	if err != nil || id <= 0 {
+		return 0, false, false
+	}
+	return id, false, true
 }
 
 func encodeExternalWikiID(id int64) string {

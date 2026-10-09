@@ -154,6 +154,14 @@ func formatStatsYears(years []string) string {
 // buildStatsRAGStats 构造统计回答的 rag_stats：每文件一个 chunk 条目（source_key=[Source:N-1]），
 // document_quotations 全量引用，前端用现有来源卡片逻辑渲染（复用 formatRagStats / useRagStats）。
 func buildStatsRAGStats(files []elasticsearch.StatsSearchResult) (string, error) {
+	b, err := json.Marshal(buildStatsRAGStatsData(files))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+func buildStatsRAGStatsData(files []elasticsearch.StatsSearchResult) *RAGStatsData {
 	chunks := make([]ChunkData, 0, len(files))
 	quotations := make([]string, 0, len(files))
 	for i, f := range files {
@@ -171,7 +179,7 @@ func buildStatsRAGStats(files []elasticsearch.StatsSearchResult) (string, error)
 		})
 		quotations = append(quotations, chunkID)
 	}
-	stats := &RAGStatsData{
+	return &RAGStatsData{
 		DocumentSearch:     &DocumentSearchData{Chunks: chunks},
 		DocumentQuotations: quotations,
 		FileQuotations:     quotations,
@@ -179,11 +187,6 @@ func buildStatsRAGStats(files []elasticsearch.StatsSearchResult) (string, error)
 		Performance:        &PerformanceData{},
 		Type:               "rag_search",
 	}
-	b, err := json.Marshal(stats)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
 }
 
 // statsSubject 统计回答的主题：优先取意图分类提取的核心关键词，否则用原查询。
@@ -217,16 +220,30 @@ func tryHandleStatsCount(c *gin.Context, chatRequest *ChatRequest, ctx context.C
 			fileHits++
 		}
 	}
-	ragStatsJSON, ragStatsErr := buildStatsRAGStats(statsFiles)
+	ragStatsData := buildStatsRAGStatsData(statsFiles)
+	ragStatsBytes, ragStatsErr := json.Marshal(ragStatsData)
+	ragStatsJSON := string(ragStatsBytes)
 	if ragStatsErr != nil {
 		logger.Warnf(ctx, "统计回答 rag_stats 构造失败: %v", ragStatsErr)
+		ragStatsJSON = ""
 	}
 	messageStatus.StepSender.SendEndStep(STEP_STATS_COUNT, fmt.Sprintf("统计完成，共 %d 个文件", total), map[string]interface{}{
 		"total":          total,
 		"file_name_hits": fileHits,
 		"source":         source,
 		"keyword":        keyword,
+		"sources":        ragStatsData.DocumentSearch.Chunks,
 	})
+	if len(ragStatsData.DocumentQuotations)+len(ragStatsData.WikiPageQuotations) > 0 {
+		messageStatus.StepSender.SendStartStep(STEP_REF_ANALYSIS, "正在分析回答中的文档引用...", nil)
+		quotedCount := len(ragStatsData.DocumentQuotations) + len(ragStatsData.WikiPageQuotations)
+		messageStatus.StepSender.SendEndStep(STEP_REF_ANALYSIS, fmt.Sprintf("引用分析完成，回答中引用了 %d 篇文档", quotedCount), map[string]interface{}{
+			"document_quotations":  ragStatsData.DocumentQuotations,
+			"file_quotations":      ragStatsData.FileQuotations,
+			"wiki_page_quotations": ragStatsData.WikiPageQuotations,
+			"performance":          ragStatsData.Performance,
+		})
+	}
 	handleStatsCountReply(c, chatRequest, agent, answer, ragStatsJSON, requestId, messageStatus)
 	return true
 }
@@ -412,7 +429,7 @@ func statsCountViaSQL(ctx context.Context, eid, userID int64, keyword string, li
 }
 
 // handleStatsCountReply 写统计回答消息并返回（仿 handleOutOfRangeReply 骨架，正常响应状态）。
-// ragStatsJSON 为统计回答的 rag_stats（chunks + quotations），落库供前端来源卡片渲染。
+// ragStatsJSON 为统计回答的 rag_stats（chunks + quotations），落库并随流式响应返回。
 func handleStatsCountReply(c *gin.Context, chatRequest *ChatRequest, agent *model.Agent, answer, ragStatsJSON, requestId string, messageStatus *MessageStatsInfo) {
 	ctx := c.Request.Context()
 	userID := config.GetUserId(c)
@@ -494,7 +511,7 @@ func handleStatsCountReply(c *gin.Context, chatRequest *ChatRequest, agent *mode
 	}
 
 	if chatRequest.Stream {
-		sendStreamOutOfRangeReply(c, answer, requestId, agent.Model)
+		sendStreamReply(c, answer, requestId, agent.Model, json.RawMessage(ragStatsJSON))
 	} else {
 		sendNonStreamOutOfRangeReply(c, answer, requestId, agent.Model)
 	}

@@ -135,7 +135,7 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
     };
 
     const content = libraryInfo ? (
-      <div style={{ width: DEFAULT_GRAPH_WIDTH }}>
+      <div style={{ width: `min(${DEFAULT_GRAPH_WIDTH}px, calc(100vw - 32px))` }}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 overflow-hidden">
             <div className="size-5 rounded flex items-center justify-center bg-[#145CF7] text-white">
@@ -155,7 +155,7 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
           </Button>
         </div>
 
-        <div className="w-full" style={{ height: DEFAULT_GRAPH_HEIGHT }}>
+        <div className="w-full" style={{ height: `min(${DEFAULT_GRAPH_HEIGHT}px, 50vh)` }}>
           {showGraph && (renderGraphViewer ? renderGraphViewer(graphDataRef.current) : defaultGraphRenderer(graphDataRef.current))}
         </div>
 
@@ -194,6 +194,9 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
         trigger="click"
         content={content}
         classNames={{ container: "!p-4" }}
+        // bottomLeft 等边缘 placement 默认只有翻转（adjustX/Y）没有视口内平移（shiftX/Y），
+        // 弹层在移动端可能显示不全；补充 shift 让 rc-trigger 强制将弹层限制在视口内
+        align={{ overflow: { adjustX: true, adjustY: true, shiftX: true, shiftY: true } }}
       >
         <span style={triggerStyle} />
       </Popover>

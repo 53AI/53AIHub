@@ -1364,6 +1364,7 @@ mine.no_audio_to_import,没有有效的音频文件可导入,沒有有效的音�
 mine.imported,已导入,已導入,Imported,インポート済み
 mine.import_failed,导入失败,導入失敗,Import failed,インポート失敗
 global_search.clear,清除,清除,Clear,クリア
+global_search.filter,筛选,篩選,Filter,フィルター
 global_search.dynamic_tab,Wiki,Wiki,Wiki,Wiki
 global_search.related_spaces,相关知识空间,相關知識空間,Related Knowledge Spaces,関連ナレッジスペース
 global_search.related_libraries,相关知识库,相關知識庫,Related Knowledge Bases,関連ナレッジベース

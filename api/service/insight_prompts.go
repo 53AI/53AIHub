@@ -3,7 +3,7 @@ package service
 import "github.com/53AI/53AIHub/model"
 
 type insightPromptProfile struct {
-	Perspective         model.InsightPerspective
+	Scene               model.RecordingScene
 	SourceTag           string
 	SourceName          string
 	SourceIsPrimaryText bool
@@ -111,6 +111,24 @@ const managementCourseInsightPrompt = `# 当前场景：管理课程
 
 不要伪造老师原话或课程案例；没有验证的观点必须标记为待验证。`
 
+const hiringInsightPrompt = `# 当前场景：人才面试 / 合作人才评估
+
+把当前材料还原成一次人才判断：既要判断“这个人值不值得一起做事”，也要判断“以什么方式一起做事”。你服务的是需要做用人判断的决策者，不是面试记录员。
+
+重点分析：
+1. 候选人真实能力证据：做过什么、拿到过什么结果、在什么条件下拿到的；区分候选人自述与可核验的行为证据（提前调研、主动提交方案、被追问后的反应、是否能快速吸收新方法、是否交付过结果）。
+2. 与岗位当前阶段的匹配：岗位现在真正要解决的问题、必须已验证的能力、可以边做边补的能力，以及错配会带来的代价；简历和职位名称不是证据。
+3. 双向风险：既包括“贸然录用或合作”的风险，也包括“低估一个仍然有潜力的人、错失窗口”的风险；没有证据时不得写成结论。
+4. 合作方式：全职、兼职、项目制、顾问式、先试做再决定，各自成立的条件和需要先确认的事项；没有明确共识时不得写成已经确定合作关系。
+5. 尚未验证的能力清单与下一轮最值得验证的问题：接下来的动作要能真正降低录用或合作判断的不确定性。
+
+在统一 Markdown 输出结构中，优先呈现：这个人现在能不能用、用在哪、以什么方式用、还缺哪些证据、下一步验证什么、什么条件下应该停止推进。行动必须写明由谁、做什么、做到什么才算验证完成。
+
+判断权限按 <personal_info> 校准：
+- 当前用户拥有招聘或合作决策权时，必须给出明确的建议判断，例如“建议继续推进”“暂不建议直接录用”“建议先试做再决定”“建议停止推进”“更适合项目合作而不是全职”“当前证据已经足以进入录用讨论”“当前证据仍不足以作录用判断”。不要用“请自行判断”回避判断。
+- 当前用户没有最终决策权时，写成“建议升级给招聘决策者”，并说明需要决策者确认什么。
+- 无论哪种情况，都只能写成建议判断，不得写成“已经录用 / 已经拒绝 / 已经决定”。`
+
 const externalTrainingInsightPrompt = `# 当前场景：参与外部培训会议
 
 你要判断这次培训对当前用户、公司和业务是否真正有用，而不是复述讲师讲了什么。
@@ -201,94 +219,107 @@ const bookInsightPrompt = `# 当前场景：读一本书
 输出前检查：不读原书是否也能理解最重要的思想；是否真正结合了用户、公司和行业；是否提出了用户可能没想到的判断；是否指出不适用部分；行动是否具体；删除书名后是否仍像任何一本商业书都能套用。如果会套用，必须重写为更具体的分析。
 `
 
-var insightPromptProfiles = map[model.InsightPerspective]insightPromptProfile{
-	model.InsightPerspectiveManagementMeeting: {
-		Perspective:       model.InsightPerspectiveManagementMeeting,
+var sceneInsightPrompts = map[model.RecordingScene]insightPromptProfile{
+	model.RecordingSceneStrategyOperation: {
+		Scene:             model.RecordingSceneStrategyOperation,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "管理例会纪要",
+		SourceName:        "战略经营纪要",
 		PerspectivePrompt: managementMeetingInsightPrompt,
 	},
-	model.InsightPerspectiveCustomerCommunication: {
-		Perspective:       model.InsightPerspectiveCustomerCommunication,
+	model.RecordingSceneCustomerGrowth: {
+		Scene:             model.RecordingSceneCustomerGrowth,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "客户交流纪要",
+		SourceName:        "客户增长纪要",
 		PerspectivePrompt: customerCommunicationInsightPrompt,
 	},
-	model.InsightPerspectiveProjectReview: {
-		Perspective:       model.InsightPerspectiveProjectReview,
+	model.RecordingSceneProductInnovation: {
+		Scene:             model.RecordingSceneProductInnovation,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "项目复盘纪要",
-		PerspectivePrompt: projectReviewInsightPrompt,
-	},
-	model.InsightPerspectiveBusinessCooperation: {
-		Perspective:       model.InsightPerspectiveBusinessCooperation,
-		SourceTag:         "meeting_minutes",
-		SourceName:        "商业合作纪要",
-		PerspectivePrompt: businessCooperationInsightPrompt,
-	},
-	model.InsightPerspectiveBusinessInnovation: {
-		Perspective:       model.InsightPerspectiveBusinessInnovation,
-		SourceTag:         "meeting_minutes",
-		SourceName:        "业务创新纪要",
+		SourceName:        "产品创新纪要",
 		PerspectivePrompt: businessInnovationInsightPrompt,
 	},
-	model.InsightPerspectiveEmployeeConversation: {
-		Perspective:       model.InsightPerspectiveEmployeeConversation,
+	model.RecordingSceneProjectDelivery: {
+		Scene:             model.RecordingSceneProjectDelivery,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "员工谈话纪要",
+		SourceName:        "项目交付纪要",
+		PerspectivePrompt: projectReviewInsightPrompt,
+	},
+	model.RecordingSceneOrganizationTalent: {
+		Scene:             model.RecordingSceneOrganizationTalent,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "组织人才纪要",
 		PerspectivePrompt: employeeConversationInsightPrompt,
 	},
-	model.InsightPerspectiveIndustryExchange: {
-		Perspective:       model.InsightPerspectiveIndustryExchange,
+	model.RecordingScenePartnershipResource: {
+		Scene:             model.RecordingScenePartnershipResource,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "行业交流纪要",
-		PerspectivePrompt: industryExchangeInsightPrompt,
+		SourceName:        "合作资源纪要",
+		PerspectivePrompt: businessCooperationInsightPrompt,
 	},
-	model.InsightPerspectiveManagementCourse: {
-		Perspective:       model.InsightPerspectiveManagementCourse,
+	model.RecordingSceneLearningInsight: {
+		Scene:             model.RecordingSceneLearningInsight,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "管理课程纪要",
+		SourceName:        "学习认知纪要",
 		PerspectivePrompt: managementCourseInsightPrompt,
 	},
-	model.InsightPerspectiveExternalSpeech: {
-		Perspective:       model.InsightPerspectiveExternalSpeech,
+}
+
+var legacyInsightPromptProfiles = map[model.InsightPerspective]insightPromptProfile{
+	model.InsightPerspectiveHiring: {
+		Scene:             model.RecordingSceneOrganizationTalent,
 		SourceTag:         "meeting_minutes",
-		SourceName:        "演讲活动纪要",
-		PerspectivePrompt: externalSpeechInsightPrompt,
-	},
-	model.InsightPerspectiveRoadshow: {
-		Perspective:       model.InsightPerspectiveRoadshow,
-		SourceTag:         "meeting_minutes",
-		SourceName:        "路演会议纪要",
-		PerspectivePrompt: roadshowInsightPrompt,
-	},
-	model.InsightPerspectiveExternalTraining: {
-		Perspective:       model.InsightPerspectiveExternalTraining,
-		SourceTag:         "meeting_minutes",
-		SourceName:        "培训会议纪要",
-		PerspectivePrompt: externalTrainingInsightPrompt,
+		SourceName:        "人才面试纪要",
+		PerspectivePrompt: hiringInsightPrompt,
 	},
 	model.InsightPerspectiveBook: {
-		Perspective:       model.InsightPerspectiveBook,
+		Scene:             model.RecordingSceneLearningInsight,
 		SourceTag:         "meeting_minutes",
 		SourceName:        "读书录音纪要",
 		PerspectivePrompt: bookInsightPrompt,
 	},
+	model.InsightPerspectiveRoadshow: {
+		Scene:             model.RecordingSceneCustomerGrowth,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "路演会议纪要",
+		PerspectivePrompt: roadshowInsightPrompt,
+	},
+	model.InsightPerspectiveExternalSpeech: {
+		Scene:             model.RecordingSceneLearningInsight,
+		SourceTag:         "meeting_minutes",
+		SourceName:        "演讲活动纪要",
+		PerspectivePrompt: externalSpeechInsightPrompt,
+	},
 }
 
+var sceneModeGuides = map[model.SceneMode]string{
+	model.SceneModeDecision:      "本场会议是「决策」模式：重点分析备选方案、关键假设、取舍与资源配置、风险与停止条件。",
+	model.SceneModeAdvancement:   "本场会议是「推进」模式：重点分析进度、阻塞、责任人、依赖、时间与延期风险、下一步。",
+	model.SceneModeNegotiation:   "本场会议是「沟通谈判」模式：重点分析真实需求、预算、决策链、采购意愿、异议、价格与成交风险。",
+	model.SceneModeEvaluation:    "本场会议是「评估」模式：重点判断能力真实性、岗位匹配、意愿、成长性与风险。",
+	model.SceneModeRetrospective: "本场会议是「复盘」模式：重点分析目标差距、根因、错误判断、经验与机制改进。",
+	model.SceneModeLearning:      "本场会议是「学习」模式：重点提炼新观点、认知冲突、适用性、可吸收的方法与是否值得进入认知系统。",
+}
+
+// insightPromptProfileFor 将任意视角码或场景码归一化到场景 profile；旧专用码优先命中。
 func insightPromptProfileFor(perspective model.InsightPerspective) insightPromptProfile {
 	normalized := model.NormalizeInsightPerspective(string(perspective))
-	canonical := model.CanonicalInsightPerspective(normalized)
-	if canonical != normalized {
-		normalized = canonical
-	}
-	if profile, ok := insightPromptProfiles[normalized]; ok {
+	if profile, ok := legacyInsightPromptProfiles[normalized]; ok {
 		return profile
 	}
-	return insightPromptProfiles[model.DefaultInsightPerspective]
+	scene := model.ResolveSceneFromCode(string(normalized))
+	if !model.IsCanonicalScene(scene) {
+		scene = model.RecordingSceneStrategyOperation
+	}
+	return sceneInsightPrompts[scene]
 }
 
-func buildInsightSystemPrompt(perspective model.InsightPerspective) string {
+func buildInsightSystemPrompt(perspective model.InsightPerspective, modes ...model.SceneMode) string {
 	profile := insightPromptProfileFor(perspective)
-	return insightPerspectiveCommonPrompt + "\n\n" + insightDecisionMethodPrompt + "\n\n" + profile.PerspectivePrompt
+	prompt := insightPerspectiveCommonPrompt + "\n\n" + insightDecisionMethodPrompt + "\n\n" + profile.PerspectivePrompt
+	if len(modes) > 0 {
+		if guide := sceneModeGuides[modes[0]]; guide != "" {
+			prompt += "\n\n" + guide
+		}
+	}
+	return prompt
 }

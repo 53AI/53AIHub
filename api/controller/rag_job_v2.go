@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -17,29 +19,37 @@ import (
 
 // RetryRagJobStepRequestV2 重试RAG任务步骤请求参数 (V2)
 type RetryRagJobStepRequestV2 struct {
-	Config   json.RawMessage `json:"config" binding:"-"`
+	Config   json.RawMessage `json:"config" binding:"-" swaggertype:"string"`
 	Continue bool            `json:"continue" enums:"true,false" description:"是否继续执行后续步骤：true-执行完当前步骤后自动触发下一步；false-仅执行当前步骤（默认）"`
 }
 
 type BatchRetryRagJobStepItemV2 struct {
-	JobID     int64           `json:"job_id" binding:"-" description:"任务ID"`
-	StepKey   string          `json:"step_key" binding:"-" description:"步骤 Key（首次运行/无 job_id 场景）"`
-	StepIndex *int            `json:"step_index" binding:"-" description:"步骤序号（首次运行/无 job_id 场景）"`
-	RunMode   string          `json:"run_mode" binding:"-" description:"运行模式：auto/manual/skip（仅首次运行场景有效）"`
-	Config    json.RawMessage `json:"config" binding:"-" description:"可选，新的步骤配置 JSON"`
+	JobID     int64           `json:"job_id" description:"任务ID"`
+	StepKey   string          `json:"step_key" description:"步骤 Key（首次运行/无 job_id 场景）"`
+	StepIndex *int            `json:"step_index" description:"步骤序号（首次运行/无 job_id 场景）"`
+	RunMode   string          `json:"run_mode" description:"运行模式：auto/manual/skip（仅首次运行场景有效）"`
+	Config    json.RawMessage `json:"config" swaggertype:"string" description:"可选，新的步骤配置 JSON"`
 }
 
 type BatchRunContextV2 struct {
-	RelatedID       interface{}     `json:"related_id" binding:"-" description:"关联ID（文件ID），支持数字或 HashID"`
-	StrategyID      interface{}     `json:"strategy_id" binding:"-" description:"可选，指定策略ID，支持数字或 HashID"`
-	PipelineID      interface{}     `json:"pipeline_id" binding:"-" description:"可选，指定流水线ID，支持数字或 HashID"`
-	RunID           string          `json:"run_id" binding:"-" description:"可选，指定 run_id"`
-	StartParameters json.RawMessage `json:"start_parameters" binding:"-" description:"可选，启动参数 JSON"`
+	// RelatedID 为文件 ID；HashID 与原始正整数均可。
+	RelatedID json.RawMessage `json:"related_id" swaggertype:"string"`
+	// StrategyID 指定图谱路由策略；HashID 与原始正整数均可。
+	StrategyID json.RawMessage `json:"strategy_id,omitempty" swaggertype:"string"`
+	// PipelineID 指定图谱管线；HashID 与原始正整数均可。
+	PipelineID json.RawMessage `json:"pipeline_id,omitempty" swaggertype:"string"`
+	// PipelineKind 为 graph 时启动独立图谱管线；省略时保持 RAG 行为。
+	PipelineKind string `json:"pipeline_kind,omitempty"`
+	// SourceJobID 可选引用同一文件的旧 graph_generation job，仅用于审计。
+	SourceJobID json.RawMessage `json:"source_job_id,omitempty" swaggertype:"string"`
+	RunID       string          `json:"run_id,omitempty"`
+	// StartParameters 为 RAG run 模式的启动参数；图谱 run 不接受客户端覆盖。
+	StartParameters json.RawMessage `json:"start_parameters,omitempty" swaggertype:"string"`
 }
 
 type BatchRetryRagJobStepRequestV2 struct {
-	Run  *BatchRunContextV2           `json:"run" binding:"-"`
-	Jobs []BatchRetryRagJobStepItemV2 `json:"jobs" binding:"required"`
+	Run  *BatchRunContextV2           `json:"run,omitempty"`
+	Jobs []BatchRetryRagJobStepItemV2 `json:"jobs" binding:"required" description:"批量操作的 RAG 或图谱任务步骤"`
 }
 
 type BatchRetryRagJobStepResponseV2 struct {
@@ -54,18 +64,20 @@ type RagJobWithStepsV2 struct {
 }
 
 type RagJobBatchByRelatedResponseV2 struct {
-	RelatedID int64               `json:"related_id"`
-	RunID     string              `json:"run_id"`
-	Jobs      []RagJobWithStepsV2 `json:"jobs"`
+	RelatedID        int64                           `json:"related_id"`
+	RunID            string                          `json:"run_id"`
+	Jobs             []RagJobWithStepsV2             `json:"jobs"`
+	LegacyGraphJob   *service.GraphRelatedJobSummary `json:"legacy_graph_job,omitempty"`
+	GraphPipelineJob *service.GraphRelatedJobSummary `json:"graph_pipeline_job,omitempty"`
 }
 
 // @Summary 通过 related_id 获取最近一次任务批次
-// @Description 通过 related_id 查询最后一次相同 run_id 的一批次任务列表，包含 rag_job_steps 数据
+// @Description 通过 related_id 查询最后一次相同 run_id 的 RAG 批次，包含 rag_job_steps 数据；旧图谱 job 和独立图谱管线 job 作为单独摘要返回
 // @Tags RAG任务V2
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param related_id query int true "关联ID(文件ID)"
+// @Param related_id query string true "关联ID(文件HashID或原始正整数)"
 // @Success 200 {object} model.CommonResponse{data=RagJobBatchByRelatedResponseV2} "获取成功"
 // @Failure 400 {object} model.CommonResponse "参数错误"
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
@@ -76,7 +88,7 @@ func GetRagJobsByRelatedIDV2(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("缺少 related_id"))
 		return
 	}
-	relatedID, err := strconv.ParseInt(relatedIdStr, 10, 64)
+	relatedID, err := hashids.TryParseID(relatedIdStr)
 	if err != nil || relatedID <= 0 {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的 related_id"))
 		return
@@ -97,11 +109,19 @@ func GetRagJobsByRelatedIDV2(c *gin.Context) {
 			Steps:  stepMap[job.JobID],
 		})
 	}
+	legacyGraphJob, graphPipelineJob, err := service.GetRelatedGraphJobSummaries(c.Request.Context(), eid, relatedID)
+	if err != nil {
+		logger.Errorf(c.Request.Context(), "【图谱任务】系统查询文件%d关联的图谱任务：失败（%v）", relatedID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
+		return
+	}
 
 	resp := RagJobBatchByRelatedResponseV2{
-		RelatedID: relatedID,
-		RunID:     runID,
-		Jobs:      respJobs,
+		RelatedID:        relatedID,
+		RunID:            runID,
+		Jobs:             respJobs,
+		LegacyGraphJob:   legacyGraphJob,
+		GraphPipelineJob: graphPipelineJob,
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(resp))
@@ -148,7 +168,7 @@ func RetryRagJobStepV2(c *gin.Context) {
 
 // BatchRetryRagJobStepV2 批量重试 RAG 任务步骤 (V2)
 // @Summary 批量重试 RAG 任务步骤
-// @Description 批量修改参数并按请求顺序发送重试指令，仅执行传入的步骤
+// @Description 批量修改参数并按请求顺序发送重试指令；run.pipeline_kind=graph 时创建独立图谱管线运行并生成新的 run_id
 // @Tags RAG任务V2
 // @Accept json
 // @Produce json
@@ -156,6 +176,7 @@ func RetryRagJobStepV2(c *gin.Context) {
 // @Param body body BatchRetryRagJobStepRequestV2 true "批量重试请求参数"
 // @Success 200 {object} model.CommonResponse "操作成功"
 // @Failure 400 {object} model.CommonResponse "参数错误"
+// @Failure 409 {object} model.CommonResponse "该文件已有图谱任务运行中"
 // @Failure 500 {object} model.CommonResponse "服务器内部错误"
 // @Router /api/rag/v2/jobs/batch-retry [post]
 func BatchRetryRagJobStepV2(c *gin.Context) {
@@ -171,15 +192,9 @@ func BatchRetryRagJobStepV2(c *gin.Context) {
 
 	if req.Run != nil {
 		var relatedID int64
-		if req.Run.RelatedID != nil {
-			switch v := req.Run.RelatedID.(type) {
-			case string:
-				relatedID, _ = hashids.TryParseID(v)
-			case float64:
-				relatedID = int64(v)
-			case int64:
-				relatedID = v
-			}
+		var err error
+		if len(req.Run.RelatedID) > 0 && string(req.Run.RelatedID) != "null" {
+			relatedID, _ = parseBatchRunID(req.Run.RelatedID)
 		}
 		if relatedID <= 0 {
 			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的 run.related_id"))
@@ -187,26 +202,28 @@ func BatchRetryRagJobStepV2(c *gin.Context) {
 		}
 
 		var pipelineID int64
-		if req.Run.PipelineID != nil {
-			switch v := req.Run.PipelineID.(type) {
-			case string:
-				pipelineID, _ = hashids.TryParseID(v)
-			case float64:
-				pipelineID = int64(v)
-			case int64:
-				pipelineID = v
+		if len(req.Run.PipelineID) > 0 && string(req.Run.PipelineID) != "null" {
+			pipelineID, err = parseBatchRunID(req.Run.PipelineID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的 run.pipeline_id"))
+				return
 			}
 		}
 
 		var strategyID int64
-		if req.Run.StrategyID != nil {
-			switch v := req.Run.StrategyID.(type) {
-			case string:
-				strategyID, _ = hashids.TryParseID(v)
-			case float64:
-				strategyID = int64(v)
-			case int64:
-				strategyID = v
+		if len(req.Run.StrategyID) > 0 && string(req.Run.StrategyID) != "null" {
+			strategyID, err = parseBatchRunID(req.Run.StrategyID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的 run.strategy_id"))
+				return
+			}
+		}
+		var sourceJobID int64
+		if len(req.Run.SourceJobID) > 0 && string(req.Run.SourceJobID) != "null" {
+			sourceJobID, err = parseBatchRunID(req.Run.SourceJobID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的 run.source_job_id"))
+				return
 			}
 		}
 
@@ -225,13 +242,19 @@ func BatchRetryRagJobStepV2(c *gin.Context) {
 			RelatedID:       relatedID,
 			StrategyID:      strategyID,
 			PipelineID:      pipelineID,
+			PipelineKind:    req.Run.PipelineKind,
+			SourceJobID:     sourceJobID,
 			RunID:           req.Run.RunID,
 			StartParameters: req.Run.StartParameters,
 		}, steps)
 		if err != nil {
 			logger.Errorf(c.Request.Context(), "Failed to batch run job steps: %v", err)
-			if errors.Is(err, service.ErrInvalidBatchRunRequest) {
+			if errors.Is(err, service.ErrInvalidBatchRunRequest) || errors.Is(err, service.ErrInvalidGraphPipelineStart) {
 				c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+				return
+			}
+			if errors.Is(err, service.ErrGraphPipelineAlreadyRunning) {
+				c.JSON(http.StatusConflict, model.ParamError.ToResponse(err))
 				return
 			}
 			c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
@@ -269,6 +292,44 @@ func BatchRetryRagJobStepV2(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse("批量重试指令已发送"))
+}
+
+func parseBatchRunID(value interface{}) (int64, error) {
+	switch id := value.(type) {
+	case json.RawMessage:
+		decoder := json.NewDecoder(bytes.NewReader(id))
+		decoder.UseNumber()
+		var decoded interface{}
+		if err := decoder.Decode(&decoded); err != nil {
+			return 0, err
+		}
+		return parseBatchRunID(decoded)
+	case json.Number:
+		parsed, err := strconv.ParseInt(string(id), 10, 64)
+		if err != nil || parsed <= 0 {
+			return 0, errors.New("invalid id")
+		}
+		return parsed, nil
+	case string:
+		return hashids.TryParseID(id)
+	case float64:
+		if id <= 0 || id != math.Trunc(id) || id >= float64(math.MaxInt64) {
+			return 0, errors.New("invalid id")
+		}
+		return int64(id), nil
+	case int:
+		if id <= 0 {
+			return 0, errors.New("invalid id")
+		}
+		return int64(id), nil
+	case int64:
+		if id <= 0 {
+			return 0, errors.New("invalid id")
+		}
+		return id, nil
+	default:
+		return 0, errors.New("invalid id")
+	}
 }
 
 // CancelRagJobV2 取消 RAG 任务 (V2)

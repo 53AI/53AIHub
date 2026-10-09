@@ -9,6 +9,7 @@ import (
 
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type wikiGenerationCheckpoint struct {
@@ -183,18 +184,86 @@ func persistWikiGenerationCheckpoint(ctx context.Context, db *gorm.DB, jobID int
 	if db == nil || jobID <= 0 {
 		return nil
 	}
-	data, err := json.Marshal(checkpoint)
-	if err != nil {
-		return fmt.Errorf("marshal wiki generation checkpoint: %w", err)
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var step model.RagJobStep
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("job_id = ?", jobID).First(&step).Error; err != nil {
+			return err
+		}
+		var current wikiGenerationCheckpoint
+		if step.Results != "" {
+			if err := json.Unmarshal([]byte(step.Results), &current); err != nil {
+				return fmt.Errorf("parse wiki generation checkpoint: %w", err)
+			}
+		}
+		merged := mergeWikiGenerationCheckpoint(current, checkpoint)
+		data, err := json.Marshal(merged)
+		if err != nil {
+			return fmt.Errorf("marshal wiki generation checkpoint: %w", err)
+		}
+		return tx.Model(&step).Update("results", string(data)).Error
+	})
+}
+
+func mergeWikiGenerationCheckpoint(current, incoming wikiGenerationCheckpoint) wikiGenerationCheckpoint {
+	if incoming.ProcessingVersion != "" {
+		current.ProcessingVersion = incoming.ProcessingVersion
 	}
-	result := db.WithContext(ctx).Model(&model.RagJobStep{}).
-		Where("job_id = ?", jobID).
-		Update("results", string(data))
-	if result.Error != nil {
-		return result.Error
+	if incoming.ContentFingerprint != "" {
+		current.ContentFingerprint = incoming.ContentFingerprint
 	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+	if incoming.WikiGenerationMode != "" {
+		current.WikiGenerationMode = incoming.WikiGenerationMode
 	}
-	return nil
+	if incoming.WikiCategoryScopeFingerprint != "" {
+		current.WikiCategoryScopeFingerprint = incoming.WikiCategoryScopeFingerprint
+	}
+	if incoming.Result != nil {
+		current.Result = incoming.Result
+	}
+	if incoming.Candidates != nil {
+		current.Candidates = incoming.Candidates
+	}
+	if incoming.Updates != nil {
+		current.Updates = incoming.Updates
+	}
+	completed := make(map[string]struct{}, len(current.CompletedSlugs)+len(incoming.CompletedSlugs))
+	for _, slug := range append(current.CompletedSlugs, incoming.CompletedSlugs...) {
+		completed[slug] = struct{}{}
+	}
+	current.CompletedSlugs = current.CompletedSlugs[:0]
+	for slug := range completed {
+		current.CompletedSlugs = append(current.CompletedSlugs, slug)
+	}
+	sort.Strings(current.CompletedSlugs)
+	categoryPages := make(map[string]struct{}, len(current.CompletedCategoryPages)+len(incoming.CompletedCategoryPages))
+	for _, key := range append(current.CompletedCategoryPages, incoming.CompletedCategoryPages...) {
+		categoryPages[key] = struct{}{}
+	}
+	current.CompletedCategoryPages = current.CompletedCategoryPages[:0]
+	for key := range categoryPages {
+		current.CompletedCategoryPages = append(current.CompletedCategoryPages, key)
+	}
+	sort.Strings(current.CompletedCategoryPages)
+	if current.CompiledResults == nil {
+		current.CompiledResults = make(map[string]string)
+	}
+	for slug, result := range incoming.CompiledResults {
+		current.CompiledResults[slug] = result
+	}
+	if current.SlugStates == nil {
+		current.SlugStates = make(map[string]wikiSlugCheckpointState)
+	}
+	for slug, state := range incoming.SlugStates {
+		previous := current.SlugStates[slug]
+		if previous.Status == wikiSlugStateSuccess || state.Attempts >= previous.Attempts {
+			current.SlugStates[slug] = state
+		}
+	}
+	for _, slug := range current.CompletedSlugs {
+		state := current.SlugStates[slug]
+		state.Status = wikiSlugStateSuccess
+		state.LastError = ""
+		current.SlugStates[slug] = state
+	}
+	return current
 }

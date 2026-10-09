@@ -30,6 +30,7 @@ import {
 } from './hooks/useRecordingList'
 import { RecordingFileList } from './components/list/RecordingFileList'
 import { GroupDialog, type GroupDialogRef } from '@/components/GroupDialog'
+import { ResponsiveSidebar } from '@/components/Layout/ResponsiveSidebar'
 import { SvgIcon } from "@km/shared-components-react"
 import { useLibraryStore } from '@/stores/modules/library'
 import agentsApi from '@/api/modules/agents'
@@ -835,8 +836,10 @@ export function RecordingView() {
   return (
     <div className="flex h-full">
       {/* 左栏 */}
-      <div className="flex-shrink-0 w-[280px] h-full pt-4 bg-white border-r border-[#EDEEF0] flex flex-col">
-        <div className='h-10 flex items-center justify-between px-3'>
+      <ResponsiveSidebar className="pt-4 bg-white border-r border-[#EDEEF0]">
+        {({ close }) => (
+          <>
+            <div className='h-10 flex items-center justify-between px-3'>
           <Popover
             open={deviceListOpen}
             onOpenChange={handleDeviceListOpenChange}
@@ -999,7 +1002,10 @@ export function RecordingView() {
         <div className="px-3 mt-3">
           <button
             type="button"
-            onClick={goToHome}
+            onClick={() => {
+              goToHome();
+              close();
+            }}
             className={[
               'w-full h-9 flex items-center gap-2 px-3 rounded-lg text-left text-[13px] transition-colors',
               !selectedFileId && !cognitionMatch
@@ -1015,7 +1021,10 @@ export function RecordingView() {
         <div className="px-3 mt-1">
           <button
             type="button"
-            onClick={goToCognition}
+            onClick={() => {
+              goToCognition();
+              close();
+            }}
             className={[
               'w-full h-9 flex items-center gap-2 px-3 rounded-lg text-left text-[13px] transition-colors',
               cognitionMatch
@@ -1098,13 +1107,18 @@ export function RecordingView() {
           list={fileList}
           loading={loading}
           selectedId={selectedFileId}
-          onSelect={handleSelect}
+          onSelect={(item) => {
+            handleSelect(item);
+            close();
+          }}
           onCommand={handleListCommand}
           hasMore={hasMore}
           onLoadMore={loadMore}
           categoryTags={categoryTags}
         />
-      </div>
+          </>
+        )}
+      </ResponsiveSidebar>
 
       {/* 右栏：由子路由决定（index=经营记忆 / cognition=认知模型 / preview=录音预览） */}
       <Outlet context={outletContext} />

@@ -344,6 +344,7 @@ func migrateDB() error {
 		&ActionOpportunityRecord{}, &ActionEvidenceRefRecord{},
 		&ActionPlanRecord{},
 		&CanonicalSourceIdentityRecord{}, &ActionSourceRefRecord{},
+		&ActionOpportunityDetectionLockRecord{},
 	); err != nil {
 		return err
 	}
@@ -416,6 +417,9 @@ func migrateDB() error {
 		&RecordingCognitionApplicability{},
 		&RecordingMemoryV2Shadow{},
 		&RecordingMemoryV2Evaluation{},
+		&RecordingSecondBrainShadow{},
+		&RecordingInsightFrameworkExperiment{},
+		&RecordingTaxonomyV2Shadow{},
 		&RecordingDeviceConfig{},
 		&RecordingSyncSource{},
 		&RecordingSyncJob{},

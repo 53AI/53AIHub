@@ -210,7 +210,7 @@ export function CaptchaModal({ fetchCaptcha, t }: CaptchaModalProps) {
                 <img
                   src={image}
                   alt="captcha"
-                  className={`h-full w-full object-cover${expired ? ' blur-[2px]' : ''}`}
+                  className={`w-full object-cover${expired ? ' blur-[2px]' : ''}`}
                 />
               ) : null}
               {expired || loadFailed || !image ? (

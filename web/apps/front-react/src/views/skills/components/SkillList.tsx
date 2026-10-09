@@ -92,7 +92,7 @@ const SkillList: React.FC<SkillListProps> = ({
 
   if (loading) {
     return (
-      <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 ${className || ""}`}>
+      <div className={className || ""}>
         {[1, 2, 3, 4, 5, 6].map((i) => (
           <div
             key={i}
@@ -136,7 +136,7 @@ const SkillList: React.FC<SkillListProps> = ({
   return (
     <>
       <div
-        className={`grid grid-cols-3 gap-4 ${className || ""}`}
+        className={className || ""}
       >
         {showList.map((skill) => (
           <SkillCard
@@ -144,6 +144,7 @@ const SkillList: React.FC<SkillListProps> = ({
             skill={skill}
             type={type}
             groupId={groupId}
+            keyword={keyword}
             onAdd={onAdd}
             addedAgentId={addedAgentId}
             addedSkillIds={addedSkillIds}

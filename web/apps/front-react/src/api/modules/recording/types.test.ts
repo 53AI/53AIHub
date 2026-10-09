@@ -4,18 +4,16 @@ import {
 	RecordingDecisionContextPackage,
 	RecordingDecisionRuntimeContext,
 	resolveInsightPerspectiveForSubmit,
-	toCanonicalInsightPerspective,
 } from './types'
 
-describe('insight perspective compatibility', () => {
+describe('insight scene compatibility', () => {
   it('preserves auto until the user explicitly changes the scene', () => {
-    expect(toCanonicalInsightPerspective('auto')).toBe('management_meeting')
-    expect(resolveInsightPerspectiveForSubmit('auto', 'management_meeting', false)).toBe('auto')
-    expect(resolveInsightPerspectiveForSubmit('auto', 'customer_communication', true)).toBe('customer_communication')
+    expect(resolveInsightPerspectiveForSubmit('auto', 'strategy_operation', false)).toBe('auto')
+    expect(resolveInsightPerspectiveForSubmit('auto', 'customer_growth', true)).toBe('customer_growth')
   })
 
   it('preserves a legacy value until the user explicitly changes the scene', () => {
-    expect(resolveInsightPerspectiveForSubmit('sales_visit', 'customer_communication', false)).toBe('sales_visit')
+    expect(resolveInsightPerspectiveForSubmit('sales_visit', 'customer_growth', false)).toBe('sales_visit')
   })
 })
 

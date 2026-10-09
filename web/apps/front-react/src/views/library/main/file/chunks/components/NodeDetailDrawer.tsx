@@ -1,10 +1,10 @@
-import React, {
+import {
   useState,
   forwardRef,
   useImperativeHandle,
   useCallback,
 } from "react";
-import { Tag, Spin } from "antd";
+import { Tag, Spin, Typography } from "antd";
 import { ArrowRightOutlined } from "@ant-design/icons";
 import { SvgIcon } from "@km/shared-components-react";
 import chunksApi from "@/api/modules/chunks";
@@ -321,24 +321,37 @@ export const NodeDetailDrawer = forwardRef<
                       <div key={rel.id} className="flex items-center py-3.5">
                         <div className="flex-1 px-4 flex justify-end overflow-hidden">
                           <div className="flex items-center justify-center bg-[#ebf1ff] rounded-lg min-w-[60px] h-[30px] px-3 truncate">
-                            <span className="text-sm text-[#2563eb]">
+                            <Typography.Text
+                              className="text-sm text-[#2563eb]"
+                              ellipsis={{
+                                tooltip: rel.sourceEntity.entity_name,
+                              }}
+                            >
                               {rel.sourceEntity.entity_name}
-                            </span>
+                            </Typography.Text>
                           </div>
                         </div>
                         <div className="flex items-center justify-center w-20">
                           <div className="flex items-center justify-center py-1 bg-[#f3f0ff] rounded-lg max-w-[120px] h-[18px] px-2 truncate">
-                            <span className="text-xs text-[#8063e3] truncate">
+                            <Typography.Text
+                              className="text-xs text-[#8063e3]"
+                              ellipsis={{ tooltip: rel.predicate }}
+                            >
                               {rel.predicate}
-                            </span>
+                            </Typography.Text>
                           </div>
                         </div>
                         <ArrowRightOutlined style={{ color: "#D9DADB" }} />
                         <div className="flex-1 px-4 flex overflow-hidden">
                           <div className="flex items-center justify-center bg-[#ebf1ff] rounded-lg min-w-[60px] h-[30px] px-3 truncate">
-                            <span className="text-sm text-[#2563eb]">
+                            <Typography.Text
+                              className="text-sm text-[#2563eb]"
+                              ellipsis={{
+                                tooltip: rel.targetEntity.entity_name,
+                              }}
+                            >
                               {rel.targetEntity.entity_name}
-                            </span>
+                            </Typography.Text>
                           </div>
                         </div>
                       </div>
@@ -400,5 +413,3 @@ export const NodeDetailDrawer = forwardRef<
 });
 
 NodeDetailDrawer.displayName = "NodeDetailDrawer";
-
-export default NodeDetailDrawer;

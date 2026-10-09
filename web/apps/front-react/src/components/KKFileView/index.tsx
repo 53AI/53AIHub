@@ -11,11 +11,15 @@ const base64Encode = (str: string): string => {
 
 interface KKFileViewProps {
   url: string;
+  /** 文件 SHA-256（来自 upload_file.hash），合法时走 kkfileview 内容级缓存 */
+  fileHash?: string;
 }
 
 type LoadingStatus = "loading" | "ready" | "converting" | "complete" | "error";
 
-export function KKFileView({ url }: KKFileViewProps) {
+const isValidSha256 = (h?: string) => !!h && /^[a-f0-9]{64}$/i.test(h);
+
+export function KKFileView({ url, fileHash }: KKFileViewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<LoadingStatus>("loading");
@@ -44,13 +48,17 @@ export function KKFileView({ url }: KKFileViewProps) {
     const kk = getKkfileviewUrl();
     if (!kk) return "";
     const realUrl = encodeURIComponent(base64Encode(url));
-    const forceParams = url.includes("knowledge_file_")
-      ? ""
-      : "&forceUpdatedCache=true";
+    // 有合法 hash：走 kkfileview 内容级缓存（同文件复用转换结果），不再强制刷新；
+    // 无 hash：维持旧行为（knowledge_file_ 之外的仍带 forceUpdatedCache）
+    const cacheParams = isValidSha256(fileHash)
+      ? `&fileHash=${fileHash}`
+      : url.includes("knowledge_file_")
+        ? ""
+        : "&forceUpdatedCache=true";
     return isDoc
-      ? `${kk}/onlinePreview?url=${realUrl}&officePreviewType=pdf${forceParams}`
-      : `${kk}/onlinePreview?url=${realUrl}${forceParams}`;
-  }, [url, isDoc]);
+      ? `${kk}/onlinePreview?url=${realUrl}&officePreviewType=pdf${cacheParams}`
+      : `${kk}/onlinePreview?url=${realUrl}${cacheParams}`;
+  }, [url, isDoc, fileHash]);
 
   // 清除超时定时器
   const clearTimeout = useCallback(() => {

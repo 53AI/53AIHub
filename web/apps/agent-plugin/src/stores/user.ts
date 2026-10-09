@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import request from '../utils/request'
 import { clearFingerprint } from '../utils/fingerprint'
+import { tApp } from '../i18n'
 
 export const TOKEN_KEY = 'agentplugin_access_token'
 export const CURRENT_AGENT_ID_KEY = 'agentplugin_current_agent_id'
@@ -16,6 +17,10 @@ export interface UserInfo {
   avatar: string
   email: string
   mobile: string
+  /** 用户所属分组 IDs（外部用户为订阅分组，内部用户为内部用户组） */
+  group_ids: number[]
+  /** 是否内部用户（/api/users/me 的 type === 2） */
+  is_internal: boolean
 }
 
 interface H5LoginResponse {
@@ -50,6 +55,8 @@ const defaultUser: UserInfo = {
   avatar: '',
   email: '',
   mobile: '',
+  group_ids: [],
+  is_internal: false,
 }
 
 function loadTokenStore(): TokenStore {
@@ -131,7 +138,7 @@ export const useUserStore = create<UserState>((set, get) => ({
       })
       return data
     } else {
-      throw new Error(res?.message || '登录失败')
+      throw new Error(res?.message || tApp('app.login_failed'))
     }
   },
 
@@ -145,7 +152,7 @@ export const useUserStore = create<UserState>((set, get) => ({
         is_login: true
       }))
     } else {
-      throw new Error(res?.message || 'SSO登录失败')
+      throw new Error(res?.message || tApp('app.sso_login_failed'))
     }
   },
 
@@ -181,6 +188,8 @@ export const useUserStore = create<UserState>((set, get) => ({
           avatar: info.avatar || '',
           email: info.email || '',
           mobile: info.mobile || '',
+          group_ids: Array.isArray(info.group_ids) ? info.group_ids : [],
+          is_internal: info.type === 2,
         },
         is_login: true
       }))

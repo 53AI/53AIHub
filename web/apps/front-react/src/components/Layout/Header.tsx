@@ -115,7 +115,7 @@ export function Header({
       className={`flex-none h-16 sticky top-0 z-10 bg-white ${border ? "border-b" : ""} ${className}`}
     >
       <div
-        className={`px-5 flex items-center justify-between h-full ${mainClass}`}
+        className={`px-5 max-md:px-3 flex items-center justify-between h-16 ${mainClass}`}
       >
         <div className="flex-1 flex items-center gap-2 overflow-hidden">
           { expandSidebar && <ExpandSidebarButton />}

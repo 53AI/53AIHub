@@ -31,6 +31,7 @@ vi.mock('@/stores/modules/skills', () => ({
   useSkillsStore: () => ({
     loadMySkillList,
     loadSkillList,
+    categorys: [],
   }),
 }))
 
@@ -43,6 +44,8 @@ beforeEach(() => {
 const baseSkill = {
   id: 'skill-1',
   eid: 174,
+  logo: '',
+  group_ids: [] as number[],
   source_type: 'zip',
   skill_name: 'tencent-meeting-mcp',
   sort: 0,

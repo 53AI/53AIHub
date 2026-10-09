@@ -17,6 +17,7 @@ import { useSpaceStore } from "@/stores/modules/space";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { EntityDisplay } from "@/components/EntityDisplay";
 import Header from "@/components/Layout/Header";
+import { ResponsiveSidebar } from "@/components/Layout/ResponsiveSidebar";
 import { MoreDropdown, type MenuItem } from "@/components/MoreDropdown";
 import {
   PERMISSION_TYPE,
@@ -32,6 +33,7 @@ import type { SortOrder } from "../types";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "../library/InfoSaveDialog";
 import List from "../library/List";
 import { admin_url } from "@/utils/config";
+import "./KnowledgePanel.css";
 
 const GlobalSearch = lazy(() =>
   import("@/components/GlobalSearch").then((m) => ({ default: m.GlobalSearch })),
@@ -391,8 +393,10 @@ export function KnowledgePanel({
       <div className="flex h-full">
         {/* 左侧：空间侧边栏 */}
         {showSpaceSidebar && (
-          <div className="w-[280px] h-full py-3 bg-white border-r border-[#E5E7EB] flex flex-col shrink-0">
-            <div className="h-9 px-5 flex items-center">
+          <ResponsiveSidebar className="py-3 bg-white border-r border-[#E5E7EB]">
+            {({ close }) => (
+              <>
+                <div className="h-9 px-5 flex items-center">
               <div className="flex-1 text-sm text-[#1D1E1F]">
                 {t("module.space")}
               </div>
@@ -410,7 +414,10 @@ export function KnowledgePanel({
                 <div
                   key={item.id}
                   ref={activeSpaceId === item.id ? selectedSpaceRef : null}
-                  onClick={() => handleSpaceClick(item.id)}
+                  onClick={() => {
+                    handleSpaceClick(item.id);
+                    close();
+                  }}
                   className={`flex items-center gap-2.5 p-3 rounded-xl cursor-pointer transition-colors ${
                     activeSpaceId === item.id
                       ? "bg-[#F0F5FF]"
@@ -439,8 +446,10 @@ export function KnowledgePanel({
                   </div>
                 </div>
               ))}
-            </nav>
-          </div>
+                </nav>
+              </>
+            )}
+          </ResponsiveSidebar>
         )}
         {/* 右侧：知识库列表 */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-white overflow-y-auto">
@@ -459,11 +468,11 @@ export function KnowledgePanel({
                   <Spin size="large" />
                 </div>
               ) : (
-                <div className="w-11/12 md:w-4/5 max-w-[1200px] mx-auto py-4">
+                <div className="w-11/12 md:w-4/5 max-w-[1200px] mx-auto py-4 knowledge-panel-content">
                   {showDynamicEntry && (
                     <div className="mb-8">
                       <div className="text-xl font-medium">{t('dynamic_knowledge.label')}</div>
-                      <div className="border p-4 rounded-xl mt-5 flex flex-wrap items-center gap-3">
+                      <div className="border p-4 rounded-xl mt-5 wiki-entry-grid">
                         {wikiCategories.slice(0, 3).map((cat, idx) => {
                           // 沿用原摘要/实体/概念三张图标，按顺序分配给前三个分类
                           const icon = ["summary", "entity", "concept"][idx] ?? "summary";
@@ -471,7 +480,7 @@ export function KnowledgePanel({
                             <Link
                               key={cat.id}
                               to={wikiCategoryUrl(cat.id)}
-                              className="flex-1 min-w-[200px] bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden group hover:bg-[#F0F5FF] transition-colors"
+                              className="bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden group hover:bg-[#F0F5FF] transition-colors"
                             >
                               <div className="size-12 bg-[#E6EEFF] rounded-xl flex-shrink-0 flex items-center justify-center">
                                 <SafeImage className="size-[22px]" src={`/images/wiki/${icon}.png`} alt={cat.name} />
@@ -489,7 +498,7 @@ export function KnowledgePanel({
                         })}
                         <Link
                           to={wikiUrl}
-                          className="flex-1 min-w-[200px] bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden hover:bg-[#F0F5FF] transition-colors"
+                          className="bg-[#F8F9FA] rounded-xl p-4 flex items-center gap-2 overflow-hidden hover:bg-[#F0F5FF] transition-colors"
                         >
                           <div className="flex-1 flex flex-col text-center">
                             <h5 className="text-2xl text-primary">{formatStatNumber(wikiStats?.month_new_docs)}</h5>

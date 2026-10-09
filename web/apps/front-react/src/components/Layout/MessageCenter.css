@@ -12,3 +12,17 @@
 .message-popover .ant-popover-content {
   height: 100%;
 }
+
+/* 移动端：锚点在抽屉式侧边栏内，rightBottom 定位会从锚点右缘向右展开，
+   叠加近全屏宽度后横向溢出视口（antd 翻转成 leftBottom 时同样出屏）。
+   这里把左缘钉在 12px（宽度由内联 calc(100vw - 24px) 保证，右缘恰好留 12px），
+   纵向沿用上面的 top/bottom 20px 拉通全高，并隐藏指向被遮挡锚头的箭头 */
+@media (max-width: 767.98px) {
+  .message-popover {
+    left: 12px !important;
+  }
+
+  .message-popover .ant-popover-arrow {
+    display: none;
+  }
+}

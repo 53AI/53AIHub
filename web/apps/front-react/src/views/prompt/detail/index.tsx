@@ -14,6 +14,7 @@ import { CloseOutlined } from "@ant-design/icons";
 import { usePromptStore } from "@/stores/modules/prompt";
 import { useUserStore } from "@/stores/modules/user";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
+import { useResponsive } from "@/hooks/useResponsive";
 import promptApi from "@/api/modules/prompt";
 import resourceScopesApi from "@/api/modules/resource-scopes";
 import { copyToClip } from "@km/shared-utils";
@@ -87,6 +88,7 @@ export function PromptDetailView() {
   const promptStore = usePromptStore();
   const userStore = useUserStore();
   const isSoftStyle = useIsSoftStyle();
+  const { isMobile } = useResponsive();
   const [loading, setLoading] = useState(true);
   const [detailData, setDetailData] = useState<PromptDetail | null>(null);
   const [isUseCase, setIsUseCase] = useState(false);
@@ -307,14 +309,6 @@ export function PromptDetailView() {
               <div className="flex-1">
                 <h2 className="text-xl font-medium text-primary mb-2 flex items-center justify-between md:justify-start">
                   <span>{detailData.name}</span>
-                  <IconAction
-                    title={t("chat.usage_guide")}
-                    size="compact"
-                    className="md:hidden"
-                    onClick={() => setIsUseCase(true)}
-                  >
-                    <SvgIcon name="layout-split" size={18} />
-                  </IconAction>
                 </h2>
                 {/* 分组 */}
                 {groupNames.length > 0 && (
@@ -336,7 +330,8 @@ export function PromptDetailView() {
               {detailData.description}
             </p>
 
-            {!isSoftStyle && (
+            {/* 非软件模式始终展示；软件模式下移动端也内联展示权限标签 */}
+            {(!isSoftStyle || isMobile) && (
               <div className="mb-7">
                 <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} />
               </div>
@@ -488,13 +483,16 @@ export function PromptDetailView() {
             )}
 
             {isSoftStyle && <Footer />}
-            {/* 软件模式下底部悬浮栏 */}
-            {isSoftStyle && detailData.group_ids && detailData.group_ids.length > 0 && (
+            {/* 软件模式下底部悬浮栏：移动端权限标签已内联展示，悬浮栏仅在需要展示"去使用"按钮时出现 */}
+            {isSoftStyle && detailData.group_ids && detailData.group_ids.length > 0 &&
+              (!isMobile || (hasAccess && detailData.ai_links_data && detailData.ai_links_data.length > 0)) && (
               <>
                 <div className="h-28"></div>
-                <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
+                <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-1/2 md:left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
                   <div className="flex-1 overflow-hidden">
-                    <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} mode="compact" />
+                    {!isMobile && (
+                      <AuthTagGroup value={detailData.group_ids} scopes={detailData.scopes} mode="compact" />
+                    )}
                   </div>
                   {hasAccess && detailData.ai_links_data && detailData.ai_links_data.length > 0 && (
                     <Popover
@@ -551,8 +549,8 @@ export function PromptDetailView() {
         </div>
       </div>
 
-      {/* 使用指引右侧面板 */}
-      <SidePanel side="right" width={450} open={isUseCase}>
+      {/* 使用指引右侧面板（移动端自动悬浮） */}
+      <SidePanel side="right" width={450} open={isUseCase} onClose={() => setIsUseCase(false)}>
         <div className="h-full flex flex-col bg-white border-l">
           <div className="h-16 flex-none flex items-center justify-between px-5 border-b">
             <h4 className="text-lg text-primary">{t("chat.usage_guide")}</h4>

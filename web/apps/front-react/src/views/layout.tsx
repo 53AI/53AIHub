@@ -19,6 +19,7 @@ import { VERSION_MODULE } from '@/constants/enterprise'
 import { EVENT_NAMES } from '@/constants/events'
 import { NAVIGATION_TARGET, NAVIGATION_TYPE } from '@/constants/navigation'
 import { SidebarContext } from '@/contexts/SidebarContext'
+import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useMultiAccountGuard } from '@/hooks/useMultiAccountGuard'
 import { useResponsive } from '@/hooks/useResponsive'
 import { t } from '@/locales'
@@ -70,10 +71,12 @@ export function Layout() {
   const shortcutsStore = useShortcutsStore()
   const isSoftStyle = useIsSoftStyle()
   const { isMobile } = useResponsive()
+  const { isInMobile } = useBasicLayout()
   const recordingConfig = useRecordingStore((s) => s.recordingConfig)
 
-  // 紧凑模式判断：软件模式 + 非知识库页面 + 非移动端
-  const useCompactMode = isSoftStyle  && !isMobile
+  // 紧凑模式判断：软件模式 + 非移动端
+  // 移动端一律不启用紧凑模式：视口宽度 < 768（isMobile）或 UA 判定为移动设备（isInMobile，覆盖横屏手机、平板等宽视口场景）
+  const useCompactMode = isSoftStyle && !isMobile && !isInMobile
 
   // 多账号登录冲突检测
   useMultiAccountGuard()
@@ -400,6 +403,13 @@ export function Layout() {
   const getIconColor = (bool: boolean) => (bool ? '#2563EB' : '#979799')
   const getBlockColor = (bool: boolean) => (bool ? 'bg-[#E7EFFB] text-[#2563EB]' : 'text-[#979799]')
 
+  // 导航项布局：移动端抽屉内 icon 与文字横排展示；桌面端保持图标在上、文字在下
+  const navItemClass = `py-2 rounded-lg flex cursor-pointer hover:bg-[#EBF1FF] ${
+    isMobile ? 'items-center gap-2 px-2' : 'flex-col items-center gap-1'
+  }`
+  // 导航项文字：移动端横排时用常规字号，桌面端保持小字号
+  const navItemLabelClass = isMobile ? 'text-sm truncate' : 'text-[10px] truncate'
+
   const handleShortcutClick = async (shortcut: any) => {
     if (isMobile) setSiderVisible(false)
 
@@ -640,7 +650,7 @@ export function Layout() {
                           isMobile && setSiderVisible(false)
                           handleNavigationClick(item)
                         }}
-                        className={`py-2 rounded-lg flex flex-col items-center gap-1 cursor-pointer hover:bg-[#EBF1FF] ${getBlockColor(isNavItemActive(item))}`}
+                        className={`${navItemClass} ${getBlockColor(isNavItemActive(item))}`}
                       >
                         <div className={`size-5 flex-center overflow-hidden`}>
                           <img
@@ -652,7 +662,7 @@ export function Layout() {
                             }}
                           />
                         </div>
-                        <p className="text-[10px] truncate">{item.name}</p>
+                        <p className={navItemLabelClass}>{item.name}</p>
                       </div>
                     )
                   }
@@ -665,7 +675,7 @@ export function Layout() {
                         href={item.jump_path}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`py-2 rounded-lg flex flex-col items-center gap-1 cursor-pointer hover:bg-[#EBF1FF] ${getBlockColor(isNavItemActive(item))}`}
+                        className={`${navItemClass} ${getBlockColor(isNavItemActive(item))}`}
                       >
                         <div className={`size-5 flex-center overflow-hidden`}>
                           <img
@@ -677,7 +687,7 @@ export function Layout() {
                             }}
                           />
                         </div>
-                        <p className="text-[10px] truncate">{item.name}</p>
+                        <p className={navItemLabelClass}>{item.name}</p>
                       </a>
                     )
                   }
@@ -702,7 +712,7 @@ export function Layout() {
                           navigate(item.jump_path, { replace: true })
                         }
                       }}
-                      className={`py-2 rounded-lg flex flex-col items-center gap-1 cursor-pointer hover:bg-[#EBF1FF] relative group ${getBlockColor(effectivePath.startsWith(item.menu_path))}`}
+                      className={`${navItemClass} relative group ${getBlockColor(effectivePath.startsWith(item.menu_path))}`}
                     >
                       <div className={`size-5 flex-center overflow-hidden`}>
                         <img
@@ -714,7 +724,7 @@ export function Layout() {
                           }}
                         />
                       </div>
-                      <p className="text-[10px] truncate">{item.name}</p>
+                      <p className={navItemLabelClass}>{item.name}</p>
                     </Link>
                   )
                 })}
@@ -726,12 +736,12 @@ export function Layout() {
                     onClick={(e) => {
                       isMobile && setSiderVisible(false)
                     }}
-                    className={`py-2 flex flex-col items-center gap-1 rounded-lg cursor-pointer hover:bg-[#EBF1FF] ${getBlockColor(effectivePath.startsWith('/mine'))}`}
+                    className={`${navItemClass} ${getBlockColor(effectivePath.startsWith('/mine'))}`}
                   >
                     <div className={`size-5 flex-center`}>
                       <SvgIcon name="member" size="18" />
                     </div>
-                    <p className="text-[10px] truncate">{t('module.mine')}</p>
+                    <p className={navItemLabelClass}>{t('module.mine')}</p>
                   </Link>
                 )}
               </div>

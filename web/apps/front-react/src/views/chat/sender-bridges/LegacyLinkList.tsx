@@ -10,6 +10,7 @@
  *   - 删除按钮:hover 显示,rounded-full + bg-white + size-4
  */
 import { LinkChip } from "./LinkChip";
+import { SafeImage } from "@km/shared-components-react";
 import type { LinkListSlotProps, MentionLinkItem } from "@km/hub-ui-x-react";
 
 export type LegacyLinkListProps = LinkListSlotProps & {
@@ -27,7 +28,7 @@ export function LegacyLinkList({ links = [], onRemove, collapsed, onToggleCollap
           // 复合 key:跨 dialog source(knowledge/uploads/recordings 等)允许同一文件 ID 并存,
           // 只用 link.id 会让 React 报 duplicate key。fallback 到 id 保证 source 缺失时也唯一。
           key={`${link.source ?? ''}::${link.id}`}
-          icon={link.icon ? <img src={link.icon} className="size-4" alt="" /> : null}
+          icon={link.icon ? <SafeImage src={link.icon} letter={link.name} className="size-4" alt="" /> : null}
           name={link.name}
           onRemove={() => onRemove(link)}
         />

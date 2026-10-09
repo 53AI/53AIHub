@@ -254,5 +254,3 @@ async function uploadIcon(icon: string): Promise<string> {
     return ''
   }
 }
-
-export default createPipelineAdapter

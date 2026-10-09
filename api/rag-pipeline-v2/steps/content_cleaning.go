@@ -119,39 +119,45 @@ type contentCleaningBatch struct {
 	Lines []contentCleaningLine
 }
 
-const contentCleaningOutputInstruction = `你是内容清洗助手。请根据输入批次和 enabled_features 处理文档行，只修改需要清洗的当前批次行。
+// contentCleaningPromptHeader 通用指令头，所有批次都携带。
+const contentCleaningPromptHeader = `你是内容清洗助手。请根据输入批次和 enabled_features 处理文档行，只修改需要清洗的当前批次行。
 只能返回 JSON，不要返回 Markdown、解释文字或代码围栏。响应格式必须是：{"replacements":[],"entities":[]}。
 replacements 只包含发生变化的行，每项必须包含当前批次中已有的 id 和替换后的完整 text；未变化的行不要返回。entities 用于返回需要跨批次保持一致的脱敏实体。
 
-注意：必须完整检查所有 enabled_features 对应的清洗能力，并逐项应用到当前批次中，不得遗漏。
+注意：必须完整检查所有 enabled_features 对应的清洗能力，并逐项应用到当前批次中，不得遗漏。`
 
-当 enabled_features 包含 remove_invalid_tags 时，必须移除文档中的页眉、页脚、页码、注脚等无效标签或非正文内容，保留正文。
-
-当 enabled_features 包含 typo_correction 时，必须纠正文本中的错别字和拼写错误。
-
-当 enabled_features 包含 format_correction 时，必须修复 Markdown 格式问题，返回修改后的完整行文本：
+// contentCleaningFeatureInstructions 按功能拆分的指令段，仅拼接已开启功能，节省每批重复的指令 token。
+var contentCleaningFeatureInstructions = map[string]string{
+	"remove_invalid_tags": `当 enabled_features 包含 remove_invalid_tags 时，必须移除文档中的页眉、页脚、页码、注脚等无效标签或非正文内容，保留正文。`,
+	"typo_correction":     `当 enabled_features 包含 typo_correction 时，必须纠正文本中的错别字和拼写错误。`,
+	"format_correction": `当 enabled_features 包含 format_correction 时，必须修复 Markdown 格式问题，返回修改后的完整行文本：
 - 代码块：必须确保三个反引号开始和结束标记正确配对。例如，三个反引号加 sql 后缺少结束标记，必须补全；三个反引号后缺少语言标识则无需添加。
 - 表格：必须确保每行末尾的竖线 | 完整，所有行列数一致，分隔行与列数匹配。例如，|a|b 补全为 |a|b|；|a|b| 与 |---| 不匹配，需修正分隔行。
-- 加粗/斜体/其他行内标记：必须确保标记正确闭合，不遗留未闭合的 **、*、__、_ 等标记。
+- 加粗/斜体/其他行内标记：必须确保标记正确闭合，不遗留未闭合的 **、*、__、_ 等标记。`,
+	"ocr_correction":      `当 enabled_features 包含 ocr_correction 时，必须纠正 OCR 识别产生的错误：水印文字、杂字、乱码，以及勾选/叉选标记（如 ✓/✗/☑/☐）还原为文字描述（如"已勾选"/"未勾选"）。`,
+	"grammar_correction":  `当 enabled_features 包含 grammar_correction 时，必须纠正文本中的语法错误，保持原意不变。`,
+	"formula_restoration": `当 enabled_features 包含 formula_restoration 时，必须修正 OCR 造成的公式样式错位，还原 LaTeX 公式格式（如 $...$ 或 $$...$$ 内的内容）。`,
+	"sensitive_mask": `当 enabled_features 包含 sensitive_mask 时，必须识别当前批次中的中文姓名并执行脱敏：
+- 仅处理姓名；手机号、邮箱、身份证号、银行卡号、API Key 已由系统规则处理，无需重复处理。
+- 只脱敏，不删除、不整行替换；除姓名外保留原文、标点、标签和行结构。
+- 姓名保留姓氏，例如"张三"替换为"张*"。
+- 同一 original+type 必须优先复用 entity_context 中已有的 masked 值，新增实体必须写入 entities，保证后续批次一致。`,
+	"glossary":      `当 enabled_features 包含 glossary 时，必须参考 glossary 列表中的专业术语，确保文档中的术语用法一致。`,
+	"custom_prompt": `当 enabled_features 包含 custom_prompt 时，必须参考 custom_prompt 中的附加规则执行清洗。`,
+}
 
-当 enabled_features 包含 ocr_correction 时，必须纠正 OCR 识别产生的错误：水印文字、杂字、乱码，以及勾选/叉选标记（如 ✓/✗/☑/☐）还原为文字描述（如"已勾选"/"未勾选"）。
-
-当 enabled_features 包含 grammar_correction 时，必须纠正文本中的语法错误，保持原意不变。
-
-当 enabled_features 包含 formula_restoration 时，必须修正 OCR 造成的公式样式错位，还原 LaTeX 公式格式（如 $...$ 或 $$...$$ 内的内容）。
-
-当 enabled_features 包含 sensitive_mask 时，必须识别当前批次中属于 sensitive_fields 的敏感信息并执行脱敏：
-- 只脱敏，不删除、不整行替换；除敏感值外保留原文、标点、标签和行结构。
-- 姓名保留姓氏，例如"张三"替换为"张*"；手机号保留前三位和后四位，例如"13800138000"替换为"138****8000"。
-- 邮箱保留首字符和域名，例如"zhangsan@company.com"替换为"z****@company.com"；身份证保留前四位和后四位，例如"110101199001011234"替换为"110***********1234"；银行卡号保留前四位和后四位，例如"6222021234567890"替换为"6222********7890"。
-- 仅处理 sensitive_fields 列出的类型；同一 original+type 必须优先复用 entity_context 中已有的 masked 值，新增实体必须写入 entities，保证后续批次一致。
-
-当 enabled_features 包含 glossary 时，必须参考 glossary 列表中的专业术语，确保文档中的术语用法一致。
-
-当 enabled_features 包含 custom_prompt 时，必须参考 custom_prompt 中的附加规则执行清洗。`
-
-func buildContentCleaningLLMPrompt(batchJSON string) string {
-	return contentCleaningOutputInstruction + "\n\n输入批次：\n" + batchJSON
+func buildContentCleaningLLMPrompt(batchJSON string, enabledFeatures []string) string {
+	var sb strings.Builder
+	sb.WriteString(contentCleaningPromptHeader)
+	for _, key := range enabledFeatures {
+		if section, ok := contentCleaningFeatureInstructions[key]; ok {
+			sb.WriteString("\n\n")
+			sb.WriteString(section)
+		}
+	}
+	sb.WriteString("\n\n输入批次：\n")
+	sb.WriteString(batchJSON)
+	return sb.String()
 }
 
 // estimateContentCleaningTokens 粗略估算文本 token 数，与 tokenlimit.TruncateContent 保持一致（rune/3）。
@@ -306,7 +312,7 @@ func isContentCleaningTableLine(text string) bool {
 //   - 未返回的行保持原文。
 //
 // 返回的 map key 为行 ID（int），value 为最终文本（替换或原文）。
-func validateAndMergeContentCleaningResponse(batch contentCleaningBatchRequest, resp contentCleaningBatchResponse) (map[int]string, error) {
+func validateAndMergeContentCleaningResponse(ctx context.Context, batch contentCleaningBatchRequest, resp contentCleaningBatchResponse) (map[int]string, error) {
 	validIDs := make(map[int]bool, len(batch.Lines))
 	for _, l := range batch.Lines {
 		validIDs[l.ID] = true
@@ -319,11 +325,14 @@ func validateAndMergeContentCleaningResponse(batch contentCleaningBatchRequest, 
 
 	seen := make(map[int]bool, len(resp.Replacements))
 	for _, r := range resp.Replacements {
+		// 降级：未知 ID 跳过（该行保留原文），重复 ID 取首个，不因单条非法响应失败整批
 		if !validIDs[r.ID] {
-			return nil, fmt.Errorf("响应包含未知行 ID: %d", r.ID)
+			logger.Warnf(ctx, "【内容清洗】响应包含未知行 ID，跳过: id=%d", r.ID)
+			continue
 		}
 		if seen[r.ID] {
-			return nil, fmt.Errorf("响应包含重复行 ID: %d", r.ID)
+			logger.Warnf(ctx, "【内容清洗】响应包含重复行 ID，取首个: id=%d", r.ID)
+			continue
 		}
 		seen[r.ID] = true
 		result[r.ID] = r.Text
@@ -422,7 +431,7 @@ func newContentCleaningHandlerWithInvoker(db *gorm.DB, invoker contentCleaningLL
 		// 生产环境注入基于 ContentGeneratorService 的真实 invoker
 		realInvoker := invoker
 		if realInvoker == nil {
-			realInvoker = newContentCleaningProductionInvoker(db, params.Eid)
+			realInvoker = newContentCleaningProductionInvoker(db, params.Eid, cfg.EnabledFeatureKeys())
 		}
 
 		cleaned, totalTokens, err := executeContentCleaning(ctx, db, params, cfg, realInvoker.InputBudget(), realInvoker)
@@ -471,6 +480,94 @@ func parseContentCleaningParams(job *model.RagJob) (contentCleaningParams, error
 	return p, nil
 }
 
+// ruleCleanableFields 规则可处理的敏感字段集合；姓名无可靠正则边界，必须走 LLM。
+var ruleCleanableFields = map[string]bool{"手机号": true, "邮箱": true, "身份证": true, "银行卡": true, "API Key": true}
+
+// llmRequiredFeatures 计算启用功能中哪些必须走 LLM。
+// 返回 (llmFeatures, ruleOnly)：ruleOnly 表示全部可规则化，可零 LLM 调用完成清洗。
+func llmRequiredFeatures(cfg model.ContentCleaningConfig) ([]string, bool) {
+	var llm []string
+	// 布尔功能全部是 LLM 功能，除 remove_invalid_tags（规则处理）
+	if cfg.TypoCorrection {
+		llm = append(llm, "typo_correction")
+	}
+	if cfg.GrammarCorrection {
+		llm = append(llm, "grammar_correction")
+	}
+	if cfg.FormatCorrection {
+		llm = append(llm, "format_correction")
+	}
+	if cfg.OCRCorrection {
+		llm = append(llm, "ocr_correction")
+	}
+	if cfg.FormulaRestoration {
+		llm = append(llm, "formula_restoration")
+	}
+	if cfg.Glossary.Enabled {
+		llm = append(llm, "glossary")
+	}
+	if cfg.CustomPrompt.Enabled {
+		llm = append(llm, "custom_prompt")
+	}
+	// 敏感字段中仅"姓名"走 LLM
+	if cfg.SensitiveMask.Enabled {
+		for _, f := range cfg.SensitiveMask.Fields {
+			if f == "姓名" {
+				llm = append(llm, "sensitive_mask")
+				break
+			}
+		}
+	}
+	return llm, len(llm) == 0
+}
+
+// llmSensitiveFields 混合路径下传给 LLM 的敏感字段：仅保留规则处理不了的"姓名"。
+func llmSensitiveFields(cfg model.ContentCleaningConfig) []string {
+	if !cfg.SensitiveMask.Enabled {
+		return nil
+	}
+	for _, f := range cfg.SensitiveMask.Fields {
+		if f == "姓名" {
+			return []string{"姓名"}
+		}
+	}
+	return nil
+}
+
+// saveCleanedFileBody 事务创建第二条 FileBody，不更新原始记录；纯规则与 LLM 路径共用。
+func saveCleanedFileBody(db *gorm.DB, params contentCleaningParams, cleaned string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		newBody := &model.FileBody{
+			Eid:       params.Eid,
+			FileID:    params.FileID,
+			LibraryID: params.LibraryID,
+			Content:   cleaned,
+			UserID:    params.UserID,
+		}
+		if err := newBody.ProcessContentStorage(); err != nil {
+			return fmt.Errorf("处理文件内容存储失败: %v", err)
+		}
+		if err := tx.Create(newBody).Error; err != nil {
+			return fmt.Errorf("保存清洗后文件体失败: %v", err)
+		}
+		return nil
+	})
+}
+
+func formatContentCleaningLLMResponseLog(batchLabel string, lines []contentCleaningLine, response string) string {
+	firstID, lastID := 0, 0
+	if len(lines) > 0 {
+		firstID = lines[0].ID
+		lastID = lines[len(lines)-1].ID
+	}
+	return fmt.Sprintf("【诊断-内容清洗】批次=%s，行数=%d，首行ID=%d，末行ID=%d，LLM完整输出：%s",
+		batchLabel, len(lines), firstID, lastID, response)
+}
+
+func formatContentCleaningLineChangeLog(lineID int, before, after string) string {
+	return fmt.Sprintf("【诊断-内容清洗】行ID=%d，原文=%q，新文=%q", lineID, before, after)
+}
+
 // executeContentCleaning 执行内容清洗核心逻辑：
 //  1. 校验参数，获取文件，检查停止信号。
 //  2. 通过 RunID 找 document_parsing Job/Step 定位解析源 FileBody（不盲读最新）。
@@ -515,11 +612,49 @@ func executeContentCleaning(ctx context.Context, db *gorm.DB, params contentClea
 		return "", 0, fmt.Errorf("源文件内容为空，无法清洗")
 	}
 
+	// 智能路由：确定性规则（无效标签/手机号/邮箱/身份证/银行卡/API Key）前置处理；
+	// 全部可规则化时零 LLM 调用，否则规则先行、LLM 只处理剩余项（含姓名脱敏）
+	llmFeatures, ruleOnly := llmRequiredFeatures(cfg)
+	ruleApplied := false
+	if cfg.RemoveInvalidTags {
+		sourceContent = ruleCleanInvalidTags(sourceContent)
+		ruleApplied = true
+	}
+	if cfg.SensitiveMask.Enabled {
+		var ruleResults []ruleCleaningResult
+		sourceContent, ruleResults = ruleCleanSensitive(sourceContent, ruleCleanableFields)
+		if len(ruleResults) > 0 {
+			ruleApplied = true
+		}
+	}
+	logger.Infof(ctx, "【内容清洗】规则处理完成: file_id=%d, rule_applied=%v, 剩余LLM功能=%v",
+		params.FileID, ruleApplied, llmFeatures)
+
+	if strings.TrimSpace(sourceContent) == "" {
+		return "", 0, fmt.Errorf("规则清洗后内容为空，无法继续")
+	}
+
+	if ruleOnly {
+		cleaned := sourceContent
+		if err := saveCleanedFileBody(db, params, cleaned); err != nil {
+			return "", 0, err
+		}
+		logger.Infof(ctx, "【内容清洗】完成(纯规则): file_id=%d, 替换行=0, token=0", params.FileID)
+		return cleaned, 0, nil
+	}
+
 	// 批次构造
 	batches := buildContentCleaningBatches(sourceContent, batchTokenBudget)
 	if len(batches) == 0 {
 		return "", 0, fmt.Errorf("批次构造结果为空")
 	}
+
+	// 启用的清洗能力：传给 LLM 的功能与敏感字段均过滤为规则处理后的剩余项
+	enabledFeatures := llmFeatures
+	sensitiveFields := llmSensitiveFields(cfg)
+
+	logger.Infof(ctx, "【内容清洗】配置: file_id=%d, 已开启=%v, sensitive_fields=%v, glossary=%d条, custom_prompt=%v",
+		params.FileID, contentCleaningFeatureNamesFromKeys(enabledFeatures), sensitiveFields, len(cfg.Glossary.Items), cfg.CustomPrompt.Enabled)
 
 	// 收集所有行（用于最终重组）和批次校验
 	allLines := make([]contentCleaningLine, 0)
@@ -527,12 +662,6 @@ func executeContentCleaning(ctx context.Context, db *gorm.DB, params contentClea
 		allLines = append(allLines, b.Lines...)
 	}
 
-	// 启用的清洗能力
-	enabledFeatures := cfg.EnabledFeatureKeys()
-	sensitiveFields := cfg.SensitiveMask.Fields
-
-	logger.Infof(ctx, "【内容清洗】配置: file_id=%d, 已开启=%v, sensitive_fields=%v, glossary=%d条, custom_prompt=%v",
-		params.FileID, contentCleaningFeatureNamesFromKeys(enabledFeatures), sensitiveFields, len(cfg.Glossary.Items), cfg.CustomPrompt.Enabled)
 	// 跨批次实体上下文（仅内存）
 	entityContext := make([]contentCleaningEntity, 0)
 	// 累计替换：行ID -> 替换文本
@@ -564,24 +693,7 @@ func executeContentCleaning(ctx context.Context, db *gorm.DB, params contentClea
 	// 全部成功，重组清洗后内容
 	cleaned := mergeContentCleaningReplacements(allLines, mergedReplacements)
 
-	// 事务创建第二条 FileBody，不更新原始记录
-	err = db.Transaction(func(tx *gorm.DB) error {
-		newBody := &model.FileBody{
-			Eid:       params.Eid,
-			FileID:    params.FileID,
-			LibraryID: params.LibraryID,
-			Content:   cleaned,
-			UserID:    params.UserID,
-		}
-		if err := newBody.ProcessContentStorage(); err != nil {
-			return fmt.Errorf("处理文件内容存储失败: %v", err)
-		}
-		if err := tx.Create(newBody).Error; err != nil {
-			return fmt.Errorf("保存清洗后文件体失败: %v", err)
-		}
-		return nil
-	})
-	if err != nil {
+	if err := saveCleanedFileBody(db, params, cleaned); err != nil {
 		return "", 0, err
 	}
 
@@ -606,7 +718,30 @@ func tryContentCleaningBatch(ctx context.Context, invoker contentCleaningLLMInvo
 		return nil, nil, 0, fmt.Errorf("序列化批次请求失败: %v", err)
 	}
 
-	respText, usage, err := invoker.Invoke(ctx, string(promptBytes))
+	// 瞬时错误重试：仅重试调用层错误，解析/校验错误不重试（由降级与截断分半兜底）
+	// lazy: 固定间隔 1s, 需精细化退避时复用 relay 的 RetryPolicy
+	var respText string
+	var usage *usageWrapper
+	const contentCleaningMaxAttempts = 3
+	for attempt := 1; ; attempt++ {
+		respText, usage, err = invoker.Invoke(ctx, string(promptBytes))
+		if respText != "" {
+			batchLabel := "未知"
+			if len(lines) > 0 {
+				batchLabel = fmt.Sprintf("行%d-%d", lines[0].ID, lines[len(lines)-1].ID)
+			}
+			status := "成功"
+			if err != nil {
+				status = "失败"
+			}
+			logger.Infof(ctx, "%s，尝试次数=%d，调用状态=%s", formatContentCleaningLLMResponseLog(batchLabel, lines, respText), attempt, status)
+		}
+		if err == nil || attempt >= contentCleaningMaxAttempts {
+			break
+		}
+		logger.Warnf(ctx, "【内容清洗】批次 LLM 调用失败，准备重试: 第%d次, 行数=%d, err=%v", attempt, len(lines), err)
+		time.Sleep(time.Second)
+	}
 	if err != nil {
 		logger.Warnf(ctx, "【内容清洗】批次 LLM 调用失败: 行数=%d, 功能数=%d, 敏感字段数=%d, 实体上下文数=%d, err=%v",
 			len(lines), len(enabledFeatures), len(sensitiveFields), len(entityContext), err)
@@ -622,7 +757,7 @@ func tryContentCleaningBatch(ctx context.Context, invoker contentCleaningLLMInvo
 		return nil, nil, tokens, fmt.Errorf("批次响应解析失败: %w", err)
 	}
 
-	batchReplacements, err := validateAndMergeContentCleaningResponse(req, resp)
+	batchReplacements, err := validateAndMergeContentCleaningResponse(ctx, req, resp)
 	if err != nil {
 		return nil, nil, tokens, fmt.Errorf("批次响应校验失败: %w", err)
 	}
@@ -633,6 +768,15 @@ func tryContentCleaningBatch(ctx context.Context, invoker contentCleaningLLMInvo
 		for _, l := range lines {
 			if l.ID == id && l.Text != text {
 				filtered[id] = text
+			}
+		}
+	}
+	if len(filtered) == 0 {
+		logger.Infof(ctx, "【诊断-内容清洗】本批次无行变更：行数=%d", len(lines))
+	} else {
+		for _, l := range lines {
+			if text, ok := filtered[l.ID]; ok {
+				logger.Infof(ctx, "%s", formatContentCleaningLineChangeLog(l.ID, l.Text, text))
 			}
 		}
 	}
@@ -756,23 +900,26 @@ func relaymodelUsageToWrapper(u *relaymodel.Usage) *usageWrapper {
 // contentCleaningProductionInvoker 生产环境 invoker，基于 ContentGeneratorService。
 // 通过企业默认逻辑推理渠道和模型调用，保持 MaxTokens=0，由统一渠道配置处理。
 type contentCleaningProductionInvoker struct {
-	channel     *model.Channel
-	model       string
-	gen         contentCleaningGenerator
-	eid         int64
-	inputBudget int // 单批次输入 token 预算，来自 tokenlimit.ComputeBudget
+	channel         *model.Channel
+	model           string
+	gen             contentCleaningGenerator
+	eid             int64
+	inputBudget     int      // 单批次输入 token 预算，来自 tokenlimit.ComputeBudget
+	enabledFeatures []string // 已开启清洗功能，用于 prompt 按功能裁剪
 }
 
 // contentCleaningStepMaxInput 内容清洗单批次最大输入 token（stepMaxInput）。
-// 与项目其他 RAG 步骤（摘要/实体抽取）一致，控制单批输入上限。
-const contentCleaningStepMaxInput = 6000
+// 仅作 ComputeBudget 的上限封顶：实际预算按渠道模型上下文自动调整，
+// 小上下文模型自动下调，大上下文模型可用到 16000，减少批次数提升吞吐。
+const contentCleaningStepMaxInput = 16000
 
 // newContentCleaningProductionInvoker 构造生产 invoker：
 // 通过企业默认分块配置选择逻辑推理渠道和模型，缺失配置时 Invoke 时报错（步骤失败）。
 // 通过 tokenlimit.ComputeBudget 计算输入预算，Invoke 时用 TruncateContent 控制输入，保持 MaxTokens=0。
-func newContentCleaningProductionInvoker(db *gorm.DB, eid int64) contentCleaningLLMInvoker {
+func newContentCleaningProductionInvoker(db *gorm.DB, eid int64, enabledFeatures []string) contentCleaningLLMInvoker {
 	invoker := &contentCleaningProductionInvoker{
-		eid: eid,
+		eid:             eid,
+		enabledFeatures: enabledFeatures,
 	}
 	if db == nil {
 		return invoker
@@ -829,7 +976,7 @@ func (p *contentCleaningProductionInvoker) Invoke(ctx context.Context, prompt st
 	if p.channel == nil || strings.TrimSpace(p.model) == "" {
 		return "", nil, fmt.Errorf("未配置企业默认逻辑推理渠道或模型，无法执行内容清洗")
 	}
-	truncated := tokenlimit.TruncateContent(buildContentCleaningLLMPrompt(prompt), p.InputBudget())
+	truncated := tokenlimit.TruncateContent(buildContentCleaningLLMPrompt(prompt, p.enabledFeatures), p.InputBudget())
 	resp, usage, err := p.gen.GenerateRawPromptWithUsage(ctx, p.channel, p.model, truncated)
 	if err != nil {
 		return "", nil, err

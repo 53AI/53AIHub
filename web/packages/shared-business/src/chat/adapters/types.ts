@@ -1,4 +1,5 @@
 import type { SkillInfo } from "../types/message";
+import type { ScopeItem } from "../../agent-create/adapters/types";
 
 /**
  * API Adapter Interfaces
@@ -154,8 +155,8 @@ export interface IAgentInfo {
   use_cases?: any[];
   /** 用户组 IDs - 用于 AuthTagGroup 显示使用范围 */
   user_group_ids?: number[];
-  // 内部用户
-  scopes?: { scoped_type: string; target_id: number }[]
+  /** 可见范围 scopes - 用于 AuthTagGroup 显示权限范围标签（company/department/user/group） */
+  scopes?: ScopeItem[];
   /** 智能体用途类型 - 用于判断是否支持反馈功能 */
   agent_usage?: number;
   /**

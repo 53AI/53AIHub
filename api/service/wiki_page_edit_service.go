@@ -220,6 +220,15 @@ func (s *wikiPageEditService) CreatePage(ctx context.Context, req WikiCreatePage
 		if err := persistWikiPageWrite(ctx, tx, page, sources, links, "create"); err != nil {
 			return err
 		}
+		if err := tx.Model(&model.WikiPageVersion{}).
+			Where("eid = ? AND page_id = ? AND id = ?", req.Eid, page.ID, page.CurrentVersionID).
+			Updates(map[string]any{
+				"is_published":   true,
+				"publish_kind":   model.WikiPagePublishKindManual,
+				"published_time": time.Now().UnixMilli(),
+			}).Error; err != nil {
+			return err
+		}
 		if err := upsertWikiPageLog(tx, page, page.CurrentVersionID, req.CreatorID, "create", req.ChangeReason, map[string]any{
 			"slug": page.Slug,
 		}); err != nil {

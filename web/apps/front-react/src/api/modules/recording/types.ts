@@ -282,99 +282,33 @@ export interface RecordingFileInsightPage {
   updated_time: number
 }
 
-/** 洞察协同研讨中的背景快照 */
-export type CanonicalInsightPerspective =
-  | 'management_meeting'
-  | 'customer_communication'
-  | 'project_review'
-  | 'business_cooperation'
-  | 'business_innovation'
-  | 'employee_conversation'
-  | 'industry_exchange'
-  | 'management_course'
+/**
+ * 洞察场景（scene）取值说明：
+ * - 场景列表由服务端统一下发（GET /api/recordings/scenes），key 如 strategy_operation /
+ *   customer_growth 等，前端不硬编码、统一按 string 透传，后端增删场景无需前端发版；
+ * - 存量数据可能是 'auto' 或旧场景值（sales_visit / management_meeting …），
+ *   不在场景列表中时回退展示第一项场景名，提交时未改动则原样回传。
+ */
 
-/** 包含存量数据的历史场景值；新选择器只使用 CanonicalInsightPerspective。 */
-export type InsightPerspective =
-  | CanonicalInsightPerspective
-  | 'auto'
-  | 'external_training'
-  | 'external_speech'
-  | 'roadshow'
-  | 'sales_visit'
-  | 'internal_meeting'
-  | 'lecture'
-  | 'book'
-  | 'one_on_one'
-  | 'hiring'
-  | 'general'
-
-export const DEFAULT_INSIGHT_PERSPECTIVE: CanonicalInsightPerspective = 'management_meeting'
-
-export function toCanonicalInsightPerspective(value?: InsightPerspective | string): CanonicalInsightPerspective {
-  switch (value) {
-    case 'external_training':
-    case 'lecture':
-      return 'management_course'
-    case 'sales_visit':
-      return 'customer_communication'
-    case 'internal_meeting':
-    case 'general':
-    case 'auto':
-    case 'external_speech':
-    case 'roadshow':
-    case 'book':
-    case 'hiring':
-    case 'one_on_one':
-    case undefined:
-      return DEFAULT_INSIGHT_PERSPECTIVE
-    case 'management_meeting':
-    case 'customer_communication':
-    case 'project_review':
-    case 'business_cooperation':
-    case 'business_innovation':
-    case 'employee_conversation':
-    case 'industry_exchange':
-    case 'management_course':
-      return value
-    default:
-      return DEFAULT_INSIGHT_PERSPECTIVE
-  }
-}
-
+/** 用户未改动选择时保留原值（含 'auto'），改动后才提交新选中的场景 key。 */
 export function resolveInsightPerspectiveForSubmit(
-  original: InsightPerspective | undefined,
-  selected: CanonicalInsightPerspective,
+  original: string | undefined,
+  selected: string,
   changed: boolean,
-): InsightPerspective {
+): string {
   return changed ? selected : original || 'auto'
 }
 
-const LEGACY_INSIGHT_PERSPECTIVE_NAMES: Record<string, string> = {
-  auto: '自动判断',
-  external_training: '参与外部培训会议',
-  external_speech: '去别人公司演讲',
-  roadshow: '路演会议',
-  sales_visit: '销售拜访',
-  internal_meeting: '公司内部会议',
-  lecture: '听一堂课',
-  book: '读一本书',
-  one_on_one: '一对一',
-  hiring: '招聘',
-  general: '通用',
-}
-
-export function getInsightPerspectiveDisplayName(
-  value: InsightPerspective | string | undefined,
-  options: InsightPerspectiveOption[],
-): string {
-  if (!value) return '尚未记录'
-  const option = options.find((item) => item.key === value)
-  if (option) return option.name
-  return `历史场景：${LEGACY_INSIGHT_PERSPECTIVE_NAMES[value] || value}`
-}
-
+/** 洞察场景选项（GET /api/recordings/scenes）；key 由服务端定义，前端不做枚举约束。 */
 export interface InsightPerspectiveOption {
-  key: CanonicalInsightPerspective
+  key: string
+  name: string
+  description: string
+}
+
+/** 洞察决策模式选项（GET /api/recordings/scene-modes）；key 由服务端定义，前端不做枚举约束。 */
+export interface SceneModeOption {
+  key: string
   name: string
   description: string
 }
@@ -391,8 +325,11 @@ export interface InsightBackground {
   external_constraints: string
   material_context: string
   conversation?: InsightConversationMessage[]
-  insight_perspective?: InsightPerspective
-  resolved_insight_perspective?: InsightPerspective
+  /** 用户选择的洞察场景 key（新值来自 /api/recordings/scenes；存量可能是 'auto' 或旧场景值） */
+  scene?: string
+  /** 用户选择的洞察决策模式 key（新值来自 /api/recordings/scene-modes；存量数据可能没有） */
+  scene_mode?: string
+  resolved_insight_perspective?: string
   perspective_confidence?: number
   perspective_reason_codes?: string[]
   perspective_evidence?: string[]
@@ -412,7 +349,10 @@ export interface InsightWorkshopChatResponse {
 export interface InsightRegenerationRequest {
   background: InsightBackground
   conversation: InsightConversationMessage[]
-  insight_perspective: InsightPerspective
+  /** 场景 key（/api/recordings/scenes 下发）；用户未改动时回传原值（可能是 'auto'） */
+  scene: string
+  /** 决策模式 key（/api/recordings/scene-modes 下发）；用户未改动时回传原值，无原值时省略 */
+  scene_mode?: string
 }
 
 /** 页面编排 Block 类型 */

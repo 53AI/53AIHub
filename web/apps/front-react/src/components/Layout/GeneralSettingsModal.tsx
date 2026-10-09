@@ -1,14 +1,9 @@
 import { useState, useEffect } from "react";
 import { Modal, Collapse, Button, message } from "antd";
 import {
-  UserOutlined,
-  DatabaseOutlined,
-  SettingOutlined,
-  BellOutlined,
-  CreditCardOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
-  SyncOutlined,
+  SyncOutlined
 } from "@ant-design/icons";
 import { api_host, getPublicPath } from "@/utils/config";
 import { copyToClip } from "@km/shared-utils";
@@ -167,11 +162,11 @@ export function GeneralSettingsModal({
         <h2 className="text-xl font-medium text-[#1D1E1F] mb-6">MCP与接入</h2>
 
         {/* Cards */}
-        <div className="grid grid-cols-4 gap-4 mb-2.5">
+        <div className="grid grid-cols-4 md:grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 mb-2.5">
           {MCP_CARDS.map((card) => (
             <div
               key={card.key}
-              className={`p-5 rounded-xl border cursor-pointer transition-all ${
+              className={`p-2 md:p-5 rounded-xl border cursor-pointer transition-all ${
                 activeCard === card.key
                   ? "border-blue-500 "
                   : "border-transparent hover:border-blue-300"
@@ -184,15 +179,17 @@ export function GeneralSettingsModal({
                 setActiveCard(card.key);
               }}
             >
-              <div className="flex items-center gap-2 mb-5">
+              <div className="flex md:items-center md:gap-2 md:mb-5 max-md:flex-col max-md:items-center max-md:gap-1">
                 <img
-                  className="w-9 h-9"
+                  className="w-6 h-6 md:w-9 md:h-9"
                   src={getPublicPath(card.icon)}
                   alt={card.name}
                 />
-                <span className="text-base text-[#1D1E1F]">{card.name}</span>
+                <span className="text-xs md:text-base text-[#1D1E1F] max-md:text-center max-md:leading-tight">
+                  {card.name}
+                </span>
               </div>
-              <p className="text-xs text-[#6B7280] leading-relaxed">
+              <p className="text-xs text-[#6B7280] leading-relaxed max-md:hidden">
                 {card.description}
               </p>
             </div>
@@ -201,7 +198,7 @@ export function GeneralSettingsModal({
 
         {/* Setup Container */}
         {MCP_CARDS.find((c) => c.key === activeCard)?.available && (
-          <div className="flex-1 border border-gray-200 rounded-xl px-10 py-7 overflow-y-auto relative">
+          <div className="flex-1 border border-gray-200 rounded-xl px-4 md:px-10 py-5 md:py-7 overflow-y-auto relative">
             <h3 className="text-xl font-medium text-[#1D1E1F] mb-6">
               安装包含53AI MCP的Skill
             </h3>
@@ -260,7 +257,7 @@ export function GeneralSettingsModal({
 
             <div className="border-b my-10"></div>
 
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
               <div className="text-base text-[#1D1E1F]">
                 2. 复制以下 Skill 安装指令，发送给 AI 工具即可完成接入
               </div>
@@ -332,12 +329,12 @@ export function GeneralSettingsModal({
                       </span>
                     ),
                     children: (
-                      <div className="flex items-center gap-3 pb-4 pt-2">
-                        <div className="flex-1 flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-3 pb-4 pt-2">
+                        <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
                           <span className="text-sm text-[#1D1E1F]">
                             我的MCP密钥:
                           </span>
-                          <span className="text-sm font-mono text-gray-600">
+                          <span className="text-sm font-mono text-gray-600 break-all min-w-0">
                             {loading
                               ? "加载中..."
                               : showKey
@@ -399,24 +396,22 @@ export function GeneralSettingsModal({
       width={1440}
       className="general-settings-modal"
       styles={{
-        body: { padding: 0, height: "700px" },
+        body: { padding: 0, height: "80vh"  },
         container: {
           borderRadius: "12px",
           overflow: "hidden",
+          padding: 0,
         },
-      }}
-      style={{
-        "--ant-modal-content-padding": 0,
       }}
       centered
     >
-      <div className="flex h-full w-full">
+      <div className="flex flex-col md:flex-row h-full w-full min-h-0">
         {/* Sidebar */}
-        <div className="w-[224px] bg-[#F8FAFC] flex-shrink-0">
-          <div className="text-base font-medium text-[#1D1E1F] my-4 px-5">
+        <div className="w-full md:w-[224px] bg-[#F8FAFC] flex-shrink-0">
+          <div className="text-base font-medium text-[#1D1E1F] my-4 px-5 max-md:my-3">
             通用设置
           </div>
-          <div className="flex flex-col gap-1 px-4">
+          <div className="flex flex-row md:flex-col gap-1 px-2 md:px-4 max-md:pb-3">
             {MENUS.map((menu) => (
               <div
                 key={menu.key}
@@ -435,7 +430,7 @@ export function GeneralSettingsModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 bg-white py-[26px] px-[30px] overflow-y-auto">
+        <div className="flex-1 bg-white py-4 px-4 md:py-[26px] md:px-[30px] overflow-y-auto">
           {renderContent()}
         </div>
       </div>

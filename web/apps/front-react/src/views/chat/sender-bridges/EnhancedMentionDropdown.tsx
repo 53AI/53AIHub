@@ -26,6 +26,7 @@ import {
 } from "@ant-design/icons";
 import { useEffect, useMemo, useRef } from "react";
 import type { MentionDropdownSlotProps, MentionDocItem } from "@km/hub-ui-x-react";
+import { SafeImage } from "@km/shared-components-react";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { checkVersion } from "@/utils/version";
 import { t } from "@/locales";
@@ -167,7 +168,7 @@ export function EnhancedMentionDropdown(props: EnhancedMentionDropdownProps) {
                   >
                     <div className="enhanced-mention-dropdown__icon">
                       {doc.icon ? (
-                        <img src={doc.icon} className="enhanced-mention-dropdown__icon-img" alt="" />
+                        <SafeImage src={doc.icon} letter={doc.name} className="enhanced-mention-dropdown__icon-img" alt="" />
                       ) : null}
                     </div>
                     <p className="enhanced-mention-dropdown__name">{doc.name}</p>

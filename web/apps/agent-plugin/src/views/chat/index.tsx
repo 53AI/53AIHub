@@ -5,7 +5,7 @@ import {
 import type { IAgentInfo } from "@km/shared-business/chat";
 import { isOpenClawCompatibleAgentType } from "@km/shared-business/agent-create";
 import AuthTagGroup from "../../components/AuthTagGroup";
-import { checkPermission as checkUserPermission } from "../../utils/permission";
+import { checkScopePermissionAsync } from "../../utils/permission";
 import { agentUploadApi } from "../../adapters/upload";
 import { api_host } from '../../config/api';
 
@@ -70,14 +70,16 @@ function ChatViewInner({ agentId: agentIdProp, agentInfo: agentInfoProp }: ChatV
     return accept || "*/*";
   }, [settingsObj]);
 
-  // 权限检查回调
-  const handleCheckPermission = (userGroupIds?: number[]): boolean => {
-    // 开放登录跳过权限检查
-    if (!isSsoLogin) return true;
-    return checkUserPermission({
-      groupIds: userGroupIds || [],
-    });
-  };
+  // 权限检查回调：仅 SSO 登录（内部用户身份绑定）才检查权限，
+  // H5 访客（指纹登录）跳过。SSO 用户走后端资源权限检测
+  // （/api/resource-scopes/check，对齐 front-react 权限规范）。
+  const handleCheckAccess = useCallback(
+    (resourceId?: string | number): boolean | Promise<boolean> => {
+      if (!isSsoLogin) return true;
+      return checkScopePermissionAsync(resourceId || agentId, "agent");
+    },
+    [isSsoLogin, agentId]
+  );
   // Chat Mode
   return (
     <ChatViewBase
@@ -100,11 +102,14 @@ function ChatViewInner({ agentId: agentIdProp, agentInfo: agentInfoProp }: ChatV
         enabled: isOpenclaw,
       }}
       permission={{
-        checkAccess: handleCheckPermission,
+        checkAccess: handleCheckAccess,
       }}
       slots={{
         authTags: isSsoLogin ? (userGroupIds) => (
-          <AuthTagGroup value={userGroupIds} label="使用范围" />
+          <AuthTagGroup
+            value={userGroupIds}
+            scopes={agentInfoProp?.scopes}
+          />
         ) : () => (<div className=""></div>),
       }}
     />

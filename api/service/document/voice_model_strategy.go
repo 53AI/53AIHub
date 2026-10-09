@@ -41,6 +41,103 @@ func NewVoiceModelDocumentStrategy(libraryID int64) *VoiceModelDocumentStrategy 
 	return &VoiceModelDocumentStrategy{libraryID: libraryID}
 }
 
+// maxRecordingVoiceHotwordsMain 是官方单列表/单请求热词上限为 2000 的模型群
+// （fun-asr 主版本、Qwen-Audio-3.0-ASR-Flash 系列，见阿里"提升识别准确率"文档热词限制与计费）。
+// maxRecordingVoiceHotwordsLegacy 是官方上限为 500 的模型群（Paraformer 系列及其他 fun-asr 版本）。
+// 静态渠道热词优先，历史人物热词仅在上限内补足。
+const (
+	maxRecordingVoiceHotwordsMain   = 2000
+	maxRecordingVoiceHotwordsLegacy = 500
+)
+
+// voiceHotwordMode 表示当前模型可用的热词注入方式。
+type voiceHotwordMode int
+
+const (
+	// voiceHotwordInstant 即时热词：请求 parameters.vocabulary 内联（仅 Qwen-Audio-3.0-ASR-Flash 系列）。
+	voiceHotwordInstant voiceHotwordMode = iota
+	// voiceHotwordPrecompiled 预编译热词：先创建热词列表拿 vocabulary_id，识别后删除（fun-asr/Paraformer 等）。
+	voiceHotwordPrecompiled
+	// voiceHotwordNone 该模型不支持热词，不注入。
+	voiceHotwordNone
+)
+
+// isQwenAudio3xASRFlash 判断模型是否属于 Qwen-Audio-3.x-ASR-Flash 系列（含 3.0/3.1 及后续 3.x）。
+// 官方热词能力按该系列统一：仅该系列支持即时热词（vocabulary 内联）与上下文增强，热词上限 2000。
+func isQwenAudio3xASRFlash(modelName string) bool {
+	return strings.HasPrefix(modelName, "qwen-audio-3.") && strings.Contains(modelName, "asr-flash")
+}
+
+// precompiledHotwordModels 官方支持预编译热词（vocabulary_id）的模型清单
+// （Qwen-Audio-3.x-ASR-Flash 系列走即时热词，不在此列）。
+var precompiledHotwordModels = map[string]bool{
+	"fun-asr": true, "fun-asr-2025-11-07": true, "fun-asr-2025-08-25": true,
+	"fun-asr-mtl": true, "fun-asr-mtl-2025-08-25": true,
+	"fun-asr-realtime": true, "fun-asr-realtime-2025-11-07": true,
+	"fun-asr-realtime-2026-02-28": true, "fun-asr-realtime-2025-09-15": true,
+	"fun-asr-flash-8k-realtime": true, "fun-asr-flash-8k-realtime-2026-01-28": true,
+	"fun-asr-flash-2026-06-15": true,
+	"paraformer-v2":            true, "paraformer-8k-v2": true,
+	"paraformer-realtime-v2": true, "paraformer-realtime-8k-v2": true,
+}
+
+// voiceHotwordModeForModel 按模型选择热词注入方式：支持即时的用即时，否则支持预编译的用预编译，否则不用热词。
+func voiceHotwordModeForModel(modelName string) voiceHotwordMode {
+	if isQwenAudio3xASRFlash(modelName) {
+		return voiceHotwordInstant
+	}
+	if precompiledHotwordModels[modelName] {
+		return voiceHotwordPrecompiled
+	}
+	return voiceHotwordNone
+}
+
+// maxVoiceHotwordsForModel 按语音模型返回热词总量上限：
+// Qwen-Audio-3.x-ASR-Flash 系列与 fun-asr 主版本（fun-asr / fun-asr-2025-11-07 / fun-asr-2025-08-25 / fun-asr-mtl 等）→ 2000；
+// Paraformer 及其他模型 → 500。
+func maxVoiceHotwordsForModel(modelName string) int {
+	if isQwenAudio3xASRFlash(modelName) {
+		return maxRecordingVoiceHotwordsMain
+	}
+	switch modelName {
+	case "fun-asr", "fun-asr-2025-11-07", "fun-asr-2025-08-25", "fun-asr-mtl", "fun-asr-mtl-2025-08-25":
+		return maxRecordingVoiceHotwordsMain
+	default:
+		return maxRecordingVoiceHotwordsLegacy
+	}
+}
+
+// mergeVoiceHotwords 合并静态渠道热词与历史人物热词：去空、去重、渠道热词优先。
+// 静态热词全部保留；历史人物热词仅在合并总量未达上限时追加，总量不超过上限。
+func mergeVoiceHotwords(configured, personNames []string, limit int) []string {
+	if limit <= 0 {
+		limit = maxRecordingVoiceHotwordsLegacy
+	}
+	merged := make([]string, 0, len(configured)+limit)
+	seen := make(map[string]struct{}, len(configured)+limit)
+	add := func(word string) {
+		word = strings.TrimSpace(word)
+		if word == "" {
+			return
+		}
+		if _, ok := seen[word]; ok {
+			return
+		}
+		seen[word] = struct{}{}
+		merged = append(merged, word)
+	}
+	for _, word := range configured {
+		add(word)
+	}
+	for _, word := range personNames {
+		if len(merged) >= limit {
+			break
+		}
+		add(word)
+	}
+	return merged
+}
+
 func (s *VoiceModelDocumentStrategy) GetStrategyName() string {
 	return "voice_model"
 }
@@ -158,6 +255,20 @@ func (s *VoiceModelDocumentStrategy) ProcessWithUploadFile(fileID int64, content
 				}
 			}
 		}
+	}
+
+	// 历史人物热词归属录音文件所有者（与 CompileRecordingEntityMemory 的 owner 一致）；
+	// 解析任务的 userID 在"重转"场景可能是请求者，不能用于热词归属。
+	hotwordOwnerID := userID
+	if file, ferr := model.GetFileByID(eid, fileID); ferr == nil && file.UserID > 0 {
+		hotwordOwnerID = file.UserID
+	}
+	hotwordLimit := maxVoiceHotwordsForModel(modelName)
+	if personNames, perr := model.ListActiveRecordingMemoryPersonNames(eid, hotwordOwnerID, hotwordLimit); perr != nil {
+		logger.Warnf(context.Background(), "【语音模型】加载历史人物热词失败: eid=%d ownerID=%d err=%v", eid, hotwordOwnerID, perr)
+	} else if len(personNames) > 0 {
+		hotwords = mergeVoiceHotwords(hotwords, personNames, hotwordLimit)
+		logger.Infof(context.Background(), "【语音模型】并入历史人物热词: eid=%d ownerID=%d person=%d total=%d limit=%d", eid, hotwordOwnerID, len(personNames), len(hotwords), hotwordLimit)
 	}
 
 	voiceCfg := voiceModelConfig{
@@ -349,10 +460,32 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 		"diarization_enabled": true,
 	}
 	if len(cfg.Hotwords) > 0 {
-		params["hotwords"] = map[string]interface{}{
-			"customized_hotwords": cfg.Hotwords,
+		switch voiceHotwordModeForModel(cfg.ModelName) {
+		case voiceHotwordInstant:
+			// 即时热词：随请求 parameters.vocabulary 内联，无需创建/删除热词列表。
+			vocabulary := make(map[string]interface{}, len(cfg.Hotwords))
+			for _, hw := range cfg.Hotwords {
+				vocabulary[hw] = 5
+			}
+			params["vocabulary"] = vocabulary
+			logger.Infof(ctx, "【语音模型】启用即时热词: words=%v", cfg.Hotwords)
+		case voiceHotwordPrecompiled:
+			vocabularyID, vErr := s.createVocabulary(ctx, cfg)
+			if vErr != nil {
+				logger.Warnf(ctx, "【语音模型】创建热词列表失败，本次转写不带热词: %v", vErr)
+			} else {
+				params["vocabulary_id"] = vocabularyID
+				logger.Infof(ctx, "【语音模型】启用预编译热词: vocabulary_id=%s words=%v", vocabularyID, cfg.Hotwords)
+				defer func() {
+					if dErr := s.deleteVocabulary(context.WithoutCancel(ctx), cfg, vocabularyID); dErr != nil {
+						logger.Warnf(ctx, "【语音模型】删除热词列表失败: vocabulary_id=%s err=%v", vocabularyID, dErr)
+					}
+				}()
+			}
+		default:
+			// 该模型不支持热词，不注入。
+			logger.Infof(ctx, "【语音模型】模型不支持热词，本次转写不带热词: model=%s", cfg.ModelName)
 		}
-		logger.Infof(ctx, "【语音模型】启用热词: %v", cfg.Hotwords)
 	}
 	requestBody["parameters"] = params
 	bodyBytes, _ := json.Marshal(requestBody)
@@ -544,4 +677,113 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 		default:
 		}
 	}
+}
+
+// createVocabulary 创建 DashScope 预编译热词列表，返回 vocabulary_id。
+// fun-asr 只支持预编译热词（即时热词仅 Qwen-Audio 系列支持），识别时需在 parameters.vocabulary_id 传入。
+// 接口契约见 https://help.aliyun.com/zh/model-studio/vocabulary-http-api
+func (s *VoiceModelDocumentStrategy) createVocabulary(ctx context.Context, cfg *voiceModelConfig) (string, error) {
+	baseURL := strings.TrimRight(cfg.ApiDomain, "/")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+	vocabulary := make([]map[string]interface{}, 0, len(cfg.Hotwords))
+	for _, hw := range cfg.Hotwords {
+		vocabulary = append(vocabulary, map[string]interface{}{
+			"text":   hw,
+			"weight": 5,
+		})
+	}
+	requestBody := map[string]interface{}{
+		"model": "speech-biasing",
+		"input": map[string]interface{}{
+			"action":       "create_vocabulary",
+			"target_model": cfg.ModelName,
+			"prefix":       "kmrec",
+			"vocabulary":   vocabulary,
+		},
+	}
+	bodyBytes, _ := json.Marshal(requestBody)
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/api/v1/services/audio/asr/customization", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("创建热词列表请求失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.ApiKey)
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.WorkspaceID != "" {
+		req.Header.Set("X-DashScope-WorkSpace", cfg.WorkspaceID)
+	}
+
+	dashScopeSemaphore <- struct{}{}
+	defer func() { <-dashScopeSemaphore }()
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("创建热词列表请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	logger.Infof(ctx, "【语音模型】创建热词列表: status=%d body=%s", resp.StatusCode, string(respBody))
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("创建热词列表失败 status=%d body=%s", resp.StatusCode, string(respBody))
+	}
+
+	var res struct {
+		Output struct {
+			VocabularyID string `json:"vocabulary_id"`
+		} `json:"output"`
+	}
+	if err := json.Unmarshal(respBody, &res); err != nil {
+		return "", fmt.Errorf("解析创建热词列表响应失败: %w", err)
+	}
+	if res.Output.VocabularyID == "" {
+		return "", fmt.Errorf("创建热词列表未返回 vocabulary_id: %s", string(respBody))
+	}
+	return res.Output.VocabularyID, nil
+}
+
+// deleteVocabulary 删除 DashScope 预编译热词列表，释放账号热词列表配额（每账号最多 10 个）。
+func (s *VoiceModelDocumentStrategy) deleteVocabulary(ctx context.Context, cfg *voiceModelConfig, vocabularyID string) error {
+	baseURL := strings.TrimRight(cfg.ApiDomain, "/")
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		baseURL = "https://" + baseURL
+	}
+	requestBody := map[string]interface{}{
+		"model": "speech-biasing",
+		"input": map[string]interface{}{
+			"action":        "delete_vocabulary",
+			"vocabulary_id": vocabularyID,
+		},
+	}
+	bodyBytes, _ := json.Marshal(requestBody)
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/api/v1/services/audio/asr/customization", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return fmt.Errorf("删除热词列表请求失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+cfg.ApiKey)
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.WorkspaceID != "" {
+		req.Header.Set("X-DashScope-WorkSpace", cfg.WorkspaceID)
+	}
+
+	dashScopeSemaphore <- struct{}{}
+	defer func() { <-dashScopeSemaphore }()
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("删除热词列表请求失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	logger.Infof(ctx, "【语音模型】删除热词列表: status=%d vocabulary_id=%s", resp.StatusCode, vocabularyID)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("删除热词列表失败 status=%d body=%s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }

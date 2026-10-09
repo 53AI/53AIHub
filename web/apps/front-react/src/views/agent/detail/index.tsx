@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Empty, Spin, message, Button } from "antd";
 import { useEnterpriseStore, useIsSoftStyle } from "@/stores/modules/enterprise";
+import { useResponsive } from "@/hooks/useResponsive";
 import { useAgentStore } from "@/stores/modules/agent";
 import { UsageGuide, ChatConfigProvider } from "@km/shared-business/chat";
 import { chatAdapters } from "@/adapters/chat-adapters";
@@ -34,6 +35,7 @@ export function AgentDetailView() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const isSoftStyle = useIsSoftStyle();
+  const { isMobile } = useResponsive();
   const locale = useEnterpriseStore((state) => state.language);
 
   // 新增：获取 agentStore
@@ -245,7 +247,8 @@ export function AgentDetailView() {
           <p className="text-base text-placeholder mt-5 text-wrap break-words whitespace-pre-wrap">
             {detailData.description || ""}
           </p>
-          {!isSoftStyle && detailData.user_group_ids && detailData.user_group_ids.length > 0 && (
+          {/* 非软件模式始终展示；软件模式下移动端也内联展示权限标签 */}
+          {(!isSoftStyle || isMobile) && detailData.user_group_ids && detailData.user_group_ids.length > 0 && (
             <div className="mt-5">
               <AuthTagGroup value={detailData.user_group_ids} scopes={detailData.scopes} />
             </div>
@@ -264,9 +267,10 @@ export function AgentDetailView() {
           {isSoftStyle && (
             <>
               <div className="h-28"></div>
-              <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
+              <div className="fixed shadow-[0_4px_20px_rgba(0,0,0,0.08)] bottom-7 left-1/2 md:left-[calc(50%+27px)] -translate-x-1/2 h-[70px] w-11/12 lg:w-4/5 max-w-[1200px] px-5 bg-white rounded-xl flex items-center justify-between">
                 <div className="flex-1 overflow-hidden">
-                  {detailData.user_group_ids && detailData.user_group_ids.length > 0 && (
+                  {/* 移动端权限标签已内联展示，悬浮栏中不再重复显示 */}
+                  {!isMobile && detailData.user_group_ids && detailData.user_group_ids.length > 0 && (
                     <AuthTagGroup value={detailData.user_group_ids} scopes={detailData.scopes} mode="compact" />
                   )}
                 </div>

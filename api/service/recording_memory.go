@@ -118,7 +118,7 @@ func recordingMemoryExtractionEnabled(config *model.RecordingConfig) bool {
 	if memCfg == nil {
 		memCfg = &model.MemoryExtractionConfig{
 			Enabled: true,
-			Types:   []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeRisk, model.EntityTypePrinciple},
+			Types:   []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeRisk, model.EntityTypeCommitment, model.EntityTypeDecision},
 		}
 	}
 	return memCfg.IsEffectivelyEnabled()

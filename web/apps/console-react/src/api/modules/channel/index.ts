@@ -316,7 +316,8 @@ export const channelApi = {
         if (Array.isArray(data)) {
           data.forEach((model: any) => {
             const modelMaxTokens = model.top_provider?.max_completion_tokens || model.max_tokens
-            const modelContextLength = model.top_provider?.context_length
+            // top_provider.context_length 可能为 null，回退到顶层 context_length
+            const modelContextLength = model.top_provider?.context_length || model.context_length
             if (model.id) {
               // 存储完整格式（如 'qwen/qwen3.7-plus'）
               if (modelMaxTokens) maxTokens[model.id] = modelMaxTokens

@@ -1601,5 +1601,3 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
 })
 
 FileUpload.displayName = 'FileUpload'
-
-export default FileUpload

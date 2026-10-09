@@ -1,0 +1,10 @@
+/* 滚动容器使用 overflow-x-auto 以支持移动端触摸滑动，同时隐藏水平滚动条 */
+.tabs-scroll-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+
+.tabs-scroll-hide::-webkit-scrollbar {
+  display: none;
+}

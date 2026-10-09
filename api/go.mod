@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.3.3
+	github.com/aichy126/json_repair v0.0.0-20260117102223-347cca95b390
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.1.14
 	github.com/alibabacloud-go/dingtalk v1.6.91
 	github.com/alibabacloud-go/tea v1.3.13
@@ -23,6 +24,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/jordan-wright/email v4.0.1-0.20210109023952-943e75fe5223+incompatible
 	github.com/modelcontextprotocol/go-sdk v1.5.0
+	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/pkoukk/tiktoken-go v0.1.7
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d
 	github.com/sqids/sqids-go v0.4.1
@@ -30,7 +32,10 @@ require (
 	github.com/swaggo/swag v1.16.4
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.1.34
 	go.uber.org/zap v1.27.0
+	golang.org/x/image v0.18.0
+	golang.org/x/mod v0.33.0
 	golang.org/x/net v0.50.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/text v0.34.0
 	gorm.io/driver/postgres v1.5.7
 	gorm.io/gorm v1.30.0
@@ -44,7 +49,6 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/JohannesKaufmann/dom v0.2.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
-	github.com/aichy126/json_repair v0.0.0-20260117102223-347cca95b390 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/gateway-dingtalk v1.0.2 // indirect
@@ -99,7 +103,6 @@ require (
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
-	github.com/mozillazg/go-pinyin v0.21.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -119,10 +122,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.24.0 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/image v0.18.0 // indirect
-	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	golang.org/x/tools v0.42.0 // indirect
 	google.golang.org/api v0.187.0 // indirect

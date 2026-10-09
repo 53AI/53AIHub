@@ -1,11 +1,12 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Spin, Empty, Table, Checkbox, Tooltip } from "antd";
-import { RightOutlined } from "@ant-design/icons";
+import { LeftOutlined, RightOutlined } from "@ant-design/icons";
 import type { SpaceItem } from "@/api/modules/spaces";
 import type { LibraryItem } from "@/api/modules/libraries";
 import type { FileItem } from "@/api/modules/files/types";
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
+import { useResponsive } from "@/hooks/useResponsive";
 
 // 支持懒加载的文件项
 interface FileItemWithLoaded extends FileItem {
@@ -72,6 +73,13 @@ export function KnowledgeDirectory({
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]);
   // 内部状态：正在加载的文件夹路径
   const [loadingPaths, setLoadingPaths] = useState<string[]>([]);
+
+  const { isMobile } = useResponsive();
+  // 移动端下钻层级：空间 → 知识库 → 文件；桌面端仍为三列并排
+  const [drillLevel, setDrillLevel] = useState<"space" | "library" | "file">("space");
+  // 打开弹窗后父级会自动选中首个空间/知识库并加载文件，
+  // 移动端随之直接落到文件级（与桌面三列立即可见对齐），返回键逐级上跳
+  const autoJumpedRef = useRef(false);
 
   // 监听 fileList 变化，当文件夹加载完成后移除 loadingPaths
   useEffect(() => {
@@ -140,6 +148,33 @@ export function KnowledgeDirectory({
     return selectedCount > 0 && selectedCount < visibleFiles.length;
   }, [getVisibleFiles, isSelectedFile]);
 
+  // 自动跳转到文件级（仅一次，避免覆盖用户的下钻操作）
+  useEffect(() => {
+    if (!autoJumpedRef.current && libraryId) {
+      autoJumpedRef.current = true;
+      setDrillLevel("file");
+    }
+  }, [libraryId]);
+
+  // 移动端下钻：当前层级只显示对应列
+  const showSpaceCol = !isMobile || drillLevel === "space";
+  const showLibraryCol = !isMobile || drillLevel === "library";
+  const showFileCol = !isMobile || drillLevel === "file";
+
+  // 全选 checkbox（桌面/移动端列表头共用）
+  const selectAllCheckbox = !singleSelect ? (
+    <Checkbox
+      checked={isAllFilesSelected}
+      indeterminate={isIndeterminateFiles}
+      onClick={(e) => {
+        e.stopPropagation();
+        handleSelectAllFiles();
+      }}
+    >
+      {isAllFilesSelected ? t("action.unselect_all") : t("action.select_all")}
+    </Checkbox>
+  ) : null;
+
   // 处理文件夹展开/折叠
   const handleFolderToggle = useCallback((record: FileItem) => {
     const isExpanded = expandedRowKeys.includes(record.id);
@@ -166,9 +201,9 @@ export function KnowledgeDirectory({
   }, [onToggleFile, singleSelect, handleFolderToggle]);
 
   return (
-    <div className="h-[500px] flex overflow-hidden border rounded-xl">
+    <div className="h-[500px] max-md:h-[55vh] flex flex-col md:flex-row overflow-hidden border rounded-xl">
       {/* 空间列 */}
-      <div className="flex-none w-[216px] py-1 border-r flex flex-col overflow-hidden">
+      <div className={`${showSpaceCol ? "flex" : "hidden md:flex"} flex-col overflow-hidden py-1 w-full flex-1 min-h-0 md:flex-none md:w-[216px] md:h-auto md:border-r`}>
         <div className="h-9 px-4 flex items-center text-sm text-secondary">
           {t("space.label")}
         </div>
@@ -187,7 +222,10 @@ export function KnowledgeDirectory({
               <div
                 key={item.id}
                 className={`h-9 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] ${spaceId === item.id ? "bg-[#EDF3FF] hover:bg-[#EDF3FF]" : "hover:bg-[#F2F3F5]"}`}
-                onClick={() => onSelectSpace(item)}
+                onClick={() => {
+                  onSelectSpace(item);
+                  if (isMobile) setDrillLevel("library");
+                }}
               >
                 {allowSelectSpace && (
                   <Checkbox
@@ -212,10 +250,23 @@ export function KnowledgeDirectory({
       </div>
 
       {/* 知识库列 */}
-      <div className="flex-none w-[216px] py-1 border-r flex flex-col overflow-hidden">
-        <div className="h-9 px-4 flex items-center text-sm text-secondary">
-          {t("library.name")}
-        </div>
+      <div className={`${showLibraryCol ? "flex" : "hidden md:flex"} flex-col overflow-hidden py-1 w-full flex-1 min-h-0 md:flex-none md:w-[216px] md:h-auto md:border-r`}>
+        {isMobile ? (
+          <div className="h-9 px-2 flex items-center gap-1" onClick={() => setDrillLevel("space")}>
+            <div
+              className="size-7 flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]"
+            >
+              <LeftOutlined className="text-xs text-[#999]" />
+            </div>
+            <span className="flex-1 text-sm text-secondary truncate">
+              {spaceList.find((s) => s.id === spaceId)?.name || t("space.label")}
+            </span>
+          </div>
+        ) : (
+          <div className="h-9 px-4 flex items-center text-sm text-secondary">
+            {t("library.name")}
+          </div>
+        )}
         <div className="flex-1 px-2 space-y-1 overflow-y-auto">
           {libraryLoading ? (
             <div className="flex justify-center py-4">
@@ -231,7 +282,10 @@ export function KnowledgeDirectory({
               <div
                 key={item.id}
                 className={`h-9 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] ${libraryId === item.id ? "bg-[#EDF3FF] hover:bg-[#EDF3FF]" : "hover:bg-[#F2F3F5]"}`}
-                onClick={() => onSelectLibrary(item)}
+                onClick={() => {
+                  onSelectLibrary(item);
+                  if (isMobile) setDrillLevel("file");
+                }}
               >
                 {allowSelectLibrary && (
                   <Checkbox
@@ -258,22 +312,25 @@ export function KnowledgeDirectory({
       </div>
 
       {/* 文件列 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="h-9 px-4 flex items-center justify-between">
-          <span className="text-sm text-secondary">{t("space.column_knowledge")}</span>
-          {!singleSelect && (
-            <Checkbox
-              checked={isAllFilesSelected}
-              indeterminate={isIndeterminateFiles}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleSelectAllFiles();
-              }}
+      <div className={`${showFileCol ? "" : "hidden md:block"} flex-1 min-h-0 overflow-y-auto`}>
+        {isMobile ? (
+          <div className="h-9 px-2 flex items-center gap-1" onClick={() => setDrillLevel("library")}>
+            <div
+              className="size-7 flex items-center justify-center rounded cursor-pointer hover:bg-[#F2F3F5]"
             >
-              {isAllFilesSelected ? t("action.unselect_all") : t("action.select_all")}
-            </Checkbox>
-          )}
-        </div>
+              <LeftOutlined className="text-xs text-[#999]" />
+            </div>
+            <span className="flex-1 text-sm text-secondary truncate">
+              {libraryList.find((l) => l.id === libraryId)?.name || t("space.column_knowledge")}
+            </span>
+            {selectAllCheckbox}
+          </div>
+        ) : (
+          <div className="h-9 px-4 flex items-center justify-between">
+            <span className="text-sm text-secondary">{t("space.column_knowledge")}</span>
+            {selectAllCheckbox}
+          </div>
+        )}
         {fileLoading ? (
           <div className="flex justify-center py-8">
             <Spin />

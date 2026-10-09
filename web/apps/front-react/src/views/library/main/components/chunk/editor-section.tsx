@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react'
+import { useRef, useEffect, forwardRef, useImperativeHandle, useCallback } from 'react'
 import { t } from '@/locales'
 import './editor-section.css'
 
@@ -244,5 +244,3 @@ export const EditorSection = forwardRef<EditorSectionRef, EditorSectionProps>(
 )
 
 EditorSection.displayName = 'EditorSection'
-
-export default EditorSection

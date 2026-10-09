@@ -189,6 +189,8 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		recordingRoute.GET("/config", controller.GetRecordingConfigForUser)
 		recordingRoute.GET("/insight-perspectives", controller.GetInsightPerspectives)
+		recordingRoute.GET("/scenes", controller.GetScenes)
+		recordingRoute.GET("/scene-modes", controller.GetSceneModes)
 		recordingRoute.GET("/memories/overview", controller.GetRecordingMemoryOverview)
 		recordingRoute.GET("/memories/entities", controller.ListRecordingMemoryEntities)
 		recordingRoute.POST("/memories/entities", controller.CreateRecordingMemoryEntity)
@@ -280,6 +282,7 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.PUT("/devices/:device_id/active", controller.SetActiveRecordingDevice)
 		recordingRoute.DELETE("/devices/:device_id", controller.DeleteRecordingDeviceByID)
 		recordingRoute.GET("/devices/:device_type/status", controller.GetRecordingDeviceStatus)
+		recordingRoute.GET("/devices/:device_type/recordings", controller.GetRecordingDeviceRecordings)
 		recordingRoute.POST("/sync", controller.SyncRecording)
 		recordingRoute.POST("/sync-sonicnote", controller.SyncSonicNote)
 		recordingRoute.GET("/sync-status", controller.GetRecordingSyncStatus)
@@ -521,10 +524,10 @@ func SetApiRouter(router *gin.Engine) {
 	}
 
 	agentGroup := apiRouter.Group("/agents")
-	agentGroup.GET("/current", controller.GetCurrentAgents)
 	agentGroup.GET("/available", controller.GetAvailableAgents)
 	agentGroup.Use(middleware.UserTokenAuth(model.RoleGuestUser))
 	{
+		agentGroup.GET("/current", controller.GetCurrentAgents)
 		agentGroup.POST("", controller.CreateAgent)
 		agentGroup.GET("", controller.GetAgents)
 		agentGroup.GET("/group", controller.GetAgentsByGroup)
@@ -1409,6 +1412,7 @@ func SetApiRouter(router *gin.Engine) {
 	externalWikiRoute := apiRouter.Group("/external-wiki")
 	externalWikiRoute.Use(middleware.ExternalAPIKeyAuth())
 	{
+		externalWikiRoute.GET("/categories", externalWikiController.ListCategories)
 		externalWikiRoute.GET("/pages", externalWikiController.ListPages)
 		externalWikiRoute.GET("/pages/:page_id", externalWikiController.GetPage)
 		externalWikiRoute.GET("/search", externalWikiController.Search)

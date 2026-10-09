@@ -198,7 +198,7 @@ export const buildInvalidFilesMessage = (
  * 把 ArrayBuffer 算成 SHA-256 hex 字符串。
  * 优先走 Web Crypto（性能更好），不可用时回退到 js-sha256 纯 JS 实现。
  */
-export const sha256Hex = async (data: ArrayBuffer): Promise<string> => {
+const sha256Hex = async (data: ArrayBuffer): Promise<string> => {
   if (hasWebCryptoDigest()) {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data)
     const hashArray = Array.from(new Uint8Array(hashBuffer))
@@ -273,21 +273,6 @@ export const scanDirectoryStructure = (files: File[]): FileStructureItem[] => {
 }
 
 /**
- * 防抖函数
- */
-export const debounce = <T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): ((...args: Parameters<T>) => void) => {
-  let timeout: NodeJS.Timeout | null = null
-
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout)
-    timeout = setTimeout(() => func(...args), wait)
-  }
-}
-
-/**
  * 节流函数
  * @param func 函数
  * @param limit 限制时间
@@ -305,23 +290,5 @@ export const throttle = <T extends (...args: any[]) => any>(
       inThrottle = true
       setTimeout(() => (inThrottle = false), limit)
     }
-  }
-}
-
-/**
- * 重试函数
- */
-export const retry = async <T>(
-  fn: () => Promise<T>,
-  retries: number,
-  delay: number = 1000
-): Promise<T> => {
-  try {
-    return await fn()
-  } catch (error) {
-    if (retries <= 0) throw error
-
-    await new Promise((resolve) => setTimeout(resolve, delay))
-    return retry(fn, retries - 1, delay * 2)
   }
 }

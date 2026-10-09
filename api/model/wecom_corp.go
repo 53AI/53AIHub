@@ -64,10 +64,10 @@ type AgentItem struct {
 
 type Privilege struct {
 	AllowParty []int    `json:"allow_party"` // 修改为int类型
-	AllowTag   []string `json:"allow_tag"`
+	AllowTag   []int    `json:"allow_tag"`
 	AllowUser  []string `json:"allow_user"`
 	ExtraParty []int    `json:"extra_party"` // 修改为int类型
-	ExtraTag   []string `json:"extra_tag"`
+	ExtraTag   []int    `json:"extra_tag"`
 	ExtraUser  []string `json:"extra_user"`
 	Level      int      `json:"level"`
 }

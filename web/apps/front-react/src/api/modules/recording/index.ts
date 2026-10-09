@@ -30,6 +30,7 @@ import type {
   RecordingFileInsightPage,
   InsightBackground,
   InsightPerspectiveOption,
+  SceneModeOption,
   InsightWorkshopChatRequest,
   InsightWorkshopChatResponse,
   InsightRegenerationRequest,
@@ -568,9 +569,14 @@ export async function getInsightBackground(fileId: string): Promise<InsightBackg
   return getRequest<InsightBackground>(`/api/recordings/files/${fileId}/insight-context`).catch(handleError)
 }
 
-/** 获取洞察可选场景 */
-export async function getInsightPerspectives(): Promise<InsightPerspectiveOption[]> {
-  return getRequest<InsightPerspectiveOption[]>('/api/recordings/insight-perspectives').catch(handleError)
+/** 获取洞察可选场景（GET /api/recordings/scenes；场景由服务端统一定义，前端不硬编码） */
+export async function getInsightScenes(): Promise<InsightPerspectiveOption[]> {
+  return getRequest<InsightPerspectiveOption[]>('/api/recordings/scenes').catch(handleError)
+}
+
+/** 获取洞察决策模式（GET /api/recordings/scene-modes；模式由服务端统一定义，前端不硬编码） */
+export async function getSceneModes(): Promise<SceneModeOption[]> {
+  return getRequest<SceneModeOption[]>('/api/recordings/scene-modes').catch(handleError)
 }
 
 /**
@@ -886,7 +892,8 @@ export const recordingApi = {
   // 决策页面编排
   getInsightPage,
   getInsightBackground,
-  getInsightPerspectives,
+  getInsightScenes,
+  getSceneModes,
   chatInsightWorkshop,
   regenerateInsights,
   promoteInsightExternalConstraints,

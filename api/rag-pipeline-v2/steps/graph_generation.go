@@ -395,7 +395,7 @@ func NewGraphGenerationHandler(db *gorm.DB) func(ctx context.Context, job *model
 		// 创建图谱抽取服务
 		extractor := rag.NewGraphExtractionService(db)
 
-		// 先保留当前短分片跳过规则，再交给 batch helper 组批
+		// 保留知识类型的短分片，过滤后交给 batch helper 组批
 		knowledgeChunks, skippedChunks := collectGraphGenerationKnowledgeChunks(chunks)
 		logger.Debugf(ctx, "【图谱生成】知识分片筛选完成: file_id=%d, candidate_chunks=%d, skipped_chunks=%d", fileID, len(knowledgeChunks), skippedChunks)
 

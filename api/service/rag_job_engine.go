@@ -250,7 +250,9 @@ type BatchRunContextV2 struct {
 	RelatedID       int64
 	StrategyID      int64
 	PipelineID      int64
+	PipelineKind    string
 	RunID           string
+	SourceJobID     int64
 	StartParameters json.RawMessage
 }
 
@@ -506,6 +508,26 @@ func BatchRunJobStepsV2(ctx context.Context, eid int64, run BatchRunContextV2, i
 	if len(items) == 0 {
 		return "", nil, fmt.Errorf("%w: empty steps", ErrInvalidBatchRunRequest)
 	}
+	if run.PipelineKind != "" && run.PipelineKind != model.PipelineKindRag && run.PipelineKind != model.PipelineKindGraph {
+		return "", nil, fmt.Errorf("%w: invalid pipeline kind", ErrInvalidBatchRunRequest)
+	}
+	if run.PipelineKind == model.PipelineKindGraph {
+		if run.RunID != "" || hasJSONParameters(run.StartParameters) || len(items) != 1 || items[0].StepKey != "graph_generation" || items[0].StepIndex != nil || items[0].RunMode != "" {
+			return "", nil, fmt.Errorf("%w: graph runs require one graph_generation step and a server-generated run id", ErrInvalidBatchRunRequest)
+		}
+		job, err := NewGraphPipelineTriggerService(model.DB).StartGraphGeneration(ctx, GraphPipelineStartInput{
+			Eid:         eid,
+			FileID:      run.RelatedID,
+			PipelineID:  run.PipelineID,
+			StrategyID:  run.StrategyID,
+			SourceJobID: run.SourceJobID,
+			Config:      items[0].Config,
+		})
+		if err != nil {
+			return "", nil, err
+		}
+		return job.RunID, []int64{job.JobID}, nil
+	}
 
 	jobFactory := GetRagJobFactoryV2()
 	if jobFactory == nil {
@@ -739,6 +761,18 @@ func BatchRunJobStepsV2(ctx context.Context, eid int64, run BatchRunContextV2, i
 	}
 
 	return runID, createdJobIDs, nil
+}
+
+func hasJSONParameters(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return false
+	}
+	var parameters map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &parameters); err != nil {
+		return true
+	}
+	return len(parameters) > 0
 }
 
 func populateRagJobOwnerID(params map[string]interface{}, fileOwnerID int64) {
@@ -1053,8 +1087,8 @@ func GetLatestRunJobsWithStepsByRelatedID(ctx context.Context, eid int64, relate
 	// 独立管线 job（图谱/wiki 独立任务）使用独立 run_id，不参与 RAG 批次聚合：
 	// 排除后 latestJob 始终是 RAG 管线 job，避免以其独立 run_id 为基准导致 RAG 步骤丢失。
 	if err := query.Where("related_id = ?", relatedID).
-		Where("type NOT IN ?", []string{graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType, "generate_knowledge_map"}).
-		Order("created_time DESC").First(&latestJob).Error; err != nil {
+		Where("type NOT IN ?", []string{"graph_generation", graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType, "generate_knowledge_map"}).
+		Order("created_time DESC, job_id DESC").First(&latestJob).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil, map[int64][]model.RagJobStep{}, nil
 		}
@@ -1081,7 +1115,7 @@ func GetLatestRunJobsWithStepsByRelatedID(ctx context.Context, eid int64, relate
 	// 历史图谱 job 曾复用 RAG 的 source_run_id，若按 run_id 查回会混入 RAG 批次，
 	// 需在此一并排除，保证 by-related 只返回 RAG 管线 job。
 	jobQuery = jobQuery.Where("related_id = ?", relatedID).
-		Where("type NOT IN ?", []string{graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType, "generate_knowledge_map"}).
+		Where("type NOT IN ?", []string{"graph_generation", graphPipelineJobType, wikiAutoTriggerJobType, wikiPageVectorizationJobType, "generate_knowledge_map"}).
 		Order("created_time ASC")
 
 	var jobs []model.RagJob

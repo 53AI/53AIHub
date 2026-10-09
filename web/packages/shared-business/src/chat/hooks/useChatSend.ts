@@ -912,19 +912,22 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
 
     const currentMessage = currentMessageRef.current;
     const currentPhase = openClawTurnPhaseRef.current;
-      if (openClawRequestRef.current && currentMessage) {
-        currentMessage.interrupted = true;
-        currentMessage.error = false;
-        currentMessage.loading = false;
-        if (currentMessage.openclawTurn) {
-          currentMessage.openclawTurn = {
-            ...currentMessage.openclawTurn,
-            status: "interrupted",
-          };
-        }
-        if (!currentMessage.answer?.trim()) {
-          currentMessage.answer = "本次运行已中断";
-        }
+    // Mark the current message as interrupted and stop loading.
+    // This applies to both openclaw and non-openclaw messages, so the
+    // message list and sender both reflect the stopped state immediately.
+    if (currentMessage) {
+      currentMessage.interrupted = true;
+      currentMessage.error = false;
+      currentMessage.loading = false;
+      if (currentMessage.openclawTurn) {
+        currentMessage.openclawTurn = {
+          ...currentMessage.openclawTurn,
+          status: "interrupted",
+        };
+      }
+      if (!currentMessage.answer?.trim()) {
+        currentMessage.answer = "本次运行已中断";
+      }
       messageListChangeRef.current?.((list) => [...list], currentMessage);
     }
 

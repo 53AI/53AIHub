@@ -42,6 +42,62 @@ export type KnowledgeGraphConfig = {
   library_ids: string[] | null
 }
 
+/** 图谱生成进度项（GET /api/spaces/{space_id}/graph/progress/{file_id}） */
+export type GraphProgressItem = {
+  file_id: number
+  file_name: string
+  file_path: string
+  run_id: string
+  status: string
+  progress: number
+  success_count: number
+  failure_count: number
+  total_steps: number
+  step_key: string
+  step_name: string
+  start_time: number
+  end_time: number
+  updated_time: number
+}
+
+/** 图谱生成任务步骤 */
+export type GraphProgressStep = {
+  id: number
+  job_id: number
+  eid: number
+  step_order: number
+  parameters: string
+  results: string
+  status: string
+  start_time: number
+  end_time: number
+}
+
+/** 图谱生成任务（type: graph_pipeline_generation） */
+export type GraphProgressJob = {
+  job_id: number
+  eid: number
+  type: string
+  status: string
+  current_step_order: number
+  failure_reason?: string
+  run_id: string
+  related_id: number
+  pipeline_id: number
+  progress: number
+  completion_time: number
+  created_time: number
+  updated_time: number
+  steps: GraphProgressStep[]
+}
+
+/** 文件图谱生成进度响应 */
+export type GraphProgressData = {
+  progress_item?: GraphProgressItem
+  jobs?: GraphProgressJob[]
+  steps?: GraphProgressStep[]
+}
+
 export type SpaceCreateRequest = {
   name: string
   description: string
@@ -91,6 +147,27 @@ export const spacesApi = {
           enable_knowledge_graph: Boolean(data.enable_knowledge_graph),
           library_ids: Array.isArray(data.library_ids) ? data.library_ids : [],
         } as KnowledgeGraphConfig
+      })
+      .catch(handleError)
+  },
+
+  /**
+   * 获取文件图谱生成进度
+   * GET /api/spaces/{space_id}/graph/progress/{file_id}
+   */
+  getGraphProgress(
+    space_id: SpaceItem['id'],
+    file_id: string | number
+  ): Promise<GraphProgressData> {
+    return service
+      .get(`/api/spaces/${space_id}/graph/progress/${file_id}`)
+      .then((res: any) => {
+        const data = res?.data ?? {}
+        return {
+          progress_item: data.progress_item,
+          jobs: Array.isArray(data.jobs) ? data.jobs : [],
+          steps: Array.isArray(data.steps) ? data.steps : [],
+        } as GraphProgressData
       })
       .catch(handleError)
   },

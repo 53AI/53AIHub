@@ -382,5 +382,3 @@ export function useInlineEdit() {
     getDisplayName,
   }
 }
-
-export default useInlineEdit

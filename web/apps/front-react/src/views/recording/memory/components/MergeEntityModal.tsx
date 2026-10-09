@@ -77,7 +77,7 @@ export function MergeEntityModal({
       styles={{ body: { paddingTop: 8, paddingBottom: 24 } }}
     >
       {/* 源卡行：两张并排，选中态走蓝色边框 + 蓝色实心圆点 */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
         {entities.map((entity) => {
           const selected = entity.id === keepId
           return (

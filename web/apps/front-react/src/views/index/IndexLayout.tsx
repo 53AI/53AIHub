@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Outlet } from "react-router-dom";
+import { ResponsiveSidebar } from "@/components/Layout/ResponsiveSidebar";
 import { IndexSidebar } from "./IndexSidebar";
 
 export function IndexLayout() {
@@ -11,10 +12,15 @@ export function IndexLayout() {
 
   return (
     <div className="flex h-full w-full overflow-hidden">
-      <IndexSidebar
-        chatRenderKey={chatRenderKey}
-        onChatRenderKeyChange={bumpChatRenderKey}
-      />
+      <ResponsiveSidebar>
+        {({ close }) => (
+          <IndexSidebar
+            chatRenderKey={chatRenderKey}
+            onChatRenderKeyChange={bumpChatRenderKey}
+            onNavigate={close}
+          />
+        )}
+      </ResponsiveSidebar>
       <div className="flex-1 overflow-hidden" key={chatRenderKey}>
         <Outlet />
       </div>

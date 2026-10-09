@@ -59,6 +59,8 @@ type RecordingConfig struct {
 	InsightRegenerateEnabled *bool `json:"insight_regenerate_enabled,omitempty"`
 	// CognitionConfidence 智能提炼认知的置信度阈值（本轮仅预留配置字段，后台写入下轮开放）。
 	CognitionConfidence *CognitionConfidenceConfig `json:"cognition_confidence,omitempty"`
+	// ActionOpportunityAutoDetectEnabled 企业级开关：洞察页面生成完成后自动发现行动建议，默认关闭。
+	ActionOpportunityAutoDetectEnabled bool `json:"action_opportunity_auto_detect_enabled"`
 }
 
 func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
@@ -86,7 +88,7 @@ func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
 		MultiPerspectiveEnabled: false,
 		MemoryExtraction: &MemoryExtractionConfig{
 			Enabled: true,
-			Types:   []string{EntityTypePerson, EntityTypeMatter, EntityTypeRisk, EntityTypePrinciple},
+			Types:   []string{EntityTypePerson, EntityTypeMatter, EntityTypeRisk, EntityTypeCommitment, EntityTypeDecision},
 		},
 	}
 
@@ -109,18 +111,19 @@ func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
 	return defaultConfig, nil
 }
 
-func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voiceModelID int64, voiceModelName string, inferenceModelID int64, inferenceModelName string, recordingAgentEnabled bool, multiPerspectiveEnabled bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool) error {
+func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voiceModelID int64, voiceModelName string, inferenceModelID int64, inferenceModelName string, recordingAgentEnabled bool, multiPerspectiveEnabled bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled bool) error {
 	config := RecordingConfig{
-		Enabled:                  enabled,
-		ParserPlatform:           parserPlatform,
-		VoiceModelID:             voiceModelID,
-		VoiceModelName:           voiceModelName,
-		InferenceModelID:         inferenceModelID,
-		InferenceModelName:       inferenceModelName,
-		RecordingAgentEnabled:    recordingAgentEnabled,
-		MultiPerspectiveEnabled:  multiPerspectiveEnabled,
-		MemoryExtraction:         memoryExtraction,
-		InsightRegenerateEnabled: insightRegenerateEnabled,
+		Enabled:                            enabled,
+		ParserPlatform:                     parserPlatform,
+		VoiceModelID:                       voiceModelID,
+		VoiceModelName:                     voiceModelName,
+		InferenceModelID:                   inferenceModelID,
+		InferenceModelName:                 inferenceModelName,
+		RecordingAgentEnabled:              recordingAgentEnabled,
+		MultiPerspectiveEnabled:            multiPerspectiveEnabled,
+		MemoryExtraction:                   memoryExtraction,
+		InsightRegenerateEnabled:           insightRegenerateEnabled,
+		ActionOpportunityAutoDetectEnabled: actionOpportunityAutoDetectEnabled,
 	}
 	value, err := json.Marshal(config)
 	if err != nil {
@@ -129,7 +132,7 @@ func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voice
 	return UpdateOrCreateSetting(eid, SETTING_RECORDING_CONFIG, string(value), 0)
 }
 
-func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool) error {
+func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled *bool) error {
 	current, err := ValidateOrCreateRecordingConfig(eid)
 	if err != nil {
 		return fmt.Errorf("获取当前配置失败: %w", err)
@@ -164,6 +167,9 @@ func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voic
 	if insightRegenerateEnabled != nil {
 		current.InsightRegenerateEnabled = insightRegenerateEnabled
 	}
+	if actionOpportunityAutoDetectEnabled != nil {
+		current.ActionOpportunityAutoDetectEnabled = *actionOpportunityAutoDetectEnabled
+	}
 	value, err := json.Marshal(current)
 	if err != nil {
 		return fmt.Errorf("failed to marshal recording config: %w", err)
@@ -177,6 +183,13 @@ func IsRecordingEnabled(eid int64) (bool, error) {
 		return false, err
 	}
 	return config.Enabled, nil
+}
+
+// IsActionOpportunityAutoDetectEnabled 判断企业是否开启洞察完成后的行动建议自动发现。
+// 未配置或读取配置失败时默认关闭，避免未明确授权时产生额外模型调用。
+func IsActionOpportunityAutoDetectEnabled(eid int64) bool {
+	config, err := ValidateOrCreateRecordingConfig(eid)
+	return err == nil && config != nil && config.ActionOpportunityAutoDetectEnabled
 }
 
 // IsInsightRegenerateEnabled 判断企业是否允许重新生成洞察。
@@ -199,7 +212,7 @@ func IsRecordingMemoryExtractionEnabled(eid int64) bool {
 	}
 	memCfg := config.MemoryExtraction
 	if memCfg == nil {
-		memCfg = &MemoryExtractionConfig{Enabled: true, Types: []string{EntityTypePerson, EntityTypeMatter, EntityTypeRisk, EntityTypePrinciple}}
+		memCfg = &MemoryExtractionConfig{Enabled: true, Types: []string{EntityTypePerson, EntityTypeMatter, EntityTypeRisk, EntityTypeCommitment, EntityTypeDecision}}
 	}
 	return memCfg.IsEffectivelyEnabled()
 }

@@ -451,6 +451,117 @@ describe("useKnowledgeSenderConfig — isInLibrary 模式下 reset 保留当前�
   });
 });
 
+describe("useKnowledgeSenderConfig — 非 library 模式 reset 保留选择器开关(参数不重置)", () => {
+  it("send 后保留用户手动开启的 wiki / 知识图谱开关,不回退到智能体默认值", async () => {
+    const { result } = renderHook(() =>
+      useKnowledgeSenderConfig({
+        // 智能体默认:wiki/知识图谱均未开启(default_enable 缺省)
+        currentAgent: { agent_id: 1, settings: {} },
+        enabled: true,
+        isInLibrary: false,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current).not.toBeNull();
+    });
+
+    // 模拟用户在选择器菜单里手动开启 wiki + 知识图谱
+    act(() => {
+      const prev = result.current!.knowledgeSource;
+      result.current!.onChangeKnowledgeSource({
+        ...prev,
+        wiki: true,
+        knowledgeGraph: true,
+      });
+    });
+
+    expect(result.current!.knowledgeSource.wiki).toBe(true);
+    expect(result.current!.knowledgeSource.knowledgeGraph).toBe(true);
+
+    // 模拟 send 完毕,ChatContainer 调用 reset
+    act(() => {
+      result.current!.reset();
+    });
+
+    // 关键断言:开关保留,不回退到智能体默认(关闭)
+    expect(result.current!.knowledgeSource.wiki).toBe(true);
+    expect(result.current!.knowledgeSource.knowledgeGraph).toBe(true);
+  });
+
+  it("send 后保留用户手动关闭的开关(智能体默认开启 → 用户关闭)", async () => {
+    const { result } = renderHook(() =>
+      useKnowledgeSenderConfig({
+        // 智能体默认:wiki 默认开启
+        currentAgent: {
+          agent_id: 1,
+          settings: {},
+          settings_obj: {
+            wiki_search_setting: { enable: true, default_enable: true },
+          },
+        },
+        enabled: true,
+        isInLibrary: false,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current).not.toBeNull();
+      expect(result.current!.knowledgeSource.wiki).toBe(true);
+    });
+
+    // 用户手动关闭 wiki
+    act(() => {
+      const prev = result.current!.knowledgeSource;
+      result.current!.onChangeKnowledgeSource({ ...prev, wiki: false });
+    });
+
+    act(() => {
+      result.current!.reset();
+    });
+
+    // 关键断言:不因 reset 重新打开
+    expect(result.current!.knowledgeSource.wiki).toBe(false);
+  });
+
+  it("send 后清空临时勾选的文件/动态知识条目,但保留 wiki 开关", async () => {
+    const { result } = renderHook(() =>
+      useKnowledgeSenderConfig({
+        currentAgent: { agent_id: 1, settings: {} },
+        enabled: true,
+        isInLibrary: false,
+      })
+    );
+
+    await waitFor(() => {
+      expect(result.current).not.toBeNull();
+    });
+
+    // 用户 @ 选中一个文件,并手动开启 wiki
+    act(() => {
+      result.current!.mention.onSelect!(result.current!.mention.recentList![0]!);
+    });
+    act(() => {
+      const prev = result.current!.knowledgeSource;
+      result.current!.onChangeKnowledgeSource({ ...prev, wiki: true });
+    });
+
+    expect(result.current!.knowledgeSource.selectedFiles.length).toBeGreaterThan(0);
+
+    act(() => {
+      result.current!.reset();
+    });
+
+    // 临时文件被清空,mention list 同步清空
+    expect(result.current!.knowledgeSource.selectedFiles).toEqual([]);
+    expect(result.current!.mention.list ?? []).toHaveLength(0);
+    // wiki 开关保留
+    expect(result.current!.knowledgeSource.wiki).toBe(true);
+    // allKnowledge 不被强制打开(wiki 仍是激活来源)
+    expect(result.current!.knowledgeSource.allKnowledge).toBe(false);
+  });
+});
+
 describe("useKnowledgeSenderConfig — 默认知识源(strict 双开门)", () => {
   it("后端返回 {} 或完全缺省:默认关闭(不擅自打开)", async () => {
     const cases: Array<{ label: string; settings: any }> = [

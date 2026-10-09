@@ -628,3 +628,72 @@ func SummarizeRecordingEvaluationRun(durationsMs []int64, totalTokens int64, llm
 	}
 	return RecordingEvaluationRunMetrics{CaseCount: len(values), P50LatencyMs: percentile(50), P95LatencyMs: percentile(95), TotalTokens: totalTokens, LLMCalls: llmCalls, DegradedCases: degradedCases}
 }
+
+// RecordingSecondBrainReviewDimensions 是「二号总裁第二大脑 V2」输出的人工评审维度契约。
+// 它只定义评审结构与取值范围：分数必须来自真实人工评审，代码不生成、不补默认值。
+// 语义（对齐 V2 目标：用户原来需要自己再想 30 分钟的问题，看完后只需 3 分钟做最后判断）：
+//
+//	cognitive_load_reduction 是否明显减少用户重新分析会议的脑力
+//	judgment_usefulness     是否形成真正有用的第一轮判断（默认判断草案）
+//	evidence_grounding      判断是否有事实/行为证据支撑，而非当事人自述
+//	uncertainty_quality     是否准确找出会改变最终判断的未知信息
+//	next_step_quality       下一步是否真正降低不确定性或推进结果
+//	non_obvious_value       是否有超越普通会议摘要的价值
+//	overreach_penalty       是否把建议写成决定、把猜测写成事实、替用户越权拍板（越高越差）
+type RecordingSecondBrainReviewDimensions struct {
+	CognitiveLoadReduction *float64 `json:"cognitive_load_reduction"`
+	JudgmentUsefulness     *float64 `json:"judgment_usefulness"`
+	EvidenceGrounding      *float64 `json:"evidence_grounding"`
+	UncertaintyQuality     *float64 `json:"uncertainty_quality"`
+	NextStepQuality        *float64 `json:"next_step_quality"`
+	NonObviousValue        *float64 `json:"non_obvious_value"`
+	OverreachPenalty       *float64 `json:"overreach_penalty"`
+}
+
+const (
+	// RecordingSecondBrainReviewMinScore / MaxScore 是单维度的人工评审取值范围。
+	RecordingSecondBrainReviewMinScore = 0.0
+	RecordingSecondBrainReviewMaxScore = 5.0
+)
+
+// Validate 要求 7 个维度全部填写且在取值范围内；缺失即视为评审未完成。
+func (d *RecordingSecondBrainReviewDimensions) Validate() error {
+	if d == nil {
+		return fmt.Errorf("second brain review dimensions are nil")
+	}
+	for _, dimension := range []struct {
+		name  string
+		value *float64
+	}{
+		{"cognitive_load_reduction", d.CognitiveLoadReduction},
+		{"judgment_usefulness", d.JudgmentUsefulness},
+		{"evidence_grounding", d.EvidenceGrounding},
+		{"uncertainty_quality", d.UncertaintyQuality},
+		{"next_step_quality", d.NextStepQuality},
+		{"non_obvious_value", d.NonObviousValue},
+		{"overreach_penalty", d.OverreachPenalty},
+	} {
+		if dimension.value == nil {
+			return fmt.Errorf("second brain review requires %s", dimension.name)
+		}
+		if *dimension.value < RecordingSecondBrainReviewMinScore || *dimension.value > RecordingSecondBrainReviewMaxScore {
+			return fmt.Errorf("second brain review %s must be within [%.0f, %.0f]", dimension.name, RecordingSecondBrainReviewMinScore, RecordingSecondBrainReviewMaxScore)
+		}
+	}
+	return nil
+}
+
+// Overall 返回 0–5 的汇总分：六个正向维度取平均，再按 overreach_penalty 扣分，下限 0。
+// 它只是评审结果的聚合方式，不替代人工判断。
+func (d *RecordingSecondBrainReviewDimensions) Overall() (float64, error) {
+	if err := d.Validate(); err != nil {
+		return 0, err
+	}
+	positive := (*d.CognitiveLoadReduction + *d.JudgmentUsefulness + *d.EvidenceGrounding +
+		*d.UncertaintyQuality + *d.NextStepQuality + *d.NonObviousValue) / 6
+	score := positive - *d.OverreachPenalty
+	if score < RecordingSecondBrainReviewMinScore {
+		return RecordingSecondBrainReviewMinScore, nil
+	}
+	return score, nil
+}

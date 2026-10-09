@@ -49,7 +49,7 @@ export function FileViewerWrapper({ currentFile, content }: ViewProps) {
   }
 
   if (officeType === 'kk') {
-    return <KKFileView url={currentFile.file_url} />
+    return <KKFileView url={currentFile.file_url} fileHash={currentFile.file_hash} />
   }
 
   return (

@@ -66,6 +66,7 @@ export interface FileItem extends RawFileItem {
   file_ext: string
   file_mime: string
   file_url: string
+  file_hash: string
   parsing_status: string
   cleaning_info: {
     step_key: string

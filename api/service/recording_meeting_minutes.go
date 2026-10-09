@@ -171,7 +171,7 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 同时为每个 memory_entity 输出 identity_policy_class：
 - person：正文提及的人物需要姓名加组织/职位等身份锚点，或明确人工确认；转写行首由 ASR 直接提供的具体 speaker 名称可直接作为已确认人物。
 - named_object：具体项目、客户、产品或命名事项，通常对应 matter。
-- conceptual_object：风险、原则、主题、技术或泛化事项，不能仅按名称跨会议合并。
+- conceptual_object：风险、主题、技术或泛化事项，不能仅按名称跨会议合并。
 - unknown：无法安全判断时使用，必须按当前会议局部实体处理。
 必须同时输出 identity_policy_confidence 和 identity_policy_evidence_segment_ids。identity_status 不是 confirmed 时，person 不得跨会议自动合并。
 
@@ -179,16 +179,17 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 
 除 key_entities 外，必须输出 memory_entities。它仅用于安心录后续决策洞察，不是通用知识图谱实体。
 
-只允许以下四类，且只提取逐字稿或纪要中有明确证据的内容：
+只允许以下五类，且只提取逐字稿或纪要中有明确证据的内容：
 
 - person：company、position、demand、relationship(potential_customer|customer|partner|competitor|irrelevant)；
 - matter：status(todo|in_progress|completed|shelved)、priority(high|medium|low)、deliverable、dependency；
 - risk：risk_type(compliance|delivery|financial|technical)、risk_level(high|medium|low)、probability、response；
-- principle：principle_type(company_policy|industry_norm|compliance_req|business_principle)、applicable_scope、binding_force(mandatory|recommended|reference)、exceptions。
+- commitment：fulfillment_status(not_started|in_progress|fulfilled|overdue)、priority(high|medium|low)、due_date；
+- decision：decision_status(confirmed|proposed|rejected|deferred|uncertain)、decision_maker、reason、impact_scope。
 
-memory_entities 不是名词、标签或类别清单，而是可以在未来会议中再次指向并承载事实的长期经营记忆对象。输出前必须确认：它具体关于谁、哪个项目、客户、产品、公司、制度或事项；只有“技术研发人员”“业务人员”“落地使用风险”“进度延期风险”“业务适配原则”这类角色泛称、风险类别和原则标签时，不得升级为 memory_entity。概念可以保留在 topics、claims 或事实内容中，但不要单独建立长期实体。
-当前 memory_entities 没有独立且可持久化的 subject_entity_id；因此 risk、matter、principle 的 canonical_name 必须保留足以定位主体或适用范围的最小完整称谓，不得把“CRM 升级项目的落地使用风险”缩短为“落地使用风险”。已有明确结构化适用范围时，可避免重复堆叠名称，但不能依赖未定义的 identity_subject 或 identity_binding 来掩盖空泛名称。
-person 只能是具体人物，或转写行首由 ASR 直接确认的具体 speaker 名称；“技术研发人员”等角色只能作为具体人物的 position，不能独立成为 person。matter 必须有具体项目、客户、产品、合同、功能或任务，并至少提供 status、priority、deliverable、dependency 之一；risk 必须绑定具体主体或范围，并至少提供 risk_type、risk_level、probability、response 之一；principle 必须有具体适用对象或范围，并至少提供 principle_type、applicable_scope、binding_force、exceptions 之一。
+memory_entities 不是名词、标签或类别清单，而是可以在未来会议中再次指向并承载事实的长期经营记忆对象。输出前必须确认：它具体关于谁、哪个项目、客户、产品、公司、制度或事项；只有“技术研发人员”“业务人员”“落地使用风险”“进度延期风险”这类角色泛称和风险类别时，不得升级为 memory_entity。概念可以保留在 topics、claims 或事实内容中，但不要单独建立长期实体。
+当前 memory_entities 没有独立且可持久化的 subject_entity_id；因此 risk、matter、commitment、decision 的 canonical_name 必须保留足以定位主体或适用范围的最小完整称谓，不得把“CRM 升级项目的落地使用风险”缩短为“落地使用风险”。已有明确结构化适用范围时，可避免重复堆叠名称，但不能依赖未定义的 identity_subject 或 identity_binding 来掩盖空泛名称。
+person 只能是具体人物，或转写行首由 ASR 直接确认的具体 speaker 名称；“技术研发人员”等角色只能作为具体人物的 position，不能独立成为 person。matter 必须有具体项目、客户、产品、合同、功能或任务，并至少提供 status、priority、deliverable、dependency 之一；risk 必须绑定具体主体或范围，并至少提供 risk_type、risk_level、probability、response 之一；commitment 必须有具体承诺对象，并至少提供 fulfillment_status、priority、due_date 之一；decision 必须有具体决策主体或范围，并至少提供 decision_status、decision_maker、reason、impact_scope 之一。
 只有包含状态、责任、动作、时间、风险、约束、依赖、结果、判断、承诺或变化等信息增量的事实才进入 memory_entities。只有 summary 没有 facts，或 facts 缺少 source_segment_ids 时，不输出该长期实体/事实；不要用 summary 代替事实证据。
 
 转写中的"A说话人"、"B说话人"、"说话人 1"、"Speaker 1"、"发言人"、"无说话人"、"未知说话人"是默认说话人标签，只能用于发言归属，绝不能作为 person 的 canonical_name、mention 或 alias。转写行首由 ASR 直接提供的具体人物名称（如"王天一"、"珠江钢琴王总"）可作为 person 实体；正文中其他人名仍需有明确证据，无法确认时宁可不输出。
@@ -244,7 +245,7 @@ person 只能是具体人物，或转写行首由 ASR 直接确认的具体 spea
   "memory_entities": [
     {
       "temp_id": "entity_001",
-      "entity_type": "person|matter|risk|principle",
+      "entity_type": "person|matter|risk|commitment|decision",
       "mention": "",
       "canonical_name": "",
       "identity_status": "candidate|confirmed|manual_confirmed|unresolved",
@@ -417,8 +418,8 @@ person 只能是具体人物，或转写行首由 ASR 直接确认的具体 spea
 6. 是否在纪要阶段做了过度经营推演；
 7. 是否存在原文未出现的人物、预算、权限或截止时间；
 8. memory_entities 的每个属性和事实是否都有对应证据；
-9. memory_entities 是否都有具体主体或适用范围，而不是角色、类别、风险标签或原则标签；
-10. person 是否为具体人物，matter/risk/principle 是否满足对应类型的最低属性要求；
+9. memory_entities 是否都有具体主体或适用范围，而不是角色、类别、风险标签或类别标签；
+10. person 是否为具体人物，matter/risk/commitment/decision 是否满足对应类型的最低属性要求；
 11. 每条长期事实是否包含可复用的信息增量，不能只有寒暄、确认或空泛判断；
 12. 是否把只有 summary、没有带 source_segment_ids 的内容错误升级为长期事实。`
 

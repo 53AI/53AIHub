@@ -1,5 +1,5 @@
-import { Button, Space } from "antd";
-import { Dropdown, Search, SvgIcon } from "@km/shared-components-react";
+import { Button } from "antd";
+import { Dropdown, Search, SvgIcon, Tabs } from "@km/shared-components-react";
 import { t } from "@/locales";
 import type { MenuProps } from "antd";
 import type { MineTabKey } from "../types";
@@ -34,32 +34,24 @@ export function MineHeader({
   uploadActions,
 }: MineHeaderProps) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
       {/* Tab 切换 */}
-      <div className="flex flex-none items-center gap-1 bg-[#F5F5F5] p-1 rounded-xl">
-        {tabs.map((item) => (
-          <div
-            key={item.value}
-            className={`px-4 py-2 text-sm cursor-pointer transition-colors ${
-              activeTab === item.value
-                ? "text-[#1D1E1F] font-medium bg-white rounded-md"
-                : "text-[#9A9A9A] hover:text-[#666]"
-            }`}
-            onClick={() => onTabChange(item.value)}
-          >
-            {item.label}
-          </div>
-        ))}
-      </div>
+      <Tabs
+        variant="segmented"
+        className="flex-none"
+        items={tabs.map((item) => ({ key: item.value, label: item.label }))}
+        activeKey={activeTab}
+        onChange={(key) => onTabChange(key as MineTabKey)}
+      />
 
       {/* 搜索和操作按钮 */}
-      <Space>
+      <div className="flex items-center gap-2 min-w-0">
         <Search
           mode="expanded"
           placeholder={t("mine.search_document")}
           value={keyword}
           onDebouncedChange={onKeywordChange}
-          className="max-w-[200px] rounded-lg"
+          className="flex-1 min-w-0 md:flex-none md:max-w-[200px] rounded-lg"
         />
 
         {/* 上传 Tab 操作 */}
@@ -73,6 +65,7 @@ export function MineHeader({
                 color="primary"
                 variant="filled"
                 icon={<SvgIcon name="download" size={16} />}
+                className="flex-none"
               >
                 {t("mine.import")}
               </Button>
@@ -81,13 +74,17 @@ export function MineHeader({
               menu={{ items: uploadActions.createMenuItems }}
               placement="bottomRight"
             >
-              <Button type="primary" icon={<SvgIcon name="plus" size={16} />}>
+              <Button
+                type="primary"
+                icon={<SvgIcon name="plus" size={16} />}
+                className="flex-none"
+              >
                 {t("action.create")}
               </Button>
             </Dropdown>
           </>
         )}
-      </Space>
+      </div>
     </div>
   );
 }

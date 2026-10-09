@@ -130,7 +130,8 @@ func GetOrganizationalUserList(params OrganizationUserListParams) (*Organization
 	params.Keyword = strings.TrimSpace(params.Keyword)
 	query := model.DB.Model(&model.MemberBinding{}).
 		Where(clause.Eq{Column: clause.Column{Table: "member_bindings", Name: "eid"}, Value: params.EID}).
-		Where(clause.Eq{Column: clause.Column{Table: "member_bindings", Name: "from"}, Value: params.From})
+		Where(clause.Eq{Column: clause.Column{Table: "member_bindings", Name: "from"}, Value: params.From}).
+		Where("member_bindings.deleted_at = ?", 0)
 
 	query.Select(`
     member_bindings.*,
@@ -163,6 +164,15 @@ func GetOrganizationalUserList(params OrganizationUserListParams) (*Organization
 			Column: clause.Column{Table: "member_department_relations", Name: "did"},
 			Value:  params.DID,
 		})
+		query.Where("member_department_relations.deleted_at = ?", 0)
+	} else {
+		query.Where(`EXISTS (
+			SELECT 1
+			FROM member_department_relations
+			WHERE member_department_relations.bid = member_bindings.id
+			  AND member_department_relations.eid = member_bindings.eid
+			  AND member_department_relations.deleted_at = ?
+		)`, 0)
 	}
 	if params.UserStatus != -1 {
 		query.Where("users.status = ?", params.UserStatus)
@@ -219,6 +229,7 @@ func (o *OrganizationUserListResponse) LoadDepartmentRelations() error {
 		Select("member_department_relations.*, departments.bindvalue, departments.pdid, departments.name, departments.sort, departments.path").
 		Joins("Left Join departments ON departments.did = member_department_relations.did AND departments.eid = member_department_relations.eid").
 		Where("member_department_relations.eid=? AND member_department_relations.bid IN?", eid, bindIDs).
+		Where("member_department_relations.deleted_at = ?", 0).
 		Where(clause.Eq{
 			Column: clause.Column{Table: "departments", Name: "from"},
 			Value:  clause.Column{Table: "member_department_relations", Name: "from"},

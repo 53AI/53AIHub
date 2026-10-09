@@ -1,10 +1,7 @@
 import { useState } from 'react'
-import { Link, useLocation } from 'react-router-dom'
 import { useEnterpriseStore, useIsSoftStyle } from '@/stores/modules/enterprise'
 import { getPublicPath } from '@/utils/config'
-import { useResponsive } from '@/hooks/useResponsive'
 import { t } from '@/locales'
-import { SvgIcon } from '@km/shared-components-react'
 import './Footer.css'
 
 interface FooterItem {
@@ -15,8 +12,6 @@ interface FooterItem {
 }
 
 export function Footer({ fixed = true }: { fixed?: boolean }) {
-  const location = useLocation()
-  const { isMobile } = useResponsive()
 
   const enterpriseStore = useEnterpriseStore()
   const isSoftStyle = useIsSoftStyle()
@@ -50,30 +45,7 @@ export function Footer({ fixed = true }: { fixed?: boolean }) {
           </div>
         )}
         {copyright === 'true' && <div className="h-12" />}
-        {fixed && <div className="h-14 md:hidden" />}
-        {isMobile && (
-          <div
-            className={`bg-white flex items-center border-t ${
-              fixed ? 'fixed bottom-0 left-0 right-0 z-[9]' : ''
-            }`}
-          >
-            {footerList.map((item) => (
-              <div key={item.icon} className="flex-1 flex items-center justify-center">
-                <Link
-                  to={`/${item.name.toLowerCase()}`}
-                  className={`h-14 px-2 flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    location.pathname.startsWith(`/${item.name.toLowerCase()}`)
-                      ? 'text-theme'
-                      : 'text-primary'
-                  }`}
-                >
-                  <SvgIcon name={item.icon} size={18} stroke={item.stroke} />
-                  <p className="text-sm leading-none max-w-[100px] truncate">{item.title}</p>
-                </Link>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* {fixed && <div className="h-14 md:hidden" />} */}
       </>
     )
   }

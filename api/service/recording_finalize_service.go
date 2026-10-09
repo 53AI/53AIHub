@@ -846,8 +846,9 @@ var ErrRetranscribeAlreadyProcessing = errors.New("转写任务已在处理中")
 
 // RetranscribeRecordingFile 对录音文件补触发转写（document_parsing job）。
 // 用于同步时引擎未就绪导致"有录音无转写"的存量文件；复用 CreateRagJobsForRecordingFile。
+// forceReparse=true 时写入 force_reparse 参数，令 document_parsing 跳过转写复用与秒解析缓存，真正重跑 ASR。
 // 幂等：已有 pending/processing document_parsing job 时返回 ErrRetranscribeAlreadyProcessing。
-func RetranscribeRecordingFile(ctx context.Context, eid, fileID int64) error {
+func RetranscribeRecordingFile(ctx context.Context, eid, fileID int64, forceReparse bool) error {
 	file, err := model.GetFileByID(eid, fileID)
 	if err != nil || file == nil {
 		return fmt.Errorf("录音文件不存在: file_id=%d", fileID)
@@ -871,6 +872,9 @@ func RetranscribeRecordingFile(ctx context.Context, eid, fileID int64) error {
 		"user_id":       file.UserID,
 		"library_id":    file.LibraryID,
 		"origin_status": model.FileConversionStatusPending,
+	}
+	if forceReparse {
+		params["force_reparse"] = true
 	}
 	paramsJSON, err := json.Marshal(params)
 	if err != nil {

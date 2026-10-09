@@ -10,9 +10,13 @@ const base64Encode = (str: string): string => {
 
 interface KKFileViewProps {
   url: string;
+  /** 文件 SHA-256（来自 upload_file.hash），合法时走 kkfileview 内容级缓存 */
+  fileHash?: string;
 }
 
-export function KKFileView({ url }: KKFileViewProps) {
+const isValidSha256 = (h?: string) => !!h && /^[a-f0-9]{64}$/i.test(h);
+
+export function KKFileView({ url, fileHash }: KKFileViewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const previewUrl = useMemo(() => {
@@ -25,11 +29,13 @@ export function KKFileView({ url }: KKFileViewProps) {
       pathname.endsWith(".docx") ||
       pathname.endsWith(".pdf");
 
+    // 有合法 hash：走 kkfileview 内容级缓存（同文件复用转换结果），不再强制刷新
+    const cacheParams = isValidSha256(fileHash) ? `&fileHash=${fileHash}` : "&forceUpdatedCache=true";
     if (isDoc) {
-      return `${kk}/onlinePreview?url=${realUrl}&officePreviewType=pdf&forceUpdatedCache=true`;
+      return `${kk}/onlinePreview?url=${realUrl}&officePreviewType=pdf${cacheParams}`;
     }
-    return `${kk}/onlinePreview?url=${realUrl}&forceUpdatedCache=true`;
-  }, [url]);
+    return `${kk}/onlinePreview?url=${realUrl}${cacheParams}`;
+  }, [url, fileHash]);
 
   const onMessage = useCallback((event: MessageEvent) => {
     const text = event.data.text;

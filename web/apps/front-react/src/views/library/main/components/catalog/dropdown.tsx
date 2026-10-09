@@ -140,5 +140,3 @@ export function CatalogDropdown({
     </Dropdown>
   )
 }
-
-export default CatalogDropdown

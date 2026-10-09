@@ -2,6 +2,8 @@ package ticnote
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 )
 
@@ -56,15 +58,31 @@ func FriendlySyncError(err error) string {
 	return "TicNote 服务暂不可用，请稍后重试"
 }
 
+// HTTPStatusForError 远端错误 → HTTP 状态码：设备 Key 无效 422，超时 504，其余（网络/远端 5xx）502。
+// 不用 401：401 在本系统专指用户登录态失效，前端会全局登出/重定向，设备 Key 无效不能与之混淆。
+func HTTPStatusForError(err error) int {
+	if err == nil {
+		return http.StatusOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout
+	}
+	if classifyAuthError(err) == ReasonKeyInvalid {
+		return http.StatusUnprocessableEntity
+	}
+	return http.StatusBadGateway
+}
+
 // CheckStatus 探测 TicNote 可用性：用 AppKey 登录验证有效性，
 // 并拉取前 maxProbeProjects 个项目统计录音数（轻量探测，避免大账号全量遍历拖慢）。
 // 探测失败不返回 error，以 status.Available=false + reason 表达。
 func (s *SyncService) CheckStatus(ctx context.Context, appkey string) (*DeviceStatus, error) {
-	token, err := s.client.Login(ctx, appkey)
+	client := s.clientFor(appkey)
+	token, err := client.Login(ctx, appkey)
 	if err != nil {
 		return &DeviceStatus{Available: false, UnavailableReason: classifyAuthError(err)}, nil
 	}
-	recordings, err := s.client.ListRecordingsLimited(ctx, token, maxProbeProjects)
+	recordings, err := client.ListRecordingsLimited(ctx, token, maxProbeProjects)
 	if err != nil {
 		return &DeviceStatus{Available: false, UnavailableReason: classifyAuthError(err)}, nil
 	}

@@ -92,6 +92,12 @@ func encodeMapFields(m map[string]interface{}) map[string]interface{} {
 			} else {
 				result[key] = value
 			}
+		} else if strings.EqualFold(key, "jobs") {
+			if jobs, ok := value.([]interface{}); ok {
+				result[key] = encodeJobIDs(jobs)
+			} else {
+				result[key] = encodeIDFields(value)
+			}
 		} else {
 			// 递归处理嵌套结构
 			result[key] = encodeIDFields(value)
@@ -99,6 +105,18 @@ func encodeMapFields(m map[string]interface{}) map[string]interface{} {
 	}
 
 	return result
+}
+
+func encodeJobIDs(jobs []interface{}) []interface{} {
+	encoded := make([]interface{}, len(jobs))
+	for i, job := range jobs {
+		if id := tryEncodeID(job); id != nil {
+			encoded[i] = id
+		} else {
+			encoded[i] = encodeIDFields(job)
+		}
+	}
+	return encoded
 }
 
 // encodeSliceFields 编码切片中的ID字段

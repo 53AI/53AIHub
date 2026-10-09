@@ -1,6 +1,6 @@
-import { Modal, Button, Table } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
 import { useState, useCallback, useMemo } from 'react'
+import { Button, Modal, Table } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import DeptMemberPicker from '@/components/DeptMemberPicker'
 import PermissionSelector from './selector'
 import { PERMISSION_TYPE, RESOURCE_TYPE, SUBJECT_TYPE, type PermissionType, type SubjectType } from './constant'
@@ -101,21 +101,45 @@ export function MemberSelector({ onConfirm, showWiki = false, children }: Member
     handleCancel()
   }, [memberList, onConfirm, handleCancel, showWiki])
 
-  const handlePermissionChange = useCallback((record: PickerItem, permission: PermissionType) => {
-    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, permission } : item)))
-  }, [])
+  /** 按稳定键（type + value）匹配行，避免依赖对象引用（引用会随其他维度权限更新而变化） */
+  const updateMemberItem = useCallback(
+    (record: PickerItem, patch: Partial<Pick<PickerItem, 'permission' | 'wikiPermission'>>) => {
+      setMemberList((prev) =>
+        prev.map((item) =>
+          item.type === record.type && item.value === record.value ? { ...item, ...patch } : item,
+        ),
+      )
+    },
+    [],
+  )
 
-  const handleWikiPermissionChange = useCallback((record: PickerItem, permission: PermissionType) => {
-    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, wikiPermission: permission } : item)))
-  }, [])
+  const handlePermissionChange = useCallback(
+    (record: PickerItem, permission: PermissionType) => {
+      updateMemberItem(record, { permission })
+    },
+    [updateMemberItem],
+  )
 
-  const handlePermissionUnselected = useCallback((record: PickerItem) => {
-    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, permission: undefined } : item)))
-  }, [])
+  const handleWikiPermissionChange = useCallback(
+    (record: PickerItem, permission: PermissionType) => {
+      updateMemberItem(record, { wikiPermission: permission })
+    },
+    [updateMemberItem],
+  )
 
-  const handleWikiPermissionUnselected = useCallback((record: PickerItem) => {
-    setMemberList((prev) => prev.map((item) => (item === record ? { ...item, wikiPermission: undefined } : item)))
-  }, [])
+  const handlePermissionUnselected = useCallback(
+    (record: PickerItem) => {
+      updateMemberItem(record, { permission: undefined })
+    },
+    [updateMemberItem],
+  )
+
+  const handleWikiPermissionUnselected = useCallback(
+    (record: PickerItem) => {
+      updateMemberItem(record, { wikiPermission: undefined })
+    },
+    [updateMemberItem],
+  )
 
   const columns: ColumnsType<PickerItem> = useMemo(() => {
     const userColumn = {

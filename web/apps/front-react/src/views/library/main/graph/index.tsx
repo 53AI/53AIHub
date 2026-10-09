@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Button, Empty, Spin, message, Select, Drawer } from 'antd'
+import { Button, Empty, Spin, message, Drawer } from 'antd'
 import {
   ZoomInOutlined,
   ZoomOutOutlined,

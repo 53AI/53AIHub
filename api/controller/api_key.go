@@ -46,6 +46,8 @@ type APIKeyInfo struct {
 	Description string     `json:"description"`
 	Eid         int64      `json:"eid"`
 	CreatorID   int64      `json:"creator_id"`
+	LibraryID   *int64     `json:"library_id,omitempty"`
+	SpaceID     *int64     `json:"space_id,omitempty"`
 	Status      int        `json:"status"`
 	CreatedTime int64      `json:"created_time"`
 	UpdatedTime int64      `json:"updated_time"`
@@ -157,6 +159,8 @@ func (ctrl *APIKeyController) GetAPIKeys(c *gin.Context) {
 			Description: key.Description,
 			Eid:         key.Eid,
 			CreatorID:   key.CreatorID,
+			LibraryID:   key.LibraryID,
+			SpaceID:     key.SpaceID,
 			Status:      key.Status,
 			CreatedTime: key.CreatedTime,
 			UpdatedTime: key.UpdatedTime,

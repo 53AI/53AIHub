@@ -112,7 +112,7 @@ func (s *WikiPageVectorizationProcessorImpl) replaceChunks(ctx context.Context, 
 			}
 		}
 		if len(ids) > 0 {
-			if err := s.vectorDB.Delete(ctx, wikiVectorCollectionName(eid), ids); err != nil && !vectorstore.IsNotFoundError(err) {
+			if err := s.vectorDB.Delete(ctx, WikiVectorCollectionName(eid), ids); err != nil && !vectorstore.IsNotFoundError(err) {
 				return false, fmt.Errorf("delete old wiki vectors: %w", err)
 			}
 		}
@@ -167,7 +167,7 @@ func (s *WikiPageVectorizationProcessorImpl) deactivatePreviousVersions(ctx cont
 	if len(ids) == 0 {
 		return nil
 	}
-	if err := s.vectorDB.Delete(ctx, wikiVectorCollectionName(eid), ids); err != nil && !vectorstore.IsNotFoundError(err) {
+	if err := s.vectorDB.Delete(ctx, WikiVectorCollectionName(eid), ids); err != nil && !vectorstore.IsNotFoundError(err) {
 		return fmt.Errorf("delete previous wiki version vectors: %w", err)
 	}
 	logger.Infof(ctx, "【Wiki生成】 旧版本下线: eid=%d page_id=%d version_id=%d old_chunk_count=%d", eid, pageID, versionID, len(old))
@@ -194,7 +194,7 @@ func (s *WikiPageVectorizationProcessorImpl) embedChunks(ctx context.Context, ei
 	if config.EmbeddingModelName != nil {
 		modelName = strings.TrimSpace(*config.EmbeddingModelName)
 	}
-	collection := wikiVectorCollectionName(eid)
+	collection := WikiVectorCollectionName(eid)
 	metric := vectorstore.LoadFromEnv().DistanceMetric
 	type chunkRow struct {
 		item WikiPageChunk
@@ -321,7 +321,7 @@ func (s *WikiPageVectorizationProcessorImpl) markChunkFailed(ctx context.Context
 	}).Error
 }
 
-func wikiVectorCollectionName(eid int64) string {
+func WikiVectorCollectionName(eid int64) string {
 	return fmt.Sprintf("%s%d", wikiVectorCollectionPrefix, eid)
 }
 

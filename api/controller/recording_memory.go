@@ -117,7 +117,7 @@ func GetRecordingMemoryOverview(c *gin.Context) {
 // @Tags 录音
 // @Produce json
 // @Security BearerAuth
-// @Param entity_type query string false "人物/事项/风险/原则：person/matter/risk/principle"
+// @Param entity_type query string false "人物/事项/风险/承诺/决策：person/matter/risk/commitment/decision"
 // @Param keyword query string false "实体名或总结关键词"
 // @Param limit query int false "返回条数" default(50)
 // @Param offset query int false "跳过条数" default(0)

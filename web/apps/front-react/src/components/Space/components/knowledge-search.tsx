@@ -77,7 +77,7 @@ export function KnowledgeSearch({
   );
 
   return (
-    <div className="h-[500px] overflow-y-auto border rounded-xl px-2 py-1">
+    <div className="h-[500px] max-md:h-[55vh] overflow-y-auto border rounded-xl px-2 py-1">
       {loading && pageList.length === 0 ? (
         <div className="flex justify-center py-10">
           <Spin />

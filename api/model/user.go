@@ -389,6 +389,9 @@ func DeleteUser(eid int64, user_id int64) error {
 		tx.Rollback()
 		return err
 	}
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
 
 	// 用户硬删：统一清该用户全部缓存（行+群组+token），0 延迟。
 	InvalidateUserCaches(eid, user_id, context.Background(), user.AccessToken)
@@ -587,6 +590,7 @@ func (u *User) LoadDepartments(from int) error {
 			Column: clause.Column{Table: "member_department_relations", Name: "from"},
 			Value:  from,
 		}).
+		Where("member_department_relations.deleted_at = ? AND member_bindings.deleted_at = ?", 0, 0).
 		Find(&departments).Error
 
 	if err == nil && len(departments) > 0 {
@@ -600,7 +604,7 @@ func (u *User) LoadMemberBindings(from int) error {
 	if u.UserID == 0 {
 		return nil
 	}
-	err := DB.Where(map[string]interface{}{"mid": u.UserID, "eid": u.Eid, "from": from}).
+	err := DB.Where(map[string]interface{}{"mid": u.UserID, "eid": u.Eid, "from": from, "deleted_at": 0}).
 		Find(&memberBindings).Error
 	if err == nil && len(memberBindings) > 0 {
 		u.MemberBindings = memberBindings
@@ -626,7 +630,7 @@ func (u *User) GetUserGroupIds(ctxs ...context.Context) ([]int64, error) {
 		}
 
 		var dids []int64
-		err = dbWithOptionalCtx(ctxs...).Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid = ?", u.Eid, u.UserID).Pluck("did", &dids).Error
+		err = dbWithOptionalCtx(ctxs...).Model(&MemberDepartmentRelation{}).Where("eid = ? AND bid = ? AND deleted_at = ?", u.Eid, u.UserID, 0).Pluck("did", &dids).Error
 		if err != nil {
 			return nil, err
 		}

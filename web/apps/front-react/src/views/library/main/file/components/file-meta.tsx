@@ -18,5 +18,3 @@ export function FileMetaLine({ file }: { file: FileItem }) {
     </p>
   );
 }
-
-export default FileMetaLine;

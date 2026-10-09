@@ -577,7 +577,7 @@ func searchGlobalRAG(c *gin.Context, req GlobalSearchRequest) (*elasticsearch.Fi
 	if err != nil {
 		return nil, err
 	}
-	if len(filteredLibraryIDs) == 0 && len(accessibleLibraryIDs) > 0 {
+	if len(filteredLibraryIDs) == 0 {
 		return &elasticsearch.FileNameSearchResponse{Results: []elasticsearch.FileNameSearchResult{}, Query: req.Query, Source: "sql"}, nil
 	}
 	esClient := elasticsearch.GetGlobalClient()

@@ -189,5 +189,3 @@ export const ApplyDialog = forwardRef<
 });
 
 ApplyDialog.displayName = "ApplyDialog";
-
-export default ApplyDialog;

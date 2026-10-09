@@ -4,7 +4,7 @@ import type { TableColumnsType } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Header from '@/components/Layout/Header';
 import recordingApi from '@/api/modules/recording';
-import { Search } from '@km/shared-components-react';
+import { Search, Tabs } from '@km/shared-components-react';
 import type {
   RecordingMemoryEntityDetail,
   RecordingMemoryEntityItem,
@@ -18,6 +18,7 @@ import { FactCard } from './components/FactCard';
 import { MemoryKnowledgeGraph } from './components/MemoryKnowledgeGraph';
 import { MergeEntityModal } from './components/MergeEntityModal';
 import { factEntityTypeLabel, formatSourceFile, isEnumAttribute } from './components/utils';
+import './index.css';
 
 export function RecordingMemoryHomeView() {
   const [items, setItems] = useState<RecordingMemoryEntityItem[]>([])
@@ -249,7 +250,7 @@ export function RecordingMemoryHomeView() {
       width: 130,
       align: 'right',
       render: (_: unknown, record) => (
-        <div className="flex items-center gap-1 justify-end invisible group-hover:visible transition-colors">
+        <div className="flex items-center gap-1 justify-end visible md:invisible md:group-hover:visible transition-colors">
           <Tooltip title="查看">
             <Button
               type="text"
@@ -313,7 +314,7 @@ export function RecordingMemoryHomeView() {
       ) : !schema ? (
         <div className="flex h-[60vh] items-center justify-center"><Spin size="large" tip="加载中..." /></div>
       ) : (
-      <div className="mx-auto w-11/12 lg:w-4/5 max-w-[1200px] p-6">
+      <div className="memory-content-container mx-auto w-11/12 lg:w-4/5 max-w-[1200px] p-6 max-md:px-0">
 
         {/* <h2 className="mb-6 text-base font-medium text-[#1D1E1F]">数据统计</h2>
 
@@ -403,29 +404,20 @@ export function RecordingMemoryHomeView() {
 
         {activeTab === 'memory' ? (
           <>
-            <div className="mb-5 flex items-center justify-between gap-3">
+            <div className="memory-toolbar mb-5">
               <div className="flex items-center gap-3">
  
-                <div className="flex bg-[#F6F7F7] p-1 rounded-lg w-fit">
-                  {typeTabs.map((option) => (
-                    <button
-                      type="button"
-                      key={option.key}
-                      onClick={() => {
-                        setActiveType(option.key)
-                        setCurrentPage(1)
-                        setMergeSelectedIds([])
-                      }}
-                      className={`px-4 h-8 text-base transition-all rounded flex items-center ${
-                        activeType === option.key
-                          ? 'bg-white text-[#2563EB] shadow-sm'
-                          : 'text-[#999999] hover:text-[#1e293b]'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+                <Tabs
+                  variant="segmented"
+                  className="memory-type-tabs"
+                  items={typeTabs}
+                  activeKey={activeType}
+                  onChange={(key) => {
+                    setActiveType(key as RecordingMemoryEntityType | 'all')
+                    setCurrentPage(1)
+                    setMergeSelectedIds([])
+                  }}
+                />
               </div>
               <div className="flex items-center gap-2">
                 <Search
@@ -433,7 +425,7 @@ export function RecordingMemoryHomeView() {
                   value={keyword}
                   placeholder="搜索记忆实体名称或内容"
                   debounceMs={260}
-                  className="w-full lg:w-[280px]"
+                  className="memory-toolbar-search"
                   onDebouncedChange={(val) => {
                     setKeyword(val)
                     setCurrentPage(1)
@@ -458,10 +450,13 @@ export function RecordingMemoryHomeView() {
               </div>
             </div>
             <section className="bg-white p-5 rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-sm">
+              {/* 横向滚动下限取各列宽之和（含选择列，约 950px）：窄屏可横向滚动，
+                  宽屏下"实体/记忆内容"等弹性列按剩余空间分配，不会无限撑开 */}
               <Table
                 dataSource={items}
                 columns={entityColumns}
                 rowKey="id"
+                scroll={{ x: 950 }}
                 rowSelection={{
                   selectedRowKeys: mergeSelectedIds,
                   // 记忆融合只允许恰好 2 个:超过 2 个时自动取消最早选中的,保证最多 2 个。
@@ -531,7 +526,7 @@ export function RecordingMemoryHomeView() {
                 <span className="text-lg text-[#1D1E1F] min-w-0 truncate" title={selected.canonical_name}>{selected.canonical_name}</span>
                 <span className={`shrink-0 rounded-md px-2 py-1 text-xs bg-slate-100 text-slate-600 `}>{entityTypeLabel(selected.entity_type)}</span>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4">
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                 {attributeFieldDefs.length === 0 ? (
                   <p className="col-span-2 text-sm text-[#9CA3AF]">该类型暂无属性</p>
                 ) : attributeFieldDefs.map((field) => {

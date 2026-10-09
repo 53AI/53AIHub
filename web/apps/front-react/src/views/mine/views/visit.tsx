@@ -304,17 +304,17 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
             </div>
 
             {/* 位置列 */}
-            <div className="w-[160px] flex-shrink-0 text-sm text-[#4F5052] font-medium">
+            <div className="hidden md:block md:w-[160px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium">
               位置
             </div>
 
             {/* 所有人列 */}
-            <div className="w-[100px] flex-shrink-0 text-sm text-[#4F5052] font-medium">
+            <div className="hidden md:block md:w-[100px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium">
               所有人
             </div>
 
             {/* 访问时间列 */}
-            <div className="w-[140px] flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">
+            <div className="hidden md:block md:w-[140px] md:flex-shrink-0 text-sm text-[#4F5052] font-medium text-right">
               访问时间
             </div>
 
@@ -374,17 +374,17 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
                     </div>
 
                     {/* 位置列 */}
-                    <div className="w-[160px] flex-shrink-0 text-sm text-placeholder truncate">
+                    <div className="hidden md:block md:w-[160px] md:flex-shrink-0 text-sm text-placeholder truncate">
                       {item.position}
                     </div>
 
                     {/* 所有人列 */}
-                    <div className="w-[100px] flex-shrink-0 text-sm text-placeholder truncate">
+                    <div className="hidden md:block md:w-[100px] md:flex-shrink-0 text-sm text-placeholder truncate">
                       {item.owner}
                     </div>
 
                     {/* 访问时间列 */}
-                    <div className="w-[140px] flex-shrink-0 text-sm text-placeholder text-right">
+                    <div className="hidden md:block md:w-[140px] md:flex-shrink-0 text-sm text-placeholder text-right">
                       {item.recentTime}
                     </div>
 

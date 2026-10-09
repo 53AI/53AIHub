@@ -18,6 +18,8 @@ interface SkillCardProps {
   skill: Skill
   type: 'explore' | 'my'
   groupId?: number
+  /** 搜索关键词，用于高亮标题与描述（与 prompt/agent 列表卡片一致） */
+  keyword?: string
   onAdd?: (id: string) => void
   onOpenEnvSettings?: () => void
   /** 直接添加到指定 agentId，不弹出选择小助理弹窗 */
@@ -28,10 +30,17 @@ interface SkillCardProps {
   onUseSkill?: (skill: { id: string; display_name: string; skill_name: string; icon?: string }) => void
 }
 
-const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOpenEnvSettings, addedAgentId, addedSkillIds, onUseSkill }) => {
+const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, keyword = '', onAdd, onOpenEnvSettings, addedAgentId, addedSkillIds, onUseSkill }) => {
   const navigate = useNavigate()
   const skillsStore = useSkillsStore()
   const [addModalOpen, setAddModalOpen] = useState(false)
+
+  // 关键词高亮（与 prompt/agent 列表卡片保持一致）
+  const highlightKeyword = (text: string, kw: string) => {
+    if (!kw.trim()) return text
+    const regex = new RegExp(`(${kw})`, 'gi')
+    return text.replace(regex, "<span class='text-theme'>$1</span>")
+  }
 
   const isEnabled = skill.binding_status === 'enabled'
 
@@ -139,7 +148,7 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
     <>
       <Tooltip title={isDisabled ? t('skill.disabled_by_admin') : ''} placement="top">
         <div
-        className={`h-[186px] bg-white border border-[#E6E6E6] rounded-lg p-5 hover:shadow-lg transition-all duration-300 group cursor-pointer flex flex-col relative ${isDisabled ? 'cursor-not-allowed' : ''}`}
+        className={`h-[186px] bg-white border border-[#E6E6E6] rounded-lg p-5 hover:shadow-md transition-all duration-300 group cursor-pointer flex flex-col relative ${isDisabled ? 'cursor-not-allowed' : ''}`}
         onClick={handleClick}
       >
         <div className="flex flex-1 items-start gap-3">
@@ -153,10 +162,11 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
             <div className="flex items-center justify-between">
               <div className="flex-1 flex items-center gap-2 overflow-hidden">
                 <h3
-                  className={`text-base font-medium text-gray-900 truncate transition-all ${isGrayscale ? 'grayscale opacity-60' : ''}`}
-                >
-                  {skill.display_name}
-                </h3>
+                  className={`text-base font-medium text-primary truncate transition-all ${isGrayscale ? 'grayscale opacity-60' : ''}`}
+                  dangerouslySetInnerHTML={{
+                    __html: type === 'explore' ? highlightKeyword(skill.display_name, keyword) : skill.display_name
+                  }}
+                />
                 <Tag className="shrink-0 text-xs rounded-3xl truncate max-w-[80px]" title={skill.version}>{skill.version}</Tag>
               </div>
 
@@ -183,9 +193,10 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, onAdd, onOp
 
         <p
           className={`text-sm text-placeholder line-clamp-2 my-2 flex-1 leading-relaxed transition-all ${isGrayscale ? 'grayscale opacity-60' : ''}`}
-        >
-          {skill.description}
-        </p>
+          dangerouslySetInnerHTML={{
+            __html: type === 'explore' ? highlightKeyword(skill.description || '', keyword) : skill.description || ''
+          }}
+        />
 
         {type === 'explore' && (
           <div

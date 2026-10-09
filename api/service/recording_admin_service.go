@@ -36,6 +36,8 @@ type RecordingConfigResult struct {
 	MemoryExtraction        *model.MemoryExtractionConfig `json:"memory_extraction,omitempty"`
 	// InsightRegenerateEnabled 企业级开关：是否允许重新生成洞察（未配置时视为允许）。
 	InsightRegenerateEnabled bool `json:"insight_regenerate_enabled"`
+	// ActionOpportunityAutoDetectEnabled 企业级开关：洞察完成后是否自动发现行动建议。
+	ActionOpportunityAutoDetectEnabled bool `json:"action_opportunity_auto_detect_enabled"`
 }
 
 func (s *RecordingAdminService) GetRecordingConfig(ctx context.Context) (*RecordingConfigResult, error) {
@@ -44,22 +46,44 @@ func (s *RecordingAdminService) GetRecordingConfig(ctx context.Context) (*Record
 		return nil, fmt.Errorf("获取录音配置失败: %w", err)
 	}
 	return &RecordingConfigResult{
-		Enabled:                  config.Enabled,
-		ParserPlatform:           config.ParserPlatform,
-		VoiceModelID:             config.VoiceModelID,
-		VoiceModelName:           config.VoiceModelName,
-		InferenceModelID:         config.InferenceModelID,
-		InferenceModelName:       config.InferenceModelName,
-		RecordingAgentEnabled:    config.RecordingAgentEnabled,
-		MultiPerspectiveEnabled:  config.MultiPerspectiveEnabled,
-		MemoryExtraction:         config.MemoryExtraction,
-		InsightRegenerateEnabled: model.IsInsightRegenerateEnabled(s.eid),
+		Enabled:                            config.Enabled,
+		ParserPlatform:                     config.ParserPlatform,
+		VoiceModelID:                       config.VoiceModelID,
+		VoiceModelName:                     config.VoiceModelName,
+		InferenceModelID:                   config.InferenceModelID,
+		InferenceModelName:                 config.InferenceModelName,
+		RecordingAgentEnabled:              config.RecordingAgentEnabled,
+		MultiPerspectiveEnabled:            config.MultiPerspectiveEnabled,
+		MemoryExtraction:                   config.MemoryExtraction,
+		InsightRegenerateEnabled:           model.IsInsightRegenerateEnabled(s.eid),
+		ActionOpportunityAutoDetectEnabled: config.ActionOpportunityAutoDetectEnabled,
 	}, nil
 }
 
-func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *model.MemoryExtractionConfig, insightRegenerateEnabled *bool) error {
+func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *model.MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled *bool) error {
 	if parserPlatform != nil && *parserPlatform != "" && !IsValidParserPlatform(*parserPlatform) {
 		return fmt.Errorf("不支持的解析平台: %s", *parserPlatform)
+	}
+
+	// 显式变更语音模型时，parser_platform 必须同步为该模型（{voice|openai}:{channel_type}:{model_name}）。
+	// parser_platform 是秒解析缓存的隔离键，模型变更而 platform 未同步会导致缓存误命中旧模型结果。
+	if voiceModelName != nil && *voiceModelName != "" {
+		modelID := int64(0)
+		if voiceModelID != nil {
+			modelID = *voiceModelID
+		} else if cfg, cfgErr := model.ValidateOrCreateRecordingConfig(s.eid); cfgErr == nil {
+			modelID = cfg.VoiceModelID
+		}
+		if modelID > 0 {
+			if ch, chErr := model.GetChannelByID(modelID); chErr == nil && model.IsVoiceModelChannel(ch) {
+				prefix := "voice"
+				if model.IsOpenAIAudioChannel(ch) {
+					prefix = "openai"
+				}
+				synced := fmt.Sprintf("%s:%d:%s", prefix, ch.Type, *voiceModelName)
+				parserPlatform = &synced
+			}
+		}
 	}
 
 	if voiceModelID != nil && *voiceModelID > 0 && (parserPlatform == nil || *parserPlatform == "") {
@@ -91,7 +115,7 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 		parserPlatform = &parserPlatformValue
 	}
 
-	if err := model.PatchRecordingConfig(s.eid, enabled, parserPlatform, voiceModelID, voiceModelName, inferenceModelID, inferenceModelName, recordingAgentEnabled, multiPerspectiveEnabled, memoryExtraction, insightRegenerateEnabled); err != nil {
+	if err := model.PatchRecordingConfig(s.eid, enabled, parserPlatform, voiceModelID, voiceModelName, inferenceModelID, inferenceModelName, recordingAgentEnabled, multiPerspectiveEnabled, memoryExtraction, insightRegenerateEnabled, actionOpportunityAutoDetectEnabled); err != nil {
 		return fmt.Errorf("更新录音配置失败: %w", err)
 	}
 

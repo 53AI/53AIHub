@@ -302,7 +302,7 @@ export function Feedback({ agentId }: FeedbackProps) {
   ];
 
   return (
-    <div>
+    <div className="h-full overflow-y-auto">
       <div className="flex justify-between items-center">
         <div>
           <span className="text-lg">{t("search-feedback.statistics")}</span>

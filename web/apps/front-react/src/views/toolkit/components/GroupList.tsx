@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Input } from "antd";
 import { Search as SearchInput, Tabs } from "@km/shared-components-react";
 import { SearchOutlined } from "@ant-design/icons";
@@ -7,6 +7,7 @@ import { t } from "@/locales";
 import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { scrollToElement } from "@km/shared-utils";
 import { useListState } from "@/hooks";
+import { useBasicLayout } from "@/hooks/useBasicLayout";
 import { showLoginModal, isLoggedIn } from "@/utils/permission";
 import ListView from "./List";
 
@@ -30,6 +31,13 @@ export function GroupList({
 }: ExploreToolkitProps) {
   const linksStore = useLinksStore();
   const isSoftStyle = useIsSoftStyle();
+  const { isMdScreen } = useBasicLayout();
+  const filterBarRef = useRef<HTMLDivElement>(null);
+
+  // 探索标题吸顶块高度：移动端 py-2.5 + h-8 = 52px，md 及以上 py-4 + h-8 = 64px
+  const exploreBlockHeight = isMdScreen ? 52 : 64;
+  // 筛选吸顶条 top：软件风格下页面 Header 吸顶占 56px，探索标题叠加其下；网站风格无页面 Header
+  const filterStickyTop = (isSoftStyle ? 56 : 0) + exploreBlockHeight;
 
   // 筛选状态（URL 持久化由 enableUrlSync 控制，默认关闭）
   const defaultState = useMemo<ExploreState>(
@@ -73,7 +81,12 @@ export function GroupList({
       showLoginModal();
     }
     updateState({ group_id: Number(key) });
-    scrollToElement(`#group_${key}`, (stickyOffset || 0) + 150);
+    // 滚动偏移按吸顶内容实际高度计算，避免分组标题被吸顶的搜索/分类条遮挡
+    const barHeight = filterBarRef.current?.getBoundingClientRect().height || 0;
+    const offset = barHeight
+      ? filterStickyTop + barHeight + 8
+      : (stickyOffset || 0) + 150;
+    scrollToElement(`#group_${key}`, offset);
   };
 
   const handleSearchFocus = () => {
@@ -85,10 +98,11 @@ export function GroupList({
   return (
     <>
       <div
+        ref={filterBarRef}
         className="sticky z-[100] bg-white"
-        style={{ top: isSoftStyle ? "120px" : "30px" }}
+        style={{ top: filterStickyTop }}
       >
-        <div className="flex md:flex-row flex-col-reverse gap-5 items-stretch md:items-center justify-between bg-white py-1">
+        <div className="flex md:flex-row flex-col-reverse gap-2 md:gap-5 items-stretch md:items-center justify-between bg-white py-1">
           <Tabs
             activeKey={String(state.group_id)}
             onChange={handleTabChange}

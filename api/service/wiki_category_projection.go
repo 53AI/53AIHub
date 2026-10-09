@@ -41,8 +41,7 @@ func (s *WikiIngestV2Service) loadStrictWikiCategoryScope(ctx context.Context, e
 	return strings.TrimSpace(b.String()), types, nil
 }
 
-// matchWikiCategories 查询启用分类，对每个分类做大类粗筛 + 批量 LLM 判断，返回命中投影。
-// 判断失败按保守策略：跳过该分类并记录日志。
+// matchWikiCategories 一次比较所有启用分类，保证每个候选至多命中一个分类。
 func (s *WikiIngestV2Service) matchWikiCategories(ctx context.Context, in WikiIngestV2MapDocumentInput, spaceID int64, candidates []wikiIngestV2Candidate) ([]wikiCategoryProjection, error) {
 	if s == nil || s.db == nil || s.llm == nil || spaceID <= 0 || !in.EnableWikiKnowledgeGraph || len(candidates) == 0 {
 		return nil, nil
@@ -51,68 +50,40 @@ func (s *WikiIngestV2Service) matchWikiCategories(ctx context.Context, in WikiIn
 	if err := s.db.WithContext(ctx).Where("eid = ? AND space_id = ? AND status = ?", in.Eid, spaceID, model.WikiCategoryStatusEnabled).Order("sort ASC, id ASC").Find(&categories).Error; err != nil {
 		return nil, err
 	}
+	if len(categories) == 0 {
+		return nil, nil
+	}
+	start := time.Now()
+	assignments, err := s.matchWikiCategoryCandidates(ctx, in, categories, candidates)
+	observation := WikiGenerationObservation{Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "category_llm_match", LLMCalls: 1, DurationMs: time.Since(start).Milliseconds(), Data: map[string]interface{}{"candidates": len(candidates), "categories": len(categories)}}
+	if err != nil {
+		observation.Status, observation.Error = "failed", err.Error()
+		recordWikiGenerationObservation(ctx, observation)
+		return nil, err
+	}
+	matched := 0
+	for _, categoryID := range assignments {
+		if categoryID != 0 {
+			matched++
+		}
+	}
+	observation.Status = "success"
+	observation.CategoryMatched = int64(matched)
+	observation.Data["unclassified"] = len(candidates) - matched
+	recordWikiGenerationObservation(ctx, observation)
 	projections := make([]wikiCategoryProjection, 0, len(categories))
 	for _, category := range categories {
-		var coarse []wikiIngestV2Candidate
-		var exact []wikiIngestV2Candidate
+		var accepted []wikiIngestV2Candidate
 		for _, candidate := range candidates {
-			if CoarseCategoryMatch(category, candidate.EntityType) {
-				if categoryTargetMatchesCandidate(category, candidate) {
-					exact = append(exact, candidate)
-				} else {
-					coarse = append(coarse, candidate)
-				}
+			if assignments[candidate.Slug] == category.ID {
+				accepted = append(accepted, candidate)
 			}
 		}
-		logger.Infof(ctx, "【Wiki生成】 预判候选 category=%s target=%s total=%d exact=%d coarse=%d", category.Name, category.TargetEntityType, len(candidates), len(exact), len(coarse))
-		recordWikiGenerationObservation(ctx, WikiGenerationObservation{
-			Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "category_coarse_filter", Status: "success", Category: category.Name,
-			Data: map[string]interface{}{
-				"total": len(candidates), "direct_match": len(exact), "coarse_pass": len(coarse),
-				"direct_slugs": extractWikiCandidateSlugs(exact), "fine_slugs": extractWikiCandidateSlugs(coarse),
-			},
-		})
-		accepted := exact
-		if len(coarse) > 0 {
-			fineStart := time.Now()
-			matched, err := s.matchWikiCategoryCandidates(ctx, in, category, coarse)
-			fineObservation := WikiGenerationObservation{
-				Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "category_llm_match", Category: category.Name,
-				LLMCalls: 1, DurationMs: time.Since(fineStart).Milliseconds(),
-				Data: map[string]interface{}{"input_slugs": extractWikiCandidateSlugs(coarse)},
-			}
-			if err != nil {
-				fineObservation.Status = "failed"
-				fineObservation.Reason = "category_llm_error"
-				fineObservation.Error = err.Error()
-				recordWikiGenerationObservation(ctx, fineObservation)
-				recordWikiGenerationObservation(ctx, WikiGenerationObservation{Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "category_match", Status: "failed", Reason: "category_llm_error", Category: category.Name, Error: err.Error(), Data: map[string]interface{}{"total": len(candidates), "exact": len(exact), "coarse": len(coarse)}})
-				logger.Errorf(ctx, "【Wiki生成】 批量判断失败，保留明确类型命中，跳过歧义候选 category=%s candidates=%s err=%v", category.Name, extractWikiCandidateSlugs(coarse), err)
-			} else {
-				fineObservation.Status = "success"
-				fineObservation.Reason = "batch_result"
-				fineObservation.Data["matched_slugs"] = extractWikiCandidateSlugs(matched)
-				fineObservation.Data["matched"] = len(matched)
-				recordWikiGenerationObservation(ctx, fineObservation)
-				accepted = append(accepted, matched...)
-				logger.Infof(ctx, "【Wiki生成】 预判完成 category=%s llm_matched=%d accepted=%d", category.Name, len(matched), len(accepted))
-			}
+		if len(accepted) > 0 {
+			projections = append(projections, wikiCategoryProjection{Category: category, Candidates: accepted})
 		}
-		if len(accepted) == 0 {
-			logger.Infof(ctx, "【Wiki生成】 无命中 category=%s candidates=%s", category.Name, extractWikiCandidateSlugs(candidates))
-			recordWikiGenerationObservation(ctx, WikiGenerationObservation{Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "category_match", Status: "success", Reason: "no_match", Category: category.Name, Data: map[string]interface{}{"total": len(candidates), "exact": len(exact), "coarse": len(coarse), "accepted": 0}})
-			continue
-		}
-		recordWikiGenerationObservation(ctx, WikiGenerationObservation{Eid: in.Eid, FileID: in.FileID, JobID: in.JobID, Phase: "category_match", Status: "success", Reason: "matched", Category: category.Name, CategoryMatched: int64(len(accepted)), Data: map[string]interface{}{"total": len(candidates), "exact": len(exact), "coarse": len(coarse), "accepted": len(accepted), "candidates": wikiCandidateTraceItems(accepted)}})
-		projections = append(projections, wikiCategoryProjection{Category: category, Candidates: accepted})
 	}
 	return projections, nil
-}
-
-func categoryTargetMatchesCandidate(category model.WikiCategory, candidate wikiIngestV2Candidate) bool {
-	want, wantOK := model.NormalizeWikiCategoryTargetType(category.TargetEntityType)
-	got, gotOK := model.NormalizeWikiCategoryTargetType(candidate.EntityType)
-	return candidate.PageType == model.WikiPageTypeEntity && wantOK && gotOK && want == got
 }
 
 // hitWikiCategorySlugs 收集所有命中分类的候选 slug（这些候选不再生成常规 entity 页）。
@@ -158,6 +129,12 @@ func (s *WikiIngestV2Service) generateWikiCategoryProjections(ctx context.Contex
 		for _, candidate := range projection.Candidates {
 			checkpointKey := wikiCategoryCheckpointKey(category.Slug, candidate.Slug)
 			if checkpoint != nil && checkpoint.isCategoryPageCompleted(checkpointKey) {
+				// 断点续跑也要重新检查并修复历史上已落库但未发布的分类页。
+				if err := s.reconcileWikiPageCategory(ctx, in, spaceID, category, candidate); err != nil {
+					logger.Errorf(ctx, "【Wiki生成】 分类关联修复失败: slug=%s err=%v", candidate.Slug, err)
+					continue
+				}
+				generated = append(generated, candidate.Slug)
 				continue
 			}
 			prompt, err := BuildWikiCategoryPrompt(WikiCategoryGenerationInput{Category: category, EntityName: candidate.Name, EntityType: candidate.EntityType, EntitySlug: candidate.Slug, EntitySummary: candidate.Description, EntityDetails: candidate.Details, Language: in.Language})
@@ -242,11 +219,11 @@ func wikiMarkdownHeadingSummary(body string) string {
 
 // matchWikiCategoryCandidates 一次批量 LLM 调用，判断候选是否属于该分类。
 // 判断失败按保守策略：返回错误，由调用方跳过该分类并记录日志。
-func (s *WikiIngestV2Service) matchWikiCategoryCandidates(ctx context.Context, in WikiIngestV2MapDocumentInput, category model.WikiCategory, candidates []wikiIngestV2Candidate) ([]wikiIngestV2Candidate, error) {
+func (s *WikiIngestV2Service) matchWikiCategoryCandidates(ctx context.Context, in WikiIngestV2MapDocumentInput, categories []model.WikiCategory, candidates []wikiIngestV2Candidate) (map[string]int64, error) {
 	if len(candidates) == 0 {
 		return nil, nil
 	}
-	prompt, err := BuildWikiCategoryMatchPrompt(WikiCategoryMatchInput{Category: category, Candidates: candidates, Language: in.Language})
+	prompt, err := BuildWikiCategoryMatchPrompt(WikiCategoryMatchInput{Categories: categories, Candidates: candidates, Language: in.Language})
 	if err != nil {
 		return nil, err
 	}
@@ -258,18 +235,34 @@ func (s *WikiIngestV2Service) matchWikiCategoryCandidates(ctx context.Context, i
 	if err := decodeWikiLLMJSON(raw, &batch); err != nil {
 		return nil, fmt.Errorf("parse category match JSON: %w", err)
 	}
-	bySlug := make(map[string]wikiIngestV2Candidate, len(candidates))
+	bySlug := make(map[string]struct{}, len(candidates))
 	for _, candidate := range candidates {
-		bySlug[candidate.Slug] = candidate
+		bySlug[candidate.Slug] = struct{}{}
 	}
-	result := make([]wikiIngestV2Candidate, 0, len(batch.Results))
+	byID := make(map[int64]struct{}, len(categories))
+	for _, category := range categories {
+		byID[category.ID] = struct{}{}
+	}
+	result := make(map[string]int64, len(candidates))
 	for _, r := range batch.Results {
-		if !r.IsMatch {
-			continue
+		if _, ok := bySlug[r.Slug]; !ok {
+			return nil, fmt.Errorf("unknown category candidate slug %q", r.Slug)
 		}
-		if candidate, ok := bySlug[r.Slug]; ok {
-			result = append(result, candidate)
+		if _, ok := result[r.Slug]; ok {
+			return nil, fmt.Errorf("duplicate category candidate slug %q", r.Slug)
 		}
+		if r.CategoryID != 0 {
+			if _, ok := byID[r.CategoryID]; !ok {
+				return nil, fmt.Errorf("unknown category id %d", r.CategoryID)
+			}
+		}
+		if r.Confidence < 0 || r.Confidence > 1 {
+			return nil, fmt.Errorf("invalid category confidence for %q", r.Slug)
+		}
+		result[r.Slug] = r.CategoryID
+	}
+	if len(result) != len(bySlug) {
+		return nil, fmt.Errorf("incomplete category match: got %d of %d candidates", len(result), len(bySlug))
 	}
 	return result, nil
 }
@@ -315,6 +308,9 @@ func (s *WikiIngestV2Service) upsertWikiCategoryPage(ctx context.Context, in Wik
 		if err := persistWikiPageWrite(ctx, tx, page, sources, links, "category projection"); err != nil {
 			return err
 		}
+		if err := tx.Where("eid = ? AND space_id = ? AND page_id = ? AND category_id <> ?", in.Eid, spaceID, page.ID, category.ID).Delete(&model.WikiPageCategory{}).Error; err != nil {
+			return err
+		}
 		var mapping model.WikiPageCategory
 		err = tx.Where("eid = ? AND space_id = ? AND category_id = ? AND page_id = ?", in.Eid, spaceID, category.ID, page.ID).First(&mapping).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -325,6 +321,31 @@ func (s *WikiIngestV2Service) upsertWikiCategoryPage(ctx context.Context, in Wik
 		}
 		return tx.Model(&mapping).Updates(map[string]interface{}{"entity_type": candidate.EntityType, "entity_slug": candidate.Slug, "classification_reason": category.Description, "confidence": 1}).Error
 	})
+}
+
+func (s *WikiIngestV2Service) reconcileWikiPageCategory(ctx context.Context, in WikiIngestV2MapDocumentInput, spaceID int64, category model.WikiCategory, candidate wikiIngestV2Candidate) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		page, err := loadWikiPageForWrite(tx, in.Eid, in.LibraryID, candidate.Slug)
+		if err != nil {
+			return err
+		}
+		if page == nil {
+			return fmt.Errorf("category page %s not found", candidate.Slug)
+		}
+		if err := tx.Where("eid = ? AND space_id = ? AND page_id = ? AND category_id <> ?", in.Eid, spaceID, page.ID, category.ID).Delete(&model.WikiPageCategory{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("eid = ? AND space_id = ? AND category_id = ? AND page_id = ?", in.Eid, spaceID, category.ID, page.ID).
+			FirstOrCreate(&model.WikiPageCategory{Eid: in.Eid, SpaceID: spaceID, CategoryID: category.ID, PageID: page.ID, EntityType: candidate.EntityType, EntitySlug: candidate.Slug, ClassificationReason: category.Description, Confidence: 1}).Error
+	})
+}
+
+func (s *WikiIngestV2Service) clearWikiPageCategories(ctx context.Context, in WikiIngestV2MapDocumentInput, spaceID int64, slug string) error {
+	page, err := loadWikiPageForWrite(s.db.WithContext(ctx), in.Eid, in.LibraryID, slug)
+	if err != nil || page == nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Where("eid = ? AND space_id = ? AND page_id = ?", in.Eid, spaceID, page.ID).Delete(&model.WikiPageCategory{}).Error
 }
 
 func ensureWikiCategoryFolder(tx *gorm.DB, eid, libraryID, spaceID int64, category model.WikiCategory) (*model.WikiFolder, error) {

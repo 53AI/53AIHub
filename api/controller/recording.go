@@ -84,7 +84,7 @@ func toFFmpegHealthResponse(result service.FFmpegCheckResult) FFmpegHealthRespon
 
 // GetRecordingConfigForUser godoc
 // @Summary 获取录音配置（前台）
-// @Description 获取录音功能开关和解析平台选择，供前台判断录音功能是否可用
+// @Description 获取录音功能开关、解析平台选择和行动建议自动发现开关，供前台判断录音功能是否可用
 // @Tags 录音
 // @Produce json
 // @Security BearerAuth
@@ -121,7 +121,13 @@ type UpdateRecordingJobStateRequest struct {
 }
 
 type UpdateFileInsightPerspectiveRequest struct {
-	Perspective string `json:"perspective" binding:"required"`
+	Perspective string `json:"perspective"`
+	Scene       string `json:"scene"`
+	SceneMode   string `json:"scene_mode"`
+}
+
+type RetranscribeRecordingFileRequest struct {
+	ForceReparse bool `json:"force_reparse"` // 是否强制重新转写（绕过转写复用与秒解析缓存），默认 false 保持复用
 }
 
 type UploadRecordingSegmentRequest struct {
@@ -165,6 +171,30 @@ func GetInsightPerspectives(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(model.InsightPerspectiveOptions()))
 }
 
+// GetScenes godoc
+// @Summary 获取会议场景
+// @Description 返回内置的一级经营场景（7 个）
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse{data=[]model.RecordingSceneOption}
+// @Router /api/recordings/scenes [get]
+func GetScenes(c *gin.Context) {
+	c.JSON(http.StatusOK, model.Success.ToResponse(model.SceneOptions()))
+}
+
+// GetSceneModes godoc
+// @Summary 获取会议模式
+// @Description 返回内置的会议模式（6 个）
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.CommonResponse{data=[]model.RecordingSceneOption}
+// @Router /api/recordings/scene-modes [get]
+func GetSceneModes(c *gin.Context) {
+	c.JSON(http.StatusOK, model.Success.ToResponse(model.SceneModeOptions()))
+}
+
 // UpdateFileInsightPerspective godoc
 // @Summary 修改文件洞察视角
 // @Description 修改文件后续生成决策洞察时采用的视角，不会自动触发重新生成
@@ -188,8 +218,12 @@ func UpdateFileInsightPerspective(c *gin.Context) {
 		return
 	}
 
-	perspective, err := service.SetFileInsightPerspective(
-		c.Request.Context(), config.GetEID(c), config.GetUserId(c), fileID, req.Perspective,
+	rawScene := strings.TrimSpace(req.Scene)
+	if rawScene == "" {
+		rawScene = strings.TrimSpace(req.Perspective)
+	}
+	perspective, scene, mode, err := service.SetFileSceneAndMode(
+		c.Request.Context(), config.GetEID(c), config.GetUserId(c), fileID, rawScene, req.SceneMode,
 	)
 	if err != nil {
 		if errors.Is(err, service.ErrInsightPerspectiveForbidden) {
@@ -197,17 +231,27 @@ func UpdateFileInsightPerspective(c *gin.Context) {
 			return
 		}
 		if errors.Is(err, service.ErrInvalidInsightPerspective) {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不支持的洞察视角"))
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不支持的场景或会议模式"))
 			return
 		}
-		logger.SysErrorf("【洞察】修改视角失败: file_id=%d err=%v", fileID, err)
-		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("修改洞察视角失败"))
+		logger.SysErrorf("【洞察】修改场景失败: file_id=%d err=%v", fileID, err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToNewErrorResponse("修改场景失败"))
 		return
 	}
 	c.JSON(http.StatusOK, model.Success.ToResponse(gin.H{
 		"file_id":             fileID,
 		"insight_perspective": perspective,
+		"scene":               displayScene(scene, string(perspective)),
+		"scene_mode":          mode,
 	}))
+}
+
+// displayScene 返回展示用场景：优先生效场景，历史行按旧视角码映射兜底。
+func displayScene(scene, insightPerspective string) string {
+	if strings.TrimSpace(scene) != "" {
+		return scene
+	}
+	return string(model.ResolveSceneFromCode(insightPerspective))
 }
 
 // CreateRecordingJob godoc
@@ -889,12 +933,13 @@ func GetFileParseStatus(c *gin.Context) {
 
 // RetranscribeRecordingFile godoc
 // @Summary 补触发转写
-// @Description 对指定录音文件重新触发转写任务（document_parsing），用于同步时引擎未就绪导致"有录音无转写"的存量文件
+// @Description 对指定录音文件重新触发转写任务（document_parsing）。force_reparse=true 时绕过转写复用与秒解析缓存，真正重跑 ASR；缺省复用已有转写
 // @Tags 录音
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param file_id path string true "文件ID（HashID）"
+// @Param request body controller.RetranscribeRecordingFileRequest false "补触发参数"
 // @Success 200 {object} model.CommonResponse{data=object} "补触发结果"
 // @Router /api/recordings/files/{file_id}/retranscribe [post]
 func RetranscribeRecordingFile(c *gin.Context) {
@@ -913,7 +958,14 @@ func RetranscribeRecordingFile(c *gin.Context) {
 		return
 	}
 
-	if err := service.RetranscribeRecordingFile(c.Request.Context(), eid, fileID); err != nil {
+	// 鉴权通过后再解析可选 body（空 body 按缺省 false，保持复用）
+	var req RetranscribeRecordingFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+
+	if err := service.RetranscribeRecordingFile(c.Request.Context(), eid, fileID, req.ForceReparse); err != nil {
 		if errors.Is(err, service.ErrRetranscribeAlreadyProcessing) {
 			c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{"status": "processing", "message": err.Error()}))
 			return
@@ -984,6 +1036,7 @@ func GetFileInsightBackground(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("读取洞察背景失败"))
 		return
 	}
+	background.Scene = displayScene(background.Scene, background.InsightPerspective)
 	c.JSON(http.StatusOK, model.Success.ToResponse(background))
 }
 
@@ -1225,6 +1278,7 @@ func RunRecordingPipeline(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param file_id path string true "文件ID（HashID）"
+// @Param request body service.InsightRegenerationRequest true "洞察重生成请求（可含 scene/mode 一次修改并重新生成，也可为空）"
 // @Success 202 {object} model.CommonResponse "已触发洞察重新生成"
 // @Failure 400 {object} model.CommonResponse "参数错误或文件不存在"
 // @Router /api/recordings/files/{file_id}/insights/regenerate [post]

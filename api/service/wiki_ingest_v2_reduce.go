@@ -35,6 +35,11 @@ func (s *WikiIngestV2Service) upsertSummaryPage(ctx context.Context, eid, librar
 
 	changed := false
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if claim := wikiPageUpdateBatchClaimFromContext(ctx); claim != nil {
+			if err := validateWikiPageUpdateBatchClaim(ctx, tx, claim); err != nil {
+				return err
+			}
+		}
 		if err := s.checkFileGenerationAllowed(ctx, tx); err != nil {
 			return err
 		}
@@ -82,7 +87,10 @@ func (s *WikiIngestV2Service) upsertSummaryPage(ctx context.Context, eid, librar
 		if err != nil {
 			return err
 		}
-		page.Body = linkedBody
+		page.Body, err = rewriteWikiPageBodyForWrite(ctx, tx, eid, libraryID, slug, linkedBody)
+		if err != nil {
+			return err
+		}
 
 		if page.ID > 0 {
 			existingSources, err := loadWikiPageSourcesForWrite(tx, page.ID)
@@ -99,6 +107,11 @@ func (s *WikiIngestV2Service) upsertSummaryPage(ctx context.Context, eid, librar
 		links := buildWikiPageLinksForContent(page.ID, eid, libraryID, page.Body, s.linkSvc, tx, update.Eid)
 		if err := persistWikiPageWrite(ctx, tx, page, sources, links, "summary update"); err != nil {
 			return err
+		}
+		if claim := wikiPageUpdateBatchClaimFromContext(ctx); claim != nil {
+			if err := completeWikiPageUpdateBatchClaimInTx(tx, claim); err != nil {
+				return err
+			}
 		}
 		if existingPage == nil {
 			creatorUserID := update.Eid
@@ -211,6 +224,12 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 	}
 
 	compiled := ""
+	claim := wikiPageUpdateBatchClaimFromContext(ctx)
+	if claim != nil {
+		if err := validateWikiPageUpdateBatchClaim(ctx, s.db, claim); err != nil {
+			return false, err
+		}
+	}
 	if s.checkpoint != nil {
 		compiled = s.checkpoint.compiledResult(slug)
 	}
@@ -239,6 +258,11 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 
 	changed := false
 	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if claim != nil {
+			if err := validateWikiPageUpdateBatchClaim(ctx, tx, claim); err != nil {
+				return err
+			}
+		}
 		if err := s.checkFileGenerationAllowed(ctx, tx); err != nil {
 			return err
 		}
@@ -294,7 +318,10 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 		if err != nil {
 			return err
 		}
-		page.Body = linkedBody
+		page.Body, err = rewriteWikiPageBodyForWrite(ctx, tx, eid, libraryID, slug, linkedBody)
+		if err != nil {
+			return err
+		}
 
 		existingSources, err := loadWikiPageSourcesForWrite(tx, page.ID)
 		if err != nil {
@@ -307,6 +334,11 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 		links := buildWikiPageLinksForContent(page.ID, eid, libraryID, page.Body, s.linkSvc, tx, creatorID)
 		if err := persistWikiPageWrite(ctx, tx, page, finalSources, links, "compiled update"); err != nil {
 			return err
+		}
+		if claim != nil {
+			if err := completeWikiPageUpdateBatchClaimInTx(tx, claim); err != nil {
+				return err
+			}
 		}
 		if snapshotPage == nil {
 			creatorUserID := creatorID
@@ -339,6 +371,18 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 		return nil
 	})
 	return changed, err
+}
+
+func rewriteWikiPageBodyForWrite(ctx context.Context, db *gorm.DB, eid, libraryID int64, slug, body string) (string, error) {
+	refs, liveTitles, liveSlugs, redirectTargets, err := loadWikiPostProcessRefs(ctx, db, eid, libraryID)
+	if err != nil {
+		return "", err
+	}
+	if linked, ok := linkifyWikiContent(body, refs, slug); ok {
+		body = linked
+	}
+	body, _ = rewriteDeadWikiLinks(body, liveTitles, liveSlugs, redirectTargets)
+	return body, nil
 }
 
 func splitWikiSlugUpdateKinds(updates []WikiSlugUpdate) (additions []WikiSlugUpdate, retracts []WikiSlugUpdate) {

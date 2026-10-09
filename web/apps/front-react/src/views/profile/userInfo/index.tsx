@@ -22,12 +22,12 @@ export function ProfileView() {
   }, []);
 
   return (
-    <div className="flex flex-col h-full py-[26px] px-[30px] overflow-y-auto">
+    <div className="py-[26px] px-[30px]">
       <h2 className="text-xl font-medium text-[#1D1E1F] mb-6">
         {t("profile.user_info")}
       </h2>
       {/* 内容区域 */}
-      <div className="flex-1 w-full lg:w-3/5 max-w-[600px] mx-auto">
+      <div className="w-full lg:w-3/5 max-w-[600px] mx-auto">
         <Suspense
           fallback={
             <div className="flex justify-center py-8">

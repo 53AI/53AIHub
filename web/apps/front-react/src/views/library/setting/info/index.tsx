@@ -16,7 +16,7 @@ const VISIBILITY_TYPE = {
   private: 2,
 };
 
-export function LibraryInfo() {
+function LibraryInfo() {
   const [form] = Form.useForm();
   const libraryStore = useLibraryStore();
   const navigate = useNavigate();

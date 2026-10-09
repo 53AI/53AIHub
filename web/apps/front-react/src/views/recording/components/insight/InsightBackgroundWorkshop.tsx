@@ -215,7 +215,8 @@ function ListEditor({
 type EditableInsightBackgroundKey = Exclude<
   keyof InsightBackground,
   | 'conversation'
-  | 'insight_perspective'
+  | 'scene'
+  | 'scene_mode'
   | 'resolved_insight_perspective'
   | 'perspective_confidence'
   | 'perspective_reason_codes'

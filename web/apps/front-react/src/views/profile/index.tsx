@@ -68,23 +68,24 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
       destroyOnClose
       className="profile-settings-modal"
       styles={{
-        body: { padding: 0, height: "800px" },
+        body: { padding: 0, height: "80vh", overflow: "hidden" },
         container: {
           borderRadius: "12px",
           overflow: "hidden",
+          padding: 0,
         },
       }}
-      style={{
-        "--ant-modal-content-padding": 0,
-      }}
     >
-      <div className="flex h-full w-full">
+      <div
+        className="flex flex-col md:flex-row w-full min-h-0"
+        style={{ height: "100%" }}
+      >
         {/* Sidebar */}
-        <div className="w-[200px] bg-[#F8FAFC] flex-shrink-0">
-          <div className="text-base font-medium text-[#1D1E1F] my-4 px-5">
+        <div className="flex-none w-full md:w-[200px] bg-[#F8FAFC] flex-shrink-0">
+          <div className="text-base font-medium text-[#1D1E1F] my-4 px-5 max-md:my-3">
             {t("profile.setting")}
           </div>
-          <div className="flex flex-col gap-1 px-4">
+          <div className="flex flex-row md:flex-col gap-1 px-2 md:px-4 max-md:pb-3">
             {MENUS.map((menu) => (
               <div
                 key={menu.key}
@@ -103,7 +104,7 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 bg-white overflow-hidden">
+        <div className="flex-1 bg-white overflow-y-auto min-h-0">
           {renderContent()}
         </div>
       </div>

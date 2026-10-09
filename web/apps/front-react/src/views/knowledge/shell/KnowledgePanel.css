@@ -1,0 +1,26 @@
+/* 右侧内容区：启用容器查询。
+   软模式下内容区实际宽度 = 视口 - 应用侧栏(~54px) - 空间侧栏(280px)，
+   视口断点（md/lg）无法准确反映可用宽度，改按内容区实际宽度做响应式。 */
+.knowledge-panel-content {
+  container-type: inline-size;
+}
+
+/* 动态知识入口卡片：随内容区宽度 1 → 2 → 4 列自适应。
+   原先 flex + min-w-[200px] 在放不下 4 张时会出现 3+1 的错位换行。 */
+.wiki-entry-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+@container (min-width: 34rem) {
+  .wiki-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 52.25rem) {
+  .wiki-entry-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

@@ -132,6 +132,10 @@ func finishJob(jobID int64, result *SyncResult, failedDetails []map[string]inter
 	if firstErr != nil && result.Discovered == 0 {
 		status = "failed"
 		errMsg = firstErr.Error()
+	} else if result.Completed == 0 && result.Skipped == 0 && result.Failed > 0 {
+		// 全部条目都失败（例如选中的远端录音都不存在）：不能算 completed
+		status = "failed"
+		errMsg = "全部条目同步失败"
 	}
 	detailsJSON := ""
 	if len(failedDetails) > 0 {
@@ -153,9 +157,13 @@ func finishJob(jobID int64, result *SyncResult, failedDetails []map[string]inter
 // force 参数已弃用（保留兼容，行为与普通同步一致）。
 // limit>0 时最多处理 limit 条远端录音（调试用，0=不限）。
 // 前端通过 GET /sync-status 轮询 job 进度。
-func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int) (int64, error) {
+func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (int64, error) {
 	if !s.mu.TryLock() {
 		return 0, ErrSyncInProgress
+	}
+	if len(remoteIDs) > 0 && deviceID <= 0 {
+		s.mu.Unlock()
+		return 0, fmt.Errorf("选中同步必须指定 device_id")
 	}
 
 	// 多实例防重入：进程内 mutex 只防同实例；DB 层再查一次 running 任务，
@@ -215,7 +223,7 @@ func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceTy
 			})
 		}
 		for _, cfg := range cfgs {
-			r, details, rErr := s.runSync(bgCtx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, onProgress)
+			r, details, rErr := s.runSync(bgCtx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, onProgress)
 			if r != nil { // runSync 失败时（如登录/列表失败）返回 nil result，需防空指针
 				result.Discovered += r.Discovered
 				result.Completed += r.Completed
@@ -245,11 +253,14 @@ func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceTy
 // Sync 同步执行一次同步（同步入口，供测试/调用方等待结果）。
 // 语义同 StartSync（deviceID 指定单配置 / 缺省该 type 全部配置串行）。
 // 返回合并结果；所有配置均失败（无任何处理）时返回 error。
-func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int) (*SyncResult, error) {
+func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (*SyncResult, error) {
 	if !s.mu.TryLock() {
 		return nil, ErrSyncInProgress
 	}
 	defer s.mu.Unlock()
+	if len(remoteIDs) > 0 && deviceID <= 0 {
+		return nil, fmt.Errorf("选中同步必须指定 device_id")
+	}
 
 	// 多实例防重入：DB 层查 running，避免跨实例并发同步同一设备（优先于配置查询）。
 	if running, rerr := model.HasRunningRecordingSyncJob(eid, userID, deviceType); rerr == nil && running {
@@ -283,7 +294,7 @@ func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType st
 	var failedDetails []map[string]interface{}
 	var firstErr error
 	for _, cfg := range cfgs {
-		r, details, rErr := s.runSync(ctx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, nil)
+		r, details, rErr := s.runSync(ctx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, nil)
 		if r != nil { // runSync 失败时（如登录/列表失败）返回 nil result，需防空指针
 			result.Discovered += r.Discovered
 			result.Completed += r.Completed
@@ -318,6 +329,9 @@ const downloadConcurrency = 4
 // 本地存储/DB 仍按 downloadConcurrency 并发，不受此限制。
 const remoteConcurrency = 2
 
+// maxSelectiveScanPages 选中同步最多翻页数（50 条/页）：避免"选了一个不存在的 id 就翻完整个账号"。
+const maxSelectiveScanPages = 50
+
 // getExistingSyncSourceStates 包级函数变量（测试可替换以注入去重查询失败）。
 var getExistingSyncSourceStates = model.GetExistingSyncSourceStates
 
@@ -332,12 +346,25 @@ var getExistingSyncSourceStates = model.GetExistingSyncSourceStates
 // 单配置同步（一个 key）；多 key 场景由 StartSync/Sync 串行调用并合并结果。
 // onProgress 每完成一条回调（调用层更新 job 进度），可 nil。
 // 返回 (result, failedDetails, err)；err 为致命错误（login/列表失败）。
-func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, provider, apiKey string, force bool, limit int, onProgress func(*SyncResult)) (*SyncResult, []map[string]interface{}, error) {
+func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, provider, apiKey string, force bool, limit int, remoteIDs []string, skipDeleted bool, onProgress func(*SyncResult)) (*SyncResult, []map[string]interface{}, error) {
 	token, err := s.client.Login(ctx, apiKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	// 选中模式：limit 对选中集合截断；selected 为 nil 表示全量同步。
+	if limit > 0 && len(remoteIDs) > limit {
+		remoteIDs = remoteIDs[:limit]
+	}
+	var selected, pending map[string]struct{}
+	if len(remoteIDs) > 0 {
+		selected = make(map[string]struct{}, len(remoteIDs))
+		pending = make(map[string]struct{}, len(remoteIDs))
+		for _, id := range remoteIDs {
+			selected[id] = struct{}{}
+			pending[id] = struct{}{}
+		}
+	}
 	result := &SyncResult{}
 	var failedDetails []map[string]interface{} // 逐条失败明细，sync 完成后写入 job
 	var resultMu sync.Mutex                    // 并发下保护 result 计数与 failedDetails
@@ -345,15 +372,27 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 	for {
 		items, total, err := s.client.ListRecordings(ctx, token, page, 50)
 		if err != nil {
+			if selected != nil {
+				// 选中模式：返回 nil result 使 job 置 failed，避免 discovered 预置导致误标 completed
+				return nil, nil, err
+			}
 			return result, failedDetails, err
 		}
 
+		// 选中模式：本页只保留选中项（命中项从 pending 移除）
+		pageItems := selectSonicNoteItems(items, selected, pending)
+
 		// 批量查去重（join files 判文件有效：已同步+文件在→跳过，软删→重导）
-		existing, err := getExistingSyncSourceStates(ctx, eid, userID, provider, remoteIDsOf(items))
+		existing, err := getExistingSyncSourceStates(ctx, eid, userID, provider, remoteIDsOf(pageItems))
 		if err != nil {
+			if selected != nil {
+				// 选中模式条目少：查询失败直接失败（返回 nil result 使 job 置 failed），
+				// 避免把已选中项误判为"远端未找到"，也避免 job 被标成 completed。
+				return nil, nil, fmt.Errorf("查询同步状态失败: %w", err)
+			}
 			// 去重查询失败：整页跳过（宁可不处理，也不误判未同步撞唯一键全失败），告警后继续下一页
 			logger.Warnf(ctx, "【SonicNote】批量去重查询失败，整页跳过 page=%d: %v", page, err)
-			for range items {
+			for range pageItems {
 				if limit > 0 && result.Discovered >= limit {
 					break
 				}
@@ -375,8 +414,8 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 		sem := make(chan struct{}, downloadConcurrency)
 		// 打设备服务器的限流槽：detail + 下载共用，避免批量同步触发远端限流。
 		remoteSem := make(chan struct{}, remoteConcurrency)
-		for _, item := range items {
-			// limit>0：最多处理 limit 条（discovered 在派发循环单线程递增，截断精确）
+		for _, item := range pageItems {
+			// limit>0 时最多处理 limit 条（discovered 在派发循环单线程递增，截断精确）
 			if limit > 0 && result.Discovered >= limit {
 				break
 			}
@@ -394,7 +433,7 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 						resultMu.Unlock()
 					}
 				}()
-				err := s.syncOne(ctx, eid, userID, jobID, token, provider, item, existing, remoteSem)
+				err := s.syncOne(ctx, eid, userID, jobID, token, provider, item, existing, remoteSem, skipDeleted)
 				if err != nil {
 					if errors.Is(err, ErrSyncSkipped) {
 						resultMu.Lock()
@@ -442,7 +481,7 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 						return
 					}
 					logger.Warnf(ctx, "【SonicNote】同步单条失败，重试1次: %v", err)
-					if retryErr := s.syncOne(ctx, eid, userID, jobID, token, provider, item, existing, remoteSem); retryErr != nil {
+					if retryErr := s.syncOne(ctx, eid, userID, jobID, token, provider, item, existing, remoteSem, skipDeleted); retryErr != nil {
 						resultMu.Lock()
 						if errors.Is(retryErr, ErrSyncSkipped) {
 							result.Skipped++
@@ -493,10 +532,30 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 		if onProgress != nil {
 			onProgress(result)
 		}
+		if selected != nil {
+			if len(pending) == 0 {
+				break // 选中的远端录音全部命中，无需继续翻页
+			}
+			// 用"本页不足 50 条=最后一页"判断，避免远端缺 total 时提前结束、把选中项误报为远端未找到
+			if len(items) < 50 || page >= maxSelectiveScanPages {
+				break
+			}
+			page++
+			continue
+		}
 		if len(items) == 0 || page*50 >= total || (limit > 0 && result.Discovered >= limit) {
 			break
 		}
 		page++
+	}
+	// 选中但远端未枚举到（或超出扫描页上限）：显式记为失败，保持 completed+skipped+failed==discovered
+	for id := range pending {
+		result.Discovered++
+		result.Failed++
+		failedDetails = append(failedDetails, map[string]interface{}{
+			"audio_id": id, "type": "remote_not_found",
+			"reason": "远端未找到该录音（可能已删除或超出扫描范围）",
+		})
 	}
 	logger.Infof(ctx, "【SonicNote】同步完成 eid=%d result=%+v", eid, *result)
 	return result, failedDetails, nil
@@ -513,10 +572,26 @@ func remoteIDsOf(items []map[string]interface{}) []string {
 	return ids
 }
 
+// selectSonicNoteItems 选中模式过滤本页条目；命中项从 pending 移除。selected=nil 时原样返回。
+func selectSonicNoteItems(items []map[string]interface{}, selected, pending map[string]struct{}) []map[string]interface{} {
+	if selected == nil {
+		return items
+	}
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, it := range items {
+		id, _ := it["audioId"].(string)
+		if _, ok := selected[id]; ok {
+			out = append(out, it)
+			delete(pending, id)
+		}
+	}
+	return out
+}
+
 // syncOne 处理单条远端录音：幂等去重 → detail → 流式下载 → 存储 → 事务落库。
 // 同步只拿音频，不从设备抓取转写；转写统一由本系统本地转写管线完成（无条件，同步即转写）。
 // remoteSem 为打设备服务器的限流槽（detail+下载共用）；nil 表示不限流（单测可传 nil 保持原行为）。
-func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, token, provider string, item map[string]interface{}, existing map[string]model.SyncSourceState, remoteSem chan struct{}) error {
+func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, token, provider string, item map[string]interface{}, existing map[string]model.SyncSourceState, remoteSem chan struct{}, skipDeleted bool) error {
 	audioID, _ := item["audioId"].(string)
 	if audioID == "" {
 		return permanentErr("远端录音缺少 audioId")
@@ -534,6 +609,10 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, tok
 	// 幂等去重：已同步且文件有效 → 跳过（不删文件、不重新处理）
 	if state.HasSource && state.FileActive {
 		logger.Infof(ctx, "【%s】已同步过，跳过 audio_id=%s", provider, audioID)
+		return ErrSyncSkipped
+	}
+	if skipDeleted && state.HasSource && !state.FileActive {
+		logger.Infof(ctx, "【%s】本地已删除且本次要求不同步已删除文件，跳过 audio_id=%s", provider, audioID)
 		return ErrSyncSkipped
 	}
 	// state.HasSource && !state.FileActive：已同步但文件被软删 → 重导（把音频同步回来）

@@ -200,7 +200,7 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
     const isWikiSearch = chunk?.chunk_type === ('wiki' as const)
 
     const content = chunk ? (
-      <div className="overflow-hidden" style={{ width: DEFAULT_WIDTH }}>
+      <div className="overflow-hidden" style={{ width: `min(${DEFAULT_WIDTH}px, calc(100vw - 32px))` }}>
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 overflow-hidden">
@@ -267,7 +267,7 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
         )}
 
         {/* Content */}
-        <div className="max-h-56 overflow-auto">
+        <div className="max-h-[min(14rem,45vh)] overflow-auto">
           <Spin spinning={loading}>
             <div className="text-sm text-gray-700" ref={contentRef}>
               {loading ? null : (chunk.content || '')}
@@ -325,6 +325,9 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
         trigger="click"
         content={content}
         classNames={{ container: "!p-4" }}
+        // bottomLeft 等边缘 placement 默认只有翻转（adjustX/Y）没有视口内平移（shiftX/Y），
+        // 弹层在移动端可能显示不全；补充 shift 让 rc-trigger 强制将弹层限制在视口内
+        align={{ overflow: { adjustX: true, adjustY: true, shiftX: true, shiftY: true } }}
       >
         <span style={triggerStyle} />
       </Popover>

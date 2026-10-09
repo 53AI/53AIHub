@@ -58,7 +58,7 @@ export const ragJobApi = {
   },
 
   batchRetry(data: {
-    run: { related_id: string; strategy_id?: string; pipeline_id?: string; start_parameters?: Record<string, any> }
+    run: { related_id: string; strategy_id?: string; pipeline_id?: string; pipeline_kind?: string; start_parameters?: Record<string, any> }
     jobs?: Array<{ job_id?: number; step_key?: string; run_mode?: string; config?: Record<string, any> }>
   }) {
     return request.post('/api/rag/v2/jobs/batch-retry', data).then((res) => res.data)

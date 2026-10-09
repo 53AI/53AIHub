@@ -46,6 +46,14 @@ type InsightBackground struct {
 	PerspectiveReasonCodes     []string `json:"perspective_reason_codes,omitempty"`
 	PerspectiveEvidence        []string `json:"perspective_evidence,omitempty"`
 	PerspectiveAbstained       bool     `json:"perspective_abstained,omitempty"`
+	// 以下为场景与模式的权威结果（files.scene 为生效场景）。
+	Scene           string  `json:"scene,omitempty"`
+	SceneMode       string  `json:"scene_mode,omitempty"`
+	SceneConfidence float64 `json:"scene_confidence,omitempty"`
+	SceneAbstained  bool    `json:"scene_abstained,omitempty"`
+	SceneReason     string  `json:"scene_reason,omitempty"`
+	SceneSource     string  `json:"scene_source,omitempty"`
+	SceneModeSource string  `json:"scene_mode_source,omitempty"`
 }
 
 type InsightConversationMessage struct {
@@ -57,6 +65,9 @@ type InsightRegenerationRequest struct {
 	Background         InsightBackground            `json:"background"`
 	Conversation       []InsightConversationMessage `json:"conversation"`
 	InsightPerspective string                       `json:"insight_perspective"`
+	// Scene/SceneMode 为一次调用同时改场景+模式并重新生成提供一等字段；语义与 SetFileSceneAndMode 一致，优先于 background 中的同名字段。
+	Scene     string `json:"scene"`
+	SceneMode string `json:"scene_mode"`
 }
 
 type PromoteInsightExternalConstraintsRequest struct {
@@ -96,6 +107,51 @@ func GetInsightBackground(ctx context.Context, eid, userID, fileID int64) (*Insi
 	return &background, nil
 }
 
+// applyRegenerationSceneMode 将 regenerate 请求里的 scene/scene_mode 应用到背景快照与请求视角，
+// 语义与 SetFileSceneAndMode 一致：scene=auto 清空并恢复自动识别；scene 非 auto 时用户值锁定并清掉 AI 模式（除非同时传 scene_mode）。
+func applyRegenerationSceneMode(background *InsightBackground, requestedPerspective *string, scene, sceneMode string) error {
+	sceneRaw := strings.TrimSpace(scene)
+	modeRaw := strings.ToLower(strings.TrimSpace(sceneMode))
+	if sceneRaw != "" {
+		if sceneRaw == string(model.InsightPerspectiveAuto) {
+			background.Scene = ""
+			background.SceneMode = ""
+			background.SceneSource = ""
+			background.SceneModeSource = ""
+			background.SceneConfidence = 0
+			background.SceneAbstained = false
+			background.SceneReason = ""
+			*requestedPerspective = string(model.InsightPerspectiveAuto)
+		} else {
+			if !model.IsValidInsightPerspective(sceneRaw) {
+				return fmt.Errorf("%w: %s", ErrInvalidInsightPerspective, sceneRaw)
+			}
+			sceneCode := model.ResolveSceneFromCode(sceneRaw)
+			if !model.IsCanonicalScene(sceneCode) {
+				return fmt.Errorf("%w: %s", ErrInvalidInsightPerspective, sceneRaw)
+			}
+			background.Scene = string(sceneCode)
+			background.SceneSource = "user"
+			background.SceneConfidence = 0
+			background.SceneAbstained = false
+			background.SceneReason = ""
+			*requestedPerspective = string(sceneCode)
+			if modeRaw == "" && background.SceneModeSource != "user" {
+				background.SceneMode = ""
+				background.SceneModeSource = ""
+			}
+		}
+	}
+	if modeRaw != "" {
+		if !model.IsValidSceneMode(model.SceneMode(modeRaw)) {
+			return fmt.Errorf("%w: %s", ErrInvalidInsightPerspective, modeRaw)
+		}
+		background.SceneMode = modeRaw
+		background.SceneModeSource = "user"
+	}
+	return nil
+}
+
 // RegenerateInsightsWithContext 保存用户确认的背景并异步重新生成洞察和页面。
 func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int64, req *InsightRegenerationRequest) error {
 	file, err := getInsightContextFile(ctx, eid, userID, fileID)
@@ -110,6 +166,9 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 		background.Conversation = req.Conversation
 		if strings.TrimSpace(req.InsightPerspective) != "" {
 			requestedPerspective = req.InsightPerspective
+		}
+		if err := applyRegenerationSceneMode(&background, &requestedPerspective, req.Scene, req.SceneMode); err != nil {
+			return err
 		}
 	} else if strings.TrimSpace(string(file.InsightContext)) != "" {
 		// 兼容原有“无请求体重新生成”接口：不应意外清除用户已经确认的背景。
@@ -290,7 +349,7 @@ func defaultInsightBackground(ctx context.Context, eid, userID int64, file *mode
 		if memoryConfig == nil {
 			memoryConfig = &model.MemoryExtractionConfig{
 				Enabled: true,
-				Types:   []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeRisk, model.EntityTypePrinciple},
+				Types:   []string{model.EntityTypePerson, model.EntityTypeMatter, model.EntityTypeRisk, model.EntityTypeCommitment, model.EntityTypeDecision},
 			}
 		}
 		background.HistoricalContext = formatInsightHistory(loadRelatedInsightHistory(ctx, eid, file.ID, userID, memoryConfig))
@@ -364,6 +423,14 @@ func mergeInsightBackground(target *InsightBackground, saved InsightBackground) 
 	if strings.TrimSpace(saved.ExternalConstraints) != "" {
 		target.ExternalConstraints = saved.ExternalConstraints
 	}
+	// 场景/模式是最近一次识别或用户设置的权威结果，读取详情时必须随快照返回。
+	target.Scene = saved.Scene
+	target.SceneMode = saved.SceneMode
+	target.SceneConfidence = saved.SceneConfidence
+	target.SceneAbstained = saved.SceneAbstained
+	target.SceneReason = saved.SceneReason
+	target.SceneSource = saved.SceneSource
+	target.SceneModeSource = saved.SceneModeSource
 }
 
 // loadSavedInsightBackground 读取文件级保存的用户补充背景。
@@ -399,23 +466,68 @@ func persistedInsightBackground(background InsightBackground) InsightBackground 
 	return background
 }
 
-func withResolvedInsightPerspective(raw model.LongText, resolution insightPerspectiveResolution) (string, error) {
-	var background InsightBackground
-	if strings.TrimSpace(string(raw)) != "" {
-		if err := json.Unmarshal([]byte(raw), &background); err != nil {
-			return "", err
+// persistResolvedScene 在洞察生成前把识别到的场景与模式落库（列 + JSON）。
+// 读取数据库当前 insight_context 合并写入，遵守 insight_generation 版本条件与按字段用户锁定。
+func persistResolvedScene(ctx context.Context, eid, fileID, generation int64, scene model.RecordingScene, mode model.SceneMode, source string, confidence float64, abstained bool, reason string) error {
+	if eid == 0 || fileID == 0 {
+		return nil
+	}
+	return model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current model.File
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Select("id, insight_context, insight_generation").
+			Where("id = ? AND eid = ?", fileID, eid).First(&current).Error; err != nil {
+			return err
 		}
-	}
-	background.ResolvedInsightPerspective = string(resolution.Perspective)
-	background.PerspectiveConfidence = resolution.Confidence
-	background.PerspectiveReasonCodes = resolution.ReasonCodes
-	background.PerspectiveEvidence = resolution.Evidence
-	background.PerspectiveAbstained = resolution.Abstained
-	data, err := json.Marshal(background)
-	if err != nil {
-		return "", err
-	}
-	return string(data), nil
+		if current.InsightGeneration != generation {
+			return ErrInsightGenerationStale
+		}
+		var background InsightBackground
+		if strings.TrimSpace(string(current.InsightContext)) != "" {
+			_ = json.Unmarshal([]byte(current.InsightContext), &background)
+		}
+		switch source {
+		case "user":
+			// 用户选择：以用户值覆盖场景；模式由 PATCH 维护，这里不触碰。
+			background.Scene = string(scene)
+			background.SceneSource = "user"
+		default:
+			if background.SceneSource != "user" {
+				background.Scene = string(scene)
+				background.SceneSource = ""
+				if scene != "" {
+					background.SceneSource = "ai"
+				}
+			}
+			if background.SceneModeSource != "user" {
+				background.SceneMode = string(mode)
+				background.SceneModeSource = ""
+				if mode != "" {
+					background.SceneModeSource = "ai"
+				}
+			}
+			background.SceneConfidence = confidence
+			background.SceneAbstained = abstained
+			background.SceneReason = reason
+		}
+		// legacy 只读镜像
+		background.ResolvedInsightPerspective = background.Scene
+		background.PerspectiveConfidence = confidence
+		background.PerspectiveAbstained = abstained
+		if reason != "" {
+			background.PerspectiveReasonCodes = []string{reason}
+		}
+		data, err := json.Marshal(background)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&model.File{}).
+			Where("id = ? AND eid = ? AND insight_generation = ?", fileID, eid, generation).
+			Updates(map[string]interface{}{
+				"scene":           background.Scene,
+				"insight_context": string(data),
+			}).Error
+	})
 }
 
 func normalizeInsightBackground(background *InsightBackground) error {

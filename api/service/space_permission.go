@@ -400,7 +400,7 @@ func getUserPermissionWikiSnapshot(eid int64, pageID int64, userID int64, ctxs .
 func (s *SpacePermissionService) SearchLibrariesByName(userID int64, name string, spaceIDs []int64, creatorIDs []int64, createdTimeFrom, createdTimeTo, updatedTimeFrom, updatedTimeTo int64, offset, limit int) ([]model.Library, int64, error) {
 	// 1. 获取企业下所有知识库
 	var allLibraries []model.Library
-	query := model.DB.Where("eid = ?", s.Eid)
+	query := model.DB.Where("eid = ? AND library_kind <> ?", s.Eid, model.LIBRARY_KIND_PERSONAL_USER)
 	if len(spaceIDs) > 0 {
 		query = query.Where("space_id IN ?", spaceIDs)
 	}

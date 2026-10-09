@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/actionsystem"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
 
@@ -42,6 +44,8 @@ var (
 	ErrActionArtifactFormatUnsupported   = actionsystem.ErrDeliverableFormatUnsupported
 	ErrActionArtifactTitleFormatConflict = actionsystem.ErrDeliverableTitleFormatConflict
 )
+
+var recordingActionOpportunityDetectionGroup singleflight.Group
 
 type ActionOpportunityView struct {
 	OpportunityID        string                     `json:"opportunity_id"`
@@ -137,6 +141,34 @@ type ActionPlanConfirmationView struct {
 }
 
 func (s *ActionRuntimeService) DetectInsightActionOpportunities(ctx context.Context, eid, userID, fileID int64) ([]*ActionOpportunityView, error) {
+	_, err := GetViewableRecordingFile(ctx, eid, userID, fileID)
+	if err != nil {
+		return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
+	}
+	key := recordingActionOpportunityDetectionKey(eid, userID, fileID)
+	result, err, _ := recordingActionOpportunityDetectionGroup.Do(key, func() (interface{}, error) {
+		lease, leaseErr := acquireActionOpportunityDetectionLease(ctx, eid, userID, fileID)
+		if leaseErr != nil {
+			return nil, leaseErr
+		}
+		defer func() {
+			if releaseErr := lease.Release(); releaseErr != nil {
+				logger.Warnf(ctx, "【行动建议】释放自动发现锁失败：fileID=%d eid=%d err=%v", fileID, eid, releaseErr)
+			}
+		}()
+		return s.detectInsightActionOpportunities(ctx, eid, userID, fileID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	opportunities, ok := result.([]*ActionOpportunityView)
+	if !ok {
+		return nil, ErrActionOpportunityUnavailable
+	}
+	return opportunities, nil
+}
+
+func (s *ActionRuntimeService) detectInsightActionOpportunities(ctx context.Context, eid, userID, fileID int64) ([]*ActionOpportunityView, error) {
 	file, err := GetViewableRecordingFile(ctx, eid, userID, fileID)
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
@@ -212,6 +244,13 @@ func (s *ActionRuntimeService) DetectInsightActionOpportunities(ctx context.Cont
 	opportunities, err := s.opportunityGenerator.Generate(ctx, config, input, registry)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrActionOpportunityUnavailable, err)
+	}
+	latestFile, err := model.GetFileByID(eid, fileID, ctx)
+	if err != nil {
+		return nil, err
+	}
+	if latestFile == nil || latestFile.InsightGeneration != file.InsightGeneration {
+		return nil, ErrActionInsightChanged
 	}
 	for index := range opportunities {
 		opportunities[index].SourceType = input.SourceType

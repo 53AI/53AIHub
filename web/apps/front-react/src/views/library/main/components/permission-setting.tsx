@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Button, message } from 'antd'
 import { CloseOutlined } from '@ant-design/icons'
 import { MemberSelector } from '@/components/KMPermission/MemberSelector'

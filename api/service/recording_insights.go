@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -32,13 +33,63 @@ const (
 	historyRecallEntityFact
 )
 
+// insightRunMode 区分生产生成与开发者 Shadow 运行。
+type insightRunMode int
+
+const (
+	// insightRunModeProduction 是生产链路：写入正式洞察与决策页面（历史行为不变）。
+	insightRunModeProduction insightRunMode = iota
+	// insightRunModeSecondBrainShadowOnly 是开发者安全模式：只产出 V2 Shadow。
+	// 它复用与生产完全相同的输入准备流程，但不写 files.insight_summary / insight_context /
+	// insight_generation / cleaning_rule_info，不生成决策页面，不触发任何 Action。
+	insightRunModeSecondBrainShadowOnly
+	// insightRunModeControlledComparison 是评测模式：一次准备输入，用 V1 与 V2 两套 System Prompt
+	// 各调用一次模型，只写评测专用表；不写任何正式结果，也不跑 Prompt 5。
+	insightRunModeControlledComparison
+	// insightRunModeSecondBrainV21Comparison 是 Phase 3B1 评测模式：冻结的 V2.0 与 V2.1（证据护栏）各调用一次，
+	// 仍然只写评测专用表，不写任何正式结果。
+	insightRunModeSecondBrainV21Comparison
+	// insightRunModeTaxonomyAttentionRouterComparison 是 Phase 5A 评测模式：V2.1 baseline（CONTROL）
+	// 与 V2.1 + Taxonomy Attention Router（TREATMENT）严格对照，只写评测表。
+	insightRunModeTaxonomyAttentionRouterComparison
+	// insightRunModeMinimalTaxonomyComparison 是 Phase 5B 评测模式：V2.1 baseline（CONTROL）
+	// 与 V2.1 + Minimal Taxonomy Context（TREATMENT）严格对照，只写评测表。
+	insightRunModeMinimalTaxonomyComparison
+	// insightRunModeGuardedMinimalTaxonomyComparison 是 Phase 5C 评测模式：V2.1 baseline（CONTROL）
+	// 与 V2.1 + Guarded Minimal Taxonomy Context（TREATMENT）严格对照，只写评测表。
+	insightRunModeGuardedMinimalTaxonomyComparison
+)
+const (
+	recordingSecondBrainFormalEnabledEnv = "RECORDING_SECOND_BRAIN_FORMAL_ENABLED"
+)
+
+// recordingSecondBrainFormalEnabled 控制生产正式洞察是否采用「第二大脑 V2.1（证据护栏版）」框架。
+// 默认开启，使测试服和线上环境直接生成第二大脑洞察，落地前端主展示区与决策页面。
+// 支持通过环境变量显式配置为 0/false/off/disabled 快速回退到旧版 V1 决策幕僚。
+func recordingSecondBrainFormalEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(recordingSecondBrainFormalEnabledEnv))) {
+	case "0", "false", "off", "disabled", "no":
+		return false
+	default:
+		return true
+	}
+}
+
 // 输出：写入 file.insight_summary
 func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
+	// 生产入口忽略返回的错误原因（状态已写回 cleaning_rule_info），保持原有行为。
+	_ = generateInsights(ctx, eid, fileID, userID, insightRunModeProduction)
+}
+
+func generateInsights(ctx context.Context, eid, fileID, userID int64, mode insightRunMode) (err error) {
+	production := mode == insightRunModeProduction
 	file, err := model.GetFileByID(eid, fileID)
 	if err != nil || file == nil {
 		logger.Errorf(ctx, "【洞察】读取文件信息失败 fileID=%d err=%v", fileID, err)
-		setInsightsStatus(fileID, "failed")
-		return
+		if production {
+			setInsightsStatus(fileID, "failed")
+		}
+		return fmt.Errorf("读取文件信息失败: %w", err)
 	}
 	traceCtx, trace, _ := recordingdebug.EnsureTrace(ctx, eid, fileID, file.InsightGeneration, file.Path)
 	ctx = traceCtx
@@ -48,27 +99,31 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 	}, nil)
 	if !file.IsRecordingOriginType() {
 		logger.Infof(ctx, "【洞察】跳过非录音来源 fileID=%d originType=%s", fileID, file.OriginType)
-		setInsightOutcomeIfCurrent(eid, fileID, file.InsightGeneration, insightGateResult{
-			Mode:       insightModeNoInsight,
-			ReasonCode: "non_recording_source",
-			Message:    "非安心录文件不生成会议洞察。",
-		})
+		if production {
+			setInsightOutcomeIfCurrent(eid, fileID, file.InsightGeneration, insightGateResult{
+				Mode:       insightModeNoInsight,
+				ReasonCode: "non_recording_source",
+				Message:    "非安心录文件不生成会议洞察。",
+			})
+		}
 		recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "non_recording_source"}, nil)
 		trace.Finish("success", nil)
-		return
+		return fmt.Errorf("非安心录来源文件不生成会议洞察")
 	}
 
 	config, err := model.ValidateOrCreateRecordingConfig(eid)
 	if err != nil || config.InferenceModelID == 0 || config.InferenceModelName == "" {
 		logger.Infof(ctx, "【洞察】推理模型未配置，跳过 fileID=%d", fileID)
-		setInsightOutcomeIfCurrent(eid, fileID, file.InsightGeneration, insightGateResult{
-			Mode:       insightModeNoInsight,
-			ReasonCode: "model_not_configured",
-			Message:    "当前未配置推理模型，暂不生成洞察。",
-		})
+		if production {
+			setInsightOutcomeIfCurrent(eid, fileID, file.InsightGeneration, insightGateResult{
+				Mode:       insightModeNoInsight,
+				ReasonCode: "model_not_configured",
+				Message:    "当前未配置推理模型，暂不生成洞察。",
+			})
+		}
 		recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "model_not_configured"}, nil)
 		trace.Finish("success", nil)
-		return
+		return fmt.Errorf("推理模型未配置")
 	}
 
 	if file.UserID > 0 && userID != file.UserID {
@@ -97,12 +152,14 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 		"material_chars": len([]rune(gateMaterial)),
 	}, nil)
 	if !gateResult.Allowed {
-		if setInsightOutcomeIfCurrent(eid, fileID, generation, gateResult) {
-			logger.Infof(ctx, "【洞察-质量门控】跳过 fileID=%d mode=%s reason=%s", fileID, gateResult.Mode, gateResult.ReasonCode)
+		if production {
+			if setInsightOutcomeIfCurrent(eid, fileID, generation, gateResult) {
+				logger.Infof(ctx, "【洞察-质量门控】跳过 fileID=%d mode=%s reason=%s", fileID, gateResult.Mode, gateResult.ReasonCode)
+			}
 		}
 		recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": gateResult.ReasonCode, "mode": gateResult.Mode}, nil)
 		trace.Finish("success", nil)
-		return
+		return fmt.Errorf("洞察质量门控未通过: %s", gateResult.ReasonCode)
 	}
 	currentContext, contextErr := buildCurrentMeetingContext(ctx, eid, fileID, generation)
 	if contextErr != nil {
@@ -166,28 +223,32 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 	// 查询企业信息
 	enterprise, _ := model.GetEnterpriseByID(eid)
 
-	setInsightsStatusIfCurrent(eid, fileID, generation, "processing")
-	if markErr := markInsightPageFormatIfCurrent(ctx, eid, fileID, generation, insightPageHTMLFormat); markErr != nil {
-		if errors.Is(markErr, ErrInsightGenerationStale) {
-			logger.Infof(ctx, "【洞察】检测到更新的生成版本，跳过旧任务 fileID=%d generation=%d", fileID, generation)
-			recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "stale_generation"}, nil)
-			trace.Finish("skipped", nil)
-			return
+	if production {
+		setInsightsStatusIfCurrent(eid, fileID, generation, "processing")
+		if markErr := markInsightPageFormatIfCurrent(ctx, eid, fileID, generation, insightPageHTMLFormat); markErr != nil {
+			if errors.Is(markErr, ErrInsightGenerationStale) {
+				logger.Infof(ctx, "【洞察】检测到更新的生成版本，跳过旧任务 fileID=%d generation=%d", fileID, generation)
+				recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "stale_generation"}, nil)
+				trace.Finish("skipped", nil)
+				return nil
+			}
+			logger.Errorf(ctx, "【洞察】保存页面格式标记失败 fileID=%d generation=%d err=%v", fileID, generation, markErr)
+			setInsightsStatusIfCurrent(eid, fileID, generation, "failed")
+			recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "failed", insightStartedAt, map[string]interface{}{"reason": "page_format_marker"}, markErr)
+			trace.Finish("failed", markErr)
+			return markErr
 		}
-		logger.Errorf(ctx, "【洞察】保存页面格式标记失败 fileID=%d generation=%d err=%v", fileID, generation, markErr)
-		setInsightsStatusIfCurrent(eid, fileID, generation, "failed")
-		recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "failed", insightStartedAt, map[string]interface{}{"reason": "page_format_marker"}, markErr)
-		trace.Finish("failed", markErr)
-		return
 	}
-	// 上报 Keystone 阶段开始
-	if client := keystone.GlobalClient; client != nil {
-		client.ReportTaskStageStarted(keystone.TaskEvent{
-			ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
-			TaskType:       "RECORDING_PIPELINE",
-			StageKey:       "insights",
-			ServiceKey:     "recording-pipeline",
-		})
+	// 上报 Keystone 阶段开始（仅生产链路，Shadow 运行不污染外部任务指标）
+	if production {
+		if client := keystone.GlobalClient; client != nil {
+			client.ReportTaskStageStarted(keystone.TaskEvent{
+				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+				TaskType:       "RECORDING_PIPELINE",
+				StageKey:       "insights",
+				ServiceKey:     "recording-pipeline",
+			})
+		}
 	}
 	startTime := time.Now()
 
@@ -196,9 +257,11 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 	if err != nil {
 		recordingdebug.RecordStage(ctx, "insight_material", "读取洞察主要材料", "failed", insightStartedAt, map[string]interface{}{"perspective": perspective}, err)
 		logger.Errorf(ctx, "【洞察】读取主要材料失败 fileID=%d perspective=%s err=%v", fileID, perspective, err)
-		setInsightsStatusIfCurrent(eid, fileID, generation, "failed")
+		if production {
+			setInsightsStatusIfCurrent(eid, fileID, generation, "failed")
+		}
 		trace.Finish("failed", err)
-		return
+		return err
 	}
 	recordingdebug.RecordStage(ctx, "insight_material", "读取洞察主要材料", "success", insightStartedAt, map[string]interface{}{
 		"perspective":       perspective,
@@ -208,18 +271,39 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 	}, nil)
 
 	var perspectiveResolution *insightPerspectiveResolution
-	// 视角未设置时，只有企业显式开启多视角才调用一次分类器；分类失败安全回退为管理例会。
+	scene := model.RecordingScene("")
+	sceneMode := model.SceneMode("")
+	sceneSource := ""
+	sceneConfidence := 0.0
+	sceneAbstained := false
+	sceneReason := ""
+	// 视角未设置时，只有企业显式开启多视角才调用一次分类器；识别在洞察 Prompt 组装之前完成。
 	if requestedPerspective == model.InsightPerspectiveAuto {
 		resolved := resolveInsightPerspective(ctx, config, insightSourceTitle(file.Path), primaryMaterial)
 		perspectiveResolution = &resolved
 		perspective = resolved.Perspective
+		scene = model.RecordingScene(resolved.Perspective)
+		sceneMode = resolved.SceneMode
+		sceneConfidence = resolved.Confidence
+		sceneAbstained = resolved.Abstained
+		sceneSource = "ai"
+		if len(resolved.ReasonCodes) > 0 {
+			sceneReason = strings.Join(resolved.ReasonCodes, ",")
+		}
 		profile = insightPromptProfileFor(perspective)
-		logger.Infof(ctx, "【洞察】自动场景解析完成 fileID=%d perspective=%s enabled=%v", fileID, perspective, config.MultiPerspectiveEnabled)
+		logger.Infof(ctx, "【洞察】自动场景解析完成 fileID=%d scene=%s mode=%s enabled=%v", fileID, scene, sceneMode, config.MultiPerspectiveEnabled)
+	} else {
+		scene = model.ResolveSceneFromCode(string(requestedPerspective))
+		sceneSource = "user"
+	}
+	if persistErr := persistResolvedScene(ctx, eid, fileID, generation, scene, sceneMode, sceneSource, sceneConfidence, sceneAbstained, sceneReason); persistErr != nil && !errors.Is(persistErr, ErrInsightGenerationStale) {
+		logger.Warnf(ctx, "【洞察】保存场景失败 fileID=%d scene=%s err=%v", fileID, scene, persistErr)
 	}
 	if perspectiveResolution != nil {
-		recordingdebug.RecordStage(ctx, "insight_perspective", "自动判断洞察视角", "success", insightStartedAt, map[string]interface{}{
+		recordingdebug.RecordStage(ctx, "insight_perspective", "自动判断会议场景", "success", insightStartedAt, map[string]interface{}{
 			"requested":    requestedPerspective,
 			"resolved":     perspectiveResolution.Perspective,
+			"scene_mode":   perspectiveResolution.SceneMode,
 			"confidence":   perspectiveResolution.Confidence,
 			"reason_codes": perspectiveResolution.ReasonCodes,
 			"evidence":     perspectiveResolution.Evidence,
@@ -227,8 +311,20 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 		}, nil)
 	}
 
-	// 构建视角化增强 Prompt。最终洞察请求仍会注入个人信息、公司信息和历史记忆。
-	enrichedPrompt := buildEnrichedPrompt(enterprise, personal.User, personal.Position, personal.Style, personal.CustomMemory, buildInsightSystemPrompt(perspective))
+	// 构建场景化增强 Prompt。默认使用第二大脑 V2.1（证据护栏版），落入主展示区与决策页面。
+	var basePrompt string
+	if recordingSecondBrainFormalEnabled() {
+		effectivePerspective := perspective
+		if isHiringPerspective(perspective, file.Path, insightSourceTitle(file.Path)) {
+			effectivePerspective = model.InsightPerspectiveHiring
+		}
+		basePrompt = buildSecondBrainSystemPromptV21(effectivePerspective, sceneMode)
+		logger.Infof(ctx, "【洞察】使用第二大脑 V2.1 证据护栏框架生成正式洞察 fileID=%d perspective=%s effective=%s mode=%s", fileID, perspective, effectivePerspective, sceneMode)
+	} else {
+		basePrompt = buildInsightSystemPrompt(perspective, sceneMode)
+	}
+	baseEnrichedPrompt := buildEnrichedPrompt(enterprise, personal.User, personal.Position, personal.Style, personal.CustomMemory, basePrompt)
+	enrichedPrompt := baseEnrichedPrompt
 	if cognitionContext == nil {
 		var cognitionErr error
 		cognitionContext, cognitionErr = LoadApplicableRecordingCognition(ctx, eid, userID, currentContext)
@@ -296,6 +392,11 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 		logger.Infof(ctx, "【洞察-决策Runtime】跳过重复 historical_context fileID=%d", fileID)
 	}
 	historyStr := buildHistoricalContext(promptHistoryRows)
+	enrichedPrompt += "\n\n<citation_index>\n" + buildInsightCitationContext(historyRows, cognitionContext) + "\n</citation_index>\n引用标记只使用 citation_index 中与实际判断相关的 ref。"
+	// contextTail 是 V1 System Prompt 中「除 Persona/场景/思考框架以外」的全部动态上下文。
+	// V2（第二大脑）Shadow 复用同一份 contextTail 与同一份 User Prompt，只替换思考框架，
+	// 保证 V1/V2 对比时事实输入完全一致。
+	contextTail := enrichedPrompt[len(baseEnrichedPrompt):]
 	recordingdebug.RecordStage(ctx, "insight_history", "加载历史关联会议", "success", insightStartedAt, map[string]interface{}{
 		"meeting_count":        len(historyRows),
 		"prompt_row_count":     len(promptHistoryRows),
@@ -372,97 +473,205 @@ func GenerateInsights(ctx context.Context, eid, fileID, userID int64) {
 		transcriptText = ""
 	}
 
-	// 4. 调用视角化 Prompt 生成洞察
-	result, err := callInsightsLLMForPerspective(ctx, config, fileID, perspective, insightSourceTitle(file.Path), transcriptText, primaryMaterial, promptHistoryRows, enrichedPrompt)
-	if err != nil {
-		if !isInsightGenerationCurrent(eid, fileID, generation) {
+	// 4. 调用视角化 Prompt 生成洞察（仅生产链路；Shadow 运行不生成正式洞察）
+	result := ""
+	if production {
+		result, err = callInsightsLLMForPerspective(ctx, config, fileID, perspective, insightSourceTitle(file.Path), transcriptText, primaryMaterial, promptHistoryRows, enrichedPrompt)
+		if err != nil {
+			if !isInsightGenerationCurrent(eid, fileID, generation) {
+				recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "stale_generation"}, nil)
+				trace.Finish("skipped", nil)
+				return
+			}
+			recordingdebug.RecordStage(ctx, "insights_llm", "Prompt 4 生成决策洞察", "failed", insightStartedAt, map[string]interface{}{"perspective": perspective}, err)
+			logger.Errorf(ctx, "【洞察】生成失败 fileID=%d err=%v", fileID, err)
+			// 提取 LLM 错误类型
+			errorType := model.ErrorTypeModelUnavailable
+			var llmErr *model.LLMError
+			if errors.As(err, &llmErr) {
+				errorType = llmErr.ErrorType
+			}
+			if client := keystone.GlobalClient; client != nil {
+				client.ReportTaskStageCompleted(keystone.TaskEvent{
+					ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
+					TaskType:       "RECORDING_PIPELINE",
+					StageKey:       "insights",
+					StageStatus:    keystone.TaskStatusFailed,
+					FailureCode:    "INSIGHTS_FAILED",
+					ServiceKey:     "recording-pipeline",
+					FinishedAt:     time.Now().UTC(),
+				})
+			}
+			model.SetInsightsStatus(fileID, "failed", err.Error(), errorType)
+			trace.Finish("failed", err)
+			return
+		}
+		recordingdebug.RecordStage(ctx, "insights_llm", "Prompt 4 生成决策洞察", "success", insightStartedAt, map[string]interface{}{
+			"perspective":  perspective,
+			"result_chars": len([]rune(result)),
+		}, nil)
+	}
+
+	// 5. 写入 file.insight_summary 与阶段状态（仅生产链路）。将生成版本放进 UPDATE 条件，
+	// 即使用户在检查后立即确认新背景，旧结果也无法覆盖新一代洞察。
+	if production {
+		updates := map[string]interface{}{"insight_summary": result}
+		updateResult := model.DB.WithContext(ctx).Model(&model.File{}).
+			Where("id = ? AND eid = ? AND insight_generation = ?", fileID, eid, generation).
+			Updates(updates)
+		if updateResult.Error != nil {
+			recordingdebug.RecordStage(ctx, "insights_persist", "保存决策洞察", "failed", insightStartedAt, map[string]interface{}{"generation": generation}, updateResult.Error)
+			logger.Errorf(ctx, "【洞察】保存失败 fileID=%d err=%v", fileID, updateResult.Error)
+			setInsightsStatusIfCurrent(eid, fileID, generation, "failed")
+			trace.Finish("failed", updateResult.Error)
+			return
+		}
+		if updateResult.RowsAffected != 1 {
+			logger.Infof(ctx, "【洞察】检测到更新的生成版本，丢弃旧结果 fileID=%d generation=%d", fileID, generation)
 			recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "stale_generation"}, nil)
 			trace.Finish("skipped", nil)
 			return
 		}
-		recordingdebug.RecordStage(ctx, "insights_llm", "Prompt 4 生成决策洞察", "failed", insightStartedAt, map[string]interface{}{"perspective": perspective}, err)
-		logger.Errorf(ctx, "【洞察】生成失败 fileID=%d err=%v", fileID, err)
-		// 提取 LLM 错误类型
-		errorType := model.ErrorTypeModelUnavailable
-		var llmErr *model.LLMError
-		if errors.As(err, &llmErr) {
-			errorType = llmErr.ErrorType
-		}
+		recordingdebug.RecordStage(ctx, "insights_persist", "保存决策洞察", "success", insightStartedAt, map[string]interface{}{
+			"generation":   generation,
+			"result_chars": len([]rune(result)),
+		}, nil)
+
+		elapsed := time.Since(startTime)
+		logger.Infof(ctx, "【洞察】生成成功 fileID=%d elapsed=%v history=%d", fileID, elapsed, len(historyRows))
+		// 上报 Keystone 阶段成功
 		if client := keystone.GlobalClient; client != nil {
 			client.ReportTaskStageCompleted(keystone.TaskEvent{
 				ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
 				TaskType:       "RECORDING_PIPELINE",
 				StageKey:       "insights",
-				StageStatus:    keystone.TaskStatusFailed,
-				FailureCode:    "INSIGHTS_FAILED",
+				StageStatus:    keystone.TaskStatusSucceeded,
 				ServiceKey:     "recording-pipeline",
 				FinishedAt:     time.Now().UTC(),
 			})
 		}
-		model.SetInsightsStatus(fileID, "failed", err.Error(), errorType)
-		trace.Finish("failed", err)
-		return
+		setInsightsStatusIfCurrent(eid, fileID, generation, "completed")
 	}
-	recordingdebug.RecordStage(ctx, "insights_llm", "Prompt 4 生成决策洞察", "success", insightStartedAt, map[string]interface{}{
-		"perspective":  perspective,
-		"result_chars": len([]rune(result)),
-	}, nil)
 
-	// 5. 写入 file.insight_summary。将生成版本放进 UPDATE 条件，
-	// 即使用户在检查后立即确认新背景，旧结果也无法覆盖新一代洞察。
-	resolution := insightPerspectiveResolution{Perspective: perspective}
-	if perspectiveResolution != nil {
-		resolution = *perspectiveResolution
+	// 6. 严格对照实验（仅评测模式）：一次准备输入、两次模型调用，唯一变量是 System Prompt 框架。
+	if mode == insightRunModeControlledComparison || mode == insightRunModeSecondBrainV21Comparison || mode == insightRunModeTaxonomyAttentionRouterComparison || mode == insightRunModeMinimalTaxonomyComparison || mode == insightRunModeGuardedMinimalTaxonomyComparison {
+		frameworkUserPrompt := buildInsightUserPrompt(perspective, insightSourceTitle(file.Path), historyStr, primaryMaterial, transcriptText)
+		enrich := func(base string) string {
+			return buildEnrichedPrompt(enterprise, personal.User, personal.Position, personal.Style, personal.CustomMemory, base) + contextTail
+		}
+		variants := []insightFrameworkVariant{
+			{Name: model.InsightFrameworkVariantV1, SystemPrompt: enrichedPrompt},
+			{Name: model.InsightFrameworkVariantV2, SystemPrompt: enrich(buildSecondBrainSystemPromptV20(perspective))},
+		}
+		if mode == insightRunModeSecondBrainV21Comparison {
+			// Phase 3B1：不再比较 V1，只比较“冻结的 V2.0”与“V2.1 证据护栏”。
+			variants = []insightFrameworkVariant{
+				{Name: model.InsightFrameworkVariantV2Frozen, SystemPrompt: enrich(buildSecondBrainSystemPromptV20(perspective))},
+				{Name: model.InsightFrameworkVariantV21, SystemPrompt: enrich(buildSecondBrainSystemPromptV21(perspective))},
+			}
+		}
+		inputs := insightFrameworkInputs{
+			Perspective:     perspective,
+			Variants:        variants,
+			UserPrompt:      frameworkUserPrompt,
+			ContextTail:     contextTail,
+			PrimaryMaterial: primaryMaterial,
+			TranscriptText:  transcriptText,
+			HistoryStr:      historyStr,
+			GateMode:        gateResult.Mode,
+		}
+		if mode == insightRunModeTaxonomyAttentionRouterComparison {
+			// Phase 5A：CONTROL = V2.1 baseline；TREATMENT = V2.1 + Taxonomy Attention Router。
+			baseSystemPrompt := enrich(buildSecondBrainSystemPromptV21(perspective))
+			routerText, routerHash, taxonomyVersion, taxonomyResultHash, _, routerErr := RecordingTaxonomyAttentionRouterForComparison(ctx, eid, userID, fileID, generation)
+			if routerErr != nil {
+				trace.Finish("failed", routerErr)
+				return routerErr
+			}
+			variants = []insightFrameworkVariant{
+				{Name: model.InsightFrameworkVariantV21Control, SystemPrompt: baseSystemPrompt, AttentionRouterHash: ""},
+				{Name: model.InsightFrameworkVariantV21TaxonomyRouter, SystemPrompt: baseSystemPrompt + "\n\n" + routerText, AttentionRouterHash: routerHash},
+			}
+			inputs.Variants = variants
+			inputs.BaseSystemPrompt = baseSystemPrompt
+			inputs.TaxonomyVersion = taxonomyVersion
+			inputs.TaxonomyResultHash = taxonomyResultHash
+		}
+		if mode == insightRunModeMinimalTaxonomyComparison {
+			// Phase 5B：CONTROL = V2.1 baseline；TREATMENT = V2.1 + Minimal Taxonomy Context。
+			baseSystemPrompt := enrich(buildSecondBrainSystemPromptV21(perspective))
+			minimalText, minimalHash, taxonomyVersion, taxonomyResultHash, minimalErr := RecordingTaxonomyMinimalContextForComparison(ctx, eid, userID, fileID, generation)
+			if minimalErr != nil {
+				trace.Finish("failed", minimalErr)
+				return minimalErr
+			}
+			variants = []insightFrameworkVariant{
+				{Name: model.InsightFrameworkVariantV21Control, SystemPrompt: baseSystemPrompt, MinimalRouterHash: ""},
+				{Name: model.InsightFrameworkVariantV21Minimal, SystemPrompt: baseSystemPrompt + "\n\n" + minimalText, MinimalRouterHash: minimalHash},
+			}
+			inputs.Variants = variants
+			inputs.BaseSystemPrompt = baseSystemPrompt
+			inputs.TaxonomyVersion = taxonomyVersion
+			inputs.TaxonomyResultHash = taxonomyResultHash
+		}
+		if mode == insightRunModeGuardedMinimalTaxonomyComparison {
+			// Phase 5C：CONTROL = V2.1 baseline；TREATMENT = V2.1 + Guarded Minimal Taxonomy Context。
+			baseSystemPrompt := enrich(buildSecondBrainSystemPromptV21(perspective))
+			guardedText, guardedHash, taxonomyVersion, taxonomyResultHash, guardedErr := RecordingTaxonomyGuardedMinimalContextForComparison(ctx, eid, userID, fileID, generation)
+			if guardedErr != nil {
+				trace.Finish("failed", guardedErr)
+				return guardedErr
+			}
+			variants = []insightFrameworkVariant{
+				{Name: model.InsightFrameworkVariantV21Control, SystemPrompt: baseSystemPrompt, GuardedMinimalRouterHash: ""},
+				{Name: model.InsightFrameworkVariantV21GuardedMinimal, SystemPrompt: baseSystemPrompt + "\n\n" + guardedText, GuardedMinimalRouterHash: guardedHash},
+			}
+			inputs.Variants = variants
+			inputs.BaseSystemPrompt = baseSystemPrompt
+			inputs.TaxonomyVersion = taxonomyVersion
+			inputs.TaxonomyResultHash = taxonomyResultHash
+		}
+		experimentErr := runInsightFrameworkExperiment(ctx, eid, userID, fileID, generation, config, inputs)
+		if experimentErr != nil {
+			trace.Finish("failed", experimentErr)
+			return experimentErr
+		}
+		trace.Finish("success", nil)
+		return nil
 	}
-	insightContext, contextErr := withResolvedInsightPerspective(file.InsightContext, resolution)
-	if contextErr != nil {
-		logger.Warnf(ctx, "【洞察】保存实际场景失败 fileID=%d perspective=%s err=%v", fileID, perspective, contextErr)
-	}
-	updates := map[string]interface{}{"insight_summary": result}
-	if contextErr == nil {
-		updates["insight_context"] = insightContext
-	}
-	updateResult := model.DB.WithContext(ctx).Model(&model.File{}).
-		Where("id = ? AND eid = ? AND insight_generation = ?", fileID, eid, generation).
-		Updates(updates)
-	if updateResult.Error != nil {
-		recordingdebug.RecordStage(ctx, "insights_persist", "保存决策洞察", "failed", insightStartedAt, map[string]interface{}{"generation": generation}, updateResult.Error)
-		logger.Errorf(ctx, "【洞察】保存失败 fileID=%d err=%v", fileID, updateResult.Error)
-		setInsightsStatusIfCurrent(eid, fileID, generation, "failed")
-		trace.Finish("failed", updateResult.Error)
-		return
-	}
-	if updateResult.RowsAffected != 1 {
-		logger.Infof(ctx, "【洞察】检测到更新的生成版本，丢弃旧结果 fileID=%d generation=%d", fileID, generation)
-		recordingdebug.RecordStage(ctx, "insights", "决策洞察生成", "skipped", insightStartedAt, map[string]interface{}{"reason": "stale_generation"}, nil)
-		trace.Finish("skipped", nil)
-		return
-	}
-	recordingdebug.RecordStage(ctx, "insights_persist", "保存决策洞察", "success", insightStartedAt, map[string]interface{}{
-		"generation":   generation,
-		"result_chars": len([]rune(result)),
-	}, nil)
 
-	elapsed := time.Since(startTime)
-	logger.Infof(ctx, "【洞察】生成成功 fileID=%d elapsed=%v history=%d", fileID, elapsed, len(historyRows))
-	// 上报 Keystone 阶段成功
-	if client := keystone.GlobalClient; client != nil {
-		client.ReportTaskStageCompleted(keystone.TaskEvent{
-			ExternalTaskID: fmt.Sprintf("recording-%d", fileID),
-			TaskType:       "RECORDING_PIPELINE",
-			StageKey:       "insights",
-			StageStatus:    keystone.TaskStatusSucceeded,
-			ServiceKey:     "recording-pipeline",
-			FinishedAt:     time.Now().UTC(),
+	// 7. 调用 Prompt 5 生成决策页面编排（仅生产链路）
+	if production {
+		pageCtx, pageCancel := context.WithTimeout(recordingPipelineCtx, 5*time.Minute)
+		defer pageCancel()
+		generateInsightPageForGeneration(recordingdebug.WithTrace(pageCtx, trace), eid, fileID, config, result, historyRows, generation, cognitionContext)
+	}
+
+	// 8. 第二大脑 V2 Shadow：同一份事实输入与 Context，只替换思考框架。
+	// 生产链路默认关闭（RECORDING_SECOND_BRAIN_V2_SHADOW_ENABLED）；开发者安全模式无条件运行。
+	// 两种情况下都不覆盖正式洞察、不生成页面、不触发任何 Action，失败只记录在 shadow 表。
+	if shouldRunSecondBrainShadow(!production) && (!production || !recordingSecondBrainFormalEnabled()) {
+		shadowPerspective := perspective
+		if isHiringPerspective(perspective, file.Path, insightSourceTitle(file.Path)) {
+			shadowPerspective = model.InsightPerspectiveHiring
+		}
+		v2SystemPrompt := buildEnrichedPrompt(enterprise, personal.User, personal.Position, personal.Style, personal.CustomMemory, buildSecondBrainSystemPromptV21(shadowPerspective, sceneMode)) + contextTail
+		v2UserPrompt := buildInsightUserPrompt(perspective, insightSourceTitle(file.Path), historyStr, primaryMaterial, transcriptText)
+		shadowErr := runSecondBrainShadow(ctx, eid, userID, fileID, generation, config, secondBrainShadowInput{
+			Perspective:  perspective,
+			SystemPrompt: v2SystemPrompt,
+			UserPrompt:   v2UserPrompt,
 		})
+		if shadowErr != nil {
+			logger.Warnf(ctx, "【第二大脑V2-Shadow】生成失败，正式洞察不受影响 fileID=%d err=%v", fileID, shadowErr)
+			if !production {
+				trace.Finish("failed", shadowErr)
+				return shadowErr
+			}
+		}
 	}
-	setInsightsStatusIfCurrent(eid, fileID, generation, "completed")
-
-	// 6. 调用 Prompt 5 生成决策页面编排（跟随当前 Worker 执行槽位，避免脱离限流）
-	pageCtx, pageCancel := context.WithTimeout(recordingPipelineCtx, 5*time.Minute)
-	defer pageCancel()
-	generateInsightPageForGeneration(recordingdebug.WithTrace(pageCtx, trace), eid, fileID, config, result, historyRows, generation)
 	trace.Finish("success", nil)
+	return nil
 }
 
 // generateInsightPage 调用 Prompt 5 将洞察结果编排为动态决策页面。
@@ -474,7 +683,7 @@ func generateInsightPage(ctx context.Context, eid, fileID int64, config *model.R
 	generateInsightPageForGeneration(ctx, eid, fileID, config, insightMarkdown, nil, generation)
 }
 
-func generateInsightPageForGeneration(ctx context.Context, eid, fileID int64, config *model.RecordingConfig, insightMarkdown string, historyRows []historyMeeting, generation int64) {
+func generateInsightPageForGeneration(ctx context.Context, eid, fileID int64, config *model.RecordingConfig, insightMarkdown string, historyRows []historyMeeting, generation int64, cognitions ...*RecordingCognitionContextPackage) {
 	pageStartedAt := time.Now()
 	recordingdebug.RecordStage(ctx, "insight_page", "决策页面编排", "processing", pageStartedAt, map[string]interface{}{"generation": generation}, nil)
 	if !isInsightGenerationCurrent(eid, fileID, generation) {
@@ -498,7 +707,11 @@ func generateInsightPageForGeneration(ctx context.Context, eid, fileID int64, co
 		return
 	}
 
-	pageHTML, err := callPageLayoutLLM(ctx, config, fileID, insightMarkdown, buildInsightCitationContext(historyRows))
+	var cognition *RecordingCognitionContextPackage
+	if len(cognitions) > 0 {
+		cognition = cognitions[0]
+	}
+	pageHTML, err := callPageLayoutLLM(ctx, config, fileID, insightMarkdown, buildInsightCitationContext(historyRows, cognition))
 	if err != nil {
 		if !isInsightGenerationCurrent(eid, fileID, generation) {
 			return
@@ -563,6 +776,7 @@ func generateInsightPageForGeneration(ctx context.Context, eid, fileID int64, co
 	}
 	if isInsightGenerationCurrent(eid, fileID, generation) {
 		setInsightPageStatus(fileID, "completed")
+		EnqueueAutomaticActionOpportunityDetection(eid, fileID)
 	}
 	recordingdebug.RecordStage(ctx, "insight_page", "决策页面编排", "success", pageStartedAt, map[string]interface{}{
 		"elapsed_ms": time.Since(pageStartedAt).Milliseconds(),
@@ -602,11 +816,6 @@ func insightSourceTitle(filePath string) string {
 	return strings.TrimSpace(title)
 }
 
-// callInsightsLLM 调用 Prompt 4 生成洞察（带重试）。
-func callInsightsLLM(ctx context.Context, config *model.RecordingConfig, fileID int64, transcriptText, summaryMarkdown string, historyRows []historyMeeting, enrichedPrompt string) (string, error) {
-	return callInsightsLLMForPerspective(ctx, config, fileID, model.DefaultInsightPerspective, "", transcriptText, summaryMarkdown, historyRows, enrichedPrompt)
-}
-
 func callInsightsLLMForPerspective(ctx context.Context, config *model.RecordingConfig, fileID int64, perspective model.InsightPerspective, sourceTitle, transcriptText, primaryMaterial string, historyRows []historyMeeting, enrichedPrompt string) (string, error) {
 	historicalContext := buildHistoricalContext(historyRows)
 
@@ -624,12 +833,6 @@ func callInsightsLLMForPerspective(ctx context.Context, config *model.RecordingC
 	}
 
 	return callLLMWithRetry(recordingdebug.WithLLMStage(ctx, recordingdebug.LLMStage(ctx, "insights_llm")), config, buildRequest)
-}
-
-// buildInsightsUserPrompt 构建 Prompt 4 的五段输入中的历史相关信息、纪要和转写部分。
-// 个人信息和公司信息由 system prompt 中的独立标签注入。
-func buildInsightsUserPrompt(historicalContext, summaryMarkdown, transcriptText string) string {
-	return buildInsightUserPrompt(model.DefaultInsightPerspective, "", historicalContext, summaryMarkdown, transcriptText)
 }
 
 func buildInsightUserPrompt(perspective model.InsightPerspective, sourceTitle, historicalContext, primaryMaterial, transcriptText string) string {
@@ -831,9 +1034,9 @@ func callPageLayoutLLM(ctx context.Context, config *model.RecordingConfig, fileI
 %s
 </decision_analysis>
 
-<memory_citations>
+<citation_context>
 %s
-</memory_citations>
+</citation_context>
 
 页面偏好：
 
@@ -877,18 +1080,37 @@ func callPageLayoutLLM(ctx context.Context, config *model.RecordingConfig, fileI
 	return "", fmt.Errorf("Prompt 5 输出 HTML 校验失败: %w", formatErr)
 }
 
-func buildInsightCitationContext(rows []historyMeeting) string {
-	if len(rows) == 0 {
-		return `{"items":[]}`
+func buildInsightCitationContext(rows []historyMeeting, cognitions ...*RecordingCognitionContextPackage) string {
+	type citation struct {
+		Ref               string                          `json:"ref"`
+		SourceKind        string                          `json:"source_kind"`
+		Title             string                          `json:"title,omitempty"`
+		Content           string                          `json:"content"`
+		Type              string                          `json:"type,omitempty"`
+		Scope             []string                        `json:"scope,omitempty"`
+		RetrievalReason   string                          `json:"retrieval_reason,omitempty"`
+		EvidenceRefs      []RecordingCognitionEvidenceRef `json:"evidence_refs,omitempty"`
+		SourceFile        string                          `json:"source_file,omitempty"`
+		SourceConfidence  float64                         `json:"source_confidence,omitempty"`
+		EvidenceAvailable bool                            `json:"evidence_available,omitempty"`
 	}
-	items := make([]string, 0)
+	items := make([]citation, 0)
+	if len(cognitions) > 0 && cognitions[0] != nil {
+		cognitionItems := append([]RecordingCognitionContextItem{}, cognitions[0].Core...)
+		cognitionItems = append(cognitionItems, cognitions[0].Situational...)
+		for _, item := range cognitionItems {
+			items = append(items, citation{Ref: fmt.Sprintf("C-%d", len(items)+1), SourceKind: "cognition", Title: item.Title, Content: item.Statement, Type: item.CognitionType, Scope: item.Scope, RetrievalReason: item.RetrievalReason, EvidenceRefs: item.EvidenceRefs})
+		}
+	}
 	refIndex := 0
 	for _, row := range rows {
 		for _, memory := range row.Memories {
 			refIndex++
-			items = append(items, fmt.Sprintf(`{"ref":"M-%d","type":%s,"content":%s,"source_file":%s,"confidence":%.4f,"evidence_available":%t}`,
-				refIndex, jsonMarshal(memory.Kind), jsonMarshal(memory.Content), jsonMarshal(memory.SourceFile), memory.SourceConfidence, memory.EvidenceAvailable))
+			items = append(items, citation{Ref: fmt.Sprintf("M-%d", refIndex), SourceKind: "memory", Type: memory.Kind, Content: memory.Content, SourceFile: memory.SourceFile, SourceConfidence: memory.SourceConfidence, EvidenceAvailable: memory.EvidenceAvailable, RetrievalReason: memory.RecallReason})
 		}
 	}
-	return fmt.Sprintf(`{"items":[%s]}`, strings.Join(items, ","))
+	encoded, _ := json.Marshal(struct {
+		Items []citation `json:"items"`
+	}{Items: items})
+	return string(encoded)
 }

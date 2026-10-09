@@ -2,6 +2,7 @@ import React, { useState, lazy, Suspense, useEffect } from "react";
 import { Spin } from "antd";
 import { useSearchParams } from "react-router-dom";
 import LeftSidebar from "./LeftSidebar";
+import { ResponsiveSidebar } from "@/components/Layout/ResponsiveSidebar";
 import RightContent from "./RightContent";
 import { useKnowledgeAssistantStore } from "@/stores/modules/knowledge-assistant";
 import { useSpaceStore } from "@/stores/modules/space";
@@ -61,15 +62,23 @@ const DynamicKnowledge: React.FC = () => {
 
   return (
     <div className="flex h-full w-full bg-white overflow-hidden text-sm min-h-0">
-      {/* 动态知识的左侧列表 */}
-      <div className="flex shrink-0 h-full min-h-0 z-10 relative">
-        <LeftSidebar
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
-          selectedItemId={selectedItemId}
-          setSelectedItemId={setSelectedItemId}
-        />
-      </div>
+      {/* 动态知识的左侧列表：桌面端常驻 flex 列，移动端抽屉化（同 KnowledgePanel） */}
+      <ResponsiveSidebar width={280}>
+        {({ close }) => (
+          <LeftSidebar
+            activeTab={activeTab}
+            setActiveTab={(tab) => {
+              setActiveTab(tab);
+              close();
+            }}
+            selectedItemId={selectedItemId}
+            setSelectedItemId={(id) => {
+              setSelectedItemId(id);
+              close();
+            }}
+          />
+        )}
+      </ResponsiveSidebar>
 
       {/* 内容区域 */}
       <div className="flex-1 overflow-y-auto">

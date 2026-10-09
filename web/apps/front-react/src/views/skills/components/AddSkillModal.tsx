@@ -7,6 +7,7 @@ import agentShortcutsApi from '@/api/modules/agent-shortcuts';
 import type { AgentShortcutItem } from '@/api/modules/agent-shortcuts/types';
 import { AGENT_USAGES } from '@/constants/agent';
 import { checkPermissionAsync } from '@/utils/permission';
+import { useResponsive } from '@/hooks/useResponsive';
 
 interface AddSkillModalProps {
   /** 弹窗是否打开 */
@@ -38,6 +39,7 @@ export function AddSkillModal({
   onClose,
   onSuccess,
 }: AddSkillModalProps) {
+  const { isMobile } = useResponsive();
   const [loading, setLoading] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<number | string>();
   // 小助理列表（与侧边栏同源：用户已添加的快捷方式，仅 WORK_AI 类型）
@@ -151,6 +153,7 @@ export function AddSkillModal({
   return (
     <Modal
       open={open}
+      width={isMobile ? '90%' : 520}
       title={t('skill.add_skill')}
       onCancel={onClose}
       destroyOnClose={false}

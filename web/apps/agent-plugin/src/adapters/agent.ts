@@ -1,5 +1,6 @@
 import type { IAgentApi } from '@km/shared-business'
 import request from '../utils/request'
+import { tApp } from '../i18n'
 
 function parseJsonField(value: any, defaultValue: any) {
   if (!value) return defaultValue
@@ -21,6 +22,8 @@ function formatAgentData(data: any = {}): any {
   data.custom_config_obj = data.custom_config
   data.settings = parseJsonField(data.settings, {})
   data.settings_obj = data.settings
+  // 可见范围 scopes（ScopeItem[]，供 AuthTagGroup 展示权限范围标签）
+  data.scopes = parseJsonField(data.scopes, [])
   data.enable = !!+(data.enable ?? false)
   data.sort = +(data.sort ?? 0)
   return data
@@ -50,6 +53,6 @@ export const agentAgentApi: IAgentApi = {
     if (res?.code === 0 && res?.data) {
       return formatAgentData(res.data)
     }
-    throw new Error(res?.message || '获取智能体信息失败')
+    throw new Error(res?.message || tApp('app.fetch_agent_failed'))
   },
 }

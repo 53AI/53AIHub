@@ -31,7 +31,7 @@ function renderItem(item: BreadcrumbItem, isLast: boolean) {
   const isLink = !isLast || item.linkable;
   const content = (
     <span
-      className={`${isLink ? "text-regular font-normal hover-text-theme" : "text-primary"} inline-block truncate max-w-[16em]`}
+      className={`${isLink ? "text-regular font-normal hover-text-theme" : "text-primary"} inline-block truncate max-w-[6em] sm:max-w-[16em]`}
       title={typeof label === "string" ? label : undefined}
     >
       {label}
