@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -9,9 +10,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var secretKey = []byte(env.String("JWT_SECRET", "secret"))
+// ErrSecretNotConfigured 表示部署未配置 JWT_SECRET。
+//
+// 这里刻意不再回落到固定的默认值：默认值一旦公开，任何人都能为任意 user_id / eid
+// 签出能通过校验的 HS256 token。宁可在调用点明确失败，也不要拿公开密钥签发 token。
+var ErrSecretNotConfigured = errors.New("JWT_SECRET is not configured")
+
+var secretKey = []byte(env.String("JWT_SECRET", ""))
+
+// SecretConfigured 报告 JWT_SECRET 是否已配置，供启动阶段做 fail-close 检查。
+func SecretConfigured() bool {
+	return len(secretKey) > 0
+}
 
 func UserGenerateJWT(userID int64, eid int64) (string, error) {
+	if len(secretKey) == 0 {
+		return "", ErrSecretNotConfigured
+	}
+
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"eid":     eid,
@@ -23,6 +39,10 @@ func UserGenerateJWT(userID int64, eid int64) (string, error) {
 }
 
 func UserParseJWT(tokenString string) (int64, int64, error) {
+	if len(secretKey) == 0 {
+		return 0, 0, ErrSecretNotConfigured
+	}
+
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
 		return 0, 0, jwt.ErrTokenMalformed

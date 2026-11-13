@@ -15,7 +15,13 @@ const (
 	issuerSandboxFile = "sandbox-file-download"
 )
 
-var signingKey = []byte(env.String("SANDBOX_DOWNLOAD_TOKEN_SECRET", env.String("JWT_SECRET", "secret")))
+// ErrSigningKeyNotConfigured 表示 SANDBOX_DOWNLOAD_TOKEN_SECRET 与 JWT_SECRET 都未配置。
+//
+// 这里刻意不再回落到固定的默认值：默认值一旦公开，任何人都能为任意 file_id 签出能通过
+// 校验的下载 token，从而绕过下载接口的鉴权。宁可在调用点明确失败。
+var ErrSigningKeyNotConfigured = errors.New("SANDBOX_DOWNLOAD_TOKEN_SECRET is not configured")
+
+var signingKey = []byte(env.String("SANDBOX_DOWNLOAD_TOKEN_SECRET", env.String("JWT_SECRET", "")))
 
 type DownloadTokenClaims struct {
 	FileID   int64  `json:"fid"`
@@ -24,6 +30,9 @@ type DownloadTokenClaims struct {
 }
 
 func GenerateDownloadToken(fileID int64, fileName string, ttl time.Duration) (string, error) {
+	if len(signingKey) == 0 {
+		return "", ErrSigningKeyNotConfigured
+	}
 	cleanName := sanitizeFileName(fileName)
 	if fileID <= 0 || cleanName == "" {
 		return "", errors.New("invalid download token payload")
@@ -47,6 +56,9 @@ func GenerateDownloadToken(fileID int64, fileName string, ttl time.Duration) (st
 }
 
 func ValidateDownloadToken(tokenStr string, fileID int64, fileName string) error {
+	if len(signingKey) == 0 {
+		return ErrSigningKeyNotConfigured
+	}
 	cleanName := sanitizeFileName(fileName)
 	if fileID <= 0 || cleanName == "" || strings.TrimSpace(tokenStr) == "" {
 		return errors.New("invalid download token verify input")

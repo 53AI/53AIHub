@@ -15,6 +15,7 @@ import (
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
@@ -43,6 +44,24 @@ import (
 // 本地部署版本包含前端资源, SaaS 版本仅包含基础静态资源
 
 func main() {
+	// 安全基线：签名密钥必须显式配置，否则拒绝启动。放在所有初始化之前，
+	// 保证配置缺失时第一时间失败，而不是带着可伪造的密钥先把服务跑起来。
+	//
+	// 历史上缺失 JWT_SECRET 会静默回落到源码中公开的默认值，任何人都能据此伪造出
+	// 通过校验的 token。这里改为 fail-close，并给出可直接照做的修复提示。
+	//
+	// 刻意不用 logger.FatalLog 退出：LOG_LEVEL=NONE 时它会被日志级别过滤静默吞掉，
+	// 而这条检查属于安全基线，必须无条件生效。
+	if !jwt.SecretConfigured() {
+		msg := "JWT_SECRET is not configured. Refusing to start, because tokens signed with " +
+			"a publicly known default secret can be forged. Generate one with " +
+			"`openssl rand -hex 32`, set it as the JWT_SECRET environment variable " +
+			"(or in your .env file), then restart."
+		logger.SysErrorf("%s", msg)
+		fmt.Fprintln(os.Stderr, "[FATAL] "+msg)
+		os.Exit(1)
+	}
+
 	common.Init()
 
 	// 初始化 Keystone 上报客户端
