@@ -1,3 +1,5 @@
+import { suite_id } from '@/utils/config'
+
 export const VERSION_MODULE = {
   AGENT: 'agent',
   PROMPT: 'prompt',
@@ -60,6 +62,7 @@ export type VersionModule = (typeof VERSION_MODULE)[keyof typeof VERSION_MODULE]
 export type WebsiteType = (typeof WEBSITE_TYPE)[keyof typeof WEBSITE_TYPE]
 export type WebsiteVersion = (typeof WEBSITE_VERSION)[keyof typeof WEBSITE_VERSION]
 
-export const ENTERPRISE_WECOM_SUITE_ID = 'wwdce32ea39893200f'
+/** 企业微信套件 ID：由部署方通过 VITE_GLOB_SUITEID 配置，禁止在仓库内写死 */
+export const ENTERPRISE_WECOM_SUITE_ID = suite_id
 
 export type EnterpriseSyncFrom = (typeof ENTERPRISE_SYNC_FROM)[keyof typeof ENTERPRISE_SYNC_FROM]

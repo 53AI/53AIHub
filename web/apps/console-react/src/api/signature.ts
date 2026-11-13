@@ -1,6 +1,8 @@
 import { md5 } from '@km/shared-utils'
 
-const DEFAULT_AUTH_KEY = 'c3a39e4eeacf4542d6a488e19037fa45'
+import { auth_key } from '@/utils/config'
+
+const DEFAULT_AUTH_KEY = auth_key
 
 function serialize(params: Record<string, any>): string {
   return Object.keys(params)

@@ -28,6 +28,9 @@ export const suite_id: string = getConfigValue('suite_id', 'VITE_GLOB_SUITEID', 
 
 export const official_id: string = getConfigValue('official_id', 'VITE_GLOB_OFFICIALID', '53ai')
 
+/** 接口签名密钥：由部署方通过 VITE_GLOB_AUTH_KEY 配置，禁止在仓库内写死真实密钥 */
+export const auth_key: string = getConfigValue('auth_key', 'VITE_GLOB_AUTH_KEY', '53ai')
+
 export const domain_suffix: string = getConfigValue(
   'domain_suffix',
   'VITE_DOMAIN_SUFFIX',
