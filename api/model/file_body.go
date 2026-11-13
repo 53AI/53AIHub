@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -337,6 +338,14 @@ func RollbackFileBodyContentFromStorage(batchSize int) (int, error) {
 func GetLastFileBodyByFileID(eid int64, fileID int64) (*FileBody, error) {
 	var fileBody FileBody
 	if err := DB.Where("eid = ? AND file_id = ?", eid, fileID).Order("created_time desc").First(&fileBody).Error; err != nil {
+		return nil, err
+	}
+	return &fileBody, nil
+}
+
+func GetLastFileBodyByFileIDWithContext(ctx context.Context, eid int64, fileID int64) (*FileBody, error) {
+	var fileBody FileBody
+	if err := DB.WithContext(ctx).Where("eid = ? AND file_id = ?", eid, fileID).Order("created_time desc").First(&fileBody).Error; err != nil {
 		return nil, err
 	}
 	return &fileBody, nil

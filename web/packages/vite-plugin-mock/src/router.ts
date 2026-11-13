@@ -97,6 +97,18 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
     const hasStatus = !!data && typeof data === 'object' && typeof (data as any).__status === 'number'
     const payload = hasStatus ? (data as any).__body : data
 
+    // 允许 handler 通过 { __raw, body, headers } 返回非 JSON 响应（例如图片预览）
+    if (!!data && typeof data === 'object' && (data as any).__raw) {
+      const { body: rawBody, headers = {} } = data as any
+      for (const [key, value] of Object.entries(headers)) {
+        res.setHeader(key, value as string)
+      }
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.statusCode = 200
+      res.end(rawBody)
+      return true
+    }
+
     res.setHeader('Content-Type', 'application/json')
     res.setHeader('Access-Control-Allow-Origin', '*')
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS')

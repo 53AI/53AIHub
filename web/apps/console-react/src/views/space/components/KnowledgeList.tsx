@@ -107,14 +107,11 @@ export function KnowledgeList({ spaceId }: KnowledgeListProps) {
         render: (_, record) => (
           <div className="flex items-center gap-2">
             {record.icon ? (
-              <img
+              <SafeImage
                 src={record.icon}
                 className="size-7 rounded-full"
                 alt="creator"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = "/images/default_avatar.png";
-                }}
+                kind="user"
               />
             ) : (
               <div className="size-6 bg-[#E0EEFF] flex items-center justify-center rounded-full">

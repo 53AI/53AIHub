@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Divider, Spin, message, Popover, Tooltip, Button } from 'antd'
 import { LeftOutlined, QrcodeOutlined } from '@ant-design/icons'
@@ -10,9 +10,7 @@ import { FullscreenToggle } from '@/components/FullscreenToggle'
 import { FavoriteToggle } from '@/components/FavoriteToggle'
 import { IconAction } from '@km/shared-components-react'
 import {
-  useInlineEditLite,
-  getDisplayName,
-  buildRenamePath,
+  useInlineEditLite, buildRenamePath
 } from '@/views/mine/useInlineEditLite'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
 import { AUDIO_DOUBLE_EXT_REGEX } from '@/views/mine/constants'
@@ -40,11 +38,28 @@ import DocumentApp from '@/views/library/main/file/components/document-app'
 import { InsightRegeneratePanel } from '@/views/recording/components/insight/InsightRegeneratePanel'
 import { InsightChatModal } from '@/views/recording/components/insight/InsightChatModal'
 import { useLibraryStore } from '@/stores/modules/library'
+import { useRecordingFlutterPanel } from '@/stores/modules/recording-flutter-panel'
+import { buildFlutterWebUrl } from '../flutter-panel/flutterUrl'
+import { useFlutterPanelClosed } from '../flutter-panel/useFlutterPanelClosed'
+import { PreviewInsightDock } from './PreviewInsightDock'
 import { AGENT_USAGES } from '@/constants/agent'
 import recordingApi from '@/api/modules/recording'
+import recordingActionApi from '@/api/modules/recording/action'
 
 const AudioView = lazy(() => import('../audio/AudioView'))
 type AudioViewRef = import('../audio/AudioView').AudioViewRef
+
+/** Flutter 面板写操作上报事件（父路由从 useFlutterPanelMutation 消息构造） */
+export type PanelMutationEvent = {
+  /** 变更针对的录音文件 id */
+  fileId: string
+  /** create=添加总结模块；update=重写转写（关联发言人等） */
+  action: 'create' | 'update'
+  /** update 的内容范围：transcript（缺省）= 重拉转写；action_items = 重拉 Dock 计数 */
+  scope?: 'transcript' | 'action_items'
+  /** 递增序号：同一文件连续变更也生成新事件，避免 state 同值不重渲染 */
+  seq: number
+}
 
 export interface RecordingPreviewProps {
   file: PreviewFile
@@ -57,14 +72,21 @@ export interface RecordingPreviewProps {
   enableFavorite?: boolean
   fullscreen?: boolean
   onToggleFullscreen?: () => void
-  /** 录音分组标签（用于「移动至」子菜单） */
-  categoryTags?: { key: string; label: string }[]
   /** 洞察生成完成时回调，用于更新文件列表描述 */
   onDescriptionUpdate?: (fileId: string, description: string) => void
   /** 纪要完成时回调，刷新列表获取最新文件名 */
   onMeetingMinutesRename?: (fileId: string) => void
   /** AI 助手面板的挂载容器，由父级提供，避免 querySelector 选错多个同名节点 */
   assistantSiderRef?: React.RefObject<HTMLDivElement>
+  /**
+   * Flutter 面板写操作上报事件（父路由从 mutation 消息构造）：
+   * - create（添加总结模块）→ 重拉 fileSummaries，sum-* tab / 导出菜单 / 分享 chip 同步；
+   * - update（关联发言人重写转写）→ 重拉转写 markdown，转写列表同步。
+   * 单独传事件对象而不是让父级直接调 ref：预览页内部要校验 fileId 与当前
+   * 文件一致才重拉，避免预览页已切到别的文件时误刷；seq 保证同一文件
+   * 连续变更（如连续关联多个发言人）也会重新触发。
+   */
+  panelMutation?: PanelMutationEvent
 }
 
 /**
@@ -81,10 +103,10 @@ export function RecordingPreview({
   enableFavorite = true,
   fullscreen = false,
   onToggleFullscreen,
-  categoryTags,
   onDescriptionUpdate,
   onMeetingMinutesRename,
   assistantSiderRef,
+  panelMutation,
 }: RecordingPreviewProps) {
 
   const {
@@ -130,9 +152,18 @@ export function RecordingPreview({
   const audioViewRef = useRef<AudioViewRef>(null)
   const [exportMenuItems, setExportMenuItems] = useState<MenuItem[]>([])
   const [moreOpen, setMoreOpen] = useState(false)
+
   // 洞察生成状态（窄语义）：从 AudioView 的 onInsightStateChange 回调同步过来；
   // 用于分享按钮拦截——「正在生成中」的洞察内容不应被分享出去。
   const [insightGenerating, setInsightGenerating] = useState(false)
+  // 洞察生成完成：预览页右侧浮动按钮组（提议/行动/成果/探讨）的显示开关
+  const [insightDone, setInsightDone] = useState(false)
+  // Dock 三入口计数（统一事项接口 counts；拉取失败静默显示 0，对齐 Flutter）
+  const [actionCounts, setActionCounts] = useState<{
+    proposal: number
+    action: number
+    deliverable: number
+  }>({ proposal: 0, action: 0, deliverable: 0 })
   // 解析整体在跑（宽语义）：任意阶段 loading（pending/parsing/processing）即为 true；
   // 用于「参谋洞察」面板在生成中再次提交时锁住按钮和切换文案。
   const [parseStatusRunning, setParseStatusRunning] = useState(false)
@@ -157,7 +188,7 @@ export function RecordingPreview({
 
   // 同步当前录音文件到 library store，供 DocumentApp 通过 currentFile() 读取。
   // 数据源以 formatFile() 产出的 PreviewFile 为主（带 icon/name/file_ext 等 Chat 需要的字段），
-  // 再用 rawData 兜底补齐 PreviewFile 未暴露的字段（如 origin_type/group_id/insight_summary 等）。
+  // 再用 rawData 兜底补齐 PreviewFile 未暴露的字段（如 origin_type/scene/insight_summary 等）。
   // 依赖包含 file.rawData：同一个 file.id 下后端轮询更新 rawData（例如刷新解析状态）时
   // 也能重新同步，避免 store 里残留过期数据。
   useEffect(() => {
@@ -237,13 +268,6 @@ export function RecordingPreview({
     })
   }
 
-  const moveToChildren: MenuItem[] = (categoryTags ?? [])
-    .filter((tag) => tag.key !== '0')
-    .map((tag) => ({
-      key: `move-to:${tag.key}`,
-      label: tag.label,
-    }))
-
   const menuItems = [
     {
       key: 'new-tab',
@@ -256,13 +280,6 @@ export function RecordingPreview({
       icon: 'export',
       label: t('recording.export.menu_label'),
       children: exportMenuItems,
-    },
-    {
-      key: 'move-to',
-      icon: 'move',
-      label: t('action.move_to'),
-      children: moveToChildren,
-      visible: moveToChildren.length > 0,
     },
     { key: 'rename', icon: 'edit', label: t('action.rename') },
     { key: 'divider', divided: true },
@@ -498,19 +515,115 @@ export function RecordingPreview({
   const shouldPoll =
     recordingConfig?.enabled !== false && !!recordingConfig?.parser_platform
 
+  // 探讨：右侧 375px Flutter Web 面板加载本录音详情页并自动弹出探讨抽屉
+  //（KM-Record /recording/detail/:id?discuss=1，登录态由 flutterUrl 统一拼接）
+  const openFlutterPanel = useRecordingFlutterPanel((s) => s.open)
+  const handleOpenDiscuss = () => {
+    // _t：每次点击变化的 nonce —— 同一详情页重复点「探讨」时 Flutter 侧
+    // 页面不会重新挂载，靠它识别这是新一次的打开请求（didUpdateWidget）。
+    openFlutterPanel(
+      buildFlutterWebUrl(`/recording/detail/${file.id}`, { discuss: 1, _t: Date.now() }),
+    )
+  }
+
+  // Dock「提议 / 行动 / 成果」：同探讨深链，action_items 指定落地阶段，
+  // Flutter 侧自动弹出对应阶段的行动事项抽屉。
+  const handleOpenActionItems = (stage: 'proposal' | 'action' | 'result') => {
+    openFlutterPanel(
+      buildFlutterWebUrl(`/recording/detail/${file.id}`, {
+        action_items: stage,
+        _t: Date.now(),
+      }),
+    )
+  }
+
+  // 转写 Tab「关联」：同探讨深链，bind_speaker=1 让 Flutter 侧自动弹出
+  // 关联发言人抽屉（两步：声音校验 → 人员绑定，绑定后转写即时刷新）。
+  // speaker：行内按钮点哪行关联谁（深链带上，Flutter 侧直接定位该说话人）；
+  // 顶部入口卡片不传 → Flutter 侧自动选第一个未确认的说话人。
+  const handleOpenSpeakerBind = (speaker?: string) => {
+    openFlutterPanel(
+      buildFlutterWebUrl(`/recording/detail/${file.id}`, {
+        bind_speaker: 1,
+        ...(speaker ? { speaker } : {}),
+        _t: Date.now(),
+      }),
+    )
+  }
+
+  // 拉取 Dock 三入口计数（统一事项接口，page_size=1 只为拿 counts）。
+  // 静默失败：不打扰用户，重进预览页会再试（对齐 Flutter 详情页）。
+  const refreshActionCounts = useCallback(async () => {
+    try {
+      const page = await recordingActionApi.listActionItems({
+        recording_file_id: file.id,
+        page: 1,
+        page_size: 1,
+      })
+      setActionCounts({
+        proposal: page.counts?.proposal ?? 0,
+        action: page.counts?.action ?? 0,
+        deliverable: page.counts?.result ?? 0,
+      })
+    } catch {
+      // 静默失败
+    }
+  }, [file.id])
+
+  // Flutter 面板写操作上报 → 按 action / scope 重拉对应数据（fileId 不
+  // 匹配（预览页已切到别的文件）时忽略）。见 props 注释。
+  useEffect(() => {
+    if (!panelMutation || panelMutation.fileId !== file.id) return
+    if (panelMutation.action === 'create') {
+      audioViewRef.current?.refreshSummaries()
+    } else if (panelMutation.scope === 'action_items') {
+      // 面板内改了提议 / 行动 / 成果（标记已读、生成方案、批准执行、
+      // 移入回收站、删成果）→ Dock 三入口计数即时跟随，不必等关面板。
+      void refreshActionCounts()
+      // 兜底再拉一次：Flutter 侧刚 detect 生成时，通知发出瞬间后端
+      // 可能还在落库，第一次拉到的是旧值且之后没有第二次机会。
+      // 延迟重拉覆盖这个窗口（幂等，多拉一次只多一个轻量 GET）。
+      const timer = setTimeout(() => void refreshActionCounts(), 1500)
+      return () => clearTimeout(timer)
+    } else {
+      audioViewRef.current?.refreshTranscript()
+    }
+  }, [panelMutation, file.id, refreshActionCounts])
+
+  // 洞察生成完成：静默 detect 行动机会（每文件一次，失败不打扰）后拉计数。
+  // 对齐 Flutter 详情页 _maybeDetectOpportunitiesSilently：detect 幂等，
+  // 已有机会时后端直接返回现有结果。
+  const detectedRef = useRef<string>('')
+  useEffect(() => {
+    if (!insightDone) return
+    let cancelled = false
+    const run = async () => {
+      if (detectedRef.current !== file.id) {
+        detectedRef.current = file.id
+        try {
+          await recordingActionApi.detectActionOpportunities(file.id)
+        } catch {
+          // 静默失败：不阻断计数展示，下次进入预览页再试
+        }
+      }
+      if (!cancelled) void refreshActionCounts()
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [insightDone, file.id, refreshActionCounts])
+
+  // Flutter 面板关闭：面板内可能确认了方案 / 验收了成果（阶段流转），
+  // 重拉计数保持 Dock 角标与服务端事实一致（不重复 detect）。
+  useFlutterPanelClosed(() => {
+    if (insightDone) void refreshActionCounts()
+  })
+
   return (
     <div className="relative flex flex-col bg-white h-full">
-      <LibraryHeader showBack={false} showSiderButton={false} footer={headerFooter}>
+      <LibraryHeader showBack={false} className='h-[52px]' showBorder={false} showSiderButton={false} footer={headerFooter}>
         <div className="flex-1">
-          <h3
-            className="py-0.5 text-base text-[#1D1E1F] truncate inline-editable"
-            onClick={handleClickTitle}
-            onBlur={handleInlineBlur}
-            onKeyDown={handleInlineKeydown}
-            onPaste={handleInlinePaste}
-          >
-            {getDisplayName(file.name, !isFolder, file.file_ext)}
-          </h3>
           <p className="text-xs text-[#9A9A9A] px-1">
             {/* {t('common.recently_edit')}： */}
             {file.updated_time}
@@ -518,7 +631,7 @@ export function RecordingPreview({
         </div>
       </LibraryHeader>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden">
         <Suspense
           fallback={
             <div className="w-full flex justify-center items-center h-full">
@@ -532,6 +645,7 @@ export function RecordingPreview({
               id: file.id,
               file_url: file.file_url,
               name: file.name,
+              file_ext: file.file_ext,
               insight_summary: (file.rawData as any)?.insight_summary,
               rawData: file.rawData,
             } as any}
@@ -542,12 +656,23 @@ export function RecordingPreview({
             parseStatus={parseStatus}
             onDescriptionUpdate={onDescriptionUpdate}
             onMeetingMinutesRename={onMeetingMinutesRename}
+            onOpenSpeakerBind={handleOpenSpeakerBind}
             onInsightStateChange={(state) => {
               setInsightGenerating(!!state?.generating)
               setParseStatusRunning(!!state?.parseStatusRunning)
+              setInsightDone(!!state?.insightDone)
             }}
           />
         </Suspense>
+
+        {/* 右侧固定悬浮按钮组：洞察生成完成才显示（计数来自统一事项接口，点击在 Flutter 面板打开抽屉） */}
+        {insightDone && !isFolder && (
+          <PreviewInsightDock
+            onDiscuss={handleOpenDiscuss}
+            onOpenActionItems={handleOpenActionItems}
+            counts={actionCounts}
+          />
+        )}
       </div>
 
       {/* Portal 挂载到外层 .assistant-sider 容器（由 recording/index.tsx 渲染） */}

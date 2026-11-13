@@ -11,7 +11,12 @@ import {
   useEffect,
 } from "react";
 import type { Area } from "react-easy-crop";
-import { getCroppedImageBlob } from "./helpers";
+import {
+  getCroppedImageBlob,
+  compressImageFile,
+  isCompressibleImage,
+  getFileExt,
+} from "./helpers";
 
 export interface CropperDialogRef {
   uploadFile: () => void;
@@ -33,6 +38,8 @@ export interface CropperDialogProps {
   onUpload: (file: File) => Promise<{ url: string; preview_key?: string }>;
   /** 裁剪完成后的回调 */
   onConfirm?: (result: { url: string; preview_key?: string }) => void;
+  /** 上传中状态变化回调（直传/裁剪确认上传时触发，供调用方展示 loading） */
+  onUploadingChange?: (uploading: boolean) => void;
   /** 国际化文案，调用方必须提供 */
   locale: {
     imageValidator: string;
@@ -68,6 +75,7 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
       cropperDisabled = false,
       onUpload,
       onConfirm,
+      onUploadingChange,
       locale,
     },
     ref,
@@ -187,9 +195,9 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
         reuploadInputRef.current.value = "";
       }
 
-      // Check file type
-      const ext = file.name.split(".").pop()?.toLowerCase();
-      if (!allowTypeList.includes(ext || "")) {
+      // Check file type（无扩展名时用 MIME 兑底）
+      const ext = getFileExt(file);
+      if (!allowTypeList.includes(ext)) {
         message.error(
           imageValidator
             .replace("{types}", allowTypeList.join("、").toUpperCase())
@@ -197,8 +205,20 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
         return;
       }
 
+      // 移动端相册照片普遍超过 limitSize（头像限制 2MB），
+      // 先用 canvas 压缩再校验，避免“选图后什么都没发生”。
+      const maxBytes = limitSize * 1024 * 1024;
+      let fileToUse = file;
+      if (file.size > maxBytes && isCompressibleImage(file)) {
+        try {
+          fileToUse = await compressImageFile(file, maxBytes);
+        } catch (error) {
+          console.error("Image compression failed:", error);
+        }
+      }
+
       // Check file size
-      if (file.size > limitSize * 1024 * 1024) {
+      if (fileToUse.size > maxBytes) {
         message.error(sizeLimit.replace("{size}", String(limitSize)));
         return;
       }
@@ -206,13 +226,15 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
       // If cropper disabled, upload directly
       if (cropperDisabled) {
         setUploading(true);
+        onUploadingChange?.(true);
         try {
-          const result = await onUpload(file);
+          const result = await onUpload(fileToUse);
           onConfirm?.(result);
         } catch (error) {
           message.error(uploadFailed);
         } finally {
           setUploading(false);
+          onUploadingChange?.(false);
         }
         return;
       }
@@ -229,13 +251,14 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
         setCroppedAreaPixels(null);
         setPreviewImage(null);
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(fileToUse);
     };
 
     const handleConfirm = async () => {
       if (!imageSrc || !croppedAreaPixels) return;
 
       setUploading(true);
+      onUploadingChange?.(true);
       try {
         const croppedBlob = await getCroppedImageBlob(imageSrc, croppedAreaPixels, rotation, 'image/png');
         const file = new File([croppedBlob], "cropped-image.png", {
@@ -249,6 +272,7 @@ export const CropperDialog = forwardRef<CropperDialogRef, CropperDialogProps>(
         message.error(uploadFailed);
       } finally {
         setUploading(false);
+        onUploadingChange?.(false);
       }
     };
 

@@ -5,7 +5,7 @@ import { useUserStore } from "@/stores/modules/user";
 import { t } from "@/locales";
 import { copyToClip } from "@km/shared-utils";
 import { getPublicPath } from "@/utils/config";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { checkPermissionAsync } from "@/utils/permission";
 
 interface PromptItem {
@@ -134,7 +134,7 @@ export function PromptList({
           }}
         >
           <div className="flex items-center">
-            <img
+            <SafeImage
               className="flex-none size-12 mr-3 rounded-lg object-cover"
               src={item.logo}
               alt={item.name}

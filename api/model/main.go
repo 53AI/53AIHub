@@ -182,10 +182,19 @@ func migrateDB() error {
 	if err = DB.AutoMigrate(&Conversation{}); err != nil {
 		return err
 	}
+	if err = DB.AutoMigrate(&ConversationSummary{}); err != nil {
+		return err
+	}
 	if err = DB.AutoMigrate(&Provider{}); err != nil {
 		return err
 	}
 	if err = DB.AutoMigrate(&AgentAccessKey{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&BotBinding{}); err != nil {
+		return err
+	}
+	if err = DB.AutoMigrate(&BotWebhookOutbox{}); err != nil {
 		return err
 	}
 	if err = DB.AutoMigrate(&UserChannel{}); err != nil {
@@ -405,10 +414,12 @@ func migrateDB() error {
 		&RecordingShare{},
 		&RecordingFileSummary{},
 		&RecordingFileInsightPage{},
+		&RecordingSpeakerBaseline{},
 		&RecordingMemoryClaim{},
 		&RecordingMemoryEntity{},
 		&RecordingMemoryFact{},
 		&RecordingMemoryEntityRelation{},
+		&RecordingMemoryEntityBinding{},
 		&RecordingCognitionDomain{},
 		&RecordingCognition{},
 		&RecordingCognitionVersion{},

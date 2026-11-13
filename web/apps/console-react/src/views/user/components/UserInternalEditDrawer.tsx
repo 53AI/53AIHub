@@ -25,6 +25,9 @@ const UserInternalEditDrawer: React.FC<UserInternalEditDrawerProps> = ({
   const [originalData, setOriginalData] = useState<any>({});
 
   const userInfo = useMemo(() => userStore.info, [userStore.info]);
+  // 已注册成员（含企微/钉钉同步成员）手机号锁定不可编辑；
+  // 企微同步成员没有手机号，锁定状态下不做必填校验，否则无法保存
+  const isMobileDisabled = originalData.status !== INTERNAL_USER_STATUS_UNDEFINED;
 
   useEffect(() => {
     if (open && data) {
@@ -157,7 +160,7 @@ const UserInternalEditDrawer: React.FC<UserInternalEditDrawerProps> = ({
           extra={t("internal_user.account.mobile_disabled_tip")}
           rules={[
             {
-              required: true,
+              required: !isMobileDisabled,
               message: t("internal_user.account.mobile_placeholder"),
             },
             {
@@ -169,7 +172,7 @@ const UserInternalEditDrawer: React.FC<UserInternalEditDrawerProps> = ({
           <Input
             autoComplete="new-mobile"
             placeholder={t("internal_user.account.mobile_placeholder")}
-            disabled={originalData.status !== INTERNAL_USER_STATUS_UNDEFINED}
+            disabled={isMobileDisabled}
             allowClear
           />
         </Form.Item>

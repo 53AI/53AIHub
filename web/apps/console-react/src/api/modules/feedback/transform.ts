@@ -9,7 +9,6 @@ import {
   type ProcessStep,
   parseJson
 } from '@/hooks/useChatStream'
-import { getPublicPath } from '@/utils/config'
 
 export const transformFeedbackItem = (item: FeedbackItem): FeedbackDisplayItem => ({
   ...item,
@@ -68,7 +67,7 @@ export const formatFileInfo = (fileName: string): { ext: string; fname: string; 
   return {
     ext: file_ext,
     fname: displayName,
-    icon: getPublicPath(`/images/file/${file_ext}.png`),
+    icon: `/images/file/${file_ext}.png`,
   }
 }
 

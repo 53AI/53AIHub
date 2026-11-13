@@ -11,12 +11,18 @@ import (
 	"github.com/53AI/53AIHub/model"
 )
 
+type transcriptContactMeta struct {
+	ID string `json:"id"`
+}
+
 // transcriptSentence 对应 DashScope 转写 JSON 中 transcripts[].sentences[]。
 type transcriptSentence struct {
-	BeginTime int64  `json:"begin_time"`
-	EndTime   int64  `json:"end_time"`
-	Text      string `json:"text"`
-	SpeakerID int    `json:"speaker_id"`
+	BeginTime   int64                  `json:"begin_time"`
+	EndTime     int64                  `json:"end_time"`
+	Text        string                 `json:"text"`
+	SpeakerID   int                    `json:"speaker_id"`
+	SpeakerName string                 `json:"speaker_name,omitempty"`
+	Contact     *transcriptContactMeta `json:"contact,omitempty"`
 }
 
 // transcriptBlock 对应 transcripts[] 元素。
@@ -27,7 +33,8 @@ type transcriptBlock struct {
 
 // dashScopeTranscriptJSON 顶层结构。
 type dashScopeTranscriptJSON struct {
-	Transcripts []transcriptBlock `json:"transcripts"`
+	Transcripts       []transcriptBlock `json:"transcripts"`
+	CorrectionVersion string            `json:"_transcript_correction_version,omitempty"`
 }
 
 // formatTranscriptTime 毫秒转 HH:MM:SS。
@@ -44,9 +51,10 @@ func formatTranscriptTime(ms int64) string {
 
 // sonicNoteTranscriptItem 对应 SonicNote /share/{audioId}/transcript/result 的 data 元素。
 type sonicNoteTranscriptItem struct {
-	Spokesperson string `json:"spokesperson"`
-	Text         string `json:"text"`
-	Time         string `json:"time"`
+	Spokesperson string                 `json:"spokesperson"`
+	Text         string                 `json:"text"`
+	Time         string                 `json:"time"`
+	Contact      *transcriptContactMeta `json:"contact,omitempty"`
 }
 
 // sonicSpeakerPattern 匹配 SonicNote 发言人 "说话人N"（N 从 1 开始）。
@@ -81,12 +89,6 @@ func renderSonicNoteTranscriptMarkdown(rawJSON, title string) (string, error) {
 	}
 
 	var b strings.Builder
-	if strings.TrimSpace(title) != "" {
-		b.WriteString("# ")
-		b.WriteString(title)
-		b.WriteString("\n\n")
-	}
-
 	lineCount := 0
 	for _, it := range items {
 		text := strings.TrimSpace(it.Text)
@@ -110,6 +112,9 @@ func renderSonicNoteTranscriptMarkdown(rawJSON, title string) (string, error) {
 				// 非默认标签是转写服务确认过的具体 speaker 名称，必须原样保留。
 				label = speaker
 			}
+		}
+		if label != "" && it.Contact != nil && it.Contact.ID != "" {
+			label = label + buildContactComment(it.Contact.ID)
 		}
 		switch {
 		case label != "" && ts != "":
@@ -144,14 +149,24 @@ func renderDashScopeTranscriptMarkdown(rawJSON string, title string) (string, er
 	}
 
 	var b strings.Builder
-	if strings.TrimSpace(title) != "" {
-		b.WriteString("# ")
-		b.WriteString(title)
-		b.WriteString("\n\n")
-	}
-
-	var speakerSeen = map[int]string{}
+	// 只缓存名称：同一 speaker 后续句可能没带 speaker_name，需沿用已确认的人名；
+	// contact 必须逐句取，否则片段级关联（同一声纹不同片段绑不同人）重渲染后会被首句覆盖。
+	speakerNameByID := map[int]string{}
 	lineCount := 0
+	currentSpeaker, currentText := "", ""
+	currentID := -2
+	var currentStart, currentEnd int64
+	flush := func() {
+		if currentText == "" {
+			return
+		}
+		if currentSpeaker != "" {
+			b.WriteString(fmt.Sprintf("[%s] %s: %s\n\n", formatTranscriptTime(currentStart), currentSpeaker, currentText))
+		} else {
+			b.WriteString(fmt.Sprintf("[%s] %s\n\n", formatTranscriptTime(currentStart), currentText))
+		}
+		currentText = ""
+	}
 	for _, block := range data.Transcripts {
 		for _, s := range block.Sentences {
 			text := strings.TrimSpace(s.Text)
@@ -159,55 +174,99 @@ func renderDashScopeTranscriptMarkdown(rawJSON string, title string) (string, er
 				continue
 			}
 			lineCount++
-			ts := formatTranscriptTime(s.BeginTime)
+			speaker := ""
 			if s.SpeakerID >= 0 {
-				speaker, ok := speakerSeen[s.SpeakerID]
-				if !ok {
+				speaker = strings.TrimSpace(s.SpeakerName)
+				if speaker != "" {
+					speakerNameByID[s.SpeakerID] = speaker
+				} else if cached := speakerNameByID[s.SpeakerID]; cached != "" {
+					speaker = cached
+				} else {
 					speaker = speakerLabelByIndex(s.SpeakerID)
-					speakerSeen[s.SpeakerID] = speaker
 				}
-				b.WriteString(fmt.Sprintf("[%s] %s: %s\n\n", ts, speaker, text))
-			} else {
-				b.WriteString(fmt.Sprintf("[%s] %s\n\n", ts, text))
+				// 注释逐句取：同一 speaker 的不同片段可能绑不同人员，缓存人名但绝不缓存注释
+				if s.Contact != nil && s.Contact.ID != "" {
+					speaker += buildContactComment(s.Contact.ID)
+				}
 			}
+			// Short consecutive fragments from the same speaker become one display turn.
+			// The formal JSON retains every original sentence and millisecond timestamp.
+			join := data.CorrectionVersion != "" && currentText != "" && s.SpeakerID >= 0 && currentID == s.SpeakerID &&
+				currentSpeaker == speaker && s.BeginTime >= currentEnd &&
+				s.BeginTime-currentEnd <= 1200 && len([]rune(currentText))+len([]rune(text)) <= 220
+			if join {
+				currentText += text
+			} else {
+				flush()
+				currentStart, currentText, currentID, currentSpeaker = s.BeginTime, text, s.SpeakerID, speaker
+			}
+			currentEnd = s.EndTime
 		}
-		// 兼容无 sentences 只有整段 text 的情况
 		if len(block.Sentences) == 0 {
 			if text := strings.TrimSpace(block.Text); text != "" {
+				flush()
 				lineCount++
-				b.WriteString(text)
-				b.WriteString("\n\n")
+				b.WriteString(text + "\n\n")
 			}
 		}
 	}
-
+	flush()
 	if lineCount == 0 {
 		return "", fmt.Errorf("转写内容为空")
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
-// ExportTranscriptMarkdown 导出录音转写为 Markdown。返回 (markdown, 文件名, error)。
-func ExportTranscriptMarkdown(ctx context.Context, eid, fileID int64) (string, string, error) {
+// GetTranscriptMarkdown 统一获取指定录音文件的转写 Markdown 和准确文件名。
+// 获取转写接口（stripComments = false）：不处理注释内容，完整保留 <!--contact:...--> 供前端或富文本渲染；
+// 导出接口（stripComments = true）：处理注释内容，100% 剥离 <!--contact:...-->，向用户呈现纯净文本。
+func GetTranscriptMarkdown(ctx context.Context, eid, fileID int64, stripComments bool) (string, string, error) {
 	file, err := model.GetFileByID(eid, fileID)
 	if err != nil {
 		return "", "", fmt.Errorf("文件不存在: %w", err)
-	}
-
-	raw, err := loadTranscriptTextRaw(ctx, eid, fileID)
-	if err != nil {
-		return "", "", fmt.Errorf("读取转写失败: %w", err)
 	}
 
 	title := strings.TrimSpace(file.GetAccurateFileName())
 	if title == "" {
 		title = fmt.Sprintf("录音_%d", fileID)
 	}
-	md, err := RenderTranscriptMarkdown(raw, title)
-	if err != nil {
-		return "", "", err
+
+	// 优先读取已编译的最新 FileBody（Markdown）；若为空则从 Summary(-1) 动态渲染
+	var md string
+	if fb, ferr := model.GetLastFileBodyByFileID(eid, fileID); ferr == nil && fb != nil {
+		if content, gerr := fb.GetContent(); gerr == nil && strings.TrimSpace(content) != "" && classifyRecordingContent(content) == recordingContentTranscriptMD {
+			md = content
+		}
+	}
+
+	if md == "" {
+		raw, err := loadTranscriptTextRaw(ctx, eid, fileID)
+		if err != nil {
+			return "", "", fmt.Errorf("读取转写失败: %w", err)
+		}
+		rendered, rerr := RenderTranscriptMarkdown(raw, title)
+		if rerr != nil {
+			// 非预期/畸形格式降级：直接返回原始文本，保持服务可用性
+			md = raw
+		} else {
+			md = rendered
+		}
+	}
+
+	// 动态注入人员最新信息（最新姓名与头像，头像置于名称前）
+	enrichedMD, enrichErr := EnrichTranscriptWithLatestContacts(ctx, eid, md, stripComments)
+	if enrichErr == nil && enrichedMD != "" {
+		md = enrichedMD
+	} else if stripComments {
+		md = StripTranscriptContactComments(md)
 	}
 
 	fileName := title + "_转写.md"
 	return md, fileName, nil
+}
+
+// ExportTranscriptMarkdown 导出录音转写为 Markdown。返回 (markdown, 文件名, error)。
+// 内部复用 GetTranscriptMarkdown，指定 stripComments = true 剥除注释。
+func ExportTranscriptMarkdown(ctx context.Context, eid, fileID int64) (string, string, error) {
+	return GetTranscriptMarkdown(ctx, eid, fileID, true)
 }

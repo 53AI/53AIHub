@@ -3,8 +3,10 @@ import { Table, Button, Tooltip } from "antd";
 import { t } from "@/locales";
 import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import FilterDateRange from "@/components/Filter/date-range";
+import AskerFilter from "@/components/Filter/Asker";
 import { getLastTimeAsDay } from "@km/shared-utils";
 import recordApi from "@/api/modules/record/index";
+import { resolveRecordAskerName } from "@/api/modules/record/transform";
 import { userApi } from "@/api/modules/user";
 import RecordDetail from "@/views/search/components/detail";
 import { SEARCH_TYPE } from "@/api/modules/feedback/types";
@@ -50,6 +52,7 @@ export default function Statistic({ agentId }: StatisticProps) {
     start_time: null as number | null,
     end_time: null as number | null,
     file_keyword: "",
+    uid: null as string | null,
     thinking_mode: 0,
     response_status: 0,
     knowledge_type: 0,
@@ -98,7 +101,7 @@ export default function Statistic({ agentId }: StatisticProps) {
           ...item,
           file_name:
             item.file_name?.replace(/(.*)\.([a-zA-Z0-9]+)\.md$/, "$1.$2") || "",
-          nickname: userListRef.current[item.user_id],
+          nickname: resolveRecordAskerName(item, userListRef.current),
         };
       });
       setTableData(data);
@@ -161,7 +164,7 @@ export default function Statistic({ agentId }: StatisticProps) {
       title: t("search-record.user"),
       dataIndex: "nickname",
       ellipsis: true,
-      width: 110,
+      width: 170,
     },
     {
       title: t("search-record.time"),
@@ -256,6 +259,13 @@ export default function Statistic({ agentId }: StatisticProps) {
               const newForm = { ...detailedForm, file_keyword: val };
               setDetailedForm(newForm);
               onRefresh(newForm, detailedDate);
+            }}
+          />
+          <AskerFilter
+            onChange={(uid) => {
+              const newForm = { ...detailedForm, uid };
+              setDetailedForm(newForm);
+              onRefresh(newForm);
             }}
           />
         </div>

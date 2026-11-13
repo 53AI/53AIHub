@@ -8,19 +8,21 @@ import {
   useCallback,
 } from "react";
 import { Button, Tooltip, Checkbox, message } from "antd";
-import { Dropdown } from "@km/shared-components-react";
+import { Dropdown, SafeImage } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import { t } from "@/locales";
+import { buildKnowledgeFileUrl } from "@/utils/router";
+import { getPublicPath } from "@/utils/config";
 import { SvgIcon } from "@km/shared-components-react";
-import { Sender, MessageMenu } from "@/components/Chat";
+import { Sender, MessageMenu, ShareHeader } from "@/components/Chat";
 import {
   FeedbackPanel,
   RagHeader, SpecifiedFiles,
-  ShareHeader,
   Chunk,
-  ThinkKnowledge
+  ThinkKnowledge,
+  ChatConfigProvider
 } from "@km/shared-business/chat";
-import { AddAnswerAsMd } from "@/components/Chat/AddAnswerAsMd";
+import { AddAnswerAsMd, addAnswerAsMdApi } from "@/components/Chat";
 import { ModelView } from "@/components/Model/view";
 import { ChatHistoryDrawer } from "./components/ChatHistoryDrawer";
 import {
@@ -31,6 +33,7 @@ import {
 } from "@km/hub-ui-x-react";
 import { useFileConversationStore } from "./conversation";
 import { useUserStore } from "@/stores/modules/user";
+import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { useSpaceStore } from "@/stores/modules/space";
 import { usePoll } from "@/hooks/usePoll";
 import {
@@ -55,6 +58,7 @@ interface ModelItem {
   channel_id: number;
   channel_type: number;
   model: string;
+  type: "deep_reasoning" | "fast_reasoning";
   name: string;
   icon: string;
   temperature: number;
@@ -65,6 +69,8 @@ interface ChatProps {
   fileInfo: any;
   autoSelectEnabled?: boolean;
   onOpenAi?: () => void;
+  /** 消息分享链接的来源类型：file=知识库文档，record=安心录录音 */
+  shareFrom?: "file" | "record";
 }
 
 export interface ChatRef {
@@ -73,10 +79,11 @@ export interface ChatRef {
 }
 
 const ChatAssistant = forwardRef<ChatRef, ChatProps>(
-  ({ agentInfo, fileInfo, autoSelectEnabled = false, onOpenAi }, ref) => {
+  ({ agentInfo, fileInfo, autoSelectEnabled = false, onOpenAi, shareFrom = "file" }, ref) => {
     const userStore = useUserStore();
     const convStore = useFileConversationStore();
     const spaceStore = useSpaceStore();
+    const locale = useEnterpriseStore((state) => state.language);
 
     // 使用 hooks
     const {
@@ -344,6 +351,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
           agent_id,
           conversation_id: conversation_id as number,
           modelId,
+          thinkingMode: resolvedModel.type === "deep_reasoning" ? 2 : 1,
           completion_params: {
             ...completion_params,
             temperature: resolvedModel?.temperature,
@@ -466,7 +474,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
 
     // 来源编号渲染
     const renderSource = (type: string, number: number, msg: any) => {
-      return '';
+      return renderSourceBase(type, number, msg);
     };
 
     const handleAddAsMd = (msg: any) => {
@@ -573,10 +581,15 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
 
     const handleSelectAll = () => handleSelectAllBase(messageState.messageList);
     const handleOpenShare = handleOpenShareBase;
+    // useChatShare 没有独立的 close：handleOpenShare 无参调用是 toggle（SHARE → CHAT）。
+    // 这里显式限定为「仅退出」，避免状态不同步时把未进入的分享模式又打开。
+    const handleCancelShare = () => {
+      if (isShareMode) handleOpenShare();
+    };
     const handleCreateShare = () => {
       handleCreateShareBase(
         currentConv?.conversation_id || "",
-        "file",
+        shareFrom,
         fileInfo?.name,
         spaceStore.space?.name,
       );
@@ -634,7 +647,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
             customClass="w-full px-5"
             onSelectAll={handleSelectAll}
             onCreateShare={handleCreateShare}
-            onOpenShare={handleOpenShare}
+            onCancel={handleCancelShare}
           />
         )}
 
@@ -975,7 +988,7 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
                       />
                       { fileInfo?.document_type === 'wiki' ? <div className="size-5 flex-shrink-0 rounded bg-[#EDF3FF] flex items-center justify-center text-[#2563EB]">
               <SvgIcon name="doc-detail" size={16} />
-            </div> :<img src={fileInfo.icon} className="size-4" alt="" /> }
+            </div> :<SafeImage src={fileInfo.icon} className="size-4" alt="" /> }
                       <p className="text-sm truncate">{fileInfo.name}</p>
                     </div>
                   )}
@@ -1065,8 +1078,21 @@ const ChatAssistant = forwardRef<ChatRef, ChatProps>(
           />
         )}
 
-        {/* Add Answer as MD */}
-        <AddAnswerAsMd ref={addAnswerAsMdRef} />
+        {/* Add Answer as MD（包 ChatConfigProvider 提供 shared i18n 的 t） */}
+        <ChatConfigProvider lang={locale}>
+          <AddAnswerAsMd
+            ref={addAnswerAsMdRef}
+            api={addAnswerAsMdApi}
+            buildFileUrl={buildKnowledgeFileUrl}
+            folderIcon={
+              <SafeImage
+                src={"/images/file/folder.png"}
+                className="size-6"
+                alt=""
+              />
+            }
+          />
+        </ChatConfigProvider>
       </div>
     );
   },

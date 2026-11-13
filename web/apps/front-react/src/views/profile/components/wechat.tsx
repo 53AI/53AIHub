@@ -3,6 +3,7 @@ import { Button } from 'antd'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { api_host, official_id } from '@/utils/config'
 import { t } from '@/locales'
+import { SafeImage } from "@km/shared-components-react";
 
 interface WechatViewProps {
   width?: string
@@ -84,7 +85,7 @@ export function WechatView({
     return (
       <div style={{ height, width }} className="flex flex-col justify-center items-center">
         <div className="w-[220px] h-[220px] border relative rounded-lg overflow-hidden">
-          <img src="/images/login/wecom_login.png" alt="" />
+          <SafeImage src="/images/login/wecom_login.png" alt="" />
           <div className="absolute inset-0 bg-white/90 flex justify-center items-center">
             <Button
               type="primary"

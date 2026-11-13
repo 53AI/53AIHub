@@ -14,7 +14,7 @@ import { eventBus } from "@km/shared-utils";
 import { EVENT_NAMES } from "@/constants/events";
 import commonApi from "@/api/modules/common";
 import subscriptionApi from "@/api/modules/subscription";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { GeneralSettingsModal } from "./GeneralSettingsModal";
 import { MessageCenter } from "./MessageCenter";
 import { showUpgradeModal } from "@/utils/permission";
@@ -120,12 +120,10 @@ export function ProfilePopover({
                   className="h-6 flex items-center gap-1 bg-[#F7F7F7] rounded-full px-2 text-xs text-[#999999] whitespace-nowrap"
                   title={userStore.info.group_name}
                 >
-                  <img
+                  <SafeImage
                     src={
                       !/\.png$/.test(userStore.info.group_icon || "")
-                        ? getPublicPath(
-                            `/images/subscription/${userStore.info.group_icon}.png`,
-                          )
+                        ? `/images/subscription/${userStore.info.group_icon}.png`
                         : userStore.info.group_icon
                     }
                     className="w-4 h-4 object-cover"

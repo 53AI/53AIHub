@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
@@ -301,4 +302,9 @@ func (a *AliyunOSSStorage) Delete(fileName string) error {
 
 func (a *AliyunOSSStorage) GetBasePath() string {
 	return a.BasePath
+}
+
+// SignedURL 生成对象的临时读取地址，供 ffmpeg 按需 Range 读取而不必整段下载。
+func (a *AliyunOSSStorage) SignedURL(fileName string, expire time.Duration) (string, error) {
+	return a.bucket.SignURL(filepath.ToSlash(fileName), oss.HTTPGet, int64(expire.Seconds()))
 }

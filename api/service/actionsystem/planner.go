@@ -29,6 +29,9 @@ func BuildActionPlan(opportunity ActionOpportunity, input DetectionInput) Action
 	if material := strings.TrimSpace(input.MaterialContext); material != "" {
 		background += "\n\n" + contextLabel + "补充材料：\n" + material
 	}
+	if reason := strings.TrimSpace(opportunity.Reason); reason != "" {
+		background += "\n\n行动缘由（AI建议，待核实）：\n" + reason
+	}
 
 	intent := BuildActionIntent(opportunity, input)
 	plan := ActionPlan{

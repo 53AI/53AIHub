@@ -14,10 +14,16 @@ import { router } from './router'
 import { eventBus } from '@km/shared-utils'
 import { EVENT_NAMES } from './constants/events'
 import { fetchPasswordStrength, resetPasswordPolicyCache } from './hooks/usePasswordPolicy'
+import { useVersionReload } from './hooks/useVersionReload'
+import { useRecordingStore } from './stores/modules/recording'
 
 export function App() {
   const userStore = useUserStore()
   const enterpriseStore = useEnterpriseStore()
+  const recordingStatus = useRecordingStore((s) => s.status)
+
+  // 部署版本自愈：检测到新版本自动刷新（录音中跳过，结束后下轮再试）
+  useVersionReload(() => recordingStatus !== 'idle')
 
   useEffect(() => {
     // Load enterprise info on mount

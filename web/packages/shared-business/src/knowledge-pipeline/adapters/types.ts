@@ -116,10 +116,7 @@ export interface IDataPipelineAdapter {
   /** 跳转到模型管理页面 */
   goToModelManagement?(): void
 
-  // ========== 公共路径方法 ==========
 
-  /** 获取公共资源路径 */
-  getPublicPath?(path: string): string
 }
 
 /**

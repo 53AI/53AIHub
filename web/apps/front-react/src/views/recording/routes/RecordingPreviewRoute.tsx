@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Modal, Spin } from 'antd'
+import { Button, message, Modal, Spin } from 'antd'
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import filesApi from '@/api/modules/files'
 import { formatFile } from '@/api/modules/files/transform'
@@ -12,7 +12,9 @@ import { useFullscreen } from '@/hooks/useFullscreen'
 import { useRecordingStore } from '@/stores/modules/recording'
 import { useLibraryStore } from '@/stores/modules/library'
 import { useRecordingTemplates } from '../hooks/useRecordingTemplates'
-import { RecordingPreview } from '../components/preview/RecordingPreview'
+import { RecordingPreview, type PanelMutationEvent } from '../components/preview/RecordingPreview'
+import { useFlutterPanelMutation } from '../components/flutter-panel/useFlutterPanelMutation'
+import { notifyFlutterPanelMutation } from '../components/flutter-panel/notifyFlutterPanelMutation'
 import type { RecordingOutletContext } from '..'
 import type { PreviewFile } from '@/views/mine/types'
 import type { FileParseStatus } from '@/api/modules/recording/types'
@@ -42,6 +44,34 @@ export function RecordingPreviewRoute() {
 
   const { templates, categories: templateCategories } = useRecordingTemplates()
   const { fullscreen, toggle: toggleFullscreen, composeClassName } = useFullscreen()
+
+  // Flutter 面板（右侧 iframe）里的写操作同步到本预览页：
+  // - 添加总结模块（create）→ RecordingPreview 重拉 fileSummaries（sum-* tab /
+  //   导出菜单 / 分享 chip 跟着更新）；
+  // - 重写转写（update，如关联发言人）→ RecordingPreview 重拉转写 markdown，
+  //   转写列表的说话人 / 头像同步；
+  // - 删除录音（delete）→ 退回列表首页（列表由布局层 RecordingView 监听同一
+  //   消息移除该项，这里只负责导航）。
+  const [panelMutation, setPanelMutation] = useState<PanelMutationEvent | null>(null)
+  const panelMutationSeqRef = useRef(0)
+  useFlutterPanelMutation((mutation) => {
+    if (mutation.module !== 'recording' || !mutation.fileId) return
+    if (mutation.action === 'create' || mutation.action === 'update') {
+      setPanelMutation({
+        fileId: mutation.fileId,
+        action: mutation.action,
+        scope: mutation.scope,
+        seq: ++panelMutationSeqRef.current,
+      })
+    } else if (mutation.action === 'delete') {
+      // 删的正是当前预览对象（或列表里已找不到它）→ 退回列表首页；
+      // 删的是别的文件 → 预览页不动，只由布局层刷新列表。
+      if (mutation.fileId === fileId) {
+        message.info('录音已在移动端删除')
+        navigate('/recording', { replace: true })
+      }
+    }
+  })
 
   const [file, setFile] = useState<PreviewFile | null>(null)
   const [parseStatus, setParseStatus] = useState<FileParseStatus | null>(null)
@@ -121,6 +151,8 @@ export function RecordingPreviewRoute() {
         setFile((prev) =>
           prev?.id === id ? toPreviewFile(formatted, fileData) : prev,
         )
+        // 同步 Flutter 面板（iframe）：列表 / 详情页同步新标题
+        notifyFlutterPanelMutation('update', id)
       } catch (e) {
         console.error('Failed to sync file title after meeting minutes:', e)
       }
@@ -144,8 +176,6 @@ export function RecordingPreviewRoute() {
       setFile((prev) => (prev ? { ...prev, isFavorite: next } : prev))
     } else if (cmd === 'rename') {
       if (item) ctx.openRenameModal(item)
-    } else if (cmd.startsWith('move-to:')) {
-      if (item) await ctx.moveTo(item, Number(cmd.slice('move-to:'.length)))
     } else if (cmd === 'delete') {
       Modal.confirm({
         title: t('common.tip'),
@@ -194,10 +224,10 @@ export function RecordingPreviewRoute() {
           enableFavorite
           fullscreen={fullscreen}
           onToggleFullscreen={toggleFullscreen}
-          categoryTags={ctx.categoryTags}
           onDescriptionUpdate={ctx.updateFileDescription}
           onMeetingMinutesRename={handleMeetingMinutesRename}
           assistantSiderRef={assistantSiderRef}
+          panelMutation={panelMutation ?? undefined}
         />
       </div>
 

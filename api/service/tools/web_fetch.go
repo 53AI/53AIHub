@@ -124,6 +124,45 @@ func executeWebFetch(ctx context.Context, args map[string]interface{}) (*ToolRes
 	}, nil
 }
 
+// FetchWebPageText retrieves and extracts the readable text from a public web page.
+func FetchWebPageText(ctx context.Context, rawURL string, maxChars int) (string, error) {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", fmt.Errorf("invalid url: %w", err)
+	}
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || strings.TrimSpace(parsed.Hostname()) == "" {
+		return "", fmt.Errorf("only http and https URLs with a hostname are supported")
+	}
+	proxyURL := webFetchProxyURLForRequest(parsed)
+	if proxyURL == nil {
+		if err := checkWebFetchSSRF(ctx, parsed.Hostname(), defaultWebFetchResolver); err != nil {
+			return "", err
+		}
+	}
+	result, err := fetchWebContent(ctx, rawURL, proxyURL)
+	if err != nil {
+		return "", err
+	}
+	content := result.Content
+	if strings.Contains(result.ContentType, "text/html") {
+		content = extractTextFromHTML(content)
+	}
+	if !utf8.ValidString(content) {
+		return "", fmt.Errorf("web page content is not valid UTF-8 text")
+	}
+	content = strings.TrimSpace(normalizeWebFetchText(content))
+	if maxChars > 0 && len(content) > maxChars {
+		content = content[:maxChars]
+		for !utf8.ValidString(content) {
+			content = content[:len(content)-1]
+		}
+	}
+	if content == "" {
+		return "", fmt.Errorf("web page contains no extractable text")
+	}
+	return content, nil
+}
+
 type webFetchResult struct {
 	FinalURL    string
 	StatusCode  int

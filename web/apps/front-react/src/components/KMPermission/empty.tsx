@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
-import './empty.css'
+
+import { SafeImage } from "@km/shared-components-react";import './empty.css'
 
 interface PermissionEmptyProps {
   desc?: string
@@ -12,17 +13,10 @@ export function PermissionEmpty({
   className = '',
   children
 }: PermissionEmptyProps) {
-  const getPublicPath = (path: string) => {
-    if (typeof window !== 'undefined' && (window as any).$getPublicPath) {
-      return (window as any).$getPublicPath(path)
-    }
-    return path
-  }
-
   return (
     <div className={`flex flex-col items-center justify-center gap-4 ${className}`}>
-      <img
-        src={getPublicPath('/images/permission_empty.png')}
+      <SafeImage
+        src={'/images/permission_empty.png'}
         alt="permission-empty"
         className="size-40"
       />

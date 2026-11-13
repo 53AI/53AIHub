@@ -6,6 +6,7 @@ import { useAgentPreviewSender } from '../../hooks/useAgentPreviewSender'
 import { PreviewModelSelector } from './PreviewModelSelector'
 import { PreviewKnowledgeSourceSelector } from './PreviewKnowledgeSourceSelector'
 import { copyToClip } from '@km/shared-utils'
+import { SafeImage } from '@km/shared-components-react'
 // 通过相对路径引用 shared-business/chat 内的 hooks，避免 tsup 自引用 dist 子路径未构建的问题
 import { useChatStream, useRagStats } from '../../../chat/hooks'
 import { ProcessFlowHeader } from '../../../chat/components/process-flow'
@@ -235,6 +236,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
     let sendType: 'work-ai' | 'agent' | '' = ''
     let sendSkill: { display_name?: string; skill_name?: string } | undefined
     let sendModelId: string | undefined
+    let sendThinkingMode: 1 | 2 | undefined
     let sendAgentInfo: any
     let sendLibrary: { value: string[] | number[] } | undefined
     let sendKnowledgeSource: typeof previewSender.knowledgeSource | undefined
@@ -254,6 +256,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
       // `modelId = currentModel?.id`）。useAgentPreviewSender 通过 adapter.getAgentModels
       // 拉取后按 value 匹配，已知后端独立分配的 id。未加载完成时为 undefined。
       sendModelId = previewSender.model?.modelId?.toString()
+      sendThinkingMode = previewSender.model?.thinkingMode
       sendKnowledgeSource = previewSender.knowledgeSource
       sendAgentInfo = agentFormStore.agent_data
       // knowledge 场景无 library 配置入口时，默认回退为 ['all']，
@@ -366,6 +369,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
         type: sendType,
         skill: sendSkill,
         modelId: sendModelId,
+        thinking_mode: sendThinkingMode,
         knowledgeSource: sendKnowledgeSource,
         agentInfo: sendAgentInfo,
         library: sendLibrary,
@@ -556,7 +560,7 @@ export const Chat = forwardRef<ChatRef, ChatProps>(({ className, onSave: _onSave
         {showChatListEmpty ? (
           <div className="min-h-full flex flex-col items-center justify-center gap-3">
             {agentFormStore.form_data.logo && (
-              <img
+              <SafeImage
                 src={agentFormStore.form_data.logo}
                 alt={agentFormStore.form_data.name || 'Agent'}
                 className="w-14 h-14 rounded-xl object-cover"

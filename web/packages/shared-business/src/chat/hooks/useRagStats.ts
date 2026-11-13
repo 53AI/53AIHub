@@ -13,6 +13,8 @@ export const validChunkTypes: ChunkType[] = [
   'knowledge_map',
   'graph_result',
   'wiki',
+  'document',
+  'document_full',
 ];
 
 /**
@@ -35,6 +37,7 @@ export function formatRagStats(
   const document_quotations = ragStats ? ragStats.document_quotations || [] : [];
   let file_quotations: any[] = ragStats ? ragStats.file_quotations || [] : [];
   const wiki_quotations: any[] = ragStats ? ragStats.wiki_page_quotations || [] : [];
+  const web_page_quotations: string[] = ragStats ? ragStats.web_page_quotations || [] : [];
 
   // 兼容旧消息：Wiki 可能只在 processRecords 中。新消息已写入
   // document_search.chunks，因此只补充尚未存在的 Wiki 分块，避免重复来源。
@@ -100,6 +103,10 @@ export function formatRagStats(
       return filesSearch.find((chunk: any) => chunk.wiki_page_id === String(page_id))
     }).filter(Boolean)
 
+  const webPageQuotations = web_page_quotations
+    .map((url: string) => filesSearch.find((chunk: any) => chunk.url === url || chunk.file_path === url))
+    .filter(Boolean);
+
   const librarySearch = libraryIds
     .map((id: any) => filesSearch.find((chunk: any) => chunk.library_id === id))
     .filter(Boolean);
@@ -116,7 +123,7 @@ export function formatRagStats(
         library_search: librarySearch,
         files_search: filesSearchResult,
         document_quotations: documentQuotations,
-        file_quotations: [...fileQuotations, ...wikiQuotations],
+        file_quotations: [...fileQuotations, ...wikiQuotations, ...webPageQuotations],
       }
     : null;
 }

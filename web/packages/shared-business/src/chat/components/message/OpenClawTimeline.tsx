@@ -11,6 +11,7 @@ import type {
     OutputFile,
 } from "../../types/message";
 import { mergeOutputFiles } from "../../utils/openclaw-timeline";
+import { bubbleAvatarSlot } from "./bubbleAvatarSlot";
 
 const toneClassMap: Record<string, string> = {
   neutral: "border-[#DFE3EA] bg-white text-[#1F2A44]",
@@ -163,6 +164,7 @@ function TimelineAnswerBubble({
       streaming={active}
       alwaysShowMenu={Boolean(menu)}
       avatar={avatar}
+      avatarSlot={bubbleAvatarSlot(avatar)}
       sourceEnabled
       sourceIds={sourceIds}
       renderSource={(type: string, number: number) => renderSource?.(type, number, message) || `${type}-${number}`}
@@ -631,6 +633,7 @@ export const OpenClawTimeline = memo(function OpenClawTimeline({
           content=""
           streaming
           avatar={agentInfo?.logo}
+          avatarSlot={bubbleAvatarSlot(agentInfo?.logo)}
           sourceEnabled
           sourceIds={((message as any).rag_stats?.chunks || (message as any).rag_stats?.document_search?.chunks || [])
             .map((chunk: any) => chunk.source_key || chunk.source || chunk.reference_id || chunk.source_id)

@@ -127,8 +127,12 @@ func (a *Adapter) StartSession(ctx context.Context, request actionruntime.Sessio
 	if err != nil {
 		return actionruntime.RuntimeSession{}, err
 	}
+	environment, err := Environment(ctx, a.config.Env)
+	if err != nil {
+		return actionruntime.RuntimeSession{}, actionruntime.NewRuntimeError("environment", actionruntime.ErrorCodeUnknown, err)
+	}
 	if minimum := strings.TrimSpace(a.config.MinVersion); minimum != "" {
-		actual, versionErr := a.readVersion(ctx, workdir)
+		actual, versionErr := a.readVersion(ctx, workdir, environment)
 		if versionErr != nil {
 			return actionruntime.RuntimeSession{}, actionruntime.NewRuntimeError("version", classifyError("version", versionErr), versionErr)
 		}
@@ -142,7 +146,7 @@ func (a *Adapter) StartSession(ctx context.Context, request actionruntime.Sessio
 	}
 	cmd := exec.CommandContext(ctx, a.config.Binary, args...)
 	cmd.Dir = workdir
-	cmd.Env = a.environment()
+	cmd.Env = environment
 	configureProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -236,10 +240,10 @@ func parseVersion(value string) (string, bool) {
 	return "", false
 }
 
-func (a *Adapter) readVersion(ctx context.Context, workdir string) (string, error) {
+func (a *Adapter) readVersion(ctx context.Context, workdir string, environment []string) (string, error) {
 	command := exec.CommandContext(ctx, a.config.Binary, "--version")
 	command.Dir = workdir
-	command.Env = a.environment()
+	command.Env = environment
 	var stdout boundedBuffer
 	var stderr boundedBuffer
 	command.Stdout = &stdout
@@ -255,13 +259,6 @@ func (a *Adapter) readVersion(ctx context.Context, workdir string) (string, erro
 		return "", fmt.Errorf("read Codex version: %w", err)
 	}
 	return strings.TrimSpace(stdout.buffer.String()), nil
-}
-
-func (a *Adapter) environment() []string {
-	if len(a.config.Env) == 0 {
-		return os.Environ()
-	}
-	return append(os.Environ(), a.config.Env...)
 }
 
 func (a *Adapter) StartRun(ctx context.Context, request actionruntime.RunRequest) (<-chan actionruntime.ActionEvent, error) {
@@ -424,7 +421,11 @@ func (a *Adapter) workDir(action actionruntime.ActionSpec) (string, error) {
 	if workdir == "" {
 		workdir = "."
 	}
-	return filepath.Abs(workdir)
+	absWorkdir, err := filepath.Abs(workdir)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absWorkdir)
 }
 
 func (p *process) request(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -535,7 +536,14 @@ func (p *process) close() error {
 }
 
 func (p *process) stageError(stage string, err error) error {
-	return actionruntime.NewRuntimeError(stage, classifyError(stage, err), err)
+	code := classifyError(stage, err)
+	if code == actionruntime.ErrorCodeRuntimeExited {
+		_ = p.close()
+		if detail := strings.TrimSpace(p.stderr.buffer.String()); detail != "" {
+			err = fmt.Errorf("%w; Codex stderr: %s", err, detail)
+		}
+	}
+	return actionruntime.NewRuntimeError(stage, code, err)
 }
 
 func classifyError(stage string, err error) actionruntime.ErrorCode {
@@ -621,7 +629,12 @@ func eventType(method string, params json.RawMessage) actionruntime.EventType {
 		default:
 			return actionruntime.EventTurnCompleted
 		}
-	case "error", "turn/failed":
+	case "error":
+		if nestedBoolBytes(params, "willRetry") {
+			return actionruntime.EventRuntime
+		}
+		return actionruntime.EventTurnFailed
+	case "turn/failed":
 		return actionruntime.EventTurnFailed
 	default:
 		return actionruntime.EventRuntime
@@ -829,6 +842,12 @@ func nestedStringBytes(raw json.RawMessage, path ...string) string {
 	}
 	result, _ := value.(string)
 	return result
+}
+
+func nestedBoolBytes(raw json.RawMessage, path ...string) bool {
+	value, ok := valueAt(raw, path...)
+	result, _ := value.(bool)
+	return ok && result
 }
 
 func nestedStringValue(value map[string]any, path ...string) string {

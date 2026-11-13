@@ -1,10 +1,10 @@
 import { Popover, Button, Image as AntdImage } from "antd";
 import { PlusOutlined, CloseOutlined } from "@ant-design/icons";
-import { SafeImage } from "@km/shared-components-react";
 import { useState, useEffect, useRef, ReactNode } from "react";
 import CropperDialog, { CropperDialogRef } from "@/components/CropperDialog";
 import { t } from "@/locales";
 import { img_host } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
 export interface IconPopoverProps {
   value?: string;
@@ -251,7 +251,7 @@ export function IconPopover({
           alt="logo"
         />
       ) : (
-        <img
+        <SafeImage
           className="size-7 object-cover -translate-y-[60px]"
           src={defaultIcon}
           alt="logo"

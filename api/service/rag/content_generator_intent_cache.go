@@ -18,9 +18,9 @@ import (
 
 const (
 	intentClassificationCachePrefix  = "Cache:rag:intent_classification"
-	intentClassificationCacheVersion = "v3"
+	intentClassificationCacheVersion = "v5"
 	fastIntentRouteCachePrefix       = "Cache:rag:fast_intent_route"
-	fastIntentRouteCacheVersion      = "v3"
+	fastIntentRouteCacheVersion      = "v4"
 	queryExpansionCachePrefix        = "Cache:rag:query_expansion"
 	queryExpansionCacheVersion       = "v1"
 	intentClassificationCacheTTL     = 2 * time.Hour
@@ -48,6 +48,7 @@ type intentClassificationCachePayload struct {
 	TimeBucket         string                                   `json:"time_bucket"`
 	Query              string                                   `json:"query"`
 	Conversation       []ConversationItem                       `json:"conversation"`
+	AttachmentTypes    []string                                 `json:"attachment_types,omitempty"`
 	Skills             []intentClassificationCacheSkillSnapshot `json:"skills"`
 }
 
@@ -196,6 +197,7 @@ func buildIntentTaskCacheFingerprint(
 		TimeBucket:         timeBucket,
 		Query:              strings.TrimSpace(request.Query),
 		Conversation:       request.Conversation,
+		AttachmentTypes:    request.AttachmentTypes,
 		Skills:             skillSnapshots,
 	}
 
@@ -296,7 +298,11 @@ func (s *ContentGeneratorService) getOrBuildCachedIntentClassification(
 	if !ok {
 		return nil, fmt.Errorf("意图分类缓存返回类型异常: %T", result)
 	}
-	return cachedResult, nil
+	resultCopy := *cachedResult
+	resultCopy.Keywords = append([]string(nil), cachedResult.Keywords...)
+	resultCopy.TargetKeywords = append([]string(nil), cachedResult.TargetKeywords...)
+	resultCopy.ExpandedQueries = append([]string(nil), cachedResult.ExpandedQueries...)
+	return &resultCopy, nil
 }
 
 func (s *ContentGeneratorService) getCachedQueryExpansion(ctx context.Context, cacheKey string) (*QueryExpansionResult, bool) {

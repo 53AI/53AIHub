@@ -9,6 +9,7 @@ import type { ScopeItem } from "../../agent-create/adapters/types";
 export interface ChatCompletionParams {
   conversation_id?: string | number;
   model: string;
+  thinking_mode?: 1 | 2;
   messages: Array<{ role: string; content: string }>;
   stream: boolean;
   enable_process_steps?: boolean;

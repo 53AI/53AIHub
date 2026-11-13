@@ -265,8 +265,9 @@ func (dm *DirectoryManager) createDirectoryRecord(eid, libraryID int64, item Fil
 	return nil
 }
 
-// CreateFileRecord 在数据库中创建文件记录
-func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath string, uploadFileID int64, basePath string, userID int64, duplicateMode DuplicateMode, isPersonalLibrary bool, originType string, originSource string, originRefID int64, groupID int64) (int64, error) {
+// CreateFileRecord 在数据库中创建文件记录。
+// recordingStartTime 为前端上报的开始录音时间（毫秒），仅录音来源落库，普通文档忽略。
+func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath string, uploadFileID int64, basePath string, userID int64, duplicateMode DuplicateMode, isPersonalLibrary bool, originType string, originSource string, originRefID int64, groupID int64, recordingStartTime int64) (int64, error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
@@ -290,6 +291,7 @@ func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath 
 		if !existingFile.IsRecordingOriginType() {
 			existingFile.SetPersonalUploadOrigin(uploadFileID)
 		}
+		existingFile.RecordingStartTime = recordingStartTimeForOrigin(existingFile, recordingStartTime)
 		existingFile.ConversionStatus = model.FileConversionStatusNormal
 		existingFile.ParsingStatus = fileParsingStatusByLibrary(isPersonalLibrary)
 		if err := existingFile.Update(); err != nil {
@@ -321,6 +323,7 @@ func (dm *DirectoryManager) CreateFileRecord(eid, libraryID int64, relativePath 
 	if !file.IsRecordingOriginType() {
 		file.SetPersonalUploadOrigin(uploadFileID)
 	}
+	file.RecordingStartTime = recordingStartTimeForOrigin(file, recordingStartTime)
 
 	if err := file.Save(); err != nil {
 		return 0, fmt.Errorf("保存文件记录失败: %v", err)
@@ -433,6 +436,18 @@ func (dm *DirectoryManager) GetDirectoryPath(basePath, relativePath string) stri
 	}
 
 	return filepath.Clean(fullPath)
+}
+
+// recordingStartTimeForOrigin 归一前端上报的开始录音时间：仅录音来源接受有效值，
+// 其他来源一律 0（不适用），非法值也置 0，由读路径回退展示创建时间。
+func recordingStartTimeForOrigin(file *model.File, recordingStartTime int64) int64 {
+	if file == nil || !file.IsRecordingOriginType() {
+		return 0
+	}
+	if !model.IsValidRecordingStartTime(recordingStartTime) {
+		return 0
+	}
+	return recordingStartTime
 }
 
 func applyFileOriginMeta(file *model.File, originType string, originSource string, originRefID int64) {

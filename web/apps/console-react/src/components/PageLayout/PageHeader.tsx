@@ -1,6 +1,6 @@
 import { LeftOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import type { PageHeaderConfig } from "./types";
 
 interface PageHeaderProps {
@@ -73,7 +73,7 @@ export function PageHeader({ config, className = "" }: PageHeaderProps) {
               color={icon.color || "white"}
             />
           ) : (
-            <img className={icon.className || "size-8"} src={icon.src} alt="" />
+            <SafeImage className={icon.className || "size-8"} src={icon.src} alt="" />
           )}
         </div>
         <div className="flex flex-col gap-1">

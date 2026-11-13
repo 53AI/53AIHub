@@ -49,6 +49,8 @@ const MODEL_USE_TYPE = {
   RERANKER: '3',
   // 语音
   VOICE: '4',
+  // 结构化决策模型（4 已由语音占用）
+  DECISION: '5',
 } as const
 
 const REASONING_MODE = {
@@ -395,6 +397,13 @@ const MODEL_CONFIG = {
     channelType: 24,
     multiple: false,
     label: window.$t('provider_platform.gemini'),
+  },
+  typesafe_decision: {
+    name: 'typesafe_decision',
+    owner: 'typesafe_decision',
+    channelType: 1020,
+    multiple: false,
+    label: 'TypeSafe AI (Jev)',
   },
   custom_openai: {
     name: 'custom_openai',

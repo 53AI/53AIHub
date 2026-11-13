@@ -34,7 +34,7 @@ export const SvgIcon = forwardRef<SVGSVGElement, SvgIconProps>(
           width: w ?? s,
           height: h ?? s,
           fill: color ?? "currentColor",
-          color: color ?? "currentColor",
+          ...(color ? { color } : {}),
           ...style,
         }}
         onClick={onClick}

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Select, Spin, Tooltip } from "antd";
 import { LoadingOutlined, EyeOutlined } from "@ant-design/icons";
+import { SafeImage } from "../SafeImage";
 
 export interface ModelOption {
   value: string;
@@ -61,7 +62,7 @@ export function ModelSelect({
       label: (
         <div className="flex items-center gap-2">
           {channel.icon && (
-            <img
+            <SafeImage
               src={channel.icon}
               alt={channel.label}
               className="w-4 h-4 object-contain"
@@ -75,7 +76,7 @@ export function ModelSelect({
         label: (
           <div className="flex items-center gap-2">
             {model.icon && (
-              <img
+              <SafeImage
                 src={model.icon}
                 alt={model.label}
                 className="w-4 h-4 object-contain"

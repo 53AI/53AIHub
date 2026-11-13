@@ -11,7 +11,7 @@ import { HolderOutlined } from "@ant-design/icons";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { t } from "@/locales";
-import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { eventBus, sleep } from "@km/shared-utils";
 import { navigationApi } from "@/api/modules/navigation";
 import { transformNavigationList } from "@/api/modules/navigation/transform";
@@ -302,7 +302,7 @@ export function NavigationPage() {
       render: (name: string, record) => (
         <div className="flex items-center">
           {record.icon && (
-            <img
+            <SafeImage
               className="w-[18px] h-[18px] mr-2 overflow-hidden"
               src={record.icon}
               alt=""

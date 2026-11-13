@@ -72,7 +72,14 @@ func GetFilesDeletedFlags(eid int64, fileIDs []int64, ctxs ...context.Context) (
 		return result, nil
 	}
 	var files []File
-	if err := dbWithOptionalCtx(ctxs...).Select("id, is_deleted").Where("eid = ? AND id IN ?", eid, fileIDs).Find(&files).Error; err != nil {
+	if err := forEachInt64Batch(fileIDs, func(ids []int64) error {
+		var batch []File
+		if err := dbWithOptionalCtx(ctxs...).Select("id, is_deleted").Where("eid = ? AND id IN ?", eid, ids).Find(&batch).Error; err != nil {
+			return err
+		}
+		files = append(files, batch...)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	alive := make(map[int64]bool, len(files))
@@ -119,10 +126,17 @@ func BuildCapabilityWikiPages(eid int64, libraryID int64, ctxs ...context.Contex
 		pageIDs = append(pageIDs, p.ID)
 	}
 	var sources []WikiPageSource
-	if err := dbWithOptionalCtx(ctxs...).
-		Select("page_id, source_file_id").
-		Where("eid = ? AND page_id IN ? AND source_file_id > 0", eid, pageIDs).
-		Find(&sources).Error; err != nil {
+	if err := forEachInt64Batch(pageIDs, func(ids []int64) error {
+		var batch []WikiPageSource
+		if err := dbWithOptionalCtx(ctxs...).
+			Select("page_id, source_file_id").
+			Where("eid = ? AND page_id IN ? AND source_file_id > 0", eid, ids).
+			Find(&batch).Error; err != nil {
+			return err
+		}
+		sources = append(sources, batch...)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	for _, s := range sources {
@@ -141,7 +155,14 @@ func BuildCapabilityWikiPages(eid int64, libraryID int64, ctxs ...context.Contex
 			ids = append(ids, id)
 		}
 		var sourceFiles []File
-		if err := dbWithOptionalCtx(ctxs...).Select("id, is_deleted").Where("id IN ?", ids).Find(&sourceFiles).Error; err != nil {
+		if err := forEachInt64Batch(ids, func(batchIDs []int64) error {
+			var batch []File
+			if err := dbWithOptionalCtx(ctxs...).Select("id, is_deleted").Where("id IN ?", batchIDs).Find(&batch).Error; err != nil {
+				return err
+			}
+			sourceFiles = append(sourceFiles, batch...)
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 		alive := make(map[int64]bool, len(sourceFiles))
@@ -173,9 +194,16 @@ func BuildCapabilityWikiPerms(eid int64, libraryID int64, ctxs ...context.Contex
 		return snap, nil
 	}
 	var pagePerms []Permission
-	if err := dbWithOptionalCtx(ctxs...).
-		Where("eid = ? AND resource_type = ? AND resource_id IN ?", eid, RESOURCE_TYPE_WIKI_PAGE, pageIDs).
-		Order("id asc").Find(&pagePerms).Error; err != nil {
+	if err := forEachInt64Batch(pageIDs, func(ids []int64) error {
+		var batch []Permission
+		if err := dbWithOptionalCtx(ctxs...).
+			Where("eid = ? AND resource_type = ? AND resource_id IN ?", eid, RESOURCE_TYPE_WIKI_PAGE, ids).
+			Order("id asc").Find(&batch).Error; err != nil {
+			return err
+		}
+		pagePerms = append(pagePerms, batch...)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	for _, p := range pagePerms {

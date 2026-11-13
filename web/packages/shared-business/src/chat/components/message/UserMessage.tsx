@@ -4,6 +4,7 @@ import { memo, useCallback, useMemo } from "react";
 import { Checkbox } from "antd";
 import { getSimpleDateFormatString } from "@km/shared-utils";
 import { BubbleUser } from "@km/hub-ui-x-react";
+import { bubbleAvatarSlot } from "./bubbleAvatarSlot";
 import { MessageMenu } from "../MessageMenu";
 import { SpecifiedFiles } from "../source";
 import type { Message, ChatMessagesFeatures } from "../../types/message";
@@ -168,6 +169,7 @@ function UserMessageInner({
           content={parsedContent}
           files={uploadedFiles}
           avatar={userAvatar}
+          avatarSlot={bubbleAvatarSlot(userAvatar)}
           className={className}
           style={{
             "--hubx-color-bg-message": "#EBF1FF",

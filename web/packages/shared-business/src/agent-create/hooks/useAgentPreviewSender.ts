@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { SkillFeature } from '@km/hub-ui-x-react'
 import { AdapterContext } from '../adapters'
-import type { AgentFormData } from '../adapters/types'
+import type { AgentFormData, ChannelOption } from '../adapters/types'
 import {
   buildKnowledgeSourcePayload as buildPayload,
   type KnowledgeSourcePayloadConfig,
@@ -21,6 +21,8 @@ export interface AgentPreviewModelOption {
   channel_id: number
   channel_type: number
   model: string
+  thinkingMode: 1 | 2
+  supportsNativeWebSearch?: boolean
 }
 
 export interface AgentPreviewSenderConfig {
@@ -30,6 +32,7 @@ export interface AgentPreviewSenderConfig {
   model?: {
     options: AgentPreviewModelOption[]
     selectedId: string
+    thinkingMode?: 1 | 2
     /**
      * 后端分配的模型 id（knowledge 场景才有值）
      * 对齐 apps/front-react/src/views/knowledge/chat.tsx 行 435
@@ -50,14 +53,14 @@ export interface AgentPreviewSenderConfig {
 
 /**
  * 预览态知识源状态
- * - 联网搜索(networkSearch)与其他三个互斥
+ * - 联网搜索(networkSearch)可与其他来源组合
  * - 知识图谱(knowledgeGraph)和动态知识(wiki)可同时开启
- * - 全部知识(all) = !networkSearch && !knowledgeGraph && !wiki
+ * - 全部知识(all) 作为独立的知识库范围
  */
 export interface PreviewKnowledgeSourceState {
   // 全部知识库 （可与wiki、knowledgeGraph 同时开启）
   allKnowledge: boolean
-  /** 联网搜索（与其他互斥） */
+  /** 是否同时检索联网来源 */
   networkSearch: boolean
   /** 知识图谱（可与 wiki、全部知识库 同时开启，） */
   knowledgeGraph: boolean
@@ -93,10 +96,7 @@ export function buildKnowledgeSourcePayload(
   return buildPayload(config)
 }
 
-export {
-  buildKnowledgeSourcePayload as buildKnowledgeSourcePayloadShared,
-  type BuildKnowledgeSourcePayloadOptions,
-} from '../../chat/utils/buildKnowledgeSourcePayload'
+export { buildKnowledgeSourcePayload as buildKnowledgeSourcePayloadShared } from '../../chat/utils/buildKnowledgeSourcePayload'
 
 interface AgentPreviewSenderParams {
   /** 智能体 ID，用于拉 agent_models（仅 knowledge 场景） */
@@ -108,7 +108,7 @@ interface AgentPreviewSenderParams {
       skills?: Array<{ skill_id: string; display_name?: string; skill_name?: string }>
       fast_reasoning_config?: { channel_id?: number; channel_type?: number; model_name?: string }
       deep_thinking_config?: { enable?: boolean; channel_id?: number; channel_type?: number; model_name?: string }
-      web_search_setting?: { enable?: boolean }
+      web_search_setting?: { enable?: boolean; source_type?: 'api' | 'model' }
       graph_search_setting?: { enable?: boolean; default_enable?: boolean }
       wiki_search_setting?: { enable?: boolean; default_enable?: boolean }
     }
@@ -119,15 +119,15 @@ interface AgentPreviewSenderParams {
       skills?: Array<{ skill_id: string; display_name?: string; skill_name?: string }>
       fast_reasoning_config?: { channel_id?: number; channel_type?: number; model_name?: string }
       deep_thinking_config?: { enable?: boolean; channel_id?: number; channel_type?: number; model_name?: string }
-      web_search_setting?: { enable?: boolean }
+      web_search_setting?: { enable?: boolean; source_type?: 'api' | 'model' }
       graph_search_setting?: { enable?: boolean; default_enable?: boolean }
       wiki_search_setting?: { enable?: boolean; default_enable?: boolean }
     }
   }
 }
 
-function buildModelId(channel_id: number, channel_type: number, model_name: string): string {
-  return `${channel_id}_${channel_type}_${model_name}`
+function buildModelId(mode: 'fast' | 'deep', channel_id: number, channel_type: number, model_name: string): string {
+  return `${mode}_${channel_id}_${channel_type}_${model_name}`
 }
 
 export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPreviewSenderConfig {
@@ -186,6 +186,7 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
     channel_type: number
     model: string
   }>>([])
+  const [modelChannels, setModelChannels] = useState<ChannelOption[]>([])
 
   // 拉取 agent_models，按 agent_id 变化重新请求。
   // 关键：不要把 settings 对象放 deps（每次渲染都是新对象引用），否则会无限重渲染。
@@ -207,30 +208,59 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
     }
   }, [agent_type, agent_id, adapter])
 
+  useEffect(() => {
+    if (agent_type !== 'knowledge' || !adapter?.loadModels) return
+    let cancelled = false
+    adapter.loadModels()
+      .then((channels) => {
+        if (!cancelled) setModelChannels(channels)
+      })
+      .catch(() => {
+        if (!cancelled) setModelChannels([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [agent_type, adapter])
+
   const modelConfig = useMemo(() => {
     if (agent_type !== 'knowledge') return undefined
     const fast = settings?.fast_reasoning_config
     if (!fast?.channel_id) return undefined
 
+    const supportsNativeWebSearch = (channelId: number, model: string) =>
+      modelChannels.some((channel) =>
+        channel.options.some(
+          (option) =>
+            option.value === `${channelId}_53aikm_${model}` &&
+            option.upstream_api_format === 'responses' &&
+            option.enabled_tools?.includes('web_search') === true,
+        ),
+      )
+
     const fastOption: AgentPreviewModelOption = {
-      id: buildModelId(fast.channel_id, fast.channel_type || 0, fast.model_name || ''),
+      id: buildModelId('fast', fast.channel_id, fast.channel_type || 0, fast.model_name || ''),
       label: 'chat.fast_response',
       icon: 'lightning',
       channel_id: fast.channel_id,
       channel_type: fast.channel_type || 0,
       model: fast.model_name || '',
+      thinkingMode: 1,
+      supportsNativeWebSearch: supportsNativeWebSearch(fast.channel_id, fast.model_name || ''),
     }
     const options: AgentPreviewModelOption[] = [fastOption]
 
     const deep = settings?.deep_thinking_config
     if (deep?.enable && deep.channel_id) {
       options.push({
-        id: buildModelId(deep.channel_id, deep.channel_type || 0, deep.model_name || ''),
+        id: buildModelId('deep', deep.channel_id, deep.channel_type || 0, deep.model_name || ''),
         label: 'chat.deep_thinking',
         icon: 'star-link',
         channel_id: deep.channel_id,
         channel_type: deep.channel_type || 0,
         model: deep.model_name || '',
+        thinkingMode: 2,
+        supportsNativeWebSearch: supportsNativeWebSearch(deep.channel_id, deep.model_name || ''),
       })
     }
 
@@ -253,10 +283,11 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
     return {
       options,
       selectedId: defaultId,
+      thinkingMode: selectedOption?.thinkingMode,
       modelId: matchedModel?.id,
       onChange: (id: string) => setSelectedModelId(id),
     }
-  }, [agent_type, settings?.fast_reasoning_config, settings?.deep_thinking_config, selectedModelId, agentModels])
+  }, [agent_type, settings?.fast_reasoning_config, settings?.deep_thinking_config, selectedModelId, agentModels, modelChannels])
 
   const reset = useCallback(() => {
     setSelectedSkillId(null)
@@ -265,7 +296,7 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
   }, [])
 
   // ============ knowledge: 知识源选择 ============
-  // 联网搜索与其他互斥；知识图谱和动态知识可同时开启；全部知识为独立状态
+  // 知识图谱、动态知识、联网搜索和全部知识范围分别记录。
   const [sourceState, setSourceState] = useState<PreviewKnowledgeSourceState>(() => {
     if (agent_type !== 'knowledge') return { networkSearch: false, knowledgeGraph: false, wiki: false, allKnowledge: true }
     return {
@@ -279,7 +310,11 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
   const knowledgeSource = useMemo<KnowledgeSourceConfig | undefined>(() => {
     if (agent_type !== 'knowledge') return undefined
     const graphEnabled = Boolean(settings?.graph_search_setting?.enable)
-    const webSearchEnabled = Boolean(settings?.web_search_setting?.enable)
+    const selectedModelSupportsNativeWebSearch = modelConfig?.options.find(
+      (option) => option.id === modelConfig.selectedId,
+    )?.supportsNativeWebSearch === true
+    const webSearchEnabled = Boolean(settings?.web_search_setting?.enable) &&
+      (settings?.web_search_setting?.source_type !== 'model' || selectedModelSupportsNativeWebSearch)
     const wikiEnabled = Boolean(settings?.wiki_search_setting?.enable)
     return {
       state: sourceState,
@@ -287,14 +322,18 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
       webSearchEnabled,
       wikiEnabled,
     }
-  }, [agent_type, sourceState, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.wiki_search_setting?.enable])
+  }, [agent_type, sourceState, modelConfig, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.web_search_setting?.source_type, settings?.wiki_search_setting?.enable])
 
   // 监听配置变化，自动重置无效选择
   useEffect(() => {
     if (agent_type !== 'knowledge') return
 
     const graphEnabled = Boolean(settings?.graph_search_setting?.enable)
-    const webSearchEnabled = Boolean(settings?.web_search_setting?.enable)
+    const selectedModelSupportsNativeWebSearch = modelConfig?.options.find(
+      (option) => option.id === modelConfig.selectedId,
+    )?.supportsNativeWebSearch === true
+    const webSearchEnabled = Boolean(settings?.web_search_setting?.enable) &&
+      (settings?.web_search_setting?.source_type !== 'model' || selectedModelSupportsNativeWebSearch)
     const wikiEnabled = Boolean(settings?.wiki_search_setting?.enable)
     const deepThinkingEnabled = Boolean(settings?.deep_thinking_config?.enable)
 
@@ -313,13 +352,13 @@ export function useAgentPreviewSender(params: AgentPreviewSenderParams): AgentPr
     if (!deepThinkingEnabled && selectedModelId) {
       const fast = settings?.fast_reasoning_config
       if (fast?.channel_id) {
-        const fastId = buildModelId(fast.channel_id, fast.channel_type || 0, fast.model_name || '')
+        const fastId = buildModelId('fast', fast.channel_id, fast.channel_type || 0, fast.model_name || '')
         if (selectedModelId !== fastId) {
           setSelectedModelId(fastId)
         }
       }
     }
-  }, [agent_type, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.deep_thinking_config?.enable, settings?.fast_reasoning_config, sourceState, selectedModelId])
+  }, [agent_type, settings?.graph_search_setting?.enable, settings?.web_search_setting?.enable, settings?.web_search_setting?.source_type, settings?.deep_thinking_config?.enable, settings?.fast_reasoning_config, sourceState, selectedModelId, modelConfig])
 
   if (agent_type === 'workbench') {
     return {

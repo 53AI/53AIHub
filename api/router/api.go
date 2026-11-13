@@ -247,6 +247,7 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.POST("/files/:file_id/insight-context/chat", controller.ChatFileInsightWorkshop)
 		recordingRoute.POST("/files/:file_id/insights/regenerate", controller.RegenerateInsights)
 		recordingRoute.POST("/files/:file_id/action-opportunities/detect", controller.DetectActionOpportunities)
+		recordingRoute.POST("/files/:file_id/action-opportunities/preview", controller.PreviewActionOpportunities)
 		recordingRoute.GET("/action-opportunities", controller.ListActionOpportunities)
 		recordingRoute.GET("/action-opportunities/:opportunity_id", controller.GetActionOpportunity)
 		recordingRoute.POST("/action-opportunities/:opportunity_id/plans", controller.CreateActionPlan)
@@ -268,6 +269,10 @@ func SetApiRouter(router *gin.Engine) {
 		recordingRoute.POST("/files/:file_id/entities/extract", controller.ReExtractEntities)
 		recordingRoute.GET("/files/:file_id/transcription", controller.GetFileTranscription)
 		recordingRoute.GET("/files/:file_id/transcription/export", controller.ExportTranscript)
+		recordingRoute.POST("/files/:file_id/transcription/bind-speaker", controller.BindTranscriptSpeaker)
+		recordingRoute.GET("/speaker-baselines", controller.ListSpeakerBaselines)
+		recordingRoute.GET("/speaker-baselines/:baseline_id/audio", controller.PlaySpeakerBaselineAudio)
+		recordingRoute.DELETE("/speaker-baselines/:baseline_id", controller.DeleteSpeakerBaseline)
 		recordingRoute.POST("/files/:file_id/share", controller.CreateRecordingShareHandler)
 		recordingRoute.PUT("/files/:file_id/group", controller.MoveRecordingFileToGroup)
 		recordingRoute.GET("/my-queued-count", controller.GetMyQueuedCount)
@@ -292,17 +297,26 @@ func SetApiRouter(router *gin.Engine) {
 	actionRoute := apiRouter.Group("/actions")
 	actionRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
+		// Unified business-item APIs, one stable opportunity_id for proposal/action/result.
+		actionRoute.GET("/items", controller.ListActionItems)
+		actionRoute.GET("/items/:item_id", controller.GetActionItem)
 		actionRoute.POST("/opportunities/detect", controller.DetectActionOpportunitiesFromSource)
 		actionRoute.GET("/opportunities", controller.ListActionOpportunities)
 		actionRoute.GET("/opportunities/:opportunity_id", controller.GetActionOpportunity)
 		actionRoute.PATCH("/opportunities/:opportunity_id", controller.PatchActionOpportunity)
+		actionRoute.DELETE("/opportunities/:opportunity_id", controller.DeleteActionOpportunity)
 		actionRoute.POST("/opportunities/:opportunity_id/plans", controller.CreateActionPlan)
 		actionRoute.GET("/plans", controller.ListActionPlans)
 		actionRoute.GET("/plans/:plan_id", controller.GetActionPlan)
+		actionRoute.PATCH("/plans/:plan_id/state", controller.UpdateActionPlanState)
+		actionRoute.DELETE("/plans/:plan_id", controller.DeleteActionPlan)
 		actionRoute.PATCH("/plans/:plan_id", controller.UpdateActionPlan)
 		actionRoute.POST("/plans/:plan_id/confirm", controller.ConfirmActionPlan)
 		actionRoute.GET("/results", controller.ListActionResultAssets)
+		actionRoute.GET("/results/categories", controller.ListActionResultAssetCategories)
 		actionRoute.GET("/results/:result_asset_id", controller.GetActionResultAsset)
+		actionRoute.DELETE("/results/:result_asset_id", controller.DeleteActionResultAsset)
+		actionRoute.GET("/board", controller.ListActionWorkspace)
 		actionRoute.GET("/:action_id", controller.GetAction)
 	}
 
@@ -737,6 +751,30 @@ func SetApiRouter(router *gin.Engine) {
 		openclawRouter.GET("/cron-tasks", controller.GetOpenClawCronTasks)
 	}
 
+	// bot-gateway 接入：
+	// - Webhook（公开，HMAC 验签）：在引擎级注册，绕过 RequestDecoder 等改写 body 的中间件，
+	//   确保 HMAC 签名基于 bot-gateway 推送的原始字节校验。
+	// - 管理接口（admin）：挂 /api 组，复用 Hashids/ResponseEncoder/UserTokenAuth。
+	router.POST("/api/bot-gateway/webhook", middleware.Logger(), middleware.SlowAPILogger(), controller.BotGatewayWebhook)
+	botGatewayManageRoute := apiRouter.Group("/bot-gateway")
+	botGatewayManageRoute.Use(middleware.UserTokenAuth(model.RoleAdminUser))
+	{
+		botGatewayManageRoute.POST("/binds", controller.BotGatewayCreateBinding)
+		botGatewayManageRoute.GET("/binds", controller.BotGatewayListBindings)
+		botGatewayManageRoute.GET("/binds/:id/callback-url", controller.BotGatewayBindingCallbackURL)
+		botGatewayManageRoute.DELETE("/binds/:id", controller.BotGatewayDeleteBinding)
+		botGatewayManageRoute.PATCH("/binds/:id", controller.BotGatewayUpdateBinding)
+		botGatewayManageRoute.GET("/bots", controller.BotGatewayListBots)
+		botGatewayManageRoute.POST("/contacts/detail", controller.BotGatewayContactDetails)
+		botGatewayManageRoute.GET("/bots/:bot_id/detail", controller.BotGatewayBotDetail)
+		botGatewayManageRoute.GET("/bots/:bot_id/online", controller.BotGatewayBotOnline)
+		botGatewayManageRoute.POST("/login/qrcode", controller.BotGatewayLoginQR)
+		botGatewayManageRoute.GET("/login/regions", controller.BotGatewayLoginRegions)
+		botGatewayManageRoute.POST("/login/poll", controller.BotGatewayLoginPoll)
+		botGatewayManageRoute.POST("/login/verify", controller.BotGatewayLoginVerify)
+		botGatewayManageRoute.POST("/login/logout", controller.BotGatewayLoginLogout)
+	}
+
 	apiV1Router := router.Group("/v1")
 	apiV1Router.Use(middleware.CORS())
 	apiV1Router.Use(middleware.Logger())
@@ -1046,6 +1084,12 @@ func SetApiRouter(router *gin.Engine) {
 	wikiQueueRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
 	{
 		wikiQueueRoute.GET("/status", controller.NewWikiQueueStatusController(model.DB).GetStatus)
+		wikiRetryQueueController := controller.NewWikiRetryQueueController(model.DB)
+		wikiQueueRoute.GET("/tasks", wikiRetryQueueController.ListTasks)
+		wikiQueueRoute.POST("/retry", wikiRetryQueueController.RetryTasks)
+		wikiDocumentQueueController := controller.NewWikiDocumentQueueController(model.DB)
+		wikiQueueRoute.GET("/documents", wikiDocumentQueueController.ListDocuments)
+		wikiQueueRoute.GET("/documents/:file_id/pages", wikiDocumentQueueController.ListPages)
 	}
 	vectorizationTaskRoute := apiRouter.Group("/wiki/vectorization-tasks")
 	vectorizationTaskRoute.Use(middleware.UserTokenAuth(model.RoleCommonUser))
@@ -1352,6 +1396,7 @@ func SetApiRouter(router *gin.Engine) {
 		ragV2CommonRoute.PUT("/jobs/:job_id/cancel", controller.CancelRagJobV2)
 		ragV2CommonRoute.POST("/jobs/:job_id/retry", controller.RetryRagJobStepV2)
 		ragV2CommonRoute.POST("/jobs/batch-retry", controller.BatchRetryRagJobStepV2)
+		ragV2CommonRoute.POST("/jobs/batch-continue", controller.BatchContinueRagJobsV2)
 	}
 
 	ragV2AdminRoute := ragV2Route.Group("")

@@ -192,7 +192,8 @@ func (s *OpenAIAudioDocumentStrategy) ProcessWithUploadFile(fileID int64, conten
 		}
 	}
 
-	// 写 File.summary/duration_ms + 转写状态（对齐 voice 策略）
+	// 写 File.summary/duration_ms（转写状态由 document_parsing 在入库事务提交后统一写入：
+	// ASR 成功≠入库成功，此处提前置 completed 会在后续中止时留下与内容不符的状态）
 	if fileID > 0 && result.Text != "" {
 		updates := map[string]interface{}{}
 		updates["summary"] = result.Text
@@ -202,9 +203,6 @@ func (s *OpenAIAudioDocumentStrategy) ProcessWithUploadFile(fileID int64, conten
 		if err := model.DB.Model(&model.File{}).Where("id = ?", fileID).Updates(updates).Error; err != nil {
 			logger.Errorf(ctx, "【OpenAI语音】保存摘要失败 fileID=%d err=%v", fileID, err)
 		}
-	}
-	if fileID > 0 {
-		_ = model.SetFileTranscriptionStatus(fileID, "completed")
 	}
 
 	logger.Infof(ctx, "【OpenAI语音】转写成功 fileID=%d model=%s duration_ms=%d", fileID, modelName, durationMs)

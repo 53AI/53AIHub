@@ -26,10 +26,10 @@ import {
 } from "@ant-design/icons";
 import { useEffect, useMemo, useRef } from "react";
 import type { MentionDropdownSlotProps, MentionDocItem } from "@km/hub-ui-x-react";
-import { SafeImage } from "@km/shared-components-react";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { checkVersion } from "@/utils/version";
 import { t } from "@/locales";
+import { SafeImage } from "@km/shared-components-react";
 
 export interface EnhancedMentionDropdownCallbacks {
   /** 「从知识库里选择」入口回调;不传则不渲染 */

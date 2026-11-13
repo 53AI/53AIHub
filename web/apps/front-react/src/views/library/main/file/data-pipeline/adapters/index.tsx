@@ -15,7 +15,7 @@ import type {
 } from '@km/shared-business/knowledge-pipeline'
 import { ragPipelineApi } from '@/api/modules/rag-pipeline'
 import { uploadApi } from '@/api/modules/upload'
-import { api_host, getPublicPath } from '@/utils/config'
+import { api_host } from '@/utils/config'
 import { buildPreviewUrl } from '@/utils/preview'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { getSimpleParserConfigs } from '@/constants/parser'
@@ -147,7 +147,7 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
           key: 'recording_voice',
           name: voiceName || '语音解析',
           desc: '语音识别模型解析',
-          icon: voiceIcon || getPublicPath('/images/tools/voice.png'),
+          icon: voiceIcon || '/images/tools/voice.png',
           detailedDesc: '使用语音识别模型解析录音文件，自动转写音频文本。',
         })
       }
@@ -229,9 +229,6 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
 
     // ========== 公共路径方法 ==========
 
-    getPublicPath(path: string): string {
-      return getPublicPath(path)
-    },
   }
 }
 

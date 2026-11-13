@@ -5,7 +5,7 @@ import { PageLayoutContent, PageLayoutTabs } from "@/components/PageLayout";
 import { t } from "@/locales";
 import type { AgentInfo } from "@/api/modules/agents/index";
 import { AGENT_USAGES } from "@/constants/agent";
-import { getPublicPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 import "./index.css";
 
 const Setting = lazy(() => import("./Setting"));
@@ -97,9 +97,9 @@ export function ChatPage() {
         }}
       >
         <div className="flex items-center justify-between gap-4 mb-4 px-4 pt-4">
-          <img
+          <SafeImage
             className="flex-none w-[60px] h-[60px]"
-            src={getPublicPath("/images/document-app/chat.png")}
+            src={"/images/document-app/chat.png"}
             alt=""
           />
           <div className="flex-1">

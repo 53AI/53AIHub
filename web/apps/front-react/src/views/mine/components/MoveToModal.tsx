@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal, Radio, Spin, Tooltip, Tree } from 'antd'
 import type { DataNode } from 'antd/es/tree'
-import { Search as SearchInput } from '@km/shared-components-react'
+import { Search as SearchInput, SafeImage } from '@km/shared-components-react';
 import { t } from '@/locales'
 import { getPublicPath } from '@/utils/config'
 import { formatFileInfo } from '@/api/modules/files/transform'
@@ -147,9 +147,9 @@ export function MoveToModal({
 			<div
 				className={`group flex items-center gap-2 w-full ${unavailable ? 'opacity-50 cursor-not-allowed' : ''}`}
 			>
-				<img
+				<SafeImage
 					className="flex-none w-5 h-5"
-					src={getPublicPath('/images/file/folder.png')}
+					src={'/images/file/folder.png'}
 					alt=""
 				/>
 				<Tooltip title={node.name} placement="topLeft">
@@ -191,7 +191,7 @@ export function MoveToModal({
 			title: (
 				<Tooltip title={fileTip}>
 					<div className="group flex items-center gap-2 w-full opacity-60 cursor-not-allowed">
-						<img className="flex-none w-5 h-5" src={icon} alt="" />
+						<SafeImage className="flex-none w-5 h-5" src={icon} alt="" />
 							<span className="flex-1 truncate text-sm min-w-0">{displayName}</span>
 							<span onClick={(e) => e.stopPropagation()}>
 								<Radio checked={false} disabled className="opacity-0 group-hover:opacity-100" />
@@ -346,9 +346,9 @@ export function MoveToModal({
 											setSelectedPath((p) => (p === node.path ? '' : node.path))
 										}}
 									>
-										<img
+										<SafeImage
 											className="flex-none w-5 h-5"
-											src={getPublicPath('/images/file/folder.png')}
+											src={'/images/file/folder.png'}
 											alt=""
 										/>
 										<span className="flex-1 text-sm truncate">{node.name}</span>

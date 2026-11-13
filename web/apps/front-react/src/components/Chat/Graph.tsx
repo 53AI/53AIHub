@@ -11,7 +11,6 @@ import { CloseOutlined, ShareAltOutlined } from "@ant-design/icons";
 import { SvgIcon } from "@km/shared-components-react";
 import { GraphViewerWidget } from "@km/shared-business/chat";
 import loadLib from "@/utils/loadLib";
-import { getPublicPath } from "@/utils/config";
 import { deepCopy } from "@/utils";
 
 interface GraphProps {
@@ -109,7 +108,6 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
               ref={graphRef}
               empty={false}
               loadG6={() => loadLib('g6')}
-              getStaticPath={(path) => getPublicPath(path)}
             />
           )}
         </div>

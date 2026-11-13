@@ -21,6 +21,11 @@ export interface BubbleUserProps {
   content?: string;
   files?: FileItem[];
   avatar?: string;
+  /**
+   * 自定义头像渲染（如业务侧的安全图片组件：失败重试 + 兜底图）。
+   * 传入时优先于 [avatar] 的默认 `<img>`，组件库本身不引入任何业务依赖。
+   */
+  avatarSlot?: React.ReactNode;
   header?: React.ReactNode;
   fileSlot?: React.ReactNode;
   contentSlot?: React.ReactNode;
@@ -36,6 +41,7 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
   content = "",
   files = [],
   avatar = "",
+  avatarSlot,
   header,
   fileSlot,
   contentSlot,
@@ -125,10 +131,14 @@ const BubbleUser: React.FC<BubbleUserProps> = ({
                 </p>
               </div>
             ))}
-          {avatar && (
-            <div className="x-bubble__avatar">
-              <img src={avatar} alt="User" />
-            </div>
+          {avatarSlot ? (
+            <div className="x-bubble__avatar">{avatarSlot}</div>
+          ) : (
+            avatar && (
+              <div className="x-bubble__avatar">
+                <img src={avatar} alt="User" />
+              </div>
+            )
           )}
         </div>
 

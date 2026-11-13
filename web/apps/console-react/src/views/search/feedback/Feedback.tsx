@@ -12,15 +12,17 @@ import FeedbackConfigDialog, {
   FeedbackConfigDialogRef,
 } from "./FeedbackConfigDialog";
 import { DateRangeFilter } from "@/components/Filter/date-range";
-import { UserFilter } from "@/components/Filter/user";
+import AskerFilter from "@/components/Filter/Asker";
 import { getLastTimeAsDay } from "@km/shared-utils";
 import { useEnterpriseStore } from "@/stores";
 
 interface FeedbackProps {
   agentId?: string | number;
+  /** 反馈配置类型，默认 message（AI对话页）；AI搜问 agent 传 work_ai，知识库地图传 knowledge_map */
+  type?: "message" | "knowledge_map" | "work_ai" | "chat" | "workflow";
 }
 
-export function Feedback({ agentId }: FeedbackProps) {
+export function Feedback({ agentId, type = "message" }: FeedbackProps) {
   const enterpriseStore = useEnterpriseStore();
   // 获取默认日期范围的辅助函数
   const getDefaultDateRange = (): [number, number] => {
@@ -46,7 +48,7 @@ export function Feedback({ agentId }: FeedbackProps) {
     end_time: null as number | null,
     question: null as string | null,
     feedback_type: t("search-record.all"),
-    user_id: [] as any[],
+    user_id: null as string | null,
     reason: t("search-record.all"),
     offset: 0,
     limit: 10,
@@ -60,6 +62,7 @@ export function Feedback({ agentId }: FeedbackProps) {
   const feedbackDetailRef = useRef<DetailRef>(null);
   const [configList, setConfigList] = useState<any>(null);
   const [isCleared, setIsCleared] = useState(false);
+  const [askerClearKey, setAskerClearKey] = useState(0);
   const [isClearIconAvailable, setIsClearIconAvailable] = useState(false);
 
   const openFeedbackConfig = () => {
@@ -83,6 +86,7 @@ export function Feedback({ agentId }: FeedbackProps) {
   const loadFeedbackConfig = async () => {
     const configData = await feedbackApi.getConfig({
       eid: enterpriseStore.info.eid,
+      type,
     });
     setConfigList(JSON.parse(configData.value));
     const types = [
@@ -116,10 +120,7 @@ export function Feedback({ agentId }: FeedbackProps) {
             ? null
             : form.feedback_type,
         reason: form.reason === t("search-record.all") ? null : form.reason,
-        user_id:
-          form.user_id.length > 0
-            ? form.user_id.map((item) => item.user_id).join(",")
-            : undefined,
+        user_id: form.user_id || undefined,
       });
       setTableData(list.feedbacks);
       setTableTotal(list.total);
@@ -159,12 +160,13 @@ export function Feedback({ agentId }: FeedbackProps) {
     const newForm = {
       ...detailedForm,
       question: null,
-      user_id: [],
+      user_id: null,
       reason: t("search-record.all"),
       feedback_type: type,
       offset: 0,
     };
     setIsClearIconAvailable(true);
+    setAskerClearKey((key) => key + 1);
     setDetailedForm(newForm);
     setIsCleared(true);
     setDetailedDate(newDates);
@@ -179,13 +181,14 @@ export function Feedback({ agentId }: FeedbackProps) {
       end_time: null,
       question: null,
       feedback_type: t("search-record.all"),
-      user_id: [],
+      user_id: null,
       reason: t("search-record.all"),
       offset: 0,
       limit: 10,
     };
     setDetailedDate(newDates);
     setDetailedForm(newForm);
+    setAskerClearKey((key) => key + 1);
     setIsCleared(true);
     setIsClearIconAvailable(false);
     loadFeedbackList(newForm, newDates);
@@ -396,7 +399,11 @@ export function Feedback({ agentId }: FeedbackProps) {
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}
-            placeholder={`${t("search-feedback.feedback_type")}:`}
+            prefix={
+              <span className="text-placeholder">
+                {t("search-feedback.feedback_type") + ":"}
+              </span>
+            }
           >
             <Select.Option value={t("search-record.all")}>
               {t("search-record.all")}
@@ -408,14 +415,15 @@ export function Feedback({ agentId }: FeedbackProps) {
               {t("search-feedback.unsatisfied")}
             </Select.Option>
           </Select>
-          <UserFilter
-            value={detailedForm.user_id}
-            onChange={(val) => {
-              const newForm = { ...detailedForm, user_id: val };
+          <AskerFilter
+            clearKey={askerClearKey}
+            field="user_id"
+            label={t("search-feedback.user")}
+            onChange={(user_id) => {
+              const newForm = { ...detailedForm, user_id };
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}
-            isCleared={isCleared}
           />
           <Select
             value={detailedForm.reason}
@@ -429,7 +437,11 @@ export function Feedback({ agentId }: FeedbackProps) {
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}
-            placeholder={`${t("search-feedback.question_type")}:`}
+            prefix={
+              <span className="text-placeholder">
+                {t("search-feedback.question_type") + ":"}
+              </span>
+            }
           >
             {feedbackTypeList.map((item) => (
               <Select.Option key={item} value={item}>
@@ -476,7 +488,7 @@ export function Feedback({ agentId }: FeedbackProps) {
           </div>
         </Spin>
       </div>
-      <FeedbackConfigDialog ref={feedbackConfigRef} />
+      <FeedbackConfigDialog ref={feedbackConfigRef} type={type} />
       <Detail ref={feedbackDetailRef} />
     </div>
   );

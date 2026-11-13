@@ -28,23 +28,37 @@ func SaveRAGStats(
 	}
 	hasAnswer := answerToValidate != ""
 
-	// 1. 从 Context 获取 sources
-	sourcesValue, exists := c.Get("rag_sources")
-	if !exists {
-		// 没有 RAG 数据，跳过
-		logger.Debugf(ctx, "未找到 RAG sources，跳过统计")
-		return nil
+	// 1. 从 Context 获取 sources（工具型回答可能没有 RAG 文档来源）
+	var sources []rag.SourceReference
+	if sourcesValue, exists := c.Get("rag_sources"); exists {
+		if typed, ok := sourcesValue.([]rag.SourceReference); ok {
+			sources = typed
+		} else {
+			logger.Warnf(ctx, "sources 类型转换失败")
+		}
 	}
 
-	sources, ok := sourcesValue.([]rag.SourceReference)
-	if !ok || len(sources) == 0 {
-		logger.Warnf(ctx, "sources 类型转换失败或为空")
-		return nil
-	}
+	// 2. 引用校验必须无条件执行（Phase 2E Slice 2）：
+	//    没有真实来源支撑的 [Source:N-M] 不得作为有效引用展示。
+	//    旧实现只在存在 RAG sources 时才校验，导致「工具型回答」的编造引用被原样落库。
 	cleanResponse, citationStats := sanitizeAndValidateAnswer(c, answerToValidate)
 	responseContent = cleanResponse
-	if message != nil && (hasAnswer || message.Answer == "") {
+	if message != nil && (c == nil || !c.GetBool("agent_loop_final_answer_persisted")) && (hasAnswer || message.Answer == "") {
 		message.Answer = responseContent
+	}
+
+	if len(sources) == 0 {
+		// 无来源：不生成来源卡片数据，但仍要记录无效引用以便观测。
+		if citationStats.Invalid > 0 || citationStats.Detected > 0 {
+			logger.Warnf(ctx, "【引用校验】本轮无可核验来源，已剔除无效引用标记: detected=%d valid=%d invalid=%d invalidCitations=%v",
+				citationStats.Detected, citationStats.Valid, citationStats.Invalid, citationStats.InvalidCitations)
+			if message != nil {
+				if raw, err := json.Marshal(RAGStatsData{CitationStats: &citationStats}); err == nil {
+					message.RAGStats = string(raw)
+				}
+			}
+		}
+		return nil
 	}
 
 	// 2. 生成引用统计数据
@@ -57,7 +71,7 @@ func SaveRAGStats(
 	}
 
 	// 3. 更新消息记录
-	message.CitationCount = len(ragStats.FileQuotations) + len(ragStats.WikiPageQuotations)
+	message.CitationCount = len(ragStats.FileQuotations) + len(ragStats.WikiPageQuotations) + len(ragStats.WebPageQuotations)
 
 	ragStatsJSON, err := json.Marshal(ragStats)
 	if err != nil {
@@ -76,6 +90,7 @@ type RAGStatsData struct {
 	DocumentQuotations     []string                 `json:"document_quotations"` // 实际引用的分片ID列表（hash后）
 	FileQuotations         []string                 `json:"file_quotations"`     // 实际引用的文件ID列表（hash后）
 	WikiPageQuotations     []string                 `json:"wiki_page_quotations,omitempty"`
+	WebPageQuotations      []string                 `json:"web_page_quotations,omitempty"`
 	RetrievalObservability map[string]interface{}   `json:"retrieval_observability,omitempty"`
 	CitationStats          *citationValidationStats `json:"citation_stats,omitempty"`
 	Performance            *PerformanceData         `json:"performance"` // 性能数据
@@ -168,6 +183,7 @@ func generateRAGStats(
 	// 3. 生成实际引用的分片ID和文件ID列表
 	documentQuotations, fileQuotations := resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 	wikiPageQuotations := getQuotedWikiPageIDs(quotedSourceIDs, sources)
+	webPageQuotations := getQuotedWebPageURLs(quotedSourceIDs, sources)
 
 	logger.Debugf(ctx, "实际引用统计: 分片数=%d, 文件数=%d",
 		len(documentQuotations), len(fileQuotations))
@@ -183,6 +199,7 @@ func generateRAGStats(
 		DocumentQuotations: documentQuotations,
 		FileQuotations:     fileQuotations,
 		WikiPageQuotations: wikiPageQuotations,
+		WebPageQuotations:  webPageQuotations,
 		Performance: &PerformanceData{
 			ProcessingTimeMs: 0, // 可选：需要时记录实际处理时间
 		},
@@ -253,18 +270,33 @@ func sendReferenceAnalysisStep(
 	// 2. 发送引用分析开始步骤
 	messageStatus.StepSender.SendStartStep(
 		STEP_REF_ANALYSIS,
-		"正在分析回答中的文档引用...",
+		"正在分析回答中的来源引用...",
 		nil,
 	)
 
 	// 3. 生成引用数据
 	quotationsData := createQuotationsData(ctx, sources, responseContent)
-	quotedCount := len(quotationsData["document_quotations"].([]string)) + len(quotationsData["wiki_page_quotations"].([]string))
+	documentCount := len(quotationsData["document_quotations"].([]string))
+	wikiCount := len(quotationsData["wiki_page_quotations"].([]string))
+	webPageCount := len(quotationsData["web_page_quotations"].([]string))
 	logger.Debugf(ctx, "【引用分析】生成后引用数据: request_id=%s, document_quotations=%v, file_quotations=%v",
 		helper.GetRequestID(ctx), quotationsData["document_quotations"], quotationsData["file_quotations"])
 
 	// 4. 发送引用分析完成步骤（包含引用数据）
-	message := fmt.Sprintf("引用分析完成，回答中引用了 %d 篇文档", quotedCount)
+	var quotedSources []string
+	if documentCount > 0 {
+		quotedSources = append(quotedSources, fmt.Sprintf("%d 篇文档", documentCount))
+	}
+	if wikiCount > 0 {
+		quotedSources = append(quotedSources, fmt.Sprintf("%d 篇 Wiki", wikiCount))
+	}
+	if webPageCount > 0 {
+		quotedSources = append(quotedSources, fmt.Sprintf("%d 个网页", webPageCount))
+	}
+	message := "引用分析完成，回答中未引用检索来源"
+	if len(quotedSources) > 0 {
+		message = fmt.Sprintf("引用分析完成，回答中引用了 %s", strings.Join(quotedSources, "、"))
+	}
 	messageStatus.StepSender.SendEndStep(
 		STEP_REF_ANALYSIS,
 		message,

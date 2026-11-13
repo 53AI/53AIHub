@@ -1,0 +1,17 @@
+{
+  "fixture": "B",
+  "entity": {"entity_type": "matter", "canonical_name": "珠江钢琴项目", "matter_kind_source": "none"},
+  "meetings": [
+    {"id": "b1", "status": "in_progress", "risk": "交付资源不足", "risk_state": "uncertain", "loop": {"content": "完成试点方案", "status": "open", "loop_key": "trial-plan"}},
+    {"id": "b2", "risk": "客户预算审批较慢", "risk_state": "uncertain", "loop": {"content": "完成试点方案", "status": "completed", "loop_key": "trial-plan", "previous_status": "open", "new_status": "completed"}},
+    {"id": "b3", "status_candidates": ["in_progress", "shelved"], "risk": "客户预算冻结", "risk_state": "active", "continuation_evidence": true, "loop": {"content": "安排客户评审", "status": "open"}}
+  ],
+  "expected": {
+    "matter_kind_state": "unknown",
+    "current_status_state": "conflicted",
+    "active_risks": ["客户预算冻结"],
+    "uncertain_risks": ["交付资源不足", "客户预算审批较慢"],
+    "completed_excluded": ["完成试点方案"],
+    "recent_changes": ["open → completed"]
+  }
+}

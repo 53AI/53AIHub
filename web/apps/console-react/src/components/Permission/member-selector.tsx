@@ -5,8 +5,8 @@ import DeptMemberPicker from '@/components/DeptMemberPicker'
 import PermissionSelector from './selector'
 import { PERMISSION_TYPE, RESOURCE_TYPE, SUBJECT_TYPE, type PermissionType, type SubjectType } from './constant'
 import { t } from '@/locales'
-import { getRealPath } from '@/utils/config'
 
+import { SafeImage } from "@km/shared-components-react";
 interface PickerItem {
   label: string
   value: string | number
@@ -57,8 +57,8 @@ export function MemberSelector({ onConfirm, showWiki = false, children }: Member
         type: itemType,
         value: item.value,
         avatar: isCompany
-          ? getRealPath('/images/space/peoples.png')
-          : getRealPath('/images/space/people.png'),
+          ? '/images/space/peoples.png'
+          : '/images/space/people.png',
         permission: PERMISSION_TYPE.viewer,
       }
     })
@@ -147,7 +147,7 @@ export function MemberSelector({ onConfirm, showWiki = false, children }: Member
       key: 'user',
       render: (_: unknown, record: PickerItem) => (
         <div className="flex items-center gap-2">
-          <img src={record.avatar} alt="avatar" className="w-5 h-5 rounded-full" />
+          <SafeImage src={record.avatar} alt="avatar" className="w-5 h-5 rounded-full" />
           <span className="flex-1 min-w-0 text-sm text-primary truncate">{record.label}</span>
         </div>
       ),

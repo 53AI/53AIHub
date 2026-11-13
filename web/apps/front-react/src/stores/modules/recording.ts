@@ -8,6 +8,7 @@ import type { RecordingConfig } from '@/api/modules/recording/types'
 import { RecordingStateAction } from '@/api/modules/recording/types'
 import { MAX_RECORDING_DURATION_HOURS } from '@/constants/recording'
 import { t } from '@/locales'
+import { registerLiveTranscriptHandlers } from '@/stores/modules/live-transcript'
 
 // ============= Type Definitions =============
 
@@ -41,7 +42,7 @@ export interface RecordingState {
   enableSystemAudio: boolean       // 是否在本次录音中启用了系统声音（恢复时透传给 bridge）
 
   // Actions
-  start: (showFloat?: boolean, groupId?: number, enableSystemAudio?: boolean) => Promise<void>
+  start: (showFloat?: boolean, enableSystemAudio?: boolean) => Promise<void>
   pause: () => Promise<void>
   resume: () => Promise<void>
   finish: () => Promise<void>
@@ -69,6 +70,10 @@ export interface RecordingState {
 
 /** Register common bridge event handlers */
 function registerBridgeHandlers(bridge: RecordingBridge) {
+  // 端侧实时转写（第三个订阅者）：pcmTap 接流、stopped/interrupted 断流。
+  // 降级红线：ASR 任何失败不影响录音（见 live-transcript.ts）。
+  registerLiveTranscriptHandlers(bridge)
+
   bridge.on('duration', (duration: number) => {
     useRecordingStore.getState().setDuration(duration)
   })
@@ -278,7 +283,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
 
   // ============= Actions =============
 
-  start: async (showFloat: boolean = true, groupId?: number, enableSystemAudio = false) => {
+  start: async (showFloat: boolean = true, enableSystemAudio = false) => {
     const state = get()
 
     // Prevent rapid clicks
@@ -342,7 +347,7 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
 
     try {
       // Start recording via bridge
-      const jobId = await bridge.start(groupId, { enableSystemAudio })
+      const jobId = await bridge.start({ enableSystemAudio })
       const info = bridge.getRecordingInfo()
       const recordingStartTime = Date.now()
 

@@ -14,7 +14,7 @@ import { PlusOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { t } from "@/locales";
 import { subscriptionApi } from "@/api/modules/subscription";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import SelectPlus from "@/components/SelectPlus";
 import { getRealPath, img_host } from "@/utils/config";
 import {
@@ -246,7 +246,7 @@ export function SubscriptionPage() {
                         items: [1, 2, 3, 4, 5].map((i) => ({
                           key: i,
                           label: (
-                            <img
+                            <SafeImage
                               src={`${img_host}/subscription/vip-${i}.png`}
                               className="w-[36px] h-[36px] object-cover"
                               alt={`VIP ${i}`}
@@ -257,12 +257,10 @@ export function SubscriptionPage() {
                       }}
                       trigger={["click"]}
                     >
-                      <img
+                      <SafeImage
                         src={
                           !/\.png$/.test(item.logo_url)
-                            ? getRealPath(
-                                `/images/subscription/${item.logo_url}.png`,
-                              )
+                            ? `/images/subscription/${item.logo_url}.png`
                             : item.logo_url
                         }
                         className="flex-none w-[36px] h-[36px] object-cover cursor-pointer"
@@ -410,7 +408,7 @@ export function SubscriptionPage() {
                           key={agentIndex}
                           className="w-full flex items-center gap-2 mb-3"
                         >
-                          <img
+                          <SafeImage
                             src={agent.logo}
                             className="flex-none w-[18px] h-[18px] object-contain rounded-full overflow-hidden"
                             alt={agent.name}

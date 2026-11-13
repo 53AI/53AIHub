@@ -6,15 +6,17 @@ import { licenseApi } from '@/api/modules/license'
 import { isPrivatePrem } from '@/hooks/useEnv'
 import { WEBSITE_VERSION, WEBSITE_VERSION_NAME_MAP, WEBSITE_TYPE } from '@/constants/enterprise'
 import { useUserStore } from './user'
-import { getPublicPath } from '@/utils/config'
+import { resolveAssetUrl } from '@km/shared-utils'
 
 
 export const WEBSITE_TYPE_INDEPENDENT = 'independent'
 export const WEBSITE_TYPE_ENTERPRISE = 'enterprise'
 export const WEBSITE_TYPE_INDUSTRY = 'industry'
 
+// 默认 logo 返回原始相对路径：消费端 SafeImage 内部统一解析 base；
+// 仅 favicon(DOM href)场景需解析后的完整 URL，就地用 resolveAssetUrl
 export const getDefaultLogo = () => {
-  return getPublicPath('/images/default_logo.png')
+  return '/images/default_logo.png'
 }
 
 export type EnterpriseInfo = {
@@ -262,7 +264,7 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
 
       const link = document.querySelector('link[rel="icon"]') || document.createElement('link')
       link.rel = 'icon'
-      link.href = formattedInfo.ico || formattedInfo.logo || getDefaultLogo()
+      link.href = formattedInfo.ico || formattedInfo.logo || resolveAssetUrl(getDefaultLogo())
       if (!document.querySelector('link[rel="icon"]')) document.head.appendChild(link)
 
       eventBus.emit('enterprise-info-loaded', formattedInfo)

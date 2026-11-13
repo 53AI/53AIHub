@@ -211,3 +211,7 @@
   width: 100%;
   background: transparent;
 }
+
+.wiki-document-pages-drawer .ant-drawer-content-wrapper {
+  max-width: 100vw;
+}

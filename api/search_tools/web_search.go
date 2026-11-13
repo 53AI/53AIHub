@@ -33,9 +33,10 @@ func (w *WebSearcher) searchBochai(query string, count int) ([]*SearchItem, erro
 
 	// 创建搜索请求
 	request := service.SearchRequest{
-		Query:   query,
-		Count:   count,
-		Summary: true,
+		Query:     query,
+		Freshness: w.C.Wsc.Freshness,
+		Count:     count,
+		Summary:   true,
 	}
 
 	// 执行搜索
@@ -85,6 +86,7 @@ func (w *WebSearcher) searchBochai(query string, count int) ([]*SearchItem, erro
 				FileName:    item.Name,
 				LibraryName: item.SiteName,
 				LibraryIcon: item.SiteIcon,
+				PublishedAt: item.DatePublished,
 				ChunkType:   "web_page",
 				Content:     item.Summary,
 				Score:       1.0,

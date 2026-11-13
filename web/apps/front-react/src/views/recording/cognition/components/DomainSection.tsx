@@ -1,6 +1,6 @@
 import { message, Modal } from 'antd'
-import { ClockCircleOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
-import { IconAction, SafeImage, SvgIcon } from '@km/shared-components-react'
+import { ClockCircleOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import { SafeImage, SvgIcon, IconAction } from '@km/shared-components-react'
 import { getFormatTimeStamp } from '@km/shared-utils'
 import recordingApi from '@/api/modules/recording'
 import type { RecordingCognitionDomain } from '@/api/modules/recording/types'
@@ -12,9 +12,11 @@ interface DomainSectionProps {
   onOpenDrawer: (domain: RecordingCognitionDomain) => void
   onOpenEdit: (domain: RecordingCognitionDomain) => void
   onOpenCreate: () => void
+  /** 是否渲染"领域认知"区块标题：旧版认知页（主入口）展示，新版（erhao.html）不展示 */
+  showHeader?: boolean
 }
 
-export function DomainSection({ domains, onOpenDrawer, onOpenEdit, onOpenCreate }: DomainSectionProps) {
+export function DomainSection({ domains, onOpenDrawer, onOpenEdit, onOpenCreate, showHeader = false }: DomainSectionProps) {
   const { refreshAfterMutation } = useCognitionContext()
 
   const confirmRemove = (domain: RecordingCognitionDomain) => {
@@ -42,26 +44,14 @@ export function DomainSection({ domains, onOpenDrawer, onOpenEdit, onOpenCreate 
     })
   }
   return (
-    <section className="mt-8">
-      <div className="mb-3">
-        <h2 className="text-lg font-medium text-[#1D1E1F]">领域认知</h2>
-        <p className="mt-1 text-sm text-[#9CA3AF]">二号总裁基于你最近的会议、决策和经营变化，整理出的领域认知</p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => void onOpenCreate()}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') void onOpenCreate()
-          }}
-          className="min-h-[120px] rounded-lg border border-[#E8EEFA] bg-[#F7FAFF] flex justify-center items-center cursor-pointer transition-all duration-300 relative ease-linear hover:shadow-lg"
-        >
-          <div className="size-10 rounded-lg bg-[#E6EEFF] flex items-center justify-center mr-2">
-            <PlusOutlined style={{ fontSize: 16, color: '#2563EB' }} />
-          </div>
-          <div className="text-sm text-[#2563EB]">新建认知</div>
+    <section className="mt-4">
+      {showHeader && (
+        <div className="mb-3">
+          <h2 className="text-lg font-medium text-[#1D1E1F]">领域认知</h2>
+          <p className="mt-1 text-sm text-[#9CA3AF]">二号总裁基于你最近的会议、决策和经营变化，整理出的领域认知</p>
         </div>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {domains.map((domain) => {
           return (
             <div
@@ -101,6 +91,20 @@ export function DomainSection({ domains, onOpenDrawer, onOpenEdit, onOpenCreate 
             </div>
           )
         })}
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => void onOpenCreate()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') void onOpenCreate()
+          }}
+          className="min-h-[120px] rounded-lg border border-[#E8EEFA] bg-[#F7FAFF] flex justify-center items-center cursor-pointer transition-all duration-300 relative ease-linear hover:shadow-lg"
+        >
+          <div className="size-10 rounded-lg bg-[#E6EEFF] flex items-center justify-center mr-2">
+            <PlusOutlined style={{ fontSize: 16, color: '#2563EB' }} />
+          </div>
+          <div className="text-sm text-[#2563EB]">新建认知</div>
+        </div>
       </div>
     </section>
   )

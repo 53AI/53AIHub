@@ -334,6 +334,93 @@ var registry = map[string]ToolDefinition{
 			},
 		},
 	},
+	"search_discussion_history": {
+		Type: "function",
+		Function: Function{
+			Name:        "search_discussion_history",
+			Description: "跨会话检索当前老板在其他探讨会话中的历史讨论、决策结论与原始发言记录（只读）。当用户追问以前如何决定、探讨过什么或要求对比不同探讨中的经营问题时调用。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "检索关键词，如客户名、项目名、报价、决策问题等",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "返回最多结果条数(1-15)，默认 5",
+					},
+					"time_range": map[string]interface{}{
+						"type":        "string",
+						"description": "可选时间范围，如 7d (7天内), 30d (30天内), all (全部)，默认 all",
+					},
+					"conversation_ids": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "可选限定检索的特定历史会话ID列表",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
+	"query_boss_cognitions": {
+		Type: "function",
+		Function: Function{
+			Name:        "query_boss_cognitions",
+			Description: "查询当前老板已注册的经营认知（原则/价值排序/判断标准/偏好/边界/前提/触发条件），用于回答「老板依据什么原则做判断」这类问题（只读）。认知自带确认状态、来源、层级与适用边界，需按状态与边界正确使用。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "检索关键词，如「现金流」「降价」「授权」等经营主题词",
+					},
+					"layer": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"core", "situational"},
+						"description": "可选：core=核心认知（跨业务通用），situational=情境/领域认知（有适用边界）",
+					},
+					"cognition_type": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"principle", "priority", "criterion", "preference", "boundary", "assumption", "trigger"},
+						"description": "可选：认知类别（原则/价值排序/判断标准/偏好/边界/前提/触发条件）",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "返回最多条数(1-10)，默认 5",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
+	"query_business_memory": {
+		Type: "function",
+		Function: Function{
+			Name:        "query_business_memory",
+			Description: "查询当前老板已沉淀的经营记忆：人员/企业/事项/风险/承诺/决策等实体档案、可追溯事实与会议原子记忆（只读）。用于回答「某某客户/某人相关的事实和变化是什么」这类问题。",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "检索关键词，如客户名、人名、项目名、风险主题等",
+					},
+					"entity_type": map[string]interface{}{
+						"type":        "string",
+						"enum":        []string{"person", "matter", "risk", "commitment", "decision"},
+						"description": "可选实体类型过滤：person=人物/人员（企业作为人物属性记录）、matter=事项、risk=风险、commitment=承诺、decision=决策",
+					},
+					"limit": map[string]interface{}{
+						"type":        "integer",
+						"description": "返回最多条数(1-10)，默认 5",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+	},
 }
 
 // GetToolDefinition returns the full tool definition for a given tool name

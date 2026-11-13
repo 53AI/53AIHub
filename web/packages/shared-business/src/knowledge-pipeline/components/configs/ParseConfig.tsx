@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { CheckOutlined } from '@ant-design/icons'
 import { Button } from 'antd'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react'
 import { usePipelineTranslation } from '../../context'
 import { usePipelineAdapter } from '../../adapters'
 
@@ -191,7 +191,7 @@ export function ParseConfig({
                   </div>
                 )}
                 <div className="w-[50px] h-[50px] mb-4 rounded overflow-hidden">
-                  <img src={method.icon} className="w-full h-full object-cover" alt={method.name} />
+                  <SafeImage src={method.icon} className="w-full h-full object-cover" alt={method.name} />
                 </div>
                 <div className="text-base font-semibold text-gray-800 mb-1">{method.name}</div>
                 <div className="text-sm text-gray-400 leading-normal">{method.desc}</div>

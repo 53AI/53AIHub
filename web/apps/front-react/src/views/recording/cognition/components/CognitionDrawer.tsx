@@ -23,7 +23,16 @@ import { getPublicPath } from '@/utils/config'
 // 按抽屉作用域派生列表查询参数：核心认知固定类型，领域认知取类型筛选；来源筛选取逗号拼接字符串
 const buildDrawerQuery = (scope: DrawerScope, typeFilter: string, keyword: string, sourceType?: string) => ({
   layer: scope.kind,
-  cognition_type: scope.kind === 'core' ? scope.key : typeFilter === 'all' ? undefined : typeFilter,
+  cognition_type:
+    scope.kind === 'core'
+      ? scope.key === 'all'
+        ? typeFilter === 'all'
+          ? undefined
+          : typeFilter
+        : scope.key
+      : typeFilter === 'all'
+        ? undefined
+        : typeFilter,
   domain_id: scope.kind === 'situational' ? scope.id : undefined,
   keyword: keyword.trim() || undefined,
   ...(sourceType ? { source_type: sourceType } : {}),
@@ -148,17 +157,25 @@ export function CognitionDrawer({ open, scope, onClose, onOpenDetail, onAdd }: C
     { value: SMART_SOURCES, label: '智能生成' },
   ]
   const drawerTitle = scope ? scope.label : '认知详情'
-  const drawerCoreGroup = scope?.kind === 'core' ? CORE_GROUPS.find((group) => group.key === scope.key) : undefined
+  const drawerCoreGroup = scope?.kind === 'core' && scope.key !== 'all' ? CORE_GROUPS.find((group) => group.key === scope.key) : undefined
   const drawerDomain = scope?.kind === 'situational' ? domainRegistry.find((domain) => domain.id === scope.id) : undefined
   const drawerCount = scope
-    ? scope.kind === 'core' ? coreTotals[scope.key] : domainRegistry.find((domain) => domain.id === scope.id)?.cognition_count
+    ? scope.kind === 'core'
+      ? scope.key === 'all'
+        ? Object.values(coreTotals).reduce((a, b) => a + b, 0)
+        : coreTotals[scope.key]
+      : domainRegistry.find((domain) => domain.id === scope.id)?.cognition_count
     : undefined
   const drawerHeader = scope
     ? (
       <>
         <div className="flex items-center gap-3">
           {scope.kind === 'core' ? (
-            <RegistryIcon name={scope.key} iconBg={drawerCoreGroup?.iconBg} />
+            scope.key === 'all' ? (
+              <SafeImage src={'/images/recording/core.png'} alt="核心认知" className="size-8 shrink-0 object-contain" />
+            ) : (
+              <RegistryIcon name={scope.key} iconBg={drawerCoreGroup?.iconBg} />
+            )
           ) : (
             <SafeImage src={drawerDomain?.logo || ''} fallback={DEFAULT_DOMAIN_LOGO} round={8} className="size-8 shrink-0 rounded-lg object-cover" />
           )}
@@ -178,7 +195,9 @@ export function CognitionDrawer({ open, scope, onClose, onOpenDetail, onAdd }: C
     )
     : <div className="text-lg font-medium leading-6 text-[#253B5D]">{drawerTitle}</div>
   const drawerTypeOptions = scope?.kind === 'core'
-    ? [{ value: 'all', label: '全部' }, { value: scope.key, label: `${scope.label}` }]
+    ? scope.key === 'all'
+      ? [{ value: 'all', label: '全部' }, ...Object.entries(CANONICAL_TYPE_LABELS).map(([value, label]) => ({ value, label: `${label}` }))]
+      : [{ value: 'all', label: '全部' }, { value: scope.key, label: `${scope.label}` }]
     : scope?.kind === 'situational'
       ? [{ value: 'all', label: '全部' }, ...Object.entries(CANONICAL_TYPE_LABELS).map(([value, label]) => ({ value, label: `${label}` }))]
       : []
@@ -228,12 +247,14 @@ export function CognitionDrawer({ open, scope, onClose, onOpenDetail, onAdd }: C
                 onDebouncedChange={setKeyword}
               />
             </div>
-            {scope?.kind === 'situational' && (
+            {(scope?.kind === 'situational' || (scope?.kind === 'core' && scope.key === 'all')) && (
               <Select className="w-[152px] shrink-0" value={typeFilter} prefix={<span className="text-[#9CA3AF]">类型：</span>} options={drawerTypeOptions} onChange={setTypeFilter} />
             )}
             <Select className="w-[172px] shrink-0" value={sourceFilter} prefix={<span className="text-[#9CA3AF]">添加方式：</span>} options={SOURCE_FILTER_OPTIONS} onChange={setSourceFilter} />
             <div className="flex-1"></div>
-            <Button type="primary" onClick={() => onAdd(scope)}>添加</Button>
+            {scope?.kind !== 'core' && (
+              <Button type="primary" onClick={() => onAdd(scope)}>添加</Button>
+            )}
           </div>
           {pendingCount > 0 && (
             <button

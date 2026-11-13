@@ -4,7 +4,7 @@ import {
   ReloadOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
-import { Search } from "@km/shared-components-react";
+import { Search, SafeImage } from "@km/shared-components-react";
 import { filesApi } from "@/api/modules/files";
 import { formatRecycleList, type RecycleListItem } from "@/api/modules/files/transform";
 import { useLibraryStore } from "@/stores/modules/library";
@@ -172,7 +172,7 @@ export function LibraryRecycleSettingsView() {
       ellipsis: true,
       render: (name, record) => (
         <div className="flex items-center gap-2">
-          <img src={record.icon} alt="" className="size-6" />
+          <SafeImage src={record.icon} alt="" className="size-6" />
           <span className="text-sm text-[#1D1E1F]">{name}</span>
         </div>
       ),

@@ -226,6 +226,8 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 
 	successCount := 0
 	failureCount := 0
+	fatalFailureCount := 0
+	nonFatalContentCleaningFailureCount := 0
 	pausedCount := 0
 	pendingCount := 0
 	processingCount := 0
@@ -247,6 +249,11 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 			successCount++
 		} else if job.Status == RagJobStatusFailed {
 			failureCount++
+			if job.Type == string(RagPipelineStepKeyContentCleaning) {
+				nonFatalContentCleaningFailureCount++
+			} else {
+				fatalFailureCount++
+			}
 		} else if job.Status == RagJobStatusPaused {
 			pausedCount++
 		} else if job.Status == RagJobStatusPending {
@@ -333,9 +340,9 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 	if statusUpdate != "" {
 		info.Status = statusUpdate
 	} else {
-		if hasInterrupted || failureCount > 0 {
+		if hasInterrupted || fatalFailureCount > 0 {
 			info.Status = "failed"
-		} else if successCount >= info.TotalSteps && info.TotalSteps > 0 {
+		} else if countedJobs > 0 && successCount+nonFatalContentCleaningFailureCount == countedJobs {
 			info.Status = "success"
 			info.Progress = 100
 		} else if pendingCount == 0 && processingCount == 0 && pausedCount > 0 {
@@ -436,6 +443,10 @@ func UpdateFileCleaningRuleInfoHelper(db *gorm.DB, fileID int64, runID string, s
 
 // ExtractFileIDFromJob 从 Job 中提取 FileID
 func ExtractFileIDFromJob(job *RagJob) int64 {
+	// 页面向量化的 RelatedId 是 WikiPage.ID，不是文件 ID。
+	if job.Type == "wiki_page_vectorization" {
+		return 0
+	}
 	// 尝试从 RelatedId 获取
 	if job.RelatedId > 0 {
 		return job.RelatedId

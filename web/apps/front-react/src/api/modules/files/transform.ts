@@ -4,7 +4,6 @@ import { api_host } from '@/utils/config'
 import { PERMISSION_TYPE } from '@/components/KMPermission/constant'
 import { AI_GENERATE_CHUNK_STATUS } from '@/constants/chunk'
 import { formatFileSize } from '@km/shared-utils'
-import { getPublicPath } from '@/utils/config'
 
 const MAX_ENCODED_FILENAME_LENGTH = 100
 
@@ -104,7 +103,7 @@ export const formatFileInfo = (fileName: string, isfolder: boolean = false) : { 
     ext: file_ext,
     mime: file_mime,
     fname: displayName,
-    icon: getPublicPath(`/images/file/${file_mime || 'unknown'}.png`)
+    icon: `/images/file/${file_mime || 'unknown'}.png`
   }
 }
 

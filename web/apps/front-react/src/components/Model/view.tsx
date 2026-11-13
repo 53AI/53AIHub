@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Spin } from 'antd'
 import { QuestionCircleOutlined } from '@ant-design/icons'
+import { SafeImage } from '@km/shared-components-react'
 import { loadModels } from './index'
 import './view.css'
 
@@ -91,11 +92,6 @@ export function ModelView({
     loadModelInfo()
   }, [channelId, model])
 
-  const handleImageError = (event: React.SyntheticEvent<HTMLImageElement>) => {
-    const img = event.currentTarget
-    img.style.display = 'none'
-  }
-
   if (isLoading) {
     return (
       <div className="model-display">
@@ -113,11 +109,11 @@ export function ModelView({
       <div className="model-display">
         <div className="flex items-center gap-2">
           {modelInfo.icon && showIcon && (
-            <img
+            <SafeImage
               src={modelInfo.icon}
               alt={modelInfo.label}
               className="w-5 h-5 object-contain"
-              onError={handleImageError}
+              // 加载失败 → 展示 SafeImage 的兜底图（不再手写 onError 隐藏）。
             />
           )}
           <span className="whitespace-nowrap">{modelInfo.label}</span>

@@ -26,14 +26,17 @@ import { t } from '@/locales'
 import { safeRedirectPath } from '@/router'
 import { recordingChannel } from '@/services/recording-channel'
 import { wakeLockService } from '@/services/wake-lock'
-import { useEnterpriseStore, useIsSoftStyle } from '@/stores/modules/enterprise'
+import { useCognitionStore } from '@/stores/modules/cognition'
+import { useEnterpriseStore, useIsRecordOnly, useIsSoftStyle } from '@/stores/modules/enterprise'
 import { useNavigationStore } from '@/stores/modules/navigation'
 import { useRecordingStore } from '@/stores/modules/recording'
 import { navigateAgentShortcut, useShortcutsStore } from '@/stores/modules/shortcuts'
 import { useUserStore } from '@/stores/modules/user'
 import { api_host } from '@/utils/config'
 import { checkPermission } from '@/utils/permission'
+import { buildUrl } from '@/utils/router'
 import { checkVersion } from '@/utils/version'
+import { RecordingFlutterPanel } from '@/views/recording/components/flutter-panel/RecordingFlutterPanel'
 import './layout.css'
 
 // Lazy load heavy components
@@ -70,9 +73,14 @@ export function Layout() {
   const navigationStore = useNavigationStore()
   const shortcutsStore = useShortcutsStore()
   const isSoftStyle = useIsSoftStyle()
+  // 安心录模式（erhao.html 入口或企业配置）：软件风格布局 + 只展示安心录菜单
+  const isRecordOnly = useIsRecordOnly()
   const { isMobile } = useResponsive()
   const { isInMobile } = useBasicLayout()
   const recordingConfig = useRecordingStore((s) => s.recordingConfig)
+  // 认知模型待确认数：erhao.html 入口的侧边栏认知模型项需要展示红点
+  // （轮询由 RecordingView 负责，record 模式下它常驻挂载）
+  const cognitionPendingCount = useCognitionStore((s) => s.pendingCount)
 
   // 紧凑模式判断：软件模式 + 非移动端
   // 移动端一律不启用紧凑模式：视口宽度 < 768（isMobile）或 UA 判定为移动设备（isInMobile，覆盖横屏手机、平板等宽视口场景）
@@ -109,17 +117,30 @@ export function Layout() {
   const shouldShowBanner = !isSoftStyle && matches.some((match) => (match.handle as any)?.banner)
 
   // Computed: show mine menu (including document, agent, skill, recording)
+  // erhao.html 入口下不展示"我的"菜单
   const showMineMenu =
+    !isRecordOnly &&
     userStore.is_login &&
     ((hasKnowledge && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE)) || checkVersion(VERSION_MODULE.AGENT))
 
   // Computed: navigations with is_internal filter
-  const navigations = navigationStore.navigations
-    .filter((item) => +item.status)
-    .filter((item) => (item.jump_path === '/knowledge' ? userStore.info.is_internal : true))
-    // 软件模式下不展示首页
-    .filter((item) => !(isSoftStyle && item.jump_path === '/index'))
-    .filter((item) => item.jump_path !== '/___placeholder')
+  // erhao.html 入口：导航菜单全部隐藏，仅保留安心录入口
+  const navigations = isRecordOnly
+    ? []
+    : navigationStore.navigations
+        .filter((item) => +item.status)
+        .filter((item) => (item.jump_path === '/knowledge' ? userStore.info.is_internal : true))
+        // 软件模式下不展示首页
+        .filter((item) => !(isSoftStyle && item.jump_path === '/index'))
+        .filter((item) => item.jump_path !== '/___placeholder')
+
+  // erhao.html 入口的"知识"项：与主入口同源——由导航接口驱动（名称 / 图标 / 可见性），
+  // 过滤条件与主入口一致（status 启用 + 知识库仅内部用户可见）
+  const knowledgeNav = isRecordOnly
+    ? (navigationStore.navigations.find(
+        (item) => +item.status && item.jump_path === '/knowledge' && userStore.info.is_internal
+      ) ?? null)
+    : null
 
   // 导航项 active 判定：
   // - 外部链接：通过当前 webview 路由 + url 参数匹配
@@ -472,8 +493,8 @@ export function Layout() {
         <header className="flex-none h-[70px] border-b sticky top-0 z-10 nav-bg">
           <div className="flex items-center justify-between h-full w-11/12 lg:w-4/5 max-w-[1200px] mx-auto">
             <div className="flex-1 flex items-center gap-2 overflow-hidden relative">
-              <a href="/" className="flex flex-none items-center gap-2 overflow-hidden">
-                <img
+              <a href={buildUrl('/')} className="flex flex-none items-center gap-2 overflow-hidden">
+                <SafeImage
                   src={enterpriseStore.logo}
                   title={enterpriseStore.display_name}
                   className="max-w-[180px] max-h-8 rounded"
@@ -563,7 +584,7 @@ export function Layout() {
 
   return (
     <SidebarContext.Provider value={sidebarContextValue}>
-      <div className="h-full flex relative flex-row">
+      <div className={`h-full flex relative flex-row ${isRecordOnly ? 'bg-[#F7F8FA]' : 'bg-[#fff]'}`}>
         {/* Hover trigger area */}
         {!useCompactMode && !showSider && !siderVisible && !isMobile && (
           <div
@@ -583,8 +604,10 @@ export function Layout() {
         {/* Sidebar */}
         <div
           ref={siderRef}
-          className={`flex-none flex flex-col border-r bg-[#fff] transition-all duration-300 ease-linear overflow-hidden ${
+          className={`flex-none flex flex-col transition-all duration-300 ease-linear overflow-hidden ${
             useCompactMode ? 'w-[64px]' : 'w-[240px]'
+          } ${
+            isRecordOnly ? '' : 'border-r bg-white'
           } ${
             isMobile
               ? 'fixed top-0 bottom-0 z-[200]'
@@ -605,7 +628,7 @@ export function Layout() {
           {useCompactMode ? (
             <div className="pt-4 pb-2 flex justify-center">
               <Tooltip title={enterpriseStore.display_name} placement="right">
-                <img
+                <SafeImage
                   className="w-8 h-8 rounded"
                   src={enterpriseStore.ico}
                   alt={enterpriseStore.display_name}
@@ -618,7 +641,7 @@ export function Layout() {
                 className="flex items-center gap-2 overflow-hidden"
                 title={enterpriseStore.display_name}
               >
-                <img
+                <SafeImage
                   className="max-w-[180px] max-h-8 rounded"
                   src={enterpriseStore.logo}
                   alt={enterpriseStore.display_name}
@@ -653,7 +676,7 @@ export function Layout() {
                         className={`${navItemClass} ${getBlockColor(isNavItemActive(item))}`}
                       >
                         <div className={`size-5 flex-center overflow-hidden`}>
-                          <img
+                          <SafeImage
                             className="w-5 h-5 -translate-y-16"
                             src={item.icon}
                             alt={item.name}
@@ -678,7 +701,7 @@ export function Layout() {
                         className={`${navItemClass} ${getBlockColor(isNavItemActive(item))}`}
                       >
                         <div className={`size-5 flex-center overflow-hidden`}>
-                          <img
+                          <SafeImage
                             className="w-5 h-5 -translate-y-16"
                             src={item.icon}
                             alt={item.name}
@@ -715,7 +738,7 @@ export function Layout() {
                       className={`${navItemClass} relative group ${getBlockColor(effectivePath.startsWith(item.menu_path))}`}
                     >
                       <div className={`size-5 flex-center overflow-hidden`}>
-                        <img
+                        <SafeImage
                           className="w-5 h-5 -translate-y-16"
                           src={item.icon}
                           alt={item.name}
@@ -747,8 +770,8 @@ export function Layout() {
               </div>
             </div>
 
-            {/* Shortcuts */}
-            {shortcutsStore.shortcuts.length > 0 && (
+            {/* Shortcuts（erhao.html 入口隐藏） */}
+            {!isRecordOnly && shortcutsStore.shortcuts.length > 0 && (
               <div className="py-3 flex flex-col gap-1">
                 {!useCompactMode && (
                   <div className="h-7 px-2 flex items-center text-sm text-[#9A9A9A]">
@@ -771,7 +794,7 @@ export function Layout() {
                           <SvgIcon name="database-k" />
                         </div>
                       ) : (
-                        <img
+                        <SafeImage
                           src={shortcut.logo}
                           className="size-5 rounded flex-center"
                           alt={shortcut.name}
@@ -894,13 +917,20 @@ export function Layout() {
         {/* Main content */}
         <main
           ref={mainRef}
-          className="flex-1 relative overflow-y-auto flex flex-col transition-all duration-300"
+          className={`flex-1 relative overflow-y-auto flex flex-col transition-all duration-300 ${ isRecordOnly ? 'm-2 rounded-xl' : '' }`}
           style={{
             marginLeft: useCompactMode ? '0' : showSider ? '240px' : '0'
           }}
         >
-          {navigations.length === 0 && !showMineMenu ? null : <Outlet />}
+          {/* erhao.html 入口下导航为空、无"我的"菜单，但仍需渲染子路由 */}
+          {isRecordOnly || navigations.length > 0 || showMineMenu ? <Outlet /> : null}
         </main>
+
+        {/* 安心录右侧 Flutter Web 面板（375px）：与 main 平级挂在最右侧，
+            记忆 / 认知 / 关系的「查看」「创建」入口加载 Flutter Web 页面。
+            面板状态全局（useRecordingFlutterPanel），关闭时零占位，
+            非录音页面不受影响。 */}
+        <RecordingFlutterPanel />
 
         {/* Profile modal */}
         <Suspense fallback={null}>

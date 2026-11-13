@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Modal, Button, message, Tooltip } from 'antd'
-import { SvgIcon, OverflowTooltip } from '@km/shared-components-react'
+import { SvgIcon, OverflowTooltip, SafeImage } from '@km/shared-components-react'
 import { AGENT_TYPE_OPTIONS } from '../../platformConfig'
 import { AgentBasicInfo } from '../shared/AgentBasicInfo'
 import type {
@@ -51,7 +51,7 @@ function PlatformSection({
               }`}
               onClick={() => onSelect(platform)}
             >
-              <img src={platform.icon} className="size-6" alt={label} />
+              <SafeImage src={platform.icon || ""} className="size-6" alt={label} />
               <OverflowTooltip>
                 <span className="text-md leading-tight truncate">{label}</span>
               </OverflowTooltip>

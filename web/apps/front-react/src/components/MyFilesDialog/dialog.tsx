@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo, useRef, forwardRef, useImperativeHandle
 import { Modal, Spin, Empty, Button, Popover, Tree, message } from "antd";
 import type { TreeDataNode, TreeProps } from "antd";
 import { DownOutlined, CloseOutlined } from "@ant-design/icons";
-import { Search } from "@km/shared-components-react";
+import { Search, SafeImage } from "@km/shared-components-react";
 import mySpaceApi from '@/api/modules/my-space';
 import recordingApi from '@/api/modules/recording';
 import { formatFile } from '@/api/modules/files/transform';
@@ -51,9 +51,9 @@ const formatTreeNode = (item: any): TreeNode => {
     id: formattedFile.id,
     name: formattedFile.name,
     icon: isFolder
-      ? getPublicPath('/images/file/folder.png')
+      ? '/images/file/folder.png'
       : formattedFile.origin_source === 'recording' || formattedFile.origin_source === 'recording_import'
-        ? getPublicPath('/images/file/recrod.png')
+        ? '/images/file/recrod.png'
         : formattedFile.icon,
     isfolder: isFolder,
     path: item.path || '',
@@ -628,7 +628,7 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
                 key={item.id}
                 className="h-8 px-2 rounded flex items-center gap-1 text-[#999999] hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
               >
-                <img src={item.icon} className="size-4" alt="" />
+                <SafeImage src={item.icon} className="size-4" alt="" />
                 <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
                 <CloseOutlined
                   className="block md:hidden md:group-hover:block"
@@ -655,7 +655,7 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
           key: node.id,
           title: (
             <div className="flex items-center gap-2">
-              <img src={node.icon} className="w-5 h-5 shrink-0" alt="" />
+              <SafeImage src={node.icon} className="w-5 h-5 shrink-0" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] overflow-hidden text-ellipsis whitespace-nowrap">
                 {node.name}
               </span>
@@ -782,7 +782,7 @@ export const MyFilesDialog = forwardRef<MyFilesDialogRef, MyFilesDialogProps>(
                           onChange={() => toggleCheck(activeTab, String(node.key), checked)}
                           onClick={(e) => e.stopPropagation()}
                         />
-                        <img src={(node as any).icon} className="w-5 h-5 shrink-0" alt="" />
+                        <SafeImage src={(node as any).icon} className="w-5 h-5 shrink-0" alt="" />
                         <span className="flex-1 text-sm text-[#1D1E1F] truncate">{(node as any).name}</span>
                       </div>
                     );

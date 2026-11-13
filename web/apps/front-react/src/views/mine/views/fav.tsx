@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Empty, Spin, message, Button } from "antd";
-import { Dropdown } from "@km/shared-components-react";
+import { Dropdown, SafeImage } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import favoritesApi from "@/api/modules/favorites";
 import mySpaceApi from "@/api/modules/my-space";
@@ -10,7 +10,6 @@ import { formatFile } from "@/api/modules/files/transform";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { formatLibrary } from "@/stores/modules/library";
-import { SafeImage } from "@km/shared-components-react";
 import { SvgIcon } from "@km/shared-components-react";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { getPublicPath } from "@/utils/config";
@@ -105,7 +104,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
           type: "file" as const,
           id: item.resource_id,
           name: formattedFile.name,
-          icon: isRecording ? getPublicPath("/images/file/recrod.png") : formattedFile.icon,
+          icon: isRecording ? "/images/file/recrod.png" : formattedFile.icon,
           position,
           owner,
           favoriteTime: getFormatTimeStamp(item.recent_time),
@@ -501,7 +500,7 @@ export default function FavView({ keyword = "", onPreview, refreshKey }: FavView
                         <SvgIcon name="database-k" />
                       </div>
                     ) : ( item.icon ? (
-                      <img
+                      <SafeImage
                         className="flex-none w-6 h-6"
                         src={item.icon}
                         alt=""

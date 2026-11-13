@@ -4,39 +4,55 @@
   container-type: inline-size;
 }
 
-/* 工具栏：内容区 ≥ 720px 时一行（类型 tab 左、搜索+按钮右）；
-   不足时上下堆叠（类型 tab 在上、搜索+按钮在下）。 */
+/* 工具栏：类型 tab 左、"融合/新增"按钮右，同一行；
+   极窄内容放不下时按钮自动换行（退化为上下两行）。 */
 .memory-toolbar {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
 }
 
-/* 类型 tab：堆叠态占满整行（可换行），行布局态收缩为内容宽度 */
+/* 类型 tab：按内容收缩，不再占满整行（右侧要放"融合/新增"按钮） */
 .memory-type-tabs {
-  width: 100%;
-}
-
-/* 搜索框：堆叠态占满剩余行宽，行布局态固定 280px */
-.memory-toolbar-search {
-  width: 100%;
+  width: fit-content;
   min-width: 0;
 }
 
+/* 标题区搜索框：移动端按文档流堆叠（标题 / 描述 / 搜索），搜索占满整行；
+   无边框灰底（#F5F5F5），仅作用于记忆页标题搜索，不影响其他页面的 Search 组件 */
+.memory-title-search {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.75rem;
+  border: none;
+  background: #f5f5f5;
+}
+
 @container (min-width: 45rem) {
-  .memory-toolbar {
-    flex-direction: row;
+  /* 标题区：标题与搜索同行（标题左、搜索右、垂直居中），描述独占第二行 */
+  .memory-title-area {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'title search'
+      'desc desc';
     align-items: center;
+    row-gap: 0.25rem;
   }
 
-  .memory-type-tabs {
-    width: fit-content;
+  .memory-title {
+    grid-area: title;
   }
 
-  .memory-toolbar-search {
+  .memory-desc {
+    grid-area: desc;
+  }
+
+  .memory-title-search {
+    grid-area: search;
     width: 280px;
-    flex: none;
+    margin-top: 0;
   }
 }

@@ -64,16 +64,19 @@ export const WEBSITE_VERSION_NAME_MAP = {
 export const WEBSITE_STYLE = {
   WEBSITE: 'website',
   SOFTWARE: 'software',
+  RECORDING: 'recording',
 } as const
 export type WebsiteStyle = (typeof WEBSITE_STYLE)[keyof typeof WEBSITE_STYLE]
 
 export const WEBSITE_STYLE_LABEL_MAP = new Map([
   [WEBSITE_STYLE.WEBSITE, 'template_style.website'],
   [WEBSITE_STYLE.SOFTWARE, 'template_style.software'],
+  [WEBSITE_STYLE.RECORDING, 'template_style.recording'],
 ])
 export const WEBSITE_STYLE_DEMO_MAP = new Map([
   [WEBSITE_STYLE.WEBSITE, '/images/info/template-website.png'],
   [WEBSITE_STYLE.SOFTWARE, '/images/info/template-software.png'],
+  [WEBSITE_STYLE.RECORDING, '/images/info/template-recording.png'],
 ])
 
 export const ENTERPRISE_INDUSTRY = {

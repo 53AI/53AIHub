@@ -2,7 +2,7 @@ import { forwardRef, useImperativeHandle, useState, useRef, useEffect, useCallba
 import { message, Modal } from 'antd';
 import { PlusOutlined, CloseCircleFilled } from "@ant-design/icons";
 import { FileItem } from '@/api/modules/files/types';
-import { Tabs } from '@km/shared-components-react';
+import { Tabs, SvgIcon } from '@km/shared-components-react';
 import { copyToClip } from '@km/shared-utils';
 import loadLib from '@/utils/loadLib';
 import { TemplateListModal } from '@km/shared-business/recording-template';
@@ -14,9 +14,13 @@ import recordingApi from '@/api/modules/recording';
 import ragJobApi from '@/api/modules/rag-job';
 import promptApi from '@/api/modules/prompt';
 import { GROUP_TYPE } from '@/constants/group';
+import {
+  getDisplayName
+} from '@/views/mine/useInlineEditLite';
 import { useTemplateTabs } from '../../hooks/useTemplateTabs';
 import { useFileParse } from '../../hooks/useFileParse';
 import { useInsightDescriptionUpdate, useMeetingMinutesRename } from '../../hooks/useInsightCallbacks';
+import { notifyFlutterPanelMutation } from '../flutter-panel/notifyFlutterPanelMutation';
 import { useExport } from '../../hooks/useExport';
 import { STAGE_STATUS, isStageActionable, isStageFailed, isStageDone, isStageActive } from '../../constants/recordingStatus';
 import { InsightTabContent } from '../preview/InsightTabContent';
@@ -74,6 +78,13 @@ interface AudioViewProps {
    * 用于分享页等接收方场景，保留轮询和被动展示 */
   readOnly?: boolean
   /**
+   * 打开「关联发言人」：右侧 Flutter 面板加载本录音详情并自动弹出关联
+   * 发言人抽屉（深链 bind_speaker=1）。参数为指定说话人（行内按钮点哪
+   * 行关联谁）；不传说话人时 Flutter 侧自动选第一个未确认的。不传回调
+   * （分享页等只读场景）时转写 Tab 不渲染关联入口。
+   */
+  onOpenSpeakerBind?: (speaker?: string) => void
+  /**
    * 洞察生成状态变化回调：让父级（RecordingPreview）感知当前是否还在生成中，
    * 供「参谋洞察」面板在生成中再次提交时弹出确认提示。
    */
@@ -82,6 +93,8 @@ interface AudioViewProps {
     generating: boolean
     /** 任意解析阶段在 loading（pending/parsing/processing）→ 后端在跑，不可重生成洞察 */
     parseStatusRunning?: boolean
+    /** 洞察生成完成（insights 阶段 done 且当前不在生成中）→ 预览页右侧浮动按钮组显示 */
+    insightDone?: boolean
   }) => void
 }
 
@@ -101,9 +114,19 @@ export interface AudioViewRef {
    *  并启动新一轮轮询。供「参谋洞察」面板提交后调用，让主视图洞察 Tab 立刻进入 loading。
    */
   startInsightRegeneration: () => void
+  /**
+   * 重拉当前文件的总结列表（fileSummaries）：sum-* tab、导出菜单、分享 chip
+   * 都由它驱动。供 Flutter 面板「添加总结模块」上报后同步主视图（两侧互通）。
+   */
+  refreshSummaries: () => void
+  /**
+   * 重拉当前文件的转写 markdown 并重新解析：转写列表（说话人 / 头像）由它驱动。
+   * 供 Flutter 面板「关联发言人」上报后同步主视图（两侧互通）。
+   */
+  refreshTranscript: () => void
 }
 
-export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function AudioView({ currentFile, shouldPoll = true, templates, templateCategories, recordingConfig, parseStatus, onDescriptionUpdate, onMeetingMinutesRename, readOnly = false, onInsightStateChange }, ref) {
+export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function AudioView({ currentFile, shouldPoll = true, templates, templateCategories, recordingConfig, parseStatus, onDescriptionUpdate, onMeetingMinutesRename, readOnly = false, onInsightStateChange, onOpenSpeakerBind }, ref) {
   const [currentTranscriptId, setCurrentTranscriptId] = useState('')
   const audioPlayerRef = useRef<AudioPlayerBarHandles>(null)
 
@@ -169,6 +192,8 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
     startInsightRegeneration,
     updateSummary,
     insightPageApiDone,
+    loadFileSummaries,
+    loadTranscription,
   } = useFileParse({ fileId: currentFile?.id, shouldPoll, initialParseStatus: parseStatus })
 
   // 我的录音旧数据：转录和洞察都完成，纪要/页面编排为 pending → 不展示重新生成页面
@@ -192,12 +217,16 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
   const insightsActionable = isStageActionable(insightsStatus)
   const parseStatusRunning = !initialLoadDone
     || (isBeingParsed && !insightsActionable)
+  // 洞察生成完成：insights 阶段到达终态 done（completed/normal/skipped）且当前不在生成中
+  //（含首拉未完成的 race window 保护）→ 预览页右侧浮动按钮组（提议/行动/成果/探讨）显示。
+  const insightDone = isStageDone(insightsStatus) && !insightGenerating
   useEffect(() => {
     onInsightStateChange?.({
       generating: insightGenerating,
       parseStatusRunning,
+      insightDone,
     })
-  }, [insightGenerating, parseStatusRunning, onInsightStateChange])
+  }, [insightGenerating, parseStatusRunning, insightDone, onInsightStateChange])
   const showSummaryPending = !isLegacyData && (isStageActionable(meetingMinutesStatus) || isStageActionable(transcriptionStatus))
 
   // 音频播放 → 转写列表反向联动：按当前播放时间找出应高亮的转写项
@@ -507,8 +536,14 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
       // 只返回模板总结（template_id !== 0），纪要（template_id === 0）走独立的 's' chip
       getFileSummaries: () => (fileSummaries || []).filter((s) => String(s.template_id) !== '0'),
       startInsightRegeneration,
+      refreshSummaries: () => {
+        if (currentFile?.id) void loadFileSummaries(currentFile.id)
+      },
+      refreshTranscript: () => {
+        if (currentFile?.id) void loadTranscription(currentFile.id)
+      },
     }),
-    [exportApi.exportItem, fileSummaries, startInsightRegeneration],
+    [exportApi.exportItem, fileSummaries, startInsightRegeneration, loadFileSummaries, loadTranscription, currentFile?.id],
   )
 
   // ── 继续生成（补跑失败的步骤） ──
@@ -567,6 +602,8 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
           recordingApi.deleteSummary(tplId).then(() => {
             removeSummaryTab(tplId)
             message.success('已删除')
+            // 同步 Flutter 面板（iframe）：详情页总结 Tab 重拉，移除已删模板
+            notifyFlutterPanelMutation('update', currentFile.id)
           }).catch((err) =>
             message.error(err?.message || '删除总结失败'),
           )
@@ -575,21 +612,23 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
     },
     [setActiveTab, removeSummaryTab, readOnly],
   )
-
   return (
-    <div className={`flex-1  min-h-0 flex flex-col ${ activeTab === 'insight' ? 'bg-[#FAFBFC]' : 'bg-white' } overflow-hidden`}>
-      <div className="w-4/5 mx-auto relative">
-        {/* Top Tabs */}
-        <div className="py-2.5 ">
+    <div className={`flex-1  min-h-0 flex flex-col ${ activeTab === 'insight' ? 'bg-white' : 'bg-white' } overflow-hidden`}>
+      <div className="px-8">
+        <div className="max-w-[1200px] mx-auto relative pt-5">
+          <h2 className="text-2xl font-normal text-[#1D1E1F] mb-4">
+            {getDisplayName(currentFile?.name, false, currentFile?.file_ext)}
+          </h2>
+          {/* Top Tabs */}
           <Tabs
-            variant="underline"
+            variant="custom"
             activeKey={activeTab}
             onChange={(key) => setActiveTab(key)}
             prefixItems={tabItems.map((t) => ({ key: t.key, label: t.label }))}
             items={[]}
             divider={
               templateTabItems.length > 0 ? (
-                <div className="flex-none h-4 w-px bg-[#E6E8EB] mx-1" />
+                <div className="flex-none h-4 w-px bg-[#E6E8EB] ml-1 mr-6" />
               ) : null
             }
             extra={
@@ -604,7 +643,7 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
                   return (
                     <div
                       key={t.key}
-                      className={`relative px-4 h-[52px] flex items-center text-xl cursor-pointer whitespace-nowrap group/tab ${
+                      className={`relative h-[52px] mr-6 flex items-center text-base cursor-pointer whitespace-nowrap group/tab ${
                         isActive
                           ? 'text-[#2563EB]'
                           : 'text-[#4F5052] hover:text-[#2563EB]'
@@ -613,7 +652,7 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
                     >
                       {t.label}
                       {isActive && (
-                        <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-[#2563EB] rounded-full" />
+                        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2563EB] rounded-full" />
                       )}
                       {!isLoading && !readOnly && (
                         <span
@@ -637,17 +676,17 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
               </>
             }
           />
-        </div>
 
-        <TemplateListModal
-          ref={templateListModalRef}
-          templates={templates}
-          categories={templateCategories}
-          actionMode="add"
-          onAction={handleTemplateSelect}
-          title="AI模板"
-          hideAdminControls
-        />
+          <TemplateListModal
+            ref={templateListModalRef}
+            templates={templates}
+            categories={templateCategories}
+            actionMode="add"
+            onAction={handleTemplateSelect}
+            title="AI模板"
+            hideAdminControls
+          />
+        </div>
       </div>
       {/* Main Content Area */}
       {activeTab === 'insight' ? (
@@ -670,10 +709,25 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
           />
         </div>
       ) : activeTab === 'transcript' ? (
-        <div className="flex-1 min-h-0 flex flex-col py-4">
-          <div className="w-4/5 mx-auto">
-            <AudioPlayerBar ref={audioPlayerRef} audioSrc={currentFile?.file_url ?? ''} onTimeUpdate={handleAudioTimeUpdate} />
-          </div>
+        <div className="flex-1 min-h-0 flex flex-col py-4 px-8">
+
+          {/* 发言人关联入口：对齐 Flutter 详情页统计卡片视觉（浅灰底、people
+              图标、统计文案），点击在右侧 Flutter 面板打开关联发言人抽屉
+              （两步：声音校验 → 人员绑定）。转写未就绪 / 只读模式不展示。 */}
+          {transcriptList.length > 0 && (
+            <div>
+              <div className="max-w-[1200px] mx-auto">
+                <div
+                  className="flex w-full items-center gap-2 rounded-lg bg-[#F8F9FA] px-3.5 py-2.5 transition-colors"
+                >
+                  <SvgIcon name="people" size={18} className="shrink-0 text-[#F97316]" />
+                  <span className="flex-1 text-[13.5px] font-medium text-[#333332]">
+                    识别到 {new Set(transcriptList.map((item) => item.speaker)).size} 位发言人
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
           {/* 转写 */}
           <TranscriptPanel
             transcriptList={transcriptList}
@@ -688,7 +742,13 @@ export const AudioView = forwardRef<AudioViewRef, AudioViewProps>(function Audio
             initialLoadDone={initialLoadDone}
             generating={generating}
             onStartGenerate={readOnly ? undefined : handleStartGenerate}
+            onOpenSpeakerBind={onOpenSpeakerBind}
           />
+                    <div>
+            <div className="max-w-[1200px] mx-auto">
+              <AudioPlayerBar ref={audioPlayerRef} audioSrc={currentFile?.file_url ?? ''} onTimeUpdate={handleAudioTimeUpdate} />
+            </div>
+          </div>
         </div>
       ) : activeTab === 'summary' ? (
         <div className="flex-1 overflow-y-auto" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>

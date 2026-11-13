@@ -3,6 +3,8 @@ package adaptorregistry
 import (
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/53AI/53AIHub/model"
@@ -113,6 +115,28 @@ func GetAdaptor(apiType int) adaptor.Adaptor {
 	}
 
 	return nil
+}
+
+func GetAdaptorWithBaseURL(apiType int, baseURL string) adaptor.Adaptor {
+	if apiType == apitype.Ali {
+		parsed, err := url.Parse(baseURL)
+		if err == nil {
+			basePath := strings.TrimRight(parsed.Path, "/")
+			if strings.HasSuffix(basePath, "/compatible-mode/v1") || strings.HasSuffix(basePath, "/compatible-mode") {
+				return &Custom_openai.Adaptor{}
+			}
+		}
+	}
+	return GetAdaptor(apiType)
+}
+
+func GetAdaptorForChannel(apiType int, baseURL string, channelType int) adaptor.Adaptor {
+	switch channelType {
+	case 1, 3, 36, 900, model.ChannelApiTypeTencentTokenHub:
+		return &Custom_openai.Adaptor{}
+	default:
+		return GetAdaptorWithBaseURL(apiType, baseURL)
+	}
 }
 
 func SetCustomConfig(a *adaptor.Adaptor, customConfig *custom.CustomConfig) error {

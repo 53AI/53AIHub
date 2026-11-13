@@ -40,6 +40,9 @@ export interface SidePanelProps {
 	 * 无论是否传入，悬浮模式打开时都会渲染全屏遮罩（遮挡底层交互入口，
 	 * 如 ResponsiveSidebar 的移动端切换按钮，避免多个浮层同时打开） */
 	onClose?: () => void
+	/** 关闭时是否保留子内容挂载（不卸载）。适用于 iframe 等重资源内容：
+	 *  关闭只是收起，重新打开无需重建、不重走加载。默认 false（关闭即卸载） */
+	keepMounted?: boolean
 	/** 透传到外层 wrapper 的 data-testid */
 	'data-testid'?: string
 	children: ReactNode
@@ -63,6 +66,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 	className = '',
 	overlay = true,
 	onClose,
+	keepMounted = false,
 	'data-testid': dataTestid,
 	children,
 }) => {
@@ -93,7 +97,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 						className={`absolute inset-y-0 ${side === 'right' ? 'left-0' : 'right-0'}`}
 						style={{ width: widthValue, maxWidth: '100vw' }}
 					>
-						{open ? children : null}
+						{open || keepMounted ? children : null}
 					</div>
 				</div>
 			</>
@@ -121,7 +125,7 @@ const SidePanel: React.FC<SidePanelProps> = ({
 				className={`absolute inset-y-0 ${side === 'right' ? 'left-0' : 'right-0'}`}
 				style={innerStyle}
 			>
-				{open ? children : null}
+				{open || keepMounted ? children : null}
 			</div>
 		</div>
 	)

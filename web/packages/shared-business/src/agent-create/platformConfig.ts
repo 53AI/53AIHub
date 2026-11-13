@@ -52,15 +52,13 @@ function createPlatformOption(
 /**
  * 创建平台配置（后台管理）
  * @param imgHost 图片服务器地址，如 `${api_host}/api/images`
- * @param getPublicPath 可选的公共路径转换函数，用于处理基础路径前缀
  */
 export function createPlatformsByType(
   imgHost: string,
-  getPublicPath?: (path: string) => string,
 ): AgentPlatformOption[] {
   const getIconUrl = (path: string): string => `${imgHost}${path}`
   const openClawCompatiblePlatforms = OPENCLAW_COMPATIBLE_CREATABLE_AGENT_TYPES.map((agentType) =>
-    createPlatformOption(agentType, OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].label, getOpenClawCompatibleAgentIconPath(agentType, getPublicPath), OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].channelType, BACKEND_AGENT_TYPE.ASSISTANT, AGENT_MODES.ASSISTANT),
+    createPlatformOption(agentType, OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].label, getOpenClawCompatibleAgentIconPath(agentType), OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].channelType, BACKEND_AGENT_TYPE.ASSISTANT, AGENT_MODES.ASSISTANT),
   )
 
   return [
@@ -92,14 +90,12 @@ export function createPlatformsByType(
 /**
  * 创建平台配置（前台用户）
  * @param imgHost 图片服务器地址，如 `${api_host}/api/images`
- * @param getPublicPath 可选的公共路径转换函数，用于处理基础路径前缀
  */
 export function createFrontPlatformsByType(
   _imgHost: string,
-  getPublicPath?: (path: string) => string,
 ): AgentPlatformOption[] {
   return OPENCLAW_COMPATIBLE_CREATABLE_AGENT_TYPES.map((agentType) =>
-    createPlatformOption(agentType, OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].label, getOpenClawCompatibleAgentIconPath(agentType, getPublicPath), OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].channelType, BACKEND_AGENT_TYPE.ASSISTANT, AGENT_MODES.ASSISTANT),
+    createPlatformOption(agentType, OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].label, getOpenClawCompatibleAgentIconPath(agentType), OPENCLAW_COMPATIBLE_AGENT_METADATA[agentType].channelType, BACKEND_AGENT_TYPE.ASSISTANT, AGENT_MODES.ASSISTANT),
   )
 }
 

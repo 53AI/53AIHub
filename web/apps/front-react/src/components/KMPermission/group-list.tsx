@@ -10,6 +10,7 @@ import {
 } from "./constant";
 import { getPublicPath } from "@/utils/config";
 import "./group-list.css";
+import { SafeImage } from "@km/shared-components-react";
 
 interface GroupMember {
   subject_id: number;
@@ -77,8 +78,8 @@ export function GroupList({
               <div className="km-group-list-member-info">
                 {member.subject_type === SUBJECT_TYPE.company_all ? (
                   <>
-                    <img
-                      src={getPublicPath("/images/space/group.png")}
+                    <SafeImage
+                      src={"/images/space/group.png"}
                       alt="admin"
                       className="km-group-list-member-icon"
                     />

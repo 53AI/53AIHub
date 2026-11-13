@@ -17,6 +17,7 @@ export interface ChatCompletionParams {
   agent_id?: string
   messages?: Array<{ role: string; content: string }>
   model?: string
+  thinking_mode?: 1 | 2
   stream?: boolean
   frequency_penalty?: number
   presence_penalty?: number

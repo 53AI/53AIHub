@@ -70,6 +70,10 @@ function mapToTreeNode(raw: any): TreeNode {
 		name: raw.name || raw.path?.split('/').pop() || raw.path,
 		path: raw.path,
 		hasChildren: raw.has_children ?? undefined,
+		// 透传调用方标记的禁用状态（如无写权限目录），
+		// MoveToModal 据此禁用 radio 并展示 disabledReason tooltip
+		disabled: raw.disabled ?? undefined,
+		disabledReason: raw.disabledReason ?? undefined,
 	}
 }
 

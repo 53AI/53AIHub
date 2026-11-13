@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Modal, Select, message } from 'antd';
-import { SvgIcon } from '@km/shared-components-react';
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { t } from '@/locales';
 import { skillApi } from '@/api/modules/skill';
 import agentShortcutsApi from '@/api/modules/agent-shortcuts';
@@ -194,7 +194,7 @@ export function AddSkillModal({
             label: (
               <div className="flex items-center gap-2">
                 {agent.agent_logo ? (
-                  <img
+                  <SafeImage
                     src={agent.agent_logo}
                     alt=""
                     className="size-5 rounded object-cover"

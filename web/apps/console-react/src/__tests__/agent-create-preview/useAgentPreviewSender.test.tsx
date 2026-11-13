@@ -157,7 +157,7 @@ describe('useAgentPreviewSender — knowledge', () => {
     )
     expect(result.current.model?.options).toHaveLength(1)
     const opt = result.current.model?.options[0]
-    expect(opt?.id).toBe('10_1_gpt-4')
+    expect(opt?.id).toBe('fast_10_1_gpt-4')
     expect(opt?.label).toBe('chat.fast_response')
     expect(opt?.icon).toBe('lightning')
   })
@@ -175,8 +175,8 @@ describe('useAgentPreviewSender — knowledge', () => {
       }),
     )
     expect(result.current.model?.options).toHaveLength(2)
-    expect(result.current.model?.options.map((o) => o.id)).toEqual(['10_1_gpt-4', '11_1_gpt-4-deep'])
-    const deepOpt = result.current.model?.options.find((o) => o.id === '11_1_gpt-4-deep')
+    expect(result.current.model?.options.map((o) => o.id)).toEqual(['fast_10_1_gpt-4', 'deep_11_1_gpt-4-deep'])
+    const deepOpt = result.current.model?.options.find((o) => o.id === 'deep_11_1_gpt-4-deep')
     expect(deepOpt?.label).toBe('chat.deep_thinking')
     expect(deepOpt?.icon).toBe('star-link')
   })
@@ -188,7 +188,7 @@ describe('useAgentPreviewSender — knowledge', () => {
         agent_data: baseAgentData,
       }),
     )
-    expect(result.current.model?.selectedId).toBe('10_1_gpt-4')
+    expect(result.current.model?.selectedId).toBe('fast_10_1_gpt-4')
   })
 
   it('model.onChange updates selectedId', () => {
@@ -203,8 +203,8 @@ describe('useAgentPreviewSender — knowledge', () => {
         },
       }),
     )
-    act(() => result.current.model!.onChange('11_1_deep'))
-    expect(result.current.model?.selectedId).toBe('11_1_deep')
+    act(() => result.current.model!.onChange('deep_11_1_deep'))
+    expect(result.current.model?.selectedId).toBe('deep_11_1_deep')
   })
 
   it('reset() does not change model.selectedId', () => {
@@ -243,9 +243,9 @@ describe('useAgentPreviewSender — knowledge', () => {
         },
       }),
     )
-    expect(result.current.source?.value.mode).toBe('all')
-    expect(result.current.source?.graphEnabled).toBe(true)
-    expect(result.current.source?.webSearchEnabled).toBe(true)
+    expect(result.current.knowledgeSource?.state.allKnowledge).toBe(true)
+    expect(result.current.knowledgeSource?.graphEnabled).toBe(true)
+    expect(result.current.knowledgeSource?.webSearchEnabled).toBe(true)
   })
 
   it('source default mode is "knowledgeGraph" when graph_search_setting.default_enable=true', () => {
@@ -260,7 +260,7 @@ describe('useAgentPreviewSender — knowledge', () => {
         },
       }),
     )
-    expect(result.current.source?.value.mode).toBe('knowledgeGraph')
+    expect(result.current.knowledgeSource?.state.knowledgeGraph).toBe(true)
   })
 
   it('source.onChange updates the mode', () => {
@@ -276,8 +276,8 @@ describe('useAgentPreviewSender — knowledge', () => {
         },
       }),
     )
-    act(() => result.current.source!.onChange({ mode: 'networkSearch' }))
-    expect(result.current.source?.value.mode).toBe('networkSearch')
+    act(() => result.current.onKnowledgeSourceChange!({ allKnowledge: true, networkSearch: true, knowledgeGraph: false, wiki: false }))
+    expect(result.current.knowledgeSource?.state.networkSearch).toBe(true)
   })
 
   it('source is undefined for non-knowledge agent types', () => {

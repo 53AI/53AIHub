@@ -147,6 +147,21 @@ func (c ResponseCode) ToErrorResponse(err error) CommonResponse {
 	}
 }
 
+// WithMessage 用给定文案覆盖默认文案：用于已经把提示写成人话的场景，
+// 不再拼接 "param error: " 这类英文机器码前缀。
+func (c ResponseCode) WithMessage(message string) CommonResponse {
+	return CommonResponse{
+		Code:    int(c),
+		Message: message,
+	}
+}
+
+// WithRequestID 顶层回填 request_id（与响应头同值），便于用户报障时只提供一个编号。
+func (c CommonResponse) WithRequestID(requestID string) CommonResponse {
+	c.RequestID = requestID
+	return c
+}
+
 func (c ResponseCode) ToNewErrorResponse(message string) CommonResponse {
 	err := errors.New(message)
 	return CommonResponse{

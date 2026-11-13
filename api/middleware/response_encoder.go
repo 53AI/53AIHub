@@ -86,6 +86,10 @@ func encodeMapFields(m map[string]interface{}) map[string]interface{} {
 
 	for key, value := range m {
 		if isIDField(key) {
+			if ids, ok := value.([]interface{}); ok {
+				result[key] = encodeJobIDs(ids)
+				continue
+			}
 			// 尝试编码ID字段
 			if encodedValue := tryEncodeID(value); encodedValue != nil {
 				result[key] = encodedValue

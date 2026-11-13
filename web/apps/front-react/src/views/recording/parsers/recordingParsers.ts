@@ -17,6 +17,11 @@ export interface TranscriptItem {
   speaker: string
   speakerNum: number
   content: string
+  /** 发言人头像 URL（转写 Markdown 说话人字段含 `![avatar](URL)` 时提取，
+   * 绑定联系人后后端写入；与 KM-Record TranscriptLine.avatarUrl 同源） */
+  avatarUrl?: string
+  /** 绑定人员的 ID；即使该人员没有头像 URL，也应保留已关联人物的展示逻辑。 */
+  contactId?: string
 }
 
 /**
@@ -156,7 +161,7 @@ function timeStringToSeconds(timeStr: string): number {
 
 /** 从说话人文本里推出 speakerNum，用于 UI 颜色轮换等场景 */
 function deriveSpeakerNum(speaker: string): number {
-  const letter = /^([A-Z])/i.exec(speaker)
+  const letter = /^(?:说话人\s*)?([A-Z])/i.exec(speaker)
   if (letter) {
     const code = letter[1].toUpperCase().charCodeAt(0) - 64
     if (code >= 1 && code <= 26) return code
@@ -166,28 +171,53 @@ function deriveSpeakerNum(speaker: string): number {
   return 1
 }
 
+/** 说话人字段里的头像标记 `![avatar](URL)`（与 KM-Record _avatarRegex 同源） */
+const AVATAR_MARK_REGEX = /!\[.*?\]\((.*?)\)/
+/** 说话人字段里的隐藏人员注释 `<!--contact:{"id":"..."}-->`（与 KM-Record _contactRegex 同源） */
+const CONTACT_MARK_REGEX = /<!--contact:\s*\{.*?"id"\s*:\s*"([^"]+)".*?\}\s*-->/
+
 /**
  * 解析分享接口后端预渲染的转写 Markdown：`# 文件名\n\n[hh:mm:ss] 说话人: 内容\n…`
  * 逐行匹配时间戳前缀，跳过开头的 `# ` 标题（与页面 header 重复）。
  * 不含音频地址，调用方 fileUrl = undefined。
+ *
+ * 说话人字段可能携带绑定联系人后写入的头像 / 人员标记（与 KM-Record
+ * parseTranscriptMarkdown 同源）：
+ * - 头像 `![avatar](https://…)`：提取为 avatarUrl，不进 speaker 文本；
+ * - 隐藏注释 `<!--contact:{"id":"…"}-->`：提取 contactId，同时从姓名中剔除。
+ * 标记内含冒号，不能被「台词分隔冒号」误切，正则单独捕获后再清理。
  */
 export function parseTranscriptLines(content: string): TranscriptItem[] {
   if (!content?.trim()) return []
   const items: TranscriptItem[] = []
+  // 主正则：时间戳 + 可选头像标记 + 名字（可带隐藏注释）+ 分隔冒号 + 正文。
+  // 头像 / 注释里的冒号在独立捕获组内，不会截断名字匹配。
+  const lineRegex = /^\[(\d{2}:\d{2}(?::\d{2})?)\]\s*(?:(!\[.*?\]\(.*?\))\s*)?([^:]+?(?:<!--contact:.*?-->)?)\s*:\s*(.*)$/
+  // 兜底正则：名字本身较复杂（含冒号等）时主正则失配，退回宽松匹配
+  const fallbackRegex = /^\[(\d{2}:\d{2}(?::\d{2})?)\]\s*(.+?):\s*(.*)$/
   for (const rawLine of content.split('\n')) {
     const line = rawLine.trim()
     if (!line) continue
     if (line.startsWith('# ')) continue
-    const match = line.match(/^\[(\d{2}:\d{2}(?::\d{2})?)\]\s*([^:]+?):\s*(.*)$/)
+    const match = lineRegex.exec(line) ?? fallbackRegex.exec(line)
     if (!match) continue
-    const [, timeStr, speakerRaw, contentText] = match
+    const [, timeStr, avatarMark, speakerRaw, contentText] = match
+    const rawSpeaker = `${avatarMark ?? ''} ${speakerRaw}`.trim()
+    const avatarUrl = AVATAR_MARK_REGEX.exec(rawSpeaker)?.[1]?.trim()
+    const contactId = CONTACT_MARK_REGEX.exec(rawSpeaker)?.[1]
+    const cleanSpeaker = rawSpeaker
+      .replace(AVATAR_MARK_REGEX, '')
+      .replace(CONTACT_MARK_REGEX, '')
+      .trim()
     items.push({
       id: `transcript-${items.length + 1}`,
       time: timeStr,
       seconds: timeStringToSeconds(timeStr),
-      speaker: speakerRaw.trim(),
-      speakerNum: deriveSpeakerNum(speakerRaw.trim()),
+      speaker: cleanSpeaker || '未知说话人',
+      speakerNum: deriveSpeakerNum(cleanSpeaker),
       content: contentText.trim(),
+      avatarUrl: avatarUrl || undefined,
+      contactId: contactId || undefined,
     })
   }
   return items
@@ -204,6 +234,35 @@ export function isInsightHTMLPage(pageJson: Record<string, any> | null | undefin
   return pageJson?._format === 'html_v2' && typeof pageJson._html === 'string' && pageJson._html.trim().length > 0
 }
 
+/** 与 InsightHtmlRenderer 保持一致：不参与页面内容包裹的非内容标签 */
+const HTML_NON_CONTENT_TAGS = ['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE']
+
+/** body 下内容根节点的统一布局 class（定宽居中 + 上下留白 + 相对定位） */
+const HTML_ROOT_CLASS = 'max-width: 1200px; margin: 0 auto; padding: 0; '
+
+/**
+ * 对生成的独立 HTML 页面做渲染前装饰：
+ * - body 背景色置白，避免生成页自带的非白底色与宿主不一致
+ * - body 下的内容根节点挂上统一布局 class，控制内容宽度与留白
+ * 通过 DOMParser 定位元素，避免用正则猜测 HTML 结构。
+ */
+function decorateInsightHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const body = doc.body
+  if (body) {
+    const bodyStyle = body.getAttribute('style')
+    body.setAttribute('style', bodyStyle ? `${bodyStyle}; background-color: #fff` : 'background-color: #fff')
+    const root = Array.from(body.children).find(
+      (el) => !HTML_NON_CONTENT_TAGS.includes(el.tagName)
+    )
+    if (root) {
+      const prevStyle = root.getAttribute('style')
+      root.setAttribute('style', prevStyle ? `${prevStyle}; ${HTML_ROOT_CLASS}` : HTML_ROOT_CLASS)
+    }
+  }
+  return `<!doctype html>${doc.documentElement.outerHTML}`
+}
+
 /**
  * 解析 page_json：兼容旧 JSON Block、旧 Markdown 和新的 HTML 页面封装。
  * 新 HTML 仍复用 page_json 字段，但使用 format 标记选择隔离的 HTML 渲染器；
@@ -217,7 +276,7 @@ export function parsePageJson(pageJson: string): Record<string, any> {
       return {
         _format: 'html_v2',
         _version: typeof parsed.version === 'number' ? parsed.version : undefined,
-        _html: parsed.html,
+        _html: decorateInsightHtml(parsed.html),
       }
     }
     // 旧格式：JSON Block 结构
@@ -225,7 +284,7 @@ export function parsePageJson(pageJson: string): Record<string, any> {
   }
   if (/^<!doctype\s+html[\s>]/i.test(trimmed) || /^<html[\s>]/i.test(trimmed)) {
     // 兼容曾经直接保存完整 HTML 的实验数据。
-    return { _format: 'html_v2', _html: trimmed }
+    return { _format: 'html_v2', _html: decorateInsightHtml(trimmed) }
   }
   // 新格式：Markdown 字符串
   // 后端可能用 ```markdown ... ``` 把整段包起来返回，先剥掉围栏避免污染

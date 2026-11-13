@@ -41,6 +41,9 @@ interface GroupListProps {
 export function GroupList({ enableUrlSync = false }: GroupListProps) {
   const promptStore = usePromptStore();
   const isSoftStyle = useIsSoftStyle();
+  // 筛选吸顶条 top：页面标题条（探索，py-4 + h-8 = 64px）吸顶于其上，
+  // 软件风格下再叠加页面 Header（56px）；网站风格无页面 Header（参考 toolkit 同款计算）
+  const filterStickyTop = (isSoftStyle ? 56 : 0) + 64
 
   // 筛选状态（URL 持久化由 enableUrlSync 控制，默认关闭）
   const defaultState = useMemo<PromptExploreState>(
@@ -150,7 +153,7 @@ export function GroupList({ enableUrlSync = false }: GroupListProps) {
       {/* Sticky filter bar */}
       <div
         className="sticky z-[100] bg-white"
-        style={{ top: isSoftStyle ? "120px" : "30px" }}
+        style={{ top: filterStickyTop }}
       >
         <div className="flex md:flex-row flex-col-reverse gap-5 items-stretch md:items-center justify-between bg-white py-1">
           <div className="flex-1 md:w-0 flex items-center gap-2">

@@ -3,8 +3,10 @@ import { Table, Select, Button, Tag, Spin, Tooltip } from "antd";
 import { t } from "@/locales";
 import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import recordApi from "@/api/modules/record";
+import { resolveRecordAskerName } from "@/api/modules/record/transform";
 import userApi from "@/api/modules/user";
 import { DateRangeFilter } from "@/components/Filter/date-range";
+import AskerFilter from "@/components/Filter/Asker";
 import Detail, { DetailRef } from "@/views/search/components/detail";
 import {
     SEARCH_TYPE
@@ -71,6 +73,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
     start_time: null as number | null,
     end_time: null as number | null,
     keyword: "",
+    uid: null as string | null,
     thinking_mode: 0,
     response_status: 0,
     knowledge_type: 0,
@@ -85,6 +88,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
   const [isCleared, setIsCleared] = useState(false);
   const userListRef = useRef<Record<number, string>>({});
   const [isClearIconAvailable, setIsClearIconAvailable] = useState(false);
+  const [askerClearKey, setAskerClearKey] = useState(0);
   // 获取默认日期范围的辅助函数
   const getDefaultDateRange = (): [number, number] => {
     const endDate = new Date();
@@ -164,7 +168,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
       const messages = (list.messages || []).map((item: any) => {
         return {
           ...item,
-          nickname: userListRef.current[item.user_id],
+          nickname: resolveRecordAskerName(item, userListRef.current),
         };
       });
       setTableData(messages);
@@ -209,6 +213,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
       start_time: null,
       end_time: null,
       keyword: "",
+      uid: null,
       thinking_mode: 0,
       response_status: 0,
       knowledge_type: 0,
@@ -218,6 +223,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
     };
     setDetailedDateValue(newDates);
     setDetailedForm(newForm);
+    setAskerClearKey((key) => key + 1);
     setIsCleared(true);
     setIsClearIconAvailable(false);
     loadRecordList(newForm, newDates);
@@ -336,7 +342,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
       title: t("search-record.user"),
       dataIndex: "nickname",
       key: "nickname",
-      width: 110,
+      width: 170,
       ellipsis: true,
     },
     {
@@ -465,6 +471,14 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
             placeholder={t("action_search")}
             className="w-[240px]"
           />
+          <AskerFilter
+            clearKey={askerClearKey}
+            onChange={(uid) => {
+              const newForm = { ...detailedForm, uid };
+              setDetailedForm(newForm);
+              handleFilterChange(newForm);
+            }}
+          />
           {
             showStatusFilter && (<Select
             value={detailedForm.response_status}
@@ -477,7 +491,7 @@ const WorkAIStatistic: React.FC<StatisticProps> = ({ agentId, showSourceFilter, 
             }}
             prefix={
               <span className="text-[rgb(168_171_178)]">
-                {t("search-record.status")}:
+                {t("search-record.answer_status")}:
               </span>
             }
             options={[

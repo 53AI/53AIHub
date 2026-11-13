@@ -5,10 +5,10 @@ import {
   EyeInvisibleOutlined,
   SyncOutlined
 } from "@ant-design/icons";
-import { api_host, getPublicPath } from "@/utils/config";
+import { api_host } from "@/utils/config";
 import { copyToClip } from "@km/shared-utils";
 import { personalApiKeysApi, type ApiKey } from "@/api/modules/api-key";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 
 interface GeneralSettingsModalProps {
   open: boolean;
@@ -180,9 +180,9 @@ export function GeneralSettingsModal({
               }}
             >
               <div className="flex md:items-center md:gap-2 md:mb-5 max-md:flex-col max-md:items-center max-md:gap-1">
-                <img
+                <SafeImage
                   className="w-6 h-6 md:w-9 md:h-9"
-                  src={getPublicPath(card.icon)}
+                  src={card.icon}
                   alt={card.name}
                 />
                 <span className="text-xs md:text-base text-[#1D1E1F] max-md:text-center max-md:leading-tight">
@@ -211,27 +211,27 @@ export function GeneralSettingsModal({
                 {[
                   {
                     name: "OpenClaw",
-                    logo: getPublicPath("/images/vibe/openclaw.png"),
+                    logo: "/images/vibe/openclaw.png",
                   },
                   {
                     name: "QClaw",
-                    logo: getPublicPath("/images/vibe/qclaw.png"),
+                    logo: "/images/vibe/qclaw.png",
                   },
                   {
                     name: "WorkBuddy",
-                    logo: getPublicPath("/images/vibe/workbuddy.png"),
+                    logo: "/images/vibe/workbuddy.png",
                   },
                   {
                     name: "CodeBuddy",
-                    logo: getPublicPath("/images/vibe/codebuddy.png"),
+                    logo: "/images/vibe/codebuddy.png",
                   },
                   {
                     name: "Cursor",
-                    logo: getPublicPath("/images/vibe/cursor.png"),
+                    logo: "/images/vibe/cursor.png",
                   },
                   {
                     name: "VS Code",
-                    logo: getPublicPath("/images/vibe/vscode.png"),
+                    logo: "/images/vibe/vscode.png",
                   },
                 ].map((tool) => (
                   <div
@@ -241,7 +241,7 @@ export function GeneralSettingsModal({
                     <div
                       className={`w-8 h-8 rounded-sm flex items-center justify-center`}
                     >
-                      <img
+                      <SafeImage
                         src={tool.logo}
                         alt={tool.name}
                         className="w-full h-full object-contain"

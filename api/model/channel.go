@@ -57,7 +57,9 @@ const (
 	GlmCodingPlanDefaultBaseURL = "https://open.bigmodel.cn/api/coding/paas/v4"
 	// 腾讯云 TokenHub
 	ChannelApiTypeTencentTokenHub = 1019
-	TencentTokenHubDefaultBaseURL = "https://tokenhub.tencentmaas.com"
+	// TypeSafe Jev structured decision API
+	ChannelApiTypeTypeSafeDecision = 1020
+	TencentTokenHubDefaultBaseURL  = "https://tokenhub.tencentmaas.com"
 )
 
 // ChannelDescription 渠道描述结构体

@@ -20,6 +20,7 @@ const CACHE_TTL_MINUTES = 2
 const mapUser = (item: any): ScopeDisplayTreeNode => ({
   value: item.user_id,
   label: item.nickname || item.name || '',
+  uid: item.id,
   user_id: item.user_id,
   nickname: item.nickname,
   name: item.name,

@@ -87,6 +87,12 @@ function DocumentApp({
   const libraryStore = useLibraryStore();
 
   const [install, setInstall] = useState(false);
+  // 消息分享链接的 from 参数：录音端的聊天（agent_usage=5）分享出去应落到安心录分享页，
+  // 而非知识库文档分享页，否则落地页的标题/底部引导会误指向知识库。
+  const shareFrom: "file" | "record" =
+    (chatAgentUsage ?? AGENT_USAGES.KM_FILE_CHAT) === AGENT_USAGES.KM_RECORDING_CHAT
+      ? "record"
+      : "file";
   // activeMenu 取值：
   //   ''            - 面板未打开
   //   'chat'        - 文档助手
@@ -371,6 +377,7 @@ function DocumentApp({
           chatAgent={chatAgent}
           mapAgent={mapAgent}
           fileInfo={currentFile}
+          shareFrom={shareFrom}
           curCustomApp={curAgentInfo}
           onVisible={handleVisible}
           onCollapsed={handleCollapsed}

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 )
 
@@ -35,6 +36,23 @@ type RecordingMemoryEntity struct {
 func (RecordingMemoryEntity) TableName() string {
 	return "recording_memory_entities"
 }
+
+// RecordingMemoryEntityBinding 记录同一会议中某个名称/身份键的已确认归属。
+// 合并仅重定向此会议的绑定；不会把“张总”等泛称全局固定为某个人。
+type RecordingMemoryEntityBinding struct {
+	ID         int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	Eid        int64  `gorm:"not null;uniqueIndex:uniq_recording_meeting_entity_binding,priority:1"`
+	OwnerID    int64  `gorm:"not null;uniqueIndex:uniq_recording_meeting_entity_binding,priority:2"`
+	FileID     int64  `gorm:"not null;uniqueIndex:uniq_recording_meeting_entity_binding,priority:3;index"`
+	EntityType string `gorm:"size:32;not null;uniqueIndex:uniq_recording_meeting_entity_binding,priority:4"`
+	MentionKey string `gorm:"size:64;not null;uniqueIndex:uniq_recording_meeting_entity_binding,priority:5"`
+	Mention    string `gorm:"size:255;not null"`
+	EntityID   int64  `gorm:"not null;index"`
+	Source     string `gorm:"size:16;not null"` // automatic / confirmed
+	BaseModel
+}
+
+func (RecordingMemoryEntityBinding) TableName() string { return "recording_memory_entity_bindings" }
 
 // RecordingMemoryFact 是一条可追溯的会议事实；自动事实不覆盖人工修正。
 type RecordingMemoryFact struct {
@@ -74,9 +92,9 @@ func (RecordingMemoryEntityRelation) TableName() string {
 	return "recording_memory_entity_relations"
 }
 
-// ListActiveRecordingMemoryPersonNames 返回指定 owner 下有效的 person 实体 canonical_name，
+// ListActiveRecordingMemoryPersonNames 返回指定 owner 下有效的 person 实体主名与别称，
 // 按最近事实时间倒序，供语音解析热词使用。
-// 只取 canonical_name（不含 aliases），已融合（merged_into_id != 0）与已删除的不计入。
+// 主名与 aliases 都会返回（跨实体去重）；已融合（merged_into_id != 0）与已删除的不计入。
 func ListActiveRecordingMemoryPersonNames(eid, ownerID int64, limit int) ([]string, error) {
 	if limit <= 0 {
 		limit = 50
@@ -92,16 +110,26 @@ func ListActiveRecordingMemoryPersonNames(eid, ownerID int64, limit int) ([]stri
 	}
 	names := make([]string, 0, len(entities))
 	seen := make(map[string]struct{}, len(entities))
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		names = append(names, value)
+	}
 	for _, entity := range entities {
-		name := strings.TrimSpace(entity.CanonicalName)
-		if name == "" {
+		add(entity.CanonicalName)
+		var aliases []string
+		if err := json.Unmarshal([]byte(entity.AliasesJSON), &aliases); err != nil {
 			continue
 		}
-		if _, ok := seen[name]; ok {
-			continue
+		for _, alias := range aliases {
+			add(alias)
 		}
-		seen[name] = struct{}{}
-		names = append(names, name)
 	}
 	return names, nil
 }

@@ -3,8 +3,8 @@ import { Menu } from "antd";
 import { LeftOutlined } from "@ant-design/icons";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useLibraryStore } from "@/stores/modules/library";
-import { SafeImage } from "@km/shared-components-react";
 import { SvgIcon } from "@km/shared-components-react";
+import { SafeImage } from "@km/shared-components-react";
 
 const menuItems = [
   { key: "info", label: "基础信息", icon: "book-one" },

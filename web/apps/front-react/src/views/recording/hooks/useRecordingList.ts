@@ -8,6 +8,7 @@ import { t } from '@/locales'
 import { getFormatTimeStamp } from '@km/shared-utils'
 import { AUDIO_EXT_REGEX, AUDIO_DOUBLE_EXT_REGEX } from '@/views/mine/constants'
 import { stripMarkdownCodeFence } from '@/views/recording/components/insightRenderer/markdownParser'
+import { notifyFlutterPanelMutation } from '@/views/recording/components/flutter-panel/notifyFlutterPanelMutation'
 
 const PAGE_SIZE = 10
 
@@ -29,7 +30,8 @@ export interface RecordingFileItemUI {
   createdTime: string
   updatedTime: string
   isFavorite: boolean
-  groupId?: number
+  /** 场景 key（/api/recordings/scenes 下发）；解析完成前可能为空 */
+  scene?: string
   rawData: RecordingFileItem
 }
 
@@ -37,8 +39,9 @@ export interface UseRecordingListParams {
   keyword: string
   category: RecordingFilter
   sortBy?: 'updated_time' | 'created_time'
-  groupId?: number
-  /** 初始数据是否就绪（如分类标签加载完成），false 时不触发首次加载 */
+  /** 场景筛选（服务端下发 key）；缺省 = 全部 */
+  scene?: string
+  /** 初始数据是否就绪（如场景字典加载完成），false 时不触发首次加载 */
   ready?: boolean
 }
 
@@ -56,8 +59,6 @@ export interface UseRecordingListReturn {
   updateFileDescription: (fileId: string, description: string) => void
   /** 更新指定文件在列表中的名称（不刷新整个列表） */
   updateFileName: (fileId: string, name: string) => void
-  /** 更新指定文件在列表中的分组 ID（不刷新整个列表） */
-  updateFileGroup: (fileId: string, groupId: number | undefined) => void
 }
 
 /** 从 page_json 中提取描述文本
@@ -150,7 +151,7 @@ function mapItem(item: RecordingFileItem): RecordingFileItemUI {
     createdTime: getFormatTimeStamp(item.created_time),
     updatedTime: getFormatTimeStamp(item.updated_time),
     isFavorite: item.is_favorite,
-    groupId: item.group_id,
+    scene: item.scene || undefined,
     rawData: item,
   }
 }
@@ -163,7 +164,7 @@ export function useRecordingList({
   keyword,
   category,
   sortBy,
-  groupId,
+  scene,
   ready = true,
 }: UseRecordingListParams): UseRecordingListReturn {
   const [rawList, setRawList] = useState<RecordingFileItemUI[]>([])
@@ -193,11 +194,11 @@ export function useRecordingList({
         offset: pageOffset,
         limit: PAGE_SIZE,
         sort_by: sortBy,
-        group_id: groupId,
+        scene,
       })
       return { files: res.data.map(mapItem), rawCount: res.data.length }
     },
-    [keyword, sortBy, groupId],
+    [keyword, sortBy, scene],
   )
 
   const loadFiles = useCallback(
@@ -268,7 +269,7 @@ export function useRecordingList({
     setHasMore(true)
     loadFiles(true)
     // biome-ignore lint/correctness/useExhaustiveDependencies: loadFiles 由 fetchPage 派生，sortBy 已显式列出，避免与间接引用重复触发
-  }, [keyword, sortBy, groupId, ready])
+  }, [keyword, sortBy, scene, ready])
 
   const toggleFavorite = useCallback(async (id: string, isFav: boolean) => {
     try {
@@ -316,6 +317,9 @@ export function useRecordingList({
         ? `${parentPath}/${trimmedName}${ext}`
         : `/${trimmedName}${ext}`
       await filesApi.rename({ id: item.id, path: newPath })
+      // 同步 Flutter 面板（iframe）：列表重拉单条更新标题；面板里正开着
+      // 该录音详情页时同步标题。面板未开时 no-op（下次打开全量重拉）。
+      notifyFlutterPanelMutation('update', item.id)
       refresh()
     },
     [refresh],
@@ -324,6 +328,9 @@ export function useRecordingList({
   const remove = useCallback(
     async (item: RecordingFileItemUI) => {
       await filesApi.delete(item.id)
+      // 同步 Flutter 面板（iframe）：列表移除该项；面板里正开着该录音
+      // 详情页时退回首页。面板未开时 no-op（下次打开全量重拉）。
+      notifyFlutterPanelMutation('delete', item.id)
       refresh()
     },
     [refresh],
@@ -344,21 +351,6 @@ export function useRecordingList({
     )
   }, [])
 
-  const updateFileGroup = useCallback(
-    (fileId: string, groupId: number | undefined) => {
-      setRawList((prev) =>
-        prev.map((it) => {
-          if (it.id !== fileId) return it
-          const nextRawData = groupId === undefined
-            ? it.rawData
-            : { ...it.rawData, group_id: groupId }
-          return { ...it, groupId, rawData: nextRawData }
-        }),
-      )
-    },
-    [],
-  )
-
   return {
     loading,
     loadingMore,
@@ -371,6 +363,5 @@ export function useRecordingList({
     remove,
     updateFileDescription,
     updateFileName,
-    updateFileGroup,
   }
 }

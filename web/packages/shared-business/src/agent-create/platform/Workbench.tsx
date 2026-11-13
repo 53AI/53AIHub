@@ -4,7 +4,7 @@ import { DeleteOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import { useAgentForm, parseModelValue, encodeModelValue, validateModelConfig } from "../hooks";
 import { useAgentCreateAdapter, ChannelOption } from "../adapters";
 import { BaseConfig, RelateAgents, RoleInstruction } from "../components";
-import { ModelSelect, SvgIcon } from "@km/shared-components-react";
+import { ModelSelect, SvgIcon, SafeImage } from "@km/shared-components-react";
 import { MAX_SKILLS_COUNT, DEFAULT_FAST_REASONING_CONFIG } from "../constants";
 
 interface WorkbenchProps {
@@ -304,14 +304,11 @@ export const Workbench = forwardRef<WorkbenchRef, WorkbenchProps>(
                 >
                   <div className="flex-1 min-w-0 flex items-center gap-2">
                     {skill.logo ? (
-                      <img
+                      <SafeImage
                         className="size-8 rounded-full overflow-hidden shrink-0"
                         src={skill.logo}
                         alt=""
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                        }}
+                        fallback="/images/default_agent.png"
                       />
                     ) : null}
                     <div className={`size-8 bg-[#F0F2F5] rounded flex items-center justify-center shrink-0 ${skill.logo ? 'hidden' : ''}`}>

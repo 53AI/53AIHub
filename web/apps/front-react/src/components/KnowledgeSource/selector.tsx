@@ -35,6 +35,7 @@ export const KnowledgeSourceSelector = forwardRef<
 		allowSelectLibrary = false,
 		allowSelectSpace = false,
 		allowSelectDynamicKnowledge: allowSelectDynamicKnowledgeProp,
+		nativeWebSearchSupported = false,
 		agentInfo,
 	},
 	ref,
@@ -62,7 +63,9 @@ export const KnowledgeSourceSelector = forwardRef<
 	const graphSearchEnabled =
 		agentInfo?.settings?.graph_search_setting?.enable ?? false;
 	const webSearchEnabled =
-		agentInfo?.settings?.web_search_setting?.enable ?? false;
+		(agentInfo?.settings?.web_search_setting?.enable ?? false) &&
+		(agentInfo?.settings?.web_search_setting?.source_type !== "model" ||
+			nativeWebSearchSupported);
 	const wikiSearchEnabled =
 		agentInfo?.settings?.wiki_search_setting?.enable ?? false;
 
@@ -85,11 +88,24 @@ export const KnowledgeSourceSelector = forwardRef<
 
 	// 触发按钮显示内容（图标+文字）
 	const displayContent = useMemo(() => {
-		// 联网搜索（优先级最高，与其他互斥）
+		const otherSourceCount =
+			Number(value.allKnowledge) +
+			Number(value.knowledgeGraph) +
+			Number(value.networkSearch) +
+			Number(value.wiki) +
+			(value.selectedFiles?.length || 0) +
+			(value.selectedLibraries?.length || 0) +
+			(value.selectedSpaces?.length || 0) +
+			(value.selectedWikiSpaces?.length || 0) +
+			(value.selectedWikiPages?.length || 0);
+		const withSourceCount = (label: string) =>
+			otherSourceCount > 1 ? `${label} +${otherSourceCount - 1}` : label;
+
+		// 联网搜索开启时优先显示其标签，其他知识范围仍保持已选状态。
 		if (value.networkSearch) {
 			return {
 				icon: <SvgIcon name="network" size={16} />,
-				text: t("chat.online_search"),
+				text: withSourceCount(t("chat.online_search")),
 			};
 		}
 
@@ -97,7 +113,7 @@ export const KnowledgeSourceSelector = forwardRef<
 		if (value.wiki) {
 			return {
 				icon: <SvgIcon name="book-one" size={16} />,
-				text: t("chat.wiki"),
+				text: withSourceCount(t("chat.wiki")),
 			};
 		}
 
@@ -105,7 +121,7 @@ export const KnowledgeSourceSelector = forwardRef<
 		if (value.knowledgeGraph) {
 			return {
 				icon: <SvgIcon name="graph_v2" size={16} />,
-				text: t("chat.knowledge_graph"),
+				text: withSourceCount(t("chat.knowledge_graph")),
 			};
 		}
 
@@ -151,7 +167,7 @@ export const KnowledgeSourceSelector = forwardRef<
 		if (value.allKnowledge) {
 			return {
 				icon: <SvgIcon name="documents" size={16} />,
-				text: t("library.all_knowledge"),
+				text: withSourceCount(t("library.all_knowledge")),
 			};
 		}
 
@@ -229,7 +245,7 @@ export const KnowledgeSourceSelector = forwardRef<
 			const hasWikiSpaces = wikis?.some(w => w.wikiType === 'space') ?? false;
 			const hasWikiPages = wikis?.some(w => w.wikiType === 'page') ?? false;
 
-			// 都为空时重置为全部知识（只取消联网搜索，保留动态知识/知识图谱）
+				// 都为空时重置知识库范围，保留联网搜索、动态知识和知识图谱状态。
 			if (!hasFiles && !hasLibraries && !hasSpaces && !hasWikiSpaces && !hasWikiPages) {
 				const newState: KnowledgeSourceState = {
 					...value,
@@ -240,7 +256,6 @@ export const KnowledgeSourceSelector = forwardRef<
 					selectedSpaces: [],
 					selectedWikiSpaces: [],
 					selectedWikiPages: [],
-					networkSearch: false,
 				};
 				onChange(defaultAllKnowledgeIfNothingSelected(newState));
 				return;
@@ -260,11 +275,9 @@ export const KnowledgeSourceSelector = forwardRef<
 			const newState: KnowledgeSourceState = {
 				...value,
 				mode,
-				// 规则: 选择文件/知识库/空间时，关闭知识图谱、联网搜索、全部知识
-				// 动态知识与全部知识可同时存在（仅联网搜索与动态知识互斥）
+				// 选择文件/知识库/空间时，关闭全部知识；联网搜索与这些来源可并行。
 				allKnowledge: hasFileOrLibOrSpace ? false : value.allKnowledge,
 				knowledgeGraph: hasFileOrLibOrSpace ? false : value.knowledgeGraph,
-				networkSearch: hasFileOrLibOrSpace ? false : value.networkSearch,
 				// 如果有动态知识选择，勾选动态知识
 				wiki: hasAnyWikiSelection ? true : value.wiki,
 				selectedFiles: hasFiles
@@ -332,7 +345,6 @@ export const KnowledgeSourceSelector = forwardRef<
 			const newState: KnowledgeSourceState = {
 				...value,
 				mode: "all",
-				networkSearch: false,
 				allKnowledge: true,
 				selectedFiles: [],
 				selectedLibraries: [],
@@ -342,13 +354,12 @@ export const KnowledgeSourceSelector = forwardRef<
 		}
 	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
-	// 切换知识图谱（与联网搜索互斥，与动态知识可同时启用）
+	// 切换知识图谱
 	const handleToggleKnowledgeGraph = useCallback(() => {
 		const newKnowledgeGraph = !value.knowledgeGraph;
 		const newState: KnowledgeSourceState = {
 			...value,
-			// 规则1: 知识图谱必须选中全部知识，关闭联网搜索
-			networkSearch: false,
+			// 知识图谱使用全部知识时，清空指定文件/库/空间范围。
 			allKnowledge: newKnowledgeGraph ? true : value.allKnowledge,
 			knowledgeGraph: newKnowledgeGraph,
 			// 清空从知识库选中的内容
@@ -359,32 +370,20 @@ export const KnowledgeSourceSelector = forwardRef<
 		onChange(defaultAllKnowledgeIfNothingSelected(newState));
 	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
-	// 切换联网搜索（与动态知识、知识图谱互斥）
+	// 切换联网搜索；保留当前知识库、文件和 Wiki 范围。
 	const handleToggleNetworkSearch = useCallback(() => {
 		const newState: KnowledgeSourceState = {
 			...value,
-			// 规则3: 联网搜索关闭全部知识、动态知识、知识图谱
-			allKnowledge: false,
-			wiki: false,
-			knowledgeGraph: false,
 			networkSearch: !value.networkSearch,
-			// 清空从知识库选中的内容
-			selectedFiles: [],
-			selectedLibraries: [],
-			selectedSpaces: [],
-			selectedWikiSpaces: [],
-			selectedWikiPages: [],
 		};
 		onChange(defaultAllKnowledgeIfNothingSelected(newState));
 	}, [value, onChange, defaultAllKnowledgeIfNothingSelected]);
 
-	// 切换动态知识（与联网搜索互斥，与全部知识/知识图谱可同时启用）
+	// 切换动态知识
 	const handleToggleWiki = useCallback(() => {
 		const newWiki = !value.wiki;
 		const newState: KnowledgeSourceState = {
 			...value,
-			// 动态知识与联网搜索互斥：启用动态知识时取消联网搜索，取消时恢复
-			networkSearch: newWiki ? false : value.networkSearch,
 			wiki: newWiki,
 		};
 		onChange(defaultAllKnowledgeIfNothingSelected(newState));
@@ -479,7 +478,6 @@ export const KnowledgeSourceSelector = forwardRef<
 							...value,
 							mode: "all",
 							allKnowledge: true,
-							networkSearch: false,
 							selectedFiles: [],
 							selectedLibraries: [],
 							selectedSpaces: [],
@@ -491,7 +489,6 @@ export const KnowledgeSourceSelector = forwardRef<
 						mode: "libraries",
 						allKnowledge: false,
 						knowledgeGraph: false,
-						networkSearch: false,
 						selectedFiles: [],
 						selectedLibraries: [
 							{
@@ -594,6 +591,7 @@ export const KnowledgeSourceSelector = forwardRef<
 	}, [
 		graphSearchEnabled,
 		webSearchEnabled,
+		nativeWebSearchSupported,
 		wikiSearchEnabled,
 		value.allKnowledge,
 		value.knowledgeGraph,

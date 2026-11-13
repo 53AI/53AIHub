@@ -13,13 +13,16 @@ import (
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
+	"github.com/53AI/53AIHub/config"
 	db_model "github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/common/helper"
+	"github.com/songquanpeng/one-api/common/render"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
 	"github.com/songquanpeng/one-api/relay/meta"
 	"github.com/songquanpeng/one-api/relay/model"
+	"gorm.io/gorm"
 )
 
 type Adaptor struct {
@@ -67,10 +70,10 @@ func ConvertRequest(textRequest model.GeneralOpenAIRequest, meta *meta.Meta, cus
 	}
 
 	queryStr := ""
-	for i, message := range textRequest.Messages {
-		if i == len(textRequest.Messages)-1 {
-			queryStr = message.StringContent()
-			continue
+	for i := len(textRequest.Messages) - 1; i >= 0; i-- {
+		if textRequest.Messages[i].Role == "user" {
+			queryStr = textRequest.Messages[i].StringContent()
+			break
 		}
 	}
 
@@ -152,11 +155,14 @@ func (a *Adaptor) ConvertImageRequest(request *model.ImageRequest) (any, error) 
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (usage *model.Usage, err *model.ErrorWithStatusCode) {
 	var responseText *string
-	var channelConversationId string
 	if meta.IsStream {
-		err, responseText, channelConversationId = StreamHandler(c, resp)
+		err, responseText, _ = StreamHandler(c, resp, meta.ActualModelName, func(id string) error {
+			return a.persistConversationID(c, id)
+		})
 	} else {
-		err, responseText, channelConversationId = Handler(c, resp, meta.PromptTokens, meta.ActualModelName)
+		err, responseText, _ = Handler(c, resp, meta.ActualModelName, func(id string) error {
+			return a.persistConversationID(c, id)
+		})
 	}
 	if responseText != nil {
 		usage = openai.ResponseText2Usage(*responseText, meta.ActualModelName, meta.PromptTokens)
@@ -165,11 +171,52 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 	}
 	usage.PromptTokens = meta.PromptTokens
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	a.CustomConfig.ConversationId = channelConversationId
+	// 流式会话 ID 已在首个上游事件到达时持久化成功，再结束前端流。
+	if meta.IsStream && err == nil {
+		render.Done(c)
+	}
 	return
 }
 
-func Handler(c *gin.Context, resp *http.Response, promptTokens int, modelName string) (*model.ErrorWithStatusCode, *string, string) {
+// persistConversationID 只写渠道会话映射；配额及消息内容仍由通用后置流程处理。
+func (a *Adaptor) persistConversationID(c *gin.Context, channelConversationId string) error {
+	if channelConversationId == "" {
+		return nil
+	}
+	if a.CustomConfig.AIHubConversationId == 0 {
+		a.CustomConfig.ConversationId = channelConversationId
+		return nil
+	}
+
+	eid, userID, conversationID := config.GetEID(c), config.GetUserId(c), a.CustomConfig.AIHubConversationId
+	db := db_model.DB.WithContext(c.Request.Context())
+	result := db.Model(&db_model.Conversation{}).
+		Where("eid = ? AND user_id = ? AND conversation_id = ?", eid, userID, conversationID).
+		Where("(channel_conversation_id = ? OR channel_conversation_id = ? OR channel_conversation_id IS NULL)", "", channelConversationId).
+		Update("channel_conversation_id", channelConversationId)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		var conversation db_model.Conversation
+		err := db.Select("channel_conversation_id").
+			Where("eid = ? AND user_id = ? AND conversation_id = ?", eid, userID, conversationID).
+			Take(&conversation).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("Dify 会话映射保存失败：未找到对应的 53AIHub 会话")
+		}
+		if err != nil {
+			return err
+		}
+		if conversation.ChannelConversationID != channelConversationId {
+			return fmt.Errorf("Dify 会话映射保存失败：会话已有不同的 Dify 映射，拒绝覆盖")
+		}
+	}
+	a.CustomConfig.ConversationId = channelConversationId
+	return nil
+}
+
+func Handler(c *gin.Context, resp *http.Response, modelName string, persistConversationID func(string) error) (*model.ErrorWithStatusCode, *string, string) {
 	channelConversationId := ""
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -190,6 +237,11 @@ func Handler(c *gin.Context, resp *http.Response, promptTokens int, modelName st
 	jsonResponse, err := json.Marshal(fullTextResponse)
 	if err != nil {
 		return openai.ErrorWrapper(err, "marshal_response_body_failed", http.StatusInternalServerError), nil, channelConversationId
+	}
+	if difyResponse.ConversationID != "" {
+		if saveErr := persistConversationID(difyResponse.ConversationID); saveErr != nil {
+			return openai.ErrorWrapper(saveErr, "persist_dify_conversation_id_failed", http.StatusInternalServerError), nil, ""
+		}
 	}
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(resp.StatusCode)

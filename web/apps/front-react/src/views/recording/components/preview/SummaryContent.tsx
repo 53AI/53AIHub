@@ -7,7 +7,7 @@ const MarkdownViewer = lazy(() => import('@/components/FileViewer/MarkdownViewer
 interface SummaryContentProps {
   /** 总结原文（兼容 JSON 旧格式和 Markdown 新格式） */
   content: string
-  /** Markdown 容器宽度类名，默认 w-4/5 mx-auto */
+  /** Markdown 容器宽度类名，默认 max-w-[1200px] mx-auto */
   containerClass?: string
   // 背景色
   bgColor?: string
@@ -21,7 +21,7 @@ interface SummaryContentProps {
  * 登录态（SummaryTabContent）与匿名态（分享落地页）共用，避免两端维护两份解析逻辑。
  * JSON 解析失败时降级为纯文本展示，不抛错。
  */
-export function SummaryContent({ content, containerClass = 'w-4/5 mx-auto', bgColor= '#fff', padding = 'p-6' }: SummaryContentProps) {
+export function SummaryContent({ content, containerClass = 'max-w-[1200px] mx-auto', bgColor= '#fff', padding = 'py-6' }: SummaryContentProps) {
   if (!content) return null
   if (content.startsWith('{')) {
     try {
@@ -36,7 +36,7 @@ export function SummaryContent({ content, containerClass = 'w-4/5 mx-auto', bgCo
     }
   }
   return (
-    <div className="h-full overflow-hidden">
+    <div className="h-full overflow-hidden px-8">
       <Suspense fallback={<Spin className="summary-markdown flex items-center justify-center h-full" />}>
         <MarkdownViewer content={content} containerClass={containerClass} bgColor={bgColor} padding={padding} />
       </Suspense>

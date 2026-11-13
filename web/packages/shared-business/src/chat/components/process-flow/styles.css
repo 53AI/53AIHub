@@ -144,6 +144,11 @@
   overflow-wrap: break-word;
 }
 
+.x-skill-step-body {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 .x-skill-step-body.x-skill-step-body-plain {
   padding: 0px;
 }

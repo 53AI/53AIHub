@@ -94,6 +94,10 @@ func (r *wikiPromptLLMRunner) Generate(ctx context.Context, prompt string) (stri
 	start := time.Now()
 	logger.Infof(ctx, "【Wiki生成】 开始 步骤=%s model=%s prompt_chars=%d", step, modelName, len(prompt))
 	logger.Infof(ctx, "【Wiki生成】 步骤=%s model=%s\n%s", step, modelName, sanitizeWikiPromptForLog(prompt))
+	if step == "summary" || step == "reduction" {
+		// 诊断 dump：summary/reduction 阶段记录完整请求 prompt（不脱敏），用于定位空响应/内容退化根因。取证后可移除。
+		logger.Infof(ctx, "【Wiki诊断-摘要】 步骤=%s model=%s 请求 prompt 完整内容 chars=%d:\n%s", step, modelName, len(prompt), prompt)
+	}
 	response, usage, err := generateWikiPromptWithRetryWithUsage(ctx, func() (string, *relaymodel.Usage, error) {
 		return r.generator.GenerateRawPromptWithUsage(ctx, channel, modelName, prompt)
 	})
@@ -107,6 +111,10 @@ func (r *wikiPromptLLMRunner) Generate(ctx context.Context, prompt string) (stri
 		}
 	}
 	logger.Infof(ctx, "【Wiki生成】 结束 步骤=%s model=%s prompt_chars=%d 耗时=%s err=%v", step, modelName, len(prompt), time.Since(start), err)
+	if step == "summary" || step == "reduction" {
+		// 诊断 dump：summary/reduction 阶段记录完整响应 content（不脱敏），用于定位空响应/内容退化根因。取证后可移除。
+		logger.Infof(ctx, "【Wiki诊断-摘要】 步骤=%s model=%s 响应 content 完整内容 chars=%d:\n%s", step, modelName, len([]rune(response)), response)
+	}
 	llmObservation := WikiGenerationObservation{Phase: "llm", Status: "success", Reason: step, LLMCalls: 1, DurationMs: time.Since(start).Milliseconds(), Data: map[string]interface{}{"step": step, "model": modelName, "prompt_preview": truncateWikiText(prompt, 200), "response_chars": len([]rune(strings.TrimSpace(response))), "response_preview": truncateWikiText(response, 200)}}
 	if err != nil {
 		llmObservation.Status = "failed"
@@ -213,8 +221,13 @@ func classifyWikiPromptStep(prompt string) string {
 	switch {
 	case strings.Contains(prompt, "lightweight candidate set"):
 		return "candidate_extract"
-	case strings.Contains(prompt, "create a cohesive wiki summary page"):
+	// 特征字符串来自 WikiSummaryPrompt 首句（service/wiki_prompt_templates.go）。
+	// 修改提示词首句时需同步更新此处，避免日志阶段名退化为 unknown。
+	case strings.Contains(prompt, "create a faithful, concise wiki summary page"):
 		return "summary"
+	// 特征字符串来自 WikiSummaryReductionPrompt 首句。
+	case strings.Contains(prompt, "Create a concise intermediate summary of the following document material"):
+		return "reduction"
 	case strings.Contains(prompt, "Scan the document chunks and decide"):
 		return "citation"
 	case strings.Contains(prompt, "organizing wiki pages into a navigation taxonomy"):
@@ -243,13 +256,33 @@ func generateWikiPromptWithRetry(ctx context.Context, fn func() (string, error),
 }
 
 func generateWikiPromptWithRetryWithUsage(ctx context.Context, fn func() (string, *relaymodel.Usage, error), opts ...common.RetryOption) (string, *relaymodel.Usage, error) {
+	// opts 里可能带自己的 WithRetryableFunc（如摘要格式/回显校验），而 RetryOption 是
+	// 覆盖语义——直接 append 会让内层判定顶掉外层 isWikiPromptRetryableError，
+	// 导致网络类瞬时故障（500 / EOF）不再重试，表现为"时好时坏"。
+	// 这里把内层判定与外层判定合并为 OR：两者任一判定可重试即重试。
+	var innerRetryable func(error) bool
+	if len(opts) > 0 {
+		innerCfg := &common.RetryConfig{RetryableFunc: func(error) bool { return false }}
+		for _, opt := range opts {
+			if opt != nil {
+				opt(innerCfg)
+			}
+		}
+		innerRetryable = innerCfg.RetryableFunc
+	}
+
 	retryOpts := []common.RetryOption{
 		common.WithMaxRetries(2),
 		common.WithInitialDelay(500 * time.Millisecond),
 		common.WithMaxDelay(2 * time.Second),
-		common.WithRetryableFunc(isWikiPromptRetryableError),
 	}
 	retryOpts = append(retryOpts, opts...)
+	retryOpts = append(retryOpts, common.WithRetryableFunc(func(err error) bool {
+		if isWikiPromptRetryableError(err) {
+			return true
+		}
+		return innerRetryable != nil && innerRetryable(err)
+	}))
 
 	var response string
 	var usage *relaymodel.Usage
@@ -271,7 +304,9 @@ func isWikiPromptRetryableError(err error) bool {
 		return true
 	}
 	errStr := strings.ToLower(err.Error())
-	return strings.Contains(errStr, "eof")
+	return strings.Contains(errStr, "eof") ||
+		strings.Contains(errStr, "llm 返回内容为空") ||
+		strings.Contains(errStr, "response is missing summary line")
 }
 
 type WikiProcessFileInput struct {
@@ -314,7 +349,6 @@ func (s *WikiIngestV2Service) ProcessFile(ctx context.Context, in WikiProcessFil
 	if err != nil {
 		return nil, fmt.Errorf("读取文件内容失败: %v", err)
 	}
-
 	if strings.TrimSpace(content) == "" {
 		return nil, nil
 	}
@@ -591,6 +625,7 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 			partialFailure = true
 			logger.Errorf(ctx, "【Wiki生成】 草稿发布失败，不阻断其他页面: file_id=%d err=%v", in.FileID, err)
 		}
+		syncWikiESSlugs(ctx, s.db, in.Eid, in.LibraryID, uniqueWikiUpdateSlugs(entityUpdates))
 		if err := enqueueWikiPageVectorizationJobs(ctx, s.db, common.RDB, in.Eid, in.LibraryID, uniqueWikiUpdateSlugs(entityUpdates), "auto_after_wiki_generation"); err != nil {
 			partialFailure = true
 			logger.Errorf(ctx, "【Wiki生成】 生成完成后创建任务失败: eid=%d library_id=%d err=%v", in.Eid, in.LibraryID, err)
@@ -608,6 +643,7 @@ func (s *WikiIngestV2Service) ProcessDocument(ctx context.Context, in WikiIngest
 			partialFailure = true
 			logger.Errorf(ctx, "【Wiki生成】 分类页发布失败，不阻断其他页面: file_id=%d err=%v", in.FileID, err)
 		}
+		syncWikiESSlugs(ctx, s.db, in.Eid, in.LibraryID, categorySlugs)
 		if err := enqueueWikiPageVectorizationJobs(ctx, s.db, common.RDB, in.Eid, in.LibraryID, categorySlugs, "auto_after_wiki_category_generation"); err != nil {
 			partialFailure = true
 			logger.Errorf(ctx, "【Wiki生成】 页面向量化任务创建失败: file_id=%d err=%v", in.FileID, err)
@@ -722,24 +758,7 @@ func (s *WikiIngestV2Service) publishWikiPageSlugs(ctx context.Context, eid, lib
 			if err := tx.Where("eid = ? AND page_id = ? AND id = ?", eid, page.ID, page.CurrentVersionID).First(&version).Error; err != nil {
 				return err
 			}
-			if version.IsPublished && page.Status == model.WikiPageStatusActive {
-				return nil
-			}
-
-			if err := tx.Model(&version).Updates(map[string]any{
-				"is_published":   true,
-				"publish_kind":   model.WikiPagePublishKindSync,
-				"published_time": time.Now().UnixMilli(),
-			}).Error; err != nil {
-				return err
-			}
-			if page.Status != model.WikiPageStatusActive {
-				if err := tx.Model(page).Update("status", model.WikiPageStatusActive).Error; err != nil {
-					return err
-				}
-				page.Status = model.WikiPageStatusActive
-			}
-			return upsertWikiPageLog(tx, page, page.CurrentVersionID, page.UpdaterID, "publish", "", map[string]any{
+			return publishWikiPageVersion(tx, page, &version, map[string]any{
 				"publish_kind": model.WikiPagePublishKindSync,
 			})
 		}); err != nil {
@@ -751,6 +770,26 @@ func (s *WikiIngestV2Service) publishWikiPageSlugs(ctx context.Context, eid, lib
 		return fmt.Errorf("publish wiki pages partially failed: %s", strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+func publishWikiPageVersion(tx *gorm.DB, page *model.WikiPage, version *model.WikiPageVersion, meta map[string]any) error {
+	if version.IsPublished && page.Status == model.WikiPageStatusActive {
+		return nil
+	}
+	if err := tx.Model(version).Updates(map[string]any{
+		"is_published":   true,
+		"publish_kind":   model.WikiPagePublishKindSync,
+		"published_time": time.Now().UnixMilli(),
+	}).Error; err != nil {
+		return err
+	}
+	if page.Status != model.WikiPageStatusActive {
+		if err := tx.Model(page).Update("status", model.WikiPageStatusActive).Error; err != nil {
+			return err
+		}
+		page.Status = model.WikiPageStatusActive
+	}
+	return upsertWikiPageLog(tx, page, version.ID, page.UpdaterID, "publish", "", meta)
 }
 
 // reduceSlugUpdatesWithRetry 对单个 slug 的编译进行有限次重试。

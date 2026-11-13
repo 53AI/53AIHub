@@ -28,6 +28,8 @@ const (
 	EntityTypeRedLine      = "RedLine"      // 红线（不可逾越的硬性底线，如"不得低于成本价""禁止使用未授权数据"）
 	EntityTypeDisagreement = "Disagreement" // 分歧（意见不一致的具体观点，需列明争议双方和核心差异）
 	EntityTypeRisk         = "Risk"         // 风险（可能影响目标的不确定性因素，指出来源与可能后果）
+	// EntityTypeCompany 仅供安心录实体记忆使用（不属于通用 RAG 实体体系，故不登记进 GetAllEntityTypes）
+	EntityTypeCompany = "Company" // 企业（人物所属/关联的公司实体）
 )
 
 // EntityRelationSource* 实体关联来源枚举（用于区分自动/手动来源，便于重生成时隔离）

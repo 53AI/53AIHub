@@ -46,6 +46,7 @@ function ChatMessagesInner({
   fileAction,
   sourceAction,
   isShareMode = false,
+  autoScroll = true,
   t: externalT,
   boxClassName,
 }: ChatMessagesProps) {
@@ -225,7 +226,7 @@ function ChatMessagesInner({
       <BubbleList
         ref={bubbleListRef}
         messages={messageList}
-        autoScroll
+        autoScroll={autoScroll}
         className="flex-1"
         mainClass={boxClassName || "w-11/12 md:w-4/5 max-w-[1200px] mx-auto"}
         enablePullUp={hasMore && !isLoadingMore}

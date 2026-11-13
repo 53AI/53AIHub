@@ -16,7 +16,7 @@ import type {
 } from '@km/shared-business/knowledge-pipeline'
 import { ragPipelineApi } from '@/api/modules/rag-pipeline'
 import { uploadApi } from '@/api/modules/upload'
-import { api_host, getPublicPath } from '@/utils/config'
+import { api_host } from '@/utils/config'
 import { buildPreviewUrl } from '@/utils/preview'
 import { getSimpleParserConfigs } from '@/constants/parser'
 import platformSettingsApi from '@/api/modules/platform-settings'
@@ -246,11 +246,6 @@ export function createPipelineAdapter(): IDataPipelineAdapter {
       )
     },
 
-    // ========== 公共路径方法 ==========
-
-    getPublicPath(path: string): string {
-      return getPublicPath(path)
-    },
   }
 }
 

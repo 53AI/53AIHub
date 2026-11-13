@@ -10,8 +10,8 @@
  *   - 删除按钮:hover 显示,rounded-full + bg-white + size-4
  */
 import { LinkChip } from "./LinkChip";
-import { SafeImage } from "@km/shared-components-react";
 import type { LinkListSlotProps, MentionLinkItem } from "@km/hub-ui-x-react";
+import { SafeImage } from "@km/shared-components-react";
 
 export type LegacyLinkListProps = LinkListSlotProps & {
   className?: string;

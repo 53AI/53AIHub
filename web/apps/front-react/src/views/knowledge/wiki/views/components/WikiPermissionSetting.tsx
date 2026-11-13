@@ -10,7 +10,8 @@ import { permissionsApi, type PermissionItem } from '@/api/modules/permissions'
 import { RESOURCE_TYPE, PERMISSION_TYPE, SUBJECT_TYPE, type SubjectType } from '@/components/KMPermission/constant'
 import { useUserStore } from '@/stores/modules/user'
 import { getPublicPath } from '@/utils/config'
-import '@/views/library/main/components/permission-setting.css'
+
+import { SafeImage } from "@km/shared-components-react";import '@/views/library/main/components/permission-setting.css'
 
 interface WikiPermissionSettingProps {
   onClose?: () => void
@@ -254,8 +255,8 @@ export function WikiPermissionSetting({ onClose, className, pageId }: WikiPermis
                 <div className="flex items-center gap-2">
                   {member.subject_type === SUBJECT_TYPE.company_all ? (
                     <>
-                      <img
-                        src={getPublicPath('/images/space/group.png')}
+                      <SafeImage
+                        src={'/images/space/group.png'}
                         alt="admin"
                         className="size-5"
                       />

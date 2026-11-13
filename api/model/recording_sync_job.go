@@ -13,8 +13,10 @@ type RecordingSyncJob struct {
 	Failed     int    `json:"failed" gorm:"column:failed;not null;default:0"`
 	Skipped    int    `json:"skipped" gorm:"column:skipped;not null;default:0"`
 	Error      string `json:"error,omitempty" gorm:"column:error;type:text"`
-	// FailedDetails 逐条失败明细 JSON：[{audio_id, title, reason}]，空为无失败。
-	FailedDetails string `json:"failed_details,omitempty" gorm:"column:failed_details;type:text"`
+	// FailedDetails 逐条失败明细 JSON（DB 存储形态）；对外不直接暴露，见 FailedDetailsList。
+	FailedDetails string `json:"-" gorm:"column:failed_details;type:text"`
+	// FailedDetailsList 对外结构化失败明细（由 FailedDetails 解析，不落库）。
+	FailedDetailsList []FailedDetail `json:"failed_details,omitempty" gorm:"-"`
 	// OwnerInstance 启动同步的实例 ID（多实例隔离，复用录音模块的 RECORDING_INSTANCE_ID）。
 	OwnerInstance string `json:"owner_instance" gorm:"size:64;not null;default:'';index"`
 	StartedAt     int64  `json:"started_at" gorm:"column:started_at;not null;default:0"`
@@ -23,6 +25,16 @@ type RecordingSyncJob struct {
 }
 
 func (RecordingSyncJob) TableName() string { return "recording_sync_jobs" }
+
+// FailedDetail 同步失败明细（对外结构化返回）。字段按失败类型可选：
+// audio_unavailable/remote_not_found/transcription_not_triggered/permanent/retryable_error。
+type FailedDetail struct {
+	AudioID    string `json:"audio_id,omitempty"`
+	DeviceType string `json:"device_type,omitempty"`
+	Title      string `json:"title,omitempty"`
+	Type       string `json:"type,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
 
 // CreateRecordingSyncJob 创建同步任务记录。
 func CreateRecordingSyncJob(job *RecordingSyncJob) error {

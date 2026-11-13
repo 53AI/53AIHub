@@ -8,10 +8,12 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
+	"github.com/53AI/53AIHub/common/utils/hashids"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
@@ -21,13 +23,17 @@ import (
 
 // CheckUploadHash 秒传预检：前端先算 hash 查询，命中则跳过文件传输
 // @Summary      Check upload hash
-// @Description  Check if a file with the given SHA256 hash already exists in the enterprise (quick-upload pre-check).
+// @Description  Check if a file with the given SHA256 hash already exists in the enterprise or an optional knowledge base.
 // @Tags         Upload
 // @Accept       json
 // @Produce      json
 // @Param        hash  query  string  true  "file SHA256 hash"
+// @Param        library_id  query  string  false  "Knowledge base ID (Hashid or integer); omitted checks the whole enterprise"
 // @Security BearerAuth
 // @Success      200  {object}  model.CommonResponse{data=object}  "exists=true with file, or exists=false"
+// @Failure      400  {object}  model.CommonResponse  "invalid library ID or library not found"
+// @Failure      403  {object}  model.CommonResponse  "insufficient library permission"
+// @Failure      500  {object}  model.CommonResponse  "database or permission lookup failure"
 // @Router       /api/upload/check [get]
 func CheckUploadHash(c *gin.Context) {
 	hash := c.Query("hash")
@@ -36,9 +42,49 @@ func CheckUploadHash(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(nil))
 		return
 	}
-	existing, err := model.GetUploadFileByEidHashAndSourceType(eid, hash, model.UploadFileSourceUserUpload)
-	if err != nil || existing == nil {
+	var libraryID *int64
+	if value := strings.TrimSpace(c.Query("library_id")); value != "" {
+		id, err := hashids.TryParseID(value)
+		if err != nil {
+			id, err = strconv.ParseInt(value, 10, 64)
+		}
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("无效的知识库 ID"))
+			return
+		}
+		library, err := model.GetLibraryByID(eid, id, c.Request.Context())
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("知识库不存在"))
+			return
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+		permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_LIBRARY, library.ID, config.GetUserId(c), c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+		if permission < model.PERMISSION_VIEW_ONLY {
+			c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(nil))
+			return
+		}
+		libraryID = &id
+	}
+	var existing *model.UploadFile
+	var err error
+	if libraryID == nil {
+		existing, err = model.GetUploadFileByEidHashAndSourceType(eid, hash, model.UploadFileSourceUserUpload)
+	} else {
+		existing, err = model.GetUploadFileByEidHashSourceTypeAndLibraryID(eid, hash, model.UploadFileSourceUserUpload, *libraryID)
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) || existing == nil {
 		c.JSON(http.StatusOK, model.Success.ToResponse(map[string]bool{"exists": false}))
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
 		return
 	}
 	logger.Infof(c.Request.Context(), "秒传命中(hash查询)：eid=%d, hash=%s, upload_file_id=%d", eid, hash, existing.ID)

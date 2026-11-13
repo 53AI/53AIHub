@@ -57,7 +57,8 @@ func (s *TingwuDocumentStrategy) ProcessWithUploadFile(fileID int64, content []b
 	logger.Infof(ctx, "【听悟直连】转换成功 - fileID=%d content_len=%d summary_len=%d insight_len=%d",
 		fileID, len(resp.Content), len(resp.Summary), len(resp.InsightSummary))
 
-	// 保存 summary、insight_summary 到 file 表（与 docconv queue.go 逻辑对齐）
+	// 保存 summary、insight_summary 到 file 表（与 docconv queue.go 逻辑对齐）。
+	// 转写状态不在此处落库：ASR 成功≠入库成功，由 document_parsing 在 FileBody 事务提交后统一写 completed。
 	if fileID > 0 {
 		updates := map[string]interface{}{}
 		if resp.Summary != "" {
@@ -84,8 +85,6 @@ func (s *TingwuDocumentStrategy) ProcessWithUploadFile(fileID int64, content []b
 					fileID, len(resp.Summary), len(resp.InsightSummary))
 			}
 		}
-		// 设置转写状态（独立于 parsing_status，避免被后续 RAG 管线失败覆盖）
-		model.SetFileTranscriptionStatus(fileID, "completed")
 	}
 
 	return &DocumentProcessResult{

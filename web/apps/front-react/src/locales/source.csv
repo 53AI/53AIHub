@@ -326,6 +326,7 @@ common.back,返回,返回,Back,戻る
 common.back_home,返回站点首页,返回站點首頁,Return to site homepage,返回站点首页
 common.catalog,目录,目錄,Catalog,目次
 common.code,代码,代碼,Code,コード
+common.action,操作,操作,Action,操作
 common.collapse_more,收起更多,收起更多,Collapse More,もっと見る
 common.common_document,通用文档,通用文檔,General Document,一般的なドキュメント
 common.confirm_delete,确定删除该项？,確定刪除該項？,Are you sure you want to delete this item?,このアイテムを削除しますか？
@@ -1068,6 +1069,9 @@ share.recording_scan_footer,扫码分享,扫码分享,WeChat Scan,WeChatスキ�
 share.recording_chip_section,选择指定内容,選擇指定內容,Select specific content,表示するコンテンツを選択
 share.recording_switch_tabs,切换,切換,Switch,切り替え
 share.recording_insight_not_ready,请生成洞察后，再进行分享,請生成洞察後，再進行分享,Please wait for the insight to be generated before sharing,インサイト生成後に共有してください
+share.conversation_with_recording,{nickname}与录音《{name}》的对话,{nickname}與錄音《{name}》的對話,{nickname}'s conversation about the recording "{name}",{nickname}と録音「{name}」の会話
+share.go_recording,去安心录,去安心錄,Go to Recording,安心録音へ
+share.go_recording_desc,录音转写与洞察，随时回顾,錄音轉寫與洞察，隨時回顧,"Transcripts and insights, always available",文字起こしとインサイトをいつでも振り返り
 skill.binding_id_not_found,技能绑定ID不存在,技能绑定ID不存在,Skill binding ID not found,スキルのバインドIDが存在しません
 skill.enable_first,请先启用技能再使用,請先啟用技能再使用,Please enable the skill first,先にスキルを有効にしてください
 skill.disabled_by_admin,当前技能已禁用，请联系管理员,當前技能已禁用，請聯繫管理員,The skill has been disabled by admin, please contact administrator,現在のスキルは管理者によって無効にされています
@@ -1107,6 +1111,7 @@ mine.record_btn,录音,錄音,Record,録音
 recording.system_audio,录制系统声音,錄製系統聲音,Record system audio,システム音声を録音
 recording.system_audio_hint,启用后将录制您选择的标签页或窗口的音频，需在共享时勾选"共享音频",啟用後將錄製您選擇的標籤頁或窗口的音頻，需在共享時勾選"共享音頻",Enable to record audio from the selected tab or window. Check "Share audio" when sharing.,有効化後、選択したタブまたはウィンドウの音声を録音します。共有時に「音声を共有」をチェックしてください
 recording.system_audio_missing,未检测到共享音频，仅录制麦克风,未檢測到共享音頻，僅錄製麥克風,No shared audio detected. Recording microphone only.,共有音声が検出されません。マイクのみ録音中
+recording.system_audio_unsupported,当前环境不支持录制系统声音，已切换为仅麦克风录音,當前環境不支持錄製系統聲音，已切換為僅麥克風錄音,System audio capture is not supported in this environment. Recording microphone only.,この環境ではシステム音声の録音に対応していません。マイクのみ録音中
 recording.user_cancelled_picker,已取消录音启动,已取消錄音啟動,Recording start cancelled.,録音開始がキャンセルされました
 recording.default_name,录音,錄音,Recording,録音
 recording.tab.insight,洞察,洞察,Insight,インサイト
@@ -1126,6 +1131,9 @@ recording.export.transcript,导出转写,導出轉寫,Export Transcript,文字�
 recording.export.transcript_exporting,正在导出转写...,正在導出轉寫...,Exporting transcript...,文字起こしをエクスポート中...
 recording.export.not_ready_warning,{type}内容尚未生成,{type}內容尚未生成,{type} is not ready,{type}は未生成です
 recording.export.template_prefix,导出,導出,Export,エクスポート
+recording.disabled_title,安心录未开启,安心錄未開啟,Recording is not enabled,録音機能が有効になっていません
+recording.disabled_subtitle,请联系管理员开启后使用,請聯繫管理員開啟後使用,Please contact your administrator to enable it.,管理者に連絡して有効化してください
+recording.disabled_refresh,刷新,重新整理,Refresh,更新
 mine.space_init,个人空间正在初始化，请稍候...,個人空間正在初始化，請稍候...,Personal space is initializing, please wait...,個人スペースを初期化中、お待ちください...
 mine.untitled_folder,无标题文件夹,無標題文件夾,Untitled Folder,無題のフォルダ
 mine.untitled_knowledge,无标题知识,無標題知識,Untitled Knowledge,無題のナレッジ
@@ -1253,6 +1261,38 @@ group_not_empty,分组不能为空,分組不能為空,Group cannot be empty,グ�
 status.account_disabled_desc,账号已被禁用，请联系管理员开启~,帳號已被停用，請聯繫管理員開啟~,Your account has been disabled, please contact administrator to enable,アカウントは無効になっています。管理者に連絡して有効化してください
 logs.title,日志,日誌,Logs,ログ
 logs.empty,暂无日志记录,暫無日誌,No Logs,ログがありません
+wiki.queue.title,文档任务队列,文檔任務佇列,Document queue,ドキュメントキュー
+wiki.queue.stats_title,数据统计,數據統計,Statistics,統計
+wiki.queue.list_title,任务列表,任務列表,Task list,タスクリスト
+wiki.queue.summary_all,全部文档,全部文檔,All documents,すべてのドキュメント
+wiki.queue.summary_success,已完成,已完成,Completed,完了
+wiki.queue.summary_failed,失败/中断,失敗/中斷,Failed/Interrupted,失敗/中断
+wiki.queue.summary_pending,待处理/暂停,待處理/暫停,Queued/Paused,待機/一時停止
+wiki.queue.summary_processing,处理中,處理中,Processing,処理中
+wiki.queue.filter_all,全部,全部,All,すべて
+wiki.queue.filter_success,已完成,已完成,Completed,完了
+wiki.queue.filter_failed,失败/中断,失敗/中斷,Failed/Interrupted,失敗/中断
+wiki.queue.filter_pending,排队中,排隊中,Queued,待機中
+wiki.queue.filter_processing,处理中,處理中,Processing,処理中
+wiki.queue.search_placeholder,搜索文档、关联页面或失败原因,搜尋文檔、關聯頁面或失敗原因,"Search documents, pages or failures",ドキュメント・ページ・失敗理由を検索
+wiki.queue.column_page,页面,頁面,Page,ページ
+wiki.queue.column_type,任务类型,任務類型,Task type,タスク種別
+wiki.queue.column_status,状态,狀態,Status,状態
+wiki.queue.column_failure,最近失败原因,最近失敗原因,Latest failure reason,最新の失敗理由
+wiki.queue.column_retries,已重试次数,已重試次數,Retry count,再試行回数
+wiki.queue.column_time,更新时间,更新時間,Updated,更新日時
+wiki.queue.column_action,操作,操作,Action,操作
+wiki.queue.type_generation,页面生成,頁面生成,Page generation,ページ生成
+wiki.queue.type_vectorization,页面索引,頁面索引,Page indexing,ページのインデックス作成
+wiki.queue.failure_unknown,失败原因暂不可用,失敗原因暫不可用,Failure reason unavailable,失敗理由を表示できません
+wiki.queue.selected_count,已选择 {count} 个失败任务,已選擇 {count} 個失敗任務,{count} failed tasks selected,失敗したタスクを {count} 件選択中
+wiki.queue.result_count,共 {count} 份文档,共 {count} 份文檔,{count} documents,{count} 件のドキュメント
+wiki.queue.retry_selected,重试所选（{count}）,重試所選（{count}）,Retry selected ({count}),選択した項目を再試行（{count}）
+wiki.queue.empty,暂无符合条件的文档,暫無符合條件的文檔,No matching documents,該当するドキュメントはありません
+wiki.queue.load_failed,加载任务队列失败,載入任務佇列失敗,Failed to load task queue,タスクキューの読み込みに失敗しました
+wiki.queue.retry_success,已提交 {count} 个任务重试,已提交 {count} 個任務重試,Submitted {count} tasks for retry,{count} 件のタスクを再試行に送信しました
+wiki.queue.retry_partial_failed,{count} 个任务未能重试,{count} 個任務未能重試,{count} tasks could not be retried,{count} 件のタスクを再試行できませんでした
+wiki.queue.retry_failed,提交重试失败,提交重試失敗,Failed to submit retry,再試行の送信に失敗しました
 wiki.alias_label,别名,別名,Alias,別名
 wiki.backlinks_label,被链接,被鏈接,Backlinks,被リンク
 wiki.continue_edit,继续编辑,繼續編輯,Continue Editing,編集を続行
@@ -1341,6 +1381,15 @@ memory.merge_card_stats,{n} 个关联,{n} 個關聯,{n} related facts,{n} 個の
 memory.merge_success,记忆融合成功,記憶融合成功,Memories merged,メモリ融合に成功
 memory.merge_failed,记忆融合失败,記憶融合失敗,Merge failed,メモリ融合に失敗
 memory.merge_type_mismatch_tip,仅可融合类型相同的两个实体,僅可融合類型相同的兩個實體,Only entities of the same type can be merged,同じタイプのエンティティのみ融合できます
+memory.selected_prefix,已选,已選,,
+memory.selected_suffix,个,個,selected,件選択中
+memory.batch_merge,合并（{n}）,合併（{n}）,Merge ({n}),統合（{n}）
+memory.batch_delete,删除（{n}）,刪除（{n}）,Delete ({n}),削除（{n}）
+memory.merge_need_two,融合仅支持选择 2 个同类型实体,融合僅支援選擇 2 個同類型實體,Merge supports exactly 2 entities of the same type,統合は同タイプのエンティティ2件のみサポートします
+memory.batch_delete_confirm_title,确认删除选中的记忆?,確認刪除選中的記憶?,Delete selected memories?,選択したメモリを削除しますか？
+memory.batch_delete_confirm_desc,将删除选中的 {n} 条记忆，删除后不可恢复,將刪除選中的 {n} 條記憶，刪除後不可恢復,{n} selected memories will be deleted and cannot be undone,選択した{n}件のメモリを削除します。元に戻せません
+memory.batch_delete_success,已删除 {n} 条记忆,已刪除 {n} 條記憶,{n} memories deleted,{n}件のメモリを削除しました
+memory.batch_delete_partial,已删除 {success} 条，{failed} 条失败,已刪除 {success} 條，{failed} 條失敗,{success} deleted, {failed} failed,{success}件削除、{failed}件失敗
 memory.add_success,记忆已新增,記憶已新增,Memory added,メモリが追加されました
 memory.add_with_relations_success,记忆与关联已保存,記憶與關聯已保存,Memory and relations saved,メモリと関連が保存されました
 memory.delete_confirm_title,确认删除该记忆?,確認刪除該記憶?,Delete this memory?,このメモリを削除しますか？
@@ -1387,3 +1436,24 @@ global_search.time_365d,一年内,一年內,Within a year,1年以内
 global_search.type_webpage,网页文件,網頁文件,Web Page,Webページ
 global_search.type_audio,音频文件,音頻文件,Audio File,オーディオファイル
 global_search.other,其他,其他,Other,その他
+wiki.queue.column_document,文档,文檔,Document,ドキュメント
+wiki.queue.column_library,知识库,知識庫,Library,ナレッジベース
+wiki.queue.related_pages,关联页面,關聯頁面,Related pages,関連ページ
+wiki.queue.generation_status,Wiki 生成状态,Wiki 生成狀態,Wiki generation,Wiki 生成状態
+wiki.queue.page_status,页面状态,頁面狀態,Page status,ページ状態
+wiki.queue.index_status,索引状态,索引狀態,Index status,インデックス状態
+wiki.queue.summary_waiting,已暂停,已暫停,Paused,一時停止
+wiki.queue.filter_waiting,已暂停,已暫停,Paused,一時停止
+wiki.queue.filter_not_started,尚未开始,尚未開始,Not started,未開始
+wiki.queue.filter_not_required,无需索引,無需索引,Not required,不要
+wiki.queue.filter_cancelled,已取消,已取消,Cancelled,キャンセル済み
+wiki.queue.pages_generating,页面生成后会显示在这里,頁面生成後會顯示在這裡,Generated pages will appear here,生成されたページはここに表示されます
+wiki.queue.generation_failed,Wiki 生成失败，尚无关联页面,Wiki 生成失敗，尚無關聯頁面,Wiki generation failed; no related pages,Wiki の生成に失敗しました。関連ページはありません
+wiki.queue.pages_empty,本次生成未产生页面,本次生成未產生頁面,No pages were produced,ページは生成されませんでした
+wiki.queue.page_active,已发布,已發布,Published,公開済み
+wiki.queue.page_draft,草稿,草稿,Draft,下書き
+wiki.queue.page_archived,已归档,已封存,Archived,アーカイブ済み
+wiki.queue.page_deprecated,已停用,已停用,Deprecated,廃止
+wiki.queue.page_pending,待发布,待發布,Pending publication,公開待ち
+wiki.queue.page_inactive,未发布,未發布,Unpublished,未公開
+wiki.queue.document_status,文档状态,文檔狀態,Document status,ドキュメント状態

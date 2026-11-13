@@ -22,6 +22,22 @@ export function buildPreviewUrl(previewKey?: string | null): string | undefined 
   return key ? `${api_host}/api/preview/${key}` : undefined
 }
 
+/** 同一主机上的旧端口预览地址改用当前 API 主机，兼容已保存的绝对预览 URL。 */
+export function normalizePreviewHost(url?: string | null, currentApiHost: string = api_host): string {
+  if (!url) return ''
+
+  try {
+    const current = new URL(currentApiHost)
+    const parsed = new URL(url, currentApiHost)
+    if (parsed.pathname.startsWith('/api/preview/') && parsed.hostname === current.hostname) {
+      return `${current.origin}${parsed.pathname}${parsed.search}${parsed.hash}`
+    }
+  } catch {
+    return url
+  }
+
+  return url
+}
 
 export function buildLibraryPreviewUrl(fileid: string, fileName: string): string {
   return `${api_host}/api/files/${fileid}/preview/knowledge_file_${fileid}_${fileName}`

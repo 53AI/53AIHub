@@ -382,6 +382,8 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
           label: opt.label,
           icon: opt.icon,
           vision: opt.vision || false,
+          enabled_tools: opt.enabled_tools,
+          upstream_api_format: opt.upstream_api_format,
         })),
       }
     })
@@ -440,13 +442,6 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
 
   // front-react 用户端不需要使用范围（个人版），因此不提供使用范围相关组件；
   // CreatePageLayout 的 usageScope 插槽不传，使用范围区块保持隐藏。
-
-  // ========== 公共路径 ==========
-
-  getPublicPath: (path: string) => {
-    // front-react 的静态资源路径
-    return `/static${path}`
-  },
 
   // ========== API Host ==========
 
@@ -520,11 +515,9 @@ export const frontAgentAdapter: IAgentCreateAdapter = {
       : {
           ...basePayload,
           enable_process_steps: true,
-          knowledge_base_ids: params.knowledgeSource?.state?.networkSearch
-            ? []
-            : params.knowledgeSource?.state?.allKnowledge
-              ? ['all']
-              : (params.library?.value ?? ['']),
+          knowledge_base_ids: params.knowledgeSource?.state?.allKnowledge
+            ? ['all']
+            : (params.library?.value?.map(String) ?? ['']),
           file_ids: [],
           space_ids: [],
           solo_file_mode: false,

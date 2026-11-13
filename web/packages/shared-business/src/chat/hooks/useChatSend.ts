@@ -305,6 +305,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
         agent_id,
         conversation_id,
         modelId = "",
+        thinkingMode,
         completion_params = {},
         messageList = [],
         links = [],
@@ -528,6 +529,7 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
             temperature: 0,
             top_p: 0,
             ...completion_params,
+            ...(thinkingMode !== undefined ? { thinking_mode: thinkingMode } : {}),
           }
         : {
             conversation_id,
@@ -541,12 +543,9 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
             presence_penalty: 0,
             stream: true,
             // knowledgeSource.state 推导逻辑:
-            // - networkSearch: 不使用知识库 (空数组)
-            // - allKnowledge: 使用 ["all"]
+            // 联网搜索与知识库范围并行；allKnowledge 表示同时检索全部知识库。
             // - knowledgeGraph/wiki: 由 buildKnowledgeSourcePayload 处理，不影响 knowledge_base_ids
-            knowledge_base_ids: (networkSearch)
-              ? []
-              : hasLinkLibraries
+            knowledge_base_ids: hasLinkLibraries
                 ? linkLibraries.map(lib => String(lib.id))
                 : (knowledgeSource?.state?.allKnowledge)
                   ? ["all"] : [],
@@ -579,9 +578,9 @@ export function useChatSend(legacyConversationApi?: IConversationApi) {
                   ...(w.space_id != null && { space_id: String(w.space_id) }),
                 })),
               },
-              { webSearchConfig: webSearchConfig as Record<string, unknown> },
             ),
             ...completion_params,
+            ...(thinkingMode !== undefined ? { thinking_mode: thinkingMode } : {}),
           };
 
       // ========== 5. 发送请求 ==========

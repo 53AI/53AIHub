@@ -2045,11 +2045,15 @@ export function processStreamDataItem(
     if (process_data.wiki_page_quotations) {
       message.rag_temp.wiki_page_quotations = process_data.wiki_page_quotations;
     }
+    if (process_data.web_page_quotations) {
+      message.rag_temp.web_page_quotations = process_data.web_page_quotations;
+    }
     if (
       message.rag_temp.document_search ||
       message.rag_temp.document_quotations ||
       message.rag_temp.file_quotations ||
       message.rag_temp.wiki_page_quotations ||
+      message.rag_temp.web_page_quotations ||
       (message.process_records || []).some(
         (r: any) => r.step_code === "knowledge_search"
       )

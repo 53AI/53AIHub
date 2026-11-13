@@ -15,6 +15,10 @@ type BatchSearcher interface {
 	SearchBatch(ctx context.Context, queries []string, count int) (*SearchResult, error)
 }
 
+type ContextSearcher interface {
+	SearchContext(ctx context.Context, query string, count int) (*SearchResult, error)
+}
+
 type SearchItem struct {
 	ChunkID       int64   `json:"chunk_id"`
 	FileID        int64   `json:"file_id"`
@@ -24,6 +28,7 @@ type SearchItem struct {
 	LibraryName   string  `json:"library_name"`
 	LibraryIcon   string  `json:"library_icon"`
 	FileCreatedAt int64   `json:"file_created_at,omitempty"`
+	PublishedAt   string  `json:"published_at,omitempty"`
 	SpaceID       int64   `json:"space_id,omitempty"`
 	SpaceName     string  `json:"space_name,omitempty"`
 	ChunkType     string  `json:"chunk_type"`
@@ -37,8 +42,9 @@ type SearchConfig struct {
 }
 
 type WebSearchConfig struct {
-	ApiType string `json:"api_type"`
-	ApiKey  string `json:"api_key"`
+	ApiType   string `json:"api_type"`
+	ApiKey    string `json:"api_key"`
+	Freshness string `json:"freshness,omitempty"`
 }
 
 // RagConfig RAG搜索配置

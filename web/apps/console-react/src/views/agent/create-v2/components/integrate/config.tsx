@@ -1,24 +1,39 @@
-import { getPublicPath } from '@/utils/config';
 import { t } from '@/locales';
+import { WechatOutlined } from '@ant-design/icons';
+import type { ReactNode } from 'react';
 
-export const directUseItems = [
+export interface DirectUseItem {
+  id: string;
+  title: string;
+  desc: string;
+  /** 图片地址或 ReactNode 图标 */
+  icon: string | ReactNode;
+}
+
+export const directUseItems: DirectUseItem[] = [
   {
     id: "web",
     title: t('integrate.web_h5_embed'),
     desc: t('integrate.web_h5_embed_desc'),
-    icon: getPublicPath('/images/agent/access-h5.png'),
+    icon: '/images/agent/access-h5.png',
   },
   {
     id: "link",
     title: t('integrate.link_qr'),
     desc: t('integrate.link_qr_desc'),
-    icon: getPublicPath('/images/agent/access-link.png'),
+    icon: '/images/agent/access-link.png',
+  },
+  {
+    id: "wx_bot",
+    title: t('integrate.wechat_clone'),
+    desc: t('integrate.wechat_clone_desc'),
+    icon: <WechatOutlined className="text-[#09BB07]" style={{ fontSize: 28 }} />,
   },
   {
     id: "api",
     title: t('integrate.api_access'),
     desc: t('integrate.api_access_desc'),
-    icon: getPublicPath('/images/agent/access-api.png'),
+    icon: '/images/agent/access-api.png',
   },
 ];
 

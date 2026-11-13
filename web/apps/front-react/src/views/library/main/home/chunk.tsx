@@ -1,7 +1,7 @@
 import { useState, useMemo, type Key } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Table, Tooltip, Modal, Pagination, Button, Checkbox, message } from "antd";
-import { Dropdown, Tabs } from "@km/shared-components-react";
+import { Dropdown, Tabs, SafeImage } from "@km/shared-components-react";
 import { MoreOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { MenuProps, TableColumnsType } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
@@ -9,7 +9,7 @@ import { useLibraryStore } from "@/stores/modules/library";
 import type { FileItem } from "@/api/modules/files/types";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";
 import { checkHasKMPermission } from "@/utils/km-permission";
-import { RUN_STATUS } from "@/constants/chunk";
+import { RUN_STATUS, RAG_JOB_STATUS } from "@/constants/chunk";
 import { useResponsive } from "@/hooks/useResponsive";
 import { EntityDisplay } from "@/components/EntityDisplay/index";
 import { STEP_KEY_TO_NAME } from "@/views/library/main/components/status/file";
@@ -17,6 +17,7 @@ import { ragJobApi } from "@/api/modules/rag-job";
 import type { RagJobWithSteps } from "@/api/modules/rag-job/types";
 import strategiesApi, { type Strategy } from "@/api/modules/strategies";
 import ragPipelineApi from "@/api/modules/rag-pipeline";
+import { submitBatchContinue } from "./batchContinue";
 
 interface FileStats {
   completed_count: number;
@@ -130,6 +131,16 @@ export function ChunkHomeView() {
       ).length,
       failedCount: selected.filter(
         (f) => f.cleaning_info?.status === RUN_STATUS.FAILED,
+      ).length,
+      waitingCount: selected.filter(
+        (f) => f.cleaning_info?.status === RUN_STATUS.WAITING,
+      ).length,
+      // 继续清洗一次提交成功/失败/待人工处理三类文档
+      continueCount: selected.filter(
+        (f) =>
+          f.cleaning_info?.status === RUN_STATUS.SUCCESS ||
+          f.cleaning_info?.status === RUN_STATUS.FAILED ||
+          f.cleaning_info?.status === RUN_STATUS.WAITING,
       ).length,
     };
   }, [files, selectedRowKeys]);
@@ -386,13 +397,28 @@ export function ChunkHomeView() {
       // 接口声明返回 RagJobItem，实际是带 current_step_order 的完整任务，按运行时结构断言
       const jobs = (res.jobs || []) as unknown as RagJobWithSteps[];
       const failedStepKey = file.cleaning_info?.step_key;
-      const failedJobs = jobs.filter((j) => j.status === RUN_STATUS.FAILED);
-      // 优先取与已知失败步骤名一致的任务，取不到再退化为「按步骤顺序的第一个失败节点」
+      // failed(失败) 与 cancelled(中断) 都可作为续跑起点：后端对两者统一把文件
+      // 置为「失败/中断」（hasInterrupted || failureCount > 0），但此前只筛 failed，
+      // 导致被中断的任务（用户停止任务、上游超时被 StaleJobCleaner 连坐取消）
+      // 在列表里显示失败却无法续跑，提示「未找到可继续执行的任务节点」。
+      // retry 接口仅拒绝 processing，cancelled 可安全重试（与流水线详情页一致）。
+      const resumableJobs = jobs.filter(
+        (j) =>
+          j.status === RUN_STATUS.FAILED ||
+          j.status === RAG_JOB_STATUS.CANCELLED,
+      );
+      // 优先取与已知失败步骤名一致的任务（cleaning_info.step_key 是后端算好的
+      // 「第一个未成功节点」）；取不到再退化为「failed 优先、按步骤顺序取最早」，
+      // 避免上游真失败时误从被连坐取消的下游节点起跑。
       const target =
-        failedJobs.find((j) => j.type === failedStepKey) ??
-        [...failedJobs].sort(
-          (a, b) => (a.current_step_order || 0) - (b.current_step_order || 0),
-        )[0];
+        resumableJobs.find((j) => j.type === failedStepKey) ??
+        [...resumableJobs]
+          .sort(
+            (a, b) =>
+              Number(a.status !== RUN_STATUS.FAILED) -
+                Number(b.status !== RUN_STATUS.FAILED) ||
+              (a.current_step_order || 0) - (b.current_step_order || 0),
+          )[0];
       if (!target) {
         message.warning("未找到可继续执行的任务节点");
         return;
@@ -418,22 +444,23 @@ export function ChunkHomeView() {
     libraryStore.loadFilesAll();
   };
 
-  // 批量继续清洗：逐个从失败节点续跑，结束时统一刷新一次
+  // 批量继续清洗：一次请求提交选中集合（成功/失败/待人工处理），
+  // 由后端按每个文档的实际状态选择断点（成功→从头，失败→失败步骤，待人工→手动步骤）
   const handleBatchContinueClean = async (keys: Key[]) => {
     if (keys.length === 0) return;
-    const targets = files.filter(
-      (f) =>
-        keys.includes(f.id) &&
-        f.isfile &&
-        f.cleaning_info?.status === RUN_STATUS.FAILED,
-    );
-    if (targets.length === 0) {
-      message.warning("已选文件中没有失败状态的文件");
-      return;
+    try {
+      const submitted = await submitBatchContinue(files, keys, ragJobApi);
+      if (submitted.length === 0) {
+        message.warning("已选文件中没有可继续清洗的文档");
+        return;
+      }
+      message.success("已提交");
+      setSelectedRowKeys([]);
+      libraryStore.loadFilesAll();
+    } catch (error) {
+      console.error("继续清洗失败:", error);
+      message.error("继续清洗失败");
     }
-    await Promise.all(targets.map((file) => runContinueClean(file)));
-    setSelectedRowKeys([]);
-    libraryStore.loadFilesAll();
   };
 
   // Handle command
@@ -605,7 +632,7 @@ export function ChunkHomeView() {
       ellipsis: true,
       render: (name: string, record: FileItem) => (
         <div className="flex items-center gap-3">
-          <img
+          <SafeImage
             className="size-6 rounded flex items-center justify-center text-white shadow-sm"
             src={record.icon}
             alt=""
@@ -801,21 +828,21 @@ export function ChunkHomeView() {
                   重新清洗({selectedStatuses.successCount})
                 </Button>
               )}
-              {selectedStatuses.failedCount > 0 && (
+              {selectedStatuses.failedCount + selectedStatuses.waitingCount > 0 && (
                 <Button
                   color="primary"
                   variant="outlined"
                   onClick={() => {
                     Modal.confirm({
                       title: "提示",
-                      content: `确定对已选中的 ${selectedStatuses.failedCount} 个失败文件从失败节点继续清洗吗？`,
+                      content: `确定对已选中的 ${selectedStatuses.continueCount} 个文件继续清洗吗？已完成将从第一步重跑，失败/中断将从断点继续，待人工处理将从手动步骤开始。`,
                       okText: "确定",
                       cancelText: "取消",
                       onOk: () => handleBatchContinueClean(selectedRowKeys),
                     });
                   }}
                 >
-                  继续清洗({selectedStatuses.failedCount})
+                  继续清洗({selectedStatuses.continueCount})
                 </Button>
               )}
               <Button
@@ -851,7 +878,7 @@ export function ChunkHomeView() {
                     )
                   }
                 />
-                <img
+                <SafeImage
                   className="size-6 rounded flex-none mt-1"
                   src={record.icon}
                   alt=""

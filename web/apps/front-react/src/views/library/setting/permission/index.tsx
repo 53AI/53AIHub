@@ -13,6 +13,7 @@ import { useLibraryStore, useUserStore } from "@/stores";
 import { Header } from "@/components/Header";
 import { getPublicPath } from "@/utils/config";
 import type { ColumnsType } from "antd/es/table";
+import { SafeImage } from "@km/shared-components-react";
 
 // Default permissions for library
 const getLibraryDefault = (): PermissionItem[] => [
@@ -193,8 +194,8 @@ export function LibraryPermissionSettingsView() {
         if (record.subject_type === SUBJECT_TYPE.space_admin) {
           return (
             <div className="flex items-center gap-2">
-              <img
-                src={getPublicPath("/images/library/group.png")}
+              <SafeImage
+                src={"/images/library/group.png"}
                 alt="admin"
                 className="size-6"
               />
@@ -207,8 +208,8 @@ export function LibraryPermissionSettingsView() {
         if (record.subject_type === SUBJECT_TYPE.space_user) {
           return (
             <div className="flex items-center gap-2">
-              <img
-                src={getPublicPath("/images/library/group.png")}
+              <SafeImage
+                src={"/images/library/group.png"}
                 alt="admin"
                 className="size-6"
               />
@@ -221,8 +222,8 @@ export function LibraryPermissionSettingsView() {
         if (record.subject_type === SUBJECT_TYPE.company_all) {
           return (
             <div className="flex items-center gap-2">
-              <img
-                src={getPublicPath("/images/space/group.png")}
+              <SafeImage
+                src={"/images/space/group.png"}
                 alt="全体成员"
                 className="size-6"
               />

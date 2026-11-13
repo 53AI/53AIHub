@@ -9,19 +9,27 @@ type RecordingMemoryAttributeSchema struct {
 
 // RecordingMemoryEntitySchema 描述一类实体的属性约束。
 type RecordingMemoryEntitySchema struct {
-	Label      string                                    `json:"label"` // 类型中文展示名（人物/事项/风险/承诺/决策）
+	Label      string                                    `json:"label"` // 类型中文展示名（人员/企业/事项/风险/承诺/决策）
 	Attributes map[string]RecordingMemoryAttributeSchema `json:"attributes"`
 }
 
-// RecordingMemoryEntitySchemas 全局唯一权威 schema：5 类实体及每类属性/枚举。
+// RecordingMemoryEntitySchemas 全局唯一权威 schema：6 类实体及每类属性/枚举。
 // 硬编码不存表；prompt 生成、编译落库、列表/详情接口、前端展示均以此为限。
 var RecordingMemoryEntitySchemas = map[string]RecordingMemoryEntitySchema{
-	"person": {Label: "人物",
+	"person": {Label: "人员",
 		Attributes: map[string]RecordingMemoryAttributeSchema{
-			"company":      {Label: "公司"},
 			"position":     {Label: "职位"},
 			"demand":       {Label: "诉求"},
 			"relationship": {Label: "关系", Values: map[string]string{"potential_customer": "潜在客户", "customer": "客户", "partner": "合作伙伴", "competitor": "竞品方", "irrelevant": "无关人员"}},
+			"phone":        {Label: "手机号码"},
+			"avatar":       {Label: "头像"},
+		},
+	},
+	"company": {Label: "企业",
+		Attributes: map[string]RecordingMemoryAttributeSchema{
+			"industry": {Label: "行业"},
+			"region":   {Label: "地区"},
+			"logo":     {Label: "logo"},
 		},
 	},
 	"matter": {Label: "事项",
@@ -82,12 +90,22 @@ type RecordingMemoryEntitySchemaView struct {
 	Attributes []RecordingMemoryAttributeSchemaView `json:"attributes"`
 }
 
+// recordingMemorySchemaLeadingFields 仅用于 /schema 展示的前置字段：对应实体一等字段（aliases），
+// 不是 attributes_json 的键，因此只进 schema 响应、不进写入校验。姓名不在此列——它是实体名
+// canonical_name（独立字段），不作为人员属性返回。
+var recordingMemorySchemaLeadingFields = map[string][]RecordingMemoryAttributeSchemaView{
+	"person": {
+		{Key: "aliases", Label: "其他称呼"},
+	},
+}
+
 // recordingEntityTypeOrder 实体类型在 schema 数组返回中的顺序（与前端约定一致）。
-var recordingEntityTypeOrder = []string{"person", "matter", "risk", "commitment", "decision"}
+var recordingEntityTypeOrder = []string{"person", "company", "matter", "risk", "commitment", "decision"}
 
 // recordingEntityAttrOrder 每类实体属性在 schema 数组返回中的顺序（与前端约定一致）。
 var recordingEntityAttrOrder = map[string][]string{
-	"person":     {"company", "position", "relationship", "demand"},
+	"person":     {"position", "relationship", "demand", "phone", "avatar"},
+	"company":    {"industry", "region", "logo"},
 	"matter":     {"status", "priority", "dependency", "deliverable"},
 	"risk":       {"risk_type", "risk_level", "probability", "response"},
 	"commitment": {"fulfillment_status", "priority", "due_date"},
@@ -116,6 +134,7 @@ func RecordingMemoryEntitySchemaArray() []RecordingMemoryEntitySchemaView {
 			continue
 		}
 		view := RecordingMemoryEntitySchemaView{Type: typ, Label: schema.Label}
+		view.Attributes = append(view.Attributes, recordingMemorySchemaLeadingFields[typ]...)
 		attrOrder := recordingEntityAttrOrder[typ]
 		if len(attrOrder) == 0 {
 			for key := range schema.Attributes { // 兜底：未配置顺序时按 map 声明顺序
@@ -148,4 +167,33 @@ func RecordingMemoryEntitySchemaArray() []RecordingMemoryEntitySchemaView {
 		out = append(out, view)
 	}
 	return out
+}
+
+// ===== schema 接口分组（GET /api/recordings/memories/schema?category=）=====
+// memory（默认）：记忆 —— 事项/风险/承诺/决策；relation：关系 —— 人员/企业；all：全部。
+const (
+	RecordingMemorySchemaCategoryMemory   = "memory"
+	RecordingMemorySchemaCategoryRelation = "relation"
+	RecordingMemorySchemaCategoryAll      = "all"
+)
+
+// recordingMemorySchemaRelationTypeSet 属于"关系"分组的类型（其余类型归"记忆"）。
+var recordingMemorySchemaRelationTypeSet = map[string]struct{}{"person": {}, "company": {}}
+
+// RecordingMemoryEntitySchemaArrayForCategory 按分组返回 schema 数组，
+// 顺序与 RecordingMemoryEntitySchemaArray 一致；未知分组按默认"记忆"处理。
+func RecordingMemoryEntitySchemaArrayForCategory(category string) []RecordingMemoryEntitySchemaView {
+	all := RecordingMemoryEntitySchemaArray()
+	if category == RecordingMemorySchemaCategoryAll {
+		return all
+	}
+	wantRelation := category == RecordingMemorySchemaCategoryRelation
+	result := make([]RecordingMemoryEntitySchemaView, 0, len(all))
+	for _, view := range all {
+		_, isRelation := recordingMemorySchemaRelationTypeSet[view.Type]
+		if isRelation == wantRelation {
+			result = append(result, view)
+		}
+	}
+	return result
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Dropdown, Spin } from "antd";
 import type { MenuProps } from "antd";
-import { Loading3QuartersOutlined, CheckOutlined } from "@ant-design/icons";
+import { Loading3QuartersOutlined, CheckOutlined, OrderedListOutlined } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { SvgIcon, Search } from "@km/shared-components-react";
 import type {
@@ -96,6 +96,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   // 空间页面生成/向量化队列状态
   const [queueStatusData, setQueueStatusData] = useState<WikiQueueStatusResponse | null>(null);
+  const [failedQueueCount, setFailedQueueCount] = useState(0);
+  const [activeDocumentCount, setActiveDocumentCount] = useState(0);
+  const progressRequestId = useRef(0);
 
   // 记录上一次的待处理数量
   const prevPendingCountRef = useRef(0);
@@ -173,9 +176,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   // 加载队列状态的函数
   const loadProgress = useCallback(async () => {
     if (!spaceId) return;
+    const currentRequest = ++progressRequestId.current;
     try {
-      const res = await wikiApi.queueStatus({ space_id: spaceId });
+      const [res, queue] = await Promise.all([
+        wikiApi.queueStatus({ space_id: spaceId }),
+        wikiApi.queueDocuments({ space_id: spaceId, page: 1, size: 1 }),
+      ]);
+      if (currentRequest !== progressRequestId.current) return;
       setQueueStatusData(res);
+      setFailedQueueCount(queue.status_counts.failed ?? 0);
+      setActiveDocumentCount((queue.status_counts.pending ?? 0) + (queue.status_counts.processing ?? 0) + (queue.status_counts.waiting ?? 0));
     } catch (err) {
       console.error('[LeftSidebar] queue status error:', err);
     }
@@ -186,17 +196,22 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   // 初始加载一次
   useEffect(() => {
+    setQueueStatusData(null);
+    setFailedQueueCount(0);
+    setActiveDocumentCount(0);
+    prevPendingCountRef.current = 0;
     loadProgress();
+    return () => { ++progressRequestId.current; };
   }, [loadProgress]);
 
   // 根据是否有待处理任务启动/停止轮询
   useEffect(() => {
-    if (pendingCount > 0) {
+    if (pendingCount > 0 || failedQueueCount > 0 || activeDocumentCount > 0) {
       startPolling();
     } else {
       stopPolling();
     }
-  }, [pendingCount, startPolling, stopPolling]);
+  }, [pendingCount, failedQueueCount, activeDocumentCount, startPolling, stopPolling]);
 
   // 当待处理数量从 > 0 变为 0 时，刷新列表与分类
   useEffect(() => {
@@ -339,7 +354,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         <div className="text-lg text-primary">{t('module.dynamic_knowledge')}</div>
       </div>
 
-      {/* 搜索框 + 排序按钮：搜索在左，排序下拉触发器在右 */}
+      {/* 页面搜索只用于页面列表 */}
       <div className="px-3 flex items-center gap-2 mt-4">
         <Search
           mode="expanded"
@@ -368,7 +383,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         )}
       </div>
       {/* 顶部待处理任务提示 */}
-      {(pendingCount > 0) && (
+      {(activeTab !== "queue" && pendingCount > 0) && (
         <div className="h-8 bg-[#F3F3F3] text-primary px-3 mx-3 rounded-md text-sm flex items-center gap-2 mt-3">
           {pendingCount > 0 && (
             <>
@@ -395,6 +410,27 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         >
           <SvgIcon name="bill" size={17} />
           <span className="text-sm">{t("wiki.page_type.index")}</span>
+        </div>
+        <div
+          className={`h-9 flex items-center gap-2 px-3 rounded-md cursor-pointer transition-colors ${activeTab === "queue" ? "bg-blue-50 text-theme font-medium" : "text-primary hover:bg-gray-100"}`}
+          onClick={() => {
+            setSearchParams(
+              (prev) => {
+                prev.set("sub", "queue");
+                prev.delete("selected");
+                return prev;
+              },
+              { replace: true },
+            );
+          }}
+        >
+          <OrderedListOutlined />
+          <span className="text-sm flex-1">{t("wiki.queue.title")}</span>
+          {failedQueueCount > 0 && (
+            <span className="min-w-5 h-5 px-1 rounded-full bg-[#FFF1F0] text-[#F04438] text-xs flex items-center justify-center">
+              {failedQueueCount > 99 ? "99+" : failedQueueCount}
+            </span>
+          )}
         </div>
         <div
           className={`h-9 flex items-center gap-2 px-3 rounded-md cursor-pointer transition-colors ${activeTab === "logs" ? "bg-blue-50 text-theme font-medium" : "text-primary hover:bg-gray-100"}`}

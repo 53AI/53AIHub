@@ -136,11 +136,10 @@ export function resolveOpenClawCompatibleAgentTypeFromChannelType(
 
 export function getOpenClawCompatibleAgentIconPath(
   agentType?: unknown,
-  getPublicPath?: (path: string) => string,
 ): string {
   const metadata = getOpenClawCompatibleAgentMetadata(agentType)
   const relativePath = `/images/agent/${metadata.iconFileName}`
-  return getPublicPath ? getPublicPath(relativePath) : relativePath
+  return relativePath
 }
 
 export function resolveOpenClawCompatibleAgentLogo(logo?: unknown, agentType?: unknown): string {

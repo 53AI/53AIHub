@@ -63,7 +63,7 @@ export function TemplateSummaryTabContent({
     return (
       <div className="h-full overflow-hidden">
         <Suspense fallback={<Spin className="flex items-center justify-center h-full" />}>
-          <MarkdownViewer content={summary.summary_content} containerClass="w-4/5 mx-auto" />
+          <MarkdownViewer content={summary.summary_content} containerClass="max-w-[1200px] mx-auto" />
         </Suspense>
       </div>
     )

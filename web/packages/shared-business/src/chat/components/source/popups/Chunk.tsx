@@ -2,10 +2,13 @@
 
 import { forwardRef, useImperativeHandle, useState, useRef, useEffect, useCallback } from 'react';
 import { Popover, Button, Spin } from 'antd';
-import { CloseOutlined } from '@ant-design/icons';
+import { CloseOutlined, LinkOutlined } from '@ant-design/icons';
 import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation, useChatConfig, buildLibraryUrl } from '../../../i18n';
+import { SafeImage } from '@km/shared-components-react';
 import type { ChunkItem } from '../../../types/message';
+import { usePopupFullscreen, PopupFullscreenButton } from './PopupFullscreen';
+import './popups.css';
 
 export interface ChunkRef {
   setLibraryInfo: (chunk: ChunkItem | null, type?: string) => void;
@@ -56,8 +59,14 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
     const [searchType, setSearchType] = useState<string>('web_search');
     const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
     const contentRef = useRef<HTMLDivElement>(null);
+    // 全屏状态：弹窗关闭时自动复位（见 usePopupFullscreen）
+    const { isFullscreen, toggleFullscreen } = usePopupFullscreen(visible);
 
-    const isRagSearch = searchType !== 'web_search';
+    const isWebSearch =
+      searchType === 'web_search' ||
+      chunk?.chunk_type === 'web_search' ||
+      chunk?.chunk_type === 'web_page';
+    const isRagSearch = !isWebSearch;
 
     // 缓存
     const cacheRef = useRef<Map<string, { content: string; token_count?: number; chunk_index?: number }>>(new Map());
@@ -84,8 +93,8 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
           setTriggerRect(virtualRef.current.getBoundingClientRect());
         }
 
-        // web_search 类型直接显示，其他类型从 API 获取详情
-        if (type === 'web_search') {
+        // 网页搜索来源直接显示摘要和原文链接，其他类型从 API 获取详情
+        if (type === 'web_search' || copied.chunk_type === 'web_search' || copied.chunk_type === 'web_page') {
           setVisible(true);
           return;
         }
@@ -93,34 +102,36 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
         const isWiki = newChunk.chunk_type === ('wiki' as const);
 
         // 动态知识（wiki）：通过 /api/spaces/{space_id}/wiki/pages/{slug} 拿正文
-        if (isWiki && fetchWikiPageDetail) {
-          const cacheKey = `wiki:${newChunk.wiki_page_id || newChunk.chunk_id}`;
-          if (cacheKey) {
-            const cached = cacheRef.current.get(cacheKey);
-            if (cached) {
-              setChunk(prev => prev ? { ...prev, ...cached } : null);
-              setVisible(true);
-            } else {
-              setLoading(true);
-              fetchWikiPageDetail(newChunk)
-                .then(detail => {
-                  cacheRef.current.set(cacheKey, detail);
-                  setChunk(prev => prev ? { ...prev, ...detail } : null);
-                })
-                .catch(() => {
-                  // 获取失败时使用已有数据
-                })
-                .finally(() => {
-                  setLoading(false);
-                });
-              setVisible(true);
+        if (isWiki) {
+          if (fetchWikiPageDetail) {
+            const cacheKey = `wiki:${newChunk.wiki_page_id || newChunk.chunk_id}`;
+            if (cacheKey) {
+              const cached = cacheRef.current.get(cacheKey);
+              if (cached) {
+                setChunk(prev => prev ? { ...prev, ...cached } : null);
+                setVisible(true);
+              } else {
+                setLoading(true);
+                fetchWikiPageDetail(newChunk)
+                  .then(detail => {
+                    cacheRef.current.set(cacheKey, detail);
+                    setChunk(prev => prev ? { ...prev, ...detail } : null);
+                  })
+                  .catch(() => {
+                    // 获取失败时使用已有数据
+                  })
+                  .finally(() => {
+                    setLoading(false);
+                  });
+                setVisible(true);
+              }
+              return;
             }
-            return;
+          } else {
+            setVisible(true);
           }
-        }
-
-        // 普通 RAG：有 fetchChunkDetail 回调且有 chunk_id 时，从 API 获取详情
-        if (fetchChunkDetail && newChunk.chunk_id) {
+        } else if (fetchChunkDetail && newChunk.chunk_id) {
+          // 普通 RAG：有 fetchChunkDetail 回调且有 chunk_id 时，从 API 获取详情
           const cached = cacheRef.current.get(newChunk.chunk_id);
           if (cached) {
             setChunk(prev => prev ? { ...prev, ...cached } : null);
@@ -198,9 +209,13 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
     }, [chunk, onOpenLibrary, config]);
 
     const isWikiSearch = chunk?.chunk_type === ('wiki' as const)
+    const webSourceUrl = chunk?.url || chunk?.file_path;
 
     const content = chunk ? (
-      <div className="overflow-hidden" style={{ width: `min(${DEFAULT_WIDTH}px, calc(100vw - 32px))` }}>
+      <div
+        className={isFullscreen ? 'flex flex-col w-full h-full overflow-hidden' : 'overflow-hidden'}
+        style={isFullscreen ? undefined : { width: `min(${DEFAULT_WIDTH}px, calc(100vw - 32px))` }}
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 overflow-hidden">
@@ -213,9 +228,18 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
                   {chunk.title}
                 </h3>
               </>
+            ) : isWebSearch ? (
+              <>
+                <div className="flex-shrink-0 size-5 rounded bg-[#EDF3FF] flex items-center justify-center text-[#2563EB]">
+                  <LinkOutlined />
+                </div>
+                <h3 className="flex-1 text-base text-[#1D1E1F] truncate">
+                  {chunk.file_name || chunk.title || chunk.url || chunk.file_path}
+                </h3>
+              </>
             ) : (
               <>
-                <img className="size-5" src={isRagSearch ? chunk.file_icon : chunk.library_icon} alt="" />
+                <SafeImage className="size-5" src={(isRagSearch ? chunk.file_icon : chunk.library_icon) || ""} alt="" />
                 <h3 className="flex-1 text-base text-[#1D1E1F] truncate">
                   {isRagSearch ? chunk.file_name : chunk.library_name}
                 </h3>
@@ -235,7 +259,7 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
             ) : isRagSearch && (
               <>
                 <span className=" text-sm text-[#999999]">
-                  #{chunk.chunk_index || 0}
+                  #{(chunk.chunk_index || 0) + 1}
                 </span>
                 <div className="h-2.5 w-px bg-[#dbdbdb]"></div>
                 <span className="text-sm text-[#999999]">
@@ -244,32 +268,41 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
               </>
             )}
           </div>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => setVisible(false)}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <CloseOutlined />
-          </Button>
+          <div className="flex items-center flex-none">
+            <PopupFullscreenButton
+              isFullscreen={isFullscreen}
+              onToggle={toggleFullscreen}
+            />
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setVisible(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <CloseOutlined />
+            </Button>
+          </div>
         </div>
 
         {/* File link for web search */}
-        {!isRagSearch && chunk.file_path && (
-          <a
-            className="text-base text-[#2563EB] block mb-3"
-            href={chunk.file_path}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {chunk.file_name}
-          </a>
+        {!isRagSearch && webSourceUrl && (
+          <div className="mb-3">
+            <a
+              className="text-sm text-[#2563EB] inline-flex items-center gap-1"
+              href={webSourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <LinkOutlined />
+              查看原文
+            </a>
+          </div>
         )}
 
         {/* Content */}
-        <div className="max-h-[min(14rem,45vh)] overflow-auto">
+        <div className={isFullscreen ? 'flex-1 min-h-0 overflow-auto' : 'max-h-[min(24rem,60vh)] overflow-auto'}>
           <Spin spinning={loading}>
-            <div className="text-sm text-gray-700" ref={contentRef}>
+            <div className="text-sm leading-6 text-gray-700" ref={contentRef}>
               {loading ? null : (chunk.content || '')}
             </div>
           </Spin>
@@ -324,7 +357,10 @@ const Chunk = forwardRef<ChunkRef, ChunkProps>(
         placement="bottomLeft"
         trigger="click"
         content={content}
-        classNames={{ container: "!p-4" }}
+        classNames={{
+          root: isFullscreen ? 'source-popover-fullscreen' : undefined,
+          container: "!p-4",
+        }}
         // bottomLeft 等边缘 placement 默认只有翻转（adjustX/Y）没有视口内平移（shiftX/Y），
         // 弹层在移动端可能显示不全；补充 shift 让 rc-trigger 强制将弹层限制在视口内
         align={{ overflow: { adjustX: true, adjustY: true, shiftX: true, shiftY: true } }}

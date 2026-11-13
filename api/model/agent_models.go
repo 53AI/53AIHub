@@ -1,5 +1,12 @@
 package model
 
+import (
+	"fmt"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
 // AgentModels Agent模型配置
 // @Description Agent模型配置，用于存储Agent支持的不同模型和渠道类型
 type AgentModels struct {
@@ -48,7 +55,7 @@ func GetAgentModelByID(eid, id int64) (*AgentModels, error) {
 
 func GetAgentModelsByAgentID(eid, agentID int64) ([]*AgentModels, error) {
 	var agentModels []*AgentModels
-	err := DB.Where("eid = ? AND agent_id = ?", eid, agentID).Find(&agentModels).Error
+	err := DB.Where("eid = ? AND agent_id = ?", eid, agentID).Order("id ASC").Find(&agentModels).Error
 	if err != nil {
 		return nil, err
 	}
@@ -89,4 +96,77 @@ func GetAgentModelsByEidAndChannelIds(eid int64, channelIds []int64) ([]*AgentMo
 		return nil, err
 	}
 	return agentModels, nil
+}
+
+// ReconcileAgentModels replaces the ordered configuration list without replacing the
+// primary keys of existing slots. The batch API has historically treated list position
+// as the role (fast reasoning first, deep thinking / skill execution second). Preserve
+// this contract for existing clients and databases, without requiring a schema migration.
+//
+// An agent row lock serializes concurrent saves, including the initial empty list.
+// Every operation is in a single transaction: a failed update/create/delete rolls back.
+func ReconcileAgentModels(eid, agentID int64, requested []AgentModels) ([]*AgentModels, error) {
+	if len(requested) == 0 {
+		return nil, fmt.Errorf("models list cannot be empty")
+	}
+	for _, item := range requested {
+		if item.Model == "" || item.ChannelID <= 0 {
+			return nil, fmt.Errorf("model and channel_id are required")
+		}
+	}
+
+	var result []*AgentModels
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var agent Agent
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("eid = ? AND agent_id = ?", eid, agentID).First(&agent).Error; err != nil {
+			return err
+		}
+		var existing []AgentModels
+		if err := tx.Where("eid = ? AND agent_id = ?", eid, agentID).
+			Order("id ASC").Find(&existing).Error; err != nil {
+			return err
+		}
+
+		result = make([]*AgentModels, 0, len(requested))
+		for i, item := range requested {
+			if i < len(existing) {
+				current := existing[i]
+				if current.Model != item.Model || current.ChannelID != item.ChannelID || current.ChannelType != item.ChannelType {
+					if err := tx.Model(&current).Updates(map[string]interface{}{
+						"model": item.Model, "channel_id": item.ChannelID,
+						"channel_type": item.ChannelType,
+					}).Error; err != nil {
+						return err
+					}
+					current.Model, current.ChannelID, current.ChannelType = item.Model, item.ChannelID, item.ChannelType
+				}
+				result = append(result, &current)
+				continue
+			}
+			created := &AgentModels{
+				Eid: eid, AgentID: agentID, Model: item.Model,
+				ChannelID: item.ChannelID, ChannelType: item.ChannelType,
+			}
+			if err := tx.Create(created).Error; err != nil {
+				return err
+			}
+			result = append(result, created)
+		}
+		if len(existing) > len(requested) {
+			ids := make([]int64, 0, len(existing)-len(requested))
+			for _, removed := range existing[len(requested):] {
+				ids = append(ids, removed.ID)
+			}
+			if err := tx.Where("eid = ? AND agent_id = ? AND id IN ?", eid, agentID, ids).
+				Delete(&AgentModels{}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

@@ -8,7 +8,6 @@ import { transformSpaceList } from "@/api/modules/spaces/transform";
 import type { SpaceDisplayItem } from "@/api/modules/spaces/types";
 import { useListState } from "@/hooks";
 import { t } from "@/locales";
-import { getPublicPath } from "@/utils/config";
 import SpaceSettingDrawer, {
 	type SpaceSettingDrawerRef,
 } from "./components/SpaceSettingDrawer";
@@ -110,14 +109,11 @@ export function SpacePage() {
 					}
 					return (
 						<div className="flex items-center gap-2">
-							<img
-								src={(record.owner_info as any)?.avatar}
+							<SafeImage
+								src={(record.owner_info as any)?.avatar || ""}
 								className="size-7 rounded-full"
 								alt=""
-								onError={(e) => {
-									const target = e.target as HTMLImageElement;
-									target.src = getPublicPath("/images/default_avatar.png");
-								}}
+								kind="user"
 							/>
 							{(record.owner_info as any)?.nickname || "--"}
 						</div>

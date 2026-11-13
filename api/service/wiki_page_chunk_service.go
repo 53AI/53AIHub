@@ -184,6 +184,10 @@ func (c *WikiPageChunker) chunkSection(in WikiPageChunkInput, section wikiPageSe
 			continue
 		}
 		flushOrdinary()
+		if atom.Type == WikiPageChunkTypeTable && c.tokenCount(atom.Content) > wikiPageChunkWindowTokens {
+			chunks = append(chunks, c.splitOversizedTable(in, section, atom)...)
+			continue
+		}
 		over := c.tokenCount(atom.Content) > wikiPageChunkWindowTokens
 		chunks = append(chunks, c.newChunk(in, atom.Type, section.ParentSectionID, section.HeadingPath, atom.Content, atom.Start, atom.End, over))
 	}
@@ -222,6 +226,54 @@ func (c *WikiPageChunker) splitOrdinary(in WikiPageChunkInput, section wikiPageS
 			next = take
 		}
 		offset += next
+	}
+	return chunks
+}
+
+func (c *WikiPageChunker) splitOversizedTable(in WikiPageChunkInput, section wikiPageSection, table wikiPageAtomicBlock) []WikiPageChunk {
+	lines := strings.SplitAfter(table.Content, "\n")
+	headerLineCount := 2
+	if headerLineCount > len(lines) {
+		headerLineCount = len(lines)
+	}
+	header := strings.Join(lines[:headerLineCount], "")
+	if c.tokenCount(header) > wikiPageChunkWindowTokens {
+		return c.splitOrdinary(in, section, table.Content, table.Start, table.End)
+	}
+
+	chunks := make([]WikiPageChunk, 0)
+	rows := make([]string, 0)
+	chunkStart := table.Start
+	rowEnd := table.Start + len(header)
+	offset := len(header)
+	flush := func() {
+		if len(rows) == 0 {
+			return
+		}
+		chunks = append(chunks, c.newChunk(in, WikiPageChunkTypeTable, section.ParentSectionID, section.HeadingPath, header+strings.Join(rows, ""), chunkStart, rowEnd))
+		rows = rows[:0]
+	}
+	for _, line := range lines[headerLineCount:] {
+		lineStart := table.Start + offset
+		lineEnd := lineStart + len(line)
+		offset += len(line)
+		candidate := header + strings.Join(rows, "") + line
+		if c.tokenCount(candidate) > wikiPageChunkWindowTokens && len(rows) > 0 {
+			flush()
+			chunkStart = lineStart
+		}
+		if c.tokenCount(header+line) > wikiPageChunkWindowTokens {
+			flush()
+			chunks = append(chunks, c.splitOrdinary(in, section, line, lineStart, lineEnd)...)
+			chunkStart = lineEnd
+			continue
+		}
+		rows = append(rows, line)
+		rowEnd = lineEnd
+	}
+	flush()
+	if len(chunks) == 0 {
+		return c.splitOrdinary(in, section, table.Content, table.Start, table.End)
 	}
 	return chunks
 }

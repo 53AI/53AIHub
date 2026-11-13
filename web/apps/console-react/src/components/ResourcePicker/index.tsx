@@ -1,6 +1,6 @@
 import { Modal, Button, Table, Tag } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
-import { Search } from "@km/shared-components-react";
+import { Search, SafeImage } from "@km/shared-components-react";
 import "./index.css";
 import {
   useRef,
@@ -17,9 +17,6 @@ import skillApi from "@/api/modules/skill";
 import { GROUP_TYPE, type GroupType } from "@/constants/group";
 import { GroupTabs } from "@/components/GroupTabs";
 import type { ColumnsType } from "antd/es/table";
-import { api_host, getPublicPath } from "@/utils/config";
-
-const DEFAULT_SKILL_LOGO = `${api_host}/api/images/skill/logo.png`;
 
 export interface ResourcePickerItem {
   value: number;
@@ -122,14 +119,11 @@ function ResourcePickerInner(
           key: "name",
           render: (name: string, record) => (
             <div className="flex items-center gap-2">
-              <img
+              <SafeImage
                 className="w-8 h-8 rounded-full"
                 src={record.logo || ""}
                 alt=""
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src =
-                    getPublicPath("/images/default-avatar.png");
-                }}
+                kind="user"
               />
               <div className="flex-1 min-w-0">
                 <div className="text-brand truncate">{name || "--"}</div>
@@ -179,13 +173,11 @@ function ResourcePickerInner(
           minWidth: 200,
           render: (displayName: string, record) => (
             <div className="flex items-center gap-2 w-full">
-              <img
+              <SafeImage
                 className="flex-none w-8 h-8 rounded overflow-hidden"
-                src={record.logo || DEFAULT_SKILL_LOGO}
+                src={record.logo}
                 alt=""
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = DEFAULT_SKILL_LOGO;
-                }}
+                kind="skill"
               />
               <div className="flex-1 w-0 text-sm flex flex-col">
                 <div className="text-brand truncate">
@@ -217,7 +209,7 @@ function ResourcePickerInner(
         key: "name",
         render: (name: string, record) => (
           <div className="flex items-center gap-2">
-            <img
+            <SafeImage
               className="w-8 h-8 rounded-full"
               src={record.logo || ""}
               alt=""

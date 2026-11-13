@@ -46,6 +46,8 @@ export interface ChannelItem extends Omit<RawChannelItem, 'models' | 'config' | 
       deep_thinking: boolean
       vision: boolean
       text_generation: boolean
+      enabled_tools?: string[]
+      upstream_api_format?: string
     }>
   }>
   options: Array<{
@@ -57,6 +59,8 @@ export interface ChannelItem extends Omit<RawChannelItem, 'models' | 'config' | 
     deep_thinking: boolean
     vision: boolean
     text_generation: boolean
+    enabled_tools?: string[]
+    upstream_api_format?: string
   }>
 }
 
@@ -95,7 +99,8 @@ export const getModelIcon = (value: string) => {
   ]
   for (const [pattern, icon] of iconPatterns) {
     if (pattern.test(value)) {
-      return `https://kmtest.53ai.com/console/images/platform/${icon}.png`
+      // 原始相对路径：消费端 SafeImage 内部统一解析 base
+      return `/images/platform/${icon}.png`
     }
   }
   return ''
@@ -103,7 +108,7 @@ export const getModelIcon = (value: string) => {
 
 export const transformChannelData = (data: RawChannelItem): ChannelItem => {
   const model = getPlatformInfo(data.type)
-  let config = {}
+  let config: Record<string, unknown> | Array<Record<string, unknown>> = {}
   let custom_config = {}
   try {
     config = (typeof data.config === 'string' ? JSON.parse(data.config) : data.config) || {}
@@ -119,6 +124,10 @@ export const transformChannelData = (data: RawChannelItem): ChannelItem => {
 
   const options = models.map(value => {
     const model_type = custom_config[value] || '1'
+    const modelConfig = Array.isArray(config)
+      ? config.find(item => item.model_id === value)
+      : config
+    const enabledTools = modelConfig?.enabled_tools
     return {
       value,
       modelType: model_type,
@@ -128,6 +137,12 @@ export const transformChannelData = (data: RawChannelItem): ChannelItem => {
       deep_thinking: custom_config.deep_thinking?.includes(value) || false,
       vision: custom_config.vision?.includes(value) || false,
       text_generation: custom_config.text_generation?.includes(value) || false,
+      enabled_tools: Array.isArray(enabledTools)
+        ? enabledTools.filter((tool): tool is string => typeof tool === 'string')
+        : [],
+      upstream_api_format: typeof modelConfig?.upstream_api_format === 'string'
+        ? modelConfig.upstream_api_format
+        : 'chat_completions',
     }
   })
 
@@ -194,6 +209,8 @@ export const transformSelectData = (
         deep_thinking: item.deep_thinking,
         vision: item.vision,
         text_generation: item.text_generation,
+        enabled_tools: item.enabled_tools,
+        upstream_api_format: item.upstream_api_format,
       }
     }),
   }

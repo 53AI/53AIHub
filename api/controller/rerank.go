@@ -31,6 +31,7 @@ type RerankRequest struct {
 	Documents       []string `json:"documents" example:"[\"人工智能起源于1950年代，图灵提出了著名的图灵测试\",\"深度学习是机器学习的一个分支，使用神经网络进行学习\",\"自然语言处理是人工智能的重要应用领域之一\"]" binding:"required"` // List of documents to rerank
 	TopN            *int     `json:"top_n,omitempty" example:"3"`                                                                                                    // Number of top results to return
 	ReturnDocuments *bool    `json:"return_documents,omitempty" example:"true"`                                                                                      // Whether to return document content in response
+	Instruct        string   `json:"instruct,omitempty" example:"Given a web search query, retrieve relevant passages that answer the query."`                       // Optional task instruction for supported rerank models
 }
 
 // RerankResponse represents the response structure for rerank API
@@ -220,8 +221,12 @@ func validateRerankRequest(req *RerankRequest) error {
 	if len(req.Documents) == 0 {
 		return fmt.Errorf("documents 参数不能为空")
 	}
-	if len(req.Documents) > 1000 {
-		return fmt.Errorf("documents 数量不能超过 1000")
+	maxDocuments := 1000
+	if strings.EqualFold(strings.TrimSpace(req.Model), "qwen3.7-text-rerank") {
+		maxDocuments = 500
+	}
+	if len(req.Documents) > maxDocuments {
+		return fmt.Errorf("documents 数量不能超过 %d", maxDocuments)
 	}
 	if req.TopN != nil && *req.TopN <= 0 {
 		return fmt.Errorf("top_n 参数必须大于 0")
@@ -295,6 +300,7 @@ func executeAliRerankRequest(c *gin.Context, req *RerankRequest, meta *meta.Meta
 		Documents:       req.Documents,
 		TopN:            req.TopN,
 		ReturnDocuments: req.ReturnDocuments,
+		Instruct:        req.Instruct,
 	}
 
 	// 调用 service 的方法

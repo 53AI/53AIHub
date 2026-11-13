@@ -1,6 +1,8 @@
 package dbgormlogger
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"runtime"
 	"strconv"
 	"strings"
@@ -72,12 +74,13 @@ func RegisterSlowQueryCallback(db *gorm.DB) {
 			logger.SlowLog("慢查询: cost=%s table=%s sql=%s",
 				elapsed, tx.Statement.Table, fullSQL)
 
-			// 异步入库 - 以 SQL 指纹 + 调用位置作为 feature 实现去重
+			// 异步入库 - 以 SQL 指纹哈希 + 调用位置作为 feature 实现去重。
+			// fingerprint 会随 IN (...) 的元素数量增长，不能直接入库（varchar(500)）。
 			fingerprint := normalizeSQL(tx.Statement.SQL.String())
 			fileLine := getCallerInfo()
 			pushSlowLog(SlowLogEntry{
 				Type:       "sql",
-				Feature:    fingerprint + " | " + fileLine,
+				Feature:    slowLogFeature(fingerprint, fileLine),
 				SampleData: fullSQL,
 				CostMs:     costMs,
 				FileLine:   fileLine,
@@ -86,7 +89,8 @@ func RegisterSlowQueryCallback(db *gorm.DB) {
 	})
 }
 
-// normalizeSQL 简单归一化 SQL（去除字符串字面量和数字字面量，保留结构）
+// normalizeSQL 简单归一化 SQL（去除字符串字面量和数字字面量，保留结构）。
+// 连续占位符列表（IN (?, ?, ...)）会折叠成单个占位符，避免指纹随数据量线性膨胀。
 func normalizeSQL(sql string) string {
 	var b strings.Builder
 	b.Grow(len(sql))
@@ -112,7 +116,74 @@ func normalizeSQL(sql string) string {
 		}
 		b.WriteByte(c)
 	}
-	return b.String()
+	return collapsePlaceholderLists(b.String())
+}
+
+// collapsePlaceholderLists 把 "?, ?, ?" / "$?, $?, $?" 折叠成单个占位符。
+func collapsePlaceholderLists(sql string) string {
+	var out strings.Builder
+	out.Grow(len(sql))
+	for i := 0; i < len(sql); {
+		ph, n, ok := placeholderAt(sql, i)
+		if !ok {
+			out.WriteByte(sql[i])
+			i++
+			continue
+		}
+		out.WriteString(ph)
+		i += n
+		for {
+			j := skipSpaces(sql, i)
+			if j >= len(sql) || sql[j] != ',' {
+				break
+			}
+			j = skipSpaces(sql, j+1)
+			_, nextLen, nextOK := placeholderAt(sql, j)
+			if !nextOK {
+				break
+			}
+			i = j + nextLen
+		}
+	}
+	return out.String()
+}
+
+func placeholderAt(sql string, i int) (string, int, bool) {
+	if i >= len(sql) {
+		return "", 0, false
+	}
+	if sql[i] == '?' {
+		return "?", 1, true
+	}
+	if sql[i] == '$' && i+1 < len(sql) && sql[i+1] == '?' {
+		return "$?", 2, true
+	}
+	return "", 0, false
+}
+
+func skipSpaces(sql string, i int) int {
+	for i < len(sql) {
+		switch sql[i] {
+		case ' ', '\t', '\n', '\r':
+			i++
+		default:
+			return i
+		}
+	}
+	return i
+}
+
+const slowLogFeatureMaxLen = 500
+
+// slowLogFeature 生成固定长度的去重键：SQL 指纹哈希 + 调用位置。
+// slow_log_records.feature 是 varchar(500)，不能直接存可能很长的 SQL 指纹。
+func slowLogFeature(fingerprint, fileLine string) string {
+	sum := sha256.Sum256([]byte(fingerprint))
+	feature := hex.EncodeToString(sum[:]) + " | " + fileLine
+	if len(feature) > slowLogFeatureMaxLen {
+		feature = feature[:slowLogFeatureMaxLen]
+	}
+	return feature
 }
 
 // getCallerInfo 获取调用栈中第一个非 dbgormlogger/gorm 包的调用位置

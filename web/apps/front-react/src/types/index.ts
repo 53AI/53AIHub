@@ -49,7 +49,7 @@ declare namespace Enterprise {
       interval: string
     }
     template_style_info: {
-      style_type: 'website' | 'software'
+      style_type: 'website' | 'software' | 'recording'
       theme_color?: string
       text_color?: string
       nav_bg_color?: string

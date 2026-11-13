@@ -1,4 +1,4 @@
-data: {"choices":[],"created":1782546166,"id":"req-1782546165752258614","message_id":"5eCBQZ","model":"deepseek-ai/DeepSeek-V3.2-Exp","object":"chat.completion.chunk"}
+data: {"choices":[],"created":1782546166,"id":"req-1782546165752258614","message_id":"5eCBQZ","model":"deepseek-ai/DeepSeek-V4.1-Flash","object":"chat.completion.chunk"}
 
 data: {"object":"process.step","process_step":{"message":"正在识别意图...","status":"start","step_code":"intent_classification"}}
 
@@ -92,7 +92,7 @@ data: {"choices":[{"delta":{"content":"告诉我，我会规划"}}]}
 
 data: {"choices":[{"delta":{"content":"步骤并执行任务！"}}]}
 
-data: {"choices":[{"finish_reason":"stop","index":0}],"created":1782546168,"id":"019f0807f937fcc80ee8d140a3a1b28b","model":"deepseek-ai/DeepSeek-V3.2-Exp","object":"chat.completion.chunk"}
+data: {"choices":[{"finish_reason":"stop","index":0}],"created":1782546168,"id":"019f0807f937fcc80ee8d140a3a1b28b","model":"deepseek-ai/DeepSeek-V4.1-Flash","object":"chat.completion.chunk"}
 
 data: {"object":"process.step","process_step":{"message":"回答生成完成","status":"completed","step_code":"answer_generation"}}
 

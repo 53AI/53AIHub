@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useState } from "react";
 import { Button, Collapse, Tag, Tooltip } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { MODEL_USE_TYPE } from "@/constants/platform/config";
 import type { ChannelGroup, ModelTypeEntry } from "../Model";
@@ -66,7 +66,7 @@ export function ModelGroup({
   return (
     <li className="w-full px-5 border rounded box-border overflow-hidden bg-white">
       <div className="h-14 flex items-center gap-3 border-b border-[#F7F8FA]">
-        <img
+        <SafeImage
           className="flex-none w-6 h-6 object-contain rounded-md overflow-hidden"
           src={primary.platform_icon}
           alt=""
@@ -126,7 +126,7 @@ export function ModelGroup({
                       className={`w-full box-border flex items-center gap-2 group ${group.multiple ? "" : "h-10 px-2.5 hover:bg-[#FAFBFC] rounded-md"}`}
                     >
                       {model.icon && (
-                        <img
+                        <SafeImage
                           className={`flex-none w-5 h-5 object-contain ${group.multiple ? "" : "rounded-full"}`}
                           src={model.icon}
                           alt=""

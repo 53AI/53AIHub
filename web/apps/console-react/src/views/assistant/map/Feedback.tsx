@@ -3,7 +3,7 @@ import { Table, Button, Tooltip, Select, Tag } from "antd";
 import { SettingOutlined } from "@ant-design/icons";
 import { t } from "@/locales";
 import FilterDateRange from "@/components/Filter/date-range";
-import { UserFilter } from "@/components/Filter/user";
+import AskerFilter from "@/components/Filter/Asker";
 import { getLastTimeAsDay } from "@km/shared-utils";
 import feedbackApi from "@/api/modules/feedback/index";
 import { SEARCH_TYPE } from "@/api/modules/feedback/types";
@@ -58,7 +58,7 @@ export default function Feedback({ agentId }: FeedbackProps) {
     end_time: null as number | null,
     question: "",
     feedback_type: t("search-record.all"),
-    user_id: [] as any[],
+    user_id: null as string | null,
     reason: t("search-record.all"),
     offset: 0,
     limit: 10,
@@ -69,6 +69,7 @@ export default function Feedback({ agentId }: FeedbackProps) {
   const [tableTotal, setTableTotal] = useState(0);
   const [tableLoading, setTableLoading] = useState(false);
   const [isCleared, setIsCleared] = useState(false);
+  const [askerClearKey, setAskerClearKey] = useState(0);
 
   const feedbackConfigRef = useRef<any>(null);
   const feedbackDetailRef = useRef<any>(null);
@@ -126,9 +127,7 @@ export default function Feedback({ agentId }: FeedbackProps) {
             ? null
             : form.feedback_type,
         reason: form.reason === t("search-record.all") ? null : form.reason,
-        user_id: form.user_id.length
-          ? form.user_id.map((item) => item.user_id).join(",")
-          : undefined,
+        user_id: form.user_id || undefined,
       });
       const data = list.feedbacks.map((item: any) => {
         return {
@@ -156,11 +155,12 @@ export default function Feedback({ agentId }: FeedbackProps) {
     const newForm = {
       ...detailedForm,
       question: "",
-      user_id: [],
+      user_id: null,
       reason: t("search-record.all"),
       feedback_type: type,
     };
     setIsCleared(true);
+    setAskerClearKey((key) => key + 1);
     setDetailedDate([...statisticsDate]);
     onRefresh(newForm, [...statisticsDate]);
   };
@@ -171,10 +171,11 @@ export default function Feedback({ agentId }: FeedbackProps) {
       ...detailedForm,
       question: "",
       feedback_type: t("search-record.all"),
-      user_id: [],
+      user_id: null,
       reason: t("search-record.all"),
     };
     setIsCleared(true);
+    setAskerClearKey((key) => key + 1);
     setDetailedDate(newDates);
     onRefresh(newForm, newDates);
   };
@@ -362,12 +363,11 @@ export default function Feedback({ agentId }: FeedbackProps) {
               { label: t("search-feedback.unsatisfied"), value: "unsatisfied" },
             ]}
           />
-          <UserFilter
-            value={detailedForm.user_id}
-            className="flex-none min-w-[180px]"
-            type="user"
-            isCleared={isCleared}
-            onChange={(val) => onRefresh({ ...detailedForm, user_id: val })}
+          <AskerFilter
+            clearKey={askerClearKey}
+            field="user_id"
+            label={t("search-feedback.user")}
+            onChange={(user_id) => onRefresh({ ...detailedForm, user_id })}
           />
           <Select
             value={detailedForm.reason}

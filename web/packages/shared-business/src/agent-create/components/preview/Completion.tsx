@@ -5,7 +5,7 @@ import { useAgentCreateAdapter } from '../../adapters'
 import { useAgentFormStore } from '../../store'
 import { generateRandomId } from '@km/shared-utils'
 import { isUrl } from '@km/shared-utils'
-import { PromptInput } from '@km/shared-components-react'
+import { PromptInput, SafeImage } from '@km/shared-components-react'
 
 // 默认输出字段属性
 const defaultOutputField = {
@@ -647,7 +647,7 @@ export const Completion = forwardRef<CompletionRef, CompletionProps>(({ classNam
         return (
           <div className="overflow-hidden flex flex-col gap-5">
             {images.map((src: string, i: number) => (
-              <img key={i} src={src} className="max-w-full h-auto object-contain rounded" alt="" />
+              <SafeImage key={i} src={src} className="max-w-full h-auto object-contain rounded" alt="" />
             ))}
           </div>
         )

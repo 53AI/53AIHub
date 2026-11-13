@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/53AI/53AIHub/common/ctxkey"
 	"github.com/53AI/53AIHub/common/logger"
@@ -24,6 +25,166 @@ import (
 const compactChatDeltaFlushChars = 64
 const compactChatDeltaFlushWindow = 100 * time.Millisecond
 const streamTerminalWriterGinKey = "relay_stream_terminal_writer"
+
+const (
+	relayDiagnosticOutcomeOK                 = "ok"
+	relayDiagnosticOutcomeClientDisconnected = "client_disconnected_warning"
+	relayDiagnosticOutcomeUpstreamError      = "upstream_http_error"
+	relayDiagnosticOutcomeRelayError         = "relay_error"
+	relayDiagnosticOutcomeEmptyAnswer        = "empty_answer"
+	relayDiagnosticOutcomeIncompleteStream   = "incomplete_stream"
+)
+
+// relayDiagnosticSummary holds only request-lifetime counters and status data.
+type relayDiagnosticSummary struct {
+	Outcome                  string
+	Model                    string
+	UpstreamHTTPStatus       int
+	ClientHTTPStatus         int
+	Streaming                bool
+	VisibleAnswerChars       int
+	UniqueToolCallCount      int
+	FinishReason             string
+	StreamTerminatedNormally bool
+	ClientDisconnected       bool
+	RelayError               bool
+	Duration                 time.Duration
+}
+
+func classifyRelayDiagnosticOutcome(summary relayDiagnosticSummary) string {
+	if summary.ClientDisconnected {
+		return relayDiagnosticOutcomeClientDisconnected
+	}
+	if summary.UpstreamHTTPStatus != 0 && (summary.UpstreamHTTPStatus < http.StatusOK || summary.UpstreamHTTPStatus >= http.StatusMultipleChoices) {
+		return relayDiagnosticOutcomeUpstreamError
+	}
+	if summary.RelayError {
+		return relayDiagnosticOutcomeRelayError
+	}
+	if summary.Streaming && !summary.StreamTerminatedNormally {
+		return relayDiagnosticOutcomeIncompleteStream
+	}
+	if summary.UpstreamHTTPStatus == http.StatusOK && summary.VisibleAnswerChars == 0 && summary.UniqueToolCallCount == 0 {
+		return relayDiagnosticOutcomeEmptyAnswer
+	}
+	return relayDiagnosticOutcomeOK
+}
+
+func buildRelayDiagnosticSummary(c *gin.Context, duration time.Duration) relayDiagnosticSummary {
+	summary := relayDiagnosticSummary{
+		ClientHTTPStatus:   c.Writer.Status(),
+		Streaming:          c.GetBool("relay_diagnostic_streaming"),
+		RelayError:         c.GetBool("relay_diagnostic_error") || c.Writer.Status() >= http.StatusInternalServerError,
+		ClientDisconnected: c.GetBool("relay_client_write_disconnected"),
+		Duration:           duration,
+	}
+	if status, ok := c.Get("relay_upstream_http_status"); ok {
+		summary.UpstreamHTTPStatus, _ = status.(int)
+	}
+	if collector, ok := c.Get("stream_response_collector"); ok {
+		if streamCollector, ok := collector.(*StreamResponseCollector); ok {
+			collected := streamCollector.DiagnosticSummary()
+			summary.VisibleAnswerChars = collected.VisibleAnswerChars
+			summary.UniqueToolCallCount = collected.UniqueToolCallCount
+			summary.FinishReason = collected.FinishReason
+			summary.StreamTerminatedNormally = collected.StreamTerminatedNormally
+		}
+	}
+	summary.StreamTerminatedNormally = summary.StreamTerminatedNormally || c.GetBool("stream_response_done")
+	if chars, ok := c.Get("relay_visible_answer_chars"); ok {
+		summary.VisibleAnswerChars, _ = chars.(int)
+	}
+	if toolCalls, ok := c.Get("relay_unique_tool_call_count"); ok {
+		summary.UniqueToolCallCount, _ = toolCalls.(int)
+	}
+	if model, ok := c.Get("relay_diagnostic_model"); ok {
+		summary.Model, _ = model.(string)
+	}
+	if finishReason, ok := c.Get("relay_finish_reason"); ok {
+		if reason, ok := finishReason.(string); ok && reason != "" {
+			summary.FinishReason = reason
+		}
+	}
+	return summary
+}
+
+func recordNonStreamRelayDiagnostic(c *gin.Context, body []byte) {
+	var response struct {
+		Choices []struct {
+			Index   *int `json:"index"`
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					Index *int   `json:"index"`
+					ID    string `json:"id"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+			Text         string `json:"text"`
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(body, &response) != nil {
+		return
+	}
+	visibleContent := response.Text
+	toolCallKeys := make(map[string]struct{})
+	finishReason := ""
+	for choicePosition, choice := range response.Choices {
+		visibleContent += choice.Message.Content + choice.Text
+		choiceIndex := choicePosition
+		if choice.Index != nil {
+			choiceIndex = *choice.Index
+		}
+		if finishReason == "" {
+			finishReason = choice.FinishReason
+		}
+		for _, toolCall := range choice.Message.ToolCalls {
+			key := toolCall.ID
+			if toolCall.Index != nil {
+				key = fmt.Sprintf("choice:%d:index:%d", choiceIndex, *toolCall.Index)
+			} else if key != "" {
+				key = fmt.Sprintf("choice:%d:id:%s", choiceIndex, key)
+			}
+			if key != "" {
+				toolCallKeys[key] = struct{}{}
+			}
+		}
+	}
+	c.Set("relay_visible_answer_chars", utf8.RuneCountInString(visibleContent))
+	c.Set("relay_unique_tool_call_count", len(toolCallKeys))
+	c.Set("relay_finish_reason", finishReason)
+}
+
+func logRelayDiagnostic(c *gin.Context, duration time.Duration) {
+	summary := buildRelayDiagnosticSummary(c, duration)
+	summary.Outcome = classifyRelayDiagnosticOutcome(summary)
+	if summary.Outcome == relayDiagnosticOutcomeOK {
+		return
+	}
+	outcome := map[string]string{
+		relayDiagnosticOutcomeClientDisconnected: "客户端连接已断开",
+		relayDiagnosticOutcomeUpstreamError:      "上游返回非2xx状态",
+		relayDiagnosticOutcomeRelayError:         "中继处理失败",
+		relayDiagnosticOutcomeEmptyAnswer:        "上游返回空回答",
+		relayDiagnosticOutcomeIncompleteStream:   "流式响应未正常结束",
+	}[summary.Outcome]
+	streaming := "否"
+	if summary.Streaming {
+		streaming = "是"
+	}
+	normalEnd := "否"
+	if summary.StreamTerminatedNormally {
+		normalEnd = "是"
+	}
+	message := "【Relay响应诊断】请求最终响应异常：%s（模型%s，上游HTTP状态%d，客户端HTTP状态%d，流式响应%s，可见回答%d字符，工具调用%d个，finish_reason=%s，正常结束%s，耗时%d毫秒）"
+	args := []any{outcome, summary.Model, summary.UpstreamHTTPStatus, summary.ClientHTTPStatus, streaming, summary.VisibleAnswerChars, summary.UniqueToolCallCount, summary.FinishReason, normalEnd, summary.Duration.Milliseconds()}
+	if summary.ClientDisconnected {
+		logger.Warnf(c.Request.Context(), message, args...)
+		return
+	}
+	logger.Errorf(c.Request.Context(), message, args...)
+}
 
 // GetResponseContent 获取响应内容
 func GetResponseContent(c *gin.Context, isStream bool, resp *http.Response) (string, string) {
@@ -115,6 +276,9 @@ func GetResponseContent(c *gin.Context, isStream bool, resp *http.Response) (str
 type StreamResponseCollector struct {
 	content          strings.Builder
 	reasoningContent strings.Builder
+	sseBuffer        strings.Builder
+	diagnostic       relayDiagnosticSummary
+	toolCallKeys     map[string]struct{}
 	c                *gin.Context
 }
 
@@ -126,39 +290,96 @@ func NewStreamResponseCollector(c *gin.Context) *StreamResponseCollector {
 	}
 }
 
+// Reset 重置内容收集缓冲（用于多轮 Agent 循环进入终答阶段时清理上一轮前置过渡语）
+func (c *StreamResponseCollector) Reset() {
+	c.content.Reset()
+	c.reasoningContent.Reset()
+	c.sseBuffer.Reset()
+	c.diagnostic = relayDiagnosticSummary{}
+	c.toolCallKeys = nil
+}
+
 func (c *StreamResponseCollector) Collect(chunk []byte) {
-	data := string(chunk)
-	lines := strings.Split(data, "\n")
+	c.sseBuffer.Write(chunk)
+	normalized := strings.ReplaceAll(c.sseBuffer.String(), "\r\n", "\n")
+	for {
+		idx := strings.Index(normalized, "\n\n")
+		if idx < 0 {
+			break
+		}
+		c.collectSSEEvent(normalized[:idx])
+		normalized = normalized[idx+2:]
+	}
+	c.sseBuffer.Reset()
+	if normalized != "" {
+		c.sseBuffer.WriteString(normalized)
+	}
+}
 
-	for _, line := range lines {
-		if strings.HasPrefix(line, "data: ") {
-			dataContent := strings.TrimPrefix(line, "data: ")
-			if dataContent == "[DONE]" {
-				continue
+func (c *StreamResponseCollector) collectSSEEvent(event string) {
+	dataContent, isDone, ok := extractSSEDataContent([]byte(event))
+	if !ok {
+		return
+	}
+	if isDone {
+		c.diagnostic.StreamTerminatedNormally = true
+		return
+	}
+	var streamResp struct {
+		Choices []struct {
+			Index *int `json:"index"`
+			Delta struct {
+				Content          *string `json:"content"`
+				ReasoningContent *string `json:"reasoning_content"`
+				ToolCalls        []struct {
+					Index *int   `json:"index"`
+					ID    string `json:"id"`
+				} `json:"tool_calls"`
+			} `json:"delta"`
+			FinishReason *string `json:"finish_reason"`
+		} `json:"choices"`
+	}
+	if err := json.Unmarshal([]byte(dataContent), &streamResp); err != nil || len(streamResp.Choices) == 0 {
+		return
+	}
+	for choicePosition, choice := range streamResp.Choices {
+		if choicePosition == 0 {
+			delta := choice.Delta
+			if delta.Content != nil && *delta.Content != "" {
+				c.content.WriteString(*delta.Content)
+				c.diagnostic.VisibleAnswerChars += utf8.RuneCountInString(*delta.Content)
 			}
-
-			var streamResp struct {
-				Choices []struct {
-					Delta struct {
-						Content          *string `json:"content"`
-						ReasoningContent *string `json:"reasoning_content"`
-					} `json:"delta"`
-				} `json:"choices"`
+			if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
+				c.reasoningContent.WriteString(*delta.ReasoningContent)
 			}
-
-			if err := json.Unmarshal([]byte(dataContent), &streamResp); err == nil {
-				if len(streamResp.Choices) > 0 {
-					delta := streamResp.Choices[0].Delta
-					if delta.Content != nil && *delta.Content != "" {
-						c.content.WriteString(*delta.Content)
-					}
-					if delta.ReasoningContent != nil && *delta.ReasoningContent != "" {
-						c.reasoningContent.WriteString(*delta.ReasoningContent)
-					}
+			if choice.FinishReason != nil && *choice.FinishReason != "" {
+				c.diagnostic.FinishReason = *choice.FinishReason
+			}
+		}
+		choiceIndex := choicePosition
+		if choice.Index != nil {
+			choiceIndex = *choice.Index
+		}
+		for _, toolCall := range choice.Delta.ToolCalls {
+			key := ""
+			if toolCall.Index != nil {
+				key = fmt.Sprintf("choice:%d:index:%d", choiceIndex, *toolCall.Index)
+			} else if toolCall.ID != "" {
+				key = fmt.Sprintf("choice:%d:id:%s", choiceIndex, toolCall.ID)
+			}
+			if key != "" {
+				if c.toolCallKeys == nil {
+					c.toolCallKeys = make(map[string]struct{})
 				}
+				c.toolCallKeys[key] = struct{}{}
 			}
 		}
 	}
+	c.diagnostic.UniqueToolCallCount = len(c.toolCallKeys)
+}
+
+func (c *StreamResponseCollector) DiagnosticSummary() relayDiagnosticSummary {
+	return c.diagnostic
 }
 
 func (c *StreamResponseCollector) GetContent() (string, string) {
@@ -168,12 +389,14 @@ func (c *StreamResponseCollector) GetContent() (string, string) {
 // StreamResponseInterceptor 用于拦截和收集流式响应
 type StreamResponseInterceptor struct {
 	gin.ResponseWriter
-	collector  *StreamResponseCollector
-	c          *gin.Context
-	sseBuffer  strings.Builder
-	deltaBuf   compactDeltaBuffer
-	mu         sync.Mutex
-	flushTimer *time.Timer
+	collector         *StreamResponseCollector
+	c                 *gin.Context
+	sseBuffer         strings.Builder
+	deltaBuf          compactDeltaBuffer
+	citationSanitizer *StreamCitationSanitizer
+	thoughtSanitizer  streamThoughtSanitizer
+	mu                sync.Mutex
+	flushTimer        *time.Timer
 }
 
 type compactDeltaBuffer struct {
@@ -186,7 +409,7 @@ type compactDeltaBuffer struct {
 func (w *StreamResponseInterceptor) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if config.IsSSECompactMode() {
+	if config.IsSSECompactMode() || w.citationSanitizer != nil {
 		return w.writeCompactSSE(b)
 	}
 	// 收集响应内容
@@ -359,6 +582,14 @@ func (w *StreamResponseInterceptor) writeCompactSSE(b []byte) (int, error) {
 		}
 		event := normalized[:idx]
 		normalized = normalized[idx+2:]
+		if _, done, ok := extractSSEDataContent([]byte(event)); ok && done && w.citationSanitizer != nil {
+			remaining := w.citationSanitizer.Feed(w.thoughtSanitizer.Flush()) + w.citationSanitizer.Flush()
+			w.appendCompactDelta(remaining, "")
+			if flushed := w.flushCompactDeltaBuffer(true); len(flushed) > 0 {
+				w.collector.Collect(flushed)
+				_, _ = w.ResponseWriter.Write(flushed)
+			}
+		}
 		out, hasOutput := w.sanitizeSSEEvent(event)
 		if !hasOutput {
 			continue
@@ -407,6 +638,10 @@ func (w *StreamResponseInterceptor) handleCompactEventOutput(out []byte) ([][]by
 		}
 		result = append(result, out)
 		return result, nil
+	}
+
+	if !config.IsSSECompactMode() {
+		return [][]byte{out}, nil
 	}
 
 	var payload map[string]interface{}
@@ -675,7 +910,7 @@ func (w *StreamResponseInterceptor) sanitizeSSEEvent(event string) ([]byte, bool
 		return []byte("data: " + string(rebuilt) + "\n\n"), true
 	}
 
-	if payload["object"] != "chat.completion.chunk" {
+	if payload["object"] != "chat.completion.chunk" && payload["choices"] == nil {
 		rebuilt, err := json.Marshal(payload)
 		if err != nil {
 			return []byte("data: " + dataContent + "\n\n"), true
@@ -685,6 +920,30 @@ func (w *StreamResponseInterceptor) sanitizeSSEEvent(event string) ([]byte, bool
 
 	choices, hasChoices := payload["choices"].([]interface{})
 	if hasChoices {
+		for _, choiceAny := range choices {
+			choice, ok := choiceAny.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			delta, _ := choice["delta"].(map[string]interface{})
+			if delta != nil && w.citationSanitizer != nil {
+				content := w.thoughtSanitizer.Add(toString(delta["content"]))
+				finished := toString(choice["finish_reason"]) != ""
+				if finished {
+					content += w.thoughtSanitizer.Flush()
+				}
+				content = w.citationSanitizer.Feed(content)
+				if finished {
+					content += w.citationSanitizer.Flush()
+				}
+				if content != "" {
+					delta["content"] = content
+				} else {
+					delete(delta, "content")
+				}
+			}
+		}
+
 		if config.IsSSECompactMode() {
 			// null logprobs carries no token-probability information. Compact
 			// Agent streams omit it, while legacy OpenAI-compatible streams keep
@@ -697,7 +956,7 @@ func (w *StreamResponseInterceptor) sanitizeSSEEvent(event string) ([]byte, bool
 			if _, hasMessageID := payload["message_id"]; !hasMessageID {
 				return nil, false
 			}
-		} else if shouldDropCompactChatChunk(choices) {
+		} else if config.IsSSECompactMode() && shouldDropCompactChatChunk(choices) {
 			return nil, false
 		}
 	}
@@ -823,6 +1082,10 @@ func flushDeferredStreamDone(c *gin.Context) {
 	}
 	if !deferred && !ensureTerminal {
 		return
+	}
+	// 在解包前强制刷新截获器缓冲，确保未满阈值的最后一段内容推送到客户端与收集器 (R8 修复)
+	if flusher, ok := c.Writer.(http.Flusher); ok {
+		flusher.Flush()
 	}
 	writer := unwrapStreamResponseWriter(c.Writer)
 	if captured, exists := c.Get(streamTerminalWriterGinKey); exists {
@@ -1092,9 +1355,10 @@ func SetupStreamInterceptor(c *gin.Context) *StreamResponseCollector {
 
 	// 创建并设置拦截器
 	interceptor := &StreamResponseInterceptor{
-		ResponseWriter: c.Writer,
-		collector:      collector,
-		c:              c,
+		ResponseWriter:    c.Writer,
+		collector:         collector,
+		c:                 c,
+		citationSanitizer: NewStreamCitationSanitizer(c),
 	}
 	c.Writer = interceptor
 

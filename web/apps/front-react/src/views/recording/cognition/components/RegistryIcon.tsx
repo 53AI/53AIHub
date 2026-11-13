@@ -1,4 +1,4 @@
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { getBlockColor, getBlockIcon } from '../../components/preview/BlockDecorations'
 
 /**
@@ -12,7 +12,7 @@ export function RegistryIcon({ name, iconBg, index = 0 }: { name?: string; iconB
       {name ? (
         <SvgIcon name={name} size={16} />
       ) : (
-        <img
+        <SafeImage
           className="size-4 object-cover -translate-y-[60px]"
           style={{ filter: `drop-shadow(${colors.dark} 0 60px)` }}
           src={getBlockIcon(index)}

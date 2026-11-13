@@ -7,7 +7,7 @@ import {
   useEffect,
 } from "react";
 import { Modal, Button, Empty, Spin, Pagination as AntPagination } from "antd";
-import { Search, SvgIcon } from "@km/shared-components-react";
+import { Search, SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useAgentCreateAdapter } from "../../adapters";
 import RelateAgentsSetting from "./RelateAgentsSetting";
 
@@ -124,7 +124,7 @@ export const RelateAgentsDialog = forwardRef<RelateAgentsDialogRef, Props>(
     const showEmpty = tableData.list.length === 0 && !tableData.loading;
 
     // 获取默认图片路径
-    const defaultLogo = adapter.getPublicPath?.("/images/agent/default-logo.png") || "/images/agent/default-logo.png";
+    const defaultLogo = "/images/agent/default-logo.png"
 
     return (
       <>
@@ -189,13 +189,10 @@ export const RelateAgentsDialog = forwardRef<RelateAgentsDialogRef, Props>(
                   key={item.agent_id}
                   className="bg-white rounded border p-4 flex items-center gap-2 relative group"
                 >
-                  <img
+                  <SafeImage
                     alt={t('agent.ai_search')}
                     src={item.logo || defaultLogo}
                     className="size-10 rounded-md"
-                    onError={(e) => {
-                      e.currentTarget.src = defaultLogo;
-                    }}
                   />
                   <div className="flex-1 overflow-hidden">
                     <div className="text-sm text-[#1D1E1F] flex items-center gap-3">

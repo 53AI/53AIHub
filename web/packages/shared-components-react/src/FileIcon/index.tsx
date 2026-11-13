@@ -1,6 +1,6 @@
 import { forwardRef, useState } from "react";
 import type { CSSProperties, ImgHTMLAttributes } from "react";
-import { formatFileInfo } from "@km/shared-utils";
+import { formatFileInfo, resolveAssetUrl } from "@km/shared-utils";
 
 export interface FileIconProps {
   /**
@@ -50,7 +50,7 @@ export const FileIcon = forwardRef<HTMLImageElement, FileIconProps>(
     return (
       <img
         ref={ref}
-        src={icon}
+        src={resolveAssetUrl(icon)}
         alt={alt}
         className={className}
         style={style}

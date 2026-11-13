@@ -21,6 +21,9 @@ type RecordingSyncSource struct {
 	FileID int64 `json:"file_id" gorm:"column:file_id;not null;default:0"`
 	// JobID 同步该文件的 job（文件↔job 溯源）。
 	JobID int64 `json:"job_id" gorm:"column:job_id;not null;default:0;index"`
+	// RemoteMeta 远端原始元数据 JSON 快照（设备溯源与扩展字段留痕，不对外暴露）。
+	// 挂在本表而非 files.cleaning_rule_info：后者由 RAG 管线按定长结构体反复重写，扩展字段会被丢弃。
+	RemoteMeta LongText `json:"-" gorm:"column:remote_meta;type:text;comment:'远端设备原始元数据快照'"`
 	BaseModel
 }
 
@@ -40,24 +43,32 @@ type SyncSourceState struct {
 // GetExistingSyncSourceStates 批量查询**当前用户**已同步 remote_id 及其关联文件有效态（每页一次 IN 查询）。
 // 关联 files 表判定 FileActive：files.id 存在且未软删（LEFT JOIN 保护"FileID 指向已删/不存在文件"场景）。
 func GetExistingSyncSourceStates(ctx context.Context, eid, userID int64, provider string, remoteIDs []string) (map[string]SyncSourceState, error) {
+	result := make(map[string]SyncSourceState, len(remoteIDs))
 	if len(remoteIDs) == 0 {
-		return map[string]SyncSourceState{}, nil
+		return result, nil
 	}
-	var rows []struct {
-		RemoteID   string
-		ID         int64
-		FileActive bool
-	}
-	if err := DB.WithContext(ctx).Model(&RecordingSyncSource{}).
-		Select("recording_sync_sources.remote_id, recording_sync_sources.id, (files.id IS NOT NULL AND files.is_deleted = ?) AS file_active", false).
-		Joins("LEFT JOIN files ON files.id = recording_sync_sources.file_id").
-		Where("recording_sync_sources.eid = ? AND recording_sync_sources.user_id = ? AND recording_sync_sources.provider = ? AND recording_sync_sources.remote_id IN ?", eid, userID, provider, remoteIDs).
-		Scan(&rows).Error; err != nil {
-		return nil, err
-	}
-	result := make(map[string]SyncSourceState, len(rows))
-	for _, r := range rows {
-		result[r.RemoteID] = SyncSourceState{HasSource: true, FileActive: r.FileActive, ID: r.ID}
+	// 分块 IN：全量预览可能带数千个 remote_id，单条超大 IN 易触 MySQL 占位符/包大小限制。
+	const chunkSize = 500
+	for start := 0; start < len(remoteIDs); start += chunkSize {
+		end := start + chunkSize
+		if end > len(remoteIDs) {
+			end = len(remoteIDs)
+		}
+		var rows []struct {
+			RemoteID   string
+			ID         int64
+			FileActive bool
+		}
+		if err := DB.WithContext(ctx).Model(&RecordingSyncSource{}).
+			Select("recording_sync_sources.remote_id, recording_sync_sources.id, (files.id IS NOT NULL AND files.is_deleted = ?) AS file_active", false).
+			Joins("LEFT JOIN files ON files.id = recording_sync_sources.file_id").
+			Where("recording_sync_sources.eid = ? AND recording_sync_sources.user_id = ? AND recording_sync_sources.provider = ? AND recording_sync_sources.remote_id IN ?", eid, userID, provider, remoteIDs[start:end]).
+			Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, r := range rows {
+			result[r.RemoteID] = SyncSourceState{HasSource: true, FileActive: r.FileActive, ID: r.ID}
+		}
 	}
 	return result, nil
 }

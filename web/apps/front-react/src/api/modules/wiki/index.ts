@@ -1,6 +1,9 @@
 import request from '../../index'
 import { handleError } from '../../errorHandler'
 import type {
+  WikiDocumentQueueParams,
+  WikiDocumentQueueResponse,
+  WikiDocumentPagesResponse,
   WikiCategory,
   WikiCategoryListResponse,
   WikiIndexResponse,
@@ -13,6 +16,8 @@ import type {
   WikiPageUpdateResponse,
   WikiPageVersion,
   WikiQueueStatusResponse,
+  WikiRetryQueueResponse,
+  WikiRetryQueueStatus,
   WikiStatsResponse,
   WikiVersionPublishParams,
   WikiVersionPublishResponse,
@@ -108,6 +113,30 @@ export const wikiApi = {
       .catch(handleError)
   },
 
+  queueDocuments(params: WikiDocumentQueueParams): Promise<WikiDocumentQueueResponse> {
+    return request.get('/api/wiki/queue/documents', { params }).then((res) => res.data).catch(handleError)
+  },
+
+  documentPages(fileId: string, params: { space_id: string; page: number; size: number }): Promise<WikiDocumentPagesResponse> {
+    return request.get(`/api/wiki/queue/documents/${fileId}/pages`, { params }).then((res) => res.data).catch(handleError)
+  },
+
+  /** Wiki 重试任务列表 */
+  retryQueue(params: { space_id: string; status?: WikiRetryQueueStatus; keyword?: string; page: number; size: number }): Promise<WikiRetryQueueResponse> {
+    return request
+      .get(`/api/wiki/queue/tasks`, { params })
+      .then((res) => res.data)
+      .catch(handleError)
+  },
+
+  /** 批量重试失败的 Wiki 任务；单条重试也复用该接口 */
+  retryQueueTasks(task_ids: string[], space_id: string): Promise<{ results: Array<{ id: string; success: boolean; error?: string }> }> {
+    return request
+      .post(`/api/wiki/queue/retry`, { task_ids }, { params: { space_id } })
+      .then((res) => res.data)
+      .catch(handleError)
+  },
+
   /** 空间 wiki 统计（摘要/实体/概念数量、本月新增、累计编译） */
   stats(space_id: string): Promise<WikiStatsResponse> {
     return request
@@ -186,6 +215,9 @@ export type {
   WikiPageVisibility,
   WikiQueueCount,
   WikiQueueStatusResponse,
+  WikiRetryQueueItem,
+  WikiRetryQueueResponse,
+  WikiRetryQueueStatus,
   WikiPublishKind,
   WikiSortOrder,
   WikiStatsResponse,
@@ -194,3 +226,5 @@ export type {
   WikiVersionsListParams,
   WikiVersionsListResponse,
 } from './types'
+
+export type { WikiDocumentStatus, WikiDocumentQueueItem, WikiDocumentQueueParams, WikiDocumentQueueResponse, WikiDocumentPageItem, WikiDocumentPagesResponse } from './types'

@@ -13,8 +13,9 @@ type BailianRerankInput struct {
 }
 
 type BailianRerankParameters struct {
-	TopN            *int  `json:"top_n,omitempty"`
-	ReturnDocuments *bool `json:"return_documents,omitempty"`
+	TopN            *int   `json:"top_n,omitempty"`
+	ReturnDocuments *bool  `json:"return_documents,omitempty"`
+	Instruct        string `json:"instruct,omitempty"`
 }
 
 // Rerank 响应结构 - 百炼格式

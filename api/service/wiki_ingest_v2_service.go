@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/tokenlimit"
 	"github.com/53AI/53AIHub/model"
@@ -32,6 +34,8 @@ type WikiIngestV2Service struct {
 	dedup                  *WikiDedupService
 	index                  *WikiIndexIntroService
 	pageUpdateBatchAcquire wikiPageUpdateBatchAcquire
+	identitySemanticSearch func(context.Context, *gorm.DB, int64, int64, WikiDedupItem) ([]int64, error)
+	identityESearch        func(context.Context, int64, int64, WikiDedupItem) ([]int64, error)
 }
 
 type WikiIngestV2MapDocumentInput struct {
@@ -91,6 +95,8 @@ func NewWikiIngestV2Service(db *gorm.DB, llm WikiLLMRunner) *WikiIngestV2Service
 		dedup:                  NewWikiDedupService(prompts, llm),
 		index:                  NewWikiIndexIntroService(prompts, llm),
 		pageUpdateBatchAcquire: acquireWikiPageUpdateBatchLease,
+		identitySemanticSearch: searchWikiIdentitySemantic,
+		identityESearch:        searchWikiIdentityES,
 	}
 }
 
@@ -116,10 +122,8 @@ func (s *WikiIngestV2Service) mapDocument(ctx context.Context, in WikiIngestV2Ma
 
 	// 知识图谱阶段：实体/概念提取 + 去重
 	if in.EnableWikiKnowledgeGraph && !(model.NormalizeWikiGenerationMode(in.WikiGenerationMode) == model.WikiGenerationModeStrict && strings.TrimSpace(in.strictCategoryScope) == "") {
-		previousSlugs, err := s.loadWikiCandidatePreviousSlugs(ctx, in.Eid, in.LibraryID)
-		if err != nil {
-			return nil, nil, err
-		}
+		// 候选提取只识别当前文档；已有词条由后续增量消歧检索提供。
+		previousSlugs := "(none)"
 
 		candidatePrompt, err := s.prompts.Render(WikiCandidateSlugPrompt, map[string]any{
 			"Content":             "",
@@ -299,26 +303,93 @@ func (s *WikiIngestV2Service) deduplicateWikiCandidates(ctx context.Context, in 
 			continue
 		}
 		newItems = append(newItems, WikiDedupItem{
-			Slug:    slug,
-			Type:    candidate.PageType,
-			Name:    candidate.Name,
-			Aliases: append([]string(nil), candidate.Aliases...),
+			Slug:        slug,
+			Type:        candidate.PageType,
+			Name:        candidate.Name,
+			Description: candidate.Description,
+			Aliases:     append([]string(nil), candidate.Aliases...),
 		})
 	}
 	if len(newItems) == 0 {
 		return candidates, nil
 	}
 
-	existingPages, err := s.loadWikiDedupExistingPages(ctx, in.Eid, in.LibraryID)
-	if err != nil {
-		return nil, err
-	}
-	merges, err := s.dedup.PlanDedup(ctx, WikiDedupInput{
-		NewItems:      newItems,
-		ExistingPages: existingPages,
-	})
-	if err != nil {
-		return nil, err
+	merges := make(map[string]string)
+	for i, item := range newItems {
+		// 同批次同类型、标题完全相同的候选确定性归并，避免依赖 LLM 是否返回 merges。
+		name := normalizeWikiDedupTitle(item.Name)
+		if name != "" {
+			for _, prior := range newItems[:i] {
+				if prior.Type != item.Type || normalizeWikiDedupTitle(prior.Name) != name {
+					continue
+				}
+				target := prior.Slug
+				if resolved := merges[target]; resolved != "" {
+					target = resolved
+				}
+				merges[item.Slug] = target
+				break
+			}
+			if merges[item.Slug] != "" {
+				continue
+			}
+		}
+
+		existingPages, err := s.loadWikiDedupExistingPages(ctx, in.Eid, in.LibraryID, []WikiDedupItem{item})
+		if err != nil {
+			return nil, err
+		}
+		// 唯一的历史同名词条是明确身份匹配；只在存在多个同名页面时交给 LLM 消歧。
+		name = normalizeWikiDedupTitle(item.Name)
+		var exactTitleMatches []WikiDedupPage
+		if name != "" {
+			for _, page := range existingPages {
+				if normalizeWikiDedupTitle(page.Title) == name {
+					exactTitleMatches = append(exactTitleMatches, page)
+				}
+			}
+		}
+		if len(exactTitleMatches) == 1 {
+			merges[item.Slug] = exactTitleMatches[0].Slug
+			logger.Infof(ctx, "【Wiki去重】候选词条与已有词条标题完全匹配，直接复用已有页面：新候选=%s，已有页面=%s", item.Slug, exactTitleMatches[0].Slug)
+			continue
+		}
+		for _, prior := range newItems[:i] {
+			if prior.Type != item.Type || !wikiIdentityNamesOverlap(item, prior) {
+				continue
+			}
+			target := prior.Slug
+			if resolved := merges[target]; resolved != "" {
+				target = resolved
+			}
+			found := false
+			for _, page := range existingPages {
+				if page.Slug == target {
+					found = true
+					break
+				}
+			}
+			if !found && target != item.Slug {
+				if len(existingPages) == 20 {
+					existingPages = existingPages[:19]
+				}
+				existingPages = append(existingPages, WikiDedupPage{Slug: target, Type: prior.Type, Title: prior.Name, Summary: prior.Description, Aliases: prior.Aliases})
+			}
+		}
+		if len(existingPages) == 0 {
+			continue
+		}
+		resolved, err := s.dedup.PlanDedup(ctx, WikiDedupInput{
+			NewItems:      []WikiDedupItem{item},
+			ExistingPages: existingPages,
+		})
+		if err != nil {
+			logger.Warnf(ctx, "【Wiki生成】候选 %s 消歧失败，保留独立词条继续生成：%v", item.Slug, err)
+			continue
+		}
+		for source, target := range resolved {
+			merges[source] = target
+		}
 	}
 	if len(merges) == 0 {
 		return candidates, nil
@@ -357,31 +428,152 @@ func (s *WikiIngestV2Service) deduplicateWikiCandidates(ctx context.Context, in 
 	return merged, nil
 }
 
-func (s *WikiIngestV2Service) loadWikiDedupExistingPages(ctx context.Context, eid, libraryID int64) ([]WikiDedupPage, error) {
-	if s == nil || s.db == nil {
+func normalizeWikiDedupTitle(title string) string {
+	return strings.ToLower(strings.TrimSpace(title))
+}
+
+func (s *WikiIngestV2Service) loadWikiDedupExistingPages(ctx context.Context, eid, libraryID int64, items []WikiDedupItem) ([]WikiDedupPage, error) {
+	if s.db == nil {
 		return nil, nil
 	}
-	var pages []model.WikiPage
-	if err := s.db.WithContext(ctx).
-		Model(&model.WikiPage{}).
-		Select("slug", "title", "page_type", "aliases").
-		Where("eid = ? AND library_id = ? AND status = ? AND page_type IN ?", eid, libraryID, model.WikiPageStatusActive, []string{model.WikiPageTypeEntity, model.WikiPageTypeConcept}).
-		Order("page_type ASC, sort ASC, id ASC").
-		Find(&pages).Error; err != nil {
-		return nil, fmt.Errorf("load wiki dedup pages: %w", err)
-	}
-
-	existing := make([]WikiDedupPage, 0, len(pages))
-	for _, page := range pages {
-		if strings.TrimSpace(page.Slug) == "" || strings.TrimSpace(page.Title) == "" {
-			continue
+	const candidateLimit = 20
+	var existing []WikiDedupPage
+	seen := make(map[string]bool)
+	for _, item := range items {
+		// 先独立查询精确标题和 Slug，避免别名候选达到上限后挤掉真正的同名页面。
+		// 同名结果可能不止一个，因此保留全部候选交给后续的歧义判断。
+		names := append([]string{item.Slug, item.Name}, item.Aliases...)
+		var exactPages []model.WikiPage
+		if title := normalizeWikiDedupTitle(item.Name); title != "" {
+			if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+				Select("id", "slug", "title", "summary", "page_type", "aliases").
+				Where("eid = ? AND library_id = ? AND status = ? AND page_type = ?", eid, libraryID, model.WikiPageStatusActive, item.Type).
+				Where("LOWER(TRIM(title)) = ?", title).Order("id ASC").Limit(candidateLimit).Find(&exactPages).Error; err != nil {
+				return nil, fmt.Errorf("retrieve exact wiki title matches: %w", err)
+			}
 		}
-		existing = append(existing, WikiDedupPage{
-			Slug:    page.Slug,
-			Type:    page.PageType,
-			Title:   page.Title,
-			Aliases: append([]string(nil), page.Aliases...),
-		})
+		if slug := strings.TrimSpace(item.Slug); slug != "" && len(exactPages) < candidateLimit {
+			var slugPages []model.WikiPage
+			if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+				Select("id", "slug", "title", "summary", "page_type", "aliases").
+				Where("eid = ? AND library_id = ? AND status = ? AND page_type = ? AND slug = ?", eid, libraryID, model.WikiPageStatusActive, item.Type, slug).
+				Limit(1).Find(&slugPages).Error; err != nil {
+				return nil, fmt.Errorf("retrieve exact wiki slug match: %w", err)
+			}
+			if len(slugPages) == 0 {
+				if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+					Select("id", "slug", "title", "summary", "page_type", "aliases").
+					Where("eid = ? AND library_id = ? AND status = ? AND page_type = ? AND LOWER(TRIM(slug)) = ?", eid, libraryID, model.WikiPageStatusActive, item.Type, strings.ToLower(slug)).
+					Limit(1).Find(&slugPages).Error; err != nil {
+					return nil, fmt.Errorf("retrieve normalized wiki slug match: %w", err)
+				}
+			}
+			exactPages = append(exactPages, slugPages...)
+		}
+		for _, page := range exactPages {
+			if !seen[page.Slug] && len(existing) < candidateLimit {
+				seen[page.Slug] = true
+				existing = append(existing, WikiDedupPage{Slug: page.Slug, Title: page.Title, Summary: page.Summary, Type: page.PageType, Aliases: wikiIdentityRankAliases(page.Aliases, names)})
+			}
+		}
+		var esIDs []int64
+		if s.identityESearch != nil {
+			ids, esErr := s.identityESearch(ctx, eid, libraryID, item)
+			if esErr != nil {
+				logger.Warnf(ctx, "【Wiki生成】ES 身份召回不可用，回退数据库查询：%v", esErr)
+			} else {
+				esIDs = ids
+			}
+		}
+		const lexicalLimit = 12
+		for pass := 0; pass < 2 && len(existing) < lexicalLimit; pass++ {
+			if pass == 1 && len(esIDs) > 0 {
+				break
+			}
+			var match *gorm.DB
+			for _, value := range names {
+				name := strings.ToLower(strings.TrimSpace(value))
+				if name == "" || (pass == 1 && (len([]rune(name)) < 4 || strings.ContainsAny(name, "%_"))) {
+					continue
+				}
+				var condition *gorm.DB
+				if pass == 0 {
+					condition = s.db.Where("LOWER(TRIM(slug)) = ? OR LOWER(TRIM(title)) = ? OR lower(aliases) LIKE ?", name, name, "%\""+name+"\"%")
+				} else {
+					pattern := "%" + name + "%"
+					condition = s.db.Where("lower(title) LIKE ? OR lower(slug) LIKE ?", pattern, pattern)
+				}
+				if match == nil {
+					match = condition
+				} else {
+					match = match.Or(condition)
+				}
+			}
+			if match == nil {
+				continue
+			}
+			var pages []model.WikiPage
+			if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+				Select("id", "slug", "title", "summary", "page_type", "aliases").
+				Where("eid = ? AND library_id = ? AND status = ? AND page_type = ?", eid, libraryID, model.WikiPageStatusActive, item.Type).
+				Where(match).
+				Order(gorm.Expr("CASE WHEN LOWER(TRIM(title)) = ? THEN 0 WHEN LOWER(TRIM(slug)) = ? THEN 1 ELSE 2 END, id ASC", normalizeWikiDedupTitle(item.Name), normalizeWikiDedupTitle(item.Slug))).
+				Limit(lexicalLimit - len(existing)).Find(&pages).Error; err != nil {
+				return nil, fmt.Errorf("retrieve wiki identity candidates: %w", err)
+			}
+			for _, page := range pages {
+				if !seen[page.Slug] {
+					seen[page.Slug] = true
+					existing = append(existing, WikiDedupPage{Slug: page.Slug, Title: page.Title, Summary: page.Summary, Type: page.PageType, Aliases: wikiIdentityRankAliases(page.Aliases, names)})
+				}
+			}
+		}
+		// ES 词法候选经过数据库重新确认身份范围，避免依赖 ES 中可能滞后的元数据。
+		if len(esIDs) > 0 && len(existing) < candidateLimit {
+			ids := esIDs
+			var pages []model.WikiPage
+			if err := s.db.WithContext(ctx).Model(&model.WikiPage{}).
+				Select("id", "slug", "title", "summary", "page_type", "aliases").
+				Where("eid = ? AND library_id = ? AND status = ? AND page_type = ? AND id IN ?", eid, libraryID, model.WikiPageStatusActive, item.Type, ids).
+				Limit(candidateLimit).Find(&pages).Error; err != nil {
+				return nil, err
+			}
+			byID := make(map[int64]model.WikiPage, len(pages))
+			for _, page := range pages {
+				byID[page.ID] = page
+			}
+			for _, id := range ids {
+				page, ok := byID[id]
+				if ok && !seen[page.Slug] && len(existing) < candidateLimit {
+					seen[page.Slug] = true
+					existing = append(existing, WikiDedupPage{Slug: page.Slug, Title: page.Title, Summary: page.Summary, Type: page.PageType, Aliases: wikiIdentityRankAliases(page.Aliases, names)})
+				}
+			}
+		}
+		if s.identitySemanticSearch != nil && len(existing) < candidateLimit {
+			ids, searchErr := s.identitySemanticSearch(ctx, s.db, eid, libraryID, item)
+			if searchErr != nil {
+				logger.Warnf(ctx, "【Wiki生成】语义候选召回失败，继续使用名称召回：%v", searchErr)
+			} else if len(ids) > 0 {
+				var pages []model.WikiPage
+				if err := s.db.WithContext(ctx).Select("id", "slug", "title", "summary", "page_type", "aliases").
+					Where("eid = ? AND library_id = ? AND status = ? AND page_type = ? AND id IN ?", eid, libraryID, model.WikiPageStatusActive, item.Type, ids).
+					Limit(candidateLimit).Find(&pages).Error; err != nil {
+					return nil, err
+				}
+				byID := make(map[int64]model.WikiPage, len(pages))
+				for _, page := range pages {
+					byID[page.ID] = page
+				}
+				for _, id := range ids {
+					page, ok := byID[id]
+					if ok && !seen[page.Slug] && len(existing) < candidateLimit {
+						seen[page.Slug] = true
+						existing = append(existing, WikiDedupPage{Slug: page.Slug, Title: page.Title, Summary: page.Summary, Type: page.PageType, Aliases: wikiIdentityRankAliases(page.Aliases, names)})
+					}
+				}
+			}
+		}
 	}
 	return existing, nil
 }
@@ -449,40 +641,6 @@ func (s *WikiIngestV2Service) extractKnowledgeCandidatesFromBatches(ctx context.
 	return candidates, nil
 }
 
-func (s *WikiIngestV2Service) loadWikiCandidatePreviousSlugs(ctx context.Context, eid, libraryID int64) (string, error) {
-	if s == nil || s.db == nil {
-		return "(none — this is a new document)", nil
-	}
-	var pages []model.WikiPage
-	if err := s.db.WithContext(ctx).
-		Model(&model.WikiPage{}).
-		Select("slug").
-		Where("eid = ? AND library_id = ? AND status = ? AND page_type IN ?", eid, libraryID, model.WikiPageStatusActive, []string{model.WikiPageTypeEntity, model.WikiPageTypeConcept}).
-		Order("page_type ASC, sort ASC, id ASC").
-		Find(&pages).Error; err != nil {
-		return "", fmt.Errorf("load wiki previous slugs: %w", err)
-	}
-	if len(pages) == 0 {
-		return "(none — this is a new document)", nil
-	}
-
-	var builder strings.Builder
-	for _, page := range pages {
-		slug := strings.TrimSpace(page.Slug)
-		if slug == "" {
-			continue
-		}
-		builder.WriteString("- ")
-		builder.WriteString(slug)
-		builder.WriteString("\n")
-	}
-	result := strings.TrimSpace(builder.String())
-	if result == "" {
-		return "(none — this is a new document)", nil
-	}
-	return result, nil
-}
-
 func (s *WikiIngestV2Service) generateSummaryPage(ctx context.Context, in WikiIngestV2MapDocumentInput, content string, candidates []wikiIngestV2Candidate) (string, string, error) {
 	vars := map[string]any{
 		"Content":        "",
@@ -508,11 +666,11 @@ func (s *WikiIngestV2Service) generateSummaryPage(ctx context.Context, in WikiIn
 
 	partials := make([]string, 0, len(batches))
 	for _, batch := range batches {
-		line, body, err := s.generateSummaryPageForContent(ctx, in, batch, candidates)
+		partial, err := s.generateWikiSummaryReduction(ctx, batch, in.Language)
 		if err != nil {
 			return "", "", err
 		}
-		partials = append(partials, "SUMMARY: "+line+"\n\n"+body)
+		partials = append(partials, partial)
 	}
 
 	for len(partials) > 1 {
@@ -523,18 +681,87 @@ func (s *WikiIngestV2Service) generateSummaryPage(ctx context.Context, in WikiIn
 		}
 		next := make([]string, 0, len(mergeBatches))
 		for _, batch := range mergeBatches {
-			line, body, err := s.generateSummaryPageForContent(ctx, in, batch, candidates)
+			partial, err := s.generateWikiSummaryReduction(ctx, batch, in.Language)
 			if err != nil {
 				return "", "", err
 			}
-			next = append(next, "SUMMARY: "+line+"\n\n"+body)
+			next = append(next, partial)
 		}
 		partials = next
 	}
-	line, body := splitSummaryLine(partials[0])
-	return line, body, nil
+	return s.generateSummaryPageForContent(ctx, in, partials[0], candidates)
 }
 
+// generateWikiSummaryReduction 生成中间摘要（分批摘要链路的第一级）。
+//
+// 三点与旧实现的区别，都是为了消除"猜模型会输出什么"：
+//
+//  1. 输出协议改为 XML 标签（<intermediate_summary>），由提示词明文要求。
+//     旧实现靠"是否以某句英文开头"判断回显，模型换个说法就穿透；标签是提示词
+//     与代码之间的显式约定，模型不遵守就是违约，不遵守就不落库，不需要猜。
+//
+//  2. 校验只看提示词自己承诺的契约：标签完整、单段、指定语言、不逐字照抄源内容。
+//     全部可在提示词模板里逐条指出出处。
+//
+//  3. 重试携带纠偏信息。此前 prompt 是闭包外的固定变量，三次重发的是逐字节相同的
+//     提示词，属于盲重采样；生产日志里出现过多次逐字节相同的响应，纯粹浪费 token。
+//     现在每次重试都会把"上一次具体违反了哪条契约"回灌给模型。
+func (s *WikiIngestV2Service) generateWikiSummaryReduction(ctx context.Context, content, language string) (string, error) {
+	prompt, err := s.prompts.Render(WikiSummaryReductionPrompt, map[string]any{
+		"Content":  content,
+		"Language": wikiIngestV2Language(language),
+	})
+	if err != nil {
+		return "", fmt.Errorf("render wiki summary reduction prompt: %w", err)
+	}
+
+	var lastViolation string
+	raw, err := generateWikiPromptWithRetry(ctx, func() (string, error) {
+		response, callErr := s.llm.Generate(ctx, prompt)
+		if callErr != nil {
+			return "", callErr
+		}
+		inner, stripErr := extractWikiTaggedBlock(response, "intermediate_summary")
+		if stripErr != nil {
+			lastViolation = stripErr.Error()
+			return "", fmt.Errorf("%s: %w", wikiContractViolationMarker, stripErr)
+		}
+		if verr := validateWikiReductionContract(inner, content, language); verr != nil {
+			lastViolation = verr.Error()
+			return "", verr
+		}
+		return inner, nil
+	},
+		common.WithMaxRetries(2),
+		common.WithRetryableFunc(isWikiSummaryFormatRetryableError),
+		// 每次重试追加"上一次为什么不合格"，让重试有信息增量而不是重复采样。
+		common.WithRetryHook(func(attempt int, retryErr error) {
+			if attempt <= 0 || lastViolation == "" {
+				return
+			}
+			prompt = prompt + fmt.Sprintf(`
+
+Your previous attempt was rejected: %s
+
+Produce the <intermediate_summary> block again, this time satisfying the shape and content requirements above.`, lastViolation)
+			logger.Warnf(ctx, "【Wiki生成】 reduction 重试并纠偏 attempt=%d violation=%s", attempt+1, truncateWikiText(lastViolation, 160))
+			lastViolation = ""
+		}),
+	)
+	if err != nil {
+		return "", fmt.Errorf("reduce wiki summary: %w", err)
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("reduce wiki summary: LLM returned empty content")
+	}
+	return trimmed, nil
+}
+
+// generateSummaryPageForContent 生成文档摘要页（分批链路的最后一级，或单批时的唯一一级）。
+//
+// content 可能是原始正文（单批），也可能是 reduction 的输出（多批）。提示词现在明确
+// 告诉模型 <content> 是数据而非指令，因此即使上游压缩得不理想，下游也不会跟着跑偏。
 func (s *WikiIngestV2Service) generateSummaryPageForContent(ctx context.Context, in WikiIngestV2MapDocumentInput, content string, candidates []wikiIngestV2Candidate) (string, string, error) {
 	prompt, err := s.prompts.Render(WikiSummaryPrompt, map[string]any{
 		"Content":        content,
@@ -546,19 +773,110 @@ func (s *WikiIngestV2Service) generateSummaryPageForContent(ctx context.Context,
 		return "", "", fmt.Errorf("render wiki summary prompt: %w", err)
 	}
 
-	raw, err := s.llm.Generate(ctx, prompt)
+	var lastViolation string
+	raw, err := generateWikiPromptWithRetry(ctx, func() (string, error) {
+		response, callErr := s.llm.Generate(ctx, prompt)
+		if callErr != nil {
+			return "", callErr
+		}
+		inner, stripErr := extractWikiTaggedBlock(response, "wiki_summary")
+		if stripErr != nil {
+			lastViolation = stripErr.Error()
+			return "", fmt.Errorf("%s: %w", wikiContractViolationMarker, stripErr)
+		}
+		if verr := validateWikiSummaryContract(inner, content, in.Language); verr != nil {
+			lastViolation = verr.Error()
+			return "", verr
+		}
+		return inner, nil
+	},
+		common.WithMaxRetries(2),
+		common.WithRetryableFunc(isWikiSummaryFormatRetryableError),
+		common.WithRetryHook(func(attempt int, retryErr error) {
+			if attempt <= 0 || lastViolation == "" {
+				return
+			}
+			prompt = prompt + fmt.Sprintf(`
+
+Your previous attempt was rejected: %s
+
+Produce the <wiki_summary> block again, this time satisfying the shape and content requirements above.`, lastViolation)
+			logger.Warnf(ctx, "【Wiki生成】 summary 重试并纠偏 attempt=%d violation=%s", attempt+1, truncateWikiText(lastViolation, 160))
+			lastViolation = ""
+		}),
+	)
 	if err != nil {
 		return "", "", fmt.Errorf("generate summary page: %w", err)
 	}
 
 	summaryLine, summaryBody := splitSummaryLine(raw)
-	if summaryBody == "" {
-		summaryBody = strings.TrimSpace(raw)
-	}
-	if summaryLine == "" {
-		summaryLine = strings.TrimSpace(in.Title)
+	if strings.TrimSpace(summaryLine) == "" {
+		return "", "", fmt.Errorf("generate summary page: %s: no SUMMARY line after retries", wikiContractViolationMarker)
 	}
 	return summaryLine, summaryBody, nil
+}
+
+// isWikiSummaryFormatRetryableError 判断契约类错误是否值得重试。
+//
+// 判定依据是统一标记 wikiContractViolationMarker，而不是一堆具体错误文案——
+// 错误文案会随实现变化，按文案匹配是另一种形式的脆弱字符串判断。
+func isWikiSummaryFormatRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if strings.Contains(err.Error(), wikiContractViolationMarker) {
+		return true
+	}
+	errStr := strings.ToLower(err.Error())
+	return strings.Contains(errStr, "llm 返回内容为空")
+}
+
+func wikiSummaryResponseMatchesLanguage(response, language string) bool {
+	language = strings.ToLower(strings.TrimSpace(language))
+	if !strings.Contains(language, "中文") && language != "zh" && !strings.HasPrefix(language, "zh-") {
+		return true
+	}
+	return strings.IndexFunc(response, func(r rune) bool { return unicode.Is(unicode.Han, r) }) >= 0
+}
+
+// wikiResponseLooksLikePromptEcho 已移除。
+//
+// 背景：本轮之前这里有 47 条前缀黑名单（wikiEchoImperativePrefixes /
+// wikiEchoContentAnchors），靠"输出开头像不像某句英文"判定回显。实测证明这条路
+// 走不通：
+//
+//  1. 黑名单必然被绕过。生产日志里的 "NOT include any analysis, explanations, or
+//     markdown formatting." 在整个代码仓库 grep 不到，是模型自造的。
+//  2. 换成"与提示词原文的重合度"也不行。实测生产回显样本的重合率是 0%——模型
+//     几乎从不逐字复制提示词，它是自己改写了一遍。所以重合度检测对改写型回显
+//     完全无效。
+//  3. 换成"与源文档的实体重合度"方向是反的。实测回显样本与源文档重合 33%，
+//     正常摘要只有 0%（因为那份源文档本身全是英文指令，中文摘要自然不重合）。
+//  4. 换成"新颖词占比"只能抓逐字抄源，对自造回显同样无效。
+//
+// 结论：没有任何基于输出文本内容的统计判据能可靠识别回显。继续加判据就是在
+// 打地鼠，而且会制造"已修复"的假象。
+//
+// 现在的做法：**把防线前移到输出协议**。提示词要求响应必须是
+// <wiki_summary>...</wiki_summary> 这样的标签块，代码用 extractWikiTaggedBlock
+// 提取。模型如果回显，它产出的是自然语言，不会有正确的标签块——协议校验直接
+// 把它挡在门外，失败信息（"response does not contain the required
+// <wiki_summary> opening tag"）会作为纠偏信息回灌给下一次尝试。
+//
+// 这不依赖任何对模型措辞的猜测：判据是"输出是否符合我要求的格式"，不是"输出像
+// 不像坏输出"。
+
+// wikiResponseHasSubstantiveHanRatio 判断响应是否含有足量中文实体。
+//
+// 这不是猜测，而是提示词的明文契约（"Write in {{.Language}}"）：中文任务里，
+// 一段正常的中文摘要汉字占比必然很高；纯英文回显则接近 0。
+func wikiResponseHasSubstantiveHanRatio(response string) bool {
+	return wikiContractHasDominantHanRatio(response)
+}
+
+// hasWikiSummaryContent 判断本次生成是否产出了可落库的摘要内容。
+func hasWikiSummaryContent(summaryLine, summaryBody string) bool {
+	return strings.TrimSpace(summaryLine) != "" || strings.TrimSpace(summaryBody) != ""
 }
 
 func buildWikiIngestV2SlugUpdates(
@@ -572,7 +890,12 @@ func buildWikiIngestV2SlugUpdates(
 ) []WikiSlugUpdate {
 	contentHash := wikiDocumentContentFingerprint(in.Content)
 	updates := make([]WikiSlugUpdate, 0, 1+len(candidates)+len(discovered))
-	if in.EnableWikiDynamicKnowledge {
+	// 摘要生成失败时 summaryLine/summaryBody 为空（见 mapDocument 中"文档摘要生成失败"的降级分支）。
+	// 此时若仍然写入 summary 更新，会把上一轮正常生成的摘要页覆盖成空页面。
+	// 生产日志 53AIHub-20261021.log:105xxx 记录了 file_id=1978075 的这一现象：
+	// summary 生成报"language does not match requested language"后，页面变成空文档。
+	// 没有可用摘要时直接跳过，让上一轮内容保持不变。
+	if in.EnableWikiDynamicKnowledge && hasWikiSummaryContent(summaryLine, summaryBody) {
 		updates = append(updates, WikiSlugUpdate{
 			Slug:              wikiSummarySlug(in.FileID),
 			PageType:          model.WikiPageTypeSummary,

@@ -7,7 +7,7 @@ import {
 } from "react";
 import { Tooltip, message, Spin } from "antd";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { copyToClip } from "@km/shared-utils";
 import conversationApi from "@/api/modules/conversation";
 import fileBodiesApi from "@/api/modules/file-bodies";
@@ -653,7 +653,7 @@ const AgentApp = forwardRef<AgentAppRef, AgentAppProps>(
                         ? item.value
                         : [item.value]
                       ).map((src, index) => (
-                        <img
+                        <SafeImage
                           key={index}
                           src={src}
                           className="max-w-full h-auto object-contain rounded"

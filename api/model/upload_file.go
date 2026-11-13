@@ -138,6 +138,16 @@ func GetUploadFileByEidHashAndSourceType(eid int64, hash, sourceType string) (*U
 	return &file, err
 }
 
+func GetUploadFileByEidHashSourceTypeAndLibraryID(eid int64, hash, sourceType string, libraryID int64) (*UploadFile, error) {
+	var file UploadFile
+	err := DB.Model(&UploadFile{}).
+		Joins("JOIN files ON files.upload_file_id = upload_files.id").
+		Where("upload_files.eid = ? AND upload_files.hash = ? AND upload_files.source_type = ?", eid, hash, sourceType).
+		Where("files.eid = ? AND files.library_id = ? AND files.type = ? AND files.is_deleted = ?", eid, libraryID, FILE_TYPE_FILE, false).
+		First(&file).Error
+	return &file, err
+}
+
 func GetUploadFileByIDAndEid(id, eid int64) (*UploadFile, error) {
 	var file UploadFile
 	err := DB.Where("id = ? AND eid = ?", id, eid).First(&file).Error

@@ -4,7 +4,7 @@ import { Spin, Switch } from "antd";
 import { PageLayoutContent, PageLayoutTabs } from "@/components/PageLayout";
 import { t } from "@/locales";
 import type { AgentInfo } from "@/api/modules/agents/index";
-import { getPublicPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
 const Setting = lazy(() => import("./Setting"));
 const Feedback = lazy(() => import("./Feedback"));
@@ -87,9 +87,9 @@ export function AssistantMapPage() {
         }}
       >
         <div className="flex items-center justify-between gap-4 mb-4 px-4 pt-4">
-          <img
+          <SafeImage
             className="flex-none size-[60px]"
-            src={getPublicPath("/images/document-app/map.png")}
+            src={"/images/document-app/map.png"}
             alt=""
           />
           <div className="flex-1">

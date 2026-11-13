@@ -9,6 +9,7 @@ import { EVENT_NAMES } from '@/constants/events'
 import { isOpLocalEnv, isPrivatePrem } from '@/utils/config'
 import { t } from '@/locales'
 import { resetPasswordPolicyCache } from '@/hooks/usePasswordPolicy'
+import { buildUrl } from '@/utils/router'
 
 export const DEFAULT_GROUP_NAME = '免费版'
 export const DEFAULT_GROUP_ICON = 'vip-1'
@@ -144,7 +145,9 @@ export const useUserStore = create<UserState>((set, get) => ({
 
   reset_password: async (data: User.ResetPasswordForm) => {
     await userApi.reset_password(data)
-    await get().getUserInfo()
+    // 忘记密码场景是未登录调用，没有身份，/api/users/me 必然 401，
+    // 那会把「重置成功」变成失败提示。仅在已登录（改密码）时刷新用户信息。
+    if (localStorage.getItem(TOKEN_KEY)) await get().getUserInfo()
   },
 
   change_mobile: async (data: User.ChangeMobileForm, id: string) => {
@@ -306,7 +309,8 @@ export const useUserStore = create<UserState>((set, get) => ({
 
     setTimeout(() => {
       if (!redirectDisabled) {
-        window.location.href = '/'
+        // hash 模式（含模板入口）下保留当前入口 pathname，避免登出后退出到主入口
+        window.location.href = buildUrl('/')
       }
     }, 800)
   }

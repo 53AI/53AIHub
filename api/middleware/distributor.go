@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/53AI/53AIHub/common/ctxkey"
 	"github.com/53AI/53AIHub/model"
@@ -40,6 +41,9 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 			}
 		}
 	}
+	if channel.Type == channeltype.Ali {
+		baseURL = normalizeAliBaseURL(baseURL)
+	}
 
 	c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 	c.Set(ctxkey.BaseURL, baseURL)
@@ -70,4 +74,12 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 		}
 	}
 	c.Set(ctxkey.Config, cfg)
+}
+
+func normalizeAliBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	for strings.HasSuffix(baseURL, "/api/v1") {
+		baseURL = strings.TrimSuffix(baseURL, "/api/v1")
+	}
+	return baseURL
 }

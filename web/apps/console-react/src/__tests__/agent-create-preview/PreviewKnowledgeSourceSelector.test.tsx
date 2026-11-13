@@ -29,7 +29,7 @@ const tMap: Record<string, string> = {
 const t = (key: string) => tMap[key] ?? key
 
 const makeKnowledgeSource = (overrides = {}) => ({
-  state: { networkSearch: false, knowledgeGraph: false, wiki: false, ...overrides },
+  state: { networkSearch: false, knowledgeGraph: false, wiki: false, allKnowledge: true, ...overrides },
   graphEnabled: true,
   webSearchEnabled: true,
   wikiEnabled: true,
@@ -86,11 +86,10 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('opt-all'))
-    // 点击 all 切换 allKnowledge 状态，从 true 变为 false
     expect(onChange).toHaveBeenCalledWith({ networkSearch: false, knowledgeGraph: true, wiki: true, allKnowledge: false })
   })
 
-  it('clicking networkSearch toggles it (互斥 only)', () => {
+  it('clicking networkSearch preserves other selected sources', () => {
     const onChange = vi.fn()
     render(
       <PreviewKnowledgeSourceSelector
@@ -100,7 +99,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('opt-networkSearch'))
-    expect(onChange).toHaveBeenCalledWith({ networkSearch: true, knowledgeGraph: false, wiki: false, allKnowledge: false })
+    expect(onChange).toHaveBeenCalledWith({ networkSearch: true, knowledgeGraph: true, wiki: false, allKnowledge: true })
   })
 
   it('clicking knowledgeGraph toggles it without affecting wiki', () => {
@@ -113,7 +112,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('opt-knowledgeGraph'))
-    expect(onChange).toHaveBeenCalledWith({ networkSearch: false, knowledgeGraph: true, wiki: true })
+    expect(onChange).toHaveBeenCalledWith({ networkSearch: false, knowledgeGraph: true, wiki: true, allKnowledge: true })
   })
 
   it('clicking wiki toggles it without affecting knowledgeGraph', () => {
@@ -126,7 +125,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     fireEvent.click(screen.getByTestId('opt-wiki'))
-    expect(onChange).toHaveBeenCalledWith({ networkSearch: false, knowledgeGraph: true, wiki: true })
+    expect(onChange).toHaveBeenCalledWith({ networkSearch: false, knowledgeGraph: true, wiki: true, allKnowledge: true })
   })
 
   it('trigger reflects networkSearch priority', () => {
@@ -147,7 +146,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     expect(screen.getByTestId('icon-network')).toBeTruthy()
-    expect(screen.getByText('联网搜索')).toBeTruthy()
+    expect(screen.getByText('联网搜索 +1')).toBeTruthy()
   })
 
   it('trigger reflects wiki priority (below networkSearch)', () => {
@@ -159,7 +158,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
       />,
     )
     expect(screen.getByTestId('icon-book-one')).toBeTruthy()
-    expect(screen.getByText('Wiki')).toBeTruthy()
+    expect(screen.getByText('Wiki +1')).toBeTruthy()
 
     rerender(
       <PreviewKnowledgeSourceSelector
@@ -170,6 +169,7 @@ describe('PreviewKnowledgeSourceSelector', () => {
     )
     // networkSearch should take priority
     expect(screen.getByTestId('icon-network')).toBeTruthy()
+    expect(screen.getByText('联网搜索 +2')).toBeTruthy()
   })
 
   it('falls back to label raw text when t is not provided', () => {

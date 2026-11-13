@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Spin, Tag, message } from "antd";
 import { useNavigate } from "react-router-dom";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useEnterpriseStore, useUserStore } from "@/stores";
 import systemLogApi from "@/api/modules/system-log";
 import { sleep } from "@/utils";
@@ -185,7 +185,7 @@ export function EnterpriseList(props: EnterpriseListProps) {
                 onClick={() => handleSelect(item)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <SafeImage
                   className="flex-none mr-4 w-[60px] h-[60px] object-cover rounded"
                   src={item.ico || item.logo}
                   alt=""

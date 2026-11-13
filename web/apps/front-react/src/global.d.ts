@@ -3,6 +3,8 @@
 // Window extensions
 interface Window {
   $t: (key: string, options?: any) => string
+  /** 入口模板声明，由各模板 HTML 的内联脚本在 module 加载前写入（见 constants/app-template.ts） */
+  __APP_TEMPLATE__?: 'main' | 'website' | 'client' | 'recording'
   $vars: {
     includeKm: boolean
     isOpLocalEnv: boolean
@@ -63,7 +65,7 @@ declare namespace Enterprise {
       interval: string
     }
     template_style_info: {
-      style_type: 'website' | 'software'
+      style_type: 'website' | 'software' | 'recording'
       theme_color?: string
       text_color?: string
       nav_bg_color?: string
@@ -185,9 +187,9 @@ declare namespace Conversation {
     temperature?: number
     top_p?: number
     presence_penalty?: number
-    knowledge_base_ids?: number[]
-    file_ids?: number[]
-    space_ids?: number[]
+    knowledge_base_ids?: string[]
+    file_ids?: string[]
+    space_ids?: string[]
     message_file_id?: number
     solo_file_mode?: boolean
     search_config?: Record<string, any>

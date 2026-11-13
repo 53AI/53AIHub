@@ -3,6 +3,7 @@ import { useAgentFormStore } from '../../store'
 import { useAgentCreateAdapter } from '../../adapters'
 import { useChannelConfig } from '../../hooks/useChannelConfig'
 import { getInitialFormData } from '../../types'
+import { AGENT_TYPES } from '../../constants'
 
 interface ChannelConfig {
   channel_type?: number
@@ -119,7 +120,10 @@ export const AgentDrawer = forwardRef<AgentDrawerRef, {
       await compRef.onChannelSave?.()
 
       const store = useAgentFormStore.getState()
-      if (store.is_new) {
+      // Knowledge and Workbench editors persist through the adapter (including
+      // their model batches). Their platform components have no onChannelSave hook.
+      // Other existing editor types retain the original onChannelSave contract.
+      if (store.is_new || store.agent_type === AGENT_TYPES.KNOWLEDGE || store.agent_type === AGENT_TYPES.WORKBENCH) {
         await store.saveAgentData({ hideToast: true })
       }
 

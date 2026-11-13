@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/model"
@@ -63,6 +64,9 @@ func (s *ChunkerService) ChunkDocument(eid int64, fileID int64, content string, 
 
 // ChunkDocumentWithConfig 使用指定配置分块文档
 func (s *ChunkerService) ChunkDocumentWithConfig(eid int64, fileID int64, content string, chunkConfig *ChunkConfig) (*ChunkResult, error) {
+	// 分块正文必须剥离私有人员元信息注释（<!--contact:...-->），避免私有 ID 进入检索分块、向量与引用
+	content = common.StripInternalContactComments(content)
+
 	startTime := time.Now()
 
 	// 根据配置类型选择不同的分块策略
@@ -207,6 +211,7 @@ func (s *ChunkerService) CheckContentChanged(eid int64, fileID int64) (bool, err
 	if err != nil {
 		return false, fmt.Errorf("获取文档内容失败: %v", err)
 	}
+	content = common.StripInternalContactComments(content)
 
 	// 获取现有分块
 	var chunks []model.DocumentChunk

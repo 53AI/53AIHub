@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // 入口模板声明：安心录专用入口（软件模式布局，仅展示安心录菜单）。
+      // 必须在 module 脚本加载前执行，src/constants/app-template.ts 启动时读取。
+      window.__APP_TEMPLATE__ = 'recording'
+    </script>
+    <script>
+      document.title = '安心录'
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- 与 index.html 共享的启动脚本：URL 参数 token/SSO 处理 -->
+    <script src="./boot.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

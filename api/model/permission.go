@@ -135,9 +135,18 @@ func GetResourcePermissions(eid int64, resourceType int, resourceID int64, ctxs 
 
 func GetResourcesPermissions(eid int64, resourceType int, resourceIDs []int64, ctxs ...context.Context) ([]Permission, error) {
 	var permissions []Permission
-	err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND resource_type = ? AND resource_id IN ?",
-		eid, resourceType, resourceIDs).Find(&permissions).Error
-	return permissions, err
+	if err := forEachInt64Batch(resourceIDs, func(ids []int64) error {
+		var batch []Permission
+		if err := dbWithOptionalCtx(ctxs...).Where("eid = ? AND resource_type = ? AND resource_id IN ?",
+			eid, resourceType, ids).Find(&batch).Error; err != nil {
+			return err
+		}
+		permissions = append(permissions, batch...)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return permissions, nil
 }
 
 // GetSubjectPermissions 获取主体的所有权限

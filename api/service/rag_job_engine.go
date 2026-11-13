@@ -53,6 +53,7 @@ func InitRAGJobEngine() {
 
 	// 注册转写 JSON→Markdown 渲染回调（document_parsing 语音转写完成后，FileBody 存转写 Markdown）
 	v2steps.RenderTranscriptMarkdownFn = RenderTranscriptMarkdown
+	v2steps.CorrectTranscriptFn = CorrectRecordingTranscript
 
 	// 注册录音管线 context provider，供异步 goroutine 派生可被服务停止优雅取消的子 context
 	v2steps.PipelineCtxFn = func() context.Context { return recordingPipelineCtx }
@@ -268,20 +269,23 @@ func RetryJobStepV2(ctx context.Context, jobID int64, newConfig json.RawMessage)
 }
 
 func RetryJobStepV2WithOptions(ctx context.Context, jobID int64, newConfig json.RawMessage, options RetryJobStepOptionsV2) error {
-	var job model.RagJob
-	if err := model.DB.First(&job, jobID).Error; err != nil {
-		return err
-	}
-
-	lockKey := fmt.Sprintf("rag:job:lock:%d", jobID)
-	locked, err := common.RDB.SetNX(ctx, lockKey, 1, 10*time.Second).Result()
+	lockToken, locked, err := v2engines.AcquireJobLock(ctx, common.RDB, jobID)
 	if err != nil {
 		return fmt.Errorf("redis error: %v", err)
 	}
 	if !locked {
 		return fmt.Errorf("job is currently being retried or processed")
 	}
-	defer common.RDB.Del(ctx, lockKey)
+	defer v2engines.ReleaseJobLock(ctx, common.RDB, jobID, lockToken)
+
+	var job model.RagJob
+	if err := model.DB.WithContext(ctx).First(&job, jobID).Error; err != nil {
+		return err
+	}
+	if model.IsWikiJobType(job.Type) && job.Status != model.RagJobStatusFailed {
+		return fmt.Errorf("wiki job can only be retried from failed status")
+	}
+	originalJob := job
 
 	if job.Status == model.RagJobStatusProcessing {
 		return fmt.Errorf("job is currently processing")
@@ -345,16 +349,40 @@ func RetryJobStepV2WithOptions(ctx context.Context, jobID int64, newConfig json.
 		}
 	}
 
+	if model.IsWikiJobType(job.Type) {
+		retryCount := numericRetryCount(params["__wiki_manual_retry_count"])
+		if retryCount < 0 {
+			retryCount = 0
+		}
+		params["__wiki_manual_retry_count"] = retryCount + 1
+	}
 	newParamsBytes, _ := json.Marshal(params)
-	job.StartParameters = string(newParamsBytes)
 
+	var originalSteps []model.RagJobStep
+	job.StartParameters = string(newParamsBytes)
 	job.Status = model.RagJobStatusPending
 	job.FailureReason = ""
-	if err := model.DB.Save(&job).Error; err != nil {
-		return err
-	}
-
-	if err := resetJobStepResults(ctx, job.JobID); err != nil {
+	if err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("job_id = ?", job.JobID).Find(&originalSteps).Error; err != nil {
+			return err
+		}
+		result := tx.Model(&model.RagJob{}).Where("job_id = ? AND status = ?", job.JobID, originalJob.Status).Updates(map[string]interface{}{
+			"runtime_profile_json": job.RuntimeProfile,
+			"start_parameters":     job.StartParameters,
+			"status":               model.RagJobStatusPending,
+			"failure_reason":       "",
+		})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("job %d changed before retry", job.JobID)
+		}
+		return tx.Model(&model.RagJobStep{}).Where("job_id = ?", job.JobID).Updates(map[string]interface{}{
+			"status": model.RagJobStepStatusPending, "start_time": int64(0), "end_time": int64(0),
+			"results": "", "parameters": "",
+		}).Error
+	}); err != nil {
 		return err
 	}
 
@@ -368,9 +396,16 @@ func RetryJobStepV2WithOptions(ctx context.Context, jobID int64, newConfig json.
 
 	wrapperBytes, _ := json.Marshal(wrapper)
 	queueName := fmt.Sprintf("rag:job:queue:%s", job.Type)
-
-	if err := common.RDB.LPush(ctx, queueName, wrapperBytes).Err(); err != nil {
-		return err
+	processingQueue := fmt.Sprintf("rag:job:processing:%s", job.Type)
+	restored, err := v2engines.RestoreProcessingJob(ctx, common.RDB, queueName, processingQueue, job.JobID)
+	if err != nil {
+		return rollbackUnqueuedRetry(ctx, job, originalJob, originalSteps, queueName, processingQueue, err)
+	}
+	if !restored {
+		err = v2engines.EnqueueJobIdempotent(ctx, common.RDB, queueName, processingQueue, fmt.Sprint(job.JobID), string(wrapperBytes))
+	}
+	if err != nil {
+		return rollbackUnqueuedRetry(ctx, job, originalJob, originalSteps, queueName, processingQueue, err)
 	}
 
 	fileID := model.ExtractFileIDFromJob(&job)
@@ -401,6 +436,64 @@ func RetryJobStepV2WithOptions(ctx context.Context, jobID int64, newConfig json.
 	}
 	logger.Infof(ctx, "Retrying job %d (step: %s) in single step mode", job.JobID, step.StepKey)
 	return nil
+}
+
+func numericRetryCount(value interface{}) int64 {
+	switch count := value.(type) {
+	case float64:
+		return int64(count)
+	case int64:
+		return count
+	case int:
+		return int64(count)
+	default:
+		return 0
+	}
+}
+
+func rollbackUnqueuedRetry(ctx context.Context, pendingJob, originalJob model.RagJob, originalSteps []model.RagJobStep, queue, processing string, enqueueErr error) error {
+	for _, list := range []string{queue, processing} {
+		payloads, err := common.RDB.LRange(ctx, list, 0, -1).Result()
+		if err != nil {
+			return fmt.Errorf("retry enqueue failed (%v); queue reconciliation pending: %w", enqueueErr, err)
+		}
+		for _, payload := range payloads {
+			var wrapper v2engines.JobWrapper
+			if json.Unmarshal([]byte(payload), &wrapper) == nil && wrapper.JobID == pendingJob.JobID {
+				return fmt.Errorf("retry enqueue result is uncertain; job %d remains pending in Redis", pendingJob.JobID)
+			}
+		}
+	}
+
+	var current model.RagJob
+	if err := model.DB.WithContext(ctx).First(&current, pendingJob.JobID).Error; err != nil {
+		return fmt.Errorf("retry enqueue failed (%v); database reconciliation pending: %w", enqueueErr, err)
+	}
+	if current.Status != model.RagJobStatusPending || current.StartParameters != pendingJob.StartParameters {
+		return fmt.Errorf("retry enqueue failed (%v); job %d changed during reconciliation", enqueueErr, pendingJob.JobID)
+	}
+	return model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.RagJob{}).
+			Where("job_id = ? AND status = ? AND start_parameters = ?", pendingJob.JobID, model.RagJobStatusPending, pendingJob.StartParameters).
+			Updates(map[string]interface{}{
+				"runtime_profile_json": originalJob.RuntimeProfile,
+				"start_parameters":     originalJob.StartParameters,
+				"status":               originalJob.Status,
+				"failure_reason":       originalJob.FailureReason,
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("job %d changed before retry rollback", pendingJob.JobID)
+		}
+		for _, step := range originalSteps {
+			if err := tx.Save(&step).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func BatchRetryJobStepsV2(ctx context.Context, items []BatchRetryJobStepItemV2) error {
@@ -493,6 +586,16 @@ func BatchRetryJobStepsV2(ctx context.Context, items []BatchRetryJobStepItemV2) 
 	}
 
 	if len(items) > 1 {
+		// 将后续待执行步骤批量置为 paused，防止在前置步骤长时间执行期间被 StartPendingJobReclaimer 误判为孤儿 pending 任务提前抢跑
+		downstreamIDs := make([]int64, 0, len(items)-1)
+		for _, it := range items[1:] {
+			downstreamIDs = append(downstreamIDs, it.JobID)
+		}
+		if err := model.DB.WithContext(ctx).Model(&model.RagJob{}).
+			Where("job_id IN ?", downstreamIDs).
+			Update("status", model.RagJobStatusPaused).Error; err != nil {
+			return err
+		}
 		go runBatchRetryJobStepsV2(context.Background(), items)
 	}
 	return nil
@@ -1235,16 +1338,4 @@ func isJobBlockedByPausedManualStep(ctx context.Context, jobID int64) (bool, err
 		return false, nil
 	}
 	return hasPausedManualStepBefore(ctx, job.RunID, idx, profile)
-}
-
-func resetJobStepResults(ctx context.Context, jobID int64) error {
-	return model.DB.WithContext(ctx).Model(&model.RagJobStep{}).
-		Where("job_id = ?", jobID).
-		Updates(map[string]interface{}{
-			"status":     model.RagJobStepStatusPending,
-			"start_time": int64(0),
-			"end_time":   int64(0),
-			"results":    "",
-			"parameters": "",
-		}).Error
 }

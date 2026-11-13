@@ -6,7 +6,11 @@
  * - 实时分支：URL 携带 fileId（外加可选 ?token=…），并发拉 5 个接口实时组装
  *   - GET /api/files/{fileId}（filesApi.get）
  *   - GET /api/recordings/files/{fileId}/parse-status（recordingApi.getParseStatus）
- *   - GET /api/recordings/files/{fileId}/transcription（recordingApi.getTranscription）
+ *   - GET /api/recordings/files/{fileId}/transcription/export（recordingApi.exportTranscription）
+ *     注：不用 /transcription 原始接口 —— 它偶尔「状态 normal 但内容空」，
+ *     导出接口是后端预渲染的稳定产物（与主录音页 useFileParse 同源同口径）；
+ *     音频地址相应改从 file.upload_file.preview_key 还原匿名 /api/preview/{key}
+ *     （对齐 snapshot 分支设计），不再依赖语音 JSON 根级 file_url
  *   - GET /api/recordings/files/{fileId}/summaries（recordingApi.getFileSummaries）
  *   - GET /api/recordings/files/{fileId}/insight-page（recordingApi.getInsightPage）
  *
@@ -46,7 +50,7 @@
  *
  * 错误处理：
  * - 必加载接口（file / parseStatus）失败 → 全局 `share.link_expired` 空态
- * - 可选接口（transcription / summaries / insightPage）失败 → 对应 tab 内容为空，tab 仍展示
+ * - 可选接口（transcriptionExport / summaries / insightPage）失败 → 对应 tab 内容为空，tab 仍展示
  * - 401/403/404 全部归 share.link_expired 文案
  */
 import { useEffect, useMemo, useState, lazy } from 'react';
@@ -55,10 +59,10 @@ import { Spin, Empty, Button } from 'antd';
 import recordingApi from '@/api/modules/recording';
 import type {
   FileParseStatus,
-  FileTranscriptionResponse,
   RecordingFileInsightPage,
   RecordingFileSummary,
   RecordingSharedContent,
+  TranscriptionExportResponse,
 } from '@/api/modules/recording/types';
 import filesApi from '@/api/modules/files';
 import type { RawFileItem } from '@/api/modules/files/types';
@@ -80,7 +84,8 @@ const MarkdownViewer = lazy(() => import('@/components/FileViewer/MarkdownViewer
 interface LiveData {
   file: RawFileItem | null;
   parseStatus: FileParseStatus | null;
-  transcription: FileTranscriptionResponse | null;
+  /** /transcription/export 产物（后端预渲染 Markdown）；失败时为 null */
+  transcriptionExport: TranscriptionExportResponse | null;
   summaries: RecordingFileSummary[];
   insightPage: RecordingFileInsightPage | null;
 }
@@ -88,7 +93,7 @@ interface LiveData {
 interface LiveErrors {
   file?: unknown;
   parseStatus?: unknown;
-  transcription?: unknown;
+  transcriptionExport?: unknown;
   summaries?: unknown;
   insightPage?: unknown;
 }
@@ -138,7 +143,7 @@ export function ShareRecordingLiveView() {
   const [data, setData] = useState<LiveData>({
     file: null,
     parseStatus: null,
-    transcription: null,
+    transcriptionExport: null,
     summaries: [],
     insightPage: null,
   });
@@ -168,7 +173,7 @@ export function ShareRecordingLiveView() {
     setData({
       file: null,
       parseStatus: null,
-      transcription: null,
+      transcriptionExport: null,
       summaries: [],
       insightPage: null,
     });
@@ -181,7 +186,7 @@ export function ShareRecordingLiveView() {
     Promise.allSettled([
       filesApi.get(fileId, tokenConfig),
       recordingApi.getParseStatus(fileId, tokenConfig),
-      recordingApi.getTranscription(fileId, tokenConfig),
+      recordingApi.exportTranscription(fileId, tokenConfig),
       recordingApi.getFileSummaries(fileId, tokenConfig),
       recordingApi.getInsightPage(fileId, tokenConfig),
     ]).then((results) => {
@@ -190,14 +195,14 @@ export function ShareRecordingLiveView() {
       const newData: LiveData = {
         file: fileR.status === 'fulfilled' ? fileR.value : null,
         parseStatus: parseR.status === 'fulfilled' ? parseR.value : null,
-        transcription: transR.status === 'fulfilled' ? transR.value : null,
+        transcriptionExport: transR.status === 'fulfilled' ? transR.value : null,
         summaries: sumsR.status === 'fulfilled' ? sumsR.value : [],
         insightPage: insightR.status === 'fulfilled' ? insightR.value : null,
       };
       const newErrors: LiveErrors = {
         file: fileR.status === 'rejected' ? fileR.reason : undefined,
         parseStatus: parseR.status === 'rejected' ? parseR.reason : undefined,
-        transcription: transR.status === 'rejected' ? transR.reason : undefined,
+        transcriptionExport: transR.status === 'rejected' ? transR.reason : undefined,
         summaries: sumsR.status === 'rejected' ? sumsR.reason : undefined,
         insightPage: insightR.status === 'rejected' ? insightR.reason : undefined,
       };
@@ -212,7 +217,7 @@ export function ShareRecordingLiveView() {
       } else {
         // 可选接口失败仅记日志，渲染层走 tab 级空态
         Object.entries(newErrors).forEach(([key, err]) => {
-          if (err && (key === 'transcription' || key === 'summaries' || key === 'insightPage')) {
+          if (err && (key === 'transcriptionExport' || key === 'summaries' || key === 'insightPage')) {
             // eslint-disable-next-line no-console
             console.warn(`[ShareRecordingLiveView] 可选接口 ${key} 失败`, err);
           }
@@ -235,7 +240,7 @@ export function ShareRecordingLiveView() {
       kind: 'live',
       file: data.file,
       parseStatus: data.parseStatus,
-      transcription: data.transcription,
+      transcriptionExport: data.transcriptionExport,
       summaries: data.summaries,
       insightPage: data.insightPage,
       selection,

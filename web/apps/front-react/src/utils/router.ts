@@ -1,4 +1,5 @@
 import { isHashRouter } from '@/router/index'
+import { getEntryBase } from '@/constants/app-template'
 
 /**
  * Router utility functions
@@ -31,8 +32,13 @@ export function buildUrl(path: string, params?: Record<string, any>): string {
     }
   }
 
-  // 添加协议和域名
-  return `${window.location.origin}${isHashRouter ? `#${fullPath}` : fullPath}`
+  // 添加协议和域名：
+  // - hash 模式：pathname 即入口页（如 /client.html），路由挂在 # 后
+  // - history 模式：模板入口需带入口文件名前缀（与 BrowserRouter basename 一致），主入口为空
+  if (isHashRouter) {
+    return `${window.location.origin}${window.location.pathname}#${fullPath}`
+  }
+  return `${window.location.origin}${getEntryBase()}${fullPath}`
 }
 
 /**

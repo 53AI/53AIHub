@@ -18,9 +18,9 @@ const DEFAULT_COLOR = 'text-[#1D1E1F]'
  * 预览态知识源选择器（仅样式 + 交互，无文件选择弹窗）。
  *
  * 对齐前台 `apps/front-react/src/components/KnowledgeSource/selector.tsx`：
- * - 联网搜索 与 知识图谱/动态知识/全部知识 互斥
+ * - 联网搜索、知识图谱、动态知识和全部知识可以组合
  * - 知识图谱 与 动态知识 可同时开启
- * - 全部知识 = !networkSearch && !knowledgeGraph && !wiki
+ * - 全部知识范围独立于联网搜索、知识图谱和动态知识
  */
 export function PreviewKnowledgeSourceSelector({
   knowledgeSource,
@@ -32,20 +32,24 @@ export function PreviewKnowledgeSourceSelector({
   const graphEnabled = knowledgeSource?.graphEnabled || false
   const webSearchEnabled = knowledgeSource?.webSearchEnabled || false
   const wikiEnabled = knowledgeSource?.wikiEnabled || false
+  const activeSourceCount = [state.allKnowledge, state.networkSearch, state.knowledgeGraph, state.wiki]
+    .filter(Boolean).length
+  const withSourceCount = (labelKey: string) =>
+    activeSourceCount > 1 ? `${translate(labelKey)} +${activeSourceCount - 1}` : translate(labelKey)
 
 
   // 触发按钮显示逻辑（与 front-react 保持一致的优先级）
   const getDisplayContent = () => {
     if (state.networkSearch) {
-      return { icon: 'network', labelKey: 'chat.online_search' }
+      return { icon: 'network', label: withSourceCount('chat.online_search') }
     }
     if (state.wiki) {
-      return { icon: 'book-one', labelKey: 'chat.wiki' }
+      return { icon: 'book-one', label: withSourceCount('chat.wiki') }
     }
     if (state.knowledgeGraph) {
-      return { icon: 'graph_v2', labelKey: 'chat.knowledge_graph' }
+      return { icon: 'graph_v2', label: withSourceCount('chat.knowledge_graph') }
     }
-    return { icon: 'documents', labelKey: 'library.all_knowledge' }
+    return { icon: 'documents', label: withSourceCount('library.all_knowledge') }
   }
 
   const current = getDisplayContent()
@@ -91,45 +95,33 @@ export function PreviewKnowledgeSourceSelector({
 
   // 统一在 menu.onClick 层级处理点击
   const handleMenuClick = ({ key }: { key: string }) => {
-    // 规则1: 知识图谱必须选中全部知识，关闭联网搜索
-    // 规则2: 动态知识可与全部知识/知识图谱同时开
-    // 规则3: 联网搜索关闭全部知识、动态知识、知识图谱
-    // 取消全部知识时，关闭知识图谱
-    // 全部知识 = 无任何特殊模式选中（networkSearch/knowledgeGraph/wiki 都为 false）
+    // 搜索范围独立组合。
 
     let newState: PreviewKnowledgeSourceState
 
     if (key === 'all') {
       if (state.allKnowledge) {
-        // 取消全部知识
-        newState = { ...state, networkSearch: false, allKnowledge: false, knowledgeGraph: false }
+        newState = { ...state, allKnowledge: false }
       } else {
         // 选中全部知识
-        newState = { ...state, networkSearch: false, allKnowledge: true }
+        newState = { ...state, allKnowledge: true }
       }
     } else if (key === 'knowledgeGraph') {
       const newKnowledgeGraph = !state.knowledgeGraph
       newState = {
         ...state,
-        networkSearch: false,
-        allKnowledge: newKnowledgeGraph ? true : state.allKnowledge,
         knowledgeGraph: newKnowledgeGraph,
       }
     } else if (key === 'networkSearch') {
       const newNetworkSearch = !state.networkSearch
       newState = {
         ...state,
-        allKnowledge: newNetworkSearch ? false : state.allKnowledge,
-        wiki: newNetworkSearch ? false : state.wiki,
-        knowledgeGraph: newNetworkSearch ? false : state.knowledgeGraph,
         networkSearch: newNetworkSearch,
       }
     } else if (key === 'wiki') {
-      // 动态知识与联网搜索互斥：启用时取消联网搜索，取消时恢复
       const newWiki = !state.wiki
       newState = {
         ...state,
-        networkSearch: newWiki ? false : state.networkSearch,
         wiki: newWiki,
       }
     } else {
@@ -169,7 +161,7 @@ export function PreviewKnowledgeSourceSelector({
         className={`h-8 px-4 flex items-center gap-1 rounded-full border border-[#E3EEFF] bg-[#F3F8FF] cursor-pointer ${SELECTED_COLOR}`}
       >
         <SvgIcon name={current.icon} />
-        <span className="text-sm whitespace-nowrap">{translate(current.labelKey)}</span>
+        <span className="text-sm whitespace-nowrap">{current.label}</span>
         <div className="size-4 flex items-center justify-center">
           <DownOutlined style={{ fontSize: 14 }} />
         </div>

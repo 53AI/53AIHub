@@ -23,6 +23,7 @@ import ChunkEditDrawer, {
 
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
 interface ResultItem {
   chunk_id: number;
@@ -37,6 +38,12 @@ interface ResultItem {
   isHighlight: boolean;
   vector_score: number;
 }
+
+const CHUNK_TYPE_LABEL_KEYS: Record<string, string> = {
+  retrieval: "chunk.retrieval",
+  summary: "chunk.summary",
+  question: "chunk.question",
+};
 
 export function LibraryRecallView() {
   const { id } = useParams<{ id: string }>();
@@ -214,10 +221,9 @@ export function LibraryRecallView() {
       <Header>
         <h3 className="text-base text-[#1D1E1F]">{t("recall.recall")}</h3>
       </Header>
-      <div className="bg-[#ffffff] flex-1 gap-6 overflow-y-auto mb-5">
-        <div className="flex h-full">
+      <div className="bg-[#ffffff] flex-1 flex gap-6 min-h-0">
           <aside
-            className="px-6 py-5 border-r h-full flex-none"
+            className="px-6 py-5 border-r h-full flex-none overflow-y-auto"
             style={{ width: "46%" }}
           >
             <div className="text-sm text-[#999999] text-opacity-60">
@@ -289,7 +295,7 @@ export function LibraryRecallView() {
             />
           </aside>
 
-          <main className="w-full overflow-y-auto">
+          <main className="w-full  overflow-y-auto">
             {loading ? (
               <div className="h-full flex flex-col gap-2 items-center justify-center">
                 <LoadingOutlined className="animate-spin text-xl text-[#409EFF]" />
@@ -300,7 +306,7 @@ export function LibraryRecallView() {
             ) : isEmpty ? (
               <div className="h-full flex flex-col items-center justify-center">
                 <div style={{ width: "104px" }}>
-                  <img src={getPublicPath("/images/empty.png")} alt="empty" />
+                  <SafeImage src={"/images/empty.png"} alt="empty" />
                 </div>
                 <div className="text-sm text-regular text-opacity-60">
                   {t("recall.show_result")}
@@ -323,33 +329,46 @@ export function LibraryRecallView() {
                         </span>
                       </div>
                       <div className="flex-none flex items-center">
-                        <ChunkStatus
-                          value={item.knowledge_chunk_status === "enabled"}
-                          group="group"
-                          onChange={(checked) =>
-                            handleChunkStatusChange(
-                              item.knowledge_chunk_id,
-                              checked,
-                            )
-                          }
-                        />
-                        <div className="hidden items-center ml-2 group-hover:flex">
-                          <Button
-                            type="link"
-                            className="hidden group-hover:inline-flex p-0"
-                            onClick={() =>
-                              handleEdit(item.knowledge_chunk_id, item.file_id)
-                            }
-                          >
-                            <EditOutlined />
-                            <span className="ml-1">{t("action.edit")}</span>
-                          </Button>
-                        </div>
+                        {item.chunk_type === "knowledge" ? (
+                          <>
+                            <ChunkStatus
+                              value={item.knowledge_chunk_status === "enabled"}
+                              group="group"
+                              onChange={(checked) =>
+                                handleChunkStatusChange(
+                                  item.knowledge_chunk_id,
+                                  checked,
+                                )
+                              }
+                            />
+                            <div className="hidden items-center ml-2 group-hover:flex">
+                              <Button
+                                type="link"
+                                className="hidden group-hover:inline-flex p-0"
+                                onClick={() =>
+                                  handleEdit(
+                                    item.knowledge_chunk_id,
+                                    item.file_id,
+                                  )
+                                }
+                              >
+                                <EditOutlined />
+                                <span className="ml-1">{t("action.edit")}</span>
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-xs text-regular">
+                            {CHUNK_TYPE_LABEL_KEYS[item.chunk_type]
+                              ? t(CHUNK_TYPE_LABEL_KEYS[item.chunk_type])
+                              : item.chunk_type}
+                          </span>
+                        )}
                       </div>
                     </div>
                     {item.isHighlight && (
-                      <img
-                        src={getPublicPath("/images/stamp.png")}
+                      <SafeImage
+                        src={"/images/stamp.png"}
                         className="w-[84px] absolute right-[74px] -top-4"
                         alt="highlight"
                       />
@@ -366,7 +385,6 @@ export function LibraryRecallView() {
               </div>
             )}
           </main>
-        </div>
       </div>
       <ChunkEditDrawer ref={chunkEditDrawerRef} file={file} />
     </div>

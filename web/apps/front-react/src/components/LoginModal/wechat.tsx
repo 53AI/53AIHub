@@ -3,6 +3,7 @@ import { Button, Spin } from 'antd'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { api_host, official_id, getPublicPath } from '@/utils/config'
 import { t } from '@/locales'
+import { SafeImage } from "@km/shared-components-react";
 
 interface WechatLoginProps {
   width?: string
@@ -83,7 +84,7 @@ export function WechatLogin({
     return (
       <div style={{ height, width }} className="flex flex-col justify-center items-center">
         <div className="w-[220px] h-[220px] border relative rounded-lg overflow-hidden">
-          <img src={getPublicPath('/images/login/wecom_login.png')} alt="WeChat Login" />
+          <SafeImage src={'/images/login/wecom_login.png'} alt="WeChat Login" />
           <div className="absolute inset-0 bg-white/90 flex justify-center items-center">
             <Button type="primary" danger onClick={handleLogin}>
               {t('login.immediate_login')}

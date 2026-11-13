@@ -68,6 +68,9 @@ func NewRelayRouter(cr *ChatRequest, ms *MessageStatsInfo) *RelayRouter {
 ●缓存命中：计算 Query 的 Hash，查 Redis。如果这个问题 10 分钟前有人问过，直接把上次生成的最终答案吐出来（特别是对于企业规章制度类的问题，答案是固定的）。
 */
 func (rr *RelayRouter) Level1Router() *RouterResult {
+	if rr.CR != nil && len(currentUserAttachmentTypes(rr.CR.Messages)) > 0 {
+		return nil
+	}
 	// 处理预设回答，预设的配置明前还没确定
 	if presetResult := rr.PresetAnswer(); presetResult != nil {
 		return presetResult

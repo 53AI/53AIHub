@@ -280,7 +280,7 @@ func (fp *FileProcessor) processWithTransactionProtection(task *UploadTask, save
 
 	// 创建文件记录，使用 base_path
 	dirManager := NewDirectoryManager()
-	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, uploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID, task.GroupID)
+	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, uploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID, task.GroupID, task.RecordingStartTime)
 
 	if err != nil {
 		uploadFile.MarkAsFailed(fmt.Sprintf("创建文件记录失败: %v", err))

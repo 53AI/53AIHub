@@ -34,7 +34,7 @@ interface KnowledgeTabProps {
 }
 
 const getIconUrl = (icon?: string): string => {
-  if (!icon) return getPublicPath("/images/file-default.png");
+  if (!icon) return "/images/file-default.png";
   if (icon.startsWith("https://") || icon.startsWith("http://")) return icon;
   return `${api_host}${icon.startsWith("/") ? "" : "/"}${icon}`;
 };

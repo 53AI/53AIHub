@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, forwardRef, useImperativeHandle, type ReactNode } from 'react'
 import { Modal, Form, Input, message } from 'antd'
+import { SafeImage } from '@km/shared-components-react'
 import { usePipelineTranslation } from '../../context'
 import type { Pipeline } from '../../types'
 
@@ -89,7 +90,7 @@ export const BasicDialog = forwardRef<BasicDialogRef, BasicDialogProps>(
     const iconPreview = (
       <div className="size-[60px] border border-gray-200 rounded-lg flex items-center justify-center shadow-sm cursor-pointer transition-all hover:shadow-md">
         {icon && (
-          <img
+          <SafeImage
             className="size-[60px] object-contain"
             src={icon}
             alt="logo"

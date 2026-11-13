@@ -3,7 +3,7 @@ import { useLibraryStore } from '@/stores/modules/library'
 import { useRecordingStore } from '@/stores/modules/recording'
 import { eventBus } from '@km/shared-utils'
 import { t } from '@/locales'
-import { IconAction } from "@km/shared-components-react"
+import { IconAction, SafeImage } from "@km/shared-components-react";
 import agentsApi from '@/api/modules/agents'
 import { AGENT_USAGES } from '@/constants/agent'
 import { AI_ICON_URL } from '@/views/library/main/file/components/sidebar-app-item'
@@ -62,7 +62,7 @@ export function AssistantBtn() {
       onClick={handleClick}
       activeClassName={assistantVisible ? 'bg-[#F2F6FE]' : ''}
     >
-      <img className="size-5" src={AI_ICON_URL} alt="" />
+      <SafeImage className="size-5" src={AI_ICON_URL} alt="" />
     </IconAction>
   )
 }

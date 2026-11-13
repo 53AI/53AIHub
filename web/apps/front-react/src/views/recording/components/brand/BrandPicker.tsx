@@ -1,7 +1,8 @@
 import { Tooltip } from 'antd'
 import { getPublicPath } from '@/utils'
 import type { RecordingDeviceConfig } from '@/api/modules/recording/types'
-import type { BrandCardOption } from '../../constants/brandOptions'
+
+import { SafeImage } from "@km/shared-components-react";import type { BrandCardOption } from '../../constants/brandOptions'
 
 export type { BrandCardOption }
 
@@ -40,7 +41,7 @@ export function BrandPicker({ options, value, onChange }: BrandPickerProps) {
               onChange?.(opt.value)
             }}
           >
-            <img className="size-4" src={getPublicPath(`/images/recording/branch/${opt.value}.png`)} />
+            <SafeImage className="size-4" src={`/images/recording/branch/${opt.value}.png`} />
             <span className="text-[13px] leading-none">{opt.label}</span>
           </button>
         )

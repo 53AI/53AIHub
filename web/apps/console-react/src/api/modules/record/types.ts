@@ -45,6 +45,7 @@ export interface RecordListRequest {
   start_date: number | null
   end_date: number | null
   keyword?: string | null
+  uid?: string | null
   agent_id?: string | null
   offset: number
   limit: number
@@ -69,9 +70,15 @@ export interface RecordItem {
   citation_count: number
   knowledge_type: KNOWLEDGE_TYPE_VALUE
   id: string
+  /** HashID 或数字，接口两种都可能返回 */
+  conversation_id: string | number
   file_name: string
   model_name: string
   user_id: number
+  /** API / 外部接入访客标识（如 api_1432），内部用户为空 */
+  visitor_id?: string
+  /** 消息接入来源，API 接入为 api */
+  request_source?: string
   updated_time: number
   message: string
   rag_stats: {

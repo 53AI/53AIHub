@@ -158,6 +158,8 @@ export interface SendContext {
   library?: { name: string; value: string[]; isSpace: boolean };
   /** 当前选中的模型 id(用于 modelId 拼接 model 字段) */
   modelId?: number | string;
+  /** 当前选中的回答模式：1 快速回答，2 深度思考 */
+  thinkingMode?: 1 | 2;
   /** 完整 agentInfo(用于 search_config / web_search_config / rerank_config) */
   agentInfo?: IAgentInfo;
   /**

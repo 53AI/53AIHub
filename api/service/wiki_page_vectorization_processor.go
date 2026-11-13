@@ -4,13 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/53AI/53AIHub/service/vectorstore"
+	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
 
@@ -118,9 +122,16 @@ func (s *WikiPageVectorizationProcessorImpl) replaceChunks(ctx context.Context, 
 		}
 	}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("eid = ? AND wiki_page_id = ? AND wiki_page_version_id = ?", eid, pageID, versionID).Delete(&model.WikiPageChunk{}).Error; err != nil {
-			return err
+	oldIDs := make([]int64, 0, len(old))
+	for _, item := range old {
+		oldIDs = append(oldIDs, item.ID)
+	}
+	replace := func(tx *gorm.DB) error {
+		// 新版本不做空范围删除，避免 MySQL REPEATABLE READ 下的间隙锁。
+		if len(oldIDs) > 0 {
+			if err := tx.Where("eid = ? AND id IN ?", eid, oldIDs).Delete(&model.WikiPageChunk{}).Error; err != nil {
+				return err
+			}
 		}
 		rows := make([]model.WikiPageChunk, 0, len(chunks))
 		for _, item := range chunks {
@@ -136,8 +147,31 @@ func (s *WikiPageVectorizationProcessorImpl) replaceChunks(ctx context.Context, 
 			})
 		}
 		return tx.Create(&rows).Error
-	})
-	return false, err
+	}
+	for attempt := 0; ; attempt++ {
+		err := s.db.WithContext(ctx).Transaction(replace)
+		if err == nil || attempt >= 2 || !isWikiChunkTransactionRetryable(err) {
+			return false, err
+		}
+		delay := time.Duration(50*(1<<attempt)+rand.Intn(50)) * time.Millisecond
+		logger.Warnf(ctx, "【Wiki向量化】页面%d版本%d的分块替换事务：并发冲突已回滚，准备第%d次重试（等待%s）", pageID, versionID, attempt+1, delay)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return false, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func isWikiChunkTransactionRetryable(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	if errors.As(err, &mysqlErr) {
+		return mysqlErr.Number == 1213
+	}
+	var sqlState interface{ SQLState() string }
+	return errors.As(err, &sqlState) && (sqlState.SQLState() == "40P01" || sqlState.SQLState() == "40001")
 }
 
 func (s *WikiPageVectorizationProcessorImpl) deactivatePreviousVersions(ctx context.Context, eid, pageID, versionID int64) error {
@@ -201,12 +235,14 @@ func (s *WikiPageVectorizationProcessorImpl) embedChunks(ctx context.Context, ei
 		row  model.WikiPageChunk
 	}
 	eligible := make([]chunkRow, 0, len(chunks))
+	oversizedCount := 0
 	for _, item := range chunks {
 		var row model.WikiPageChunk
 		if err := s.db.WithContext(ctx).Where("eid = ? AND chunk_id = ?", eid, item.ChunkID).First(&row).Error; err != nil {
 			return err
 		}
 		if item.Oversized {
+			oversizedCount++
 			if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]interface{}{
 				"embedding_status": model.WikiPageChunkEmbeddingStatusFailed,
 				"index_status":     model.WikiPageChunkIndexStatusOversized,
@@ -220,7 +256,7 @@ func (s *WikiPageVectorizationProcessorImpl) embedChunks(ctx context.Context, ei
 		eligible = append(eligible, chunkRow{item: item, row: row})
 	}
 	if len(eligible) == 0 {
-		return nil
+		return wikiOversizedChunkError(oversizedCount)
 	}
 	for _, item := range eligible {
 		if err := s.db.WithContext(ctx).Model(&item.row).Updates(map[string]interface{}{
@@ -295,7 +331,14 @@ func (s *WikiPageVectorizationProcessorImpl) embedChunks(ctx context.Context, ei
 		}
 	}
 	logger.Infof(ctx, "【Wiki生成】 批量 Chunk 完成: eid=%d page_id=%d version_id=%d count=%d dimension=%d", eid, page.ID, version.ID, len(eligible), vectorDimension)
-	return nil
+	return wikiOversizedChunkError(oversizedCount)
+}
+
+func wikiOversizedChunkError(count int) error {
+	if count == 0 {
+		return nil
+	}
+	return fmt.Errorf("%d wiki page chunk(s) exceed the configured vectorization window", count)
 }
 
 func splitWikiEmbeddingBatches[T any](items []T) [][]T {

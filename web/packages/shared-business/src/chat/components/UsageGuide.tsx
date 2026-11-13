@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Empty, Tooltip, message } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { copyToClip } from "@km/shared-utils";
 import { useTranslation } from "../i18n";
 
@@ -25,7 +25,6 @@ export interface UsageGuideProps {
 
 function UsageGuide({ useCases, defaultImage = DEFAULT_IMG, showChannel = false, plain = false }: UsageGuideProps) {
   const { t } = useTranslation();
-
   const { cases, scenes, channels } = useMemo(() => {
     let list: UseCase[] = [];
     try {
@@ -50,12 +49,6 @@ function UsageGuide({ useCases, defaultImage = DEFAULT_IMG, showChannel = false,
     } catch (err) {
       message.error(t("action.copy_failed") || "复制失败");
     }
-  };
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    const target = e.target as HTMLImageElement;
-    if (target.src.endsWith(defaultImage)) return;
-    target.src = defaultImage;
   };
 
 
@@ -114,11 +107,11 @@ function UsageGuide({ useCases, defaultImage = DEFAULT_IMG, showChannel = false,
               key={index}
               className="flex-1 px-4 text-center pt-3 pb-10 relative cursor-pointer group"
             >
-              <img
+              <SafeImage
                 className="max-w-[200px] mx-auto"
-                src={item.image}
+                src={item.image || ""}
+                fallback={defaultImage}
                 alt={item.scene}
-                onError={handleImageError}
               />
               <h6 className="text-base text-[#1F2123] mt-5 break-words">
                 {item.scene}
@@ -147,11 +140,11 @@ function UsageGuide({ useCases, defaultImage = DEFAULT_IMG, showChannel = false,
                 key={index}
                 className="flex-1 px-4 text-center pt-3 pb-10 relative cursor-pointer group"
               >
-                <img
+                <SafeImage
                   className="max-w-[200px] mx-auto"
-                  src={item.image}
+                  src={item.image || ""}
+                  fallback={defaultImage}
                   alt={item.name}
-                  onError={handleImageError}
                 />
                 <h6 className="text-base text-[#1F2123] mt-5 break-words">
                   {item.name}

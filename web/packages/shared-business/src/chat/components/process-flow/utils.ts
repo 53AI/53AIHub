@@ -31,10 +31,20 @@ export function formatResult(result?: string, maxLength = 300): string {
   return result.length > maxLength ? result.substring(0, maxLength) + "..." : result;
 }
 
-/** 格式化 LLM 内容 */
-export function formatLlmContent(content: string, maxLength = 500): string {
-  if (!content) return "";
-  return content.length > maxLength ? content.substring(0, maxLength) + "..." : content;
+/** 保留完整 LLM 内容，避免思考过程在展示时被截断。 */
+export function formatLlmContent(content: string): string {
+  return content;
+}
+
+/** 将意图说明中的内部分类名转换为面向用户的业务表达。 */
+export function localizeIntentReasoning(reasoning: string, t: (key: string) => string): string {
+  return reasoning
+    .replace(/\bSIMPLE_RAG\b/gi, t("process.intent_label.simple_rag"))
+    .replace(/\bCOMPLEX_AGENT\b/gi, t("process.intent_label.complex_agent"))
+    .replace(/\bCHITCHAT\b/gi, t("process.intent_label.chitchat"))
+    .replace(/\bUSE_SKILL\b/gi, t("process.intent_label.use_skill"))
+    .replace(/\bSTATS_COUNT\b/gi, t("process.intent_label.stats_count"))
+    .replace(/\bRAG\b/gi, t("process.intent_label.rag"));
 }
 
 /** 判断流程类型 */

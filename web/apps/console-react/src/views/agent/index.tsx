@@ -37,7 +37,7 @@ import type { AgentPlatformOption, CreateAgentDialogResult } from "@km/shared-bu
 import { consoleAgentAdapter } from "@/adapters/agent-create-adapter";
 import ScopeDisplay from "@/components/ScopeDisplay";
 import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
-import { img_host, getPublicPath } from "@/utils/config";
+import { img_host } from "@/utils/config";
 import { buildOpenClawEnterpriseAgentPayload } from "./openclaw-create";
 import {
   buildAgentListParams,
@@ -176,7 +176,7 @@ export function AgentPage() {
     };
 
     // 获取公共配置的平台列表
-    const basePlatforms = createPlatformsByType(img_host, getPublicPath);
+    const basePlatforms = createPlatformsByType(img_host);
     return filterByAuth(basePlatforms);
   }, [authProviders]);
 

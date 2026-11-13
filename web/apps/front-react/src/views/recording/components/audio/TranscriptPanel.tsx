@@ -1,31 +1,10 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { Checkbox, Empty, Input, Modal, message } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
-import { SafeImage } from "@km/shared-components-react"
 import type { StageStatusBag, TranscriptItem } from '../../hooks/useFileParse'
 import { ParsingPlaceholder, ParsingUnavailable, PendingPlaceholder, InsightLoadingPlaceholder, hasStageFailed, type ParsingStep } from './ParseStatusPlaceholder'
 import { isStageLoading } from '../../constants/recordingStatus'
-
-/** 说话人头像专属配色：柔和浅底色 + 同色系深文字，保证可读 */
-const SPEAKER_PALETTE: ReadonlyArray<{ backgroundColor: string; textColor: string }> = [
-  { backgroundColor: '#E0EAFF', textColor: '#2563EB' }, // 蓝
-  { backgroundColor: '#EDE9FE', textColor: '#7C3AED' }, // 紫
-  { backgroundColor: '#DCFCE7', textColor: '#15803D' }, // 绿
-  { backgroundColor: '#FFEDD5', textColor: '#C2410C' }, // 橙
-  { backgroundColor: '#FCE7F3', textColor: '#DB2777' }, // 粉
-  { backgroundColor: '#CCFBF1', textColor: '#0F766E' }, // 青
-  { backgroundColor: '#FEF3C7', textColor: '#B45309' }, // 琥珀
-  { backgroundColor: '#E0E7FF', textColor: '#4338CA' }, // 靛
-  { backgroundColor: '#FEE2E2', textColor: '#B91C1C' }, // 红
-  { backgroundColor: '#CFFAFE', textColor: '#0E7490' }, // 湖蓝
-]
-
-/** 按 speakerNum 稳定映射到唯一配色，同一说话人始终同色 */
-function getSpeakerColors(speakerNum: number) {
-  const len = SPEAKER_PALETTE.length
-  const key = ((speakerNum - 1) % len + len) % len
-  return SPEAKER_PALETTE[key] ?? SPEAKER_PALETTE[0]
-}
+import { TranscriptSpeakerAvatar, isBoundSpeaker, speakerTone } from './TranscriptSpeakerAvatar'
 
 interface TranscriptPanelProps {
   /** 转写列表 */
@@ -47,6 +26,11 @@ interface TranscriptPanelProps {
   /** 开始生成回调；只读模式（分享页）下不传，按钮会被隐藏 */
   onStartGenerate?: () => void
   /**
+   * 点击某行的「关联」按钮：在右侧 Flutter 面板打开该说话人的关联抽屉
+   * （参数为该行说话人）。不传（分享页等只读场景）时不渲染行内关联按钮。
+   */
+  onOpenSpeakerBind?: (speaker: string) => void
+  /**
    * 限制 ParsingPlaceholder 渲染的步骤集合；
    * 库视图等不展示洞察 Tab 的场景可传 `['transcript','summary']`，
    * 避免进度面板与 Tab 列表展示不一致。不传时走 ParsingPlaceholder 默认全量行为。
@@ -64,6 +48,7 @@ export function TranscriptPanel({
   initialLoadDone,
   generating,
   onStartGenerate,
+  onOpenSpeakerBind,
   visibleSteps,
 }: TranscriptPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -107,7 +92,7 @@ export function TranscriptPanel({
 
   return (
     <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ contentVisibility: 'auto', containIntrinsicSize: '500px' }}>
-      <div className="w-4/5 mx-auto">
+      <div className="max-w-[1200px] mx-auto">
         {(() => {
           if (noVoiceModel) return <ParsingUnavailable />
           // 切换文件瞬间转写列表为空，先展示 loading
@@ -121,41 +106,54 @@ export function TranscriptPanel({
                 {transcriptList.map((item) => {
                   const speakerLabel = item.speaker || ''
                   const isActive = currentTranscriptId === item.id
+                  const nameColor = isBoundSpeaker(item) ? '' : speakerTone(item).name
                   return (
                     <div
                       key={item.id}
                       data-transcript-id={item.id}
-                      className={`cursor-pointer px-4 py-4 rounded-xl transition-colors duration-200 hover:bg-[#F8FAFC] ${isActive ? 'bg-[#F2F7FF]' : ''}`}
+                      className={`group cursor-pointer px-4 py-3 rounded-xl transition-colors duration-200 hover:bg-[#F0F3FA] ${isActive ? 'bg-[#F0F3FA]' : ''}`}
                       onClick={() => onTranscriptClick(item)}
                     >
-                      <div className="flex items-center mb-2 text-sm text-[#1D1E1F]">
+                      {/* 头像颜色与分享页同源，绑定后仍使用人员头像。 */}
+                      <div className="flex items-start gap-3">
                         <span
-                          className="mr-2.5 shrink-0 inline-flex cursor-pointer"
+                          className="shrink-0 inline-flex cursor-pointer"
                           onClick={openRename(item)}
                         >
-                          <SafeImage
-                            src=""
-                            letter={speakerLabel}
-                            textColor={getSpeakerColors(item.speakerNum).textColor}
-                            round={11}
-                            border={false}
-                            backgroundColor={getSpeakerColors(item.speakerNum).backgroundColor}
-                            className="size-[22px] text-xs"
-                          />
+                          <TranscriptSpeakerAvatar item={item} />
                         </span>
-                        <span className="select-none cursor-pointer hover:text-[#2563EB]" onClick={openRename(item)}>
-                          {speakerLabel}
-                        </span>
-                        <span className="select-none mx-2">|</span>
-                        <span className="text-[13px] font-mono mr-2 select-none">{item.time}</span>
-                        {isActive && (
-                          <span className="ml-2 w-6 h-[18px] bg-[#E6EDFF] rounded inline-flex items-center justify-center">
-                            <SvgIcon name="align-bottom-two-filled" color="#2563EB" size={14} />
-                          </span>
-                        )}
-                      </div>
-                      <div className="pl-8 text-sm text-[#4F5052] leading-[1.85] whitespace-pre-wrap break-words text-justify">
-                        {item.content}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center mb-1.5 text-sm text-[#1D1E1F]">
+                            <span className={`select-none cursor-pointer hover:text-[#2563EB] ${nameColor}`} onClick={openRename(item)}>
+                              {speakerLabel}
+                            </span>
+                            <span className="select-none mx-2">|</span>
+                            <span className="text-[13px] font-mono mr-2 select-none">{item.time}</span>
+                            {isActive && (
+                              <span className="ml-2 w-6 h-[18px] bg-[#E6EDFF] rounded inline-flex items-center justify-center">
+                                <SvgIcon name="align-bottom-two-filled" color="#2563EB" size={14} />
+                              </span>
+                            )}
+                            {/* 关联：对齐 Flutter 行内「🔗 关联」按钮，hover 本行才
+                                出现（group-hover），点击在右侧 Flutter 面板打开该
+                                说话人的关联抽屉；stopPropagation 避免触发整行跳播。 */}
+                            {onOpenSpeakerBind && (
+                              <span
+                                className="ml-2 inline-flex cursor-pointer items-center gap-0.5 rounded text-[12.5px] font-medium text-[#2563EB] opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onOpenSpeakerBind(item.speaker || '')
+                                }}
+                              >
+                                <SvgIcon name="link-two" size={14} />
+                                关联
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm text-[#4F5052] leading-[1.85] whitespace-pre-wrap break-words text-justify">
+                            {item.content}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )

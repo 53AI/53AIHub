@@ -335,10 +335,17 @@ func BuildRecordingMemoryV2Shadow(ctx context.Context, eid, userID, fileID int64
 // RunRecordingMemoryV2ShadowEvaluation 只记录 baseline 与 shadow 的召回差异，
 // 不参与本次洞察 Prompt，也不改变现有结构化记忆的主召回结果。
 func RunRecordingMemoryV2ShadowEvaluation(ctx context.Context, eid, userID, fileID, generation int64, memCfg *model.MemoryExtractionConfig, currentContext *CurrentMeetingContext) (*model.RecordingMemoryV2Evaluation, error) {
-	started := time.Now()
 	contextResult, err := BuildRecordingDecisionContext(ctx, eid, userID, fileID, generation, memCfg, currentContext)
 	if err != nil {
 		return nil, err
+	}
+	return RunRecordingMemoryV2ShadowEvaluationWithContext(ctx, eid, userID, fileID, generation, contextResult)
+}
+
+func RunRecordingMemoryV2ShadowEvaluationWithContext(ctx context.Context, eid, userID, fileID, generation int64, contextResult *RecordingDecisionContextResult) (*model.RecordingMemoryV2Evaluation, error) {
+	started := time.Now()
+	if contextResult == nil || contextResult.Current == nil || contextResult.Public == nil {
+		return nil, errors.New("decision context is required for memory shadow evaluation")
 	}
 	baseline := flattenDecisionMemory(contextResult.History)
 	baselineIDs := make(map[int64]struct{}, len(baseline))

@@ -3,9 +3,8 @@ import { CopyOutlined } from "@ant-design/icons";
 import { message, Button, Switch } from "antd";
 import { useEnv } from "@/hooks/useEnv";
 import { copyToClip, md5 } from "@km/shared-utils";
-import { getPublicPath } from "@/utils/config";
 import { generateSignParams } from "@/api/signature";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useUserStore } from "@/stores";
 import enterpriseApi from "@/api/modules/enterprise";
 import { t } from "@/locales";
@@ -210,8 +209,8 @@ window.__AGENT_PLUGIN_SDK_CONFIG__ = ${JSON.stringify(config, null, 2)}
           {t('integrate.embed_step1')}
         </div>
         <div className="flex gap-6">
-          <img
-            src={getPublicPath("/images/agent/access-iframe.png")}
+          <SafeImage
+            src={"/images/agent/access-iframe.png"}
             alt={t("integrate.web_link")}
             className="w-64 h-80 rounded-lg shadow-md"
           />
@@ -257,8 +256,8 @@ window.__AGENT_PLUGIN_SDK_CONFIG__ = ${JSON.stringify(config, null, 2)}
           {t('integrate.embed_step2')}
         </div>
         <div className="flex gap-6">
-          <img
-            src={getPublicPath("/images/agent/access-bubble.png")}
+          <SafeImage
+            src={"/images/agent/access-bubble.png"}
             alt={t("integrate.web_link")}
             className="w-64 h-80 rounded-lg shadow-md"
           />

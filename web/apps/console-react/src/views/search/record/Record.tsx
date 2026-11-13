@@ -2,6 +2,7 @@ import { Table, Button, Tag, Tooltip, Select, Spin } from "antd";
 import { useEffect, useState, useRef } from "react";
 import { t } from "@/locales";
 import recordApi from "@/api/modules/record";
+import { resolveRecordAskerName } from "@/api/modules/record/transform";
 import userApi from "@/api/modules/user";
 import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
 import Detail, { DetailRef } from "../components/detail";
@@ -14,6 +15,7 @@ import {
     KNOWLEDGE_TYPE_FILTER,
 } from "@/api/modules/record/types";
 import { DateRangeFilter } from "@/components/Filter/date-range";
+import AskerFilter from "@/components/Filter/Asker";
 import { getLastTimeAsDay } from "@km/shared-utils";
 
 interface RecordProps {
@@ -47,6 +49,7 @@ export function Record({ agentId }: RecordProps) {
     start_time: null as number | null,
     end_time: null as number | null,
     keyword: "",
+    uid: null as string | null,
     thinking_mode: 0,
     response_status: 0,
     knowledge_type: KNOWLEDGE_TYPE_FILTER.ALL as number | string,
@@ -61,6 +64,7 @@ export function Record({ agentId }: RecordProps) {
   const [isCleared, setIsCleared] = useState(false);
   const userListRef = useRef<Record<number, string>>({});
   const [isClearIconAvailable, setIsClearIconAvailable] = useState(false);
+  const [askerClearKey, setAskerClearKey] = useState(0);
 
   // 获取统计数据、数据统计时间
   const loadRecordStats = async () => {
@@ -97,7 +101,7 @@ export function Record({ agentId }: RecordProps) {
         list.messages.map((item) => {
           return {
             ...item,
-            nickname: userListRef.current[item.user_id],
+            nickname: resolveRecordAskerName(item, userListRef.current),
           };
         }),
       );
@@ -139,6 +143,7 @@ export function Record({ agentId }: RecordProps) {
       start_time: null,
       end_time: null,
       keyword: "",
+      uid: null,
       thinking_mode: 0,
       response_status: 0,
       knowledge_type: 0,
@@ -147,6 +152,7 @@ export function Record({ agentId }: RecordProps) {
     };
     setDetailedDate(newDates);
     setDetailedForm(newForm);
+    setAskerClearKey((key) => key + 1);
     setIsCleared(true);
     setIsClearIconAvailable(false);
     loadRecordList(newForm, newDates);
@@ -188,6 +194,25 @@ export function Record({ agentId }: RecordProps) {
       tableData,
       type: SEARCH_TYPE.RECORD,
     });
+  };
+
+  // 会话内相邻消息（按 message id 游标）：详情抽屉的「加载上一条 / 下一条」用，每次只取 1 条，不拉整段会话
+  const loadNeighborRecord = async (
+    record: RecordDisplayItem,
+    direction: "prev" | "next",
+  ): Promise<RecordDisplayItem | null> => {
+    // 缺会话 id 或消息 id 时无法定位相邻消息（如接口未返回 conversation_id），直接返回空
+    if (!record?.id || !record?.conversation_id) return null;
+    const neighbor = await recordApi.getNeighborMessage({
+      conversation_id: record.conversation_id,
+      message_id: record.id,
+      direction,
+    });
+    if (!neighbor) return null;
+    return {
+      ...neighbor,
+      nickname: resolveRecordAskerName(neighbor, userListRef.current),
+    };
   };
 
   const onRowClick = (row: RecordDisplayItem) => {
@@ -409,6 +434,14 @@ export function Record({ agentId }: RecordProps) {
               handleFilterChange(newForm, detailedDate);
             }}
           />
+          <AskerFilter
+            clearKey={askerClearKey}
+            onChange={(uid) => {
+              const newForm = { ...detailedForm, uid };
+              setDetailedForm(newForm);
+              handleFilterChange(newForm);
+            }}
+          />
           <Select
             value={detailedForm.thinking_mode}
             className="flex-none min-w-[180px]"
@@ -418,7 +451,11 @@ export function Record({ agentId }: RecordProps) {
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}
-            placeholder={`${t("search-record.thinking_way")}:`}
+            prefix={
+              <span className="text-placeholder">
+                {t("search-record.thinking_way") + ":"}
+              </span>
+            }
           >
             <Select.Option value={0}>{t("search-record.all")}</Select.Option>
             <Select.Option value={THINKING_MODE.QUICK_ANSWER}>
@@ -437,7 +474,11 @@ export function Record({ agentId }: RecordProps) {
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}
-            placeholder={`${t("search-record.answer_status")}:`}
+            prefix={
+              <span className="text-placeholder">
+                {t("search-record.answer_status") + ":"}
+              </span>
+            }
           >
             <Select.Option value={0}>{t("search-record.all")}</Select.Option>
             <Select.Option value={RESPONSE_STATUS.NORMAL}>
@@ -456,7 +497,11 @@ export function Record({ agentId }: RecordProps) {
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}
-            placeholder={`${t("search-record.knowledge_scope")}:`}
+            prefix={
+              <span className="text-placeholder">
+                {t("search-record.knowledge_scope") + ":"}
+              </span>
+            }
           >
             <Select.Option value={KNOWLEDGE_TYPE_FILTER.ALL}>
               {t("search-record.all")}
@@ -522,7 +567,7 @@ export function Record({ agentId }: RecordProps) {
           </div>
         </Spin>
       </div>
-      <Detail ref={detailRef} />
+      <Detail ref={detailRef} loadNeighborRecord={loadNeighborRecord} />
     </div>
   );
 }

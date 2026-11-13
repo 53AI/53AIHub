@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { Select, Spin, Tooltip } from "antd";
 import { LoadingOutlined, EyeOutlined } from "@ant-design/icons";
+import { SafeImage } from "@km/shared-components-react";
 import { loadModels } from "./index";
 import {
   MODEL_USE_TYPE,
@@ -15,6 +16,8 @@ export interface ModelOption {
   label: string;
   icon?: string;
   vision?: boolean;
+  enabled_tools?: string[];
+  upstream_api_format?: string;
 }
 
 export interface ChannelOption {
@@ -100,7 +103,7 @@ export function ModelSelect({
       label: (
         <div className="flex items-center gap-2">
           {channel.icon && (
-            <img
+            <SafeImage
               src={channel.icon}
               alt={channel.label}
               className="w-4 h-4 object-contain"
@@ -114,7 +117,7 @@ export function ModelSelect({
         label: (
           <div className="flex items-center gap-2">
             {model.icon && (
-              <img
+              <SafeImage
                 src={model.icon}
                 alt={model.label}
                 className="w-4 h-4 object-contain"

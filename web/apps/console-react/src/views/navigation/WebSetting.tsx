@@ -2,7 +2,7 @@ import { Button, Spin, message, Menu } from "antd";
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { eventBus } from "@km/shared-utils";
 import { navigationApi } from "@/api/modules/navigation";
 import { useEnterpriseStore } from "@/stores";
@@ -169,7 +169,7 @@ export function WebSettingPage() {
             {/* 导航栏预览 */}
             <div className="w-full h-[76px] px-8 box-border flex items-center gap-4 border-b">
               {enterpriseInfo.logo && (
-                <img
+                <SafeImage
                   src={enterpriseInfo.logo}
                   className="flex-none w-10 h-10 rounded"
                   style={{ objectFit: "cover" }}

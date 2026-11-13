@@ -448,6 +448,14 @@ func (w *LLMDeltaCollector) sanitizeInternalPassthroughEvent(event string) (stri
 
 	choice := payload.Choices[0]
 	if len(choice.Delta.ToolCalls) > 0 {
+		if w.decisionResolved && w.decisionValue == DecisionDone && w.shouldBufferDiscussionPlanningContent() {
+			// Explicit DONE already committed the answer to outer SSE. A later
+			// tool_call violates that protocol; never execute it or append its
+			// attached planning text to the answer already shown to the user.
+			w.upstreamSeq++
+			logger.Warnf(w.ctx, "【探讨】DONE 后收到违规工具调用，已丢弃: request_id=%s", w.requestId)
+			return "", false
+		}
 		firstLateToolCall := !w.hasToolCall
 		w.hasToolCall = true
 		w.upstreamSeq++
@@ -663,13 +671,16 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 		return
 	}
 
-	// Route by the orchestrator-declared turn phase. Planning content is visible
-	// immediately in process.step; only answering content may enter outer choices.
+	// Ordinary planning streams into process.step. Discussion planning buffers
+	// undecided text until tool calls or completion, to avoid showing the same
+	// answer in the reasoning pane and again in outer choices.
 	if !w.seenFirstContent && hasVisibleContent && !w.hasToolCall {
 		contentChunk := *delta.Content
 		if w.shouldRoutePlanningToProcess() {
 			w.seenFirstContent = true
-			w.enableLLMDeltaIfNeeded("planning_phase")
+			if !w.shouldBufferDiscussionPlanningContent() {
+				w.enableLLMDeltaIfNeeded("planning_phase")
+			}
 		} else if w.shouldDelayPassthroughForDecision(contentChunk) {
 			// 内容可能包含决策标签，不立即透传，继续缓冲
 			w.seenFirstContent = true
@@ -680,7 +691,9 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 			return
 		}
 	} else if !w.seenFirstContent && hasReasoningContent && !w.hasToolCall {
-		w.enableLLMDeltaIfNeeded("internal_reasoning")
+		if !w.shouldBufferDiscussionPlanningContent() {
+			w.enableLLMDeltaIfNeeded("internal_reasoning")
+		}
 	}
 
 	// 常规内容处理（已有 tool_call 或 llm_delta 已启用）
@@ -705,7 +718,11 @@ func (w *LLMDeltaCollector) processSSEEvent(event string) {
 
 	if w.decisionResolved && w.decisionValue != DecisionDone {
 		w.enableLLMDeltaIfNeeded("decision")
-	} else if w.decisionResolved && w.decisionValue == DecisionDone && !w.hasToolCall && !w.shouldRoutePlanningToProcess() {
+	} else if w.decisionResolved && w.decisionValue == DecisionDone && !w.hasToolCall &&
+		(!w.shouldRoutePlanningToProcess() || (w.shouldBufferDiscussionPlanningContent() &&
+			strings.HasPrefix(strings.TrimSpace(w.content.String()), "<decision>DONE</decision>"))) {
+		// An explicit DONE at the start of a discussion planning turn commits
+		// the model to its final answer. Reveal content in outer SSE immediately.
 		w.switchBufferedContentToPassthroughLocked("decision_done")
 	}
 }
@@ -960,6 +977,17 @@ func (w *LLMDeltaCollector) queueVisibleContentLLMDelta() {
 	w.llmDeltaContentQueued = len(visible)
 }
 
+const discussionPlanningBufferContentContextKey = "agent_discussion_planning_buffer_content"
+
+func (w *LLMDeltaCollector) shouldBufferDiscussionPlanningContent() bool {
+	if !w.shouldRoutePlanningToProcess() || w.c == nil {
+		return false
+	}
+	enabled, _ := w.c.Get(discussionPlanningBufferContentContextKey)
+	value, _ := enabled.(bool)
+	return value && !w.hasToolCall
+}
+
 func (w *LLMDeltaCollector) shouldRoutePlanningToProcess() bool {
 	return isInternalAgentStreamTurn(w.c) && getAgentStreamPhase(w.c) == agentStreamPhasePlanning
 }
@@ -1106,8 +1134,77 @@ func getAgentStreamPhase(c *gin.Context) string {
 	return agentStreamPhasePlanning
 }
 
+const discussionDefaultPlanningPrompt = "本轮可以使用已授权的探讨工具。若问题需要历史探讨、老板认知或经营记忆，请直接调用对应工具，不能跳过必要查询。如果不需要调用工具且已准备好直接答复，请在 content 开头输出 <decision>DONE</decision>，然后连续输出给用户的最终答案（如有 RAG 证据则按 [Source:x-y] 引用）。输出该标记即表示不再调用工具。不要输出其他规划文字或原始思考。"
+
+// A selected meeting changes answer priority only if its evidence actually
+// made it into the RAG sources, rather than just having a file ID attached.
+func discussionPlanningPrompt(c *gin.Context, agent *model.Agent, request *ChatRequest) string {
+	if c == nil || !isDiscussionAgentAuthorized(agent) {
+		return discussionDefaultPlanningPrompt
+	}
+	value, ok := c.Get("rag_sources")
+	if !ok {
+		return discussionDefaultPlanningPrompt
+	}
+	sources, ok := value.([]rag.SourceReference)
+	if !ok {
+		return discussionDefaultPlanningPrompt
+	}
+	evidence, selected := selectedMeetingEvidence(request, sources)
+	if !selected || (!evidence.HasMinutes && !evidence.HasInsight) {
+		return discussionDefaultPlanningPrompt
+	}
+	available := make([]string, 0, 3)
+	if evidence.HasMinutes {
+		available = append(available, "会议纪要")
+	}
+	if evidence.HasInsight {
+		available = append(available, "决策洞察 Markdown（AI 分析，不等于已确认决议）")
+	}
+	if evidence.HasTranscript {
+		available = append(available, "会议逐字稿")
+	}
+	return "当前会议已提供：" + strings.Join(available, "、") +
+		"。用户追问本次会议的结论、洞察、人员、客户、项目或风险时，应优先使用这些已提供的资料直接回答，当前资料足够时不需要再次调用工具搜索；优先以会议原话和纪要核验洞察的判断。只有用户询问跨会议历史才按需使用 search_discussion_history；需要本次会议之外且未提供的经营事实才调用 query_business_memory；需要老板独立的长期判断原则才调用 query_boss_cognitions。不要仅因出现客户、项目或判断等词就调用工具。若已可回答，在 content 开头输出 <decision>DONE</decision>，之后直接连续输出最终答案并按真实来源引用 [Source:x-y]；DONE 后不再调用工具，不输出规划文字。"
+}
+
 func shouldStartAgentFinalAnswerTurn(streamPhase string, finalAnswerOnly bool) bool {
 	return streamPhase == agentStreamPhasePlanning && !finalAnswerOnly
+}
+
+// A discussion agent may have optional read-only tools but already provide a
+// grounded answer without calling any tool. Avoid an unnecessary LLM retry
+// that can replace a correct answer with transcript text.
+func shouldFinalizeDiscussionPlanningAnswer(c *gin.Context, agent *model.Agent, streamPhase string, finalAnswerOnly bool, content string, upstreamComplete bool, hasToolCalls bool) bool {
+	if !shouldStartAgentFinalAnswerTurn(streamPhase, finalAnswerOnly) ||
+		!isDiscussionAgentAuthorized(agent) || !upstreamComplete || hasToolCalls {
+		return false
+	}
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" || trimmed != sanitizeFinalAssistantContent(trimmed) {
+		return false
+	}
+	// Never promote control protocol or provider special tokens into a final
+	// answer. Let the existing answering fallback handle those cases.
+	lower := strings.ToLower(trimmed)
+	for _, marker := range []string{"<decision", "</decision", "<skill_name", "</skill_name", "<tool_call", "</tool_call", "<function_call", "<|", "<｜", "dsml", "function_calls", "invoke name=", "\"tool_calls\""} {
+		if strings.Contains(lower, marker) {
+			return false
+		}
+	}
+	if c == nil {
+		return false
+	}
+	value, ok := c.Get("rag_sources")
+	if !ok {
+		return false
+	}
+	sources, ok := value.([]rag.SourceReference)
+	if !ok || len(sources) == 0 {
+		return false
+	}
+	validated, stats := validateAnswerCitations(trimmed, sources)
+	return strings.TrimSpace(validated) != "" && stats.Valid > 0 && stats.Invalid == 0
 }
 
 func shouldReserveAgentFinalAnswerTurn(turnCount, maxTurns int, streamPhase string, finalAnswerOnly bool) bool {
@@ -2754,6 +2851,16 @@ func injectGlobalToolsToChatRequest(chatRequest *ChatRequest, ctx context.Contex
 	injectGlobalTools(&chatRequest.Tools, ctx)
 }
 
+func withoutWebFetchTool(toolList []relay_model.Tool) []relay_model.Tool {
+	filtered := toolList[:0]
+	for _, tool := range toolList {
+		if tool.Function.Name != "web_fetch" {
+			filtered = append(filtered, tool)
+		}
+	}
+	return filtered
+}
+
 func injectGlobalToolsToGeneralRequest(req *relay_model.GeneralOpenAIRequest, ctx context.Context) {
 	if req == nil {
 		return
@@ -2872,6 +2979,22 @@ func (g *agentRunTerminalGuard) Finalize(status, errorCode, errorMessage string)
 	}
 	g.finalized = true
 	logger.Infof(finalizeCtx, "【诊断-AgentRun】调用终态持久化: request_id=%s message_id=%d status=%s", g.requestID, messageID, status)
+
+	// Agent Loop 在这里完成正式终态；普通 Relay 的完成回调不会触发。
+	// 两条路径共用同一空闲记忆压缩机制，避免 Agent 型会话不写长期记忆。
+	if status != model.AgentRunStatusCompleted || !supportsSystemRole(g.agent.ChannelType) || messageID <= 0 {
+		return
+	}
+	msg, err := model.GetMessageByID(g.agent.Eid, messageID)
+	if err != nil || msg == nil || msg.UserID <= 0 {
+		logger.Warnf(finalizeCtx, "【会话记忆】终态消息读取失败: message_id=%d err=%v", messageID, err)
+		return
+	}
+	service.DefaultIdleTrigger.Reset(g.agent.Eid, g.agent.AgentID, msg.UserID, messageID)
+	if service.ShouldMaintainConversationSummary(g.agent) {
+		service.TriggerConversationSummaryAsync(finalizeCtx, g.agent.Eid, g.conversationID, msg.UserID, g.agent.AgentID)
+	}
+
 }
 
 func (g *agentRunTerminalGuard) FinalizeUnhandled() {
@@ -3039,7 +3162,7 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 
 	// 匹配模型与 agent.settings 配置，确定 ThinkingMode
 	if messageStatus != nil {
-		messageStatus.ThinkingMode = resolveThinkingMode(agent, initialModel)
+		messageStatus.ThinkingMode = resolveThinkingModeForRequest(agent, initialModel, chatRequest.ThinkingMode)
 	}
 
 	initialTextRequest := &relay_model.GeneralOpenAIRequest{
@@ -3152,6 +3275,8 @@ func runAgentLoop(c *gin.Context, requestCtx context.Context, agent *model.Agent
 	// planning/tool turn as a separate user question.
 	c.Set(relayAgentLoopStatsContextKey, true)
 	defer c.Set(relayAgentLoopStatsContextKey, false)
+	c.Set(discussionPlanningBufferContentContextKey, isDiscussionAgentAuthorized(agent))
+	defer c.Set(discussionPlanningBufferContentContextKey, false)
 
 	nextStreamPhase := getAgentInitialStreamPhase(c)
 	emptyResponseCorrectionAttempted := false
@@ -3208,6 +3333,13 @@ agentLoop:
 		currentRequest := *chatRequest
 		currentRequest.Stream = streamIntermediate // Enable streaming for intermediate turns when outer is streaming
 		currentRequest.Model = requestModel        // Fix: Ensure request uses the actual underlying model name, not the virtual agent name
+		if nextStreamPhase == agentStreamPhasePlanning && isDiscussionAgentAuthorized(agent) {
+			currentRequest.Messages = append([]relay_model.Message(nil), chatRequest.Messages...)
+			currentRequest.Messages = append(currentRequest.Messages, relay_model.Message{
+				Role:    "system",
+				Content: discussionPlanningPrompt(c, agent, chatRequest),
+			})
+		}
 		if nextStreamPhase == agentStreamPhaseAnswering {
 			currentRequest.Tools = nil
 			currentRequest.Messages = append([]relay_model.Message(nil), chatRequest.Messages...)
@@ -3215,6 +3347,12 @@ agentLoop:
 				Role:    "system",
 				Content: "现在进入最终答复阶段。只输出给用户的最终答案：不要调用任何工具，不要继续规划，不要复述内部思考过程，也不要输出 <decision> 控制标签。回答必须为信息点标注引用编号，格式固定为半角 [Source:x-y]，即使回答偏好要求口语化，也必须保留引用编号，禁止使用全角括号【】。",
 			})
+			// 进入最终答复阶段时，重置流式收集器缓冲，确保最终答复不被上一轮工具调用的过渡语覆盖 (R8 修复)
+			if collectorAny, exists := c.Get("stream_response_collector"); exists {
+				if col, ok := collectorAny.(*StreamResponseCollector); ok && col != nil {
+					col.Reset()
+				}
+			}
 		}
 
 		// Prepare request body
@@ -3610,7 +3748,9 @@ agentLoop:
 					currentRunMessages = chatRequest.Messages[runStartMsgCount:]
 				}
 				finalAnswerContent = ensureNonEmptyFinalAssistantContent(finalAnswerContent, currentRunMessages, getCurrentSkillName())
+				finalAnswerContent, _ = sanitizeAndValidateAnswer(c, finalAnswerContent)
 				passthrough := deltaCollector != nil && deltaCollector.IsPassthrough()
+				passthroughAnswer, passthroughReasoning := "", ""
 				logger.Infof(ctx, "Agent decision: DONE - returning final answer, streamIntermediate=%v, passthrough=%v, sessionOutputFiles count: %d",
 					streamIntermediate, passthrough, len(sessionOutputFiles))
 				finishOutputSync := prepareFinalOutputSync(chatRequest.Stream, func() {
@@ -3632,16 +3772,18 @@ agentLoop:
 					// 透传模式下内容已实时发送，只需发送 finish 信号
 					if passthrough {
 						// 从 delta collector 获取 passthrough 期间跟踪的内容
-						passthroughAnswer, passthroughReasoning := "", ""
 						passthroughDeltas := []string(nil)
 						if deltaCollector != nil {
 							passthroughAnswer, passthroughReasoning = deltaCollector.GetPassthroughContent()
 							passthroughDeltas = deltaCollector.GetPassthroughContentDeltas()
 						}
-						if collectedAnswer, collectedReasoning := getCollectedStreamResponseContent(c); strings.TrimSpace(collectedAnswer) != "" {
-							passthroughAnswer = collectedAnswer
-							if strings.TrimSpace(collectedReasoning) != "" && passthroughReasoning == "" {
-								passthroughReasoning = collectedReasoning
+						passthroughAnswer, _ = sanitizeAndValidateAnswer(c, passthroughAnswer)
+						if strings.TrimSpace(passthroughAnswer) == "" {
+							if collectedAnswer, collectedReasoning := getCollectedStreamResponseContent(c); strings.TrimSpace(collectedAnswer) != "" {
+								passthroughAnswer = collectedAnswer
+								if strings.TrimSpace(collectedReasoning) != "" && passthroughReasoning == "" {
+									passthroughReasoning = collectedReasoning
+								}
 							}
 						}
 						if passthroughReasoning != "" && reasoningStr == "" {
@@ -3714,6 +3856,19 @@ agentLoop:
 					completionSource = "tool_finalize"
 				}
 				runMetrics.complete(completionSource)
+				// 最终落库兜底：确保 MySQL 主消息包含真正的终态回答 (R8 修复)
+				finalPersistAnswer := passthroughAnswer
+				if !passthrough || strings.TrimSpace(finalPersistAnswer) == "" {
+					finalPersistAnswer = finalAnswerContent
+				}
+				finalPersistAnswer, _ = sanitizeAndValidateAnswer(c, finalPersistAnswer)
+				if msgID := getCurrentMessageID(); msgID > 0 && strings.TrimSpace(finalPersistAnswer) != "" {
+					if err := model.DB.Model(&model.Message{}).Where("eid = ? AND id = ?", agent.Eid, msgID).Update("answer", finalPersistAnswer).Error; err != nil {
+						logger.Warnf(ctx, "【技能运行】更新主消息最终答案失败: msg_id=%d err=%v", msgID, err)
+					} else {
+						c.Set("agent_loop_final_answer_persisted", true)
+					}
+				}
 				runFinalizer.Finalize(model.AgentRunStatusCompleted, "", "")
 				return
 
@@ -3797,7 +3952,7 @@ agentLoop:
 					logger.Errorf(ctx, "RAG query failed after retries: %v", err)
 					// Add warning message for user
 					warningMsg := relay_model.Message{
-						Role:    "system",
+						Role:    "user",
 						Content: "注意：知识库查询暂时不可用，将基于已有信息回答。",
 					}
 					appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
@@ -3816,15 +3971,9 @@ agentLoop:
 					contextBuilder.WriteString(CreateRetrievalContext(sources))
 					appendRAGSourcesForCitationValidation(c, sources)
 
-					// Create system message with RAG context
-					ragContextMsg := relay_model.Message{
-						Role:    "system",
-						Content: contextBuilder.String(),
-					}
-
-					// Append assistant message (with RAG query decision) and RAG context
+					// Append the retrieval decision, then the evidence as a user context turn.
 					appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
-					chatRequest.Messages = append(chatRequest.Messages, ragContextMsg)
+					chatRequest.Messages = appendAgentRAGContext(chatRequest.Messages, contextBuilder.String())
 					logger.Infof(ctx, "RAG context injected: %d sources, context length: %d chars", len(sources), contextBuilder.Len())
 				} else {
 					// No sources found, just append the message
@@ -4576,11 +4725,15 @@ agentLoop:
 		} else {
 			// No tool calls -> Final Answer (default DONE behavior)
 			if shouldStartAgentFinalAnswerTurn(nextStreamPhase, finalAnswerOnly) {
-				appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
-				finalAnswerOnly = true
-				nextStreamPhase = agentStreamPhaseAnswering
-				logger.Infof(ctx, "【技能运行】Planning 无工具输出转入独立最终答复轮次: request_id=%s, turn=%d", requestID, turnCount)
-				continue
+				if !(deltaCollector != nil && deltaCollector.IsPassthrough() && streamComplete && isDiscussionAgentAuthorized(agent)) &&
+					!shouldFinalizeDiscussionPlanningAnswer(c, agent, nextStreamPhase, finalAnswerOnly, contentStr, streamComplete, len(message.ToolCalls) > 0) {
+					appendAgentAssistantMessage(c, chatRequest, message, reasoningStr)
+					finalAnswerOnly = true
+					nextStreamPhase = agentStreamPhaseAnswering
+					logger.Infof(ctx, "【技能运行】Planning 无工具输出需额外最终答复轮次: request_id=%s, turn=%d", requestID, turnCount)
+					continue
+				}
+				logger.Infof(ctx, "【探讨】Planning 首轮回答已有有效引用，直接交付终答: request_id=%s, turn=%d", requestID, turnCount)
 			}
 			finalAnswerContent := sanitizeFinalAssistantContent(contentStr)
 			currentRunMessages := chatRequest.Messages
@@ -4588,7 +4741,9 @@ agentLoop:
 				currentRunMessages = chatRequest.Messages[runStartMsgCount:]
 			}
 			finalAnswerContent = ensureNonEmptyFinalAssistantContent(finalAnswerContent, currentRunMessages, getCurrentSkillName())
+			finalAnswerContent, _ = sanitizeAndValidateAnswer(c, finalAnswerContent)
 			passthrough := deltaCollector != nil && deltaCollector.IsPassthrough()
+			passthroughAnswer, passthroughReasoning := "", ""
 			logger.Infof(ctx, "Agent loop finished (no tool calls), returning final answer, streamIntermediate=%v, passthrough=%v", streamIntermediate, passthrough)
 			finishOutputSync := prepareFinalOutputSync(chatRequest.Stream, func() {
 				syncFinalAIUploadFiles(sessionOutputFiles, sessionFolderPath)
@@ -4609,16 +4764,18 @@ agentLoop:
 				sendOutputFilesStep(c, ctx, messageStatus.RequestId, sessionOutputFiles, messageStatus, true)
 				if passthrough {
 					// 从 delta collector 获取 passthrough 期间跟踪的内容
-					passthroughAnswer, passthroughReasoning := "", ""
 					passthroughDeltas := []string(nil)
 					if deltaCollector != nil {
 						passthroughAnswer, passthroughReasoning = deltaCollector.GetPassthroughContent()
 						passthroughDeltas = deltaCollector.GetPassthroughContentDeltas()
 					}
-					if collectedAnswer, collectedReasoning := getCollectedStreamResponseContent(c); strings.TrimSpace(collectedAnswer) != "" {
-						passthroughAnswer = collectedAnswer
-						if strings.TrimSpace(collectedReasoning) != "" && passthroughReasoning == "" {
-							passthroughReasoning = collectedReasoning
+					passthroughAnswer, _ = sanitizeAndValidateAnswer(c, passthroughAnswer)
+					if strings.TrimSpace(passthroughAnswer) == "" {
+						if collectedAnswer, collectedReasoning := getCollectedStreamResponseContent(c); strings.TrimSpace(collectedAnswer) != "" {
+							passthroughAnswer = collectedAnswer
+							if strings.TrimSpace(collectedReasoning) != "" && passthroughReasoning == "" {
+								passthroughReasoning = collectedReasoning
+							}
 						}
 					}
 					if passthroughReasoning != "" && reasoningStr == "" {
@@ -4690,6 +4847,19 @@ agentLoop:
 				completionSource = "tool_finalize"
 			}
 			runMetrics.complete(completionSource)
+			// 最终落库兜底：确保 MySQL 主消息包含真正的终态回答 (R8 修复)
+			finalPersistAnswer := passthroughAnswer
+			if !passthrough || strings.TrimSpace(finalPersistAnswer) == "" {
+				finalPersistAnswer = finalAnswerContent
+			}
+			finalPersistAnswer, _ = sanitizeAndValidateAnswer(c, finalPersistAnswer)
+			if msgID := getCurrentMessageID(); msgID > 0 && strings.TrimSpace(finalPersistAnswer) != "" {
+				if err := model.DB.Model(&model.Message{}).Where("eid = ? AND id = ?", agent.Eid, msgID).Update("answer", finalPersistAnswer).Error; err != nil {
+					logger.Warnf(ctx, "【技能运行】更新主消息最终答案失败: msg_id=%d err=%v", msgID, err)
+				} else {
+					c.Set("agent_loop_final_answer_persisted", true)
+				}
+			}
 			runFinalizer.Finalize(model.AgentRunStatusCompleted, "", "")
 			return
 		}
@@ -4785,6 +4955,14 @@ agentLoop:
 	}
 	c.Data(200, "application/json; charset=utf-8", injectRequestID(injectOutputFilesToResponse(body, sessionOutputFiles), finalRequestID))
 	runFinalizer.Finalize(hardStopRunStatus, stopCode, stopDetail)
+}
+
+func appendAgentRAGContext(messages []relay_model.Message, context string) []relay_model.Message {
+	context = strings.TrimSpace(context)
+	if context == "" {
+		return messages
+	}
+	return append(messages, relay_model.Message{Role: "user", Content: context})
 }
 
 func prepareFinalOutputSync(stream bool, syncFn func()) func() {
@@ -4900,6 +5078,7 @@ func executeLLMRequest(c *gin.Context, chatRequest *ChatRequest, ctx context.Con
 
 		bizErr = RelayTextHelper(c, messageStatus)
 		if bizErr == nil {
+			c.Set("relay_diagnostic_error", false)
 			return nil
 		}
 
@@ -5061,6 +5240,7 @@ func writeLiveMessageCompleted(c *gin.Context, answer string) {
 }
 
 func sendStreamResponse(c *gin.Context, requestId, modelName, content, reasoningContent string, messageID int64, contentDeltas []string) {
+	content, _ = sanitizeAndValidateAnswer(c, content)
 	logger.Infof(c, "【诊断-流结束】sendStreamResponse 开始: request_id=%s message_id=%d compact=%v", requestId, messageID, config.IsSSECompactMode())
 
 	// 客户端已断开时跳过 SSE 发送，但仍要把 deltas 和最终事件持久化到 agent_run_events，

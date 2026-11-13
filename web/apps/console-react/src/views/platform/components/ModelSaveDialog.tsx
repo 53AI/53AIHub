@@ -34,8 +34,20 @@ import {
   DEFAULT_VECTOR_DIMENSION, DEBOUNCE_DELAY
 } from "@/constants/platform/model";
 import { useDebounceFn } from "@/hooks";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { clearModelCache } from "@/components/Model";
+import {
+  applyModelAPIFormat,
+  CHAT_COMPLETIONS_API_FORMAT,
+  RESPONSES_API_FORMAT,
+  supportsModelAPIFormat,
+} from "./model-api-format";
+import { getChannelModelTypeKeys } from "./channel-model-mapping";
+import {
+  buildAzureModelConfig,
+  getAzureModelCapabilities,
+  AzureModelOption,
+} from "./azure-model-config";
 
 interface ModelSaveDialogProps {
   open: boolean;
@@ -54,6 +66,11 @@ interface ExtendedModel {
   max_tokens?: number;
   context_length?: number;
   vision?: boolean;
+  enabled_tools?: string[];
+  upstream_api_format?: string;
+  supported_api_formats?: string[];
+  preview?: boolean;
+  model_version?: string;
   is_system?: boolean;
   value?: string;
   label?: string;
@@ -71,6 +88,9 @@ interface ExtendedModelCategory {
 // 多模型配置项接口
 interface ConfigModelItem {
   model_id: string;
+  base_model_id?: string;
+  upstream_api_format?: string;
+  enabled_tools?: string[];
   max_tokens?: number;
   context_length?: number;
   deep_thinking?: boolean;
@@ -87,7 +107,7 @@ interface FormData {
   other: string;
   base_url: string;
   models: string[];
-  model_type: number;
+  model_type: string | number;
   model_mapping: string;
   custom_config: {
     models: any[];
@@ -113,9 +133,13 @@ const DEFAULT_FORM: FormData = {
   custom_config: {
     models: [],
     alias_map: {},
+    voice_models: {},
   },
   config: {},
 };
+
+const isAzureV1ModelType = (modelType: string | number) =>
+  String(modelType) === MODEL_USE_TYPE.REASONING || String(modelType) === MODEL_USE_TYPE.EMBEDDING;
 
 // Normalize custom_config with validation
 const normalizeCustomConfig = (custom_config: any) => {
@@ -190,10 +214,10 @@ export function ModelSaveDialog({
   // 展开的模型 ID 集合
   const [expandedModels, setExpandedModels] = useState<Set<string>>(new Set());
 
-  // 切换模型展开状态（仅推理模型可展开）
+  // 推理模型和百炼决策模型可展开配置
   const toggleExpand = (modelId: string, modelType?: string) => {
-    // 非推理模型不允许展开
-    if (modelType && String(modelType) !== MODEL_USE_TYPE.REASONING) return;
+    if (modelType && String(modelType) !== MODEL_USE_TYPE.REASONING &&
+        !(formData.type === MODEL_VALUES.BAILIAN && String(modelType) === MODEL_USE_TYPE.DECISION)) return;
     setExpandedModels((prev) => {
       const next = new Set(prev);
       if (next.has(modelId)) {
@@ -220,9 +244,25 @@ export function ModelSaveDialog({
   // Filter visible schemas
   const visibleSchemas = useMemo(() => {
     const features = enterpriseStore.version?.features;
+    const azureBaseModel = formData.models[0];
+    const azureCatalogModels = modelList
+      .filter((item) => item.channel_type === MODEL_VALUES.AZURE)
+      .flatMap((item) => item.categories.flatMap((category) => category.models)) as AzureModelOption[];
+    const azureCapabilities = getAzureModelCapabilities(azureBaseModel, azureCatalogModels);
+    const azureConfig = formData.config as Record<string, any>;
+    const azureFormData = {
+      ...formData,
+      azureCustomBaseModel: formData.type === MODEL_VALUES.AZURE && formData.other === "v1" && !azureCapabilities.known,
+      azureWebSearchAvailable: azureCapabilities.webSearch && azureConfig.upstream_api_format === "responses",
+    };
     let schemas = modelSchemas.filter(
-      (config) => !config.showWhen || config.showWhen(formData),
+      (config) => !config.showWhen || config.showWhen(azureFormData),
     );
+    if (formData.type === MODEL_VALUES.AZURE && formData.other !== "v1") {
+      schemas = schemas.map((config) =>
+        config.prop === "models" ? { ...config, label: "Azure 部署名 / 模型名" } : config,
+      );
+    }
 
     if (!canUseKnowledgeBase && features) {
       schemas = schemas.map((config) => {
@@ -238,7 +278,7 @@ export function ModelSaveDialog({
       });
     }
     return schemas;
-  }, [modelSchemas, formData, canUseKnowledgeBase, enterpriseStore.version?.features]);
+  }, [modelSchemas, formData, canUseKnowledgeBase, enterpriseStore.version?.features, modelList]);
 
   // Has model type field
   const hasModelType = useMemo(() => {
@@ -284,10 +324,11 @@ export function ModelSaveDialog({
     setModelSchemas(schemas);
 
     const newFormData: FormData = { ...DEFAULT_FORM, type };
+    newFormData.other = channelData.other || (type === MODEL_VALUES.AZURE && !channelData.channel_id ? "v1" : "");
 
     schemas.forEach((schema) => {
       if (schema.prop === "model_type") {
-        newFormData.model_type = MODEL_USE_TYPE.REASONING;
+        newFormData.model_type = type === 1020 ? MODEL_USE_TYPE.DECISION : MODEL_USE_TYPE.REASONING;
       } else if (schema.prop === "models") {
         newFormData.models = (channelData.models || "")
           .toString()
@@ -297,7 +338,7 @@ export function ModelSaveDialog({
       } else if ("default" in schema) {
         const [parent, child] = schema.prop.split(".");
         if (child && parent === "config") {
-          newFormData.config[child] = schema.default;
+          (newFormData.config as Record<string, any>)[child] = schema.default;
         } else {
           (newFormData as any)[schema.prop] = schema.default;
         }
@@ -321,12 +362,7 @@ export function ModelSaveDialog({
     const modelsSchema = schemas.find((s) => s.prop === "models");
     const isSingleModelNow = modelsSchema ? !modelsSchema.multiple : false;
 
-    const customConfigKeys = Object.keys(
-      channelData.custom_config || {},
-    ).filter(
-      (key) =>
-        !["deep_thinking", "vision", "alias_map", "models", "voice_models"].includes(key),
-    );
+    const customConfigKeys = getChannelModelTypeKeys(channelData.custom_config || {});
     const models = customConfigKeys.map(
       (item) => buildModelValue(channelData.custom_config[item], item),
     );
@@ -351,6 +387,20 @@ export function ModelSaveDialog({
     if (isSingleModelNow) {
       // 单模型：config 为对象格式
       mergedConfig = { ...defaultConfig, ...channelData.config };
+      if (
+        channelData.channel_type === MODEL_VALUES.CUSTOM_OPENAI &&
+        String(
+          customConfigKeys.length > 0
+            ? channelData.custom_config[customConfigKeys[0]]
+            : MODEL_USE_TYPE.REASONING,
+        ) === MODEL_USE_TYPE.REASONING
+      ) {
+        mergedConfig.web_search_enabled =
+          mergedConfig.upstream_api_format === "responses" &&
+          Array.isArray(mergedConfig.enabled_tools)
+          ? mergedConfig.enabled_tools.includes("web_search")
+          : false;
+      }
     } else if (isConfigArray) {
       // 多模型新格式：config 为数组
       mergedConfig = channelData.config;
@@ -375,7 +425,18 @@ export function ModelSaveDialog({
     }
 
     // 单选模型时，直接使用第一个模型ID
-    const modelValue = isSingleModelNow
+    const isAzureV1Model =
+      channelData.channel_type === MODEL_VALUES.AZURE &&
+      channelData.other === "v1" &&
+      Boolean(mergedConfig.base_model_id);
+    if (isAzureV1Model) {
+      mergedConfig.web_search_enabled = Array.isArray(mergedConfig.enabled_tools) &&
+        mergedConfig.enabled_tools.includes("web_search");
+    }
+
+    const modelValue = isAzureV1Model
+      ? mergedConfig.base_model_id
+      : isSingleModelNow
       ? Array.isArray(channelData.models)
         ? channelData.models[0] || ""
         : channelData.models || ""
@@ -392,7 +453,12 @@ export function ModelSaveDialog({
       type: channelData.channel_type,
       base_url: channelData.base_url || "",
       key: channelData.key || "",
-      name: channelData.name || "",
+      name: isAzureV1Model
+        ? channelData.config?.deployment_name ||
+          (Array.isArray(channelData.models) ? channelData.models[0] : channelData.models) ||
+          channelData.name ||
+          ""
+        : channelData.name || "",
       other: channelData.other || "",
       models: Array.isArray(modelValue)
         ? modelValue
@@ -402,7 +468,7 @@ export function ModelSaveDialog({
       model_type:
         hasModelTypeNow && isSingleModelNow && customConfigKeys.length > 0
           ? channelData.custom_config[customConfigKeys[0]]
-          : MODEL_USE_TYPE.REASONING,
+          : channelData.channel_type === 1020 ? MODEL_USE_TYPE.DECISION : MODEL_USE_TYPE.REASONING,
       config: mergedConfig,
       custom_config: mergedCustomConfig,
       model_mapping: channelData.model_mapping || "",
@@ -443,6 +509,10 @@ export function ModelSaveDialog({
           model_count: 0,
           models: [],
         });
+      }
+
+      if (channelType === 17 && !options.some((item: { model_type: number | string }) => String(item.model_type) === MODEL_USE_TYPE.DECISION)) {
+        options.push({ icon: "", model_type: Number(MODEL_USE_TYPE.DECISION), model_type_name: "决策模型", model_count: 0, models: [] });
       }
 
       setModelOptions(options);
@@ -503,6 +573,7 @@ export function ModelSaveDialog({
     modelAddForm.setFieldsValue({
       model_id: "",
       model_name: "",
+      upstream_api_format: CHAT_COMPLETIONS_API_FORMAT,
       vision: false,
       deep_thinking: false,
       text_generation: false,
@@ -544,6 +615,7 @@ export function ModelSaveDialog({
         model_id: modelId,
         model_name: values.model_name || modelId,
         model_type: Number(modelAddData.model_type),
+        upstream_api_format: values.upstream_api_format || CHAT_COMPLETIONS_API_FORMAT,
         vision: modelAddData.vision,
         deep_thinking: modelAddData.deep_thinking,
         text_generation: modelAddData.text_generation,
@@ -564,6 +636,12 @@ export function ModelSaveDialog({
             voice_models: { ...(prev.custom_config.voice_models || {}) },
           },
         };
+        if (prev.type === MODEL_VALUES.BAILIAN && String(modelAddData.model_type) === MODEL_USE_TYPE.DECISION) {
+          next.custom_config.decision_model_endpoints = {
+            ...(prev.custom_config?.decision_model_endpoints || {}),
+            [modelId]: values.decision_endpoint,
+          };
+        }
         // 仅语音模型才将配置写入 voice_models 和 alias_map
         if (String(modelAddData.model_type) === MODEL_USE_TYPE.VOICE) {
           const voiceConfig: Record<string, any> = {
@@ -599,6 +677,10 @@ export function ModelSaveDialog({
           ),
         },
       };
+      if (prev.custom_config.decision_model_endpoints?.[model.model_id]) {
+        next.custom_config.decision_model_endpoints = { ...prev.custom_config.decision_model_endpoints };
+        delete next.custom_config.decision_model_endpoints[model.model_id];
+      }
       // 同步删除语音模型配置
       if (prev.custom_config.voice_models?.[model.model_id]) {
         next.custom_config.voice_models = { ...prev.custom_config.voice_models };
@@ -691,10 +773,12 @@ export function ModelSaveDialog({
 
       return {
         model_id: modelId,
+        upstream_api_format: customModel?.upstream_api_format ?? userConfig?.upstream_api_format ?? systemModelConfig?.upstream_api_format,
+        enabled_tools: userConfig?.enabled_tools ?? customModel?.enabled_tools ?? systemModelConfig?.enabled_tools,
         max_tokens: userConfig?.max_tokens,
         context_length: userConfig?.context_length,
         deep_thinking: userConfig?.deep_thinking ?? customModel?.deep_thinking ?? systemModelConfig?.deep_thinking ?? false,
-        vision: userConfig?.vision ?? customModel?.vision ?? systemModelConfig?.vision ?? false,
+        vision: systemModelConfig?.vision || userConfig?.vision || customModel?.vision || false,
       };
     });
 
@@ -705,6 +789,11 @@ export function ModelSaveDialog({
         custom_config[modelId] = config.model_type;
       }
     });
+
+    // Preserve per-model Bailian SystemOne endpoints when saving ordinary models.
+    if (data.type === MODEL_VALUES.BAILIAN) {
+      custom_config.decision_model_endpoints = data.custom_config?.decision_model_endpoints || {};
+    }
 
     // 构建 alias_map
     const aliasMap = models.reduce(
@@ -760,7 +849,13 @@ export function ModelSaveDialog({
     const typeMapping: Record<string, string> = {};
 
     if (isSingleModel) {
-      const modelId = Array.isArray(data.models) ? data.models[0] : data.models;
+      const selectedModelID = Array.isArray(data.models) ? data.models[0] : data.models;
+      const modelId =
+        data.type === MODEL_VALUES.AZURE &&
+        data.other === "v1" &&
+        isAzureV1ModelType(data.model_type)
+          ? data.name.trim()
+          : selectedModelID;
       if (modelId) {
         models.push(modelId);
         typeMapping[modelId] = String(data.model_type);
@@ -804,7 +899,60 @@ export function ModelSaveDialog({
     configModels?: ConfigModelItem[],
   ) => {
     // 多模型使用 configModels 数组，单模型使用 saveData.config
-    const config = isSingleModel ? saveData.config : configModels;
+    let config = isSingleModel ? saveData.config : configModels;
+    const selectedModelID = models[0];
+    if (
+      saveData.type === MODEL_VALUES.AZURE &&
+      saveData.other === "v1" &&
+      isAzureV1ModelType(saveData.model_type)
+    ) {
+      const modelConfig = saveData.config as Record<string, any>;
+      const baseModelID = modelConfig.base_model_id || saveData.models[0];
+      if (String(saveData.model_type) === MODEL_USE_TYPE.REASONING) {
+        const catalogModels = modelList
+          .filter((item) => item.channel_type === MODEL_VALUES.AZURE)
+          .flatMap((item) => item.categories.flatMap((category) => category.models)) as AzureModelOption[];
+        config = {
+          ...buildAzureModelConfig(baseModelID, selectedModelID, catalogModels, {
+            upstreamAPIFormat: modelConfig.upstream_api_format,
+            webSearchEnabled: modelConfig.web_search_enabled,
+          }),
+          max_tokens: modelConfig.max_tokens,
+          context_length: modelConfig.context_length,
+          deep_thinking: modelConfig.deep_thinking,
+        };
+      } else {
+        config = { model_id: selectedModelID, base_model_id: baseModelID };
+      }
+    }
+    const addedModel = saveData.custom_config?.models?.find(
+      (item: any) => item.model_id === selectedModelID,
+    );
+    if (saveData.type !== MODEL_VALUES.AZURE && selectedModelID && addedModel?.upstream_api_format) {
+      config = applyModelAPIFormat(
+        config as ConfigModelItem[] | Record<string, any>,
+        selectedModelID,
+        addedModel.upstream_api_format,
+      );
+    }
+    if (isSingleModel && saveData.type === MODEL_VALUES.CUSTOM_OPENAI && config && !Array.isArray(config)) {
+      const { web_search_enabled, ...modelConfig } = config;
+      if (String(saveData.model_type) === MODEL_USE_TYPE.REASONING) {
+        const enabledTools = Array.isArray(modelConfig.enabled_tools)
+          ? modelConfig.enabled_tools.filter((tool: string) => tool !== "web_search")
+          : ["function"];
+        config = {
+          ...modelConfig,
+          enabled_tools: web_search_enabled
+            ? [...enabledTools, "web_search"]
+            : enabledTools,
+        };
+      } else {
+        delete modelConfig.enabled_tools;
+        delete modelConfig.upstream_api_format;
+        config = modelConfig;
+      }
+    }
 
     return {
       channel_id: saveData.channel_id,
@@ -888,8 +1036,17 @@ export function ModelSaveDialog({
       if (child && parent === "config") {
         // 单模型时，config 是对象
         if (!Array.isArray(prev.config)) {
-          const newConfig = { ...prev.config, [child]: value };
+          const newConfig = {
+            ...prev.config,
+            [child]: value,
+            ...(child === "upstream_api_format" && value !== "responses"
+              ? { web_search_enabled: false }
+              : {}),
+          };
           form.setFieldValue([parent, child], value);
+          if (child === "upstream_api_format" && value !== "responses") {
+            form.setFieldValue([parent, "web_search_enabled"], false);
+          }
           return {
             ...prev,
             config: newConfig,
@@ -922,11 +1079,19 @@ export function ModelSaveDialog({
     const model = singleModelOptions.find((item) => item.model_id === value);
     const newVision = model?.vision || false;
     const newDeepThinking = model?.deep_thinking || false;
+    const isAzureV1 = formData.type === MODEL_VALUES.AZURE && formData.other === "v1" && isAzureV1ModelType(formData.model_type);
     setFormData((prev) => ({
       ...prev,
       models: [value],
       config: {
         ...prev.config,
+        ...(isAzureV1
+          ? {
+              base_model_id: value,
+              upstream_api_format: model?.upstream_api_format || CHAT_COMPLETIONS_API_FORMAT,
+              web_search_enabled: false,
+            }
+          : {}),
         vision: newVision,
         deep_thinking: newDeepThinking,
       },
@@ -936,6 +1101,11 @@ export function ModelSaveDialog({
     if (!Array.isArray(formData.config)) {
       form.setFieldValue(["config", "vision"], newVision);
       form.setFieldValue(["config", "deep_thinking"], newDeepThinking);
+      if (isAzureV1) {
+        form.setFieldValue(["config", "base_model_id"], value);
+        form.setFieldValue(["config", "upstream_api_format"], model?.upstream_api_format || CHAT_COMPLETIONS_API_FORMAT);
+        form.setFieldValue(["config", "web_search_enabled"], false);
+      }
     }
   };
 
@@ -1140,7 +1310,7 @@ export function ModelSaveDialog({
       onChange={(e) => handleFieldChange(config.prop, e.target.value)}
     >
       {config.options?.map((opt) => (
-        <Radio key={opt.value} value={opt.value}>
+        <Radio key={String(opt.value)} value={opt.value}>
           {opt.label}
         </Radio>
       ))}
@@ -1168,11 +1338,25 @@ export function ModelSaveDialog({
           config.allowCreate
             ? (searchValue) => {
                 if (searchValue) {
+                  const isAzureV1 = formData.type === MODEL_VALUES.AZURE && formData.other === "v1" && isAzureV1ModelType(formData.model_type);
                   setFormData((prev) => ({
                     ...prev,
                     models: [searchValue],
+                    config: isAzureV1
+                      ? {
+                          ...prev.config,
+                          base_model_id: searchValue,
+                          upstream_api_format: CHAT_COMPLETIONS_API_FORMAT,
+                          web_search_enabled: false,
+                        }
+                      : prev.config,
                   }));
                   form.setFieldValue("models", searchValue);
+                  if (isAzureV1) {
+                    form.setFieldValue(["config", "base_model_id"], searchValue);
+                    form.setFieldValue(["config", "upstream_api_format"], CHAT_COMPLETIONS_API_FORMAT);
+                    form.setFieldValue(["config", "web_search_enabled"], false);
+                  }
                 }
               }
             : undefined
@@ -1191,7 +1375,7 @@ export function ModelSaveDialog({
         )}
         {singleModelOptions.map((opt) => (
           <Select.Option key={opt.model_id} value={opt.model_id}>
-            {opt.model_name}
+            {opt.model_name}{opt.preview ? "（预览）" : ""}
           </Select.Option>
         ))}
       </Select>
@@ -1224,8 +1408,9 @@ export function ModelSaveDialog({
             {opt.models.map((item) => (
               <div key={item.value} className="flex flex-col">
                 <div className="h-8 flex items-center gap-1.5">
-                  {/* 只有推理模型才显示展开/折叠图标 */}
-                  {String(item.model_type) === MODEL_USE_TYPE.REASONING && (
+                  {/* 推理模型和百炼决策模型支持展开配置 */}
+                  {(String(item.model_type) === MODEL_USE_TYPE.REASONING ||
+                    (formData.type === MODEL_VALUES.BAILIAN && String(item.model_type) === MODEL_USE_TYPE.DECISION)) && (
                     <SvgIcon
                       name={expandedModels.has(item.model_id) ? "down" : "right"}
                       width={14}
@@ -1234,7 +1419,7 @@ export function ModelSaveDialog({
                     />
                   )}
                   {item.icon && (
-                    <img
+                    <SafeImage
                       src={item.icon}
                       className="w-5 h-5 object-contain flex-none"
                       alt=""
@@ -1281,6 +1466,24 @@ export function ModelSaveDialog({
                 </div>
                 {expandedModels.has(item.model_id) && (
                   <div className="px-4 bg-[#F7F8FA] rounded-xl ml-6 mt-2 py-3 flex flex-col gap-3">
+                    {formData.type === MODEL_VALUES.BAILIAN && String(item.model_type) === MODEL_USE_TYPE.DECISION && (
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs text-gray-500">SystemOne 部署地址</span>
+                        <Input
+                          value={formData.custom_config?.decision_model_endpoints?.[item.model_id] || ""}
+                          onChange={(event) => setFormData((prev) => ({
+                            ...prev,
+                            custom_config: {
+                              ...prev.custom_config,
+                              decision_model_endpoints: {
+                                ...(prev.custom_config?.decision_model_endpoints || {}),
+                                [item.model_id]: event.target.value,
+                              },
+                            },
+                          }))}
+                        />
+                      </div>
+                    )}
                     {/* <div className="flex items-center gap-3">
                       <span className="text-xs text-gray-400 w-20 flex-none">
                         {t("module.platform_model_max_tokens")}
@@ -1327,10 +1530,15 @@ export function ModelSaveDialog({
       placeholder={config.placeholder || ""}
       allowClear={config.allowCreate}
       showSearch={config.allowCreate}
+      disabled={
+        config.prop === "config.web_search_enabled" &&
+        (Array.isArray(formData.config) ||
+          formData.config.upstream_api_format !== "responses")
+      }
       onChange={(value) => handleFieldChange(config.prop, value)}
     >
       {config.options?.map((opt) => (
-        <Select.Option key={opt.value} value={opt.value}>
+        <Select.Option key={String(opt.value)} value={opt.value}>
           {opt.label}
         </Select.Option>
       ))}
@@ -1460,6 +1668,25 @@ export function ModelSaveDialog({
         ]}
       >
         <Form form={modelAddForm} layout="vertical">
+          {supportsModelAPIFormat(formData.type, String(modelAddData.model_type), formData.base_url) && (
+            <Form.Item
+              label="上游 API 类型"
+              name="upstream_api_format"
+              initialValue={CHAT_COMPLETIONS_API_FORMAT}
+            >
+              <Select
+                options={[
+                  { label: "Chat Completions API (/chat/completions)", value: CHAT_COMPLETIONS_API_FORMAT },
+                  { label: "Responses API (/responses)", value: RESPONSES_API_FORMAT },
+                ]}
+              />
+            </Form.Item>
+          )}
+          {formData.type === MODEL_VALUES.BAILIAN && String(modelAddData.model_type) === MODEL_USE_TYPE.DECISION && (
+            <Form.Item label="SystemOne 部署地址" name="decision_endpoint" rules={[{ required: true, type: "url" }]}>
+              <Input placeholder="https://{workspace}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/systemone" />
+            </Form.Item>
+          )}
           {modelAddData.model_type === MODEL_USE_TYPE.VOICE && (
             <Form.Item
               label="Workspace ID"

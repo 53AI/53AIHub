@@ -43,6 +43,10 @@ const (
 	recordingCognitionStatusExpired    = "expired"
 	recordingCognitionStatusRejected   = "rejected"
 
+	// 列表排序字段（sort_by 白名单）
+	recordingCognitionSortUpdatedTime = "updated_time"
+	recordingCognitionSortCreatedTime = "created_time"
+
 	recordingCognitionCandidateStatusPending   = "candidate"
 	recordingCognitionCandidateStatusConfirmed = "confirmed"
 	recordingCognitionCandidateStatusRejected  = "rejected"
@@ -315,10 +319,34 @@ func (s *RecordingCognitionService) ensureOwnerAccess(ctx context.Context, userI
 	return err
 }
 
-func (s *RecordingCognitionService) List(ctx context.Context, userID int64, status, layer, cognitionType string, domainID int64, sourceTypes []string, keyword string, limit, offset int) (*RecordingCognitionList, error) {
+// RecordingCognitionFilter 认知列表多维查询条件。
+//
+// 用结构体而不是位置参数：本方法调用点分散在 controller / 联想上下文
+// 工具 / 多个测试里，位置参数每加一个筛选维度都要改所有调用点，且相邻
+// 的 string / int64 / []string 顺序传错也能编译通过。与
+// RecordingMemoryEntityFilter 保持同一形态。
+type RecordingCognitionFilter struct {
+	Status        string   // 认知状态：confirmed/conflicted/expired/rejected
+	Layer         string   // 认知层：core/situational
+	CognitionType string   // 认知类型：principle/priority/...
+	DomainID      int64    // 领域认知 ID
+	SourceTypes   []string // 来源类型（多值任一命中）
+	Keyword       string   // 标题或认知表述模糊搜索
+	SortBy        string   // 排序字段：created_time / updated_time（白名单，缺省 updated_time）
+	Limit         int
+	Offset        int
+}
+
+func (s *RecordingCognitionService) List(ctx context.Context, userID int64, filter RecordingCognitionFilter) (*RecordingCognitionList, error) {
 	if err := s.ensureOwnerAccess(ctx, userID, false); err != nil {
 		return nil, err
 	}
+	status, layer, cognitionType := filter.Status, filter.Layer, filter.CognitionType
+	domainID := filter.DomainID
+	sourceTypes := filter.SourceTypes
+	keyword := filter.Keyword
+	sortBy := filter.SortBy
+	limit, offset := filter.Limit, filter.Offset
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -365,7 +393,24 @@ func (s *RecordingCognitionService) List(ctx context.Context, userID int64, stat
 		return nil, err
 	}
 	var rows []model.RecordingCognition
-	if err := query.Order("status asc, updated_time desc, id desc").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+	// 排序：白名单内切换（created_time / updated_time），缺省与历史行为一致；
+	// 非法值回退缺省不报错（兼容老客户端）。参数在这里再归一化一次 ——
+	// 本方法是包内公共方法，不能只依赖 controller 的 TrimSpace，否则
+	// " Created_Time" 之类会静默回退、用户选了排序却看不到变化。
+	//
+	// status asc 前缀在两种排序下都保留：列表按状态分组是既有语义，
+	// 显式选「创建时间」只切换组内的次生时间字段（App 列表恒带
+	// status=confirmed 单值，对它是 no-op；不传 status 的调用方仍按状态
+	// 分组）。末尾固定补 id desc —— 批量导入的数据时间戳大量相同，只按
+	// 时间排序时同值内部顺序不保证稳定，offset 翻页会重复 / 漏项。
+	order := "status asc, updated_time desc, id desc"
+	switch strings.ToLower(strings.TrimSpace(sortBy)) {
+	case recordingCognitionSortCreatedTime:
+		order = "status asc, created_time desc, id desc"
+	case recordingCognitionSortUpdatedTime, "":
+		// 缺省，保持历史行为
+	}
+	if err := query.Order(order).Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 

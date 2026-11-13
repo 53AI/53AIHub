@@ -318,8 +318,14 @@ func GetWikiPagesByIDs(eid int64, pageIDs []int64) ([]WikiPage, error) {
 		return nil, nil
 	}
 	var pages []WikiPage
-	err := DB.Where("eid = ? AND id IN ? AND status = 'active'", eid, pageIDs).Find(&pages).Error
-	if err != nil {
+	if err := forEachInt64Batch(pageIDs, func(ids []int64) error {
+		var batch []WikiPage
+		if err := DB.Where("eid = ? AND id IN ? AND status = 'active'", eid, ids).Find(&batch).Error; err != nil {
+			return err
+		}
+		pages = append(pages, batch...)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	return pages, nil
@@ -333,10 +339,17 @@ func GetWikiPageSourceFileIDs(eid int64, pageIDs []int64, ctxs ...context.Contex
 		return result, nil
 	}
 	var sources []WikiPageSource
-	if err := dbWithOptionalCtx(ctxs...).
-		Select("page_id, source_file_id").
-		Where("eid = ? AND page_id IN ? AND source_file_id > 0", eid, pageIDs).
-		Find(&sources).Error; err != nil {
+	if err := forEachInt64Batch(pageIDs, func(ids []int64) error {
+		var batch []WikiPageSource
+		if err := dbWithOptionalCtx(ctxs...).
+			Select("page_id, source_file_id").
+			Where("eid = ? AND page_id IN ? AND source_file_id > 0", eid, ids).
+			Find(&batch).Error; err != nil {
+			return err
+		}
+		sources = append(sources, batch...)
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	seen := make(map[int64]map[int64]struct{})

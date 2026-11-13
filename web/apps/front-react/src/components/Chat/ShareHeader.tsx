@@ -9,7 +9,8 @@ interface ShareHeaderProps {
   customClass?: string
   onSelectAll: () => void
   onCreateShare: () => void
-  onOpenShare: () => void
+  /** 退出分享模式（点右上角 X） */
+  onCancel: () => void
 }
 
 export function ShareHeader({
@@ -19,7 +20,7 @@ export function ShareHeader({
   customClass = '',
   onSelectAll,
   onCreateShare,
-  onOpenShare,
+  onCancel,
 }: ShareHeaderProps) {
   return (
     <header
@@ -46,7 +47,7 @@ export function ShareHeader({
           )}
           <div
             className="size-8 flex items-center justify-center rounded-md bg-[#F5F5F7] cursor-pointer hover:bg-[#E1E2E3]"
-            onClick={() => onOpenShare()}
+            onClick={onCancel}
           >
             <CloseOutlined />
           </div>

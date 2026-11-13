@@ -32,6 +32,9 @@ func (s *WikiIngestV2Service) upsertSummaryPage(ctx context.Context, eid, librar
 	if update == nil {
 		return false, nil
 	}
+	if firstNonEmpty(update.SummaryBody, update.Content, update.SummaryLine, update.Summary) == "" {
+		return false, fmt.Errorf("wiki summary page has no content: %s", slug)
+	}
 
 	changed := false
 	err := s.db.Transaction(func(tx *gorm.DB) error {
@@ -205,6 +208,7 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 	updateAliases := collectWikiUpdateAliasesList(additions, retracts)
 	pageAliases := strings.Join(updateAliases, ", ")
 
+	language := firstNonEmpty(additionsLanguage(additions), retractsLanguage(retracts), "中文")
 	prompt, err := s.prompts.RenderPageModifyPrompt(WikiPageModifyInput{
 		PageSlug:         slug,
 		PageTitle:        pageTitle,
@@ -215,7 +219,7 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 		DeletedContent:   deletedContent,
 		RemainingSources: remainingSources,
 		AvailableSlugs:   availableLinks,
-		Language:         firstNonEmpty(additionsLanguage(additions), retractsLanguage(retracts), "中文"),
+		Language:         language,
 		HasAdditions:     len(additions) > 0,
 		HasRetractions:   len(retracts) > 0,
 	})
@@ -234,7 +238,13 @@ func (s *WikiIngestV2Service) upsertCompiledPage(ctx context.Context, eid, libra
 		compiled = s.checkpoint.compiledResult(slug)
 	}
 	if compiled == "" {
-		compiled, err = s.llm.Generate(ctx, prompt)
+		// 契约校验：page_modify 此前是唯一一条零防线的生成路径——LLM 返回什么就
+		// 落库什么。这里按提示词自己承诺的契约校验：首行必须是 SUMMARY、必须用
+		// 指定语言、不能是提示词复述。三条都能在service/wiki_prompt_templates.go
+		// 的 WikiPageModifyPrompt 里逐条指出出处。
+		//
+		// 失败时不落库：保持页面原内容不变，由外层 reduceSlugUpdatesWithRetry 重试。
+		compiled, err = s.generateCompiledPageContent(ctx, prompt, additions, language)
 		if err != nil {
 			return false, err
 		}

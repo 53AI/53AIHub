@@ -12,7 +12,8 @@ import { buildUrl } from "@/utils/router";
 import { t } from "@/locales";
 import "./share.css";
 
-type From = "agent" | "index" | "file";
+type From = "agent" | "index" | "file" | "record";
+import { SafeImage, SvgIcon } from "@km/shared-components-react";
 
 interface CurrentFile {
   file_icon: string;
@@ -48,6 +49,8 @@ export function ShareChatView() {
   const shareId = searchParams.get("share_id");
   const from = (searchParams.get("from") as From) || "agent";
   const infoId = searchParams.get("info");
+  /** file / record 都是「文档类」对话：带指定文件头 */
+  const isDocLike = from === "file" || from === "record";
 
   const handleSourceReferenceHover = useCallback(
     (data: any, message: any) => {
@@ -76,6 +79,9 @@ export function ShareChatView() {
       );
     } else if (from === "index") {
       navigate("/index");
+    } else if (from === "record") {
+      // 安心录分享：统一回安心录首页（路由会自行打开默认录音预览）
+      window.open(buildUrl("/recording"), "_blank");
     } else if (from === "file") {
       const file = messageList?.[0]?.rag_stats?.file_quotations?.[0];
       if (file) {
@@ -92,12 +98,13 @@ export function ShareChatView() {
   }, [navigate]);
 
   const handleClickFile = useCallback(() => {
-    if (currentFile.file_id) {
-      const url = buildUrl(
+    if (!currentFile.file_id) return;
+    window.open(
+      buildUrl(
         `/library/${currentFile.library_id}/file/${currentFile.file_id}?openAi=true`
-      );
-      window.open(url, "_blank");
-    }
+      ),
+      "_blank"
+    );
   }, [currentFile]);
 
   useEffect(() => {
@@ -218,13 +225,17 @@ export function ShareChatView() {
           }),
         });
 
-        // 处理文件信息
+        // 处理文件信息（仅知识库文档分享展示文件卡片；录音分享不展示且不可跳转）
+        // 分享数据里的 file_name 不在接口类型声明中，但 file / record 的标题都需要它
+        const sharedFileName =
+          (res.messages?.[0] as { file_name?: string } | undefined)?.file_name || "";
         if (from === "file") {
           const fileQuotation = processedMessages?.[0]?.rag_stats?.file_quotations?.[0] || {};
-          const fileNameInfo = formatFileInfo(res.messages?.[0]?.file_name || "");
+          const fileNameInfo = formatFileInfo(sharedFileName);
           setCurrentFile({
             ...fileQuotation,
             file_name: fileNameInfo.fname || "",
+            file_icon: fileQuotation.file_icon || fileNameInfo.icon || "",
           });
         }
 
@@ -251,8 +262,15 @@ export function ShareChatView() {
             }
             break;
           case "file":
-            const fileName = formatFileInfo(res.messages?.[0]?.file_name || "").fname || "--";
+            const fileName = formatFileInfo(sharedFileName).fname || "--";
             computedTitle = `${res.user?.nickname || ""}与文档《${fileName}》的对话`;
+            break;
+          case "record":
+            const recordName = formatFileInfo(sharedFileName).fname || "--";
+            computedTitle = t("share.conversation_with_recording", {
+              nickname: res.user?.nickname || "",
+              name: recordName,
+            });
             break;
         }
 
@@ -301,7 +319,7 @@ export function ShareChatView() {
       <div className="w-11/12 lg:w-[1200px] h-[90%] overflow-hidden rounded-3xl m-auto bg-white flex flex-col">
         {/* Header */}
         <div className="flex-none h-[110px] flex items-center gap-2 max-md:h-20 border-b md:px-10 px-3">
-          <img
+          <SafeImage
             src={user?.avatar || "/images/default_avatar.png"}
             title={user?.nickname}
             className="w-14 h-14 rounded-full"
@@ -337,7 +355,7 @@ export function ShareChatView() {
                     "--hubx-color-bg-message": "#EBF1FF",
                   }}
                   header={
-                    from === "file" ? (
+                    isDocLike ? (
                       <SpecifiedFiles
                         files={message.specified_files}
                         content={message.specified_content}
@@ -373,6 +391,7 @@ export function ShareChatView() {
                             files={message.rag_stats.file_quotations}
                           />
                         )}
+                      {/* 录音文件在分享页不可跳转（无对应可访问页面），record 不展示文件卡片 */}
                       {from === "file" &&
                         index === messageList.length - 1 && (
                           <div
@@ -381,7 +400,7 @@ export function ShareChatView() {
                           >
                             <div className="text-sm mb-2">知识文档</div>
                             <div className="h-[88px] p-4 bg-[#F5F5F5] rounded-xl flex items-center">
-                              <img
+                              <SafeImage
                                 src={currentFile?.file_icon}
                                 alt=""
                                 className="size-12 md:size-14 rounded-md mr-3"
@@ -412,14 +431,14 @@ export function ShareChatView() {
         {/* Footer */}
         <div className="flex-none h-[80px] md:h-[122px] flex items-center justify-center relative">
           <div
-            className={`h-10 flex items-center gap-2 bg-[#2563EB] rounded-xl px-3 cursor-pointer hover:bg-[#1D5ECD] text-white ${
+            className={`min-h-10 flex items-center gap-2 bg-[#2563EB] rounded-xl px-3 py-2 cursor-pointer hover:bg-[#1D5ECD] text-white ${
               from === "agent" ? "" : "w-11/12 md:w-[400px]"
             }`}
             onClick={handleOpenAgent}
           >
             {from === "agent" ? (
               <>
-                <img
+                <SafeImage
                   src={agent?.logo}
                   title={agent?.name}
                   className="h-6 rounded-full"
@@ -431,11 +450,21 @@ export function ShareChatView() {
               </>
             ) : (
               <>
-                <span className="text-2xl">💬</span>
-                <div className="flex-1 flex flex-col justify-between">
-                  <div>去知识库</div>
-                  <div className="text-sm text-[#FCFDFF]">
-                    知识库+联网搜索，解答更精准
+                {from === "record" ? (
+                  <SvgIcon name="voice-one" size={20} color="#fff" />
+                ) : (
+                  <SvgIcon name="doc-search" size={20} color="#fff" />
+                )}
+                <div className="flex-1 flex flex-col gap-0.5 min-w-0">
+                  <div className="text-sm leading-5 truncate">
+                    {from === "record"
+                      ? t("share.go_recording")
+                      : "去知识库"}
+                  </div>
+                  <div className="text-xs leading-4 text-[#FCFDFF] truncate">
+                    {from === "record"
+                      ? t("share.go_recording_desc")
+                      : "知识库+联网搜索，解答更精准"}
                   </div>
                 </div>
                 <ArrowRightOutlined style={{ fontSize: 20 }} />

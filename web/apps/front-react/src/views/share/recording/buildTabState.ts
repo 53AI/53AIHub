@@ -5,14 +5,14 @@
  * - snapshot 分支（ShareRecordingView）从 RecordingSharedContent 一把梭，
  *   后端已经在快照里预清洗了 insight_page / transcription 字段
  * - live 分支（ShareRecordingLiveView）走实时 5 个接口，
- *   前端要从 RawFileItem + FileParseStatus + FileTranscriptionResponse + RecordingFileSummary[] + RecordingFileInsightPage 重新组装
+ *   前端要从 RawFileItem + FileParseStatus + TranscriptionExportResponse + RecordingFileSummary[] + RecordingFileInsightPage 重新组装
  * 两者最终都收敛成同一个 TabState，渲染层零感知。
  */
-import type { RecordingSharedContent, RecordingFileSummary, FileTranscriptionResponse, FileParseStatus, RecordingFileInsightPage } from '@/api/modules/recording/types'
+import type { RecordingSharedContent, RecordingFileSummary, TranscriptionExportResponse, FileParseStatus, RecordingFileInsightPage } from '@/api/modules/recording/types'
 import type { RawFileItem } from '@/api/modules/files/types'
 import type { RecordingShareSelection } from '@/views/recording/selection/shareSelection'
-import { buildLibraryPreviewUrl } from '@/utils/preview'
-import { parseTranscriptionWithUrl, safeParsePageJson, type TranscriptItem } from '@/views/recording/parsers/recordingParsers'
+import { buildLibraryPreviewUrl, buildPreviewUrl } from '@/utils/preview'
+import { parseTranscriptLines, parseTranscriptionWithUrl, safeParsePageJson, type TranscriptItem } from '@/views/recording/parsers/recordingParsers'
 
 /** 渲染层消费的 tab state —— 两分支共同产物。 */
 export interface TabState {
@@ -63,12 +63,17 @@ export interface SnapshotTabInputs {
 /** live 分支入参 —— 前端从 5 个接口分别拉取后组装 */
 export interface LiveTabInputs {
   kind: 'live'
-  /** 来自 filesApi.get，承载 file_id + file_name（或 path） */
+  /** 来自 filesApi.get，承载 file_id + file_name（或 path）+ upload_file.preview_key（音频地址） */
   file: RawFileItem
   /** 来自 recordingApi.getParseStatus —— 当前实时分支未在 TabState 中使用，保留便于以后按状态禁用 tab */
   parseStatus: FileParseStatus | null
-  /** 来自 recordingApi.getTranscription —— 可能为 null（接口失败 / 无数据） */
-  transcription: FileTranscriptionResponse | null
+  /**
+   * 来自 recordingApi.exportTranscription（/transcription/export，后端预渲染 Markdown）
+   * —— 可能为 null（接口失败 / 无数据）。
+   * 不用 /transcription 原始接口：它偶尔「状态 normal 但内容空」，
+   * 导出接口是稳定产物（与主录音页 useFileParse 同源同口径）。
+   */
+  transcriptionExport: TranscriptionExportResponse | null
   /** 来自 recordingApi.getFileSummaries —— 可能为 [] */
   summaries: RecordingFileSummary[]
   /** 来自 recordingApi.getInsightPage —— 可能为 null */
@@ -125,8 +130,10 @@ function buildFromSnapshot(snapshot: RecordingSharedContent, selection: Recordin
  * 实时 5 接口产物 → tab 状态。
  *
  * 与 snapshot 分支的差异：
- * - transcription 是对象（{ content: string }），不是已渲染的 Markdown 字符串；
- *   用 parseTranscriptionWithUrl 一次拿齐 items + file_url
+ * - transcriptionExport 是 /transcription/export 的预渲染 Markdown
+ *   （`[hh:mm:ss] 说话人: 文本`），用 parseTranscriptLines 还原条目；
+ *   不含音频地址，音频从 file.upload_file.preview_key 还原匿名 /api/preview/{key}
+ *   （对齐 snapshot 分支设计；不再依赖语音 JSON 根级 file_url）
  * - insightPage 是 RecordingFileInsightPage 对象（含 page_json string），不是已渲染字符串；
  *   用 safeParsePageJson 解析成 { _markdown } / Block 结构
  * - file_name 来自 RawFileItem.path（拆出最后一段）
@@ -135,19 +142,20 @@ function buildFromSnapshot(snapshot: RecordingSharedContent, selection: Recordin
  * 渲染层按 has* 字段决定 tab 是否展示，tab 自身在 content 缺失时各自走空态。
  */
 function buildFromLive(inputs: LiveTabInputs): TabState {
-  const { file, transcription, summaries, insightPage, selection } = inputs
+  const { file, transcriptionExport, summaries, insightPage, selection } = inputs
   const allSummaries = summaries ?? []
   const meetingMinutes = allSummaries.find((s) => s.template_id === 0 && s.summary_content)
   const allTemplates = allSummaries.filter((s) => s.template_id !== 0 && s.summary_content)
 
-  // 用 parseTranscriptionWithUrl 一次拿齐 items + file_url，避免两份解析走偏
-  const { items: transcriptItems, fileUrl } = transcription
-    ? parseTranscriptionWithUrl(transcription.content)
-    : { items: [] as TranscriptItem[], fileUrl: undefined }
+  // 转写条目：/transcription/export 预渲染 Markdown，与主录音页解析口径一致
+  const transcriptItems = parseTranscriptLines(transcriptionExport?.markdown ?? '')
 
-  // audio 地址：优先转写 JSON 根级 file_url（OSS 临时签名 URL），缺省时退回 /api/preview/{key}
+  // audio 地址：优先 upload_file.preview_key 还原匿名 /api/preview/{key}（<audio> 无法带
+  // Authorization，必须走匿名路径）；preview_key 缺失时退回 /api/files/{id}/preview 兕底
   const fileName = extractFileNameFromPath(file.path)
-  const transcriptFileUrl = fileUrl ?? buildLibraryPreviewUrl(String(file.id), fileName || 'audio.mp3')
+  const transcriptFileUrl =
+    buildPreviewUrl(file.upload_file?.preview_key) ??
+    buildLibraryPreviewUrl(String(file.id), fileName || 'audio.mp3')
 
   const parsedInsightPage = insightPage ? safeParsePageJson(insightPage.page_json) : null
 

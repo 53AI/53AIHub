@@ -1084,11 +1084,45 @@ func (s *FileNameSearchService) buildFileNameQuery(req *FileNameSearchRequest) m
 		}
 	} else {
 		// 默认全文检索：标题/文件名和简介优先，正文作为低权重兜底。
+		// 文件名前缀：filename_analyzer 会把 2026083113947 这类纯数字文件名切成单个整 token，
+		// phrase 查 2026 永远命中不了该 token 的前缀，故补 prefix 子句做词项前缀召回。
+		// prefix 值不分词，索引侧已小写，这里必须 ToLower(TrimSpace(q))：
+		// 带前后空格的查询（如 "2026 "）不做 trim 会静默失配，只剩两条无用子句。
+		prefixValue := strings.ToLower(strings.TrimSpace(req.Query))
+		should := []map[string]interface{}{
+			{
+				"multi_match": map[string]interface{}{
+					"query":  req.Query,
+					"fields": []string{"base_name^6", "file_name^5", "summary^3", "content^1"},
+					"type":   "phrase",
+				},
+			},
+		}
+		// 纯空白查询没有可用的前缀，空 prefix 会退化成匹配所有词项。
+		if prefixValue != "" {
+			should = append(should,
+				map[string]interface{}{
+					"prefix": map[string]interface{}{
+						"base_name": map[string]interface{}{
+							"value": prefixValue,
+							"boost": 1.0,
+						},
+					},
+				},
+				map[string]interface{}{
+					"prefix": map[string]interface{}{
+						"file_name": map[string]interface{}{
+							"value": prefixValue,
+							"boost": 1.0,
+						},
+					},
+				},
+			)
+		}
 		fileNameQuery = map[string]interface{}{
-			"multi_match": map[string]interface{}{
-				"query":  req.Query,
-				"fields": []string{"base_name^6", "file_name^5", "summary^3", "content^1"},
-				"type":   "phrase",
+			"bool": map[string]interface{}{
+				"should":               should,
+				"minimum_should_match": 1,
 			},
 		}
 	}

@@ -13,6 +13,7 @@ interface RecordingFileListProps {
   onCommand: (item: RecordingFileItemUI, cmd: string) => void
   hasMore: boolean
   onLoadMore: () => void
+  /** 分类标签（全部 + 场景字典），用于行徽标显示场景名 */
   categoryTags?: { key: string; label: string }[]
 }
 
@@ -66,21 +67,8 @@ export function RecordingFileList({
   return (
     <div className="px-3 flex-1 overflow-y-auto">
       {list.map((item) => {
-        const moveToChildren: MenuItem[] = (categoryTags ?? [])
-          .filter((tag) => tag.key !== '0')
-          .map((tag) => ({
-            key: `move-to:${tag.key}`,
-            label: tag.label,
-          }))
         const dropdownItems: MenuItem[] = [
           { key: 'rename', icon: 'edit', label: t('action.rename') },
-          {
-            key: 'move-to',
-            icon: 'move',
-            label: t('action.move_to'),
-            children: moveToChildren,
-            visible: moveToChildren.length > 0,
-          },
           { key: 'divider', divided: true },
           { key: 'delete', icon: 'delete', label: t('action.delete'), danger: true },
         ]
@@ -102,9 +90,13 @@ export function RecordingFileList({
               </div>
             )}
             <div className="mt-1 flex justify-between items-center gap-2">
-              <span className="text-[11px] px-1 rounded text-secondary flex-center gap-1">
-                <SvgIcon name="folder-minus" size={14} /> { item.groupId ? categoryTags?.find(t => t.key === String(item.groupId ?? 0))?.label || item.category :'未分类'}
-              </span>
+              {/* 场景徽标：AI 解析完成前无 scene，不渲染 */}
+              {item.scene && (
+                <span className="text-[11px] px-1 rounded text-secondary flex-center gap-1">
+                  <SvgIcon name="tag-one" size={14} />
+                  {categoryTags?.find((tag) => tag.key === item.scene)?.label ?? item.scene}
+                </span>
+              )}
               <span className="text-[11px] text-secondary">{item.createdTime}</span>
             </div>
             <div

@@ -4,7 +4,7 @@ import type {
 } from '@/api/modules/recording/types';
 
 export type DrawerScope =
-  | { kind: 'core'; key: RecordingCognitionCanonicalType; label: string; hint: string }
+  | { kind: 'core'; key: RecordingCognitionCanonicalType | 'all'; label: string; hint: string }
   | { kind: 'situational'; code: string; id: string; label: string; hint: string }
 
 export type EditorDraft = {

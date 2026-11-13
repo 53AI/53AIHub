@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Avatar, Button, Input, Modal, message } from 'antd'
+import { Avatar, Button, Input, Modal, Spin, message } from 'antd'
 import { RightOutlined, CloseOutlined, WarningFilled } from '@ant-design/icons'
 import { SafeImage } from '@km/shared-components-react'
 import { useUserStore } from '@/stores/modules/user'
@@ -38,6 +38,7 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
     nickname: '',
     avatar: ''
   })
+  const [avatarUploading, setAvatarUploading] = useState(false)
   const [qrcodeRender, setQrcodeRender] = useState(true)
   const originHistoryRef = useRef(0)
 
@@ -69,6 +70,7 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
   }
 
   const handleChangeAvatar = () => {
+    if (avatarUploading) return
     cropperRef.current?.uploadFile()
   }
 
@@ -252,7 +254,7 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
         title={t('action.edit') + t('profile.info')}
         onCancel={() => setDialogs(prev => ({ ...prev, profile: false }))}
         onOk={handleSaveProfile}
-        okButtonProps={{ disabled: !profileForm.nickname.trim() }}
+        okButtonProps={{ disabled: !profileForm.nickname.trim(), loading: avatarUploading }}
       >
         <div className="mt-4">
           <div className="w-[73px] text-regular text-opacity-80">{t('form.avatar')}</div>
@@ -260,10 +262,14 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
             className="mt-3 relative rounded-full w-[60px] h-[60px] overflow-hidden cursor-pointer"
             onClick={handleChangeAvatar}
           >
-            <Avatar size={60} src={profileForm.avatar} />
-            <div className="absolute bottom-0 left-0 right-0 h-5 flex justify-center items-center bg-black/60 text-white/80 text-xs">
-              {t('form.change')}
-            </div>
+            <Spin spinning={avatarUploading}>
+              <Avatar size={60} src={profileForm.avatar} />
+            </Spin>
+            {!avatarUploading && (
+              <div className="absolute bottom-0 left-0 right-0 h-5 flex justify-center items-center bg-black/60 text-white/80 text-xs">
+                {t('form.change')}
+              </div>
+            )}
           </div>
         </div>
         <div className="mt-6">
@@ -279,6 +285,7 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
         <CropperDialog
           ref={cropperRef}
           onConfirm={handleSuccessCropper}
+          onUploadingChange={setAvatarUploading}
           cropperDisabled
           limitSize={2}
         />

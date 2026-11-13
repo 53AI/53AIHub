@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { t } from '@/locales'
-import { 
-  Modal, Button, Radio, Checkbox, InputNumber, Select, Spin, message 
+import {
+  Modal, Button, Radio, Checkbox, InputNumber, Select, Spin, message
 } from 'antd'
 import { DownOutlined } from '@ant-design/icons'
 import { chunkSettingApi, ChunkSetting } from '@/api/modules/chunk-setting'
 import { CHUNK_SETTING_DEFAULT } from '@/constants/chunk'
 import { cacheManager as cache } from '@km/shared-utils'
+import { SafeImage } from "@km/shared-components-react"
 
 // Constants
 const CHUNK_TYPE = {
@@ -618,7 +619,7 @@ export function KnowledgeChunkPage() {
               className="flex items-center justify-between bg-white border rounded-lg p-4 hover:shadow-sm transition-shadow"
             >
               <div className="flex-1 flex items-center gap-3">
-                <img
+                <SafeImage
                   src={`/images/split/${item.chunking_config?.type || 'default'}.png`}
                   alt=""
                   className="size-8"
@@ -658,7 +659,7 @@ export function KnowledgeChunkPage() {
         ]}
       >
         <div className="flex items-center gap-2 mb-4">
-          <img className="size-8" src="/images/split/default.png" alt="" />
+          <SafeImage className="size-8" src="/images/split/default.png" alt="" />
           <h4 className="font-medium">通用文档</h4>
         </div>
 

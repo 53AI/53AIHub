@@ -13,18 +13,14 @@ const KmModelsJSON = `{
                     "model_type": 1,
                     "models": [
                         {
-                            "model_id": "deepseek-ai/DeepSeek-V4-Flash",
-                            "model_name": "DeepSeek-V4-Flash",
-                            "deep_thinking": false
+                            "model_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+                            "model_name": "DeepSeek-V4.1-Flash",
+                            "deep_thinking": true,
+                            "vision": true
                         },
                         {
                             "model_id": "deepseek-ai/DeepSeek-V4-Pro",
                             "model_name": "DeepSeek-V4-Pro",
-                            "deep_thinking": false
-                        },
-                        {
-                            "model_id": "deepseek-ai/DeepSeek-V3.2",
-                            "model_name": "DeepSeek-V3.2",
                             "deep_thinking": false
                         },
                         {
@@ -142,19 +138,19 @@ const KmModelsJSON = `{
                     "model_type": 1,
                     "models": [
                         {
-                            "model_id": "deepseek-v4-flash",
-                            "model_name": "DeepSeek-V4-Flash",
-                            "deep_thinking": false
+                            "model_id": "deepseek-flash",
+                            "model_name": "DeepSeek-V4.1-Flash",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function"]
                         },
                         {
                             "model_id": "deepseek-v4-pro",
                             "model_name": "DeepSeek-V4-Pro",
-                            "deep_thinking": false
-                        },
-                        {
-                            "model_id": "deepseek-v3.2",
-                            "model_name": "DeepSeek-V3.2",
-                            "deep_thinking": false
+                            "deep_thinking": false,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function"]
                         }
                     ]
                 }
@@ -170,21 +166,354 @@ const KmModelsJSON = `{
                     "model_type": 1,
                     "models": [
                         {
+                            "model_id": "gpt-6.1-sol",
+                            "model_name": "GPT-6.1 Sol",
+                            "model_version": "2026-09-29",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-6-astra",
+                            "model_name": "GPT-6 Astra",
+                            "model_version": "2026-09-03",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-6-sol",
+                            "model_name": "GPT-6 Sol",
+                            "model_version": "2026-09-22",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-6-luna",
+                            "model_name": "GPT-6 Luna",
+                            "model_version": "2026-09-22",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.6-sol",
+                            "model_name": "GPT-5.6 Sol",
+                            "model_version": "2026-07-09",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.6-terra",
+                            "model_name": "GPT-5.6 Terra",
+                            "model_version": "2026-07-09",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.6-luna",
+                            "model_name": "GPT-5.6 Luna",
+                            "model_version": "2026-07-09",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.5",
+                            "model_name": "GPT-5.5",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.4",
+                            "model_name": "GPT-5.4",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.4-mini",
+                            "model_name": "GPT-5.4 mini",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.4-nano",
+                            "model_name": "GPT-5.4 nano",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.4-pro",
+                            "model_name": "GPT-5.4 Pro",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-5.3-codex",
+                            "model_name": "GPT-5.3 Codex",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-5.2",
+                            "model_name": "GPT-5.2",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.2-codex",
+                            "model_name": "GPT-5.2 Codex",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-5.1",
+                            "model_name": "GPT-5.1",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5.1-codex",
+                            "model_name": "GPT-5.1 Codex",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-5.1-codex-mini",
+                            "model_name": "GPT-5.1 Codex mini",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-5.1-codex-max",
+                            "model_name": "GPT-5.1 Codex Max",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-5",
+                            "model_name": "GPT-5",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5-mini",
+                            "model_name": "GPT-5 mini",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5-nano",
+                            "model_name": "GPT-5 nano",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-5-codex",
+                            "model_name": "GPT-5 Codex",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "gpt-chat-latest",
+                            "model_name": "GPT Chat Latest",
+                            "model_version": "2026-08-06",
+                            "preview": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-oss-120b",
+                            "model_name": "GPT-OSS 120B",
+                            "preview": true,
+                            "enabled_tools": ["function"],
+                            "upstream_api_format": "chat_completions",
+                            "supported_api_formats": ["chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-oss-20b",
+                            "model_name": "GPT-OSS 20B",
+                            "preview": true,
+                            "enabled_tools": ["function"],
+                            "upstream_api_format": "chat_completions",
+                            "supported_api_formats": ["chat_completions"]
+                        },
+                        {
+                            "model_id": "o3",
+                            "model_name": "o3",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "o4-mini",
+                            "model_name": "o4-mini",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "o3-pro",
+                            "model_name": "o3-pro",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "codex-mini",
+                            "model_name": "Codex mini",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses"]
+                        },
+                        {
+                            "model_id": "o3-mini",
+                            "model_name": "o3-mini",
+                            "deep_thinking": true,
+                            "enabled_tools": ["function"],
+                            "upstream_api_format": "chat_completions",
+                            "supported_api_formats": ["chat_completions"]
+                        },
+                        {
+                            "model_id": "o1",
+                            "model_name": "o1",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function"],
+                            "upstream_api_format": "chat_completions",
+                            "supported_api_formats": ["chat_completions"]
+                        },
+                        {
+                            "model_id": "o1-mini",
+                            "model_name": "o1-mini",
+                            "deep_thinking": true,
+                            "enabled_tools": ["function"],
+                            "upstream_api_format": "chat_completions",
+                            "supported_api_formats": ["chat_completions"]
+                        },
+                        {
                             "model_id": "gpt-4o",
                             "model_name": "gpt-4o",
                             "deep_thinking": false,
-                            "vision": true
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
                         },
                         {
                             "model_id": "gpt-4o-mini",
                             "model_name": "GPT-4o-mini",
                             "deep_thinking": false,
-                            "vision": true
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-4.1",
+                            "model_name": "GPT-4.1",
+                            "deep_thinking": false,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-4.1-mini",
+                            "model_name": "GPT-4.1 mini",
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-4.1-nano",
+                            "model_name": "GPT-4.1 nano",
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
                         },
                         {
                             "model_id": "gpt-4",
                             "model_name": "gpt-4",
-                            "deep_thinking": false
+                            "deep_thinking": false,
+                            "upstream_api_format": "chat_completions",
+                            "supported_api_formats": ["chat_completions"]
                         }
                     ]
                 },
@@ -223,19 +552,49 @@ const KmModelsJSON = `{
                     "model_type": 1,
                     "models": [
                         {
+                            "model_id": "gpt-6-astra",
+                            "model_name": "GPT-6 Astra",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-6.1-sol",
+                            "model_name": "GPT-6.1 Sol",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
+                            "model_id": "gpt-6-luna",
+                            "model_name": "GPT-6 Luna",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "enabled_tools": ["function", "web_search"],
+                            "upstream_api_format": "responses",
+                            "supported_api_formats": ["responses", "chat_completions"]
+                        },
+                        {
                             "model_id": "gpt-5",
                             "model_name": "GPT-5",
-                            "deep_thinking": false
+                            "deep_thinking": true,
+                            "vision": true
                         },
                         {
                             "model_id": "gpt-5-mini",
                             "model_name": "GPT-5-mini",
-                            "deep_thinking": false
+                            "deep_thinking": true,
+                            "vision": true
                         },
                         {
                             "model_id": "gpt-5-nano",
                             "model_name": "GPT-5-nano",
-                            "deep_thinking": false
+                            "deep_thinking": true,
+                            "vision": true
                         },
                         {
                             "model_id": "gpt-4o",
@@ -307,17 +666,25 @@ const KmModelsJSON = `{
                         {
                             "model_id": "qwen3.7-max",
                             "model_name": "Qwen3.7-Max",
-                            "deep_thinking": false
+                            "deep_thinking": false,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function", "web_search"]
                         },
                         {
                             "model_id": "qwen3.7-plus",
                             "model_name": "Qwen3.7-Plus",
-                            "deep_thinking": false
+                            "deep_thinking": false,
+                            "vision": true,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function", "web_search"]
                         },
                         {
                             "model_id": "qwen3.6-flash",
                             "model_name": "Qwen3.6-Flash",
-                            "deep_thinking": false
+                            "deep_thinking": false,
+                            "vision": true,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function", "web_search"]
                         },
                         {
                             "model_id": "qwen3-coder-plus",
@@ -327,12 +694,17 @@ const KmModelsJSON = `{
                         {
                             "model_id": "deepseek-v4-pro",
                             "model_name": "DeepSeek-V4-Pro",
-                            "deep_thinking": false
+                            "deep_thinking": false,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function", "web_search"]
                         },
                         {
-                            "model_id": "deepseek-v4-flash",
-                            "model_name": "DeepSeek-V4-Flash",
-                            "deep_thinking": false
+                            "model_id": "deepseek-v4.1-flash-1017",
+                            "model_name": "DeepSeek-V4.1-Flash-1017",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function", "web_search"]
                         }
                     ]
                 },
@@ -362,6 +734,10 @@ const KmModelsJSON = `{
                 {
                     "model_type": 3,
                     "models": [
+                        {
+                            "model_id": "qwen3.7-text-rerank",
+                            "model_name": "Qwen3.7-Text-Rerank"
+                        },
                         {
                             "model_id": "qwen-gte-rerank-v2",
                             "model_name": "Qwen-gte-rerank-v2"
@@ -410,19 +786,17 @@ const KmModelsJSON = `{
                             "deep_thinking": false
                         },
                         {
-                            "model_id": "deepseek-v4-pro-260425",
+                            "model_id": "deepseek-v4-pro-ga-260813",
                             "model_name": "DeepSeek-V4-Pro",
                             "deep_thinking": false
                         },
                         {
-                            "model_id": "deepseek-v4-flash-260425",
-                            "model_name": "DeepSeek-V4-Flash",
-                            "deep_thinking": false
-                        },
-                        {
-                            "model_id": "deepseek-v3-2-251201",
-                            "model_name": "DeepSeek-V3.2",
-                            "deep_thinking": false
+                            "model_id": "deepseek-v4-1-flash-261017",
+                            "model_name": "DeepSeek-V4.1-Flash",
+                            "deep_thinking": true,
+                            "vision": true,
+                            "upstream_api_format": "responses",
+                            "enabled_tools": ["function", "web_search"]
                         }
                     ]
                 },
@@ -716,10 +1090,10 @@ const KmModelsJSON = `{
                             "vision": false
                         },
                         {
-                            "model_id": "deepseek-v4-flash",
-                            "model_name": "DeepSeek-V4-Flash",
+                            "model_id": "deepseek/deepseek-flash",
+                            "model_name": "DeepSeek-V4.1-Flash",
                             "deep_thinking": true,
-                            "vision": false
+                            "vision": true
                         },
                         {
                             "model_id": "kimi-k3",

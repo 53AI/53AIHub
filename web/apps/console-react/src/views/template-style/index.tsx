@@ -11,7 +11,7 @@ import {
 import { useEffect, useState, useMemo } from "react";
 import { t } from "@/locales";
 import { useEnterpriseStore } from "@/stores";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { ImageUpload } from "@/components/Upload/image";
 import {
     templateStyleApi,
@@ -26,10 +26,12 @@ import {
 import type { Banner } from "@/api/modules/banner/types";
 import { BANNER_CONFIG } from "@/constants/banner";
 import {
+    VERSION_MODULE,
     WEBSITE_STYLE,
     WEBSITE_STYLE_LABEL_MAP,
     WEBSITE_STYLE_DEMO_MAP,
 } from "@/constants/enterprise";
+import { useVersion } from "@/hooks";
 import { getRealPath } from "@/utils/config";
 
 const UPLOAD_COUNT_LIMIT = BANNER_CONFIG.MAX_IMAGES;
@@ -42,6 +44,25 @@ export function TemplateStylePage() {
   const [submitting, setSubmitting] = useState(false);
   const [banner, setBanner] = useState<Banner>(getDefaultBanner());
   const [styleType, setStyleType] = useState<string>(WEBSITE_STYLE.SOFTWARE);
+
+  // 二号总裁风格需要安心录开启
+  const { canUse: isRecordingEnabled } = useVersion({
+    module: VERSION_MODULE.RECORDING,
+  });
+
+  const styleOptions = useMemo(() => {
+    const options = [WEBSITE_STYLE.WEBSITE, WEBSITE_STYLE.SOFTWARE];
+    if (isRecordingEnabled) options.push(WEBSITE_STYLE.RECORDING);
+    return options;
+  }, [isRecordingEnabled]);
+
+  // 安心录关闭后，已保存的安心录模板风格回退为软件模式（与前台表现一致）
+  useEffect(() => {
+    if (!isRecordingEnabled && styleType === WEBSITE_STYLE.RECORDING) {
+      setStyleType(WEBSITE_STYLE.SOFTWARE);
+      form.setFieldValue("style_type", WEBSITE_STYLE.SOFTWARE);
+    }
+  }, [isRecordingEnabled, styleType, form]);
 
   const addDisabled = useMemo(() => {
     return banner.url_list.length >= UPLOAD_COUNT_LIMIT;
@@ -120,11 +141,11 @@ export function TemplateStylePage() {
         fetchTemplateStyleData();
         fetchBannerData();
       } else {
+        // 软件模式 / 二号总裁模式不使用网站配色与轮播图，统一存默认值
         await templateStyleApi.saveTemplateStyle({
           ...defaultForm,
-          style_type: WEBSITE_STYLE.SOFTWARE,
+          style_type: currentStyleType,
         });
-        setStyleType(WEBSITE_STYLE.SOFTWARE);
         message.success(t("action_save_success"));
       }
 
@@ -139,7 +160,7 @@ export function TemplateStylePage() {
       <Form form={form} className="flex-1" colon={false}>
         <Form.Item label={t("template_style.website_style")}>
           <ul className="flex flex-wrap gap-4">
-            {[WEBSITE_STYLE.WEBSITE, WEBSITE_STYLE.SOFTWARE].map((value) => (
+            {styleOptions.map((value) => (
               <li
                 key={value}
                 className={`w-[172px] p-1.5 bg-[#F5F5F5] flex relative flex-col cursor-pointer items-center gap-2 border rounded box-border overflow-hidden text-sm hover:border-[#3664EF] hover:text-brand ${
@@ -172,9 +193,9 @@ export function TemplateStylePage() {
                 <div className="text-sm p-1.5">
                   {t(WEBSITE_STYLE_LABEL_MAP.get(value) || "")}
                 </div>
-                <img
+                <SafeImage
                   className="w-full"
-                  src={getRealPath(WEBSITE_STYLE_DEMO_MAP.get(value) || "")}
+                  src={WEBSITE_STYLE_DEMO_MAP.get(value) || ""}
                   alt=""
                 />
               </li>

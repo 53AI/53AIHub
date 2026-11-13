@@ -224,7 +224,9 @@ export type ChunkType =
   | 'summary'
   | 'knowledge_map'
   | 'graph_result'
-  | 'wiki';
+  | 'wiki'
+  | 'document'
+  | 'document_full';
 
 // ============================================================================
 // 文件类型
@@ -347,6 +349,7 @@ export interface RagStats {
   library_search?: ChunkItem[];
   file_quotations?: ChunkItem[];
   document_quotations?: ChunkItem[];
+  web_page_quotations?: string[];
   document_search?: { chunks?: ChunkItem[] };
 }
 
@@ -530,6 +533,7 @@ export interface SendMessageOptions {
   agent_id: string | number;
   conversation_id: string | number;
   modelId?: string | number;
+  thinkingMode?: 1 | 2;
   completion_params?: Record<string, any>;
   messageList?: Message[];
   links?: SpecifiedFile[];

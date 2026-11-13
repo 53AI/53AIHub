@@ -1,4 +1,5 @@
 import type { MockRoute } from '../router'
+import { Buffer } from 'node:buffer'
 
 const ok = (data: any) => ({ code: 0, message: 'ok', data })
 const now = Math.floor(Date.now() / 1000)
@@ -6,7 +7,30 @@ const now = Math.floor(Date.now() / 1000)
 export const uploadRoutes: MockRoute[] = [
   {
     method: 'POST', path: '/api/upload',
-    handler: () => ok({ file_id: Date.now(), url: '/mock-uploaded-file.pdf' }),
+    handler: () => ok({
+      file_id: Date.now(),
+      url: '/mock-uploaded-file.pdf',
+      file_name: 'mock-uploaded-file',
+      extension: 'jpg',
+      mime_type: 'image/jpeg',
+      size: 1024,
+      hash: 'mock-hash',
+      key: 'mock-key',
+      preview_key: 'mock-preview-key',
+      status: 'done',
+    }),
+  },
+  {
+    // 头像等上传产物的预览地址：返回 1x1 像素 PNG，让 <img> 能正常加载
+    method: 'GET', path: '/api/preview/{key}',
+    handler: () => ({
+      __raw: true,
+      body: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKcMIgAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+      headers: { 'Content-Type': 'image/png' },
+    }),
   },
 ]
 

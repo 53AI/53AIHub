@@ -1238,6 +1238,7 @@ func hashSourcesArray(sources []rag.SourceReference) []map[string]interface{} {
 			"end_position":        source.EndPosition,
 			"url":                 source.URL,
 			"file_path":           source.FilePath,
+			"published_at":        source.PublishedAt,
 			"knowledge_base_id":   hashInt64(source.KnowledgeBaseID),
 			"knowledge_base_name": source.KnowledgeBaseName,
 			"knowledge_base_logo": source.KnowledgeBaseLogo,
@@ -1427,6 +1428,7 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 	quotedChunkIDs := make([]string, 0)
 	quotedFileIDs := make([]string, 0)
 	quotedWikiPageIDs := make([]string, 0)
+	quotedWebPageURLs := make([]string, 0)
 
 	logger.Debugf(ctx, "【引用分析】开始生成引用数据: sources=%d, answer_len=%d", len(sources), len(answer))
 	for i, source := range sources {
@@ -1439,27 +1441,10 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 		quotedSourceIDs := extractQuotedSourceIDs(answer)
 		logger.Debugf(ctx, "【引用分析】extractQuotedSourceIDs 结果: %v", quotedSourceIDs)
 
-		// 判断是否为网页搜索（通过检查ReferenceID是否以"B_"开头）
-		isWebSearch := false
-		isSoloFile := false
-
-		if len(sources) > 0 {
-			if strings.HasPrefix(sources[0].ReferenceID, "B_") {
-				isWebSearch = true
-			} else if strings.Contains(sources[0].ReferenceID, "-") && !strings.HasPrefix(sources[0].ReferenceID, "A_") {
-				// 包含短横线且不是A_开头，可能是单文件模式
-				isSoloFile = true
-			}
-		}
-
-		if isWebSearch {
-			// 对于网页搜索，直接使用原始ID
+		// 兼容旧版博查 B_ 引用；新版来源类型由 SourceType 标记，引用编号可为数字。
+		if len(sources) > 0 && strings.HasPrefix(sources[0].ReferenceID, "B_") && sources[0].SourceType != "web" {
 			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, true, false)
-		} else if isSoloFile {
-			// 对于单文件模式，使用hash值
-			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 		} else {
-			// 对于知识库搜索，使用hash值
 			quotedChunkIDs, quotedFileIDs = resolveQuotedSourceIDs(quotedSourceIDs, sources, false, true)
 		}
 		lookup := buildQuotedSourceLookup(sources)
@@ -1469,6 +1454,7 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 				quotedWikiPageIDs = append(quotedWikiPageIDs, hashInt64(info.WikiPageID))
 			}
 		}
+		quotedWebPageURLs = getQuotedWebPageURLs(quotedSourceIDs, sources)
 	}
 
 	logger.Debugf(ctx, "【引用分析】引用数据生成完成: document_quotations=%v, file_quotations=%v",
@@ -1478,6 +1464,7 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 		"document_quotations":  quotedChunkIDs,
 		"file_quotations":      quotedFileIDs,
 		"wiki_page_quotations": quotedWikiPageIDs,
+		"web_page_quotations":  quotedWebPageURLs,
 		"performance": map[string]interface{}{
 			"processing_time_ms": 0, // 引用分析的时间可以单独计算，这里先设为0
 		},
@@ -1486,18 +1473,48 @@ func createQuotationsData(ctx context.Context, sources []rag.SourceReference, an
 
 // addContextToMessages 将检索到的上下文信息添加到消息中
 func addContextToMessages(chatRequest *ChatRequest, context string) {
+	if strings.TrimSpace(context) == "" {
+		return
+	}
+	appendStableSystemPrompt(&chatRequest.Messages, rag.GetContextInstructions())
+	prependContextToLastUserMessage(chatRequest.Messages, context)
+}
+
+func appendStableSystemPrompt(messages *[]relay_model.Message, prompt string) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return
+	}
+	for i := range *messages {
+		if (*messages)[i].Role == "system" {
+			(*messages)[i].Content = strings.TrimSpace(prompt + "\n\n" + (*messages)[i].StringContent())
+			return
+		}
+	}
+	*messages = append([]relay_model.Message{{Role: "system", Content: prompt}}, (*messages)...)
+}
+
+func prependContextToLastUserMessage(messages []relay_model.Message, context string) {
+	context = strings.TrimSpace(context)
 	if context == "" {
 		return
 	}
-
-	// 创建包含上下文的系统消息，使用空字符串作为问题占位符
-	contextMessage := relay_model.Message{
-		Role:    "system",
-		Content: rag.GetContextMessage(context, ""),
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role != "user" {
+			continue
+		}
+		if hasMessageTextPart(messages[i].Content) {
+			messages[i].Content = rewriteMessageText(messages[i].Content, func(text string, index, total int) string {
+				if index == 0 {
+					return context + "\n\n" + text
+				}
+				return text
+			})
+		} else {
+			messages[i].Content = appendMessageTextPart(messages[i].Content, context)
+		}
+		return
 	}
-
-	// 将上下文消息添加到消息列表的开头
-	chatRequest.Messages = append([]relay_model.Message{contextMessage}, chatRequest.Messages...)
 }
 func extractQuotedSourceIDs(answer string) []string {
 	// 支持三种格式：
@@ -1643,11 +1660,24 @@ func getQuotedWikiPageIDs(quotedSourceIDs []string, sources []rag.SourceReferenc
 	return ids
 }
 
+func getQuotedWebPageURLs(quotedSourceIDs []string, sources []rag.SourceReference) []string {
+	lookup := buildQuotedSourceLookup(sources)
+	var urls []string
+	for _, sourceID := range quotedSourceIDs {
+		info, ok := lookupQuotedSourceInfo(lookup, sourceID)
+		if ok && strings.EqualFold(info.SourceType, "web") && info.URL != "" {
+			urls = appendUniqueString(urls, info.URL)
+		}
+	}
+	return urls
+}
+
 type quotedSourceLookup struct {
 	ChunkID    int64
 	FileID     int64
 	WikiPageID int64
 	SourceType string
+	URL        string
 }
 
 func buildQuotedSourceLookup(sources []rag.SourceReference) map[string]quotedSourceLookup {
@@ -1656,11 +1686,24 @@ func buildQuotedSourceLookup(sources []rag.SourceReference) map[string]quotedSou
 		info := quotedSourceLookup{
 			ChunkID: source.ChunkID, FileID: source.FileID,
 			WikiPageID: source.WikiPageID, SourceType: source.SourceType,
+			URL: strings.TrimSpace(source.URL),
+		}
+		if info.URL == "" {
+			info.URL = strings.TrimSpace(source.FilePath)
 		}
 		lookup[source.ReferenceID] = info
 		lookup[strconv.Itoa(index+1)] = info
 	}
 	return lookup
+}
+
+func appendUniqueString(values []string, value string) []string {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
 }
 
 func resolveQuotedSourceIDs(
@@ -1683,12 +1726,14 @@ func resolveQuotedSourceIDs(
 		if !ok {
 			continue
 		}
-		if strings.EqualFold(info.SourceType, "wiki") || strings.EqualFold(info.SourceType, "graph") {
+		if strings.EqualFold(info.SourceType, "wiki") || strings.EqualFold(info.SourceType, "graph") || strings.EqualFold(info.SourceType, "web") {
 			continue
 		}
 
 		if rawOutput {
-			quotedChunkIDs = append(quotedChunkIDs, fmt.Sprintf("%d", info.ChunkID))
+			if info.ChunkID > 0 {
+				quotedChunkIDs = append(quotedChunkIDs, fmt.Sprintf("%d", info.ChunkID))
+			}
 			if dedupeFileIDs {
 				if _, exists := uniqueFileIDs[info.FileID]; exists {
 					continue
@@ -1699,7 +1744,9 @@ func resolveQuotedSourceIDs(
 			continue
 		}
 
-		quotedChunkIDs = append(quotedChunkIDs, hashInt64(info.ChunkID))
+		if info.ChunkID > 0 {
+			quotedChunkIDs = append(quotedChunkIDs, hashInt64(info.ChunkID))
+		}
 		if dedupeFileIDs {
 			if _, exists := uniqueFileIDs[info.FileID]; exists {
 				continue
@@ -1907,40 +1954,11 @@ func validateAnswerCitations(answer string, sources []rag.SourceReference) (stri
 	})
 	cleaned = sanitizeWikiLinks(cleaned)
 
-	// 无引用兜底：回答完全未标注引用（如被回答偏好"不要提来源"等表述干扰导致模型省略引用），
-	// 在末尾挂上最相关来源编号，保证前端来源卡片可用；仅在有来源且无任何有效引用时触发，不编造内容。
-	if stats.Valid == 0 && len(sources) > 0 {
-		cleaned = appendTopSourceReferences(cleaned, sources, 3)
-	}
 	return cleaned, stats
 }
 
-// appendTopSourceReferences 在回答末尾追加最相关来源的引用编号（兜底用途）。
-// sources 按最终入选排名传入，取前 maxSources 个不重复编号；不修改答案正文，不编造内容。
-func appendTopSourceReferences(answer string, sources []rag.SourceReference, maxSources int) string {
-	seen := make(map[string]struct{}, len(sources))
-	refs := make([]string, 0, maxSources)
-	for _, source := range sources {
-		id := strings.TrimSpace(source.ReferenceID)
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		refs = append(refs, fmt.Sprintf("[Source:%s]", id))
-		if len(refs) >= maxSources {
-			break
-		}
-	}
-	if len(refs) == 0 {
-		return answer
-	}
-	return answer + "\n\n参考来源：" + strings.Join(refs, "")
-}
-
 func sanitizeAndValidateAnswer(c *gin.Context, answer string) (string, citationValidationStats) {
+	answer = sanitizeThoughtContent(answer)
 	if c == nil {
 		return validateAnswerCitations(answer, nil)
 	}
@@ -1953,6 +1971,10 @@ func sanitizeAndValidateAnswer(c *gin.Context, answer string) (string, citationV
 		return validateAnswerCitations(answer, nil)
 	}
 	return validateAnswerCitations(answer, sources)
+}
+
+func sanitizeStreamAnswerFragment(c *gin.Context, answer string) (string, citationValidationStats) {
+	return sanitizeAndValidateAnswer(c, answer)
 }
 
 func appendRAGSourcesForCitationValidation(c *gin.Context, sources []rag.SourceReference) {
@@ -1980,14 +2002,68 @@ func appendRAGSourcesForCitationValidation(c *gin.Context, sources []rag.SourceR
 	c.Set("rag_sources", merged)
 }
 
+func retrievalDocumentKey(source rag.SourceReference, index int) string {
+	if source.WikiPageID > 0 {
+		return fmt.Sprintf("wiki:%d", source.WikiPageID)
+	}
+	if source.SourceType == "web" {
+		if url := strings.TrimSpace(source.URL); url != "" {
+			return "web:" + url
+		}
+	}
+	if source.FileID > 0 {
+		return fmt.Sprintf("file:%d", source.FileID)
+	}
+	if path := strings.TrimSpace(source.FilePath); path != "" {
+		return "path:" + path
+	}
+	if referenceID := strings.TrimSpace(source.ReferenceID); referenceID != "" {
+		return "source:" + referenceID
+	}
+	return fmt.Sprintf("unknown:%d", index)
+}
+
+func retrievalDocumentName(source rag.SourceReference) string {
+	for _, name := range []string{source.FileName, source.Title, source.FilePath, source.URL} {
+		if name = strings.TrimSpace(name); name != "" {
+			return name
+		}
+	}
+	return "未命名来源"
+}
+
 func CreateRetrievalContext(sources []rag.SourceReference) string {
 	contextParts := make([]string, 0, len(sources)+1)
 	allowedIDs := make([]string, 0, len(sources))
-	for _, source := range sources {
+	documentIDs := make(map[string]string, len(sources))
+	contextParts = append(contextParts, "检索资料说明：相同文档ID的分片属于同一文档，不同文档ID必须分别归因；不得把不同文档的内容当作同一文档的连续内容。回答引用请使用对应的 Source 编号。")
+	for index, source := range sources {
 		if id := strings.TrimSpace(source.ReferenceID); id != "" {
 			allowedIDs = append(allowedIDs, id)
 		}
-		contextParts = append(contextParts, fmt.Sprintf("[Source:%s] \n <begin>  %s <end>", source.ReferenceID, sanitizeRetrievalContent(source.Content)))
+		documentKey := retrievalDocumentKey(source, index)
+		documentID, ok := documentIDs[documentKey]
+		if !ok {
+			documentID = fmt.Sprintf("D%d", len(documentIDs)+1)
+			documentIDs[documentKey] = documentID
+		}
+		coverage := ""
+		switch source.WikiCoverage {
+		case "partial":
+			coverage = "Wiki 页面上下文覆盖范围：部分，仅提供命中章节内容，且可能受预算截短；不得据此声称已完整阅读整页。\n"
+		case "unavailable":
+			coverage = "Wiki 页面上下文覆盖范围：不可用，本来源没有可注入的正文内容。\n"
+		case "summarized_complete":
+			coverage = "Wiki 页面上下文覆盖范围：全文分批归纳已完成；以下内容是全文归纳结果，并非逐字全文。\n"
+		}
+		contextParts = append(contextParts, fmt.Sprintf(
+			"[Source:%s]\n文档ID：%s\n文档名称：%q\n%s<begin>\n%s\n<end>",
+			source.ReferenceID,
+			documentID,
+			retrievalDocumentName(source),
+			coverage,
+			sanitizeRetrievalContent(source.Content),
+		))
 	}
 	if len(allowedIDs) > 0 {
 		sort.Strings(allowedIDs)

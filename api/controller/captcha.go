@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 
+	"github.com/53AI/53AIHub/common/utils"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service/sms"
 	"github.com/gin-gonic/gin"
@@ -13,8 +15,17 @@ import (
 // @Tags SMS
 // @Produce json
 // @Success 200 {object} model.CommonResponse{data=map[string]string}
+// @Failure 429 {object} model.CommonResponse "请求过于频繁"
 // @Router /api/captcha [get]
 func GetCaptcha(c *gin.Context) {
+	clientIP := utils.GetClientIP(c)
+	if err := sms.CheckCaptchaIPRateLimit(clientIP); err != nil {
+		if errors.Is(err, sms.ErrCaptchaIPRateLimit) {
+			c.JSON(http.StatusTooManyRequests, model.OperateTooFast.ToResponse("请求过于频繁，请稍后重试"))
+			return
+		}
+	}
+
 	captchaID, imageBase64, err := sms.GenerateCaptcha()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse("验证码生成失败"))

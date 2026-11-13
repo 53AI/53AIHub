@@ -47,6 +47,8 @@ export const kkfileview_url = getConfigValue('kkfileview_url', 'VITE_GLOB_KKFILE
 /** 按需读取 kkfileview 地址（优先使用后端 env-config 返回的 kk_base_url） */
 export const getKkfileviewUrl = (): string =>
   getConfigValue('kkfileview_url', 'VITE_GLOB_KKFILEVIEW_URL', '')
+/** 安心录 Flutter Web 站点地址（安心录右侧 375px iframe 面板加载；测试环境为本机 flutter run 端口） */
+export const record_flutter_url = formatUrl(getConfigValue('record_flutter_url', 'VITE_GLOB_RECORD_FLUTTER_URL', '/meetingplugin/index.html'))
 export const official_id = getConfigValue('official_id', 'VITE_GLOB_OFFICIALID', '53ai')
 export const suite_id = getConfigValue('suite_id', 'VITE_GLOB_SUITEID', '53ai')
 export const auth_key = getConfigValue('auth_key', 'VITE_GLOB_AUTH_KEY', '53ai')
@@ -66,3 +68,16 @@ export const getPublicPath = (path: string): string => {
   const base = (window as any).$getPublicPath?.('') || '/'
   return base + path.replace(/^\//, '')
 }
+
+/**
+ * 端侧 ASR 模型基址（silero-vad / whisper-small_timestamped / wespeaker-cnceleb）。
+ * 模型不入 git（~268MB），部署三选一：
+ *   1. 同源（默认）：CI 构建前跑 scripts/download-asr-models.mjs，模型随 dist 部署
+ *   2. CDN/对象存储：注入 window.asr_models_base_url 或 VITE_ASR_MODELS_BASE_URL
+ *      （需 CORS 允许 GET；transformers.js 首次拉取后浏览器 Cache API 缓存）
+ *   3. 线上关闭：localStorage km-live-transcript-disabled=1
+ * 优先级：window 全局 > URL 参数 > 构建时 env > 同源 public 路径
+ */
+export const asr_models_base_url = formatUrl(
+  getConfigValue('asr_models_base_url', 'VITE_ASR_MODELS_BASE_URL', getPublicPath('models'))
+)

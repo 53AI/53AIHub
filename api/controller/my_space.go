@@ -65,6 +65,8 @@ type RecordingFileListItem struct {
 	SceneReason     string                          `json:"scene_reason,omitempty"`
 	SceneSource     string                          `json:"scene_source,omitempty"`
 	SceneModeSource string                          `json:"scene_mode_source,omitempty"`
+	// Participants 已关联人员的参会发言人（实时优先、快照兜底），未关联的发言人不在其中
+	Participants []service.RecordingParticipant `json:"participants"`
 }
 
 type RecordingListResponse struct {
@@ -266,7 +268,7 @@ func GetMySpaceAIGenerated(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} model.CommonResponse{data=controller.MySpaceContextResponse}
-// @Failure 429 {object} model.CommonResponse
+// @Failure 503 {object} model.CommonResponse
 // @Failure 500 {object} model.CommonResponse
 // @Router /api/my-space/context [get]
 func GetMySpaceContext(c *gin.Context) {
@@ -274,11 +276,12 @@ func GetMySpaceContext(c *gin.Context) {
 	userID := config.GetUserId(c)
 
 	svc := service.NewPersonalSpaceService(eid)
-	space, library, err := svc.EnsurePersonalWorkspace(c.Request.Context(), userID)
+	space, library, err := svc.GetPersonalWorkspaceContext(c.Request.Context(), userID)
 	if err != nil {
 		logger.SysErrorf("【我的空间】获取个人空间上下文失败: eid=%d user_id=%d err=%v", eid, userID, err)
 		if errors.Is(err, service.ErrPersonalWorkspaceInitializing) {
-			c.JSON(http.StatusTooManyRequests, model.OperateTooFast.ToResponse(err))
+			c.Header("Retry-After", "1")
+			c.JSON(http.StatusServiceUnavailable, model.SystemError.ToResponse(errors.New("personal workspace is initializing, please retry later")))
 			return
 		}
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
@@ -480,12 +483,21 @@ func GetMySpaceRecordings(c *gin.Context) {
 		fileIDs = append(fileIDs, f.ID)
 	}
 	insightPages, _ := model.BatchGetRecordingFileInsightPagesByFileIDs(fileIDs)
+	// 批量取参会人员（一条 SQL 批量查人员，零大文本扫描；缺失时懒回填）
+	participantsMap, _ := service.ListFileParticipants(c.Request.Context(), eid, files)
 
 	items := make([]RecordingFileListItem, 0, len(files))
 	for _, f := range files {
+		// 开始录音时间对外归一：录音来源未记录时回退创建时间（仅响应副本，不落库）
+		f.RecordingStartTime = f.EffectiveRecordingStartTime()
 		item := RecordingFileListItem{File: f}
 		if p, ok := insightPages[f.ID]; ok {
 			item.InsightPage = p
+		}
+		if parts, ok := participantsMap[f.ID]; ok && len(parts) > 0 {
+			item.Participants = parts
+		} else {
+			item.Participants = []service.RecordingParticipant{}
 		}
 		if strings.TrimSpace(string(f.InsightContext)) != "" {
 			var bg service.InsightBackground

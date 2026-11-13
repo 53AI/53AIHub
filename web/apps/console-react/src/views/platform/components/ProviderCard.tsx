@@ -2,7 +2,7 @@ import { Button, Divider, Spin } from "antd";
 import { t } from "@/locales";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { useVersion } from "@/hooks";
-import { getPublicPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
 interface ProviderOption {
   id: number;
@@ -57,9 +57,9 @@ export function ProviderCard({
   return (
     <li className=" h-[178px] flex flex-col border rounded box-border overflow-hidden">
       <div className="flex items-center gap-4 p-5 box-border">
-        <img
+        <SafeImage
           className="flex-none w-10 h-10 overflow-hidden"
-          src={getPublicPath(`/images/platform/${provider.icon}.png`)}
+          src={`/images/platform/${provider.icon}.png`}
           alt=""
         />
         <div className="text-dark font-semibold line-clamp-2">

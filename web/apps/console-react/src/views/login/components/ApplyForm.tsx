@@ -2,7 +2,8 @@ import { Button, Form, Input, Steps, message } from 'antd'
 import { CheckCircleFilled } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { t } from '@/locales'
-import { useUserStore, useEnterpriseStore } from '@/stores'
+
+import { SafeImage } from "@km/shared-components-react";import { useUserStore, useEnterpriseStore } from '@/stores'
 
 interface ApplyFormProps {
   onLogin?: () => void
@@ -188,7 +189,7 @@ export function ApplyForm({ onLogin }: ApplyFormProps) {
           <div className="text-tertiary text-sm mt-4">
             {t('apply_success_desc')}
           </div>
-          <img
+          <SafeImage
             className="w-[148px] object-contain mt-14"
             src="//chat.53ai.com/images/upgrade-qrcode.png"
             alt="QR Code"

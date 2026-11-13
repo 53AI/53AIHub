@@ -2,15 +2,14 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { PlusOutlined, MoreOutlined } from "@ant-design/icons";
 import { Modal, message, Spin, Switch } from "antd";
-import { Dropdown } from "@km/shared-components-react";
+import { Dropdown, SafeImage } from "@km/shared-components-react";
 import agentsApi from "@/api/modules/agents/index";
 import settingApi from "@/api/modules/setting";
 import { AGENT_USAGES } from "@/constants/agent";
 import { transformAgentInfo } from "@/api/modules/agents/transform";
 import type { AgentInfo } from "@/api/modules/agents/index";
-import { getPublicPath } from "@/utils/config";
 import RelateAgentsDialog, {
-    RelateAgentsDialogRef,
+  RelateAgentsDialogRef,
 } from "@/views/agent/create-v2/shared/components/config/RelateAgentsDialog";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { VERSION_MODULE } from "@/constants/enterprise";
@@ -176,9 +175,9 @@ export function AssistantPage() {
             className="border rounded-lg px-4 py-6 hover:shadow block text-inherit"
           >
             <div className="flex items-center justify-between gap-2.5 h-8">
-              <img
+              <SafeImage
                 className="size-6"
-                src={getPublicPath("/images/document-app/chat.png")}
+                src={"/images/document-app/chat.png"}
                 alt="chat"
               />
               <div className="flex-1 text-sm font-medium text-primary">
@@ -203,9 +202,9 @@ export function AssistantPage() {
             className="border rounded-lg px-4 py-6 block text-inherit"
           >
             <div className="flex items-center justify-between gap-2.5 h-8">
-              <img
+              <SafeImage
                 className="size-6"
-                src={getPublicPath("/images/document-app/map.png")}
+                src={"/images/document-app/map.png"}
                 alt="map"
               />
               <div className="flex-1 text-sm font-medium text-primary">
@@ -257,11 +256,11 @@ export function AssistantPage() {
               </div>
               <div className="flex items-start justify-between gap-3 mt-2">
                 <div className="flex items-center gap-2.5">
-                  <img
+                  <SafeImage
                     className="size-6"
                     src={
                       agent.logo ||
-                      getPublicPath("/images/agent/default-logo.png")
+                      "/images/agent/default-logo.png"
                     }
                     alt="logo"
                   />

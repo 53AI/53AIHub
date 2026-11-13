@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Empty, Switch } from 'antd'
 import { CheckOutlined } from '@ant-design/icons'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react'
 import { usePipelineTranslation } from '../../context'
 import { usePipelineAdapter } from '../../adapters'
 
@@ -249,7 +249,7 @@ export function GraphConfig({
 
                     <div className="flex items-center gap-2 mb-3">
                       <div className="size-7 rounded-lg bg-[#EBF1FF] overflow-hidden flex items-center justify-center">
-                        <img src={item.logo || defaultLogo} className="size-full object-cover" alt={item.name} />
+                        <SafeImage src={item.logo || defaultLogo} className="size-full object-cover" alt={item.name} />
                       </div>
                       <h3 className="flex-1 text-base font-medium text-gray-800 truncate" title={item.name}>
                         {item.name}

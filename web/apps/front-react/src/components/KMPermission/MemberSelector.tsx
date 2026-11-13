@@ -3,7 +3,8 @@ import { Modal } from 'antd'
 import { DeptMemberPicker } from '../DeptMemberPicker'
 import { RolePopover } from './RolePopover'
 import { PERMISSION_TYPE, RESOURCE_TYPE, SUBJECT_TYPE, type PermissionType, type ResourceType, type SubjectType } from './constant'
-import './MemberSelector.css'
+
+import { SafeImage } from "@km/shared-components-react";import './MemberSelector.css'
 
 interface PickerItem {
   label: string
@@ -114,7 +115,7 @@ export function MemberSelector({ trigger, onConfirm, resourceType = RESOURCE_TYP
         <div className="member-list">
           {memberList.map((item, index) => (
             <div key={item.value} className="member-item">
-              <img src={item.avatar} alt="avatar" className="member-avatar" />
+              <SafeImage src={item.avatar} alt="avatar" className="member-avatar" />
               <p className="member-name">{item.label}</p>
               <RolePopover
                 value={item.permission}

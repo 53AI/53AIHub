@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/53AI/53AIHub/common/tokenlimit"
+	relaymodel "github.com/songquanpeng/one-api/relay/model"
 )
 
+// 模型上下文按现有统一预算估算；只缩减候选页，不截断事实正文。
 type WikiDedupLLMRunner interface {
 	Generate(ctx context.Context, prompt string) (string, error)
 }
@@ -18,16 +22,18 @@ type WikiDedupService struct {
 }
 
 type WikiDedupItem struct {
-	Slug    string
-	Type    string
-	Name    string
-	Aliases []string
+	Slug        string
+	Type        string
+	Name        string
+	Description string
+	Aliases     []string
 }
 
 type WikiDedupPage struct {
 	Slug    string
 	Type    string
 	Title   string
+	Summary string
 	Aliases []string
 }
 
@@ -57,12 +63,32 @@ func (s *WikiDedupService) PlanDedup(ctx context.Context, input WikiDedupInput) 
 		return map[string]string{}, nil
 	}
 
-	prompt, err := s.prompts.Render(WikiDeduplicationPrompt, map[string]any{
-		"NewItems":      renderWikiDedupItemsXML(input.NewItems),
-		"ExistingPages": renderWikiDedupPagesXML(input.ExistingPages),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("render wiki dedup prompt: %w", err)
+	pages := input.ExistingPages
+	var prompt string
+	for {
+		var err error
+		prompt, err = s.prompts.Render(WikiDeduplicationPrompt, map[string]any{
+			"NewItems":      renderWikiDedupItemsXML(input.NewItems),
+			"ExistingPages": renderWikiDedupPagesXML(pages),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("render wiki dedup prompt: %w", err)
+		}
+		budgeter, ok := s.llm.(wikiPromptInputBudgeter)
+		if !ok {
+			break
+		}
+		available, err := budgeter.InputBudget(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		if tokenlimit.EstimateTokens([]relaymodel.Message{{Role: "system", Content: prompt}}) <= available {
+			break
+		}
+		if len(pages) <= 1 {
+			return nil, fmt.Errorf("wiki dedup prompt exceeds model context budget")
+		}
+		pages = pages[:len(pages)-1]
 	}
 
 	raw, err := s.llm.Generate(ctx, prompt)
@@ -91,7 +117,7 @@ func (s *WikiDedupService) PlanDedup(ctx context.Context, input WikiDedupInput) 
 		}
 	}
 	existingBySlug := make(map[string]WikiDedupPage, len(input.ExistingPages))
-	for _, page := range input.ExistingPages {
+	for _, page := range pages {
 		slug := strings.TrimSpace(page.Slug)
 		if slug == "" {
 			continue
@@ -134,7 +160,7 @@ func renderWikiDedupItemsXML(items []WikiDedupItem) string {
 		if strings.TrimSpace(item.Slug) == "" || strings.TrimSpace(item.Name) == "" {
 			continue
 		}
-		writeWikiDedupItemXML(&builder, item.Slug, item.Name, item.Type, item.Aliases)
+		writeWikiDedupItemXML(&builder, item.Slug, item.Name, item.Type, item.Aliases, item.Description)
 	}
 	result := strings.TrimSpace(builder.String())
 	if result == "" {
@@ -152,7 +178,7 @@ func renderWikiDedupPagesXML(pages []WikiDedupPage) string {
 		if strings.TrimSpace(page.Slug) == "" || strings.TrimSpace(page.Title) == "" {
 			continue
 		}
-		writeWikiDedupItemXML(&builder, page.Slug, page.Title, page.Type, page.Aliases)
+		writeWikiDedupItemXML(&builder, page.Slug, page.Title, page.Type, page.Aliases, page.Summary)
 	}
 	result := strings.TrimSpace(builder.String())
 	if result == "" {
@@ -161,16 +187,31 @@ func renderWikiDedupPagesXML(pages []WikiDedupPage) string {
 	return result
 }
 
-func writeWikiDedupItemXML(builder *strings.Builder, slug, name, itemType string, aliases []string) {
+func writeWikiDedupItemXML(builder *strings.Builder, slug, name, itemType string, aliases []string, description string) {
 	if builder == nil {
 		return
 	}
 	builder.WriteString("<item>\n")
 	builder.WriteString(fmt.Sprintf("<slug>%s</slug>\n", strings.TrimSpace(slug)))
 	builder.WriteString(fmt.Sprintf("<type>%s</type>\n", strings.TrimSpace(itemType)))
-	builder.WriteString(fmt.Sprintf("<name>%s</name>\n", strings.TrimSpace(name)))
+	builder.WriteString(fmt.Sprintf("<name>%s</name>\n", wikiIdentityShortText(name, 200)))
+	if summary := wikiIdentityShortText(description, 240); summary != "" {
+		builder.WriteString(fmt.Sprintf("<description>%s</description>\n", summary))
+	}
 	if len(aliases) > 0 {
-		builder.WriteString(fmt.Sprintf("<aliases>%s</aliases>\n", strings.Join(normalizeWikiStringSlice(aliases), ", ")))
+		selected := make([]string, 0, 8)
+		seen := make(map[string]bool)
+		for _, alias := range aliases {
+			alias = wikiIdentityShortText(alias, 80)
+			if alias != "" && !seen[alias] {
+				selected = append(selected, alias)
+				seen[alias] = true
+			}
+			if len(selected) == 8 {
+				break
+			}
+		}
+		builder.WriteString(fmt.Sprintf("<aliases>%s</aliases>\n", strings.Join(selected, ", ")))
 	}
 	builder.WriteString("</item>\n\n")
 }

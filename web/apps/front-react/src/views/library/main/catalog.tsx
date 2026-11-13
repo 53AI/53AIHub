@@ -8,7 +8,7 @@ import {
   useEffect,
 } from "react";
 import { Tree, Modal, Input, Tooltip, message } from "antd";
-import { Dropdown } from "@km/shared-components-react";
+import { Dropdown, SafeImage } from "@km/shared-components-react";
 import type { TreeProps, TreeDataNode } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -546,11 +546,14 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
     );
 
     // 「移动到」弹窗适配：基于 filesApi.all 按 parent_path 列目录内/文件内子项。
-    // - 路径参数：MoveToModal 用 '/' 表示根目录、'/A' 表示 A 文件夹内；
-    //   filesApi.all 的 parent_path 用 '' 表示根级（与 Space/dialog 一致），
-    //   非根时直接透传 '/xxx'，由后端按前缀匹配。
-    // - type 参数：MoveToModal 内部传 'dir' / 'file'，filesApi.all 返回的
-    //   RawFileItem.type 是 0/1，这里按 targetType 过滤后映射成 TreeNode 形状。
+    // - 路径参数：MoveToModal 用 '/' 表示根目录、'/A' 表示 A 文件夹内。
+    //   /api/files/all 的语义：parent_path 为空 = 递归返回整库；'/' = 仅根级直接子项；
+    //   '/A' = 仅 A 内直接子项。根级必须显式传 '/'（与 Space/dialog 的 loadFilesAll(id, '/')
+    //   一致）。此前根级漏传 parent_path，弹窗一打开就把整库节点拉回并平铺成根级树节点
+    //   （弹窗 Tree 未开虚拟滚动），大库直接卡死页面。
+    // - type 参数：MoveToModal 内部传 'dir' / 'file'，直接透传给后端按类型过滤，
+    //   避免每次懒加载把 dir+file 全量拉回再前端过滤；返回的 RawFileItem.type 是
+    //   0/1，仍按 targetType 兜底过滤。
     // - 权限校验：filesApi.all 每条记录已随接口下发 permission（当前用户最高权限），
     //   权限 < edit_knowledge 的项标记 disabled（tooltip 由 MoveToModal 渲染），
     //   这样用户无法把文件搬到自己没有写权限的目录下。
@@ -563,12 +566,16 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
           return { data: [] }
         }
         const targetType = params.type === 'file' ? 1 : 0
-        const isRoot = !params.path || params.path === '/'
-        const apiParams: { library_id: string; parent_path?: string } = {
+        // 根级显式传 '/'：空 parent_path 会被后端理解为「递归返回整库」
+        const parentPath = !params.path || params.path === '/' ? '/' : params.path
+        const apiParams: {
+          library_id: string
+          parent_path: string
+          type?: string
+        } = {
           library_id: libraryId,
-        }
-        if (!isRoot) {
-          apiParams.parent_path = params.path
+          parent_path: parentPath,
+          type: params.type,
         }
         const list = await filesApi.all(apiParams)
         const filtered = (list || []).filter(
@@ -1005,7 +1012,7 @@ export const Catalog = forwardRef<CatalogRef, CatalogProps>(
                 }}
               >
                 <div className="flex-none size-5 flex items-center">
-                  <img className="size-4" src={file.icon} alt="" />
+                  <SafeImage className="size-4" src={file.icon} alt="" />
                 </div>
                 {isEditing ? (
                   <input

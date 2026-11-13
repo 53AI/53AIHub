@@ -1,5 +1,5 @@
-import { forwardRef, useImperativeHandle, useEffect, useState } from "react";
-import { Form, Switch, Slider, InputNumber, Input, Tooltip, Radio, Checkbox } from "antd";
+import { forwardRef, useImperativeHandle, useEffect, useMemo, useState } from "react";
+import { Form, Switch, Slider, InputNumber, Input, Tooltip, Radio, Checkbox, message } from "antd";
 import { QuestionCircleOutlined } from "@ant-design/icons";
 import { useAgentForm, parseModelValue, encodeModelValue, validateModelConfig } from "../hooks";
 import { useAgentCreateAdapter, ChannelOption } from "../adapters";
@@ -41,6 +41,7 @@ const DEFAULT_SETTINGS = {
     question_rewrite_config: { enable: false },
     web_search_setting: {
       enable: false,
+      source_type: "api",
       platform_setting_id: "",
       platform_key: "",
       top_k: 20,
@@ -76,6 +77,23 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
     const [rerankLoading, setRerankLoading] = useState(false);
     const [bochaPlatformSetting, setBochaPlatformSetting] = useState<PlatformSetting | null>(null);
     const [searchOptions, setSearchOptions] = useState<{ label: string; value: string; icon: string }[]>([]);
+    const [searchOptionsLoaded, setSearchOptionsLoaded] = useState(false);
+
+    const fastModelConfig = form.formData.settings?.fast_reasoning_config;
+    const fastModelOption = useMemo(() => {
+      const value = `${fastModelConfig?.channel_id}${MODEL_VALUE_SEPARATOR}${fastModelConfig?.model_name}`;
+      return modelOptions.flatMap((channel) => channel.options).find((option) => option.value === value);
+    }, [modelOptions, fastModelConfig?.channel_id, fastModelConfig?.model_name]);
+    const fastModelSupportsSearch =
+      fastModelOption?.upstream_api_format === "responses" && fastModelOption.enabled_tools?.includes("web_search") === true;
+    const deepModelConfig = form.formData.settings?.deep_thinking_config;
+    const deepModelOption = useMemo(() => {
+      const value = `${deepModelConfig?.channel_id}${MODEL_VALUE_SEPARATOR}${deepModelConfig?.model_name}`;
+      return modelOptions.flatMap((channel) => channel.options).find((option) => option.value === value);
+    }, [modelOptions, deepModelConfig?.channel_id, deepModelConfig?.model_name]);
+    const deepModelSupportsSearch =
+      deepModelOption?.upstream_api_format === "responses" && deepModelOption.enabled_tools?.includes("web_search") === true;
+    const modelSearchAvailable = fastModelSupportsSearch || (deepModelConfig?.enable && deepModelSupportsSearch);
 
     // 加载模型列表
     useEffect(() => {
@@ -116,9 +134,89 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
               ]);
             }
           })
-          .catch(console.error);
+          .catch(console.error)
+          .finally(() => setSearchOptionsLoaded(true));
+      } else {
+        setSearchOptionsLoaded(true);
       }
     }, [showChannelConfig, adapter]);
+
+    // 模型原生搜索能力消失时，关闭并清除原生搜索配置。
+    useEffect(() => {
+      const webSearchSetting = form.formData.settings?.web_search_setting;
+      if (
+        !showChannelConfig ||
+        modelLoading ||
+        !searchOptionsLoaded ||
+        !webSearchSetting
+      ) {
+        return;
+      }
+
+      if (webSearchSetting.source_type === "model") {
+        if (modelSearchAvailable) return;
+        form.updateFields({
+          settings: {
+            ...form.formData.settings,
+            web_search_setting: {
+              enable: false,
+              source_type: "api",
+              platform_setting_id: "",
+              platform_key: "",
+              top_k: 20,
+            },
+          },
+        });
+        message.warning(t('module.web_search_model_unsupported'));
+        return;
+      }
+
+      if (!webSearchSetting.enable) return;
+      const hasConfiguredApiSearch = searchOptions.some(
+        (option) => option.value === `${webSearchSetting.platform_setting_id}${MODEL_VALUE_SEPARATOR}${webSearchSetting.platform_key}`,
+      );
+      if (hasConfiguredApiSearch) return;
+
+      const fallback = searchOptions[0];
+      if (modelSearchAvailable) {
+        form.updateFields({
+          settings: {
+            ...form.formData.settings,
+            web_search_setting: {
+              ...webSearchSetting,
+              source_type: "model",
+              platform_setting_id: "",
+              platform_key: "",
+            },
+          },
+        });
+        return;
+      }
+      const [platform_setting_id = "", platform_key = ""] = fallback?.value.split(MODEL_VALUE_SEPARATOR) || [];
+      form.updateFields({
+        settings: {
+          ...form.formData.settings,
+          web_search_setting: {
+            ...webSearchSetting,
+            enable: Boolean(fallback),
+            source_type: fallback ? "api" : "model",
+            platform_setting_id: fallback ? platform_setting_id : "",
+            platform_key: fallback ? platform_key : "",
+          },
+        },
+      });
+    }, [
+      showChannelConfig,
+      modelLoading,
+      searchOptionsLoaded,
+      searchOptions,
+      fastModelSupportsSearch,
+      deepModelSupportsSearch,
+      form.formData.settings?.deep_thinking_config?.enable,
+      form.formData.settings?.web_search_setting,
+      form.formData.settings,
+      t,
+    ]);
 
     // 初始化默认设置
     useEffect(() => {
@@ -174,6 +272,25 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
             t,
             required: false,
           })) {
+            return false;
+          }
+
+          const webSearchSetting = form.formData.settings?.web_search_setting;
+          if (
+            webSearchSetting?.enable &&
+            webSearchSetting.source_type === "model" &&
+            (!fastModelSupportsSearch &&
+              !(deepConfig?.enable && deepModelSupportsSearch))
+          ) {
+            message.warning(t('module.web_search_model_unsupported'));
+            return false;
+          }
+          if (
+            webSearchSetting?.enable &&
+            webSearchSetting.source_type !== "model" &&
+            (!webSearchSetting.platform_setting_id || !webSearchSetting.platform_key)
+          ) {
+            message.warning(t('module.web_search_provider_required'));
             return false;
           }
         }
@@ -257,11 +374,20 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
     // 联网搜索值
     const webSearchSetting = form.formData.settings?.web_search_setting;
     const searchValue =
-      webSearchSetting?.platform_setting_id &&
+      webSearchSetting?.source_type === "model"
+        ? "model"
+        : webSearchSetting?.platform_setting_id &&
       webSearchSetting?.platform_key &&
       bochaPlatformSetting?.id === webSearchSetting?.platform_setting_id
         ? `${webSearchSetting.platform_setting_id}${MODEL_VALUE_SEPARATOR}${webSearchSetting.platform_key}`
         : "";
+    const webSearchOptions = [
+      ...(modelSearchAvailable
+        ? [{ label: "模型", value: "model", icon: (fastModelSupportsSearch ? fastModelOption?.icon : deepModelOption?.icon) || "" }]
+        : []),
+      ...searchOptions,
+    ];
+    const canDisplayWebSearch = searchOptionsLoaded && !modelLoading && webSearchOptions.length > 0;
 
     const setSearchValue = (value: string) => {
       const [platform_setting_id, platform_key] = value.split(MODEL_VALUE_SEPARATOR);
@@ -270,8 +396,9 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
           ...form.formData.settings,
           web_search_setting: {
             ...form.formData.settings?.web_search_setting,
-            platform_setting_id,
-            platform_key,
+            source_type: value === "model" ? "model" : "api",
+            platform_setting_id: value === "model" ? "" : platform_setting_id,
+            platform_key: value === "model" ? "" : platform_key,
           },
         },
       });
@@ -486,67 +613,70 @@ export const Knowledge = forwardRef<KnowledgeRef, KnowledgeProps>(
                   )}
 
                   {/* 联网搜索 */}
-                  <div className="flex items-start gap-2">
-                    <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
-                      {t('module.web_search')}
-                      <Tooltip title={t('module.web_search_desc')} placement="top">
-                        <QuestionCircleOutlined className="text-hint cursor-help" />
-                      </Tooltip>
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 overflow-hidden">
-                        <Switch
-                          size="small"
-                          checked={form.formData.settings?.web_search_setting?.enable}
-                          onChange={(checked) => form.updateFields({
-                            settings: {
-                              ...form.formData.settings,
-                              web_search_setting: {
-                                ...form.formData.settings?.web_search_setting,
-                                enable: checked,
-                              },
-                            },
-                          })}
-                        />
-                        <span className={`text-xs ${form.formData.settings?.web_search_setting?.enable ? 'text-primary' : 'text-placeholder'}`}>
-                          {form.formData.settings?.web_search_setting?.enable ? t('setting1.enabled') : t('setting1.disabled')}
-                        </span>
-                        
-                        {form.formData.settings?.web_search_setting?.enable && (
-                          <>
-                            {adapter.OtherComponents?.SelectPlus ? (
-                              <adapter.OtherComponents.SelectPlus
-                                className="flex-1 overflow-hidden"
-                                value={searchValue}
-                                onChange={setSearchValue}
-                                options={searchOptions}
-                                useI18n={false}
-                              />
-                            ) : null}
-                            <div className="flex-1 flex items-center gap-2">
-                              <span className="text-sm text-secondary shrink-0">{t('module.max_result')}</span>
-                              <InputNumber
-                                value={form.formData.settings?.web_search_setting?.top_k || 20}
-                                min={1}
-                                max={20}
-                                controls={false}
-                                className="w-20"
-                                onChange={(value) => form.updateFields({
-                                  settings: {
-                                    ...form.formData.settings,
-                                    web_search_setting: {
-                                      ...form.formData.settings?.web_search_setting,
-                                      top_k: value,
-                                    },
+                  {canDisplayWebSearch && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-sm text-secondary w-[100px] flex-none flex items-center gap-1">
+                        {t('module.web_search')}
+                        <Tooltip title={t('module.web_search_desc')} placement="top">
+                          <QuestionCircleOutlined className="text-hint cursor-help" />
+                        </Tooltip>
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <Switch
+                            size="small"
+                            checked={form.formData.settings?.web_search_setting?.enable}
+                            onChange={(checked) => {
+                              form.updateFields({
+                                settings: {
+                                  ...form.formData.settings,
+                                  web_search_setting: {
+                                    ...form.formData.settings?.web_search_setting,
+                                    enable: checked,
                                   },
-                                })}
-                              />
-                            </div>
-                          </>
-                        )}
+                                },
+                              });
+                            }}
+                          />
+                          <span className={`text-xs ${form.formData.settings?.web_search_setting?.enable ? 'text-primary' : 'text-placeholder'}`}>
+                            {form.formData.settings?.web_search_setting?.enable ? t('setting1.enabled') : t('setting1.disabled')}
+                          </span>
+                          {form.formData.settings?.web_search_setting?.enable && (
+                            <>
+                              {adapter.OtherComponents?.SelectPlus ? (
+                                <adapter.OtherComponents.SelectPlus
+                                  className="flex-1 overflow-hidden"
+                                  value={searchValue}
+                                  onChange={setSearchValue}
+                                  options={webSearchOptions}
+                                  useI18n={false}
+                                />
+                              ) : null}
+                              <div className="flex-1 flex items-center gap-2">
+                                <span className="text-sm text-secondary shrink-0">{t('module.max_result')}</span>
+                                <InputNumber
+                                  value={form.formData.settings?.web_search_setting?.top_k || 20}
+                                  min={1}
+                                  max={20}
+                                  controls={false}
+                                  className="w-20"
+                                  onChange={(value) => form.updateFields({
+                                    settings: {
+                                      ...form.formData.settings,
+                                      web_search_setting: {
+                                        ...form.formData.settings?.web_search_setting,
+                                        top_k: value,
+                                      },
+                                    },
+                                  })}
+                                />
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="w-full border-t border-dashed my-3"></div>
 

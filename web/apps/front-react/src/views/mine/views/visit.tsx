@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Empty, Spin, message, Button } from "antd";
-import { Dropdown } from "@km/shared-components-react";
+import { Dropdown, SafeImage } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import mySpaceApi from "@/api/modules/my-space";
 import filesApi from "@/api/modules/files";
@@ -10,7 +10,6 @@ import { formatFile } from "@/api/modules/files/transform";
 import { checkVersion } from "@/utils/version";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { formatLibrary } from "@/stores/modules/library";
-import { SafeImage } from "@km/shared-components-react";
 import { SvgIcon } from "@km/shared-components-react";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { getPublicPath } from "@/utils/config";
@@ -72,7 +71,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
           type: "file" as const,
           id: item.resource_id,
           name: formattedFile.name,
-          icon: item.file.origin_source === 'recording' || item.file.origin_source === 'recording_import' ? getPublicPath("/images/file/recrod.png"):  formattedFile.icon,
+          icon: item.file.origin_source === 'recording' || item.file.origin_source === 'recording_import' ? "/images/file/recrod.png":  formattedFile.icon,
           position,
           owner: creator?.nickname || creator?.username || "",
           isFavorite: item.is_favorite ?? false,
@@ -354,7 +353,7 @@ export default function VisitView({ keyword = "", onPreview, refreshKey }: Visit
                           className="size-[26px] object-cover text-sm"
                         />
                       ) : (
-                        <img
+                        <SafeImage
                           className="flex-none w-6 h-6"
                           src={item.icon}
                           alt=""

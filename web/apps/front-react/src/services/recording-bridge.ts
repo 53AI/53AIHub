@@ -27,6 +27,8 @@ export type EventType =
   | 'memoryWarning'
   | 'heartbeatError'
   | 'maxDurationReached'
+  /** 录音开始后携带麦克风流发出（本地实时转写等旁路订阅者用；云端上传链路不变） */
+  | 'pcmTap'
 
 export type BridgeEventHandler =
   | ((duration: number) => void)
@@ -39,6 +41,7 @@ export type BridgeEventHandler =
   | ((info: { usage: number; usedMB: number }) => void)
   | ((failCount: number) => void)
   | (() => void)
+  | ((stream: MediaStream) => void)
 
 export interface RecordingInfo {
   jobId: string
@@ -120,7 +123,7 @@ export class RecordingBridge {
    * saves draft to IDB, starts MediaRecorder
    * @returns jobId
    */
-  async start(groupId?: number, options?: { enableSystemAudio?: boolean }): Promise<string> {
+  async start(options?: { enableSystemAudio?: boolean }): Promise<string> {
     if (this.recordingInfo) {
       throw new Error('Recording already in progress')
     }
@@ -172,7 +175,6 @@ export class RecordingBridge {
         title,
         target_format: 'm4a',
         source_mime_type: this.mimeType,
-        group_id: groupId
       })
     } catch (error: any) {
       const errorMsg =
@@ -213,6 +215,13 @@ export class RecordingBridge {
 
     // Start recording with timeslice for chunked output
     recorder.start(TIMESLICE)
+
+    // 旁路订阅者（本地实时转写）拿同一个麦克风流：与 MediaRecorder 并行消费，
+    // 云端上传链路零影响。注意系统音频混音场景下此流仅含麦克风（不含系统声），
+    // 本地展示与云端转写内容可能不一致，属可接受差异。
+    if (this.mediaStream) {
+      this.emit('pcmTap', this.mediaStream)
+    }
 
     return job.id
   }
@@ -520,11 +529,13 @@ export class RecordingBridge {
   on(event: 'tick', handler: (data: { duration: number; recordingId: string }) => void): () => void
   on(event: 'chunkReady', handler: (chunk: { index: number; mimeType: string }) => void): () => void
   on(event: 'stopped', handler: (info: { fileId: number; jobId: string }) => void): () => void
+  on(event: 'interrupted', handler: (info: { jobId: string }) => void): () => void
   on(event: 'error', handler: (message: string) => void): () => void
   on(event: 'deviceDisconnected', handler: (trackLabel: string) => void): () => void
   on(event: 'memoryWarning', handler: (info: { usage: number; usedMB: number }) => void): () => void
   on(event: 'heartbeatError', handler: (failCount: number) => void): () => void
   on(event: 'maxDurationReached', handler: () => void): () => void
+  on(event: 'pcmTap', handler: (stream: MediaStream) => void): () => void
   on(event: EventType, handler: BridgeEventHandler): () => void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set())
@@ -799,6 +810,15 @@ export class RecordingBridge {
    */
   private async buildOutputStream(enableSystemAudio: boolean): Promise<MediaStream> {
     if (!enableSystemAudio) {
+      return this.mediaStream!
+    }
+
+    // 能力检测：移动端（H5）浏览器没有 getDisplayMedia（屏幕采集是桌面端专属能力），
+    // 调用方（侧栏）固定传 enableSystemAudio=true，不检测会直接抛
+    // “navigator.mediaDevices.getDisplayMedia is not a function”导致录音启动失败。
+    // 这里降级为纯麦克风录音。
+    if (typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
+      message.warning(t('recording.system_audio_unsupported'))
       return this.mediaStream!
     }
 
@@ -1151,6 +1171,7 @@ export class RecordingBridge {
   private emit(event: 'memoryWarning', info: { usage: number; usedMB: number }): void
   private emit(event: 'heartbeatError', failCount: number): void
   private emit(event: 'maxDurationReached'): void
+  private emit(event: 'pcmTap', stream: MediaStream): void
   private emit(event: EventType, ...args: unknown[]): void {
     const handlers = this.eventHandlers.get(event)
     if (!handlers) return

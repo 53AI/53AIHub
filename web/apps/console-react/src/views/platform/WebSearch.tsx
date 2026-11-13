@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Button, Drawer, Modal, Form, Input, Empty, message } from "antd";
-import { SvgIcon, IconAction } from "@km/shared-components-react";
+import { SvgIcon, IconAction, SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import { transformPlatformSetting } from "@/api/modules/platform-settings/transform";
@@ -125,8 +125,8 @@ export function PlatformWebSearch() {
           <div className="group flex items-center justify-between bg-white border border-gray-200 rounded-lg p-4 hover:shadow-sm transition-shadow">
             {/* 左侧：图标和名称 */}
             <div className="flex-none w-[170px] flex items-center gap-3">
-              <img
-                src={getRealPath("/images/tools/bocha.png")}
+              <SafeImage
+                src={"/images/tools/bocha.png"}
                 alt={BOCHA_PLATFORM_NAME}
                 className="w-8 h-8"
               />
@@ -218,8 +218,8 @@ export function PlatformWebSearch() {
             <div className="flex items-center justify-between px-5 py-4 rounded-md bg-[#F8F9FA]">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10">
-                  <img
-                    src={getRealPath("/images/tools/bocha.png")}
+                  <SafeImage
+                    src={"/images/tools/bocha.png"}
                     alt={BOCHA_PLATFORM_NAME}
                     className="w-10 h-10"
                   />
@@ -250,8 +250,8 @@ export function PlatformWebSearch() {
         getContainer={false}
         title={
           <div className="flex items-center gap-2">
-            <img
-              src={getRealPath("/images/tools/bocha.png")}
+            <SafeImage
+              src={"/images/tools/bocha.png"}
               alt={BOCHA_PLATFORM_NAME}
               className="w-8 h-8"
             />

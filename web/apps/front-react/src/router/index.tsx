@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import {
   useEnterpriseStore,
+  useIsRecordOnly,
   useIsSoftStyle,
 } from "@/stores/modules/enterprise";
 import { useNavigationStore } from "@/stores/modules/navigation";
@@ -23,6 +24,7 @@ import { InitGuard } from "@/components/InitGuard";
 import { RouterErrorBoundary } from "@/components/RouterErrorBoundary";
 import { checkVersion } from "@/utils/version";
 import { isOpLocalEnv, isPrivatePrem } from '@/utils/config';
+import { getEntryBase } from '@/constants/app-template';
 import { VERSION_MODULE } from "@/constants/enterprise";
 
 // Loading fallback component
@@ -317,6 +319,7 @@ function PermissionGuard({ children, auth }: { children: React.ReactNode; auth?:
   const token = localStorage.getItem('access_token')
   const location = useLocation()
   const needsLogin = auth && !token
+  const isRecordOnly = useIsRecordOnly()
 
   // Dispatch login modal event in useEffect to avoid setState during render
   useEffect(() => {
@@ -326,6 +329,17 @@ function PermissionGuard({ children, auth }: { children: React.ReactNode; auth?:
   }, [needsLogin])
 
   if (needsLogin) {
+    // 安心录模式（erhao.html 入口或企业配置）：/ 会被 RootRedirect 跳回 /recording，形成重定向死循环。
+    // 改为原地等待登录（上方 useEffect 已弹登录框），并把目标写入 sessionStorage，
+    // 登录成功后由 layout 的 handleLoginSuccess 跳回（与 AuthBlocker 同一机制）。
+    if (isRecordOnly) {
+      try {
+        sessionStorage.setItem('login_redirect', locationToPath(location))
+      } catch {
+        // sessionStorage 不可用时静默忽略
+      }
+      return null
+    }
     const redirectTarget = encodeURIComponent(locationToPath(location))
     return <Navigate to={`/?redirect=${redirectTarget}`} replace />
   }
@@ -355,8 +369,16 @@ function useVisibleNavigations() {
 function RootRedirect() {
   const visibleNavigations = useVisibleNavigations()
   const isSoftStyle = useIsSoftStyle()
+  const isRecordOnly = useIsRecordOnly()
   const firstNav = visibleNavigations[0]
   const location = useLocation()
+
+  // 安心录模式（erhao.html 入口或企业配置）：首页直接进安心录“经营”（默认查看第一个文件）
+  if (isRecordOnly) {
+    return (
+      <Navigate to={withPreservedRedirect('/recording', location.search, location.hash)} replace />
+    )
+  }
 
   if (!firstNav) {
     // 软件模式下首页不可达，fallback 直接走 /agent，避免 /index → /agent 的二次跳转
@@ -383,7 +405,15 @@ function RootRedirect() {
 // Dynamic component for index
 function IndexComponent() {
   const isSoftStyle = useIsSoftStyle()
+  const isRecordOnly = useIsRecordOnly()
   const location = useLocation()
+
+  // 安心录模式下 /index 不是有效页面，直接进安心录“经营”
+  if (isRecordOnly) {
+    return (
+      <Navigate to={withPreservedRedirect('/recording', location.search, location.hash)} replace />
+    )
+  }
 
   // 软件模式下访问 /index 重定向到 /agent
   if (isSoftStyle) {
@@ -734,6 +764,10 @@ const buildRoutes = () => {
   return routes
 }
 
+// 路由模式：op 本地 / 私有化 / 桌面端（Tauri）环境使用 hash 路由（这些环境没有服务端回退配置）。
+// 模板入口（website.html / client.html / erhao.html）在 history 模式下以入口
+// 文件名作为 basename，URL 形如 /client.html/agent；刷新后由服务端把
+// /client.html/* 回退到 client.html（nginx 配置见部署文档），入口身份不丢。
 const useHashRouter = isOpLocalEnv || isPrivatePrem;
 
 export const isHashRouter = useHashRouter
@@ -753,8 +787,10 @@ export function getCurrentPathname(): string {
     const hash = window.location.hash
     return hash ? hash.slice(1) || '/' : '/'
   }
-  // BrowserRouter: pathname 直接是路径
-  return window.location.pathname || '/'
+  // BrowserRouter：模板入口下 pathname 带入口文件名前缀（如 /client.html/agent），需剥离 basename
+  const base = getEntryBase()
+  const pathname = window.location.pathname || '/'
+  return base && pathname.startsWith(base) ? pathname.slice(base.length) || '/' : pathname
 }
 
 /**
@@ -797,10 +833,10 @@ function withErrorBoundary(routes: RouteObject[]): RouteObject[] {
   }))
 }
 
-// Create router
+// Create router（history 模式下模板入口以入口文件名为 basename，主入口为默认 '/'）
 export const router = useHashRouter
   ? createHashRouter(withErrorBoundary(buildRoutes()))
-  : createBrowserRouter(withErrorBoundary(buildRoutes()))
+  : createBrowserRouter(withErrorBoundary(buildRoutes()), { basename: getEntryBase() || '/' })
 
 // Setup router function
 export async function setupRouter() {

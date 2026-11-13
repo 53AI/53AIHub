@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Skeleton, Divider, Tooltip } from 'antd'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import type { ScopeItem } from '@km/shared-business/agent-create'
 import { subscriptionApi } from '@/api/modules/subscription'
 import groupApi from '@/api/modules/group'
@@ -140,10 +140,10 @@ export function AuthTagGroup({
   // 获取订阅项的 logo
   const getLogoSrc = useCallback((item: SubscriptionItem) => {
     if (!value.includes(item.group_id)) {
-      return getPublicPath('/images/subscription/vip-0.png')
+      return '/images/subscription/vip-0.png'
     }
     if (item.logo && !/\.png$/.test(item.logo)) {
-      return getPublicPath(`/images/subscription/${item.logo}.png`)
+      return `/images/subscription/${item.logo}.png`
     }
     return item.logo || ''
   }, [value])
@@ -348,7 +348,7 @@ export function AuthTagGroup({
                   className="flex items-center gap-1 text-sm"
                 >
                   {item.type === 'subscription' && item.logo && (
-                    <img
+                    <SafeImage
                       src={item.logo}
                       className="flex-none size-6 rounded-full overflow-auto"
                       alt={item.name}
@@ -396,7 +396,7 @@ export function AuthTagGroup({
                 key={item.group_id}
                 className={`flex items-center gap-1 text-sm text-theme ${value.includes(item.group_id) ? '' : 'hidden'}`}
               >
-                <img
+                <SafeImage
                   src={getLogoSrc(item)}
                   className="flex-none size-6 rounded-full overflow-auto"
                   alt={item.group_name}
@@ -440,7 +440,7 @@ export function AuthTagGroup({
                   <React.Fragment key={item.id}>
                     <li className="flex items-center gap-1 text-sm text-theme">
                       {item.type === 'subscription' && item.logo && (
-                        <img
+                        <SafeImage
                           src={item.logo}
                           className="flex-none size-6 rounded-full overflow-auto"
                           alt={item.name}

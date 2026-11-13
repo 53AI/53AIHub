@@ -294,6 +294,98 @@ func BatchRetryRagJobStepV2(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse("批量重试指令已发送"))
 }
 
+// BatchContinueRagJobsRequestV2 批量断点清洗请求参数 (V2)
+type BatchContinueRagJobsRequestV2 struct {
+	RelatedIDs []json.RawMessage `json:"related_ids" binding:"required" description:"文档 related_id 列表（HashID 或正整数）"`
+}
+
+type BatchContinueRagJobItemV2 struct {
+	RelatedID string `json:"related_id"`
+	RunID     string `json:"run_id,omitempty"`
+	Status    string `json:"status"` // restarted | continued | skipped | error
+	StepKey   string `json:"step_key,omitempty"`
+	JobID     int64  `json:"job_id,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+type BatchContinueRagJobsResponseV2 struct {
+	SuccessCount int                         `json:"success_count"`
+	SkippedCount int                         `json:"skipped_count"`
+	FailedCount  int                         `json:"failed_count"`
+	Results      []BatchContinueRagJobItemV2 `json:"results"`
+}
+
+func batchContinueRelatedLabel(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	return string(raw)
+}
+
+// BatchContinueRagJobsV2 批量断点清洗 RAG 文档 (V2)
+// @Summary 批量断点清洗 RAG 文档
+// @Description 按文档实际状态选择重跑起点，无需逐个提交 jobID 与断点步骤参数：已完成文档从第一步重新清洗，失败文档从最早失败步骤开始，等待手动执行文档从对应手动步骤开始
+// @Tags RAG任务V2
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body BatchContinueRagJobsRequestV2 true "批量断点清洗请求参数"
+// @Success 200 {object} model.CommonResponse{data=BatchContinueRagJobsResponseV2} "处理完成，逐文档返回结果"
+// @Failure 400 {object} model.CommonResponse "参数错误"
+// @Failure 500 {object} model.CommonResponse "服务器内部错误"
+// @Router /api/rag/v2/jobs/batch-continue [post]
+func BatchContinueRagJobsV2(c *gin.Context) {
+	var req BatchContinueRagJobsRequestV2
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("参数格式错误"))
+		return
+	}
+	if len(req.RelatedIDs) == 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse("文档列表不能为空"))
+		return
+	}
+
+	eid := config.GetEID(c)
+	resp := BatchContinueRagJobsResponseV2{Results: make([]BatchContinueRagJobItemV2, 0, len(req.RelatedIDs))}
+	seen := make(map[int64]struct{}, len(req.RelatedIDs))
+
+	for _, raw := range req.RelatedIDs {
+		label := batchContinueRelatedLabel(raw)
+		relatedID, err := parseBatchRunID(raw)
+		if err != nil || relatedID <= 0 {
+			resp.FailedCount++
+			resp.Results = append(resp.Results, BatchContinueRagJobItemV2{RelatedID: label, Status: "error", Error: "无效的 related_id"})
+			continue
+		}
+		if _, dup := seen[relatedID]; dup {
+			continue
+		}
+		seen[relatedID] = struct{}{}
+
+		res, err := service.ContinueRelatedRunV2(c.Request.Context(), eid, relatedID)
+		item := BatchContinueRagJobItemV2{
+			RelatedID: label,
+			RunID:     res.RunID,
+			Status:    res.Status,
+			StepKey:   res.StepKey,
+			JobID:     res.JobID,
+			Error:     res.Error,
+		}
+		switch {
+		case err != nil || res.Status == "error":
+			resp.FailedCount++
+		case res.Status == "skipped":
+			resp.SkippedCount++
+		default:
+			resp.SuccessCount++
+		}
+		resp.Results = append(resp.Results, item)
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(resp))
+}
+
 func parseBatchRunID(value interface{}) (int64, error) {
 	switch id := value.(type) {
 	case json.RawMessage:

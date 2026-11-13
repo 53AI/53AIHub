@@ -72,9 +72,13 @@ export function useChatFeedback() {
   const loadMessageFeedback = useCallback(async (messageId: string | number): Promise<FeedbackState> => {
     try {
       const feedbackData = await api.getFeedback({ message_id: messageId })
+      // 剥离反馈记录自身的 id:FeedbackState 会被 spread 进消息对象,
+      // 保留 id 会把消息 id 覆盖成反馈记录 id(点赞/点踩时 message_id 就传错了)。
+      // 记录 id 归位到 feedbackId,供更新/删除反馈使用。
+      const { id: feedbackRecordId, ...feedbackFields } = feedbackData ?? {}
       return {
-        ...feedbackData,
-        feedbackId: feedbackData.id,
+        ...feedbackFields,
+        feedbackId: feedbackRecordId ?? null,
         feedbackVisible: false,
         feedbackTypeOptions: null,
         submitBtnDisabled: true,

@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { BubbleAssistant } from "@km/hub-ui-x-react";
+import { SafeImage } from "@km/shared-components-react";
 import { DEFAULT_AGENT_IMG } from "../stores/conversation";
 
 export interface WelcomeProps {
@@ -18,12 +19,6 @@ export interface WelcomeProps {
   className?: string;
   /** 渲染使用范围标签 - 如 AuthTagGroup */
   renderAuthTags?: (props: { userGroupIds: number[] }) => React.ReactNode;
-}
-
-function handleImageError(e: React.SyntheticEvent<HTMLImageElement>) {
-  const target = e.target as HTMLImageElement;
-  if (target.src.endsWith(DEFAULT_AGENT_IMG)) return;
-  target.src = DEFAULT_AGENT_IMG;
 }
 
 function WelcomeInner({ agentInfo, onSuggestion, className, renderAuthTags }: WelcomeProps) {
@@ -45,11 +40,10 @@ function WelcomeInner({ agentInfo, onSuggestion, className, renderAuthTags }: We
             "linear-gradient(90deg, rgba(243, 249, 254, 1) 0%, rgba(247, 243, 255, 1) 100%)",
         }}
       >
-        <img
+        <SafeImage
           className="flex-none size-10 rounded-full overflow-hidden"
           src={agentInfo?.logo || DEFAULT_AGENT_IMG}
           alt={agentInfo?.name || "Agent"}
-          onError={handleImageError}
         />
         <div className="flex-1 flex flex-col gap-1">
           <div className="text-xl font-semibold text-[#1F2123]">

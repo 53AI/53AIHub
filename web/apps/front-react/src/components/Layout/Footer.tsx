@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { useEnterpriseStore, useIsSoftStyle } from '@/stores/modules/enterprise'
 import { getPublicPath } from '@/utils/config'
 import { t } from '@/locales'
-import './Footer.css'
+
+import { SafeImage } from "@km/shared-components-react";import './Footer.css'
 
 interface FooterItem {
   name: string
@@ -34,8 +35,8 @@ export function Footer({ fixed = true }: { fixed?: boolean }) {
           <div className="mt-auto w-full flex justify-center items-center gap-1.5 text-xs text-[#999999] py-4">
             <span>本网站由</span>
             <div className="flex-none h-4 overflow-hidden">
-              <img
-                src={getPublicPath('/images/53ai-hub.png')}
+              <SafeImage
+                src={'/images/53ai-hub.png'}
                 className="flex-none h-4 object-cover -translate-y-16"
                 alt="53AI Hub"
                 style={{ filter: 'drop-shadow(var(--el-text-color-placeholder, #999) 0 64px)' }}
@@ -63,8 +64,8 @@ export function Footer({ fixed = true }: { fixed?: boolean }) {
         {copyright !== 'true' && (
           <div className="flex items-center gap-1.5 text-xs">
             <span>本网站由</span>
-            <img
-              src={getPublicPath('/images/53ai-hub.png')}
+            <SafeImage
+              src={'/images/53ai-hub.png'}
               className="flex-none h-4 object-cover"
               alt="53AI Hub"
             />

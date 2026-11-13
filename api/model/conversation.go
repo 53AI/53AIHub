@@ -381,6 +381,14 @@ func (c *Conversation) LoadUser() error {
 	return nil
 }
 
+// GetBotConversation 查询 bot 会话（source=bot，按 visitor 精确匹配，未删除）
+func GetBotConversation(eid, userID, agentID int64, visitorID string) (*Conversation, error) {
+	var conversation Conversation
+	err := DB.Where("eid = ? AND user_id = ? AND agent_id = ? AND visitor_id = ? AND deleted_time = 0",
+		eid, userID, agentID, visitorID).Order("updated_time DESC").First(&conversation).Error
+	return &conversation, err
+}
+
 func GetConversationsByAgentID(eid int64, agentID int64) ([]*Conversation, error) {
 	var conversations []*Conversation
 	err := DB.Where("eid = ? AND agent_id = ?", eid, agentID).Order("updated_time DESC").Find(&conversations).Error

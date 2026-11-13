@@ -3,7 +3,7 @@ import { Table, Select, Button, Tag, Spin, Tooltip } from "antd";
 import { SvgIcon, Search } from "@km/shared-components-react";
 import feedbackApi from "@/api/modules/feedback";
 import { DateRangeFilter } from "@/components/Filter/date-range";
-import { UserFilter } from "@/components/Filter/user";
+import AskerFilter from "@/components/Filter/Asker";
 import FeedbackConfigDialog from "@/views/search/feedback/FeedbackConfigDialog";
 import Detail, { DetailRef } from "@/views/search/components/detail";
 import {
@@ -79,7 +79,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
     end_time: null as number | null,
     question: null as string | null,
     feedback_type: t("search-record.all"),
-    user_id: [] as any[],
+    user_id: null as string | null,
     reason: t("search-record.all"),
     offset: 0,
     limit: 10,
@@ -92,6 +92,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
   const [configList, setConfigList] = useState<any>(null);
   const [isCleared, setIsCleared] = useState(false);
   const [isClearIconAvailable, setIsClearIconAvailable] = useState(false);
+  const [askerClearKey, setAskerClearKey] = useState(0);
   const [configLoaded, setConfigLoaded] = useState(false);
 
   const openFeedbackConfig = () => {
@@ -156,7 +157,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
     } finally {
       loadingRef.current.config = false;
     }
-  }, [enterpriseStore.info.eid]);
+  }, [type, enterpriseStore.info.eid]);
 
   const loadFeedbackList = useCallback(
     async (form = detailedForm, dates = detailedDateValue) => {
@@ -186,9 +187,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
               ? null
               : form.feedback_type,
           reason: form.reason === t("search-record.all") ? null : form.reason,
-          user_id: form.user_id.length
-            ? form.user_id.map((item: any) => item.user_id).join(",")
-            : undefined,
+          user_id: form.user_id || undefined,
           offset: form.offset,
           limit: form.limit,
         });
@@ -242,12 +241,13 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
     const newForm = {
       ...detailedForm,
       question: null,
-      user_id: [],
+      user_id: null,
       reason: t("search-record.all"),
       feedback_type: type,
       offset: 0,
     };
     setIsClearIconAvailable(true);
+    setAskerClearKey((key) => key + 1);
     setIsCleared(true);
     setDetailedDateValue(newDates);
     lastRequestRef.current.detailedForm = null;
@@ -263,7 +263,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
       end_time: null,
       question: null,
       feedback_type: t("search-record.all"),
-      user_id: [],
+      user_id: null,
       reason: t("search-record.all"),
       offset: 0,
       limit: 10,
@@ -271,6 +271,7 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
     setDetailedDateValue(newDates);
     lastRequestRef.current.detailedForm = null;
     setDetailedForm(newForm);
+    setAskerClearKey((key) => key + 1);
     setIsCleared(true);
     setIsClearIconAvailable(false);
     loadFeedbackList(newForm, newDates);
@@ -491,12 +492,12 @@ const WorkAIFeedback: React.FC<FeedbackProps> = ({ agentId, type = 'work_ai' }) 
               { label: t("search-feedback.unsatisfied"), value: "unsatisfied" },
             ]}
           />
-          <UserFilter
-            value={detailedForm.user_id}
-            className="flex-none max-w-[180px]"
-            isCleared={isCleared}
-            onChange={(value) => {
-              const newForm = { ...detailedForm, user_id: value };
+          <AskerFilter
+            clearKey={askerClearKey}
+            field="user_id"
+            label={t("search-feedback.user")}
+            onChange={(user_id) => {
+              const newForm = { ...detailedForm, user_id };
               setDetailedForm(newForm);
               handleFilterChange(newForm);
             }}

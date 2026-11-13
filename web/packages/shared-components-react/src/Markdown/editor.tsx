@@ -150,11 +150,15 @@ const getToolbar = (type: "full" | "simple") => {
   ];
 };
 
-// Load Vditor script
+const vditorScriptPromises = new Map<string, Promise<void>>();
+
+// Load Vditor script once per CDN, including concurrent React StrictMode mounts.
 const loadVditorScript = async (cdn: string): Promise<void> => {
   if (window.Vditor) return;
+  const loading = vditorScriptPromises.get(cdn);
+  if (loading) return loading;
 
-  return new Promise((resolve, reject) => {
+  const promise = new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
     script.src = `${cdn}/dist/index.min.js`;
     script.onload = () => resolve();
@@ -166,6 +170,11 @@ const loadVditorScript = async (cdn: string): Promise<void> => {
     link.rel = "stylesheet";
     link.href = `${cdn}/dist/index.css`;
     document.head.appendChild(link);
+  });
+  vditorScriptPromises.set(cdn, promise);
+  return promise.catch((error: unknown) => {
+    vditorScriptPromises.delete(cdn);
+    throw error;
   });
 };
 
@@ -197,6 +206,7 @@ export const MarkdownEditor = forwardRef<
     const containerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(false);
     const vditorRef = useRef<any>(null);
+    const initGenerationRef = useRef(0);
     const [wordCount, setWordCount] = useState(0);
     // 使用 ref 保存 onChange，避免作为 useEffect 依赖
     const onChangeRef = useStableCallback(onChange);
@@ -205,6 +215,7 @@ export const MarkdownEditor = forwardRef<
 
     const initVditor = useCallback(async () => {
       if (!config) return;
+      const initGeneration = ++initGenerationRef.current;
 
       if (vditorRef.current) {
         try {
@@ -220,7 +231,7 @@ export const MarkdownEditor = forwardRef<
       try {
         await loadVditorScript(config.cdn);
 
-        if (!containerRef.current) return;
+        if (initGeneration !== initGenerationRef.current || !containerRef.current) return;
 
         const uploadConfig = getUploadConfig(config);
 
@@ -279,7 +290,7 @@ export const MarkdownEditor = forwardRef<
       } catch (error) {
         console.error("Failed to load Vditor:", error);
       } finally {
-        setLoading(false);
+        if (initGeneration === initGenerationRef.current) setLoading(false);
       }
     }, [height, type, preview, maxlength, config]);
 
@@ -287,6 +298,7 @@ export const MarkdownEditor = forwardRef<
       initVditor();
 
       return () => {
+        initGenerationRef.current++;
         if (vditorRef.current) {
           try {
             vditorRef.current.destroy();

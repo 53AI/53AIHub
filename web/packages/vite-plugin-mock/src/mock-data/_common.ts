@@ -8,30 +8,38 @@ export const mockVersion = () => ok({ version: 'v1.0.0-mock' })
 
 export const mockEnvConfig = () => ok({ api_host: '', kk_base_url: '' })
 
-export const mockEnterprisesCurrent = () => ({
-  id: 1,
-  display_name: 'Mock Enterprise',
-  domain: 'http://localhost:5173',
-  logo: '',
-  ico: '',
-  banner: '',
-  slogan: 'AI Knowledge Management',
-  description: 'Mock enterprise for development',
-  copyright: '© 2025 Mock Enterprise',
-  keywords: 'AI,Knowledge,Agent',
-  language: 'Zh',
-  timezone: 'UTC+8',
-  template_type: 'default',
-  layout_type: '1',
-  type: 'enterprise',
-  status: 1,
-  created_time: now,
-  updated_time: now,
-})
+export const mockEnterprisesCurrent = () =>
+  ok({
+    enterprise: {
+      id: 1,
+      display_name: 'Mock Enterprise',
+      domain: 'http://localhost:5173',
+      logo: '',
+      ico: '',
+      banner: '',
+      slogan: 'AI Knowledge Management',
+      description: 'Mock enterprise for development',
+      copyright: '© 2025 Mock Enterprise',
+      keywords: 'AI,Knowledge,Agent',
+      language: 'Zh',
+      timezone: 'UTC+8',
+      template_type: 'default',
+      layout_type: '1',
+      type: 'enterprise',
+      status: 1,
+      created_time: now,
+      updated_time: now,
+    },
+    version: 1,
+  })
 
-export const mockEnterpriseFeatures = () => ({
-  features: ['knowledge_base', 'agent', 'workflow', 'prompt_management'],
-})
+export const mockEnterpriseFeatures = () =>
+  ok([
+    { feature_key: 'knowledge_base', value: true },
+    { feature_key: 'agent', value: true },
+    { feature_key: 'workflow', value: true },
+    { feature_key: 'prompt_management', value: true },
+  ])
 
 export const mockIsSaas = () => ok({ is_saas: false })
 

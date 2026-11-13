@@ -10,6 +10,14 @@ func GetAdaptor(apiType int) adaptor.Adaptor {
 	return adaptorregistry.GetAdaptor(apiType)
 }
 
+func GetAdaptorWithBaseURL(apiType int, baseURL string) adaptor.Adaptor {
+	return adaptorregistry.GetAdaptorWithBaseURL(apiType, baseURL)
+}
+
+func GetAdaptorForChannel(apiType int, baseURL string, channelType int) adaptor.Adaptor {
+	return adaptorregistry.GetAdaptorForChannel(apiType, baseURL, channelType)
+}
+
 func SetCustomConfig(a *adaptor.Adaptor, customConfig *custom.CustomConfig) error {
 	return adaptorregistry.SetCustomConfig(a, customConfig)
 }

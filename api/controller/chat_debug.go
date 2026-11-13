@@ -284,6 +284,11 @@ function formatDuration(ms) {
   return (ms / 1000).toFixed(2) + 's';
 }
 
+function formatCacheRate(cacheUsage) {
+  if (!cacheUsage) return '不可用';
+  return (Number(cacheUsage.hit_rate || 0) * 100).toFixed(1) + '%';
+}
+
 function getHeaders() {
   const t = tokenInput.value.trim();
   const headers = {};
@@ -351,6 +356,7 @@ function renderList() {
       '<div class="trace-meta">' +
         '<span>' + formatTime(t.started_at) + ' (' + formatDuration(t.duration_ms) + ')</span>' +
         '<span>' + (t.total_tokens || 0) + ' tokens</span>' +
+        '<span>缓存命中率 ' + formatCacheRate(t.cache_usage) + '</span>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -401,6 +407,9 @@ function renderDetail(t) {
     '<div class="metric"><div class="label">Prompt Tokens</div><div class="value">' + (t.prompt_tokens || 0) + '</div></div>' +
     '<div class="metric"><div class="label">Completion Tokens</div><div class="value">' + (t.completion_tokens || 0) + '</div></div>' +
     '<div class="metric"><div class="label">Total Tokens</div><div class="value">' + (t.total_tokens || 0) + '</div></div>' +
+    '<div class="metric"><div class="label">缓存命中 Token</div><div class="value">' + (t.cache_usage ? t.cache_usage.hit_tokens : '不可用') + '</div></div>' +
+    '<div class="metric"><div class="label">缓存未命中 Token</div><div class="value">' + (t.cache_usage ? t.cache_usage.miss_tokens : '不可用') + '</div></div>' +
+    '<div class="metric"><div class="label">缓存命中率</div><div class="value">' + formatCacheRate(t.cache_usage) + '</div><div class="muted" style="font-size:11px;">按缓存统计可用的模型调用汇总</div></div>' +
   '</div>';
 
   // 2. 调优诊断 Copilot 卡片
@@ -477,6 +486,7 @@ function renderOptimizationDiagnosis(t) {
   if (ragStage && ragStage.data) {
     const rdata = ragStage.data;
     const selectedCount = rdata.selected_count !== undefined ? rdata.selected_count : (rdata.count || 0);
+    const fullDocumentIncluded = (rdata.sources || []).some(source => source.chunk_type === 'document_full');
     const obs = rdata.retrieval_observability || {};
     const initCandidates = obs.initial_candidates || 0;
     const droppedSources = rdata.dropped_sources || [];
@@ -498,7 +508,7 @@ function renderOptimizationDiagnosis(t) {
         suggestions.push('请展开下方【被淘汰切片】卡片排查是否有核心依据切片被误杀；若存在误杀可调低相似度阈值');
       }
       // 重排相关性阈值模式（自适应注入）下，命中少量高相关切片属正常设计，不告警
-      if (selectedCount < 2 && !(d.search_config && d.search_config.rerank_score_threshold_enabled)) {
+      if (selectedCount < 2 && !fullDocumentIncluded && !(rdata.search_config && rdata.search_config.rerank_score_threshold_enabled)) {
         if (healthLevel === 'good') healthLevel = 'warning';
         issues.push('<strong>参考上下文偏少（仅 ' + selectedCount + ' 条切片）：</strong>可能影响多段落综合答复的完整度');
         suggestions.push('可在 Agent 配置中适当调高最终 TopK 数量');
@@ -622,7 +632,13 @@ function renderStageCard(st, idx, t) {
   } else if (st.stage === 'rag') {
     const selectedCount = d.selected_count !== undefined ? d.selected_count : (d.count || 0);
     body += '<div class="prop-row"><div class="prop-key">检索关键词：</div><div class="prop-val" style="color:var(--blue);font-weight:bold;">' + esc(d.query || '-') + '</div></div>';
-    body += '<div class="prop-row"><div class="prop-key">送入大模型切片：</div><div class="prop-val"><strong style="color:var(--green);font-size:15px;">' + selectedCount + ' 条</strong> <span style="font-size:12px;color:var(--muted);">（最终注入 Prompt 作为推理参考上下文）</span></div></div>';
+    const fullDocumentSources = (d.sources || []).filter(source => source.chunk_type === 'document_full');
+    if (fullDocumentSources.length) {
+      const fullDocumentChars = fullDocumentSources.reduce((total, source) => total + String(source.content || '').length, 0);
+      body += '<div class="prop-row"><div class="prop-key">文档上下文：</div><div class="prop-val"><strong style="color:var(--green);font-size:15px;">整篇文档 ' + fullDocumentSources.length + ' 份</strong> <span style="font-size:12px;color:var(--muted);">（正文 ' + fullDocumentChars.toLocaleString() + ' 字符，未按检索 TopK 截断）</span></div></div>';
+    } else {
+      body += '<div class="prop-row"><div class="prop-key">送入大模型切片：</div><div class="prop-val"><strong style="color:var(--green);font-size:15px;">' + selectedCount + ' 条</strong> <span style="font-size:12px;color:var(--muted);">（最终注入 Prompt 作为推理参考上下文）</span></div></div>';
+    }
 
     // 检索配置快照
     const scfg = d.search_config;
@@ -841,6 +857,7 @@ function renderStageCard(st, idx, t) {
       '</div>';
     }
     body += '<div class="prop-row"><div class="prop-key">Token 消耗：</div><div class="prop-val">Prompt: ' + (d.prompt_tokens || 0) + ' · Completion: ' + (d.completion_tokens || 0) + ' · Total: ' + (d.total_tokens || 0) + '</div></div>';
+    body += '<div class="prop-row"><div class="prop-key">缓存 Token：</div><div class="prop-val">' + (d.cache_usage ? ('命中 ' + d.cache_usage.hit_tokens + ' · 未命中 ' + d.cache_usage.miss_tokens + ' · 命中率 ' + formatCacheRate(d.cache_usage)) : '不可用（上游未返回缓存统计）') + '</div></div>';
     if (d.prompt) {
       body += '<div style="margin-top:10px;"><strong>输入提示词 Prompt（组装后）：</strong></div>';
       body += '<pre class="code-block" style="margin-top:6px;">' + esc(typeof d.prompt === 'string' ? d.prompt : JSON.stringify(d.prompt, null, 2)) + '</pre>';

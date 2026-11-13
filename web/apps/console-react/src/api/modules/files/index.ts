@@ -25,6 +25,19 @@ export const filesApi = {
       .catch(handleError)
   },
 
+  /** 创建文件（type: 0=文件夹 1=文件），供「添加到」等场景写入知识库 */
+  create(data: {
+    path: RawFileItem['path']
+    type: number
+    library_id: RawFileItem['library_id']
+    permissions: unknown[]
+  }): Promise<RawFileItem> {
+    return service
+      .post('/api/files', data)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
+
   search(params: FileSearchParams): Promise<FileSearchResponse> {
     return service
       .get('/api/files/search/by-name', { params })

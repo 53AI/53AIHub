@@ -1,10 +1,10 @@
 import React, { useContext, useMemo } from "react";
 import { Modal, Button, message, Table } from "antd";
 import {
-    useRef,
-    useState,
-    forwardRef,
-    useImperativeHandle,
+  useRef,
+  useState,
+  forwardRef,
+  useImperativeHandle,
 } from "react";
 import { t } from "@/locales";
 import { settingApi, DefaultLinkItem } from "@/api/modules/setting";
@@ -15,13 +15,14 @@ import { DndContext } from "@dnd-kit/core";
 import type { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
-    arrayMove,
-    SortableContext,
-    useSortable,
-    verticalListSortingStrategy,
+  arrayMove,
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { TableColumnsType } from "antd";
+import { SafeImage } from "@km/shared-components-react";
 
 const MAX_LINKS_LEN = 8;
 
@@ -188,7 +189,7 @@ const LinksDialog = forwardRef<LinksDialogRef>((_, ref) => {
       dataIndex: "name",
       render: (name: string, record: DefaultLinkItem) => (
         <div className="flex items-center gap-2">
-          <img className="w-8 h-8 rounded-full" src={record.logo} alt="" />
+          <SafeImage className="w-8 h-8 rounded-full" src={record.logo} alt="" />
           <span className="text-sm text-primary">{name}</span>
         </div>
       ),

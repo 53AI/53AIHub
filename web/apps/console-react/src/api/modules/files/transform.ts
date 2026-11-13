@@ -2,7 +2,7 @@ import type { RawFileItem, FileItem, RecycleListItem, RawRecycleListItem } from 
 import { PERMISSION_TYPE } from './types'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import { PARSING_STATUS } from '@/constants/chunk'
-import { api_host, getPublicPath } from '@/utils/config'
+import { api_host } from '@/utils/config'
 import { buildPreviewUrl } from '@/utils/preview'
 
 export const formatFileInfo = (fileName: string): { ext: string; fname: string; icon: string } => {
@@ -48,7 +48,7 @@ export const formatFileInfo = (fileName: string): { ext: string; fname: string; 
   return {
     ext: file_ext,
     fname: displayName,
-    icon: getPublicPath(iconPath),
+    icon: iconPath,
   }
 }
 
@@ -77,7 +77,7 @@ export const formatFile = (file: RawFileItem): FileItem => {
     file_ext,
     permission: PERMISSION_TYPE.loading,
     file_type: isfolder ? 'folder' : 'file',
-    icon: getPublicPath(iconPath),
+    icon: iconPath,
     file_url: file.upload_file ? (buildPreviewUrl(file.upload_file.preview_key) ?? '') : '',
     created_at: getSimpleDateFormatString({ date: file.created_time, format: 'YYYY-MM-DD hh:mm' }),
     updated_at: getSimpleDateFormatString({ date: file.updated_time, format: 'YYYY-MM-DD hh:mm' }),

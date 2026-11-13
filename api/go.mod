@@ -10,19 +10,23 @@ require (
 	github.com/alibabacloud-go/tea v1.3.13
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.7
 	github.com/alibabacloud-go/tingwu-20230930/v2 v2.0.23
+	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/elastic/go-elasticsearch/v7 v7.17.10
 	github.com/gin-contrib/cors v1.7.4
 	github.com/gin-contrib/gzip v1.2.5
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
+	github.com/go-oauth2/oauth2/v4 v4.6.0
 	github.com/go-pay/crypto v0.0.1
 	github.com/go-pay/gopay v1.5.114
 	github.com/go-pay/xlog v0.0.3
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/golang-migrate/migrate/v4 v4.17.1
+	github.com/google/jsonschema-go v0.4.2
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/jordan-wright/email v4.0.1-0.20210109023952-943e75fe5223+incompatible
+	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/mozillazg/go-pinyin v0.21.0
 	github.com/pkoukk/tiktoken-go v0.1.7
@@ -53,7 +57,6 @@ require (
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
 	github.com/alibabacloud-go/gateway-dingtalk v1.0.2 // indirect
 	github.com/alibabacloud-go/openapi-util v0.1.1 // indirect
-	github.com/alicebob/miniredis/v2 v2.37.0 // indirect
 	github.com/aliyun/credentials-go v1.4.6 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.27.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.2 // indirect
@@ -86,7 +89,6 @@ require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.5 // indirect
@@ -102,7 +104,6 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
-	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
@@ -111,6 +112,14 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/tidwall/btree v0.0.0-20191029221954-400434d76274 // indirect
+	github.com/tidwall/buntdb v1.1.2 // indirect
+	github.com/tidwall/gjson v1.12.1 // indirect
+	github.com/tidwall/grect v0.0.0-20161006141115-ba9a043346eb // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
+	github.com/tidwall/rtree v0.0.0-20180113144539-6cd427091e0e // indirect
+	github.com/tidwall/tinyqueue v0.0.0-20180302190814-1e39f5511563 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/gopher-lua v1.1.1 // indirect
@@ -168,5 +177,5 @@ require (
 	google.golang.org/protobuf v1.36.10 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/mysql v1.5.7
-	gorm.io/driver/sqlite v1.6.0 // indirect
+	gorm.io/driver/sqlite v1.6.0
 )

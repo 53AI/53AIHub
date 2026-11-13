@@ -1223,12 +1223,20 @@ type AgentModelUpdateRequest struct {
 	ChannelID int64 `json:"channel_id" example:"0"`
 }
 
+// BatchAgentModelItemRequest validates the batch API independently from the
+// legacy single-model create endpoint, which accepts channel_id=0.
+type BatchAgentModelItemRequest struct {
+	Model string `json:"model" binding:"required"`
+	ChannelType int `json:"channel_type"`
+	ChannelID int64 `json:"channel_id" binding:"required,gt=0"`
+}
+
 // BatchAgentModelRequest 批量创建Agent Model请求参数
 type BatchAgentModelRequest struct {
 	// AgentID Agent ID
-	AgentID int64 `json:"agent_id" example:"1"`
+	AgentID int64 `json:"agent_id" binding:"required,gt=0" example:"1"`
 	// Models 模型配置列表
-	Models []AgentModelRequest `json:"models" example:"[{'model': 'gpt-3.5-turbo', 'channel_type': 0, 'channel_id': 1}]"`
+	Models []BatchAgentModelItemRequest `json:"models" binding:"required,min=1,dive" example:"[{'model': 'gpt-3.5-turbo', 'channel_type': 0, 'channel_id': 1}]"`
 }
 
 // BatchAgentModelResponse 批量创建Agent Model响应数据
@@ -1453,8 +1461,8 @@ func DeleteAgentModel(c *gin.Context) {
 	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
 }
 
-// @Summary 全量覆盖Agent模型配置
-// @Description 为指定Agent全量覆盖模型配置，先删除所有现有配置再创建新的（需要管理员权限）
+// @Summary 保存Agent模型配置
+// @Description 按模型角色顺序增量更新配置并保留已有配置ID（需要管理员权限）
 // @Tags Agent
 // @Accept json
 // @Produce json
@@ -1493,52 +1501,22 @@ func BatchCreateAgentModels(c *gin.Context) {
 		return
 	}
 
-	// 开始事务
-	tx := model.DB.Begin()
-	if tx.Error != nil {
+	// Preserve the existing slot identities: batch list order is the public
+	// fast/deep (or planning/skill) role contract.
+	requested := make([]model.AgentModels, 0, len(req.Models))
+	for _, m := range req.Models {
+		requested = append(requested, model.AgentModels{
+			Model: m.Model, ChannelID: m.ChannelID, ChannelType: m.ChannelType,
+		})
+	}
+	agentModels, err := model.ReconcileAgentModels(eid, req.AgentID, requested)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
 		return
 	}
-
 	response := &BatchAgentModelResponse{
-		SuccessCount: 0,
-		FailedCount:  0,
-		AgentModels:  make([]*model.AgentModels, 0),
-		Errors:       make([]string, 0),
-	}
-
-	// 全量覆盖：先删除该 Agent 的所有现有模型配置
-	if err := tx.Where("eid = ? AND agent_id = ?", eid, req.AgentID).Delete(&model.AgentModels{}).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-		return
-	}
-
-	// 遍历模型列表进行批量创建
-	for _, modelReq := range req.Models {
-		agentModel := &model.AgentModels{
-			Eid:         eid,
-			AgentID:     req.AgentID,
-			Model:       modelReq.Model,
-			ChannelType: modelReq.ChannelType,
-			ChannelID:   modelReq.ChannelID,
-		}
-
-		// 创建新的模型配置
-		if err := tx.Create(agentModel).Error; err != nil {
-			response.FailedCount++
-			response.Errors = append(response.Errors, fmt.Sprintf("Failed to create model %s: %v", modelReq.Model, err))
-			continue
-		}
-
-		response.SuccessCount++
-		response.AgentModels = append(response.AgentModels, agentModel)
-	}
-
-	// 提交事务
-	if err := tx.Commit().Error; err != nil {
-		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(nil))
-		return
+		SuccessCount: len(agentModels),
+		AgentModels: agentModels,
 	}
 
 	fillAgentModelsMeta(response.AgentModels)

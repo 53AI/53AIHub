@@ -1,4 +1,3 @@
-import { getPublicPath } from '@/utils/config'
 
 // 解析工具配置元数据
 export type ParserConfig = {
@@ -22,7 +21,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
     name: '标准解析',
     desc: '快速提取数字原生文档',
     detailedDesc: '支持 PDF、Word、Excel、PPT 等快速转化成 Markdown，本地运行无数据隐私风险。',
-    icon: getPublicPath('/images/tools/markitdown.png'),
+    icon: '/images/tools/markitdown.png',
     formFields: [],
     displayFields: [],
     isSystem: true,
@@ -33,7 +32,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
     name: '标准解析',
     desc: '快速提取数字原生文档',
     detailedDesc: '支持 PDF、Word、Excel、PPT 等快速转化成 Markdown，本地运行无数据隐私风险。',
-    icon: getPublicPath('/images/tools/markitdown.png'),
+    icon: '/images/tools/markitdown.png',
     formFields: [],
     displayFields: [],
     isDefault: true,
@@ -44,7 +43,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
     name: 'DocReader',
     desc: '支持复杂格式docx/pdf/xlsx，需单独容器',
     detailedDesc: '',
-    icon: getPublicPath('/images/tools/builtin.png'),
+    icon: '/images/tools/builtin.png',
     formFields: [],
     displayFields: [],
     isSystem: true,
@@ -53,7 +52,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
   {
     key: 'textin',
     name: 'Textin',
-    icon: getPublicPath('/images/tools/textin.png'),
+    icon: '/images/tools/textin.png',
     desc: '支持复杂版面与扫描件',
     detailedDesc: '企业级 OCR 引擎，在扫描件识别、复杂表格还原以及手写体识别方面表现优异。',
     description: `
@@ -82,7 +81,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
   {
     key: 'mineru.net',
     name: 'MinerU 云服务',
-    icon: getPublicPath('/images/tools/mineru.png'),
+    icon: '/images/tools/mineru.png',
     desc: '专用于论文与多栏 PDF',
     detailedDesc:
       '专为复杂学术文献设计的 PDF 解析器，能够精准提取公式、表格及版面结构，生成高质量 Markdown。',
@@ -102,7 +101,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
   {
     key: 'mineru.local',
     name: 'MinerU 私有部署',
-    icon: getPublicPath('/images/tools/mineru.png'),
+    icon: '/images/tools/mineru.png',
     desc: '专用于论文与多栏 PDF',
     detailedDesc:
       '专为复杂学术文献设计的 PDF 解析器，能够精准提取公式、表格及版面结构，生成高质量 Markdown。',
@@ -121,7 +120,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
     name: 'PP-OCRV5',
     desc: '百度开源引擎',
     detailedDesc: '基于百度开源的 PP-OCRV5 技术，高性能的中英文识别引擎，适合各种通用场景。',
-    icon: getPublicPath('/images/tools/paddlepaddle.png'),
+    icon: '/images/tools/paddlepaddle.png',
 
     formFields: [
       { key: 'api_url', label: '服务器地址' },
@@ -136,7 +135,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
   {
     key: 'paddlepaddle_pp-structurev3',
     name: 'PP-StructureV3',
-    icon: getPublicPath('/images/tools/paddlepaddle.png'),
+    icon: '/images/tools/paddlepaddle.png',
     desc: '百度开源引擎',
     detailedDesc: '超轻量级 OCR 系统，支持 80+ 种语言、复杂版面分析(PP-Structure) 及表格还原',
     formFields: [
@@ -152,7 +151,7 @@ const PARSER_CONFIGS: ParserConfig[] = [
   {
     key: 'paddlepaddle_paddleocr-vl',
     name: 'PaddleOCR-VL',
-    icon: getPublicPath('/images/tools/paddlepaddle.png'),
+    icon: '/images/tools/paddlepaddle.png',
     desc: '百度开源引擎',
     detailedDesc: '基于百度开源的 PaddleOCR 技术，高性能的中英文识别引擎，适合各种通用场景。',
     formFields: [

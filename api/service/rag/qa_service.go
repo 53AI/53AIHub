@@ -13,12 +13,6 @@ const (
 	REDIS_KEY_CONTEXT_MESSAGE_TEMPLATE = "53AIKM_agent_context_message_template"
 
 	BASE_PROMPT = `
-# 用户消息为：
-{{query}}
-
-# 助理
-{{context}}
-
 在我给你的搜索结果中:
 - 将获得一组与该问题相关的上下文，每个上下文都以参考编号开头，例如 [Source:x-y]，请使用上下文进行参考作答。 
 - 如果一句话源自多个上下文，请列出所有相关的引用编号，例如：[Source:x-y][Source:x-y]。切记不要将引用集中在最后返回引用编号，而是在答案对应部分列出。
@@ -46,11 +40,16 @@ const (
   - 你需要根据用户要求和回答内容选择合适、美观的回答格式，确保可读性强。
   - 你的回答应该综合多个相关知识点来回答，不能重复引用一个知识点。
 - 语言一致性：除非用户要求，否则你回答的语言需要和用户提问的语言保持一致。
-- 图片嵌入与内容呈现形式：如果知识点中存在图片，请在合适的地方使用 markdown 语法 ![标题](url) 嵌入相应的图片，不能自己编造知识点中没有的链接。
-- 图片确保上下文关联：在撰写每个段落时，主动检查是否有对应的图片可以嵌入。图片应紧随其最相关的内容之后，起到图文并茂、相互印证的作用。如果没有图片链接，不能编造。
+- 仅当图片与回答直接相关且搜索结果提供可用链接时嵌入图片；不要补充图片缺失、页码范围或检索覆盖等说明，除非用户明确询问。
 - 知识库拒答判断
   - 当所有搜索结果未直接提及问题中所依赖主体信息时，你的回答必须包含：“根据搜索结果，知识库中未直接提及”，然后结束你的回答。不要尝试提供替代信息、相关案例或任何其他内容，也不要分析可能的原因。
   - 不要结合无关信息或你自己的知识进行回答。
+
+# 检索材料
+{{context}}
+
+# 用户消息为：
+{{query}}
 `
 )
 
@@ -68,8 +67,33 @@ func NewChatService(db *gorm.DB) *ChatService {
 func replaceTemplateVars(prompt string, context, query string) string {
 	result := strings.ReplaceAll(prompt, "{{context}}", context)
 	result = strings.ReplaceAll(result, "{{query}}", query)
-	result = strings.ReplaceAll(result, "{{time}}", time.Now().Format("2006-01-02 15:04:05"))
+	result = strings.ReplaceAll(result, "{{time}}", time.Now().Format(time.DateOnly))
 	return result
+}
+
+func normalizeContextMessageTemplate(template string) string {
+	lines := strings.Split(template, "\n")
+	stableLines := make([]string, 0, len(lines))
+	dateLines := make([]string, 0, 1)
+	for _, line := range lines {
+		if strings.Contains(line, "{{time}}") {
+			dateLines = append(dateLines, strings.TrimSpace(line))
+			continue
+		}
+		stableLines = append(stableLines, line)
+	}
+	template = strings.Join(stableLines, "\n")
+	template = strings.ReplaceAll(template, "{{context}}", "")
+	template = strings.ReplaceAll(template, "{{query}}", "")
+	for _, marker := range []string{"# 用户消息为：", "# 助理", "# 检索材料"} {
+		template = strings.ReplaceAll(template, marker, "")
+	}
+	template = strings.TrimSpace(template)
+	result := template + "\n\n# 检索材料\n{{context}}"
+	if len(dateLines) > 0 {
+		result += "\n\n" + strings.Join(dateLines, "\n")
+	}
+	return result + "\n\n# 用户消息为：\n{{query}}"
 }
 
 // ChatRequest 聊天请求
@@ -186,6 +210,7 @@ type SourceReference struct {
 	EndPosition   int     `json:"end_position,omitempty"`
 	URL           string  `json:"url,omitempty"`
 	FilePath      string  `json:"file_path,omitempty"`
+	PublishedAt   string  `json:"published_at,omitempty"`
 	// 新增字段：知识库信息
 	KnowledgeBaseID   int64  `json:"knowledge_base_id"`   // 知识库ID
 	KnowledgeBaseName string `json:"knowledge_base_name"` // 知识库名称
@@ -202,12 +227,28 @@ type SourceReference struct {
 	Slug      string `json:"slug,omitempty"`
 	Title     string `json:"title,omitempty"`
 
+	WikiPageVersionID     int64             `json:"-"`
+	WikiChunkID           string            `json:"-"`
+	WikiHeadingPath       string            `json:"-"`
+	WikiCoverage          string            `json:"-"`
+	WikiMatchedChunkDBIDs []int64           `json:"-"`
+	WikiMatchedChunkIDs   []string          `json:"-"`
+	WikiChunkDBIDs        []int64           `json:"-"`
+	WikiChunkIDs          []string          `json:"-"`
+	WikiChunks            []WikiSourceChunk `json:"-"`
 	// 图谱聚合结构化结果
 	EntityCount                  int                  `json:"entity_count,omitempty"`
 	EntitySupportingChunkCount   int                  `json:"entity_supporting_chunk_count,omitempty"`
 	RelationSupportingChunkCount int                  `json:"relation_supporting_chunk_count,omitempty"`
 	SupportingChunkCountTotal    int                  `json:"supporting_chunk_count_total,omitempty"`
 	Graph                        *GraphAggregateGraph `json:"graph,omitempty"`
+}
+
+type WikiSourceChunk struct {
+	DBID        int64
+	ChunkID     string
+	HeadingPath string
+	Content     string
 }
 
 // GraphAggregateGraph 图谱聚合结果的结构化图数据
@@ -259,12 +300,21 @@ func GetContextMessage(context, question string) string {
 		// 如果没有上下文，只返回问题
 		return question
 	}
-	// 从 redis 中获取上下文prompt
-	// 如果没有则使用默认的prompt
+	return replaceTemplateVars(normalizeContextMessageTemplate(getContextMessageTemplate()), context, question)
+}
+
+func GetContextInstructions() string {
+	return contextInstructionsFromTemplate(getContextMessageTemplate())
+}
+
+func getContextMessageTemplate() string {
 	template, err := common.RedisGet(REDIS_KEY_CONTEXT_MESSAGE_TEMPLATE)
 	if err != nil || template == "" {
-		template = BASE_PROMPT
+		return BASE_PROMPT
 	}
+	return template
+}
 
-	return replaceTemplateVars(template, context, question)
+func contextInstructionsFromTemplate(template string) string {
+	return replaceTemplateVars(normalizeContextMessageTemplate(template), "", "")
 }

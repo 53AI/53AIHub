@@ -2,9 +2,11 @@ import { create } from 'zustand'
 import enterpriseApi from '@/api/modules/enterprise/index'
 import { cacheManager as cache } from '@km/shared-utils'
 import licenseApi from '@/api/modules/license'
-import { getPublicPath } from '@/utils/config'
+import { APP_TEMPLATE, getAppTemplate, isRecordingEntry } from '@/constants/app-template'
+import { VERSION_MODULE } from '@/constants/enterprise'
+import { resolveAssetUrl } from '@km/shared-utils'
 
-const getDefaultLogo = () => getPublicPath('/images/default_logo.png')
+const getDefaultLogo = () => '/images/default_logo.png'
 
 const CACHE_KEYS = {
   ENTERPRISE_INFO: 'enterprise_info',
@@ -129,7 +131,7 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
     document.title = title
     const link = document.querySelector('link[rel="icon"]') || document.createElement('link')
     link.setAttribute('rel', 'icon')
-    link.setAttribute('href', iconUrl || getDefaultLogo())
+    link.setAttribute('href', iconUrl || resolveAssetUrl(getDefaultLogo()))
     if (!document.querySelector('link[rel="icon"]')) {
       document.head.appendChild(link)
     }
@@ -262,8 +264,18 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
       }
 
       const search = window.location.search
-      if (!['website', 'software'].includes(template_style_info.style_type)) {
+      if (!['website', 'software', 'recording'].includes(template_style_info.style_type)) {
         template_style_info.style_type = 'website'
+      }
+
+      // 先加载版本特性（失败不阻塞企业信息应用）：
+      // 安心录模块关闭后，企业配置的安心录模板风格回退为软件模式
+      await get().loadSaasInfo().catch(() => undefined)
+      if (
+        template_style_info.style_type === 'recording' &&
+        get().features[VERSION_MODULE.RECORDING]?.max === 0
+      ) {
+        template_style_info.style_type = 'software'
       }
       if (search.includes('style_type=software')) {
         template_style_info.style_type = 'software'
@@ -273,7 +285,18 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
       }
 
       const isMobile = window.innerWidth < 768 || !!(window as any).electron
-      if (isMobile) {
+      // 移动端仅网站布局不可用；安心录模式基于软件布局，保持不变
+      if (isMobile && template_style_info.style_type === 'website') {
+        template_style_info.style_type = 'software'
+      }
+
+      // 入口模板强制风格（website.html / client.html / erhao.html），优先级最高：
+      // 模板入口面向特定部署场景（网站门户、客户端外壳、安心录设备），
+      // 不应被企业配置、URL 参数或移动端检测覆盖
+      const appTemplate = getAppTemplate()
+      if (appTemplate === APP_TEMPLATE.WEBSITE) {
+        template_style_info.style_type = 'website'
+      } else if (appTemplate === APP_TEMPLATE.CLIENT || appTemplate === APP_TEMPLATE.RECORDING) {
         template_style_info.style_type = 'software'
       }
 
@@ -306,7 +329,6 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
       get().setMetaDescription(description || '')
       get().saveToStorage()
       get().initTemplateStyle()
-      get().loadSaasInfo()
     } catch (error) {
       console.error('获取企业信息失败', error)
     }
@@ -314,10 +336,19 @@ export const useEnterpriseStore = create<EnterpriseState>((set, get) => ({
   }
 }))
 
-// Computed getter for isSoftStyle
+// Computed getter for isSoftStyle（软件布局：软件模式 + 安心录模式）
 export const useIsSoftStyle = () => {
   const template_style_info = useEnterpriseStore((state) => state.template_style_info)
-  return template_style_info.style_type === 'software'
+  const style = template_style_info.style_type
+  return style === 'software' || style === 'recording'
+}
+
+// Computed getter for 安心录模式：erhao.html 模板入口，
+// 或企业配置 style_type = 'recording'（后台“模板风格”设为安心录风格）
+export const useIsRecordOnly = () => {
+  const isTemplateEntry = isRecordingEntry()
+  const template_style_info = useEnterpriseStore((state) => state.template_style_info)
+  return isTemplateEntry || template_style_info.style_type === 'recording'
 }
 
 // Computed getter for enterprise type

@@ -189,6 +189,11 @@ export interface ChatMessagesProps {
   // === 其他 ===
   /** 分享模式 */
   isShareMode?: boolean;
+  /**
+   * 是否自动滚动到底部，默认 true。
+   * 单条历史消息回放（如后台问答明细详情翻页）应传 false，由调用方控制滚动位置。
+   */
+  autoScroll?: boolean;
   /** 外部传入的翻译函数 */
   t?: TranslateFn;
   /** 自定义内容区域容器类名 */

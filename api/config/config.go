@@ -13,7 +13,7 @@ import (
 )
 
 // Version 硬编码的系统版本号
-var Version = "v0.5.3"
+var Version = "v0.5.5"
 
 var chinaTimeZone = time.FixedZone("UTC+8", 8*60*60)
 
@@ -91,6 +91,21 @@ var ApiHost = env.String("API_HOST", "http://127.0.0.1:3000")
 var SERVER_PORT = env.String("PORT", "3000")
 var KKBaseURL = env.String("KK_BASE_URL", "")
 var DocConvertBaseURL = env.String("DOC_CONVERT_BASE_URL", "")
+
+// bot-gateway 微服务接入配置
+var BotGatewayDefaultBaseURL = env.String("BOT_GATEWAY_DEFAULT_BASE_URL", "http://localhost:8080")
+var BotGatewayAdminToken = env.String("BOT_GATEWAY_ADMIN_TOKEN", "")
+
+// 上行消息快速兜底回复文案（空串=关闭快速兜底，不可处理类型也走 agent）
+var BotGatewayFallbackReply = env.String("BOT_GATEWAY_FALLBACK_REPLY", "暂不支持该类型的消息，请发送文字或图片。")
+
+// 重试耗尽后回给聊天用户的失败文案（空串=不回执，保持静默）：宁可说一句"没处理成"，
+// 也不要让用户对着不响应的机器人干等。
+var BotGatewayFailureReply = env.String("BOT_GATEWAY_FAILURE_REPLY", "刚才没能处理你的问题，可以再发一次吗？")
+
+// 短时间相同内容不重复回复窗口（秒，0=关闭；参考 xbot 消息幂等思路）
+var BotGatewayRepeatWindowSeconds = env.Int("BOT_GATEWAY_REPEAT_WINDOW_SECONDS", 60)
+
 var MigrateDBEnabled = env.Bool("MIGRATE_DB_ENABLED", true)
 var SchemaMigrateAutoEnabled = env.Bool("SCHEMA_MIGRATE_AUTO_ENABLED", false)
 var SchemaMigrateAutoDelaySeconds = env.Int("SCHEMA_MIGRATE_AUTO_DELAY_SECONDS", 180)
@@ -230,6 +245,19 @@ var SMS_VERIFY_FAIL_COOLDOWN_SECONDS = env.Int("SMS_VERIFY_FAIL_COOLDOWN_SECONDS
 //	true=sendcode 必须带合法 captcha_id/captcha_answer，否则 400；false=可选（带了就校验）。
 //	上线建议：先 false 发布、前端接入图形码后置 true。
 var SMS_CAPTCHA_REQUIRED = env.Bool("SMS_CAPTCHA_REQUIRED", false)
+
+// SMS_CAPTCHA_MODE：图形验证码模式。
+// "alphanumeric"=4位防混淆英数字符（默认，前端免改动）；"math"=算术题（如 7+8=?，答案为数字字符串）
+var SMS_CAPTCHA_MODE = env.String("SMS_CAPTCHA_MODE", "alphanumeric")
+
+// SMS_CAPTCHA_EXPIRE_SECONDS：图形验证码有效期（秒），默认 120 秒（2分钟）。
+var SMS_CAPTCHA_EXPIRE_SECONDS = env.Int("SMS_CAPTCHA_EXPIRE_SECONDS", 120)
+
+// SMS_CAPTCHA_MAX_ATTEMPTS：单图形验证码最大允许试错次数，达到即作废（防暴力破解），默认 3 次。
+var SMS_CAPTCHA_MAX_ATTEMPTS = env.Int("SMS_CAPTCHA_MAX_ATTEMPTS", 3)
+
+// SMS_CAPTCHA_IP_RATE_LIMIT：同一 IP 1 分钟内允许获取图形验证码的最大次数（防刷图打满CPU），默认 30 次。
+var SMS_CAPTCHA_IP_RATE_LIMIT = env.Int("SMS_CAPTCHA_IP_RATE_LIMIT", 30)
 
 // SMS_TEST_MOBILES：测试手机号列表（逗号分隔，如 "13800138000,13900139000"）。
 //

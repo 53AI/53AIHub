@@ -43,3 +43,13 @@ export function sourceTypeLabel(sourceType?: string) {
   if (sourceType === 'automatic' || sourceType === 'meeting') return '会议记录'
   return sourceType
 }
+
+/**
+ * "全部" tab 的 entity_type 查询参数。
+ * entities 接口支持 entity_type 逗号分隔多值（entity_type=xxx,xxx），
+ * "全部"时把 schema 返回的所有类型拼接传入；schema 为空数组时返回 undefined（不传该参数）。
+ */
+export function allEntityTypesParam(schema: RecordingMemoryEntitySchemas): string | undefined {
+  const types = [...new Set(schema.map((s) => s.type))]
+  return types.length > 0 ? types.join(',') : undefined
+}

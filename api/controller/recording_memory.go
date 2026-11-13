@@ -21,26 +21,41 @@ type RecordingMemoryOverviewQuery struct {
 }
 
 type RecordingMemoryEntityQuery struct {
-	EntityType string `form:"entity_type"`
-	Keyword    string `form:"keyword"`
-	Limit      int    `form:"limit"`
-	Offset     int    `form:"offset"`
+	EntityType     []string `form:"entity_type"`
+	Keyword        string   `form:"keyword"`
+	Name           string   `form:"name"`
+	AttributeKey   string   `form:"attribute_key"`
+	AttributeValue string   `form:"attribute_value"`
+	SortBy         string   `form:"sort_by"`
+	Limit          int      `form:"limit"`
+	Offset         int      `form:"offset"`
+}
+
+// RecordingMemoryRelationGroupRequest 一组结构化关联：按 relation_type 替换该类型的关联集合。
+// 未出现的 relation_type 保持不变；related_entity_ids 为空数组表示清空该类型。
+type RecordingMemoryRelationGroupRequest struct {
+	RelationType     string   `json:"relation_type"`
+	RelatedEntityIDs []string `json:"related_entity_ids"`
 }
 
 type CreateRecordingMemoryEntityRequest struct {
-	EntityType    string                             `json:"entity_type" binding:"required"`
-	CanonicalName string                             `json:"canonical_name" binding:"required"`
-	Summary       string                             `json:"summary"`
-	Attributes    map[string]string                  `json:"attributes"`
-	Facts         []CreateRecordingMemoryFactRequest `json:"facts"`
+	EntityType    string                                `json:"entity_type" binding:"required"`
+	CanonicalName string                                `json:"canonical_name" binding:"required"`
+	Summary       string                                `json:"summary"`
+	Attributes    map[string]string                     `json:"attributes"`
+	Aliases       *[]string                             `json:"aliases"`
+	Facts         []CreateRecordingMemoryFactRequest    `json:"facts"`
+	Relations     []RecordingMemoryRelationGroupRequest `json:"relations"`
 }
 
 type UpdateRecordingMemoryEntityRequest struct {
-	CanonicalName  *string                            `json:"canonical_name"`
-	Summary        *string                            `json:"summary"`
-	Attributes     map[string]string                  `json:"attributes"`
-	Facts          []UpdateRecordingMemoryFactRequest `json:"facts"`
-	DeletedFactIDs []string                           `json:"deleted_fact_ids"`
+	CanonicalName  *string                               `json:"canonical_name"`
+	Summary        *string                               `json:"summary"`
+	Attributes     map[string]string                     `json:"attributes"`
+	Aliases        *[]string                             `json:"aliases"` // 替换语义：缺省=不改，[]=清空
+	Facts          []UpdateRecordingMemoryFactRequest    `json:"facts"`
+	DeletedFactIDs []string                              `json:"deleted_fact_ids"`
+	Relations      []RecordingMemoryRelationGroupRequest `json:"relations"` // 缺省=不改，按 relation_type 替换
 }
 
 type CreateRecordingMemoryFactRequest struct {
@@ -117,8 +132,12 @@ func GetRecordingMemoryOverview(c *gin.Context) {
 // @Tags 录音
 // @Produce json
 // @Security BearerAuth
-// @Param entity_type query string false "人物/事项/风险/承诺/决策：person/matter/risk/commitment/decision"
+// @Param entity_type query []string false "实体类型，可重复传参或逗号分隔（?entity_type=person&entity_type=company / ?entity_type=person,company）：person/company/matter/risk/commitment/decision"
 // @Param keyword query string false "实体名或总结关键词"
+// @Param name query string false "只按名称搜索（只匹配人名/实体名）"
+// @Param attribute_key query string false "属性筛选 key（须为 schema 内属性，如 person 的 relationship、company 的 industry）；不在 schema 内时返回空列表"
+// @Param attribute_value query string false "属性筛选值，逗号分隔多值任一命中（如 potential_customer 或 潜在客户,关键决策人）；与 attribute_key 搭配使用。传了 attribute_key 但 value 全为空时返回空列表（不会退化为全量）"
+// @Param sort_by query string false "排序字段：updated_time（默认，最近更新在前）/ created_time（最近创建在前）；同值按 id 降序稳定排序" default(updated_time)
 // @Param limit query int false "返回条数" default(50)
 // @Param offset query int false "跳过条数" default(0)
 // @Success 200 {object} model.CommonResponse{data=service.RecordingMemoryEntityList}
@@ -129,7 +148,24 @@ func ListRecordingMemoryEntities(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("查询参数不合法"))
 		return
 	}
-	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).List(c.Request.Context(), config.GetUserId(c), strings.TrimSpace(req.EntityType), strings.TrimSpace(req.Keyword), req.Limit, req.Offset)
+	// 属性筛选值：逗号分隔多值（任一命中）；兼容枚举 value 与中文 label 双写，
+	// 调用方可同时传两种写法（如 potential_customer,潜在客户）。
+	attributeValues := make([]string, 0, 4)
+	for _, raw := range strings.Split(req.AttributeValue, ",") {
+		if value := strings.TrimSpace(raw); value != "" {
+			attributeValues = append(attributeValues, value)
+		}
+	}
+	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).ListWithFilter(c.Request.Context(), config.GetUserId(c), service.RecordingMemoryEntityFilter{
+		EntityTypes:     req.EntityType,
+		Keyword:         strings.TrimSpace(req.Keyword),
+		Name:            strings.TrimSpace(req.Name),
+		AttributeKey:    strings.TrimSpace(req.AttributeKey),
+		AttributeValues: attributeValues,
+		SortBy:          strings.TrimSpace(req.SortBy),
+		Limit:           req.Limit,
+		Offset:          req.Offset,
+	})
 	if respondRecordingEntityMemoryError(c, err) {
 		return
 	}
@@ -256,6 +292,11 @@ func CreateRecordingMemoryEntity(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
+	relations, err := parseRecordingMemoryRelations(req.Relations)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
 	data, err := service.NewRecordingMemoryEntityService(config.GetEID(c)).Create(
 		c.Request.Context(),
 		config.GetUserId(c),
@@ -264,7 +305,9 @@ func CreateRecordingMemoryEntity(c *gin.Context) {
 			CanonicalName: strings.TrimSpace(req.CanonicalName),
 			Summary:       req.Summary,
 			Attributes:    req.Attributes,
+			Aliases:       req.Aliases,
 			Facts:         convertCreateRecordingMemoryFacts(req.Facts),
+			Relations:     relations,
 		},
 	)
 	if respondRecordingEntityMemoryError(c, err) {
@@ -313,8 +356,29 @@ func convertCreateRecordingMemoryFacts(facts []CreateRecordingMemoryFactRequest)
 	return result
 }
 
+// parseRecordingMemoryRelations 解析结构化关联分组（HashID → int64），未知 relation_type 交给 service 校验。
+func parseRecordingMemoryRelations(groups []RecordingMemoryRelationGroupRequest) ([]service.RecordingMemoryRelationInput, error) {
+	result := make([]service.RecordingMemoryRelationInput, 0, len(groups))
+	for _, group := range groups {
+		ids := make([]int64, 0, len(group.RelatedEntityIDs))
+		for _, raw := range group.RelatedEntityIDs {
+			raw = strings.TrimSpace(raw)
+			if raw == "" {
+				continue
+			}
+			id, err := hashids.TryParseID(raw)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+		result = append(result, service.RecordingMemoryRelationInput{RelationType: strings.TrimSpace(group.RelationType), RelatedEntityIDs: ids})
+	}
+	return result, nil
+}
+
 func convertUpdateRecordingMemoryEntityInput(req UpdateRecordingMemoryEntityRequest) (service.UpdateRecordingMemoryEntityInput, error) {
-	input := service.UpdateRecordingMemoryEntityInput{CanonicalName: req.CanonicalName, Summary: req.Summary, Attributes: req.Attributes}
+	input := service.UpdateRecordingMemoryEntityInput{CanonicalName: req.CanonicalName, Summary: req.Summary, Attributes: req.Attributes, Aliases: req.Aliases}
 	for _, fact := range req.Facts {
 		input.Facts = append(input.Facts, service.UpdateRecordingMemoryFactInput{ID: fact.ID, RelatedEntityID: fact.RelatedEntityID, Content: fact.Content, Attributes: fact.Attributes})
 	}
@@ -324,6 +388,13 @@ func convertUpdateRecordingMemoryEntityInput(req UpdateRecordingMemoryEntityRequ
 			return input, errors.New("invalid deleted fact id")
 		}
 		input.DeletedFactIDs = append(input.DeletedFactIDs, id)
+	}
+	if req.Relations != nil {
+		relations, err := parseRecordingMemoryRelations(req.Relations)
+		if err != nil {
+			return input, err
+		}
+		input.Relations = &relations
 	}
 	return input, nil
 }
@@ -445,10 +516,12 @@ func parseRecordingMemoryID(c *gin.Context, key string) (int64, bool) {
 // @Tags 录音
 // @Produce json
 // @Security BearerAuth
+// @Param category query string false "分组：memory（默认，记忆：事项/风险/承诺/决策）/relation（关系：人物、企业）/all（全部）" Enums(memory, relation, all)
 // @Success 200 {object} model.CommonResponse{data=[]model.RecordingMemoryEntitySchemaView}
 // @Router /api/recordings/memories/schema [get]
 func GetRecordingMemoryEntitySchema(c *gin.Context) {
-	c.JSON(http.StatusOK, model.Success.ToResponse(model.RecordingMemoryEntitySchemaArray()))
+	category := strings.ToLower(strings.TrimSpace(c.Query("category")))
+	c.JSON(http.StatusOK, model.Success.ToResponse(model.RecordingMemoryEntitySchemaArrayForCategory(category)))
 }
 
 func respondRecordingEntityMemoryError(c *gin.Context, err error) bool {
@@ -472,6 +545,12 @@ func respondRecordingEntityMemoryError(c *gin.Context, err error) bool {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("推理模型未配置，请先配置推理模型"))
 	case errors.Is(err, service.ErrRecordingEntityMemoryRelationSelf):
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不能关联自身"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryRelationTooMany):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("一个人物只能关联一个企业"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryRelationTypeMismatch):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("仅支持人物与企业之间的关联"))
+	case errors.Is(err, service.ErrRecordingEntityMemoryRelationTypeUnsupported):
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("不支持的关联类型"))
 	default:
 		logger.SysErrorf("【实体记忆】接口处理失败 eid=%d user_id=%d err=%v", config.GetEID(c), config.GetUserId(c), err)
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("会议记忆操作失败"))

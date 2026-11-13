@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	recordingdebug "github.com/53AI/53AIHub/service/recording_debug"
@@ -22,6 +23,9 @@ const (
 	recordingEntityMemorySourceManual    = "manual"
 	recordingEntityMemoryFactExtracted   = "extracted"
 	recordingEntityMemoryFactCorrection  = "manual_correction"
+	// recordingEntityMemoryFactBelongsTo 是"人物所属企业"结构化关联的关系类型，直接作为 fact_kind 使用。
+	// 事实类 fact_kind 只有 extracted / manual_correction，其余取值一律视为结构化关联（不进 facts[]）。
+	recordingEntityMemoryFactBelongsTo   = "belongs_to"
 	recordingEntityIdentityPolicyKey     = "_identity_policy_class"
 	recordingEntityIdentityConfidenceKey = "_identity_policy_confidence"
 	recordingEntityIdentityStatusKey     = "_identity_status"
@@ -36,6 +40,9 @@ var recordingMemoryGenericNames = map[string]map[string]struct{}{
 		"技术研发人员": {}, "研发人员": {}, "技术人员": {}, "业务人员": {}, "工作人员": {}, "负责人": {},
 		"管理人员": {}, "销售人员": {}, "开发人员": {}, "采购人员": {}, "客服人员": {}, "用户": {},
 		"客户": {}, "业务方": {}, "研发团队": {}, "技术团队": {},
+	},
+	"company": {
+		"公司": {}, "客户公司": {}, "该公司": {}, "贵公司": {}, "甲方": {}, "乙方": {}, "供应商": {}, "合作伙伴": {}, "同行": {},
 	},
 	"matter": {
 		"评审问题清单": {}, "问题清单": {}, "会议事项": {}, "待办事项": {}, "优化升级项目": {}, "需求变更": {}, "需求变化": {},
@@ -54,6 +61,7 @@ var recordingMemoryGenericNames = map[string]map[string]struct{}{
 
 var recordingMemoryLowInformationFacts = map[string]struct{}{
 	"嗯": {}, "哦": {}, "好的": {}, "知道了": {}, "收到": {}, "谢谢": {}, "是的": {}, "没问题": {}, "大家好": {}, "欢迎参加": {}, "开始吧": {},
+	"然后": {}, "然后呢": {}, "嗯嗯": {}, "啊": {}, "就是": {},
 }
 
 var ErrRecordingEntityMemoryNotFound = errors.New("recording entity memory not found")
@@ -63,6 +71,9 @@ var ErrRecordingEntityMemoryCrossType = errors.New("recording entity memory merg
 var ErrRecordingEntityMemoryMergeSelf = errors.New("recording entity memory cannot merge into itself")
 var ErrRecordingEntityMemoryModelNotConfigured = errors.New("recording entity memory merge requires inference model")
 var ErrRecordingEntityMemoryRelationSelf = errors.New("recording entity memory cannot relate to itself")
+var ErrRecordingEntityMemoryRelationTooMany = errors.New("recording entity memory allows at most one company per person")
+var ErrRecordingEntityMemoryRelationTypeMismatch = errors.New("recording entity memory company link requires one person and one company")
+var ErrRecordingEntityMemoryRelationTypeUnsupported = errors.New("recording entity memory relation type is not supported")
 
 type recordingEntityMemoryItem struct {
 	entityType         string
@@ -74,6 +85,7 @@ type recordingEntityMemoryItem struct {
 	summary            string
 	attributes         map[string]string
 	aliases            []string
+	companyName        string // 人物所属企业名称（抽取用中间态，不作为人物属性落库）
 	facts              []recordingEntityMemoryFactItem
 }
 
@@ -99,12 +111,15 @@ type RecordingMemoryEntityListItem struct {
 	LastFactAt     int64             `json:"last_fact_at"`
 	UpdatedTime    int64             `json:"updated_time"`
 	SourceFile     string            `json:"source_file"` // 最新一条事实的来源文件名（人工事实为空）
+	Aliases        []string          `json:"aliases"`     // 其他称呼（人物别称）
 	Attributes     map[string]string `json:"attributes"`  // schema 过滤后的属性（英文键值，中文经 schema 接口映射）
+	// 结构化关联（belongs_to）：人物行返回所属企业；企业行返回关联人物数量
+	RelatedCompany     *RecordingMemoryEntityRelationView `json:"related_company,omitempty"`
+	RelatedPersonCount int64                              `json:"related_person_count,omitempty"`
 }
 
 type RecordingMemoryEntityDetail struct {
 	RecordingMemoryEntityListItem
-	Aliases          []string                            `json:"aliases"`
 	FirstMentionedAt int64                               `json:"first_mentioned_at"`
 	Facts            []RecordingMemoryEntityFactView     `json:"facts"`
 	Relations        []RecordingMemoryEntityRelationView `json:"relations"`
@@ -128,11 +143,13 @@ type RecordingMemoryEntityFactView struct {
 }
 
 type RecordingMemoryEntityRelationView struct {
-	ID              int64  `json:"id"`
-	RelatedEntityID int64  `json:"related_entity_id"`
-	RelatedName     string `json:"related_name"`
-	RelatedType     string `json:"related_type"`
-	RelationType    string `json:"relation_type"`
+	ID              int64             `json:"id"`
+	RelatedEntityID int64             `json:"related_entity_id"`
+	RelatedName     string            `json:"related_name"`
+	RelatedType     string            `json:"related_type"`
+	RelationType    string            `json:"relation_type"`
+	Summary         string            `json:"summary"`    // 被关联实体描述
+	Attributes      map[string]string `json:"attributes"` // 被关联实体属性（schema 过滤）
 }
 
 type CreateRecordingMemoryFactInput struct {
@@ -148,12 +165,21 @@ type UpdateRecordingMemoryFactInput struct {
 	Attributes      map[string]string
 }
 
+// RecordingMemoryRelationInput 一组结构化关联：按 relation_type 替换该类型的关联集合。
+// 未出现在入参中的 relation_type 保持不变；空切片表示清空该类型。
+type RecordingMemoryRelationInput struct {
+	RelationType     string
+	RelatedEntityIDs []int64
+}
+
 type CreateRecordingMemoryEntityInput struct {
 	EntityType    string
 	CanonicalName string
 	Summary       string
 	Attributes    map[string]string
 	Facts         []CreateRecordingMemoryFactInput
+	Aliases       *[]string                      // 人工别称；替换语义
+	Relations     []RecordingMemoryRelationInput // 结构化关联（belongs_to）：人物传所属企业，企业传关联人物
 }
 
 type UpdateRecordingMemoryEntityInput struct {
@@ -162,6 +188,8 @@ type UpdateRecordingMemoryEntityInput struct {
 	Attributes     map[string]string
 	Facts          []UpdateRecordingMemoryFactInput
 	DeletedFactIDs []int64
+	Aliases        *[]string                       // 人工别称；替换语义，nil=不改
+	Relations      *[]RecordingMemoryRelationInput // 结构化关联：nil=不改，按 relation_type 替换
 }
 
 type AddRecordingMemoryFactInput struct {
@@ -177,13 +205,16 @@ func NewRecordingMemoryEntityService(eid int64) *RecordingMemoryEntityService {
 
 func recordingEntityTypesFromConfig(config *model.RecordingConfig) map[string]bool {
 	result := map[string]bool{}
-	if config == nil || config.MemoryExtraction == nil || !config.MemoryExtraction.IsEffectivelyEnabled() {
+	if config == nil || config.MemoryExtraction == nil || !config.MemoryExtraction.Enabled {
 		return result
 	}
+	// 人员（人物）与企业默认开启抽取，不受配置影响
+	result["person"] = true
+	result["company"] = true
+
+	// 其他业务记忆类型按配置原逻辑
 	for _, kind := range config.MemoryExtraction.Types {
 		switch kind {
-		case model.EntityTypePerson:
-			result["person"] = true
 		case model.EntityTypeMatter:
 			result["matter"] = true
 		case model.EntityTypeRisk:
@@ -202,39 +233,55 @@ func isRecordingMinutesSource(raw string) bool {
 	return classifyRecordingContent(cleaned) == recordingContentMinutesJSON
 }
 
-// loadRecordingEntityMemorySource 读取安心录语义实体的结构化来源。
-// 最新结构中 Summary(0) 是 Prompt 2 产出的唯一结构化语义来源。
-// Summary(0) 缺失时由最新 FileBody 转写触发 Prompt 2；不读取旧布局。
-func loadRecordingEntityMemorySource(fileID int64) (string, bool, error) {
+// loadRecordingEntityMemorySource 读取安心录语义实体的结构化来源（纪要 JSON）。
+// 优先 Summary(0)；转写布局反转后纪要也可能落在 FileBody（此时转写原文在 Summary(-1)），
+// 故 Summary(0) 缺失时若 FileBody 内容是纪要 JSON 同样采用。
+func loadRecordingEntityMemorySource(eid, fileID int64) (string, bool, error) {
 	summary, summaryErr := model.GetSummaryByTemplateID(fileID, 0)
-	if errors.Is(summaryErr, gorm.ErrRecordNotFound) {
-		return "", false, nil
-	}
-	if summaryErr != nil {
+	if summaryErr != nil && !errors.Is(summaryErr, gorm.ErrRecordNotFound) {
 		return "", false, summaryErr
 	}
-	if summary == nil {
+	if summary != nil {
+		raw := strings.TrimSpace(string(summary.SummaryContent))
+		if raw != "" {
+			if !isRecordingMinutesSource(raw) {
+				return "", true, fmt.Errorf("Summary(0) 不是有效的会议纪要 JSON")
+			}
+			return raw, true, nil
+		}
+	}
+	body, err := model.GetLastFileBodyByFileID(eid, fileID)
+	if err != nil {
 		return "", false, nil
 	}
-	raw := strings.TrimSpace(string(summary.SummaryContent))
-	if raw != "" && !isRecordingMinutesSource(raw) {
-		return "", true, fmt.Errorf("Summary(0) 不是有效的会议纪要 JSON")
+	content, err := body.GetContent()
+	if err != nil {
+		return "", false, err
 	}
-	return raw, true, nil
+	if raw := strings.TrimSpace(content); raw != "" && isRecordingMinutesSource(raw) {
+		return raw, true, nil
+	}
+	return "", false, nil
 }
 
 // loadRecordingEntityMemoryTranscript 读取 ASR 转写源，并保留转写服务确认的 speaker 名称。
-// 最新结构中 FileBody 始终是转写文本；可信 speaker person 始终从该源独立编译。
+// 转写原文当前存在 Summary(-1)（反转后布局），旧布局存放在 FileBody，两条路径都要兼容。
 func loadRecordingEntityMemoryTranscript(eid, fileID int64) (string, error) {
-	body, err := model.GetLastFileBodyByFileID(eid, fileID)
-	if err != nil {
-		return "", err
+	raw := ""
+	if summary, err := model.GetSummaryByTemplateID(fileID, -1); err == nil && summary != nil {
+		raw = strings.TrimSpace(string(summary.SummaryContent))
 	}
-	raw, err := body.GetContent()
-	if err != nil {
-		return "", err
+	if raw == "" {
+		body, err := model.GetLastFileBodyByFileID(eid, fileID)
+		if err != nil {
+			return "", err
+		}
+		content, err := body.GetContent()
+		if err != nil {
+			return "", err
+		}
+		raw = strings.TrimSpace(content)
 	}
-	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", nil
 	}
@@ -242,7 +289,7 @@ func loadRecordingEntityMemoryTranscript(eid, fileID int64) (string, error) {
 	case recordingContentTranscriptJSON:
 		return RenderTranscriptMarkdown(raw, "")
 	case recordingContentTranscriptMD, recordingContentUnknown:
-		return raw, nil
+		return common.StripInternalContactComments(raw), nil
 	default:
 		return "", nil
 	}
@@ -274,7 +321,7 @@ func CompileRecordingEntityMemory(ctx context.Context, eid, fileID, ownerID int6
 	if len(allowedTypes) == 0 {
 		return 0, nil
 	}
-	minutesRaw, hasSummary, err := loadRecordingEntityMemorySource(fileID)
+	minutesRaw, hasSummary, err := loadRecordingEntityMemorySource(eid, fileID)
 	if err != nil {
 		return 0, err
 	}
@@ -329,17 +376,49 @@ func CompileRecordingEntityMemory(ctx context.Context, eid, fileID, ownerID int6
 			return err
 		}
 		for itemIndex, item := range items {
+			// 原始 speaker 只用于补充同名实体身份；没有语义事实时不建立空人物档案。
+			if len(item.facts) == 0 {
+				continue
+			}
 			entity, err := findOrCreateRecordingMemoryEntity(tx, eid, ownerID, fileID, item, mentionedAt)
+			if errors.Is(err, errRecordingMemoryBindingRetired) {
+				continue
+			}
 			if err != nil {
 				return err
 			}
-			if err := updateAutomaticRecordingMemoryEntity(tx, entity, item, mentionedAt); err != nil {
+			if err := saveRecordingMemoryEntityBinding(tx, eid, ownerID, fileID, item.entityType, recordingMemoryMentionKey(fileID, item), item.canonicalName, entity.ID, "automatic"); err != nil {
 				return err
 			}
+			confirmed, err := isRecordingMemoryBindingConfirmed(tx, eid, ownerID, fileID, item.entityType, recordingMemoryMentionKey(fileID, item))
+			if err != nil {
+				return err
+			}
+			if !confirmed {
+				if err := updateAutomaticRecordingMemoryEntity(tx, entity, item, mentionedAt); err != nil {
+					return err
+				}
+			}
+			// 人物所属企业：按名称查找/新建企业实体并建立关联（企业记忆的唯一真相，不再存 person.company）
+			if !confirmed && item.entityType == "person" && item.companyName != "" {
+				if err := linkRecordingMemoryEntityCompanyForFile(tx, eid, ownerID, fileID, entity.ID, item.companyName, mentionedAt); err != nil {
+					return err
+				}
+			}
+			// 同一实体已有有效自动事实或人工修正时不重复新增相同内容；数据变化仍留下新版本。
+			var priorFacts []model.RecordingMemoryFact
+			if err := tx.Where("eid = ? AND owner_id = ? AND entity_id = ? AND file_id <> ? AND fact_kind IN ? AND is_deleted = ?", eid, ownerID, entity.ID, fileID, []string{recordingEntityMemoryFactExtracted, recordingEntityMemoryFactCorrection}, false).Find(&priorFacts).Error; err != nil {
+				return err
+			}
+			known := map[string]bool{}
+			for _, previous := range priorFacts {
+				known[recordingMemoryFactCanonicalKey(string(previous.Content))] = true
+			}
 			for factIndex, fact := range item.facts {
-				if strings.TrimSpace(fact.content) == "" {
+				if !isUsefulRecordingMemoryFact(fact.content) || known[recordingMemoryFactCanonicalKey(fact.content)] {
 					continue
 				}
+				known[recordingMemoryFactCanonicalKey(fact.content)] = true
 				sourceSeed := fmt.Sprintf("%s|%d|%d|%s|%s", minutesHash, itemIndex, factIndex, item.canonicalName, fact.content)
 				hash := sha256.Sum256([]byte(sourceSeed))
 				attributesJSON, _ := json.Marshal(fact.attributes)
@@ -449,6 +528,7 @@ func buildRecordingEntityMemoryItems(minutes map[string]interface{}, allowedType
 			identityStatus:     strings.ToLower(strings.TrimSpace(stringValue(row["identity_status"]))),
 			summary:            strings.TrimSpace(stringValue(row["summary"])),
 			attributes:         sanitizeRecordingMemoryAttributes(kind, stringMapValue(row["attributes"])),
+			companyName:        strings.TrimSpace(stringMapValue(row["attributes"])["company"]),
 			aliases:            aliases,
 		}
 		item.attributes[recordingEntityIdentityPolicyKey] = item.identityClass
@@ -480,20 +560,30 @@ func buildRecordingEntityMemoryItems(minutes map[string]interface{}, allowedType
 		if mention != "" && mention != name && !isGeneratedSpeakerLabel(mention) {
 			item.aliases = append(item.aliases, mention)
 		}
+		// 其他称呼仅人员保留，且不收录与主名相同的项
+		item.aliases = CleanRecordingMemoryAliases(kind, name, mergeRecordingMemoryAliases(nil, item.aliases))
 		facts, _ := row["facts"].([]interface{})
+		seenFacts := map[string]int{}
 		for _, rawFact := range facts {
 			fact, ok := rawFact.(map[string]interface{})
 			if !ok {
 				continue
 			}
 			content := strings.TrimSpace(stringValue(fact["content"]))
-			if !isUsefulRecordingMemoryFact(content) {
+			// 新纪要可明确拒绝长期价值低的候选；兼容没有该字段的历史纪要。
+			if strings.EqualFold(stringValue(fact["memory_value"]), "low") || !isUsefulRecordingMemoryFact(content) {
 				continue
 			}
+			key := recordingMemoryFactCanonicalKey(content)
 			sourceSegmentIDs := memorySourceSegmentIDs(fact["source_segment_ids"])
 			if len(sourceSegmentIDs) == 0 {
 				continue
 			}
+			if index, exists := seenFacts[key]; exists {
+				item.facts[index].sourceSegmentIDs = mergeRecordingMemorySourceIDs(item.facts[index].sourceSegmentIDs, sourceSegmentIDs)
+				continue
+			}
+			seenFacts[key] = len(item.facts)
 			item.facts = append(item.facts, recordingEntityMemoryFactItem{
 				content:          content,
 				attributes:       sanitizeRecordingMemoryAttributes(kind, stringMapValue(fact["attributes"])),
@@ -511,7 +601,8 @@ func isUsefulRecordingMemoryItem(item recordingEntityMemoryItem) bool {
 	if isGenericRecordingMemoryName(item.entityType, item.canonicalName) || !hasRecordingMemoryScope(item.entityType, item.canonicalName, item.attributes) {
 		return false
 	}
-	if item.entityType == "person" {
+	// 人物与企业以具名身份为准，不要求额外结构化属性；其余类型必须至少有一个 schema 内属性
+	if item.entityType == "person" || item.entityType == "company" {
 		return true
 	}
 	return hasRecordingMemoryTypeAttribute(item.entityType, item.attributes)
@@ -529,7 +620,7 @@ func isGenericRecordingMemoryName(entityType, name string) bool {
 }
 
 func hasRecordingMemoryScope(entityType, name string, attributes map[string]string) bool {
-	if entityType == "person" {
+	if entityType == "person" || entityType == "company" {
 		return true
 	}
 	for _, marker := range recordingMemoryScopeMarkers {
@@ -565,12 +656,30 @@ func hasRecordingMemoryTypeAttribute(entityType string, attributes map[string]st
 }
 
 func isUsefulRecordingMemoryFact(content string) bool {
-	content = strings.TrimSpace(content)
+	content = strings.Trim(strings.TrimSpace(content), " \t\r\n，。！？!?、.;；…")
 	if content == "" {
 		return false
 	}
-	_, lowInformation := recordingMemoryLowInformationFacts[content]
-	return !lowInformation
+	if _, low := recordingMemoryLowInformationFacts[content]; low {
+		return false
+	}
+	// 不把无主体的口头碎片当作长期记忆；保留短的经营数值、金额或百分比事实。
+	if (len([]rune(content)) <= 4 || strings.HasSuffix(content, "的啊")) && !strings.ContainsAny(content, "0123456789%％￥¥") {
+		return false
+	}
+	return true
+}
+
+// 轻量格式去重，不折叠日期、数字和否定词，避免误认为经营数据变化是重复信息。
+func recordingMemoryFactCanonicalKey(content string) string {
+	content = strings.ToLower(strings.TrimSpace(content))
+	content = strings.TrimPrefix(strings.TrimPrefix(content, "目前"), "当前")
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(" \t\r\n，。！？!?、.;；…：:（）()", r) {
+			return -1
+		}
+		return r
+	}, content)
 }
 
 // mergeRecordingEntityMemoryItems 合并 ASR speaker 与纪要抽取的同名实体。
@@ -586,6 +695,9 @@ func mergeRecordingEntityMemoryItems(groups ...[]recordingEntityMemoryItem) []re
 			}
 			item.canonicalName = name
 			key := strings.ToLower(item.entityType) + "\x00" + normalizeRecordingMemoryEntityName(name)
+			if item.entityType == "person" && recordingMemoryAmbiguousTitle(name) {
+				key += "\x00" + strings.TrimSpace(item.attributes[recordingEntityIdentityDiscriminator])
+			}
 			if index, ok := indexes[key]; ok {
 				result[index] = mergeRecordingEntityMemoryItem(result[index], item)
 				continue
@@ -605,6 +717,9 @@ func mergeRecordingEntityMemoryItem(existing, incoming recordingEntityMemoryItem
 
 	if strings.TrimSpace(preferred.summary) == "" {
 		preferred.summary = secondary.summary
+	}
+	if strings.TrimSpace(preferred.companyName) == "" {
+		preferred.companyName = secondary.companyName
 	}
 	preferred.mentionOnlyName = preferred.mentionOnlyName && secondary.mentionOnlyName
 	preferred.attributes = mergeRecordingMemoryAttributes(secondary.attributes, preferred.attributes)
@@ -626,20 +741,34 @@ func recordingEntityMemoryIdentityRank(item recordingEntityMemoryItem) int {
 	return 0
 }
 
+// 归并重复事实时合并证据，而不是简单丢弃新出现的逐字稿引用。
+func mergeRecordingMemorySourceIDs(existing, incoming []string) []string {
+	seen := make(map[string]bool, len(existing)+len(incoming))
+	out := make([]string, 0, len(existing)+len(incoming))
+	for _, id := range append(append([]string{}, existing...), incoming...) {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 func mergeRecordingEntityMemoryFacts(existing, incoming []recordingEntityMemoryFactItem) []recordingEntityMemoryFactItem {
 	result := make([]recordingEntityMemoryFactItem, 0, len(existing)+len(incoming))
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	for _, facts := range [][]recordingEntityMemoryFactItem{existing, incoming} {
 		for _, fact := range facts {
 			content := strings.TrimSpace(fact.content)
 			if content == "" {
 				continue
 			}
-			key := content + "\x00" + strings.Join(fact.sourceSegmentIDs, ",")
-			if seen[key] {
+			key := recordingMemoryFactCanonicalKey(content)
+			if index, exists := seen[key]; exists {
+				result[index].sourceSegmentIDs = mergeRecordingMemorySourceIDs(result[index].sourceSegmentIDs, fact.sourceSegmentIDs)
 				continue
 			}
-			seen[key] = true
+			seen[key] = len(result)
 			fact.content = content
 			result = append(result, fact)
 		}
@@ -685,6 +814,28 @@ func sanitizeRecordingMemoryAttributes(entityType string, attributes map[string]
 			}
 		}
 		result[key] = value
+	}
+	return result
+}
+
+// recordingMemoryLegacyAttributeKeys 历史数据兼容键：这些键已从 schema 移除（如 person.company），
+// 但存量行 attributes_json 里仍有值。读路径按白名单放行，避免存量数据显示不全；
+// 写路径仍只接受 schema 内属性，因此新数据不会再写入这些键（新旧数据天然可分）。
+var recordingMemoryLegacyAttributeKeys = map[string]bool{"company": true}
+
+// filterRecordingMemoryAttributesForResponse 读路径属性过滤：schema 内属性 + 历史兼容键（原样返回存量值）。
+func filterRecordingMemoryAttributesForResponse(entityType string, attributes map[string]string) map[string]string {
+	result := sanitizeRecordingMemoryAttributes(entityType, attributes)
+	if result == nil {
+		result = map[string]string{}
+	}
+	for key, value := range attributes {
+		if !recordingMemoryLegacyAttributeKeys[key] {
+			continue
+		}
+		if value = strings.TrimSpace(value); value != "" {
+			result[key] = value
+		}
 	}
 	return result
 }
@@ -742,12 +893,12 @@ func recordingEntityMemoryOccurredAt(ctx context.Context, eid, fileID int64) int
 }
 
 func findOrCreateRecordingMemoryEntity(tx *gorm.DB, eid, ownerID, fileID int64, item recordingEntityMemoryItem, mentionedAt int64) (*model.RecordingMemoryEntity, error) {
-	identityName := item.canonicalName
-	if item.mentionOnlyName {
-		// mention 没有被模型归一为 canonical_name，不能据此自动跨会议合并。
-		identityName = fmt.Sprintf("mention:%d:%s", fileID, item.canonicalName)
+	// 首先尊重本会议已经确认的归属；泛称只在本会议里对应实体。
+	key := recordingMemoryMentionKey(fileID, item)
+	if target, found, err := findRecordingMemoryBoundEntity(tx, eid, ownerID, fileID, item.entityType, key); found || err != nil {
+		return target, err
 	}
-	normalized := normalizeRecordingMemoryEntityName(identityName)
+	normalized := key
 	var entity model.RecordingMemoryEntity
 	err := tx.Where("eid = ? AND owner_id = ? AND entity_type = ? AND normalized_name = ?", eid, ownerID, item.entityType, normalized).First(&entity).Error
 	if err == nil {
@@ -768,7 +919,7 @@ func findOrCreateRecordingMemoryEntity(tx *gorm.DB, eid, ownerID, fileID int64, 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	if item.entityType == "person" && !item.mentionOnlyName {
+	if item.entityType == "person" && !item.mentionOnlyName && !recordingMemoryAmbiguousTitle(item.canonicalName) {
 		legacyNormalized := normalizeRecordingMemoryEntityName(fmt.Sprintf("mention:%d:%s", fileID, item.canonicalName))
 		var legacy model.RecordingMemoryEntity
 		legacyErr := tx.Where("eid = ? AND owner_id = ? AND entity_type = ? AND normalized_name = ?", eid, ownerID, item.entityType, legacyNormalized).First(&legacy).Error
@@ -841,7 +992,7 @@ func updateAutomaticRecordingMemoryEntity(tx *gorm.DB, entity *model.RecordingMe
 		updates["attributes_json"] = string(payload)
 		updates["attributes_source"] = recordingEntityMemorySourceAutomatic
 	}
-	aliases := mergeRecordingMemoryAliases(decodeStringSlice(entity.AliasesJSON), item.aliases)
+	aliases := CleanRecordingMemoryAliases(entity.EntityType, entity.CanonicalName, mergeRecordingMemoryAliases(decodeStringSlice(entity.AliasesJSON), item.aliases))
 	if len(aliases) > 0 {
 		payload, _ := json.Marshal(aliases)
 		updates["aliases_json"] = string(payload)
@@ -883,14 +1034,46 @@ func mergeRecordingMemoryAliases(existing, incoming []string) []string {
 	return result
 }
 
+// CleanRecordingMemoryAliases 收敛实体别名（读路径 / 写入 / 融合 / 离线清洗共用同一规则）：仅人员（person）保留其他称呼，
+// 且只放与记忆名称不同的项（剔除与主名相同、全空格及规范化同名、默认说话人标签与重复项），其他类型一律返回空切片。
+func CleanRecordingMemoryAliases(entityType, canonicalName string, aliases []string) []string {
+	if entityType != "person" {
+		return []string{}
+	}
+	canonicalTrim := strings.TrimSpace(canonicalName)
+	canonicalNorm := normalizeRecordingMemoryEntityName(canonicalName)
+	filtered := make([]string, 0, len(aliases))
+	seen := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		aliasTrim := strings.TrimSpace(alias)
+		if aliasTrim == "" || isGeneratedSpeakerLabel(aliasTrim) {
+			continue
+		}
+		// 明确其他称呼只放和记忆名称不同的项
+		if aliasTrim == canonicalTrim {
+			continue
+		}
+		norm := normalizeRecordingMemoryEntityName(aliasTrim)
+		if norm == canonicalNorm {
+			continue
+		}
+		if _, ok := seen[norm]; ok {
+			continue
+		}
+		seen[norm] = struct{}{}
+		filtered = append(filtered, aliasTrim)
+	}
+	return filtered
+}
+
 func refreshRecordingMemoryEntityStats(tx *gorm.DB, eid, ownerID, entityID int64) error {
 	var count int64
-	if err := tx.Model(&model.RecordingMemoryFact{}).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", eid, ownerID, entityID, false).Count(&count).Error; err != nil {
+	if err := recordingMemoryFactRowsOnly(tx.Model(&model.RecordingMemoryFact{})).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", eid, ownerID, entityID, false).Count(&count).Error; err != nil {
 		return err
 	}
 	var last model.RecordingMemoryFact
 	if count > 0 {
-		if err := tx.Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", eid, ownerID, entityID, false).Order("occurred_at DESC, id DESC").First(&last).Error; err != nil {
+		if err := recordingMemoryFactRowsOnly(tx.Model(&model.RecordingMemoryFact{})).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", eid, ownerID, entityID, false).Order("occurred_at DESC, id DESC").First(&last).Error; err != nil {
 			return err
 		}
 	}
@@ -933,10 +1116,68 @@ func (s *RecordingMemoryEntityService) ensureAccess(ctx context.Context, userID 
 	return nil
 }
 
-func (s *RecordingMemoryEntityService) List(ctx context.Context, userID int64, entityType, keyword string, limit, offset int) (*RecordingMemoryEntityList, error) {
+// RecordingMemoryEntityFilter 实体记忆列表多维查询过滤条件
+type RecordingMemoryEntityFilter struct {
+	EntityTypes     []string // 实体类型列表（person, company...）
+	Keyword         string   // 全局模糊搜索（同时匹配 canonical_name 和 summary）
+	Name            string   // 只按名称搜索（只匹配 canonical_name）
+	AttributeKey    string   // 属性筛选 key（须为 schema 内属性，如 relationship / industry）
+	AttributeValues []string // 属性筛选值（多值任一命中；兼容枚举 value 与中文 label 双写）
+	SortBy          string   // 排序字段：created_time / updated_time（白名单，缺省 updated_time）
+	Limit           int
+	Offset          int
+}
+
+// List 兼容门面方法，默认将 keyword 作为全局模糊搜索。
+func (s *RecordingMemoryEntityService) List(ctx context.Context, userID int64, entityTypes []string, keyword string, limit, offset int) (*RecordingMemoryEntityList, error) {
+	return s.ListWithFilter(ctx, userID, RecordingMemoryEntityFilter{
+		EntityTypes: entityTypes,
+		Keyword:     keyword,
+		Limit:       limit,
+		Offset:      offset,
+	})
+}
+
+// recordingMemorySchemaAttributeKeyExists 判断 [key] 是否在任一实体类型的
+// schema 属性集内（属性筛选 key 白名单；不在集内的 key 直接返回空列表）。
+func recordingMemorySchemaAttributeKeyExists(key string) bool {
+	for _, schema := range model.RecordingMemoryEntitySchemas {
+		if _, ok := schema.Attributes[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// recordingMemoryAttributeLikePattern 构造 attributes JSON 文本列的 LIKE 模式：
+// %"key":"value"% —— 依赖落库为 json.Marshal 的紧凑形态（{"k":"v"} 无空格）；
+// 若写入路径改成带空格的序列化，本筛选会静默全失效。
+//
+// 两侧引号都参与匹配，因此 key / value 都是精确匹配：key 不会被「尾串相同的
+// 其他 key」误命中（sub_industry 里不含 `"industry"`），value 也不会被更长值
+// 误命中（partner_x 里不含 `"partner"`）。
+//
+// 转义只做两件事：JSON 转义（值的引号 / 反斜杠由 json.Marshal 转成落库形态，
+// 如 a"b → a\"b）+ LIKE 通配符转义（复用 escapeLikePattern）。
+//
+// LIKE 转义字符用 '!' 而不是反斜杠：MySQL 的字符串字面量里反斜杠是转义符，
+// `ESCAPE '\'` 会被当成未闭合字面量直接语法报错（默认 sql_mode 下），而
+// PostgreSQL / SQLite 又能通过 —— 等于只在生产 MySQL 上炸、SQLite 测试全绿。
+// 反斜杠在 ESCAPE '!' 下是普通字符，故无需二次处理（与仓库既有约定一致，
+// 见 my_space_upload_service.go 的 escapeLikePattern）。
+func recordingMemoryAttributeLikePattern(key, value string) string {
+	jsonKey, _ := json.Marshal(key)
+	jsonValue, _ := json.Marshal(value)
+	return "%" + escapeLikePattern(string(jsonKey)) + ":" + escapeLikePattern(string(jsonValue)) + "%"
+}
+
+// ListWithFilter 增强版实体记忆列表查询，支持指定 Name 进行精准名称搜索，杜绝简介关键词干扰。
+func (s *RecordingMemoryEntityService) ListWithFilter(ctx context.Context, userID int64, filter RecordingMemoryEntityFilter) (*RecordingMemoryEntityList, error) {
 	if err := s.ensureAccess(ctx, userID, false); err != nil {
 		return nil, err
 	}
+	limit := filter.Limit
+	offset := filter.Offset
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
@@ -949,10 +1190,60 @@ func (s *RecordingMemoryEntityService) List(ctx context.Context, userID int64, e
 		schemaTypes = append(schemaTypes, entityType)
 	}
 	query = query.Where("entity_type IN ?", schemaTypes)
-	if entityType = strings.TrimSpace(entityType); entityType != "" {
-		query = query.Where("entity_type = ?", entityType)
+	// 多值查询：支持重复传参与逗号分隔两种写法；只保留 schema 内类型；全部未知时直接返回空，避免 IN () 非法 SQL
+	if len(filter.EntityTypes) > 0 {
+		wanted := make([]string, 0, len(filter.EntityTypes))
+		seen := make(map[string]bool, len(filter.EntityTypes))
+		for _, raw := range filter.EntityTypes {
+			for _, entityType := range strings.Split(raw, ",") {
+				entityType = strings.ToLower(strings.TrimSpace(entityType))
+				if entityType == "" || seen[entityType] {
+					continue
+				}
+				if _, ok := model.RecordingMemoryEntitySchemas[entityType]; !ok {
+					continue
+				}
+				seen[entityType] = true
+				wanted = append(wanted, entityType)
+			}
+		}
+		if len(wanted) == 0 {
+			return &RecordingMemoryEntityList{Items: []RecordingMemoryEntityListItem{}}, nil
+		}
+		query = query.Where("entity_type IN ?", wanted)
 	}
-	if keyword = strings.TrimSpace(keyword); keyword != "" {
+
+	// 属性筛选：attributes JSON 文本列按 "key":"value" 形态精确匹配（参数化 LIKE，
+	// MySQL / PostgreSQL / SQLite 三方言通用，不用 JSON_EXTRACT）。多值任一命中
+	// （用 OR 拼接，GORM 会给含 OR 的原生条件自动加括号，不会与上面的
+	// eid / owner_id / entity_type 条件混淆优先级）。兼容枚举 value 与中文 label
+	// 双写的历史数据。key 不在 schema 属性集内、或传了 key 但 value 全为空，
+	// 一律返回空列表（与未知 entity_type 同口径，不静默省略筛选条件返回全量）。
+	if attributeKey := strings.TrimSpace(filter.AttributeKey); attributeKey != "" {
+		if !recordingMemorySchemaAttributeKeyExists(attributeKey) {
+			return &RecordingMemoryEntityList{Items: []RecordingMemoryEntityListItem{}}, nil
+		}
+		conds := make([]string, 0, len(filter.AttributeValues))
+		args := make([]interface{}, 0, len(filter.AttributeValues))
+		for _, value := range filter.AttributeValues {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			conds = append(conds, `attributes_json LIKE ? ESCAPE '!'`)
+			args = append(args, recordingMemoryAttributeLikePattern(attributeKey, value))
+		}
+		if len(conds) == 0 {
+			return &RecordingMemoryEntityList{Items: []RecordingMemoryEntityListItem{}}, nil
+		}
+		query = query.Where(strings.Join(conds, " OR "), args...)
+	}
+
+	// 搜索过滤：优先按名称精确搜索（name）；若未传 name 则回退全局模糊搜索（keyword）
+	if name := strings.TrimSpace(filter.Name); name != "" {
+		like := "%" + name + "%"
+		query = query.Where("canonical_name LIKE ?", like)
+	} else if keyword := strings.TrimSpace(filter.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		query = query.Where("canonical_name LIKE ? OR summary LIKE ?", like, like)
 	}
@@ -961,7 +1252,18 @@ func (s *RecordingMemoryEntityService) List(ctx context.Context, userID int64, e
 		return nil, err
 	}
 	var entities []model.RecordingMemoryEntity
-	if err := query.Order("updated_time DESC").Offset(offset).Limit(limit).Find(&entities).Error; err != nil {
+	// 排序：白名单内切换（created_time / updated_time），缺省与历史行为一致
+	// （updated_time DESC，列表默认「最近更新」在前）；非法值回退缺省不报错（兼容
+	// 老客户端）。末尾固定补 id DESC：批量导入的数据时间戳大量相同，只按时间
+	// 排序时数据库不保证同值内部顺序稳定，offset 翻页会重复 / 漏项。
+	order := "updated_time DESC, id DESC"
+	switch strings.ToLower(strings.TrimSpace(filter.SortBy)) {
+	case "created_time":
+		order = "created_time DESC, id DESC"
+	case "updated_time", "":
+		// 缺省
+	}
+	if err := query.Order(order).Offset(offset).Limit(limit).Find(&entities).Error; err != nil {
 		return nil, err
 	}
 	entityIDs := make([]int64, 0, len(entities))
@@ -977,9 +1279,18 @@ func (s *RecordingMemoryEntityService) List(ctx context.Context, userID int64, e
 		return nil, err
 	}
 	items := make([]RecordingMemoryEntityListItem, 0, len(entities))
+	companies, personCounts, err := recordingMemoryEntityRelationSummaries(ctx, s.eid, userID, entities)
+	if err != nil {
+		return nil, err
+	}
 	for _, entity := range entities {
 		item := recordingMemoryEntityListItem(entity, sourceMeetings[entity.ID])
 		item.SourceFile = sourceFiles[entity.ID]
+		if company, ok := companies[entity.ID]; ok {
+			view := company
+			item.RelatedCompany = &view
+		}
+		item.RelatedPersonCount = personCounts[entity.ID]
 		items = append(items, item)
 	}
 	return &RecordingMemoryEntityList{Items: items, Total: total}, nil
@@ -999,12 +1310,15 @@ func recordingMemoryEntityLatestSourceFiles(ctx context.Context, eid, ownerID in
 	var rows []latestFactRow
 	const latestSQL = `SELECT f.entity_id, f.file_id FROM recording_memory_facts f
 WHERE f.eid = ? AND f.owner_id = ? AND f.entity_id IN ? AND f.is_deleted = ?
+  AND f.fact_kind NOT IN ?
   AND NOT EXISTS (
     SELECT 1 FROM recording_memory_facts g
     WHERE g.eid = f.eid AND g.owner_id = f.owner_id AND g.entity_id = f.entity_id AND g.is_deleted = ?
+      AND g.fact_kind NOT IN ?
       AND (g.occurred_at > f.occurred_at OR (g.occurred_at = f.occurred_at AND g.id > f.id))
   )`
-	if err := model.DB.WithContext(ctx).Raw(latestSQL, eid, ownerID, entityIDs, false, false).Scan(&rows).Error; err != nil {
+	if err := model.DB.WithContext(ctx).Raw(latestSQL, eid, ownerID, entityIDs, false,
+		recordingMemoryRelationFactKinds, false, recordingMemoryRelationFactKinds).Scan(&rows).Error; err != nil {
 		return result, err
 	}
 	fileIDs := make([]int64, 0, len(rows))
@@ -1045,7 +1359,22 @@ func recordingMemorySourceMeetingCounts(ctx context.Context, eid, ownerID int64,
 }
 
 func recordingMemoryEntityListItem(entity model.RecordingMemoryEntity, sourceMeetings int64) RecordingMemoryEntityListItem {
-	return RecordingMemoryEntityListItem{ID: entity.ID, EntityType: entity.EntityType, CanonicalName: entity.CanonicalName, Summary: string(entity.Summary), FactCount: entity.FactCount, SourceMeetings: sourceMeetings, LastFactAt: entity.LastFactAt, UpdatedTime: entity.UpdatedTime, Attributes: sanitizeRecordingMemoryAttributes(entity.EntityType, decodeStringMap(entity.AttributesJSON))}
+	aliases := CleanRecordingMemoryAliases(entity.EntityType, entity.CanonicalName, decodeStringSlice(entity.AliasesJSON))
+	if aliases == nil {
+		aliases = []string{}
+	}
+	return RecordingMemoryEntityListItem{
+		ID:             entity.ID,
+		EntityType:     entity.EntityType,
+		CanonicalName:  entity.CanonicalName,
+		Aliases:        aliases,
+		Summary:        string(entity.Summary),
+		FactCount:      entity.FactCount,
+		SourceMeetings: sourceMeetings,
+		LastFactAt:     entity.LastFactAt,
+		UpdatedTime:    entity.UpdatedTime,
+		Attributes:     filterRecordingMemoryAttributesForResponse(entity.EntityType, decodeStringMap(entity.AttributesJSON)),
+	}
 }
 
 func (s *RecordingMemoryEntityService) Detail(ctx context.Context, userID, entityID int64) (*RecordingMemoryEntityDetail, error) {
@@ -1063,9 +1392,9 @@ func (s *RecordingMemoryEntityService) Detail(ctx context.Context, userID, entit
 	if err := model.DB.WithContext(ctx).Model(&model.RecordingMemoryFact{}).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ? AND file_id > ?", s.eid, userID, entity.ID, false, 0).Distinct("file_id").Count(&sourceMeetings).Error; err != nil {
 		return nil, err
 	}
-	detail := &RecordingMemoryEntityDetail{RecordingMemoryEntityListItem: recordingMemoryEntityListItem(*entity, sourceMeetings), Aliases: decodeStringSlice(entity.AliasesJSON), FirstMentionedAt: entity.FirstMentionedAt, Facts: []RecordingMemoryEntityFactView{}, Relations: []RecordingMemoryEntityRelationView{}}
+	detail := &RecordingMemoryEntityDetail{RecordingMemoryEntityListItem: recordingMemoryEntityListItem(*entity, sourceMeetings), FirstMentionedAt: entity.FirstMentionedAt, Facts: []RecordingMemoryEntityFactView{}, Relations: []RecordingMemoryEntityRelationView{}}
 	var facts []model.RecordingMemoryFact
-	if err := model.DB.WithContext(ctx).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", s.eid, userID, entity.ID, false).Order("occurred_at DESC, id DESC").Limit(100).Find(&facts).Error; err != nil {
+	if err := recordingMemoryFactRowsOnly(model.DB.WithContext(ctx).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", s.eid, userID, entity.ID, false)).Order("occurred_at DESC, id DESC").Limit(100).Find(&facts).Error; err != nil {
 		return nil, err
 	}
 	fileIDs := make([]int64, 0, len(facts))
@@ -1105,6 +1434,15 @@ func (s *RecordingMemoryEntityService) Detail(ctx context.Context, userID, entit
 		return nil, err
 	}
 	detail.Relations = relations
+	companies, personCounts, err := recordingMemoryEntityRelationSummaries(ctx, s.eid, userID, []model.RecordingMemoryEntity{*entity})
+	if err != nil {
+		return nil, err
+	}
+	if company, ok := companies[entity.ID]; ok {
+		view := company
+		detail.RelatedCompany = &view
+	}
+	detail.RelatedPersonCount = personCounts[entity.ID]
 	return detail, nil
 }
 
@@ -1127,7 +1465,7 @@ func recordingMemorySourceFileNames(ctx context.Context, eid, ownerID int64, fil
 // 无任何事实时返回 0（由调用方兜底）。
 func recordingMemoryRelatedLatestOccurredAt(tx *gorm.DB, eid, ownerID, entityID int64) (int64, error) {
 	var last model.RecordingMemoryFact
-	err := tx.Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", eid, ownerID, entityID, false).
+	err := recordingMemoryFactRowsOnly(tx).Where("eid = ? AND owner_id = ? AND entity_id = ? AND is_deleted = ?", eid, ownerID, entityID, false).
 		Order("occurred_at DESC, id DESC").First(&last).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, nil
@@ -1175,12 +1513,14 @@ func recordingMemoryRelatedLatestFacts(ctx context.Context, eid, ownerID int64, 
 	var rows []row
 	const latestSQL = `SELECT f.entity_id, f.file_id, f.source_segment_ids FROM recording_memory_facts f
 WHERE f.eid = ? AND f.owner_id = ? AND f.entity_id IN ? AND f.is_deleted = ?
+  AND f.fact_kind NOT IN ?
   AND NOT EXISTS (
     SELECT 1 FROM recording_memory_facts g
     WHERE g.eid = f.eid AND g.owner_id = f.owner_id AND g.entity_id = f.entity_id AND g.is_deleted = ?
+      AND g.fact_kind NOT IN ?
       AND (g.occurred_at > f.occurred_at OR (g.occurred_at = f.occurred_at AND g.id > f.id))
   )`
-	if err := model.DB.WithContext(ctx).Raw(latestSQL, eid, ownerID, entityIDs, false, false).Scan(&rows).Error; err != nil {
+	if err := model.DB.WithContext(ctx).Raw(latestSQL, eid, ownerID, entityIDs, false, recordingMemoryRelationFactKinds, false, recordingMemoryRelationFactKinds).Scan(&rows).Error; err != nil {
 		return result
 	}
 	fileIDs := make([]int64, 0, len(rows))
@@ -1222,6 +1562,10 @@ func (s *RecordingMemoryEntityService) Create(ctx context.Context, userID int64,
 	if err != nil {
 		return nil, err
 	}
+	aliasesJSON, err := marshalRecordingMemoryAliases(entityType, name, input.Aliases)
+	if err != nil {
+		return nil, err
+	}
 	var createdID int64
 	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var duplicate int64
@@ -1242,7 +1586,7 @@ func (s *RecordingMemoryEntityService) Create(ctx context.Context, userID int64,
 			NormalizedName:   normalizeRecordingMemoryEntityName(name),
 			Summary:          model.LongText(strings.TrimSpace(input.Summary)),
 			AttributesJSON:   model.LongText(attributesJSON),
-			AliasesJSON:      "[]",
+			AliasesJSON:      model.LongText(aliasesJSON),
 			SummarySource:    recordingEntityMemorySourceManual,
 			AttributesSource: recordingEntityMemorySourceManual,
 			FirstMentionedAt: now,
@@ -1254,6 +1598,11 @@ func (s *RecordingMemoryEntityService) Create(ctx context.Context, userID int64,
 		createdID = entity.ID
 		if err := createRecordingMemoryManualFacts(tx, s.eid, userID, entityType, entity.ID, input.Facts, now); err != nil {
 			return err
+		}
+		if len(input.Relations) > 0 {
+			if err := syncRecordingMemoryEntityRelations(tx, s.eid, userID, entity.ID, entityType, input.Relations); err != nil {
+				return err
+			}
 		}
 		if err := refreshRecordingMemoryEntityStats(tx, s.eid, userID, entity.ID); err != nil {
 			return err
@@ -1307,7 +1656,14 @@ func (s *RecordingMemoryEntityService) Update(ctx context.Context, userID, entit
 			updates["attributes_json"] = string(payload)
 			updates["attributes_source"] = recordingEntityMemorySourceManual
 		}
-		if len(updates) == 0 && len(input.Facts) == 0 && len(input.DeletedFactIDs) == 0 {
+		if input.Aliases != nil {
+			aliasesJSON, err := marshalRecordingMemoryAliases(entity.EntityType, entity.CanonicalName, input.Aliases)
+			if err != nil {
+				return err
+			}
+			updates["aliases_json"] = aliasesJSON
+		}
+		if len(updates) == 0 && len(input.Facts) == 0 && len(input.DeletedFactIDs) == 0 && input.Relations == nil {
 			return nil
 		}
 		if len(updates) > 0 {
@@ -1318,6 +1674,11 @@ func (s *RecordingMemoryEntityService) Update(ctx context.Context, userID, entit
 		}
 		if err := updateRecordingMemoryEntityFacts(tx, s.eid, userID, &entity, input); err != nil {
 			return err
+		}
+		if input.Relations != nil && len(*input.Relations) > 0 {
+			if err := syncRecordingMemoryEntityRelations(tx, s.eid, userID, entity.ID, entity.EntityType, *input.Relations); err != nil {
+				return err
+			}
 		}
 		if len(input.Facts) > 0 || len(input.DeletedFactIDs) > 0 {
 			return refreshRecordingMemoryEntityStats(tx, s.eid, userID, entityID)
@@ -1586,6 +1947,12 @@ func (s *RecordingMemoryEntityService) DeleteEntity(ctx context.Context, userID,
 			Updates(map[string]interface{}{"is_deleted": true}).Error; err != nil {
 			return err
 		}
+		// 其他实体指向本实体的关联行（关联记忆/结构化关联）一并软删，避免其详情出现空白关联项
+		if err := tx.Model(&model.RecordingMemoryFact{}).
+			Where("eid = ? AND owner_id = ? AND related_entity_id = ? AND is_deleted = ?", s.eid, userID, entityID, false).
+			Updates(map[string]interface{}{"is_deleted": true}).Error; err != nil {
+			return err
+		}
 		// 删除该实体的所有关联关系（人工关联不再有意义）。
 		return tx.Where("eid = ? AND owner_id = ? AND (entity_id = ? OR related_entity_id = ?)", s.eid, userID, entityID, entityID).
 			Delete(&model.RecordingMemoryEntityRelation{}).Error
@@ -1612,7 +1979,7 @@ func (s *RecordingMemoryEntityService) Merge(ctx context.Context, userID, source
 		}
 		// 公共底层：facts 去重迁移 + 关联修正 + content/summary 旧名替换 + aliases + relation + source 软删 + stats。
 		// 单源融合现状不调 LLM 合并描述（mergedSummary 传空，不更新 summary）。
-		return mergeRecordingEntitiesTx(tx, s.eid, userID, []int64{sourceID}, targetID, "")
+		return mergeRecordingEntitiesTx(tx, s.eid, userID, []int64{sourceID}, targetID, "", "confirmed")
 	})
 	if err != nil {
 		return nil, err
@@ -1631,40 +1998,392 @@ func (s *RecordingMemoryEntityService) findActiveEntity(ctx context.Context, use
 	return &entity, nil
 }
 
-func (s *RecordingMemoryEntityService) listRelations(ctx context.Context, userID, entityID int64) ([]RecordingMemoryEntityRelationView, error) {
-	var relations []model.RecordingMemoryEntityRelation
-	if err := model.DB.WithContext(ctx).Where("eid = ? AND owner_id = ? AND (entity_id = ? OR related_entity_id = ?)", s.eid, userID, entityID, entityID).Find(&relations).Error; err != nil {
-		return nil, err
+// recordingMemoryRelationFactKinds 是结构化关联使用的关系类型白名单（作为 fact_kind 存储）。
+// 新增关系类型时必须同步这里，以及 syncRecordingMemoryEntityRelations 的 switch。
+var recordingMemoryRelationFactKinds = []string{recordingEntityMemoryFactBelongsTo}
+
+// recordingMemoryFactRowsOnly 只保留"事实/关联记忆"行，排除结构化关联行。
+// facts[]、fact_count、last_fact_at、source_file 与历史召回统一使用，保证"列表条数 == fact_count"。
+// 采用"只排除已登记的关系类型"而不是"只保留事实类 kind"：fact_kind 是开放取值
+// （存量/夹具里存在其它取值），后者会把关系行之外的数据一并隐藏。
+func recordingMemoryFactRowsOnly(db *gorm.DB) *gorm.DB {
+	return db.Where("fact_kind NOT IN ?", recordingMemoryRelationFactKinds)
+}
+
+// marshalRecordingMemoryAliases 清洗并序列化人工别称；nil（未提供）落库为 "[]"。
+// 仅人员（person）保留其他称呼，且剔除与主名相同的项。
+func marshalRecordingMemoryAliases(entityType, canonicalName string, aliases *[]string) (string, error) {
+	if aliases == nil {
+		return "[]", nil
 	}
-	ids := make([]int64, 0, len(relations))
-	for _, relation := range relations {
-		if relation.EntityID == entityID {
-			ids = append(ids, relation.RelatedEntityID)
-		} else {
-			ids = append(ids, relation.EntityID)
+	payload, err := json.Marshal(CleanRecordingMemoryAliases(entityType, canonicalName, mergeRecordingMemoryAliases(nil, *aliases)))
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+// upsertRecordingMemoryEntityCompanyLink 幂等写入"人物→企业"关联行。
+// source_key 固定，而唯一索引 uniq_recording_memory_fact_source 不含 is_deleted，
+// 因此同键的已软删行必须复活复用，不能重复插入（否则改绑回旧企业/清空后重挂会唯一约束报错）。
+func upsertRecordingMemoryEntityCompanyLink(tx *gorm.DB, eid, ownerID, personID, companyID, occurredAt int64) error {
+	seed := fmt.Sprintf("manual|relation|%s|%d|%d", recordingEntityMemoryFactBelongsTo, personID, companyID)
+	hash := sha256.Sum256([]byte(seed))
+	sourceKey := hex.EncodeToString(hash[:])
+	var existing model.RecordingMemoryFact
+	err := tx.Where("eid = ? AND owner_id = ? AND file_id = ? AND source_key = ?", eid, ownerID, 0, sourceKey).First(&existing).Error
+	if err == nil {
+		return tx.Model(&model.RecordingMemoryFact{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{
+			"entity_id":         personID,
+			"related_entity_id": companyID,
+			"is_deleted":        false,
+			"occurred_at":       occurredAt,
+			"fact_kind":         recordingEntityMemoryFactBelongsTo,
+		}).Error
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return tx.Create(&model.RecordingMemoryFact{
+		Eid: eid, OwnerID: ownerID, EntityID: personID, FileID: 0,
+		SourceKey:        sourceKey,
+		FactKind:         recordingEntityMemoryFactBelongsTo,
+		Content:          model.LongText(""),
+		AttributesJSON:   model.LongText("{}"),
+		SourceSegmentIDs: model.LongText("[]"),
+		SourceType:       recordingEntityMemorySourceManual,
+		OccurredAt:       occurredAt,
+		RelatedEntityID:  companyID,
+	}).Error
+}
+
+// IsGenericOrUnnamedCompany 判断公司名是否属于泛称或未具名占位词（用于抽取和历史数据回填清洗）。
+func IsGenericOrUnnamedCompany(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	return trimmed == "" || isGenericRecordingMemoryName("company", trimmed) || isUnnamedRecordingMemoryCompany(trimmed)
+}
+
+// unnamedRecordingMemoryCompanyMarkers 占位/未具名企业名标记：命中即不建企业实体，避免垃圾卡片。
+// 现网 person.company 中约 16% 是这类占位值（未明确/未具名/未知/待确认…）。
+var unnamedRecordingMemoryCompanyMarkers = []string{"未明确", "未具名", "未提供", "未说明", "不详", "待确认", "未知", "无法确认", "不明确", "某公司", "同上", "不明", "本公司", "我公司", "我方公司", "我司", "个人", "供应商方"}
+
+func isUnnamedRecordingMemoryCompany(name string) bool {
+	for _, marker := range unnamedRecordingMemoryCompanyMarkers {
+		if strings.Contains(name, marker) {
+			return true
 		}
 	}
-	var entities []model.RecordingMemoryEntity
-	if len(ids) > 0 {
-		if err := model.DB.WithContext(ctx).Where("eid = ? AND owner_id = ? AND id IN ? AND is_deleted = ?", s.eid, userID, ids, false).Find(&entities).Error; err != nil {
-			return nil, err
+	return false
+}
+
+// linkRecordingMemoryEntityCompany 依据人物抽取到的企业名称，查找/新建 company 实体并建立 belongs_to 关联。
+// 企业实体不存在时按名称新建（属性留空，等待人工或后续会议补充）；人物至多一个企业，切换时软删旧关联。
+func LinkRecordingMemoryEntityCompany(tx *gorm.DB, eid, ownerID, personID int64, companyName string, mentionedAt int64) error {
+	return linkRecordingMemoryEntityCompanyForFile(tx, eid, ownerID, 0, personID, companyName, mentionedAt)
+}
+
+func linkRecordingMemoryEntityCompanyForFile(tx *gorm.DB, eid, ownerID, fileID, personID int64, companyName string, mentionedAt int64) error {
+	name := strings.TrimSpace(companyName)
+	if name == "" || isGenericRecordingMemoryName("company", name) || isUnnamedRecordingMemoryCompany(name) {
+		return nil
+	}
+	normalized := normalizeRecordingMemoryEntityName(name)
+	bound, found, err := findRecordingMemoryBoundEntity(tx, eid, ownerID, fileID, "company", normalized)
+	if errors.Is(err, errRecordingMemoryBindingRetired) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var company model.RecordingMemoryEntity
+	if found {
+		company = *bound
+	} else {
+		err = tx.Where("eid = ? AND owner_id = ? AND entity_type = ? AND normalized_name = ?", eid, ownerID, "company", normalized).First(&company).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			company = model.RecordingMemoryEntity{
+				Eid: eid, OwnerID: ownerID, EntityType: "company", CanonicalName: name, NormalizedName: normalized,
+				SummarySource: recordingEntityMemorySourceAutomatic, AttributesSource: recordingEntityMemorySourceAutomatic,
+				FirstMentionedAt: mentionedAt, LastFactAt: mentionedAt,
+			}
+			if err := tx.Create(&company).Error; err != nil {
+				return err
+			}
+		case err != nil:
+			return err
+		case company.MergedIntoID != 0:
+			if err := tx.Where("id = ? AND eid = ? AND owner_id = ? AND is_deleted = ?", company.MergedIntoID, eid, ownerID, false).First(&company).Error; err != nil {
+				return err
+			}
 		}
 	}
-	byID := map[int64]model.RecordingMemoryEntity{}
-	for _, entity := range entities {
-		byID[entity.ID] = entity
+	if err := saveRecordingMemoryEntityBinding(tx, eid, ownerID, fileID, "company", normalized, name, company.ID, "automatic"); err != nil {
+		return err
 	}
-	result := make([]RecordingMemoryEntityRelationView, 0, len(relations))
-	for _, relation := range relations {
-		relatedID := relation.EntityID
+	// 若企业之前被软删，再次在会议中作为人员所属企业出现时，自动复活恢复有效
+	if company.IsDeleted {
+		if err := tx.Model(&company).Updates(map[string]interface{}{
+			"is_deleted":   false,
+			"last_fact_at": mentionedAt,
+			"updated_time": time.Now().UTC().UnixMilli(),
+		}).Error; err != nil {
+			return err
+		}
+		company.IsDeleted = false
+	}
+	// 人物至多一个企业：已关联同一企业则幂等返回；已关联其他企业时，只有不早于现有结论的会议才能改绑，
+	// 避免重跑旧会议把新会议确定的关联顶掉。
+	var current model.RecordingMemoryFact
+	curErr := tx.Where("eid = ? AND owner_id = ? AND entity_id = ? AND fact_kind = ? AND is_deleted = ?",
+		eid, ownerID, personID, recordingEntityMemoryFactBelongsTo, false).
+		Order("occurred_at DESC, id DESC").First(&current).Error
+	switch {
+	case curErr == nil && current.RelatedEntityID == company.ID:
+		return nil
+	case curErr == nil:
+		if current.OccurredAt > mentionedAt {
+			return nil
+		}
+		if err := tx.Model(&model.RecordingMemoryFact{}).Where("id = ?", current.ID).Update("is_deleted", true).Error; err != nil {
+			return err
+		}
+	case !errors.Is(curErr, gorm.ErrRecordNotFound):
+		return curErr
+	}
+	return upsertRecordingMemoryEntityCompanyLink(tx, eid, ownerID, personID, company.ID, mentionedAt)
+}
+
+// syncRecordingMemoryEntityRelations 按 relation_type 分组替换结构化关联；未知关系类型报错。
+func syncRecordingMemoryEntityRelations(tx *gorm.DB, eid, ownerID, entityID int64, entityType string, groups []RecordingMemoryRelationInput) error {
+	for _, group := range groups {
+		switch group.RelationType {
+		case recordingEntityMemoryFactBelongsTo:
+			if err := syncRecordingMemoryEntityCompanyLinks(tx, eid, ownerID, entityID, entityType, group.RelatedEntityIDs); err != nil {
+				return err
+			}
+		default:
+			return ErrRecordingEntityMemoryRelationTypeUnsupported
+		}
+	}
+	return nil
+}
+
+// syncRecordingMemoryEntityCompanyLinks 按替换语义维护人物↔企业的 belongs_to 关联行。
+// 行方向固定为 entity_id=人物、related_entity_id=企业：人物侧维护自己名下的行，企业侧维护指向自己的行。
+func syncRecordingMemoryEntityCompanyLinks(tx *gorm.DB, eid, ownerID, entityID int64, entityType string, relatedIDs []int64) error {
+	personSide := entityType == "person"
+	wantType := "company"
+	if !personSide {
+		if entityType != "company" {
+			return ErrRecordingEntityMemoryRelationTypeMismatch
+		}
+		wantType = "person"
+	}
+	want := make([]int64, 0, len(relatedIDs))
+	seen := make(map[int64]bool, len(relatedIDs))
+	for _, relatedID := range relatedIDs {
 		if relatedID == entityID {
-			relatedID = relation.RelatedEntityID
+			return ErrRecordingEntityMemoryRelationSelf
 		}
-		related, ok := byID[relatedID]
-		if !ok {
+		if relatedID <= 0 || seen[relatedID] {
 			continue
 		}
-		result = append(result, RecordingMemoryEntityRelationView{ID: relation.ID, RelatedEntityID: relatedID, RelatedName: related.CanonicalName, RelatedType: related.EntityType, RelationType: relation.RelationType})
+		seen[relatedID] = true
+		want = append(want, relatedID)
+	}
+	if personSide && len(want) > 1 {
+		return ErrRecordingEntityMemoryRelationTooMany
+	}
+	if len(want) > 0 {
+		var targets []model.RecordingMemoryEntity
+		if err := tx.Where("id IN ? AND eid = ? AND owner_id = ? AND merged_into_id = ? AND is_deleted = ?", want, eid, ownerID, 0, false).Find(&targets).Error; err != nil {
+			return err
+		}
+		if len(targets) != len(want) {
+			return ErrRecordingEntityMemoryNotFound
+		}
+		for _, target := range targets {
+			if target.EntityType != wantType {
+				return ErrRecordingEntityMemoryRelationTypeMismatch
+			}
+		}
+	}
+	currentQuery := tx.Where("eid = ? AND owner_id = ? AND fact_kind = ? AND is_deleted = ?", eid, ownerID, recordingEntityMemoryFactBelongsTo, false)
+	if personSide {
+		currentQuery = currentQuery.Where("entity_id = ?", entityID)
+	} else {
+		currentQuery = currentQuery.Where("related_entity_id = ?", entityID)
+	}
+	var current []model.RecordingMemoryFact
+	if err := currentQuery.Find(&current).Error; err != nil {
+		return err
+	}
+	kept := make(map[int64]bool, len(current))
+	for _, fact := range current {
+		otherID := fact.RelatedEntityID
+		if !personSide {
+			otherID = fact.EntityID
+		}
+		if seen[otherID] {
+			kept[otherID] = true
+			continue
+		}
+		if err := tx.Model(&model.RecordingMemoryFact{}).Where("id = ?", fact.ID).Update("is_deleted", true).Error; err != nil {
+			return err
+		}
+	}
+	now := time.Now().UTC().UnixMilli()
+	for _, otherID := range want {
+		if kept[otherID] {
+			continue
+		}
+		personID, companyID := entityID, otherID
+		if !personSide {
+			personID, companyID = otherID, entityID
+		}
+		// 人物至多一个企业：挂到本企业前清掉该人物名下的其它企业关联（企业侧多选时也可能命中）
+		if err := tx.Model(&model.RecordingMemoryFact{}).
+			Where("eid = ? AND owner_id = ? AND entity_id = ? AND fact_kind = ? AND is_deleted = ? AND related_entity_id <> ?",
+				eid, ownerID, personID, recordingEntityMemoryFactBelongsTo, false, companyID).
+			Update("is_deleted", true).Error; err != nil {
+			return err
+		}
+		if err := upsertRecordingMemoryEntityCompanyLink(tx, eid, ownerID, personID, companyID, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// convergeRecordingMemoryEntityCompanyLinks 融合后收敛：同一人物只保留一条有效 belongs_to 关联。
+func convergeRecordingMemoryEntityCompanyLinks(tx *gorm.DB, eid, ownerID int64) error {
+	type linkCount struct {
+		EntityID int64
+		Total    int64
+	}
+	var rows []linkCount
+	if err := tx.Model(&model.RecordingMemoryFact{}).
+		Select("entity_id, COUNT(*) AS total").
+		Where("eid = ? AND owner_id = ? AND fact_kind = ? AND is_deleted = ?", eid, ownerID, recordingEntityMemoryFactBelongsTo, false).
+		Group("entity_id").Having("COUNT(*) > 1").Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		var facts []model.RecordingMemoryFact
+		if err := tx.Where("eid = ? AND owner_id = ? AND entity_id = ? AND fact_kind = ? AND is_deleted = ?", eid, ownerID, row.EntityID, recordingEntityMemoryFactBelongsTo, false).
+			Order("id DESC").Find(&facts).Error; err != nil {
+			return err
+		}
+		for _, fact := range facts[1:] {
+			if err := tx.Model(&model.RecordingMemoryFact{}).Where("id = ?", fact.ID).Update("is_deleted", true).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// recordingMemoryEntityRelationSummaries 批量汇总结构化关联：人物行 → 所属企业；企业行 → 关联人物数。
+func recordingMemoryEntityRelationSummaries(ctx context.Context, eid, ownerID int64, entities []model.RecordingMemoryEntity) (map[int64]RecordingMemoryEntityRelationView, map[int64]int64, error) {
+	companies := map[int64]RecordingMemoryEntityRelationView{}
+	counts := map[int64]int64{}
+	personIDs := make([]int64, 0, len(entities))
+	companyIDs := make([]int64, 0, len(entities))
+	for _, entity := range entities {
+		switch entity.EntityType {
+		case "person":
+			personIDs = append(personIDs, entity.ID)
+		case "company":
+			companyIDs = append(companyIDs, entity.ID)
+		}
+	}
+	if len(personIDs) > 0 {
+		var facts []model.RecordingMemoryFact
+		if err := model.DB.WithContext(ctx).
+			Where("eid = ? AND owner_id = ? AND fact_kind = ? AND is_deleted = ? AND entity_id IN ?", eid, ownerID, recordingEntityMemoryFactBelongsTo, false, personIDs).
+			Order("id DESC").Find(&facts).Error; err != nil {
+			return nil, nil, err
+		}
+		relatedIDs := make([]int64, 0, len(facts))
+		for _, fact := range facts {
+			relatedIDs = append(relatedIDs, fact.RelatedEntityID)
+		}
+		infos := recordingMemoryRelatedEntityInfos(ctx, eid, ownerID, relatedIDs)
+		for _, fact := range facts {
+			if _, exists := companies[fact.EntityID]; exists {
+				continue // 一人至多一个企业；出现重复行时保留最新
+			}
+			info, ok := infos[fact.RelatedEntityID]
+			if !ok {
+				continue
+			}
+			companies[fact.EntityID] = RecordingMemoryEntityRelationView{
+				ID: fact.ID, RelatedEntityID: fact.RelatedEntityID, RelatedName: info.Name, RelatedType: info.Type,
+				RelationType: fact.FactKind, Summary: info.Summary,
+				Attributes: filterRecordingMemoryAttributesForResponse(info.Type, info.Attributes),
+			}
+		}
+	}
+	if len(companyIDs) > 0 {
+		var facts []model.RecordingMemoryFact
+		if err := model.DB.WithContext(ctx).
+			Where("eid = ? AND owner_id = ? AND fact_kind = ? AND is_deleted = ? AND related_entity_id IN ?", eid, ownerID, recordingEntityMemoryFactBelongsTo, false, companyIDs).
+			Find(&facts).Error; err != nil {
+			return nil, nil, err
+		}
+		linkPersonIDs := make([]int64, 0, len(facts))
+		for _, fact := range facts {
+			linkPersonIDs = append(linkPersonIDs, fact.EntityID)
+		}
+		infos := recordingMemoryRelatedEntityInfos(ctx, eid, ownerID, linkPersonIDs)
+		counted := map[int64]map[int64]bool{}
+		for _, fact := range facts {
+			info, ok := infos[fact.EntityID]
+			if !ok || info.Type != "person" {
+				continue
+			}
+			if counted[fact.RelatedEntityID] == nil {
+				counted[fact.RelatedEntityID] = map[int64]bool{}
+			}
+			counted[fact.RelatedEntityID][fact.EntityID] = true
+		}
+		for companyID, set := range counted {
+			counts[companyID] = int64(len(set))
+		}
+	}
+	return companies, counts, nil
+}
+
+func (s *RecordingMemoryEntityService) listRelations(ctx context.Context, userID, entityID int64) ([]RecordingMemoryEntityRelationView, error) {
+	var facts []model.RecordingMemoryFact
+	if err := model.DB.WithContext(ctx).
+		Where("eid = ? AND owner_id = ? AND fact_kind = ? AND is_deleted = ? AND (entity_id = ? OR related_entity_id = ?)",
+			s.eid, userID, recordingEntityMemoryFactBelongsTo, false, entityID, entityID).
+		Find(&facts).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]int64, 0, len(facts))
+	for _, fact := range facts {
+		if fact.EntityID == entityID {
+			ids = append(ids, fact.RelatedEntityID)
+		} else {
+			ids = append(ids, fact.EntityID)
+		}
+	}
+	infos := recordingMemoryRelatedEntityInfos(ctx, s.eid, userID, ids)
+	result := make([]RecordingMemoryEntityRelationView, 0, len(facts))
+	for i, fact := range facts {
+		info, ok := infos[ids[i]]
+		if !ok {
+			continue // 目标已删/已融合：不返回悬空项
+		}
+		result = append(result, RecordingMemoryEntityRelationView{
+			ID: fact.ID, RelatedEntityID: ids[i], RelatedName: info.Name, RelatedType: info.Type,
+			RelationType: fact.FactKind,
+			Summary:      info.Summary,
+			Attributes:   filterRecordingMemoryAttributesForResponse(info.Type, info.Attributes),
+		})
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].RelatedName < result[j].RelatedName })
 	return result, nil
@@ -1679,9 +2398,22 @@ func loadRecordingEntityMemoryRecallHistory(ctx context.Context, eid, ownerID, c
 		Distinct("entity_id").Pluck("entity_id", &currentEntityIDs).Error; err != nil || len(currentEntityIDs) == 0 {
 		return nil
 	}
+	genericTerms := buildGenericIdentityTerms(ctx, eid, ownerID, currentFileID)
+	var allEntities []model.RecordingMemoryEntity
+	if err := model.DB.WithContext(ctx).Where("eid = ? AND owner_id = ? AND id IN ? AND is_deleted = ?", eid, ownerID, currentEntityIDs, false).Find(&allEntities).Error; err != nil || len(allEntities) == 0 {
+		return nil
+	}
+	specificEnts, _ := partitionRecordingMemoryEntities(allEntities, genericTerms)
+	if len(specificEnts) == 0 {
+		return nil
+	}
+	specificEntityIDs := make([]int64, 0, len(specificEnts))
+	for _, ent := range specificEnts {
+		specificEntityIDs = append(specificEntityIDs, ent.ID)
+	}
 	var facts []model.RecordingMemoryFact
-	if err := model.DB.WithContext(ctx).
-		Where("eid = ? AND owner_id = ? AND entity_id IN ? AND file_id != ? AND is_deleted = ?", eid, ownerID, currentEntityIDs, currentFileID, false).
+	if err := recordingMemoryFactRowsOnly(model.DB.WithContext(ctx).
+		Where("eid = ? AND owner_id = ? AND entity_id IN ? AND file_id != ? AND is_deleted = ?", eid, ownerID, specificEntityIDs, currentFileID, false)).
 		Order("occurred_at DESC, id DESC").Limit(24).Find(&facts).Error; err != nil || len(facts) == 0 {
 		return nil
 	}
