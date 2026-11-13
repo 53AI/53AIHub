@@ -1,7 +1,7 @@
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import type { EditorRef, Pipeline } from '@km/shared-business/knowledge-pipeline'
 import { Editor } from '@km/shared-business/knowledge-pipeline'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { createIconFileFromStatic } from '@km/shared-utils'
 import { Button, Drawer, Form, Image, Input, type InputRef, Select } from 'antd'
 import type { Strategy } from '@/api/modules/rag-strategy'
@@ -57,7 +57,7 @@ function getStepTitle(
     return (
       <div className="flex items-center gap-3">
         {editingRule?.icon && (
-          <img src={editingRule.icon} className="size-8 object-contain" alt="logo" />
+          <SafeImage src={editingRule.icon} className="size-8 object-contain" alt="logo" />
         )}
         <span>{editingRule.name}</span>
       </div>

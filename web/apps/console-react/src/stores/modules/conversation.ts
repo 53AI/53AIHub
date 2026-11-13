@@ -76,16 +76,15 @@ export const useConversationStore = create<ConversationState>(() => ({
       const library = (finalData as any).library
       const rerankConfig = agentInfo?.settings?.rerank_config || {}
       const webSearchConfig = agentInfo?.settings?.web_search_setting || {}
-      // networkSearch 时不指定知识库（使用空数组），其他模式默认全部知识库
       const isNetworkSearch = knowledgeSource?.state?.networkSearch
-      const useAllKnowledge = !isNetworkSearch && (
+      const useAllKnowledge = (
         !knowledgeSource ||
         knowledgeSource?.state?.allKnowledge
       )
 
       Object.assign(finalData, {
         enable_process_steps: true,
-        knowledge_base_ids: isNetworkSearch ? [] : (useAllKnowledge ? ['all'] : library?.value ?? []),
+        knowledge_base_ids: useAllKnowledge ? ['all'] : (library?.value ?? []),
         file_ids: [],
         space_ids: [],
         solo_file_mode: false,

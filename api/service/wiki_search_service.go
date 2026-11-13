@@ -35,26 +35,27 @@ type WikiSearchPage struct {
 }
 
 type WikiSearchResult struct {
-	PageID      int64                `json:"page_id"`
-	SpaceID     int64                `json:"space_id"`
-	LibraryID   int64                `json:"library_id"`
-	ChunkDBID   int64                `json:"chunk_db_id"`
-	Title       string               `json:"title"`
-	Summary     string               `json:"summary"`
-	Body        string               `json:"body"`
-	Content     string               `json:"content"`
-	ChunkID     string               `json:"chunk_id"`
-	HeadingPath string               `json:"heading_path"`
-	ChunkType   string               `json:"chunk_type"`
-	Slug        string               `json:"slug"`
-	PageType    string               `json:"page_type"`
-	CreatedTime int64                `json:"created_time"`
-	UpdatedTime int64                `json:"updated_time"`
-	Score       float64              `json:"score"`
-	LibraryName string               `json:"library_name"`
-	LibraryIcon string               `json:"library_icon"`
-	SpaceName   string               `json:"space_name"`
-	Categories  []WikiSearchCategory `json:"categories"`
+	PageID            int64                `json:"page_id"`
+	SpaceID           int64                `json:"space_id"`
+	LibraryID         int64                `json:"library_id"`
+	ChunkDBID         int64                `json:"chunk_db_id"`
+	WikiPageVersionID int64                `json:"-"`
+	Title             string               `json:"title"`
+	Summary           string               `json:"summary"`
+	Body              string               `json:"body"`
+	Content           string               `json:"content"`
+	ChunkID           string               `json:"chunk_id"`
+	HeadingPath       string               `json:"heading_path"`
+	ChunkType         string               `json:"chunk_type"`
+	Slug              string               `json:"slug"`
+	PageType          string               `json:"page_type"`
+	CreatedTime       int64                `json:"created_time"`
+	UpdatedTime       int64                `json:"updated_time"`
+	Score             float64              `json:"score"`
+	LibraryName       string               `json:"library_name"`
+	LibraryIcon       string               `json:"library_icon"`
+	SpaceName         string               `json:"space_name"`
+	Categories        []WikiSearchCategory `json:"categories"`
 }
 
 type WikiSearchCategory struct {
@@ -474,25 +475,42 @@ func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchReq
 	}
 	chunkIDs := make([]string, 0, len(response.Results))
 	seenChunkIDs := make(map[string]struct{}, len(response.Results))
+	versionIDs := make([]int64, 0, len(response.Results))
+	seenVersionIDs := make(map[int64]struct{}, len(response.Results))
 	for _, hit := range response.Results {
 		chunkID := wikiMetadataString(hit.Metadata, "chunk_id")
-		if chunkID == "" {
-			continue
+		if chunkID != "" {
+			if _, ok := seenChunkIDs[chunkID]; !ok {
+				seenChunkIDs[chunkID] = struct{}{}
+				chunkIDs = append(chunkIDs, chunkID)
+			}
 		}
-		if _, ok := seenChunkIDs[chunkID]; ok {
-			continue
+		versionID := wikiMetadataInt64(hit.Metadata, "wiki_page_version_id")
+		if versionID > 0 {
+			if _, ok := seenVersionIDs[versionID]; !ok {
+				seenVersionIDs[versionID] = struct{}{}
+				versionIDs = append(versionIDs, versionID)
+			}
 		}
-		seenChunkIDs[chunkID] = struct{}{}
-		chunkIDs = append(chunkIDs, chunkID)
 	}
-	chunkDBIDs := make(map[string]int64, len(chunkIDs))
+	chunkMap := make(map[string]model.WikiPageChunk, len(chunkIDs))
 	if len(chunkIDs) > 0 {
 		var wikiChunks []model.WikiPageChunk
 		if err := s.db.WithContext(ctx).Where("eid = ? AND chunk_id IN ?", req.Eid, chunkIDs).Find(&wikiChunks).Error; err != nil {
 			return nil, err
 		}
 		for _, chunk := range wikiChunks {
-			chunkDBIDs[chunk.ChunkID] = chunk.ID
+			chunkMap[chunk.ChunkID] = chunk
+		}
+	}
+	versionMap := make(map[int64]model.WikiPageVersion, len(versionIDs))
+	if len(versionIDs) > 0 {
+		var versions []model.WikiPageVersion
+		if err := s.db.WithContext(ctx).Where("eid = ? AND id IN ? AND is_published = ?", req.Eid, versionIDs, true).Find(&versions).Error; err != nil {
+			return nil, err
+		}
+		for _, version := range versions {
+			versionMap[version.ID] = version
 		}
 	}
 	var libraries []model.Library
@@ -513,10 +531,24 @@ func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchReq
 	}
 	results := make([]WikiSearchResult, 0, req.TopK)
 	returned := make(map[int64]struct{})
+	allowedPageSet := make(map[int64]struct{}, len(allowedPageIDs))
+	for _, pageID := range allowedPageIDs {
+		allowedPageSet[pageID] = struct{}{}
+	}
 	for _, hit := range response.Results {
 		pageID := wikiMetadataInt64(hit.Metadata, "wiki_page_id")
 		page, ok := pageMap[pageID]
-		if !ok || permissions[pageID] < model.PERMISSION_VIEW_ONLY {
+		if _, allowed := allowedPageSet[pageID]; !allowed || !ok || permissions[pageID] < model.PERMISSION_VIEW_ONLY {
+			continue
+		}
+		versionID := wikiMetadataInt64(hit.Metadata, "wiki_page_version_id")
+		version, ok := versionMap[versionID]
+		if !ok || version.PageID != pageID {
+			continue
+		}
+		chunkID := wikiMetadataString(hit.Metadata, "chunk_id")
+		chunk, ok := chunkMap[chunkID]
+		if !ok || chunk.WikiPageID != pageID || chunk.WikiPageVersionID != versionID {
 			continue
 		}
 		if _, ok := returned[pageID]; ok {
@@ -524,8 +556,7 @@ func (s *WikiSearchService) searchVectors(ctx context.Context, req WikiSearchReq
 		}
 		returned[pageID] = struct{}{}
 		library, space := libraryMap[page.LibraryID], spaceMap[page.SpaceID]
-		chunkID := wikiMetadataString(hit.Metadata, "chunk_id")
-		results = append(results, WikiSearchResult{PageID: page.ID, SpaceID: page.SpaceID, LibraryID: page.LibraryID, ChunkDBID: chunkDBIDs[chunkID], Title: page.Title, Summary: page.Summary, Body: page.Body, Content: wikiMetadataString(hit.Metadata, "content"), ChunkID: chunkID, HeadingPath: wikiMetadataString(hit.Metadata, "heading_path"), ChunkType: wikiMetadataString(hit.Metadata, "chunk_type"), Slug: page.Slug, PageType: page.PageType, CreatedTime: page.CreatedTime, UpdatedTime: page.UpdatedTime, Score: float64(hit.Score), LibraryName: library.Name, LibraryIcon: library.Icon, SpaceName: space.Name})
+		results = append(results, WikiSearchResult{PageID: page.ID, WikiPageVersionID: versionID, SpaceID: page.SpaceID, LibraryID: page.LibraryID, ChunkDBID: chunk.ID, Title: page.Title, Summary: page.Summary, Content: chunk.Content, ChunkID: chunkID, HeadingPath: chunk.HeadingPath, ChunkType: chunk.ChunkType, Slug: page.Slug, PageType: page.PageType, CreatedTime: page.CreatedTime, UpdatedTime: page.UpdatedTime, Score: float64(hit.Score), LibraryName: library.Name, LibraryIcon: library.Icon, SpaceName: space.Name})
 		if len(results) >= req.TopK {
 			break
 		}

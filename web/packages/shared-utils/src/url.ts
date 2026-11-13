@@ -16,6 +16,22 @@ export const joinUrl = (url: string, paramStr: string): string => {
 }
 
 /**
+ * 解析静态资源地址（唯一实现，SafeImage / chat 组件共用）：
+ * - 绝对 URL（http(s)/data:/blob: 等带 scheme 的）原样返回
+ * - 其余（/images/x.png 或相对路径）用 window.$getPublicPath 拼接站点 base
+ *   （front 恒等、console 为 /console；未设置时兜底 '/'）
+ */
+export const resolveAssetUrl = (input?: string): string => {
+  if (!input) return ''
+  if (/^[a-z][a-z\d+.-]*:/i.test(input)) return input
+  if (typeof window === 'undefined') return input
+  const base = (window as any).$getPublicPath?.('') || '/'
+  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base
+  const normalizedPath = input.startsWith('/') ? input : `/${input}`
+  return `${normalizedBase}${normalizedPath}`
+}
+
+/**
  * 判断当前是否在内网环境（依赖 window.location，仅浏览器可用）
  */
 export const isInternalNetwork = (): boolean => {

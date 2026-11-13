@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Modal, Skeleton, message } from "antd";
-import { SvgIcon, Dropdown } from "@km/shared-components-react";
+import { SvgIcon, Dropdown, SafeImage } from "@km/shared-components-react";
 import type { MenuProps } from "@km/shared-components-react";
 import { ExpandSidebarButton } from "@/components/Layout/ExpandSidebarButton";
 import { GroupList } from "@/views/agent/components/GroupList";
@@ -138,10 +138,10 @@ export function IndexSidebar({
         data.map((item) => {
           if (item.agent_usage === AGENT_USAGES.KM_AI_SEARCH) {
             item.agent_name = item.agent_name || "AI搜问";
-            item.agent_logo = item.agent_logo || getPublicPath("/images/chat/knowledge.png");
+            item.agent_logo = item.agent_logo || "/images/chat/knowledge.png";
           } else if (item.agent_usage === AGENT_USAGES.WORK_AI) {
             item.agent_name = item.agent_name || "小助理";
-            item.agent_logo = item.agent_logo || getPublicPath("/images/chat/workbench.png");
+            item.agent_logo = item.agent_logo || "/images/chat/workbench.png";
           }
           return item;
         }),
@@ -337,7 +337,7 @@ export function IndexSidebar({
               >
                 <div className="flex-none size-9 rounded-full overflow-hidden">
                   {item.logo ? (
-                    <img
+                    <SafeImage
                       src={item.logo}
                       alt={item.label}
                       className="w-full h-full object-cover"
@@ -385,8 +385,8 @@ export function IndexSidebar({
         footer={null}
         width={1260}
         align-center
-        destroyOnClose
-        maskClosable={false}
+        destroyOnHidden
+        mask={{ closable: false }}
       >
         <div className="h-[732px] max-md:h-[70vh] flex flex-col">
           <div

@@ -1,5 +1,4 @@
 import type { RawProviderItem, ProviderItem } from './types'
-import { getPublicPath } from '@/utils/config'
 
 function getProviderMeta(provider_type: number): { icon: string; label: string } {
   // React 侧暂未全量迁移 console 的 platform/config，这里先给最小可用映射，保证字段 shape 一致
@@ -21,7 +20,7 @@ export const transformProviderItem = (item: RawProviderItem): ProviderItem => {
   const providerIconUrl = `/images/platform/${provider.icon}.png`
   return {
     ...item,
-    provider_icon: getPublicPath(providerIconUrl),
+    provider_icon: providerIconUrl,
     provider_label: provider.label,
     configs: typeof item.configs === 'string' ? JSON.parse(item.configs) : (item.configs as any) || {},
   }

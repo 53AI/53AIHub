@@ -67,7 +67,8 @@ export function SearchPage() {
         label: t("agent.app_feedback"),
         children: (
           <Suspense fallback={<Spin />}>
-            <Feedback agentId={agentSearch?.agent_id} />
+            {/* AI搜问模块的反馈用 work_ai 反馈配置（与智能体反馈 Tab 对 AI搜问智能体的传参一致） */}
+            <Feedback agentId={agentSearch?.agent_id} type="work_ai" />
           </Suspense>
         ),
       },

@@ -7,7 +7,7 @@ import {
 } from "react";
 import { Spin, message, Button } from "antd";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
 import { MessageMenu, FeedbackPanel } from "@/components/Chat";
 import { BubbleAssistant } from "@km/hub-ui-x-react";
@@ -15,6 +15,7 @@ import { filesApi } from "@/api/modules/files";
 import conversationApi from "@/api/modules/conversation";
 import { usePoll } from "@/hooks/usePoll";
 import { useChatFeedback } from "@km/shared-business/chat";
+import { normalizeKnowledgeMapAnswer } from "./knowledgeMap";
 import "./Map.css";
 
 interface MapProps {
@@ -108,7 +109,7 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
           setMsg({
             ...firstMsg,
             id: firstMsg.id,
-            answer: firstMsg.answer,
+            answer: normalizeKnowledgeMapAnswer(firstMsg.answer ?? ""),
             original_question: firstMsg.original_question,
             question: firstMsg.file_name,
             ...feedbackParams,
@@ -117,13 +118,11 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
         } else {
           // Use knowledge_map from fileInfo if available
           const raw = fileInfo.knowledge_map ?? "";
-          // Process the knowledge map format - same as Vue
-          // root(( )) 固定结构，只去掉双括号内部的 () 内容，如 (2)、(副本)
-          const processedAnswer = raw.replace(
-            /root\(\(((?:[^()]|\([^)]*\))*)\)\)/g,
-            (_, inner) => "root((" + inner.replace(/\([^)]*\)/g, "") + "))",
-          );
-          setMsg((prev: any) => ({ ...prev, id: "", answer: processedAnswer }));
+          setMsg((prev: any) => ({
+            ...prev,
+            id: "",
+            answer: normalizeKnowledgeMapAnswer(raw),
+          }));
         }
       } catch (error) {
         console.error("Failed to load messages:", error);
@@ -185,8 +184,8 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
       return (
         <div className="h-full overflow-y-auto p-5">
           <div className="max-w-[494px] mx-auto">
-            <img
-              src={getPublicPath("/images/library/ai_map_loading.png")}
+            <SafeImage
+              src={"/images/library/ai_map_loading.png"}
               alt={t("library.knowledge_map")}
               className="w-full"
             />
@@ -264,8 +263,8 @@ const MapAssistant = forwardRef<MapRef, MapProps>(
     // Empty state - show intro with banner image
     return (
       <div className="h-full overflow-y-auto p-5">
-        <img
-          src={getPublicPath("/images/library/ai_map_banner.png")}
+        <SafeImage
+          src={"/images/library/ai_map_banner.png"}
           alt={t("library.knowledge_map")}
           className="w-full"
         />

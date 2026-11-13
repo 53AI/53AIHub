@@ -34,24 +34,33 @@ type ActionResultSpecView struct {
 	Spec              actionruntime.ResultSpec `json:"spec"`
 }
 
+type ActionResultExecutionProcessView struct {
+	Run          *ActionRunView     `json:"run"`
+	Events       []*ActionEventView `json:"events"`
+	NextAfterSeq int64              `json:"next_after_seq"`
+	HasMore      bool               `json:"has_more"`
+}
+
 type ActionResultAssetView struct {
-	ResultAssetID   string                           `json:"result_asset_id"`
-	PlanID          string                           `json:"plan_id"`
-	ActionID        string                           `json:"action_id"`
-	RunID           string                           `json:"run_id"`
-	OpportunityID   string                           `json:"opportunity_id"`
-	SourceInsightID string                           `json:"source_insight_id"`
-	SourceMeetingID string                           `json:"source_meeting_id"`
-	SourceRefs      []actionsystem.SourceRef         `json:"source_refs"`
-	Title           string                           `json:"title"`
-	ResultType      string                           `json:"result_type"`
-	Summary         string                           `json:"summary"`
-	Status          string                           `json:"status"`
-	Artifacts       []*ActionResultAssetArtifactView `json:"artifacts"`
-	ResultSpec      *ActionResultSpecView            `json:"result_spec,omitempty"`
-	SourceLinks     []*ActionSourceLinkView          `json:"source_links,omitempty"`
-	CreatedTime     int64                            `json:"created_time"`
-	UpdatedTime     int64                            `json:"updated_time"`
+	ResultAssetID    string                            `json:"result_asset_id"`
+	PlanID           string                            `json:"plan_id"`
+	ActionID         string                            `json:"action_id"`
+	RunID            string                            `json:"run_id"`
+	OpportunityID    string                            `json:"opportunity_id"`
+	SourceInsightID  string                            `json:"source_insight_id"`
+	SourceMeetingID  string                            `json:"source_meeting_id"`
+	SourceRefs       []actionsystem.SourceRef          `json:"source_refs"`
+	Title            string                            `json:"title"`
+	ResultType       string                            `json:"result_type"`
+	Summary          string                            `json:"summary"`
+	Status           string                            `json:"status"`
+	Artifacts        []*ActionResultAssetArtifactView  `json:"artifacts"`
+	ExecutionSteps   []actionsystem.ExecutionStep      `json:"execution_steps"`
+	ExecutionProcess *ActionResultExecutionProcessView `json:"execution_process,omitempty"`
+	ResultSpec       *ActionResultSpecView             `json:"result_spec,omitempty"`
+	SourceLinks      []*ActionSourceLinkView           `json:"source_links,omitempty"`
+	CreatedTime      int64                             `json:"created_time"`
+	UpdatedTime      int64                             `json:"updated_time"`
 }
 
 func (s *ActionRuntimeService) AcceptActionRun(ctx context.Context, eid, userID int64, runID string) (*ActionResultAssetView, error) {
@@ -60,7 +69,7 @@ func (s *ActionRuntimeService) AcceptActionRun(ctx context.Context, eid, userID 
 		return nil, mapActionNotFound(err, ErrActionRunNotFound)
 	}
 	if existing, getErr := model.GetActionResultAssetByRunForUser(ctx, eid, userID, run.RunID); getErr == nil {
-		return s.actionResultAssetView(ctx, existing)
+		return s.actionResultAssetView(ctx, existing, true)
 	} else if !errors.Is(getErr, gorm.ErrRecordNotFound) {
 		return nil, getErr
 	}
@@ -97,7 +106,7 @@ func (s *ActionRuntimeService) AcceptActionRun(ctx context.Context, eid, userID 
 	aggregate := &model.ActionResultAssetAggregate{Record: &model.ActionResultAssetRecord{
 		ResultAssetID: resultID, Eid: eid, OwnerID: userID, PlanID: plan.PlanID, ActionID: action.ActionID, RunID: run.RunID,
 		OpportunityID: opportunity.Record.OpportunityID, SourceInsightID: opportunity.Record.SourceInsightID, SourceMeetingID: opportunity.Record.SourceMeetingID,
-		Title: resultAssetTitle(planAggregate), ResultType: ActionResultAssetTypeDocument, Summary: model.LongText(artifactSummary(artifacts)), Status: model.ActionResultAssetStatusActive,
+		Title: resultAssetTitle(planAggregate, opportunity), ResultType: opportunity.Record.OpportunityType, Summary: model.LongText(artifactSummary(artifacts)), Status: model.ActionResultAssetStatusActive,
 	}}
 	aggregate.SourceRefs = actionSourceRefsRecords(actionSourceRefsDomain(planAggregate.SourceRefs))
 	aggregate.Artifacts = artifacts
@@ -113,27 +122,38 @@ func (s *ActionRuntimeService) AcceptActionRun(ctx context.Context, eid, userID 
 		}
 	}
 	aggregate.EvidenceRefs = actionEvidence
-	if err := model.CreateActionResultAssetAggregate(ctx, aggregate); err != nil {
+	// 成果写入、Action 终态及业务主记录归档必须原子提交；不能让成果与列表阶段分叉。
+	if err := model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := model.CreateActionResultAssetAggregateTx(tx, aggregate); err != nil {
+			return err
+		}
+		update := tx.Model(&model.ActionRecord{}).
+			Where("eid = ? AND owner_id = ? AND action_id = ? AND status = ?", eid, userID, action.ActionID, model.ActionStatusAwaitingReview).
+			Update("status", model.ActionStatusAccepted)
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected != 1 {
+			return ErrActionState
+		}
+		return model.TransitionActionItemStage(tx, eid, userID, opportunity.Record.OpportunityID,
+			model.ActionItemStageAction, model.ActionItemStageResult)
+	}); err != nil {
 		return nil, err
 	}
-	// Action 接受后进入业务终点；成果是独立对象，Plan 状态不再表达"已归档"。
-	if err := model.DB.WithContext(ctx).Model(&model.ActionRecord{}).
-		Where("eid = ? AND action_id = ?", eid, action.ActionID).Update("status", model.ActionStatusAccepted).Error; err != nil {
-		return nil, err
-	}
-	return s.actionResultAssetView(ctx, aggregate)
+	return s.actionResultAssetView(ctx, aggregate, true)
 }
 
-// resultAssetTitle 让成果标题与用户确认过的 Plan 主交付物一致；Plan 没有可用
-// 主交付物时（历史数据）回落到 objective。
-func resultAssetTitle(aggregate *model.ActionPlanAggregate) string {
-	if aggregate == nil || aggregate.Record == nil {
+// resultAssetTitle keeps the result card title aligned with the originating opportunity;
+// the actual file name remains available through artifacts.
+func resultAssetTitle(plan *model.ActionPlanAggregate, opportunity *model.ActionOpportunityAggregate) string {
+	if opportunity != nil && opportunity.Record != nil && strings.TrimSpace(opportunity.Record.Title) != "" {
+		return strings.TrimSpace(opportunity.Record.Title)
+	}
+	if plan == nil || plan.Record == nil {
 		return ""
 	}
-	if primary, err := primaryPlanDeliverable(aggregate); err == nil && strings.TrimSpace(primary.Title) != "" {
-		return primary.Title
-	}
-	return strings.TrimSpace(aggregate.Record.Objective)
+	return strings.TrimSpace(plan.Record.Objective)
 }
 
 func artifactSummary(artifacts []*model.ActionArtifactRecord) string {
@@ -148,7 +168,7 @@ func (s *ActionRuntimeService) GetActionResultAsset(ctx context.Context, eid, us
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionResultAssetNotFound)
 	}
-	return s.actionResultAssetView(ctx, aggregate)
+	return s.actionResultAssetView(ctx, aggregate, true)
 }
 
 func (s *ActionRuntimeService) ListActionResultAssets(ctx context.Context, eid, userID int64) ([]*ActionResultAssetView, error) {
@@ -171,7 +191,60 @@ func (s *ActionRuntimeService) ListActionResultAssets(ctx context.Context, eid, 
 	return views, nil
 }
 
-func (s *ActionRuntimeService) actionResultAssetView(ctx context.Context, aggregate *model.ActionResultAssetAggregate) (*ActionResultAssetView, error) {
+type ActionResultAssetPage struct {
+	Items    []*ActionResultAssetView `json:"items"`
+	Total    int64                    `json:"total"`
+	Page     int                      `json:"page"`
+	PageSize int                      `json:"page_size"`
+}
+
+func (s *ActionRuntimeService) ListActionResultAssetsPage(ctx context.Context, eid, userID int64, typeFilter, statusFilter, sortBy string, page, pageSize int) (*ActionResultAssetPage, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	records, total, err := model.ListActionResultAssetsForUserPage(ctx, eid, userID, strings.TrimSpace(typeFilter), strings.TrimSpace(statusFilter), model.NormalizeActionResultAssetSortBy(sortBy), page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]*ActionResultAssetView, 0, len(records))
+	for _, record := range records {
+		aggregate, getErr := model.GetActionResultAssetForUser(ctx, eid, userID, record.ResultAssetID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		view, viewErr := s.actionResultAssetView(ctx, aggregate)
+		if viewErr != nil {
+			return nil, viewErr
+		}
+		views = append(views, view)
+	}
+	return &ActionResultAssetPage{Items: views, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func (s *ActionRuntimeService) ListActionResultAssetCategories(ctx context.Context, eid, userID int64, stage string) ([]model.ActionResultAssetCategory, error) {
+	return model.ListActionResultAssetCategoriesForUser(ctx, eid, userID, stage)
+}
+
+// DeleteActionResultAsset 用户侧删除成果：软删除（status=archived），列表不再
+// 展示。成果挂在执行历史上，不做物理删除，避免 artifacts / evidence / source
+// 引用悬空。
+func (s *ActionRuntimeService) DeleteActionResultAsset(ctx context.Context, eid, userID int64, resultAssetID string) error {
+	if strings.TrimSpace(resultAssetID) == "" {
+		return ErrActionResultAssetNotFound
+	}
+	if err := model.ArchiveActionResultAssetForUser(ctx, eid, userID, strings.TrimSpace(resultAssetID)); err != nil {
+		return mapActionNotFound(err, ErrActionResultAssetNotFound)
+	}
+	return nil
+}
+
+func (s *ActionRuntimeService) actionResultAssetView(ctx context.Context, aggregate *model.ActionResultAssetAggregate, includeExecutionProcess ...bool) (*ActionResultAssetView, error) {
 	if aggregate == nil || aggregate.Record == nil {
 		return nil, ErrActionResultAssetNotFound
 	}
@@ -185,7 +258,41 @@ func (s *ActionRuntimeService) actionResultAssetView(ctx context.Context, aggreg
 	if err != nil {
 		return nil, err
 	}
-	view := &ActionResultAssetView{ResultAssetID: aggregate.Record.ResultAssetID, PlanID: aggregate.Record.PlanID, ActionID: aggregate.Record.ActionID, RunID: aggregate.Record.RunID, OpportunityID: aggregate.Record.OpportunityID, SourceInsightID: aggregate.Record.SourceInsightID, SourceMeetingID: aggregate.Record.SourceMeetingID, Title: aggregate.Record.Title, ResultType: aggregate.Record.ResultType, Summary: string(aggregate.Record.Summary), Status: aggregate.Record.Status, CreatedTime: aggregate.Record.CreatedTime, UpdatedTime: aggregate.Record.UpdatedTime}
+	title, resultType := aggregate.Record.Title, aggregate.Record.ResultType
+	if opportunity, opportunityErr := model.GetActionOpportunityForUser(ctx, aggregate.Record.Eid, aggregate.Record.OwnerID, aggregate.Record.OpportunityID); opportunityErr == nil {
+		if strings.TrimSpace(opportunity.Record.Title) != "" {
+			title = strings.TrimSpace(opportunity.Record.Title)
+		}
+		if strings.TrimSpace(opportunity.Record.OpportunityType) != "" {
+			resultType = opportunity.Record.OpportunityType
+		}
+	} else if !errors.Is(opportunityErr, gorm.ErrRecordNotFound) {
+		return nil, opportunityErr
+	}
+	view := &ActionResultAssetView{ResultAssetID: aggregate.Record.ResultAssetID, PlanID: aggregate.Record.PlanID, ActionID: aggregate.Record.ActionID, RunID: aggregate.Record.RunID, OpportunityID: aggregate.Record.OpportunityID, SourceInsightID: aggregate.Record.SourceInsightID, SourceMeetingID: aggregate.Record.SourceMeetingID, Title: title, ResultType: resultType, Summary: string(aggregate.Record.Summary), Status: aggregate.Record.Status, CreatedTime: aggregate.Record.CreatedTime, UpdatedTime: aggregate.Record.UpdatedTime}
+	if len(includeExecutionProcess) > 0 && includeExecutionProcess[0] {
+		replay, replayErr := s.GetActionRunReplay(ctx, aggregate.Record.Eid, aggregate.Record.OwnerID, aggregate.Record.RunID, 0, 101)
+		if replayErr != nil {
+			return nil, replayErr
+		}
+		events := replay.Events
+		hasMore := len(events) > 100
+		if hasMore {
+			events = events[:100]
+		}
+		nextAfterSeq := int64(0)
+		if len(events) > 0 {
+			nextAfterSeq = events[len(events)-1].Seq
+		}
+		view.ExecutionProcess = &ActionResultExecutionProcessView{Run: replay.Run, Events: events, NextAfterSeq: nextAfterSeq, HasMore: hasMore}
+	}
+	if plan, planErr := model.GetActionPlanForUser(ctx, aggregate.Record.Eid, aggregate.Record.OwnerID, aggregate.Record.PlanID); planErr == nil {
+		for _, step := range plan.ExecutionSteps {
+			view.ExecutionSteps = append(view.ExecutionSteps, actionsystem.ExecutionStep{Order: step.StepOrder, Title: step.Title, Description: step.Description})
+		}
+	} else if !errors.Is(planErr, gorm.ErrRecordNotFound) {
+		return nil, planErr
+	}
 	if spec, specErr := resultSpecFromRun(ctx, aggregate.Record.Eid, aggregate.Record.RunID); specErr == nil {
 		view.ResultSpec = spec
 	} else if !errors.Is(specErr, gorm.ErrRecordNotFound) {

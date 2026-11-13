@@ -20,7 +20,9 @@ import promptApi from "@/api/modules/prompt";
 import { GROUP_TYPE } from "@/constants/group";
 import { MODEL_USE_TYPE } from "@/constants/platform/config";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
-import ModelSelectPopover from "@/components/Model/select-popover";
+import ModelSelectPopover, { supportsConfiguredModelsWebSearch, supportsModelWebSearch } from "@/components/Model/select-popover";
+import type { ModelOption } from "@/components/Model/select";
+import { loadModels } from "@/components/Model/index";
 import SelectPlus from "@/components/SelectPlus";
 import QuickerDialog, { QuickerDialogRef } from "./components/QuickerDialog";
 import SlideDialog, { SlideDialogRef } from "./components/SlideDialog";
@@ -100,6 +102,7 @@ const getDefaultSettings = (enterpriseName: string, agentUsage: number) => ({
     },
     web_search_setting: {
       enable: false,
+      source_type: "api",
       platform_setting_id: "",
       platform_key: "",
       top_k: 20,
@@ -143,6 +146,7 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
     const [slideGroup, setSlideGroup] = useState<any>(null);
     const [slideCommandList, setSlideCommandList] = useState<any[]>([]);
     const [searchOptions, setSearchOptions] = useState<any[]>([]);
+    const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
 
     const quickerDialogRef = useRef<QuickerDialogRef>(null);
     const slideDialogRef = useRef<SlideDialogRef>(null);
@@ -169,6 +173,7 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
 
     const searchValue = useMemo(() => {
       const setting = form.settings?.web_search_setting || {};
+      if (setting.source_type === "model") return "model";
       return setting.platform_setting_id &&
         setting.platform_key &&
         bochaSetting?.id === setting.platform_setting_id
@@ -179,6 +184,34 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
     const getFastReasoningValue = () => fastReasoningValue;
     const getDeepThinkingValue = () => deepThinkingValue;
     const getSearchValue = () => searchValue;
+
+    const fastModelConfig = form.settings?.fast_reasoning_config || {};
+    const fastModelOption = modelOptions.find(
+      (option) => option.value === `${fastModelConfig.channel_id}_53aikm_${fastModelConfig.model_name}`,
+    );
+    const fastModelSupportsSearch = supportsModelWebSearch(fastModelOption);
+    const deepModelConfig = form.settings?.deep_thinking_config || {};
+    const deepModelOption = modelOptions.find(
+      (option) => option.value === `${deepModelConfig.channel_id}_53aikm_${deepModelConfig.model_name}`,
+    );
+    const deepModelSupportsSearch = supportsModelWebSearch(deepModelOption);
+    const configuredModelsSupportWebSearch = supportsConfiguredModelsWebSearch(
+      fastModelSupportsSearch,
+      deepModelConfig.enable === true,
+      deepModelSupportsSearch,
+    );
+
+    useEffect(() => {
+      let active = true;
+      loadModels(MODEL_USE_TYPE.REASONING)
+        .then((channels) => {
+          if (active) setModelOptions(channels.flatMap((channel) => channel.options || []));
+        })
+        .catch(console.error);
+      return () => {
+        active = false;
+      };
+    }, []);
 
     const setFastReasoningValue = (value: string) => {
       if (!value) return;
@@ -223,8 +256,9 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
           ...prev.settings,
           web_search_setting: {
             ...prev.settings.web_search_setting,
-            platform_setting_id,
-            platform_key,
+            source_type: value === "model" ? "model" : "api",
+            platform_setting_id: value === "model" ? "" : platform_setting_id,
+            platform_key: value === "model" ? "" : platform_key,
           },
         },
       }));
@@ -396,6 +430,15 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
 
         if (!getSearchValue() && data.settings.web_search_setting?.enable) {
           message.error(t("search.select_web_search"));
+          return;
+        }
+
+        if (
+          data.settings.web_search_setting?.enable &&
+          data.settings.web_search_setting.source_type === "model" &&
+          !configuredModelsSupportWebSearch
+        ) {
+          message.error("当前启用的快思考或深度思考模型不支持模型自带联网搜索，请更换模型或选择 API 搜索");
           return;
         }
       }
@@ -612,7 +655,12 @@ export const ChatSetting = forwardRef<ChatSettingRef, ChatSettingProps>(
                         className="flex-1"
                         value={getSearchValue()}
                         useI18n={false}
-                        options={searchOptions}
+                        options={[
+                          ...(configuredModelsSupportWebSearch
+                            ? [{ label: "模型", value: "model", icon: fastModelOption?.icon || "" }]
+                            : []),
+                          ...searchOptions,
+                        ]}
                         onChange={setSearchValue}
                       />
                     </div>

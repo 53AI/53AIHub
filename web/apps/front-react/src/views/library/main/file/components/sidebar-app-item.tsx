@@ -1,8 +1,8 @@
 import { Tooltip } from "antd";
-import { getPublicPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
-export const AI_ICON_URL = getPublicPath("/images/library/ai.png");
-export const MAP_ICON_URL = getPublicPath("/images/library/map.png");
+export const AI_ICON_URL = "/images/library/ai.png";
+export const MAP_ICON_URL = "/images/library/map.png";
 
 export type SidebarIconSize = "default" | "small";
 
@@ -34,7 +34,7 @@ export function SidebarAppItem({
         className={`size-[38px] flex-center rounded-md cursor-pointer hover:shadow-[0_2px_8px_#0b1b403d] ${active ? "bg-[#E6EEFF]" : ""}`}
         onClick={onClick}
       >
-        <img
+        <SafeImage
           className={IMG_SIZE_CLASS[iconSize]}
           style={active ? {} : { filter: "grayscale(100%) opacity(0.5)" }}
           src={icon}

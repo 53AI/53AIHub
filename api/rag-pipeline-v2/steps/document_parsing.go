@@ -24,6 +24,39 @@ import (
 // 使用函数变量避免 package 循环依赖。
 var GenerateMeetingMinutesFn func(ctx context.Context, eid, fileID, userID int64) error
 
+// GenerateInsightsFn 由 service 包注册，在纪要成功生成后异步触发洞察生成。
+// 使用函数变量避免 package 循环依赖。
+var GenerateInsightsFn func(ctx context.Context, eid, fileID, userID int64)
+
+func shouldTriggerRecordingInsights(file *model.File) bool {
+	// 安心录来源（recording_audio/recording_folder/recording_imported）才生成洞察；
+	// 知识库音频（personal_upload 等来源）走音频管线但不出洞察。
+	return file != nil && file.IsRecordingOriginType()
+}
+
+func triggerRecordingInsightsAfterMinutes(ctx context.Context, db *gorm.DB, file *model.File, eid, fileID, userID int64) {
+	if !shouldTriggerRecordingInsights(file) || GenerateInsightsFn == nil {
+		return
+	}
+
+	var minutesFile model.File
+	if err := db.WithContext(ctx).Select("cleaning_rule_info").Where("eid = ? AND id = ?", eid, fileID).First(&minutesFile).Error; err != nil {
+		logger.Warnf(ctx, "【洞察】纪要完成后读取状态失败，跳过触发 fileID=%d err=%v", fileID, err)
+		return
+	}
+	var info model.FileCleaningRuleInfo
+	if err := json.Unmarshal([]byte(minutesFile.CleaningRuleInfo), &info); err != nil {
+		logger.Warnf(ctx, "【洞察】纪要完成后解析状态失败，跳过触发 fileID=%d err=%v", fileID, err)
+		return
+	}
+	if info.MeetingMinutesStatus != "completed" {
+		logger.Infof(ctx, "【洞察】纪要状态为 %s，跳过触发 fileID=%d", info.MeetingMinutesStatus, fileID)
+		return
+	}
+
+	GenerateInsightsFn(pipelineCtx(), eid, fileID, userID)
+}
+
 // ReuseTranscriptFn 由 service 包注册：将同内容源文件（同 upload_files.hash 或同 upload_file_id）的
 // completed 转写拷贝到目标文件（含转写状态置 completed、parse_type 继承）。
 // 返回 (是否已复用, 源文件 parse_type, error)；仅录音文件调用；无复用源或源未 completed 返回 (false, "", nil)。
@@ -43,6 +76,10 @@ func isHeavyParsingEngine(parseType string) bool {
 // 语音转写的新布局 FileBody 存转写 Markdown，Summary(-1) 存原始 JSON，故需在此渲染。
 // 使用函数变量避免 package 循环依赖。
 var RenderTranscriptMarkdownFn func(raw string, title string) (string, error)
+
+// CorrectTranscriptFn is the optional LLM text correction before the formal transcript is persisted.
+// It is registered by service, avoiding a package dependency cycle.
+var CorrectTranscriptFn func(ctx context.Context, eid, fileID int64, raw string) (string, error)
 
 // NewDocumentParsingHandler 创建 document_parsing 步骤处理函数
 func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model.RagJob, config json.RawMessage) error {
@@ -263,9 +300,6 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					strategy = document.NewVoiceModelDocumentStrategy(file.LibraryID)
 					logger.Infof(ctx, "DocumentParsingStepHandler: 使用语音模型策略, fileID=%d parseType=%s", fileID, parseType)
 
-					if err := clearVoiceModelDataIfNeeded(ctx, db, eid, fileID); err != nil {
-						return fmt.Errorf("清理旧 voice_model 数据失败: %w", err)
-					}
 				}
 
 				// OpenAI 兼容语音渠道绕过 docconv，直连 /v1/audio/transcriptions
@@ -273,9 +307,6 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					strategy = document.NewOpenAIAudioDocumentStrategy()
 					logger.Infof(ctx, "DocumentParsingStepHandler: 使用 OpenAI 兼容语音转写策略, fileID=%d parseType=%s", fileID, parseType)
 
-					if err := clearVoiceModelDataIfNeeded(ctx, db, eid, fileID); err != nil {
-						return fmt.Errorf("清理旧 voice_model 数据失败: %w", err)
-					}
 				}
 
 				// 录音解析能力（recording_voice）：从平台设置读取语音模型渠道，按渠道类型分派
@@ -294,10 +325,11 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					}
 					logger.Infof(ctx, "DocumentParsingStepHandler: 使用录音解析策略, fileID=%d isOpenAI=%v", fileID, rv.IsOpenAI)
 
-					if err := clearVoiceModelDataIfNeeded(ctx, db, eid, fileID); err != nil {
-						return fmt.Errorf("清理旧 voice_model 数据失败: %w", err)
-					}
 				}
+
+				// 仅语音类解析需要"成功后替换旧数据"（与原三个语音分支行为一致，避免扩大到其它文档类型）
+				clearOldVoiceData := strings.HasPrefix(parseType, model.PLATFORM_KEY_VOICE_MODEL_PREFIX) || parseType == "voice_model" ||
+					strings.HasPrefix(parseType, model.PLATFORM_KEY_OPENAI_AUDIO_PREFIX) || parseType == model.PLATFORM_KEY_RECORDING_VOICE
 
 				// 秒解析缓存检查：同企业相同 hash 文件的已有解析结果复用
 				var cachedBody *model.FileBody
@@ -315,7 +347,7 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 						legacyCompatibleParseTypeQuery(db.Where("upload_file_id = ? AND eid = ?", uploadFile.ID, eid), parseType).
 							Order("id DESC").Find(&candidateFiles)
 						for _, cf := range candidateFiles {
-							if content, ok := loadCachedTranscriptionContent(db, eid, cf.ID, parseType); ok {
+							if content, ok := loadCachedTranscriptionContent(db, eid, cf.ID, parseType, file.UserID); ok {
 								cachedBody = &model.FileBody{Content: content}
 								logger.Infof(ctx, "秒解析命中：upload_file_id=%d, parse_type=%s, file_id=%d", uploadFile.ID, parseType, cf.ID)
 								break
@@ -330,7 +362,7 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 								legacyCompatibleParseTypeQuery(db.Where("upload_file_id IN ? AND eid = ?", relatedUploadIDs, eid), parseType).
 									Order("id DESC").Find(&crossFiles)
 								for _, crossFile := range crossFiles {
-									if content, ok := loadCachedTranscriptionContent(db, eid, crossFile.ID, parseType); ok {
+									if content, ok := loadCachedTranscriptionContent(db, eid, crossFile.ID, parseType, file.UserID); ok {
 										cachedBody = &model.FileBody{Content: content}
 										logger.Infof(ctx, "秒解析跨用户命中：current_upload_file_id=%d matched_upload_file_id=%d parse_type=%s file_id=%d",
 											uploadFile.ID, crossFile.UploadFileID, parseType, crossFile.ID)
@@ -429,9 +461,18 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 				// 语音转写：新布局 FileBody=转写 Markdown，Summary(-1)=转写原文（原始 JSON）。
 				// 普通文档 FileBody 保持原内容，无 Summary(-1)。
 				voiceTranscriptRaw := ""
+				voiceTranscriptSource := ""
 				fileBodyContent := processedContent
 				if isVoiceParseType(parseType) {
+					voiceTranscriptSource = processedContent
 					voiceTranscriptRaw = processedContent
+					if CorrectTranscriptFn != nil {
+						if corrected, correctionErr := CorrectTranscriptFn(ctx, eid, fileID, voiceTranscriptRaw); correctionErr == nil && strings.TrimSpace(corrected) != "" {
+							voiceTranscriptRaw = corrected
+						} else if correctionErr != nil {
+							logger.Warnf(ctx, "【转写校正】失败，使用原始ASR转写：fileID=%d err=%v", fileID, correctionErr)
+						}
+					}
 					title := strings.TrimSpace(file.GetAccurateFileName())
 					if title == "" {
 						title = strings.TrimSpace(uploadFile.FileName)
@@ -445,9 +486,26 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					}
 				}
 
+				// 检查停止信号及文件是否已被删除，若已删除则放弃回写并中止管线，防止复活已删除文件
+				if stopErr := common.CheckRagTaskStop(file.LibraryID, file.ID); stopErr != nil {
+					return stopErr
+				}
+				var latestFile model.File
+				if fErr := db.Select("is_deleted").Where("eid = ? AND id = ?", eid, fileID).First(&latestFile).Error; fErr == nil && latestFile.IsDeleted {
+					logger.Warnf(ctx, "DocumentParsingStepHandler: 文件已删除，放弃保存解析结果并中止管线 fileID=%d", fileID)
+					return fmt.Errorf("文件已被删除，管线中止: fileID=%d", fileID)
+				}
+
 				// 处理结果保存 (FileBody)
 				// 开启事务
 				err = db.Transaction(func(tx *gorm.DB) error {
+					// 解析成功后才清理旧数据：解析/ASR 失败时保留原转写，避免重转失败导致数据丢失。
+					// 清理与新数据写入放在同一事务，成功后替换，避免新旧数据混用。
+					if clearOldVoiceData {
+						if err := clearVoiceModelDataIfNeeded(ctx, tx, eid, fileID); err != nil {
+							return fmt.Errorf("清理旧 voice_model 数据失败: %w", err)
+						}
+					}
 					// 保存 FileBody
 					fileBody := &model.FileBody{
 						Eid:       eid,
@@ -481,35 +539,34 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 						if err := tx.Create(summary).Error; err != nil {
 							return fmt.Errorf("保存转写原文失败: %v", err)
 						}
-					}
-
-					// 更新状态
-					if err := model.UpdateFileParsingStatus(fileID, model.FileParsingStatusNormal); err != nil {
-						logger.Error(ctx, fmt.Sprintf("更新文件解析状态失败: %v", err))
-					}
-					// 显式更新文件转换状态为正常
-					if err := model.UpdateFileConversionStatus(fileID, model.FileConversionStatusNormal); err != nil {
-						logger.Error(ctx, fmt.Sprintf("更新文件转换状态失败: %v", err))
-					}
-
-					// 回写 parse_type，确保秒解析缓存可命中
-					if parseType != "" {
-						if err := tx.Model(&file).Where("id = ? AND eid = ?", fileID, eid).Update("parse_type", parseType).Error; err != nil {
-							logger.Error(ctx, fmt.Sprintf("更新文件parse_type失败: %v", err))
+						// Store an immutable source snapshot for the current ASR generation.
+						if err := tx.Where("file_id = ? AND template_id = ?", fileID, -3).Delete(&model.RecordingFileSummary{}).Error; err != nil {
+							return err
 						}
+						if err := tx.Create(&model.RecordingFileSummary{FileID: fileID, TemplateID: -3, TemplateName: "ASR原始快照", SummaryContent: model.LongText(voiceTranscriptSource)}).Error; err != nil {
+							return err
+						}
+					}
+
+					// 原子更新文件状态与元数据（在 tx 内统一提交，避免事务内外连接互锁争用）
+					fileUpdates := map[string]interface{}{
+						"parsing_status":    model.FileParsingStatusNormal,
+						"conversion_status": model.FileConversionStatusNormal,
+					}
+					if parseType != "" {
+						fileUpdates["parse_type"] = parseType
+					}
+					if result != nil && result.ConfigId > 0 {
+						fileUpdates["config_id"] = result.ConfigId
+					}
+					if err := tx.Model(&model.File{}).Where("id = ? AND eid = ?", fileID, eid).Updates(fileUpdates).Error; err != nil {
+						return fmt.Errorf("更新文件解析状态失败: %w", err)
 					}
 
 					if err := uploadFile.MarkAsCompleted(); err != nil {
 						logger.Error(ctx, fmt.Sprintf("标记上传文件为完成状态失败: %v", err))
 					} else {
 						tx.Save(&uploadFile)
-					}
-
-					// 更新 ConfigID (如果存在)
-					if result != nil && result.ConfigId > 0 {
-						if err := tx.Model(&file).Where("id = ? AND eid = ?", fileID, eid).Update("config_id", result.ConfigId).Error; err != nil {
-							logger.Error(ctx, fmt.Sprintf("更新文件ConfigID失败: %v", err))
-						}
 					}
 
 					return nil
@@ -531,8 +588,10 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 					}()
 				}
 
-				// 语音模型转写完成后，记录转写状态（独立于 parsing_status，避免被后续 RAG 管线失败覆盖）
-				if isVoiceParseType(parseType) {
+				// 转写内容已入库，才记录转写状态（独立于 parsing_status，避免被后续 RAG 管线失败覆盖）。
+				// 状态由本步骤统一落库：ASR 策略不再提前写 completed，防止管线中途停止/文件删除时
+				// 残留"已转写"标记而 FileBody 并不存在。
+				if shouldMarkTranscriptionCompleted(parseType) {
 					_ = model.SetFileTranscriptionStatus(fileID, "completed")
 				}
 			}
@@ -541,6 +600,14 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 			// 纪要失败时终止管线，不继续分块/向量
 			if isVoiceParseType(parseType) || transcriptReused {
 				if GenerateMeetingMinutesFn != nil {
+					if stopErr := common.CheckRagTaskStop(file.LibraryID, file.ID); stopErr != nil {
+						return stopErr
+					}
+					var chkFile model.File
+					if fErr := db.Select("is_deleted").Where("eid = ? AND id = ?", eid, fileID).First(&chkFile).Error; fErr == nil && chkFile.IsDeleted {
+						logger.Warnf(ctx, "DocumentParsingStepHandler: 文件已删除，中止纪要生成 fileID=%d", fileID)
+						return fmt.Errorf("文件已被删除，中止纪要生成: fileID=%d", fileID)
+					}
 					minutesCtx, minutesCancel := context.WithTimeout(pipelineCtx(), 15*time.Minute)
 					if err := GenerateMeetingMinutesFn(minutesCtx, eid, fileID, userID); err != nil {
 						minutesCancel()
@@ -555,6 +622,7 @@ func NewDocumentParsingHandler(db *gorm.DB) func(ctx context.Context, job *model
 						return fmt.Errorf("纪要生成失败，终止管线: %w", err)
 					}
 					minutesCancel()
+					triggerRecordingInsightsAfterMinutes(ctx, db, &file, eid, fileID, userID)
 				}
 			}
 
@@ -631,6 +699,13 @@ func isVoiceParseType(parseType string) bool {
 		parseType == model.PLATFORM_KEY_RECORDING_VOICE
 }
 
+// shouldMarkTranscriptionCompleted 判断本次解析是否产出了"可读的音频转写内容"，用于入库后写转写状态。
+// 听悟（tingwu）同样是音频转写，但它走通用文档管线：不写 Summary(-1)、不触发纪要、不清理旧 voice 数据，
+// 因此不能并入 isVoiceParseType（那会改变它的失败语义与纪要门控）；转写状态这一件事上它与语音模型同权。
+func shouldMarkTranscriptionCompleted(parseType string) bool {
+	return isVoiceParseType(parseType) || parseType == model.PLATFORM_KEY_TINGWU
+}
+
 func legacyCompatibleParseTypeQuery(query *gorm.DB, parseType string) *gorm.DB {
 	if parseType == model.PLATFORM_KEY_MARKITDOWN {
 		return query.Where("parse_type = ? OR parse_type = ''", parseType)
@@ -663,33 +738,57 @@ func isTranscriptJSONContent(content string) bool {
 	return false
 }
 
-// loadCachedTranscriptionContent 读取文件的原始转写内容。
-//
-// 新布局（语音文件转写完成后由本步骤写入）：
-//   - 原始转写 JSON 在 Summary(template_id=-1)
-//   - 转写 Markdown 在 FileBody
-//
-// 秒解析缓存必须读原始转写，而非转写 Markdown，否则后续文件无法重建转写原文。
-// 优先读 Summary(-1)，不存在时回退读 FileBody（历史未迁移布局）。
-// 对 voice_model/voice:* 类型按 isTranscriptJSONContent 语义校验（DashScope 对象 / SonicNote 数组），
-// 跳过被污染的纪要 JSON 与转写 Markdown。
-func loadCachedTranscriptionContent(db *gorm.DB, eid, fileID int64, parseType string) (string, bool) {
+// loadCachedTranscriptionContent returns ASR evidence for a fresh correction pass.
+// Summary(-1) is the formal transcript and must never be re-used as "raw" once corrected.
+// Legacy sources without a raw snapshot may be reused if no correction marker exists.
+func loadCachedTranscriptionContent(db *gorm.DB, eid, fileID int64, parseType string, targetOwnerID int64) (string, bool) {
 	isVoice := isVoiceParseType(parseType)
-
-	// 优先读 Summary(-1)（新布局的原始转写位置）
-	var summary model.RecordingFileSummary
-	if err := db.Where("file_id = ? AND template_id = -1", fileID).First(&summary).Error; err == nil {
-		content := string(summary.SummaryContent)
-		if content != "" && (!isVoice || isTranscriptJSONContent(content)) {
+	if isVoice {
+		var source model.File
+		if err := db.Select("user_id").Where("id = ? AND eid = ?", fileID, eid).First(&source).Error; err != nil {
+			return "", false
+		}
+		crossUser := source.UserID != targetOwnerID
+		var summary model.RecordingFileSummary
+		for _, templateID := range []int64{-3, -1} {
+			if err := db.Where("file_id = ? AND template_id = ?", fileID, templateID).First(&summary).Error; err != nil {
+				continue
+			}
+			content := string(summary.SummaryContent)
+			if !isTranscriptJSONContent(content) {
+				continue
+			}
+			if templateID == -1 && strings.Contains(content, `"_transcript_correction_version"`) {
+				// Without the original, fall back to a fresh ASR call rather than re-correct.
+				continue
+			}
+			if crossUser && strings.Contains(content, `"contact"`) {
+				// Legacy speaker bindings belong to another user. Re-ASR instead of leaking.
+				continue
+			}
 			return content, true
+		}
+	} else {
+		var summary model.RecordingFileSummary
+		if err := db.Where("file_id = ? AND template_id = -1", fileID).First(&summary).Error; err == nil && summary.SummaryContent != "" {
+			return string(summary.SummaryContent), true
 		}
 	}
 
-	// 未反转，读 FileBody
+	// Legacy layout: source JSON sometimes lived in FileBody.
 	var body model.FileBody
 	if err := db.Where("file_id = ? AND eid = ?", fileID, eid).Order("id DESC").First(&body).Error; err == nil {
 		if err := body.LoadContent(); err == nil && body.Content != "" {
-			if !isVoice || isTranscriptJSONContent(body.Content) {
+			if !isVoice {
+				return body.Content, true
+			}
+			var source model.File
+			if err := db.Select("user_id").Where("id = ? AND eid = ?", fileID, eid).First(&source).Error; err != nil {
+				return "", false
+			}
+			if isTranscriptJSONContent(body.Content) &&
+				!strings.Contains(body.Content, `"_transcript_correction_version"`) &&
+				(source.UserID == targetOwnerID || !strings.Contains(body.Content, `"contact"`)) {
 				return body.Content, true
 			}
 		}
@@ -734,6 +833,9 @@ func clearVoiceModelDataIfNeeded(ctx context.Context, db *gorm.DB, eid, fileID i
 				info.MeetingMinutesStatus = ""
 				info.InsightsStatus = ""
 				info.InsightPageStatus = ""
+				// 重新转写后旧的人员绑定关系随之作废：清空参会人员快照并重置回填标记
+				info.Speakers = nil
+				info.SpeakersHealed = false
 				if data, err := json.Marshal(info); err == nil {
 					db.Model(&model.File{}).Where("id = ?", fileID).
 						Update("cleaning_rule_info", string(data))

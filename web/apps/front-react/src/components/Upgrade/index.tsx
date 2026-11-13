@@ -18,6 +18,7 @@ import './upgrade.css'
 
 // Re-export the hook
 export { useSubscriptionContext } from './context'
+import { SafeImage } from "@km/shared-components-react";
 
 export interface UpgradeRef {
   open: () => Promise<void>
@@ -261,10 +262,10 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                       onClick={() => handleVersionSelect(item)}
                     >
                       <header className="upgrade-version-header">
-                        <img
+                        <SafeImage
                           src={
                             !/\.png$/.test(item.logo || '')
-                              ? getPublicPath(`/images/subscription/${item.logo || ''}.png`)
+                              ? `/images/subscription/${item.logo || ''}.png`
                               : item.logo || ''
                           }
                           alt={item.group_name}
@@ -326,7 +327,8 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                             <ul className="flex flex-wrap gap-3.5 mt-4">
                               {item.agents.map((agent, idx) => (
                                 <li key={idx} className="flex items-center gap-2 w-full" title={agent.name}>
-                                  <img
+                                  <SafeImage
+                                    kind="agent"
                                     src={agent.logo || ''}
                                     alt={agent.name}
                                     className="flex-none w-4 h-4 rounded-full overflow-hidden"
@@ -355,8 +357,8 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                                 handleAIAssistantOpen('windows')
                               }}
                             >
-                              <img
-                                src={getPublicPath('/images/windows.png')}
+                              <SafeImage
+                                src={'/images/windows.png'}
                                 className="w-4 h-4 object-cover mr-1"
                                 alt="Windows"
                               />
@@ -371,8 +373,8 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                                 handleAIAssistantOpen('ios')
                               }}
                             >
-                              <img
-                                src={getPublicPath('/images/ios.png')}
+                              <SafeImage
+                                src={'/images/ios.png'}
                                 className="w-4 h-4 object-cover mr-1"
                                 alt="macOS"
                               />
@@ -387,8 +389,8 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                                 handleAIAssistantOpen('chrome')
                               }}
                             >
-                              <img
-                                src={getPublicPath('/images/chrome.png')}
+                              <SafeImage
+                                src={'/images/chrome.png'}
                                 className="w-4 h-4 object-cover mr-1"
                                 alt="Chrome"
                               />

@@ -224,7 +224,6 @@ export const useChatSend = () => {
       abortControllerRef.current = new AbortController()
       const rerankConfig = agentInfo?.settings?.rerank_config || {}
       const webSearchConfig = agentInfo?.settings?.web_search_setting || {}
-
       const completionsPayload = minimalParams
         ? {
             conversation_id,
@@ -260,7 +259,9 @@ export const useChatSend = () => {
                 ? webSearchConfig.top_k || rerankConfig.top_k
                 : rerankConfig.top_k,
             },
-            web_search_config: networkSearch ? webSearchConfig : {},
+            web_search_config: networkSearch
+              ? { ...webSearchConfig, enable: true }
+              : {},
             ...completion_params,
           }
 

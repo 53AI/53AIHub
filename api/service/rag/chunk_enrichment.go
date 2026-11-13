@@ -177,7 +177,7 @@ func (s *ContentGeneratorService) GenerateChunkEnrichmentBatch(ctx context.Conte
 		Model:     selectedModelName,
 		MaxTokens: 0, // 不限制输出，由模型自由生成
 		Messages: []relaymodel.Message{
-			{Role: "system", Content: prompt},
+			{Role: "user", Content: prompt},
 		},
 	}
 

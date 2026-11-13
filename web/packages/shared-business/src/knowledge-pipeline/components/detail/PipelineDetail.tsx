@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect, type ComponentType } from 'react'
 import { Drawer, Button, message } from 'antd'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react'
 import { CloseOutlined, CaretDownOutlined } from '@ant-design/icons'
 import { usePipelineTranslation } from '../../context'
 import type { Pipeline, PipelineStep } from '../../types'
@@ -207,7 +207,7 @@ export function PipelineDetail({
           <div className="flex items-center gap-3 px-2">
             <div className="flex-none w-8 h-8 rounded flex items-center justify-center">
               {localPipeline.icon && (
-                <img
+                <SafeImage
                   src={localPipeline.icon}
                   className="size-8 object-contain"
                   alt="logo"

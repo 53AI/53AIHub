@@ -9,6 +9,7 @@ import './index.css'
 export interface ScopeDisplayTreeNode {
   value: number | string
   label: string
+  uid?: string
   did?: number
   user_id?: number
   children?: ScopeDisplayTreeNode[]

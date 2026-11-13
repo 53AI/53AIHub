@@ -3,7 +3,8 @@ import { message, Tag, Spin } from 'antd'
 import { useEnterpriseStore } from '@/stores/modules/enterprise'
 import enterpriseApi from '@/api/modules/enterprise/index'
 import type { RawEnterpriseInfo } from '@/api/modules/enterprise/types'
-import './EnterpriseChange.css'
+
+import { SafeImage } from "@km/shared-components-react";import './EnterpriseChange.css'
 
 interface EnterpriseChangeProps {
   onClose?: () => void
@@ -82,7 +83,8 @@ export function EnterpriseChange({ onClose }: EnterpriseChangeProps) {
                 }`}
                 onClick={() => handleEnterpriseSelect(item)}
               >
-                <img
+                <SafeImage
+                  kind="space"
                   className="flex-none mr-4 w-[32px] h-[32px] object-cover rounded"
                   src={item.enterprise.logo}
                   alt={item.enterprise.display_name}

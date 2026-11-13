@@ -4,7 +4,10 @@ import type { RefObject } from "react";
 export type SpaceSettingTabKey =
   | "basic-info"
   | "members"
-  | "knowledge";
+  | "knowledge"
+  | "api"
+  | "knowledge-graph"
+  | "dynamic";
 
 /** 需要底部「取消/保存」的 tab key（成员 / 知识库管理 不在 drawer 底部渲染保存按钮） */
 export const SPACE_SETTING_FOOTER_TAB_KEYS: SpaceSettingTabKey[] = [

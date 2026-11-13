@@ -60,6 +60,12 @@ export interface ModelSetting {
       channel_type?: number | null
       model_name: string | null
     }
+    intent_decision_config?: {
+      enable: boolean
+      channel_id: number
+      model_name: string
+      confidence_threshold: number
+    }
     search_config: {
       vector: boolean
       fulltext: boolean

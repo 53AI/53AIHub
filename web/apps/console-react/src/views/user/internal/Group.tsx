@@ -1,5 +1,5 @@
 import { Dropdown, Search, SvgIcon, IconAction } from "@km/shared-components-react";
-import { Button, Empty, Modal, Table, Tag, message } from "antd";
+import { Button, Empty, Modal, Table, Tag, Typography, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { groupApi } from "@/api/modules/group";
@@ -312,21 +312,24 @@ export function UserGroup() {
 			title: t("common.name"),
 			dataIndex: "nickname",
 			key: "nickname",
+			ellipsis: { showTitle: false },
 			render: (value: string, record) => {
 				const isDept = record.resource_type === "department";
+				const name = isDept ? record.name : value || record.name || "--";
 				return (
-					<div className="flex items-center gap-2">
+					<div className="flex items-center gap-2 min-w-0">
 						<SvgIcon
 							name={isDept ? "department" : "member"}
 							width="16px"
 							height="16px"
 							color={isDept ? "#1677ff" : "#999"}
 						/>
-						{isDept ? (
-							<span className="text-blue-600 font-medium">{record.name}</span>
-						) : (
-							<span>{value || record.name || "--"}</span>
-						)}
+						<Typography.Text
+							ellipsis={{ tooltip: name }}
+							className={`!block min-w-0${isDept ? " text-blue-600 font-medium" : ""}`}
+						>
+							{name}
+						</Typography.Text>
 					</div>
 				);
 			},

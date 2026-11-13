@@ -1,5 +1,5 @@
 import { Spin, Button } from 'antd'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { MoreDropdown } from '@/components/MoreDropdown'
 import { t } from '@/locales'
 import { buildUrl } from '@/utils/router'
@@ -137,7 +137,7 @@ export function FolderBrowser({
             onClick={() => handleRowClick(item)}
           >
             <div className="flex-1 min-w-0 flex items-center gap-2">
-              <img className="flex-none w-6 h-6" src={item.icon} alt="" />
+              <SafeImage className="flex-none w-6 h-6" src={item.icon} alt="" />
               <span className="text-sm text-primary truncate">{item.name}</span>
               {item.isFavorite && (
                 <SvgIcon name="star-filled" color="#FFB300" className="text-[#FFB300] flex-shrink-0" size="14" />

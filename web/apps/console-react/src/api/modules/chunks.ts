@@ -116,6 +116,14 @@ const chunksApi = {
       .then((res: any) => res.data)
       .catch(handleError)
   },
+
+  /** 同步文件 chunk，供「添加到」写入内容后触发索引 */
+  sync(data: { file_id: KnowledgeChunk['file_id'] }) {
+    return service
+      .post('/api/chunks/sync', data)
+      .then((res: any) => res.data)
+      .catch(handleError)
+  },
   files: {
     list(
       file_id: KnowledgeChunk['file_id'],

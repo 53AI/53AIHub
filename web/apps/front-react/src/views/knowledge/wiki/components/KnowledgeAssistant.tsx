@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { Tooltip, Spin } from "antd";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { ChatConfigProvider } from "@km/shared-business/chat";
 import { chatAdapters } from "@/adapters/chat-adapters";
+import { getPublicPath } from "@/utils/config";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { useKnowledgeAssistantStore } from "@/stores/modules/knowledge-assistant";
 import { useSpaceStore } from "@/stores/modules/space";
@@ -171,7 +172,7 @@ function KnowledgeAssistant({ selectedItemId }: KnowledgeAssistantProps) {
         <div className="flex-1 h-full flex flex-col overflow-hidden">
           {/* Header：图标 + 标题 + 划词开关（对齐 library/main/file/assistant/index.tsx 的 Header） */}
           <div className="flex-none h-[68px] py-1 pl-5 pr-3 flex items-center gap-2 border-b">
-            <img className="size-5" src={AI_ICON_URL} alt="" />
+            <SafeImage className="size-5" src={AI_ICON_URL} alt="" />
             <div className="flex-1 text-base text-[#1D1E1F] truncate">
               {t("library.document_chat")}
             </div>
@@ -236,7 +237,7 @@ function KnowledgeAssistant({ selectedItemId }: KnowledgeAssistantProps) {
             {/* Chat 按钮 - 始终高亮 */}
             <Tooltip placement="left" title={t("library.document_chat")}>
               <div className="size-[38px] flex-center rounded-md cursor-pointer hover:shadow-[0_2px_8px_#0b1b403d] bg-[#E6EEFF]">
-                <img className="size-6" src={AI_ICON_URL} alt="" />
+                <SafeImage className="size-6" src={AI_ICON_URL} alt="" />
               </div>
             </Tooltip>
           </div>

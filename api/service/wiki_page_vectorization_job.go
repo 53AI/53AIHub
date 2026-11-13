@@ -56,6 +56,13 @@ func createWikiPageVectorizationJob(ctx context.Context, db *gorm.DB, rdb redis.
 	if rdb == nil || !common.IsRedisEnabled() {
 		return nil, fmt.Errorf("redis is disabled")
 	}
+	var version model.WikiPageVersion
+	if err := db.WithContext(ctx).Where("eid = ? AND page_id = ? AND id = ?", eid, pageID, versionID).First(&version).Error; err != nil {
+		return nil, err
+	}
+	if !version.IsPublished {
+		return nil, fmt.Errorf("wiki page version is not published")
+	}
 
 	if existing, err := findRunningWikiPageVectorizationJob(ctx, db, eid, pageID, versionID); err != nil {
 		return nil, err
@@ -118,6 +125,42 @@ func createWikiPageVectorizationJob(ctx context.Context, db *gorm.DB, rdb redis.
 	return job, nil
 }
 
+// PrepareWikiPageVectorizationRetry retries the publication prerequisite for Wiki versions generated automatically.
+func PrepareWikiPageVectorizationRetry(ctx context.Context, db *gorm.DB, job *model.RagJob) error {
+	params, err := parseWikiPageVectorizationParameters(job)
+	if err != nil {
+		return err
+	}
+	if job.RelatedId != params.PageID || (params.Reason != "auto_after_wiki_generation" && params.Reason != "auto_after_wiki_category_generation") {
+		return fmt.Errorf("Wiki 页面版本尚未发布，请先发布后重试")
+	}
+	if db == nil || job.Eid <= 0 {
+		return fmt.Errorf("Wiki 重试数据库或企业信息无效")
+	}
+	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var page model.WikiPage
+		if err := tx.Where("eid = ? AND id = ?", job.Eid, params.PageID).First(&page).Error; err != nil {
+			return err
+		}
+		if page.CurrentVersionID != params.VersionID {
+			return fmt.Errorf("Wiki 页面已更新，请刷新任务后重试")
+		}
+		var version model.WikiPageVersion
+		if err := tx.Where("eid = ? AND page_id = ? AND id = ?", job.Eid, page.ID, params.VersionID).First(&version).Error; err != nil {
+			return err
+		}
+		return publishWikiPageVersion(tx, &page, &version, map[string]any{
+			"publish_kind": model.WikiPagePublishKindSync,
+			"reason":       "vectorization_retry",
+		})
+	})
+	if err != nil {
+		logger.Errorf(ctx, "【Wiki重试】 自动发布页面版本失败: eid=%d page_id=%d version_id=%d err=%v", job.Eid, params.PageID, params.VersionID, err)
+		return fmt.Errorf("自动发布 Wiki 页面版本失败: %w", err)
+	}
+	return nil
+}
+
 func enqueueWikiPageVectorizationJob(ctx context.Context, rdb redis.Cmdable, job *model.RagJob, wrapper []byte) error {
 	if job == nil || rdb == nil {
 		return fmt.Errorf("vectorization job queue is unavailable")
@@ -141,8 +184,25 @@ func enqueueWikiPageVectorizationJobs(ctx context.Context, db *gorm.DB, rdb redi
 	if err := db.WithContext(ctx).Where("eid = ? AND library_id = ? AND slug IN ? AND status = ?", eid, libraryID, slugs, model.WikiPageStatusActive).Find(&pages).Error; err != nil {
 		return err
 	}
+	versionIDs := make([]int64, 0, len(pages))
 	for _, page := range pages {
-		if page.CurrentVersionID <= 0 {
+		if page.CurrentVersionID > 0 {
+			versionIDs = append(versionIDs, page.CurrentVersionID)
+		}
+	}
+	if len(versionIDs) == 0 {
+		return nil
+	}
+	var publishedVersions []model.WikiPageVersion
+	if err := db.WithContext(ctx).Where("eid = ? AND id IN ? AND is_published = ?", eid, versionIDs, true).Find(&publishedVersions).Error; err != nil {
+		return err
+	}
+	publishedVersionIDs := make(map[int64]struct{}, len(publishedVersions))
+	for _, version := range publishedVersions {
+		publishedVersionIDs[version.ID] = struct{}{}
+	}
+	for _, page := range pages {
+		if _, published := publishedVersionIDs[page.CurrentVersionID]; !published {
 			continue
 		}
 		if _, err := createWikiPageVectorizationJob(ctx, db, rdb, eid, page.ID, page.CurrentVersionID, false, reason); err != nil {

@@ -26,9 +26,9 @@ import (
 
 // Heartbeat constants
 const (
-	heartbeatKeyPrefix     = "rag:job:heartbeat"
-	heartbeatInterval      = 30 * time.Second
-	heartbeatKeyTTL        = 90 * time.Second
+	heartbeatKeyPrefix = "rag:job:heartbeat"
+	heartbeatInterval  = 30 * time.Second
+	heartbeatKeyTTL    = 90 * time.Second
 	// staleJobCutoff 无心跳判死阈值：processing/pending job 超过该时长无心跳即被清理（失败文案由 staleJobTimeoutFailureReason 从该常量推导，勿写死）
 	staleJobCutoff         = 30 * time.Minute
 	pendingReclaimInterval = 30 * time.Second
@@ -205,6 +205,37 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 		return
 	}
 
+	var lockToken string
+	for deadline := time.Now().Add(jobLockTTL + time.Second); time.Now().Before(deadline); {
+		token, locked, err := AcquireJobLock(e.ctx, e.rdb, wrapper.JobID)
+		if err != nil {
+			logger.Errorf(e.ctx, "【RAG任务】获取 job %d 锁失败：%v", wrapper.JobID, err)
+			return
+		}
+		if locked {
+			lockToken = token
+			break
+		}
+		select {
+		case <-e.ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	if lockToken == "" {
+		return
+	}
+	lockReleased := false
+	releaseClaimLock := func() {
+		if !lockReleased {
+			if err := ReleaseJobLock(e.ctx, e.rdb, wrapper.JobID, lockToken); err != nil {
+				logger.Warnf(e.ctx, "【RAG任务】释放 job %d 锁失败：%v", wrapper.JobID, err)
+			}
+			lockReleased = true
+		}
+	}
+	defer releaseClaimLock()
+
 	// 异常捕获
 	defer func() {
 		if r := recover(); r != nil {
@@ -216,9 +247,9 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 		}
 	}()
 
-	// 加载 Job
+	// 获取锁后重读，避免旧队列消息抢占状态已变化的任务。
 	var job model.RagJob
-	if err := e.db.First(&job, wrapper.JobID).Error; err != nil {
+	if err := e.db.WithContext(e.ctx).First(&job, wrapper.JobID).Error; err != nil {
 		logger.Error(e.ctx, fmt.Sprintf("Load job %d failed: %v", wrapper.JobID, err))
 		e.rdb.LRem(e.ctx, processingQueue, 1, payload)
 		return
@@ -230,12 +261,27 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 		return
 	}
 
-	// 更新状态为处理中
-	e.db.Model(&job).Update("status", model.RagJobStatusProcessing)
+	// 条件更新确保同一任务只被一个 worker 抢占。
+	claim := e.db.WithContext(e.ctx).Model(&model.RagJob{}).
+		Where("job_id = ? AND status = ?", wrapper.JobID, model.RagJobStatusPending).
+		Update("status", model.RagJobStatusProcessing)
+	if claim.Error != nil {
+		logger.Errorf(e.ctx, "【RAG任务】抢占 job %d 失败：%v", wrapper.JobID, claim.Error)
+		return
+	}
+	if claim.RowsAffected != 1 {
+		logger.Infof(e.ctx, "【RAG任务】job %d 状态已变化，移除重复处理中消息（当前状态：%s）", wrapper.JobID, job.Status)
+		e.rdb.LRem(e.ctx, processingQueue, 1, payload)
+		return
+	}
+	job.Status = model.RagJobStatusProcessing
 
 	// 写入 Redis 心跳：标记 job 正在运行
-	e.rdb.Set(e.ctx, fmt.Sprintf("%s:%d", heartbeatKeyPrefix, job.JobID),
-		time.Now().UnixMilli(), heartbeatKeyTTL)
+	if err := e.rdb.Set(e.ctx, fmt.Sprintf("%s:%d", heartbeatKeyPrefix, job.JobID),
+		time.Now().UnixMilli(), heartbeatKeyTTL).Err(); err != nil {
+		logger.Errorf(e.ctx, "【RAG任务】job %d 已抢占但写入心跳失败：%v", job.JobID, err)
+	}
+	releaseClaimLock()
 
 	// 同步更新 File 的 run_status 为 processing
 	// 显式传 processing 绕过 RunID 共享场景下旧 job 的干扰计算
@@ -338,16 +384,23 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 	if err := handler(e.ctx, &job, stepConfig.Config); err != nil {
 		// 更新 Step 状态为 Failed
 		var failedStep model.RagJobStep
-		if errStep := e.db.Where("job_id = ?", job.JobID).First(&failedStep).Error; errStep == nil {
-			failedStep.CompleteWithError(map[string]string{"error": err.Error()})
-			if errors.Is(err, model.ErrJobCancelled) {
+		stepFailureErr := e.db.Where("job_id = ?", job.JobID).First(&failedStep).Error
+		if stepFailureErr == nil {
+			stepFailureErr = failedStep.CompleteWithError(map[string]string{"error": err.Error()})
+			if stepFailureErr == nil && errors.Is(err, model.ErrJobCancelled) {
 				failedStep.Status = model.RagJobStepStatusCancelled
 			}
-			e.db.Save(&failedStep)
+			if stepFailureErr == nil {
+				stepFailureErr = e.db.Save(&failedStep).Error
+			}
 		}
 
 		if errors.Is(err, model.ErrJobCancelled) {
 			e.handleCancellation(wrapper, err.Error())
+		} else if stepFailureErr != nil {
+			e.handleFailure(wrapper, fmt.Sprintf("保存步骤失败状态失败: %v（原始错误: %v）", stepFailureErr, err))
+		} else if shouldContinueAfterContentCleaningFailure(stepKey, err) {
+			e.handleContentCleaningFailure(wrapper, job, currentIndex, err.Error())
 		} else {
 			e.handleFailure(wrapper, err.Error())
 		}
@@ -366,6 +419,99 @@ func (e *RagJobEngineV2) processJob(workerID, payload, stepKey, processingQueue 
 
 	// Ack (移除处理中消息)
 	e.rdb.LRem(e.ctx, processingQueue, 1, payload)
+}
+
+func shouldContinueAfterContentCleaningFailure(stepKey string, err error) bool {
+	return stepKey == string(model.RagPipelineStepKeyContentCleaning) &&
+		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+}
+
+func (e *RagJobEngineV2) handleContentCleaningFailure(wrapper JobWrapper, job model.RagJob, currentIndex int, reason string) {
+	result := e.db.Model(&model.RagJob{}).Where("job_id = ?", job.JobID).Updates(map[string]interface{}{
+		"status":         model.RagJobStatusFailed,
+		"failure_reason": reason,
+	})
+	if result.Error != nil || result.RowsAffected != 1 {
+		logger.Errorf(e.ctx, "【RAG流水线】内容清洗失败状态写入失败，改按终止错误处理：job=%d, err=%v", job.JobID, result.Error)
+		e.handleFailure(wrapper, reason)
+		return
+	}
+
+	if job.PipelineID > 0 {
+		if err := e.db.Model(&model.RagPipelineProfile{}).Where("id = ?", job.PipelineID).Updates(map[string]interface{}{
+			"failure_count": gorm.Expr("failure_count + ?", 1),
+			"last_run_time": time.Now().UnixMilli(),
+		}).Error; err != nil {
+			logger.Errorf(e.ctx, "【RAG流水线】内容清洗失败统计更新失败：job=%d, err=%v", job.JobID, err)
+		}
+	}
+	e.rdb.Del(e.ctx, fmt.Sprintf("%s:%d", heartbeatKeyPrefix, job.JobID))
+
+	var enqueueErr error
+	if e.factory == nil {
+		enqueueErr = errors.New("RAG job factory 未初始化")
+	} else {
+		enqueueErr = e.factory.EnqueueNextJob(e.ctx, job.RunID, currentIndex)
+	}
+	if enqueueErr != nil {
+		logger.Errorf(e.ctx, "【RAG流水线】内容清洗失败后推进下一步失败，run 标记失败：job=%d, run_id=%s, err=%v", job.JobID, job.RunID, enqueueErr)
+		fileID := model.ExtractFileIDFromJob(&job)
+		if fileID > 0 {
+			if updateErr := model.UpdateFileCleaningRuleInfoHelper(e.db, fileID, job.RunID, model.RagJobStatusFailed); updateErr != nil {
+				logger.Errorf(e.ctx, "【RAG流水线】推进失败后更新文件状态失败：job=%d, file_id=%d, err=%v", job.JobID, fileID, updateErr)
+			}
+		}
+		e.reportTaskFailure(job, "RAG_STEP_ENQUEUE_FAILED", enqueueErr.Error())
+		return
+	}
+
+	fileID := model.ExtractFileIDFromJob(&job)
+	if fileID <= 0 {
+		return
+	}
+	if err := model.UpdateFileCleaningRuleInfoHelper(e.db, fileID, job.RunID, ""); err != nil {
+		logger.Errorf(e.ctx, "【RAG流水线】内容清洗失败后重算文件状态失败：job=%d, file_id=%d, err=%v", job.JobID, fileID, err)
+		return
+	}
+
+	var file model.File
+	if err := e.db.Select("cleaning_rule_info").First(&file, fileID).Error; err != nil {
+		logger.Errorf(e.ctx, "【RAG流水线】内容清洗失败后读取文件状态失败：job=%d, file_id=%d, err=%v", job.JobID, fileID, err)
+		return
+	}
+	var info model.FileCleaningRuleInfo
+	if err := json.Unmarshal([]byte(file.CleaningRuleInfo), &info); err != nil {
+		logger.Errorf(e.ctx, "【RAG流水线】内容清洗失败后解析文件状态失败：job=%d, file_id=%d, err=%v", job.JobID, fileID, err)
+		return
+	}
+	if info.Status == model.RagJobStatusSuccess {
+		e.reportTaskSuccess(job)
+	}
+}
+
+func (e *RagJobEngineV2) reportTaskFailure(job model.RagJob, code, reason string) {
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskFailed(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("rag-pipeline-%d-%s", job.RelatedId, job.RunID),
+			TaskType:       "RAG_INDEXING",
+			ServiceKey:     "rag-indexing",
+			StageKey:       job.Type,
+			TraceID:        job.RunID,
+			StartedAt:      time.UnixMilli(job.CreatedTime),
+		}, code, reason)
+	}
+}
+
+func (e *RagJobEngineV2) reportTaskSuccess(job model.RagJob) {
+	if client := keystone.GlobalClient; client != nil {
+		client.ReportTaskSucceeded(keystone.TaskEvent{
+			ExternalTaskID: fmt.Sprintf("rag-pipeline-%d-%s", job.RelatedId, job.RunID),
+			TaskType:       "RAG_INDEXING",
+			ServiceKey:     "rag-indexing",
+			TraceID:        job.RunID,
+			StartedAt:      time.UnixMilli(job.CreatedTime),
+		})
+	}
 }
 
 func (e *RagJobEngineV2) handleFailure(wrapper JobWrapper, reason string) {
@@ -401,20 +547,7 @@ func (e *RagJobEngineV2) handleFailure(wrapper JobWrapper, reason string) {
 		e.rdb.Del(e.ctx, fmt.Sprintf("%s:%d", heartbeatKeyPrefix, job.JobID))
 
 		// 上报 Keystone 任务失败
-		if client := keystone.GlobalClient; client != nil {
-			client.ReportTaskFailed(
-				keystone.TaskEvent{
-					ExternalTaskID: fmt.Sprintf("rag-pipeline-%d-%s", job.RelatedId, job.RunID),
-					TaskType:       "RAG_INDEXING",
-					ServiceKey:     "rag-indexing",
-					StageKey:       job.Type,
-					TraceID:        job.RunID,
-					StartedAt:      time.UnixMilli(job.CreatedTime),
-				},
-				"RAG_STEP_FAILED",
-				job.FailureReason,
-			)
-		}
+		e.reportTaskFailure(job, "RAG_STEP_FAILED", job.FailureReason)
 
 		// 注意：不在此处推进流水线——下游步骤依赖上游输出，上游 failed 意味着
 		// 下游数据不完整。Cleaner 场景（超过 staleJobCutoff 无心跳）由 cleanupStaleProcessingJobs
@@ -462,14 +595,46 @@ func (e *RagJobEngineV2) startHeartbeat(ctx context.Context, jobID int64) func()
 // document_parsing 按原始文件类型分流：txt/md/markdown 走轻文本专用队列，不被重 OCR 任务堵住。
 // worker 领取时校验 DB status（非 pending 跳过），重复入队不会重复执行。
 func (e *RagJobEngineV2) enqueueJob(ctx context.Context, job model.RagJob) error {
-	stepKey := job.Type
-	queueName := fmt.Sprintf("%s:queue:%s", e.queuePrefix, stepKey)
-	if stepKey == "document_parsing" && e.isLightParsingJob(ctx, job) {
-		queueName = fmt.Sprintf("%s:queue:%s%s", e.queuePrefix, stepKey, lightQueueSuffix)
-	}
-	wrapper := JobWrapper{JobID: job.JobID, Eid: job.Eid, Type: stepKey, EnqueuedAt: time.Now()}
+	queueName, processingQueue := e.jobQueueNames(ctx, job)
+	wrapper := JobWrapper{JobID: job.JobID, Eid: job.Eid, Type: job.Type, EnqueuedAt: time.Now()}
 	payload, _ := json.Marshal(wrapper)
-	return e.rdb.LPush(ctx, queueName, string(payload)).Err()
+	return EnqueueJobIdempotent(ctx, e.rdb, queueName, processingQueue, fmt.Sprint(job.JobID), string(payload))
+}
+
+func (e *RagJobEngineV2) jobQueueNames(ctx context.Context, job model.RagJob) (string, string) {
+	queueName := fmt.Sprintf("%s:queue:%s", e.queuePrefix, job.Type)
+	if job.Type == "document_parsing" && e.isLightParsingJob(ctx, job) {
+		queueName += lightQueueSuffix
+	}
+	return queueName, fmt.Sprintf("%s:%s", e.processingQueueName, job.Type)
+}
+
+func (e *RagJobEngineV2) reconcilePendingJob(ctx context.Context, jobID int64) error {
+	token, locked, err := AcquireJobLock(ctx, e.rdb, jobID)
+	if err != nil {
+		return err
+	}
+	if !locked {
+		return nil
+	}
+	defer func() { _ = ReleaseJobLock(ctx, e.rdb, jobID, token) }()
+
+	var current model.RagJob
+	if err := e.db.WithContext(ctx).First(&current, jobID).Error; err != nil {
+		return err
+	}
+	if current.Status != model.RagJobStatusPending {
+		return nil
+	}
+	active, err := e.rdb.Exists(ctx, fmt.Sprintf("%s:%d", heartbeatKeyPrefix, jobID)).Result()
+	if err != nil || active > 0 {
+		return err
+	}
+	queueName, processingQueue := e.jobQueueNames(ctx, current)
+	if _, err := RestoreProcessingJob(ctx, e.rdb, queueName, processingQueue, jobID); err != nil {
+		return err
+	}
+	return e.enqueueJob(ctx, current)
 }
 
 // isLightParsingJob 判断解析任务是否为秒级文本（txt/md/markdown）。
@@ -585,9 +750,8 @@ func (e *RagJobEngineV2) cleanupStaleProcessingJobs(ctx context.Context) {
 				continue
 			}
 			// 孤儿 pending：从未开始 → 重新入队复活
-			if err := e.enqueueJob(ctx, job); err != nil {
-				logger.Warnf(ctx, "【StaleJobCleaner】重新入队孤儿 pending job %d 失败，标记失败: %v", job.JobID, err)
-				e.handleFailure(JobWrapper{JobID: job.JobID, Eid: job.Eid, Type: job.Type}, "孤儿 pending 重新入队失败: "+err.Error())
+			if err := e.reconcilePendingJob(ctx, job.JobID); err != nil {
+				logger.Warnf(ctx, "【StaleJobCleaner】重新入队孤儿 pending job %d 失败，保留当前状态: %v", job.JobID, err)
 			} else {
 				logger.Infof(ctx, "【StaleJobCleaner】孤儿 pending job %d 重新入队 (type=%s)", job.JobID, job.Type)
 				reclaimedCount++
@@ -659,7 +823,7 @@ func (e *RagJobEngineV2) reclaimPendingJobs(ctx context.Context, cutoff int64) {
 		if !e.HasHandler(job.Type) {
 			continue
 		}
-		if err := e.enqueueJob(ctx, job); err != nil {
+		if err := e.reconcilePendingJob(ctx, job.JobID); err != nil {
 			logger.Warnf(ctx, "【流水线恢复】补投 pending job %d 失败: %v", job.JobID, err)
 			continue
 		}

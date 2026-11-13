@@ -12,6 +12,7 @@ import { EntityDisplay } from "@/components/EntityDisplay";
 import approvalsApi from "@/api/modules/approvals";
 import permissionsApi from "@/api/modules/permissions";
 import { t } from "@/locales";
+import { SafeImage } from "@km/shared-components-react";
 
 interface PermissionApplicationData {
   resource: {
@@ -152,7 +153,7 @@ export const ApplyDialog = forwardRef<
           <div className="w-full h-10 bg-[#FCFFFE] px-4 flex items-center gap-2 border rounded">
             {resource.icon && (
               <div className="size-6 flex items-center justify-center">
-                <img src={resource.icon} className="size-full" alt="" />
+                <SafeImage src={resource.icon} kind="generic" className="size-full" alt="" />
               </div>
             )}
             <span className="flex-1 text-sm text-[#4F5052] truncate">

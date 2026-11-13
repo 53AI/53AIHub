@@ -51,6 +51,7 @@ type ChatTrace struct {
 	PromptTokens     int64        `json:"prompt_tokens"`
 	CompletionTokens int64        `json:"completion_tokens"`
 	TotalTokens      int64        `json:"total_tokens"`
+	CacheUsage       *CacheUsage  `json:"cache_usage,omitempty"`
 	Response         string       `json:"response,omitempty"`
 	Stages           []TraceStage `json:"stages"`
 
@@ -59,18 +60,19 @@ type ChatTrace struct {
 
 // TraceSummary 列表摘要
 type TraceSummary struct {
-	RequestID        string `json:"request_id"`
-	EID              int64  `json:"eid"`
-	Model            string `json:"model"`
-	OriginalQuery    string `json:"original_query"`
-	StartedAt        int64  `json:"started_at"`
-	DurationMs       int64  `json:"duration_ms"`
-	StatusCode       int    `json:"status_code"`
-	Status           string `json:"status"`
-	PromptTokens     int64  `json:"prompt_tokens"`
-	CompletionTokens int64  `json:"completion_tokens"`
-	TotalTokens      int64  `json:"total_tokens"`
-	StageCount       int    `json:"stage_count"`
+	RequestID        string      `json:"request_id"`
+	EID              int64       `json:"eid"`
+	Model            string      `json:"model"`
+	OriginalQuery    string      `json:"original_query"`
+	StartedAt        int64       `json:"started_at"`
+	DurationMs       int64       `json:"duration_ms"`
+	StatusCode       int         `json:"status_code"`
+	Status           string      `json:"status"`
+	PromptTokens     int64       `json:"prompt_tokens"`
+	CompletionTokens int64       `json:"completion_tokens"`
+	TotalTokens      int64       `json:"total_tokens"`
+	CacheUsage       *CacheUsage `json:"cache_usage,omitempty"`
+	StageCount       int         `json:"stage_count"`
 }
 
 // MemoryBuffer 本地内存环形缓冲区兜底，支持在无 Redis 时正常工作
@@ -161,6 +163,7 @@ func (mb *memoryTraceBuffer) List(eid int64) []TraceSummary {
 			PromptTokens:     detail.PromptTokens,
 			CompletionTokens: detail.CompletionTokens,
 			TotalTokens:      detail.TotalTokens,
+			CacheUsage:       detail.CacheUsage,
 			StageCount:       len(detail.Stages),
 		})
 	}
@@ -320,6 +323,23 @@ func (t *ChatTrace) AddTokens(prompt, completion, total int64) {
 	t.PromptTokens += prompt
 	t.CompletionTokens += completion
 	t.TotalTokens += total
+}
+
+func (t *ChatTrace) AddCacheUsage(usage *CacheUsage) {
+	if t == nil || usage == nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.CacheUsage == nil {
+		t.CacheUsage = &CacheUsage{}
+	}
+	t.CacheUsage.HitTokens += usage.HitTokens
+	t.CacheUsage.MissTokens += usage.MissTokens
+	total := t.CacheUsage.HitTokens + t.CacheUsage.MissTokens
+	if total > 0 {
+		t.CacheUsage.HitRate = float64(t.CacheUsage.HitTokens) / float64(total)
+	}
 }
 
 // RecordIntent 记录意图识别与范围缩小过程
@@ -535,8 +555,18 @@ func RecordTool(ctx context.Context, toolName string, args interface{}, result i
 
 	trace.AddStage(stage)
 }
+
 // RecordLLM 记录大模型实际调用与响应
 func RecordLLM(ctx context.Context, modelName string, prompt interface{}, response string, promptTokens, completionTokens int64, durationMs int64, err error, extraParams ...map[string]interface{}) {
+	recordLLM(ctx, modelName, prompt, response, promptTokens, completionTokens, durationMs, err, nil, extraParams...)
+}
+
+// RecordLLMWithCacheUsage records provider cache metrics with the model call.
+func RecordLLMWithCacheUsage(ctx context.Context, modelName string, prompt interface{}, response string, promptTokens, completionTokens int64, durationMs int64, err error, cacheUsage *CacheUsage, extraParams ...map[string]interface{}) {
+	recordLLM(ctx, modelName, prompt, response, promptTokens, completionTokens, durationMs, err, cacheUsage, extraParams...)
+}
+
+func recordLLM(ctx context.Context, modelName string, prompt interface{}, response string, promptTokens, completionTokens int64, durationMs int64, err error, cacheUsage *CacheUsage, extraParams ...map[string]interface{}) {
 	trace := GetTrace(ctx)
 	if trace == nil {
 		return
@@ -558,6 +588,9 @@ func RecordLLM(ctx context.Context, modelName string, prompt interface{}, respon
 	if len(extraParams) > 0 && extraParams[0] != nil {
 		data["params"] = extraParams[0]
 	}
+	if cacheUsage != nil {
+		data["cache_usage"] = cacheUsage
+	}
 
 	stage := TraceStage{
 		Stage:      "llm",
@@ -574,6 +607,7 @@ func RecordLLM(ctx context.Context, modelName string, prompt interface{}, respon
 
 	trace.AddStage(stage)
 	trace.AddTokens(promptTokens, completionTokens, promptTokens+completionTokens)
+	trace.AddCacheUsage(cacheUsage)
 	if trace.Model == "" {
 		trace.Model = modelName
 	}
@@ -692,6 +726,7 @@ func ListTraces(ctx context.Context, eid int64) ([]TraceSummary, error) {
 						PromptTokens:     trace.PromptTokens,
 						CompletionTokens: trace.CompletionTokens,
 						TotalTokens:      trace.TotalTokens,
+						CacheUsage:       trace.CacheUsage,
 						StageCount:       len(trace.Stages),
 					})
 				}

@@ -53,7 +53,6 @@ export interface RecordingJob {
   recovery_error: string | null
   uploaded_recorded_ms: number
   upload_interval_ms: number
-  group_id?: number             // 录音文件分组 ID
 
 }
 
@@ -108,7 +107,6 @@ export interface CreateRecordingRequest {
   source_mime_type?: string   // 默认 'audio/webm'
   upload_interval_ms?: number // 默认 3000
   max_duration_ms?: number    // 默认 28800000 (8小时)
-  group_id?: number           // 分组 ID，用于分类
 }
 
 /** 状态切换请求 */
@@ -140,7 +138,8 @@ export interface RecordingFileItem {
   created_time: number
   updated_time: number
   is_favorite: boolean
-  group_id?: number
+  /** 场景 key（/api/recordings/scenes 下发）；转写解析完成前可能为空 */
+  scene?: string
   insight_summary?: string
   insight_page?: {
     page_json?: string
@@ -161,7 +160,8 @@ export interface GetRecordingsParams {
   offset?: number
   limit?: number
   sort_by?: 'updated_time' | 'created_time'
-  group_id?: number
+  /** 场景筛选（GET /api/recordings/scenes 下发的 key）；缺省 = 全部 */
+  scene?: string
 }
 
 /** 导入音频文件结构项 */
@@ -183,7 +183,6 @@ export interface ImportAudioRequest {
   origin_type?: RecordingOriginType
   origin_source?: RecordingOriginSource
   origin_ref_id?: number
-  group_id?: number           // 分组 ID，用于分类
 }
 
 /** 导入音频响应 */
@@ -203,6 +202,7 @@ export interface RecordingConfig {
   voice_model_name?: string
   recording_agent_enabled?: boolean
   insight_regenerate_enabled?: boolean
+  action_opportunity_auto_detect_enabled?: boolean
 }
 
 // ============= 总结模板 =============
@@ -299,8 +299,8 @@ export function resolveInsightPerspectiveForSubmit(
   return changed ? selected : original || 'auto'
 }
 
-/** 洞察场景选项（GET /api/recordings/scenes）；key 由服务端定义，前端不做枚举约束。 */
-export interface InsightPerspectiveOption {
+/** 录音场景选项（GET /api/recordings/scenes）；key 由服务端定义，前端不做枚举约束。 */
+export interface RecordingSceneOption {
   key: string
   name: string
   description: string
@@ -401,7 +401,7 @@ export interface QueuedCountResponse {
 
 // ============= 会议记忆实体 =============
 
-export type RecordingMemoryEntityType = 'person' | 'matter' | 'risk' | 'principle'
+export type RecordingMemoryEntityType = 'person' | 'matter' | 'risk' | 'principle' | 'company'
 
 /**
  * 会议记忆实体的单个属性 schema 定义
@@ -424,6 +424,21 @@ export interface RecordingMemoryEntitySchema {
 /** 全量实体 schema：后端返回数组，键值对类型改为在条目的 type 字段上暴露 */
 export type RecordingMemoryEntitySchemas = RecordingMemoryEntitySchema[]
 
+/** 实体 schema 分类：memory=经营记忆（默认）/ relation=关系 / all=全部 */
+export type RecordingMemorySchemaCategory = 'memory' | 'relation' | 'all'
+
+/** 人物列表行的所属企业（结构化关联，列表接口一等字段，20261010 协议 §2.2）。
+ *  attributes 已按企业 schema 过滤，可含行业 / 地区 / logo。 */
+export interface RecordingMemoryRelatedCompany {
+  id: string | number
+  relation_type?: string
+  related_entity_id: string | number
+  related_name: string
+  related_type?: string
+  summary?: string
+  attributes?: Record<string, string>
+}
+
 export interface RecordingMemoryEntityItem {
   id: string | number
   entity_type: RecordingMemoryEntityType
@@ -435,6 +450,13 @@ export interface RecordingMemoryEntityItem {
   source_file?: string
   last_fact_at: number
   updated_time: number
+  /** 列表行属性（人物 phone/avatar/position/company，企业 industry/region/logo 等，
+   *  20261010 协议 §2.2）；老后端可缺省 */
+  attributes?: Record<string, string>
+  /** 人物行：所属企业（结构化关联）；非人物行为空 */
+  related_company?: RecordingMemoryRelatedCompany
+  /** 企业行：关联人物数量；非企业行或后端未下发时为空 */
+  related_person_count?: number
 }
 
 export interface RecordingMemoryEntityList {
@@ -958,15 +980,6 @@ export interface RecordingMemoryV2Evaluation {
   created_at_unix: number
 }
 
-// ============= 转写原文 🆕 =============
-
-/** 转写原文响应 */
-export interface FileTranscriptionResponse {
-  file_id: number
-  /** 转写纯文本 */
-  content: string
-}
-
 // ============= 转写导出 =============
 
 /**
@@ -989,22 +1002,6 @@ export interface PipelineResult {
   meeting_minutes: 'skipped' | 'processing'
   insights: 'skipped' | 'processing'
   insight_page: 'skipped' | 'processing'
-}
-
-// ============= 移动文件到分组 🆕 =============
-
-/**
- * 移动文件到分组请求
- * group_id = 0 表示移出分组（未分组）
- */
-export interface MoveFileToGroupRequest {
-  group_id: number
-}
-
-/** 移动文件到分组响应 */
-export interface MoveFileToGroupResponse {
-  file_id: string
-  group_id: number
 }
 
 // ============= 录音分享 🆕 =============
@@ -1125,14 +1122,70 @@ export interface UpdateDeviceByIdRequest {
  * 统一同步入口请求（B 组 POST /api/recordings/sync）
  * - device_type 必填
  * - device_id 可选：指定单条配置同步；缺省同步该 type 全部启用配置
+ * - remote_ids 可选：指定选中的远端录音 ID 列表（必须同时传 device_id）
+ * - exclude_remote_ids 可选：指定跳过的远端录音 ID 列表
+ * - skip_deleted 可选：是否跳过本地已删除文件，默认 false
  * - force 已弃用（保留兼容）
  * - limit 调试用
  */
 export interface SyncDeviceRequest {
   device_type: RecordingDeviceType
   device_id?: string
+  remote_ids?: string[]
+  exclude_remote_ids?: string[]
+  skip_deleted?: boolean
   force?: boolean
   limit?: number
+}
+
+/** 远端录音全量统计 */
+export interface DeviceRecordingSummary {
+  total: number
+  synced: number
+  file_deleted: number
+  not_synced: number
+  unsynced: number
+}
+
+/** 远端录音条目 */
+export interface RemoteRecordingItem {
+  remote_id: string
+  title: string
+  duration_ms?: number
+  sync_status: 'synced' | 'file_deleted' | 'not_synced'
+  created_time?: number
+  date?: string
+  /**
+   * 列表层是否带音频 URL（仅 SonicNote 有意义）：
+   * - true：列表带 URL，可同步的充分条件
+   * - false：列表无 URL（不代表一定不可同步，detail 可能才有）
+   * - TicNote 音频 URL 仅在 detail，恒为 false，请以同步后 failed_details[].type=audio_unavailable 为准
+   */
+  audio_available?: boolean
+}
+
+/** 预览远端录音列表请求参数 */
+export interface GetDeviceRecordingsParams {
+  device_id?: string
+  sync_status?: 'unsynced' | 'synced' | 'all'
+  page?: number
+  size?: number
+  full?: boolean
+}
+
+/** 预览远端录音列表响应 */
+export interface GetDeviceRecordingsResponse {
+  device_type: RecordingDeviceType
+  configured: boolean
+  enabled: boolean
+  device_id: string
+  sync_status: string
+  page: number
+  size: number
+  total: number
+  has_more: boolean
+  summary: DeviceRecordingSummary
+  items: RemoteRecordingItem[]
 }
 
 /** 统一同步入口响应 */

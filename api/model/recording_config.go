@@ -11,9 +11,9 @@ type MemoryExtractionConfig struct {
 }
 
 // IsEffectivelyEnabled 判断历史记忆是否有效启用。
-// enabled=true 但未选择任何实体类型时，等同于未启用。
+// 迭代后：人员（人物）与企业默认开启抽取不受配置影响，只要总开关 enabled=true 即有效启用。
 func (m *MemoryExtractionConfig) IsEffectivelyEnabled() bool {
-	return m != nil && m.Enabled && len(m.Types) > 0
+	return m != nil && m.Enabled
 }
 
 // CognitionConfidenceConfig 企业级：智能提炼认知的置信度阈值。
@@ -45,6 +45,13 @@ const (
 	DefaultCognitionDiscardThreshold = 0.6
 )
 
+// TranscriptCorrectionConfig is an enterprise-scoped option. Zero model values mean follow the minutes model.
+type TranscriptCorrectionConfig struct {
+	Enabled        bool   `json:"enabled"`
+	ModelChannelID int64  `json:"model_channel_id"`
+	ModelName      string `json:"model_name"`
+}
+
 type RecordingConfig struct {
 	Enabled                 bool                    `json:"enabled"`
 	ParserPlatform          string                  `json:"parser_platform"`
@@ -60,7 +67,8 @@ type RecordingConfig struct {
 	// CognitionConfidence 智能提炼认知的置信度阈值（本轮仅预留配置字段，后台写入下轮开放）。
 	CognitionConfidence *CognitionConfidenceConfig `json:"cognition_confidence,omitempty"`
 	// ActionOpportunityAutoDetectEnabled 企业级开关：洞察页面生成完成后自动发现行动建议，默认关闭。
-	ActionOpportunityAutoDetectEnabled bool `json:"action_opportunity_auto_detect_enabled"`
+	ActionOpportunityAutoDetectEnabled bool                        `json:"action_opportunity_auto_detect_enabled"`
+	TranscriptCorrection               *TranscriptCorrectionConfig `json:"transcript_correction,omitempty"`
 }
 
 func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
@@ -88,7 +96,7 @@ func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
 		MultiPerspectiveEnabled: false,
 		MemoryExtraction: &MemoryExtractionConfig{
 			Enabled: true,
-			Types:   []string{EntityTypePerson, EntityTypeMatter, EntityTypeRisk, EntityTypeCommitment, EntityTypeDecision},
+			Types:   []string{EntityTypePerson, EntityTypeCompany, EntityTypeMatter, EntityTypeRisk, EntityTypeCommitment, EntityTypeDecision},
 		},
 	}
 
@@ -112,6 +120,11 @@ func ValidateOrCreateRecordingConfig(eid int64) (*RecordingConfig, error) {
 }
 
 func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voiceModelID int64, voiceModelName string, inferenceModelID int64, inferenceModelName string, recordingAgentEnabled bool, multiPerspectiveEnabled bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled bool) error {
+	// 渠道同步等旧版整体保存入口不能清空新增的转写校正配置。
+	current, err := ValidateOrCreateRecordingConfig(eid)
+	if err != nil {
+		return err
+	}
 	config := RecordingConfig{
 		Enabled:                            enabled,
 		ParserPlatform:                     parserPlatform,
@@ -124,6 +137,7 @@ func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voice
 		MemoryExtraction:                   memoryExtraction,
 		InsightRegenerateEnabled:           insightRegenerateEnabled,
 		ActionOpportunityAutoDetectEnabled: actionOpportunityAutoDetectEnabled,
+		TranscriptCorrection:               current.TranscriptCorrection,
 	}
 	value, err := json.Marshal(config)
 	if err != nil {
@@ -132,7 +146,7 @@ func UpdateRecordingConfig(eid int64, enabled bool, parserPlatform string, voice
 	return UpdateOrCreateSetting(eid, SETTING_RECORDING_CONFIG, string(value), 0)
 }
 
-func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled *bool) error {
+func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled *bool, transcriptCorrection ...*TranscriptCorrectionConfig) error {
 	current, err := ValidateOrCreateRecordingConfig(eid)
 	if err != nil {
 		return fmt.Errorf("获取当前配置失败: %w", err)
@@ -169,6 +183,9 @@ func PatchRecordingConfig(eid int64, enabled *bool, parserPlatform *string, voic
 	}
 	if actionOpportunityAutoDetectEnabled != nil {
 		current.ActionOpportunityAutoDetectEnabled = *actionOpportunityAutoDetectEnabled
+	}
+	if len(transcriptCorrection) > 0 && transcriptCorrection[0] != nil {
+		current.TranscriptCorrection = transcriptCorrection[0]
 	}
 	value, err := json.Marshal(current)
 	if err != nil {
@@ -212,13 +229,13 @@ func IsRecordingMemoryExtractionEnabled(eid int64) bool {
 	}
 	memCfg := config.MemoryExtraction
 	if memCfg == nil {
-		memCfg = &MemoryExtractionConfig{Enabled: true, Types: []string{EntityTypePerson, EntityTypeMatter, EntityTypeRisk, EntityTypeCommitment, EntityTypeDecision}}
+		memCfg = &MemoryExtractionConfig{Enabled: true, Types: []string{EntityTypePerson, EntityTypeCompany, EntityTypeMatter, EntityTypeRisk, EntityTypeCommitment, EntityTypeDecision}}
 	}
 	return memCfg.IsEffectivelyEnabled()
 }
 
 // IsRecordingMemoryExtractionTypeEnabled 判断录音文件记忆抽取是否有效启用且包含指定实体类型。
-// 用于元信息实体抽取（Document 类型）等场景：记忆关闭或配置类型中不包含该类型时均不执行。
+// 迭代后：人员（人物）与企业默认开启抽取，不受 Types 配置影响；其余业务类型按配置原逻辑。
 func IsRecordingMemoryExtractionTypeEnabled(eid int64, entityType string) bool {
 	config, err := ValidateOrCreateRecordingConfig(eid)
 	if err != nil || config == nil || config.MemoryExtraction == nil {
@@ -226,6 +243,10 @@ func IsRecordingMemoryExtractionTypeEnabled(eid int64, entityType string) bool {
 	}
 	if !config.MemoryExtraction.Enabled {
 		return false
+	}
+	// 人员与企业默认开启抽取，不受配置 Types 限制
+	if entityType == EntityTypePerson || entityType == EntityTypeCompany {
+		return true
 	}
 	for _, t := range config.MemoryExtraction.Types {
 		if t == entityType {

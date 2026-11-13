@@ -1,6 +1,7 @@
 package custom_openai
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -8,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
+	hubcommon "github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/ctxkey"
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/common/thinkingpolicy"
@@ -25,9 +28,10 @@ import (
 )
 
 type Adaptor struct {
-	ChannelType   int
-	CustomConfig  *custom.CustomConfig
-	ChannelConfig string // 添加渠道配置字段，存储原始JSON字符串
+	ChannelType     int
+	CustomConfig    *custom.CustomConfig
+	ChannelConfig   string // 添加渠道配置字段，存储原始JSON字符串
+	NativeWebSearch bool
 }
 
 func (a *Adaptor) Init(meta *meta.Meta) {
@@ -37,15 +41,107 @@ func (a *Adaptor) Init(meta *meta.Meta) {
 }
 
 func (a *Adaptor) GetRequestURL(meta *meta.Meta) (string, error) {
-	// 直接使用 meta.BaseURL，不进行任何额外处理
-	baseURL := strings.TrimSuffix(meta.BaseURL, "/")
-	// 这里判断如果最后是 v3 则把 meta.RequestURLPath 的 /v1 去掉再进行拼接，否则不处理
-	requestURLPath := meta.RequestURLPath
-	if strings.HasSuffix(meta.BaseURL, "/v3") {
-		requestURLPath = strings.TrimPrefix(requestURLPath, "/v1")
+	if meta.ChannelType == channeltype.Azure && meta.Config.APIVersion == "v1" {
+		_, useResponses, err := a.responsesModel(meta.ActualModelName)
+		if err != nil {
+			return "", err
+		}
+		baseURL := strings.TrimSuffix(meta.BaseURL, "/")
+		for _, suffix := range []string{"/openai/v1/responses", "/openai/v1/chat/completions", "/openai/v1", "/openai", "/v1"} {
+			if strings.HasSuffix(baseURL, suffix) {
+				baseURL = strings.TrimSuffix(baseURL, suffix)
+				break
+			}
+		}
+		requestPath, rawQuery, hasQuery := strings.Cut(meta.RequestURLPath, "?")
+		task := strings.TrimPrefix(requestPath, "/v1")
+		if task == "/chat/completions" && useResponses {
+			task = "/responses"
+		}
+		if task == "/responses" && !useResponses {
+			task = "/chat/completions"
+		}
+		if !strings.HasPrefix(task, "/") {
+			task = "/" + task
+		}
+		path := baseURL + "/openai/v1" + task
+		if hasQuery {
+			query, parseErr := url.ParseQuery(rawQuery)
+			if parseErr == nil {
+				query.Del("api-version")
+				if encoded := query.Encode(); encoded != "" {
+					path += "?" + encoded
+				}
+			}
+		}
+		return path, nil
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/v1")
-	baseURL = strings.TrimSuffix(baseURL, "/")
+	if meta.ChannelType != Hub_model.ChannelApiTypeCustomOpenAI && meta.ChannelType != 17 {
+		_, useResponses, err := a.responsesModel(meta.ActualModelName)
+		if err != nil {
+			return "", err
+		}
+		if !useResponses {
+			return (&openai.Adaptor{ChannelType: meta.ChannelType}).GetRequestURL(meta)
+		}
+		responsesMeta := *meta
+		responsesMeta.Mode = relaymode.ChatCompletions
+		path, query, hasQuery := strings.Cut(responsesMeta.RequestURLPath, "?")
+		if strings.HasSuffix(path, "/v1/chat/completions") {
+			path = strings.TrimSuffix(path, "/v1/chat/completions") + "/v1/responses"
+		} else {
+			return "", fmt.Errorf("Responses upstream configured for model %q, but request path %q is not Chat Completions", meta.ActualModelName, path)
+		}
+		if hasQuery {
+			path += "?" + query
+		}
+		responsesMeta.RequestURLPath = path
+		if responsesMeta.ChannelType != 3 && responsesMeta.ChannelType != 900 {
+			responsesMeta.BaseURL = strings.TrimSuffix(strings.TrimSuffix(responsesMeta.BaseURL, "/"), "/v1")
+		}
+		requestURL, err := (&openai.Adaptor{ChannelType: meta.ChannelType}).GetRequestURL(&responsesMeta)
+		if err != nil {
+			return "", err
+		}
+		if meta.ChannelType == 900 {
+			requestURL = strings.TrimSuffix(requestURL, "/chat/completions") + "/responses"
+		}
+		return requestURL, nil
+	}
+
+	requestURLPath := meta.RequestURLPath
+	useResponses := false
+	var err error
+	_, useResponses, err = a.responsesModel(meta.ActualModelName)
+	if err != nil {
+		return "", err
+	}
+	baseURL := strings.TrimSuffix(meta.BaseURL, "/")
+	path, query, hasQuery := strings.Cut(requestURLPath, "?")
+	if strings.HasSuffix(path, "/v1/chat/completions") {
+		endpoint := "/v1/chat/completions"
+		if useResponses {
+			endpoint = "/v1/responses"
+		}
+		for _, existingEndpoint := range []string{"/v1/chat/completions", "/v1/responses"} {
+			if strings.HasSuffix(baseURL, existingEndpoint) {
+				baseURL = strings.TrimSuffix(baseURL, existingEndpoint)
+				break
+			}
+		}
+		if strings.HasSuffix(baseURL, "/v1") {
+			baseURL = strings.TrimSuffix(baseURL, "/v1")
+		}
+		if strings.HasSuffix(baseURL, "/v3") {
+			endpoint = strings.TrimPrefix(endpoint, "/v1")
+		}
+		requestURLPath = endpoint
+		if hasQuery {
+			requestURLPath += "?" + query
+		}
+	} else if useResponses {
+		return "", fmt.Errorf("Responses upstream configured for model %q, but request path %q is not Chat Completions", meta.ActualModelName, path)
+	}
 	return fmt.Sprintf("%s%s", baseURL, requestURLPath), nil
 }
 
@@ -67,6 +163,43 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 	if request == nil {
 		return nil, errors.New("request is nil")
 	}
+	if a.ChannelType != Hub_model.ChannelApiTypeCustomOpenAI && a.ChannelType != 17 {
+		config, useResponses, err := a.responsesModel(request.Model)
+		if err != nil {
+			return nil, err
+		}
+		if a.ChannelType == channeltype.Azure {
+			compatibilityModel := config.BaseModelID
+			if compatibilityModel == "" {
+				compatibilityModel = request.Model
+			}
+			openai.ApplyUnsupportedSamplingParameters(request, compatibilityModel)
+		} else if a.ChannelType == channeltype.OpenAI {
+			if catalogMeta, metaErr := hubcommon.GetModelCatalogLoader().GetModelMeta(a.ChannelType, request.Model); metaErr == nil {
+				if chatMeta, ok := catalogMeta.(*hubcommon.ChatModelMeta); ok && chatMeta.DeepThinking {
+					openai.ApplyUnsupportedSamplingParameters(request, request.Model)
+				}
+			}
+		}
+		openAIAdaptor := &openai.Adaptor{ChannelType: a.ChannelType, CustomConfig: a.CustomConfig, ChannelConfig: a.ChannelConfig}
+		converted, err := openAIAdaptor.ConvertRequest(c, relayMode, request)
+		if err != nil || !useResponses {
+			return converted, err
+		}
+		encoded, err := json.Marshal(converted)
+		if err != nil {
+			return nil, err
+		}
+		var convertedRequest model.GeneralOpenAIRequest
+		if err := json.Unmarshal(encoded, &convertedRequest); err != nil {
+			return nil, err
+		}
+		payload, err := convertResponsesRequest(c, &convertedRequest, config, a.NativeWebSearch)
+		if err == nil {
+			applyResponsesThinking(payload, extractResponsesThinking(converted))
+		}
+		return payload, err
+	}
 	if request.Stream {
 		// always return usage in stream mode
 		if request.StreamOptions == nil {
@@ -83,10 +216,16 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 			FunctionCall *bool  `json:"function_calling,omitempty"`
 		}
 		var models []perModelCfg
+		modelSupportsVision := false
+		if catalogMeta, err := hubcommon.GetModelCatalogLoader().GetModelMeta(a.ChannelType, request.Model); err == nil {
+			if chatMeta, ok := catalogMeta.(*hubcommon.ChatModelMeta); ok {
+				modelSupportsVision = chatMeta.Vision
+			}
+		}
 		if err := json.Unmarshal([]byte(a.ChannelConfig), &models); err == nil && len(models) > 0 {
 			for _, mc := range models {
 				if mc.ModelID == request.Model {
-					if mc.Vision != nil && !*mc.Vision {
+					if mc.Vision != nil && !*mc.Vision && !modelSupportsVision {
 						request.Messages = removeImageContent(request.Messages)
 					}
 					if mc.FunctionCall != nil && !*mc.FunctionCall {
@@ -138,6 +277,9 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 			if err := json.Unmarshal(modifiedJSON, &resultMap); err != nil {
 				return request, nil
 			}
+			if converted, isResponses, err := a.convertConfiguredRequest(c, request, resultMap); isResponses || err != nil {
+				return converted, err
+			}
 			return resultMap, nil
 		}
 	}
@@ -163,11 +305,65 @@ func (a *Adaptor) ConvertRequest(c *gin.Context, relayMode int, request *model.G
 			if err := json.Unmarshal(modifiedJSON, &resultMap); err != nil {
 				return request, nil
 			}
+			if converted, isResponses, err := a.convertConfiguredRequest(c, request, resultMap); isResponses || err != nil {
+				return converted, err
+			}
 			return resultMap, nil
 		}
 	}
-
+	if converted, isResponses, err := a.convertConfiguredRequest(c, request, nil); isResponses || err != nil {
+		return converted, err
+	}
 	return request, nil
+}
+
+func (a *Adaptor) convertConfiguredRequest(c *gin.Context, request *model.GeneralOpenAIRequest, modified map[string]interface{}) (any, bool, error) {
+	config, isResponses, err := a.responsesModel(request.Model)
+	if err != nil || !isResponses {
+		return nil, isResponses, err
+	}
+	if modified != nil {
+		encoded, err := json.Marshal(modified)
+		if err != nil {
+			return nil, true, err
+		}
+		var convertedRequest model.GeneralOpenAIRequest
+		if err := json.Unmarshal(encoded, &convertedRequest); err != nil {
+			return nil, true, err
+		}
+		request = &convertedRequest
+	}
+	converted, err := convertResponsesRequest(c, request, config, a.NativeWebSearch)
+	if err == nil {
+		applyResponsesThinking(converted, extractResponsesThinking(modified))
+	}
+	return converted, true, err
+}
+
+func extractResponsesThinking(request any) string {
+	requestMap, ok := request.(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	thinking, ok := requestMap["thinking"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	thinkingType, _ := thinking["type"].(string)
+	return thinkingType
+}
+
+func applyResponsesThinking(payload map[string]any, thinkingType string) {
+	var effort string
+	switch thinkingType {
+	case "enabled":
+		effort = "high"
+	case "disabled":
+		effort = "none"
+	default:
+		return
+	}
+	payload["reasoning"] = map[string]any{"effort": effort}
 }
 
 // removeImageContent 移除消息中的图像内容
@@ -205,6 +401,20 @@ func (a *Adaptor) DoRequest(c *gin.Context, meta *meta.Meta, requestBody io.Read
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Meta) (usage *model.Usage, err *model.ErrorWithStatusCode) {
+	if meta.ChannelType == channeltype.Azure && a.NativeWebSearch {
+		if policyErr := azureWebSearchPolicyError(resp); policyErr != nil {
+			return nil, policyErr
+		}
+	}
+	if meta.Mode == relaymode.ChatCompletions {
+		_, isResponses, configErr := a.responsesModel(meta.ActualModelName)
+		if configErr != nil {
+			return nil, openai.ErrorWrapper(configErr, "invalid_model_config", http.StatusInternalServerError)
+		}
+		if isResponses {
+			return a.handleResponsesResponse(c, resp, meta)
+		}
+	}
 	if meta.IsStream {
 		var responseText string
 		err, responseText, usage = openai.StreamHandler(c, resp, meta.Mode)
@@ -224,6 +434,28 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, meta *meta.Met
 		}
 	}
 	return
+}
+
+func azureWebSearchPolicyError(resp *http.Response) *model.ErrorWithStatusCode {
+	if resp == nil || resp.StatusCode < http.StatusBadRequest || resp.Body == nil {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+	resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	message := strings.ToLower(string(body))
+	if !strings.Contains(message, "web_search") && !strings.Contains(message, "web search") {
+		return nil
+	}
+	for _, reason := range []string{"disabled", "not enabled", "not available", "not supported", "blocked", "policy", "forbidden"} {
+		if strings.Contains(message, reason) {
+			return openai.ErrorWrapper(errors.New("Azure 订阅或策略未启用模型联网搜索，请管理员开通 Web Search，或关闭该模型的联网搜索"), "azure_web_search_disabled", resp.StatusCode)
+		}
+	}
+	return nil
 }
 
 func (a *Adaptor) GetModelList() []string {

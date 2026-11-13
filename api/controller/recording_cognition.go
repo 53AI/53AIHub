@@ -22,6 +22,7 @@ type RecordingCognitionQuery struct {
 	DomainID      int64  `form:"domain_id"`
 	SourceType    string `form:"source_type"`
 	Keyword       string `form:"keyword"`
+	SortBy        string `form:"sort_by"`
 	Limit         int    `form:"limit"`
 	Offset        int    `form:"offset"`
 }
@@ -134,6 +135,7 @@ type UpdateRecordingCognitionDomainRequest struct {
 // @Param domain_id query string false "领域认知 ID (HashID)"
 // @Param source_type query string false "来源类型（可逗号分隔传多个值）：boss_authored/boss_confirmed/auto_confirmed"
 // @Param keyword query string false "标题或认知表述"
+// @Param sort_by query string false "排序字段：updated_time（默认，最近更新在前）/ created_time（最近创建在前）；非法值回退缺省不报错；同值按 id 降序稳定排序" default(updated_time)
 // @Param limit query int false "返回条数" default(50)
 // @Param offset query int false "跳过条数" default(0)
 // @Success 200 {object} model.CommonResponse{data=service.RecordingCognitionList}
@@ -148,11 +150,17 @@ func ListRecordingCognitions(c *gin.Context) {
 	}
 	data, err := service.NewRecordingCognitionService(config.GetEID(c)).List(
 		c.Request.Context(), config.GetUserId(c),
-		strings.TrimSpace(req.Status),
-		strings.TrimSpace(req.Layer),
-		strings.TrimSpace(req.CognitionType), req.DomainID,
-		splitSourceTypes(req.SourceType),
-		strings.TrimSpace(req.Keyword), req.Limit, req.Offset,
+		service.RecordingCognitionFilter{
+			Status:        strings.TrimSpace(req.Status),
+			Layer:         strings.TrimSpace(req.Layer),
+			CognitionType: strings.TrimSpace(req.CognitionType),
+			DomainID:      req.DomainID,
+			SourceTypes:   splitSourceTypes(req.SourceType),
+			Keyword:       strings.TrimSpace(req.Keyword),
+			SortBy:        strings.TrimSpace(req.SortBy),
+			Limit:         req.Limit,
+			Offset:        req.Offset,
+		},
 	)
 	if respondRecordingCognitionError(c, err) {
 		return

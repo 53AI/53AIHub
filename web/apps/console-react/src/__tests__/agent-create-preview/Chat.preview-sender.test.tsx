@@ -266,6 +266,36 @@ describe('Chat — knowledge preview sender', () => {
     // `modelId = currentModel?.id`）。agent_models mock 中第一条 id=100，
     // 与 form_data.settings.fast_reasoning_config (channel_id=10) 匹配。
     expect(callArg.modelId).toBe('100')
+    expect(callArg.thinking_mode).toBe(1)
+  })
+
+  it('sends deep thinking mode when fast and deep configs use the same model and channel', async () => {
+    useAgentFormStore.setState({
+      agent_id: 'agent-2',
+      agent_type: 'knowledge',
+      agent_data: { channel_type: 1, configs: {} },
+      form_data: {
+        name: 'k',
+        settings: {
+          fast_reasoning_config: { channel_id: 10, channel_type: 1, model_name: 'gpt-4' },
+          deep_thinking_config: { enable: true, channel_id: 10, channel_type: 1, model_name: 'gpt-4' },
+        },
+      },
+    } as any)
+
+    render(
+      <AdapterProvider adapter={adapter}>
+        <SharedChat />
+      </AdapterProvider>,
+    )
+    await waitFor(() => expect(getAgentModels).toHaveBeenCalledWith('agent-2'))
+    fireEvent.click(screen.getByTestId('opt-deep_10_1_gpt-4'))
+    fireEvent.click(screen.getByTestId('x-sender-send'))
+
+    await waitFor(() => expect(sendChatMessage).toHaveBeenCalled())
+    const callArg = sendChatMessage.mock.calls[0][0]
+    expect(callArg.modelId).toBe('100')
+    expect(callArg.thinking_mode).toBe(2)
   })
 
   it('does not pass skill prop when agent_type=knowledge', () => {
@@ -322,8 +352,8 @@ describe('Chat — knowledge preview sender', () => {
     fireEvent.click(screen.getByTestId('x-sender-send'))
     await waitFor(() => expect(sendChatMessage).toHaveBeenCalled())
     const callArg = sendChatMessage.mock.calls[0][0]
-    expect(callArg.knowledgeGraph).toBe(true)
-    expect(callArg.networkSearch).toBeUndefined()
+    expect(callArg.knowledgeSource.state.knowledgeGraph).toBe(true)
+    expect(callArg.knowledgeSource.state.networkSearch).toBe(false)
   })
 
   it('passes networkSearch=true when user selects online search mode', async () => {
@@ -349,8 +379,8 @@ describe('Chat — knowledge preview sender', () => {
     fireEvent.click(screen.getByTestId('x-sender-send'))
     await waitFor(() => expect(sendChatMessage).toHaveBeenCalled())
     const callArg = sendChatMessage.mock.calls[0][0]
-    expect(callArg.networkSearch).toBe(true)
-    expect(callArg.knowledgeGraph).toBeUndefined()
+    expect(callArg.knowledgeSource.state.networkSearch).toBe(true)
+    expect(callArg.knowledgeSource.state.knowledgeGraph).toBe(false)
   })
 
   it('does not override server defaults when source mode is "all"', async () => {

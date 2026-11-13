@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { Drawer as AntDrawer, Button } from 'antd'
 import { CloseOutlined } from '@ant-design/icons'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react'
 import { usePipelineTranslation } from '../../context'
 import type { Pipeline } from '../../types'
 import { Editor, type EditorRef } from './Editor'
@@ -58,7 +58,7 @@ export function Drawer({
         <div className="flex items-center gap-3 px-2">
           <div className="flex-none w-8 h-8 rounded flex items-center justify-center">
             {pipeline.icon && (
-              <img
+              <SafeImage
                 src={pipeline.icon}
                 className="size-8 object-contain"
                 alt="logo"

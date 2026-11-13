@@ -20,8 +20,17 @@
  *
  * src 变化时自动重试：父组件更新 src 后 useEffect 清掉 readySrc/failed，新 src 重新探针加载。
  *
+ * 兜底策略（`kind` / `fallback` / `none`）：
+ * - `kind` 声明「这张图代表什么实体」（agent / user / knowledge / …），映射表集中在
+ *   `./fallbacks.ts`；不传时保持历史默认 `agent`（270+ 处已有调用行为不变）。
+ * - `fallback` 是显式 URL 逃生通道，优先级高于 `kind`；传空串等价于 `none`。
+ * - `kind="none"` 表示兜底态不显示图，只留透明占位（保留布局尺寸）。
+ * - 兜底态统一渲染 `<div>` 包裹内层 `<img style="width/height:100%; object-fit:contain">`：
+ *   任意宽高比都居中不变形。内层用 `<img>` 而非 CSS `background`，好处是容器未给高度时
+ *   能靠图片固有尺寸撑开，且保留 `alt` 语义。
+ *
  * 字母头像模式（`letter`）：当 src 缺省或加载失败后，若传了 `letter` 则渲染首字母头像
- * （替代默认兜底图），用于无真实图片的占位头像。字母分支渲染的是 `<div>` 而非 `<img>`。
+ * （优先于 `kind` / `fallback`），用于无真实图片的占位头像。与兜底态同为 `<div>` 分支。
  *
  * 尺寸约定：本组件不做内联尺寸约束，宽高统一由调用方 className 控制（如 `size-[40px]`、
  * `w-8 h-8`）；所有渲染分支（占位 / 真实图 / 兜底 / 字母头像）都透传 className，保证各分支
@@ -30,22 +39,22 @@
  * 命名说明：叫 `SafeImage` 而非 `Image`，是为了和 antd `Image` 区分（antd Image 有
  * preview 缩放功能，业务上常与本组件共存，避免调用方反复 import 别名）。
  *
- * 路径解析：本地资源（以 `/` 开头）走 `window.$getPublicPath` 拼接 base，
- * 远程 URL（`http://` / `https://`）原样使用。
+ * 路径解析：本地资源（以 `/` 开头）走 resolveAssetUrl（@km/shared-utils，基于
+ * `window.$getPublicPath` 拼接 base），远程 URL（带 scheme）原样使用。
  */
-import { forwardRef, useEffect, useState, type ImgHTMLAttributes } from 'react'
+import {
+  forwardRef,
+  useEffect,
+  useState,
+  type ImgHTMLAttributes,
+  type ReactNode,
+} from 'react'
+import { resolveAssetUrl } from '@km/shared-utils'
+import { resolveSafeImageFallback, type SafeImageKind } from './fallbacks'
 
-const DEFAULT_FALLBACK_PATH = '/images/default_agent.png'
 const DEFAULT_MAX_RETRIES = 1
 
-const resolveUrl = (input: string): string => {
-  if (!input) return input
-  if (/^https?:\/\//i.test(input)) return input
-  const base = (window as any).$getPublicPath?.('') || '/'
-  const normalizedBase = base.endsWith('/') ? base.slice(0, -1) : base
-  const normalizedPath = input.startsWith('/') ? input : `/${input}`
-  return `${normalizedBase}${normalizedPath}`
-}
+const resolveUrl = resolveAssetUrl
 
 /** 给 URL 追加 cache-busting nonce，绕过浏览器对失败 URL 的缓存，强制重新请求 */
 const withRetryNonce = (url: string, attempt: number): string => {
@@ -57,9 +66,17 @@ const withRetryNonce = (url: string, attempt: number): string => {
 const toPx = (v: string | number): string => (typeof v === 'number' ? `${v}px` : v)
 
 export type SafeImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onError'> & {
-  /** 图片 URL；空串或纯空白视作缺省 */
-  src: string
-  /** 自定义兜底图 URL；默认 `/images/default_agent.png`（merge-public 插件跨 app 提供） */
+  /** 图片 URL；缺省/空串/纯空白时直接渲染 fallback（或字母头像） */
+  src?: string
+  /**
+   * 兜底图语义类型，决定 src 缺失/失败时显示哪张图；不传保持历史默认 `agent`。
+   * 映射表见 `./fallbacks.ts`；`none` 表示不显示图、只留透明占位。
+   */
+  kind?: SafeImageKind
+  /**
+   * 自定义兜底图 URL，优先级高于 `kind`（逃生通道）。
+   * 传空串等价于 `kind="none"`。
+   */
   fallback?: string
   /** 禁用兜底，失败时由浏览器展示 alt（特殊场景，默认 false） */
   disableFallback?: boolean
@@ -80,9 +97,10 @@ export type SafeImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | '
   borderColor?: string
 }
 
-export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function SafeImage(
+export const SafeImage = forwardRef<HTMLElement, SafeImageProps>(function SafeImage(
   {
     src,
+    kind,
     fallback,
     disableFallback = false,
     maxRetries = DEFAULT_MAX_RETRIES,
@@ -155,54 +173,88 @@ export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function S
     ...customStyle,
   }
 
-  // 字母头像：src 缺省或重试耗尽时展示（替代默认兜底图）。渲染 div 而非 img，不起可加载元素
-  const showLetterAvatar = !disableFallback && !!letterChar && (emptySrc || failed)
-  if (showLetterAvatar) {
+  /**
+   * 兜底态统一用 `<div>` 包一层内层 `<img>`：任意宽高比都居中不变形
+   * （`object-fit: contain`）。容器给尺寸时内层图撑满并居中；没给尺寸时百分比
+   * 高/宽退化 auto、由图片固有尺寸撑开（这是内层用 `<img>` 而非 CSS background 的原因）。
+   * letter 分支在这个 div 上叠加背景色/居中文字。
+   *
+   * 注意：display 是内联样式，优先级高于 className，因此调用方用 `hidden` /
+   * `group-hover:block` 这类 display 工具类控制的显隐在兜底态会失效；需要隐藏时请
+   * 用条件渲染（`{show && <SafeImage />}`）而不是 className。
+   */
+  const renderBox = (content?: ReactNode): ReactNode => {
+    // disableFallback 时不给兜底图（语义同 `kind="none"`）
+    const fallbackUrl = disableFallback ? null : resolveSafeImageFallback(kind, fallback)
+    const boxUrl = fallbackUrl ? resolveUrl(fallbackUrl) : null
     return (
       <div
-        aria-hidden="true"
+        // ref 必须挂在每个分支的最外层节点上：antd Tooltip / Dropdown / Table 会把
+        // 子节点的 ref 当作触发器定位依据，只挂在 <img> 分支会导致兜底/加载态定位失效
+        ref={ref as React.Ref<HTMLDivElement>}
+        aria-hidden={content ? 'true' : undefined}
         style={{
-          display: 'inline-flex',
-          flex: 'none',
-          userSelect: 'none',
-          alignItems: 'center',
-          justifyContent: 'center',
-          textTransform: 'uppercase',
-          lineHeight: 1,
+          display: content ? 'inline-flex' : 'inline-block',
           boxSizing: 'border-box',
-          backgroundColor: backgroundColor ?? '#FCFFFE',
-          color: textColor ?? '#07C160',
+          // middle 而非 baseline：inline-block 用 baseline 对齐会在底部留出
+          // 字体 descender 的空隙（父容器非 flex 时图标会看起来偏上）。
+          verticalAlign: 'middle',
+          userSelect: 'none',
+          // 内层 <img> 撑满时不被圆角/裁剪类名裁切，必须由外层裁：className 里的
+          // rounded-full / rounded-lg / overflow-hidden 才能生效
+          overflow: 'hidden',
+          ...(content
+            ? {
+                flex: 'none',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textTransform: 'uppercase' as const,
+                lineHeight: 1,
+                color: textColor ?? '#07C160',
+                backgroundColor: backgroundColor ?? '#FCFFFE',
+                borderWidth: 1,
+                borderStyle: 'solid' as const,
+                borderColor: border !== false ? (borderColor ?? '#07C160') : 'transparent',
+              }
+            : { backgroundColor }),
           borderRadius: roundCss,
-          borderWidth: 1,
-          borderStyle: 'solid',
-          borderColor: border !== false ? (borderColor ?? '#07C160') : 'transparent',
           ...customStyle,
         }}
         {...rest}
       >
-        {letterChar}
+        {content ??
+          (boxUrl ? (
+            <img
+              src={boxUrl}
+              alt={alt}
+              onLoad={onLoad}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            />
+          ) : null)}
       </div>
     )
   }
 
-  // 无 src：直接渲染默认兜底图（disableFallback 时给空 src，由浏览器展示 alt）
-  // onLoad 沿用原语义：兜底图也算「渲染出了图」，照常回传
-  if (emptySrc) {
-    const fallbackResolved = disableFallback
-      ? ''
-      : resolveUrl(fallback ?? DEFAULT_FALLBACK_PATH)
-    return <img ref={ref} src={fallbackResolved} alt={alt} onLoad={onLoad} style={imgStyle} {...rest} />
-  }
+  // 字母头像：src 缺省或重试耗尽时展示（优先于 kind / fallback）
+  const showLetterAvatar = !disableFallback && !!letterChar && (emptySrc || failed)
+  if (showLetterAvatar) return renderBox(letterChar)
+
+  // 无 src：直接渲染兜底图（kind / fallback / none）
+  if (emptySrc) return renderBox()
 
   // 加载中：探针尚未解码完成，渲染轻量占位（尺寸与真实图一致，避免布局抖动）。
   // 想换成 spinner / 骨架屏，改这里即可。
   if (!readySrc && !failed) {
     return (
       <div
+        ref={ref as React.Ref<HTMLDivElement>}
         aria-hidden="true"
         style={{
           borderRadius: roundCss,
-          background: 'rgba(120,120,128,0.12)',
+          // 用 backgroundColor 而非 background 简写：本组件的加载占位分支与兜底分支
+          // 会渲染同构的 <div>，React 复用同一 DOM 节点时若一处用简写、一处用
+          // 长写，会报「Removing background backgroundColor」的混用警告。
+          backgroundColor: 'rgba(120,120,128,0.12)',
           ...customStyle,
         }}
         {...rest}
@@ -212,12 +264,21 @@ export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function S
 
   // 已就绪：渲染已被探针验证过的 URL（同源缓存，即时显示）
   if (readySrc) {
-    return <img ref={ref} src={readySrc} alt={alt} onLoad={onLoad} style={imgStyle} {...rest} />
+    return (
+      <img
+        ref={ref as React.Ref<HTMLImageElement>}
+        src={readySrc}
+        alt={alt}
+        onLoad={onLoad}
+        style={imgStyle}
+        {...rest}
+      />
+    )
   }
 
-  // 重试耗尽：渲染兜底图；若禁用兜底，回落到原始 src（由浏览器展示 alt/破图）
-  const fs = disableFallback ? resolveUrl(src) : resolveUrl(fallback ?? DEFAULT_FALLBACK_PATH)
-  return <img ref={ref} src={fs} alt={alt} onLoad={onLoad} style={imgStyle} {...rest} />
+  // 重试耗尽：走兜底分支（kind / fallback / none）；disableFallback 时等同于 none
+  // （原实现回落原始 src 由浏览器展示破图，改用 <div> 后不再保留破图路径）
+  return renderBox()
 })
 
 export default SafeImage

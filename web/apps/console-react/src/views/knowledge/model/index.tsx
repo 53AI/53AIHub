@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Form, Button, message, Spin, Modal, Input } from "antd";
+import { Form, Button, message, Spin, Modal, Input, Switch, InputNumber } from "antd";
 import { ExclamationCircleFilled } from "@ant-design/icons";
 import { t } from "@/locales";
 import { ModelSelect } from "@/components/Model/select";
@@ -30,6 +30,12 @@ const defaultSetting: ModelSetting = {
     fast_reasoning: {
       channel_id: 0,
       model_name: "",
+    },
+    intent_decision_config: {
+      enable: false,
+      channel_id: 0,
+      model_name: "",
+      confidence_threshold: 0.85,
     },
     search_config: {
       vector: true,
@@ -110,6 +116,9 @@ export function KnowledgeModel({ activeTab }: KnowledgeModelProps) {
     setting.model_config.fast_reasoning.model_name,
   );
 
+  const decisionConfig = setting.model_config.intent_decision_config;
+  const decisionValue = encodeModelValue(decisionConfig?.channel_id ?? 0, decisionConfig?.model_name ?? "");
+
   const vectorValue = encodeModelValue(
     setting.model_config.vector_embedding.channel_id,
     setting.model_config.vector_embedding.model_name,
@@ -134,6 +143,22 @@ export function KnowledgeModel({ activeTab }: KnowledgeModelProps) {
       model_config: {
         ...prev.model_config,
         fast_reasoning: { channel_id, model_name },
+      },
+    }));
+  }, []);
+
+  const handleDecisionChange = useCallback((value: string) => {
+    const { channel_id, model_name } = decodeModelValue(value);
+    setSetting((prev) => ({
+      ...prev,
+      model_config: {
+        ...prev.model_config,
+        intent_decision_config: {
+          enable: true,
+          confidence_threshold: prev.model_config.intent_decision_config?.confidence_threshold ?? 0.85,
+          channel_id,
+          model_name,
+        },
       },
     }));
   }, []);
@@ -204,6 +229,11 @@ export function KnowledgeModel({ activeTab }: KnowledgeModelProps) {
     }
     if (!fastReasoningValue) {
       message.error(t("model.select_model") + t("model.intent_recognition"));
+      return;
+    }
+
+    if (decisionConfig?.enable && !decisionValue) {
+      message.error("请选择决策模型");
       return;
     }
 
@@ -318,6 +348,60 @@ export function KnowledgeModel({ activeTab }: KnowledgeModelProps) {
                 placeholder={t("model.select_model")}
               />
             </Form.Item>
+
+            <div className="mb-5 rounded-lg border border-[#E8EAED] p-4">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-sm">优先使用决策模型进行意图识别</span>
+                <Switch
+                  checked={!!decisionConfig?.enable}
+                  onChange={(enable) => setSetting((prev) => ({
+                    ...prev,
+                    model_config: {
+                      ...prev.model_config,
+                      intent_decision_config: {
+                        channel_id: prev.model_config.intent_decision_config?.channel_id ?? 0,
+                        model_name: prev.model_config.intent_decision_config?.model_name ?? "",
+                        confidence_threshold: prev.model_config.intent_decision_config?.confidence_threshold ?? 0.85,
+                        enable,
+                      },
+                    },
+                  }))}
+                />
+              </div>
+              {decisionConfig?.enable && (
+                <div className="mt-4">
+                  <Form.Item label="决策模型">
+                    <ModelSelect
+                      value={decisionValue}
+                      onChange={handleDecisionChange}
+                      type={MODEL_USE_TYPE.DECISION}
+                      placeholder="请选择已接入的决策模型"
+                    />
+                  </Form.Item>
+                  <div className="flex items-center gap-3 text-sm">
+                    <span>最低置信度</span>
+                    <InputNumber
+                      min={0.5}
+                      max={1}
+                      step={0.05}
+                      precision={2}
+                      value={decisionConfig.confidence_threshold || 0.85}
+                      onChange={(value) => setSetting((prev) => ({
+                        ...prev,
+                        model_config: {
+                          ...prev.model_config,
+                          intent_decision_config: {
+                            ...prev.model_config.intent_decision_config!,
+                            confidence_threshold: value ?? 0.85,
+                          },
+                        },
+                      }))}
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="mt-2 text-xs text-gray-500">仅优先处理简单知识检索意图；不适用、低置信度或调用失败时自动使用上方意图识别模型。</div>
+            </div>
 
             <Form.Item label={t("model.embedding")}>
               <ModelSelect

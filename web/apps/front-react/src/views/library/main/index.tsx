@@ -16,7 +16,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { Avatar, Skeleton, Spin, message } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useLibraryStore } from "@/stores/modules/library";
 import { useUserStore } from "@/stores/modules/user";
 import { useEnterpriseStore, useIsSoftStyle } from "@/stores/modules/enterprise";
@@ -26,7 +26,6 @@ import { ResponsiveSidebar } from "@/components/Layout/ResponsiveSidebar";
 import { Catalog, type CatalogRef } from "./catalog";
 import { FileUpload } from "./components/file-upload";
 import { ApplyDialog, type ApplyDialogRef } from "../components/apply";
-import { SafeImage } from "@km/shared-components-react";
 import { MoreDropdown } from "@/components/MoreDropdown";
 import { ProfileModal } from "@/views/profile";
 import { PERMISSION_TYPE } from "@/components/KMPermission/constant";

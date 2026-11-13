@@ -1,6 +1,7 @@
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
 import type { MineTabKey } from "./types";
+import { SafeImage } from "@km/shared-components-react";
 
 /**
  * Tab 列表
@@ -48,9 +49,9 @@ export const createCreateMenuItems = (handlers: {
     key: "create_file",
     label: (
       <div className="flex items-center">
-        <img
+        <SafeImage
           className="size-4 mr-1"
-          src={getPublicPath("/images/export/new.png")}
+          src={"/images/export/new.png"}
           alt=""
         />
         {t("mine.new_file")}
@@ -62,9 +63,9 @@ export const createCreateMenuItems = (handlers: {
     key: "create_folder",
     label: (
       <div className="flex items-center">
-        <img
+        <SafeImage
           className="size-4 mr-1"
-          src={getPublicPath("/images/export/folder.png")}
+          src={"/images/export/folder.png"}
           alt=""
         />
         {t("library.create_folder")}
@@ -85,9 +86,9 @@ export const createImportMenuItems = (handlers: {
     key: "upload_file",
     label: (
       <div className="flex items-center">
-        <img
+        <SafeImage
           className="size-4 mr-1"
-          src={getPublicPath("/images/export/upload_file.png")}
+          src={"/images/export/upload_file.png"}
           alt=""
         />
         {t("library.upload_file")}
@@ -99,9 +100,9 @@ export const createImportMenuItems = (handlers: {
     key: "upload_folder",
     label: (
       <div className="flex items-center">
-        <img
+        <SafeImage
           className="size-4 mr-1"
-          src={getPublicPath("/images/export/upload_folder.png")}
+          src={"/images/export/upload_folder.png"}
           alt=""
         />
         {t("library.upload_folder")}

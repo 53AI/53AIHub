@@ -24,6 +24,7 @@ export interface DeptMemberPickerValue {
   value: number | string;
   label: string;
   name?: string;
+  uid?: string;
   user_id?: number;
   did?: number;
   type?: "member" | "group" | "department" | "company";
@@ -65,6 +66,7 @@ interface TreeNode {
   value: number | string;
   label: string;
   name?: string;
+  uid?: string;
   user_id?: number;
   did?: number;
   type?: "member" | "group" | "department";

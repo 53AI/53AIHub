@@ -1,7 +1,7 @@
 import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Switch, Table, message, Modal } from "antd";
+import { Button, Switch, Table, Typography, message, Modal } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import CreateSkillDialog from "./components/CreateSkillDialog";
 import { skillApi } from "@/api/modules/skill";
@@ -199,6 +199,7 @@ export default function Skills() {
       dataIndex: "skill_name",
       key: "skill_name",
       width: 180,
+      ellipsis: { showTitle: false },
       render: (_: any, row: SkillItem) => (
         <div className="flex items-center gap-2 w-full">
           <SafeImage
@@ -207,11 +208,19 @@ export default function Skills() {
             alt=""
           />
           <div className="flex-1 w-0 text-sm flex flex-col">
-            <div className="text-primary truncate">{row.skill_name || "--"}</div>
+            <Typography.Text
+              ellipsis={{ tooltip: row.skill_name }}
+              className="!block text-primary"
+            >
+              {row.skill_name || "--"}
+            </Typography.Text>
             {row.description && (
-              <div className="text-xs text-placeholder truncate">
+              <Typography.Text
+                ellipsis={{ tooltip: row.description }}
+                className="!block text-xs text-placeholder"
+              >
                 {row.description}
-              </div>
+              </Typography.Text>
             )}
           </div>
         </div>

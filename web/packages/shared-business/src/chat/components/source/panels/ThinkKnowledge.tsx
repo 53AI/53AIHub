@@ -10,7 +10,7 @@ import {
   useEffect,
 } from "react";
 import { CloseOutlined } from "@ant-design/icons";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useTranslation } from "../../../i18n";
 
 export interface SearchResultItem {
@@ -66,8 +66,6 @@ export interface ThinkKnowledgeProps {
     KnowledgeGraphDrawer?: React.ComponentType<DrawerComponentProps & { ref?: React.Ref<KnowledgeGraphDrawerRef> }>;
     KnowledgeWikiDrawer?: React.ComponentType<DrawerComponentProps & { ref?: React.Ref<KnowledgeWikiDrawerRef> }>;
   };
-  /** adapter - 获取静态资源路径 */
-  getPublicPath?: (path: string) => string;
 }
 
 export interface ThinkKnowledgeRef {
@@ -85,7 +83,7 @@ const isRagSearch = (chunkType?: ChunkType) =>
 export const ThinkKnowledge = forwardRef<
   ThinkKnowledgeRef,
   ThinkKnowledgeProps
->(({ onClose, onItemClick, slots, getPublicPath }, ref) => {
+>(({ onClose, onItemClick, slots }, ref) => {
   const { t } = useTranslation();
   const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -235,18 +233,6 @@ export const ThinkKnowledge = forwardRef<
     return { entityCount, relationCount };
   }, [graphResults]);
 
-  // 默认的 getPublicPath 函数
-  const getAssetPath = useCallback(
-    (path: string) => {
-      if (getPublicPath) {
-        return getPublicPath(path);
-      }
-      // 默认返回相对路径
-      return path;
-    },
-    [getPublicPath],
-  );
-
   return (
     <div className="h-full bg-white flex flex-col">
       {/* Header */}
@@ -320,9 +306,9 @@ export const ThinkKnowledge = forwardRef<
                       </span>
                     </div>
                     <div className="flex-1 flex-center">
-                      <img
+                      <SafeImage
                         className="w-[220px]"
-                        src={getAssetPath("/images/chat/graph_placeholder.png")}
+                        src="/images/chat/graph_placeholder.png"
                         alt={t("source.knowledge_graph")}
                       />
                     </div>
@@ -374,9 +360,9 @@ export const ThinkKnowledge = forwardRef<
                       <>
                         <div className="flex items-start gap-2">
                           <div className="flex-shrink-0">
-                            <img
+                            <SafeImage
                               className="size-5"
-                              src={item.file_icon}
+                              src={item.file_icon || ""}
                               alt=""
                             />
                           </div>
@@ -409,12 +395,11 @@ export const ThinkKnowledge = forwardRef<
                         {item.library_icon && (
                           <div className="flex items-center gap-2 mt-2">
                             <div className="flex-shrink-0">
-                              <img
+                              <SafeImage
                                 className="size-4"
                                 src={item.library_icon}
                                 alt=""
-                              />
-                            </div>
+                              /></div>
                             <div className="flex-1 min-w-0 text-xs text-[#1D1E1F]">
                               {item.library_name}
                             </div>

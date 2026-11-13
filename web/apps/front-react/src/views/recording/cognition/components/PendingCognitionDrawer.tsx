@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Drawer, Empty, Modal, Spin, message } from 'antd'
+import { Button, Drawer, Empty, Modal, Select, Spin, message } from 'antd'
 import {
   CheckOutlined,
   DeleteOutlined,
@@ -13,11 +13,18 @@ import type { RecordingCognitionCandidate } from '@/api/modules/recording/types'
 import { CognitionRow } from './CognitionRow'
 import { CandidateEditorModal, type CandidateEditorInit, type SavedCandidateFields } from './CandidateEditorModal'
 import { useCognitionContext } from './CognitionContext'
+import { CANONICAL_TYPE_LABELS } from '../constants'
 import { getPublicPath } from '@/utils/config'
 
 type ReviewAction = 'confirm' | 'reject'
 
 const PAGE_SIZE = 20
+
+// 类型筛选选项：全部 + 七类标准认知（原则/价值排序/判断标准/偏好/边界/前提/触发条件）
+const TYPE_FILTER_OPTIONS = [
+  { value: 'all', label: '全部' },
+  ...Object.entries(CANONICAL_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+]
 
 interface PendingCognitionDrawerProps {
   open: boolean
@@ -35,9 +42,11 @@ interface PendingCognitionDrawerProps {
 /**
  * 全局「待确认认知」抽屉：列出所有待老板确认的认知候选，支持编辑 / 忽略 / 确认。
  *
- * 候选接口不支持按核心/领域过滤，列表天然是全局的；认知页的「待确认」统计卡与
- * 认知抽屉内的「您有 N 个待确认」横幅共用本组件。审核/编辑等写操作经
- * `refreshAfterMutation(true)` 递增 pendingTick，本组件据此原地重拉第一页。
+ * 筛选：抽屉内可按类型（原则/价值排序/…）筛选，与核心认知/领域认知抽屉的
+ * 类型筛选同口径；外部传入的 layer/domainId/cognitionType 作为入口预筛
+ * （认知抽屉内嵌入口带作用域进来），用户可在抽屉内自行改选。
+ * 审核/编辑等写操作经 `refreshAfterMutation(true)` 递增 pendingTick，
+ * 本组件据此原地重拉第一页。
  */
 export function PendingCognitionDrawer({ layer, domainId, cognitionType, open, onClose, placement = 'right' }: PendingCognitionDrawerProps) {
   const { refreshAfterMutation, pendingTick } = useCognitionContext()
@@ -48,31 +57,53 @@ export function PendingCognitionDrawer({ layer, domainId, cognitionType, open, o
   const [loadingMore, setLoadingMore] = useState(false)
   const [reviewingId, setReviewingId] = useState<string | number | null>(null)
   const [editingCandidate, setEditingCandidate] = useState<CandidateEditorInit | null>(null)
+  // 类型筛选：入口预筛值作初值，抽屉内可改；每次打开重置回入口预筛
+  const [typeFilter, setTypeFilter] = useState<string>(cognitionType || 'all')
   const requestRef = useRef(0)
   const listRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (open) setTypeFilter(cognitionType || 'all')
+  }, [open, cognitionType])
 
   const loadFirstPage = async () => {
     const requestId = ++requestRef.current
     setLoading(true)
-    const res = await recordingApi.getCognitionCandidates({ layer, domain_id: domainId, cognition_type: cognitionType, status: 'candidate', offset: 0, limit: PAGE_SIZE })
+    const res = await recordingApi.getCognitionCandidates({
+      layer,
+      domain_id: domainId != null ? String(domainId) : undefined,
+      cognition_type: typeFilter === 'all' ? undefined : typeFilter,
+      status: 'candidate',
+      offset: 0,
+      limit: PAGE_SIZE,
+    })
     if (requestId !== requestRef.current) return
     setCandidates(res.items || [])
     setTotal(res.total || 0)
     setLoading(false)
   }
 
-  // 打开时拉第一页；写操作后 pendingTick 变化则重拉，保持列表最新
+  // 打开时拉第一页；写操作后 pendingTick 变化则重拉；筛选变化重拉，保持列表最新
   useEffect(() => {
     if (!open) return
     void loadFirstPage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pendingTick])
+  }, [open, pendingTick, typeFilter])
 
   const loadMore = async () => {    if (loading || loadingMore) return
     if (candidates.length >= total) return
     const requestId = ++requestRef.current
     setLoadingMore(true)
-    const res = await recordingApi.getCognitionCandidates({ layer, domainId, cognitionType, status: 'candidate', offset: candidates.length, limit: PAGE_SIZE })
+    // 修复：分页参数此前误传驼峰（domainId/cognitionType），接口要求下划线，
+    // 且需带当前筛选（typeFilter），否则第二页起筛选条件丢失
+    const res = await recordingApi.getCognitionCandidates({
+      layer,
+      domain_id: domainId != null ? String(domainId) : undefined,
+      cognition_type: typeFilter === 'all' ? undefined : typeFilter,
+      status: 'candidate',
+      offset: candidates.length,
+      limit: PAGE_SIZE,
+    })
     if (requestId !== requestRef.current) return
     setCandidates((prev) => [...prev, ...(res.items || [])])
     setTotal(res.total || 0)
@@ -164,6 +195,17 @@ export function PendingCognitionDrawer({ layer, domainId, cognitionType, open, o
       destroyOnHidden
     >
       <div className="flex h-full min-h-0 flex-col">
+        {/* 类型筛选：与核心认知/领域认知抽屉同口径（全部 + 七类标准认知） */}
+        <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+          <Select
+            className="w-[152px] shrink-0"
+            value={typeFilter}
+            prefix={<span className="text-[#9CA3AF]">类型：</span>}
+            options={TYPE_FILTER_OPTIONS}
+            onChange={setTypeFilter}
+          />
+          <span className="text-xs text-[#9CA3AF]">共 {total} 条</span>
+        </div>
         <div ref={listRef} className="min-h-0 flex-1 overflow-auto pr-1">
           {loading ? (
             <div className="flex h-48 items-center justify-center">

@@ -7,7 +7,7 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { Button, Tag, Collapse, Spin, message } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { copyToClip } from "@km/shared-utils";
 import { StarRating } from "@/components/StarRating";
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
@@ -266,7 +266,8 @@ export function SkillDetailView() {
           )}
 
           <div className="flex items-start gap-3 mb-5">
-            <img
+            <SafeImage
+              kind="skill"
               className="flex-none size-14 rounded-lg object-cover"
               src={skill.logo}
               alt={skill.display_name}

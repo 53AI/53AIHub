@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Dropdown } from '@km/shared-components-react'
+import { Dropdown, SafeImage } from '@km/shared-components-react';
 import type { MenuProps } from 'antd'
 import { getPublicPath } from '@/utils/config'
 import { t } from '@/locales'
@@ -67,7 +67,7 @@ export function CatalogDropdown({
         key: 'create_md',
         label: (
           <div className="flex items-center">
-            <img className="size-4 mr-1" src={getPublicPath('/images/export/new.png')} alt="" />
+            <SafeImage className="size-4 mr-1" src={'/images/export/new.png'} alt="" />
             {t('library.create_md')}
           </div>
         ),
@@ -77,7 +77,7 @@ export function CatalogDropdown({
         key: 'create_folder',
         label: (
           <div className="flex items-center">
-            <img className="size-4 mr-1" src={getPublicPath('/images/export/folder.png')} alt="" />
+            <SafeImage className="size-4 mr-1" src={'/images/export/folder.png'} alt="" />
             {t('library.create_folder')}
           </div>
         ),
@@ -95,7 +95,7 @@ export function CatalogDropdown({
           key: 'upload_file',
           label: (
             <div className="flex items-center">
-              <img className="size-4 mr-1" src={getPublicPath('/images/export/upload_file.png')} alt="" />
+              <SafeImage className="size-4 mr-1" src={'/images/export/upload_file.png'} alt="" />
               {t('library.upload_file')}
             </div>
           ),
@@ -106,7 +106,7 @@ export function CatalogDropdown({
           key: 'upload_file',
           label: (
             <div className="flex items-center">
-              <img className="size-4 mr-1" src={getPublicPath('/images/export/upload_file.png')} alt="" />
+              <SafeImage className="size-4 mr-1" src={'/images/export/upload_file.png'} alt="" />
               {t('library.upload_file')}
             </div>
           ),
@@ -117,7 +117,7 @@ export function CatalogDropdown({
         key: 'upload_folder',
         label: (
           <div className="flex items-center">
-            <img className="size-4 mr-1" src={getPublicPath('/images/export/upload_folder.png')} alt="" />
+            <SafeImage className="size-4 mr-1" src={'/images/export/upload_folder.png'} alt="" />
             {t('library.upload_folder')}
           </div>
         ),

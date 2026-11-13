@@ -244,6 +244,7 @@ func (s *wikiPageEditService) CreatePage(ctx context.Context, req WikiCreatePage
 	if err := s.refreshWikiCrossLinks(ctx, req.Eid, req.LibraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after create failed: %v", err)
 	}
+	syncWikiESPage(ctx, s.db, req.Eid, result.Page.ID)
 	return result, nil
 }
 
@@ -348,6 +349,7 @@ func (s *wikiPageEditService) UpdatePage(ctx context.Context, req WikiUpdatePage
 			logger.Warnf(ctx, "【Wiki生成】 编辑后创建任务失败: eid=%d page_id=%d version_id=%d err=%v", req.Eid, result.Page.ID, result.VersionID, enqueueErr)
 		}
 	}
+	syncWikiESPage(ctx, s.db, req.Eid, result.Page.ID)
 	return result, nil
 }
 
@@ -415,6 +417,7 @@ func (s *wikiPageEditService) RenamePage(ctx context.Context, req WikiRenamePage
 	if err := s.refreshWikiCrossLinks(ctx, req.Eid, req.LibraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after rename failed: %v", err)
 	}
+	syncWikiESPage(ctx, s.db, req.Eid, result.Page.ID)
 	return result, nil
 }
 
@@ -464,6 +467,7 @@ func (s *wikiPageEditService) MovePage(ctx context.Context, req WikiMovePageRequ
 	if err := s.refreshWikiCrossLinks(ctx, req.Eid, req.LibraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after move failed: %v", err)
 	}
+	syncWikiESPage(ctx, s.db, req.Eid, result.Page.ID)
 	return result, nil
 }
 
@@ -520,6 +524,7 @@ func (s *wikiPageEditService) archiveOrDeletePage(ctx context.Context, eid, libr
 	if err := s.refreshWikiCrossLinks(ctx, eid, libraryID); err != nil {
 		logger.Warnf(ctx, "wiki: cross-link refresh after %s failed: %v", action, err)
 	}
+	syncWikiESPage(ctx, s.db, eid, result.Page.ID)
 	return result, nil
 }
 
@@ -606,7 +611,7 @@ func (s *wikiPageEditService) persistAutoLinkedPageBody(ctx context.Context, pag
 	}
 
 	page.Body = body
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Save(page).Error; err != nil {
 			return err
 		}
@@ -621,6 +626,10 @@ func (s *wikiPageEditService) persistAutoLinkedPageBody(ctx context.Context, pag
 		}
 		return nil
 	})
+	if err == nil {
+		syncWikiESPage(ctx, s.db, page.Eid, page.ID)
+	}
+	return err
 }
 
 func validateWikiPageWriteRequest(eid, libraryID int64, pageType, title, content string) error {
@@ -870,6 +879,7 @@ func (s *wikiPageEditService) PublishVersion(ctx context.Context, req WikiPublis
 	if _, enqueueErr := createWikiPageVectorizationJob(ctx, s.db, common.RDB, req.Eid, page.ID, version.ID, false, "manual_publish"); enqueueErr != nil {
 		logger.Errorf(ctx, "【Wiki生成】 手动发布后创建任务失败: eid=%d page_id=%d version_id=%d err=%v", req.Eid, page.ID, version.ID, enqueueErr)
 	}
+	syncWikiESPage(ctx, s.db, req.Eid, page.ID)
 	return &dto, nil
 }
 

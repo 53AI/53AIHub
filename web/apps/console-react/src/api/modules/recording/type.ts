@@ -31,6 +31,13 @@ export interface MemoryEntityTypeSchema {
 
 export type MemoryEntityTypeSchemas = MemoryEntityTypeSchema[];
 
+/** 转写校正：渠道 ID 为 0 时沿用纪要模型。 */
+export type TranscriptCorrectionConfig = {
+  enabled: boolean;
+  model_channel_id: number;
+  model_name: string;
+};
+
 /** 录音配置 */
 export interface RecordingConfig {
   enabled: boolean;
@@ -42,7 +49,9 @@ export interface RecordingConfig {
   recording_agent_enabled?: boolean;
   multi_perspective_enabled?: boolean;
   insight_regenerate_enabled?: boolean;
+  action_opportunity_auto_detect_enabled?: boolean;
   memory_extraction?: MemoryExtractionConfig;
+  transcript_correction?: TranscriptCorrectionConfig;
 }
 
 /** 更新录音配置请求体 */
@@ -56,7 +65,9 @@ export interface UpdateRecordingConfigRequest {
   recording_agent_enabled?: boolean;
   multi_perspective_enabled?: boolean;
   insight_regenerate_enabled?: boolean;
+  action_opportunity_auto_detect_enabled?: boolean;
   memory_extraction?: MemoryExtractionConfig;
+  transcript_correction?: TranscriptCorrectionConfig;
 }
 
 /** 模板项 */

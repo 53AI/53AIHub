@@ -46,6 +46,8 @@ func isTranscriptProtocolName(s string) bool {
 	return true
 }
 
+var transcriptNoSpeakerTimeLineRE = regexp.MustCompile(`^\[(\d{1,2}:\d{2}:\d{2})\]\s*(.*)$`)
+
 // parseTranscriptMarkdown 解析转写 Markdown 为逐句列表。跳过标题行与纯空白。
 func parseTranscriptMarkdown(md string) []transcriptMarkdownStatement {
 	var out []transcriptMarkdownStatement
@@ -54,9 +56,14 @@ func parseTranscriptMarkdown(md string) []transcriptMarkdownStatement {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if m := transcriptTimeLinePattern.FindStringSubmatch(line); m != nil {
-			speaker := strings.TrimSpace(m[2])
-			text := strings.TrimSpace(m[3])
+		if m := transcriptLineWithTimeRE.FindStringSubmatch(line); m != nil {
+			ts := m[1]
+			speakerRaw := m[2]
+			if speakerRaw == "" {
+				speakerRaw = m[3]
+			}
+			speaker := cleanSpeakerName(speakerRaw)
+			text := strings.TrimSpace(m[4])
 			// URL 防护："[00:00:00] https://x.com" 中 "https" 是协议名非说话人，恢复整行文本
 			if strings.HasPrefix(text, "//") && isTranscriptProtocolName(speaker) {
 				text = speaker + ":" + text
@@ -66,23 +73,40 @@ func parseTranscriptMarkdown(md string) []transcriptMarkdownStatement {
 				continue
 			}
 			out = append(out, transcriptMarkdownStatement{
-				Time:    m[1],
+				Time:    ts,
 				Speaker: speaker,
 				Text:    text,
 			})
 			continue
 		}
-		if m := transcriptSpeakerLinePattern.FindStringSubmatch(line); m != nil {
+		if m := transcriptNoSpeakerTimeLineRE.FindStringSubmatch(line); m != nil {
 			text := strings.TrimSpace(m[2])
+			if text == "" {
+				continue
+			}
+			out = append(out, transcriptMarkdownStatement{
+				Time:    m[1],
+				Speaker: "",
+				Text:    text,
+			})
+			continue
+		}
+		if m := transcriptLineNoTimeRE.FindStringSubmatch(line); m != nil {
+			speakerRaw := m[1]
+			if speakerRaw == "" {
+				speakerRaw = m[2]
+			}
+			speaker := cleanSpeakerName(speakerRaw)
+			text := strings.TrimSpace(m[3])
 			// URL 防护：无时间戳的 URL 行（如 "https://x.com"）不当作说话人发言
-			if strings.HasPrefix(text, "//") && isTranscriptProtocolName(strings.TrimSpace(m[1])) {
+			if strings.HasPrefix(text, "//") && isTranscriptProtocolName(speaker) {
 				continue
 			}
 			if text == "" {
 				continue
 			}
 			out = append(out, transcriptMarkdownStatement{
-				Speaker: strings.TrimSpace(m[1]),
+				Speaker: speaker,
 				Text:    text,
 			})
 		}
@@ -93,7 +117,6 @@ func parseTranscriptMarkdown(md string) []transcriptMarkdownStatement {
 // 限制转写记忆抽取产出的实体/声明数量，避免长会议打爆记忆概览。
 const (
 	maxTranscriptionSpeakers = 30
-	maxSpeakerFacts          = 50
 	maxClaimContentRunes     = 400
 	maxClaimSegments         = 20
 )
@@ -157,8 +180,8 @@ func buildRecordingStatementClaims(md string) []recordingMemoryItem {
 	return items
 }
 
-// buildRecordingSpeakerEntities 将可信 ASR 已解析出的具体 speaker 编译为 person 实体。
-// 默认标签只承担发言归属，不生成实体；具体名称的可信度来自调用方传入的 ASR 转写源。
+// buildRecordingSpeakerEntities 从转写中保留具名 speaker 的身份线索，不将原始发言转为长期事实。
+// 只有 Prompt 2 的证据支持的语义事实才能进入人物记忆；默认 speaker 标签不生成实体。
 func buildRecordingSpeakerEntities(md string, allowedTypes map[string]bool) []recordingEntityMemoryItem {
 	if !allowedTypes["person"] {
 		return nil
@@ -202,24 +225,7 @@ func buildRecordingSpeakerEntities(md string, allowedTypes map[string]bool) []re
 		if evidence := collectClaimSegments(lines); len(evidence) > 0 {
 			item.attributes[recordingEntityIdentityEvidenceKey] = strings.Join(evidence, ",")
 		}
-		for _, s := range lines {
-			if len(item.facts) >= maxSpeakerFacts {
-				break
-			}
-			if strings.TrimSpace(s.Text) == "" {
-				continue
-			}
-			fact := recordingEntityMemoryFactItem{
-				content: s.Text,
-			}
-			if s.Time != "" {
-				fact.sourceSegmentIDs = []string{s.Time}
-			}
-			item.facts = append(item.facts, fact)
-		}
-		if len(item.facts) > 0 {
-			items = append(items, item)
-		}
+		items = append(items, item)
 	}
 	return items
 }

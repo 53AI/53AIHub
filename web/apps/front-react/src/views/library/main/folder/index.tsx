@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useContext } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button, Empty, Spin } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { MoreDropdown, type MenuItem } from "@/components/MoreDropdown";
 import { useLibraryStore } from "@/stores/modules/library";
 import { getPublicPath } from "@/utils/config";
@@ -311,9 +311,9 @@ export function LibraryFolderView() {
           <div className="flex-1 overflow-y-auto">
             <div className="w-4/5 mx-auto py-9">
               <div className="flex items-center gap-4">
-                <img
+                <SafeImage
                   className="size-12"
-                  src={getPublicPath("/images/file/folder.png")}
+                  src={"/images/file/folder.png"}
                   alt="folder"
                 />
                 <div className="flex-1 overflow-hidden">
@@ -387,7 +387,7 @@ export function LibraryFolderView() {
                         onClick={() => handleView(item)}
                       >
                         <div className="flex-1 flex items-center gap-2 overflow-hidden">
-                          <img className="size-6" src={item.icon} alt="" />
+                          <SafeImage className="size-6" src={item.icon} alt="" />
                           <span className="flex-1 text-sm text-[#1D1E1F] truncate">
                             {item.name}
                           </span>

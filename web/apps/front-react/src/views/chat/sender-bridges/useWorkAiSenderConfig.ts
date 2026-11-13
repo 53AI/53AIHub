@@ -558,12 +558,13 @@ export function useWorkAiSenderConfig(params: { currentAgent: any; enabled: bool
   const senderSlots: SenderSlots = useMemo(() => ({}), []);
   const placeholder = t("work_ai.chat_placeholder");
 
-  // 清空受控 list(在 ChatContainer.message.onSent 调用)
+  // 发送后清空技能受控 list(在 ChatContainer.message.onSent 调用)。
+  // @ 提及的文件不清空:跨发送保留,下一次发送继续携带(与 knowledge 模式对齐)。
+  // 技能是一次性调用,发送后失效,仍需清空。
   // 注意:必须放在 `if (!enabled) return null` 之前,否则 enabled 翻转时
   // 这 5 个 hook 的位置会变化,导致 React 内部 hook list 错位(规则:Hooks
   // 必须在每次渲染以相同顺序调用)。
   const reset = useCallback(() => {
-    setSelectedMentionLinks([]);
     setSelectedSkills([]);
   }, []);
 

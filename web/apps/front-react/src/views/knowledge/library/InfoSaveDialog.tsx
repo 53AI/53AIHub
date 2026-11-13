@@ -26,6 +26,7 @@ import { getPublicPath } from "@/utils/config";
 import { createIconFileFromStatic } from "@km/shared-utils";
 import UploadService from "@/services/upload";
 import "./InfoSaveDialog.css";
+import { SafeImage } from "@km/shared-components-react";
 
 interface FormValues {
   name: string;
@@ -385,8 +386,8 @@ export const InfoSaveDialog = forwardRef<
                         <div className="flex items-center gap-2">
                           {member.subject_type === SUBJECT_TYPE.company_all ? (
                             <>
-                              <img
-                                src={getPublicPath("/images/space/group.png")}
+                              <SafeImage
+                                src={"/images/space/group.png"}
                                 alt="admin"
                                 className="size-5"
                               />

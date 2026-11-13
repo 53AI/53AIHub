@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Input, Spin, Checkbox, Tooltip, Select, Button } from "antd";
 import { SearchOutlined, CloseOutlined, PlusOutlined } from "@ant-design/icons";
 import { debounce } from "@km/shared-utils";
-import { SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { DeptMemberPicker } from "@/components/DeptMemberPicker";
 import { globalSearchApi } from "@/api/modules/global-search";
@@ -17,6 +16,7 @@ import { useFilterItem } from "../hooks/useFilterItem";
 import type { FilterState } from "../types";
 import { DEFAULT_FILTER_STATE, filterStateToParams } from "../utils/filter";
 import "../index.css";
+import { SafeImage } from "@km/shared-components-react";
 
 // ==================== 类型定义 ====================
 

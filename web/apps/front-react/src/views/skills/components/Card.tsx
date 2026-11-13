@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MoreOutlined, DeleteOutlined } from '@ant-design/icons'
 import { Button, Switch, Tag, Tooltip, message, Modal } from 'antd'
-import { Dropdown } from '@km/shared-components-react'
+import { Dropdown, SafeImage } from '@km/shared-components-react';
 import type { MenuProps } from 'antd'
 import { SvgIcon } from '@km/shared-components-react'
 import { StarRating } from '@/components/StarRating'
@@ -152,7 +152,8 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, keyword = '
         onClick={handleClick}
       >
         <div className="flex flex-1 items-start gap-3">
-          <img
+          <SafeImage
+            kind="skill"
             className="flex-none size-12 rounded-lg object-cover"
             src={skill.logo}
             alt={skill.display_name}

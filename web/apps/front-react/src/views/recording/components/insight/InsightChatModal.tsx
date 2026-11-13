@@ -58,7 +58,7 @@ export function InsightChatModal({
       footer={null}
       width={760}
       centered
-      destroyOnClose={false}
+      destroyOnHidden={false}
       styles={{ container: { padding: 0 } }}
     >
       <div className="flex h-[80vh] flex-col overflow-hidden rounded-xl bg-[#F8FAFC] text-[#1F2937]">

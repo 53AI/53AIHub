@@ -105,7 +105,7 @@ export function ChangePasswordModal() {
         </div>
       }
       closable={!mustChange}
-      maskClosable={false}
+      mask={{ closable: false }}
       keyboard={!mustChange}
       onCancel={handleClose}
       footer={

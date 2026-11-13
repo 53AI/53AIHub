@@ -4,6 +4,7 @@ import { CloseOutlined, PlusOutlined } from '@ant-design/icons'
 import { CropperDialog, type CropperDialogRef } from '@/components/CropperDialog'
 import { img_host } from '@/utils/config'
 import { t } from '@/locales'
+import { SafeImage } from "@km/shared-components-react";
 
 interface BgColor {
   dark: string
@@ -156,17 +157,16 @@ export const SetIcon = forwardRef<SetIconRef, SetIconProps>(
         style={{ backgroundColor: showBg && defaultBg?.light ? defaultBg.light : 'transparent' }}
       >
         {showModelValue && value ? (
-          <img
+          <SafeImage
             className="w-full h-full object-cover"
             src={value}
             alt="logo"
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = '/images/default-logo.png'
-            }}
+            fallback="/images/default-logo.png"
           />
         ) : (
           defaultIcon && (
-            <img
+            <SafeImage
+              kind="knowledge"
               className="size-7 object-cover -translate-y-[60px]"
               style={{ filter: defaultBg ? `drop-shadow(${defaultBg.dark} 0 60px)` : undefined }}
               src={defaultIcon}
@@ -230,7 +230,7 @@ export const SetIcon = forwardRef<SetIconRef, SetIconProps>(
               }`}
               onClick={() => handleSelectIcon(item)}
             >
-              <img className="size-[18px]" src={item} alt="icon" />
+              <SafeImage className="size-[18px]" src={item} alt="icon" />
             </Button>
           ))}
         </div>

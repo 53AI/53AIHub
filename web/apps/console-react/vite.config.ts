@@ -114,7 +114,7 @@ export default defineConfig(env => {
     plugins: setupPlugins(viteEnv),
     server: {
       host: '0.0.0.0',
-      port: 8003,
+      port: Number(viteEnv.VITE_PORT) || 8003,
       open: false,
       allowedHosts: ['hubtest.53ai.com', 'hub.53ai.com', 'kmtest.53ai.com', 'km.53ai.com'],
     },

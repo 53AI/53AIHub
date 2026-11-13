@@ -12,6 +12,8 @@ interface UserInternalAddDialogProps {
   onClose: () => void;
   onSuccess: () => void;
   organizationData?: any;
+  /** 导入的初始数据（批量导入后填充） */
+  initialUsers?: { nickname: string; username: string; password: string }[];
 }
 
 export default function UserInternalAddDialog({
@@ -19,6 +21,7 @@ export default function UserInternalAddDialog({
   onClose,
   onSuccess,
   organizationData,
+  initialUsers,
 }: UserInternalAddDialogProps) {
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(false);
@@ -29,17 +32,24 @@ export default function UserInternalAddDialog({
       fetchAllUser();
       fetchPasswordPolicy();
       form.setFieldsValue({
-        users: [
-          {
-            nickname: "",
-            username: "",
-            password: "",
-            did: organizationData?.did || 0,
-          },
-        ],
+        users: initialUsers?.length
+          ? initialUsers.map((item) => ({
+              nickname: item.nickname || "",
+              username: item.username || "",
+              password: item.password || "",
+              did: organizationData?.did || 0,
+            }))
+          : [
+              {
+                nickname: "",
+                username: "",
+                password: "",
+                did: organizationData?.did || 0,
+              },
+            ],
       });
     }
-  }, [open, form, organizationData]);
+  }, [open, form, organizationData, initialUsers]);
 
   const fetchAllUser = async () => {
     try {

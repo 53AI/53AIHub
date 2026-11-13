@@ -69,12 +69,13 @@ export interface KnowledgeSourceSelectorProps {
   allowSelectLibrary?: boolean
   allowSelectSpace?: boolean
   allowSelectDynamicKnowledge?: boolean
+  nativeWebSearchSupported?: boolean
   agentInfo?: {
     agent_id: string
     name: string
     logo: string
     settings?: {
-      web_search_setting?: { enable: boolean }
+      web_search_setting?: { enable: boolean; source_type?: "api" | "model" }
       graph_search_setting?: { enable: boolean; default_enable: boolean }
       wiki_search_setting?: { enable: boolean; default_enable: boolean }
     }

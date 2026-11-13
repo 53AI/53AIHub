@@ -14,6 +14,7 @@ import filesApi from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
 import chunksApi from "@/api/modules/chunks";
 import { buildKnowledgeFileUrl, buildUrl } from "@/utils/router";
+import { SafeImage } from "@km/shared-components-react";
 
 interface ViewDrawerProps {
   onClose?: () => void;
@@ -115,7 +116,7 @@ export const KnowledgeViewDrawer = forwardRef<ViewDrawerRef, ViewDrawerProps>(
           <div className="flex items-center gap-2">
             <div className="size-6 flex-shrink-0">
               {currentFile.icon && (
-                <img className="size-6" src={currentFile.icon} alt="" />
+                <SafeImage className="size-6" src={currentFile.icon} alt="" />
               )}
             </div>
             <div className="flex-1 text-base text-[#1D1E1F] truncate">

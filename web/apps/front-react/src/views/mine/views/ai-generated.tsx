@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 import { Empty, Spin, Modal, Input, Breadcrumb } from 'antd'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { MoreDropdown } from '@/components/MoreDropdown'
 import { getPublicPath } from '@/utils/config'
 import { t } from '@/locales'
@@ -40,7 +40,7 @@ export default function AIGeneratedView({
       ...formattedFile,
       id: formattedFile.id,
       name: formattedFile.name,
-      icon: isFolder ? getPublicPath('/images/file/folder.png') : formattedFile.icon,
+      icon: isFolder ? '/images/file/folder.png' : formattedFile.icon,
       path: item.path || '',
       isfolder: isFolder,
       createdTime: item.created_time ? getFormatTimeStamp(item.created_time) : '',
@@ -165,7 +165,7 @@ export default function AIGeneratedView({
                 onDragEnd={handleDragEnd}
               >
                 <div className="flex-1 min-w-0 flex items-center gap-2">
-                  <img className="flex-none w-6 h-6" src={item.icon} alt="" />
+                  <SafeImage className="flex-none w-6 h-6" src={item.icon} alt="" />
                   <span className="text-sm text-primary truncate">{item.name}</span>
                   {enableFavorite && item.isFavorite && (
                     <SvgIcon name="star-filled" color="#FFB300" className="text-[#FFB300] flex-shrink-0" size="14" />

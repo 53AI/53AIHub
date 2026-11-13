@@ -41,6 +41,10 @@ func isLegacyInsight(insightSummary, pageFormat string) bool {
 }
 
 func RunRecordingPipeline(ctx context.Context, eid, fileID, userID int64) (*PipelineResult, error) {
+	return runRecordingPipeline(ctx, eid, fileID, userID, false)
+}
+
+func runRecordingPipeline(ctx context.Context, eid, fileID, userID int64, skipMinutesReuse bool) (*PipelineResult, error) {
 	// 权限放开：继续生成管线供其他知识库（团队/共享库）使用，只要求库查看权限，
 	// 不再要求文件创建者是当前用户；非创建者触发时生成函数内部以文件创建者为记忆归属。
 	file, err := GetViewableRecordingFile(ctx, eid, userID, fileID)
@@ -109,7 +113,7 @@ func RunRecordingPipeline(ctx context.Context, eid, fileID, userID int64) (*Pipe
 
 		if needMinutes {
 			logger.Infof(pipelineCtx, "【管线】开始生成纪要 fileID=%d", fileID)
-			if err := GenerateMeetingMinutes(pipelineCtx, eid, fileID, userID); err != nil {
+			if err := generateMeetingMinutes(pipelineCtx, eid, fileID, userID, skipMinutesReuse); err != nil {
 				logger.Errorf(pipelineCtx, "【管线】纪要生成失败 fileID=%d err=%v", fileID, err)
 				recordingdebug.RecordStage(pipelineCtx, "pipeline", "录音纪要与洞察管线", "failed", time.Now(), map[string]interface{}{"failed_stage": "meeting_minutes"}, err)
 				trace.Finish("failed", err)

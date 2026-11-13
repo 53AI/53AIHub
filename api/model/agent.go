@@ -572,9 +572,10 @@ func (a *Agent) GetAnswerRemarksConfig() (*AnswerRemarksConfig, error) {
 
 // WebISearchConfig AI在线搜索配置
 type WebSearchConfig struct {
-	Enable            bool   `json:"enable"`              // 是否启用AI在线搜索
-	PlatformSettingID string `json:"platform_setting_id"` // PlatformSetting的ID经过hashID加密后的字符串
-	PlatformKey       string `json:"platform_key"`        // PlatformKey的类型，如"bochaai"
+	Enable            bool   `json:"enable"`                // 是否启用AI在线搜索
+	SourceType        string `json:"source_type,omitempty"` // 搜索来源：api 或 model
+	PlatformSettingID string `json:"platform_setting_id"`   // PlatformSetting的ID经过hashID加密后的字符串
+	PlatformKey       string `json:"platform_key"`          // PlatformKey的类型，如"bochaai"
 }
 
 // GraphSearchConfig 图谱搜索配置
@@ -589,8 +590,7 @@ type WikiSearchConfig struct {
 	DefaultEnable bool `json:"default_enable"`
 }
 
-// GetWebSearchConfig 从 Agent Settings 中获取AI在线搜索配置
-// 使用 "web_search_config" 作为字典的 key 来获取配置
+// GetWebSearchConfig 从 Agent Settings 中获取 AI 在线搜索配置。
 func (a *Agent) GetWebSearchConfig() (*WebSearchConfig, error) {
 	if a.Settings == "" {
 		return nil, nil
@@ -601,8 +601,11 @@ func (a *Agent) GetWebSearchConfig() (*WebSearchConfig, error) {
 		return nil, err
 	}
 
-	// 使用 "web_search_config" key 获取AI在线搜索配置
-	if searchConfigData, exists := settings["web_search_config"]; exists {
+	searchConfigData, exists := settings["web_search_setting"]
+	if !exists {
+		searchConfigData, exists = settings["web_search_config"]
+	}
+	if exists {
 		// 将 interface{} 转换为 JSON 字符串，再解析为 WebSearchConfig
 		configBytes, err := json.Marshal(searchConfigData)
 		if err != nil {
@@ -612,6 +615,12 @@ func (a *Agent) GetWebSearchConfig() (*WebSearchConfig, error) {
 		var searchConfig WebSearchConfig
 		if err := json.Unmarshal(configBytes, &searchConfig); err != nil {
 			return nil, err
+		}
+		if searchConfig.SourceType == "" && searchConfig.PlatformSettingID != "" {
+			searchConfig.SourceType = "api"
+		}
+		if searchConfig.SourceType != "" && searchConfig.SourceType != "api" && searchConfig.SourceType != "model" {
+			return nil, fmt.Errorf("不支持的 Agent 联网搜索来源: %s", searchConfig.SourceType)
 		}
 
 		return &searchConfig, nil
@@ -746,27 +755,6 @@ func (a *Agent) GetDeepThinkingConfig() (*DeepThinkingConfig, error) {
 	}
 
 	return nil, nil
-}
-
-// GetDisableThinkingConfig 从 Agent Settings 中获取是否禁用思考
-// true: 关闭思考，不设置或 false: 当前行为
-func (a *Agent) GetDisableThinkingConfig() bool {
-	if a.Settings == "" {
-		return true
-	}
-
-	var settings map[string]interface{}
-	if err := json.Unmarshal([]byte(a.Settings), &settings); err != nil {
-		return true
-	}
-
-	if v, exists := settings["disable_thinking"]; exists {
-		if b, ok := v.(bool); ok {
-			return b
-		}
-	}
-
-	return true
 }
 
 // OpenClawGatewayConfig OpenClaw Gateway 配置

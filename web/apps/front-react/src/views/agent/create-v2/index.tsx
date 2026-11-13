@@ -20,6 +20,7 @@ import {
   AgentBasicInfo
 } from '@km/shared-business/agent-create'
 import { eventBus } from '@km/shared-utils'
+import { SafeImage } from '@km/shared-components-react'
 import { frontAgentAdapter } from '@/adapters/agent-create-adapter'
 import Header from '@/components/Layout/Header'
 
@@ -240,13 +241,12 @@ function AgentCreatePageContent() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             {formData.logo && (
-              <img
+              <SafeImage
+                kind="agent"
                 src={formData.logo}
                 className="w-8 rounded"
                 alt=""
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
+                // 加载失败 → 展示 SafeImage 的兜底图。
               />
             )}
             <span>{formData.name || t('agent_create_title')}</span>

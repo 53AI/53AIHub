@@ -42,7 +42,7 @@ export namespace Enterprise {
     updated_time: number
     template_style_info: {
       [key: string]: any
-      style_type: 'software' | 'website'
+      style_type: 'software' | 'website' | 'recording'
     }
     is_independent: boolean
     is_enterprise: boolean

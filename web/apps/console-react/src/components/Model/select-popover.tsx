@@ -19,6 +19,20 @@ interface ModelSelectPopoverProps {
   onTemperatureChange?: (value: number) => void;
 }
 
+export function supportsModelWebSearch(
+  option?: Pick<ModelOption, "upstream_api_format" | "enabled_tools">,
+) {
+  return option?.upstream_api_format === "responses" && option.enabled_tools?.includes("web_search") === true;
+}
+
+export function supportsConfiguredModelsWebSearch(
+  fastModelSupportsSearch: boolean,
+  deepThinkingEnabled: boolean,
+  deepModelSupportsSearch: boolean,
+) {
+  return fastModelSupportsSearch && (!deepThinkingEnabled || deepModelSupportsSearch);
+}
+
 export function ModelSelectPopover({
   className,
   value,

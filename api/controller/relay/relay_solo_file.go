@@ -146,26 +146,46 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 		}
 	}
 
-	// 拼接分块内容并添加标记，同时控制大小
 	var contextBuilder strings.Builder
 	var currentLength int
 	var fullContentLength int
 	var allChunks []interface{}
 	var usedChunkIDs []int64
+	var sources []rag.SourceReference
 
-	// 先计算完整内容长度并生成分块列表
+	// 优先调用增强逻辑：注入会议纪要与决议，并根据用户提问关键词筛选逐字稿切片
+	userQueries := []string{messageStatus.OriginalQuestion, messageStatus.RewrittenQuestion}
+	enhanced, enhErr := enhanceSoloFileSourcesAndContent(ctx, agent.Eid, file, chunks, userQueries, soloFileLibraryMeta{
+		LibraryIDHash:          libraryIDHash,
+		LibraryName:            libraryName,
+		LibraryIcon:            libraryIcon,
+		SpaceIDHash:            spaceIDHash,
+		SpaceName:              spaceName,
+		IncludeDecisionInsight: isDiscussionAgentAuthorized(agent),
+	}, MAX_SOLO_FILE_CONTENT_SIZE)
+	if enhErr == nil && enhanced != nil && len(enhanced.Sources) > 0 {
+		allChunks = enhanced.AllChunks
+		usedChunkIDs = enhanced.UsedChunkIDs
+		sources = enhanced.Sources
+		fullContentLength = len(enhanced.ContextContent)
+		_ = fullContentLength
+		goto soloFileContentReady
+	}
+	if enhErr != nil {
+		logger.Warnf(ctx, "单文件探讨增强逻辑执行失败，回退基础分片循环: %v", enhErr)
+	}
+
+	// 回退逻辑：全量分块基础循环
 	for i, chunk := range chunks {
 		chunkRefID := fmt.Sprintf("%d-%d", fileID, i+1)
 		chunkWithSource := fmt.Sprintf("[Source:%s]%s", chunkRefID, sanitizeRetrievalContent(chunk.Content))
 		fullContentLength += len(chunkWithSource)
 
-		// 生成分块预览信息
 		contentPreview := sanitizeRetrievalContent(chunk.Content)
 		if len(contentPreview) > 100 {
 			contentPreview = contentPreview[:100] + "..."
 		}
 
-		// 添加到所有分块列表 - 使用与普通模式相同的格式
 		allChunks = append(allChunks, map[string]interface{}{
 			"chunk_id":     hashInt64(chunk.ID),
 			"chunk_type":   chunk.ChunkType,
@@ -178,31 +198,32 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 			"library_icon": libraryIcon,
 			"space_id":     spaceIDHash,
 			"space_name":   spaceName,
-			"score":        1.0, // 单文件模式所有分片分数都是1.0
+			"score":        1.0,
 			"source_key":   fmt.Sprintf("[Source:%d-%d]", 1, i+1),
 		})
 	}
 
-	// 拼接分块内容，确保不超过最大长度
 	for i, chunk := range chunks {
-		chunkRefID := fmt.Sprintf("%d-%d", 1, i+1) // 使用 fileID-index 格式
+		chunkRefID := fmt.Sprintf("%d-%d", 1, i+1)
 		chunkWithSource := fmt.Sprintf("[Source:%s]%s", chunkRefID, sanitizeRetrievalContent(chunk.Content))
 		chunkLength := len(chunkWithSource)
 
-		// 检查是否超过最大长度
 		if currentLength+chunkLength > MAX_SOLO_FILE_CONTENT_SIZE {
-			// 已达到最大长度，停止拼接
 			break
 		}
 
 		contextBuilder.WriteString(chunkWithSource)
 		currentLength += chunkLength
-
-		// 记录使用的分片ID
 		usedChunkIDs = append(usedChunkIDs, chunk.ID)
 	}
 
-	processedContent := contextBuilder.String()
+soloFileContentReady:
+	var processedContent string
+	if enhanced != nil && len(enhanced.ContextContent) > 0 {
+		processedContent = enhanced.ContextContent
+	} else {
+		processedContent = contextBuilder.String()
+	}
 
 	// 步骤1完成：文件读取完成
 	// if chatRequest.EnableProcessSteps && chatRequest.Stream {
@@ -291,40 +312,40 @@ func processSoloFileChat(c *gin.Context, chatRequest *ChatRequest, agent *model.
 	messageStatus.KnowledgeScope = fmt.Sprintf("file:%d", fileID)
 
 	// 创建 sources 引用参考数据，以便后续进行引用分析
-	var sources []rag.SourceReference
-	for i, chunk := range chunks {
-		// 只为实际使用的分块创建引用
-		isUsed := false
-		for _, usedID := range usedChunkIDs {
-			if chunk.ID == usedID {
-				isUsed = true
-				break
+	if len(sources) == 0 {
+		for i, chunk := range chunks {
+			isUsed := false
+			for _, usedID := range usedChunkIDs {
+				if chunk.ID == usedID {
+					isUsed = true
+					break
+				}
 			}
-		}
-		if isUsed {
-			chunkRefID := fmt.Sprintf("%d-%d", 1, i+1) // 永远为 1-索引
-			source := rag.SourceReference{
-				SourceType:        "document",
-				ReferenceID:       chunkRefID,
-				ChunkID:           chunk.ID,
-				FileID:            chunk.FileID,
-				FileName:          fileName,
-				ChunkType:         chunk.ChunkType,
-				Content:           chunk.Content,
-				Score:             1.0,
-				KnowledgeBaseID:   file.LibraryID,
-				KnowledgeBaseName: libraryName,
-				KnowledgeBaseLogo: libraryIcon,
-				LibraryID:         hashInt64(file.LibraryID),
-				LibraryName:       libraryName,
-				LibraryIcon:       libraryIcon,
-				FileCreatedAt:     file.CreatedTime,
-				SourceKey:         fmt.Sprintf("[Source:%s]", chunkRefID),
-				SpaceID:           spaceIDHash,
-				SpaceName:         spaceName,
-				URL:               file.Path,
+			if isUsed {
+				chunkRefID := fmt.Sprintf("%d-%d", 1, i+1)
+				source := rag.SourceReference{
+					SourceType:        "document",
+					ReferenceID:       chunkRefID,
+					ChunkID:           chunk.ID,
+					FileID:            chunk.FileID,
+					FileName:          fileName,
+					ChunkType:         chunk.ChunkType,
+					Content:           chunk.Content,
+					Score:             1.0,
+					KnowledgeBaseID:   file.LibraryID,
+					KnowledgeBaseName: libraryName,
+					KnowledgeBaseLogo: libraryIcon,
+					LibraryID:         hashInt64(file.LibraryID),
+					LibraryName:       libraryName,
+					LibraryIcon:       libraryIcon,
+					FileCreatedAt:     file.CreatedTime,
+					SourceKey:         fmt.Sprintf("[Source:%s]", chunkRefID),
+					SpaceID:           spaceIDHash,
+					SpaceName:         spaceName,
+					URL:               file.Path,
+				}
+				sources = append(sources, source)
 			}
-			sources = append(sources, source)
 		}
 	}
 

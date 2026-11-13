@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { Select } from 'antd'
 import type { SelectProps } from 'antd'
 import { t } from '@/locales'
-import './index.css'
+
+import { SafeImage } from "@km/shared-components-react";import './index.css'
 
 interface OptionItem {
   value: string
@@ -68,7 +69,7 @@ export function SelectPlus({
     if (iconType === 'image' && typeof icon === 'string') {
       return (
         <div className="select-plus-icon">
-          <img src={icon} alt="" className="select-plus-icon-img" />
+          <SafeImage src={icon} alt="" className="select-plus-icon-img" />
         </div>
       )
     }

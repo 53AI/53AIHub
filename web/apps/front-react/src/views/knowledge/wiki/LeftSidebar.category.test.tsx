@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const documentsMock = vi.hoisted(() => vi.fn());
 const pagesMock = vi.hoisted(() => vi.fn());
 const nav = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -24,9 +25,10 @@ vi.mock("react-router-dom", async () => {
     useSearchParams: () => {
       const [, force] = React.useState(0);
       React.useLayoutEffect(() => {
-        nav._listeners.add(force);
+        const listener = (): void => force(value => value + 1);
+        nav._listeners.add(listener);
         return () => {
-          nav._listeners.delete(force);
+          nav._listeners.delete(listener);
         };
       }, []);
       const set = (updater: any) => {
@@ -60,6 +62,7 @@ vi.mock("@/api/modules/wiki", () => ({
       generation: { queued: 0, running: 0, total: 0 },
       vectorization: { queued: 0, running: 0, total: 0 },
     })),
+    queueDocuments: documentsMock,
   },
 }));
 
@@ -94,6 +97,7 @@ beforeEach(() => {
     disconnect() {}
     unobserve() {}
   };
+  documentsMock.mockResolvedValue({status_counts: {failed: 3, pending: 0, processing: 0, success: 10, waiting: 0}});
   pagesMock.mockReset();
   pagesMock.mockResolvedValue({ total: 0, items: [] });
 });
@@ -106,19 +110,37 @@ const lastPageParams = () => {
   return calls.length ? calls[calls.length - 1][1] : null;
 };
 
-async function renderSidebar(source: string) {
+async function renderSidebar(source: string, activeTab: "list" | "queue" = "list") {
   nav.setSource(source);
   const { default: LeftSidebar } = await import("./LeftSidebar");
   render(
-    <LeftSidebar activeTab="list" setActiveTab={() => {}} selectedItemId="" setSelectedItemId={() => {}} />,
+    <LeftSidebar activeTab={activeTab} setActiveTab={() => {}} selectedItemId="" setSelectedItemId={() => {}} />,
   );
   await waitFor(() => expect(pagesMock).toHaveBeenCalled());
 }
 
 describe("LeftSidebar category_id", () => {
+  it("队列徽标使用失败文档数，不混加后台任务数", async () => {
+    await renderSidebar("space_id=X&sub=queue", "queue");
+    await waitFor(() => expect(documentsMock).toHaveBeenCalledWith({space_id: "X", page: 1, size: 1}));
+    expect(screen.getByText("L:wiki.queue.title").parentElement?.textContent).toContain("3");
+  });
+  it("队列视图仍显示所有分类和 Wiki 页面列表", async () => {
+    pagesMock.mockResolvedValue({
+      total: 1,
+      items: [{ id: "page-1", slug: "page-one", title: "队列中的 Wiki 页面", summary: "页面摘要", updated_time: 1 }],
+    });
+    await renderSidebar("space_id=X&sub=queue", "queue");
+
+    expect(await screen.findByText("分类A")).toBeVisible();
+    expect(await screen.findByText("分类B")).toBeVisible();
+    expect(await screen.findByText("队列中的 Wiki 页面")).toBeVisible();
+    expect(screen.queryByText("L:wiki.empty_knowledge")).not.toBeInTheDocument();
+  });
+
   it("挂载时 URL 带 category_id=5:高亮分类并传给 pages", async () => {
     await renderSidebar("space_id=X&sub=list&category_id=5");
-    expect(pagesMock.mock.calls[0][1].category_id).toBe(5);
+    expect(pagesMock.mock.calls[0][1].category_id).toBe("5");
     const active = screen.getByText("分类A").closest("div");
     expect(active?.className).toContain("bg-blue-50");
   });
@@ -135,7 +157,7 @@ describe("LeftSidebar category_id", () => {
     });
 
     await waitFor(() => {
-      expect(lastPageParams()?.category_id).toBe(7);
+      expect(lastPageParams()?.category_id).toBe("7");
     });
     const actB = screen.getByText("分类B").closest("div");
     expect(actB?.className).toContain("bg-blue-50");
@@ -147,7 +169,7 @@ describe("LeftSidebar category_id", () => {
       fireEvent.click(screen.getByText("分类B"));
     });
     await waitFor(() => {
-      expect(lastPageParams()?.category_id).toBe(7);
+      expect(lastPageParams()?.category_id).toBe("7");
     });
   });
 });

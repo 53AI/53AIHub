@@ -160,7 +160,7 @@ export const TemplateListModal = forwardRef<TemplateListModalRef, TemplateListMo
         onCancel={() => setOpen(false)}
         footer={null}
         width={width}
-        destroyOnClose
+        destroyOnHidden
         className={className}
         styles={{ container: { height } }}
       >

@@ -110,6 +110,12 @@ const createEndpointConfig = (baseUrl?: {
 
 // ============ 各平台表单配置 ====
 
+export const TYPESAFE_DECISION_FORM_CONFIG: FormConfig[] = [
+  {label:'API Key',prop:'key',type:'input',required:true},
+  {label:'API 地址',prop:'base_url',type:'url',default:'https://api.typesafe.ai',required:true},
+  {label:'模型 ID',prop:'models',type:'input',required:true},
+];
+
 export const DEEPSEEK_FORM_CONFIG = createEndpointConfig({
   defaultUrl: 'https://api.deepseek.com',
   labelKey: API_ENDPOINT_LABEL,
@@ -179,9 +185,10 @@ export const AZURE_FORM_CONFIG: FormConfig[] = [
     type: 'input',
     placeholder: window.$t('module.platform_model_version_placeholder'),
     required: true,
+    showWhen: (form) => form.other !== 'v1',
   },
   {
-    label: window.$t('module.platform_model_models_azure'),
+    label: '基础模型',
     prop: 'models',
     type: 'select',
     placeholder: window.$t('module.platform_model_models_azure_placeholder'),
@@ -189,11 +196,22 @@ export const AZURE_FORM_CONFIG: FormConfig[] = [
     allowCreate: true,
   },
   {
-    label: 'Vision Support',
-    prop: 'config.vision',
+    label: '上游 API 类型',
+    prop: 'config.upstream_api_format',
     type: 'select',
-    options: SUPPORT_OPTIONS,
+    options: [
+      { label: 'Chat Completions API (/chat/completions)', value: 'chat_completions' },
+      { label: 'Responses API (/responses)', value: 'responses' },
+    ],
+    showWhen: (form) => form.other === 'v1' && String(form.model_type) === '1' && form.azureCustomBaseModel === true,
+  },
+  {
+    label: '联网搜索',
+    prop: 'config.web_search_enabled',
+    type: 'select',
     default: false,
+    options: SUPPORT_OPTIONS,
+    showWhen: (form) => form.other === 'v1' && String(form.model_type) === '1' && form.azureWebSearchAvailable === true,
   },
 ]
 
@@ -233,6 +251,25 @@ export const CUSTOM_OPENAI_FORM_CONFIG: FormConfig[] = [
     type: 'url',
     placeholder: window.$t('module.platform_model_base_url_azure_placeholder'),
     required: true,
+  },
+  {
+    label: 'API 类型',
+    prop: 'config.upstream_api_format',
+    type: 'select',
+    default: 'chat_completions',
+    options: [
+      { label: 'Chat Completions API (/chat/completions)', value: 'chat_completions' },
+      { label: 'Responses API (/responses)', value: 'responses' },
+    ],
+    showWhen: isReasoningModel,
+  },
+  {
+    label: '联网搜索',
+    prop: 'config.web_search_enabled',
+    type: 'select',
+    default: false,
+    options: SUPPORT_OPTIONS,
+    showWhen: isReasoningModel,
   },
   // 模型上下文长度
   {
@@ -298,6 +335,8 @@ export const GEMINI_FORM_CONFIG = createEndpointConfig({
 // 获取表单配置
 export const getFormConfig = (channel_type: number): FormConfig[] => {
   switch (channel_type) {
+    case MODEL_VALUES.TYPESAFE_DECISION:
+      return TYPESAFE_DECISION_FORM_CONFIG
     case MODEL_VALUES.DEEPSEEK:
       return DEEPSEEK_FORM_CONFIG
     case MODEL_VALUES.TENCENT:

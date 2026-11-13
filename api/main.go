@@ -101,6 +101,7 @@ func main() {
 	}
 	service.StartRecordingResidualCleanupWorker(appCtx)
 	service.StartRecordingFinalizeWorker(appCtx)
+	service.StartSpeakerBaselineClipWorker(appCtx)
 	service.InitLibraryFileCountCacheInvalidator()
 	service.InitLibraryCacheInvalidator()
 	service.InitCapabilitySnapshotCache()

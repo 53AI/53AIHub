@@ -2,7 +2,8 @@ import { Sender } from '@km/hub-ui-x-react'
 import { message } from 'antd'
 import { useState } from 'react'
 import { usePromptFormDataStore } from '../store'
-import { t } from '@/locales'
+
+import { SafeImage } from "@km/shared-components-react";import { t } from '@/locales'
 
 export function PromptPreview() {
   const [prompt, setPrompt] = useState('')
@@ -19,7 +20,7 @@ export function PromptPreview() {
       {/* 气泡列表区域 */}
       <div className="flex-1 flex flex-col items-center justify-center gap-3 px-4">
         {formData.logo && (
-          <img
+          <SafeImage
             src={formData.logo}
             alt={formData.name || 'Prompt'}
             className="w-14 h-14 rounded-xl object-cover"

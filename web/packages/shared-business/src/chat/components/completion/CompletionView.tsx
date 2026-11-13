@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHand
 import { Button, Form, Input, InputNumber, Select, Upload, message, Empty } from 'antd';
 import { PlusOutlined, CloseOutlined, WarningOutlined, CopyOutlined, DownloadOutlined, LoadingOutlined } from '@ant-design/icons';
 import { BubbleAssistant } from '@km/hub-ui-x-react';
+import { SafeImage } from '@km/shared-components-react';
 import { isUrl, copyToClip, downloadFile } from '@km/shared-utils';
 import { useTranslation, useChatAdapters, type IChatAdapters } from '../../i18n';
 import { useConversationStore } from '../../stores';
@@ -850,7 +851,7 @@ export const CompletionView = forwardRef<CompletionViewRef, CompletionViewProps>
           return (
             <div className="overflow-hidden flex flex-col gap-5">
               {images.map((src: string, i: number) => (
-                <img key={i} src={src} className="max-w-full h-auto object-contain rounded" alt="" />
+                <SafeImage key={i} src={src} className="max-w-full h-auto object-contain rounded" alt="" />
               ))}
             </div>
           );

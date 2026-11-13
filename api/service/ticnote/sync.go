@@ -44,10 +44,6 @@ type SyncService struct {
 	// 以正确路由 sit/海外域名；测试/调用方显式注入 client 时为 false，直接复用。
 	deriveClient bool
 	mu           sync.Mutex
-	// previewMu / previewList：预览远端列表的进程内短 TTL 缓存（TicNote 无远端分页，
-	// 避免每翻一页都重新登录 + 全量拉文件树）；跨实例不共享。
-	previewMu   sync.Mutex
-	previewList map[string]ticnotePreviewEntry
 	// createJobsFn 创建 RAG 解析任务；字段可替换便于测试断言管线触发。
 	createJobsFn func(ctx context.Context, eid, fileID int64, paramsJSON string) ([]*model.RagJob, error)
 	// esSyncFn 将新导入文件同步进 ES 索引（keyword 搜索依赖）；字段可替换便于测试断言。
@@ -64,7 +60,6 @@ func NewSyncService(client *Client) *SyncService {
 	return &SyncService{
 		client:       client,
 		deriveClient: derive,
-		previewList:  make(map[string]ticnotePreviewEntry),
 		createJobsFn: service.CreateRagJobsForRecordingFile,
 		esSyncFn:     elasticsearch.SyncFileToES,
 	}
@@ -80,9 +75,17 @@ func GetSyncService() *SyncService {
 
 // clientFor 返回打特定 AppKey 的客户端：默认单例按 AppKey 前缀路由 sit/海外域名；
 // 测试/调用方显式注入的客户端优先（不按前缀重建）。
-func (s *SyncService) clientFor(appkey string) *Client {
+// 路由判定落日志（含 ctx 归因）：Key 无效时能区分"域名路由错"与"Key 本身失效"。
+func (s *SyncService) clientFor(ctx context.Context, appkey string) *Client {
 	if !s.deriveClient {
 		return s.client
+	}
+	// 只记 Key 长度与解析出的域名（不落 Key 主体，对齐仓库脱敏标准）：Key 无效时能区分"域名路由错"与"Key 本身失效"。
+	baseURL, matched := resolveBaseURL(appkey)
+	if matched {
+		logger.Infof(ctx, "【TicNote】设备 Key（长度 %d）命中路由，接口域名 %s", len(appkey), baseURL)
+	} else {
+		logger.Warnf(ctx, "【TicNote】设备 Key（长度 %d）前缀未识别，已回退接口域名 %s；若该 Key 属测试环境请核对 Key 是否正确", len(appkey), baseURL)
 	}
 	return NewClient(appkey)
 }
@@ -110,9 +113,15 @@ func finishJob(jobID int64, result *SyncResult, failedDetails []map[string]inter
 		status = "failed"
 		errMsg = firstErr.Error()
 	} else if result.Completed == 0 && result.Skipped == 0 && result.Failed > 0 {
-		// 全部条目都失败（例如选中的远端录音都不存在）：不能算 completed
+		// 全部条目都失败（例如选中的远端录音都不存在/无音频）：不能算 completed。
+		// 取首条失败原因作为 job.error，前端据此给出可行动提示；逐条明细仍在 failed_details。
 		status = "failed"
 		errMsg = "全部条目同步失败"
+		if len(failedDetails) > 0 {
+			if reason, ok := failedDetails[0]["reason"].(string); ok && reason != "" {
+				errMsg = reason
+			}
+		}
 	}
 	detailsJSON := ""
 	if len(failedDetails) > 0 {
@@ -133,13 +142,23 @@ func finishJob(jobID int64, result *SyncResult, failedDetails []map[string]inter
 // deviceID>0 同步指定配置；deviceID=0 同步该 deviceType 全部启用配置（多 key 串行，单 job 合并计数）。
 // limit>0 时最多处理 limit 条远端录音（调试用，0=不限）。
 // 前端通过 GET /sync-status 轮询 job 进度。
-func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (int64, error) {
+func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool, excludeRemoteIDs []string) (int64, error) {
 	if !s.mu.TryLock() {
 		return 0, ErrSyncInProgress
 	}
 	if len(remoteIDs) > 0 && deviceID <= 0 {
 		s.mu.Unlock()
 		return 0, fmt.Errorf("选中同步必须指定 device_id")
+	}
+	if len(excludeRemoteIDs) > 0 {
+		if len(remoteIDs) > 0 {
+			s.mu.Unlock()
+			return 0, fmt.Errorf("remote_ids 与 exclude_remote_ids 不能同时使用")
+		}
+		if deviceID <= 0 {
+			s.mu.Unlock()
+			return 0, fmt.Errorf("排除同步必须指定 device_id")
+		}
 	}
 
 	// 多实例防重入：进程内 mutex 只防同实例；DB 层再查一次 running 任务，
@@ -198,7 +217,7 @@ func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceTy
 			})
 		}
 		for _, cfg := range cfgs {
-			r, details, rErr := s.runSync(bgCtx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, onProgress)
+			r, details, rErr := s.runSync(bgCtx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, excludeRemoteIDs, onProgress)
 			if r != nil { // runSync 失败时（如登录/列表失败）返回 nil result，需防空指针
 				result.Discovered += r.Discovered
 				result.Completed += r.Completed
@@ -228,13 +247,21 @@ func (s *SyncService) StartSync(ctx context.Context, eid, userID int64, deviceTy
 // Sync 同步执行一次同步（同步入口，供测试/调用方等待结果）。
 // 语义同 StartSync（deviceID 指定单配置 / 缺省该 type 全部配置串行）。
 // 返回合并结果；所有配置均失败（无任何处理）时返回 error。
-func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (*SyncResult, error) {
+func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool, excludeRemoteIDs []string) (*SyncResult, error) {
 	if !s.mu.TryLock() {
 		return nil, ErrSyncInProgress
 	}
 	defer s.mu.Unlock()
 	if len(remoteIDs) > 0 && deviceID <= 0 {
 		return nil, fmt.Errorf("选中同步必须指定 device_id")
+	}
+	if len(excludeRemoteIDs) > 0 {
+		if len(remoteIDs) > 0 {
+			return nil, fmt.Errorf("remote_ids 与 exclude_remote_ids 不能同时使用")
+		}
+		if deviceID <= 0 {
+			return nil, fmt.Errorf("排除同步必须指定 device_id")
+		}
 	}
 
 	// 多实例防重入（同上）：DB 层查 running，避免跨实例并发同步同一设备（优先于配置查询）。
@@ -268,7 +295,7 @@ func (s *SyncService) Sync(ctx context.Context, eid, userID int64, deviceType st
 	var failedDetails []map[string]interface{}
 	var firstErr error
 	for _, cfg := range cfgs {
-		r, details, rErr := s.runSync(ctx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, nil)
+		r, details, rErr := s.runSync(ctx, eid, userID, job.ID, cfg.DeviceType, cfg.ApiKey, force, limit, remoteIDs, skipDeleted, excludeRemoteIDs, nil)
 		if r != nil { // runSync 失败时（如登录/列表失败）返回 nil result，需防空指针
 			result.Discovered += r.Discovered
 			result.Completed += r.Completed
@@ -309,8 +336,8 @@ var getExistingSyncSourceStates = model.GetExistingSyncSourceStates
 // runSync 核心同步执行：Login → 全项目拉录音列表 → 并发去重/下载/落库。
 // 幂等补缺：已同步且文件有效跳过；已同步但文件被删（软删）重导；未同步导入。
 // 同步执行，调用方负责防重入锁；job 状态与进度在此更新。
-func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, provider, appkey string, force bool, limit int, remoteIDs []string, skipDeleted bool, onProgress func(*SyncResult)) (*SyncResult, []map[string]interface{}, error) {
-	client := s.clientFor(appkey)
+func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, provider, appkey string, force bool, limit int, remoteIDs []string, skipDeleted bool, excludeRemoteIDs []string, onProgress func(*SyncResult)) (*SyncResult, []map[string]interface{}, error) {
+	client := s.clientFor(ctx, appkey)
 	token, err := client.Login(ctx, appkey)
 	if err != nil {
 		return nil, nil, err
@@ -334,11 +361,17 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 			pending[id] = struct{}{}
 		}
 	}
+	// 排除同步（全量减去指定项）：仅在非选中模式（全量）下被 selectTicNoteRecordings 使用；
+	// 它与 remote_ids 互斥已由 StartSync/Sync 入口保证，故 selected != nil 时不会有 excluded。
+	excluded := make(map[string]struct{}, len(excludeRemoteIDs))
+	for _, id := range excludeRemoteIDs {
+		excluded[id] = struct{}{}
+	}
 	var failedDetails []map[string]interface{}
 	var resultMu sync.Mutex
 
 	// 选中模式：只保留选中项（命中项从 pending 移除）
-	recordings = selectTicNoteRecordings(recordings, selected, pending)
+	recordings = selectTicNoteRecordings(recordings, selected, pending, excluded)
 
 	// 批量查去重（join files 判文件有效：已同步+文件在→跳过，软删→重导）
 	allRemoteIDs := make([]string, 0, len(recordings))
@@ -419,7 +452,7 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 					resultMu.Lock()
 					result.Failed++
 					failedDetails = append(failedDetails, map[string]interface{}{
-						"audio_id": rec.RecordID, "title": rec.FileName, "reason": err.Error(),
+						"audio_id": rec.RecordID, "title": rec.FileName, "type": failureType(err), "reason": err.Error(),
 					})
 					resultMu.Unlock()
 					return
@@ -439,7 +472,7 @@ func (s *SyncService) runSync(ctx context.Context, eid, userID, jobID int64, pro
 						logger.Errorf(ctx, "【TicNote】同步单条重试仍失败: %v", retryErr)
 						result.Failed++
 						failedDetails = append(failedDetails, map[string]interface{}{
-							"audio_id": rec.RecordID, "title": rec.FileName, "reason": retryErr.Error(),
+							"audio_id": rec.RecordID, "title": rec.FileName, "type": failureType(retryErr), "reason": retryErr.Error(),
 						})
 					}
 					resultMu.Unlock()
@@ -483,11 +516,29 @@ var ErrSyncSkipped = errors.New("已同步过，跳过")
 // 用于区分"瞬时网络错误（值得重试）"与"业务/参数性失败（重试无意义）"：
 // 缺少音频 URL、recordId 非法、未找到个人库等属于后者，重试只会多一次无效往返。
 type permanentSyncError struct {
-	err error
+	err  error
+	kind string // 稳定失败类型（如 audio_unavailable），写入 failed_details.type 供前端分流
 }
 
 func (e *permanentSyncError) Error() string { return e.err.Error() }
 func (e *permanentSyncError) Unwrap() error { return e.err }
+
+// noAudioErr 录音无可下载音频（音频未上云/已过期/纯文本妙记）：确定性失败，且类型可识别。
+func noAudioErr(format string, args ...interface{}) error {
+	return &permanentSyncError{err: fmt.Errorf(format, args...), kind: "audio_unavailable"}
+}
+
+// failureType 把同步错误映射为稳定类型，写入 failed_details.type 供前端分流判断。
+func failureType(err error) string {
+	var pe *permanentSyncError
+	if errors.As(err, &pe) {
+		if pe.kind != "" {
+			return pe.kind
+		}
+		return "permanent"
+	}
+	return "retryable_error"
+}
 
 // permanentErr 构造确定性失败错误（同步单条时标记，重试逻辑据此跳过重试）。
 func permanentErr(format string, args ...interface{}) error {
@@ -518,9 +569,19 @@ func isTranscriptionNotTriggeredError(err error) bool {
 }
 
 // selectTicNoteRecordings 选中模式过滤远端录音；命中项从 pending 移除。selected=nil 时原样返回。
-func selectTicNoteRecordings(recs []Recording, selected, pending map[string]struct{}) []Recording {
+func selectTicNoteRecordings(recs []Recording, selected, pending, excluded map[string]struct{}) []Recording {
 	if selected == nil {
-		return recs
+		if len(excluded) == 0 {
+			return recs
+		}
+		out := make([]Recording, 0, len(recs))
+		for _, r := range recs {
+			if _, ok := excluded[r.RecordID]; ok {
+				continue
+			}
+			out = append(out, r)
+		}
+		return out
 	}
 	out := make([]Recording, 0, len(recs))
 	for _, r := range recs {
@@ -597,7 +658,7 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, cli
 	}
 	if audioURL == "" {
 		releaseRemoteSlot()
-		return permanentErr("录音 %s (%s) 缺少音频 URL", audioID, title)
+		return noAudioErr("录音 %s (%s) 缺少音频 URL", audioID, title)
 	}
 
 	// 从 fileUrl 解析真实扩展名（远端 mp3/wav/m4a 等）
@@ -662,16 +723,19 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, cli
 		SourceType: model.UploadFileSourceUserUpload,
 	}
 	file := &model.File{
-		Eid:       eid,
-		UserID:    userID,
-		LibraryID: libraryID,
-		Path:      filePath,
-		Type:      model.FILE_TYPE_FILE,
+		Eid:                eid,
+		UserID:             userID,
+		LibraryID:          libraryID,
+		Path:               filePath,
+		Type:               model.FILE_TYPE_FILE,
+		RecordingStartTime: rec.RecordTimeMs,
 	}
 	file.SetRecordingImportedOrigin(0)
 	if err := file.PrepareForCreate(); err != nil {
 		return permanentErr("文件预处理失败: %w", err)
 	}
+	// 远端原始元数据快照留痕（树节点 + 文件详情）
+	remoteMeta := buildTicNoteRemoteMeta(rec.RawNodeJSON, detail)
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if state.HasSource {
 			// 重导：事务内先删旧 sync source（避免唯一键冲突），与新数据原子写入。
@@ -687,12 +751,13 @@ func (s *SyncService) syncOne(ctx context.Context, eid, userID, jobID int64, cli
 			return fmt.Errorf("创建 File 失败: %w", err)
 		}
 		syncSource := &model.RecordingSyncSource{
-			Eid:      eid,
-			UserID:   userID,
-			Provider: TicNoteProvider,
-			RemoteID: audioID,
-			FileID:   file.ID,
-			JobID:    jobID,
+			Eid:        eid,
+			UserID:     userID,
+			Provider:   TicNoteProvider,
+			RemoteID:   audioID,
+			FileID:     file.ID,
+			JobID:      jobID,
+			RemoteMeta: remoteMeta,
 		}
 		if err := tx.Create(syncSource).Error; err != nil {
 			return fmt.Errorf("记录同步源失败: %w", err)
@@ -789,12 +854,13 @@ func (s *SyncService) syncOneReuse(ctx context.Context, eid, userID, jobID int64
 	}
 
 	file := &model.File{
-		Eid:          eid,
-		UserID:       userID,
-		LibraryID:    library.ID,
-		Path:         filePath,
-		Type:         model.FILE_TYPE_FILE,
-		UploadFileID: srcUF.ID,
+		Eid:                eid,
+		UserID:             userID,
+		LibraryID:          library.ID,
+		Path:               filePath,
+		Type:               model.FILE_TYPE_FILE,
+		UploadFileID:       srcUF.ID,
+		RecordingStartTime: rec.RecordTimeMs,
 	}
 	file.SetRecordingImportedOrigin(0)
 	// 复用路径补写 duration_ms（源文件已持有时长，直接沿用），与 SonicNote 复用路径一致，
@@ -810,12 +876,13 @@ func (s *SyncService) syncOneReuse(ctx context.Context, eid, userID, jobID int64
 			return fmt.Errorf("创建 File 失败: %w", err)
 		}
 		syncSource := &model.RecordingSyncSource{
-			Eid:      eid,
-			UserID:   userID,
-			Provider: TicNoteProvider,
-			RemoteID: audioID,
-			FileID:   file.ID,
-			JobID:    jobID,
+			Eid:        eid,
+			UserID:     userID,
+			Provider:   TicNoteProvider,
+			RemoteID:   audioID,
+			FileID:     file.ID,
+			JobID:      jobID,
+			RemoteMeta: model.LongText(rec.RawNodeJSON),
 		}
 		if err := tx.Create(syncSource).Error; err != nil {
 			return fmt.Errorf("记录同步源失败: %w", err)
@@ -849,4 +916,20 @@ func (s *SyncService) syncOneReuse(ctx context.Context, eid, userID, jobID int64
 // osRemove 移除临时文件（下载/存储完成后清理）。
 func osRemove(path string) {
 	_ = os.Remove(path)
+}
+
+// buildTicNoteRemoteMeta 组装 TicNote 远端原始元数据快照（树节点 + 文件详情）。
+func buildTicNoteRemoteMeta(rawNodeJSON string, detail *FileDetail) model.LongText {
+	payload := map[string]interface{}{}
+	if rawNodeJSON != "" {
+		payload["tree_node"] = json.RawMessage(rawNodeJSON)
+	}
+	if detail != nil && detail.RawJSON != "" {
+		payload["file_detail"] = json.RawMessage(detail.RawJSON)
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return model.LongText(b)
 }

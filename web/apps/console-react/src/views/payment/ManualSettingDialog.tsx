@@ -7,6 +7,7 @@ import { paymentApi } from "@/api/modules/payment";
 import { prepareSavePaymentSettingData } from "@/api/modules/payment/transform";
 import { PAYMENT_TYPE } from "@/constants/payment";
 import ImageUpload from "@/components/Upload/image";
+import { SafeImage } from "@km/shared-components-react";
 
 interface FormData {
   pay_qrcode: string;
@@ -141,7 +142,7 @@ export const ManualSettingDialog = forwardRef<
             >
               <div className="w-full h-full flex flex-col items-center justify-center gap-2">
                 {payQrcode ? (
-                  <img
+                  <SafeImage
                     src={payQrcode}
                     className="absolute top-0 left-0 w-full h-full object-cover"
                     alt="qrcode"

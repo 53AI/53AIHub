@@ -1,4 +1,4 @@
-import { Table, message } from "antd";
+import { Table, Typography, message } from "antd";
 import { useState, useCallback, useMemo, useEffect } from "react";
 import type { ColumnsType } from "antd/es/table";
 import { SvgIcon, SafeImage, IconAction } from "@km/shared-components-react";
@@ -80,15 +80,23 @@ export function KnowledgeList({ spaceId }: KnowledgeListProps) {
         title: t("common.name"),
         dataIndex: "name",
         key: "name",
-        minWidth: 160,
+        // ellipsis 会把 tableLayout 强成 fixed，而 rc-table 仅在 auto 下才写 minWidth，
+        // 所以列宽必须用 width（fixed 布局下才会写进 colgroup）
+        width: 200,
+        ellipsis: { showTitle: false },
         render: (_, record) => (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <SafeImage
               src={record.icon}
-              className="size-7 rounded"
+              className="size-7 flex-none rounded"
               alt={record.name}
             />
-            <span>{record.name}</span>
+            <Typography.Text
+              ellipsis={{ tooltip: record.name }}
+              className="!block min-w-0"
+            >
+              {record.name}
+            </Typography.Text>
           </div>
         ),
       },
@@ -103,33 +111,39 @@ export function KnowledgeList({ spaceId }: KnowledgeListProps) {
       {
         title: t("common.creator"),
         key: "creator",
-        minWidth: 120,
-        render: (_, record) => (
-          <div className="flex items-center gap-2">
-            {record.icon ? (
-              <img
-                src={record.icon}
-                className="size-7 rounded-full"
-                alt="creator"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.src = "/images/default_avatar.png";
-                }}
-              />
-            ) : (
-              <div className="size-6 bg-[#E0EEFF] flex items-center justify-center rounded-full">
-                <div className="text-xs text-brand">{t("common.system_avatar")}</div>
-              </div>
-            )}
-            <span>{(record as any).creator_name || "--"}</span>
-          </div>
-        ),
+        width: 140,
+        ellipsis: { showTitle: false },
+        render: (_, record) => {
+          const creatorName = (record as any).creator_name || "--";
+          return (
+            <div className="flex items-center gap-2 min-w-0">
+              {record.icon ? (
+                <SafeImage
+                  src={record.icon}
+                  className="size-7 flex-none rounded-full"
+                  alt="creator"
+                  kind="user"
+                />
+              ) : (
+                <div className="size-7 flex-none bg-[#E0EEFF] flex items-center justify-center rounded-full">
+                  <div className="text-xs text-brand">{t("common.system_avatar")}</div>
+                </div>
+              )}
+              <Typography.Text
+                ellipsis={{ tooltip: creatorName }}
+                className="!block min-w-0"
+              >
+                {creatorName}
+              </Typography.Text>
+            </div>
+          );
+        },
       },
       {
         title: t("created_time"),
         dataIndex: "created_time",
         key: "created_time",
-        minWidth: 140,
+        width: 180,
         render: (time: string) => (
           <span className={time ? "" : "text-disabled"}>{time || "--"}</span>
         ),

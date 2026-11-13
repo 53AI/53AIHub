@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
@@ -155,6 +156,14 @@ func (c *RagPipelineController) CreatePipeline(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 		return
 	}
+	if c.kind == model.PipelineKindRag {
+		name, err := validateRagPipelineName(req.Name)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+			return
+		}
+		req.Name = name
+	}
 
 	profileStr, err := normalizeJSONString(req.ProfileJSON)
 	if err != nil {
@@ -231,6 +240,14 @@ func (c *RagPipelineController) UpdatePipeline(ctx *gin.Context) {
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 		return
+	}
+	if c.kind == model.PipelineKindRag && req.Name != nil {
+		name, err := validateRagPipelineName(*req.Name)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+			return
+		}
+		req.Name = &name
 	}
 
 	updates := make(map[string]interface{})
@@ -459,10 +476,20 @@ func (c *RagPipelineController) CreateStrategy(ctx *gin.Context) {
 		return
 	}
 
-	conditionsStr, err := normalizeJSONString(req.ConditionsJSON)
+	conditionsStr, err := normalizeRoutingConditions(req.ConditionsJSON, c.kind)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 		return
+	}
+	if c.kind == model.PipelineKindRag {
+		if err := validateRagRoutingConditions(conditionsStr); err != nil {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+			return
+		}
+		if !validRagRoutingLogic(req.Logic) {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("logic 必须为 AND(1) 或 OR(2)"))
+			return
+		}
 	}
 
 	// 验证 Pipeline 是否属于当前企业
@@ -554,13 +581,23 @@ func (c *RagPipelineController) UpdateStrategy(ctx *gin.Context) {
 		updates["pipeline_id"] = *req.PipelineID
 	}
 	if req.Logic != nil {
+		if c.kind == model.PipelineKindRag && !validRagRoutingLogic(*req.Logic) {
+			ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("logic 必须为 AND(1) 或 OR(2)"))
+			return
+		}
 		updates["logic"] = *req.Logic
 	}
 	if req.ConditionsJSON != nil {
-		conditionsStr, err := normalizeJSONString(*req.ConditionsJSON)
+		conditionsStr, err := normalizeRoutingConditions(*req.ConditionsJSON, c.kind)
 		if err != nil {
 			ctx.JSON(http.StatusBadRequest, model.ParamError.ToErrorResponse(err))
 			return
+		}
+		if c.kind == model.PipelineKindRag {
+			if err := validateRagRoutingConditions(conditionsStr); err != nil {
+				ctx.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
+				return
+			}
 		}
 		updates["conditions_json"] = conditionsStr
 	}
@@ -750,17 +787,45 @@ func validateRagPipelineProfile(profileStr string) error {
 	var profile struct {
 		Steps []struct {
 			StepKey string `json:"step_key"`
+			RunMode string `json:"run_mode"`
 		} `json:"steps"`
 	}
 	if err := json.Unmarshal([]byte(profileStr), &profile); err != nil {
 		return fmt.Errorf("无效的 RAG 流水线配置: %w", err)
 	}
+	if len(profile.Steps) == 0 {
+		return errors.New("RAG 流水线至少需要一个步骤")
+	}
 	for _, step := range profile.Steps {
-		if step.StepKey == "generate_knowledge_map" {
+		stepKey := strings.TrimSpace(step.StepKey)
+		if stepKey == "" || stepKey != step.StepKey {
+			return errors.New("RAG 流水线步骤 step_key 不能为空或包含首尾空格")
+		}
+		switch stepKey {
+		case "document_parsing", "content_cleaning", "document_chunking", "vector_indexing", "graph_generation":
+		case "generate_knowledge_map":
 			return errors.New("generate_knowledge_map 已不再是 RAG 流水线步骤")
+		default:
+			return fmt.Errorf("无效的 RAG 流水线步骤: %q", step.StepKey)
+		}
+		switch step.RunMode {
+		case "", "auto", "manual", "skip": // 空值兼容历史配置
+		default:
+			return fmt.Errorf("无效的 RAG 流水线 run_mode: %q", step.RunMode)
 		}
 	}
 	return nil
+}
+
+func validateRagPipelineName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", errors.New("管线名称不能为空")
+	}
+	if utf8.RuneCountInString(name) > 20 {
+		return "", errors.New("管线名称不能超过20个字符")
+	}
+	return name, nil
 }
 
 func validateWikiPipelineProfile(profileStr string) error {
@@ -781,4 +846,100 @@ func validateWikiPipelineProfile(profileStr string) error {
 		}
 	}
 	return errors.New("Wiki 管线必须包含 wiki_page_generation 步骤")
+}
+
+func validRagRoutingLogic(logic int) bool {
+	return logic == model.RagRoutingLogicAnd || logic == model.RagRoutingLogicOr
+}
+
+func normalizeRoutingConditions(raw json.RawMessage, kind string) (string, error) {
+	if kind == model.PipelineKindRag && bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", errors.New("conditions_json 不能为 null")
+	}
+	return normalizeJSONString(raw)
+}
+
+func validateRagRoutingConditions(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil // 空条件表示无条件匹配，兼容默认策略
+	}
+	var conditions struct {
+		Matchers []struct {
+			Type     string          `json:"type"`
+			Operator string          `json:"operator"`
+			Value    json.RawMessage `json:"value"`
+		} `json:"matchers"`
+	}
+	if err := json.Unmarshal([]byte(raw), &conditions); err != nil {
+		return errors.New("conditions_json 格式无效")
+	}
+	if len(conditions.Matchers) == 0 {
+		return errors.New("conditions_json.matchers 不能为空")
+	}
+	for i, matcher := range conditions.Matchers {
+		typ := strings.ToLower(strings.TrimSpace(matcher.Type))
+		op := strings.ToLower(strings.TrimSpace(matcher.Operator))
+		allowList := false
+		switch typ {
+		case "extension":
+			allowList = true
+			if !oneOf(op, "in", "belongs", "eq", "equals") {
+				return fmt.Errorf("matcher[%d] 的 extension 操作符无效", i)
+			}
+		case "filename":
+			switch op {
+			case "contains", "include", "eq", "equals", "starts_with", "startswith", "prefix", "ends_with", "endswith", "suffix":
+			case "in", "belongs":
+				allowList = true
+			default:
+				return fmt.Errorf("matcher[%d] 的 filename 操作符无效", i)
+			}
+		case "library_kind":
+			switch op {
+			case "eq", "equals":
+			case "in", "belongs":
+				allowList = true
+			default:
+				return fmt.Errorf("matcher[%d] 的 library_kind 操作符无效", i)
+			}
+		default:
+			return fmt.Errorf("matcher[%d] 的类型无效", i)
+		}
+		if err := validateRagMatcherValue(matcher.Value, allowList); err != nil {
+			return fmt.Errorf("matcher[%d] 的 value 无效", i)
+		}
+	}
+	return nil
+}
+
+func validateRagMatcherValue(raw json.RawMessage, allowList bool) error {
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		if strings.TrimSpace(value) != "" {
+			return nil
+		}
+		return errors.New("value 不能为空")
+	}
+	if !allowList {
+		return errors.New("value 必须为字符串")
+	}
+	var values []string
+	if err := json.Unmarshal(raw, &values); err != nil || len(values) == 0 {
+		return errors.New("value 必须为非空字符串或字符串数组")
+	}
+	for _, item := range values {
+		if strings.TrimSpace(item) == "" {
+			return errors.New("value 不能包含空字符串")
+		}
+	}
+	return nil
+}
+
+func oneOf(value string, options ...string) bool {
+	for _, option := range options {
+		if value == option {
+			return true
+		}
+	}
+	return false
 }

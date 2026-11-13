@@ -14,6 +14,15 @@ type RetryConfig struct {
 	InitialDelay  time.Duration    // Initial delay before first retry (default: 500ms)
 	MaxDelay      time.Duration    // Maximum delay cap (default: 30s)
 	RetryableFunc func(error) bool // Predicate to determine if error is retryable (default: all errors retryable)
+	// RetryHook, when set, is invoked before each retry with the attempt index
+	// (0-based) and the error that triggered the retry. It is the hook to use when
+	// the next attempt must differ from the previous one — for example when
+	// feeding a language model the reason the previous output was rejected.
+	//
+	// Without it, retries re-run the exact same input, which is only useful for
+	// transient failures (network errors, rate limits). For content validation
+	// failures it burns tokens on an identical request.
+	RetryHook func(attempt int, err error)
 }
 
 // RetryOption is a functional option for configuring retry behavior
@@ -44,6 +53,18 @@ func WithMaxDelay(maxDelay time.Duration) RetryOption {
 func WithRetryableFunc(fn func(error) bool) RetryOption {
 	return func(c *RetryConfig) {
 		c.RetryableFunc = fn
+	}
+}
+
+// WithRetryHook registers a callback invoked before each retry.
+//
+// The hook receives the 0-based attempt index and the error that triggered the
+// retry. Use it when the next attempt must carry new information — e.g. telling
+// a model which contract its previous output violated, so the retry is not a
+// blind re-sample of the same prompt.
+func WithRetryHook(fn func(attempt int, err error)) RetryOption {
+	return func(c *RetryConfig) {
+		c.RetryHook = fn
 	}
 }
 
@@ -105,6 +126,12 @@ func Retry(ctx context.Context, fn func() error, opts ...RetryOption) error {
 		if !config.RetryableFunc(err) {
 			logger.SysLogf("Retry: non-retryable error encountered: %v", err)
 			return err
+		}
+
+		// Give the caller a chance to change what the next attempt will do
+		// (e.g. amend a prompt with the reason the previous output failed).
+		if config.RetryHook != nil {
+			config.RetryHook(attempt, err)
 		}
 
 		// Calculate exponential backoff delay

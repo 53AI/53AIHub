@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"log"
@@ -179,6 +180,21 @@ func BatchGetDocumentChunksByIDs(eid int64, ids []int64) ([]DocumentChunk, error
 func GetDocumentChunksByFileID(eid int64, fileID int64, offset, limit int) ([]DocumentChunk, error) {
 	var chunks []DocumentChunk
 	query := DB.Where("eid = ? AND file_id = ?", eid, fileID).Order("chunk_index asc")
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+	if err := query.Find(&chunks).Error; err != nil {
+		return nil, err
+	}
+	return chunks, nil
+}
+
+func GetDocumentChunksByFileIDWithContext(ctx context.Context, eid, fileID int64, offset, limit int) ([]DocumentChunk, error) {
+	var chunks []DocumentChunk
+	query := DB.WithContext(ctx).Where("eid = ? AND file_id = ?", eid, fileID).Order("chunk_index asc")
 	if limit > 0 {
 		query = query.Limit(limit)
 	}

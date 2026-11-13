@@ -75,7 +75,7 @@ func (s *RecordingMemoryEntityService) MergeMany(ctx context.Context, userID int
 
 	// 3. 事务落库（公共底层：facts 迁移 + 关联修正 + content/summary 替换 + aliases + relation + source 软删 + stats）。
 	err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return mergeRecordingEntitiesTx(tx, s.eid, userID, sourceIDs, target.ID, mergedSummary)
+		return mergeRecordingEntitiesTx(tx, s.eid, userID, sourceIDs, target.ID, mergedSummary, "confirmed")
 	})
 	if err != nil {
 		return nil, err
@@ -163,11 +163,13 @@ func dedupeRecordingMemoryEntityIDs(ids []int64) []int64 {
 }
 
 // migrateRecordingMemoryFact 把事实迁移到基底；目标已存在同源同内容事实时软删重复项。
+// 去重键必须包含 related_entity_id 与 fact_kind：关联行 content 通常为空、file_id=0，
+// 若只按 (entity_id, file_id, source_type, content) 判重，会把指向不同目标的关联行误判为重复而丢弃。
 func migrateRecordingMemoryFact(tx *gorm.DB, eid, userID, targetID int64, fact model.RecordingMemoryFact) error {
 	var duplicate int64
 	if err := tx.Model(&model.RecordingMemoryFact{}).
-		Where("eid = ? AND owner_id = ? AND entity_id = ? AND file_id = ? AND source_type = ? AND content = ? AND is_deleted = ?",
-			eid, userID, targetID, fact.FileID, fact.SourceType, fact.Content, false).
+		Where("eid = ? AND owner_id = ? AND entity_id = ? AND file_id = ? AND source_type = ? AND content = ? AND related_entity_id = ? AND fact_kind = ? AND is_deleted = ?",
+			eid, userID, targetID, fact.FileID, fact.SourceType, fact.Content, fact.RelatedEntityID, fact.FactKind, false).
 		Count(&duplicate).Error; err != nil {
 		return err
 	}
@@ -258,7 +260,7 @@ func fixMergedEntityReferences(tx *gorm.DB, eid, ownerID int64, sourceID, target
 // facts 去重迁移、关联修正（related_entity_id 改向 + content/summary 旧名替换）、aliases 并入、
 // relation 迁移、source 软删释放名字、stats 刷新。mergedSummary 非空时更新 target.summary。
 // 不校验权限（调用方保证）；不调用 LLM（事务内禁止，LLM 合并由调用方在事务外完成）。
-func mergeRecordingEntitiesTx(tx *gorm.DB, eid, ownerID int64, sourceIDs []int64, targetID int64, mergedSummary string) error {
+func mergeRecordingEntitiesTx(tx *gorm.DB, eid, ownerID int64, sourceIDs []int64, targetID int64, mergedSummary, bindingSource string) error {
 	var target model.RecordingMemoryEntity
 	if err := tx.First(&target, targetID).Error; err != nil {
 		return err
@@ -285,12 +287,30 @@ func mergeRecordingEntitiesTx(tx *gorm.DB, eid, ownerID int64, sourceIDs []int64
 				return err
 			}
 		}
+		if err := redirectRecordingMemoryBindingsOnMerge(tx, eid, ownerID, source, facts, targetID, bindingSource); err != nil {
+			return err
+		}
 		// 关联修正 + content/summary 旧名替换（需求2）
 		if err := fixMergedEntityReferences(tx, eid, ownerID, sourceID, targetID, source.CanonicalName, target.CanonicalName); err != nil {
 			return err
 		}
-		// 别名并入基底（辅助查找，不改展示内容）；本地累积避免多源互相覆盖
-		targetAliases = mergeRecordingMemoryAliases(targetAliases, append(decodeStringSlice(source.AliasesJSON), source.CanonicalName))
+		// 别名并入基底（辅助查找，不改展示内容）；本地累积避免多源互相覆盖。
+		// 其他称呼仅人员保留：来源主名只在人员并入，其余类型不再制造别名。
+		sourceAliases := decodeStringSlice(source.AliasesJSON)
+		if target.EntityType == "person" {
+			if !recordingMemoryAmbiguousTitle(source.CanonicalName) {
+				sourceAliases = append(sourceAliases, source.CanonicalName)
+			}
+			// "张总"等只有当前会议才可确认，不能由合并自动升级为全局别名。
+			filtered := sourceAliases[:0]
+			for _, alias := range sourceAliases {
+				if !recordingMemoryAmbiguousTitle(alias) {
+					filtered = append(filtered, alias)
+				}
+			}
+			sourceAliases = filtered
+		}
+		targetAliases = mergeRecordingMemoryAliases(targetAliases, sourceAliases)
 		// 来源软删并指向基底；释放名字（融合只影响历史，后续同名可再建新卡）
 		if err := tx.Model(&model.RecordingMemoryEntity{}).Where("id = ?", sourceID).
 			Updates(map[string]interface{}{"merged_into_id": targetID, "is_deleted": true, "normalized_name": gorm.Expr("NULL")}).Error; err != nil {
@@ -300,8 +320,13 @@ func mergeRecordingEntitiesTx(tx *gorm.DB, eid, ownerID int64, sourceIDs []int64
 		if err := migrateRecordingMemoryEntityRelations(tx, eid, ownerID, sourceID, targetID); err != nil {
 			return err
 		}
+		// 声音基准迁移：人员并入基底后，基准要跟着走，否则新卡片丢失声音样本、旧 id 变成孤儿
+		if err := migrateRecordingSpeakerBaselines(tx, eid, sourceID, targetID); err != nil {
+			return err
+		}
 	}
-	// 别名统一落库（累积结果）
+	// 别名统一落库（累积结果；按"仅人员保留、剔除与主名重复"收敛，顺带清理存量脏数据）
+	targetAliases = CleanRecordingMemoryAliases(target.EntityType, target.CanonicalName, targetAliases)
 	if len(targetAliases) > 0 {
 		payload, err := json.Marshal(targetAliases)
 		if err != nil {
@@ -311,7 +336,36 @@ func mergeRecordingEntitiesTx(tx *gorm.DB, eid, ownerID int64, sourceIDs []int64
 			return err
 		}
 	}
+	// 融合可能让同一人物出现多条 belongs_to 关联（企业与人物两侧都可能），收敛为 1 条
+	if err := convergeRecordingMemoryEntityCompanyLinks(tx, eid, ownerID); err != nil {
+		return err
+	}
 	return refreshRecordingMemoryEntityStats(tx, eid, ownerID, targetID)
+}
+
+// migrateRecordingSpeakerBaselines 把来源人员的基准片段迁到基底；与基底同录音同区间的重复项软删，避免列表重复。
+func migrateRecordingSpeakerBaselines(tx *gorm.DB, eid, sourceID, targetID int64) error {
+	var baselines []model.RecordingSpeakerBaseline
+	if err := tx.Where("eid = ? AND contact_id = ? AND is_deleted = ?", eid, sourceID, false).Find(&baselines).Error; err != nil {
+		return err
+	}
+	for _, baseline := range baselines {
+		var duplicated int64
+		if err := tx.Model(&model.RecordingSpeakerBaseline{}).
+			Where("eid = ? AND contact_id = ? AND file_id = ? AND start_ms = ? AND end_ms = ? AND is_deleted = ?",
+				eid, targetID, baseline.FileID, baseline.StartMs, baseline.EndMs, false).
+			Count(&duplicated).Error; err != nil {
+			return err
+		}
+		updates := map[string]interface{}{"contact_id": targetID}
+		if duplicated > 0 {
+			updates["is_deleted"] = true
+		}
+		if err := tx.Model(&model.RecordingSpeakerBaseline{}).Where("id = ?", baseline.ID).Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // AutoMergeSameNameEntities 扫描 eid/ownerID 下"同名同类型"多张活动实体并自动融合（需求1）。
@@ -327,7 +381,7 @@ func AutoMergeSameNameEntities(ctx context.Context, eid, ownerID int64) (int, er
 	// 按 (entityType, 规范化 canonical_name) 分组；排除 ASR speaker 标签（跨会议可能不同人，不自动合并）
 	groups := map[string][]model.RecordingMemoryEntity{}
 	for _, e := range entities {
-		if isGeneratedSpeakerLabel(e.CanonicalName) {
+		if isGeneratedSpeakerLabel(e.CanonicalName) || e.EntityType == "person" && recordingMemoryAmbiguousTitle(e.CanonicalName) {
 			continue
 		}
 		name := strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(e.CanonicalName)), ""))
@@ -357,7 +411,7 @@ func AutoMergeSameNameEntities(ctx context.Context, eid, ownerID int64) (int, er
 			continue
 		}
 		err = model.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			return mergeRecordingEntitiesTx(tx, eid, ownerID, sourceIDs, target.ID, mergedSummary)
+			return mergeRecordingEntitiesTx(tx, eid, ownerID, sourceIDs, target.ID, mergedSummary, "automatic")
 		})
 		if err != nil {
 			return merged, err

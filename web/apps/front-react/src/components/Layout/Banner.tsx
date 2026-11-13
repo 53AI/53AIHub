@@ -1,6 +1,7 @@
 import { Carousel } from "antd";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import "./Banner.css";
+import { SafeImage } from "@km/shared-components-react";
 
 export function Banner() {
   const enterpriseStore = useEnterpriseStore();
@@ -28,7 +29,7 @@ export function Banner() {
             key={index}
             className="w-full !flex items-center justify-center banner-item"
           >
-            <img
+            <SafeImage
               src={url}
               className="object-cover max-w-full max-h-full"
               alt=""

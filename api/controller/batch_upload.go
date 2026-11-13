@@ -185,19 +185,20 @@ func (ctrl *BatchUploadController) UploadFile(c *gin.Context) {
 			}
 
 			task := &service.UploadTask{
-				BatchID:       batchID,
-				FileID:        fileID,
-				RelativePath:  relativePath,
-				UserID:        batch.UserID,
-				EID:           batch.EID,
-				LibraryID:     batch.LibraryID,
-				BasePath:      batch.BasePath,
-				OriginType:    batch.OriginType,
-				OriginSource:  batch.OriginSource,
-				OriginRefID:   batch.OriginRefID,
-				Nickname:      config.GetUserNickname(c),
-				IP:            utils.GetClientIP(c),
-				DuplicateMode: duplicateMode,
+				BatchID:            batchID,
+				FileID:             fileID,
+				RelativePath:       relativePath,
+				UserID:             batch.UserID,
+				EID:                batch.EID,
+				LibraryID:          batch.LibraryID,
+				BasePath:           batch.BasePath,
+				OriginType:         batch.OriginType,
+				OriginSource:       batch.OriginSource,
+				OriginRefID:        batch.OriginRefID,
+				Nickname:           config.GetUserNickname(c),
+				IP:                 utils.GetClientIP(c),
+				DuplicateMode:      duplicateMode,
+				RecordingStartTime: fileUpload.RecordingStartTime,
 			}
 			if err := ctrl.manager.HandleInstantUpload(task, existingUploadFile); err != nil {
 				c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
@@ -233,21 +234,22 @@ func (ctrl *BatchUploadController) UploadFile(c *gin.Context) {
 
 	// 提交上传任务
 	task := &service.UploadTask{
-		BatchID:       batchID,
-		FileID:        fileID,
-		RelativePath:  relativePath,
-		FileHeader:    fileHeader,
-		UserID:        batch.UserID,
-		EID:           batch.EID,
-		LibraryID:     batch.LibraryID,
-		BasePath:      batch.BasePath,
-		OriginType:    batch.OriginType,
-		OriginSource:  batch.OriginSource,
-		OriginRefID:   batch.OriginRefID,
-		GroupID:       batch.GroupID,
-		Nickname:      config.GetUserNickname(c),
-		IP:            utils.GetClientIP(c),
-		DuplicateMode: duplicateMode,
+		BatchID:            batchID,
+		FileID:             fileID,
+		RelativePath:       relativePath,
+		FileHeader:         fileHeader,
+		UserID:             batch.UserID,
+		EID:                batch.EID,
+		LibraryID:          batch.LibraryID,
+		BasePath:           batch.BasePath,
+		OriginType:         batch.OriginType,
+		OriginSource:       batch.OriginSource,
+		OriginRefID:        batch.OriginRefID,
+		GroupID:            batch.GroupID,
+		Nickname:           config.GetUserNickname(c),
+		IP:                 utils.GetClientIP(c),
+		DuplicateMode:      duplicateMode,
+		RecordingStartTime: fileUpload.RecordingStartTime,
 	}
 
 	err = ctrl.manager.SubmitUploadTask(task)

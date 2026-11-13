@@ -11,6 +11,7 @@ import (
 	"github.com/53AI/53AIHub/common/thinkingpolicy"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service/hub_adaptor/custom_openai"
 	"github.com/gin-gonic/gin"
 )
 
@@ -149,8 +150,10 @@ type ChannelRequest struct {
 	// - vision: 是否支持视觉识别
 	// - structured_output: 是否支持结构化输出
 	// - stream_separator: 流式响应的分隔符
+	// - upstream_api_format: 上游协议（chat_completions，默认；responses）
+	// - enabled_tools: 启用工具白名单（function, web_search；默认空）
 	// 注意：Config字段只包含一份配置数据，不包含enabled字段
-	Config string `json:"config" example:"{\"completion_mode\":\"chat\",\"context_length\":4096,\"function_calling\":true}"`
+	Config string `json:"config" example:"[{\"model_id\":\"gpt-4.1\",\"completion_mode\":\"chat\",\"context_length\":4096,\"function_calling\":true,\"upstream_api_format\":\"responses\",\"enabled_tools\":[\"function\",\"web_search\"]}]"`
 
 	// CustomConfig字段：用于前端配置传输和展示的原始JSON字符串
 	// 仅用于接收前端传入的原始配置，由前端定义具体结构
@@ -198,6 +201,10 @@ func CreateChannel(c *gin.Context) {
 	}
 
 	if err := thinkingpolicy.ValidateThinkingConfig(req.Config); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	if err := validateChannelModelConfig(req.Type, req.Config); err != nil {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
@@ -323,6 +330,10 @@ func UpdateChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
 		return
 	}
+	if err := validateUpdatedChannelModelConfig(channel.Type, req.Type, req.Config); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
 
 	// 对于自定义模型类型，同样需要验证CustomConfig
 	// if req.Type == model.ChannelApiTypeCustomOpenAI {
@@ -395,6 +406,20 @@ func UpdateChannel(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(channel))
+}
+
+func validateChannelModelConfig(channelType int, channelConfig string) error {
+	if channelType != model.ChannelApiTypeCustomOpenAI {
+		return nil
+	}
+	return custom_openai.ValidateModelConfig(channelConfig)
+}
+
+func validateUpdatedChannelModelConfig(existingType, requestedType int, channelConfig string) error {
+	if requestedType <= 0 {
+		requestedType = existingType
+	}
+	return validateChannelModelConfig(requestedType, channelConfig)
 }
 
 // @Summary Delete channel

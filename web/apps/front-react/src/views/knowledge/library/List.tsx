@@ -10,7 +10,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { Button, Spin, message } from "antd";
 import { ClockCircleOutlined, PlusOutlined } from "@ant-design/icons";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useSpaceStore } from "@/stores/modules/space";
 import { t } from "@/locales";
 import { librariesApi, type LibraryItem } from "@/api/modules/libraries";
@@ -27,7 +27,6 @@ import {
   type ApplyDialogRef,
 } from "@/views/library/components/apply";
 import { InfoSaveDialog, type InfoSaveDialogRef } from "./InfoSaveDialog";
-import { SafeImage } from "@km/shared-components-react";
 import { EntityDisplay } from "@/components/EntityDisplay";
 import { useAbortController } from "@/hooks/useAbortController";
 import { checkVersion } from "@/utils/version";

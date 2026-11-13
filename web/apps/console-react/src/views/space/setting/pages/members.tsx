@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Button, Modal, Table, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { SvgIcon, IconAction } from "@km/shared-components-react";
+import { SvgIcon, IconAction, SafeImage } from "@km/shared-components-react";
 
 import { EntityDisplay } from "@/components/EntityDisplay";
 import { MemberSelector } from "@/components/Permission/member-selector";
@@ -15,7 +15,6 @@ import {
 } from "@/components/Permission/constant";
 import { permissionsApi } from "@/api/modules/permissions";
 import type { PermissionItem } from "@/api/modules/permissions";
-import { getPublicPath } from "@/utils/config";
 import type { SpaceItem } from "@/api/modules/spaces/types";
 
 import { t } from "@/locales";
@@ -268,8 +267,8 @@ export function MembersTab({ space, onRefresh: _onRefresh }: MembersTabProps) {
           if (record.subject_type === SUBJECT_TYPE.company_all) {
             return (
               <div className="flex items-center gap-2">
-                <img
-                  src={getPublicPath("/images/space/group.png")}
+                <SafeImage
+                  src={"/images/space/group.png"}
                   alt={t("space.all_members")}
                   className="size-6"
                 />

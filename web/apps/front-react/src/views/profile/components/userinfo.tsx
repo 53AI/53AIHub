@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react'
-import { Avatar, Button, Input, Modal, message } from 'antd'
+import { Button, Modal, message } from 'antd'
 import { RightOutlined, CloseOutlined, WarningFilled } from '@ant-design/icons'
 import { SafeImage } from '@km/shared-components-react'
 import { useUserStore } from '@/stores/modules/user'
 import { DEFAULT_USER_AVATAR } from '@/constants/user'
 import { useEnv } from '@/hooks/useEnv'
-import { CropperDialog, CropperDialogRef } from '@/components/CropperDialog'
+import { EditProfileModal } from '@/components/EditProfileModal'
 import ChangeMobile, { ChangeMobileRef } from './change-mobile'
 import ResetPassword, { ResetPasswordRef } from './reset-password'
 import Email, { EmailBindRef } from './email'
@@ -34,14 +34,9 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
   })
 
   const [openSMTP, setOpenSMTP] = useState(false)
-  const [profileForm, setProfileForm] = useState({
-    nickname: '',
-    avatar: ''
-  })
   const [qrcodeRender, setQrcodeRender] = useState(true)
   const originHistoryRef = useRef(0)
 
-  const cropperRef = useRef<CropperDialogRef>(null)
   const mobileRef = useRef<ChangeMobileRef>(null)
   const passwordRef = useRef<ResetPasswordRef>(null)
   const emailRef = useRef<EmailBindRef>(null)
@@ -61,26 +56,7 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
   }
 
   const handleEdit = () => {
-    setProfileForm({
-      avatar: userStore.info.avatar,
-      nickname: userStore.info.nickname
-    })
     setDialogs(prev => ({ ...prev, profile: true }))
-  }
-
-  const handleChangeAvatar = () => {
-    cropperRef.current?.uploadFile()
-  }
-
-  const handleSuccessCropper = (data: { url: string }) => {
-    setProfileForm(prev => ({ ...prev, avatar: data.url }))
-  }
-
-  const handleSaveProfile = async () => {
-    if (!profileForm.nickname.trim()) return
-    await userStore.update(profileForm)
-    setDialogs(prev => ({ ...prev, profile: false }))
-    message.success(t('status.updated'))
   }
 
   const handleSuccess = (type: 'email' | 'mobile') => {
@@ -247,42 +223,10 @@ const UserInfo = forwardRef<UserInfoRef>((_, ref) => {
       </Link>
 
       {/* Profile Dialog */}
-      <Modal
+      <EditProfileModal
         open={dialogs.profile}
-        title={t('action.edit') + t('profile.info')}
-        onCancel={() => setDialogs(prev => ({ ...prev, profile: false }))}
-        onOk={handleSaveProfile}
-        okButtonProps={{ disabled: !profileForm.nickname.trim() }}
-      >
-        <div className="mt-4">
-          <div className="w-[73px] text-regular text-opacity-80">{t('form.avatar')}</div>
-          <div
-            className="mt-3 relative rounded-full w-[60px] h-[60px] overflow-hidden cursor-pointer"
-            onClick={handleChangeAvatar}
-          >
-            <Avatar size={60} src={profileForm.avatar} />
-            <div className="absolute bottom-0 left-0 right-0 h-5 flex justify-center items-center bg-black/60 text-white/80 text-xs">
-              {t('form.change')}
-            </div>
-          </div>
-        </div>
-        <div className="mt-6">
-          <div className="w-[73px] text-regular text-opacity-80">{t('form.nickname')}</div>
-          <Input
-            className="mt-3 flex-1"
-            maxLength={15}
-            showCount
-            value={profileForm.nickname}
-            onChange={(e) => setProfileForm(prev => ({ ...prev, nickname: e.target.value }))}
-          />
-        </div>
-        <CropperDialog
-          ref={cropperRef}
-          onConfirm={handleSuccessCropper}
-          cropperDisabled
-          limitSize={2}
-        />
-      </Modal>
+        onClose={() => setDialogs(prev => ({ ...prev, profile: false }))}
+      />
 
       {/* Change Mobile Dialog */}
       <Modal

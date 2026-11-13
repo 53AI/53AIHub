@@ -203,7 +203,7 @@ func requireChunksPermission(c *gin.Context, eid int64, userID int64, chunkIDs [
 // 未配置回退 RAG 空间权限（resource_type=0）。与 Wiki 页面继承（resolveWikiPagePermissionFromData）
 // 同口径——否则只配了 type=4、未配 type=0 的用户会在空间级门禁被 403，type=4 形同虚设。
 func requireWikiSpacePermission(c *gin.Context, eid int64, userID int64, spaceID int64, minPermission int, deniedMessage string) bool {
-	permission, err := common.GetWikiSpaceReadPermission(eid, spaceID, userID)
+	permission, err := common.GetWikiSpaceReadPermission(eid, spaceID, userID, c.Request.Context())
 	if err != nil || permission < minPermission {
 		c.JSON(http.StatusForbidden, model.AuthFailed.ToResponse(errors.New(deniedMessage)))
 		return false

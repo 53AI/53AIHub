@@ -2,6 +2,8 @@ package relay
 
 import (
 	"context"
+	"github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service"
 	"sync"
 
 	"github.com/53AI/53AIHub/service/skill"
@@ -61,4 +63,15 @@ func prepareIntentRoutingPrerequisites(
 	}
 
 	return runnableSkillPathSet, skillSnapshot
+}
+
+func shouldSkipIntentClassification(request *ChatRequest, agent *model.Agent) bool {
+	return agent.AgentUsage == model.AgentUsageHub || (request.DatasetIsSoloDocument() && !service.IsAuthorizedDiscussionAgent(agent))
+}
+
+func currentIntentAttachmentTypes(request *ChatRequest, agent *model.Agent) []string {
+	if request.DatasetIsSoloFile() && service.IsAuthorizedDiscussionAgent(agent) {
+		return currentUserAttachmentTypes(request.Messages, request.FileIDs...)
+	}
+	return currentUserAttachmentTypes(request.Messages)
 }

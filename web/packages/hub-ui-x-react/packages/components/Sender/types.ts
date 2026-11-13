@@ -237,6 +237,10 @@ export interface UIConfig {
   needFixPositionWhenFocus?: boolean
   /** 操作按钮位置 */
   actionPosition?: 'actions' | 'extras'
+  /** 编辑器最小高度（px），默认 24（单行） */
+  editorMinHeight?: number
+  /** 编辑器最大高度（px），超出后内部滚动，默认 200 */
+  editorMaxHeight?: number
 }
 
 // ==================== Slot Props ====================

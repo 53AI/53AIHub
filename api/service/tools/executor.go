@@ -171,6 +171,15 @@ func ExecuteToolWithResult(ctx context.Context, name string, args map[string]int
 	case "save_memory":
 		return executeSaveMemory(ctx, args)
 
+	case "search_discussion_history":
+		return executeSearchDiscussionHistory(ctx, args)
+
+	case "query_boss_cognitions":
+		return executeQueryBossCognitions(ctx, args)
+
+	case "query_business_memory":
+		return executeQueryBusinessMemory(ctx, args)
+
 	default:
 		return nil, fmt.Errorf("tool execution not implemented for: %s", name)
 	}
@@ -2160,6 +2169,25 @@ func ExecuteToolStream(ctx context.Context, name string, args map[string]interfa
 	case "web_fetch":
 		return executeSyncToolStream(ctx, "web_fetch", func() (*ToolResult, error) {
 			return executeWebFetch(ctx, args)
+		}, handler)
+
+	// 二号总裁探讨只读上下文工具（Phase 2B/2C）。
+	// 这三个工具此前只注册在非流式分发里，而 Relay 实际总是走流式路径，
+	// 导致「工具已注入模型、执行时却恒报 tool execution not implemented」，
+	// 真实现象是模型拿不到任何检索结果（Phase 2E 实测根因）。
+	case "search_discussion_history":
+		return executeSyncToolStream(ctx, "search_discussion_history", func() (*ToolResult, error) {
+			return executeSearchDiscussionHistory(ctx, args)
+		}, handler)
+
+	case "query_boss_cognitions":
+		return executeSyncToolStream(ctx, "query_boss_cognitions", func() (*ToolResult, error) {
+			return executeQueryBossCognitions(ctx, args)
+		}, handler)
+
+	case "query_business_memory":
+		return executeSyncToolStream(ctx, "query_business_memory", func() (*ToolResult, error) {
+			return executeQueryBusinessMemory(ctx, args)
 		}, handler)
 
 	default:

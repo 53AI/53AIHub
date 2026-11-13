@@ -1,4 +1,4 @@
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { MoreDropdown } from '@/components/MoreDropdown'
 import { t } from '@/locales'
 import type { FileItem } from '../types'
@@ -89,7 +89,7 @@ export function FileTableRow({
     >
       {/* Name Column */}
       <div className="flex-1 min-w-0 flex items-center gap-2">
-        <img className="flex-none w-6 h-6" src={item.icon} alt="" />
+        <SafeImage className="flex-none w-6 h-6" src={item.icon} alt="" />
         <span className="text-sm text-primary truncate">{item.name}</span>
         {item.isFavorite && (
           <SvgIcon

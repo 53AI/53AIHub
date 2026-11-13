@@ -3,7 +3,7 @@ import { CloseOutlined } from '@ant-design/icons'
 import { usePromptFormDataStore } from '../store'
 import { RegisterUserGroupSelect } from '@/components/RegisterUserGroupSelect'
 import { useEnterpriseStore } from '@/stores'
-import { SvgIcon, PromptInput } from '@km/shared-components-react'
+import { SvgIcon, PromptInput, SafeImage } from '@km/shared-components-react';
 import GuideView from '../Guide'
 import { t } from '@/locales'
 import PromptPreview from './PromptPreview'
@@ -110,7 +110,7 @@ export function PromptConfigTab({
                       key={item.ai_link?.url || item.ai_link?.name || `link-${index}`}
                       className="h-8 flex items-center gap-2 px-3 border rounded-md hover:shadow-md bg-white"
                     >
-                      <img
+                      <SafeImage
                         className="size-5 rounded-full"
                         src={item.ai_link?.logo}
                         alt=""

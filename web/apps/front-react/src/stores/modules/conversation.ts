@@ -5,6 +5,7 @@ import conversationApi, {
   type DocumentType,
 } from '@/api/modules/conversation/index'
 import { getSimpleDateFormatString } from '@km/shared-utils'
+import { getEntryBase } from '@/constants/app-template'
 import { setRouterQuery } from '@/utils/router'
 import { isHashRouter, pathIncludes } from '@/router'
 import { AGENT_USAGES } from '@/constants/agent'
@@ -284,7 +285,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (isOpenClawConversationId(data.conversation_id)) {
         searchParams.set('type', 'openclaw')
       }
-      const url = `${state.base_path}?${searchParams.toString()}`
+      // 模板入口（history 模式）下需带入口文件名前缀，避免整页跳转退回主入口
+      const url = `${getEntryBase()}${state.base_path}?${searchParams.toString()}`
       if (isConversationHistoryRoute()) {
         window.history.replaceState(null, '', url)
       } else {

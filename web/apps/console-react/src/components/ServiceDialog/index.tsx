@@ -1,6 +1,7 @@
 import { Modal } from "antd";
 import { PhoneFilled } from "@ant-design/icons";
 import { t } from "@/locales";
+import { SafeImage } from "@km/shared-components-react";
 
 export interface ServiceDialogProps {
   open?: boolean;
@@ -34,7 +35,7 @@ export function ServiceDialog({
           style={{ display: "flex", marginBottom: 30, padding: "0 38px" }}
         >
           <div className="w-[70px] h-[70px] rounded-full bg-white flex justify-center items-center">
-            <img
+            <SafeImage
               className="w-[50px] h-[50px]"
               src="https://chat.53ai.com/images/extension_icon.png"
               alt="service"
@@ -96,7 +97,7 @@ export function ServiceDialog({
             right: 30,
           }}
         >
-          <img
+          <SafeImage
             src="https://hub.53ai.com/console/images/upgrade-qrcode.png"
             alt="qrcode"
             style={{ width: "100%", height: "100%" }}

@@ -11,6 +11,7 @@ import { filesApi } from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
 import { buildUrl } from "@/utils/router";
 import Header from "@/components/Layout/Header";
+import { useIsSoftStyle } from "@/stores/modules/enterprise";
 import { useNavigationStore } from "@/stores/modules/navigation";
 import { t } from "@/locales";
 import { getFormatTimeStamp } from "@km/shared-utils";
@@ -37,6 +38,7 @@ export function MineView() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isMdScreen } = useBasicLayout();
   const navigationStore = useNavigationStore();
+  const isSoftStyle = useIsSoftStyle();
 
   // 版本权限判断
   const hasKnowledgeBase = navigationStore.hasKnowledge && checkVersion(VERSION_MODULE.KNOWLEDGE_BASE);
@@ -555,9 +557,15 @@ export function MineView() {
 
         {(activeTab !== "upload" || !contextInitializing) && (
           <>
-            <Header title={t("module.mine")} border={false}></Header>
+            {/* 软件模式才有页内 Header；网站模式顶部导航已标识页面，不重复展示 */}
+            {isSoftStyle && <Header title={t("module.mine")} border={false}></Header>}
 
-            <div className="w-11/12 lg:w-4/5 max-w-[1200px] mx-auto py-5 relative h-[calc(100%-96px)] flex flex-col">
+            <div
+              className={`w-11/12 lg:w-4/5 max-w-[1200px] mx-auto py-5 relative flex flex-col ${
+                /* 高度扣除页内 Header（软件模式）；网站模式无 Header，仅扣 py-5 */
+                isSoftStyle ? "h-[calc(100%-96px)]" : "h-[calc(100%-40px)]"
+              }`}
+            >
               <MineHeader
                 tabs={filteredTabList}
                 activeTab={activeTab}

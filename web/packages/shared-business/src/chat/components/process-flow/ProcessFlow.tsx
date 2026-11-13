@@ -1,8 +1,14 @@
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { message } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
+import { SafeImage } from "@km/shared-components-react";
 import { formatFileInfo } from "@km/shared-utils";
-import { safeParseJson, formatLlmContent, dedupeWikiPages } from "./utils";
+import {
+  safeParseJson,
+  formatLlmContent,
+  dedupeWikiPages,
+  localizeIntentReasoning,
+} from "./utils";
 import { copyToClip } from "@km/shared-utils";
 import { useTranslation, useKnowledgePanel } from "../../i18n";
 import type { ProcessFlowHeaderProps, ProcessRecord, StepStatus, TranslateFn } from "./types";
@@ -150,7 +156,10 @@ function parseProcessSteps(
     if (stepCode === "intent_classification") {
       const config = STEP_CONFIG.intent_classification;
       const existingIdx = steps.findIndex(s => s.type === "intent_classification");
-      const displayMessage = (data as any)?.intent?.reasoning || record.message || "";
+      const displayMessage = localizeIntentReasoning(
+        (data as any)?.intent?.reasoning || record.message || "",
+        t,
+      );
       if (existingIdx !== -1) {
         const existing = steps[existingIdx];
         existing.status = isCompleted ? "completed" : "running";
@@ -225,7 +234,7 @@ function parseProcessSteps(
       if (existingIdx !== -1) {
         const existing = steps[existingIdx];
         existing.status = isCompleted ? "completed" : "running";
-        existing.title = isCompleted ? config.completed.title : config.running.title;
+        existing.title = isCompleted ? config.completed.title : record.message || config.running.title;
         existing.icon = isCompleted ? config.completed.icon : config.running.icon;
         if (data) existing.data = data;
       } else {
@@ -233,7 +242,7 @@ function parseProcessSteps(
           id: "knowledge_search",
           type: "knowledge_search",
           status: isCompleted ? "completed" : "running",
-          title: isCompleted ? config.completed.title : config.running.title,
+          title: isCompleted ? config.completed.title : record.message || config.running.title,
           icon: isCompleted ? config.completed.icon : config.running.icon,
           data: data,
         });
@@ -858,7 +867,7 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                                 style={{ cursor: isInteractive ? "pointer" : "default" }}
                                 onClick={() => handleSourceItemClick(source)}
                               >
-                                <span className="x-task-relation-icon"><img src={icon} alt="" style={{ width: 16, height: 16 }} /></span>
+                                <span className="x-task-relation-icon"><SafeImage src={icon} alt="" style={{ width: 16, height: 16 }} /></span>
                                 <span className="x-task-relation-name">{fname || source.library_name || filePath.split("/").pop()}</span>
                               </span>
                             );
@@ -896,7 +905,7 @@ const ProcessFlow: React.FC<ProcessFlowHeaderProps> = ({
                   <div className="x-task-relation-list">
                     {webPageResults.map((item: any, idx: number) => (
                       <span key={idx} className="x-task-relation-item">
-                        <span className="x-task-relation-icon"><img src={item.library_icon} alt="" style={{ width: 16, height: 16 }} /></span> 
+                        <span className="x-task-relation-icon"><SafeImage src={item.library_icon || ""} alt="" style={{ width: 16, height: 16 }} /></span> 
                         <span className="x-task-relation-name">{item.title || item.name || item.url}</span>
                       </span>
                     ))}

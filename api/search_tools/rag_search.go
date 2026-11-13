@@ -71,6 +71,10 @@ func (r *RagSearcher) Search(query string, count int) ([]*SearchItem, error) {
 	return r.convertResults(searchResponse.Results), nil
 }
 
+func (r *RagSearcher) SearchContext(ctx context.Context, query string, count int) (*SearchResult, error) {
+	return r.SearchBatch(ctx, []string{query}, count)
+}
+
 func (r *RagSearcher) SearchBatch(ctx context.Context, queries []string, count int) (*SearchResult, error) {
 	if len(queries) == 0 {
 		return &SearchResult{Items: []*SearchItem{}, Errors: []error{fmt.Errorf("queries is empty")}}, nil

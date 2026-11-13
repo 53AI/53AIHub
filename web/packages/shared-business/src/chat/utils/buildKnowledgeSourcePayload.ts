@@ -41,20 +41,10 @@ export interface KnowledgeSourcePayload {
   }
 }
 
-export interface BuildKnowledgeSourcePayloadOptions {
-  /**
-   * 联网搜索时附带的具体配置(top_k、provider 等)。
-   * 不传时只发 `web_search_config: {}`,由后端使用默认值。
-   */
-  webSearchConfig?: Record<string, unknown>
-}
-
 export function buildKnowledgeSourcePayload(
   config: KnowledgeSourcePayloadConfig,
-  options: BuildKnowledgeSourcePayloadOptions = {},
 ): KnowledgeSourcePayload {
   const { state, graphEnabled, webSearchEnabled, wikiEnabled, wikis } = config
-  const { webSearchConfig } = options
 
   // 仅在有内容时才发出对应字段，避免向 API 发送空数组。
   // space_ids = space 类型 wiki 的 id ∪ page 类型 wiki 所属的 space_id（去重）。
@@ -82,7 +72,7 @@ export function buildKnowledgeSourcePayload(
   return {
     ...(state.knowledgeGraph && graphEnabled ? { enable_graph_search: true } : {}),
     ...(state.networkSearch && webSearchEnabled
-      ? { web_search_config: webSearchConfig ?? {} }
+      ? { web_search_config: { enable: true } }
       : {}),
     ...(wikiSearchConfig ? { wiki_search_config: wikiSearchConfig } : {}),
   }

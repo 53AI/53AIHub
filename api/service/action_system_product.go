@@ -48,29 +48,32 @@ var (
 var recordingActionOpportunityDetectionGroup singleflight.Group
 
 type ActionOpportunityView struct {
-	OpportunityID        string                     `json:"opportunity_id"`
-	SourceType           string                     `json:"source_type"`
-	SourceID             string                     `json:"source_id"`
-	SourceInsightID      string                     `json:"source_insight_id"`
-	SourceMeetingID      string                     `json:"source_meeting_id"`
-	InsightGeneration    int64                      `json:"insight_generation"`
-	Title                string                     `json:"title"`
-	Type                 string                     `json:"type"`
-	TypeLabel            string                     `json:"type_label"`
-	Reason               string                     `json:"reason"`
-	Objective            string                     `json:"objective"`
-	Deliverables         []actionsystem.Deliverable `json:"deliverables"`
-	DisplayDeliverable   string                     `json:"display_deliverable"`
-	RequiredCapabilities []string                   `json:"required_capabilities"`
-	HumanDependency      string                     `json:"human_dependency"`
-	AIExecutableScore    float64                    `json:"ai_executable_score"`
-	RiskLevel            string                     `json:"risk_level"`
-	Priority             int                        `json:"priority"`
-	Status               string                     `json:"status"`
-	SourceLinks          []*ActionSourceLinkView    `json:"source_links,omitempty"`
-	SourceRefs           []actionsystem.SourceRef   `json:"source_refs"`
-	CreatedTime          int64                      `json:"created_time"`
-	UpdatedTime          int64                      `json:"updated_time"`
+	OpportunityID        string                       `json:"opportunity_id"`
+	SourceType           string                       `json:"source_type"`
+	SourceID             string                       `json:"source_id"`
+	SourceInsightID      string                       `json:"source_insight_id"`
+	SourceMeetingID      string                       `json:"source_meeting_id"`
+	InsightGeneration    int64                        `json:"insight_generation"`
+	Title                string                       `json:"title"`
+	Type                 string                       `json:"type"`
+	TypeLabel            string                       `json:"type_label"`
+	Reason               string                       `json:"reason"`
+	Objective            string                       `json:"objective"`
+	Deliverables         []actionsystem.Deliverable   `json:"deliverables"`
+	ExecutionSteps       []actionsystem.ExecutionStep `json:"execution_steps"`
+	DisplayDeliverable   string                       `json:"display_deliverable"`
+	RequiredCapabilities []string                     `json:"required_capabilities"`
+	HumanDependency      string                       `json:"human_dependency"`
+	AIExecutableScore    float64                      `json:"ai_executable_score"`
+	RiskLevel            string                       `json:"risk_level"`
+	Priority             int                          `json:"priority"`
+	Status               string                       `json:"status"`
+	IsRead               bool                         `json:"is_read"`
+	IsTrashed            bool                         `json:"is_trashed"`
+	SourceLinks          []*ActionSourceLinkView      `json:"source_links,omitempty"`
+	SourceRefs           []actionsystem.SourceRef     `json:"source_refs"`
+	CreatedTime          int64                        `json:"created_time"`
+	UpdatedTime          int64                        `json:"updated_time"`
 }
 
 type ActionPlanView struct {
@@ -78,6 +81,7 @@ type ActionPlanView struct {
 	OpportunityID        string                             `json:"opportunity_id"`
 	ActionID             string                             `json:"action_id,omitempty"`
 	Status               string                             `json:"status"`
+	IsTrashed            bool                               `json:"is_trashed"`
 	Objective            string                             `json:"objective"`
 	Background           string                             `json:"background"`
 	Scope                string                             `json:"scope"`
@@ -168,6 +172,18 @@ func (s *ActionRuntimeService) DetectInsightActionOpportunities(ctx context.Cont
 	return opportunities, nil
 }
 
+// currentInsightOpportunities returns only proposals derived from this formal insight generation.
+// Historical records are retained in storage for their plans, actions and audit trail.
+func currentInsightOpportunities(existing []*model.ActionOpportunityAggregate, generation int64) []*model.ActionOpportunityAggregate {
+	current := make([]*model.ActionOpportunityAggregate, 0, len(existing))
+	for _, item := range existing {
+		if item != nil && item.Record != nil && item.Record.InsightGeneration == generation {
+			current = append(current, item)
+		}
+	}
+	return current
+}
+
 func (s *ActionRuntimeService) detectInsightActionOpportunities(ctx context.Context, eid, userID, fileID int64) ([]*ActionOpportunityView, error) {
 	file, err := GetViewableRecordingFile(ctx, eid, userID, fileID)
 	if err != nil {
@@ -198,7 +214,7 @@ func (s *ActionRuntimeService) detectInsightActionOpportunities(ctx context.Cont
 			return nil, legacyErr
 		}
 		for _, aggregate := range legacy {
-			if err := model.MigrateActionOpportunitySource(ctx, eid, userID, aggregate.Record.OpportunityID, sourceInsightID, sourceInsightID, sourceMeetingID, file.InsightGeneration, sourceRefs); err != nil {
+			if err := model.MigrateActionOpportunitySource(ctx, eid, userID, aggregate.Record.OpportunityID, sourceInsightID, sourceInsightID, sourceMeetingID, aggregate.Record.InsightGeneration, sourceRefs); err != nil {
 				return nil, err
 			}
 		}
@@ -207,10 +223,8 @@ func (s *ActionRuntimeService) detectInsightActionOpportunities(ctx context.Cont
 			return nil, listErr
 		}
 	}
-	for _, aggregate := range existing {
-		if aggregate.Record.InsightGeneration == file.InsightGeneration {
-			return s.opportunityViews(ctx, eid, existing)
-		}
+	if current := currentInsightOpportunities(existing, file.InsightGeneration); len(current) > 0 {
+		return s.opportunityViews(ctx, eid, current)
 	}
 	background, err := GetInsightBackground(ctx, eid, userID, fileID)
 	if err != nil {
@@ -298,29 +312,105 @@ func (s *ActionRuntimeService) ListActionOpportunities(ctx context.Context, eid,
 	if err != nil {
 		return nil, err
 	}
-	return s.opportunityViews(ctx, eid, aggregates)
+	active := make([]*model.ActionOpportunityAggregate, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		if aggregate == nil || aggregate.Record == nil || aggregate.Record.IsTrashed || aggregate.Record.Status == model.ActionOpportunityStatusDismissed {
+			continue
+		}
+		active = append(active, aggregate)
+	}
+	return s.opportunityViews(ctx, eid, active)
 }
 
-// PatchActionOpportunity 是机会状态唯一写入口（candidate ↔ dismissed）。
-func (s *ActionRuntimeService) PatchActionOpportunity(ctx context.Context, eid, userID int64, opportunityID, status string) (*ActionOpportunityView, error) {
-	if status != model.ActionOpportunityStatusCandidate && status != model.ActionOpportunityStatusDismissed {
-		return nil, ErrActionInvalidRequest
+type ActionOpportunityPage struct {
+	Items    []*ActionOpportunityView `json:"items"`
+	Total    int64                    `json:"total"`
+	Page     int                      `json:"page"`
+	PageSize int                      `json:"page_size"`
+}
+
+func (s *ActionRuntimeService) ListActionOpportunitiesPage(ctx context.Context, eid, userID int64, statusFilter, typeFilter string, page, pageSize int) (*ActionOpportunityPage, error) {
+	if page < 1 {
+		page = 1
 	}
-	aggregate, err := model.GetActionOpportunityForUser(ctx, eid, userID, strings.TrimSpace(opportunityID))
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	aggregates, total, err := model.ListActionOpportunitiesForUserPage(ctx, eid, userID, strings.TrimSpace(statusFilter), strings.TrimSpace(typeFilter), page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.opportunityViews(ctx, eid, aggregates)
+	if err != nil {
+		return nil, err
+	}
+	return &ActionOpportunityPage{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+// PatchActionOpportunity updates read state and recycle-bin lifecycle without conflating either with planning state.
+func (s *ActionRuntimeService) PatchActionOpportunity(ctx context.Context, eid, userID int64, opportunityID, status string) (*ActionOpportunityView, error) {
+	opportunityID = strings.TrimSpace(opportunityID)
+	status = strings.TrimSpace(status)
+	aggregate, err := model.GetActionOpportunityForUser(ctx, eid, userID, opportunityID)
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
 	}
-	if aggregate.Record.Status == status {
-		return s.actionOpportunityView(ctx, eid, aggregate)
+	switch status {
+	case "read", "unread":
+		desiredRead := status == "read"
+		if aggregate.Record.IsRead != desiredRead {
+			if err := model.SetActionOpportunityReadState(ctx, eid, userID, opportunityID, desiredRead); err != nil {
+				return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
+			}
+		}
+	case "dismissed", "trash":
+		if aggregate.Record.Status != model.ActionOpportunityStatusDismissed {
+			if err := model.TrashActionOpportunity(ctx, eid, userID, opportunityID); err != nil {
+				return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
+			}
+		}
+	case "restore":
+		if aggregate.Record.IsTrashed || aggregate.Record.Status == model.ActionOpportunityStatusDismissed {
+			if err := model.RestoreActionOpportunity(ctx, eid, userID, opportunityID); err != nil {
+				return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
+			}
+		}
+	case model.ActionOpportunityStatusCandidate:
+		if aggregate.Record.IsTrashed || aggregate.Record.Status == model.ActionOpportunityStatusDismissed {
+			if err := model.RestoreActionOpportunity(ctx, eid, userID, opportunityID); err != nil {
+				return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
+			}
+		} else if aggregate.Record.Status != model.ActionOpportunityStatusCandidate {
+			return nil, ErrActionOpportunityState
+		}
+	default:
+		return nil, ErrActionInvalidRequest
 	}
-	if status == model.ActionOpportunityStatusDismissed && aggregate.Record.Status != model.ActionOpportunityStatusCandidate {
-		return nil, ErrActionOpportunityState
+	updated, err := model.GetActionOpportunityForUser(ctx, eid, userID, opportunityID)
+	if err != nil {
+		return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
 	}
-	if err := model.UpdateActionOpportunityStatus(ctx, eid, userID, opportunityID, status); err != nil {
-		return nil, err
+	return s.actionOpportunityView(ctx, eid, updated)
+}
+
+func (s *ActionRuntimeService) PermanentlyDeleteActionOpportunity(ctx context.Context, eid, userID int64, opportunityID string) error {
+	opportunity, err := model.GetActionOpportunityForUser(ctx, eid, userID, strings.TrimSpace(opportunityID))
+	if err != nil {
+		return mapActionNotFound(err, ErrActionOpportunityNotFound)
 	}
-	aggregate.Record.Status = status
-	return s.actionOpportunityView(ctx, eid, aggregate)
+	if !opportunity.Record.IsTrashed && opportunity.Record.Status != model.ActionOpportunityStatusDismissed {
+		return ErrActionOpportunityState
+	}
+	if err := model.DeleteActionOpportunityForUser(ctx, eid, userID, strings.TrimSpace(opportunityID)); err != nil {
+		if errors.Is(err, model.ErrActionOpportunityHasPlans) {
+			return ErrActionOpportunityState
+		}
+		return mapActionNotFound(err, ErrActionOpportunityNotFound)
+	}
+	return nil
 }
 
 func (s *ActionRuntimeService) CreateActionPlan(ctx context.Context, eid, userID int64, opportunityID string) (*ActionPlanView, error) {
@@ -333,7 +423,7 @@ func (s *ActionRuntimeService) CreateActionPlan(ctx context.Context, eid, userID
 	} else if !errors.Is(getErr, gorm.ErrRecordNotFound) {
 		return nil, getErr
 	}
-	if opportunity.Record.Status == model.ActionOpportunityStatusDismissed {
+	if opportunity.Record.IsTrashed || opportunity.Record.Status == model.ActionOpportunityStatusDismissed {
 		return nil, ErrActionOpportunityState
 	}
 	registry := actionCapabilityRegistry()
@@ -355,6 +445,7 @@ func (s *ActionRuntimeService) CreateActionPlan(ctx context.Context, eid, userID
 	if err != nil {
 		return nil, err
 	}
+	appendActionDeliverableQualityCriteria(&plan, opportunityDomain(opportunity))
 	plan.ID, err = model.GenerateActionPlanID()
 	if err != nil {
 		return nil, err
@@ -416,6 +507,103 @@ func (s *ActionRuntimeService) ListActionPlans(ctx context.Context, eid, userID 
 	return plans, nil
 }
 
+type ActionPlanPage struct {
+	Items    []*ActionPlanView `json:"items"`
+	Total    int64             `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"page_size"`
+}
+
+func (s *ActionRuntimeService) ListActionPlansPage(ctx context.Context, eid, userID int64, statusFilter, typeFilter string, page, pageSize int) (*ActionPlanPage, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	records, total, err := model.ListActionPlansForUserPage(ctx, eid, userID, strings.TrimSpace(statusFilter), strings.TrimSpace(typeFilter), page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	summaries, err := listActionSummaries(ctx, eid, records)
+	if err != nil {
+		return nil, err
+	}
+	plans := make([]*ActionPlanView, 0, len(records))
+	for _, record := range records {
+		aggregate, getErr := model.GetActionPlanForUser(ctx, eid, userID, record.PlanID)
+		if getErr != nil {
+			return nil, getErr
+		}
+		view, viewErr := s.actionPlanView(ctx, eid, userID, aggregate)
+		if viewErr != nil {
+			return nil, viewErr
+		}
+		if summary, ok := summaries[record.PlanID]; ok {
+			view.ActionSummary = summary
+		}
+		plans = append(plans, view)
+	}
+	return &ActionPlanPage{Items: plans, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func (s *ActionRuntimeService) TrashActionPlan(ctx context.Context, eid, userID int64, planID string) (*ActionPlanView, error) {
+	if _, err := model.GetActionPlanForUser(ctx, eid, userID, strings.TrimSpace(planID)); err != nil {
+		return nil, mapActionNotFound(err, ErrActionPlanNotFound)
+	}
+	if err := model.TrashActionPlanForUser(ctx, eid, userID, strings.TrimSpace(planID)); err != nil {
+		if errors.Is(err, model.ErrActionPlanHasActiveRun) {
+			return nil, ErrActionPlanState
+		}
+		return nil, mapActionNotFound(err, ErrActionPlanNotFound)
+	}
+	return s.GetActionPlan(ctx, eid, userID, planID)
+}
+
+func (s *ActionRuntimeService) RestoreActionPlan(ctx context.Context, eid, userID int64, planID string) (*ActionPlanView, error) {
+	if err := model.RestoreActionPlanForUser(ctx, eid, userID, strings.TrimSpace(planID)); err != nil {
+		return nil, mapActionNotFound(err, ErrActionPlanNotFound)
+	}
+	return s.GetActionPlan(ctx, eid, userID, planID)
+}
+
+func (s *ActionRuntimeService) PermanentlyDeleteActionPlan(ctx context.Context, eid, userID int64, planID string) error {
+	aggregate, err := model.GetActionPlanForUser(ctx, eid, userID, strings.TrimSpace(planID))
+	if err != nil {
+		return mapActionNotFound(err, ErrActionPlanNotFound)
+	}
+	if !aggregate.Record.IsTrashed {
+		return ErrActionPlanState
+	}
+	if err := model.DeleteActionPlanForUser(ctx, eid, userID, strings.TrimSpace(planID)); err != nil {
+		if errors.Is(err, model.ErrActionPlanHasDependents) {
+			return ErrActionPlanState
+		}
+		return mapActionNotFound(err, ErrActionPlanNotFound)
+	}
+	return nil
+}
+
+type ActionWorkspaceView struct {
+	Opportunities *ActionOpportunityPage `json:"opportunities"`
+	Plans         *ActionPlanPage        `json:"plans"`
+}
+
+func (s *ActionRuntimeService) ListActionWorkspace(ctx context.Context, eid, userID int64, opportunityStatus, opportunityType, planStatus, planType string, page, pageSize int) (*ActionWorkspaceView, error) {
+	opportunities, err := s.ListActionOpportunitiesPage(ctx, eid, userID, opportunityStatus, opportunityType, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	plans, err := s.ListActionPlansPage(ctx, eid, userID, planStatus, planType, page, pageSize)
+	if err != nil {
+		return nil, err
+	}
+	return &ActionWorkspaceView{Opportunities: opportunities, Plans: plans}, nil
+}
+
 // listActionSummaries 用固定 3 次批量查询补齐整页 Plan 的执行摘要
 // （plan_ids → actions → latest runs → result assets），
 // 让 App 不必为每张卡再发一次 GET /api/actions/:id。
@@ -473,6 +661,9 @@ func (s *ActionRuntimeService) UpdateActionPlan(ctx context.Context, eid, userID
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionPlanNotFound)
 	}
+	if aggregate.Record.IsTrashed {
+		return nil, ErrActionPlanState
+	}
 	if aggregate.Record.Status != model.ActionPlanStatusDraft {
 		return nil, ErrActionPlanState
 	}
@@ -516,7 +707,28 @@ func (s *ActionRuntimeService) UpdateActionPlan(ctx context.Context, eid, userID
 	return s.actionPlanView(ctx, eid, userID, aggregate)
 }
 
+// enrichActionBaselineContext 在确认 Action 时补齐基础经营档案，并冻结到 ContextJSON。
+// 已存在的会议背景或用户补充背景优先；跨会议资料只供 context_only，不作为当前任务的事实证据。
+func enrichActionBaselineContext(ctx context.Context, eid, userID int64, snapshot *InsightActionContextSnapshot) {
+	if strings.TrimSpace(snapshot.Background.PersonalInfo) == "" {
+		snapshot.Background.PersonalInfo = truncateActionText(loadInsightPersonalContext(ctx, eid, userID, snapshot.SourceFileID).formatted(), 4000)
+	}
+	if strings.TrimSpace(snapshot.Background.CompanyInfo) == "" {
+		if enterprise, err := model.GetEnterpriseByID(eid); err == nil {
+			snapshot.Background.CompanyInfo = truncateActionText(formatCompanyBackground(enterprise), 4000)
+		}
+	}
+}
+
 func (s *ActionRuntimeService) ConfirmActionPlan(ctx context.Context, eid, userID int64, planID string) (*ActionPlanConfirmationView, error) {
+	return s.ConfirmActionPlanWithSupplementalInfo(ctx, eid, userID, planID, "")
+}
+
+func (s *ActionRuntimeService) ConfirmActionPlanWithSupplementalInfo(ctx context.Context, eid, userID int64, planID, supplementalInfo string) (*ActionPlanConfirmationView, error) {
+	supplementalInfo = strings.TrimSpace(supplementalInfo)
+	if len(supplementalInfo) > 4000 {
+		return nil, ErrActionInvalidRequest
+	}
 	aggregate, err := model.GetActionPlanForUser(ctx, eid, userID, strings.TrimSpace(planID))
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionPlanNotFound)
@@ -531,6 +743,9 @@ func (s *ActionRuntimeService) ConfirmActionPlan(ctx context.Context, eid, userI
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
 	}
+	if aggregate.Record.IsTrashed || opportunity.Record.IsTrashed || opportunity.Record.Stage == model.ActionItemStageResult {
+		return nil, ErrActionPlanState
+	}
 	if !actionCapabilityRegistry().Available(opportunityCapabilities(opportunity)) {
 		return nil, ErrActionCapabilityUnavailable
 	}
@@ -543,7 +758,9 @@ func (s *ActionRuntimeService) ConfirmActionPlan(ctx context.Context, eid, userI
 		return nil, err
 	}
 	snapshot := sourceContext.Snapshot
+	enrichActionBaselineContext(ctx, eid, userID, &snapshot)
 	snapshot.CapturedAt = time.Now().UTC().UnixMilli()
+	snapshot.SupplementalInfo = supplementalInfo
 	contextJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return nil, fmt.Errorf("serialize action context: %w", err)
@@ -582,10 +799,14 @@ func (s *ActionRuntimeService) ConfirmActionPlan(ctx context.Context, eid, userI
 	if err != nil {
 		return nil, err
 	}
+	prompt := buildActionPlanPrompt(opportunityDomain(opportunity), actionPlanDomain(aggregate), contract)
+	if supplementalInfo != "" {
+		prompt += "\n\n用户针对本次执行补充的信息（作为额外上下文，不替代已确认的目标、范围和验收标准）：\n" + supplementalInfo
+	}
 	action := &model.ActionRecord{
 		ActionID: actionID, Eid: eid, OwnerID: userID, SourceFileID: snapshot.SourceFileID,
 		ActionType: ActionTypeExecutePlan, Status: model.ActionStatusDraft,
-		Title: aggregate.Record.Objective, Prompt: model.LongText(buildActionPlanPrompt(opportunityDomain(opportunity), actionPlanDomain(aggregate), contract)),
+		Title: aggregate.Record.Objective, Prompt: model.LongText(prompt),
 		ContextJSON: model.LongText(contextJSON), ExpectedArtifactsJSON: model.LongText(expectedArtifactsJSON(contract.Filename)), Runtime: "codex",
 	}
 	if err := model.CreateActionRecord(ctx, action); err != nil {
@@ -877,12 +1098,16 @@ func actionPlanDomain(aggregate *model.ActionPlanAggregate) actionsystem.ActionP
 func buildActionPlanPrompt(opportunity actionsystem.ActionOpportunity, plan actionsystem.ActionPlan, contract canonicalPrimaryArtifactContract) string {
 	var builder strings.Builder
 	builder.WriteString("这是一个已经由用户确认的二号总裁 Action。请按以下 ActionPlan 执行，不要把人工待办、对外承诺或尚未确认的建议写成已发生事实。\n\n")
-	builder.WriteString("<action_intent>\n这是用户确认的不可漂移边界：\n目标：" + opportunity.Objective + "\n行动类型：" + string(opportunity.Type) + "\n期望交付物：\n")
-	for _, item := range opportunity.Deliverables {
+	builder.WriteString("<action_intent>\n以用户最终确认的 Plan 为执行意图，禁止重新引入未被确认的旧建议。\n目标：" + plan.Objective + "\n行动类型：" + string(opportunity.Type) + "\n")
+	if dependency := strings.TrimSpace(opportunity.HumanDependency); dependency != "" {
+		builder.WriteString("人工参与及授权边界：" + dependency + "\n")
+	}
+	builder.WriteString("不得将建议理由视为已核实事实；用户确认的 Plan 优先于旧建议。\n期望交付物：\n")
+	for _, item := range plan.Deliverables {
 		builder.WriteString("- " + item.Type + "：" + item.Title + "\n")
 	}
 	builder.WriteString("如果执行过程中发现输入不足，只能标注缺口，不能改成另一个目标或交付物。\n</action_intent>\n\n")
-	builder.WriteString("<action_plan>\n目标：" + plan.Objective + "\n范围：" + plan.Scope + "\n")
+	builder.WriteString("<action_plan>\n目标：" + plan.Objective + "\nPlan业务背景（含待核实线索）：" + plan.Background + "\n范围：" + plan.Scope + "\n")
 	builder.WriteString("交付物：\n")
 	for _, item := range plan.Deliverables {
 		builder.WriteString("- " + item.Type + "：" + item.Title + "\n")
@@ -924,11 +1149,14 @@ func (s *ActionRuntimeService) actionOpportunityView(ctx context.Context, eid in
 		Title: aggregate.Record.Title, Type: aggregate.Record.OpportunityType, TypeLabel: aggregate.Record.TypeLabel, Reason: aggregate.Record.Reason,
 		Objective: aggregate.Record.Objective, DisplayDeliverable: aggregate.Record.DisplayDeliverable, HumanDependency: aggregate.Record.HumanDependency,
 		AIExecutableScore: aggregate.Record.AIExecutableScore, RiskLevel: aggregate.Record.RiskLevel, Priority: aggregate.Record.Priority, Status: aggregate.Record.Status,
+		IsRead: aggregate.Record.IsRead, IsTrashed: aggregate.Record.IsTrashed || aggregate.Record.Status == model.ActionOpportunityStatusDismissed,
 		CreatedTime: aggregate.Record.CreatedTime, UpdatedTime: aggregate.Record.UpdatedTime,
 	}
 	for _, item := range aggregate.Deliverables {
 		view.Deliverables = append(view.Deliverables, actionsystem.Deliverable{Type: item.Type, Title: item.Title})
 	}
+	previewPlan := actionsystem.BuildActionPlan(opportunityDomain(aggregate), actionsystem.DetectionInput{ContextLabel: "会议洞察"})
+	view.ExecutionSteps = previewPlan.ExecutionSteps
 	for _, item := range aggregate.Capabilities {
 		view.RequiredCapabilities = append(view.RequiredCapabilities, item.Capability)
 	}
@@ -962,7 +1190,7 @@ func (s *ActionRuntimeService) actionPlanView(ctx context.Context, eid, userID i
 	if err != nil {
 		return nil, mapActionNotFound(err, ErrActionOpportunityNotFound)
 	}
-	view := &ActionPlanView{PlanID: aggregate.Record.PlanID, OpportunityID: aggregate.Record.OpportunityID, ActionID: aggregate.Record.ActionID, Status: aggregate.Record.Status, Objective: aggregate.Record.Objective, Background: aggregate.Record.Background, Scope: aggregate.Record.Scope, EstimatedEffort: aggregate.Record.EstimatedEffort, Revision: aggregate.Record.Revision, ConfirmedAt: aggregate.Record.ConfirmedAt, SourceInsightID: opportunity.Record.SourceInsightID, SourceMeetingID: opportunity.Record.SourceMeetingID, ActionIntent: actionIntentForOpportunity(opportunity), CreatedTime: aggregate.Record.CreatedTime, UpdatedTime: aggregate.Record.UpdatedTime}
+	view := &ActionPlanView{PlanID: aggregate.Record.PlanID, OpportunityID: aggregate.Record.OpportunityID, ActionID: aggregate.Record.ActionID, Status: aggregate.Record.Status, IsTrashed: aggregate.Record.IsTrashed, Objective: aggregate.Record.Objective, Background: aggregate.Record.Background, Scope: aggregate.Record.Scope, EstimatedEffort: aggregate.Record.EstimatedEffort, Revision: aggregate.Record.Revision, ConfirmedAt: aggregate.Record.ConfirmedAt, SourceInsightID: opportunity.Record.SourceInsightID, SourceMeetingID: opportunity.Record.SourceMeetingID, ActionIntent: actionIntentForOpportunity(opportunity), CreatedTime: aggregate.Record.CreatedTime, UpdatedTime: aggregate.Record.UpdatedTime}
 	for _, item := range planDeliverableDomains(aggregate.Deliverables) {
 		view.Deliverables = append(view.Deliverables, item)
 	}

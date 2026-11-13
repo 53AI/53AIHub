@@ -212,7 +212,7 @@ export interface WikiPageListParams {
   limit?: number
   page_type?: WikiPageType
   /** 按分类筛选（0 表示「其他」虚拟分类，需传特殊值 other） */
-  category_id?: string | "other"
+  category_id?: string | number | "other"
   keyword?: string
   sort_by?: WikiPageSortBy
   sort_order?: WikiSortOrder
@@ -279,6 +279,32 @@ export interface WikiQueueStatusResponse {
   vectorization: WikiQueueCount
 }
 
+export type WikiRetryQueueStatus = 'failed' | 'pending' | 'processing' | 'success'
+
+export type WikiRetryQueueItem = {
+  id: string
+  title: string
+  type: 'wiki_page_generation' | 'wiki_page_vectorization'
+  status: WikiRetryQueueStatus
+  failure_summary: string
+  time: number
+  retry_count: number
+  retry_eligible: boolean
+  related_resource_type: 'file' | 'wiki_page'
+  page_id?: string
+  page_slug?: string
+  file_id?: string
+  library_id?: string
+}
+
+export type WikiRetryQueueResponse = {
+  items: WikiRetryQueueItem[]
+  total: number
+  status_counts: Record<WikiRetryQueueStatus, number>
+  page: number
+  size: number
+}
+
 /** 更新页面请求参数 */
 export interface WikiPageUpdateParams {
   page_type: WikiPageType
@@ -337,3 +363,36 @@ export interface WikiStatsResponse {
   /** 累计编译文档数 */
   wiki_compiled_docs: number
 }
+
+export type WikiDocumentStatus = WikiRetryQueueStatus | 'waiting'
+export type WikiDocumentQueueItem = {
+  file_id: string
+  title: string
+  library_id: string
+  library_name: string
+  status: WikiDocumentStatus
+  generation_status: string
+  generation_task_id?: string
+  page_counts: Record<'total' | 'success' | 'failed' | 'processing' | 'pending' | 'waiting' | 'not_required', number>
+  failure_summary: string
+  updated_time: number
+  retry_eligible: boolean
+  retry_task_ids: string[]
+}
+export type WikiDocumentQueueParams = { space_id: string; library_id?: string; status?: WikiDocumentStatus; keyword?: string; page: number; size: number }
+export type WikiDocumentQueueResponse = { items: WikiDocumentQueueItem[]; total: number; status_counts: Record<WikiDocumentStatus, number>; page: number; size: number }
+export type WikiDocumentPageItem = {
+  page_id: string
+  page_slug: string
+  title: string
+  page_type: string
+  page_status: string
+  current_version_id?: string
+  vectorization_status: WikiDocumentStatus | 'not_started' | 'not_required'
+  vectorization_task_id?: string
+  failure_summary: string
+  retry_count: number
+  retry_eligible: boolean
+  updated_time: number
+}
+export type WikiDocumentPagesResponse = { document: WikiDocumentQueueItem; items: WikiDocumentPageItem[]; total: number; page: number; size: number }

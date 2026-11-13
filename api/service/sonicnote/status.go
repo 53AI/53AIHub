@@ -18,9 +18,10 @@ const (
 // DeviceStatus 设备可用性探测结果。
 // Available=false 时 UnavailableReason 给出原因分类（ReasonKeyInvalid / ReasonNetworkError）。
 type DeviceStatus struct {
-	Available         bool   `json:"available"`
-	TotalRecordings   int    `json:"total_recordings"`
-	UnavailableReason string `json:"unavailable_reason,omitempty"`
+	Available            bool   `json:"available"`
+	TotalRecordings      int    `json:"total_recordings"`
+	TotalRecordingsExact bool   `json:"total_recordings_exact"` // total_recordings 是否为精确总数（TicNote 为轻量探测，false）
+	UnavailableReason    string `json:"unavailable_reason,omitempty"`
 }
 
 // classifyAuthError 按错误信息分类：仅鉴权相关响应（HTTP 401/403、业务 code 400/401/403）
@@ -56,6 +57,16 @@ func FriendlySyncError(err error) string {
 			return "SonicNote Key 不可用，请检查设备 Key 是否正确"
 		}
 	}
+	for _, kw := range []string{"远端未找到"} {
+		if strings.Contains(msg, kw) {
+			return "该录音在设备端已不存在（可能已删除或超出扫描范围），无法同步"
+		}
+	}
+	for _, kw := range []string{"缺少音频 URL", "缺少音频地址"} {
+		if strings.Contains(msg, kw) {
+			return "该录音在设备端没有可下载的音频（可能尚未上传云端或音频已过期），暂时无法同步"
+		}
+	}
 	return "SonicNote 服务暂不可用，请稍后重试"
 }
 
@@ -85,5 +96,5 @@ func (s *SyncService) CheckStatus(ctx context.Context, apiKey string) (*DeviceSt
 	if err != nil {
 		return &DeviceStatus{Available: false, UnavailableReason: classifyAuthError(err)}, nil
 	}
-	return &DeviceStatus{Available: true, TotalRecordings: total}, nil
+	return &DeviceStatus{Available: true, TotalRecordings: total, TotalRecordingsExact: true}, nil
 }

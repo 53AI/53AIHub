@@ -97,6 +97,7 @@ export default function AgentTooltip({
               onClick={() => handleSelect(item)}
             >
               <SafeImage
+                kind="agent"
                 src={item.logo}
                 className="mr-2 size-8 rounded-md"
                 alt={item.name}

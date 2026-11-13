@@ -775,6 +775,15 @@ internal_user.account.department,部门,部門,Department,部門
 internal_user.account.department_placeholder,请选择部门,請選擇部門,Please select department,部門を選択してください
 internal_user.account.edit_member,编辑成员,編輯成員,Edit Member,メンバーを編集
 internal_user.account.group,用户组,用戶組,Group,グループ
+internal_user.account.import,导入,導入,Import,インポート
+internal_user.account.import_download_template,下载文件模板,下載文件模板,Download Template,テンプレートをダウンロード
+internal_user.account.import_empty,文件中没有可导入的数据,文件中沒有可導入的數據,No data to import in the file,インポートできるデータがありません
+internal_user.account.import_invalid_template,模板格式不正确，请下载最新模板,模板格式不正確，請下載最新模板,Invalid template format. Please download the latest template,テンプレートの形式が正しくありません。最新のテンプレートをダウンロードしてください
+internal_user.account.import_parse_failed,文件解析失败，请检查文件格式,文件解析失敗，請檢查文件格式,Failed to parse the file. Please check the file format,ファイルの解析に失敗しました。ファイル形式を確認してください
+internal_user.account.import_template_file,成员导入模板,成員導入模板,Member Import Template,メンバーインポートテンプレート
+internal_user.account.import_tip,导入说明：文件必须为 xls 或 xlsx 格式,導入說明：文件必須為 xls 或 xlsx 格式,Note: The file must be in xls or xlsx format,説明：ファイルは xls または xlsx 形式である必要があります
+internal_user.account.import_title,批量导入成员,批量導入成員,Batch Import Members,メンバーを一括インポート
+internal_user.account.import_upload,上传文件,上傳文件,Upload File,ファイルをアップロード
 internal_user.account.mobile,手机,手機,Mobile,電話番号
 internal_user.account.mobile_disabled_tip,注意: 所输入的手机号须与成员本人登录的手机号一致才能使用,注意: 所輸入的手機號須與成員本人登錄的手機號一致才能使用,Note: The mobile phone number entered must be the same as the member's login mobile phone number,注意: 所輸入の電話番号は、メンバー本人のログイン電話番号と一致している必要があります
 internal_user.account.mobile_placeholder,请输入手机,請輸入手機號,Please enter a mobile phone number,電話番号を入力してください
@@ -1669,7 +1678,12 @@ search-record.generate_count,生成梳理,生成梳理,Generate Summary,生成�
 search-record.generate_count_tip,截止到统计日期，AI搜索的生成梳理次数（1次对话计为1次使用）,截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）,Number of AI Search summary generations up to the selected statistics date (one conversation counts as one use),截止到統計日期，AI搜索的生成梳理次數（1次對話計為1次使用）
 search-record.generate_model,生成模型,生成模型,Generate Model,生成模型
 search-record.knowledge_scope,知识范围,知識範圍,Knowledge Scope,知識範圍
+search-record.load_failed,加载失败,載入失敗,Load failed,読み込みに失敗しました
+search-record.next_turn,查看下一轮对话,查看下一輪對話,View next turn,次の会話を見る
+search-record.prev_turn,查看上一轮对话,查看上一輪對話,View previous turn,前の会話を見る
 search-record.model,调用模型,調用模型,Model,調用模型
+search-record.no_next,已经是最后一条了,已經是最後一條了,This is the last message,最後のメッセージです
+search-record.no_prev,已经是第一条了,已經是第一條了,This is the first message,最初のメッセージです
 search-record.no_content,未搜索到内容,未搜索到內容,No content found,未搜索到內容
 search-record.no_content_tip,截止到统计日期，AI搜索拒答的次数,截止到統計日期，AI搜索拒答的次數,Number of AI Search refusals up to the selected statistics date,截止到統計日期，AI搜索拒答的次數
 search-record.normal,正常,正常,Normal,正常
@@ -1708,6 +1722,8 @@ search-record.source_h5,Web/H5网页,Web/H5網頁,Web/H5,Web/H5
 search-record.source_api,API接入,API接入,API Access,API接続
 search-record.source_web,前台使用,前台使用,Frontend,フロントエンド
 search-record.source_console,后台使用,后台使用,Backend,フロントエンド
+search-record.api_user,API用户（{visitor}）,API用戶（{visitor}）,API user ({visitor}),APIユーザー（{visitor}）
+search-record.api_user_unknown,API用户,API用戶,API user,APIユーザー
 second,秒,秒,Second,秒
 select_agent,选择智能体,選擇智能體,Select Agent,エージェントを選択
 selected_tip,已选择 {total} 个,已選擇 {total} 個,Selected {total} items,選択済み {total} 個
@@ -1830,6 +1846,7 @@ template_style.nav_bg_color,导航背景,導航背景,Navigation Background,ナ�
 template_style.nav_text_color,导航文本,導航文本,Navigation Text,ナビゲーションテキスト
 template_style.page_footer_bg_color,页脚背景,頁腳背景,Footer Background,ページフッター背景
 template_style.page_footer_text_color,页脚文本,頁腳文本,Footer Text,ページフッターテキスト
+template_style.recording,二号总裁风格,二號總裁風格,CEO No.2 Style,CEO No.2 スタイル
 template_style.software,软件风格,軟件風格,Software Style,ソフトウェアスタイル
 template_style.text_color,文本颜色,文本顏色,Text Color,テキストカラー
 template_style.theme_color,主题色,主題色,Primary Color,テーマカラー
@@ -2036,7 +2053,355 @@ space.setting.title,空间设置,空間設置,Space Settings,空間設定
 space.setting.menu.basicInfo,基础信息,基礎資訊,Basic Info,基本情報
 space.setting.menu.members,成员与权限,成員與權限,Members & Permissions,メンバーと権限
 space.setting.menu.knowledge,知识库管理,知識庫管理,Knowledge Management,ナレッジ管理
+space.setting.menu.api,开放接口,開放介面,Open API,オープンAPI
 space.setting.menu.knowledgeGraph,知识图谱,知識圖譜,Knowledge Graph,ナレッジグラフ
+space.api.title,开放接口,開放介面,Open API,オープンAPI
+space.api.keysTitle,空间 API Key,空間 API Key,Space API Keys,スペース API Key
+space.api.create,创建 Key,建立 Key,Create key,キーを作成
+space.api.empty,当前空间还没有 API Key,目前空間還沒有 API Key,No API keys in this space yet,このスペースにはまだ API Key がありません
+space.api.copyKey,复制 API Key,複製 API Key,Copy API key,API Key をコピー
+space.api.deleteKey,删除 API Key,刪除 API Key,Delete API key,API Key を削除
+space.api.deleteTitle,删除空间 API Key,刪除空間 API Key,Delete space API key,スペース API Key を削除
+space.api.deleteConfirm,删除后使用该 Key 的外部系统将无法继续调用。确定删除吗？,刪除後使用該 Key 的外部系統將無法繼續呼叫。確定刪除嗎？,External systems using this key will no longer be able to call the API. Delete it?,このキーを使用する外部システムは API を呼び出せなくなります。削除しますか？
+space.api.created,API Key 创建成功,API Key 建立成功,API key created,API Key を作成しました
+space.api.deleted,API Key 删除成功,API Key 刪除成功,API key deleted,API Key を削除しました
+space.api.copied,已复制,已複製,Copied,コピーしました
+space.api.createFailed,创建 API Key 失败,建立 API Key 失敗,Failed to create API key,API Key の作成に失敗しました
+space.api.loadFailed,获取 API Key 失败,取得 API Key 失敗,Failed to load API keys,API Key の読み込みに失敗しました
+space.api.keyDescription,用于空间 Wiki 与外部知识库读取,用於空間 Wiki 與外部知識庫讀取,For space Wiki and external knowledge retrieval,スペース Wiki と外部ナレッジ検索用
+space.api.description,空间级 API Key 可访问该空间内所有知识库的已发布 Wiki 页面与外部知识库接口，调用时请在请求头中携带 Authorization: Bearer <API Key>。,空間級 API Key 可存取該空間內所有知識庫的已發布 Wiki 頁面與外部知識庫介面，呼叫時請在請求頭中攜帶 Authorization: Bearer <API Key>。,"Space-level API keys grant access to the published Wiki pages and external knowledge API of every library in this space. Send it as an Authorization: Bearer <API Key> header when calling the API.",スペースレベルの API Key は、このスペース内のすべてのナレッジの公開済み Wiki ページと外部ナレッジ API にアクセスできます。API 呼び出し時はリクエストヘッダーに Authorization: Bearer <API Key> を指定してください。
+space.api.endpointTitle,API Endpoint,API Endpoint,API Endpoint,API Endpoint
+space.api.externalKnowledge,外部知识库,外部知識庫,External Knowledge,外部ナレッジ
+space.api.externalWiki,外部 Wiki,外部 Wiki,External Wiki,外部 Wiki
+space.api.guide,接入指引,接入指引,Integration Guide,接続ガイド
+space.api.guideTitle,开放接口接入指引,開放介面接入指引,Open API Integration Guide,オープンAPI接続ガイド
+space.api.guideStudio,接入53AI Studio,接入53AI Studio,Connect to 53AI Studio,53AI Studioに接続
+space.api.guideDify,接入Dify,接入Dify,Connect to Dify,Difyに接続
+space.api.guideWiki,Wiki API文档,Wiki API文檔,Wiki API Documentation,Wiki APIドキュメント
+space.api.guideContent,"## 第一步：创建 API Key
+
+在当前空间的开放接口页面创建 API Key，该 Key 可用于访问该空间内所有知识库的已发布 Wiki 页面与外部知识库检索接口。
+
+## 第二步：携带认证信息
+
+调用接口时，在请求头中携带 `Authorization: Bearer km-...`。
+
+## 第三步：调用接口
+
+### 外部 Wiki
+
+接口地址：{wikiEndpoint}
+
+#### `GET /api/external-wiki/pages` — 分页获取已发布页面
+
+| 参数 | 位置 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | 否 | - | 标题、slug 或摘要关键词 |
+| `page_type` | query | 否 | - | 页面类型 |
+| `category_id` | query | 否 | - | 分类 ID，传 `other` 表示未分类页面 |
+| `library_ids` | query | 否 | 全部作用域 | 知识库 ID 列表（逗号分隔），须在 Key 作用域内 |
+| `offset` | query | 否 | 0 | 分页偏移 |
+| `limit` | query | 否 | 20 | 每页数量，最大 100 |
+
+#### `GET /api/external-wiki/pages/:page_id` — 获取页面正文
+
+| 参数 | 位置 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `page_id` | path | 是 | 页面 ID |
+
+返回当前已发布版本，含正文 `body`、来源 `sources`、出链 `links`、反向链接 `backlinks`。
+
+#### `GET /api/external-wiki/search` — 搜索已发布页面
+
+| 参数 | 位置 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | 是 | - | 搜索关键词 |
+| `top_k` | query | 否 | 10 | 最多返回数量，最大 50 |
+| `library_ids` | query | 否 | 全部作用域 | 知识库 ID 列表（逗号分隔），须在 Key 作用域内 |
+
+**调用示例**
+
+```bash
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/pages?limit=10'
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/search?keyword=关键词'
+```
+
+### 外部知识库（Dify 检索协议）
+
+接口地址：{knowledgeEndpoint}
+
+#### `POST /api/external-knowledge/retrieval` — 知识检索
+
+| 参数 | 类型 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| `knowledge_id` | string | 是 | - | 知识库 UUID |
+| `query` | string | 是 | - | 检索查询文本 |
+| `retrieval_setting` | object | 是 | - | 检索设置 |
+| `retrieval_setting.top_k` | int | 否 | 10 | 返回条数 |
+| `retrieval_setting.score_threshold` | float | 否 | 0 | 分数阈值，0 表示不限制 |
+
+**请求示例**
+
+```bash
+curl -X POST '{knowledgeEndpoint}/retrieval' -H 'Authorization: Bearer km-...' -H 'Content-Type: application/json' -d '{
+  ""knowledge_id"": ""知识库UUID"",
+  ""query"": ""检索内容"",
+  ""retrieval_setting"": {""top_k"": 3, ""score_threshold"": 0.5}
+}'
+```
+
+响应为 `records` 数组，每条包含 `content`、`score`、`title`、`metadata`，无结果时为空数组。
+
+## 说明
+
+- Wiki 接口只返回当前 API Key 作用域内 active、已发布、非 private 的页面
+- `library_ids` 传入的 ID 必须全部在 Key 作用域内，否则返回 403
+- Wiki 接口的 ID 均为 hashid 格式；检索接口的 `knowledge_id` 为知识库 UUID
+- 若 Key 绑定了单个知识库，检索时 `knowledge_id` 必须与绑定的库一致，否则返回 401
+- 错误响应格式为 `error_code` / `error_msg`","## 第一步：建立 API Key
+
+在當前空間的開放介面頁面建立 API Key，該 Key 可用於存取該空間內所有知識庫的已發布 Wiki 頁面與外部知識庫檢索介面。
+
+## 第二步：攜帶認證資訊
+
+呼叫介面時，在請求頭中攜帶 `Authorization: Bearer km-...`。
+
+## 第三步：呼叫介面
+
+### 外部 Wiki
+
+介面地址：{wikiEndpoint}
+
+#### `GET /api/external-wiki/pages` — 分頁獲取已發布頁面
+
+| 參數 | 位置 | 必填 | 預設 | 說明 |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | 否 | - | 標題、slug 或摘要關鍵詞 |
+| `page_type` | query | 否 | - | 頁面類型 |
+| `category_id` | query | 否 | - | 分類 ID，傳 `other` 表示未分類頁面 |
+| `library_ids` | query | 否 | 全部作用域 | 知識庫 ID 列表（逗號分隔），須在 Key 作用域內 |
+| `offset` | query | 否 | 0 | 分頁偏移 |
+| `limit` | query | 否 | 20 | 每頁數量，最大 100 |
+
+#### `GET /api/external-wiki/pages/:page_id` — 獲取頁面正文
+
+| 參數 | 位置 | 必填 | 說明 |
+| --- | --- | --- | --- |
+| `page_id` | path | 是 | 頁面 ID |
+
+返回當前已發布版本，含正文 `body`、來源 `sources`、出鏈 `links`、反向連結 `backlinks`。
+
+#### `GET /api/external-wiki/search` — 搜尋已發布頁面
+
+| 參數 | 位置 | 必填 | 預設 | 說明 |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | 是 | - | 搜尋關鍵詞 |
+| `top_k` | query | 否 | 10 | 最多返回數量，最大 50 |
+| `library_ids` | query | 否 | 全部作用域 | 知識庫 ID 列表（逗號分隔），須在 Key 作用域內 |
+
+**呼叫示例**
+
+```bash
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/pages?limit=10'
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/search?keyword=關鍵詞'
+```
+
+### 外部知識庫（Dify 檢索協議）
+
+介面地址：{knowledgeEndpoint}
+
+#### `POST /api/external-knowledge/retrieval` — 知識檢索
+
+| 參數 | 類型 | 必填 | 預設 | 說明 |
+| --- | --- | --- | --- | --- |
+| `knowledge_id` | string | 是 | - | 知識庫 UUID |
+| `query` | string | 是 | - | 檢索查詢文本 |
+| `retrieval_setting` | object | 是 | - | 檢索設定 |
+| `retrieval_setting.top_k` | int | 否 | 10 | 返回條數 |
+| `retrieval_setting.score_threshold` | float | 否 | 0 | 分數閾值，0 表示不限制 |
+
+**請求示例**
+
+```bash
+curl -X POST '{knowledgeEndpoint}/retrieval' -H 'Authorization: Bearer km-...' -H 'Content-Type: application/json' -d '{
+  ""knowledge_id"": ""知識庫UUID"",
+  ""query"": ""檢索內容"",
+  ""retrieval_setting"": {""top_k"": 3, ""score_threshold"": 0.5}
+}'
+```
+
+響應為 `records` 陣列，每條包含 `content`、`score`、`title`、`metadata`，無結果時為空陣列。
+
+## 說明
+
+- Wiki 介面只返回當前 API Key 作用域內 active、已發布、非 private 的頁面
+- `library_ids` 傳入的 ID 必須全部在 Key 作用域內，否則返回 403
+- Wiki 介面的 ID 均為 hashid 格式；檢索介面的 `knowledge_id` 為知識庫 UUID
+- 若 Key 綁定了單個知識庫，檢索時 `knowledge_id` 必須與綁定的庫一致，否則返回 401
+- 錯誤回應格式為 `error_code` / `error_msg`","## Step 1: Create an API key
+
+Create an API key on the Open API page of this space. The key grants access to the published Wiki pages and the external knowledge retrieval API of every library in this space.
+
+## Step 2: Authenticate
+
+Send the key as an `Authorization: Bearer km-...` header when calling the API.
+
+## Step 3: Call the API
+
+### External Wiki
+
+Endpoint: {wikiEndpoint}
+
+#### `GET /api/external-wiki/pages` — List published pages
+
+| Parameter | In | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | No | - | Keyword for title, slug, or summary |
+| `page_type` | query | No | - | Page type |
+| `category_id` | query | No | - | Category ID; use `other` for uncategorized pages |
+| `library_ids` | query | No | All in scope | Library ID list (comma-separated); must be within the key scope |
+| `offset` | query | No | 0 | Pagination offset |
+| `limit` | query | No | 20 | Page size, max 100 |
+
+#### `GET /api/external-wiki/pages/:page_id` — Get page content
+
+| Parameter | In | Required | Description |
+| --- | --- | --- | --- |
+| `page_id` | path | Yes | Page ID |
+
+Returns the current published version, including body `body`, sources `sources`, links `links`, and backlinks `backlinks`.
+
+#### `GET /api/external-wiki/search` — Search published pages
+
+| Parameter | In | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | Yes | - | Search keyword |
+| `top_k` | query | No | 10 | Max number of results, max 50 |
+| `library_ids` | query | No | All in scope | Library ID list (comma-separated); must be within the key scope |
+
+**Examples**
+
+```bash
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/pages?limit=10'
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/search?keyword=keyword'
+```
+
+### External Knowledge (Dify retrieval protocol)
+
+Endpoint: {knowledgeEndpoint}
+
+#### `POST /api/external-knowledge/retrieval` — Knowledge retrieval
+
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `knowledge_id` | string | Yes | - | Library UUID |
+| `query` | string | Yes | - | Retrieval query text |
+| `retrieval_setting` | object | Yes | - | Retrieval settings |
+| `retrieval_setting.top_k` | int | No | 10 | Number of results |
+| `retrieval_setting.score_threshold` | float | No | 0 | Score threshold; 0 means no limit |
+
+**Request example**
+
+```bash
+curl -X POST '{knowledgeEndpoint}/retrieval' -H 'Authorization: Bearer km-...' -H 'Content-Type: application/json' -d '{
+  ""knowledge_id"": ""library-uuid"",
+  ""query"": ""retrieval text"",
+  ""retrieval_setting"": {""top_k"": 3, ""score_threshold"": 0.5}
+}'
+```
+
+The response is a `records` array; each record contains `content`, `score`, `title`, and `metadata`. Empty results return an empty array.
+
+## Notes
+
+- The Wiki API only returns pages that are active and published within the scope of the API key
+- All IDs passed in `library_ids` must be within the key scope; otherwise the API returns 403
+- Wiki IDs are hashids; `knowledge_id` of the retrieval API is the library UUID
+- If the key is bound to a single library, `knowledge_id` must match that library; otherwise the API returns 401
+- Error responses use the `error_code` / `error_msg` format","## ステップ 1：API Key を作成
+
+このスペースのオープン API ページで API Key を作成します。この Key は、スペース内のすべてのナレッジの公開済み Wiki ページと外部ナレッジ検索 API にアクセスできます。
+
+## ステップ 2：認証情報を指定
+
+API 呼び出し時はリクエストヘッダーに `Authorization: Bearer km-...` を指定してください。
+
+## ステップ 3：API を呼び出す
+
+### 外部 Wiki
+
+エンドポイント：{wikiEndpoint}
+
+#### `GET /api/external-wiki/pages` — 公開済みページの一覧取得
+
+| パラメータ | 位置 | 必須 | デフォルト | 説明 |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | いいえ | - | タイトル・slug・サマリーのキーワード |
+| `page_type` | query | いいえ | - | ページタイプ |
+| `category_id` | query | いいえ | - | カテゴリ ID。`other` で未分類ページ |
+| `library_ids` | query | いいえ | スコープ内すべて | ナレッジ ID リスト（カンマ区切り）。Key のスコープ内である必要があります |
+| `offset` | query | いいえ | 0 | ページネーションオフセット |
+| `limit` | query | いいえ | 20 | 1 ページの件数。最大 100 |
+
+#### `GET /api/external-wiki/pages/:page_id` — ページ本文の取得
+
+| パラメータ | 位置 | 必須 | 説明 |
+| --- | --- | --- | --- |
+| `page_id` | path | はい | ページ ID |
+
+公開済みの最新版を返します。本文 `body`、出典 `sources`、リンク `links`、被リンク `backlinks` を含みます。
+
+#### `GET /api/external-wiki/search` — 公開済みページの検索
+
+| パラメータ | 位置 | 必須 | デフォルト | 説明 |
+| --- | --- | --- | --- | --- |
+| `keyword` | query | はい | - | 検索キーワード |
+| `top_k` | query | いいえ | 10 | 返回件数の上限。最大 50 |
+| `library_ids` | query | いいえ | スコープ内すべて | ナレッジ ID リスト（カンマ区切り）。Key のスコープ内である必要があります |
+
+**呼び出し例**
+
+```bash
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/pages?limit=10'
+curl -H 'Authorization: Bearer km-...' '{wikiEndpoint}/search?keyword=キーワード'
+```
+
+### 外部ナレッジ（Dify 検索プロトコル）
+
+エンドポイント：{knowledgeEndpoint}
+
+#### `POST /api/external-knowledge/retrieval` — ナレッジ検索
+
+| パラメータ | 型 | 必須 | デフォルト | 説明 |
+| --- | --- | --- | --- | --- |
+| `knowledge_id` | string | はい | - | ナレッジ UUID |
+| `query` | string | はい | - | 検索クエリ |
+| `retrieval_setting` | object | はい | - | 検索設定 |
+| `retrieval_setting.top_k` | int | いいえ | 10 | 返回件数 |
+| `retrieval_setting.score_threshold` | float | いいえ | 0 | スコア閾値。0 は無制限 |
+
+**リクエスト例**
+
+```bash
+curl -X POST '{knowledgeEndpoint}/retrieval' -H 'Authorization: Bearer km-...' -H 'Content-Type: application/json' -d '{
+  ""knowledge_id"": ""ナレッジUUID"",
+  ""query"": ""検索内容"",
+  ""retrieval_setting"": {""top_k"": 3, ""score_threshold"": 0.5}
+}'
+```
+
+レスポンスは `records` 配列で、各レコードは `content`、`score`、`title`、`metadata` を含みます。結果がない場合は空配列です。
+
+## 補足
+
+- Wiki API は、API Key のスコープ内で active かつ公開済みのページのみを返します
+- `library_ids` に渡す ID はすべて Key のスコープ内である必要があります。そうでない場合 403 を返します
+- Wiki API の ID は hashid 形式です。検索 API の `knowledge_id` はナレッジ UUID です
+- Key が単一のナレッジにバインドされている場合、`knowledge_id` はそのナレッジと一致する必要があります。そうでない場合 401 を返します
+- エラーレスポンスは `error_code` / `error_msg` 形式です"
+space.api.namePlaceholder,请输入 Key 名称,請輸入 Key 名稱,Enter a name for the key,Key の名前を入力
+space.api.nameRequired,Key 名称不能为空,Key 名稱不能為空,Key name cannot be empty,Key の名前は空にできません
+space.api.copyFailed,复制失败，请重试,複製失敗，請重試,Copy failed. Please try again,コピーに失敗しました。もう一度お試しください
 space.setting.menu.recycle,回收站,回收站,Recycle Bin,ごみ箱
 space.basicInfo.danger_zone,删除空间,刪除空間,Delete Space,スペースを削除
 space.basicInfo.delete_tip,将这个空间彻底删除，知识空间下的所有数据将会删除,將這個空間徹底刪除，知識空間下的所有資料將會刪除,Permanently delete this space. All data under the knowledge space will be removed,このスペースを完全に削除します。ナレッジスペース下のすべてのデータが削除されます
@@ -2294,3 +2659,63 @@ space.knowledge_graph.all_libraries,全部知识库,全部知識庫,All Librarie
 space.knowledge_graph.loading,加载中...,載入中...,Loading...,読み込み中...
 login.bind_phone_failed,绑定手机号失败,綁定手機號失敗,Failed to bind mobile number,携帯電話番号のバインドに失敗しました
 common.unsaved_confirm_message,您有未保存的更改，确定要离开吗？,您有未保存的更改，確定要離開嗎？,You have unsaved changes. Leave anyway?,未保存の変更があります。離れますか？
+integrate.wechat_clone,微信机器人,微信機器人,WeChat Bot,WeChatボット
+integrate.wechat_clone_desc,接入微信/企业微信，机器人自动回复聊天消息,接入微信/企業微信，機器人自動回覆聊天訊息,Connect WeChat/WeCom so the bot auto-replies to chats,WeChat/WeComを接続してチャットに自動返信
+integrate.bot_access.intro_title,微信机器人接入,微信機器人接入,WeChat Bot Access,WeChatボット接続
+integrate.bot_access.create_bind,新建绑定,新建綁定,Create Bind,バインドを作成
+integrate.bot_access.provider_wework,企业微信,企業微信,WeCom,WeCom
+integrate.bot_access.provider_col,渠道,渠道,Channel,チャネル
+integrate.bot_access.provider_wechat,个人微信,個人微信,WeChat,WeChat
+integrate.bot_access.token_placeholder,请输入Token,請輸入Token,Enter the token,Tokenを入力してください
+integrate.bot_access.token_required,请输入 Token,請輸入 Token,Please enter the token,Tokenを入力してください
+integrate.bot_access.bind,绑定,綁定,Bind,バインド
+integrate.bot_access.callback_url,回调地址,回調地址,Callback URL,コールバックURL
+integrate.bot_access.bot_id_label,机器人 ID,機器人 ID,Bot ID,ボットID
+integrate.bot_access.bot_id_pending,待识别,待識別,Pending,識別待ち
+integrate.bot_access.qr_login,扫码登录,掃碼登錄,Scan to Login,QRログイン
+integrate.bot_access.conflict_title,该机器人已绑定其它智能体,該機器人已綁定其它智能體,This bot is already bound to another agent,このボットは既に他のエージェントにバインドされています
+integrate.bot_access.conflict_content,该机器人已绑定其它智能体，是否替换为当前绑定？,該機器人已綁定其它智能體，是否替換為當前綁定？,This bot is bound to another agent. Replace it with this bind?,このボットは他のエージェントにバインドされています。現在のバインドに置き換えますか？
+integrate.bot_access.enabled_col,启用,啟用,Enabled,有効
+integrate.bot_access.created_col,创建时间,創建時間,Created At,作成日時
+integrate.bot_access.online,在线,在線,Online,オンライン
+integrate.bot_access.disable_confirm,停用后立即生效，停用期间该机器人将不回复消息，确定停用？,停用後立即生效，停用期間該機器人將不回覆消息，確定停用？,Once disabled it takes effect immediately and the bot stops replying. Disable it?,無効化するとすぐに効果があり、ボットは返信しなくなります。無効化しますか？
+integrate.bot_access.delete_confirm,删除后将同步删除网关侧绑定，确定删除？,刪除後將同步刪除網關側綁定，確定刪除？,This also deletes the gateway-side bind. Delete?,削除するとゲートウェイ側のバインドも削除されます。削除しますか？
+integrate.bot_access.scan_tip_wechat,请使用需要绑定分身号的微信扫码,請使用需要綁定分身號的微信掃碼,Scan with the WeChat account to bind,バインドする分身アカウントのWeChatでスキャンしてください
+integrate.bot_access.scan_tip_wework,请使用需要绑定的企业微信扫码,請使用需要綁定的企業微信掃碼,Scan with the WeCom account to bind,バインドするWeComでスキャンしてください
+integrate.bot_access.qr_valid_tip,二维码 120 秒内有效,二維碼 120 秒內有效,QR code valid for 120 seconds,QRコードは120秒有効
+integrate.bot_access.wait_detect_tip,扫码后请勿关闭弹窗，系统将自动检测登录状态,掃碼後請勿關閉彈窗，系統將自動檢測登錄狀態,After scanning keep this dialog open. Login status is checked automatically,スキャン後はダイアログを閉じないでください。ログイン状態は自動的に確認されます
+integrate.bot_access.scanned_tip,已扫码，请在手机上点击「确认登录」,已掃碼，請在手機上點擊「確認登錄」,Scanned. Tap Confirm on your phone,スキャン済み。スマホで「確認」をタップしてください
+integrate.bot_access.canceled_tip,已取消登录,已取消登錄,Login canceled,ログインをキャンセルしました
+integrate.bot_access.region,设备地区,設備地區,Device Region,デバイス地域
+integrate.bot_access.region_placeholder,请选择地区,請選擇地區,Select a region,地域を選択してください
+integrate.bot_access.region_required,请选择地区,請選擇地區,Please select a region,地域を選択してください
+integrate.bot_access.region_changed,设备地区或设备类型已变更，请重新获取二维码,設備地區或設備類型已變更，請重新獲取二維碼,Region or device type changed. Please get a new QR code,デバイス地域またはデバイスタイプが変更されました。QRコードを再取得してください
+integrate.bot_access.device_type,设备类型,設備類型,Device Type,デバイスタイプ
+integrate.bot_access.device_ipad,iPad,iPad,iPad,iPad
+integrate.bot_access.device_ipad_desc,IOS 人脸认证,IOS 人臉認證,iOS Face ID auth,IOS顔認証
+integrate.bot_access.device_mac,Mac,Mac,Mac,Mac
+integrate.bot_access.device_mac_desc,自动认证,自動認證,Auto auth,自動認証
+integrate.bot_access.ipad_tip,首次登录 iPad 会出现新设备验证，无数字验证码，需使用 IOS 设备下载认证 APP：,首次登錄 iPad 會出現新設備驗證，無數字驗證碼，需使用 IOS 設備下載認證 APP：,First iPad login requires new-device verification with no digit code. Download the auth app on an iOS device:,初回のiPadログインは新規デバイス認証が必要で、数字コードはありません。iOSデバイスで認証アプリをダウンロードしてください：
+integrate.bot_access.ipad_tip_suffix,扫描二维码网址，扫描人脸通过。如有数字验证码，需在下方「数字验证码」区域填写。,掃描二維碼網址，掃描人臉通過。如有數字驗證碼，需在下方「數字驗證碼」區域填寫。,Scan the QR URL and pass face verification. If a digit code appears enter it below.,QRコードのURLをスキャンして顔認証を通してください。数字コードがある場合は下の「数字コード」に入力してください。
+integrate.bot_access.need_app_verify,需要图形验证码/手机验证码,需要圖形驗證碼/手機驗證碼,Graphic / phone verification required,画像認証/スマホ認証が必要です
+integrate.bot_access.app_verify_tip,请在已安装微信的 APP 中打开验证链接完成扫码：,請在已安裝微信的 APP 中打開驗證鏈接完成掃碼：,Open the verification link in the WeChat app and scan:,WeChatアプリで認証リンクを開いてスキャンしてください：
+integrate.bot_access.need_verify_tip,检测到二次验证，请查看手机弹出的 6 位验证码并提交,檢測到二次驗證，請查看手機彈出的 6 位驗證碼並提交,Secondary verification required. Enter the 6-digit code shown on your phone,二次認証が必要です。スマホに表示された6桁コードを入力してください
+integrate.bot_access.too_frequent,操作过于频繁，请稍后再试,操作過於頻繁，請稍後再試,Too frequent. Please retry later,操作が頻繁すぎます。しばらくしてから再試行してください
+integrate.bot_access.qr_expired,二维码已失效,二維碼已失效,QR code expired,QRコードの有効期限が切れました
+integrate.bot_access.click_refresh,点击刷新,點擊刷新,Click to refresh,クリックして更新
+integrate.bot_access.captcha,数字验证码,數字驗證碼,Captcha Code,数字コード
+integrate.bot_access.captcha_tip,扫码后手机弹出的 6 位验证码（非必填）,掃碼後手機彈出的 6 位驗證碼（非必填）,6-digit code shown on your phone after scanning (optional),スキャン後にスマホに表示される6桁コード（任意）
+integrate.bot_access.verify_code,辅助验证码,輔助驗證碼,Verification Code,認証コード
+integrate.bot_access.verify_tip,需要二次验证时输入 6 位验证码,需要二次驗證時輸入 6 位驗證碼,Enter the 6-digit code for secondary verification,二次認証が必要な場合は6桁コードを入力
+integrate.bot_access.verify_required,请输入验证码,請輸入驗證碼,Please enter the code,コードを入力してください
+integrate.bot_access.verify_success,验证成功，等待登录,驗證成功，等待登錄,Verified. Waiting for login.,認証成功。ログインを待っています。
+integrate.bot_access.login_success,登录成功,登錄成功,Logged in,ログインしました
+integrate.bot_access.login_failed,登录状态查询失败，请重试,登錄狀態查詢失敗，請重試,Failed to check login status. Please retry,ログイン状態の確認に失敗しました。再試行してください
+integrate.bot_access.logout,退出登录,退出登錄,Log Out,ログアウト
+integrate.bot_access.logout_confirm,确定退出登录？,確定退出登錄？,Confirm log out?,ログアウトしますか？
+integrate.bot_access.logout_success,已退出,已退出,Logged out,ログアウトしました
+integrate.bot_access.get_qrcode,获取二维码,獲取二維碼,Get QR code,QRコードを取得
+
+integrate.bot_access.bind_info,绑定信息,綁定信息,Bind Info,バインド情報
+integrate.bot_access.delete_bind,删除绑定,刪除綁定,Delete Bind,バインドを削除
+integrate.bot_access.not_logged_in,未登录,未登錄,Not logged in,未ログイン

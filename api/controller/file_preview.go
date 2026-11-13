@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/config"
@@ -124,7 +125,8 @@ func PreviewRawFileContent(c *gin.Context) {
 		}
 
 		c.Header("Content-Type", contentType)
-		c.String(http.StatusOK, fileBody.Content)
+		// 预览不展示私有人员隐藏注释（<!--contact:...-->），避免把人员 ID 写进可视化页面
+		c.String(http.StatusOK, common.StripInternalContactComments(fileBody.Content))
 		return
 	}
 
@@ -490,5 +492,6 @@ func GetFileBodyContent(c *gin.Context) {
 	}
 
 	c.Header("Content-Type", contentType)
-	c.String(http.StatusOK, fileBody.Content)
+	// 预览不展示私有人员隐藏注释（<!--contact:...-->），避免把人员 ID 写进可视化页面
+	c.String(http.StatusOK, common.StripInternalContactComments(fileBody.Content))
 }

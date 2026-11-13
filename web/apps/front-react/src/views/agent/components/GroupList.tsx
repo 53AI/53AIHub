@@ -39,6 +39,9 @@ export function GroupList({
 
   const agentStore = useAgentStore();
   const isSoftStyle = useIsSoftStyle();
+  // 筛选吸顶条 top：页面标题条（探索/我的，py-4 + h-8 = 64px）吸顶于其上，
+  // 软件风格下再叠加页面 Header（56px）；网站风格无页面 Header（参考 toolkit 同款计算）
+  const filterStickyTop = (isSoftStyle ? 56 : 0) + 64
 
   // 有缓存则静默刷新，无缓存则显示骨架屏
   const [loading, setLoading] = useState(!agentStore.agentList.length);
@@ -131,7 +134,7 @@ export function GroupList({
     <div>
       <div
         className={`${selectMode ? "" : sticky ? "sticky z-[100]" : ""} bg-white`}
-        style={{ top: isSoftStyle ? "120px" : "30px" }}
+        style={{ top: filterStickyTop }}
       >
         <div className="flex md:flex-row flex-col-reverse gap-5 items-stretch md:items-center justify-between bg-white py-1">
           <Tabs

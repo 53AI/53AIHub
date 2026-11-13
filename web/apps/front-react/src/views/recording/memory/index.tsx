@@ -1,40 +1,106 @@
-import { CloseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Drawer, Empty, Modal, Spin, Table, Tooltip, message } from 'antd';
+import { EyeOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Empty, Modal, Space, Spin, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { TableColumnsType } from 'antd';
+import { DownOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Header from '@/components/Layout/Header';
 import recordingApi from '@/api/modules/recording';
-import { Search, Tabs } from '@km/shared-components-react';
+import { Search, SafeImage, Tabs } from '@km/shared-components-react';
 import type {
   RecordingMemoryEntityDetail,
   RecordingMemoryEntityItem,
   RecordingMemoryEntitySchemas,
   RecordingMemoryEntityType,
+  RecordingMemorySchemaCategory,
 } from '@/api/modules/recording/types';
 import { t } from '@/locales';
 import { getSimpleDateFormatString } from '@km/shared-utils';
+import { useRecordingFlutterPanel } from '@/stores/modules/recording-flutter-panel';
 import { EntityFormDrawer } from './components/EntityFormDrawer';
-import { FactCard } from './components/FactCard';
 import { MemoryKnowledgeGraph } from './components/MemoryKnowledgeGraph';
 import { MergeEntityModal } from './components/MergeEntityModal';
-import { factEntityTypeLabel, formatSourceFile, isEnumAttribute } from './components/utils';
+import { buildFlutterWebUrl } from '../components/flutter-panel/flutterUrl';
+import { useFlutterPanelClosed } from '../components/flutter-panel/useFlutterPanelClosed';
+import { useFlutterPanelMutation } from '../components/flutter-panel/useFlutterPanelMutation';
 import './index.css';
 
-export function RecordingMemoryHomeView() {
+export interface RecordingMemoryHomeViewProps {
+  /** 实体 schema 分类：memory=经营记忆（默认）/ relation=关系。页面完全由 schema 驱动，
+   *  关系模块等复用本页时仅切换此参数。 */
+  category?: RecordingMemorySchemaCategory
+  /** 页面标题（正文 h1） */
+  title?: string
+  /** 标题下的描述文案 */
+  description?: string
+}
+
+/** 类型维度的表格列配置：按当前类型 tab 的 schema label 命中。
+ *  人脉 / 企业 等类型用更贴业务的列头；未命中的类型用通用列头（实体 / 记忆内容 / 关联）。
+ *  showType：单类型 tab 行内类型恒定，隐藏冗余的"类型"列。
+ *  avatarAttr / avatarFallback / subtitleAttr：首列头像 + 副标题排版
+ *  （人脉=avatar+职位、企业=logo+地区，数据见 20261010 协议 §2.2 列表行 attributes），
+ *  副标题统一用 Tag 展示。
+ *  extra：首列后的附加列（人脉=所属企业，企业=行业）。 */
+type TypeTableColumnConfig = {
+  entity: string
+  content: string
+  relation: string
+  showType: boolean
+  avatarAttr?: string
+  avatarFallback?: string
+  subtitleAttr?: string
+  extra?: 'company' | 'industry'
+}
+
+const TYPE_TABLE_COLUMN_LABELS: Record<string, TypeTableColumnConfig> = {
+  // key 用后端 schema 的实体 type（稳定契约：person / company，见
+  // KM-Record mockMemorySchemas 与 20261010 协议）；label 是可变的展示
+  // 文案，用作匹配 key 会在后端改名时失配落到纯文本首列。
+  person: {
+    entity: '人物',
+    content: '描述',
+    relation: '相关',
+    showType: false,
+    avatarAttr: 'avatar',
+    avatarFallback: '/images/recording/user.png',
+    subtitleAttr: 'position',
+    extra: 'company'
+  },
+  company: {
+    entity: '企业',
+    content: '描述',
+    relation: '相关',
+    showType: false,
+    avatarAttr: 'logo',
+    avatarFallback: '/images/recording/company.png',
+    subtitleAttr: 'region',
+    extra: 'industry'
+  }
+}
+
+const DEFAULT_TABLE_COLUMN_LABELS: TypeTableColumnConfig = {
+  entity: '实体',
+  content: '记忆内容',
+  relation: '关联',
+  showType: true
+}
+
+export function RecordingMemoryHomeView({
+  category = 'memory',
+  title = '记忆',
+  description = '提取对话关键信息，沉淀各类业务记忆',
+}: RecordingMemoryHomeViewProps) {
   const [items, setItems] = useState<RecordingMemoryEntityItem[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [activeType, setActiveType] = useState<RecordingMemoryEntityType | 'all'>('all')
+  // 类型 tab 无"全部"选项：默认选中 schema 第一个类型，schema 加载前为 null（不请求列表）
+  const [activeType, setActiveType] = useState<RecordingMemoryEntityType | null>(null)
   const [keyword, setKeyword] = useState('')
   // 分页：参考 order/index.tsx，Table 内置 pagination 走 showSizeChanger。
   // filter 变化（搜索关键词 / 类型 tab）时由各 onChange 同步重置 currentPage 到 1。
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
-  const [selected, setSelected] = useState<RecordingMemoryEntityDetail | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [editingEntity, setEditingEntity] = useState<RecordingMemoryEntityDetail | null>(null)
   const [editDrawerOpen, setEditDrawerOpen] = useState(false)
-  const [addDrawerOpen, setAddDrawerOpen] = useState(false)
   // 主页 tabs: 经营记忆(列表/统计) | 知识图谱(G6 力导向图)。
   // 默认进入经营记忆 tab,符合现有用户路径;切到知识图谱时不需要重新拉 schema/entity 列表。
   const [activeTab] = useState<'memory' | 'graph'>('memory')
@@ -53,13 +119,14 @@ export function RecordingMemoryHomeView() {
   // 防搜索 / 翻页连续触发时后到先到覆盖。
   const loadTokenRef = useRef(0)
 
-  // 详情 / 编辑打开 token：用户连点不同行时，只有最后一次点击的 setSelected 生效。
+  // 编辑打开 token：用户连点不同行的编辑时，只有最后一次点击的 setEditingEntity 生效。
   const openTokenRef = useRef(0)
 
   useEffect(() => {
     let cancelled = false
     recordingApi
-      .getMemorySchema()
+      // 页面完全由 schema 驱动：category 决定展示哪些实体类型（memory=经营记忆 / relation=关系）
+      .getMemorySchema({ category })
       .then((data) => {
         if (cancelled) return
         setSchema(data)
@@ -73,12 +140,20 @@ export function RecordingMemoryHomeView() {
     }
   }, [])
 
+  // schema 到位后默认选中第一个类型（仅首次，后续用户切换不受影响）
+  useEffect(() => {
+    if (!schema || schema.length === 0) return
+    setActiveType((prev) => prev ?? schema[0].type)
+  }, [schema])
+
   const loadEntities = useCallback(async () => {
+    // 类型未就绪（schema 未加载、默认类型未定）时跳过本次请求，待默认类型设定后由依赖变化重新触发
+    if (!activeType) return
     const myToken = ++loadTokenRef.current
     setLoading(true)
     try {
       const data = await recordingApi.getMemoryEntities({
-        entity_type: activeType === 'all' ? undefined : activeType,
+        entity_type: activeType,
         keyword: keyword.trim() || undefined,
         offset: (currentPage - 1) * pageSize,
         limit: pageSize,
@@ -88,7 +163,7 @@ export function RecordingMemoryHomeView() {
       setTotal(data.total || 0)
     } catch {
       if (myToken !== loadTokenRef.current) return
-      message.error('会议记忆加载失败，请稍后重试')
+      message.error(`${title}加载失败，请稍后重试`)
     } finally {
       if (myToken === loadTokenRef.current) setLoading(false)
     }
@@ -99,25 +174,17 @@ export function RecordingMemoryHomeView() {
     return () => window.clearTimeout(timer)
   }, [loadEntities, keyword])
 
-  const openEntity = async (item: RecordingMemoryEntityItem) => {
-    const myToken = ++openTokenRef.current
-    setDrawerOpen(true)
-    setSelected(null)
-    try {
-      const detail = await recordingApi.getMemoryEntity(item.id)
-      if (myToken !== openTokenRef.current) return
-      setSelected(detail)
-    } catch {
-      if (myToken !== openTokenRef.current) return
-      message.error('记忆详情加载失败')
-      setDrawerOpen(false)
-    }
-  }
+  // 「查看详情」「创建」改为界面最右侧 375px Flutter Web 面板（KM-Record）承载。
+  // 面板内增 / 改 / 删实时上报，关闭面板时再刷新一次兜底。
+  const openFlutterPanel = useRecordingFlutterPanel((s) => s.open)
+  useFlutterPanelMutation((mutation) => {
+    if (mutation.module === 'memory') loadEntities()
+  })
+  useFlutterPanelClosed(loadEntities)
 
-  const closeEntityDrawer = () => {
-    openTokenRef.current += 1
-    setDrawerOpen(false)
-    setSelected(null)
+  // 查看详情：打开 Flutter Web 实体详情页（Flutter 侧按 id 自行拉取，这里不再预取）。
+  const openEntity = (item: RecordingMemoryEntityItem) => {
+    openFlutterPanel(buildFlutterWebUrl(`/business/memory/${item.id}`))
   }
 
   // 从 table 行 hover 编辑按钮进入：fetch 详情后切到编辑 Drawer。
@@ -134,16 +201,11 @@ export function RecordingMemoryHomeView() {
     }
   }
 
+  // 创建：打开 Flutter Web 新增页，携带当前类型 tab 与 schema 分类作表单默认值。
   const openAddEntity = () => {
-    setAddDrawerOpen(true)
-  }
-
-  // 详情 Drawer 右上角「编辑」入口：复用已加载的 selected 详情，切到编辑 Drawer。
-  const openEditFromDetail = () => {
-    if (!selected) return
-    setEditingEntity(selected)
-    setEditDrawerOpen(true)
-    closeEntityDrawer()
+    openFlutterPanel(
+      buildFlutterWebUrl('/business/memory/add', { type: activeType ?? undefined, category }),
+    )
   }
 
   const removeEntityFromTable = async (item: RecordingMemoryEntityItem) => {
@@ -152,29 +214,50 @@ export function RecordingMemoryHomeView() {
     loadEntities()
   }
 
+  // 批量删除：循环调单条删除接口（后端无批量端点），allSettled 并发后统计结果。
+  // 二次确认列出将删除的条目名；部分失败时保留成功项的刷新，失败数单独提示。
+  const batchDeleteSelected = () => {
+    const selected = items.filter((i) => mergeSelectedIds.includes(i.id))
+    if (selected.length === 0) return
+    Modal.confirm({
+      title: t('memory.batch_delete_confirm_title'),
+      content: (
+        <div>
+          <p className="text-sm text-[#1D1E1F]">
+            {t('memory.batch_delete_confirm_desc', { n: selected.length })}
+          </p>
+          <p className="mt-2 max-h-32 overflow-y-auto text-xs text-[#9CA3AF]">
+            {selected.map((s) => s.canonical_name).join('、')}
+          </p>
+        </div>
+      ),
+      okText: t('memory.delete_confirm_ok'),
+      okButtonProps: { danger: true },
+      cancelText: t('memory.delete_confirm_cancel'),
+      onOk: async () => {
+        const results = await Promise.allSettled(
+          selected.map((s) => recordingApi.deleteMemoryEntity(s.id)),
+        )
+        const failed = results.filter((r) => r.status === 'rejected').length
+        const success = results.length - failed
+        if (failed === 0) {
+          message.success(t('memory.batch_delete_success', { n: success }))
+        } else {
+          message.warning(t('memory.batch_delete_partial', { success, failed }))
+        }
+        setMergeSelectedIds([])
+        loadEntities()
+      },
+    })
+  }
+
   /** 类型中文名：取自 schema，未知类型直接回退到原始 key。 */
   const entityTypeLabel = (type: string) => schema?.find((s) => s.type === type)?.label ?? type
 
-  /** 把 schema 的 attribute 展开为详情字段定义。 */
-  const attributeFieldDefs = selected && schema
-    ? (schema.find((s) => s.type === selected.entity_type)?.attributes.map((attr) => ({
-        key: attr.key,
-        label: attr.label,
-      })) ?? [])
+  // 类型 tab 列表：按 schema 顺序展开，无"全部"选项。
+  const typeTabs: Array<{ key: RecordingMemoryEntityType; label: string }> = schema
+    ? schema.map((s) => ({ key: s.type, label: s.label }))
     : []
-
-  /** 展示某属性值：有枚举候选则翻成中文，否则原样展示（自由文本）。 */
-  const renderAttributeValue = (type: RecordingMemoryEntityType, key: string, value: string | undefined) => {
-    if (value === undefined || value === null || value === '') return '--'
-    const values = schema?.find((s) => s.type === type)?.attributes.find((a) => a.key === key)?.values
-    if (isEnumAttribute(values)) return values.find((v) => v.value === value)?.label ?? value
-    return value
-  }
-
-  // 类型 tab 列表：'全部' 始终是第一个 UI 入口，其余按 schema 顺序展开。
-  const typeTabs: Array<{ key: RecordingMemoryEntityType | 'all'; label: string }> = schema
-    ? [{ key: 'all', label: '全部' }, ...schema.map((s) => ({ key: s.type, label: s.label }))]
-    : [{ key: 'all', label: '全部' }]
 
   // 记忆融合:从当前页 items 里按 selectedIds 顺序取出选中的实体;
   // 切页 / 切类型 / 切搜索词时 selectedIds 已被 reset,这里防御性地再查一次,
@@ -193,45 +276,112 @@ export function RecordingMemoryHomeView() {
     : false
 
   // 实体记忆列表列定义：参考 chunk.tsx 知识列表的 Table 结构。
-  // 列顺序：实体 / 类型 / 记忆内容 / 关联 / 更新人 / 最近更新 / 操作。
+  // 列顺序：实体 / 类型 / 记忆内容 / 关联 / 最近更新 / 操作。
+  // 列头文案按当前类型 tab 覆盖（人脉→人物/描述/相关、企业→企业/描述/相关），
+  // 未命中类型用通用列头。
   // 所有列的字体 / 颜色 / 间距与 EntityRow 里的实体行展示一致：
   //   主信息（实体）text-sm text-[#1D1E1F]，
   //   次信息（记忆内容 / 关联 / 更新人 / 最近更新）text-xs text-[#999999]，
   //   类型沿用 meta 色调的圆角 chip。
   // 关联 / 更新人后端列表接口暂未提供，统一显示 "--"，保持列位稳定避免后续接口补齐时位移。
   // 操作列只暴露"查看"，行 hover 时显示（invisible group-hover:visible），与 chunk.tsx 的行操作一致。
+  const columnLabels = TYPE_TABLE_COLUMN_LABELS[activeType ?? ''] ?? DEFAULT_TABLE_COLUMN_LABELS
+  // 附加列：人脉→所属企业（结构化 related_company 优先，回退历史 attributes.company 文本，
+  // 20261010 协议 §2.1 渲染优先级）；企业→行业（attributes.industry）
+  const extraColumn =
+    columnLabels.extra === 'company'
+      ? {
+          title: '企业',
+          key: 'related_company',
+          width: 150,
+          render: (_: unknown, record: RecordingMemoryEntityItem) => {
+            const company = record.related_company?.related_name || record.attributes?.company || '--'
+            return (
+              <Typography.Text ellipsis={{ tooltip: company }} className="!block text-sm text-[#1D1E1F]">
+                {company}
+              </Typography.Text>
+            )
+          }
+        }
+      : columnLabels.extra === 'industry'
+        ? {
+            title: '行业',
+            key: 'industry',
+            width: 120,
+            ellipsis: true,
+            render: (_: unknown, record: RecordingMemoryEntityItem) => (
+              <span className="truncate text-sm text-[#1D1E1F]">{record.attributes?.industry || '--'}</span>
+            )
+          }
+        : null
   const entityColumns: TableColumnsType<RecordingMemoryEntityItem> = [
     {
-      title: '实体',
+      title: columnLabels.entity,
       dataIndex: 'canonical_name',
       key: 'canonical_name',
-      minWidth: 200,
+      // ellipsis 会把 tableLayout 强成 fixed，rc-table 仅在 auto 下才写 minWidth，故用 width
+      width: 240,
       ellipsis: true,
-      render: (name: string) => (
-        <span className="block truncate text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors">{name}</span>
-      ),
+      render: (name: string, record: RecordingMemoryEntityItem) => {
+        // 通用类型：纯文本首列；人脉 / 企业：头像 + 名称 + 副标题（职位 / 地区）
+        if (!columnLabels.avatarAttr) {
+          return (
+            <span className="block truncate text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors">{name}</span>
+          )
+        }
+        const subtitle = (record.attributes?.[columnLabels.subtitleAttr ?? ''] ?? '').trim()
+        return (
+          <div className="flex items-center gap-2.5">
+            <SafeImage
+              src={record.attributes?.[columnLabels.avatarAttr] || ''}
+              fallback={columnLabels.avatarFallback}
+              className="size-9 flex-none rounded-full object-cover"
+            />
+            <div className="min-w-0">
+              <Typography.Text
+                ellipsis={{ tooltip: name }}
+                className="!block text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors"
+              >
+                {name}
+              </Typography.Text>
+              {subtitle && (
+                <Tooltip title={subtitle}>
+                  <Tag className="mt-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+                    {subtitle}
+                  </Tag>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+        )
+      }
     },
+    ...(columnLabels.showType
+      ? [
+          {
+            title: '类型',
+            dataIndex: 'entity_type',
+            key: 'entity_type',
+            width: 100,
+            render: (_: RecordingMemoryEntityType, record: RecordingMemoryEntityItem) => (
+              <span className="truncate text-sm text-[#1D1E1F]">{entityTypeLabel(record.entity_type)}</span>
+            )
+          }
+        ]
+      : []),
+    ...(extraColumn ? [extraColumn] : []),
     {
-      title: '类型',
-      dataIndex: 'entity_type',
-      key: 'entity_type',
-      width: 100,
-      render: (_: RecordingMemoryEntityType, record) => (
-        <span className="truncate text-sm text-[#1D1E1F]">{entityTypeLabel(record.entity_type)}</span>
-      ),
-    },
-    {
-      title: '记忆内容',
+      title: columnLabels.content,
       dataIndex: 'summary',
       key: 'summary',
-      minWidth: 240,
+      width: 260,
       ellipsis: true,
       render: (summary: string) => (
         <span className="truncate text-sm text-[#1D1E1F]">{summary || '尚未形成总结性描述'}</span>
       ),
     },
     {
-      title: '关联',
+      title: columnLabels.relation,
       dataIndex: 'fact_count',
       key: 'fact_count',
       width: 80,
@@ -263,7 +413,7 @@ export function RecordingMemoryHomeView() {
               }}
             />
           </Tooltip>
-          <Tooltip title="编辑">
+          {/* <Tooltip title="编辑">
             <Button
               type="text"
               size="small"
@@ -298,23 +448,22 @@ export function RecordingMemoryHomeView() {
                   })
                 }}
               />
-            </Tooltip>
+            </Tooltip> */}
         </div>
       ),
     },
   ]
 
   return (
-    <div className="flex-1 min-w-0 h-full overflow-auto bg-[#FAFBFD] text-[#1D1E1F]">
-      <Header title="经营记忆" border={false} />
+    <div className="flex-1 min-w-0 h-full overflow-auto bg-white text-[#1D1E1F] px-8 pb-12 pt-7">
       {schemaError ? (
-        <div className="mx-auto min-h-full w-11/12 lg:w-4/5 max-w-[1200px] p-6">
+        <div className="min-h-full max-w-[1200px] mx-auto">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={schemaError} />
         </div>
       ) : !schema ? (
-        <div className="flex h-[60vh] items-center justify-center"><Spin size="large" tip="加载中..." /></div>
+        <div className="flex h-[60vh] items-center justify-center"><Spin size="large" description="加载中..." /></div>
       ) : (
-      <div className="memory-content-container mx-auto w-11/12 lg:w-4/5 max-w-[1200px] p-6 max-md:px-0">
+      <div className="memory-content-container  max-w-[1200px] mx-auto">
 
         {/* <h2 className="mb-6 text-base font-medium text-[#1D1E1F]">数据统计</h2>
 
@@ -400,56 +549,87 @@ export function RecordingMemoryHomeView() {
           ]}
         /> */}
 
-        <h3 className="mb-5 text-base font-medium text-[#1D1E1F]">经营记忆</h3>
+        <div className="memory-title-area">
+          <h1 className="memory-title text-2xl font-medium  text-[#333332]">{title}</h1>
+          <p className="memory-desc mt-1 text-sm text-[#888994]">{description}</p>
+          <Search
+            mode="expanded"
+            value={keyword}
+            placeholder="搜索实体名称或内容"
+            debounceMs={260}
+            className="memory-title-search"
+            onDebouncedChange={(val) => {
+              setKeyword(val)
+              setCurrentPage(1)
+              setMergeSelectedIds([])
+            }}
+          />
+        </div>
 
         {activeTab === 'memory' ? (
           <>
-            <div className="memory-toolbar mb-5">
+            <div className="memory-toolbar mt-5">
               <div className="flex items-center gap-3">
  
                 <Tabs
                   variant="segmented"
                   className="memory-type-tabs"
                   items={typeTabs}
-                  activeKey={activeType}
+                  activeKey={activeType ?? undefined}
                   onChange={(key) => {
-                    setActiveType(key as RecordingMemoryEntityType | 'all')
+                    setActiveType(key as RecordingMemoryEntityType)
                     setCurrentPage(1)
                     setMergeSelectedIds([])
                   }}
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Search
-                  mode="expanded"
-                  value={keyword}
-                  placeholder="搜索记忆实体名称或内容"
-                  debounceMs={260}
-                  className="memory-toolbar-search"
-                  onDebouncedChange={(val) => {
-                    setKeyword(val)
-                    setCurrentPage(1)
-                    setMergeSelectedIds([])
-                  }}
-                />
-                {mergeSelectedIds.length >= 2 && (
-                  <Tooltip title={sameType ? '' : t('memory.merge_type_mismatch_tip')}>
-                    <span className={sameType ? undefined : 'cursor-not-allowed'}>
-                      <Button
-                        color="primary"
-                        variant="outlined"
-                        disabled={!sameType}
-                        onClick={() => setMergeOpen(true)}
-                      >
-                        {t('memory.merge_button')}
-                      </Button>
-                    </span>
-                  </Tooltip>
-                )}
-                <Button type="primary" icon={<PlusOutlined />} onClick={openAddEntity}>{t('action.add')}</Button>
+                <Button type="primary" onClick={openAddEntity}>{t('action.add')}</Button>
+                {/* 批量操作：常驻已选计数 + 下拉菜单（合并 / 删除）。
+                    合并保持「恰好 2 个 + 同类型」约束（并入口前旧融合按钮的语义）；
+                    删除不限量，循环调单条接口。未选中时下拉整体禁用。 */}
+                <Space.Compact>
+                  <Button>
+                    {t('memory.selected_prefix')}
+                    <span className="font-medium text-[#2563EB]">{mergeSelectedIds.length}</span>
+                    {t('memory.selected_suffix')}
+                  </Button>
+                  <Dropdown
+                    placement="bottomRight"
+                    disabled={mergeSelectedIds.length === 0}
+                    menu={{
+                      items: [
+                        {
+                          key: 'merge',
+                          label: t('memory.batch_merge', { n: mergeSelectedIds.length }),
+                          // 融合仅恰好 2 个且同类型可用；disabled 原因经 title 提示
+                          disabled: mergeSelectedIds.length !== 2 || !sameType,
+                          title:
+                            mergeSelectedIds.length !== 2
+                              ? t('memory.merge_need_two')
+                              : !sameType
+                                ? t('memory.merge_type_mismatch_tip')
+                                : undefined,
+                          onClick: () => {
+                            if (mergeEntities) setMergeOpen(true)
+                          },
+                        },
+                        {
+                          key: 'delete',
+                          label: t('memory.batch_delete', { n: mergeSelectedIds.length }),
+                          disabled: mergeSelectedIds.length === 0,
+                          danger: true,
+                          onClick: batchDeleteSelected,
+                        },
+                      ],
+                    }}
+                  >
+                    <Button>{t('common.action')} <DownOutlined /></Button>
+                  </Dropdown>
+                </Space.Compact>
               </div>
             </div>
-            <section className="bg-white p-5 rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-sm">
+            <section className="bg-white mt-5 p-5 rounded-2xl border border-[#e2e8f0] overflow-hidden shadow-sm">
               {/* 横向滚动下限取各列宽之和（含选择列，约 950px）：窄屏可横向滚动，
                   宽屏下"实体/记忆内容"等弹性列按剩余空间分配，不会无限撑开 */}
               <Table
@@ -459,15 +639,10 @@ export function RecordingMemoryHomeView() {
                 scroll={{ x: 950 }}
                 rowSelection={{
                   selectedRowKeys: mergeSelectedIds,
-                  // 记忆融合只允许恰好 2 个:超过 2 个时自动取消最早选中的,保证最多 2 个。
-                  // 用户感觉是"勾第 3 个时把最早勾的踢掉",跟大多数批量操作的直觉一致。
+                  // 勾选不限量（批量删除可多选）；融合的「恰好 2 个」约束在
+                  // 下拉菜单项上把关（数量不符时禁用 + tooltip 提示）。
                   onChange: (keys) => {
-                    const next = keys as Array<string | number>
-                    if (next.length <= 2) {
-                      setMergeSelectedIds(next)
-                    } else {
-                      setMergeSelectedIds(next)
-                    }
+                    setMergeSelectedIds(keys as Array<string | number>)
                   },
                   getCheckboxProps: () => ({}),
                 }}
@@ -500,94 +675,18 @@ export function RecordingMemoryHomeView() {
       </div>
       )}
 
-      <Drawer width={620} placement="right" open={drawerOpen} onClose={closeEntityDrawer} title="记忆详情" destroyOnClose
-        closable={false}
-        extra={
-          <div className="flex items-center gap-2">
-            <Button color="primary" size="small" variant="outlined" icon={<EditOutlined />} onClick={openEditFromDetail}>
-              编辑
-            </Button>
-            <Button
-              type="text"
-              size="small"
-              icon={<CloseOutlined />}
-              aria-label="关闭"
-              onClick={closeEntityDrawer}
-            />
-          </div>
-        }
-      >
-        {!selected ? <div className="flex h-64 items-center justify-center"><Spin tip="正在读取实体记忆…" /></div> : <div className="pb-5">
-          <div className="pt-1">
-          <h3 className="mb-4 text-base font-medium text-[#1D1E1F]">记忆</h3>
-          <div className="bg-[#F7F8FA] p-5 rounded-xl">
-            <section className="border-b border-dashed border-slate-200 pb-5">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-lg text-[#1D1E1F] min-w-0 truncate" title={selected.canonical_name}>{selected.canonical_name}</span>
-                <span className={`shrink-0 rounded-md px-2 py-1 text-xs bg-slate-100 text-slate-600 `}>{entityTypeLabel(selected.entity_type)}</span>
-              </div>
-              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-                {attributeFieldDefs.length === 0 ? (
-                  <p className="col-span-2 text-sm text-[#9CA3AF]">该类型暂无属性</p>
-                ) : attributeFieldDefs.map((field) => {
-                  const value = renderAttributeValue(selected.entity_type, field.key, selected.attributes[field.key])
-                  return (
-                    <div key={field.key} className="min-w-0">
-                      <p className="mb-1 text-sm text-[#9CA3AF]">{field.label}</p>
-                      <p className="text-sm text-[#1D1E1F] break-words" title={value}>{value}</p>
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-            <section className="pt-5">
-              <p className="mb-2 text-sm text-[#9CA3AF]">内容</p>
-              <div className="whitespace-pre-line break-words text-sm text-[#1D1E1F]">{selected.summary || '尚未形成总结性描述'}</div>
-            </section>
-          </div>
-          <section className="py-5">
-            <h3 className="text-base font-medium text-[#1D1E1F]">相关</h3>
-            {selected.facts.length ? (
-              <div className="relative space-y-3 before:absolute before:bottom-3 before:left-[5px] before:top-3 before:w-px before:bg-[#E8EAED]">
-                {selected.facts.map((fact) => (
-                  <FactCard
-                    key={String(fact.id)}
-                    variant="persisted"
-                    time={fact.occurred_at ? getSimpleDateFormatString({ date: fact.occurred_at, format: 'YYYY-MM-DD hh:mm' }) : '--'}
-                    sourceLabel={formatSourceFile(fact.source_file)}
-                    body={fact.content}
-                    typeLabel={factEntityTypeLabel(fact.related_type || fact.entity_type, schema)}
-                  />
-                ))}
-              </div>
-            ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无相关数据" />}
-          </section>
-          </div>
-        </div>}
-      </Drawer>
-
       {schema && (
-        <>
-          <EntityFormDrawer
-            mode="edit"
-            open={editDrawerOpen}
-            entity={editingEntity}
-            schema={schema}
-            onClose={() => {
-              setEditDrawerOpen(false)
-              setEditingEntity(null)
-            }}
-            onSaved={loadEntities}
-          />
-          <EntityFormDrawer
-            mode="add"
-            open={addDrawerOpen}
-            entity={null}
-            schema={schema}
-            onClose={() => setAddDrawerOpen(false)}
-            onSaved={loadEntities}
-          />
-        </>
+        <EntityFormDrawer
+          mode="edit"
+          open={editDrawerOpen}
+          entity={editingEntity}
+          schema={schema}
+          onClose={() => {
+            setEditDrawerOpen(false)
+            setEditingEntity(null)
+          }}
+          onSaved={loadEntities}
+        />
       )}
 
       {mergeOpen && mergeEntities && (

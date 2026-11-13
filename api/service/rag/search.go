@@ -48,6 +48,8 @@ type SearchRequest struct {
 	precomputedQueryVector []float32
 	// 预计算的配置（用于多库并发搜索时避免重复获取配置）
 	precomputedChunkConfig *ChunkConfig
+	searchConcurrency      int
+	searchContext          context.Context
 }
 
 // SearchResponse 搜索响应
@@ -67,11 +69,34 @@ func multiLibrarySearchConcurrencyLimit() int {
 	return 1
 }
 
-func collectionSearchConcurrencyLimit() int {
+type searchConcurrencyContextKey struct{}
+
+func WithSearchConcurrency(ctx context.Context, limit int) context.Context {
+	if limit <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, searchConcurrencyContextKey{}, limit)
+}
+
+func collectionSearchConcurrencyLimit(contexts ...context.Context) int {
+	if limit := searchConcurrencyOverride(contexts...); limit > 0 {
+		return limit
+	}
 	if limit := config.RAG_COLLECTION_SEARCH_MAX_CONCURRENT; limit > 0 {
 		return limit
 	}
 	return 1
+}
+
+func searchConcurrencyOverride(contexts ...context.Context) int {
+	for _, ctx := range contexts {
+		if ctx != nil {
+			if limit, ok := ctx.Value(searchConcurrencyContextKey{}).(int); ok && limit > 0 {
+				return limit
+			}
+		}
+	}
+	return 0
 }
 
 var (
@@ -85,8 +110,8 @@ var (
 		return s.singleVectorSearch(eid, req, configService)
 	}
 	singleVectorSearchFn        = defaultSingleVectorSearchFn
-	searchBatchFallbackSearchFn = func(s *SearchService, eid int64, req *SearchRequest, userID *int64) (*SearchResponse, error) {
-		return s.Search(eid, req, userID)
+	searchBatchFallbackSearchFn = func(ctx context.Context, s *SearchService, eid int64, req *SearchRequest, userID *int64) (*SearchResponse, error) {
+		return s.SearchContext(ctx, eid, req, userID)
 	}
 )
 
@@ -195,11 +220,16 @@ func NewSearchServiceWithResolver(db *gorm.DB, resolver VectorCollectionResolver
 
 // Search 统一搜索接口
 func (s *SearchService) Search(eid int64, req *SearchRequest, userID *int64) (*SearchResponse, error) {
+	return s.SearchContext(context.Background(), eid, req, userID)
+}
+
+func (s *SearchService) SearchContext(ctx context.Context, eid int64, req *SearchRequest, userID *int64) (*SearchResponse, error) {
 	startTime := time.Now()
 
 	if req == nil {
 		return nil, fmt.Errorf("搜索请求不能为空")
 	}
+	req.searchContext = ctx
 
 	// 设置默认值
 	if req.TopK <= 0 {
@@ -366,6 +396,11 @@ func (s *SearchService) SearchBatch(ctx context.Context, eid int64, reqs []*Sear
 	}
 
 	normalized, scopeNarrowingElapsed := s.prepareBatchSearchRequests(eid, reqs)
+	if concurrency := collectionSearchConcurrencyLimit(ctx); concurrency > 0 {
+		for _, req := range normalized {
+			req.searchConcurrency = concurrency
+		}
+	}
 
 	if len(normalized) == 0 {
 		return nil, fmt.Errorf("搜索请求不能为空")
@@ -449,7 +484,7 @@ func (s *SearchService) SearchBatch(ctx context.Context, eid int64, reqs []*Sear
 		responses []vectorstore.SearchResponse
 		err       error
 	}
-	maxWorkers := collectionSearchConcurrencyLimit()
+	maxWorkers := collectionSearchConcurrencyLimit(ctx)
 	if maxWorkers <= 0 {
 		maxWorkers = 1
 	}
@@ -744,6 +779,9 @@ func (s *SearchService) searchBatchFallback(ctx context.Context, eid int64, reqs
 	}
 
 	maxWorkers := config.RAG_SEARCH_ENGINE_MAX_WORKERS
+	if limit := searchConcurrencyOverride(ctx); limit > 0 {
+		maxWorkers = limit
+	}
 	if maxWorkers <= 0 {
 		maxWorkers = 1
 	}
@@ -780,7 +818,7 @@ func (s *SearchService) searchBatchFallback(ctx context.Context, eid int64, reqs
 				return
 			}
 
-			searchResp, err := searchBatchFallbackSearchFn(s, eid, searchReq, userID)
+			searchResp, err := searchBatchFallbackSearchFn(ctx, s, eid, searchReq, userID)
 			if err != nil {
 				results[index] = BatchSearchResult{Query: searchReq.Query, Error: err}
 				return
@@ -953,7 +991,8 @@ func (s *SearchService) ApplyEntityScopeNarrowing(eid int64, req *SearchRequest)
 	return s.applyEntityScopeNarrowing(eid, req)
 }
 
-// EntityScopeNarrowResult 实体范围收敛结果，供 SSE 分阶段输出使用
+// EntityScopeNarrowResult 实体范围收敛结果，供 SSE 分阶段输出使用。
+// NarrowedFileIDs 仅保留请求显式传入的文件范围，不由实体关系推导。
 type EntityScopeNarrowResult struct {
 	NarrowedLibraryIDs  []int64                    // 收敛后的知识库 ID 列表
 	NarrowedLibraries   []EntityScopeNarrowLibrary // 收敛后的知识库摘要
@@ -973,7 +1012,7 @@ type EntityScopeNarrowLibrary struct {
 // PreprocessEntityScope 预处理实体范围收敛，不执行向量搜索
 // 用于 SSE 分阶段输出：先发送收敛结果，再执行向量搜索
 // 如果请求设置了 SkipEntityScopeNarrowing=true 则跳过收敛；
-// 否则会优先尝试实体收敛，并在实体关键词缺失或实体未命中时使用查询信号兜底收敛。
+// 否则会优先尝试知识库级实体收敛，并在实体关键词缺失或实体未命中时使用查询信号兜底收敛。
 func (s *SearchService) PreprocessEntityScope(eid int64, req *SearchRequest) (*EntityScopeNarrowResult, error) {
 	if req == nil {
 		return nil, fmt.Errorf("搜索请求不能为空")
@@ -1079,7 +1118,6 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 
 	meta := &entityScopeNarrowMeta{}
 	originalLibraryIDs := append([]int64(nil), req.LibraryIDs...)
-	originalFileIDs := append([]int64(nil), req.FileIDs...)
 	signals := buildScopeSignals(req.Query, fuzzyKeywords, req.DocumentType)
 
 	if len(fuzzyKeywords) == 0 {
@@ -1204,17 +1242,7 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 		rankedLibraryIDs = topInt64IDsByCount(libraryCount, maxGraphScopeLibraries)
 	}
 
-	if len(req.FileIDs) == 0 && len(fileIDSet) > 0 {
-		fileIDs := sortedLimitedInt64IDs(fileIDSet, 2000)
-		if len(originalFileIDs) > 0 {
-			fileIDs = intersectInt64IDs(originalFileIDs, fileIDs)
-			if len(fileIDs) == 0 {
-				fileIDs = append([]int64(nil), originalFileIDs...)
-			}
-		}
-		req.FileIDs = fileIDs
-
-		// 文件级收敛时同步收敛知识库范围，避免后续仍按原始全库并发检索。
+	if len(libraryIDSet) > 0 {
 		libraryIDs := append([]int64(nil), rankedLibraryIDs...)
 		if len(originalLibraryIDs) > 0 {
 			libraryIDs = intersectInt64IDsPreserveOrder(libraryIDs, originalLibraryIDs)
@@ -1227,22 +1255,12 @@ func (s *SearchService) applyEntityScopeNarrowingWithMeta(eid int64, req *Search
 		if len(originalLibraryIDs) > 0 || len(libraryIDs) > 0 {
 			req.LibraryIDs = libraryIDs
 		}
-		logger.SysDebugf("【实体向量匹配】文件级收敛: eid=%d, 文件数=%d, 知识库数=%d, 上限=%d", eid, len(fileIDs), len(req.LibraryIDs), maxGraphScopeLibraries)
-	} else if len(libraryIDSet) > 0 {
-		libraryIDs := append([]int64(nil), rankedLibraryIDs...)
-		if len(originalLibraryIDs) > 0 {
-			libraryIDs = intersectInt64IDsPreserveOrder(libraryIDs, originalLibraryIDs)
-			if len(libraryIDs) == 0 {
-				libraryIDs = append([]int64(nil), originalLibraryIDs...)
-			}
-		}
-		req.LibraryIDs = libraryIDs
-		logger.SysDebugf("【实体向量匹配】知识库级收敛: eid=%d, 原始知识库数=%d, 最终知识库数=%d, 上限=%d",
-			eid, len(originalLibraryIDs), len(req.LibraryIDs), maxGraphScopeLibraries)
+		logger.SysDebugf("【实体范围】实体关系用于候选知识库收敛：完成（原始知识库 %d 个，保留 %d 个，关联文件候选 %d 个，上限 %d 个）",
+			len(originalLibraryIDs), len(req.LibraryIDs), len(fileIDSet), maxGraphScopeLibraries)
 	}
 
-	logger.SysDebugf("【实体向量匹配】范围收敛完成: eid=%d, 种子实体数=%d, 实体数=%d, 分片候选数=%d, 最终文件数=%d, 最终知识库数=%d",
-		eid, len(meta.SeedEntities), len(entityIDs), meta.ChunkCandidateCount, len(req.FileIDs), len(req.LibraryIDs))
+	logger.SysDebugf("【实体范围】实体匹配后的检索范围：完成（种子实体 %d 个，关联分片 %d 条，文件范围 %d 个，知识库范围 %d 个）",
+		len(meta.SeedEntities), meta.ChunkCandidateCount, len(req.FileIDs), len(req.LibraryIDs))
 	return meta, nil
 }
 
@@ -1698,21 +1716,6 @@ func safeBaseURL(baseURL *string) string {
 	return *baseURL
 }
 
-func sortedLimitedInt64IDs(idSet map[int64]struct{}, limit int) []int64 {
-	if len(idSet) == 0 || limit == 0 {
-		return nil
-	}
-	ids := make([]int64, 0, len(idSet))
-	for id := range idSet {
-		ids = append(ids, id)
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	if limit > 0 && len(ids) > limit {
-		ids = ids[:limit]
-	}
-	return ids
-}
-
 func topInt64IDsByCount(counts map[int64]int, limit int) []int64 {
 	if len(counts) == 0 || limit == 0 {
 		return nil
@@ -1739,30 +1742,6 @@ func topInt64IDsByCount(counts map[int64]int, limit int) []int64 {
 		ids = append(ids, item.id)
 	}
 	return ids
-}
-
-func intersectInt64IDs(left, right []int64) []int64 {
-	if len(left) == 0 || len(right) == 0 {
-		return nil
-	}
-	rightSet := make(map[int64]struct{}, len(right))
-	for _, id := range right {
-		rightSet[id] = struct{}{}
-	}
-	seen := make(map[int64]struct{})
-	result := make([]int64, 0, len(left))
-	for _, id := range left {
-		if _, ok := rightSet[id]; !ok {
-			continue
-		}
-		if _, duplicated := seen[id]; duplicated {
-			continue
-		}
-		seen[id] = struct{}{}
-		result = append(result, id)
-	}
-	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
-	return result
 }
 
 func intersectInt64IDsPreserveOrder(left, right []int64) []int64 {
@@ -2225,7 +2204,8 @@ func (s *SearchService) singleVectorSearch(eid int64, req *SearchRequest, config
 		eid, truncateForDebug(req.Query, 256), len(collections), previewStringsForDebug(collections, 20), truncateForDebug(fmt.Sprintf("%v", filter), 1000))
 
 	// 并发搜索多个集合，使用可配置上限。
-	maxConcurrency := collectionSearchConcurrencyLimit()
+	ctx := WithSearchConcurrency(req.searchContext, req.searchConcurrency)
+	maxConcurrency := collectionSearchConcurrencyLimit(ctx)
 	if len(collections) < maxConcurrency {
 		maxConcurrency = len(collections)
 	}
@@ -2235,8 +2215,6 @@ func (s *SearchService) singleVectorSearch(eid int64, req *SearchRequest, config
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var allResults []SearchResultItem
-
-	ctx := context.Background()
 
 	for _, collection := range collections {
 		wg.Add(1)

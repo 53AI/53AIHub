@@ -23,7 +23,7 @@ import { t } from '@/locales'
 import { generateRandomId } from '@/utils'
 import { copyToClip } from '@km/shared-utils'
 import { lib_host, api_host, img_host, isOpLocal, isPrivatePrem } from '@/utils/config'
-import { buildPreviewUrl } from '@/utils/preview'
+import { buildPreviewUrl, normalizePreviewHost } from '@/utils/preview'
 import { ImageUpload } from '@/components/Upload/image'
 import { GroupTabs } from '@/components/GroupTabs'
 import { useEnterpriseStore, useConversationStore } from '@/stores'
@@ -198,7 +198,9 @@ export function transformToFormData(data: any): AgentFormData {
     agent_usage: data.agent_usage,
     agent_id: data.agent_id,
     bot_id: data.bot_id || '',
-    logo: isOpenclaw ? resolveOpenClawCompatibleAgentLogo(data.logo, agentType) : (data.logo || agentOptionData?.icon || ''),
+    logo: isOpenclaw
+      ? resolveOpenClawCompatibleAgentLogo(data.logo, agentType)
+      : normalizePreviewHost(data.logo || agentOptionData?.icon || ''),
     name: data.name || '',
     group_id: +data.group_id || 0,
     description: data.description || '',
@@ -698,6 +700,7 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
         type: params.type,
         minimalParams: params.minimalParams,
         modelId: params.modelId,
+        thinking_mode: params.thinking_mode,
         knowledgeSource: params.knowledgeSource,
         library: params.library,
         agentInfo: params.agentInfo,
@@ -742,12 +745,32 @@ export const consoleAgentAdapter: IAgentCreateAdapter = {
             label: model.label,
             icon: model.icon,
             vision: model.vision || false,
+            enabled_tools: model.enabled_tools,
+            upstream_api_format: model.upstream_api_format,
             deep_thinking: model.deep_thinking || false,
           })),
         })
       }
     }
     return options
+  },
+
+  loadDecisionModels: async () => {
+    const list = await channelApi.listv2()
+    return (list || []).filter((item) => item.type === 1020 || item.type === 17).map((item) => {
+      const transformed = transformSelectData(item, MODEL_USE_TYPE.DECISION, undefined)
+      return {
+        value: String(item.channel_id),
+        label: transformed.platform_name || item.name || 'TypeSafe AI',
+        icon: '',
+        options: transformed.options.map((model: any) => ({
+          value: model.value,
+          model_value: model.model_value,
+          label: model.label,
+          icon: model.icon,
+        })),
+      }
+    }).filter((item) => item.options.length > 0)
   },
 
   loadRerankModels: async () => {

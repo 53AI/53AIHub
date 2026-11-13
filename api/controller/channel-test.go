@@ -20,13 +20,17 @@ import (
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/ctxkey"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/helper"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
 	"github.com/53AI/53AIHub/service"
+	"github.com/53AI/53AIHub/service/decision"
 	"github.com/53AI/53AIHub/service/document"
 	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
+	Custom_openai "github.com/53AI/53AIHub/service/hub_adaptor/custom_openai"
 	"github.com/53AI/53AIHub/service/hub_adaptor/gemini"
+	Hub_openai "github.com/53AI/53AIHub/service/hub_adaptor/openai"
 	"github.com/53AI/53AIHub/service/rag"
 	"github.com/gin-gonic/gin"
 	"github.com/songquanpeng/one-api/relay/adaptor/openai"
@@ -48,6 +52,36 @@ type ChannelTestResponse struct {
 	Time    float64 `json:"time"`
 }
 
+func writeChannelTestResponse(c *gin.Context, code model.ResponseCode, data interface{}) {
+	c.JSON(http.StatusOK, code.ToResponseWithRequestID(data, c.GetString(helper.RequestIdKey)))
+}
+
+func formatChannelTestRequestLog(channelID int64, requestURL, token string, requestBody []byte) string {
+	tokenStatus := "未配置"
+	safeURL := logger.SanitizeURL(requestURL)
+	if token != "" {
+		tokenStatus = "[已脱敏]"
+		safeURL = redactChannelTestToken(safeURL, token)
+	}
+	return fmt.Sprintf("【渠道测试】渠道%d准备调用模型服务：已准备（请求地址为%s，令牌为%s，请求参数为%s）",
+		channelID, safeURL, tokenStatus, redactChannelTestToken(string(requestBody), token))
+}
+
+func redactChannelTestToken(value, token string) string {
+	if token == "" {
+		return value
+	}
+	for _, secret := range []string{token, url.PathEscape(token)} {
+		value = strings.ReplaceAll(value, secret, "[已脱敏]")
+	}
+	return value
+}
+
+func formatChannelTestResponseLog(channelID int64, statusCode int, responseBody []byte, token string) string {
+	return fmt.Sprintf("【渠道测试】渠道%d请求模型服务：已收到响应（状态码%d，响应参数为%s）",
+		channelID, statusCode, redactChannelTestToken(string(responseBody), token))
+}
+
 // TestChannel Test channel availability
 // @Summary Test channel connectivity
 // @Description Verify channel configuration by invoking actual API endpoints
@@ -57,19 +91,19 @@ type ChannelTestResponse struct {
 // @Security BearerAuth
 // @Param channel_id path int true "Channel ID"
 // @Param model query string false "Model name"
-// @Param model_type query string false "Model type (1: chat, 2: embedding, 3: rerank)"
+// @Param model_type query string false "Model type (1: chat, 2: embedding, 3: rerank, 4: voice, 5: decision)"
 // @Success 200 {object} model.CommonResponse{data=ChannelTestResponse}
 // @Router /api/channels/test/{channel_id} [get]
 func TestChannel(c *gin.Context) {
 	ctx := c.Request.Context()
 	channel_id, err := strconv.Atoi(c.Param("channel_id"))
 	if err != nil {
-		c.JSON(http.StatusOK, model.ParamError.ToResponse(err))
+		writeChannelTestResponse(c, model.ParamError, err)
 		return
 	}
 	channel, err := model.GetChannelByID(int64(channel_id))
 	if err != nil {
-		c.JSON(http.StatusOK, model.ParamError.ToResponse(err))
+		writeChannelTestResponse(c, model.ParamError, err)
 		return
 	}
 	modelName := c.Query("model")
@@ -90,6 +124,10 @@ func TestChannel(c *gin.Context) {
 			return
 		case "4", "voice":
 			responseMessage, err := testAudioTranscriptionChannel(ctx, channel, modelName)
+			returnResponse(c, channel, tik, modelName, responseMessage, err)
+			return
+		case "5", "decision":
+			responseMessage, err := testDecisionChannel(ctx, channel, modelName)
 			returnResponse(c, channel, tik, modelName, responseMessage, err)
 			return
 		case "1", "chat":
@@ -138,15 +176,42 @@ func TestChannel(c *gin.Context) {
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if err != nil {
-		c.JSON(http.StatusOK, model.ParamError.ToResponse(err))
+		writeChannelTestResponse(c, model.ParamError, err)
 		return
 	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(ChannelTestResponse{
+	writeChannelTestResponse(c, model.Success, ChannelTestResponse{
 		Success: true,
 		Message: responseMessage,
 		Model:   actualModel,
 		Time:    consumedTime,
-	}))
+	})
+}
+
+// testDecisionChannel uses the SystemOne API rather than the chat completion route.
+func testDecisionChannel(ctx context.Context, channel *model.Channel, modelName string) (string, error) {
+	if channel == nil || (channel.Type != 17 && channel.Type != model.ChannelApiTypeTypeSafeDecision) {
+		return "", errors.New("invalid decision channel")
+	}
+	if channel.Type == 17 && !decision.IsBailianDecisionModel(channel.CustomConfig, modelName) {
+		return "", errors.New("decision model is not configured on this channel")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	response, err := (&decision.Client{}).Evaluate(ctx, channel, modelName, "请查询公司的产品价格", map[string]decision.Question{
+		"intent": {
+			Type:         "choice",
+			Instructions: "判断用户请求属于简单知识查询还是复杂多步骤分析",
+			Criteria: map[string]string{
+				"SIMPLE_RAG":    "单一明确事实的企业知识检索",
+				"COMPLEX_AGENT": "需要多步骤分析和综合推理",
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	answer := response.Answers["intent"]
+	return fmt.Sprintf("SystemOne 判断：%s（置信度 %.2f）", answer.Choice, *answer.Confidence), nil
 }
 
 // 辅助函数，用于统一处理响应
@@ -159,15 +224,15 @@ func returnResponse(c *gin.Context, channel *model.Channel, startTime time.Time,
 	go channel.UpdateResponseTime(milliseconds)
 	consumedTime := float64(milliseconds) / 1000.0
 	if err != nil {
-		c.JSON(http.StatusOK, model.ParamError.ToResponse(err))
+		writeChannelTestResponse(c, model.ParamError, err)
 		return
 	}
-	c.JSON(http.StatusOK, model.Success.ToResponse(ChannelTestResponse{
+	writeChannelTestResponse(c, model.Success, ChannelTestResponse{
 		Success: true,
 		Message: responseMessage,
 		Model:   modelName,
 		Time:    consumedTime,
-	}))
+	})
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, request *relaymodel.GeneralOpenAIRequest) (responseMessage string, err error, openaiErr *relaymodel.Error, actualModel string) {
@@ -191,7 +256,7 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 	apiType := model.GetApiType(channel.Type)
 	meta.APIType = apiType
 	// apiType := channeltype.ToAPIType(channel.Type)
-	adaptor := service.GetAdaptor(meta.APIType)
+	adaptor := service.GetAdaptorForChannel(meta.APIType, meta.BaseURL, channel.Type)
 	err = service.SetCustomConfig(&adaptor, &custom.CustomConfig{
 		ConversationId: "",
 		UserId:         "53AIHub",
@@ -204,6 +269,12 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 		return "", fmt.Errorf("invalid api type: %d, adaptor is nil", apiType), nil, ""
 	}
 	adaptor.Init(meta)
+	if adapt, ok := adaptor.(*Hub_openai.Adaptor); ok {
+		adapt.ChannelConfig = channel.Config
+	}
+	if adapt, ok := adaptor.(*Custom_openai.Adaptor); ok {
+		adapt.ChannelConfig = channel.Config
+	}
 	modelName := request.Model
 	modelMap := channel.GetModelMapping()
 	if modelName == "" || !strings.Contains(channel.Models, modelName) {
@@ -243,7 +314,11 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 		// 	ElapsedTime: helper.CalcElapsedTime(startTime),
 		// })
 	}()
-	logger.SysLog(string(jsonData))
+	requestURL, urlErr := adaptor.GetRequestURL(meta)
+	if urlErr != nil {
+		logger.Warnf(ctx, "【渠道测试】渠道%d生成模型服务地址：失败（错误类型为%T）", channel.ChannelID, urlErr)
+	}
+	logger.Infof(ctx, "%s", formatChannelTestRequestLog(channel.ChannelID, requestURL, meta.APIKey, jsonData))
 	requestBody := bytes.NewBuffer(jsonData)
 	c.Request.Body = io.NopCloser(requestBody)
 	resp, err := adaptor.DoRequest(c, meta, requestBody)
@@ -257,31 +332,31 @@ func testChannel(ctx context.Context, channel *model.Channel, request *relaymode
 		// if errorMessage != "" {
 		// 	errorMessage = ", error message: " + errorMessage
 		// }
+		responseBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		logger.Warnf(ctx, "%s", formatChannelTestResponseLog(channel.ChannelID, resp.StatusCode, responseBody, meta.APIKey))
 		return "", fmt.Errorf("http status code: %d%s", resp.StatusCode, ""), nil, ""
 	}
 	usage, respErr := adaptor.DoResponse(c, resp, meta)
 	if respErr != nil {
+		logger.Warnf(ctx, "【渠道测试】渠道%d处理模型服务响应：失败（响应无法转换，返回参数为%s）",
+			channel.ChannelID, redactChannelTestToken(w.Body.String(), meta.APIKey))
 		return "", fmt.Errorf("%s", respErr.Error.Message), &respErr.Error, ""
 	}
 	if usage == nil {
 		return "", errors.New("usage is nil"), nil, ""
 	}
 	rawResponse := w.Body.String()
+	logger.Infof(ctx, "%s", formatChannelTestResponseLog(channel.ChannelID, resp.StatusCode, []byte(rawResponse), meta.APIKey))
 	_, responseMessage, actualModel, err = parseTestResponse(rawResponse)
 	if err != nil {
-		logger.SysError(fmt.Sprintf("failed to parse error: %s, \nresponse: %s", err.Error(), rawResponse))
+		logger.Warnf(ctx, "【渠道测试】渠道%d解析模型服务响应：失败（错误为%v，返回参数为%s）", channel.ChannelID, err,
+			redactChannelTestToken(rawResponse, meta.APIKey))
 		return "", err, nil, ""
 	}
 	if actualModel != "" && actualModel != modelName {
-		logger.SysLogf("Model fallback detected: channel=%d, requested=%s, actual=%s", channel.ChannelID, modelName, actualModel)
+		logger.Infof(ctx, "【渠道测试】渠道%d请求模型：发生回退（请求%s，实际使用%s）", channel.ChannelID, modelName, actualModel)
 	}
-	result := w.Result()
-	// print result.Body
-	respBody, err := io.ReadAll(result.Body)
-	if err != nil {
-		return "", err, nil, ""
-	}
-	logger.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.ChannelID, string(respBody)))
 	return responseMessage, nil, nil, actualModel
 }
 
@@ -630,16 +705,12 @@ func TestVoiceChannel(c *gin.Context) {
 		return
 	}
 
-	workspaceID, _ := vm["workspace_id"].(string)
-	if workspaceID == "" {
-		c.JSON(http.StatusOK, model.ParamError.ToResponse(fmt.Errorf("模型 %s 缺少 workspace_id", modelName)))
+	// 与运行时（document 语音策略）共用同一条原生网关基址推导，
+	// 避免"测试通过、真实转写 404"的口径分叉。
+	baseURL, workspaceID, domainErr := model.DashScopeNativeBase(vm, modelName)
+	if domainErr != nil {
+		c.JSON(http.StatusOK, model.ParamError.ToResponse(domainErr))
 		return
-	}
-	apiDomain := fmt.Sprintf("https://%s.cn-beijing.maas.aliyuncs.com", workspaceID)
-
-	baseURL := strings.TrimRight(apiDomain, "/")
-	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-		baseURL = "https://" + baseURL
 	}
 
 	startTime := time.Now()
@@ -667,7 +738,7 @@ func TestVoiceChannel(c *gin.Context) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("X-DashScope-Async", "enable")
-	if workspaceID, ok := vm["workspace_id"].(string); ok && workspaceID != "" {
+	if workspaceID != "" {
 		req.Header.Set("X-DashScope-WorkSpace", workspaceID)
 	}
 

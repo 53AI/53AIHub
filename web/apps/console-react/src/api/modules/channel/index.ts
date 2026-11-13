@@ -9,7 +9,6 @@ import {
   MODEL_USE_TYPE,
 } from '@/constants/platform/config'
 import { MODEL_VALUE_SEPARATOR, EXTERNAL_MODEL_API_URL } from '@/constants/platform/model'
-import { getPublicPath } from '@/utils/config'
 
 import { JSONParse } from '@/utils'
 
@@ -27,6 +26,11 @@ export interface RawModelOption {
       max_tokens?: number
       context_length?: number
       vision?: boolean
+      enabled_tools?: string[]
+      upstream_api_format?: string
+      supported_api_formats?: string[]
+      preview?: boolean
+      model_version?: string
     }>
   }>
   platform_id: string
@@ -49,6 +53,11 @@ export interface ModelCategoryOption {
     max_tokens?: number
     context_length?: number
     vision?: boolean
+    enabled_tools?: string[]
+    upstream_api_format?: string
+    supported_api_formats?: string[]
+    preview?: boolean
+    model_version?: string
   }>
 }
 
@@ -121,6 +130,8 @@ export interface ChannelItem extends Omit<RawChannelItem, 'models' | 'config' | 
       text_generation: boolean
       max_tokens?: number
       context_length?: number
+      enabled_tools?: string[]
+      upstream_api_format?: string
     }>
   }>
   options: Array<{
@@ -134,6 +145,8 @@ export interface ChannelItem extends Omit<RawChannelItem, 'models' | 'config' | 
     text_generation: boolean
     max_tokens?: number
     context_length?: number
+    enabled_tools?: string[]
+    upstream_api_format?: string
   }>
 }
 
@@ -169,9 +182,8 @@ export const getModelIcon = (value: string) => {
   else if (/kimi|moonshot/i.test(value)) icon = 'moonshot'
   else if (/glm/i.test(value)) icon = 'glm_coding_plan'
 
-
-  const w = window as any
-  return icon ? (typeof w.$getRealPath === 'function' ? w.$getRealPath({ url: `/images/platform/${icon}.png` }) : '') : ''
+  // 返回原始相对路径，由消费端 SafeImage 内部统一解析 base
+  return icon ? `/images/platform/${icon}.png` : ''
 }
 
 const getModelTypeName = (model_type: ModelUseType) => {
@@ -182,6 +194,8 @@ const getModelTypeName = (model_type: ModelUseType) => {
       return window.$t('model.embedding')
     case MODEL_USE_TYPE.RERANKER:
       return window.$t('model.rerank')
+    case MODEL_USE_TYPE.DECISION:
+      return '决策模型'
     case MODEL_USE_TYPE.VOICE:
       return window.$t('model.voice')
     default:
@@ -197,7 +211,7 @@ export const transformChannelData = (data: RawChannelItem): ChannelItem => {
       platform_name: '',
       platform_id: '',
     }
-  const config = JSONParse(data.config, {}) || {}
+  const config: any = JSONParse(data.config, {}) || {}
   const custom_config = JSONParse(data.custom_config, {})
 
   // 判断 config 是否为数组格式（新格式）
@@ -208,6 +222,8 @@ export const transformChannelData = (data: RawChannelItem): ChannelItem => {
 
   const options = models.map((value: string) => {
     const model_type = custom_config[value] || MODEL_USE_TYPE.REASONING
+    const catalogModel = (model as ModelOption | undefined)?.categories?.flatMap((category) => category.models)
+      .find((catalogItem) => catalogItem.model_id === value)
 
     // 从 config 数组或 custom_config 读取模型属性
     const modelConfig = isConfigArray
@@ -220,11 +236,17 @@ export const transformChannelData = (data: RawChannelItem): ChannelItem => {
       modelTypeName: getModelTypeName(model_type),
       label: alias_map[value] || value,
       icon: getModelIcon(value) || (model as any)?.platform_icon || '',
-      deep_thinking: modelConfig?.deep_thinking || custom_config.deep_thinking?.includes(value) || false,
-      vision: modelConfig?.vision || custom_config.vision?.includes(value) || false,
+      deep_thinking:
+        modelConfig?.deep_thinking ||
+        custom_config.deep_thinking?.includes(value) ||
+        catalogModel?.deep_thinking ||
+        false,
+      vision: modelConfig?.vision || custom_config.vision?.includes(value) || catalogModel?.vision || false,
       text_generation: modelConfig?.text_generation || custom_config.text_generation?.includes(value) || false,
       max_tokens: modelConfig?.max_tokens || custom_config.max_tokens?.[value],
       context_length: modelConfig?.context_length || custom_config.context_length?.[value],
+      enabled_tools: modelConfig?.enabled_tools ?? catalogModel?.enabled_tools ?? [],
+      upstream_api_format: modelConfig?.upstream_api_format ?? catalogModel?.upstream_api_format ?? 'chat_completions',
     }
   })
 
@@ -253,7 +275,7 @@ export const transformSelectData = (data: RawChannelItem, type?: string, mode?: 
   const result = transformChannelData(data)
 
   let options = result.options
-  if (type) options = options.filter(item => result.custom_config[item.value] === type)
+  if (type) options = options.filter(item => String(result.custom_config[item.value]) === type)
 
   const deepThinking = result.custom_config.deep_thinking || []
   if (mode === REASONING_MODE.DEEP) options = options.filter(item => deepThinking.includes(item.value) || item.deep_thinking)
@@ -273,6 +295,8 @@ export const transformSelectData = (data: RawChannelItem, type?: string, mode?: 
       deep_thinking: item.deep_thinking,
       vision: item.vision,
       text_generation: item.text_generation,
+      enabled_tools: item.enabled_tools,
+      upstream_api_format: item.upstream_api_format,
     })) as any,
   }
 }
@@ -280,7 +304,7 @@ export const transformSelectData = (data: RawChannelItem, type?: string, mode?: 
 export const transformModelList = (data: RawModelOption[]): ModelOption[] => {
   return data.map(item => ({
     ...item,
-    platform_icon: getPublicPath(`/images/platform/${item.platform_id}.png`),
+    platform_icon: `/images/platform/${item.platform_id}.png`,
     categories: item.categories.map(cate => ({
       ...cate,
       icon: '',
@@ -298,7 +322,7 @@ export const channelApi = {
     config(): Promise<RawModelOption[]> {
       return service
         .get('/api/channels/km/models')
-        .then((res: any) => res.data.platforms)
+        .then((res: any) => [...(res.data.platforms || []), {platform_id:'typesafe_decision',platform_name:'TypeSafe AI (Jev)',channel_type:1020,can_multiple:false,categories:[{model_type:MODEL_USE_TYPE.DECISION,model_count:1,models:[{model_id:'jev-latest',model_name:'Jev latest'}]}]}])
         .catch(handleError)
     },
   },

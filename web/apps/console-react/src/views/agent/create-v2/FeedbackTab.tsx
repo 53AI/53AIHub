@@ -2,7 +2,7 @@
  * Agent 反馈 Tab
  *
  * 根据 backendAgentType 动态渲染不同的反馈组件，并传递对应的 config 接口 type：
- * - knowledge (AI搜问): SearchFeedback
+ * - knowledge (AI搜问): SearchFeedback, type='work_ai'（与小助理共用 work_ai 反馈配置）
  * - workbench (小助理):  WorkAIFeedback, type='work_ai'
  * - chat (对话型):         WorkAIFeedback, type='chat'
  * - workflow (工作流):     WorkAIFeedback, type='workflow'
@@ -21,7 +21,7 @@ export function AgentFeedbackTab({ agentId, agentType, backendAgentType }: Agent
   if (agentType === 'knowledge') {
     return (
       <div className="h-full p-6 bg-white overflow-hidden">
-        <SearchFeedback agentId={agentId} />
+        <SearchFeedback agentId={agentId} type="work_ai" />
       </div>
     )
   }

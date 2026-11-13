@@ -141,6 +141,7 @@ const MODULE_KEYS = [
   ['module.question_rewrite', '问题改写', '問題改寫', 'Question Rewrite', '質問書き換え'],
   ['module.reranking_desc', '重排序模型将根据候选文档列表与用户问题语义匹配度进行重新排序，从而改进语义排序的结果', '重排序模型將根據候選文檔列表與用戶問題語義匹配度進行重新排序，從而改進語義排序的結果', 'Reranking model reranks candidate documents based on semantic matching with user question, improving semantic sorting results', '再順序付けモデルは候補文書とユーザー問題の語義マッチング度に基づいて再順序付けを行い、語義順序の結果を改善'],
   ['module.web_search', '联网搜索', '聯網搜索', 'Web Search', 'Web検索'],
+  ['module.web_search_model_unsupported', '当前模型不支持模型联网搜索，已自动调整联网搜索设置', '當前模型不支持模型聯網搜索，已自動調整聯網搜索設置', 'The selected model does not support native web search. Web search settings were adjusted.', '選択したモデルはモデル内蔵のウェブ検索に対応していません。ウェブ検索設定を調整しました。'],
   ['module.knowledge_scope', '知识范围', '知識範圍', 'Knowledge Scope', 'ナレッジ範囲'],
   ['module.knowledge_scope_desc', '选择知识库范围', '選擇知識庫範圍', 'Select knowledge base scope', 'ナレッジベース範囲を選択'],
   ['module.dynamic_knowledge', 'Wiki', 'Wiki', 'Wiki', 'Wiki'],

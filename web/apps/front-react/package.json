@@ -30,6 +30,7 @@
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
+    "@huggingface/transformers": "^4.3.1",
     "@km/hub-ui-x-react": "workspace:*",
     "@km/shared-business": "workspace:*",
     "@km/shared-components-react": "workspace:*",

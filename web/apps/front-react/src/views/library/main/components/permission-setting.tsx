@@ -11,7 +11,8 @@ import { RESOURCE_TYPE, PERMISSION_TYPE, SUBJECT_TYPE } from '@/components/KMPer
 import { useLibraryStore } from '@/stores/modules/library'
 import { useUserStore } from '@/stores/modules/user'
 import { getPublicPath } from '@/utils/config'
-import './permission-setting.css'
+
+import { SafeImage } from "@km/shared-components-react";import './permission-setting.css'
 
 interface PermissionSettingProps {
   onClose?: () => void
@@ -250,8 +251,8 @@ export function PermissionSetting({ onClose, className }: PermissionSettingProps
                 <div className="flex items-center gap-2">
                   {member.subject_type === SUBJECT_TYPE.company_all ? (
                     <>
-                      <img
-                        src={getPublicPath('/images/space/group.png')}
+                      <SafeImage
+                        src={'/images/space/group.png'}
                         alt="admin"
                         className="size-5"
                       />

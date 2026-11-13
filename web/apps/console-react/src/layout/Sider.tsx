@@ -3,7 +3,7 @@ import { Layout, Menu, Tooltip } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { getRealPath } from "@/utils/config";
 import {
   menuTree,
@@ -96,9 +96,9 @@ export function SiderMenu(props: SiderProps) {
           ].join(" ")}
         >
           {!isCollapsed ? (
-            <img
+            <SafeImage
               className="h-8 object-contain"
-              src={getRealPath("/images/km-logo.png")}
+              src="/images/km-logo.png"
               alt=""
             />
           ) : null}
@@ -257,9 +257,9 @@ export function SiderMenu(props: SiderProps) {
             style={{ fontSize: 10 }}
           >
             <span>POWERED BY</span>
-            <img
+            <SafeImage
               className="h-3 object-contain"
-              src={getRealPath("/images/km-logo.png")}
+              src={"/images/km-logo.png"}
               alt=""
             />
           </div>

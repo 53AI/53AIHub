@@ -85,8 +85,8 @@ export function InsightTabContent({
   // 我的录音旧数据：insightSummary 含 keywords 时按旧版块结构展示
   if (insightSummary?.keywords?.length > 0) {
     return (
-      <div className="h-full overflow-y-auto">
-        <div className="w-4/5 mx-auto pb-8">
+      <div className="h-full overflow-y-auto px-8">
+        <div className="max-w-[1200px] mx-auto pb-8">
           <InsightContent insightSummary={insightSummary} />
         </div>
       </div>
@@ -118,10 +118,10 @@ export function InsightTabContent({
 
   const contentClassName = isInsightHTMLPage(pageJson)
     ? ''
-    : 'w-4/5 mx-auto pb-8'
+    : 'max-w-[1200px] mx-auto pb-8'
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto px-8">
       <div className={contentClassName}>
         <InsightPageRenderer pageJson={pageJson} />
       </div>

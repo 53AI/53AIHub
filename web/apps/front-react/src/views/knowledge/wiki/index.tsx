@@ -9,7 +9,7 @@ import { useSpaceStore } from "@/stores/modules/space";
 import { useWikiStore } from "@/stores/modules/wiki";
 import { useUrlEnumState } from "@/hooks/useUrlEnumState";
 
-export type ActiveTab = "list" | "index" | "logs" | "graph";
+export type ActiveTab = "list" | "index" | "queue" | "logs" | "graph";
 
 // Lazy load the KnowledgeAssistant component
 const KnowledgeAssistant = lazy(() => import("./components/KnowledgeAssistant"));
@@ -17,11 +17,11 @@ const KnowledgeAssistant = lazy(() => import("./components/KnowledgeAssistant"))
 const DynamicKnowledge: React.FC = () => {
   const [searchParams] = useSearchParams();
 
-  // 子 tab（list / index / logs）从 URL ?sub= 读取，刷新后保持
+  // 子 tab（list / index / queue / logs）从 URL ?sub= 读取，刷新后保持
   // URL 缺 sub 时按 selected 推断：有 selected → "list"（直链进入详情），否则 → "index"
   const [activeTab, setActiveTab] = useUrlEnumState<ActiveTab>({
     urlKey: "sub",
-    validValues: ["list", "index", "logs"],
+    validValues: ["list", "index", "queue", "logs"],
     defaultValue: searchParams.get("sub")
       ? "index"
       : searchParams.get("selected")

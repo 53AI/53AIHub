@@ -6,7 +6,6 @@ import { SpacePage } from "@/views/space";
 import { KnowledgeCleaningPolicy } from "./cleaning-pipeline";
 import { KnowledgeModel } from "./model";
 import { AssistantPage } from "@/views/assistant";
-import { getPublicPath } from "@/utils/config";
 
 const TAB_KEYS = [
   "space",
@@ -63,7 +62,7 @@ export function KnowledgePage() {
         title: t("module.knowledge"),
         description: t("knowledge.desc"),
         icon: {
-          src: getPublicPath("/images/space/knowledge-icon.png"),
+          src: '/images/space/knowledge-icon.png',
           bgColor: "shadow-blue-200/50",
           className: "size-full",
         },

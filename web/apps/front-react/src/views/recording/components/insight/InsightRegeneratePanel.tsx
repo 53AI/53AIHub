@@ -4,7 +4,7 @@ import { SvgIcon } from '@km/shared-components-react'
 import recordingApi from '@/api/modules/recording'
 import type {
   InsightBackground,
-  InsightPerspectiveOption,
+  RecordingSceneOption,
   SceneModeOption,
 } from '@/api/modules/recording/types'
 import { resolveInsightPerspectiveForSubmit } from '@/api/modules/recording/types'
@@ -59,7 +59,7 @@ export function InsightRegeneratePanel({
   const [background, setBackground] = useState<InsightBackground>(EMPTY_INSIGHT_BACKGROUND)
   const [loading, setLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
-  const [perspectiveOptions, setPerspectiveOptions] = useState<InsightPerspectiveOption[]>([])
+  const [perspectiveOptions, setPerspectiveOptions] = useState<RecordingSceneOption[]>([])
   /** 当前选中场景 key（GET /api/recordings/scenes 下发）；历史值不在列表中时回退第一项 */
   const [selectedPerspective, setSelectedPerspective] = useState<string>('')
   const [originalPerspective, setOriginalPerspective] = useState<string>('auto')
@@ -84,7 +84,7 @@ export function InsightRegeneratePanel({
     try {
       const [result, options, modeOptions] = await Promise.all([
         recordingApi.getInsightBackground(fileId),
-        recordingApi.getInsightScenes(),
+        recordingApi.getRecordingScenes(),
         recordingApi.getSceneModes(),
       ])
       setBackground({ ...EMPTY_INSIGHT_BACKGROUND, ...result })

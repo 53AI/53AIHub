@@ -67,6 +67,7 @@
     "react-i18next": "^12.3.1",
     "react-router-dom": "^6.0.0",
     "sortablejs": "^1.15.0",
+    "xlsx": "^0.18.5",
     "zustand": "^4.5.0"
   },
   "devDependencies": {
@@ -85,8 +86,8 @@
     "postcss": "^8.4.21",
     "tailwindcss": "^3.2.7",
     "typescript": "~4.9.5",
+    "unplugin-auto-import": "^0.17.0",
     "vite": "^4.5.0",
-    "vitest": "^0.34.0",
-    "unplugin-auto-import": "^0.17.0"
+    "vitest": "^0.34.0"
   }
 }

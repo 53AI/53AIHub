@@ -19,9 +19,11 @@ import { ChatConfigProvider } from "../i18n";
 import { useChatSend } from "./useChatSend";
 
 interface CapturedPayload {
+  model?: string;
   knowledge_base_ids?: Array<string | number>;
   file_ids?: Array<string | number>;
   space_ids?: Array<string | number>;
+  thinking_mode?: 1 | 2;
 }
 
 function createMockConversationApi() {
@@ -183,5 +185,30 @@ describe("useChatSend.sendMessage — knowledge_base_ids 优先级链", () => {
 
     const payload = (api as any).__captured[0] as CapturedPayload;
     expect(payload.knowledge_base_ids).toEqual([]);
+  });
+});
+
+describe("useChatSend.sendMessage — thinking_mode 透传", () => {
+  it.each([
+    ["快速回答", 1],
+    ["深度思考", 2],
+  ] as const)("将%s模式传入 completions 请求", async (_modeName, thinkingMode) => {
+    const api = createMockConversationApi();
+    const wrapper = makeWrapper(api);
+    const { result } = renderHook(() => useChatSend(), { wrapper });
+
+    await sendUnderAct(result.current.sendMessage, {
+      question: "张角是谁？",
+      agent_id: "agent-aAtNvL-ySvyr3",
+      conversation_id: "IorWvB",
+      modelId: "shared-model-id",
+      thinkingMode,
+      minimalParams: false,
+      agentInfo: { agent_id: "agent-aAtNvL-ySvyr3", name: "test" } as any,
+    });
+
+    const payload = (api as any).__captured[0] as CapturedPayload;
+    expect(payload.model).toBe("agent-agent-aAtNvL-ySvyr3-shared-model-id");
+    expect(payload.thinking_mode).toBe(thinkingMode);
   });
 });

@@ -6,12 +6,13 @@ import {
   message,
   Table,
   Tooltip,
+  Typography,
 } from "antd";
 import { HolderOutlined } from "@ant-design/icons";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { t } from "@/locales";
-import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
+import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { eventBus, sleep } from "@km/shared-utils";
 import { navigationApi } from "@/api/modules/navigation";
 import { transformNavigationList } from "@/api/modules/navigation/transform";
@@ -298,18 +299,20 @@ export function NavigationPage() {
       title: t("name"),
       dataIndex: "name",
       key: "name",
-      ellipsis: true,
+      ellipsis: { showTitle: false },
       render: (name: string, record) => (
-        <div className="flex items-center">
+        <div className="flex items-center min-w-0">
           {record.icon && (
-            <img
-              className="w-[18px] h-[18px] mr-2 overflow-hidden"
+            <SafeImage
+              className="w-[18px] h-[18px] mr-2 flex-none overflow-hidden"
               src={record.icon}
               alt=""
               style={{ objectFit: "contain" }}
             />
           )}
-          {name}
+          <Typography.Text ellipsis={{ tooltip: name }} className="!block min-w-0">
+            {name}
+          </Typography.Text>
         </div>
       ),
     },
@@ -329,9 +332,14 @@ export function NavigationPage() {
       title: t("jump_path"),
       dataIndex: "jump_path",
       key: "jump_path",
-      ellipsis: true,
+      ellipsis: { showTitle: false },
       render: (path: string) => (
-        <span className={path ? "" : "text-disabled"}>{path || "--"}</span>
+        <Typography.Text
+          ellipsis={{ tooltip: path }}
+          className={`!block ${path ? "" : "text-disabled"}`}
+        >
+          {path || "--"}
+        </Typography.Text>
       ),
     },
     {

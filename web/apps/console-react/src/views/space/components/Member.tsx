@@ -4,16 +4,17 @@ import { MemberSelector } from '@/components/Permission/member-selector'
 import PermissionSelector from '@/components/Permission/selector'
 import { EntityDisplay } from '@/components/EntityDisplay'
 import {
-    PERMISSION_TYPE,
-    SUBJECT_TYPE,
-    VISIBILITY_TYPE,
-    type PermissionType,
-    type SubjectType,
+  PERMISSION_TYPE,
+  SUBJECT_TYPE,
+  VISIBILITY_TYPE,
+  type PermissionType,
+  type SubjectType,
 } from '@/components/Permission/constant'
 import type { SpaceCreateRequest } from '@/api/modules/spaces/types'
 import { useUserStore } from '@/stores/modules/user'
 import { t } from '@/locales'
 import { getRealPath } from '@/utils/config'
+import { SafeImage } from "@km/shared-components-react"
 
 export interface MemberProps {
   formData: SpaceCreateRequest
@@ -107,8 +108,8 @@ export function Member({
                 <div className="flex items-center gap-2">
                   {member.subject_type === SUBJECT_TYPE.company_all ? (
                     <>
-                      <img
-                        src={getRealPath('/images/space/peoples.png')}
+                      <SafeImage
+                        src={'/images/space/peoples.png'}
                         alt={t('space.all_members')}
                         className="w-5 h-5"
                       />

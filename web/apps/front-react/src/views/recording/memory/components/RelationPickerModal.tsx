@@ -9,6 +9,7 @@ import type {
   RecordingMemoryEntitySchemas,
   RecordingMemoryEntityType,
 } from '@/api/modules/recording/types';
+import { allEntityTypesParam } from './utils';
 
 // 「添加关联」选实体弹窗:tab 按 schema 顺序展开(全部 / 人物 / 事项 / 风险 / 原则),
 // 搜索 + 表格 + 分页 + 底部「已选择 X 个 / 取消 / 确定」。
@@ -55,7 +56,8 @@ export function RelationPickerModal({
     setLoading(true)
     try {
       const data = await recordingApi.getMemoryEntities({
-        entity_type: activeType === 'all' ? undefined : activeType,
+        // "全部" tab：entity_type 传 schema 全部类型的逗号拼接（接口支持多值）
+        entity_type: activeType === 'all' ? allEntityTypesParam(schema) : activeType,
         keyword: keyword.trim() || undefined,
         offset: (currentPage - 1) * pageSize,
         limit: pageSize,
@@ -69,7 +71,7 @@ export function RelationPickerModal({
     } finally {
       if (myToken === loadTokenRef.current) setLoading(false)
     }
-  }, [activeType, keyword, currentPage, pageSize])
+  }, [activeType, keyword, currentPage, pageSize, schema])
 
   useEffect(() => {
     if (!open) return

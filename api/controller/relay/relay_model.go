@@ -60,6 +60,7 @@ type ChatRequest struct {
 	Messages             []relay_model.Message   `json:"messages"`
 	Stream               bool                    `json:"stream"`
 	Model                string                  `json:"model" example:"agent-6"`
+	ThinkingMode         int                     `json:"thinking_mode,omitempty" example:"1"` // 思考方式：1=快速回答，2=深度思考；同一模型支持两种模式时用于明确本次选择
 	Temperature          float64                 `json:"temperature,omitempty"`
 	PresencePenalty      float64                 `json:"presence_penalty,omitempty"`
 	FrequencyPenalty     float64                 `json:"frequency_penalty,omitempty"`
@@ -321,7 +322,7 @@ func extractSkillNameFromDecision(content string) string {
 
 // sanitizeFinalAssistantContent removes runtime control markers from user-visible content.
 func sanitizeFinalAssistantContent(content string) string {
-	result := strings.TrimSpace(content)
+	result := strings.TrimSpace(sanitizeThoughtContent(content))
 	if result == "" {
 		return ""
 	}
@@ -565,6 +566,10 @@ func buildIntentClassificationStepData(result *rag.IntentClassificationResult) m
 		}
 		if result.ExpandedQueries != nil {
 			intentData["expanded_queries"] = result.ExpandedQueries
+		}
+		if result.EnhancedRetrieval {
+			intentData["enhanced_retrieval"] = true
+			intentData["target_keywords"] = result.TargetKeywords
 		}
 	}
 

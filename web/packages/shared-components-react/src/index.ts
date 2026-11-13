@@ -67,6 +67,12 @@ export type { SidePanelProps, SidePanelSide } from './SidePanel/index'
 // SafeImage
 export { default as SafeImage } from './SafeImage/index'
 export type { SafeImageProps } from './SafeImage/index'
+export {
+  SAFE_IMAGE_FALLBACKS,
+  DEFAULT_SAFE_IMAGE_KIND,
+  resolveSafeImageFallback,
+} from './SafeImage/fallbacks'
+export type { SafeImageKind } from './SafeImage/fallbacks'
 
 // IconAction
 export { default as IconAction } from './IconAction/index'

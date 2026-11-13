@@ -46,6 +46,8 @@ type InternalUserInfo struct {
 // InternalUserView defines the exact response structure for internal user lists,
 // matching model.User fields except access_token.
 type InternalUserView struct {
+	// ID is encoded as a HashID by the response middleware.
+	ID             int64                 `json:"id" swaggertype:"string" example:"ccuasQ"`
 	UserID         int64                 `json:"user_id"`
 	Username       string                `json:"username"`
 	Nickname       string                `json:"nickname"`
@@ -488,6 +490,7 @@ func convertInternalUserView(user *model.User) *InternalUserView {
 	}
 
 	return &InternalUserView{
+		ID:             user.UserID,
 		UserID:         user.UserID,
 		Username:       user.Username,
 		Nickname:       user.Nickname,

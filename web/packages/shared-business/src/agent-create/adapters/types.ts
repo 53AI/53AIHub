@@ -99,6 +99,8 @@ export interface ModelOption {
   label: string
   icon?: string
   vision?: boolean
+  enabled_tools?: string[]
+  upstream_api_format?: string
 }
 
 /** 渠道选项（供 ModelSelect 使用） */
@@ -375,6 +377,7 @@ export interface IAgentCreateAdapter {
 
   /** 加载重排序模型列表 */
   loadRerankModels?: () => Promise<ChannelOption[]>
+  loadDecisionModels?: () => Promise<ChannelOption[]>
 
   // ========== UI 组件注入 ==========
 
@@ -406,9 +409,6 @@ export interface IAgentCreateAdapter {
 
   /** 复制到剪贴板 */
   copyToClip?: (text: string) => Promise<boolean>
-
-  /** 获取公共路径 */
-  getPublicPath?: (path: string) => string
 
   /** API Host */
   apiHost?: string
@@ -547,6 +547,8 @@ export interface IAgentCreateAdapter {
     skill?: { display_name?: string; skill_name?: string }
     /** knowledge 模型 id，格式：channel_id_channel_type_model，拼到 model 后缀 */
     modelId?: string
+    /** 知识库预览回答模式：1 快速回答，2 深度思考 */
+    thinking_mode?: 1 | 2
     /** 知识源配置（直通模式） */
     knowledgeSource?: KnowledgeSourceConfig
     /** 知识库 ID 列表 */
@@ -616,6 +618,8 @@ export interface IAgentCreateAdapter {
       customClass?: string
       onChange?: (value: string) => void
       onTemperatureChange?: (value: number) => void
+      webSearchEnabled?: boolean
+      onWebSearchChange?: (enabled: boolean) => void
     }>
   }
 

@@ -298,6 +298,7 @@ func (f *RecordingFinalizeService) directFinalizeRecordingJob(ctx context.Contex
 		UserID:             job.UserID,
 		UploadFileID:       uploadFile.ID,
 		DurationMs:         job.TotalRecordedMs,
+		RecordingStartTime: recordingJobStartTime(job),
 		GroupID:            job.GroupID,
 		ConversionStatus:   model.FileConversionStatusNormal,
 		ParsingStatus:      parsingStatus,
@@ -325,6 +326,18 @@ func (f *RecordingFinalizeService) directFinalizeRecordingJob(ctx context.Contex
 
 	logger.Infof(ctx, "【录音】直接 finalize 完成: job_id=%d output_file_id=%d", job.ID, recordingFile.ID)
 	return recordingFile, nil
+}
+
+// recordingJobStartTime 取录音任务的开始录音时间（等于用户按下录音的时刻）。
+// 暂停/续录不改变该值；极端情况下 StartedAt 缺失时回退任务创建时间，避免丢字段。
+func recordingJobStartTime(job *model.RecordingJob) int64 {
+	if job == nil {
+		return 0
+	}
+	if job.StartedAt > 0 {
+		return job.StartedAt
+	}
+	return job.CreatedTime
 }
 
 // failFinalizeRecordingJob 定稿失败时回退任务状态。

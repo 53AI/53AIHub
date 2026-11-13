@@ -2,7 +2,8 @@
 
 import { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Input, Tooltip } from 'antd';
-import { Dropdown, SvgIcon } from '@km/shared-components-react';
+import { Dropdown, SvgIcon, SafeImage } from '@km/shared-components-react';
+import { resolveAssetUrl } from '@km/shared-utils';
 import { useTranslation } from '../../../i18n';
 import type { GraphData, GraphEntity, GraphRelation } from '../../../types/message';
 
@@ -46,11 +47,7 @@ export interface GraphViewerWidgetProps {
   isSupportSearch?: boolean;
   /** 加载 G6 库的函数 */
   loadG6?: () => Promise<void>;
-  /** 获取静态资源路径的函数 */
-  getStaticPath?: (path: string) => string;
 }
-
-const DEFAULT_GET_STATIC_PATH = (path: string) => path;
 
 export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWidgetProps>(
   (
@@ -60,7 +57,6 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
       emptyDescription,
       isSupportSearch = false,
       loadG6: loadG6Prop,
-      getStaticPath = DEFAULT_GET_STATIC_PATH,
     },
     ref
   ) => {
@@ -190,7 +186,7 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
 
       await new Promise(resolve => setTimeout(resolve, 0));
 
-      const bgImagePath = getStaticPath('/images/library/graph_bg.png');
+      const bgImagePath = resolveAssetUrl('/images/library/graph_bg.png');
       const bgImageUrl = bgImagePath.startsWith('http')
         ? bgImagePath
         : `${window.location.origin}${bgImagePath}`;
@@ -249,7 +245,7 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
       graphInstanceRef.current.fitView();
       const zoom = graphInstanceRef.current.getZoom();
       setCurrentZoom(zoom || 1);
-    }, [transformEntityDataToNodeData, transformRelationDataToEdgeData, getStaticPath]);
+    }, [transformEntityDataToNodeData, transformRelationDataToEdgeData]);
 
     const zoomTo = useCallback((zoom: number) => {
       if (!graphInstanceRef.current) return;
@@ -331,7 +327,7 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
       label: `${Math.floor(zoom * 100)}%`,
     }));
 
-    const emptyImagePath = getStaticPath('/images/library/graph_empty.png');
+    const emptyImagePath = resolveAssetUrl('/images/library/graph_empty.png');
 
     return (
       <div className="relative w-full h-full overflow-hidden bg-[#F5F6FA]">
@@ -378,7 +374,7 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
 
         {empty && (
           <div className="absolute inset-0 z-10 bg-[#F5F6FA] flex flex-col items-center justify-center">
-            <img src={emptyImagePath} alt="" className="w-[480px]" />
+            <SafeImage src={emptyImagePath} alt="" className="w-[480px]" />
             <p className="text-base text-[#1D1E1F] mt-6 mb-2">{finalEmptyTitle}</p>
             <p className="text-sm text-[#9A9A9A]">{finalEmptyDescription}</p>
           </div>

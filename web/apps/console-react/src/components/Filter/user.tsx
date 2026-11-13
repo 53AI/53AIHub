@@ -1,6 +1,9 @@
-import { useMemo, useState, useCallback, useEffect } from 'react'
+import { useMemo, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { DownOutlined } from '@ant-design/icons'
-import DeptMemberPicker, { DeptMemberPickerValue } from '@/components/DeptMemberPicker'
+import DeptMemberPicker, {
+  type DeptMemberPickerProps,
+  type DeptMemberPickerValue,
+} from '@/components/DeptMemberPicker'
 
 interface UserFilterProps {
   value?: string | number | null | DeptMemberPickerValue[]
@@ -8,6 +11,10 @@ interface UserFilterProps {
   multiple?: boolean
   defaultFirstValue?: boolean
   isCleared?: boolean
+  emptyLabel?: string
+  renderTrigger?: (label: string) => ReactNode
+  resetKey?: number
+  type?: DeptMemberPickerProps['type']
 }
 
 export function UserFilter({
@@ -16,6 +23,10 @@ export function UserFilter({
   multiple = false,
   defaultFirstValue = false,
   isCleared = false,
+  emptyLabel,
+  renderTrigger,
+  resetKey,
+  type = 'general',
 }: UserFilterProps) {
   const t = (window as any).$t || ((key: string) => key)
 
@@ -23,15 +34,15 @@ export function UserFilter({
 
   // Handle clear
   useEffect(() => {
-    if (isCleared) {
+    if (isCleared || resetKey !== undefined) {
       setUser([])
     }
-  }, [isCleared])
+  }, [isCleared, resetKey])
 
   // Compute display label
   const label = useMemo(() => {
-    return user.map((item) => item.label).join(',') || t('all')
-  }, [user, t])
+    return user.map((item) => item.label).join(',') || (emptyLabel ?? t('all'))
+  }, [emptyLabel, user, t])
 
   // Handle confirm
   const handleConfirm = useCallback(
@@ -46,13 +57,18 @@ export function UserFilter({
     <DeptMemberPicker
       value={user}
       onChange={handleConfirm}
+      type={type}
       multiple={multiple}
       defaultFirstValue={defaultFirstValue}
       trigger={
-        <div className="border border-[rgb(217, 217, 217)] rounded-md h-8 min-w-44 flex items-center px-3 gap-1.5 text-xs text-primary overflow-hidden cursor-pointer">
-          <p className="flex-1 text-sm text-primary truncate">{label}</p>
-          <DownOutlined style={{ fontSize: 12, color: '#9EA5B6' }} />
-        </div>
+        renderTrigger ? (
+          renderTrigger(label)
+        ) : (
+          <div className="border border-[rgb(217, 217, 217)] rounded-md h-8 min-w-44 flex items-center px-3 gap-1.5 text-xs text-primary overflow-hidden cursor-pointer">
+            <p className="flex-1 text-sm text-primary truncate">{label}</p>
+            <DownOutlined style={{ fontSize: 12, color: '#9EA5B6' }} />
+          </div>
+        )
       }
     />
   )

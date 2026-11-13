@@ -54,6 +54,7 @@ import { ThinkKnowledge, type ThinkKnowledgeRef } from "@/components/Chat";
 import AddAnswerAsMd, {
 	type AddAnswerAsMdRef,
 } from "@/components/Chat/AddAnswerAsMd";
+import { addAnswerAsMdApi } from "@/components/Chat/addAnswerAsMdAdapter";
 import FileViewer from "@/components/FileViewer";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
 import { ExpandSidebarButton } from "@/components/Layout/ExpandSidebarButton";
@@ -78,7 +79,7 @@ import {
 	checkPermission as checkUserPermission,
 	checkPermissionAsync as checkUserPermissionAsync,
 } from "@/utils/permission";
-import { buildUrl } from "@/utils/router";
+import { buildUrl, buildKnowledgeFileUrl } from "@/utils/router";
 import { checkVersion } from "@/utils/version";
 import AgentTooltip from "./components/AgentTooltip";
 import OpenClawPanel from "./components/OpenClawPanel";
@@ -178,9 +179,9 @@ function loadOpenClawStatus(agentId: string | number) {
 
 function TopicIcon({ className = "" }: { className?: string }) {
 	return (
-		<img
+		<SafeImage
 			className={`size-4 object-contain ${className}`}
-			src={getPublicPath(TOPIC_ICON)}
+			src={TOPIC_ICON}
 			alt=""
 			aria-hidden="true"
 		/>
@@ -2610,6 +2611,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								{isOpenclaw ? (
 									<div className="flex min-w-0 items-center gap-2">
 										<SafeImage
+										  kind="agent"
 											className="size-5 shrink-0 rounded-full"
 											src={currentAgent?.logo}
 											alt={agentInfo?.name || "Agent"}
@@ -2906,6 +2908,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					<div className="h-8 px-2 rounded-full flex items-center gap-1.5 bg-[#F1F2F3] cursor-pointer hover:bg-[#E1E2E3]">
 						{!isOpenclaw && (
 							<SafeImage
+							  kind="agent"
 								className="w-4 h-4 rounded-full"
 								src={agentInfo.logo}
 								alt={agentInfo.name}
@@ -3088,13 +3091,22 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					knowledgeSource: {
 						state: knowledgeSenderConfig.knowledgeSource,
 						graphEnabled: knowledgeGraph,
-						webSearchEnabled: networkSearch,
+						webSearchEnabled:
+							networkSearch &&
+							(currentAgent?.settings_obj?.web_search_setting?.source_type !== "model" ||
+								currentModel?.supportsNativeWebSearch === true),
 						wikiEnabled: wiki,
 					},
 					library: knowledgeSenderConfig.library,
 					links: knowledgeSenderConfig.selectedMentionLinks,
 					wikis,
 					modelId: currentModel?.id ?? "",
+					thinkingMode:
+						currentModel?.type === "deep_reasoning"
+							? 2
+							: currentModel?.type === "fast_reasoning"
+								? 1
+								: undefined,
 					agentInfo: currentAgent,
 					minimalParams: false,
 				} satisfies SendContext;
@@ -3226,13 +3238,10 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								showMenu: features.messageMenu,
 								onSent: () => {
 									eventBus.emit(EVENT_NAMES.SHORTCUT_UPDATED);
-									// 发送完成后清空 @ / 技能 受控 list
+									// 发送完成后只清空 work-ai 技能受控 list(技能为一次性调用)。
+									// 两模式的 @ 文件均不清空:knowledge 的 知识文档/wiki/知识库/空间
+									// 与 work-ai 的 @ 提及文件跨发送保留,下一次发送继续携带。
 									if (
-										activeSenderKind === "knowledge" &&
-										knowledgeSenderConfig
-									) {
-										knowledgeSenderConfig.reset();
-									} else if (
 										activeSenderKind === "work-ai" &&
 										workAiSenderConfig
 									) {
@@ -3433,7 +3442,18 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 							</div>
 						</SidePanel>
 					)}
-					<AddAnswerAsMd ref={addAnswerAsMdRef} />
+					<AddAnswerAsMd
+						ref={addAnswerAsMdRef}
+						api={addAnswerAsMdApi}
+						buildFileUrl={buildKnowledgeFileUrl}
+						folderIcon={
+							<SafeImage
+								src={"/images/file/folder.png"}
+								className="size-6"
+								alt=""
+							/>
+						}
+					/>
 
 					{/* ============ Work-ai 模式 @ 多入口对话框 ============ */}
 					{/* 这些对话框由 EnhancedMentionDropdown 通过闭包触发 */}

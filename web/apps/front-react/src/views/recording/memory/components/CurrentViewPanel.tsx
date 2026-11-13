@@ -119,7 +119,7 @@ function ListFacet({ title, value, empty = '暂无记录' }: { title: string; va
 }
 
 export function CurrentViewPanel({ view, loading = false, error }: CurrentViewPanelProps) {
-  if (loading) return <div className="flex min-h-64 items-center justify-center"><Spin tip="正在编译当前理解…" /></div>
+  if (loading) return <div className="flex min-h-64 items-center justify-center"><Spin description="正在编译当前理解…" /></div>
   if (error) return <Alert type="error" showIcon title="当前理解暂时不可用" description={error} />
   if (!view) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未形成当前理解" />
 

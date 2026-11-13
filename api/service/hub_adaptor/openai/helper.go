@@ -79,3 +79,22 @@ func ApplyTokenLimitForModel(request *model.GeneralOpenAIRequest) {
 	request.MaxCompletionTokens = &maxCompletionTokens
 	request.MaxTokens = 0
 }
+
+// ApplyUnsupportedSamplingParameters removes sampling parameters for models whose upstream API rejects them.
+func ApplyUnsupportedSamplingParameters(request *model.GeneralOpenAIRequest, modelName string) {
+	if request == nil || isGPT4Model(modelName) {
+		return
+	}
+	request.Temperature = nil
+	request.TopP = nil
+	request.PresencePenalty = nil
+	request.FrequencyPenalty = nil
+	request.Logprobs = nil
+	request.TopLogprobs = nil
+	request.LogitBias = nil
+}
+
+func isGPT4Model(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return name == "gpt-4" || strings.HasPrefix(name, "gpt-4-") || strings.HasPrefix(name, "gpt-4.")
+}

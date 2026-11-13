@@ -4,7 +4,7 @@ import { OpenClawPreviewWorkspace as SharedOpenClawPreviewWorkspace } from '@km/
 import conversationApi from '@/api/modules/conversation'
 import openclawApi from '@/api/modules/openclaw'
 import uploadApi from '@/api/modules/upload'
-import { api_host, getPublicPath } from '@/utils/config'
+import { api_host } from '@/utils/config'
 import { buildPreviewUrl } from '@/utils/preview'
 
 interface ConsoleOpenClawEmbeddedChatWorkspaceProps {
@@ -28,7 +28,7 @@ export function ConsoleOpenClawEmbeddedChatWorkspace({ className }: ConsoleOpenC
     () => ({
       agent_id: savedAgentId,
       bot_id: formData.bot_id,
-      logo: formData.logo || getPublicPath(`/agent/${agentMetadata.iconFileName}`),
+      logo: formData.logo ||`/agent/${agentMetadata.iconFileName}`,
       name: formData.name || agentMetadata.label,
       description: formData.description,
       channel_type: formData.channel_type || agentMetadata.channelType,
@@ -67,7 +67,6 @@ export function ConsoleOpenClawEmbeddedChatWorkspace({ className }: ConsoleOpenC
           preview_key: res.data.preview_key,
         }
       }}
-      getPublicPath={getPublicPath}
       requestSource="console"
       boxClassName="px-6 w-full"
     />

@@ -2,6 +2,7 @@ import React from "react";
 import type { ActiveTab } from "./index";
 import IndexView from "./views/IndexView";
 import LogsView from "./views/LogsView";
+import QueueView from "./views/QueueView";
 import DetailView from "./views/DetailView";
 import { useWikiStore } from "@/stores/modules/wiki";
 import { WikiPermissionFrame } from "@/components/KMPermission/wiki-frame";
@@ -31,6 +32,9 @@ const RightContent: React.FC<RightContentProps> = ({
   }
   if (activeTab === "logs") {
     return <LogsView />;
+  }
+  if (activeTab === "queue") {
+    return <QueueView />;
   }
 
   // 使用 key 确保选中项变化时组件重新挂载

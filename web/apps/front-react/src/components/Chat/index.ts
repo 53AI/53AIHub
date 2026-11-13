@@ -2,9 +2,9 @@
 export { Sender } from './Sender'
 export type { SenderRef } from './Sender'
 
-// 作为 slot 传递
-export { AddAnswerAsMd } from './AddAnswerAsMd'
-export type { AddAnswerAsMdRef } from './AddAnswerAsMd'
+// 已迁移到 shared-business 的组件（使用重导出）
+export { AddAnswerAsMd, type AddAnswerAsMdRef, type AddAnswerAsMdApi } from '@km/shared-business/chat'
+export { addAnswerAsMdApi } from './addAnswerAsMdAdapter'
 
 // 本地包装组件（使用 shared-business 组件 + adapters）
 export { Graph } from './Graph'

@@ -4,7 +4,6 @@ import {
   resolveOpenClawCompatibleAgentLogo,
   type CreateAgentDialogResult,
 } from '@km/shared-business/agent-create'
-import { getPublicPath } from '@/utils/config'
 
 export function buildOpenClawEnterpriseAgentPayload({
   data,
@@ -40,7 +39,7 @@ export function buildOpenClawEnterpriseAgentPayload({
     agent_type: 2,
     name: data.name,
     description: data.description,
-    logo: resolveOpenClawCompatibleAgentLogo(data.logo || getOpenClawCompatibleAgentIconPath(metadata.agentType, getPublicPath), metadata.agentType),
+    logo: resolveOpenClawCompatibleAgentLogo(data.logo || getOpenClawCompatibleAgentIconPath(metadata.agentType), metadata.agentType),
     group_id: data.groupId || 0,
     channel_type: metadata.channelType,
     model: 'openclaw-ws',

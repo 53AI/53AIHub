@@ -55,6 +55,11 @@ export const userRoutes: MockRoute[] = [
     handler: () => ok(mockUser),
   },
   {
+    // 个人信息保存（头像/昵称）：回显合并后的用户信息
+    method: 'PUT', path: '/api/users/me',
+    handler: (_req, _params, body) => ok({ ...mockUser, ...(body || {}) }),
+  },
+  {
     method: 'GET', path: '/api/users',
     handler: () => ok({ users: mockUsers, count: mockUsers.length }),
   },

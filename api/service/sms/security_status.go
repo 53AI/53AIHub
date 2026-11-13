@@ -33,6 +33,7 @@ type SecurityKeyState struct {
 type SecurityStatus struct {
 	Enabled            bool                `json:"enabled"`
 	SMSCaptchaRequired bool                `json:"sms_captcha_required"` // 发送短信前置字符验证码是否强制
+	SMSCaptchaMode     string              `json:"sms_captcha_mode"`     // 图形验证码模式（alphanumeric / math）
 	Limits             []SecurityLimitItem `json:"limits"`
 	BannedIPs          []SecurityKeyState  `json:"banned_ips"`       // 被封禁 IP 段
 	IPWindows          []SecurityIPWindow  `json:"ip_windows"`       // IP 维度各窗口计数
@@ -47,6 +48,7 @@ func GetSecurityStatus() SecurityStatus {
 	resp := SecurityStatus{
 		Enabled:            false,
 		SMSCaptchaRequired: config.SMS_CAPTCHA_REQUIRED,
+		SMSCaptchaMode:     config.SMS_CAPTCHA_MODE,
 	}
 	if m := GetManager(); m != nil && m.IsEnabled() {
 		resp.Enabled = true
@@ -59,6 +61,9 @@ func GetSecurityStatus() SecurityStatus {
 
 	resp.Limits = []SecurityLimitItem{
 		{"sms_captcha_required", captchaReqVal},
+		{"sms_captcha_expire_seconds", int64(config.SMS_CAPTCHA_EXPIRE_SECONDS)},
+		{"sms_captcha_max_attempts", int64(config.SMS_CAPTCHA_MAX_ATTEMPTS)},
+		{"sms_captcha_ip_rate_limit", int64(config.SMS_CAPTCHA_IP_RATE_LIMIT)},
 		{"sms_send_cooldown_seconds", int64(SMS_CODE_SEND_EXPIRE.Seconds())},
 		{"sms_send_mobile_daily_limit", int64(SMS_CODE_SEND_TIMES)},
 		{"sms_send_ip_burst_limit", int64(config.SMS_IP_BURST_LIMIT)},

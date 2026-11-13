@@ -4,3 +4,7 @@ dist
 *.local
 apps/agent-plugin/dist-sdk/*
 .claude/worktrees
+tmp/
+
+# 端侧 ASR 模型：不入库（scripts/download-asr-models.mjs 按需下载到 public/models/）
+apps/front-react/public/models/

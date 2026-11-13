@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Modal, Input, Button, Spin, message } from 'antd'
 import type { InputRef } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
+import { SafeImage } from '@km/shared-components-react'
 import {
   CAPTCHA_TTL_MS,
   registerCaptchaModal,
@@ -207,7 +208,7 @@ export function CaptchaModal({ fetchCaptcha, t }: CaptchaModalProps) {
           ) : (
             <>
               {image ? (
-                <img
+                <SafeImage
                   src={image}
                   alt="captcha"
                   className={`w-full object-cover${expired ? ' blur-[2px]' : ''}`}

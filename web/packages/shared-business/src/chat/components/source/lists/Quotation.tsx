@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { UpOutlined, RightOutlined, LinkOutlined } from '@ant-design/icons';
 import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation, useChatConfig, buildLibraryUrl } from '../../../i18n';
+import { SafeImage } from '@km/shared-components-react';
 import type { ChunkItem } from '../../../types/message';
 import RagPill from '../RagPill';
 
@@ -17,35 +18,46 @@ export function Quotation({ files = [] }: QuotationProps) {
   const config = useChatConfig();
   const [showFiles, setShowFiles] = useState(false);
 
-  const getIndex = (sourceKey?: string, isWebSearch?: boolean) => {
+  const getIndex = (sourceKey?: string) => {
     const match = (sourceKey || '').replace('[Source:', '').replace(']', '').split('-');
-    const index = isWebSearch ? match[1] : match[0];
+    const index = match[0];
     return Number(index) > -1 ? index : '';
   };
 
   const fileList = useMemo(() => {
     const list = files.map(item => ({
       ...item,
-      index: getIndex(item.source_key || item.source, item.chunk_type === 'web_search')
+      index: getIndex(item.source_key || item.source)
     }));
     return list.sort((a, b) => Number(a.index) - Number(b.index));
   }, [files]);
 
   // 分别统计：知识文档（排除 wiki 与联网搜索）vs 动态知识（wiki）
-  const { docCount, wikiCount } = useMemo(() => {
+  const { docCount, wikiCount, webCount } = useMemo(() => {
     let docCount = 0;
     let wikiCount = 0;
+    let webCount = 0;
     for (const item of fileList) {
       if (item.chunk_type === 'wiki') {
         wikiCount += 1;
-      } else if (item.chunk_type !== 'web_search' && item.chunk_type !== 'web_page') {
+      } else if (item.chunk_type === 'web_search' || item.chunk_type === 'web_page') {
+        webCount += 1;
+      } else {
         docCount += 1;
       }
     }
-    return { docCount, wikiCount };
+    return { docCount, wikiCount, webCount };
   }, [fileList]);
 
   const quotationText = useMemo(() => {
+    if (webCount > 0) {
+      const items = [
+        docCount > 0 ? t("chat.quotation_doc_item", { count: docCount }) || `${docCount} 篇知识文档` : "",
+        wikiCount > 0 ? t("chat.quotation_wiki_item", { count: wikiCount }) || `${wikiCount} 篇 Wiki` : "",
+        t("chat.quotation_web_item", { count: webCount }) || `${webCount} 个网页`,
+      ].filter(Boolean);
+      return t("chat.quotation_summary", { items: items.join("、") }) || `引用了 ${items.join("、")}`;
+    }
     if (docCount > 0 && wikiCount > 0) {
       return t("chat.quotation_mixed", { docCount, wikiCount })
         || `引用了 ${docCount} 篇知识文档、${wikiCount} 篇 Wiki`;
@@ -94,28 +106,36 @@ export function Quotation({ files = [] }: QuotationProps) {
       {showFiles && (
         <div className="space-y-1.5 mt-3">
           {fileList.map((item, index) => {
-            const displayIndex = item.source_key || item.source
-              ? getIndex(item.source_key || item.source)
-              : index + 1;
+            const displayIndex = item.index || index + 1;
 
-            // web_search 类型：外链
-            if (item.chunk_type === ('web_search' as const)) {
+            // 网页搜索来源：显示摘要并提供原文链接
+            if (item.chunk_type === 'web_search' || item.chunk_type === 'web_page') {
+              const sourceUrl = item.file_path || item.url || '';
               return (
-                <a
+                <div
                   key={item.chunk_id || item.file_id || index}
-                  href={item.file_path || item.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2"
+                  className="flex items-start gap-2"
                 >
                   <div className="size-4 rounded-full bg-[#EDEDED] flex items-center justify-center text-xs text-[#4F5052]">
                     {displayIndex}
                   </div>
-                  <LinkOutlined className="text-[#939499]" />
-                  <div className="flex-1 text-sm text-[#1D1E1F] truncate">
-                    {item.file_name}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-sm text-[#1D1E1F]">
+                      <LinkOutlined className="text-[#939499]" />
+                      <span className="truncate">{item.file_name || '模型搜索摘要'}</span>
+                    </div>
+                    {sourceUrl && (
+                      <a
+                        href={sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="ml-5 mt-1 block text-xs text-[#2563EB] truncate"
+                      >
+                        {sourceUrl}
+                      </a>
+                    )}
                   </div>
-                </a>
+                </div>
               );
             }
 
@@ -155,7 +175,7 @@ export function Quotation({ files = [] }: QuotationProps) {
                 <div className="size-4 rounded-full bg-[#EDEDED] flex items-center justify-center text-xs text-[#4F5052]">
                   {displayIndex}
                 </div>
-                {item.file_icon && <img src={item.file_icon} className="size-5" alt="" />}
+                {item.file_icon && <SafeImage src={item.file_icon} className="size-5" alt="" />}
                 <div className="flex-1 text-sm text-[#1D1E1F] truncate">
                   {item.file_name}
                   {pathSuffix && (

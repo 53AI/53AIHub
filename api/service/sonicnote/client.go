@@ -141,6 +141,25 @@ func (c *Client) ListRecordings(ctx context.Context, token string, page, size in
 	return items, total, nil
 }
 
+// remoteListPageSize SonicNote 远端列表每页条数（远端上限 50）。
+const remoteListPageSize = 50
+
+// ListAllRecordings 循环翻页拉全该账号的远端录音（远端按 recordTimestamp 倒序）。
+// 供预览统计与存量回填复用；本页不足一页即视为已到末页。
+func (c *Client) ListAllRecordings(ctx context.Context, token string) ([]map[string]interface{}, error) {
+	var all []map[string]interface{}
+	for page := 1; ; page++ {
+		items, _, err := c.ListRecordings(ctx, token, page, remoteListPageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, items...)
+		if len(items) < remoteListPageSize {
+			return all, nil
+		}
+	}
+}
+
 // GetRecordingDetail 获取录音详情。
 func (c *Client) GetRecordingDetail(ctx context.Context, token, audioID string) (map[string]interface{}, error) {
 	path := "/app/recording/detail?audioId=" + audioID

@@ -73,10 +73,18 @@ type MessageListRequest struct {
 	EndDate        *int64 `json:"end_date" form:"end_date" example:"1641081600"`
 	AgentID        *int64 `json:"agent_id" example:"1"`
 	Source         string `json:"source" form:"source" example:"h5,api"`
+	// BeforeID / AfterID 会话消息游标（仅 /api/conversations/:id/messages 使用）：
+	// 传任一参数表示按 message id 取相邻消息，忽略 offset 分页，limit 缺省 1。
+	// before_id 返回 id 更小的一条（上一条），after_id 返回 id 更大的一条（下一条）。
+	// HashID 由 middleware.RequestDecoder 统一解码（见 hashids.DefaultIDFieldMatcher），
+	// 这里按数字声明即可，客户端可直接传 HashID。
+	BeforeID *int64 `json:"before_id" form:"before_id" example:"ZTSbMU"`
+	AfterID  *int64 `json:"after_id" form:"after_id" example:"ZTSbMU"`
 }
 
 type MessageListAllRequest struct {
 	MessageListRequest
+	UID string `json:"uid" form:"uid" example:"ccuasQ"`
 }
 
 // convertToEnhancedMessages 将普通消息转换为增强消息
@@ -424,6 +432,8 @@ func GetUserMessages(c *gin.Context) {
 // @Param offset query int false "Pagination offset" default(0)
 // @Param limit query int false "Pagination limit" default(10)
 // @Param direction query string false "Direction (desc=newest first, asc=oldest first)" default(desc)
+// @Param before_id query int false "Cursor: 取 id 小于该值的一条（上一条），传此参数时忽略 offset/direction"
+// @Param after_id query int false "Cursor: 取 id 大于该值的一条（下一条），传此参数时忽略 offset/direction"
 // @Success 200 {object} model.CommonResponse{data=MessagesResponse} "Success"
 // @Router /api/conversations/{conversation_id}/messages [get]
 func GetMessagesByConversation(c *gin.Context) {
@@ -468,22 +478,49 @@ func GetMessagesByConversation(c *gin.Context) {
 		return
 	}
 
-	// 传递方向参数到模型层
-	count, messages, err = model.GetMessagesByConversationIDWithDirectionWithVisitor(
-		eid, conversation_id, 0,
-		messageListRequest.Keyword, session.GetVisitorID(c), messageListRequest.Limit, messageListRequest.Offset,
-		messageListRequest.Direction)
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
-		return
+	// 游标模式：按 message id 取会话内相邻消息（上一条 / 下一条）。
+	// 详情抽屉翻页只需 1 条，避免前端为了翻页拉取整段会话。
+	// HashID 参数已由 middleware.RequestDecoder 解码为数字，这里直接用。
+	cursorDirection := ""
+	if messageListRequest.BeforeID != nil && *messageListRequest.BeforeID > 0 {
+		cursorDirection = "before"
+	} else if messageListRequest.AfterID != nil && *messageListRequest.AfterID > 0 {
+		cursorDirection = "after"
 	}
 
-	// desc 取数后反转，前端始终收到正序（最早的消息在前）。
-	// 反转必须在增强消息构建之前执行，以保证 fileMap/processRecordMap 与消息顺序一致。
-	if messageListRequest.Direction == "desc" {
-		for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
-			messages[i], messages[j] = messages[j], messages[i]
+	if cursorDirection != "" {
+		cursorLimit := messageListRequest.Limit
+		if cursorLimit <= 0 {
+			cursorLimit = 1
+		}
+		if cursorDirection == "before" {
+			messages, err = model.GetMessagesByConversationIDWithDirectionBefore(eid, conversation_id, *messageListRequest.BeforeID, cursorLimit, "desc")
+		} else {
+			messages, err = model.GetMessagesByConversationIDWithDirectionAfter(eid, conversation_id, *messageListRequest.AfterID, cursorLimit, "asc")
+		}
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+		count = int64(len(messages))
+	} else {
+		// 传递方向参数到模型层
+		count, messages, err = model.GetMessagesByConversationIDWithDirectionWithVisitor(
+			eid, conversation_id, 0,
+			messageListRequest.Keyword, session.GetVisitorID(c), messageListRequest.Limit, messageListRequest.Offset,
+			messageListRequest.Direction)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, model.DBError.ToResponse(err))
+			return
+		}
+
+		// desc 取数后反转，前端始终收到正序（最早的消息在前）。
+		// 反转必须在增强消息构建之前执行，以保证 fileMap/processRecordMap 与消息顺序一致。
+		if messageListRequest.Direction == "desc" {
+			for i, j := 0, len(messages)-1; i < j; i, j = i+1, j-1 {
+				messages[i], messages[j] = messages[j], messages[i]
+			}
 		}
 	}
 
@@ -629,7 +666,8 @@ func GetMessageStatsSum(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param keyword query string false "搜索关键词，支持在消息内容和回答内容中搜索"
+// @Param keyword query string false "搜索关键词，仅匹配提问内容"
+// @Param uid query string false "提问人 UID（HashID），精确筛选"
 // @Param file_keyword query string false "文件名搜索关键词，支持模糊搜索匹配的文件"
 // @Param offset query int false "分页偏移量" default(0)
 // @Param limit query int false "分页大小" default(10)
@@ -661,6 +699,15 @@ func GetMessagesList(c *gin.Context) {
 		if id, err := hashids.TryParseID(agentIDStr); err == nil {
 			messageListRequest.AgentID = &id
 		}
+	}
+	var userID *int64
+	if messageListRequest.UID != "" {
+		id, err := hashids.Decode(messageListRequest.UID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("invalid uid")))
+			return
+		}
+		userID = &id
 	}
 
 	eid := config.GetEID(c)
@@ -733,6 +780,7 @@ func GetMessagesList(c *gin.Context) {
 		messageListRequest.AgentID,
 		fileIDs,
 		sources,
+		userID,
 	)
 
 	if err != nil {

@@ -68,6 +68,8 @@ type InsightRegenerationRequest struct {
 	// Scene/SceneMode 为一次调用同时改场景+模式并重新生成提供一等字段；语义与 SetFileSceneAndMode 一致，优先于 background 中的同名字段。
 	Scene     string `json:"scene"`
 	SceneMode string `json:"scene_mode"`
+	// 显式指定时先重新生成纪要，再生成洞察；缺省不改变旧接口行为。
+	RegenerateFromMinutes bool `json:"regenerate_from_minutes,omitempty"`
 }
 
 type PromoteInsightExternalConstraintsRequest struct {
@@ -159,6 +161,7 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 		return err
 	}
 
+	regenerateFromMinutes := req != nil && req.RegenerateFromMinutes
 	background := InsightBackground{}
 	requestedPerspective := strings.TrimSpace(file.InsightPerspective)
 	if req != nil {
@@ -194,6 +197,13 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 			_ = json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
 		}
 		info.InsightPageFormat = insightPageHTMLFormat
+		if regenerateFromMinutes {
+			info.MeetingMinutesStatus = "pending"
+			info.MeetingMinutesError = ""
+			info.MeetingMinutesErrorType = ""
+			info.InsightsStatus = "pending"
+			info.InsightPageStatus = "pending"
+		}
 		cleaningRuleInfo, marshalErr := json.Marshal(info)
 		if marshalErr != nil {
 			return fmt.Errorf("序列化洞察页面格式失败: %w", marshalErr)
@@ -222,6 +232,14 @@ func RegenerateInsightsWithContext(ctx context.Context, eid, userID, fileID int6
 		return nil
 	}); err != nil {
 		return err
+	}
+	if regenerateFromMinutes {
+		// 复用录音管线的「纪要 → 洞察」顺序，且不得复制其他录音的旧纪要。
+		if _, err := runRecordingPipeline(ctx, eid, fileID, userID, true); err != nil {
+			return err
+		}
+		logger.Infof(ctx, "【洞察】已触发从纪要开始重新生成: fileID=%d eid=%d userID=%d", fileID, eid, userID)
+		return nil
 	}
 	setInsightsStatus(fileID, "pending")
 	setInsightPageStatus(fileID, "pending")
@@ -754,6 +772,8 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 		return nil
 	}
 
+	genericTerms := buildGenericIdentityTerms(ctx, eid, userID, fileID)
+
 	var currentEntityIDs []int64
 	query := model.DB.WithContext(ctx).Model(&model.EntityChunkRelation{}).
 		Joins("JOIN entities e ON e.id = entity_chunk_relations.entity_id").
@@ -766,34 +786,48 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 	if err := query.Error; err != nil {
 		logger.Errorf(ctx, "【洞察】查询实体ID失败: %v", err)
 	}
+
+	var specificAnchorIDs []int64
 	currentEntityNames := make([]string, 0)
-	if len(currentEntityIDs) > 0 && currentContext == nil {
-		var genericNames []string
+	if len(currentEntityIDs) > 0 {
+		var allEntities []model.Entity
 		if err := model.DB.WithContext(ctx).Model(&model.Entity{}).
 			Where("eid = ? AND id IN ? AND status = ?", eid, currentEntityIDs, model.EntityRelationStatusActive).
-			Pluck("name", &genericNames).Error; err == nil {
-			currentEntityNames = appendUniqueStrings(currentEntityNames, genericNames...)
+			Find(&allEntities).Error; err == nil {
+			specificEnts, _ := partitionEntitiesByGenericity(allEntities, genericTerms)
+			specificAnchorIDs = make([]int64, 0, len(specificEnts))
+			for _, ent := range specificEnts {
+				specificAnchorIDs = append(specificAnchorIDs, ent.ID)
+				currentEntityNames = appendUniqueStrings(currentEntityNames, ent.Name)
+			}
 		}
 	}
 	if currentContext != nil {
-		currentEntityNames = appendUniqueStrings(currentEntityNames, currentContext.RecallEntityNames()...)
+		currentEntityNames = appendUniqueStrings(currentEntityNames, filterOutGenericTerms(currentContext.RecallEntityNames(), genericTerms)...)
 	}
 	currentRecallTerms := appendUniqueStrings(nil, currentEntityNames...)
 	if currentContext != nil {
-		currentRecallTerms = appendUniqueStrings(currentRecallTerms, currentContext.RecallClaimTerms()...)
+		currentRecallTerms = appendUniqueStrings(currentRecallTerms, filterOutGenericTerms(currentContext.RecallClaimTerms(), genericTerms)...)
 	}
+	currentRecallTerms = filterOutGenericTerms(currentRecallTerms, genericTerms)
 
 	rows := make([]historyMeeting, 0, 8)
 	entityOverlapCandidates := 0
-	claimCandidates := 0
+	var memoryRows []historyMeeting
+	if len(currentRecallTerms) > 0 {
+		memoryRows = loadMemoryRecallHistoryByTerms(ctx, eid, userID, fileID, currentRecallTerms)
+	}
+	claimCandidates := len(memoryRows)
 	entityFactCandidates := 0
-	if len(currentEntityIDs) > 0 {
+	// 第一路召回：必须拥有至少一个具体的业务 Anchor（客户/项目/候选人/外部机构等），
+	// 严禁仅靠当前用户本人（杨总）或企业名称等通用实体进行无界关联。
+	if len(specificAnchorIDs) > 0 {
 		var historyFileIDs []int64
 		if err := model.DB.WithContext(ctx).Table("entity_chunk_relations ecr").
 			Joins("JOIN files f ON f.id = ecr.file_id").
 			Joins("JOIN entities e ON e.id = ecr.entity_id").
 			Where("ecr.eid = ? AND ecr.entity_id IN ? AND ecr.file_id != ? AND ecr.status = ?",
-				eid, currentEntityIDs, fileID, "active").
+				eid, specificAnchorIDs, fileID, "active").
 			Where("e.type IN ?", memCfg.Types).
 			Where("f.user_id = ? AND f.origin_type IN ? AND f.parsing_status = ? AND f.insight_summary != ''",
 				userID, model.RecordingOriginTypes(), "normal").
@@ -806,7 +840,15 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 		}
 
 		entityOverlapCandidates = len(historyFileIDs)
+		memoriesByFile := make(map[int64]historyMeeting, len(memoryRows))
+		for _, memoryRow := range memoryRows {
+			memoriesByFile[memoryRow.FileID] = memoryRow
+		}
 		for _, historyFileID := range historyFileIDs {
+			if memoryRow, ok := memoriesByFile[historyFileID]; ok {
+				rows = mergeHistoryMeeting(rows, memoryRow, historyRecallEntityOverlap)
+				continue
+			}
 			var file model.File
 			if err := model.DB.WithContext(ctx).Where("id = ?", historyFileID).First(&file).Error; err != nil {
 				continue
@@ -820,7 +862,6 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 				FileID:       historyFileID,
 				Title:        file.Path,
 				Minutes:      minutes,
-				Memories:     loadMeetingMemoryContexts(ctx, eid, userID, historyFileID, file.Path),
 				RecallSource: historyRecallEntityOverlap,
 			})
 		}
@@ -831,8 +872,6 @@ func loadRelatedInsightHistoryWithContext(ctx context.Context, eid, fileID, user
 	// 匹配已编译的历史记忆。即使通用 Entity 抽取尚未落库，也不会丢失
 	// 当前会议的决策、承诺和风险召回。
 	if len(currentRecallTerms) > 0 {
-		memoryRows := loadMemoryRecallHistoryByTerms(ctx, eid, userID, fileID, currentRecallTerms)
-		claimCandidates = len(memoryRows)
 		for _, memoryRow := range memoryRows {
 			rows = mergeHistoryMeeting(rows, memoryRow, historyRecallClaim)
 		}
@@ -906,41 +945,6 @@ func relatedInsightHistoryScore(row historyMeeting) int {
 	return score
 }
 
-func loadMeetingMemoryContexts(ctx context.Context, eid, ownerID, fileID int64, sourceFile string) []meetingMemoryContext {
-	var claims []model.RecordingMemoryClaim
-	if err := model.DB.WithContext(ctx).
-		Where("eid = ? AND owner_id = ? AND file_id = ? AND is_current = ?", eid, ownerID, fileID, true).
-		Where("assertion_state NOT IN ?", []string{"rejected"}).
-		Where("source_confidence >= ?", recordingMemoryMinSourceConfidence).
-		Where("(review_state = ? OR (epistemic_type = ? AND evidence_available = ?))", recordingMemoryReviewConfirmed, "explicit", true).
-		Order("source_confidence DESC, updated_time DESC, id DESC").
-		Limit(8).Find(&claims).Error; err != nil {
-		logger.Warnf(ctx, "【洞察】读取结构化会议记忆失败 fileID=%d err=%v", fileID, err)
-		return nil
-	}
-	claims = selectRecordingMemoryRecallClaims(claims, recordingMemoryDirectRecallLimit, recordingMemoryOneHopRecallLimit)
-	result := make([]meetingMemoryContext, 0, len(claims))
-	for _, claim := range claims {
-		result = append(result, meetingMemoryContext{
-			MemoryID:          claim.ID,
-			Kind:              claim.ClaimKind,
-			Content:           string(claim.Content),
-			RecallReason:      "历史结构化会议记忆",
-			AssertionState:    claim.AssertionState,
-			LifecycleState:    claim.LifecycleState,
-			ReviewState:       claim.ReviewState,
-			SourceFileID:      claim.FileID,
-			SourceFile:        sourceFile,
-			SourceConfidence:  claim.SourceConfidence,
-			EvidenceAvailable: claim.EvidenceAvailable,
-			SourceSegmentIDs:  decodeMemorySourceSegmentIDs(claim.SourceSegmentIDs),
-			RecallPath:        recordingMemoryRecallPath(claim.DetailJSON),
-			StructuredLinks:   recordingMemoryStructuredLinks(claim.DetailJSON),
-		})
-	}
-	return result
-}
-
 func loadMemoryRecallHistory(ctx context.Context, eid, ownerID, currentFileID int64, entityIDs []int64) []historyMeeting {
 	var entityNames []string
 	if err := model.DB.WithContext(ctx).Model(&model.Entity{}).
@@ -957,6 +961,8 @@ func loadMemoryRecallHistoryByNames(ctx context.Context, eid, ownerID, currentFi
 }
 
 func loadMemoryRecallHistoryByTerms(ctx context.Context, eid, ownerID, currentFileID int64, terms []string) []historyMeeting {
+	genericTerms := buildGenericIdentityTerms(ctx, eid, ownerID, currentFileID)
+	terms = filterOutGenericTerms(terms, genericTerms)
 	terms = filterInsightRecallEntityNames(terms)
 	if len(terms) == 0 {
 		return nil
@@ -967,8 +973,8 @@ func loadMemoryRecallHistoryByTerms(ctx context.Context, eid, ownerID, currentFi
 		Select("c.*").
 		Joins("JOIN files f ON f.id = c.file_id AND f.eid = c.eid").
 		Where("c.eid = ? AND c.owner_id = ? AND c.file_id != ? AND c.is_current = ?", eid, ownerID, currentFileID, true).
+		Where("c.claim_kind != ?", "quote").
 		Where("c.source_item_type NOT IN ?", []string{recordingMemorySourceInsightBackground}).
-		Where("c.source_item_type <> ? OR c.assertion_state = ?", recordingMemorySourceUserConfirmed, "user_confirmed").
 		Where("c.assertion_state NOT IN ?", []string{"rejected"}).
 		Where("c.source_confidence >= ?", recordingMemoryMinSourceConfidence).
 		Where("(c.review_state = ? OR (c.epistemic_type = ? AND c.evidence_available = ?))", recordingMemoryReviewConfirmed, "explicit", true).

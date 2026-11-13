@@ -15,6 +15,7 @@ import type { FileSearchParams } from "@/api/modules/files/types";
 import { formatFileSearchResults } from "@/api/modules/files/transform";
 import { debounce } from "@km/shared-utils";
 import { checkPermission } from "@/utils/permission";
+import { SafeImage } from "@km/shared-components-react";
 
 interface FileSearchItem {
   name: string;
@@ -429,7 +430,7 @@ export const FileSearch = forwardRef<FileSearchRef, FileSearchProps>(
                         <div className="flex items-start space-x-2">
                           {/* File Icon */}
                           <div className="flex-shrink-0">
-                            <img className="size-5" src={item.icon} alt="" />
+                            <SafeImage className="size-5" src={item.icon} alt="" />
                           </div>
 
                           {/* File Info */}

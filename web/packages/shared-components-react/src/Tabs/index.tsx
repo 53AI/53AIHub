@@ -31,7 +31,7 @@ export interface TabsProps {
    * - 'segmented'：分段控制器样式，灰底容器 + 白色浮起激活项，适合列表状态筛选；
    *   超出宽度时横向滚动并显示左右箭头（滚动条隐藏，箭头是唯一的溢出提示）
    */
-  variant?: 'default' | 'underline' | 'segmented'
+  variant?: 'default' | 'underline' | 'segmented' | 'custom'
   /** items 与 extra 之间的分隔内容（例如竖线） */
   divider?: ReactNode
   /** 末尾额外内容（例如加号按钮） */
@@ -60,6 +60,11 @@ const TAB_STYLES: Record<TabsVariant, { base: string; active: string; inactive: 
     active: 'bg-white text-[#2563EB] shadow-sm',
     inactive: 'text-[#999999] hover:text-[#1e293b]',
   },
+  custom:{
+    base: 'flex-none h-8 flex items-center mr-6 whitespace-nowrap text-base transition-colors transition-all relative',
+    active: 'bg-[white] text-[#2563EB]',
+    inactive: 'text-[#6B7280] hover:text-[#2563EB]',
+  }
 }
 
 /**
@@ -154,6 +159,7 @@ export const Tabs: React.FC<TabsProps> = ({
 
   const isUnderline = variant === 'underline'
   const isSegmented = variant === 'segmented'
+  const isCustom = variant === 'custom'
   const tabStyle = TAB_STYLES[variant] || TAB_STYLES.default
 
   const renderTab = (item: TabItem) => {
@@ -172,6 +178,9 @@ export const Tabs: React.FC<TabsProps> = ({
         {item.label}
         {isUnderline && isActive && (
           <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-[#2563EB] rounded-full" />
+        )}
+        {isCustom && isActive && (
+          <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2563EB] rounded-full" />
         )}
       </div>
     )

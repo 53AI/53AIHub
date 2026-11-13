@@ -25,7 +25,7 @@ export const filesApi = {
     return request.get('/api/files', { params }).then((res) => res.data)
   },
 
-  all(params: { library_id: string }): Promise<RawFileItem[]> {
+  all(params: { library_id: string; parent_path?: string; type?: string }): Promise<RawFileItem[]> {
     return request.get('/api/files/all', { params }).then((res) => res.data)
   },
 

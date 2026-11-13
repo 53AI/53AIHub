@@ -6,6 +6,8 @@ import { CloseOutlined, ShareAltOutlined } from "@ant-design/icons";
 import { SvgIcon } from "@km/shared-components-react";
 import { useTranslation } from "../../../i18n";
 import type { ChunkItem } from "../../../types/message";
+import { usePopupFullscreen, PopupFullscreenButton } from "./PopupFullscreen";
+import "./popups.css";
 
 interface GraphEntity {
   id: string;
@@ -58,6 +60,8 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
     const [showGraph, setShowGraph] = useState(false);
     const [triggerRect, setTriggerRect] = useState<DOMRect | null>(null);
     const graphDataRef = useRef<GraphData>({ entities: [], relations: [] });
+    // 全屏状态：弹窗关闭时自动复位（见 usePopupFullscreen）
+    const { isFullscreen, toggleFullscreen } = usePopupFullscreen(visible);
 
     useImperativeHandle(ref, () => ({
       setLibraryInfo: (info: ChunkItem | null, _type?: string) => {
@@ -135,7 +139,10 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
     };
 
     const content = libraryInfo ? (
-      <div style={{ width: `min(${DEFAULT_GRAPH_WIDTH}px, calc(100vw - 32px))` }}>
+      <div
+        className={isFullscreen ? "flex flex-col w-full h-full overflow-hidden" : undefined}
+        style={isFullscreen ? undefined : { width: `min(${DEFAULT_GRAPH_WIDTH}px, calc(100vw - 32px))` }}
+      >
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 overflow-hidden">
             <div className="size-5 rounded flex items-center justify-center bg-[#145CF7] text-white">
@@ -145,17 +152,26 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
               {t("graph.knowledge_graph") || "知识图谱"}
             </h3>
           </div>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => setVisible(false)}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <CloseOutlined />
-          </Button>
+          <div className="flex items-center flex-none">
+            <PopupFullscreenButton
+              isFullscreen={isFullscreen}
+              onToggle={toggleFullscreen}
+            />
+            <Button
+              type="link"
+              size="small"
+              onClick={() => setVisible(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <CloseOutlined />
+            </Button>
+          </div>
         </div>
 
-        <div className="w-full" style={{ height: `min(${DEFAULT_GRAPH_HEIGHT}px, 50vh)` }}>
+        <div
+          className={isFullscreen ? "w-full flex-1 min-h-0" : "w-full"}
+          style={isFullscreen ? undefined : { height: `min(${DEFAULT_GRAPH_HEIGHT}px, 50vh)` }}
+        >
           {showGraph && (renderGraphViewer ? renderGraphViewer(graphDataRef.current) : defaultGraphRenderer(graphDataRef.current))}
         </div>
 
@@ -193,7 +209,10 @@ export const Graph = forwardRef<GraphRef, GraphProps>(
         placement="bottomLeft"
         trigger="click"
         content={content}
-        classNames={{ container: "!p-4" }}
+        classNames={{
+          root: isFullscreen ? "source-popover-fullscreen" : undefined,
+          container: "!p-4",
+        }}
         // bottomLeft 等边缘 placement 默认只有翻转（adjustX/Y）没有视口内平移（shiftX/Y），
         // 弹层在移动端可能显示不全；补充 shift 让 rc-trigger 强制将弹层限制在视口内
         align={{ overflow: { adjustX: true, adjustY: true, shiftX: true, shiftY: true } }}

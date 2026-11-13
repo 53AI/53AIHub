@@ -2,7 +2,7 @@
 
 import { memo } from "react";
 import { Tooltip } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useChatAdapters } from "../../i18n";
 import type { FileItem } from "../../types/message";
 
@@ -71,7 +71,7 @@ function SpecifiedFilesInner({
     const inner = (
       <>
         <SvgIcon className="flex-none" name="corner-down-right" />
-        {file.icon && <img src={file.icon} className="size-3" alt="" />}
+        {file.icon && <SafeImage src={file.icon} className="size-3" alt="" />}
         <p className="text-sm truncate">{file.name || file.title || file.file_name || file.filename}</p>
       </>
     );

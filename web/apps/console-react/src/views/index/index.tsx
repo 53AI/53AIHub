@@ -6,7 +6,7 @@ import { useLocaleStore } from "@/stores/modules/locale";
 import { useEnv } from "@/hooks/useEnv";
 import { Header } from "@/components/Header";
 import { LanguageDropdown } from "@/components/LanguageDropdown";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { ServiceDialog } from "@/components/ServiceDialog";
 import { VERSION_MODULE } from "@/constants/enterprise";
 import { useVersion } from "@/hooks";
@@ -177,7 +177,7 @@ export function HomePage() {
             {/* Enterprise info */}
             <div className="flex items-center gap-4">
               {enterpriseInfo.logo && (
-                <img
+                <SafeImage
                   className="max-w-[180px] max-h-8 object-contain"
                   src={enterpriseInfo.logo}
                   alt=""
@@ -334,14 +334,14 @@ export function HomePage() {
             {/* QR Code card */}
             <div className="w-full h-[200px] p-5 bg-white rounded-lg">
               <div className="w-full h-full flex flex-col items-center justify-center bg-[#F5F7FA] rounded-lg group cursor-pointer">
-                <img
+                <SafeImage
                   className="w-10 mb-4 transition-all duration-300 ease-in-out group-hover:hidden"
-                  src={getRealPath("/images/index/wechat.png")}
+                  src={"/images/index/wechat.png"}
                   alt=""
                 />
-                <img
+                <SafeImage
                   className="w-[120px] h-[120px] mb-2 transition-all duration-300 ease-in-out hidden group-hover:block"
-                  src={getRealPath("/images/index/qrcode.png")}
+                  src={"/images/index/qrcode.png"}
                   alt=""
                 />
                 <h6 className="text-base text-primary font-medium mb-2 group-hover:hidden">

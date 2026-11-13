@@ -15,7 +15,7 @@ import { filesApi } from '@/api/modules/files'
 import type { DuplicateFile, BatchUploadInitResponse, BatchUploadFileParams } from '@/api/modules/files/types'
 import { formatFileInfo } from '@/api/modules/files/transform'
 import { getPublicPath } from '@/utils/config'
-import { SvgIcon } from '@km/shared-components-react'
+import { SvgIcon, SafeImage } from '@km/shared-components-react';
 import { enableBeforeUnloadProtection } from '@/utils/before-unload-guard'
 import type { UploadStatus } from './constants'
 import {
@@ -289,7 +289,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
           folderMap.set(folder, {
             name: folder,
             type: 'directory',
-            icon: getPublicPath('/images/file/folder.png'),
+            icon: '/images/file/folder.png',
             children: [],
             id: `folder-${folder}`
           })
@@ -1298,7 +1298,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
       return (
         <div className="flex-1 h-[50px] pr-2.5 flex items-center gap-2 overflow-hidden">
           <div className="flex-none size-6">
-            <img className="size-6" src={node.icon} alt="" />
+            <SafeImage className="size-6" src={node.icon} alt="" />
           </div>
           <div className="flex-1 overflow-hidden">
             <div className="text-sm font-medium text-[#1D1E1F] truncate" title={node.name}>
@@ -1327,7 +1327,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
     return (
       <div className="flex-1 h-[50px] pr-2.5 flex items-center gap-2 overflow-hidden">
         <div className="flex-none size-6">
-          <img className="size-6" src={node.icon} alt="" />
+          <SafeImage className="size-6" src={node.icon} alt="" />
         </div>
         <div className="flex-1 overflow-hidden">
           <div className="text-sm font-medium text-[#1D1E1F] truncate" title={node.file?.name}>
@@ -1534,7 +1534,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
         <div className="space-y-2 max-h-[500px] overflow-y-auto">
           {duplicateFiles.map(item => (
             <div key={item.existing_id} className="flex items-center gap-2">
-              <img className="size-5" src={item.icon} alt="" />
+              <SafeImage className="size-5" src={item.icon} alt="" />
               <Tooltip title={item.relative_path}>
                 <div className="flex-1 text-sm text-[#1D1E1F] truncate">{item.relative_path}</div>
               </Tooltip>
@@ -1560,7 +1560,7 @@ export const FileUpload = forwardRef<FileUploadRef, FileUploadProps>(({
             const displayName = (item.file as any).webkitRelativePath || item.file.name
             return (
               <div key={`${displayName}-${index}`} className="flex items-center gap-2">
-                <img className="size-5" src={item.icon} alt="" />
+                <SafeImage className="size-5" src={item.icon} alt="" />
                 <Tooltip title={displayName}>
                   <div className="flex-1 text-sm text-[#1D1E1F] truncate">{displayName}</div>
                 </Tooltip>

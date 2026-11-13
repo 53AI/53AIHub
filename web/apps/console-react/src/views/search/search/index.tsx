@@ -141,6 +141,7 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
           channel_type: 0,
           model_name: "",
           temperature: 0.7,
+          web_search_enabled: false,
         },
         deep_thinking_config: {
           enable: false,
@@ -148,6 +149,7 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
           channel_type: 0,
           model_name: "",
           temperature: 0.7,
+          web_search_enabled: false,
         },
       },
       agent_usage: AGENT_USAGES.KM_AI_SEARCH,
@@ -207,6 +209,7 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
       next.settings.fast_reasoning_config.channel_id = Number(channel_id);
       next.settings.fast_reasoning_config.model_name = model_name;
       next.settings.fast_reasoning_config.channel_type = Number(channel_type);
+      next.settings.fast_reasoning_config.web_search_enabled = false;
       return next;
     });
   };
@@ -225,6 +228,7 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
       next.settings.deep_thinking_config.channel_id = Number(channel_id);
       next.settings.deep_thinking_config.model_name = model_name;
       next.settings.deep_thinking_config.channel_type = Number(channel_type);
+      next.settings.deep_thinking_config.web_search_enabled = false;
       return next;
     });
   };
@@ -506,6 +510,16 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
                     temperature={
                       form.settings.fast_reasoning_config.temperature
                     }
+                    webSearchEnabled={Boolean(
+                      form.settings.fast_reasoning_config.web_search_enabled,
+                    )}
+                    onWebSearchChange={(enabled) =>
+                      setForm((prev: any) => {
+                        const next = deepCopy(prev);
+                        next.settings.fast_reasoning_config.web_search_enabled = enabled;
+                        return next;
+                      })
+                    }
                     type={MODEL_USE_TYPE.REASONING}
                     mode={REASONING_MODE.FAST}
                     onChange={setFastReasoningValue}
@@ -550,6 +564,16 @@ export const SearchSettingPage = forwardRef<SearchSettingRef, SearchSettingPageP
                       modelName={form.settings.deep_thinking_config.model_name}
                       temperature={
                         form.settings.deep_thinking_config.temperature
+                      }
+                      webSearchEnabled={Boolean(
+                        form.settings.deep_thinking_config.web_search_enabled,
+                      )}
+                      onWebSearchChange={(enabled) =>
+                        setForm((prev: any) => {
+                          const next = deepCopy(prev);
+                          next.settings.deep_thinking_config.web_search_enabled = enabled;
+                          return next;
+                        })
                       }
                       type={MODEL_USE_TYPE.REASONING}
                       mode={REASONING_MODE.DEEP}

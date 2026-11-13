@@ -212,6 +212,37 @@ func IsModelInChannelModels(modelName, channelModels string) bool {
 	return false
 }
 
+// DashScopeNativeBase 返回百炼原生异步接口的网关基址与 workspace_id。
+//
+// 原生接口（/api/v1/services/audio/asr/*、/api/v1/uploads）挂在网关根路径下，而
+// voice_models[model].api_domain 存的可能是两种值：
+//   - 百炼原生地址（如 https://dashscope.aliyuncs.com）：直接使用；
+//   - OpenAI 兼容地址（常与 channel.base_url 同值，形如 .../compatible-mode[/v1]）：
+//     必须剥离兼容后缀，否则会拼出 .../compatible-mode/api/v1/... → HTTP 404。
+//
+// 未配置 api_domain 时回退为 workspace 专属网关 https://{workspace_id}.cn-beijing.maas.aliyuncs.com。
+func DashScopeNativeBase(vm map[string]interface{}, modelName string) (apiDomain, workspaceID string, err error) {
+	workspaceID, _ = vm["workspace_id"].(string)
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return "", "", fmt.Errorf("模型 %s 必须配置 workspace_id", modelName)
+	}
+	// 与 service/hub_adaptor/bailian/rerank.go 的 RerankURL 相同的兼容后缀剥离规则。
+	if d, ok := vm["api_domain"].(string); ok {
+		native := strings.TrimRight(strings.TrimSpace(d), "/")
+		for _, suffix := range []string{"/compatible-mode/v1", "/compatible-mode", "/api/v1"} {
+			if strings.HasSuffix(native, suffix) {
+				native = strings.TrimSuffix(native, suffix)
+				break
+			}
+		}
+		if native != "" {
+			return native, workspaceID, nil
+		}
+	}
+	return "https://" + workspaceID + ".cn-beijing.maas.aliyuncs.com", workspaceID, nil
+}
+
 // MarshalChannelCustomConfig 序列化渠道 custom_config 对象
 func MarshalChannelCustomConfig(cfg ChannelCustomConfig) (string, error) {
 	if cfg == nil {

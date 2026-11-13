@@ -18,9 +18,10 @@ const (
 // DeviceStatus 设备可用性探测结果。
 // Available=false 时 UnavailableReason 给出原因分类（ReasonKeyInvalid / ReasonNetworkError）。
 type DeviceStatus struct {
-	Available         bool   `json:"available"`
-	TotalRecordings   int    `json:"total_recordings"`
-	UnavailableReason string `json:"unavailable_reason,omitempty"`
+	Available            bool   `json:"available"`
+	TotalRecordings      int    `json:"total_recordings"`
+	TotalRecordingsExact bool   `json:"total_recordings_exact"` // total_recordings 是否为精确总数（TicNote 为轻量探测，false）
+	UnavailableReason    string `json:"unavailable_reason,omitempty"`
 }
 
 // classifyAuthError 按错误信息分类：鉴权类响应（HTTP 401/403、登录业务 code 11864/11865/11866）
@@ -55,6 +56,16 @@ func FriendlySyncError(err error) string {
 			return "TicNote Key 不可用，请检查设备 Key 是否正确"
 		}
 	}
+	for _, kw := range []string{"远端未找到"} {
+		if strings.Contains(msg, kw) {
+			return "该录音在设备端已不存在（可能已删除），无法同步"
+		}
+	}
+	for _, kw := range []string{"缺少音频 URL", "缺少音频地址"} {
+		if strings.Contains(msg, kw) {
+			return "该录音在设备端没有可下载的音频（可能尚未上传云端或音频已过期），暂时无法同步"
+		}
+	}
 	return "TicNote 服务暂不可用，请稍后重试"
 }
 
@@ -77,7 +88,7 @@ func HTTPStatusForError(err error) int {
 // 并拉取前 maxProbeProjects 个项目统计录音数（轻量探测，避免大账号全量遍历拖慢）。
 // 探测失败不返回 error，以 status.Available=false + reason 表达。
 func (s *SyncService) CheckStatus(ctx context.Context, appkey string) (*DeviceStatus, error) {
-	client := s.clientFor(appkey)
+	client := s.clientFor(ctx, appkey)
 	token, err := client.Login(ctx, appkey)
 	if err != nil {
 		return &DeviceStatus{Available: false, UnavailableReason: classifyAuthError(err)}, nil
@@ -86,5 +97,6 @@ func (s *SyncService) CheckStatus(ctx context.Context, appkey string) (*DeviceSt
 	if err != nil {
 		return &DeviceStatus{Available: false, UnavailableReason: classifyAuthError(err)}, nil
 	}
-	return &DeviceStatus{Available: true, TotalRecordings: len(recordings)}, nil
+	// 只遍历前 maxProbeProjects 个项目，total 为探测值（非精确总数）
+	return &DeviceStatus{Available: true, TotalRecordings: len(recordings), TotalRecordingsExact: false}, nil
 }

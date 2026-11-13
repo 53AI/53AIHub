@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>2CEO · 经营工作台</title>
+<style>
+:root{color-scheme:light dark;font:14px/1.6 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;--ink:light-dark(#20242b,#f2f3f5);--sub:light-dark(#67717e,#acb3bf);--bg:light-dark(#fff,#17191d);--tile:light-dark(#f6f7f9,#23262c);--line:light-dark(#e8ebef,#343840);--accent:light-dark(#235f92,#85b9ec)}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--ink);margin:0}main{max-width:980px;padding:28px 22px;margin:auto}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}.brand{display:flex;align-items:center;gap:12px}.mark{background:#203f60;color:#fff;font-size:14px;font-weight:800;border-radius:12px;padding:9px}h1{font-size:24px;line-height:1.25;margin:0}h2{font-size:18px;margin:0 0 12px}p{margin:6px 0}.muted{color:var(--sub)}.tiny{font-size:12px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:24px}.stat{background:var(--tile);border-radius:14px;padding:18px}.stat strong{font-size:28px;display:block}.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px}button{font:inherit;cursor:pointer;border:1px solid var(--line);border-radius:10px;background:var(--tile);color:var(--ink);padding:9px 14px}button:hover{border-color:var(--accent)}button:focus-visible{outline:2px solid var(--accent)}button.primary{background:#235f92;color:white;border-color:#235f92}button.active{border-color:var(--accent);color:var(--accent)}.grow{flex:1}.item{display:block;width:100%;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:10px}.item strong{font-size:16px;display:block;margin:6px 0}.pill{display:inline-block;font-size:11px;padding:2px 8px;background:var(--tile);border:1px solid var(--line);border-radius:20px}.split{display:grid;grid-template-columns:2fr 1fr;gap:18px}.panel{border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}.source{border-top:1px solid var(--line);padding:10px 0}.source:first-of-type{border-top:0}.error{padding:16px;background:var(--tile);border-radius:12px}.empty{padding:40px 14px;text-align:center;color:var(--sub)}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}a{color:var(--accent)}@media(max-width:640px){main{padding:18px 14px}.cards{gap:7px}.stat{padding:12px}.stat strong{font-size:24px}.split{grid-template-columns:1fr}}
+.meeting-overview{border-top:1px solid var(--line);padding-top:23px;margin:18px 0 25px}.meeting-header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}.meeting-rows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.meeting-record{display:block;width:100%;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:13px 16px}.meeting-record:hover{border-color:var(--accent)}.meeting-record strong{display:block;line-height:1.6;margin:4px 0}.section-note{font-size:12px;color:var(--sub)}@media(max-width:680px){.meeting-rows{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main>
+<header><div class="brand"><span class="mark">2CEO</span><div><h1>经营工作台</h1><div class="muted tiny">懂经营上下文的 AI 二号位</div></div></div><button id="refresh" type="button">刷新</button></header>
+<div id="status" role="status" class="muted tiny">正在连接 2CEO…</div>
+<div class="cards"><div class="stat"><span class="muted">值得关注</span><strong id="count-attention">—</strong></div><div class="stat"><span class="muted">行动计划</span><strong id="count-action">—</strong></div><div class="stat"><span class="muted">已产出成果</span><strong id="count-results">—</strong></div></div>
+<section class="meeting-overview" aria-label="最近会议洞察"><div class="meeting-header"><h2>最近会议洞察</h2><span class="section-note">来自已授权账号的真实录音，独立于行动机会统计</span></div><div id="recent-meetings" class="meeting-rows"><div class="empty">正在读取最近会议…</div></div><p class="section-note">完整编排页面请在「会议洞察」中阅读；以下三项数字只统计已进入行动系统的机会、计划和成果。</p></section>
+<div class="toolbar" role="tablist" aria-label="工作台视图"><button class="active" data-tab="attention" role="tab">经营关注</button><button data-tab="actions" role="tab">行动与成果</button><span class="grow"></span><span class="muted tiny">数据来自已授权的 53AI 系统</span></div>
+<div id="content"><div class="empty">正在读取经营数据…</div></div>
+</main>
+<script>
+"use strict";
+const state={attention:[],actions:[],meetings:[],meetingStatus:"loading",tab:"attention",selected:null,detail:null,loading:false};
+const pending=new Map();let requestId=0;
+const el=id=>document.getElementById(id);
+const text=(tag,value,cls)=>{const node=document.createElement(tag);node.textContent=String(value??"");if(cls)node.className=cls;return node};
+const box=(tag,cls)=>{const node=document.createElement(tag);if(cls)node.className=cls;return node};
+function notify(method,params){window.parent.postMessage({jsonrpc:"2.0",method,params:params||{}},"*")}
+function request(method,params){return new Promise((resolve,reject)=>{const id=++requestId;pending.set(id,{resolve,reject});window.parent.postMessage({jsonrpc:"2.0",id,method,params:params||{}},"*")})}
+function callTool(name,args){return request("tools/call",{name,arguments:args||{}})}
+function resultData(response){if(response?.isError){const reason=response?.content?.find(x=>x.type==="text")?.text||"2CEO 工具调用失败";throw new Error(reason)}if(response?.structuredContent)return response.structuredContent;const t=response?.content?.find(x=>x.type==="text")?.text;if(t){try{return JSON.parse(t)}catch{throw new Error("2CEO 返回了无法解析的业务数据")}}throw new Error("2CEO 未返回可用的业务数据")}
+function errorMessage(e){return typeof e==="string"?e:(e?.message||"请求失败，请刷新重试")}
+function setStatus(message){el("status").textContent=message}
+function date(ts){if(!ts)return"";return new Date(ts>1e12?ts:ts*1000).toLocaleDateString("zh-CN")}
+function label(item){return item?.type_label||item?.type||"经营关注"}
+function isFinished(plan){return Boolean(plan?.result_asset||plan?.action_summary?.result_asset_id)}
+function fillCounts(){el("count-attention").textContent=state.attention.filter(i=>i.status!=="dismissed").length;el("count-action").textContent=state.actions.length;el("count-results").textContent=state.actions.filter(isFinished).length}
+function add(parent,...children){children.forEach(n=>parent.append(n));return parent}
+function plainSummary(raw){return String(raw||"").replace(/^\s{0,3}#{1,6}\s*/gm,"").replace(/\*\*|__|\*/g,"").replace(/\s+/g," ").trim()}
+function recentMeetings(){
+    const root=clear(el("recent-meetings"));
+    if(state.meetingStatus==="loading"){root.append(text("div","正在读取会议洞察…","empty"));return}
+    if(state.meetingStatus==="error"){root.append(text("div","会议洞察暂时无法读取；行动系统的数据不受影响。","error"));return}
+    if(!state.meetings.length){root.append(text("div","当前页暂未找到已有洞察的会议，不影响经营关注与行动计划的独立统计。","empty"));return}
+    state.meetings.slice(0,4).forEach(item=>{
+        const card=box("button","meeting-record");card.type="button";
+        add(card,text("span",item.scene||"会议","pill"),text("strong",item.title||"未命名会议"),
+            text("p",plainSummary(item.preview||"已生成洞察")+"", "muted tiny"));
+        card.onclick=()=>followUpMeeting(item);
+        root.append(card)
+    });
+}
+async function followUpMeeting(item){
+    const prompt="请通过 2ceo.meetings.detail 工具读取会议 "+item.file_id+" 的真实洞察，并与我探讨："+(item.title||"本场会议")+"。请先核实原始资料，不要把推断当成事实。";
+    try{await request("ui/message",{role:"user",content:[{type:"text",text:prompt}]})}
+    catch(e){setStatus("无法发起会议探讨："+errorMessage(e))}
+}
+function clear(node){node.replaceChildren();return node}
+function button(label,fn,cls){const b=text("button",label,cls);b.type="button";b.onclick=fn;return b}
+function panel(title,value){const p=box("section","panel");add(p,text("h2",title),text("p",value||"暂无记录","muted"));return p}
+function list(){state.selected=null;state.detail=null;render()}
+function render(){fillCounts();recentMeetings();document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("active",b.dataset.tab===state.tab));const target=clear(el("content"));if(state.selected && state.tab==="attention")return renderDetail(target);if(state.tab==="actions")return renderActions(target);return renderAttention(target)}
+function renderAttention(target){const items=state.attention.filter(i=>i.status!=="dismissed");if(!items.length){add(target,text("div","还没有需要关注的行动机会。数据不足时不会生成演示事项。","empty"));return}items.forEach(item=>{const card=box("button","item");card.type="button";add(card,text("span",label(item),"pill"),text("strong",item.title),text("div",item.reason||item.objective,"muted"),text("div","优先级 "+(item.priority||"未标记")+" · "+date(item.updated_time||item.created_time),"muted tiny"));card.onclick=()=>loadDetail(item.opportunity_id);target.append(card)})}
+function renderActions(target){if(!state.actions.length){add(target,text("div","暂无行动计划。","empty"));return}state.actions.forEach(plan=>{const card=box("section","panel");add(card,text("div",plan.status||"草稿","pill"),text("h2",plan.objective||"未命名行动"),text("div","计划编号："+(plan.plan_id||"—"),"muted tiny"));if(plan.action_summary)card.append(text("p","执行状态："+plan.action_summary.status));if(isFinished(plan))card.append(text("p","已有成果，可在原二号总裁中查看。"));target.append(card)})}
+function renderDetail(target){const item=state.detail;if(!item){add(target,text("div","正在加载详情…","empty"));return}target.append(button("← 返回关注",list));const wrap=box("div","split"),main=box("div"),side=box("div");const head=box("section","panel");add(head,text("span",label(item),"pill"),text("h2",item.title),text("p",item.reason||"暂无说明"),text("p","状态："+(item.status||"未知")+" · 更新时间："+date(item.updated_time),"muted tiny"));main.append(head);main.append(panel("期望达成",item.objective));main.append(panel("预计交付",item.display_deliverable));main.append(panel("尚需确认",item.human_dependency));const sources=box("section","panel");sources.append(text("h2","关联来源"));const refs=[...(item.source_links||[]),...(item.source_refs||[])];if(refs.length===0)sources.append(text("p","暂无可核验的关联来源；请不要将 AI 的解释视为已经证实的事实。","muted"));refs.forEach(src=>{const line=box("div","source");add(line,text("strong",src.title||src.label||src.source_type||"来源"),text("div",src.source_id||src.url||src.source_meeting_id||"关联原始记录","muted tiny"));sources.append(line)});side.append(sources);const ops=box("div","actions");ops.append(button("和 2CEO 探讨",()=>followUp(item,false),"primary"));ops.append(button("规划 AI 行动",()=>followUp(item,true)));main.append(ops);add(wrap,main,side);target.append(wrap)}
+async function loadDetail(id){if(state.loading)return;state.loading=true;state.selected=id;state.detail=null;render();try{const r=resultData(await callTool("2ceo.attention.detail",{opportunity_id:id}));state.detail=r.item||null;setStatus("详情已更新");render()}catch(e){state.selected=null;setStatus("详情读取失败："+errorMessage(e));render()}finally{state.loading=false}}
+async function followUp(item,planning){const prompt=planning?"请根据已连接的 2CEO 经营关注 ID "+item.opportunity_id+" 制定可核验的 AI 行动规划。先列明数据需求、步骤、交付物和审批边界，未经我明确授权不得执行。":"请根据已连接的 2CEO 经营关注 ID "+item.opportunity_id+" 与我探讨："+item.title+"。请调用 2CEO 工具核对关联来源和事实，提出正反解释及证据缺口，不得编造经营资料。";try{await request("ui/message",{role:"user",content:[{type:"text",text:prompt}]})}catch(e){setStatus("无法发起对话："+errorMessage(e))}}
+function acceptData(data){if(data?.attention?.items)state.attention=data.attention.items;if(data?.actions?.items)state.actions=data.actions.items;fillCounts();render()}
+async function refresh(){
+    if(state.loading)return;
+    state.loading=true;
+    state.meetingStatus="loading";
+    setStatus("正在同步经营数据…");
+    recentMeetings();
+    try{
+        const [attention,actions,meetings]=await Promise.allSettled([
+            callTool("2ceo.attention.list",{}),
+            callTool("2ceo.action.list",{}),
+            callTool("2ceo.meetings.list",{offset:0,limit:20,keyword:""})
+        ]);
+        const problems=[];
+        if(attention.status==="fulfilled"){
+            try{state.attention=resultData(attention.value).items||[]}catch(e){problems.push("经营关注："+errorMessage(e))}
+        }else{problems.push("经营关注读取失败")}
+        if(actions.status==="fulfilled"){
+            try{state.actions=resultData(actions.value).items||[]}catch(e){problems.push("行动计划："+errorMessage(e))}
+        }else{problems.push("行动计划读取失败")}
+        if(meetings.status==="fulfilled"){
+            try{const parsed=resultData(meetings.value);state.meetings=parsed.items||[];state.meetingStatus="ready"}
+            catch(e){state.meetings=[];state.meetingStatus="error";problems.push("会议洞察："+errorMessage(e))}
+        }else{state.meetings=[];state.meetingStatus="error";problems.push("会议洞察读取失败")}
+        setStatus(problems.length?"部分数据未能更新："+problems.join("；"):"已读取当前授权账户的经营数据");
+        render();
+    }finally{state.loading=false}
+}
+window.addEventListener("message",event=>{if(event.source!==window.parent)return;const msg=event.data;if(!msg||msg.jsonrpc!=="2.0")return;if(msg.id!==undefined&&pending.has(msg.id)){const p=pending.get(msg.id);pending.delete(msg.id);msg.error?p.reject(msg.error):p.resolve(msg.result);return}if(msg.method==="ui/notifications/tool-result")acceptData(msg.params?.structuredContent)},{passive:true});
+el("refresh").onclick=refresh;document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.selected=null;render()});
+request("ui/initialize",{protocolVersion:"2026-01-26",appInfo:{name:"2CEO",version:"0.1.0"},appCapabilities:{}}).then(()=>{notify("ui/notifications/initialized",{});refresh()}).catch(e=>setStatus("ChatGPT App 初始化失败："+errorMessage(e)));
+</script>
+</body></html>

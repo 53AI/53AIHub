@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/model"
 	"gorm.io/gorm"
 )
@@ -106,6 +108,29 @@ func ReuseSourceHasMinutes(ctx context.Context, eid, srcFileID int64) (bool, err
 	return true, nil
 }
 
+// copyRecordingASRSource preserves the raw ASR snapshot without exposing it to transcript readers.
+func copyRecordingASRSource(tx *gorm.DB, srcFileID, dstFileID int64, crossUser bool) error {
+	var source model.RecordingFileSummary
+	err := tx.Where("file_id = ? AND template_id = ?", srcFileID, -3).First(&source).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	if err := tx.Where("file_id = ? AND template_id = ?", dstFileID, -3).Delete(&model.RecordingFileSummary{}).Error; err != nil {
+		return err
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	content := string(source.SummaryContent)
+	if crossUser {
+		content = StripTranscriptContactJSON(content)
+	}
+	return tx.Create(&model.RecordingFileSummary{
+		FileID: dstFileID, TemplateID: -3,
+		TemplateName: "ASR原始快照", SummaryContent: model.LongText(content),
+	}).Error
+}
+
 // ReuseTranscriptForFile 将源文件转写拷贝到目标，置转写状态 completed，继承 parse_type。
 // 新布局：目标 FileBody=转写 Markdown、目标 Summary(-1)=转写原文（原始 JSON）。
 func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, userID int64) error {
@@ -129,6 +154,15 @@ func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, user
 	if err != nil {
 		return fmt.Errorf("渲染转写 Markdown 失败: %w", err)
 	}
+
+	// 跨用户复用防腐：若目标用户与源文件用户不同，保留替换后的展示姓名，但剥离私有人员 ID 注释
+	crossUser := srcFile.UserID != userID
+	sourceMD := md
+	if crossUser {
+		md = StripTranscriptContactComments(md)
+		transcriptRaw = StripTranscriptContactJSON(transcriptRaw)
+	}
+
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("eid = ? AND file_id = ?", eid, dstFileID).Delete(&model.FileBody{}).Error; err != nil {
 			return err
@@ -151,12 +185,27 @@ func ReuseTranscriptForFile(ctx context.Context, eid, srcFileID, dstFileID, user
 			InferenceModelID: 0,
 			SummaryContent:   model.LongText(transcriptRaw),
 		}
-		return tx.Create(ts).Error
+		if err := tx.Create(ts).Error; err != nil {
+			return err
+		}
+		return copyRecordingASRSource(tx, srcFileID, dstFileID, crossUser)
 	}); err != nil {
 		return fmt.Errorf("拷贝转写 FileBody 失败: %w", err)
 	}
 	if err := model.SetFileTranscriptionStatus(dstFileID, "completed"); err != nil {
 		return err
+	}
+
+	// 发言人快照：同用户完整继承；跨用户仅继承姓名，清空私有人员 ID（新用户看不到别人的人员卡片）
+	snapshots := BuildSpeakerSnapshotsFromMarkdown(sourceMD)
+	if crossUser {
+		for i := range snapshots {
+			snapshots[i].ContactID = ""
+			snapshots[i].Avatar = ""
+		}
+	}
+	if err := model.SetFileSpeakerSnapshots(dstFileID, snapshots); err != nil {
+		logger.Warnf(ctx, "【转写复用】保存发言人快照失败，列表参会人员将延后补齐: fileID=%d err=%v", dstFileID, err)
 	}
 	// parse_type 继承源（前端据此区分转写来源）
 	if srcFile.ParseType != "" && srcFile.ParseType != dstFile.ParseType {
@@ -184,6 +233,10 @@ func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID 
 	if err != nil {
 		return fmt.Errorf("读源转写 Summary(-1) 失败: %w", err)
 	}
+	srcFile, err := model.GetFileByID(eid, srcFileID)
+	if err != nil {
+		return err
+	}
 	dstFile, err := model.GetFileByID(eid, dstFileID)
 	if err != nil {
 		return err
@@ -203,6 +256,14 @@ func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID 
 		}
 		fileBodyMD = md
 	}
+
+	// 跨用户复用防腐：若目标用户与源文件用户不同，保留替换后的展示姓名，但剥离私有人员 ID 注释
+	summaryRaw := string(srcTranscript.SummaryContent)
+	if srcFile.UserID != userID {
+		fileBodyMD = StripTranscriptContactComments(fileBodyMD)
+		summaryRaw = StripTranscriptContactJSON(summaryRaw)
+	}
+
 	if err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// 目标 FileBody = 转写 Markdown
 		if err := tx.Where("eid = ? AND file_id = ?", eid, dstFileID).Delete(&model.FileBody{}).Error; err != nil {
@@ -224,7 +285,7 @@ func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID 
 			TemplateID:       -1,
 			TemplateName:     "转写原文",
 			InferenceModelID: 0,
-			SummaryContent:   srcTranscript.SummaryContent,
+			SummaryContent:   model.LongText(summaryRaw),
 		}
 		if err := tx.Create(ts).Error; err != nil {
 			return err
@@ -241,7 +302,10 @@ func ReuseMinutesForFile(ctx context.Context, eid, srcFileID, dstFileID, userID 
 			SummaryContent:   srcMinutes.SummaryContent,
 			Status:           "completed",
 		}
-		return tx.Create(ms).Error
+		if err := tx.Create(ms).Error; err != nil {
+			return err
+		}
+		return copyRecordingASRSource(tx, srcFileID, dstFileID, srcFile.UserID != userID)
 	}); err != nil {
 		return fmt.Errorf("拷贝纪要失败: %w", err)
 	}

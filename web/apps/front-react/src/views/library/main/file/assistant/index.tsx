@@ -10,12 +10,13 @@ import {
 } from "react";
 import { CloseOutlined } from "@ant-design/icons";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { ChatAssistant, ChatRef } from "./Chat";
 import { MapAssistant } from "./Map";
 import { AgentApp } from "./AgentApp";
 import { ChatConfigProvider } from "@km/shared-business/chat";
 import { chatAdapters } from "@/adapters/chat-adapters";
+import { getPublicPath } from "@/utils/config";
 import { useEnterpriseStore } from "@/stores/modules/enterprise";
 import { AI_ICON_URL, MAP_ICON_URL } from "../components/sidebar-app-item";
 import "./index.css";
@@ -47,6 +48,8 @@ interface AssistantProps {
   insightRegeneratePanel?: ReactNode;
   /** 录音端参谋洞察面板的标题与图标（与 chat/map 对齐） */
   insightRegenerateHeader?: { title: string; img: string };
+  /** 消息分享来源类型（file=知识库文档 / record=安心录录音），影响分享链接的 from 参数 */
+  shareFrom?: "file" | "record";
 }
 
 export interface AssistantRef {
@@ -69,6 +72,7 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
       onCollapsed,
       insightRegeneratePanel,
       insightRegenerateHeader,
+      shareFrom,
     },
     ref,
   ) => {
@@ -243,13 +247,11 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
         >
         {/* Header */}
         <div className="flex-none h-[68px] py-1 px-5 flex items-center gap-2 border-b">
-          <img
+          <SafeImage
             className="size-5"
             src={curApp.img}
             alt=""
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = AI_ICON_URL;
-            }}
+            fallback={AI_ICON_URL}
           />
           <div className="flex-1 text-base text-[#1D1E1F]">{curApp.title}</div>
           {supportedFileExts.includes(fileInfo?.file_ext) &&
@@ -292,6 +294,7 @@ const AssistantView = forwardRef<AssistantRef, AssistantProps>(
               agentInfo={chatAgent}
               fileInfo={fileInfo}
               autoSelectEnabled={autoSelectEnabled}
+              shareFrom={shareFrom}
               ref={chatAppRef}
               onOpenAi={onOpenChat}
             />

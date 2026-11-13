@@ -70,6 +70,10 @@ type File struct {
 	// 媒体时长（毫秒），由听悟 AudioInfo.Duration 或 FFprobe 探测写入
 	DurationMs int64 `json:"duration_ms" gorm:"not null;default:0;comment:'媒体时长(毫秒)'"`
 
+	// RecordingStartTime 开始录音时间戳（毫秒）；0 表示未记录（普通文档或存量未回填）。
+	// 对外展示值经 EffectiveRecordingStartTime 归一：仅录音来源在无效时回退创建时间。
+	RecordingStartTime int64 `json:"recording_start_time" gorm:"not null;default:0;comment:'开始录音时间戳(毫秒)'"`
+
 	// 字符统计字段
 	CharacterCount int `json:"character_count" gorm:"not null;default:0;comment:'字符数'"`
 
@@ -184,6 +188,28 @@ func (f *File) IsMyRecordingResource() bool {
 	return f.IsRecordingOriginType()
 }
 
+// MinValidRecordingStartTimeMs 开始录音时间的合理性下限（2000-01-01T00:00:00Z，毫秒）。
+// 只用于挡「未传/负数」与「秒当毫秒」这类单位错误；不设未来上界：设备可能长时间离线后才同步，
+// 录音发生时间与导入时间相隔多久都属正常。
+const MinValidRecordingStartTimeMs int64 = 946684800000
+
+// IsValidRecordingStartTime 判定毫秒开始录音时间是否为可信时间（仅判是否为时间，不判早晚）。
+func IsValidRecordingStartTime(t int64) bool {
+	return t >= MinValidRecordingStartTimeMs
+}
+
+// EffectiveRecordingStartTime 返回对外展示的开始录音时间。
+// 非录音来源不适用，恒为 0；录音来源取值无效时回退文件创建时间，保证前端总有可展示值。
+func (f *File) EffectiveRecordingStartTime() int64 {
+	if f == nil || !f.IsRecordingOriginType() {
+		return 0
+	}
+	if IsValidRecordingStartTime(f.RecordingStartTime) {
+		return f.RecordingStartTime
+	}
+	return f.CreatedTime
+}
+
 // PrepareForCreate 校验路径并补默认状态，供录音导入/第三方同步等非标准创建路径复用
 // （标准上传走 CreateFileRecord）。路径校验：非空、文件必须有扩展名；状态补默认值。
 func (f *File) PrepareForCreate() error {
@@ -252,12 +278,14 @@ type FileCleaningRuleInfo struct {
 
 	// 纪要/洞察/转写状态，由 GenerateMeetingMinutes/GenerateInsights/转录策略 写入
 	// 独立于管线状态，避免被 pipeline 的 UpdateFileCleaningRuleInfoHelper 覆盖
-	MeetingMinutesStatus    string `json:"meeting_minutes"`
-	MeetingMinutesError     string `json:"meeting_minutes_error,omitempty"`
-	MeetingMinutesErrorType string `json:"meeting_minutes_error_type,omitempty"`
-	InsightsStatus          string `json:"insights"`
-	InsightsError           string `json:"insights_error,omitempty"`
-	InsightsErrorType       string `json:"insights_error_type,omitempty"`
+	// 记忆编译成功的纪要+转写来源指纹。复用现有文件阶段状态，不新增表。
+	RecordingMemorySourceHash string `json:"recording_memory_source_hash,omitempty"`
+	MeetingMinutesStatus      string `json:"meeting_minutes"`
+	MeetingMinutesError       string `json:"meeting_minutes_error,omitempty"`
+	MeetingMinutesErrorType   string `json:"meeting_minutes_error_type,omitempty"`
+	InsightsStatus            string `json:"insights"`
+	InsightsError             string `json:"insights_error,omitempty"`
+	InsightsErrorType         string `json:"insights_error_type,omitempty"`
 	// InsightMode/ReasonCode/SkipReason make a normal NO_INSIGHT result
 	// distinguishable from a failed generation without adding columns.
 	InsightMode       string `json:"insight_mode,omitempty"`
@@ -271,6 +299,20 @@ type FileCleaningRuleInfo struct {
 	TranscriptionStatus    string `json:"transcription"`
 	TranscriptionError     string `json:"transcription_error,omitempty"`
 	TranscriptionErrorType string `json:"transcription_error_type,omitempty"`
+
+	// Speakers 是「发言人绑定人员」的快照：关联时刻沉淀当时的人员姓名与头像。
+	// 读取时优先按 ContactID 实时查人员表拿最新值，查不到再回退这里的默认快照。
+	Speakers []FileSpeakerSnapshot `json:"speakers,omitempty"`
+	// SpeakersHealed 标记快照已按转写回填过（含「回填后确认为空」），避免读取侧对同一文件反复扫描转写。
+	SpeakersHealed bool `json:"speakers_healed,omitempty"`
+}
+
+// FileSpeakerSnapshot 发言人绑定人员的快照项（沉在 files.cleaning_rule_info 内，不新增表）。
+// ContactID 为对外 HashID；复制到其他用户文件时必须清空，Name/Avatar 可继承。
+type FileSpeakerSnapshot struct {
+	Name      string `json:"name,omitempty"`       // 关联时刻的人员姓名（快照兜底）
+	Avatar    string `json:"avatar,omitempty"`     // 关联时刻的人员头像（快照兜底）
+	ContactID string `json:"contact_id,omitempty"` // 绑定的对外人员 ID（HashID），用于实时查询
 }
 
 func ResolveFileRunStatus(cleaningRuleInfo string) string {
@@ -674,10 +716,37 @@ func ResolveUniqueFilePath(eid, libraryID int64, desiredPath string) (string, er
 		}
 		return "", err
 	}
-	// 已占用：去 .md 后缀后追加序号（/xxx.md → /xxx-2.md → /xxx-3.md …）
-	base := strings.TrimSuffix(desiredPath, ".md")
+	// 已占用：提取基础名与扩展名后追加序号
+	// 对双扩展名（如 /xxx.mp3.md、/xxx.m4a.md）特殊处理：剥离最外层 .md 后，若内部仍包含文件扩展名，
+	// 则序号应插在内部扩展名之前，避免生成畸形的 /xxx.mp3-2.md（前台展示去 .md 后为 xxx.mp3-2）
+	hasMdSuffix := strings.HasSuffix(desiredPath, ".md")
+	trimmed := desiredPath
+	if hasMdSuffix {
+		trimmed = strings.TrimSuffix(desiredPath, ".md")
+	}
+	innerExt := path.Ext(trimmed)
+	if innerExt == path.Base(trimmed) {
+		innerExt = ""
+	}
+	var rawBase, extSuffix string
+	if innerExt != "" {
+		rawBase = strings.TrimSuffix(trimmed, innerExt)
+		if hasMdSuffix {
+			extSuffix = innerExt + ".md"
+		} else {
+			extSuffix = innerExt
+		}
+	} else {
+		rawBase = trimmed
+		if hasMdSuffix {
+			extSuffix = ".md"
+		} else {
+			extSuffix = ""
+		}
+	}
+
 	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s-%d.md", base, i)
+		candidate := fmt.Sprintf("%s-%d%s", rawBase, i, extSuffix)
 		if _, err := GetFileByPathAndLibraryNotDeleted(eid, libraryID, candidate); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return candidate, nil
@@ -1297,7 +1366,51 @@ func cascadeDeleteFileData(eid int64, fileID int64) error {
 		return fmt.Errorf("删除文件内容失败: %v", err)
 	}
 
-	// 7. 删除文件记录
+	// 7. 级联删除录音衍生数据（若表存在）
+	if tx.Migrator().HasTable(&RecordingFileSummary{}) {
+		if err := tx.Where("file_id = ?", fileID).Delete(&RecordingFileSummary{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音总结失败: %v", err)
+		}
+	}
+	if tx.Migrator().HasTable(&RecordingFileInsightPage{}) {
+		if err := tx.Where("file_id = ?", fileID).Delete(&RecordingFileInsightPage{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音决策页面失败: %v", err)
+		}
+	}
+	if tx.Migrator().HasTable(&RecordingShare{}) {
+		if err := tx.Where("file_id = ?", fileID).Delete(&RecordingShare{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音分享失败: %v", err)
+		}
+	}
+	if tx.Migrator().HasTable(&RecordingMemoryFact{}) {
+		if err := tx.Where("file_id = ?", fileID).Delete(&RecordingMemoryFact{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音记忆事实失败: %v", err)
+		}
+	}
+	if tx.Migrator().HasTable(&RecordingMemoryClaim{}) {
+		if err := tx.Where("file_id = ?", fileID).Delete(&RecordingMemoryClaim{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音记忆Claim失败: %v", err)
+		}
+	}
+	if tx.Migrator().HasTable(&RecordingCognitionCandidate{}) {
+		if err := tx.Where("file_id = ? OR source_file_id = ?", fileID, fileID).Delete(&RecordingCognitionCandidate{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音认知候选失败: %v", err)
+		}
+	}
+	if tx.Migrator().HasTable(&RecordingSyncSource{}) {
+		if err := tx.Where("file_id = ?", fileID).Delete(&RecordingSyncSource{}).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("删除录音同步源映射失败: %v", err)
+		}
+	}
+
+	// 8. 删除文件记录
 	if err := tx.Where("eid = ? AND id = ?", eid, fileID).Delete(&File{}).Error; err != nil {
 		tx.Rollback()
 		return fmt.Errorf("删除文件记录失败: %v", err)
@@ -1815,6 +1928,35 @@ func SetFileTranscriptionStatus(fileID int64, status string) error {
 	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
 }
 
+// SetFileSpeakerSnapshots 覆盖写入「发言人绑定人员」快照（保留 cleaning_rule_info 其它键）。
+// 传空切片即清空快照，重复调用幂等；写入后标记 SpeakersHealed，读取侧不再重复扫描转写。
+func SetFileSpeakerSnapshots(fileID int64, snapshots []FileSpeakerSnapshot) error {
+	var file File
+	if err := DB.Where("id = ?", fileID).Select("cleaning_rule_info").First(&file).Error; err != nil {
+		return err
+	}
+	var info FileCleaningRuleInfo
+	if file.CleaningRuleInfo != "" {
+		json.Unmarshal([]byte(file.CleaningRuleInfo), &info)
+	}
+	info.Speakers = snapshots
+	info.SpeakersHealed = true
+	data, _ := json.Marshal(info)
+	return DB.Model(&File{}).Where("id = ?", fileID).Update("cleaning_rule_info", string(data)).Error
+}
+
+// ParseFileSpeakerSnapshots 读取 cleaning_rule_info 中的快照与回填标记。
+func ParseFileSpeakerSnapshots(cleaningRuleInfo string) (snapshots []FileSpeakerSnapshot, healed bool) {
+	if strings.TrimSpace(cleaningRuleInfo) == "" {
+		return nil, false
+	}
+	var info FileCleaningRuleInfo
+	if err := json.Unmarshal([]byte(cleaningRuleInfo), &info); err != nil {
+		return nil, false
+	}
+	return info.Speakers, info.SpeakersHealed
+}
+
 // SetFileTranscriptionError 更新 FileCleaningRuleInfo 中的转写错误状态和错误信息。
 func SetFileTranscriptionError(fileID int64, status string, errMsg string, errorType string) error {
 	var file File
@@ -2026,8 +2168,26 @@ func CleanupVectorDataForFile(eid int64, fileID int64) error {
 	return nil
 }
 
-// SoftDeleteFile 执行软删除：目标标记主动删除，未主动删除的子级批量被动删除
+// SoftDeleteFile 执行软删除：目标标记主动删除，未主动删除的子级批量被动删除。
+// 针对并发场景下可能的瞬时锁等待或死锁，提供指数退避重试，保证高并发与短时间并发删除的稳定性。
 func SoftDeleteFile(eid int64, fileID int64, userID int64) error {
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		err = softDeleteFileInternal(eid, fileID, userID)
+		if err == nil {
+			return nil
+		}
+		errStr := err.Error()
+		if strings.Contains(errStr, "1205") || strings.Contains(errStr, "Lock wait timeout") || strings.Contains(errStr, "1213") || strings.Contains(errStr, "Deadlock") {
+			time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+			continue
+		}
+		return err
+	}
+	return err
+}
+
+func softDeleteFileInternal(eid int64, fileID int64, userID int64) error {
 	now := time.Now().UTC().UnixMilli()
 
 	file, err := GetFileByID(eid, fileID)
@@ -2055,26 +2215,33 @@ func SoftDeleteFile(eid int64, fileID int64, userID int64) error {
 		return err
 	}
 
-	// 标记未主动删除的子级为被动删除（仅当前未删除的）
-	if err := tx.Model(&File{}).
-		Where("eid = ? AND library_id = ? AND path LIKE ? AND is_deleted = ?", eid, file.LibraryID, file.Path+"/%", false).
-		Updates(map[string]interface{}{
-			"is_deleted":        true,
-			"is_active_deleted": false,
-			"deleted_by":        userID,
-			"deleted_at":        now,
-		}).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
 	var affectedFileIDs []int64
-	if err := tx.Model(&File{}).
-		Select("id").
-		Where("eid = ? AND library_id = ? AND is_deleted = ? AND (id = ? OR path LIKE ?)", eid, file.LibraryID, true, fileID, file.Path+"/%").
-		Pluck("id", &affectedFileIDs).Error; err != nil {
-		tx.Rollback()
-		return err
+
+	// 若为目录类型，才需处理子级文件的被动软删除与受影响文件收集；
+	// 普通文件无子级，仅自身受影响，直接走主键单行，避免无意义的 path LIKE 全库扫描与间隙锁争用。
+	if file.Type == FILE_TYPE_DIR {
+		// 标记未主动删除的子级为被动删除（仅当前未删除的）
+		if err := tx.Model(&File{}).
+			Where("eid = ? AND library_id = ? AND path LIKE ? AND is_deleted = ?", eid, file.LibraryID, file.Path+"/%", false).
+			Updates(map[string]interface{}{
+				"is_deleted":        true,
+				"is_active_deleted": false,
+				"deleted_by":        userID,
+				"deleted_at":        now,
+			}).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+
+		if err := tx.Model(&File{}).
+			Select("id").
+			Where("eid = ? AND library_id = ? AND is_deleted = ? AND (id = ? OR path LIKE ?)", eid, file.LibraryID, true, fileID, file.Path+"/%").
+			Pluck("id", &affectedFileIDs).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	} else {
+		affectedFileIDs = []int64{fileID}
 	}
 	if len(affectedFileIDs) > 0 {
 		if err := tx.Model(&EntityChunkRelation{}).
@@ -2082,6 +2249,25 @@ func SoftDeleteFile(eid int64, fileID int64, userID int64) error {
 			Update("status", EntityRelationStatusDeleted).Error; err != nil {
 			tx.Rollback()
 			return err
+		}
+		// 录音衍生资产软删除联动：
+		// 1. 记忆事实标记软删
+		if tx.Migrator().HasTable(&RecordingMemoryFact{}) {
+			if err := tx.Model(&RecordingMemoryFact{}).
+				Where("eid = ? AND file_id IN ? AND is_deleted = ?", eid, affectedFileIDs, false).
+				Update("is_deleted", true).Error; err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+		// 2. 待确认认知候选置为失效（status = 'ignored'），防止看板残留孤儿待办
+		if tx.Migrator().HasTable(&RecordingCognitionCandidate{}) {
+			if err := tx.Model(&RecordingCognitionCandidate{}).
+				Where("eid = ? AND (file_id IN ? OR source_file_id IN ?) AND status = ?", eid, affectedFileIDs, affectedFileIDs, "candidate").
+				Update("status", "ignored").Error; err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 
@@ -2202,6 +2388,15 @@ func RestoreDeletedFile(eid int64, fileID int64, restoreToRoot bool, userID int6
 			Update("status", EntityRelationStatusActive).Error; err != nil {
 			tx.Rollback()
 			return err
+		}
+		// 恢复录音记忆事实
+		if tx.Migrator().HasTable(&RecordingMemoryFact{}) {
+			if err := tx.Model(&RecordingMemoryFact{}).
+				Where("eid = ? AND file_id IN ? AND is_deleted = ?", eid, restoredFileIDs, true).
+				Update("is_deleted", false).Error; err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 

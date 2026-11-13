@@ -6,10 +6,10 @@ import {
 } from "@ant-design/icons";
 import { message, Checkbox, InputNumber, Tooltip } from "antd";
 import { QRCodeSVG } from "qrcode.react";
-import { getPublicPath } from '@/utils/config';
 import { useEnv } from "@/hooks/useEnv";
 import { copyToClip, downloadSvgAsImage } from "@km/shared-utils";
 import { t } from "@/locales";
+import { SafeImage } from "@km/shared-components-react";
 
 interface LinkAndQrContentProps {
   agentId?: string | number;
@@ -57,7 +57,7 @@ export const LinkAndQrContent = ({ agentId, fixedToken }: LinkAndQrContentProps)
 
       <div className="mb-6">
         <div className="text-sm text-secondary mb-3">{t('integrate.style_example')}</div>
-        <img className="h-[315px] w-auto" src={getPublicPath("/images/agent/access-link-example.png")} alt="" />
+        <SafeImage className="h-[315px] w-auto" src={"/images/agent/access-link-example.png"} alt="" />
       </div>
 
       <div className="mb-6">

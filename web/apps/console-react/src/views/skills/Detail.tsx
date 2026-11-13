@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Modal, message, Spin } from "antd";
 import { EditOutlined } from "@ant-design/icons";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { skillApi } from "@/api/modules/skill";
 import { groupApi } from "@/api/modules/group";
@@ -491,7 +491,7 @@ export default function SkillDetail() {
               </div>
             ),
             titlePrefix: headerInfo.logo ? (
-              <img
+              <SafeImage
                 src={headerInfo.logo}
                 className="w-8 rounded"
                 alt=""

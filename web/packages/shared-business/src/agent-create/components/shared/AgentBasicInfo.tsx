@@ -1,5 +1,6 @@
 import { useRef, useCallback, type ReactNode } from 'react'
 import { Input, Button, Select } from 'antd'
+import { SafeImage } from '@km/shared-components-react'
 
 export interface AgentBasicInfoValue {
   name: string
@@ -78,7 +79,7 @@ export function AgentBasicInfo({
         onClick={() => uploadImageRef.current?.click()}
       >
         {value.logo ? (
-          <img src={value.logo} className="size-full object-cover" alt="avatar" />
+          <SafeImage src={value.logo} className="size-full object-cover" alt="avatar" />
         ) : (
           <span className="text-xs text-[#999]">{t('action.upload')}</span>
         )}

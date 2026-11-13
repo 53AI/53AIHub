@@ -7,10 +7,12 @@
  *      后续 task 3.x 把 knowledge/chat 迁到新 Sender 后,本 hook 可以简化为共享 @km/shared-business/chat 实现。
  */
 
+import { message } from "antd";
 import type { MentionFeature, SenderSlots } from "@km/hub-ui-x-react";
 import { CacheMode, buildAgentModelOptions, cacheManager as cache } from "@km/shared-utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import agentsApi from "@/api/modules/agents/index";
+import channelApi, { transformChannelData } from "@/api/modules/channel/index";
 import { filesApi } from "@/api/modules/files";
 import type { FileSearchResponse } from "@/api/modules/files/types";
 import { formatFile, formatFileSearchResults } from "@/api/modules/files/transform";
@@ -40,6 +42,7 @@ export interface KnowledgeSenderConfig {
 		temperature: number;
 		icon: string;
 		type: string;
+		supportsNativeWebSearch: boolean;
 	}>;
 	/** 切换模型 */
 	onChangeModel: (value: string) => void;
@@ -49,8 +52,6 @@ export interface KnowledgeSenderConfig {
 	onChangeKnowledgeSource: (state: KnowledgeSourceState) => void;
 	/** 当前生效的 library(决定 placeholder) */
 	library: { name: string; icon?: string; value: string[]; isSpace: boolean };
-	/** 发送后清空受控 list(在 ChatContainer.message.onSent 调用) */
-	reset: () => void;
 	/** @ 提及链接列表(含文件/知识库/空间,用于 sendContext.links) */
 	selectedMentionLinks: any[];
 }
@@ -199,6 +200,7 @@ export function useKnowledgeSenderConfig(
 	const [agentModels, setAgentModels] = useState<
 		KnowledgeSenderConfig["agentModels"]
 	>([]);
+	const [modelCapabilitiesLoaded, setModelCapabilitiesLoaded] = useState(false);
 	const [model, setModel] = useState("");
 	const [library, setLibrary] = useState<{
 		name: string;
@@ -252,6 +254,7 @@ export function useKnowledgeSenderConfig(
 	useEffect(() => {
 		if (!enabled || !currentAgent?.agent_id) return;
 		let cancelled = false;
+		setModelCapabilitiesLoaded(false);
 		agentsApi.models
 			.list(currentAgent.agent_id)
 			.then((res: any) => {
@@ -271,7 +274,43 @@ export function useKnowledgeSenderConfig(
 					deepName: t("chat.deep_thinking"),
 					fastName: t("chat.fast_response"),
 				});
-				setAgentModels(models);
+				setAgentModels(
+					models.map((item) => ({
+						...item,
+						supportsNativeWebSearch: false,
+					})),
+				);
+				channelApi
+					.listv2()
+					.then((channels) => {
+						if (cancelled) return;
+						const capabilities = channels.flatMap((channel) =>
+							transformChannelData(channel).options.map((option) => ({
+								channelId: channel.channel_id,
+								channelType: channel.type,
+								model: option.value,
+								supported:
+									option.upstream_api_format === "responses" &&
+									option.enabled_tools?.includes("web_search") === true,
+							})),
+						);
+						setAgentModels((current) =>
+							current.map((item) => ({
+								...item,
+								supportsNativeWebSearch: capabilities.some(
+									(capability) =>
+										capability.channelId === item.channel_id &&
+										capability.channelType === item.channel_type &&
+										capability.model === item.model &&
+										capability.supported,
+								),
+							})),
+						);
+						setModelCapabilitiesLoaded(true);
+					})
+					.catch(() => {
+						if (!cancelled) setModelCapabilitiesLoaded(true);
+					});
 				// 保留用户已选 model;仅当当前值不在新列表中或为空时回退到第一项(finding #2)
 				setModel((prev) => {
 					if (prev && models.some((m: any) => m.value === prev)) return prev;
@@ -283,6 +322,21 @@ export function useKnowledgeSenderConfig(
 			cancelled = true;
 		};
 	}, [enabled, currentAgent?.agent_id]);
+
+	useEffect(() => {
+		if (!modelCapabilitiesLoaded) return;
+		if (currentAgent?.settings_obj?.web_search_setting?.source_type !== "model") return;
+		const selectedModel = agentModels.find((item) => item.value === model);
+		if (!knowledgeSource.networkSearch || selectedModel?.supportsNativeWebSearch) return;
+		setKnowledgeSource((current) => ({ ...current, networkSearch: false }));
+		message.warning(t("module.web_search_model_unsupported"));
+	}, [
+		agentModels,
+		currentAgent?.settings_obj?.web_search_setting?.source_type,
+		knowledgeSource.networkSearch,
+		model,
+		modelCapabilitiesLoaded,
+	]);
 
 	// ============ 加载最近文件 ============
 	useEffect(() => {
@@ -606,7 +660,7 @@ export function useKnowledgeSenderConfig(
 	const mention: MentionFeature = useMemo(
 		() => ({
 			enabled: Boolean(mentionEnabled),
-			disabled: knowledgeSource.networkSearch,
+			disabled: false,
 			tooltip: t("work_ai.knowledge_placeholder"),
 			// 受控 list:由 ChatContainer 维护的 selectedMentionLinks
 			list: selectedMentionLinks,
@@ -623,7 +677,6 @@ export function useKnowledgeSenderConfig(
 		}),
 		[
 			mentionEnabled,
-			knowledgeSource.networkSearch,
 			selectedMentionLinks,
 			suggestions,
 			recentList,
@@ -645,7 +698,16 @@ export function useKnowledgeSenderConfig(
 	// 切换模型
 	const onChangeModel = useCallback((value: string) => {
 		setModel(value);
-	}, []);
+		const selectedModel = agentModels.find((item) => item.value === value);
+		if (
+			currentAgentRef.current?.settings_obj?.web_search_setting?.source_type === "model" &&
+			knowledgeSource.networkSearch &&
+			!selectedModel?.supportsNativeWebSearch
+		) {
+			setKnowledgeSource((current) => ({ ...current, networkSearch: false }));
+			message.warning(t("module.web_search_model_unsupported"));
+		}
+	}, [agentModels, knowledgeSource.networkSearch]);
 
 	// 切换知识源
 	const onChangeKnowledgeSource = useCallback((next: KnowledgeSourceState) => {
@@ -679,77 +741,9 @@ export function useKnowledgeSenderConfig(
 		[],
 	);
 
-	// 清空受控 list + 知识源(供 ChatContainer 在 message.onSent 调用)
-	// 注意:必须放在 `if (!enabled) return null` 之前,否则 enabled 翻转时
-	// 这一个 hook 的位置会变化,导致 React 内部 hook list 错位(规则:Hooks
-	// 必须在每次渲染以相同顺序调用)。
-	//
-	// /library/:id/chat 路由(指定知识库问答):send 后不应回退到「全部知识」,
-	// 仍以当前知识库为默认知识源,只清掉用户在本次输入中临时勾选的文件 / 空间 /
-	// 动态知识,避免每次发送都被重置回 allKnowledge=true。
-	//
-	// 非 library 路由(AI 搜问主页):send 后只清空本次输入临时勾选的
-	// 文件/知识库/空间/动态知识条目,保留用户手动切换的 知识文档/wiki/知识图谱/
-	// 联网搜索 开关(不回退到智能体默认值),避免每次发送后选择器参数被重置。
-	const reset = useCallback(() => {
-		if (isInLibrary) {
-			const agentSettings = currentAgentRef.current?.settings_obj ?? {};
-			const libId = String(libraryId ?? "");
-			const libName = libraryName || t("library.this_library_content");
-			const libraryLink = {
-				id: libId,
-				name: libName,
-				icon: libraryIcon,
-				isfolder: false,
-				islibrary: true,
-				isspace: false,
-				ui: { active: true },
-				source: "knowledge",
-			};
-			setKnowledgeSource({
-				...INITIAL_KNOWLEDGE_SOURCE,
-				mode: "libraries",
-				allKnowledge: false,
-				knowledgeGraph: false,
-				networkSearch: false,
-				wiki: shouldDefaultEnable(agentSettings.wiki_search_setting),
-				selectedFiles: [],
-				selectedLibraries: [
-					{ id: libId, name: libName, icon: libraryIcon },
-				],
-				selectedSpaces: [],
-			});
-			setSelectedMentionLinks([libraryLink]);
-			return;
-		}
-		setSelectedMentionLinks([]);
-		// 修复(测试反馈:参数会重置):send 后只清空本次输入临时勾选的
-		// 文件/知识库/空间/动态知识条目(与 @ 受控 list 同步清空),
-		// 但保留用户手动切换的 知识文档/wiki/知识图谱/联网搜索 开关,
-		// 不再整体回退到 deriveInitialKnowledgeSource(智能体默认值)。
-		// 对齐 legacy knowledge/chat.tsx:knowledgeSource 跨发送持久。
-		setKnowledgeSource((prev) => {
-			const next: KnowledgeSourceState = {
-				...prev,
-				mode: "all",
-				selectedFiles: [],
-				selectedLibraries: [],
-				selectedSpaces: [],
-				selectedWikiSpaces: [],
-				selectedWikiPages: [],
-			};
-			// 临时选择清空后若无任何激活来源,兜底回「全部知识」,避免空态
-			const hasActive =
-				next.allKnowledge ||
-				next.knowledgeGraph ||
-				next.networkSearch ||
-				next.wiki;
-			if (!hasActive) {
-				next.allKnowledge = true;
-			}
-			return next;
-		});
-	}, [isInLibrary, libraryId, libraryName, libraryIcon]);
+	// 发送后不清空知识源/提及列表:用户选中的 知识文档/wiki/知识库/空间 跨发送保留,
+	// 下一次发送继续携带同一批选中项(需求变更:原先 reset 会清空临时勾选)。
+	// 编辑器正文与上传附件由 Sender 自身在 onSend 后清理,不受影响。
 
 	if (!enabled) return null;
 
@@ -764,7 +758,6 @@ export function useKnowledgeSenderConfig(
 		knowledgeSource,
 		onChangeKnowledgeSource,
 		library,
-		reset,
 		selectedMentionLinks,
 	};
 }

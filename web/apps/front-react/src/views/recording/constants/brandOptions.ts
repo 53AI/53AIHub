@@ -21,7 +21,7 @@ export const SONICNOTE_DEVICE_TYPE = 'sonicnote' as const
 export const TICNOTE_DEVICE_TYPE = 'ticnote' as const
 export const SONINOTE_DEVICE_TYPE = 'soninote' as const
 
-/** 已对接的设备类型（用于多 key / 自动同步 / 探测等核心流程） */
+/** 已对接的设备类型（用于多 key / 手动同步 / 探测等核心流程） */
 export type SupportedDeviceType =
   | typeof SONICNOTE_DEVICE_TYPE
   | typeof TICNOTE_DEVICE_TYPE

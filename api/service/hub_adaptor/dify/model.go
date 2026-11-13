@@ -1,13 +1,22 @@
 package dify
 
+type StreamEventData struct {
+	Status string `json:"status"`
+	Error  string `json:"error"`
+}
+
 type StreamResponse struct {
-	Event          string `json:"event"`
-	ConversationID string `json:"conversation_id"`
-	MessageID      string `json:"message_id"`
-	CreatedAt      int64  `json:"created_at"`
-	TaskID         string `json:"task_id"`
-	ID             string `json:"id"`
-	Answer         string `json:"answer"`
+	Event          string          `json:"event"`
+	ConversationID string          `json:"conversation_id"`
+	MessageID      string          `json:"message_id"`
+	CreatedAt      int64           `json:"created_at"`
+	TaskID         string          `json:"task_id"`
+	ID             string          `json:"id"`
+	Answer         string          `json:"answer"`
+	Code           string          `json:"code"`
+	Message        string          `json:"message"`
+	Status         int             `json:"status"`
+	Data           StreamEventData `json:"data"`
 }
 
 type Response struct {

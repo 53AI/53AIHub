@@ -123,29 +123,41 @@ func (s *wikiCategoryService) ListVisible(ctx context.Context, eid, spaceID, lib
 	countByCategory := make(map[int64]int64)
 	otherCount := int64(0)
 	if len(visibleIDs) > 0 {
-		countQuery := s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
-			Select("wiki_page_categories.category_id AS category_id, COUNT(DISTINCT wiki_page_categories.page_id) AS count").
-			Joins("JOIN wiki_pages ON wiki_pages.id = wiki_page_categories.page_id").
-			Where("wiki_page_categories.eid = ? AND wiki_page_categories.space_id = ? AND wiki_pages.eid = ? AND wiki_pages.space_id = ? AND wiki_pages.status = ? AND wiki_page_categories.page_id IN ?", eid, spaceID, eid, spaceID, model.WikiPageStatusActive, visibleIDs)
-		if libraryID > 0 {
-			countQuery = countQuery.Where("wiki_pages.library_id = ?", libraryID)
-		}
-		var counts []categoryCount
-		if err := countQuery.Group("wiki_page_categories.category_id").Scan(&counts).Error; err != nil {
+		if err := wikiDocumentIDBatches(visibleIDs, func(ids []int64) error {
+			countQuery := s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+				Select("wiki_page_categories.category_id AS category_id, COUNT(DISTINCT wiki_page_categories.page_id) AS count").
+				Joins("JOIN wiki_pages ON wiki_pages.id = wiki_page_categories.page_id").
+				Where("wiki_page_categories.eid = ? AND wiki_page_categories.space_id = ? AND wiki_pages.eid = ? AND wiki_pages.space_id = ? AND wiki_pages.status = ? AND wiki_page_categories.page_id IN ?", eid, spaceID, eid, spaceID, model.WikiPageStatusActive, ids)
+			if libraryID > 0 {
+				countQuery = countQuery.Where("wiki_pages.library_id = ?", libraryID)
+			}
+			var counts []categoryCount
+			if err := countQuery.Group("wiki_page_categories.category_id").Scan(&counts).Error; err != nil {
+				return err
+			}
+			for _, count := range counts {
+				countByCategory[count.CategoryID] += count.Count
+			}
+			return nil
+		}); err != nil {
 			return nil, err
 		}
-		for _, count := range counts {
-			countByCategory[count.CategoryID] = count.Count
-		}
 
-		otherQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).Table("wiki_pages AS wp").
-			Where("wp.eid = ? AND wp.space_id = ? AND wp.status = ? AND wp.page_type IN ? AND wp.id IN ?", eid, spaceID, model.WikiPageStatusActive, []string{model.WikiPageTypeEntity, model.WikiPageTypeConcept}, visibleIDs).
-			Where("NOT EXISTS (?)", s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
-				Select("1").Where("eid = ? AND space_id = ? AND page_id = wp.id", eid, spaceID))
-		if libraryID > 0 {
-			otherQuery = otherQuery.Where("wp.library_id = ?", libraryID)
-		}
-		if err := otherQuery.Count(&otherCount).Error; err != nil {
+		if err := wikiDocumentIDBatches(visibleIDs, func(ids []int64) error {
+			otherQuery := s.db.WithContext(ctx).Model(&model.WikiPage{}).Table("wiki_pages AS wp").
+				Where("wp.eid = ? AND wp.space_id = ? AND wp.status = ? AND wp.page_type IN ? AND wp.id IN ?", eid, spaceID, model.WikiPageStatusActive, []string{model.WikiPageTypeEntity, model.WikiPageTypeConcept}, ids).
+				Where("NOT EXISTS (?)", s.db.WithContext(ctx).Model(&model.WikiPageCategory{}).
+					Select("1").Where("eid = ? AND space_id = ? AND page_id = wp.id", eid, spaceID))
+			if libraryID > 0 {
+				otherQuery = otherQuery.Where("wp.library_id = ?", libraryID)
+			}
+			var batchOther int64
+			if err := otherQuery.Count(&batchOther).Error; err != nil {
+				return err
+			}
+			otherCount += batchOther
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 	}

@@ -75,7 +75,7 @@ function TimelineItem({ item }: { item: RecordingMemoryTimelineItem }) {
 }
 
 export function MemoryTimelinePanel({ timeline, loading = false, error, onLoadMore }: MemoryTimelinePanelProps) {
-  if (loading) return <div className="flex min-h-64 items-center justify-center"><Spin tip="正在整理历史记录…" /></div>
+  if (loading) return <div className="flex min-h-64 items-center justify-center"><Spin description="正在整理历史记录…" /></div>
   if (error) return <Alert type="error" showIcon title="历史时间线暂时不可用" description={error} />
   if (!timeline) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史记录" />
 

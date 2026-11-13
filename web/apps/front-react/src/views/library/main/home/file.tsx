@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Empty, Tag } from "antd";
+import { Empty, Tag, Typography } from "antd";
 import { useLibraryStore } from "@/stores/modules/library";
 import { filesApi } from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
 import { EntityDisplay } from "@/components/EntityDisplay";
 import { PERMISSION_TYPE, getPermissionLabel } from "@/components/KMPermission";
-import { SafeImage } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
 import { t } from "@/locales";
+import { SafeImage } from "@km/shared-components-react";
 
 interface FormattedFile {
   id: string | number;
@@ -127,10 +127,13 @@ export function FileHomeView() {
             >
               {/* Title Column */}
               <div className="flex-1 flex items-center gap-2 overflow-hidden">
-                <img className="flex-none size-6" src={item.icon} alt="" />
-                <p className="flex-1 text-sm text-[#1D1E1F] truncate">
+                <SafeImage className="flex-none size-6" src={item.icon} alt="" />
+                <Typography.Text
+                  ellipsis={{ tooltip: item.name }}
+                  className="!block min-w-0 flex-1 text-sm text-[#1D1E1F]"
+                >
                   {item.name}
-                </p>
+                </Typography.Text>
               </div>
 
               {/* Owner Column */}

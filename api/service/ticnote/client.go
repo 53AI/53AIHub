@@ -31,18 +31,18 @@ const maxJSONResponseBytes = 100 << 20
 var appKeyPrefixMap = []struct{ prefix, baseURL string }{
 	{"tncn_sit_sk_", "https://voice-api-sit.ticnote.cn"},
 	{"tncn_sk_", "https://voice-api.ticnote.cn"},
-	{"tnovs_sit_sk_", "https://ainote-api-sit.mobvoi.com"},
+	{"tnovs_sit_sk_", "https://ainote-sit-api.mobvoi.com"},
 	{"tnovs_sk_", "https://ainote-api.mobvoi.com"},
 }
 
-// resolveBaseURL 按 AppKey 前缀路由 Base URL；未知前缀回退国内生产域名。
-func resolveBaseURL(appkey string) string {
+// resolveBaseURL 按 AppKey 前缀路由 Base URL；matched=false 表示未命中任何已知前缀（回退国内生产域名）。
+func resolveBaseURL(appkey string) (baseURL string, matched bool) {
 	for _, m := range appKeyPrefixMap {
 		if strings.HasPrefix(appkey, m.prefix) {
-			return m.baseURL
+			return m.baseURL, true
 		}
 	}
-	return "https://voice-api.ticnote.cn"
+	return "https://voice-api.ticnote.cn", false
 }
 
 // recordingFileTypes 录音类 fileType（file-tree 节点）：仅这些视为待同步录音。
@@ -63,8 +63,9 @@ type Client struct {
 
 // NewClient 创建 TicNote 客户端；baseURL 按 appkey 前缀自动路由。
 func NewClient(appkey string) *Client {
+	baseURL, _ := resolveBaseURL(appkey)
 	return &Client{
-		baseURL:      strings.TrimRight(resolveBaseURL(appkey), "/"),
+		baseURL:      strings.TrimRight(baseURL, "/"),
 		http:         &http.Client{Timeout: 30 * time.Second},
 		downloadHTTP: &http.Client{Timeout: 30 * time.Minute},
 	}
@@ -168,6 +169,39 @@ type Recording struct {
 	RecordID string // 记录 ID（file-detail 查询用）
 	FileName string
 	FileType string
+	// RecordTimeMs 开始录音时间（毫秒，取自节点 subRemark.recordTime）
+	RecordTimeMs int64
+	// DurationMs 录音时长（毫秒，取自节点 subRemark.duration 秒值）
+	DurationMs int64
+	// RawNodeJSON 原始树节点 JSON 快照，供远端元数据留痕
+	RawNodeJSON string
+}
+
+// recordingSubRemark 录音节点的 subRemark（远端以 JSON 字符串承载录音元数据）。
+type recordingSubRemark struct {
+	RecordTime     int64 `json:"recordTime"`
+	Duration       int64 `json:"duration"`
+	TranscodeState string `json:"transcodeStatus"`
+}
+
+// parseRecordingNode 从树节点解析录音元数据（时间/时长/原始快照）。
+func parseRecordingNode(node map[string]interface{}) Recording {
+	rec := Recording{
+		RecordID: strVal(node["id"]),
+		FileName: strVal(node["name"]),
+		FileType: strVal(node["fileType"]),
+	}
+	if raw, err := json.Marshal(node); err == nil {
+		rec.RawNodeJSON = string(raw)
+	}
+	if sr := strVal(node["subRemark"]); sr != "" {
+		var remark recordingSubRemark
+		if err := json.Unmarshal([]byte(sr), &remark); err == nil {
+			rec.RecordTimeMs = remark.RecordTime
+			rec.DurationMs = remark.Duration * 1000
+		}
+	}
+	return rec
 }
 
 // maxProbeProjects 探测时遍历的项目数上限：CheckStatus 只统计前 N 个项目的录音数，
@@ -225,10 +259,8 @@ func collectRecordings(nodes []interface{}, out *[]Recording) {
 		}
 		fileType, _ := m["fileType"].(string)
 		if isRecordingFileType(fileType) {
-			id, _ := m["id"].(string)
-			name, _ := m["name"].(string)
-			if id != "" {
-				*out = append(*out, Recording{RecordID: id, FileName: name, FileType: fileType})
+			if rec := parseRecordingNode(m); rec.RecordID != "" {
+				*out = append(*out, rec)
 			}
 		}
 		if children, ok := m["children"].([]interface{}); ok {
@@ -247,6 +279,8 @@ type FileDetail struct {
 	Status          int
 	TranscodeStatus string
 	IsVoice         bool
+	// RawJSON 原始 data 对象 JSON 快照，供远端元数据留痕
+	RawJSON string
 }
 
 // GetFileDetail 获取文件详情（音频下载 URL 等）。
@@ -274,6 +308,9 @@ func (c *Client) GetFileDetail(ctx context.Context, token, recordID string) (*Fi
 	fd.TranscodeStatus = strVal(d["transcodeStatus"])
 	if v, ok := d["isVoice"].(bool); ok {
 		fd.IsVoice = v
+	}
+	if raw, err := json.Marshal(d); err == nil {
+		fd.RawJSON = string(raw)
 	}
 	return fd, nil
 }

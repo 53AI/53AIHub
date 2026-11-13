@@ -23,10 +23,9 @@ import {
   ReloadOutlined,
   SettingOutlined,
 } from "@ant-design/icons";
-import { Search } from "@km/shared-components-react";
+import { Search, SafeImage } from "@km/shared-components-react";
 import type { TreeDataNode } from "antd";
 import { departmentApi, userApi } from "@/api";
-import { getPublicPath } from "@/utils/config";
 import { wecomApi } from "@/api/modules/wecom";
 import dingtalkApi from "@/api/modules/dingtalk";
 import {
@@ -245,8 +244,10 @@ export const DepartmentTree = forwardRef<
       if (!kw) return nodes;
 
       const filterNode = (node: DepartmentNode): DepartmentNode | null => {
+        // bind_value 后端可能返回数字，统一转字符串后匹配，避免 "includes is not a function"
         const matchesKeyword =
-          node.name?.includes(kw) || node.bind_value?.includes(kw);
+          node.name?.includes(kw) ||
+          String(node.bind_value ?? "").includes(kw);
 
         // 递归过滤子节点
         const filteredChildren = node.children
@@ -727,8 +728,8 @@ export const DepartmentTree = forwardRef<
       {isSsoSync && (
         <div className="h-11 flex items-center gap-2 px-4 border-t">
           <div className="flex-1 flex items-center gap-1">
-            <img
-              src={getPublicPath(`/images/sso/${isWecomSync ? "wecom" : "dingtalk"}.png`)}
+            <SafeImage
+              src={`/images/sso/${isWecomSync ? "wecom" : "dingtalk"}.png`}
               className="w-4 h-4"
               alt=""
             />

@@ -111,10 +111,9 @@ func (q *RecordingFileQueryService) buildMyRecordingFilesQuery(libraryID int64, 
 	}
 
 	if sceneUnrecognized {
-		qb = qb.Where("scene = ? AND insight_perspective = ?", "", string(model.InsightPerspectiveAuto))
+		qb = qb.Where("scene = ?", "")
 	} else if sceneCode := model.RecordingScene(scene); model.IsCanonicalScene(sceneCode) {
-		aliases := append([]string{scene}, model.SceneLegacyCodes(sceneCode)...)
-		qb = qb.Where("(scene = ? OR insight_perspective IN ?)", scene, aliases)
+		qb = qb.Where("scene = ?", scene)
 	}
 
 	if strings.TrimSpace(pathFilter) != "" {

@@ -9,7 +9,6 @@ import { GROUP_TYPE } from '@/constants/group'
 import { useConversationStore } from './conversation'
 import { EVENT_NAMES } from '@/constants/events'
 import { AGENT_USAGES } from '@/constants/agent'
-import { getPublicPath } from '@/utils/config'
 // 缓存key常量
 const CACHE_KEYS = {
   AGENT_LIST: 'agent_list',
@@ -80,11 +79,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
         if (item.agent_usage === AGENT_USAGES.KM_AI_SEARCH) {
           item.name = item.name || 'AI搜问'
-          item.logo = item.logo || getPublicPath('/images/chat/knowledge.png')
+          item.logo = item.logo || '/images/chat/knowledge.png'
           item.custom_config_obj.agent_type = 'knowledge'
         } else if (item.agent_usage === AGENT_USAGES.WORK_AI) {
           item.name = item.name || '小助理'
-          item.logo = item.logo || getPublicPath('/images/chat/workbench.png')
+          item.logo = item.logo || '/images/chat/workbench.png'
           item.custom_config_obj.agent_type = 'workbench'
         }
         return item

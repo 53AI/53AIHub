@@ -38,6 +38,8 @@ type FileRequst struct {
 	GroupID            int64                   `json:"group_id"`
 	InsightPerspective string                  `json:"insight_perspective" form:"insight_perspective"`
 	Permissions        []*model.PermissionData `json:"permissions"`
+	// RecordingStartTime 开始录音时间（毫秒，可选）。仅录音来源落库，普通文档忽略。
+	RecordingStartTime int64 `json:"recording_start_time" form:"recording_start_time"`
 }
 
 type FileChildrenListQuery struct {
@@ -401,6 +403,9 @@ func CreateFile(c *gin.Context) {
 	if originSource := strings.TrimSpace(req.OriginSource); originSource != "" && strings.TrimSpace(req.OriginType) != "" {
 		file.OriginSource = originSource
 	}
+	if file.IsRecordingOriginType() && model.IsValidRecordingStartTime(req.RecordingStartTime) {
+		file.RecordingStartTime = req.RecordingStartTime
+	}
 
 	if file.Path == "" {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("文件路径不能为空")))
@@ -480,7 +485,7 @@ func CreateFile(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param file_id path int true "文件ID"
-// @Success 200 {object} model.CommonResponse{data=model.File}
+// @Success 200 {object} model.CommonResponse{data=controller.FileDetailResponse} "文件详情；录音文件附带 participants 参会人员"
 // @Router /api/files/{file_id} [get]
 func GetFile(c *gin.Context) {
 	eid := config.GetEID(c)
@@ -536,12 +541,32 @@ func GetFile(c *gin.Context) {
 	_ = file.LoadUploadFile()
 	_ = file.LoadLastBodyTime()
 
+	// 开始录音时间对外归一：录音来源未记录时回退创建时间，非录音来源恒 0
+	file.RecordingStartTime = file.EffectiveRecordingStartTime()
+
 	isFav, _ := model.IsFavorited(userID, model.RESOURCE_TYPE_FILE, fileID)
 	file.IsFavorite = isFav
 
 	recordFileBrowseHistoryAsync(eid, userID, file)
 
+	// 录音文件附带参会人员（仅已关联人员的发言人；与列表共用同一实现，保证两处一致）
+	if file.IsRecordingOriginType() {
+		participantsMap, _ := service.ListFileParticipants(c.Request.Context(), eid, []model.File{*file})
+		participants := participantsMap[file.ID]
+		if participants == nil {
+			participants = []service.RecordingParticipant{}
+		}
+		c.JSON(http.StatusOK, model.Success.ToResponse(FileDetailResponse{File: *file, Participants: participants}))
+		return
+	}
+
 	c.JSON(http.StatusOK, model.Success.ToResponse(file))
+}
+
+// FileDetailResponse 文件详情响应：内嵌 model.File 保持既有字段不变，新增参会人员。
+type FileDetailResponse struct {
+	model.File
+	Participants []service.RecordingParticipant `json:"participants"`
 }
 
 func recordFileBrowseHistoryAsync(eid, userID int64, file *model.File) {

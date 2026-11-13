@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useTranslation } from "../../i18n";
 
 interface OutputField {
@@ -36,12 +36,6 @@ export interface RelatedSceneProps {
 }
 
 const DEFAULT_IMG = "/images/default_agent.png";
-
-function handleImageError(e: React.SyntheticEvent<HTMLImageElement>) {
-  const target = e.target as HTMLImageElement;
-  if (target.src.endsWith(DEFAULT_IMG)) return;
-  target.src = DEFAULT_IMG;
-}
 
 function RelatedSceneInner({
   isWorkflow = false,
@@ -107,11 +101,10 @@ function RelatedSceneInner({
             className="flex items-center gap-2 p-4 border border-[#e8e8e8] rounded-md cursor-pointer transition-all hover:shadow-[0_4px_12px_rgba(0,0,0,0.1)]"
             onClick={() => handleNextAgent(item)}
           >
-            <img
+            <SafeImage
               className="w-10 h-10 rounded-md flex-shrink-0"
               src={item.logo || DEFAULT_IMG}
               alt={item.name}
-              onError={handleImageError}
             />
             <div className="flex-1 min-w-0">
               <h6 className="text-sm m-0 overflow-hidden text-ellipsis whitespace-nowrap">{item.name}</h6>

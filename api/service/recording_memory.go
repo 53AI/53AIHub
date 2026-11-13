@@ -234,8 +234,8 @@ func compileRecordingMemory(ctx context.Context, eid, fileID, ownerID int64) (in
 	return result, nil
 }
 
-// ensureRecordingMemoryReady 在每次洞察生成前幂等编译纪要 Claim 与实体事实。
-// 它不依赖通用 RAG 实体任务，因此手动重跑和自动链路都不会因并发时序丢失会议记忆。
+// ensureRecordingMemoryReady 仅校验来源版本、读取当前有效记录。
+// 不在洞察中重新生成实体/Claim/认知，防止重复写库和覆盖已确认的身份。
 func ensureRecordingMemoryReady(ctx context.Context, eid, fileID, ownerID int64) (recordingMemoryReadiness, error) {
 	ready := recordingMemoryReadiness{}
 	file, err := loadRecordingMemorySourceFile(ctx, eid, fileID)
@@ -252,14 +252,11 @@ func ensureRecordingMemoryReady(ctx context.Context, eid, fileID, ownerID int64)
 	if !recordingMemoryExtractionEnabled(config) {
 		return ready, nil
 	}
-	if _, err := CompileRecordingMemory(ctx, eid, fileID, ownerID); err != nil {
-		return ready, err
-	}
-	if _, err := CompileRecordingEntityMemory(ctx, eid, fileID, ownerID); err != nil {
-		return ready, err
-	}
-	if _, err := CompileRecordingCognitionCandidates(ctx, eid, fileID, ownerID); err != nil {
-		logger.Warnf(ctx, "【老板认知】候选编译失败，继续使用现有会议记忆: fileID=%d err=%v", fileID, err)
+	// 洞察阶段仅读取记忆。只检测文件中的编译指纹，不执行自动抽取/补写。
+	if current, hashErr := recordingMemoryCompilationCurrent(ctx, eid, fileID, ownerID); hashErr != nil {
+		logger.Warnf(ctx, "【洞察-记忆版本】检查失败，沿用现有记忆 fileID=%d err=%v", fileID, hashErr)
+	} else if !current {
+		logger.Infof(ctx, "【洞察-记忆版本】尚无当前来源编译标记，保持只读 fileID=%d", fileID)
 	}
 	if err := model.DB.WithContext(ctx).Model(&model.RecordingMemoryClaim{}).
 		Where("eid = ? AND owner_id = ? AND file_id = ? AND is_current = ?", eid, ownerID, fileID, true).

@@ -29,6 +29,77 @@ func NewPersonalSpaceService(eid int64) *PersonalSpaceService {
 	return &PersonalSpaceService{Eid: eid}
 }
 
+// GetPersonalWorkspaceContext reads an existing workspace, waiting for a concurrent initialization when needed.
+func (s *PersonalSpaceService) GetPersonalWorkspaceContext(ctx context.Context, userID int64) (*model.Space, *model.Library, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	for {
+		var space model.Space
+		err := model.DB.WithContext(ctx).Where("eid = ? AND space_kind = ?", s.Eid, model.SPACE_KIND_PERSONAL_COMPANY).First(&space).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, err
+		}
+		if err == nil {
+			var library model.Library
+			err = model.DB.WithContext(ctx).Where("eid = ? AND creator_id = ? AND library_kind = ?", s.Eid, userID, model.LIBRARY_KIND_PERSONAL_USER).First(&library).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil, err
+			}
+			if err == nil && library.SpaceID == space.ID {
+				ready, err := s.personalWorkspaceReady(ctx, &space, &library, userID)
+				if err != nil {
+					return nil, nil, err
+				}
+				if ready {
+					return &space, &library, nil
+				}
+			}
+		}
+		initializedSpace, library, err := s.EnsurePersonalWorkspace(ctx, userID)
+		if !errors.Is(err, ErrPersonalWorkspaceInitializing) {
+			return initializedSpace, library, err
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, nil, ErrPersonalWorkspaceInitializing
+			}
+			return nil, nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *PersonalSpaceService) personalWorkspaceReady(ctx context.Context, space *model.Space, library *model.Library, userID int64) (bool, error) {
+	owner, err := model.GetEnterpriseCreatorUser(s.Eid)
+	if err != nil {
+		return false, err
+	}
+	if space.OwnerID != owner.UserID {
+		return false, nil
+	}
+	for _, expected := range []model.Permission{
+		{ResourceType: model.RESOURCE_TYPE_SPACE, ResourceID: space.ID, SubjectType: model.SUBJECT_TYPE_USER, SubjectID: owner.UserID, Permission: model.PERMISSION_MANAGE},
+		{ResourceType: model.RESOURCE_TYPE_SPACE, ResourceID: space.ID, SubjectType: model.SUBJECT_TYPE_COMPANY_ALL, SubjectID: 0, Permission: personalSpaceCompanyPermission},
+		{ResourceType: model.RESOURCE_TYPE_LIBRARY, ResourceID: library.ID, SubjectType: model.SUBJECT_TYPE_USER, SubjectID: userID, Permission: model.PERMISSION_MANAGE},
+	} {
+		var permission model.Permission
+		err := model.DB.WithContext(ctx).Where("eid = ? AND resource_type = ? AND resource_id = ? AND subject_type = ? AND subject_id = ?", s.Eid, expected.ResourceType, expected.ResourceID, expected.SubjectType, expected.SubjectID).First(&permission).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if permission.Permission != expected.Permission {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 func (s *PersonalSpaceService) EnsurePersonalWorkspace(ctx context.Context, userID int64) (*model.Space, *model.Library, error) {
 	var space *model.Space
 	var library *model.Library

@@ -168,7 +168,8 @@ func (s *WikiIngestV2Service) rewriteSingleWikiPageInTx(
 	liveSlugSet map[string]struct{},
 	redirectTargets map[string]string,
 ) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var updatedPageID int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		page, err := loadWikiPageForWrite(tx, eid, libraryID, slug)
 		if err != nil {
 			return err
@@ -207,8 +208,16 @@ func (s *WikiIngestV2Service) rewriteSingleWikiPageInTx(
 		}
 		page.Body = rewritten
 		links := buildWikiPageLinksForContent(page.ID, eid, libraryID, page.Body, s.linkSvc, tx, page.UpdaterID)
-		return persistWikiPagePostProcessWrite(ctx, tx, page, sources, links)
+		if err := persistWikiPagePostProcessWrite(ctx, tx, page, sources, links); err != nil {
+			return err
+		}
+		updatedPageID = page.ID
+		return nil
 	})
+	if err == nil && updatedPageID > 0 {
+		syncWikiESPage(ctx, s.db, eid, updatedPageID)
+	}
+	return err
 }
 
 func persistWikiPagePostProcessWrite(ctx context.Context, tx *gorm.DB, page *model.WikiPage, sources []model.WikiPageSource, links []model.WikiPageLink) error {

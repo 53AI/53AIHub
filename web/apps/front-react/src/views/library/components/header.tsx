@@ -7,9 +7,11 @@ import { SvgIcon } from "@km/shared-components-react";
 import "./header.css";
 
 interface LibraryHeaderProps {
+  className?: string;
   showHeaderWhenSideHide?: boolean;
   showSiderButton?: boolean;
   showBack?: boolean;
+  showBorder?: boolean;
   backProxy?: () => void;
   header?: ReactNode;
   footer?: ReactNode;
@@ -17,9 +19,11 @@ interface LibraryHeaderProps {
 }
 
 export function LibraryHeader({
+  className = '',
   showHeaderWhenSideHide = false,
   showSiderButton = true,
   showBack = false,
+  showBorder = true,
   backProxy,
   header,
   footer,
@@ -38,7 +42,7 @@ export function LibraryHeader({
 
   if (showHeaderWhenSideHide ? !libraryStore.siderVisible : true) {
     return (
-      <div className="flex-none h-16 px-5 max-md:px-3 flex items-center gap-2 border-b bg-white relative">
+      <div className={`flex-none h-16 px-5 max-md:px-3 flex items-center gap-2 ${showBorder ? 'border-b' : ''} ${className} bg-white relative`}>
         {!libraryStore.siderVisible && showSiderButton && (
           <>
             <Tooltip title="展开">

@@ -39,12 +39,16 @@ func RerankURL(baseURL string) string {
 	// https://dashscope.aliyuncs.com/compatible-mode/v1。重排使用原生
 	// /api/v1 接口，不能把这段兼容模式路径再次拼到原生路径前。
 	if parsed, err := url.Parse(baseURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
-		if strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/compatible-mode/v1") {
-			parsed.Path = strings.TrimSuffix(strings.TrimRight(parsed.Path, "/"), "/compatible-mode/v1")
-			parsed.RawPath = ""
-			parsed.RawQuery = ""
-			parsed.Fragment = ""
-			baseURL = strings.TrimRight(parsed.String(), "/")
+		path := strings.TrimRight(parsed.Path, "/")
+		for _, prefix := range []string{"/compatible-mode/v1", "/compatible-mode", "/api/v1"} {
+			if strings.HasSuffix(path, prefix) {
+				parsed.Path = strings.TrimSuffix(path, prefix)
+				parsed.RawPath = ""
+				parsed.RawQuery = ""
+				parsed.Fragment = ""
+				baseURL = strings.TrimRight(parsed.String(), "/")
+				break
+			}
 		}
 	}
 	return baseURL + RerankEndpointPath
@@ -65,6 +69,12 @@ func CallRerankAPI(ctx context.Context, client *http.Client, baseURL, apiKey str
 
 	requestCopy := *request
 	requestCopy.Model = NormalizeRerankModel(request.Model)
+	if strings.EqualFold(requestCopy.Model, "qwen3.7-text-rerank") {
+		if len(request.Input.Documents) > 500 {
+			return nil, fmt.Errorf("qwen3.7-text-rerank supports at most 500 documents")
+		}
+		requestCopy.Parameters.ReturnDocuments = nil
+	}
 	body, err := json.Marshal(&requestCopy)
 	if err != nil {
 		return nil, fmt.Errorf("marshal rerank request: %w", err)
@@ -101,6 +111,9 @@ func CallRerankAPI(ctx context.Context, client *http.Client, baseURL, apiKey str
 	}
 	if len(result.Output.Results) == 0 {
 		return nil, fmt.Errorf("rerank response contains no results")
+	}
+	if result.RequestID != "" {
+		logger.Infof(ctx, "【百炼重排】上游请求已完成（请求标识：%s）", result.RequestID)
 	}
 	return &result, nil
 }

@@ -4,8 +4,8 @@ import {
   useState,
   useEffect,
 } from "react";
-import { Form, Input, Modal, Image } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { Form, Input, Modal } from "antd";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useAgentCreateAdapter } from "../adapters";
 import { useAgentFormStore } from "../store";
 import { useAgentForm, usePlatformChannel } from "../hooks";
@@ -101,9 +101,6 @@ export const N8N = forwardRef<N8NRef, N8NProps>(
       },
     ];
 
-    const getPublicPath = (url: string) => {
-      return adapter?.getPublicPath?.(url) || url;
-    };
 
     useImperativeHandle(ref, () => ({
       validateForm: () => validateForm(showChannelConfig),
@@ -230,12 +227,10 @@ export const N8N = forwardRef<N8NRef, N8NProps>(
                 />
                 {item.imageList.map((image, imageIndex) => (
                   <div key={imageIndex} className="w-full">
-                    <Image
-                      src={getPublicPath(image)}
+                    <SafeImage
+                      src={image}
                       className="w-full"
-                      preview={{
-                        src: getPublicPath(image),
-                      }}
+
                     />
                   </div>
                 ))}

@@ -65,7 +65,7 @@ export function ProfileModal({ open, onClose }: ProfileModalProps) {
       footer={null}
       width={1440}
       centered
-      destroyOnClose
+      destroyOnHidden
       className="profile-settings-modal"
       styles={{
         body: { padding: 0, height: "80vh", overflow: "hidden" },

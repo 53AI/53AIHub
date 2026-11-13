@@ -4,8 +4,35 @@ import {
     THINKING_MODE,
     RESPONSE_STATUS,
     KNOWLEDGE_TYPE,
+    SOURCE_TYPE,
 } from './types'
 import { getSimpleDateFormatString } from '@km/shared-utils'
+import { t } from '@/locales'
+
+type RecordAsker = Pick<RecordItem, 'user_id' | 'visitor_id' | 'source' | 'request_source'>
+
+/**
+ * 解析提问人展示文案。
+ * 内部用户优先展示昵称；API 接入没有内部账号，回退到 visitor_id 并标注为 API 用户。
+ */
+export const resolveRecordAskerName = (
+  item: RecordAsker,
+  userMap: Record<number, string> = {},
+): string => {
+  const nickname = item.user_id !== undefined ? userMap[item.user_id] : undefined
+  if (nickname) return nickname
+
+  const requestSource = item.request_source || item.source
+  const isApiSource =
+    typeof requestSource === 'string' && requestSource.toLowerCase() === SOURCE_TYPE.API
+
+  const visitorId = item.visitor_id != null ? String(item.visitor_id).trim() : ''
+  if (visitorId && (isApiSource || visitorId.startsWith('api_'))) {
+    return t('search-record.api_user', { visitor: visitorId })
+  }
+
+  return isApiSource ? t('search-record.api_user_unknown') : ''
+}
 
 export const ThinkingModeContent = {
   [THINKING_MODE.QUICK_ANSWER]: window.$t('search-record.quick_answer'),
@@ -39,9 +66,14 @@ export const transformRecordItem = (item: RecordItem): RecordDisplayItem => {
   let specified_content = ''
 
   infos.forEach((info: any) => {
-    const infoContent = JSON.parse(info.content)
-    if (infoContent.type === 'specified_content') {
-      specified_content = infoContent.content
+    // info.content 不保证是合法 JSON（会话游标接口返回的历史消息同样走这里），解析失败直接跳过
+    try {
+      const infoContent = JSON.parse(info.content)
+      if (infoContent?.type === 'specified_content') {
+        specified_content = infoContent.content
+      }
+    } catch {
+      // ignore malformed info content
     }
   })
 

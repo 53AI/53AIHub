@@ -1,7 +1,8 @@
 import { useRef, forwardRef, useImperativeHandle } from 'react'
 import { PlusOutlined } from '@ant-design/icons'
 import CropperDialog, { type CropperDialogRef } from '@/components/CropperDialog'
-import './ImageUpload.css'
+
+import { SafeImage } from "@km/shared-components-react";import './ImageUpload.css'
 
 export interface ImageUploadRef {
   trigger: () => void
@@ -65,7 +66,7 @@ export const ImageUpload = forwardRef<ImageUploadRef, ImageUploadProps>(
           ) : (
             <>
               {value ? (
-                <img className="upload-image" src={value} alt="upload" />
+                <SafeImage className="upload-image" src={value} alt="upload" />
               ) : (
                 <div className="upload-placeholder">
                   <PlusOutlined style={{ color: '#9A9A9A', fontSize: 16 }} />

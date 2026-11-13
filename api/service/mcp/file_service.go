@@ -213,8 +213,9 @@ func (s *FileService) GetFileDetailWithBody(ctx context.Context, eid, userID int
 	}
 	if body != nil {
 		result.FileBody = body
-		result.Content = body.Content
-		result.Markdown = body.Content
+		cleanContent := common.StripInternalContactComments(body.Content)
+		result.Content = cleanContent
+		result.Markdown = cleanContent
 	}
 	return result, nil
 }

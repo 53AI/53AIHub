@@ -4,6 +4,7 @@ import { CreateNewEnterprise } from "./components/CreateNewEnterprise";
 import { EnterpriseList } from "./components/EnterpriseList";
 import { ForgetForm } from "./components/ForgetForm";
 import { getRealPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
 const FORM_TYPE = {
   LOGIN: "login",
@@ -60,19 +61,19 @@ export function LoginPage() {
         className="relative w-[55%] bg-cover bg-center bg-no-repeat max-md:hidden"
         style={{ backgroundImage: `url('${getRealPath("/images/login/km-bg.png")}')` }}
       >
-        <img
+        <SafeImage
           className="h-10 object-contain absolute top-8 left-10"
-          src={getRealPath("/images/km-logo.png")}
+          src={"/images/km-logo.png"}
           alt=""
         />
-        <img
+        <SafeImage
           className="w-[48%] object-contain absolute top-[25%] left-1/2 -translate-x-1/2"
-          src={getRealPath("/images/login/km-title-new.png")}
+          src={"/images/login/km-title-new.png"}
           alt=""
         />
-        <img
+        <SafeImage
           className="w-[75%] object-contain absolute top-[32%] left-1/2 -translate-x-1/2"
-          src={getRealPath("/images/login/km-demo-new.png")}
+          src={"/images/login/km-demo-new.png"}
           alt=""
         />
       </div>

@@ -12,6 +12,7 @@ import {
   getOpenClawHostKind,
   isOpenClawGatewayUnavailableError,
 } from "../openclaw-status";
+import { SafeImage } from "@km/shared-components-react";
 
 export { formatOpenClawGatewayName } from "../openclaw-status";
 
@@ -114,7 +115,7 @@ function SectionTitle({
   return (
     <div className="flex items-center gap-3">
       <span className="flex size-7 items-center justify-center rounded-full bg-[#F6F7FB]">
-        <img className="size-4" src={getPublicPath(iconSrc)} alt={title} />
+        <SafeImage className="size-4" src={iconSrc} alt={title} />
       </span>
       <span className="text-[15px] font-semibold text-[#3F4248]">{title}</span>
     </div>
@@ -363,7 +364,7 @@ export default function OpenClawPanel({
           <div className="mt-5 text-xs font-medium text-[#BEC4D0]">{t("openclaw.panel.version")}</div>
           <div className="mt-3 flex items-center gap-3 rounded-lg bg-[#F7F8FA] px-4 py-3">
             <span className="flex size-8 items-center justify-center rounded-full bg-[#5AA7FF] text-white">
-              <img className="size-4" src={getPublicPath(VERSION_ICON)} alt={t("openclaw.panel.current_version")} />
+              <SafeImage className="size-4" src={VERSION_ICON} alt={t("openclaw.panel.current_version")} />
             </span>
             <span className="flex-1 text-sm font-semibold text-[#3F4248]">{t("openclaw.panel.current_version")}</span>
             <span className="text-xs font-medium text-[#AEB5C2]">
@@ -448,7 +449,7 @@ export default function OpenClawPanel({
               return (
                 <div key={`${title}-${index}`} className="flex items-center gap-3 rounded-xl bg-[#F7F8FA] px-4 py-3">
                   <span className="flex size-9 items-center justify-center rounded-lg bg-white">
-                    <img className="size-6" src={getPublicPath(SKILL_ITEM_ICON)} alt={t("openclaw.panel.skill_icon", { title })} />
+                    <SafeImage className="size-6" src={SKILL_ITEM_ICON} alt={t("openclaw.panel.skill_icon", { title })} />
                   </span>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-[#3F4248]">{title}</div>
@@ -486,7 +487,7 @@ export default function OpenClawPanel({
           <div className="space-y-2">
             <div className="flex h-12 items-center gap-3 rounded-xl border border-[#EEF0F5] bg-white px-4">
               <span className="flex size-8 items-center justify-center rounded-full bg-[#F7F8FA]">
-                <img className="size-[18px]" src={getPublicPath(gatewayLogo)} alt={gatewayName} />
+                <SafeImage className="size-[18px]" src={gatewayLogo} alt={gatewayName} />
               </span>
               <span className="flex-1 text-[15px] font-semibold text-[#3F4248]">{gatewayName}</span>
               <ConnectionBadge connectionState={connectionState} />

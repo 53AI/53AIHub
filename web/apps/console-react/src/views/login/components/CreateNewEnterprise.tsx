@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Form, Input, message, Space } from "antd";
 import { CheckCircleFilled } from "@ant-design/icons";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useEnterpriseStore, useUserStore } from "@/stores";
 import { VerificationCodeInput } from "@/components/VerificationCodeInput";
 import { authApi } from "@/api/modules/auth";
@@ -391,7 +391,7 @@ export function CreateNewEnterprise(props: CreateNewEnterpriseProps) {
             <div className="text-tertiary text-sm mt-4">
               {t("apply_success_desc")}
             </div>
-            <img
+            <SafeImage
               className="w-[148px] object-contain mt-14"
               src="/images/upgrade-qrcode.png"
               alt=""

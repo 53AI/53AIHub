@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { RightOutlined } from "@ant-design/icons";
 import { t } from "@/locales";
+import { SafeImage } from "@km/shared-components-react";
 
 import {
   directUseItems,
@@ -8,6 +9,7 @@ import {
 import { LinkAndQrContent } from "./components/integrate/LinkAndQrContent";
 import { WebEmbedContent } from "./components/integrate/WebEmbedContent";
 import { ApiContent } from "./components/integrate/api";
+import { BotAccessContent } from "./components/integrate/BotAccessContent";
 import { useAgentFormStore } from "@km/shared-business/agent-create";
 import agentsApi from "@/api/modules/agents";
 
@@ -17,7 +19,7 @@ interface AgentIntegrateTabProps {
 }
 
 // 仅小助理（workbench）和 AI搜问（knowledge）开放"接入"入口
-// web、链接隐藏，只显示 api接入
+// web、链接隐藏，只显示 api 与微信机器人接入
 const ASSISTANT_LIKE_TYPES = ['workbench', 'knowledge'];
 
 export function AgentIntegrateTab({ agentId, agentType }: AgentIntegrateTabProps) {
@@ -53,10 +55,10 @@ export function AgentIntegrateTab({ agentId, agentType }: AgentIntegrateTabProps
     fetchOrGenerateToken();
   }, [currentAgentId]);
 
-  // 助理型（workbench/knowledge）侧栏只展示 API 接入；其他类型全部展示
+  // 助理型（workbench/knowledge）侧栏隐藏 web / 链接，只展示 API 与微信机器人；其他类型全部展示
   const visibleItems = useMemo(() => {
     if (!isAssistantLike) return directUseItems;
-    return directUseItems.filter(item => item.id === 'api');
+    return directUseItems.filter(item => ['api', 'wx_bot'].includes(item.id));
   }, [isAssistantLike]);
 
   const renderSidebarItem = (item: any) => {
@@ -67,7 +69,11 @@ export function AgentIntegrateTab({ agentId, agentType }: AgentIntegrateTabProps
         onClick={() => setActiveTab(item.id)}
         className={`flex items-center gap-3 px-4 py-5 mb-3 cursor-pointer rounded-lg border transition-all ${isActive ? "border-[#2563EB] bg-[#FAFCFF]" : "border hover:bg-gray-50"}`}
       >
-        <img src={item.icon} alt="" className="size-10"/>
+        {typeof item.icon === "string" ? (
+          <SafeImage src={item.icon} alt="" className="size-10"/>
+        ) : (
+          <div className="size-10 flex items-center justify-center">{item.icon}</div>
+        )}
         <div className="flex-1 min-w-0 pr-2">
           <div className="text-base font-medium text-primary truncate">
             {item.title}
@@ -113,7 +119,12 @@ export function AgentIntegrateTab({ agentId, agentType }: AgentIntegrateTabProps
         {activeTab === "api" && (
           <ApiContent agentId={currentAgentId} agentType={resolvedAgentType} />
         )}
-        {!isAssistantLike && activeTab !== "link" && activeTab !== "web" && activeTab !== "api" && (
+        {activeTab === "wx_bot" && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <BotAccessContent agentId={currentAgentId} />
+          </div>
+        )}
+        {!isAssistantLike && activeTab !== "link" && activeTab !== "web" && activeTab !== "api" && activeTab !== "wx_bot" && (
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
               <div className="text-4xl mb-4 text-gray-200">

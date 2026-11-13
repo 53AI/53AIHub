@@ -1,0 +1,39 @@
+{
+  "dataset_version": "v1-example",
+  "cases": [
+    {
+      "case_id": "example-001",
+      "split": "development",
+      "primary_scene": "management_meeting",
+      "secondary_domains": ["research_and_development"],
+      "topics": ["验证"],
+      "question": "是否扩大投入？",
+      "intent": "decision_review",
+      "meeting": {
+        "minutes_hash": "redacted-minutes-hash",
+        "segment_ids": ["seg-redacted-1"],
+        "claims": ["先做小范围验证"]
+      },
+      "access_scope": {
+        "enterprise_id": "redacted-enterprise",
+        "user_id": "redacted-user",
+        "file_ids": ["redacted-file"]
+      },
+      "knowledge_scope": {
+        "library_ids": ["redacted-library"],
+        "folder_ids": [],
+        "file_ids": []
+      },
+      "must_find": [
+        {
+          "id": "find-claim-001",
+          "kind": "claim",
+          "content": "先做小范围验证",
+          "weight": 2,
+          "evidence": "seg-redacted-1"
+        }
+      ],
+      "must_not_say": ["验证已经完成"]
+    }
+  ]
+}

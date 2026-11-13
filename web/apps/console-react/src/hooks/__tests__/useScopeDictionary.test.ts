@@ -17,7 +17,7 @@ vi.mock('@/api/modules/user', () => ({
   INTERNAL_USER_STATUS_ALL: 0,
   userApi: {
     fetch_internal_user: vi.fn(() =>
-      Promise.resolve({ list: [{ user_id: 100, nickname: '张三' }] })
+      Promise.resolve({ list: [{ id: 'ccuasQ', user_id: 100, nickname: '张三' }] })
     ),
   },
 }))
@@ -108,6 +108,14 @@ describe('useScopeDictionary', () => {
     expect(departmentApi.fetch_department_tree).toHaveBeenCalledTimes(1)
     expect(userApi.fetch_internal_user).toHaveBeenCalledTimes(1)
     expect(groupApi.list).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves the encoded user ID as the picker UID', async () => {
+    const { result } = renderHook(() => useScopeDictionary())
+
+    await waitFor(() => {
+      expect(result.current?.users[0]?.uid).toBe('ccuasQ')
+    })
   })
 
   it('does NOT re-fetch when a second consumer mounts while data is cached', async () => {

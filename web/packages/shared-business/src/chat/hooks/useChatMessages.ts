@@ -28,6 +28,15 @@ import { formatFileInfo, JSONParse } from "@km/shared-utils";
 
 type RagStatsFormatter = (ragStats: any, processRecords: any[]) => RagStats | null;
 
+export const findMessageSourceChunk = (message: any, sourceType: string, sourceNumber: string) => {
+  const ragStats = message.rag_stats;
+  const chunks = ragStats?.chunks?.length
+    ? ragStats.chunks
+    : ragStats?.document_search?.chunks || [];
+  const key = `[Source:${sourceType}-${sourceNumber}]`;
+  return chunks.find((item: any) => item.source_key === key || item.source === key);
+};
+
 export interface LoadMessagesOptions {
   skillList?: any[];
   mySkillList?: any[];
@@ -167,6 +176,10 @@ export async function loadMessagesData(
         feedback_type: "",
         feedbackLoading: false,
       };
+
+      if (typeof item.rag_stats === "string") {
+        item.rag_stats = parseJson(item.rag_stats, null);
+      }
 
       list.push({
         ...item,
@@ -795,8 +808,13 @@ function createFeedbackUpdater(feedback: any) {
   return (msg: Message): Message => ({
     ...msg,
     ...feedback,
-    feedbackVisible: msg.feedbackVisible ?? feedback.feedbackVisible,
-    feedbackTypeOptions: msg.feedbackTypeOptions ?? feedback.feedbackTypeOptions,
+    // 反馈记录自带 id(feedback 记录 id)字段,直接 spread 会把 msg.id(消息 id)覆盖掉:
+    // 之后点赞/点踩用 msg.id 作为 message_id,传出去的就是 feedback 记录 id 而非消息 id。
+    // 这里显式保留消息 id,并把 feedback 记录 id 归位到 feedbackId(更新/删除反馈时使用)。
+    id: msg.id,
+    feedbackId: feedback?.id ?? null,
+    feedbackVisible: msg.feedbackVisible ?? feedback?.feedbackVisible,
+    feedbackTypeOptions: msg.feedbackTypeOptions ?? feedback?.feedbackTypeOptions,
     feedbackLoading: false,
   });
 }
@@ -958,9 +976,7 @@ export function useChatMessages(options?: UseChatMessagesOptions) {
       graphRef?: any,
       graphSourceRef?: any
     ) => {
-      const chunks = message.rag_stats?.chunks || [];
-      const key = `[Source:${data.sourceType}-${data.sourceNumber}]`;
-      const chunk = chunks.find((item: any) => item.source_key === key || item.source === key);
+      const chunk = findMessageSourceChunk(message, data.sourceType, data.sourceNumber);
       if (chunk) {
         if (chunk.chunk_type === ("graph_result" as const)) {
           if (graphSourceRef) {

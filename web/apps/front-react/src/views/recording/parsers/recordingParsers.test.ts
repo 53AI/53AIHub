@@ -19,6 +19,18 @@ describe('parsePageJson', () => {
     expect(parsed._html).toContain('<svg')
   })
 
+  it('html_v2 的 HTML 会被装饰：body 白底 + 根节点布局 style', () => {
+    const parsed = parsePageJson(JSON.stringify({
+      format: 'html_v2',
+      version: 1,
+      html: '<!doctype html><html><head><style>body{background:red}</style></head><body><div class="page">内容</div></body></html>',
+    }))
+    expect(parsed._html).toContain('background-color: #fff')
+    // 装饰走 inline style（HTML_ROOT_CLASS），不依赖宿主 Tailwind 环境
+    expect(parsed._html).toContain('class="page"')
+    expect(parsed._html).toContain('style="max-width: 1200px; margin: 0 auto; padding: 0;')
+  })
+
   it('历史 Markdown 仍然返回旧格式', () => {
     const parsed = parsePageJson('# 旧版洞察\n\n## 风险\n内容')
     expect(parsed).toEqual({ _markdown: '# 旧版洞察\n\n## 风险\n内容' })
@@ -179,5 +191,46 @@ describe('parseTranscriptLines（分享接口后端预渲染 Markdown）', () =>
 
   it('无时间戳前缀的纯文本不产生条目', () => {
     expect(parseTranscriptLines('随便写点文字\n没有时间戳')).toEqual([])
+  })
+
+  it('说话人携带头像标记时提取 avatarUrl，speaker 为纯文本（与 KM-Record 同源）', () => {
+    const content = '[00:00:01] ![avatar](https://oss.example.com/u1.png) 张三: 你好。'
+    const items = parseTranscriptLines(content)
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      speaker: '张三',
+      avatarUrl: 'https://oss.example.com/u1.png',
+      content: '你好。',
+    })
+  })
+
+  it('说话人携带隐藏人员注释时从 speaker 中剔除，不影响解析', () => {
+    const content =
+      '[00:00:01] ![avatar](https://oss.example.com/u1.png) 李四<!--contact:{"id":"mem-42"}-->: 内容甲'
+    const items = parseTranscriptLines(content)
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      // 注释与头像标记都不进 speaker 纯文本
+      speaker: '李四',
+      contactId: 'mem-42',
+      avatarUrl: 'https://oss.example.com/u1.png',
+      content: '内容甲',
+    })
+  })
+
+  it('绑定人员缺失头像 URL 时仍保留联系人的 ID', () => {
+    const items = parseTranscriptLines('[00:00:01] 李四<!--contact:{"id":"mem-42"}-->: 你好')
+    expect(items[0]).toMatchObject({ speaker: '李四', contactId: 'mem-42' })
+    expect(items[0].avatarUrl).toBeUndefined()
+  })
+
+  it('说话人B 格式也按 B 分配颜色编号', () => {
+    const items = parseTranscriptLines('[00:00:01] 说话人A: 一\n[00:00:02] 说话人B: 二')
+    expect(items.map(item => item.speakerNum)).toEqual([1, 2])
+  })
+
+  it('未绑定说话人无 avatarUrl 字段', () => {
+    const items = parseTranscriptLines('[00:00:01] 说话人1: 你好。')
+    expect(items[0].avatarUrl).toBeUndefined()
   })
 })

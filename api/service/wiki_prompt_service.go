@@ -46,23 +46,37 @@ func renderWikiPromptTemplate(prompt string, data any) (string, error) {
 	return buf.String(), nil
 }
 
+// splitSummaryLine 拆出 SUMMARY 行与其后的正文。
+//
+// SUMMARY 行必须是**第一行**——这是提示词的明文契约（"Your FIRST line must be
+// exactly \"SUMMARY:\"..."）。旧实现取的是"最后一个"匹配的 SUMMARY 行，于是响应
+// 前面即使塞了一整段回显，也照样能把后面的 SUMMARY 行摘出来当有效摘要落库，
+// 而回显本身被静默丢弃。生产现场（logs/53AIHub-20261021.log, file_id=1978075）：
+//
+//	 If the content has no substantive information, output only the title line and
+//	 explanation sentence.        ← 回显，被静默丢弃
+//
+//	SUMMARY: 本文档仅包含写作指令，无可提取的实质性内容。
+//
+//	该来源缺少可综述的材料，仅要求遵循源语言、不使用项目符号、限制在 200 字符内并附加综述行。
+//
+// 改为只认第一行后，回显会被识别为"首行不是 SUMMARY"而进入契约校验的重试流程。
 func splitSummaryLine(raw string) (summary string, content string) {
 	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "SUMMARY:") || strings.HasPrefix(raw, "SUMMARY：") {
-		idx := strings.IndexByte(raw, '\n')
-		if idx < 0 {
-			trimmed := strings.TrimPrefix(raw, "SUMMARY:")
-			trimmed = strings.TrimPrefix(trimmed, "SUMMARY：")
-			return strings.TrimSpace(trimmed), ""
-		}
-
-		summaryLine := raw[:idx]
-		summaryLine = strings.TrimPrefix(summaryLine, "SUMMARY:")
-		summaryLine = strings.TrimPrefix(summaryLine, "SUMMARY：")
-		return strings.TrimSpace(summaryLine), strings.TrimSpace(raw[idx+1:])
+	if raw == "" {
+		return "", ""
 	}
+	lines := strings.Split(raw, "\n")
 
-	return "", raw
+	first := strings.TrimSpace(lines[0])
+	if !strings.HasPrefix(first, "SUMMARY:") && !strings.HasPrefix(first, "SUMMARY：") {
+		// 首行不是 SUMMARY：整体当作正文，摘要行留空，由调用方判为违约。
+		return "", raw
+	}
+	summaryLine := strings.TrimPrefix(strings.TrimPrefix(first, "SUMMARY:"), "SUMMARY：")
+	body := strings.TrimSpace(strings.Join(lines[1:], "\n"))
+	body = strings.TrimPrefix(body, "</summary>")
+	return strings.TrimSpace(summaryLine), strings.TrimSpace(body)
 }
 
 func cleanLLMJSON(s string) string {

@@ -4,9 +4,10 @@ import type { LibraryItem } from "@/api/modules/libraries";
 import type { FileItem } from "@/api/modules/files/types";
 import { getPublicPath, api_host } from "@/utils/config";
 import React from "react";
+import { SafeImage } from "@km/shared-components-react";
 
 // ==================== 类型定义 ====================
-const DEFAULT_ICON = getPublicPath("/images/file-default.png");
+const DEFAULT_ICON = "/images/file-default.png";
 
 // 获取完整图标URL，如果不是https开头则加上后台域名
 const getIconUrl = (icon?: string): string => {
@@ -75,7 +76,7 @@ export function SelectionListItem({
       onClick={onClick}
     >
       <Checkbox checked={selected} />
-      { icon ? icon : (iconSrc && <img src={iconSrc} className="size-5" alt="" />) }
+      { icon ? icon : (iconSrc && <SafeImage src={iconSrc} className="size-5" alt="" />) }
       <span className="flex-1 text-sm truncate">{item.name}</span>
       {subtitle && <span className="text-xs text-[#999] truncate w-1/2">{subtitle}</span>}
     </div>

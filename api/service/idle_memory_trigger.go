@@ -11,12 +11,15 @@ import (
 )
 
 // IdleMemoryTrigger 空闲记忆压缩触发器
-// Debounce 模式：每次 Reset 重置定时器，记录触发时的 messageID。
+// Debounce 模式：每次 Reset 重置定时器，并保留本批次最早的未处理 messageID。
 // 定时器到期后压缩 >= messageID 的新消息，精确控制压缩范围。
 // 支持断路器：连续失败时下次空闲间隔翻倍（上限 2h），成功后重置。
 type IdleMemoryTrigger struct {
 	mu         sync.Mutex
 	timers     map[string]*time.Timer
+	pending    map[string]int64
+	generation map[string]uint64
+	nextID     uint64
 	failures   map[string]int
 	interval   time.Duration
 	maxBackoff time.Duration
@@ -31,6 +34,8 @@ func NewIdleMemoryTrigger(interval time.Duration) *IdleMemoryTrigger {
 	}
 	return &IdleMemoryTrigger{
 		timers:     make(map[string]*time.Timer),
+		pending:    make(map[string]int64),
+		generation: make(map[string]uint64),
 		failures:   make(map[string]int),
 		interval:   interval,
 		maxBackoff: 2 * time.Hour,
@@ -59,7 +64,7 @@ func (t *IdleMemoryTrigger) effectiveInterval(key string) time.Duration {
 	return d
 }
 
-// Reset 重置指定 (eid, agentID, userID) 的空闲定时器，记录最新的 messageID
+// Reset 重置空闲计时，但保留尚未压缩的第一条消息 ID（0 表示按时间窗口扫描）。
 func (t *IdleMemoryTrigger) Reset(eid, agentID, userID, messageID int64) {
 	key := t.key(eid, agentID, userID)
 	t.mu.Lock()
@@ -68,10 +73,17 @@ func (t *IdleMemoryTrigger) Reset(eid, agentID, userID, messageID int64) {
 	if existing, ok := t.timers[key]; ok {
 		existing.Stop()
 	}
+	if firstID, ok := t.pending[key]; ok && (firstID == 0 || messageID > firstID) {
+		messageID = firstID
+	}
+	t.pending[key] = messageID
+	t.nextID++
+	generation := t.nextID
+	t.generation[key] = generation
 
 	d := t.effectiveInterval(key)
 	t.timers[key] = time.AfterFunc(d, func() {
-		t.fire(eid, agentID, userID, messageID)
+		t.fire(eid, agentID, userID, messageID, generation)
 	})
 }
 
@@ -85,6 +97,8 @@ func (t *IdleMemoryTrigger) Stop(eid, agentID, userID int64) {
 		existing.Stop()
 		delete(t.timers, key)
 	}
+	delete(t.pending, key)
+	delete(t.generation, key)
 }
 
 // RecordSuccess 记录压缩成功，重置失败计数
@@ -107,11 +121,17 @@ func (t *IdleMemoryTrigger) key(eid, agentID, userID int64) string {
 	return fmt.Sprintf("%d:%d:%d", eid, agentID, userID)
 }
 
-func (t *IdleMemoryTrigger) fire(eid, agentID, userID, messageID int64) {
+func (t *IdleMemoryTrigger) fire(eid, agentID, userID, messageID int64, generation uint64) {
 	key := t.key(eid, agentID, userID)
 
 	t.mu.Lock()
+	if t.generation[key] != generation {
+		t.mu.Unlock()
+		return // 已被更晚一次 Reset 或 Stop 取代的定时器
+	}
+	delete(t.generation, key)
 	delete(t.timers, key)
+	delete(t.pending, key)
 	fn := t.onTrigger
 	t.mu.Unlock()
 

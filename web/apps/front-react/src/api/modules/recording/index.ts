@@ -29,21 +29,19 @@ import type {
   QueuedCountResponse,
   RecordingFileInsightPage,
   InsightBackground,
-  InsightPerspectiveOption,
+  RecordingSceneOption,
   SceneModeOption,
   InsightWorkshopChatRequest,
   InsightWorkshopChatResponse,
   InsightRegenerationRequest,
-  FileTranscriptionResponse,
   TranscriptionExportResponse,
   PipelineResult,
-  MoveFileToGroupRequest,
-  MoveFileToGroupResponse,
   RecordingMemoryEntityList,
   RecordingMemoryEntityDetail,
   RecordingCurrentViewResponse,
   RecordingMemoryTimeline,
   RecordingMemoryEntitySchemas,
+  RecordingMemorySchemaCategory,
   UpdateRecordingMemoryEntityRequest,
   CreateRecordingMemoryEntityRequest,
   MergeMemoryEntitiesRequest,
@@ -75,6 +73,8 @@ import type {
   UpdateDeviceByIdRequest,
   SyncDeviceRequest,
   SyncDeviceResponse,
+  GetDeviceRecordingsParams,
+  GetDeviceRecordingsResponse,
 } from './types';
 
 /**
@@ -311,7 +311,7 @@ export async function getMyQueuedCount(): Promise<QueuedCountResponse> {
   return res.data
 }
 
-/** 获取安心录实体记忆列表。 */
+/** 获取安心录实体记忆列表。entity_type 支持逗号分隔多值（entity_type=xxx,xxx）。 */
 export async function getMemoryEntities(params: {
   entity_type?: string
   keyword?: string
@@ -325,9 +325,12 @@ export async function getMemoryEntities(params: {
 /**
  * 获取会议记忆实体 schema（进入页面时拉一次缓存）。
  * 中文名/枚举值全部来源于此接口，前端不硬编码。
+ * category：memory=经营记忆（默认）/ relation=关系 / all=全部。
  */
-export async function getMemorySchema(): Promise<RecordingMemoryEntitySchemas> {
-  const res = await request.get<ApiResponse<RecordingMemoryEntitySchemas>>('/api/recordings/memories/schema').catch(handleError)
+export async function getMemorySchema(
+  params: { category?: RecordingMemorySchemaCategory } = {},
+): Promise<RecordingMemoryEntitySchemas> {
+  const res = await request.get<ApiResponse<RecordingMemoryEntitySchemas>>('/api/recordings/memories/schema', { params }).catch(handleError)
   return res.data
 }
 
@@ -569,9 +572,11 @@ export async function getInsightBackground(fileId: string): Promise<InsightBackg
   return getRequest<InsightBackground>(`/api/recordings/files/${fileId}/insight-context`).catch(handleError)
 }
 
-/** 获取洞察可选场景（GET /api/recordings/scenes；场景由服务端统一定义，前端不硬编码） */
-export async function getInsightScenes(): Promise<InsightPerspectiveOption[]> {
-  return getRequest<InsightPerspectiveOption[]>('/api/recordings/scenes').catch(handleError)
+/** 获取录音场景字典（GET /api/recordings/scenes；场景由服务端统一定义，前端不硬编码）。
+ * 供列表分类筛选与洞察面板共用。
+ * 不链 handleError：列表侧要求静默降级（仅保留"全部"），洞察面板自行 catch 提示。 */
+export async function getRecordingScenes(): Promise<RecordingSceneOption[]> {
+  return getRequest<RecordingSceneOption[]>('/api/recordings/scenes')
 }
 
 /** 获取洞察决策模式（GET /api/recordings/scene-modes；模式由服务端统一定义，前端不硬编码） */
@@ -615,23 +620,14 @@ export async function promoteInsightExternalConstraints(fileId: string, external
   ).catch(handleError)
 }
 
-// ============= 转写原文 =============
-
-/**
- * 获取录音文件转写原文
- * GET /api/recordings/files/{file_id}/transcription
- */
-export async function getTranscription(fileId: string, config?: AxiosRequestConfig): Promise<FileTranscriptionResponse | null> {
-  const res = await request.get<ApiResponse<FileTranscriptionResponse | null>>(`/api/recordings/files/${fileId}/transcription`, config).catch(handleError)
-  return res.data
-}
+// ============= 转写导出 =============
 
 /**
  * 导出转写（后端把 DashScope 转写 JSON 渲染为 Markdown 直接返回，不是文件下载）
  * GET /api/recordings/files/{file_id}/transcription/export
  */
-export async function exportTranscription(fileId: string): Promise<TranscriptionExportResponse> {
-  const res = await request.get<ApiResponse<TranscriptionExportResponse>>(`/api/recordings/files/${fileId}/transcription/export`).catch(handleError)
+export async function exportTranscription(fileId: string, config?: AxiosRequestConfig): Promise<TranscriptionExportResponse> {
+  const res = await request.get<ApiResponse<TranscriptionExportResponse>>(`/api/recordings/files/${fileId}/transcription/export`, config).catch(handleError)
   return res.data
 }
 
@@ -644,24 +640,6 @@ export async function exportTranscription(fileId: string): Promise<Transcription
  */
 export async function pipeline(fileId: string): Promise<PipelineResult> {
   const res = await request.post<ApiResponse<PipelineResult>>(`/api/recordings/files/${fileId}/pipeline`).catch(handleError)
-  return res.data
-}
-
-// ============= 移动文件到分组 🆕 =============
-
-/**
- * 移动文件到分组（移入或移出分组）
- * PUT /api/recordings/files/{file_id}/group
- * group_id = 0 表示移出分组（未分组）
- */
-export async function moveFileToGroup(
-  fileId: string,
-  data: MoveFileToGroupRequest,
-): Promise<MoveFileToGroupResponse> {
-  const res = await request.put<ApiResponse<MoveFileToGroupResponse>>(
-    `/api/recordings/files/${fileId}/group`,
-    data,
-  ).catch(handleError)
   return res.data
 }
 
@@ -822,6 +800,24 @@ export async function syncDevice(data: SyncDeviceRequest): Promise<SyncDeviceRes
     .catch(handleError)
 }
 
+/**
+ * 预览远端录音列表
+ * GET /api/recordings/devices/{device_type}/recordings
+ *
+ * - 支持状态筛选（unsynced / synced / all）
+ * - 分页与全量（full=true）
+ * - 恒返回 summary
+ */
+export async function getDeviceRecordings(
+  deviceType: RecordingDeviceType,
+  params?: GetDeviceRecordingsParams,
+): Promise<GetDeviceRecordingsResponse> {
+  const res = await service
+    .get(`/api/recordings/devices/${deviceType}/recordings`, { params })
+    .catch(handleError)
+  return res.data
+}
+
 // ============= 默认导出 =============
 
 export const recordingApi = {
@@ -892,19 +888,15 @@ export const recordingApi = {
   // 决策页面编排
   getInsightPage,
   getInsightBackground,
-  getInsightScenes,
+  getRecordingScenes,
   getSceneModes,
   chatInsightWorkshop,
   regenerateInsights,
   promoteInsightExternalConstraints,
-  getTranscription,
   exportTranscription,
 
   // 继续生成管线
   pipeline,
-
-  // 移动文件到分组
-  moveFileToGroup,
 
   // 分享
   createFileShare,
@@ -921,6 +913,7 @@ export const recordingApi = {
   deleteDeviceById,
   setActiveDevice,
   syncDevice,
+  getDeviceRecordings,
 }
 
 export default recordingApi

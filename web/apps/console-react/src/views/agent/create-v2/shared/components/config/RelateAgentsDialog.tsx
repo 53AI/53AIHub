@@ -18,9 +18,8 @@ import { Search } from "@km/shared-components-react";
 import agentApi from "@/api/modules/agent";
 import { GROUP_TYPE } from "@/constants/group";
 import { t } from "@/locales";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import RelateAgentsSetting from "./RelateAgentsSetting";
-import { getPublicPath } from "@/utils/config";
 
 export interface RelateAgentsDialogRef {
   open: (relateAgents: any[]) => void;
@@ -194,17 +193,11 @@ export const RelateAgentsDialog = forwardRef<RelateAgentsDialogRef, Props>(
                       key={item.agent_id}
                       className="bg-white rounded border p-4 flex items-center gap-2 relative group"
                     >
-                      <img
+                      <SafeImage
                         alt={t("agent.ai_search")}
-                        src={
-                          item.logo ||
-                          getPublicPath("/images/agent/default-logo.png")
-                        }
+                        src={item.logo || "/images/agent/default-logo.png"}
                         className="size-10 rounded-md"
-                        onError={(e) => {
-                          e.currentTarget.src =
-                            getPublicPath("/images/agent/default-logo.png");
-                        }}
+                        fallback="/images/agent/default-logo.png"
                       />
                       <div className="flex-1 overflow-hidden">
                         <div className="text-sm text-primary flex items-center gap-3">

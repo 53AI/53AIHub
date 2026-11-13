@@ -1,4 +1,3 @@
-import { getPublicPath } from "@/utils"
 export const USER_ROLES = {
   ADMIN: 2,
   MEMBER: 1,
@@ -15,8 +14,8 @@ export const USER_STATUS = {
 export type UserStatus = (typeof USER_STATUS)[keyof typeof USER_STATUS]
 
 /**
- * 用户默认头像
+ * 用户默认头像（原始相对路径，消费端 SafeImage 内部统一解析 base）
  *
  * API / 分享数据返回的 avatar 字段可能为空或加载失败，统一回退到此图。
  */
-export const DEFAULT_USER_AVATAR = getPublicPath('/images/default_avatar.png')
+export const DEFAULT_USER_AVATAR = '/images/default_avatar.png'

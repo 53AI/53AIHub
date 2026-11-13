@@ -19,9 +19,9 @@ import promptApi from "@/api/modules/prompt";
 import resourceScopesApi from "@/api/modules/resource-scopes";
 import { copyToClip } from "@km/shared-utils";
 import type { ScopeItem } from "@km/shared-business/agent-create";
-import { getPublicPath, api_host } from "@/utils/config";
+import { api_host } from "@/utils/config";
 import { t } from "@/locales";
-import { SvgIcon, SidePanel, IconAction } from "@km/shared-components-react";
+import { SvgIcon, SidePanel, IconAction, SafeImage } from "@km/shared-components-react";
 import { MdRenderer } from "@km/hub-ui-x-react";
 import Header, { BreadcrumbItem } from "@/components/Layout/Header";
 import Footer from "@/components/Layout/Footer";
@@ -301,7 +301,8 @@ export function PromptDetailView() {
 
             {/* 正常内容视图 */}
             <div className="flex items-center gap-3 mb-5">
-              <img
+              <SafeImage
+                kind="prompt"
                 className="flex-none size-14 rounded-lg object-cover"
                 src={detailData.logo}
                 alt={detailData.name}
@@ -426,13 +427,11 @@ export function PromptDetailView() {
                         }}
                       >
                         <div className="size-8 rounded-full border overflow-hidden flex items-center justify-center">
-                          <img
-                            src={item.logo}
+                          <SafeImage
+                            src={item.logo || ""}
                             className="size-6 rounded-full"
                             alt={item.name}
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = getPublicPath("/images/default_logo.png");
-                            }}
+                            fallback="/images/default_logo.png"
                           />
                         </div>
                         <p className="text-primary text-sm whitespace-nowrap">
@@ -519,13 +518,11 @@ export function PromptDetailView() {
                                 }}
                               >
                                 <div className="size-8 rounded-full border overflow-hidden flex items-center justify-center">
-                                  <img
-                                    src={item.logo}
+                                  <SafeImage
+                                    src={item.logo || ""}
                                     className="size-6 rounded-full"
                                     alt={item.name}
-                                    onError={(e) => {
-                                      (e.target as HTMLImageElement).src = getPublicPath("/images/default_logo.png");
-                                    }}
+                                    fallback="/images/default_logo.png"
                                   />
                                 </div>
                                 <p className="text-primary text-sm whitespace-nowrap">
@@ -606,13 +603,11 @@ export function PromptDetailView() {
                 {useSceneList.map((item, index) => (
                   <div key={index} className="text-center p-6 bg-[#F4F6F9] rounded-xl border border-[#E6E8EB]">
                     {item.image && (
-                      <img
+                      <SafeImage
                         className="mx-auto max-w-[200px] mb-4"
                         src={item.image}
                         alt={item.scene}
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
+                        // 加载失败 → 展示 SafeImage 的兜底图。
                       />
                     )}
                     <h6 className="text-base text-primary mb-3">{item.scene}</h6>

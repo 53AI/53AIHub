@@ -81,27 +81,36 @@ func GetSharedRecordingContent(ctx context.Context, shareID string) (map[string]
 
 	// 文件元信息（title 供转写 markdown 渲染使用）
 	file, err := model.GetFileByID(rec.Eid, rec.FileID)
-	title := ""
-	if err == nil {
-		title = filePathBase(file.Path)
-		data["title"] = title
-		data["duration_ms"] = file.DurationMs
-		data["created_time"] = file.CreatedTime
-		// 语音文件字段（与录音列表一致：File.UploadFile 序列化）
-		file.LoadUploadFile()
-		if file.UploadFile != nil {
-			data["upload_file"] = file.UploadFile
-		}
+	if err != nil || file == nil || file.IsDeleted {
+		return nil, ErrRecordingShareNotFound
+	}
+	title := filePathBase(file.Path)
+	data["title"] = title
+	data["duration_ms"] = file.DurationMs
+	data["created_time"] = file.CreatedTime
+	// 语音文件字段（与录音列表一致：File.UploadFile 序列化）
+	file.LoadUploadFile()
+	if file.UploadFile != nil {
+		data["upload_file"] = file.UploadFile
 	}
 
 	// 转写（统一 Markdown 输出：SonicNote 数组 / DashScope 对象 / 非 JSON 格式感知，
-	// 复用导出渲染逻辑 RenderTranscriptMarkdown，前端无需区分转写来源二次处理）
+	// 复用导出渲染逻辑 RenderTranscriptMarkdown，前端无需区分转写来源二次处理）。
+	// 标题由独立的 title 字段下发，正文不再重复拼 # 标题（避免文件名变更后正文标题脱节）。
+	// 分享页是只读视图：按人员最新姓名/头像富化后剥离 <!--contact:...-->，既与本人所见一致，
+	// 又不把私有人员 ID 写进匿名可访问的页面内容。
 	if text, err := LoadTranscriptText(rec.Eid, rec.FileID); err == nil {
-		if md, mdErr := RenderTranscriptMarkdown(text, title); mdErr == nil {
-			data["transcription"] = md
-		} else {
-			data["transcription"] = text // 渲染失败降级返回原文
+		md, mdErr := RenderTranscriptMarkdown(text, "")
+		if mdErr != nil {
+			md = text // 渲染失败降级返回原文
 		}
+		// 富化失败也必须剥离注释：分享页任何情况下都不带隐藏人员 ID。
+		if enriched, enrichErr := EnrichTranscriptWithLatestContacts(ctx, rec.Eid, md, true); enrichErr == nil && enriched != "" {
+			md = enriched
+		} else {
+			md = StripTranscriptContactComments(md)
+		}
+		data["transcription"] = md
 	}
 
 	// 纪要放回 summaries（复用 ListFileSummaries 组装：过滤转写原文 -1/-2、

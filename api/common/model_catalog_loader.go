@@ -21,11 +21,18 @@ type EmbeddingModelMeta struct {
 
 // ChatModelMeta 聊天模型元数据
 type ChatModelMeta struct {
-	ModelID    string `json:"model_id"`
-	ModelName  string `json:"model_name"`
-	CategoryID string `json:"category_id"`
-	PlatformID string `json:"platform_id"`
-	Enabled    bool   `json:"enabled"`
+	ModelID             string   `json:"model_id"`
+	ModelName           string   `json:"model_name"`
+	CategoryID          string   `json:"category_id"`
+	PlatformID          string   `json:"platform_id"`
+	Enabled             bool     `json:"enabled"`
+	DeepThinking        bool     `json:"deep_thinking,omitempty"`
+	Vision              bool     `json:"vision,omitempty"`
+	EnabledTools        []string `json:"enabled_tools,omitempty"`
+	UpstreamAPIFormat   string   `json:"upstream_api_format,omitempty"`
+	SupportedAPIFormats []string `json:"supported_api_formats,omitempty"`
+	Preview             bool     `json:"preview,omitempty"`
+	ModelVersion        string   `json:"model_version,omitempty"`
 }
 
 // RerankModelMeta rerank模型元数据
@@ -58,12 +65,17 @@ type Category struct {
 }
 
 type Model struct {
-	ModelID      string `json:"model_id"`
-	ModelName    string `json:"model_name"`
-	Dimensions   int    `json:"dimensions,omitempty"`
-	MaxTokens    int    `json:"max_tokens,omitempty"`
-	DeepThinking bool   `json:"deep_thinking,omitempty"`
-	Vision       bool   `json:"vision,omitempty"`
+	ModelID             string   `json:"model_id"`
+	ModelName           string   `json:"model_name"`
+	Dimensions          int      `json:"dimensions,omitempty"`
+	MaxTokens           int      `json:"max_tokens,omitempty"`
+	DeepThinking        bool     `json:"deep_thinking,omitempty"`
+	Vision              bool     `json:"vision,omitempty"`
+	EnabledTools        []string `json:"enabled_tools,omitempty"`
+	UpstreamAPIFormat   string   `json:"upstream_api_format,omitempty"`
+	SupportedAPIFormats []string `json:"supported_api_formats,omitempty"`
+	Preview             bool     `json:"preview,omitempty"`
+	ModelVersion        string   `json:"model_version,omitempty"`
 }
 
 // ModelCatalogLoader 模型目录加载器
@@ -109,11 +121,18 @@ func (l *ModelCatalogLoader) load() error {
 			case 1: // chat模型
 				for _, model := range category.Models {
 					meta := &ChatModelMeta{
-						ModelID:    model.ModelID,
-						ModelName:  model.ModelName,
-						CategoryID: category.CategoryID,
-						PlatformID: platform.PlatformID,
-						Enabled:    true, // 默认启用
+						ModelID:             model.ModelID,
+						ModelName:           model.ModelName,
+						CategoryID:          category.CategoryID,
+						PlatformID:          platform.PlatformID,
+						Enabled:             true, // 默认启用
+						DeepThinking:        model.DeepThinking,
+						Vision:              model.Vision,
+						EnabledTools:        model.EnabledTools,
+						UpstreamAPIFormat:   model.UpstreamAPIFormat,
+						SupportedAPIFormats: model.SupportedAPIFormats,
+						Preview:             model.Preview,
+						ModelVersion:        model.ModelVersion,
 					}
 					l.chatModels[model.ModelID] = meta
 				}
@@ -414,17 +433,19 @@ func (l *ModelCatalogLoader) GetModelMeta(channelType int, modelName string) (in
 					// 根据模型类型返回相应的元数据
 					switch category.ModelType {
 					case 1: // chat 模型
-						chatMeta, exists := l.chatModels[modelName]
-						if exists {
-							return chatMeta, nil
-						}
-						// 如果缓存中不存在，创建一个新的
 						return &ChatModelMeta{
-							ModelID:    model.ModelID,
-							ModelName:  model.ModelName,
-							CategoryID: category.CategoryID,
-							PlatformID: platform.PlatformID,
-							Enabled:    true,
+							ModelID:             model.ModelID,
+							ModelName:           model.ModelName,
+							CategoryID:          category.CategoryID,
+							PlatformID:          platform.PlatformID,
+							Enabled:             true,
+							DeepThinking:        model.DeepThinking,
+							Vision:              model.Vision,
+							EnabledTools:        model.EnabledTools,
+							UpstreamAPIFormat:   model.UpstreamAPIFormat,
+							SupportedAPIFormats: model.SupportedAPIFormats,
+							Preview:             model.Preview,
+							ModelVersion:        model.ModelVersion,
 						}, nil
 					case 2: // embedding 模型
 						embeddingMeta, exists := l.embeddingModels[modelName]

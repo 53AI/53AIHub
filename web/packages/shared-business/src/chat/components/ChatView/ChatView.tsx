@@ -1963,6 +1963,7 @@ export const ChatView = forwardRef<ChatViewRef, ChatViewProps>(
 							? conversationId || ""
 							: conversationId || 0,
 						modelId: sendContext?.modelId ?? "",
+						thinkingMode: sendContext?.thinkingMode,
 						completion_params: completionParams,
 						messageList: baselineMessageList,
 						links, // @ 提及列表(由 Sender atList 或 sendContext.links 合并)

@@ -221,6 +221,7 @@ export function AgentDetailView() {
 
           <div className="flex items-center gap-3">
             <SafeImage
+              kind="agent"
               className="size-14 md:size-12 rounded-lg object-cover flex-none"
               src={detailData.logo}
               alt={detailData.name}
@@ -258,7 +259,7 @@ export function AgentDetailView() {
           <ChatConfigProvider lang={locale} adapters={chatAdapters}>
             <UsageGuide
               useCases={useCasesData}
-              defaultImage={getPublicPath('/images/default_agent.png')}
+              defaultImage={'/images/default_agent.png'}
               plain
             />
           </ChatConfigProvider>

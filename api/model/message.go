@@ -75,10 +75,10 @@ const (
 )
 
 const (
-	ResponseStatusNormal       = 1
-	ResponseStatusReject       = 2
-	ThinkingModeQuick          = 1
-	ThinkingModeDeep           = 2
+	ResponseStatusNormal = 1
+	ResponseStatusReject = 2
+	ThinkingModeQuick    = 1
+	ThinkingModeDeep     = 2
 
 	// KnowledgeType 按「对话开启的查询范围组合」判定，与消息列表筛选互斥对应：
 	// 0=未启用知识查询，1=知识文档(全部知识库)，2=联网搜索，3=指定知识库/空间，
@@ -377,10 +377,48 @@ func GetMessagesByConversationIDWithDirectionWithVisitor(eid, conversationID, us
 	return GetMessagesByConversationIDWithDirection(eid, conversationID, keyword, limit, offset, direction)
 }
 
-func GetMessagesList(eid int64, keyword string, thinkingMode, responseStatus *int, knowledgeTypes []int, startDate, endDate *int64, direction string, limit, offset int, agentID *int64, fileIDs []int64, sources []string) (count int64, messages []*Message, err error) {
+// GetMessagesByConversationIDWithDirectionAfter 获取指定会话中 id > afterID 的消息（升序），
+// 用于会话增量摘要的可靠消息游标推进（Phase 2A）。
+func GetMessagesByConversationIDWithDirectionAfter(eid, conversationID, afterID int64, limit int, direction string) ([]*Message, error) {
+	query := DB.Where("eid = ? AND conversation_id = ? AND id > ?", eid, conversationID, afterID)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if direction == "desc" {
+		query = query.Order("id DESC")
+	} else {
+		query = query.Order("id ASC")
+	}
+	var messages []*Message
+	err := query.Find(&messages).Error
+	return messages, err
+}
+
+// GetMessagesByConversationIDWithDirectionBefore 获取指定会话中 id < beforeID 的消息，
+// 与 GetMessagesByConversationIDWithDirectionAfter 对称：direction=desc 时由近到远（相邻的上一条），
+// 用于详情按 message id 游标翻页，避免拉取整段会话。
+func GetMessagesByConversationIDWithDirectionBefore(eid, conversationID, beforeID int64, limit int, direction string) ([]*Message, error) {
+	query := DB.Where("eid = ? AND conversation_id = ? AND id < ?", eid, conversationID, beforeID)
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	if direction == "asc" {
+		query = query.Order("id ASC")
+	} else {
+		query = query.Order("id DESC")
+	}
+	var messages []*Message
+	err := query.Find(&messages).Error
+	return messages, err
+}
+
+func GetMessagesList(eid int64, keyword string, thinkingMode, responseStatus *int, knowledgeTypes []int, startDate, endDate *int64, direction string, limit, offset int, agentID *int64, fileIDs []int64, sources []string, userID *int64) (count int64, messages []*Message, err error) {
 	query := DB.Model(&Message{}).Where("eid = ?", eid)
 	if keyword != "" {
-		query = query.Where("message LIKE ? OR answer LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+		query = query.Where("message LIKE ?", "%"+keyword+"%")
+	}
+	if userID != nil {
+		query = query.Where("user_id = ?", *userID)
 	}
 	if thinkingMode != nil {
 		query = query.Where("thinking_mode = ?", *thinkingMode)

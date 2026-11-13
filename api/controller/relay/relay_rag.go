@@ -1,24 +1,37 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/53AI/53AIHub/common/logger"
-	"github.com/53AI/53AIHub/common/utils/hashids"
-	"github.com/53AI/53AIHub/config"
-	"github.com/53AI/53AIHub/model"
-	"github.com/53AI/53AIHub/search_tools"
-	servicepkg "github.com/53AI/53AIHub/service"
-	"github.com/53AI/53AIHub/service/rag"
-	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
+	"io"
+	"net/http"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+
+	"github.com/53AI/53AIHub/common/ctxkey"
+	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/tokenlimit"
+	"github.com/53AI/53AIHub/common/utils/hashids"
+	"github.com/53AI/53AIHub/config"
+	"github.com/53AI/53AIHub/middleware"
+	"github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/search_tools"
+	servicepkg "github.com/53AI/53AIHub/service"
+	agentexec "github.com/53AI/53AIHub/service/agent"
+	"github.com/53AI/53AIHub/service/hub_adaptor/custom"
+	CustomOpenAI "github.com/53AI/53AIHub/service/hub_adaptor/custom_openai"
+	"github.com/53AI/53AIHub/service/hub_adaptor/openai"
+	"github.com/53AI/53AIHub/service/rag"
+	"github.com/gin-gonic/gin"
+	relay_model "github.com/songquanpeng/one-api/relay/model"
+	"github.com/songquanpeng/one-api/relay/relaymode"
 )
 
 const (
@@ -28,6 +41,61 @@ const (
 	// finalTopK 超过该值时由下方下限保护兜底，保证 rerank 输入不小于最终输出。
 	rerankRecallMax = 50
 )
+
+type ragSourcePlan struct {
+	LocalWebSearch bool
+	ModelSearch    bool
+	KnowledgeBase  bool
+	SoloFile       bool
+	SoloWiki       bool
+	WikiSearch     bool
+}
+
+type ragSearchBranchResult struct {
+	sources []rag.SourceReference
+	err     error
+}
+
+func runRAGSearchBranches(searches ...func() ([]rag.SourceReference, error)) []ragSearchBranchResult {
+	results := make([]ragSearchBranchResult, len(searches))
+	var wg sync.WaitGroup
+	for index, search := range searches {
+		wg.Add(1)
+		go func(index int, search func() ([]rag.SourceReference, error)) {
+			defer wg.Done()
+			results[index].sources, results[index].err = search()
+		}(index, search)
+	}
+	wg.Wait()
+	return results
+}
+
+func ragSearchStartMessage(plan ragSourcePlan) string {
+	var scopes []string
+	if plan.KnowledgeBase {
+		scopes = append(scopes, "所选知识库")
+	}
+	if plan.WikiSearch {
+		scopes = append(scopes, "Wiki")
+	} else if plan.SoloWiki {
+		scopes = append(scopes, "所选 Wiki 页面")
+	}
+	if plan.SoloFile {
+		scopes = append(scopes, "所选文件")
+	}
+	if plan.LocalWebSearch || plan.ModelSearch {
+		scopes = append(scopes, "全网")
+	}
+	if len(scopes) == 0 {
+		return ""
+	}
+	if len(scopes) == 1 {
+		return "正在搜索" + scopes[0] + "..."
+	}
+	return "正在搜索" + strings.Join(scopes[:len(scopes)-1], "、") + "和" + scopes[len(scopes)-1] + "..."
+}
+
+const nativeWebSearchUsageContextKey = "native_web_search_usage"
 
 func calculateRecallTopK(finalTopK int, _ int, rerankEnabled bool) int {
 	if finalTopK <= 0 {
@@ -53,6 +121,181 @@ func limitSearchItemsTopK(items []*search_tools.SearchItem, topK int) []*search_
 		return items
 	}
 	return items[:topK]
+}
+
+func limitDocumentQAQueries(queries []string, maxQueries int) []string {
+	if maxQueries <= 0 {
+		return nil
+	}
+	capacity := maxQueries
+	if len(queries) < capacity {
+		capacity = len(queries)
+	}
+	result := make([]string, 0, capacity)
+	seen := make(map[string]struct{}, len(queries))
+	for _, query := range queries {
+		query = strings.TrimSpace(query)
+		if query == "" {
+			continue
+		}
+		if _, exists := seen[query]; exists {
+			continue
+		}
+		seen[query] = struct{}{}
+		result = append(result, query)
+		if len(result) == maxQueries {
+			break
+		}
+	}
+	return result
+}
+
+// retrievalQueries preserves ordinary single-query behavior while allowing an
+// enhanced SIMPLE_RAG to use the expansion already produced by classification.
+func retrievalQueries(initial string, intent *rag.IntentClassificationResult) []string {
+	queries := []string{}
+	if intent != nil && (intent.Intent == "COMPLEX_AGENT" || (intent.Intent == "SIMPLE_RAG" && intent.EnhancedRetrieval)) {
+		expanded := intent.ExpandedQueries
+		if intent.Intent == "SIMPLE_RAG" && len(expanded) > 2 {
+			expanded = expanded[:2]
+		}
+		queries = append(queries, expanded...)
+	}
+	queries = append(queries, initial)
+	queries = limitDocumentQAQueries(queries, len(queries))
+	if len(queries) == 0 {
+		return []string{initial}
+	}
+	return queries
+}
+
+func retrievalScopeQuery(original, rewritten string, queries []string) string {
+	if rewritten != "" {
+		return rewritten
+	}
+	if original != "" {
+		return original
+	}
+	return queries[0]
+}
+
+// documentCluesAvailable requires the document and target terms to occur in
+// the same file. A missing clue is not proof that the document lacks the field.
+func documentCluesAvailable(sources []rag.SourceReference, intent *rag.IntentClassificationResult) bool {
+	if intent != nil && intent.EnhancedRetrieval && (strings.TrimSpace(intent.DocumentType) == "" || len(intent.TargetKeywords) == 0) {
+		return false
+	}
+	if intent == nil || strings.TrimSpace(intent.DocumentType) == "" || len(intent.TargetKeywords) == 0 {
+		return len(sources) > 0
+	}
+	found := false
+	for _, source := range sources {
+		if sourceCategory(source) != "document" || source.FileID == 0 {
+			continue
+		}
+		content := strings.ToLower(source.FileName + " " + source.Title)
+		if !strings.Contains(content, strings.ToLower(intent.DocumentType)) {
+			continue
+		}
+		// Require the document identity and all requested field clues in one
+		// coherent line/row. Pooling chunks or sentences can pair unrelated fields.
+		for _, row := range strings.FieldsFunc(source.Content, func(r rune) bool {
+			return r == '\n' || r == '\r' || r == '。' || r == '；' || r == ';' || r == '，' || r == ','
+		}) {
+			row = strings.ToLower(row)
+			all := true
+			for _, term := range intent.TargetKeywords {
+				term = strings.ToLower(strings.TrimSpace(term))
+				if term != "" && !strings.Contains(row, term) {
+					all = false
+					break
+				}
+			}
+			if all {
+				found = true
+			}
+		}
+	}
+	return found
+}
+
+func supplementalRetrievalQueries(intent *rag.IntentClassificationResult, previous []string, original, rewritten string) []string {
+	if intent == nil {
+		return nil
+	}
+	possible := append([]string{}, intent.Keywords...)
+	possible = append(possible, intent.DocumentType)
+	possible = append(possible, intent.TargetKeywords...)
+	var terms []string
+	for _, term := range possible {
+		term = strings.TrimSpace(term)
+		if term != "" && (strings.Contains(strings.ToLower(original), strings.ToLower(term)) || strings.Contains(strings.ToLower(rewritten), strings.ToLower(term))) {
+			terms = append(terms, term)
+		}
+	}
+	terms = limitDocumentQAQueries(terms, len(terms))
+	query := strings.TrimSpace(strings.Join(terms, " "))
+	if query == "" {
+		return nil
+	}
+	for _, existing := range previous {
+		if strings.EqualFold(strings.Join(strings.Fields(existing), " "), strings.Join(strings.Fields(query), " ")) {
+			return nil
+		}
+	}
+	return []string{query}
+}
+
+func mergeSupplementalSources(first, extra []rag.SourceReference) []rag.SourceReference {
+	result := append([]rag.SourceReference(nil), first...)
+	seen := make(map[string]bool, len(first)+len(extra))
+	key := func(source rag.SourceReference) string {
+		if source.ChunkID != 0 {
+			return fmt.Sprintf("%s:%d:%d", sourceCategory(source), source.FileID, source.ChunkID)
+		}
+		return fmt.Sprintf("%s:%d:%s:%s", sourceCategory(source), source.FileID, source.URL, source.Content)
+	}
+	for _, source := range first {
+		seen[key(source)] = true
+	}
+	for _, source := range extra {
+		if !seen[key(source)] {
+			result = append(result, source)
+			seen[key(source)] = true
+		}
+	}
+	return result
+}
+
+// rankDocumentClues changes ordering only; missing clues never discard a source.
+func rankDocumentClues(sources []rag.SourceReference, intent *rag.IntentClassificationResult) {
+	if intent == nil || !intent.EnhancedRetrieval || strings.TrimSpace(intent.DocumentType) == "" {
+		return
+	}
+	score := func(source rag.SourceReference) int {
+		if sourceCategory(source) != "document" {
+			return 0
+		}
+		text := strings.ToLower(source.FileName + " " + source.Title + " " + source.Content)
+		weight := 0
+		if strings.Contains(text, strings.ToLower(intent.DocumentType)) {
+			weight += 2
+		}
+		for _, term := range append(append([]string(nil), intent.Keywords...), intent.TargetKeywords...) {
+			term = strings.ToLower(strings.TrimSpace(term))
+			if term != "" && strings.Contains(text, term) {
+				weight++
+			}
+		}
+		return weight
+	}
+	// A clue may promote a document by at most one adjacent position. It cannot
+	// leap over Wiki/Web results or turn a soft signal into an absolute filter.
+	for i := 1; i < len(sources); i++ {
+		if sourceCategory(sources[i]) == "document" && sourceCategory(sources[i-1]) == "document" && score(sources[i]) > score(sources[i-1]) {
+			sources[i-1], sources[i] = sources[i], sources[i-1]
+		}
+	}
 }
 
 func appendGraphAggregateSource(base []rag.SourceReference, graphSource *rag.SourceReference) []rag.SourceReference {
@@ -215,19 +458,14 @@ func HandleWikiSearchRag(c *gin.Context, queries []string, chatRequest *ChatRequ
 }
 
 func wikiSourceReference(result servicepkg.WikiSearchResult, index int) rag.SourceReference {
-	// Vector retrieval returns the matched chunk in Content. Use the page body
-	// only as a compatibility fallback; injecting the whole page makes a
-	// single Wiki hit dominate both context size and answer grounding.
+	// Keep the matched chunk as the retrieval source; the selected Wiki page is
+	// expanded to its version body only after final source selection.
 	content := strings.TrimSpace(result.Content)
-	if content == "" {
+	if content == "" && result.ChunkID == "" {
 		content = strings.TrimSpace(result.Body)
 	}
-	if content == "" {
+	if content == "" && result.ChunkID == "" {
 		content = strings.TrimSpace(result.Summary)
-	}
-	contentRunes := []rune(content)
-	if len(contentRunes) > 12000 {
-		content = string(contentRunes[:12000])
 	}
 	referenceID := wikiReferenceID(index)
 	return rag.SourceReference{
@@ -239,9 +477,299 @@ func wikiSourceReference(result servicepkg.WikiSearchResult, index int) rag.Sour
 		LibraryName: result.LibraryName, LibraryIcon: result.LibraryIcon,
 		SpaceID: hashInt64(result.SpaceID), SpaceName: result.SpaceName,
 		Slug: result.Slug, FileCreatedAt: result.CreatedTime,
-		URL:       fmt.Sprintf("/api/wiki/pages/%s", hashInt64(result.PageID)),
-		SourceKey: fmt.Sprintf("[Source:%s]", referenceID),
+		URL:               fmt.Sprintf("/api/wiki/pages/%s", hashInt64(result.PageID)),
+		SourceKey:         fmt.Sprintf("[Source:%s]", referenceID),
+		WikiPageVersionID: result.WikiPageVersionID, WikiChunkID: result.ChunkID,
+		WikiHeadingPath: result.HeadingPath,
 	}
+}
+
+func wikiSourceWithPageContext(source rag.SourceReference, pageContext servicepkg.WikiPageContext) rag.SourceReference {
+	source.Content = pageContext.Body
+	if pageContext.Title != "" {
+		source.Title = pageContext.Title
+		source.FileName = pageContext.Title
+	}
+	source.WikiPageVersionID = pageContext.VersionID
+	if strings.TrimSpace(pageContext.Body) == "" {
+		source.WikiCoverage = "unavailable"
+	} else {
+		source.WikiCoverage = "complete"
+	}
+	source.WikiMatchedChunkDBIDs = append([]int64(nil), pageContext.MatchedChunkDBIDs...)
+	source.WikiMatchedChunkIDs = append([]string(nil), pageContext.MatchedChunkIDs...)
+	source.WikiChunks = make([]rag.WikiSourceChunk, 0, len(pageContext.Chunks))
+	source.WikiChunkDBIDs = make([]int64, 0, len(pageContext.Chunks))
+	source.WikiChunkIDs = make([]string, 0, len(pageContext.Chunks))
+	for _, chunk := range pageContext.Chunks {
+		source.WikiChunks = append(source.WikiChunks, rag.WikiSourceChunk{
+			DBID: chunk.ID, ChunkID: chunk.ChunkID, HeadingPath: chunk.HeadingPath, Content: chunk.Content,
+		})
+		source.WikiChunkDBIDs = append(source.WikiChunkDBIDs, chunk.ID)
+		source.WikiChunkIDs = append(source.WikiChunkIDs, chunk.ChunkID)
+	}
+	return source
+}
+
+func fitWikiSourceToBudget(source rag.SourceReference, budget int, modelName, question string) rag.SourceReference {
+	if source.SourceType != "wiki" || source.Content == "" {
+		return source
+	}
+	if budget <= 0 {
+		source.Content = ""
+		source.WikiCoverage = "unavailable"
+		return source
+	}
+	if openai.CountTokenText(CreateRetrievalContext([]rag.SourceReference{source}), modelName) <= budget {
+		source.WikiCoverage = "complete"
+		return source
+	}
+
+	var relevant strings.Builder
+	selectedHeadings := make(map[string]struct{})
+	selectedChunks := make(map[string]struct{})
+	for _, chunk := range source.WikiChunks {
+		if source.WikiHeadingPath != "" && chunk.HeadingPath == source.WikiHeadingPath {
+			selectedHeadings[chunk.HeadingPath] = struct{}{}
+		}
+	}
+	if len(selectedHeadings) == 0 {
+		terms := wikiBudgetQueryTerms(question)
+		for _, chunk := range source.WikiChunks {
+			text := strings.ToLower(chunk.HeadingPath + " " + chunk.Content)
+			for _, term := range terms {
+				if strings.Contains(text, term) {
+					if chunk.HeadingPath != "" {
+						selectedHeadings[chunk.HeadingPath] = struct{}{}
+					} else {
+						selectedChunks[chunk.ChunkID] = struct{}{}
+					}
+					break
+				}
+			}
+		}
+	}
+	if len(selectedHeadings) == 0 && len(selectedChunks) == 0 {
+		selectedChunks[source.WikiChunkID] = struct{}{}
+	}
+	for _, chunk := range source.WikiChunks {
+		_, headingSelected := selectedHeadings[chunk.HeadingPath]
+		_, chunkSelected := selectedChunks[chunk.ChunkID]
+		if headingSelected || chunkSelected {
+			relevant.WriteString(chunk.Content)
+			relevant.WriteString("\n")
+		}
+	}
+	if relevant.Len() == 0 {
+		source.Content = ""
+		source.WikiCoverage = "unavailable"
+		return source
+	}
+
+	source.WikiCoverage = "partial"
+	content := relevant.String()
+	contentBudget := budget - openai.CountTokenText(CreateRetrievalContext([]rag.SourceReference{{
+		SourceType: source.SourceType, WikiPageID: source.WikiPageID, ReferenceID: source.ReferenceID,
+		Title: source.Title, FileName: source.FileName, WikiCoverage: source.WikiCoverage,
+	}}), modelName) - 8
+	for contentBudget > 0 {
+		source.Content = tokenlimit.TruncateContent(content, contentBudget)
+		if openai.CountTokenText(CreateRetrievalContext([]rag.SourceReference{source}), modelName) <= budget {
+			return source
+		}
+		actualTokens := openai.CountTokenText(source.Content, modelName)
+		nextBudget := contentBudget * budget / (actualTokens + 1)
+		if nextBudget >= contentBudget {
+			nextBudget = contentBudget - 1
+		}
+		contentBudget = nextBudget
+	}
+	source.Content = ""
+	source.WikiCoverage = "unavailable"
+	return source
+}
+
+func wikiBudgetQueryTerms(question string) []string {
+	terms := extractQueryKeywords([]string{question})
+	seen := make(map[string]struct{}, len(terms))
+	for _, term := range terms {
+		seen[term] = struct{}{}
+	}
+	runes := []rune(strings.ToLower(question))
+	for i := 0; i+1 < len(runes); i++ {
+		if unicode.Is(unicode.Han, runes[i]) && unicode.Is(unicode.Han, runes[i+1]) {
+			term := string(runes[i : i+2])
+			if _, exists := seen[term]; !exists {
+				seen[term] = struct{}{}
+				terms = append(terms, term)
+			}
+		}
+	}
+	return terms
+}
+
+func fitWikiSourcesToBudget(sources []rag.SourceReference, availableTokens int, modelName, question string) []rag.SourceReference {
+	result := make([]rag.SourceReference, len(sources))
+	copy(result, sources)
+	for i := range result {
+		if result[i].SourceType != "wiki" {
+			continue
+		}
+		if result[i].Content != "" {
+			result[i] = fitWikiSourceToBudget(result[i], availableTokens, modelName, question)
+			availableTokens -= openai.CountTokenText(CreateRetrievalContext([]rag.SourceReference{result[i]}), modelName)
+		}
+		result[i].WikiChunks = nil
+	}
+	return result
+}
+
+func wikiContextInputBudget(ctx context.Context, channelID int64, channelConfig, modelName string, existingTokens int) int {
+	budget := tokenlimit.ComputeBudget(ctx, channelID, channelConfig, modelName, 0, tokenlimit.DefaultOutputBudget, 0)
+	available := budget.InputAvailable - existingTokens
+	if available < 0 {
+		return 0
+	}
+	return available
+}
+
+func budgetWikiSourcesForRequest(ctx context.Context, c *gin.Context, request *ChatRequest, status *MessageStatsInfo, sources []rag.SourceReference) ([]rag.SourceReference, error) {
+	hasWikiContent := false
+	for _, source := range sources {
+		if source.SourceType == "wiki" && source.Content != "" {
+			hasWikiContent = true
+			break
+		}
+	}
+	if !hasWikiContent {
+		for i := range sources {
+			if sources[i].SourceType == "wiki" {
+				sources[i].WikiChunks = nil
+			}
+		}
+		return sources, nil
+	}
+	channel, modelName, err := resolveExecutionChannel(ctx, status.AgentModel, request.Model)
+	if err != nil {
+		return nil, err
+	}
+	available := wikiContextInputBudget(ctx, channel.ChannelID, channel.Config, modelName,
+		documentQAExistingInputTokens(request, status.AgentModel, modelName))
+	var nonWikiSources []rag.SourceReference
+	var wikiSources []rag.SourceReference
+	for _, source := range sources {
+		if source.SourceType == "wiki" {
+			wikiSources = append(wikiSources, source)
+		} else {
+			nonWikiSources = append(nonWikiSources, source)
+		}
+	}
+	available -= openai.CountTokenText(CreateRetrievalContext(nonWikiSources), modelName)
+	if available < 0 {
+		available = 0
+	}
+	if rag.DetectDocumentQATask(status.OriginalQuestion) == rag.DocumentQATaskSummarize &&
+		openai.CountTokenText(CreateRetrievalContext(wikiSources), modelName) > available {
+		return summarizeWikiSourcesWithinBudget(ctx, c, request, status, sources, available)
+	}
+	return fitWikiSourcesToBudget(sources, available, modelName, status.OriginalQuestion), nil
+}
+
+func summarizeWikiSourcesWithinBudget(ctx context.Context, c *gin.Context, request *ChatRequest, status *MessageStatsInfo, sources []rag.SourceReference, available int) ([]rag.SourceReference, error) {
+	var documents []rag.DocumentQAContent
+	var files []*model.File
+	for _, source := range sources {
+		if source.SourceType != "wiki" || source.Content == "" {
+			continue
+		}
+		documents = append(documents, rag.DocumentQAContent{FileID: source.WikiPageID, Content: source.Content})
+		files = append(files, &model.File{Path: source.Title + ".md"})
+	}
+	result := summarizeDocumentQASegments(ctx, request, status, documents, files, available)
+	usage := result.Usage
+	addDocumentQAUsage(c, &usage)
+	coverage := make(map[string]string)
+	for i := range sources {
+		source := &sources[i]
+		if source.SourceType != "wiki" || source.Content == "" {
+			continue
+		}
+		stats := result.ByFile[source.WikiPageID]
+		if summary, ok := result.FileSummaries[source.WikiPageID]; ok && stats.Complete {
+			source.Content = summary.Content
+			source.WikiCoverage = "summarized_complete"
+		} else {
+			var notes []string
+			for _, note := range result.Notes {
+				if note.FileID == source.WikiPageID {
+					notes = append(notes, note.Content)
+				}
+			}
+			source.Content = strings.Join(notes, "\n")
+			source.WikiCoverage = "partial"
+			if source.Content == "" {
+				source.WikiCoverage = "unavailable"
+			}
+		}
+		coverage[hashInt64(source.WikiPageID)] = source.WikiCoverage
+		source.WikiChunks = nil
+	}
+	if c != nil {
+		c.Set("wiki_page_context_coverage", coverage)
+	}
+	return sources, nil
+}
+
+func wikiContextCoverage(sources []rag.SourceReference) map[string]string {
+	coverage := make(map[string]string)
+	for _, source := range sources {
+		if source.SourceType == "wiki" && source.WikiPageID > 0 && source.WikiCoverage != "" {
+			coverage[hashInt64(source.WikiPageID)] = source.WikiCoverage
+		}
+	}
+	return coverage
+}
+
+func expandWikiSourceContexts(ctx context.Context, eid, userID int64, sources []rag.SourceReference) ([]rag.SourceReference, error) {
+	matches := make([]servicepkg.WikiSearchResult, 0, len(sources))
+	for _, source := range sources {
+		if source.SourceType != "wiki" || source.WikiCoverage == "complete" || source.WikiPageVersionID == 0 || source.WikiChunkID == "" {
+			continue
+		}
+		matches = append(matches, servicepkg.WikiSearchResult{
+			PageID: source.WikiPageID, WikiPageVersionID: source.WikiPageVersionID,
+			ChunkDBID: source.ChunkID, ChunkID: source.WikiChunkID,
+		})
+	}
+	if len(matches) == 0 {
+		return sources, nil
+	}
+	contexts, err := servicepkg.NewWikiSearchService(model.DB).LoadPageContexts(ctx, eid, userID, matches)
+	if err != nil {
+		return nil, err
+	}
+	contextByPage := make(map[int64]servicepkg.WikiPageContext, len(contexts))
+	for _, pageContext := range contexts {
+		contextByPage[pageContext.PageID] = pageContext
+	}
+	result := make([]rag.SourceReference, 0, len(sources))
+	seenPages := make(map[int64]struct{}, len(contexts))
+	for _, source := range sources {
+		if source.SourceType != "wiki" || source.WikiCoverage == "complete" || source.WikiPageVersionID == 0 {
+			result = append(result, source)
+			continue
+		}
+		if _, seen := seenPages[source.WikiPageID]; seen {
+			continue
+		}
+		pageContext, found := contextByPage[source.WikiPageID]
+		if !found || pageContext.VersionID != source.WikiPageVersionID {
+			continue
+		}
+		seenPages[source.WikiPageID] = struct{}{}
+		result = append(result, wikiSourceWithPageContext(source, pageContext))
+	}
+	return result, nil
 }
 
 func wikiReferenceID(index int) string {
@@ -253,6 +781,13 @@ func wikiTopK(chatRequest *ChatRequest) int {
 		return chatRequest.SearchConfig.TopK
 	}
 	return 20
+}
+
+func documentQACompareTopK(chatRequest *ChatRequest, fileCount int) int {
+	if topK := wikiTopK(chatRequest); topK < fileCount {
+		return fileCount
+	}
+	return wikiTopK(chatRequest)
 }
 
 type retrievalStageCounts struct {
@@ -382,6 +917,8 @@ func mergeSearchSourcesWithStats(ragSources, wikiSources []rag.SourceReference, 
 		key := fmt.Sprintf("%s:%d:%s", category, source.ChunkID, source.ReferenceID)
 		if category == "wiki" {
 			key = fmt.Sprintf("wiki:%d:%d:%s", source.WikiPageID, source.ChunkID, source.ReferenceID)
+		} else if category == "web" {
+			key = fmt.Sprintf("web:%s:%s", source.URL, source.Content)
 		}
 		if _, ok := seen[key]; ok {
 			continue
@@ -458,6 +995,17 @@ func ensureWikiReferenceIDs(sources []rag.SourceReference) []rag.SourceReference
 
 func sourceResourceKey(source rag.SourceReference) string {
 	switch strings.ToLower(strings.TrimSpace(source.SourceType)) {
+	case "web":
+		if source.URL != "" {
+			return "web:" + source.URL
+		}
+		if source.Title != "" {
+			return "web:title:" + source.Title
+		}
+		if source.Content != "" {
+			return "web:content:" + source.Content
+		}
+		return fmt.Sprintf("web:chunk:%d", source.ChunkID)
 	case "wiki":
 		if source.WikiPageID > 0 {
 			return fmt.Sprintf("wiki:%d", source.WikiPageID)
@@ -468,7 +1016,7 @@ func sourceResourceKey(source rag.SourceReference) string {
 		if source.URL != "" {
 			return "wiki:url:" + source.URL
 		}
-	case "document", "file", "knowledge", "":
+	case "document", "file", "knowledge", "meeting_minutes", "meeting_insight", "":
 		if source.FileID > 0 {
 			return fmt.Sprintf("file:%d", source.FileID)
 		}
@@ -482,9 +1030,36 @@ func sourceResourceKey(source rag.SourceReference) string {
 	return ""
 }
 
-// renumberSourceReferences assigns citation sequences by resource after all
-// search sources have been merged and ordered. Each Wiki page or document
-// file gets a new resource number, and its chunks are numbered within it.
+// Merge mandatory meeting evidence without repeating the same minutes/insight
+// source when the retrieval fallback has already returned it.
+func mergePreparedMeetingSources(mandatory, retrieved []rag.SourceReference) []rag.SourceReference {
+	if len(mandatory) == 0 {
+		return retrieved
+	}
+	seen := make(map[string]struct{}, len(mandatory))
+	merged := make([]rag.SourceReference, 0, len(mandatory)+len(retrieved))
+	for _, source := range mandatory {
+		key := fmt.Sprintf("%d:%s", source.FileID, source.SourceType)
+		if _, duplicate := seen[key]; duplicate {
+			continue
+		}
+		seen[key] = struct{}{}
+		merged = append(merged, source)
+	}
+	for _, source := range retrieved {
+		if source.SourceType == "meeting_minutes" || source.SourceType == "meeting_insight" {
+			key := fmt.Sprintf("%d:%s", source.FileID, source.SourceType)
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+		}
+		merged = append(merged, source)
+	}
+	return merged
+}
+
+// renumberSourceReferences assigns one citation sequence format to all
+// sources after they have been merged and ordered.
 func renumberSourceReferences(sources []rag.SourceReference) []rag.SourceReference {
 	resourceIndexes := make(map[string]int, len(sources))
 	chunkIndexes := make(map[string]int, len(sources))
@@ -563,14 +1138,21 @@ func graphSearchToggleReason(toggle *bool) string {
 	return "请求显式关闭"
 }
 
-var executeSearchMulti = func(searcher search_tools.Searcher, queries []string, count int) (*search_tools.SearchResult, error) {
+var executeSearchMulti = func(ctx context.Context, searcher search_tools.Searcher, queries []string, count, maxWorkers int) (*search_tools.SearchResult, error) {
+	if maxWorkers <= 0 {
+		maxWorkers = config.RAG_SEARCH_ENGINE_MAX_WORKERS
+	}
 	engine := search_tools.NewEngine(
 		searcher,
-		search_tools.WithMaxWorkers(config.RAG_SEARCH_ENGINE_MAX_WORKERS),
+		search_tools.WithMaxWorkers(maxWorkers),
 		search_tools.WithTimeout(0),
 	)
-	return engine.SearchMulti(queries, count)
+	return engine.SearchMultiContext(ctx, queries, count)
 }
+
+var executeFinalRerank = rerankSources
+
+const knowledgeSearchPartialErrorsKey = "knowledge_search_partial_errors"
 
 func buildScopeNarrowingStartData(searchTarget *SearchTarget, queriesCount int) map[string]interface{} {
 	scopeType := "library"
@@ -643,6 +1225,79 @@ func buildScopeNarrowingEndData(
 	return data
 }
 
+type documentQACompareFileCoverage struct {
+	FileID            int64
+	HasEvidence       bool
+	MissingDimensions []string
+}
+
+func documentQACompareDimensions(query string) []string {
+	part := strings.TrimSpace(query)
+	start := -1
+	for _, marker := range []string{"在", "关于", "针对", "围绕"} {
+		if index := strings.LastIndex(part, marker); index > start {
+			start = index + len(marker)
+		}
+	}
+	if start >= 0 {
+		part = part[start:]
+	} else if index := strings.LastIndex(part, "的"); index >= 0 {
+		part = part[index+len("的"):]
+	}
+	for _, suffix := range []string{"方面的差异", "方面的区别", "方面的异同", "方面的不同", "方面的差别", "方面差异", "方面区别", "方面异同", "方面不同", "方面差别", "方面", "的差异", "的区别", "的异同", "的不同", "的差别", "差异", "区别", "异同", "不同", "差别"} {
+		part = strings.TrimSuffix(part, suffix)
+	}
+	part = strings.NewReplacer("以及", "|", "和", "|", "与", "|", "及", "|", "、", "|", "，", "|", ",", "|", "；", "|", ";", "|", "/", "|").Replace(part)
+
+	dimensions := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, dimension := range strings.Split(part, "|") {
+		dimension = strings.Trim(dimension, " \t\n\r：:、，,；;。.!！?？“”\"'()（）")
+		dimension = strings.TrimPrefix(dimension, "分别")
+		dimension = strings.TrimPrefix(dimension, "各自")
+		if dimension == "" || dimension == "差异" || dimension == "区别" || dimension == "方面" {
+			continue
+		}
+		if _, exists := seen[dimension]; exists {
+			continue
+		}
+		seen[dimension] = struct{}{}
+		dimensions = append(dimensions, dimension)
+	}
+	return dimensions
+}
+
+func evaluateDocumentQACompareCoverage(fileIDs []int64, sources []rag.SourceReference, dimensions []string) (string, []documentQACompareFileCoverage) {
+	coverage := "complete"
+	if len(dimensions) == 0 {
+		coverage = "partial"
+	}
+	files := make([]documentQACompareFileCoverage, 0, len(fileIDs))
+	for _, fileID := range fileIDs {
+		var content strings.Builder
+		fileCoverage := documentQACompareFileCoverage{FileID: fileID}
+		for _, source := range sources {
+			if source.FileID != fileID || source.SourceType == "web" {
+				continue
+			}
+			fileCoverage.HasEvidence = true
+			content.WriteString(source.Content)
+			content.WriteByte('\n')
+		}
+		lowerContent := strings.ToLower(content.String())
+		for _, dimension := range dimensions {
+			if !strings.Contains(lowerContent, strings.ToLower(dimension)) {
+				fileCoverage.MissingDimensions = append(fileCoverage.MissingDimensions, dimension)
+			}
+		}
+		if !fileCoverage.HasEvidence || len(fileCoverage.MissingDimensions) > 0 {
+			coverage = "partial"
+		}
+		files = append(files, fileCoverage)
+	}
+	return coverage, files
+}
+
 func rootErrorMessage(err error) string {
 	if err == nil {
 		return ""
@@ -672,50 +1327,200 @@ func searchResultErrorMessages(errs []error) []string {
 	return reasons
 }
 
+// Summarize the selected meeting evidence that actually survived RAG source
+// selection. These metadata-only counts support both planning priority and
+// diagnostics without logging any meeting content.
+type selectedMeetingEvidenceStats struct {
+	FileID          int64
+	HasMinutes      bool
+	HasInsight      bool
+	HasTranscript   bool
+	MinutesBytes    int
+	InsightBytes    int
+	TranscriptBytes int
+	SourceCount     int
+}
+
+func selectedMeetingEvidence(request *ChatRequest, sources []rag.SourceReference) (selectedMeetingEvidenceStats, bool) {
+	var stats selectedMeetingEvidenceStats
+	if request == nil || !request.DatasetIsSoloFile() {
+		return stats, false
+	}
+	fileID, err := hashids.TryParseID(request.FileIDs[0])
+	if err != nil {
+		return stats, false
+	}
+	stats.FileID = fileID
+	for _, source := range sources {
+		if source.FileID != fileID || strings.TrimSpace(source.Content) == "" {
+			continue
+		}
+		stats.SourceCount++
+		switch source.SourceType {
+		case "meeting_minutes":
+			stats.HasMinutes = true
+			stats.MinutesBytes += len(source.Content)
+		case "meeting_insight":
+			stats.HasInsight = true
+			stats.InsightBytes += len(source.Content)
+		case "document", "file":
+			stats.HasTranscript = true
+			stats.TranscriptBytes += len(source.Content)
+		}
+	}
+	return stats, true
+}
+
 func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, messageStatus *MessageStatsInfo) ([]rag.SourceReference, error) {
 	var err error
+	var kbSearchErr error
 	var searchErrors []string
+	var partialSearchErrors []string
+	if chatRequest.WebSearchConfig != nil {
+		chatRequest.WebSearchConfig, err = configuredWebSearchRequest(messageStatus.AgentModel, chatRequest.WebSearchConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
 	// 开始处理 RAG 意图
-	var queries []string // RAG 意图的查询列表
 	InitialQuery := messageStatus.OriginalQuestion
 	if messageStatus.RewrittenQuestion != "" {
 		InitialQuery = messageStatus.RewrittenQuestion
 	}
-	if messageStatus.RouterResult != nil && messageStatus.RouterResult.IntentClassificationResult != nil && messageStatus.RouterResult.IntentClassificationResult.Intent == "COMPLEX_AGENT" {
-		queries = append(queries, messageStatus.RouterResult.IntentClassificationResult.ExpandedQueries...)
+	var intent *rag.IntentClassificationResult
+	if messageStatus.RouterResult != nil {
+		intent = messageStatus.RouterResult.IntentClassificationResult
 	}
-
-	queries = append(queries, InitialQuery)
+	queries := retrievalQueries(InitialQuery, intent)
 
 	logger.SysLogf("【网络搜索】RAG 查询内容：%v", queries)
 	var sources []rag.SourceReference
 	var wikiSources []rag.SourceReference
 	var wikiErr error
-	rerankEnabled := shouldRerank(messageStatus.AgentModel, chatRequest)
-	wikiSearchEnabled := shouldRunWikiSearch(ctx, chatRequest, messageStatus.AgentModel)
-	if wikiSearchEnabled {
-		// Wiki 与原有知识库共用 knowledge_search 步骤，且步骤必须在实际检索前发出。
-		messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, "正在查找知识...", map[string]interface{}{
-			"queries": queries,
-		})
-		c.Set("knowledge_search_step_started", true)
-		wikiSources, wikiErr = HandleWikiSearchRag(c, queries, chatRequest, ctx, messageStatus)
-		if wikiErr != nil {
-			logger.Warnf(ctx, "【Wiki检索】搜索失败：%v", wikiErr)
+	sourcePlan := buildRAGSourcePlan(ctx, c, chatRequest, messageStatus.AgentModel)
+	fileOnly := len(chatRequest.FileIDs) > 0 && len(chatRequest.KnowledgeBaseIDs) == 0 && len(chatRequest.SpaceIDs) == 0 &&
+		!sourcePlan.WikiSearch && !sourcePlan.LocalWebSearch && !sourcePlan.ModelSearch
+	if fileOnly {
+		if resolved := resolveDocumentQAFollowupQuery(chatRequest.Messages, InitialQuery); resolved != InitialQuery {
+			InitialQuery = resolved
+			messageStatus.RewrittenQuestion = resolved
+			queries = []string{resolved}
 		}
 	}
+	var cancelDocumentQA context.CancelFunc
+	if fileOnly {
+		ctx, cancelDocumentQA = context.WithTimeout(ctx, documentQASummaryTimeout)
+		defer cancelDocumentQA()
+		queries = limitDocumentQAQueries(queries, 4)
+	}
+	preparedDocumentQA, useFullDocument, documentQAErr := prepareDocumentQA(c, chatRequest, ctx, messageStatus, fileOnly)
+	if documentQAErr != nil {
+		return nil, documentQAErr
+	}
+	var fullDocumentSources []rag.SourceReference
+	var partialDocumentSources []rag.SourceReference
+	if useFullDocument && preparedDocumentQA != nil {
+		fullDocumentSources = preparedDocumentQA.Sources
+		c.Set("document_qa_plan", preparedDocumentQA.Plan)
+		logger.Infof(ctx, "【文档问答】已读取全部指定文件正文：文件数=%d，策略=%s，正文估算=%d token，可用输入=%d token",
+			len(fullDocumentSources), preparedDocumentQA.Plan.Strategy, preparedDocumentQA.Plan.RequiredInputTokens, preparedDocumentQA.Plan.AvailableInputTokens)
+	} else if preparedDocumentQA != nil && preparedDocumentQA.Plan.Strategy == rag.DocumentQAStrategyMapReduce {
+		partialDocumentSources = preparedDocumentQA.Sources
+	}
+	rerankEnabled := shouldRerank(messageStatus.AgentModel, chatRequest)
+	startMessage := ragSearchStartMessage(sourcePlan)
+	if sourcePlan.KnowledgeBase {
+		c.Set("knowledge_search_start_message", startMessage)
+	} else if startMessage != "" && !knowledgeSearchStepStarted(c) {
+		messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, startMessage, map[string]interface{}{"queries": queries})
+		c.Set("knowledge_search_step_started", true)
+	}
+	var wikiSearchDone chan struct{}
+	var wikiContext *gin.Context
+	var wikiStatus MessageStatsInfo
+	if sourcePlan.WikiSearch {
+		wikiContext = c.Copy()
+		wikiStatus = *messageStatus
+		wikiSearchDone = make(chan struct{})
+		go func() {
+			defer close(wikiSearchDone)
+			wikiSources, wikiErr = HandleWikiSearchRag(wikiContext, queries, chatRequest, ctx, &wikiStatus)
+			if wikiErr != nil {
+				logger.Warnf(ctx, "【Wiki检索】搜索失败：%v", wikiErr)
+			}
+		}()
+	}
 
-	if chatRequest.DatasetIsSoloWiki() {
-		if !knowledgeSearchStepStarted(c) {
-			messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, "正在查找知识...", map[string]interface{}{
-				"queries": queries,
-			})
-			c.Set("knowledge_search_step_started", true)
-		}
+	if len(fullDocumentSources) > 0 {
+		// 全文材料按预算直接进入上下文，不参与检索 TopK 和重排。
+	} else if sourcePlan.SoloWiki {
 		logger.Infof(ctx, "【Wiki检索】当前请求为 Wiki 单文档模式，开始读取页面完整内容")
-		sources, err = HandleSoloWikiSearchRag(c, queries, chatRequest, ctx, messageStatus)
-	} else if chatRequest.DatasetIsSoloFile() {
-		enableWeb := chatRequest.DatasetIsWebSearch()
+		if sourcePlan.LocalWebSearch || sourcePlan.ModelSearch {
+			wikiContext, webContext := c.Copy(), c.Copy()
+			wikiStatus, webStatus := *messageStatus, *messageStatus
+			results := runRAGSearchBranches(
+				func() ([]rag.SourceReference, error) {
+					return HandleSoloWikiSearchRag(wikiContext, queries, chatRequest, ctx, &wikiStatus)
+				},
+				func() ([]rag.SourceReference, error) {
+					return handleConfiguredWebSearch(webContext, queries, chatRequest, ctx, &webStatus)
+				},
+			)
+			copyRAGContextValues(c, wikiContext)
+			copyRAGContextValues(c, webContext)
+			if results[0].err == nil {
+				sources = append(sources, results[0].sources...)
+				if wikiStatus.KnowledgeScope != "" {
+					messageStatus.KnowledgeScope = wikiStatus.KnowledgeScope
+				}
+			}
+			if results[1].err == nil {
+				sources = append(sources, results[1].sources...)
+			} else {
+				searchErrors = append(searchErrors, "网络搜索："+rootErrorMessage(results[1].err))
+				if len(sources) == 0 {
+					err = results[1].err
+				}
+			}
+			if results[0].err != nil {
+				searchErrors = append(searchErrors, "Wiki 页面："+rootErrorMessage(results[0].err))
+				if len(sources) == 0 {
+					err = results[0].err
+				}
+			}
+		} else {
+			sources, err = HandleSoloWikiSearchRag(c, queries, chatRequest, ctx, messageStatus)
+			if err != nil {
+				searchErrors = append(searchErrors, "Wiki 页面："+rootErrorMessage(err))
+			}
+		}
+	} else if fileOnly {
+		searchCtx, cancelSearch := context.WithTimeout(ctx, documentQARetrievalTimeout)
+		defer cancelSearch()
+		compare := rag.DetectDocumentQATask(InitialQuery) == rag.DocumentQATaskCompare && len(chatRequest.FileIDs) > 1
+		if compare {
+			sources, err = handleDocumentQACompareSearch(c, queries, chatRequest, searchCtx, messageStatus)
+		} else {
+			sources, err = HandleKnowledgeSearchRag(c, queries, chatRequest, searchCtx, messageStatus)
+			if (err != nil || len(sources) == 0) && preparedDocumentQA != nil && preparedDocumentQA.Plan.Strategy == rag.DocumentQAStrategyRetrieval {
+				fallbackCompleted := fallbackDocumentQASegmentSearch(c, chatRequest, messageStatus, ctx, preparedDocumentQA)
+				if fallbackCompleted {
+					sources = nil
+					partialDocumentSources = preparedDocumentQA.Sources
+					err = nil
+				} else if fallbackErr := documentQAFallbackFailure(false, sources, preparedDocumentQA.Sources); fallbackErr != nil {
+					err = fallbackErr
+				}
+			}
+			if err == nil && documentQAQuestionNeedsGapCheck(messageStatus, InitialQuery) {
+				sources, err = handleDocumentQAFollowupSearch(c, queries, sources, chatRequest, searchCtx, messageStatus)
+			}
+		}
+		if err != nil {
+			searchErrors = append(searchErrors, "指定文件检索："+rootErrorMessage(err))
+		}
+	} else if sourcePlan.SoloFile {
+		enableWeb := sourcePlan.LocalWebSearch || sourcePlan.ModelSearch
 		if enableWeb {
 			logger.Infof(ctx, "【网络搜索】单文件模式+网络搜索混合模式：file_ids=%d，message_file_id=%d，开始并发执行", len(chatRequest.FileIDs), chatRequest.MessageFileID)
 			messageStatus.KnowledgeType = model.KnowledgeTypeSingleFile
@@ -724,15 +1529,16 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			var webSources []rag.SourceReference
 			var soloErr, webErr error
 			var wg sync.WaitGroup
+			soloContext, webContext := c.Copy(), c.Copy()
+			soloStatus, webStatus := *messageStatus, *messageStatus
 
 			// 并发执行搜索
 			wg.Add(2)
 
-			// 1. 执行单文件搜索（使用浅拷贝避免并发修改 messageStatus 导致的数据竞争）
+			// 1. 执行单文件搜索
 			go func() {
 				defer wg.Done()
-				msCopy := *messageStatus
-				soloSources, soloErr = HandleSoloFileSearchRag(c, queries, chatRequest, ctx, &msCopy)
+				soloSources, soloErr = HandleSoloFileSearchRag(soloContext, queries, chatRequest, ctx, &soloStatus)
 				if soloErr != nil {
 					logger.Warnf(ctx, "单文件搜索失败: %v", soloErr)
 				}
@@ -741,15 +1547,22 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			// 2. 执行 Web 搜索
 			go func() {
 				defer wg.Done()
-				// 使用浅拷贝避免并发修改 KnowledgeType 导致的数据竞争
-				msCopy := *messageStatus
-				webSources, webErr = HandleWebSearchRag(c, queries, chatRequest, ctx, &msCopy)
+				webSources, webErr = handleConfiguredWebSearch(webContext, queries, chatRequest, ctx, &webStatus)
 				if webErr != nil {
 					logger.Warnf(ctx, "Web搜索失败: %v", webErr)
 				}
 			}()
 
 			wg.Wait()
+			copyRAGContextValues(c, soloContext)
+			copyRAGContextValues(c, webContext)
+			mergeSoloFileSearchStatus(messageStatus, &soloStatus, soloErr)
+			if soloErr != nil {
+				searchErrors = append(searchErrors, "单文件："+rootErrorMessage(soloErr))
+			}
+			if webErr != nil {
+				searchErrors = append(searchErrors, "网络搜索："+rootErrorMessage(webErr))
+			}
 
 			// 合并策略：单文件结果优先，Web 结果追加补充
 			sources = []rag.SourceReference{}
@@ -764,11 +1577,9 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			if len(sources) == 0 {
 				if soloErr != nil {
 					logger.Warnf(ctx, "【网络搜索】单文件+网络混合搜索未返回单文件结果：%v", soloErr)
-					searchErrors = append(searchErrors, rootErrorMessage(soloErr))
 				}
 				if webErr != nil {
 					logger.Warnf(ctx, "【网络搜索】单文件+网络混合搜索未返回网络搜索结果：%v", webErr)
-					searchErrors = append(searchErrors, rootErrorMessage(webErr))
 				}
 				if soloErr != nil && webErr != nil {
 					err = fmt.Errorf("混合搜索失败: 单文件错误[%v], Web错误[%v]", soloErr, webErr)
@@ -781,16 +1592,13 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 		} else {
 			logger.Infof(ctx, "【网络搜索】当前请求为单文件模式，未启用网络搜索：file_ids=%d，message_file_id=%d", len(chatRequest.FileIDs), chatRequest.MessageFileID)
 			sources, err = HandleSoloFileSearchRag(c, queries, chatRequest, ctx, messageStatus)
+			if err != nil {
+				searchErrors = append(searchErrors, "单文件："+rootErrorMessage(err))
+			}
 		}
 	} else {
-		if !chatRequest.DatasetIsKnowledgeBase() && !knowledgeSearchStepStarted(c) {
-			messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, "正在查找知识...", map[string]interface{}{
-				"queries": queries,
-			})
-		}
-
-		enableWeb := chatRequest.DatasetIsWebSearch()
-		enableKB := chatRequest.DatasetIsKnowledgeBase()
+		enableWeb := sourcePlan.LocalWebSearch || sourcePlan.ModelSearch
+		enableKB := sourcePlan.KnowledgeBase
 		logger.Infof(
 			ctx,
 			"【网络搜索】RAG 分支判定：是否知识库=%t，是否网络搜索=%t，是否单文件=%t，知识库数量=%d，文件数量=%d",
@@ -803,11 +1611,18 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 
 		if enableKB && enableWeb {
 			messageStatus.KnowledgeType = model.KnowledgeTypeDatabase
+			webSearchSource := "外挂 API"
+			if sourcePlan.ModelSearch {
+				webSearchSource = "模型"
+			}
+			logger.Infof(ctx, "【网络搜索】开始执行混合检索：网络搜索来源=%s，知识库数量=%d，查询数量=%d", webSearchSource, len(chatRequest.KnowledgeBaseIDs), len(queries))
 
 			var kbSources []rag.SourceReference
 			var webSources []rag.SourceReference
 			var kbErr, webErr error
 			var wg sync.WaitGroup
+			kbContext, webContext := c.Copy(), c.Copy()
+			kbStatus, webStatus := *messageStatus, *messageStatus
 
 			// 获取 TopK 配置
 			topK := 20
@@ -821,7 +1636,7 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			// 1. 执行知识库搜索
 			go func() {
 				defer wg.Done()
-				kbSources, kbErr = HandleKnowledgeSearchRag(c, queries, chatRequest, ctx, messageStatus)
+				kbSources, kbErr = HandleKnowledgeSearchRag(kbContext, queries, chatRequest, ctx, &kbStatus)
 				if kbErr != nil {
 					logger.Warnf(ctx, "知识库搜索失败: %v", kbErr)
 				}
@@ -830,16 +1645,28 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			// 2. 执行 Web 搜索
 			go func() {
 				defer wg.Done()
-				// 使用浅拷贝避免并发修改 KnowledgeType 导致的数据竞争
-				// StepSender 等引用类型字段仍然共享，需注意并发写入安全（目前 Web 搜索未发送 Step，暂无风险）
-				msCopy := *messageStatus
-				webSources, webErr = HandleWebSearchRag(c, queries, chatRequest, ctx, &msCopy)
+				webSources, webErr = handleConfiguredWebSearch(webContext, queries, chatRequest, ctx, &webStatus)
 				if webErr != nil {
 					logger.Warnf(ctx, "Web搜索失败: %v", webErr)
 				}
 			}()
 
 			wg.Wait()
+			kbSearchErr = kbErr
+			logger.Infof(ctx, "【网络搜索】混合检索完成：知识库来源数=%d，知识库错误=%t，网络搜索来源=%s，网络搜索结果数=%d，网络搜索错误=%t", len(kbSources), kbErr != nil, webSearchSource, len(webSources), webErr != nil)
+			copyRAGContextValues(c, kbContext)
+			copyRAGContextValues(c, webContext)
+			if knowledgeSearchStepStarted(kbContext) {
+				c.Set("knowledge_search_step_started", true)
+			}
+			messageStatus.KnowledgeScope = kbStatus.KnowledgeScope
+			messageStatus.KnowledgeType = model.KnowledgeTypeDatabase
+			if kbErr != nil {
+				searchErrors = append(searchErrors, "知识库："+rootErrorMessage(kbErr))
+			}
+			if webErr != nil {
+				searchErrors = append(searchErrors, "网络搜索："+rootErrorMessage(webErr))
+			}
 
 			// 错误处理策略：
 			// 1. 如果 KB 成功，忽略 Web 错误（如果 Web 失败）
@@ -867,11 +1694,9 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			if len(sources) == 0 {
 				if kbErr != nil {
 					logger.Warnf(ctx, "【网络搜索】混合搜索未返回知识库结果：%v", kbErr)
-					searchErrors = append(searchErrors, rootErrorMessage(kbErr))
 				}
 				if webErr != nil {
 					logger.Warnf(ctx, "【网络搜索】混合搜索未返回网络搜索结果：%v", webErr)
-					searchErrors = append(searchErrors, rootErrorMessage(webErr))
 				}
 				if kbErr != nil && webErr != nil {
 					err = fmt.Errorf("混合搜索失败: KB错误[%v], Web错误[%v]", kbErr, webErr)
@@ -887,24 +1712,110 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 
 		} else if enableWeb {
 			logger.Infof(ctx, "【网络搜索】仅命中网络搜索分支，开始执行网络搜索")
-			sources, err = HandleWebSearchRag(c, queries, chatRequest, ctx, messageStatus)
+			sources, err = handleConfiguredWebSearch(c, queries, chatRequest, ctx, messageStatus)
 			if err != nil {
-				searchErrors = append(searchErrors, rootErrorMessage(err))
+				searchErrors = append(searchErrors, "网络搜索："+rootErrorMessage(err))
 			}
 		} else if enableKB {
 			logger.Infof(ctx, "【网络搜索】仅命中知识库分支，网络搜索未启用")
 			messageStatus.KnowledgeType = model.KnowledgeTypeDatabase
 			sources, err = HandleKnowledgeSearchRag(c, queries, chatRequest, ctx, messageStatus)
+			kbSearchErr = err
+			if err != nil {
+				searchErrors = append(searchErrors, "知识库："+rootErrorMessage(err))
+			}
 		} else {
 			logger.Infof(ctx, "【网络搜索】既未命中知识库也未命中网络搜索分支，跳过检索")
 		}
 	}
 
+	partialSearchErrors = append(partialSearchErrors, knowledgeSearchPartialErrors(c)...)
+	// File-only document QA has its own coverage check and must not receive a
+	// second, independent retry here. KB retries retain the original request.
+	var retrievalSummary map[string]interface{}
+	if sourcePlan.KnowledgeBase && !fileOnly && !sourcePlan.SoloFile && !sourcePlan.SoloWiki {
+		firstSources := make([]rag.SourceReference, 0, len(sources))
+		for _, source := range sources {
+			if sourceCategory(source) == "document" {
+				firstSources = append(firstSources, source)
+			}
+		}
+		enhanced := intent != nil && intent.EnhancedRetrieval
+		retrievalSummary = map[string]interface{}{
+			"enhanced": enhanced, "rounds": 1, "first_queries": queries,
+			"first_result_count": len(firstSources), "supplement_queries": []string{},
+			"supplement_result_count": 0, "supplement_reason": "", "stop_reason": "clues_available",
+		}
+		if kbSearchErr != nil {
+			retrievalSummary["stop_reason"] = "search_error"
+		} else if !documentCluesAvailable(firstSources, intent) {
+			if len(firstSources) == 0 {
+				retrievalSummary["supplement_reason"] = "no_results"
+			} else {
+				retrievalSummary["supplement_reason"] = "missing_document_or_field_clues"
+			}
+			retrievalSummary["stop_reason"] = "no_new_query"
+			supplementQueries := supplementalRetrievalQueries(intent, queries, messageStatus.OriginalQuestion, messageStatus.RewrittenQuestion)
+			if ctx.Err() != nil {
+				retrievalSummary["stop_reason"] = "cancelled"
+			} else if len(supplementQueries) > 0 {
+				supplementContext := c.Copy()
+				supplementContext.Set(knowledgeSearchPartialErrorsKey, []string{})
+				supplementStatus := *messageStatus
+				supplementStatus.StepSender = nil
+				supplementRequest := *chatRequest
+				graphDisabled := false
+				supplementRequest.EnableGraphSearch = &graphDisabled
+				extra, supplementErr := HandleKnowledgeSearchRag(supplementContext, supplementQueries, &supplementRequest, ctx, &supplementStatus)
+				partialSearchErrors = append(partialSearchErrors, knowledgeSearchPartialErrors(supplementContext)...)
+				retrievalSummary["rounds"] = 2
+				retrievalSummary["supplement_queries"] = supplementQueries
+				retrievalSummary["supplement_result_count"] = len(extra)
+				if supplementErr != nil {
+					retrievalSummary["stop_reason"] = "supplement_error"
+					logger.Warnf(ctx, "【知识检索】补充检索失败，沿用首轮结果：%v", supplementErr)
+				} else {
+					sources = mergeSupplementalSources(sources, extra)
+					retrievalSummary["stop_reason"] = "supplement_completed"
+				}
+			}
+		}
+		if len(partialSearchErrors) > 0 {
+			retrievalSummary["partial_search_errors"] = partialSearchErrors
+		}
+	}
+
+	if wikiSearchDone != nil {
+		<-wikiSearchDone
+		copyRAGContextValues(c, wikiContext)
+		if wikiStatus.KnowledgeScope != "" {
+			messageStatus.KnowledgeScope = wikiStatus.KnowledgeScope
+		}
+	}
+	if sourcePlan.KnowledgeBase && !knowledgeSearchStepStarted(c) {
+		messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, startMessage, map[string]interface{}{"queries": queries})
+		c.Set("knowledge_search_step_started", true)
+	}
 	if wikiErr != nil {
-		searchErrors = append(searchErrors, rootErrorMessage(wikiErr))
+		searchErrors = append(searchErrors, "Wiki："+rootErrorMessage(wikiErr))
+	}
+	for _, message := range partialSearchErrors {
+		searchErrors = append(searchErrors, "知识库部分搜索："+message)
 	}
 	var retrievalObs retrievalObservability
-	sources, retrievalObs = mergeSearchSourcesWithStats(sources, wikiSources, wikiTopK(chatRequest), rerankEnabled)
+	keepCompareCandidates := false
+	if value, exists := c.Get("document_qa_compare_file_ids"); exists {
+		if fileIDs, ok := value.([]int64); ok {
+			compareTopK := documentQACompareTopK(chatRequest, len(fileIDs))
+			sources, retrievalObs = mergeSearchSourcesWithStats(sources, wikiSources, compareTopK, true)
+			sources = selectCompareSourcesPerFile(sources, fileIDs, compareTopK)
+			keepCompareCandidates = true
+		}
+	}
+	if !keepCompareCandidates {
+		keepCandidates := rerankEnabled || (intent != nil && intent.EnhancedRetrieval)
+		sources, retrievalObs = mergeSearchSourcesWithStats(sources, wikiSources, wikiTopK(chatRequest), keepCandidates)
+	}
 	if len(sources) > 0 {
 		hasWiki, hasFile := false, false
 		for _, source := range sources {
@@ -934,6 +1845,10 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 	// 所有召回来源（KB、Wiki、Web、图谱）完成合并后，只在这里执行一次最终重排。
 	var rerankExecutionStatus = "disabled"
 	var rerankExecutionDesc = "未开启重排功能，按初检向量/全文相关度直接截断"
+	if !rerankEnabled && !keepCompareCandidates {
+		rankDocumentClues(sources, intent)
+		sources, _ = splitTopKSourcesWithDropped(sources, wikiTopK(chatRequest))
+	}
 	if len(sources) > 0 && rerankEnabled {
 		query := messageStatus.RewrittenQuestion
 		if query == "" {
@@ -942,7 +1857,36 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 		var rerankErr error
 		var droppedSources []rag.SourceReference
 		rerankStart := time.Now()
-		sources, droppedSources, rerankErr = rerankSources(ctx, messageStatus.AgentModel, chatRequest, query, sources)
+		rerankRequest := chatRequest
+		if value, exists := c.Get("document_qa_compare_file_ids"); exists {
+			if fileIDs, ok := value.([]int64); ok {
+				requestCopy := *chatRequest
+				searchConfigCopy := &model.SearchConfigData{}
+				if chatRequest.SearchConfig != nil {
+					*searchConfigCopy = *chatRequest.SearchConfig
+				}
+				searchConfigCopy.TopK = documentQACompareTopK(chatRequest, len(fileIDs))
+				requestCopy.SearchConfig = searchConfigCopy
+				rerankRequest = &requestCopy
+			}
+		}
+		if !keepCompareCandidates && intent != nil && intent.EnhancedRetrieval {
+			requestCopy := *chatRequest
+			searchConfigCopy := &model.SearchConfigData{}
+			if chatRequest.SearchConfig != nil {
+				*searchConfigCopy = *chatRequest.SearchConfig
+			}
+			searchConfigCopy.TopK = len(sources)
+			requestCopy.SearchConfig = searchConfigCopy
+			rerankRequest = &requestCopy
+		}
+		sources, droppedSources, rerankErr = executeFinalRerank(ctx, messageStatus.AgentModel, rerankRequest, query, sources)
+		if !keepCompareCandidates && intent != nil && intent.EnhancedRetrieval {
+			rankDocumentClues(sources, intent)
+			var topKDropped []rag.SourceReference
+			sources, topKDropped = splitTopKSourcesWithDropped(sources, wikiTopK(chatRequest))
+			droppedSources = append(droppedSources, topKDropped...)
+		}
 		rerankDuration := time.Since(rerankStart)
 		if rerankErr != nil {
 			logger.Warnf(ctx, "最终重排序失败: %v，使用 TopK 截断后的原始合并结果", rerankErr)
@@ -965,6 +1909,30 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 	}
 	updateRetrievalObservability(&retrievalObs, "after_rerank", sources)
 	updateRetrievalObservability(&retrievalObs, "selected", sources)
+	if preparedDocumentQA != nil {
+		sources = mergePreparedMeetingSources(preparedDocumentQA.MeetingSources, sources)
+	}
+	sources = append(sources, fullDocumentSources...)
+	sources = append(sources, partialDocumentSources...)
+	sources, err = expandWikiSourceContexts(ctx, messageStatus.AgentModel.Eid, config.GetUserId(c), sources)
+	if err != nil {
+		return nil, fmt.Errorf("读取 Wiki 页面完整上下文失败: %w", err)
+	}
+	sources, err = budgetWikiSourcesForRequest(ctx, c, chatRequest, messageStatus, sources)
+	if err != nil {
+		return nil, fmt.Errorf("计算 Wiki 页面上下文预算失败: %w", err)
+	}
+	wikiCoverage := wikiContextCoverage(sources)
+	if len(wikiCoverage) > 0 {
+		c.Set("wiki_page_context_coverage", wikiCoverage)
+	}
+	if preparedDocumentQA != nil && preparedDocumentQA.Plan.Strategy == rag.DocumentQAStrategyMapReduce &&
+		!preparedDocumentQA.Summary.ComprehensiveComplete && len(sources) == 0 {
+		if summaryErr := documentQAFallbackFailure(false, nil, preparedDocumentQA.Sources); summaryErr != nil {
+			err = summaryErr
+			searchErrors = append(searchErrors, "指定文件全文总结："+rootErrorMessage(summaryErr))
+		}
+	}
 	c.Set("rag_retrieval_observability", retrievalObs.asMap())
 	searchConfigSnapshot := map[string]interface{}{
 		"top_k":          wikiTopK(chatRequest),
@@ -983,8 +1951,34 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 	searchConfigSnapshot["rerank_execution_status"] = rerankExecutionStatus
 	searchConfigSnapshot["rerank_execution_desc"] = rerankExecutionDesc
 	searchConfigSnapshot["retrieval_queries"] = queries
+	if retrievalSummary != nil {
+		var finalDocuments []rag.SourceReference
+		for _, source := range sources {
+			if sourceCategory(source) == "document" {
+				finalDocuments = append(finalDocuments, source)
+			}
+		}
+		retrievalSummary["clues_available"] = documentCluesAvailable(finalDocuments, intent)
+		searchConfigSnapshot["retrieval_summary"] = retrievalSummary
+		c.Set("rag_retrieval_summary", retrievalSummary)
+	}
+	if followup, exists := c.Get("document_qa_followup_queries"); exists {
+		searchConfigSnapshot["followup_queries"] = followup
+	}
 	c.Set("rag_search_config_snapshot", searchConfigSnapshot)
 	sources = renumberSourceReferences(sources)
+
+	if chatRequest.DatasetIsSoloFile() && isDiscussionAgentAuthorized(messageStatus.AgentModel) {
+		if evidence, ok := selectedMeetingEvidence(chatRequest, sources); ok {
+			strategy := "solo_retrieval"
+			if preparedDocumentQA != nil {
+				strategy = string(preparedDocumentQA.Plan.Strategy)
+			}
+			logger.Infof(ctx, "【探讨-当前会议上下文】request_id=%s file_id=%d strategy=%s has_minutes=%t has_insight=%t has_transcript=%t minutes_bytes=%d insight_bytes=%d transcript_bytes=%d source_count=%d",
+				messageStatus.RequestId, evidence.FileID, strategy, evidence.HasMinutes, evidence.HasInsight, evidence.HasTranscript,
+				evidence.MinutesBytes, evidence.InsightBytes, evidence.TranscriptBytes, evidence.SourceCount)
+		}
+	}
 
 	stepData := map[string]interface{}{
 		"sources":                  sources,
@@ -1000,8 +1994,78 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			"rank_constant":   fusionRankConstant(),
 		},
 	}
+	if len(wikiCoverage) > 0 {
+		stepData["wiki_page_context_coverage"] = wikiCoverage
+	}
+	if retrievalSummary != nil {
+		stepData["retrieval_summary"] = retrievalSummary
+	}
 	if chatRequest.DatasetIsSoloWiki() {
-		stepData["solo_wiki_chunk_count"] = len(sources)
+		chunkCount := 0
+		for _, source := range sources {
+			if source.SourceType == "wiki" {
+				chunkCount += len(source.WikiChunkIDs)
+			}
+		}
+		stepData["solo_wiki_chunk_count"] = chunkCount
+	}
+	if preparedDocumentQA != nil {
+		stepData["document_qa"] = map[string]interface{}{
+			"strategy":              preparedDocumentQA.Plan.Strategy,
+			"coverage":              preparedDocumentQA.Plan.Coverage,
+			"required_input_tokens": preparedDocumentQA.Plan.RequiredInputTokens,
+			"available_tokens":      preparedDocumentQA.Plan.AvailableInputTokens,
+		}
+		if preparedDocumentQA.Plan.Strategy == rag.DocumentQAStrategyMapReduce {
+			fileCoverage := make([]map[string]interface{}, 0, len(chatRequest.FileIDs))
+			for _, encodedFileID := range chatRequest.FileIDs {
+				fileID, parseErr := hashids.TryParseID(encodedFileID)
+				if parseErr != nil {
+					continue
+				}
+				stats := preparedDocumentQA.Summary.ByFile[fileID]
+				fileCoverage = append(fileCoverage, map[string]interface{}{
+					"file_id": hashInt64(fileID), "total": stats.Total,
+					"processed": stats.Processed, "failed": stats.Failed, "complete": stats.Complete,
+				})
+			}
+			documentQAData := stepData["document_qa"].(map[string]interface{})
+			documentQAData["coverage"] = preparedDocumentQA.Summary.Coverage
+			documentQAData["comprehensive_complete"] = preparedDocumentQA.Summary.ComprehensiveComplete
+			documentQAData["file_coverage"] = fileCoverage
+		}
+	}
+	if followup, exists := c.Get("document_qa_followup_queries"); exists {
+		if followupQueries, ok := followup.([]string); ok {
+			if data, exists := stepData["document_qa"].(map[string]interface{}); exists {
+				data["rounds"] = 2
+				data["followup_query_count"] = len(followupQueries)
+			}
+		}
+	}
+	if value, exists := c.Get("document_qa_compare_file_ids"); exists {
+		if fileIDs, ok := value.([]int64); ok {
+			dimensions := documentQACompareDimensions(messageStatus.OriginalQuestion)
+			coverage, fileCoverages := evaluateDocumentQACompareCoverage(fileIDs, sources, dimensions)
+			files := make([]map[string]interface{}, 0, len(fileIDs))
+			for _, fileCoverage := range fileCoverages {
+				files = append(files, map[string]interface{}{
+					"file_id": hashInt64(fileCoverage.FileID), "has_evidence": fileCoverage.HasEvidence,
+					"missing_dimensions": fileCoverage.MissingDimensions,
+				})
+			}
+			compareData := map[string]interface{}{"coverage": coverage, "dimensions": dimensions, "files": files}
+			if len(dimensions) == 0 {
+				compareData["dimension_coverage_available"] = false
+			}
+			if followup, exists := c.Get("document_qa_followup_queries"); exists {
+				if followupQueries, ok := followup.([]string); ok {
+					compareData["followup_query_count"] = len(followupQueries)
+					compareData["rounds"] = 2
+				}
+			}
+			stepData["document_qa_compare"] = compareData
+		}
 	}
 	if timings, ok := c.Get("rag_stage_timings_ms"); ok {
 		if stageTimings, ok := timings.(map[string]int64); ok && len(stageTimings) > 0 {
@@ -1015,13 +2079,372 @@ func HandleRAG(c *gin.Context, chatRequest *ChatRequest, ctx context.Context, me
 			err = errors.New(strings.Join(searchErrors, "; "))
 		}
 	}
-	messageStatus.StepSender.SendEndStep(STEP_KNOWLEDGE_SEARCH, "知识查找完成", stepData)
+	messageStatus.StepSender.SendEndStep(STEP_KNOWLEDGE_SEARCH, "搜索完成", stepData)
 
 	// 按对话开启的查询范围组合判定知识类型（与消息列表筛选互斥对应）
 	messageStatus.KnowledgeType = ComputeKnowledgeScopeTag(buildScopeSignals(ctx, chatRequest, messageStatus.AgentModel, sources))
 
 	c.Set("rag_sources", sources)
+	if len(sources) > 0 {
+		err = nil
+	}
 	return sources, err
+}
+
+func configuredWebSearchRequest(agent *model.Agent, request *model.WebSearchConfig) (*model.WebSearchConfig, error) {
+	if agent == nil || request == nil {
+		return nil, nil
+	}
+	configured, err := agent.GetWebSearchConfig()
+	if err != nil {
+		return nil, fmt.Errorf("读取 Agent 联网搜索配置失败: %w", err)
+	}
+	if configured == nil {
+		return nil, nil
+	}
+	configured.Enable = configured.Enable && request.Enable
+	return configured, nil
+}
+
+func copyRAGContextValues(target, source *gin.Context) {
+	if partialErrors := knowledgeSearchPartialErrors(source); len(partialErrors) > 0 {
+		target.Set(knowledgeSearchPartialErrorsKey, partialErrors)
+	}
+	if timings, exists := source.Get("rag_stage_timings_ms"); exists {
+		target.Set("rag_stage_timings_ms", timings)
+	}
+	if value, exists := source.Get(nativeWebSearchUsageContextKey); exists {
+		usage := value.(relay_model.Usage)
+		addNativeWebSearchUsage(target, &usage)
+	}
+}
+
+func knowledgeSearchPartialErrors(c *gin.Context) []string {
+	if raw, exists := c.Get(knowledgeSearchPartialErrorsKey); exists {
+		if errs, ok := raw.([]string); ok {
+			return errs
+		}
+	}
+	return nil
+}
+
+func mergeSoloFileSearchStatus(target, source *MessageStatsInfo, searchErr error) {
+	if searchErr != nil {
+		return
+	}
+	target.DocumentType = source.DocumentType
+	target.DocumentID = source.DocumentID
+	target.SaveFileID = source.SaveFileID
+	target.KnowledgeScope = source.KnowledgeScope
+	target.KnowledgeType = source.KnowledgeType
+}
+
+func addNativeWebSearchUsage(c *gin.Context, usage *relay_model.Usage) {
+	if usage == nil {
+		return
+	}
+	current, _ := c.Get(nativeWebSearchUsageContextKey)
+	if current == nil {
+		c.Set(nativeWebSearchUsageContextKey, *usage)
+		return
+	}
+	total := current.(relay_model.Usage)
+	total.PromptTokens += usage.PromptTokens
+	total.CompletionTokens += usage.CompletionTokens
+	total.TotalTokens += usage.TotalTokens
+	c.Set(nativeWebSearchUsageContextKey, total)
+}
+
+func takeNativeWebSearchUsage(c *gin.Context) (relay_model.Usage, bool) {
+	value, exists := c.Get(nativeWebSearchUsageContextKey)
+	if !exists || value == nil {
+		return relay_model.Usage{}, false
+	}
+	c.Set(nativeWebSearchUsageContextKey, nil)
+	usage, ok := value.(relay_model.Usage)
+	return usage, ok
+}
+
+func recordFailedNativeWebSearchUsage(c *gin.Context, ctx context.Context) {
+	usage, ok := takeNativeWebSearchUsage(c)
+	if !ok {
+		return
+	}
+	if executionContext := agentExecutionContextFromGin(c); executionContext != nil {
+		executionContext.AddUsage(agentexec.Usage{
+			PromptTokens: usage.PromptTokens, CompletionTokens: usage.CompletionTokens,
+			TotalTokens: usage.TotalTokens,
+		})
+	}
+	logger.Infof(ctx, "【网络搜索】模型来源检索未能进入回答流程，已记录上游用量：输入Token=%d，输出Token=%d，合计=%d",
+		usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens)
+}
+
+func buildRAGSourcePlan(ctx context.Context, c *gin.Context, chatRequest *ChatRequest, agent *model.Agent) ragSourcePlan {
+	if chatRequest == nil {
+		return ragSourcePlan{}
+	}
+	var webSearchConfig *model.WebSearchConfig
+	if agent != nil {
+		configured, configErr := agent.GetWebSearchConfig()
+		webSearchConfig = configured
+		if configErr != nil {
+			logger.Warnf(ctx, "【网络搜索】读取 Agent 搜索来源配置失败：%v", configErr)
+		}
+	}
+	modelSearch := chatRequest.DatasetIsWebSearch() && webSearchConfig != nil && webSearchConfig.SourceType == "model"
+	soloWiki := chatRequest.DatasetIsSoloWiki()
+	wikiSearch := shouldRunWikiSearch(ctx, chatRequest, agent)
+	explicitFileOnly := len(chatRequest.FileIDs) > 0 && len(chatRequest.KnowledgeBaseIDs) == 0 && len(chatRequest.SpaceIDs) == 0 &&
+		!chatRequest.DatasetIsWebSearch() && !soloWiki && !wikiSearch
+	fileOnly := explicitFileOnly && len(chatRequest.FileIDs) == 1
+	return ragSourcePlan{
+		LocalWebSearch: chatRequest.DatasetIsWebSearch() && !modelSearch,
+		ModelSearch:    modelSearch,
+		KnowledgeBase:  chatRequest.DatasetIsKnowledgeBase() && !fileOnly,
+		SoloFile:       chatRequest.DatasetIsSoloFile() || fileOnly,
+		SoloWiki:       soloWiki,
+		WikiSearch:     wikiSearch,
+	}
+}
+
+func handleConfiguredWebSearch(c *gin.Context, queries []string, chatRequest *ChatRequest, ctx context.Context, messageStatus *MessageStatsInfo) ([]rag.SourceReference, error) {
+	useModelSearch := chatRequest.WebSearchConfig != nil && chatRequest.WebSearchConfig.SourceType == "model"
+	source := "外挂 API"
+	if useModelSearch {
+		source = "模型"
+	}
+	logger.Infof(ctx, "【网络搜索】开始调用网络搜索：来源=%s，查询数量=%d", source, len(queries))
+	var sources []rag.SourceReference
+	var err error
+	if useModelSearch {
+		sources, err = HandleNativeModelWebSearchRag(c, queries, chatRequest, ctx, messageStatus)
+	} else {
+		sources, err = HandleWebSearchRag(c, queries, chatRequest, ctx, messageStatus)
+	}
+	if err != nil {
+		logger.Warnf(ctx, "【网络搜索】网络搜索调用失败：来源=%s，错误=%v", source, err)
+		return nil, err
+	}
+	logger.Infof(ctx, "【网络搜索】网络搜索调用完成：来源=%s，返回来源数=%d", source, len(sources))
+	return sources, nil
+}
+
+func HandleNativeModelWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatRequest, ctx context.Context, messageStatus *MessageStatsInfo) ([]rag.SourceReference, error) {
+	requestedModel := chatRequest.Model
+	agentModel := ""
+	if messageStatus != nil && messageStatus.AgentModel != nil {
+		agentModel = messageStatus.AgentModel.Model
+	}
+	if requestedModel == "" || strings.HasPrefix(requestedModel, "agent-") {
+		requestedModel = agentModel
+	}
+	if requestedModel == "" {
+		return nil, errors.New("无法确定网络搜索使用的模型名称")
+	}
+	logger.Infof(ctx, "【网络搜索】模型名称解析完成：请求模型=%s，Agent模型=%s，实际模型=%s", chatRequest.Model, agentModel, requestedModel)
+
+	selectedChannel, exists := c.Get(ctxkey.SelectedChannel)
+	channel, ok := selectedChannel.(*model.Channel)
+	if messageStatus != nil && messageStatus.AgentModel != nil && messageStatus.AgentModel.SpecificChannelID > 0 {
+		var err error
+		channel, err = getAgentSpecificChannel(ctx, messageStatus.AgentModel)
+		if err != nil {
+			return nil, fmt.Errorf("加载网络搜索渠道失败: %w", err)
+		}
+		middleware.SetupContextForSelectedChannel(c, channel, requestedModel)
+		ok, exists = true, true
+	}
+	if !exists || !ok || channel == nil {
+		if messageStatus != nil && messageStatus.AgentModel != nil {
+			resolvedChannel, _, err := resolveExecutionChannel(ctx, messageStatus.AgentModel, requestedModel)
+			if err == nil && resolvedChannel != nil {
+				channel = resolvedChannel
+				middleware.SetupContextForSelectedChannel(c, channel, requestedModel)
+				ok, exists = true, true
+				logger.Infof(ctx, "【网络搜索】已从 Agent 配置恢复执行渠道：渠道ID=%d，模型=%s", channel.ChannelID, requestedModel)
+			}
+		}
+	}
+	if !exists || !ok || channel == nil {
+		fixedChannelID := int64(0)
+		if messageStatus != nil && messageStatus.AgentModel != nil {
+			fixedChannelID = messageStatus.AgentModel.SpecificChannelID
+		}
+		logger.Warnf(ctx, "【网络搜索】模型来源渠道判定失败：无法获取当前渠道（Agent固定渠道ID=%d，上下文渠道存在=%t）", fixedChannelID, exists)
+		return nil, errors.New("当前模型渠道不支持模型网络搜索")
+	}
+	meta := GetByContext(c)
+	mappedModel, _ := getMappedModelName(requestedModel, channel.GetModelMapping())
+	capabilities, useResponses, err := CustomOpenAI.ResolveModelConfig(channel.Type, channel.Config, mappedModel)
+	if err != nil || !useResponses || !capabilities.EnabledTools["web_search"] {
+		return nil, errors.New("当前模型未启用 Responses API 的网络搜索能力")
+	}
+
+	topK := 20
+	if chatRequest.SearchConfig != nil && chatRequest.SearchConfig.TopK > 0 {
+		topK = chatRequest.SearchConfig.TopK
+	}
+	dateWindow := recentWeekSearchWindow(messageStatus.OriginalQuestion, time.Now())
+	if dateWindow != nil {
+		logger.Infof(ctx, "【网络搜索】模型原生搜索按最近一周检索：发布日期范围为%s至%s", dateWindow.Start.Format(time.DateOnly), dateWindow.End.Format(time.DateOnly))
+	}
+	var sources []rag.SourceReference
+	sourceIndexes := make(map[string]int)
+	for queryIndex, query := range queries {
+		metaCopy := *meta
+		metaCopy.IsStream = false
+		metaCopy.Mode = relaymode.ChatCompletions
+		metaCopy.RequestURLPath = "/v1/chat/completions"
+		metaCopy.ActualModelName = mappedModel
+		adaptor := servicepkg.GetAdaptorForChannel(metaCopy.APIType, metaCopy.BaseURL, metaCopy.ChannelType)
+		if adaptor == nil {
+			return nil, errors.New("无法创建模型渠道适配器")
+		}
+		configured, ok := adaptor.(*CustomOpenAI.Adaptor)
+		if !ok {
+			return nil, errors.New("当前模型渠道的 Responses API 地址格式不支持模型网络搜索")
+		}
+		adaptor.Init(&metaCopy)
+		configured.ChannelConfig = channel.Config
+		configured.NativeWebSearch = true
+		if err := servicepkg.SetCustomConfig(&adaptor, &custom.CustomConfig{UserId: fmt.Sprintf("agentsearch_u%d", config.GetUserId(c))}); err != nil {
+			return nil, fmt.Errorf("初始化模型网络搜索请求失败: %w", err)
+		}
+		requestURL, err := adaptor.GetRequestURL(&metaCopy)
+		if err != nil {
+			return nil, fmt.Errorf("解析模型网络搜索地址失败: %w", err)
+		}
+
+		requestBody, convertErr := adaptor.ConvertRequest(c, relaymode.ChatCompletions, &relay_model.GeneralOpenAIRequest{
+			Model:    mappedModel,
+			Messages: []relay_model.Message{{Role: "user", Content: nativeModelWebSearchPrompt(query, topK, dateWindow)}},
+		})
+		if convertErr != nil {
+			return nil, fmt.Errorf("转换模型网络搜索请求失败: %w", convertErr)
+		}
+		payload, err := json.Marshal(requestBody)
+		if err != nil {
+			return nil, fmt.Errorf("序列化模型网络搜索请求失败: %w", err)
+		}
+		logger.Infof(ctx, "【网络搜索】正在请求上游：渠道ID=%d，模型=%s，地址=%s，当前查询=%d，总查询数=%d", channel.ChannelID, mappedModel, requestURL, queryIndex+1, len(queries))
+		resp, err := adaptor.DoRequest(c, &metaCopy, bytes.NewReader(payload))
+		if err != nil {
+			return nil, fmt.Errorf("请求模型网络搜索失败: %w", err)
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("读取模型网络搜索响应失败: %w", readErr)
+		}
+		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+			responseMessage := strings.TrimSpace(string(body))
+			if len(responseMessage) > 512 {
+				responseMessage = responseMessage[:512]
+			}
+			logger.Warnf(ctx, "【网络搜索】模型上游拒绝请求：渠道ID=%d，模型=%s，地址=%s，状态码=%d，响应=%s", channel.ChannelID, mappedModel, requestURL, resp.StatusCode, responseMessage)
+			return nil, fmt.Errorf("模型网络搜索返回状态码 %d", resp.StatusCode)
+		}
+		results, usage, err := CustomOpenAI.ExtractResponsesWebSearchResult(ctx, body)
+		addNativeWebSearchUsage(c, usage)
+		if err != nil {
+			return nil, err
+		}
+		logger.Infof(ctx, "【网络搜索】模型上游响应已解析：渠道ID=%d，模型=%s，HTTP状态码=%d，网页结果数=%d", channel.ChannelID, mappedModel, resp.StatusCode, len(results))
+		filteredCount := 0
+		for _, result := range results {
+			if dateWindow != nil && !dateWindow.includes(result.Date) {
+				filteredCount++
+				continue
+			}
+			referenceKey := result.URL
+			if index, exists := sourceIndexes[referenceKey]; exists {
+				if !strings.Contains(sources[index].Content, result.Content) {
+					sources[index].Content += "\n" + result.Content
+				}
+				continue
+			}
+			if len(sources) >= topK {
+				break
+			}
+			title := strings.TrimSpace(result.Title)
+			if title == "" {
+				title = result.URL
+			}
+			sourceIndexes[referenceKey] = len(sources)
+			itemID := int64(len(sources) + 1)
+			searchItem := &search_tools.SearchItem{
+				ChunkID: itemID, FileID: itemID, FilePath: result.URL, FileName: title,
+				Content: result.Content, PublishedAt: result.Date, ChunkType: "web_page", Score: 1,
+			}
+			sources = append(sources, webSearchSourceReference(searchItem))
+		}
+		if dateWindow != nil {
+			logger.Infof(ctx, "【网络搜索】模型原生搜索已按发布日期筛选：累计保留%d条，当前查询过滤%d条", len(sources), filteredCount)
+		}
+		if len(sources) >= topK {
+			break
+		}
+	}
+	if len(sources) == 0 {
+		if dateWindow != nil {
+			return nil, fmt.Errorf("模型网络搜索未返回 %s 至 %s 内且带明确发布日期的网页来源", dateWindow.Start.Format(time.DateOnly), dateWindow.End.Format(time.DateOnly))
+		}
+		return nil, errors.New("模型网络搜索未返回可用网页来源内容")
+	}
+	messageStatus.KnowledgeType = model.KnowledgeTypeWeb
+	go func() {
+		if err := model.IncrementField(messageStatus.AgentModel.Eid, messageStatus.AgentModel.AgentID, "web_search_count", 1); err != nil {
+			logger.Warnf(ctx, "【网络搜索】更新模型来源搜索次数失败：%v", err)
+		}
+	}()
+	return sources, nil
+}
+
+func nativeModelWebSearchPrompt(query string, topK int, dateWindow *recentWeekWindow) string {
+	dateRule := ""
+	if dateWindow != nil {
+		dateRule = fmt.Sprintf("只保留发布日期在 %s 至 %s（含首尾）之间的网页；无法确认发布日期或日期不在范围内的网页不要输出；没有符合条件的网页时返回空数组。", dateWindow.Start.Format(time.DateOnly), dateWindow.End.Format(time.DateOnly))
+	}
+	return fmt.Sprintf("请使用 web_search 搜索以下问题：先搜索一次，只有结果不足时才补充搜索。将实际搜索到的网页整理为 JSON 数组，不要代码围栏、解释或总括性回答。最多 %d 条，每条仅含 url、title、content、date。url 必须来自搜索结果；title 使用网页标题；content 应提供足够回答问题的具体信息，通常写 3-5 句、约 150-300 个汉字，优先保留关键事实、时间、数据和结论依据；只能总结该网页实际提供且与问题相关的信息，不混合不同网页的内容，也不补充网页未提供的事实，若网页有效信息较少则据实缩短；date 使用网页明确提供的发布日期，格式 YYYY-MM-DD，无法确认时填空字符串。%s\n搜索问题：%s", topK, dateRule, query)
+}
+
+type recentWeekWindow struct {
+	Start time.Time
+	End   time.Time
+}
+
+func recentWeekSearchWindow(question string, now time.Time) *recentWeekWindow {
+	question = strings.ToLower(strings.TrimSpace(question))
+	for _, phrase := range []string{"最近一周", "近一周", "过去一周", "最近7天", "近7天", "过去7天", "最近七天", "近七天", "过去七天", "past week", "last week", "past 7 days", "last 7 days"} {
+		if strings.Contains(question, phrase) {
+			location := time.FixedZone("Asia/Shanghai", 8*60*60)
+			end := now.In(location)
+			end = time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, end.Location())
+			start := end.AddDate(0, 0, -6)
+			return &recentWeekWindow{Start: start, End: end}
+		}
+	}
+	return nil
+}
+
+func (window *recentWeekWindow) includes(rawDate string) bool {
+	date, ok := parseSearchPublishedDate(rawDate)
+	if !ok {
+		return false
+	}
+	dateText := date.In(window.Start.Location()).Format(time.DateOnly)
+	return dateText >= window.Start.Format(time.DateOnly) && dateText <= window.End.Format(time.DateOnly)
+}
+
+func parseSearchPublishedDate(rawDate string) (time.Time, bool) {
+	rawDate = strings.TrimSpace(rawDate)
+	for _, layout := range []string{time.DateOnly, time.RFC3339, "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, rawDate); err == nil {
+			return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, parsed.Location()), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func firstWikiPageID(sources []rag.SourceReference) int64 {
@@ -1246,6 +2669,11 @@ func HandleWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatReque
 	if chatRequest.SearchConfig != nil && chatRequest.SearchConfig.TopK > 0 {
 		count = chatRequest.SearchConfig.TopK
 	}
+	dateWindow := recentWeekSearchWindow(messageStatus.OriginalQuestion, time.Now())
+	if dateWindow != nil {
+		searchConfig.Wsc.Freshness = fmt.Sprintf("%s..%s", dateWindow.Start.Format(time.DateOnly), dateWindow.End.Format(time.DateOnly))
+		logger.Infof(ctx, "【网络搜索】博查搜索按最近一周检索：发布日期范围为%s至%s", dateWindow.Start.Format(time.DateOnly), dateWindow.End.Format(time.DateOnly))
+	}
 
 	// 执行并发搜索
 	logger.SysLogf("【网络搜索】开始执行网络搜索，查询数量：%d", len(queries))
@@ -1259,6 +2687,19 @@ func HandleWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatReque
 	if len(searchResult.Errors) > 0 {
 		logger.SysErrorf("【网络搜索】网络搜索返回了 %d 个错误，错误详情=%v", len(searchResult.Errors), searchResult.Errors)
 	}
+	if dateWindow != nil {
+		freshItems := make([]*search_tools.SearchItem, 0, len(searchResult.Items))
+		filteredCount := 0
+		for _, item := range searchResult.Items {
+			if item.ChunkType == "web_page" && dateWindow.includes(item.PublishedAt) {
+				freshItems = append(freshItems, item)
+			} else {
+				filteredCount++
+			}
+		}
+		searchResult.Items = freshItems
+		logger.Infof(ctx, "【网络搜索】博查搜索已按发布日期筛选：保留%d条，过滤%d条", len(freshItems), filteredCount)
+	}
 
 	if len(searchResult.Items) == 0 {
 		if len(searchResult.Errors) > 0 {
@@ -1269,6 +2710,9 @@ func HandleWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatReque
 			}
 		}
 		logger.Warnf(ctx, "【网络搜索】网络搜索未返回任何结果：查询数量=%d，平台配置ID=%s", len(queries), chatRequest.WebSearchConfig.PlatformSettingID)
+		if dateWindow != nil {
+			return nil, fmt.Errorf("博查未返回 %s 至 %s 内且带明确发布日期的网页来源", dateWindow.Start.Format(time.DateOnly), dateWindow.End.Format(time.DateOnly))
+		}
 		return nil, fmt.Errorf("Web搜索未返回任何结果")
 	}
 
@@ -1285,26 +2729,8 @@ func HandleWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatReque
 	// 转换搜索结果为RAG格式
 	var sources []rag.SourceReference
 
-	for i, item := range searchResult.Items {
-		SourceTk := fmt.Sprintf("B-%d", i+1)
-		source := rag.SourceReference{
-			SourceType:        "web",
-			ReferenceID:       SourceTk,
-			ChunkID:           item.ChunkID, // 确保 ChunkID 在本次搜索结果中唯一
-			FileID:            item.FileID,
-			Content:           item.Content,
-			FileName:          item.FileName,
-			LibraryName:       item.LibraryName,
-			LibraryIcon:       item.LibraryIcon,
-			KnowledgeBaseName: item.LibraryName,
-			KnowledgeBaseLogo: item.LibraryIcon,
-			URL:               item.FilePath,
-			FilePath:          item.FilePath,
-			SourceKey:         fmt.Sprintf("[Source:%s]", SourceTk),
-			Score:             1.0,
-			ChunkType:         item.ChunkType,
-		}
-		sources = append(sources, source)
+	for _, item := range searchResult.Items {
+		sources = append(sources, webSearchSourceReference(item))
 	}
 
 	// stepSender.EndStartWebSearchStep(sources)
@@ -1319,6 +2745,25 @@ func HandleWebSearchRag(c *gin.Context, queries []string, chatRequest *ChatReque
 	logger.Infof(ctx, "【网络搜索】网络搜索处理完成：查询数量=%d，返回结果数=%d", len(queries), len(sources))
 
 	return sources, nil
+}
+
+func webSearchSourceReference(item *search_tools.SearchItem) rag.SourceReference {
+	return rag.SourceReference{
+		SourceType:        "web",
+		ChunkID:           item.ChunkID,
+		FileID:            item.FileID,
+		Content:           item.Content,
+		FileName:          item.FileName,
+		LibraryName:       item.LibraryName,
+		LibraryIcon:       item.LibraryIcon,
+		KnowledgeBaseName: item.LibraryName,
+		KnowledgeBaseLogo: item.LibraryIcon,
+		URL:               item.FilePath,
+		FilePath:          item.FilePath,
+		PublishedAt:       item.PublishedAt,
+		Score:             1.0,
+		ChunkType:         item.ChunkType,
+	}
 }
 
 // HandleSoloFileSearchRag 处理单文件搜索RAG
@@ -1392,7 +2837,22 @@ func HandleSoloFileSearchRag(c *gin.Context, queries []string, chatRequest *Chat
 	}
 
 	filePath := file.Path
-	// 创建 sources 引用参考数据，以便后续进行引用分析
+	// 调用单文件增强逻辑：优先注入纪要，再按关键词检索相关逐字稿片段
+	enhanced, enhErr := enhanceSoloFileSourcesAndContent(ctx, agent.Eid, file, chunks, queries, soloFileLibraryMeta{
+		LibraryIDHash:          hashInt64(file.LibraryID),
+		LibraryName:            libraryName,
+		LibraryIcon:            libraryIcon,
+		SpaceIDHash:            spaceIDHash,
+		SpaceName:              spaceName,
+		IncludeDecisionInsight: isDiscussionAgentAuthorized(agent),
+	}, MAX_SOLO_FILE_CONTENT_SIZE)
+	if enhErr == nil && enhanced != nil && len(enhanced.Sources) > 0 {
+		return enhanced.Sources, nil
+	}
+	if enhErr != nil {
+		logger.Warnf(ctx, "【文档检索】单文件增强处理失败，回退基础分片循环: %v", enhErr)
+	}
+
 	var sources []rag.SourceReference
 	var currentLength int
 	for i, chunk := range chunks {
@@ -1450,31 +2910,22 @@ func HandleSoloWikiSearchRag(c *gin.Context, queries []string, chatRequest *Chat
 	if err != nil || permission < model.PERMISSION_VIEW_ONLY {
 		return nil, fmt.Errorf("无权限查看 Wiki 页面")
 	}
-
-	var publishedVersion model.WikiPageVersion
-	versionErr := model.DB.WithContext(ctx).
-		Where("eid = ? AND page_id = ? AND is_published = ?", eid, pageID, true).
-		Order("version_no DESC").First(&publishedVersion).Error
-	if errors.Is(versionErr, gorm.ErrRecordNotFound) {
-		logger.Warnf(ctx, "【Wiki检索】单文档页面没有已发布版本：页面ID=%d，继续使用空上下文", pageID)
+	pageContexts, err := servicepkg.NewWikiSearchService(model.DB).LoadCurrentPageContexts(ctx, eid, userID, []int64{pageID})
+	if err != nil {
+		return nil, fmt.Errorf("读取 Wiki 当前页面上下文失败: %w", err)
+	}
+	if len(pageContexts) == 0 {
+		logger.Warnf(ctx, "【Wiki检索】单文档页面当前版本未发布或无查看权限：页面ID=%d，继续使用空上下文", pageID)
 		return []rag.SourceReference{}, nil
 	}
-	if versionErr != nil {
-		return nil, fmt.Errorf("读取 Wiki 已发布版本失败: %w", versionErr)
-	}
-
-	var chunks []model.WikiPageChunk
-	query := model.DB.WithContext(ctx).Where("eid = ? AND wiki_page_id = ? AND wiki_page_version_id = ?", eid, pageID, publishedVersion.ID)
-	if err := query.Order("chunk_index ASC").Order("id ASC").Find(&chunks).Error; err != nil {
-		return nil, fmt.Errorf("读取 Wiki 页面分片失败: %w", err)
-	}
+	pageContext := pageContexts[0]
+	chunks := pageContext.Chunks
 	if len(chunks) == 0 {
-		logger.Warnf(ctx, "【Wiki检索】单文档页面暂无可用分片：页面ID=%d，已发布版本ID=%d，继续使用空上下文", pageID, publishedVersion.ID)
+		logger.Warnf(ctx, "【Wiki检索】单文档页面当前版本暂无分片：页面ID=%d，版本ID=%d", pageID, pageContext.VersionID)
 		messageStatus.KnowledgeType = model.KnowledgeTypeSpecificWiki
 		messageStatus.DocumentType = model.DocumentTypeWiki
 		messageStatus.DocumentID = pageID
 		messageStatus.KnowledgeScope = hashInt64(pageID)
-		return []rag.SourceReference{}, nil
 	}
 
 	messageStatus.KnowledgeType = model.KnowledgeTypeSpecificWiki
@@ -1489,11 +2940,15 @@ func HandleSoloWikiSearchRag(c *gin.Context, queries []string, chatRequest *Chat
 	if err := model.DB.WithContext(ctx).Where("eid = ? AND id = ?", eid, page.SpaceID).First(&space).Error; err != nil {
 		return nil, fmt.Errorf("读取 Wiki 空间信息失败: %w", err)
 	}
+	if len(chunks) == 0 {
+		base := soloWikiSourceReference(*page, library, space, model.WikiPageChunk{WikiPageVersionID: pageContext.VersionID}, 0)
+		return []rag.SourceReference{wikiSourceWithPageContext(base, pageContext)}, nil
+	}
 	sources := make([]rag.SourceReference, 0, len(chunks))
 	for i, chunk := range chunks {
 		sources = append(sources, soloWikiSourceReference(*page, library, space, chunk, i))
 	}
-	logger.Infof(ctx, "【Wiki检索】单文档读取完成：页面ID=%d，原始分片数=%d，注入分片数=%d，未执行固定字符截断", pageID, len(chunks), len(sources))
+	logger.Infof(ctx, "【Wiki检索】单文档读取完成：页面ID=%d，版本ID=%d，原始分片数=%d，注入分片数=%d", pageID, pageContext.VersionID, len(chunks), len(sources))
 	return sources, nil
 }
 
@@ -1506,8 +2961,10 @@ func soloWikiSourceReference(page model.WikiPage, library model.Library, space m
 		KnowledgeBaseID: page.LibraryID, KnowledgeBaseName: library.Name, KnowledgeBaseLogo: library.Icon,
 		LibraryID: hashInt64(page.LibraryID), LibraryName: library.Name, LibraryIcon: library.Icon,
 		SpaceID: hashInt64(page.SpaceID), SpaceName: space.Name, FileCreatedAt: page.CreatedTime,
-		URL:       fmt.Sprintf("/api/wiki/pages/%s", hashInt64(page.ID)),
-		SourceKey: fmt.Sprintf("[Source:%s]", referenceID),
+		URL:               fmt.Sprintf("/api/wiki/pages/%s", hashInt64(page.ID)),
+		SourceKey:         fmt.Sprintf("[Source:%s]", referenceID),
+		WikiPageVersionID: chunk.WikiPageVersionID, WikiChunkID: chunk.ChunkID,
+		WikiHeadingPath: chunk.HeadingPath,
 	}
 }
 
@@ -1569,11 +3026,14 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 
 	// ========== 阶段 1: 实体范围收敛 ==========
 	// 如果请求已指定 file_id，则跳过收敛（文件级检索不需要收敛）
-	messageStatus.StepSender.SendStartStep(STEP_SCOPE_NARROWING, "正在搜索文档...", buildScopeNarrowingStartData(searchTarget, len(queries)))
+	if messageStatus.StepSender != nil {
+		messageStatus.StepSender.SendStartStep(STEP_SCOPE_NARROWING, "正在搜索文档...", buildScopeNarrowingStartData(searchTarget, len(queries)))
+	}
 
 	searchService := rag.NewSearchService(model.DB)
+	scopeQuery := retrievalScopeQuery(messageStatus.OriginalQuestion, messageStatus.RewrittenQuestion, queries)
 	preprocessReq := &rag.SearchRequest{
-		Query:                    queries[0],
+		Query:                    scopeQuery,
 		LibraryIDs:               searchTarget.LibraryIDs,
 		FileIDs:                  searchTarget.FileIDs,
 		EntityKeywords:           actualKeywords,
@@ -1590,14 +3050,16 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 	}
 
 	// 发送缩小范围完成步骤（在向量搜索前）
-	messageStatus.StepSender.SendEndStep(STEP_SCOPE_NARROWING, "文档缩小范围完成", buildScopeNarrowingEndData(
-		narrowResult.NarrowedLibraries,
-		len(searchTarget.LibraryIDs),
-		len(searchTarget.FileIDs),
-		actualSearchType,
-		actualKeywords,
-		len(queries),
-	))
+	if messageStatus.StepSender != nil {
+		messageStatus.StepSender.SendEndStep(STEP_SCOPE_NARROWING, "文档缩小范围完成", buildScopeNarrowingEndData(
+			narrowResult.NarrowedLibraries,
+			len(searchTarget.LibraryIDs),
+			len(searchTarget.FileIDs),
+			actualSearchType,
+			actualKeywords,
+			len(queries),
+		))
+	}
 
 	// ========== 阶段 2: 向量搜索 ==========
 	// 使用收敛后的范围构建 RagSearcher
@@ -1612,20 +3074,35 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 	}
 
 	if !knowledgeSearchStepStarted(c) {
-		messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, "正在查找知识...", map[string]interface{}{
-			"queries": queries,
-		})
+		startMessage := "正在搜索所选知识库..."
+		if value, exists := c.Get("knowledge_search_start_message"); exists {
+			if configured, ok := value.(string); ok && configured != "" {
+				startMessage = configured
+			}
+		}
+		if messageStatus.StepSender != nil {
+			messageStatus.StepSender.SendStartStep(STEP_KNOWLEDGE_SEARCH, startMessage, map[string]interface{}{"queries": queries})
+		}
+		c.Set("knowledge_search_step_started", true)
 	}
 
 	ragSearcher := search_tools.NewRagSearcher(model.DB, agent.Eid, &userID, ragConfig)
 
 	// 创建搜索引擎并执行搜索
 	shouldDoRerank := shouldRerank(agent, chatRequest)
-	recallTopK := calculateRecallTopK(topK, len(queries), shouldDoRerank)
+	keepCandidates := shouldDoRerank
+	if messageStatus.RouterResult != nil && messageStatus.RouterResult.IntentClassificationResult != nil && messageStatus.RouterResult.IntentClassificationResult.EnhancedRetrieval {
+		keepCandidates = true
+	}
+	recallTopK := calculateRecallTopK(topK, len(queries), keepCandidates)
 	logger.Debugf(ctx, "【RAG检索】召回参数: top_k=%d, query_count=%d, rerank=%v, recall_top_k=%d",
 		topK, len(queries), shouldDoRerank, recallTopK)
 
-	searchResult, err := executeSearchMulti(ragSearcher, queries, recallTopK)
+	searchWorkers := config.RAG_SEARCH_ENGINE_MAX_WORKERS
+	if len(effectiveFileIDs) > 0 && len(effectiveLibraryIDs) == 0 {
+		ctx = rag.WithSearchConcurrency(ctx, searchWorkers)
+	}
+	searchResult, err := executeSearchMulti(ctx, ragSearcher, queries, recallTopK, searchWorkers)
 	if err != nil {
 		return nil, fmt.Errorf("执行搜索失败: %v", err)
 	}
@@ -1633,11 +3110,25 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 
 	if len(searchResult.Errors) > 0 {
 		logger.Warnf(ctx, "搜索过程中出现错误: %v", searchResult.Errors)
+		c.Set(knowledgeSearchPartialErrorsKey, searchResultErrorMessages(searchResult.Errors))
+		if len(searchResult.Items) == 0 {
+			return nil, fmt.Errorf("执行搜索失败: %w", errors.Join(searchResult.Errors...))
+		}
 	}
 
 	// 知识库和 Web 结果会在 relay 汇总后统一执行一次最终重排。
 	// 开启重排时保留完整召回窗口；关闭重排时仍在这里应用最终 TopK。
-	finalItems := selectKnowledgeItemsForFinalRerank(searchResult.Items, topK, shouldDoRerank)
+	compareFileScope := rag.DetectDocumentQATask(messageStatus.OriginalQuestion) == rag.DocumentQATaskCompare &&
+		len(chatRequest.FileIDs) > 1 && len(chatRequest.KnowledgeBaseIDs) == 0 && len(chatRequest.SpaceIDs) == 0
+	var compareFileIDs []int64
+	var finalItems []*search_tools.SearchItem
+	if compareFileScope {
+		compareFileIDs = searchTarget.FileIDs
+		finalItems = selectCompareItemsPerFile(searchResult.Items, compareFileIDs, topK)
+		c.Set("document_qa_compare_file_ids", compareFileIDs)
+	} else {
+		finalItems = selectKnowledgeItemsForFinalRerank(searchResult.Items, topK, keepCandidates)
+	}
 
 	// 转换为 SourceReference 格式
 	sources := convertToSourceReferences(ctx, agent.Eid, searchTarget, finalItems)
@@ -1678,11 +3169,247 @@ func HandleKnowledgeSearchRag(c *gin.Context, queries []string, chatRequest *Cha
 	return sources, nil
 }
 
+func handleDocumentQACompareSearch(c *gin.Context, queries []string, chatRequest *ChatRequest, ctx context.Context, messageStatus *MessageStatsInfo) ([]rag.SourceReference, error) {
+	fileIDs, err := decodeWikiIDs(chatRequest.FileIDs)
+	if err != nil {
+		return nil, fmt.Errorf("解析比较文件范围失败: %w", err)
+	}
+	if len(fileIDs) < 2 {
+		return nil, fmt.Errorf("比较检索至少需要两个目标文件")
+	}
+	maxItems := calculateRecallTopK(documentQACompareTopK(chatRequest, len(fileIDs)), len(queries), shouldRerank(messageStatus.AgentModel, chatRequest))
+	byFile := make(map[int64][]rag.SourceReference, len(fileIDs))
+	var firstErr error
+	for fileIndex, encodedFileID := range chatRequest.FileIDs {
+		fileID, parseErr := hashids.TryParseID(encodedFileID)
+		if parseErr != nil {
+			return nil, fmt.Errorf("无效的文件ID格式: %s", encodedFileID)
+		}
+		for _, query := range queries {
+			restrictedRequest := *chatRequest
+			restrictedRequest.FileIDs = []string{encodedFileID}
+			searchContext := c.Copy()
+			searchStatus := *messageStatus
+			searchStatus.StepSender = nil
+			fileSources, searchErr := HandleKnowledgeSearchRag(searchContext, []string{query}, &restrictedRequest, ctx, &searchStatus)
+			if searchErr != nil {
+				if firstErr == nil {
+					firstErr = searchErr
+				}
+				continue
+			}
+			byFile[fileID] = append(byFile[fileID], fileSources...)
+		}
+		if fileIndex < len(chatRequest.FileIDs)-1 && ctx.Err() != nil {
+			break
+		}
+	}
+	if ctx.Err() == nil {
+		fileNames := make([]string, 0, len(fileIDs))
+		for _, fileID := range fileIDs {
+			file, fileErr := model.GetFileByID(messageStatus.AgentModel.Eid, fileID, ctx)
+			if fileErr != nil {
+				continue
+			}
+			fileNames = append(fileNames, file.GetAccurateFileName())
+		}
+		firstRoundSources := make([]rag.SourceReference, 0)
+		for _, fileID := range fileIDs {
+			firstRoundSources = append(firstRoundSources, byFile[fileID]...)
+		}
+		followupQueries, followupErr := generateDocumentQAFollowupQueries(c, ctx, chatRequest, messageStatus, fileNames, firstRoundSources, queries)
+		if followupErr != nil {
+			logger.Warnf(ctx, "【文档问答】比较缺口检查失败：%v", followupErr)
+		} else if len(followupQueries) > 0 {
+			c.Set("document_qa_followup_queries", followupQueries)
+			for _, encodedFileID := range chatRequest.FileIDs {
+				fileID, parseErr := hashids.TryParseID(encodedFileID)
+				if parseErr != nil {
+					continue
+				}
+				for _, query := range followupQueries {
+					restrictedRequest := *chatRequest
+					restrictedRequest.FileIDs = []string{encodedFileID}
+					searchContext := c.Copy()
+					searchStatus := *messageStatus
+					searchStatus.StepSender = nil
+					fileSources, searchErr := HandleKnowledgeSearchRag(searchContext, []string{query}, &restrictedRequest, ctx, &searchStatus)
+					if searchErr != nil {
+						if firstErr == nil {
+							firstErr = searchErr
+						}
+						continue
+					}
+					byFile[fileID] = append(byFile[fileID], fileSources...)
+				}
+				if ctx.Err() != nil {
+					break
+				}
+			}
+		}
+	}
+	var candidates []rag.SourceReference
+	for _, fileID := range fileIDs {
+		seenChunks := make(map[int64]struct{})
+		for _, source := range byFile[fileID] {
+			if source.ChunkID > 0 {
+				if _, exists := seenChunks[source.ChunkID]; exists {
+					continue
+				}
+				seenChunks[source.ChunkID] = struct{}{}
+			}
+			candidates = append(candidates, source)
+		}
+	}
+	sources := selectCompareSourcesPerFile(candidates, fileIDs, maxItems)
+	c.Set("document_qa_compare_file_ids", fileIDs)
+	messageStatus.KnowledgeScope = "file:" + strings.Join(chatRequest.FileIDs, ",")
+	messageStatus.KnowledgeType = model.KnowledgeTypeSpecificKB
+	if len(sources) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return sources, nil
+}
+
+func documentQAQuestionNeedsGapCheck(status *MessageStatsInfo, query string) bool {
+	if status != nil && status.RouterResult != nil && status.RouterResult.IntentClassificationResult != nil &&
+		status.RouterResult.IntentClassificationResult.Intent == "COMPLEX_AGENT" {
+		return true
+	}
+	for _, cue := range []string{"分别", "各方面", "系统梳理", "全面分析", "完整梳理", "逐项说明", "依次说明", "有哪些方面", "包含哪些内容"} {
+		if strings.Contains(query, cue) {
+			return true
+		}
+	}
+	coveredDimensions := 0
+	for _, dimension := range []string{"原因", "背景", "过程", "步骤", "条件", "影响", "结果", "后果", "优缺点", "风险", "措施", "建议"} {
+		if strings.Contains(query, dimension) {
+			coveredDimensions++
+		}
+	}
+	if coveredDimensions >= 2 {
+		return true
+	}
+	return false
+}
+
+func handleDocumentQAFollowupSearch(c *gin.Context, firstRoundQueries []string, firstRoundSources []rag.SourceReference, request *ChatRequest, ctx context.Context, status *MessageStatsInfo) ([]rag.SourceReference, error) {
+	if len(request.FileIDs) == 0 {
+		return firstRoundSources, nil
+	}
+	fileNames := make([]string, 0, len(request.FileIDs))
+	for _, encodedFileID := range request.FileIDs {
+		fileID, err := hashids.TryParseID(encodedFileID)
+		if err != nil {
+			continue
+		}
+		file, err := model.GetFileByID(status.AgentModel.Eid, fileID, ctx)
+		if err == nil {
+			fileNames = append(fileNames, file.GetAccurateFileName())
+		}
+	}
+	followupQueries, err := generateDocumentQAFollowupQueries(c, ctx, request, status, fileNames, firstRoundSources, firstRoundQueries)
+	if err != nil {
+		logger.Warnf(ctx, "【文档问答】首轮检索缺口检查失败：%v", err)
+		return firstRoundSources, nil
+	}
+	if len(followupQueries) == 0 {
+		return firstRoundSources, nil
+	}
+	c.Set("document_qa_followup_queries", followupQueries)
+	extraSources, err := HandleKnowledgeSearchRag(c, followupQueries, request, ctx, status)
+	if err != nil {
+		return firstRoundSources, err
+	}
+	return appendUniqueDocumentQASources(firstRoundSources, extraSources), nil
+}
+
+func appendUniqueDocumentQASources(sources ...[]rag.SourceReference) []rag.SourceReference {
+	combined := make([]rag.SourceReference, 0)
+	seen := make(map[string]struct{})
+	for _, group := range sources {
+		for _, source := range group {
+			key := fmt.Sprintf("%d:%d:%s", source.FileID, source.ChunkID, source.SourceKey)
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			combined = append(combined, source)
+		}
+	}
+	return combined
+}
+
+func selectCompareSourcesPerFile(sources []rag.SourceReference, fileIDs []int64, limit int) []rag.SourceReference {
+	byFile := make(map[int64][]rag.SourceReference, len(fileIDs))
+	for _, source := range sources {
+		byFile[source.FileID] = append(byFile[source.FileID], source)
+	}
+	for fileID := range byFile {
+		sort.SliceStable(byFile[fileID], func(i, j int) bool {
+			return byFile[fileID][i].Score > byFile[fileID][j].Score
+		})
+	}
+	result := make([]rag.SourceReference, 0, limit)
+	for rank := 0; len(result) < limit; rank++ {
+		added := false
+		for _, fileID := range fileIDs {
+			if rank >= len(byFile[fileID]) {
+				continue
+			}
+			result = append(result, byFile[fileID][rank])
+			added = true
+			if len(result) == limit {
+				break
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return result
+}
+
 func selectKnowledgeItemsForFinalRerank(items []*search_tools.SearchItem, topK int, rerankEnabled bool) []*search_tools.SearchItem {
 	if rerankEnabled {
 		return items
 	}
 	return limitSearchItemsTopK(items, topK)
+}
+
+func selectCompareItemsPerFile(items []*search_tools.SearchItem, fileIDs []int64, topK int) []*search_tools.SearchItem {
+	if topK <= 0 {
+		topK = 20
+	}
+	byFile := make(map[int64][]*search_tools.SearchItem, len(fileIDs))
+	for _, item := range items {
+		if item != nil {
+			byFile[item.FileID] = append(byFile[item.FileID], item)
+		}
+	}
+	for fileID := range byFile {
+		sort.SliceStable(byFile[fileID], func(i, j int) bool {
+			return byFile[fileID][i].Score > byFile[fileID][j].Score
+		})
+	}
+	result := make([]*search_tools.SearchItem, 0, topK)
+	for rank := 0; len(result) < topK; rank++ {
+		added := false
+		for _, fileID := range fileIDs {
+			if rank >= len(byFile[fileID]) {
+				continue
+			}
+			result = append(result, byFile[fileID][rank])
+			added = true
+			if len(result) == topK {
+				break
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return result
 }
 
 // getSearchType 获取搜索类型

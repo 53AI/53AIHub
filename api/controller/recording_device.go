@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
@@ -343,6 +341,7 @@ func GetRecordingDeviceStatus(c *gin.Context) {
 	defer cancel()
 	var available bool
 	var total int
+	var totalExact bool
 	var reason string
 	switch deviceType {
 	case sonicnote.DeviceTypeSonicNote:
@@ -355,7 +354,7 @@ func GetRecordingDeviceStatus(c *gin.Context) {
 			}))
 			return
 		}
-		available, total, reason = st.Available, st.TotalRecordings, st.UnavailableReason
+		available, total, totalExact, reason = st.Available, st.TotalRecordings, st.TotalRecordingsExact, st.UnavailableReason
 	case ticnote.DeviceTypeTicNote:
 		st, perr := ticnote.GetSyncService().CheckStatus(ctx, cfg.ApiKey)
 		if perr != nil {
@@ -365,15 +364,16 @@ func GetRecordingDeviceStatus(c *gin.Context) {
 			}))
 			return
 		}
-		available, total, reason = st.Available, st.TotalRecordings, st.UnavailableReason
+		available, total, totalExact, reason = st.Available, st.TotalRecordings, st.TotalRecordingsExact, st.UnavailableReason
 	}
 
 	resp := map[string]interface{}{
-		"device_type":      deviceType,
-		"configured":       true,
-		"enabled":          true,
-		"available":        available,
-		"total_recordings": total,
+		"device_type":            deviceType,
+		"configured":             true,
+		"enabled":                true,
+		"available":              available,
+		"total_recordings":       total,
+		"total_recordings_exact": totalExact,
 	}
 	if !available {
 		resp["reason"] = reason
@@ -387,15 +387,65 @@ func GetRecordingDeviceStatus(c *gin.Context) {
 }
 
 const (
-	defaultPreviewPageSize = 20
-	maxPreviewPageSize     = 50
+	defaultPreviewSize = 4
+	maxPreviewSize     = 200
 )
 
 // maxSelectiveRemoteIDs 单次"选中同步"最多提交的远端录音数。
 const maxSelectiveRemoteIDs = 100
 
+// SyncRecordingRequest 同步请求体（**仅用于 Swagger 文档**；实际绑定见 SyncRecording 的匿名结构，
+// 那里用 json.RawMessage 以区分 remote_ids 的缺省/[]/null）。
+// 规则：remote_ids 与 exclude_remote_ids 互斥；两者非空时都必须提供 device_id，最多各 100 条；
+// remote_ids 传 []/null 一律 400，exclude_remote_ids 传 []/null = 不排除（全量）。
+type SyncRecordingRequest struct {
+	DeviceType       string   `json:"device_type" example:"sonicnote"` // sonicnote|ticnote
+	DeviceID         string   `json:"device_id"`                       // 设备配置 HashID（多 Key 精确指定，可选）
+	RemoteIDs        []string `json:"remote_ids"`                      // 选中同步：只同步这些远端录音
+	ExcludeRemoteIDs []string `json:"exclude_remote_ids"`              // 排除同步：全量减去这些远端录音
+	SkipDeleted      bool     `json:"skip_deleted"`                    // true=不同步本地已删除文件（默认 false=现状）
+	Force            bool     `json:"force"`                           // 已弃用（保留兼容）
+	Limit            int      `json:"limit"`                           // 最多处理 N 条远端录音，0=不限（调试用）
+}
+
 // remoteRecordingIDPattern 远端录音 ID 白名单（SonicNote audioId / TicNote recordId 同格式）。
 var remoteRecordingIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
+
+// parseRemoteIDList 清洗远端录音 ID 列表：去空、白名单校验、去重、数量上限。
+// raw 为 nil 表示字段未传；rejectEmpty=true 时清洗后为空视为错误（remote_ids 防误触发全量）。
+// 返回 (ids, errMsg)，errMsg 非空表示参数错误。
+func parseRemoteIDList(raw json.RawMessage, field string, rejectEmpty bool) ([]string, string) {
+	if raw == nil {
+		return nil, ""
+	}
+	var rawIDs []string
+	if err := json.Unmarshal(raw, &rawIDs); err != nil {
+		return nil, field + " 格式错误"
+	}
+	seen := make(map[string]struct{}, len(rawIDs))
+	out := make([]string, 0, len(rawIDs))
+	for _, r := range rawIDs {
+		id := strings.TrimSpace(r)
+		if id == "" {
+			continue
+		}
+		if !remoteRecordingIDPattern.MatchString(id) {
+			return nil, field + " 含非法记录 ID"
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if len(out) > maxSelectiveRemoteIDs {
+		return nil, fmt.Sprintf("%s 最多 %d 条", field, maxSelectiveRemoteIDs)
+	}
+	if rejectEmpty && len(out) == 0 {
+		return nil, field + " 不能为空"
+	}
+	return out, ""
+}
 
 // GetRecordingDeviceRecordings godoc
 // @Summary 预览录音设备远端录音列表（只读）
@@ -404,8 +454,10 @@ var remoteRecordingIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 // @Security BearerAuth
 // @Param device_type path string true "设备类型：sonicnote|ticnote"
 // @Param device_id query string false "设备配置 HashID（多 Key 场景精确指定）"
-// @Param page query int false "页码，默认 1"
-// @Param size query int false "每页条数，默认 20，最大 50"
+// @Param sync_status query string false "筛选状态：unsynced（默认）|synced|all"
+// @Param page query int false "页码，默认 1（full=true 时忽略）"
+// @Param size query int false "每页条数，默认 4，最大 200（full=true 时忽略）"
+// @Param full query bool false "true=返回该状态全部数据（忽略 page/size）"
 // @Success 200 {object} model.CommonResponse{data=object}
 // @Router /api/recordings/devices/{device_type}/recordings [get]
 func GetRecordingDeviceRecordings(c *gin.Context) {
@@ -416,6 +468,26 @@ func GetRecordingDeviceRecordings(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("仅支持 SonicNote/TicNote 设备"))
 		return
 	}
+
+	syncStatus := strings.TrimSpace(c.Query("sync_status"))
+	if syncStatus == "" {
+		syncStatus = "unsynced"
+	}
+	if syncStatus != "all" && syncStatus != "synced" && syncStatus != "unsynced" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("sync_status 仅支持 all/synced/unsynced"))
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	size, _ := strconv.Atoi(c.DefaultQuery("size", strconv.Itoa(defaultPreviewSize)))
+	if size < 1 {
+		size = defaultPreviewSize
+	} else if size > maxPreviewSize {
+		size = maxPreviewSize
+	}
+	full := c.Query("full") == "true"
 
 	var cfg *model.RecordingDeviceConfig
 	if raw := strings.TrimSpace(c.Query("device_id")); raw != "" {
@@ -439,37 +511,10 @@ func GetRecordingDeviceRecordings(c *gin.Context) {
 		return
 	}
 	if cfg == nil || strings.TrimSpace(cfg.ApiKey) == "" {
-		c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(previewEmpty(deviceType), c.GetString(helper.RequestIdKey)))
+		c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(previewEmpty(deviceType, syncStatus, page, size), c.GetString(helper.RequestIdKey)))
 		return
 	}
 
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	size, _ := strconv.Atoi(c.DefaultQuery("size", "20"))
-	if page < 1 {
-		page = 1
-	}
-	if page > maxPreviewPage {
-		page = maxPreviewPage
-	}
-	if size < 1 {
-		size = defaultPreviewPageSize
-	} else if size > maxPreviewPageSize {
-		size = maxPreviewPageSize
-	}
-
-	// 同步进行中不读写预览缓存：避免同步中途把旧的"未同步"状态回填（失效时机正确性）
-	skipCache := false
-	if running, rerr := model.HasRunningRecordingSyncJob(eid, userID, deviceType); rerr == nil && running {
-		skipCache = true
-	}
-	// 短 TTL 缓存命中则直接返回，避免重复打远端
-	cacheKey := previewCacheKey(deviceType, eid, userID, cfg.ID, cfg.ApiKey, page, size)
-	if !skipCache {
-		if cached, ok := previewCacheGet(cacheKey); ok {
-			writePreviewOK(c, deviceType, cfg, cached)
-			return
-		}
-	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 60*time.Second)
 	defer cancel()
 	// 进程内并发闸：排队而非直接拒绝（避免某用户高并发把其他人打成 429）；排队超过请求超时则 504。
@@ -483,14 +528,14 @@ func GetRecordingDeviceRecordings(c *gin.Context) {
 	var p *model.DeviceRecordingPreviewPage
 	switch deviceType {
 	case sonicnote.DeviceTypeSonicNote:
-		got, err := sonicnote.GetSyncService().PreviewRecordings(ctx, eid, userID, cfg.ApiKey, page, size)
+		got, err := sonicnote.GetSyncService().PreviewRecordings(ctx, eid, userID, cfg.ApiKey, syncStatus, page, size, full)
 		if err != nil {
 			writePreviewError(c, sonicnote.HTTPStatusForError(err), sonicnote.FriendlySyncError(err))
 			return
 		}
 		p = got
 	case ticnote.DeviceTypeTicNote:
-		got, err := ticnote.GetSyncService().PreviewRecordings(ctx, eid, userID, cfg.ApiKey, page, size)
+		got, err := ticnote.GetSyncService().PreviewRecordings(ctx, eid, userID, cfg.ApiKey, syncStatus, page, size, full)
 		if err != nil {
 			writePreviewError(c, ticnote.HTTPStatusForError(err), ticnote.FriendlySyncError(err))
 			return
@@ -500,9 +545,6 @@ func GetRecordingDeviceRecordings(c *gin.Context) {
 	if p == nil { // 防御：provider 返回 (nil,nil) 时不得空指针 panic
 		c.JSON(http.StatusBadGateway, model.SystemError.ToNewErrorResponse("预览结果为空，请稍后重试"))
 		return
-	}
-	if !skipCache {
-		previewCacheSet(cacheKey, p)
 	}
 	writePreviewOK(c, deviceType, cfg, p)
 }
@@ -525,7 +567,9 @@ func writePreviewOK(c *gin.Context, deviceType string, cfg *model.RecordingDevic
 	}
 	resp := map[string]interface{}{
 		"device_type": deviceType, "configured": true, "enabled": cfg.Enabled,
-		"page": p.Page, "size": p.Size, "total": p.Total, "has_more": p.HasMore, "items": items,
+		"sync_status": p.SyncStatus,
+		"page":        p.Page, "size": p.Size, "total": p.Total, "has_more": p.HasMore, "items": items,
+		"summary": p.Summary,
 	}
 	if enc, err := hashids.Encode(cfg.ID); err == nil {
 		resp["device_id"] = enc
@@ -533,87 +577,27 @@ func writePreviewOK(c *gin.Context, deviceType string, cfg *model.RecordingDevic
 	c.JSON(http.StatusOK, model.Success.ToResponseWithRequestID(resp, c.GetString(helper.RequestIdKey)))
 }
 
-// 预览并发闸与短 TTL 缓存：抑制单实例内对远端的重复/并发放大（跨实例不共享，仅作本地保护）。
-const (
-	previewGateCapacity = 8
-	previewCacheTTL     = 45 * time.Second
-	maxPreviewPage      = 10000
-)
+// 预览并发闸：抑制单实例内对远端的高并发放大（跨实例不共享，仅作本地保护）。
+const previewGateCapacity = 8
 
-var (
-	previewGate  = make(chan struct{}, previewGateCapacity)
-	previewCache = struct {
-		sync.Mutex
-		m map[string]previewCacheEntry
-	}{m: make(map[string]previewCacheEntry)}
-)
-
-type previewCacheEntry struct {
-	page    *model.DeviceRecordingPreviewPage
-	expires time.Time
-}
-
-func previewCacheGet(key string) (*model.DeviceRecordingPreviewPage, bool) {
-	previewCache.Lock()
-	defer previewCache.Unlock()
-	e, ok := previewCache.m[key]
-	if !ok || time.Now().After(e.expires) {
-		return nil, false
-	}
-	return e.page, true
-}
-
-func previewCacheSet(key string, page *model.DeviceRecordingPreviewPage) {
-	previewCache.Lock()
-	defer previewCache.Unlock()
-	now := time.Now()
-	// 顺手清理过期项，避免 map 只增不减导致内存持续上涨。
-	for k, e := range previewCache.m {
-		if now.After(e.expires) {
-			delete(previewCache.m, k)
-		}
-	}
-	previewCache.m[key] = previewCacheEntry{page: page, expires: now.Add(previewCacheTTL)}
-}
-
-// previewCacheKey 缓存 key 含 eid/user/配置 id 与 apiKey 指纹：多用户不串、改 Key 后不命中旧账号缓存。
-func previewCacheKey(deviceType string, eid, userID, cfgID int64, apiKey string, page, size int) string {
-	sum := sha256.Sum256([]byte(apiKey))
-	return fmt.Sprintf("%s/%d/%d/%d/%x/%d/%d", deviceType, eid, userID, cfgID, sum[:8], page, size)
-}
-
-// previewCacheInvalidate 清掉某用户某设备的预览缓存；cfgID=0 表示该 provider 下全部配置。
-// 在"同步触发"和"同步终态被轮询到"两个时机都调用，保证同步结束后预览能拿到最新状态。
-func previewCacheInvalidate(deviceType string, eid, userID, cfgID int64) {
-	prefix := fmt.Sprintf("%s/%d/%d/", deviceType, eid, userID)
-	if cfgID > 0 {
-		prefix = fmt.Sprintf("%s/%d/%d/%d/", deviceType, eid, userID, cfgID)
-	}
-	previewCache.Lock()
-	defer previewCache.Unlock()
-	for k := range previewCache.m {
-		if strings.HasPrefix(k, prefix) {
-			delete(previewCache.m, k)
-		}
-	}
-}
+var previewGate = make(chan struct{}, previewGateCapacity)
 
 // previewEmpty 未配置/未填 Key 时的空预览：configured=false 表示"尚不可用"（含已建配置但 Key 为空）。
-func previewEmpty(deviceType string) map[string]interface{} {
+func previewEmpty(deviceType, syncStatus string, page, size int) map[string]interface{} {
 	return map[string]interface{}{
 		"device_type": deviceType, "configured": false, "enabled": false,
-		"page": 1, "size": defaultPreviewPageSize, "total": 0, "has_more": false,
-		"items": []model.DeviceRecordingPreviewItem{},
+		"sync_status": syncStatus, "page": page, "size": size, "total": 0, "has_more": false,
+		"items": []model.DeviceRecordingPreviewItem{}, "summary": model.DeviceRecordingPreviewSummary{},
 	}
 }
 
 // recordingSyncStarter 统一同步入口：sonicnote/ticnote 的 SyncService 均实现 StartSync。
 type recordingSyncStarter interface {
-	StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) (int64, error)
+	StartSync(ctx context.Context, eid, userID int64, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool, excludeRemoteIDs []string) (int64, error)
 }
 
 // syncRecording 按 device_id（优先）或 device_type 分派同步（统一入口，避免每设备一个接口导致前端重复对接）。
-func syncRecording(c *gin.Context, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool) {
+func syncRecording(c *gin.Context, deviceType string, deviceID int64, force bool, limit int, remoteIDs []string, skipDeleted bool, excludeRemoteIDs []string) {
 	eid := config.GetEID(c)
 	userID := config.GetUserId(c)
 
@@ -655,7 +639,7 @@ func syncRecording(c *gin.Context, deviceType string, deviceID int64, force bool
 		return
 	}
 
-	jobID, err := svc.StartSync(c.Request.Context(), eid, userID, deviceType, deviceID, force, limit, remoteIDs, skipDeleted)
+	jobID, err := svc.StartSync(c.Request.Context(), eid, userID, deviceType, deviceID, force, limit, remoteIDs, skipDeleted, excludeRemoteIDs)
 	if err != nil {
 		// 防重入保持 code=4（前端已按此轮询）；未配置设备是参数/状态问题 → 400
 		if errors.Is(err, inProgressErr) {
@@ -665,8 +649,6 @@ func syncRecording(c *gin.Context, deviceType string, deviceID int64, force bool
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
 		return
 	}
-	// 同步触发后清预览缓存；同步进行中的预览不落缓存，终态轮询时再清一次
-	previewCacheInvalidate(deviceType, eid, userID, deviceID)
 	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
 		"job_id": jobID,
 	}))
@@ -677,15 +659,16 @@ func syncRecording(c *gin.Context, deviceType string, deviceID int64, force bool
 // @Description 提交同步任务立即返回 job_id，后台并发拉取音频落库（幂等补缺：已同步且文件有效跳过、已同步但文件被删重导、未同步导入）；前端轮询 GET /sync-status 查看进度。device_id 指定单设备（多 key 场景）；缺省按 device_type 同步全部启用配置（单 job 串行合并计数）
 // @Tags 录音
 // @Security BearerAuth
-// @Param request body object true "请求体" {"device_type":"sonicnote","device_id":"","remote_ids":["a1"],"skip_deleted":false,"force":false,"limit":0} device_type=sonicnote|ticnote；device_id=设备配置 HashID（可选）；remote_ids=选中同步的远端录音 ID 列表（非空时只同步这些，需同时提供 device_id，最多 100 条）；skip_deleted=true 时不同步本地已删除文件（默认 false=现状）；limit>0 最多处理 N 条远端录音（调试用，0=不限）；force 已弃用（保留兼容）
+// @Param request body controller.SyncRecordingRequest true "请求体；remote_ids 与 exclude_remote_ids 互斥，非空时都需 device_id、最多各 100 条；remote_ids 传 []/null 一律 400，exclude_remote_ids 传 []/null 表示不排除"
 // @Success 200 {object} model.CommonResponse{data=object}
 // @Router /api/recordings/sync [post]
 func SyncRecording(c *gin.Context) {
 	var req struct {
 		DeviceType  string          `json:"device_type"`
-		DeviceID    string          `json:"device_id"`    // 设备配置 HashID（可选）
-		RemoteIDs   json.RawMessage `json:"remote_ids"`   // 选中同步：仅同步这些远端录音（可选；显式传 null/[] 会被拒绝，不触发全量）
-		SkipDeleted bool            `json:"skip_deleted"` // true=不同步本地已删除的文件（默认 false=现状，会同步回来）
+		DeviceID    string          `json:"device_id"`          // 设备配置 HashID（可选）
+		RemoteIDs   json.RawMessage `json:"remote_ids"`         // 选中同步：仅同步这些远端录音（可选；显式传 null/[] 会被拒绝，不触发全量）
+		ExcludeIDs  json.RawMessage `json:"exclude_remote_ids"` // 排除同步：全量减去这些远端录音（可选；null/[] = 不排除 = 全量）；与 remote_ids 互斥
+		SkipDeleted bool            `json:"skip_deleted"`       // true=不同步本地已删除的文件（默认 false=现状，会同步回来）
 		Force       bool            `json:"force"`
 		Limit       int             `json:"limit"` // 最多处理的远端录音条数，0=不限（调试用）
 	}
@@ -703,40 +686,28 @@ func SyncRecording(c *gin.Context) {
 		}
 		deviceID = id
 	}
-	// 选中同步：清洗 remote_ids（数量/格式/去重）；传了该键但清洗后为空 → 400，避免误触发全量
-	var remoteIDs []string
-	if req.RemoteIDs != nil {
-		var rawIDs []string
-		if err := json.Unmarshal(req.RemoteIDs, &rawIDs); err != nil {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("remote_ids 格式错误"))
-			return
-		}
-		seen := make(map[string]struct{}, len(rawIDs))
-		for _, raw := range rawIDs {
-			id := strings.TrimSpace(raw)
-			if id == "" {
-				continue
-			}
-			if !remoteRecordingIDPattern.MatchString(id) {
-				c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("remote_ids 含非法记录 ID"))
-				return
-			}
-			if _, ok := seen[id]; ok {
-				continue
-			}
-			seen[id] = struct{}{}
-			remoteIDs = append(remoteIDs, id)
-		}
-		if len(remoteIDs) > maxSelectiveRemoteIDs {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(fmt.Sprintf("remote_ids 最多 %d 条", maxSelectiveRemoteIDs)))
-			return
-		}
-		if len(remoteIDs) == 0 {
-			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("remote_ids 不能为空"))
-			return
-		}
+	// 选中同步：清洗 remote_ids；传了该键但清洗后为空 → 400，避免误触发全量
+	remoteIDs, errMsg := parseRemoteIDList(req.RemoteIDs, "remote_ids", true)
+	if errMsg != "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(errMsg))
+		return
 	}
-	syncRecording(c, req.DeviceType, deviceID, req.Force, req.Limit, remoteIDs, req.SkipDeleted)
+	// 排除同步：清洗 exclude_remote_ids；空/null = 不排除（全量）
+	excludeRemoteIDs, errMsg := parseRemoteIDList(req.ExcludeIDs, "exclude_remote_ids", false)
+	if errMsg != "" {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(errMsg))
+		return
+	}
+	if len(remoteIDs) > 0 && len(excludeRemoteIDs) > 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("remote_ids 与 exclude_remote_ids 不能同时使用"))
+		return
+	}
+	// 与 remote_ids 对称：排除非空必须显式指定 device_id（在此判定，避免被同步进行中的 200+code=4 抢先）
+	if len(excludeRemoteIDs) > 0 && deviceID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("排除同步必须指定 device_id"))
+		return
+	}
+	syncRecording(c, req.DeviceType, deviceID, req.Force, req.Limit, remoteIDs, req.SkipDeleted, excludeRemoteIDs)
 }
 
 // SyncSonicNote godoc
@@ -758,7 +729,7 @@ func SyncSonicNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(err.Error()))
 		return
 	}
-	syncRecording(c, sonicnote.DeviceTypeSonicNote, 0, req.Force, req.Limit, nil, false)
+	syncRecording(c, sonicnote.DeviceTypeSonicNote, 0, req.Force, req.Limit, nil, false, nil)
 }
 
 // GetRecordingSyncStatus godoc
@@ -793,9 +764,14 @@ func GetRecordingSyncStatus(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
 		return
 	}
-	if job.Status == "completed" || job.Status == "failed" {
-		// 同步终态：清该设备预览缓存，保证前端随后预览拿到最新同步状态
-		previewCacheInvalidate(job.Provider, eid, userID, 0)
+	// failed_details 存 DB 为 JSON 文本，对外解析为结构化数组（解析失败降级为不返回明细）
+	if job.FailedDetails != "" {
+		var details []model.FailedDetail
+		if uerr := json.Unmarshal([]byte(job.FailedDetails), &details); uerr == nil {
+			job.FailedDetailsList = details
+		} else {
+			logger.SysErrorf("【录音】解析 failed_details 失败: job=%d err=%v", job.ID, uerr)
+		}
 	}
 	// 对外展示友好文案：job.error 在 DB 中保留原始错误（取证），响应时按 provider 翻译为可行动提示
 	if job.Error != "" {

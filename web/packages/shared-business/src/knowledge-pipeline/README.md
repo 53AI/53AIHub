@@ -100,7 +100,7 @@ interface ConfigProps {
 ```
 
 - **ParseConfig**: 解析配置（依赖注入 `parseMethods` 或 `onLoadParserSettings`）
-- **ChunkConfig**: 分块配置（可选 `chunkTypes`, `getPublicPath`）
+- **ChunkConfig**: 分块配置（可选 `chunkTypes`）
 - **VectorConfig**: 向量化配置（依赖注入 `onRefresh`, `onTest`, `onGoToModelManagement`）
 - **GraphConfig**: 图谱配置（依赖注入 `onLoadTemplates`）
 - **CleanConfig**: 清洗配置（可选 `cleanRules`）

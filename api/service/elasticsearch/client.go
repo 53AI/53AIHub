@@ -66,6 +66,13 @@ func GetGlobalClient() *Client {
 	return client
 }
 
+// GetInitializedClient avoids lazy network initialization inside Wiki write callbacks.
+func GetInitializedClient() *Client {
+	globalClientMu.Lock()
+	defer globalClientMu.Unlock()
+	return globalClient
+}
+
 // GetAddresses 获取客户端地址列表
 func (c *Client) GetAddresses() []string {
 	if c.config == nil {

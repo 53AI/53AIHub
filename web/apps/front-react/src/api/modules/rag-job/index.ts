@@ -62,6 +62,11 @@ export const ragJobApi = {
     jobs?: Array<{ job_id?: number; step_key?: string; run_mode?: string; config?: Record<string, any> }>
   }) {
     return request.post('/api/rag/v2/jobs/batch-retry', data).then((res) => res.data)
+  },
+
+  /** 批量断点清洗：按文档实际状态自动选择重跑起点，无需逐个提交 jobID。 */
+  batchContinue(data: { related_ids: string[] }) {
+    return request.post('/api/rag/v2/jobs/batch-continue', data).then((res) => res.data)
   }
 }
 

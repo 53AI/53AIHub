@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // 入口模板声明：软件模式（左侧导航）。
+      // 必须在 module 脚本加载前执行，src/constants/app-template.ts 启动时读取。
+      window.__APP_TEMPLATE__ = 'client'
+    </script>
+    <script>
+      // 标题：模板入口为 hash 路由，路由信息在 hash 中，pathname+hash 一起判断
+      const path = (location.pathname || '') + (location.hash || '')
+      document.title = path.includes('share/recording') ? '安心录' : '53AIKM'
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <!-- 与 index.html 共享的启动脚本：URL 参数 token/SSO 处理 -->
+    <script src="./boot.js"></script>
+    <script type="module" src="/src/main.tsx"></script>
+    <script>
+      // 延迟加载百度统计脚本，不阻塞页面渲染
+      (function () {
+        function loadBaiduAnalytics() {
+          var _hmt = _hmt || []
+          var hm = document.createElement('script')
+          hm.src =
+            'https://hm.baidu.com/hm.js?c0e32ea294a4fc371fe6ec64187e36e1'
+          hm.async = true
+          var s = document.getElementsByTagName('script')[0]
+          s.parentNode.insertBefore(hm, s)
+        }
+
+        if (document.readyState === 'complete') {
+          setTimeout(loadBaiduAnalytics, 1000)
+        } else {
+          window.addEventListener(
+            'load',
+            function () {
+              setTimeout(loadBaiduAnalytics, 1000)
+            },
+            { once: true }
+          )
+        }
+      })()
+    </script>
+  </body>
+</html>

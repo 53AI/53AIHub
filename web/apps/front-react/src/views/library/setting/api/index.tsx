@@ -1,71 +1,76 @@
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import { Button, Drawer, message, Modal } from "antd";
-import {
-  ArrowRightOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-} from "@ant-design/icons";
+import { Button, message, Modal, Tag } from "antd";
+import { CopyOutlined, DeleteOutlined } from "@ant-design/icons";
 import { apiKeysApi, type ApiKey } from "@/api/modules/api-key";
 import { useLibraryStore } from "@/stores/modules/library";
 import { API_HOST } from "@/api/index";
 import { Header } from "@/components/Header";
-import { getPublicPath } from "@/utils/config";
+import { ApiGuide } from "@km/shared-business/api-guide";
 import { copyToClip } from "@km/shared-utils";
 
-const injectConfig = {
-  dify: {
-    title: "Dify",
-    content: [
-      {
-        type: "text",
-        content:
-          '第一步：登录Dify官网（<a href="https://cloud.dify.ai/" style="color: #576D9C;" target="_blank">https://cloud.dify.ai/</a>），在「知识库」下，点击连接外部知识库',
-      },
-      { type: "image", content: "/images/library/dify_help_1.png" },
-      {
-        type: "text",
-        content:
-          "第二步：在「外部知识库API」下，点击创建新的外部知识库API，复制本知识库的相关参数填入后连接",
-      },
-      { type: "image", content: "/images/library/dify_help_2.png" },
-      { type: "image", content: "/images/library/dify_help_3.png" },
-      {
-        type: "text",
-        content: "第三步：复制填入填外部知识库ID，点击连接即创建外部知识库成功",
-      },
-      { type: "image", content: "/images/library/dify_help_4.png" },
-      { type: "image", content: "/images/library/dify_help_5.png" },
-    ],
-  },
-  studio: {
-    title: "53AI Studio",
-    content: [
-      {
-        type: "text",
-        content:
-          '第一步：登录53AI Studio（<a href="https://chat.53ai.com/#/login" style="color: #576D9C;" target="_blank">https://chat.53ai.com/#/login</a>），在「私有数据」下，点击创建/从53AI KM里导入',
-      },
-      { type: "image", content: "/images/library/studio_help_1.png" },
-      {
-        type: "text",
-        content:
-          "第二步：复制本知识库的相关参数填入，点击下一步，配置基本信息确定即可",
-      },
-      { type: "image", content: "/images/library/studio_help_2.png" },
-      { type: "image", content: "/images/library/studio_help_3.png" },
-    ],
-  },
-};
+// Wiki 接入指引内容（知识库级作用域；Studio / Dify 图文步骤共用
+// @km/shared-business/api-guide，两端不再各自维护）
+const wikiGuideContent = `## 第一步：创建 API Key
+
+在当前知识库的开放接口页面创建 API Key，该 Key 可用于访问本知识库作用域内已发布的 Wiki 页面。
+
+## 第二步：携带认证信息
+
+调用 Wiki 接口时，在请求头中携带 \`Authorization: Bearer km-...\`。
+
+## 第三步：调用接口
+
+接口地址：\`${API_HOST}/api/external-wiki\`
+
+### \`GET /api/external-wiki/pages\` — 分页获取已发布页面
+
+| 参数 | 位置 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| \`keyword\` | query | 否 | - | 标题、slug 或摘要关键词 |
+| \`page_type\` | query | 否 | - | 页面类型 |
+| \`category_id\` | query | 否 | - | 分类 ID，传 \`other\` 表示未分类页面 |
+| \`library_ids\` | query | 否 | 全部作用域 | 知识库 ID 列表（逗号分隔），须在 Key 作用域内 |
+| \`offset\` | query | 否 | 0 | 分页偏移 |
+| \`limit\` | query | 否 | 20 | 每页数量，最大 100 |
+
+### \`GET /api/external-wiki/pages/:page_id\` — 获取页面正文
+
+| 参数 | 位置 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| \`page_id\` | path | 是 | 页面 ID |
+
+返回当前已发布版本，含正文 \`body\`、来源 \`sources\`、出链 \`links\`、反向链接 \`backlinks\`。
+
+### \`GET /api/external-wiki/search\` — 搜索已发布页面
+
+| 参数 | 位置 | 必填 | 默认 | 说明 |
+| --- | --- | --- | --- | --- |
+| \`keyword\` | query | 是 | - | 搜索关键词 |
+| \`top_k\` | query | 否 | 10 | 最多返回数量，最大 50 |
+| \`library_ids\` | query | 否 | 全部作用域 | 知识库 ID 列表（逗号分隔），须在 Key 作用域内 |
+
+**调用示例**
+
+\`\`\`bash
+curl -H 'Authorization: Bearer km-...' '${API_HOST}/api/external-wiki/pages?limit=10'
+curl -H 'Authorization: Bearer km-...' '${API_HOST}/api/external-wiki/search?keyword=关键词'
+\`\`\`
+
+## 说明
+
+- 接口只返回当前 API Key 作用域内 active、已发布、非 private 的页面
+- \`library_ids\` 传入的 ID 必须全部在 Key 作用域内，否则返回 403
+- 所有 ID 均为 hashid 格式，错误响应格式为 \`error_code\` / \`error_msg\`
+- 需要访问空间内多个知识库时，请在空间设置的开放接口中创建空间级 API Key`;
 
 export function LibraryApiSettingsView() {
   const { id } = useParams<{ id: string }>();
   const libraryStore = useLibraryStore();
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [injectType, setInjectType] = useState<"studio" | "dify">("dify");
 
   const apiEndpoint = `${API_HOST}/api/external-knowledge`;
+  const wikiApiEndpoint = `${API_HOST}/api/external-wiki`;
 
   const loadList = async () => {
     if (!libraryStore.library?.id) return;
@@ -96,11 +101,6 @@ export function LibraryApiSettingsView() {
         loadList();
       },
     });
-  };
-
-  const handleHelp = (type: "studio" | "dify") => {
-    setInjectType(type);
-    setDrawerVisible(true);
   };
 
   const handleCopy = async (text: string) => {
@@ -158,22 +158,23 @@ export function LibraryApiSettingsView() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center">
-              <div className="flex-none w-[108px] text-sm text-[#4F5052]">
+            <div className="flex">
+              <div className="flex-none w-[108px] text-sm text-[#4F5052] pt-2">
                 API Endpoint
               </div>
-              <div className="flex-1">
-                <div className="h-10 px-4 flex items-center border rounded bg-[#F3F4F6]">
-                  <p className="flex-1 text-sm text-[#6E7278] truncate">
-                    {apiEndpoint}
-                  </p>
-                  <div className="flex-none border-l pl-4 flex gap-4 text-regular">
-                    <CopyOutlined
-                      className="cursor-pointer text-gray-400 hover:text-blue-500"
-                      onClick={() => handleCopy(apiEndpoint)}
-                    />
+              <div className="flex-1 flex flex-col gap-3">
+                {[{ label: "外部知识库", value: apiEndpoint }, { label: "外部 Wiki", value: wikiApiEndpoint }].map((endpoint) => (
+                  <div key={endpoint.value} className="h-10 px-4 flex items-center border rounded bg-[#F3F4F6]">
+                    <Tag className="mr-2" bordered={false}>{endpoint.label}</Tag>
+                    <p className="flex-1 text-sm text-[#6E7278] truncate">{endpoint.value}</p>
+                    <div className="flex-none border-l pl-4 flex gap-4 text-regular">
+                      <CopyOutlined
+                        className="cursor-pointer text-gray-400 hover:text-blue-500"
+                        onClick={() => handleCopy(endpoint.value)}
+                      />
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
             </div>
             <div className="flex">
@@ -212,55 +213,19 @@ export function LibraryApiSettingsView() {
 
           <h4 className="text-xl text-[#1D1E1F] mt-10">接入指引</h4>
 
-          <div className="mt-5 flex gap-4">
-            <Button onClick={() => handleHelp("studio")}>
-              <img
-                className="size-6"
-                src={getPublicPath("/images/external/studio.png")}
-                alt="studio"
-              />
-              <span className="px-2">接入53AI Studio</span>
-              <ArrowRightOutlined />
-            </Button>
-            <Button onClick={() => handleHelp("dify")}>
-              <img
-                className="size-6"
-                src={getPublicPath("/images/external/dify.png")}
-                alt="dify"
-              />
-              <span className="px-2">接入Dify</span>
-              <ArrowRightOutlined />
-            </Button>
+          <div className="mt-5">
+            <ApiGuide
+              labels={{
+                studio: "接入53AI Studio",
+                dify: "接入Dify",
+                wiki: "Wiki API文档",
+              }}
+              wikiTitle="Wiki 开放接口接入指引"
+              wikiContent={wikiGuideContent}
+            />
           </div>
         </div>
       </div>
-
-      <Drawer
-        open={drawerVisible}
-        title={injectConfig[injectType].title}
-        styles={{ wrapper: { width: 864 } }}
-        onClose={() => setDrawerVisible(false)}
-      >
-        {injectConfig[injectType].content.map((item, index) => (
-          <div key={index}>
-            {item.type === "text" && (
-              <p
-                className="text-sm text-[#1D1E1F] my-2"
-                dangerouslySetInnerHTML={{ __html: item.content }}
-              />
-            )}
-            {item.type === "image" && (
-              <div className="flex justify-center my-2">
-                <img
-                  src={getPublicPath(item.content)}
-                  className="w-full"
-                  alt=""
-                />
-              </div>
-            )}
-          </div>
-        ))}
-      </Drawer>
     </div>
   );
 }

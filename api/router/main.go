@@ -36,6 +36,7 @@ func SetRouter(router *gin.Engine, buildFS embed.FS) {
 	// 启用 gzip 压缩（swagger.json 从 1.3MB 压缩到约 150KB）
 	// 放在 Recovery 之后，确保 gzip 内部 panic 能被捕获
 	router.Use(gzip.Gzip(gzip.DefaultCompression))
+	setWorkBuddyCallbackRouter(router)
 
 	if os.Getenv("HUB_SERVER") != "prod" {
 		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

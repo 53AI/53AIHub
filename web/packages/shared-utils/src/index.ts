@@ -28,7 +28,7 @@ export { buildAgentModelOptions } from './agent-model.js'
 export type { AgentModel, AgentModelOption } from './agent-model.js'
 
 // URL 工具
-export { isUrl, joinUrl, isInternalNetwork } from './url.js'
+export { isUrl, joinUrl, isInternalNetwork, resolveAssetUrl } from './url.js'
 
 // 文件工具
 export { isOfficeFile, isKKFileViewSupported, getOfficeFileType, downloadFile, downloadImage, downloadSvgAsImage, formatFileSize, formatFileInfo, getFileIconPath, type FormatFileInfoResult } from './file.js'

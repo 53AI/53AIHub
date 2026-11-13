@@ -8,7 +8,6 @@ import {
   type ThinkKnowledgeProps,
   type SearchResultItem,
 } from "@km/shared-business/chat";
-import { getPublicPath } from "@/utils/config";
 import KnowledgeViewDrawer from "@/components/Knowledge/view-drawer";
 import KnowledgeGraphDrawer from "@/components/Knowledge/graph-drawer";
 import KnowledgeWikiDrawer from "@/components/Knowledge/wiki-view-drawer";
@@ -16,7 +15,7 @@ import KnowledgeWikiDrawer from "@/components/Knowledge/wiki-view-drawer";
 // 重导出类型
 export type { ThinkKnowledgeRef, SearchResultItem };
 
-export const ThinkKnowledge = forwardRef<ThinkKnowledgeRef, Omit<ThinkKnowledgeProps, "slots" | "getPublicPath">>(
+export const ThinkKnowledge = forwardRef<ThinkKnowledgeRef, Omit<ThinkKnowledgeProps, "slots">>(
   (props, ref) => {
     return (
       <BaseThinkKnowledge
@@ -27,7 +26,6 @@ export const ThinkKnowledge = forwardRef<ThinkKnowledgeRef, Omit<ThinkKnowledgeP
           KnowledgeGraphDrawer,
           KnowledgeWikiDrawer,
         }}
-        getPublicPath={getPublicPath}
       />
     );
   }

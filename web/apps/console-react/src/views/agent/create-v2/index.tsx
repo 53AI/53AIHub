@@ -11,6 +11,7 @@ import { Button, Modal, message } from 'antd'
 import { EditOutlined } from '@ant-design/icons'
 import { t } from '@/locales'
 import { PageLayoutContent } from '@/components/PageLayout'
+import { SafeImage } from '@km/shared-components-react'
 import { getSimpleDateFormatString } from '@km/shared-utils'
 import {
   AdapterProvider,
@@ -24,9 +25,8 @@ import {
 } from '@km/shared-business/agent-create'
 import { eventBus } from '@km/shared-utils'
 import { GROUP_TYPE } from "@/constants/group"
-import { img_host, getPublicPath } from '@/utils/config'
+import { img_host } from '@/utils/config'
 import { consoleAgentAdapter } from '@/adapters/agent-create-adapter'
-import { attachDefaultImg } from '@/directive/default-img'
 import { AgentDataTab } from './DataTab'
 import { AgentIntegrateTab } from './IntegrateTab'
 import { AgentFeedbackTab } from './FeedbackTab'
@@ -309,7 +309,7 @@ function AgentCreatePageContent() {
         const backendAgentTypeParam = searchParams.get('backend_agent_type')
 
         const { subscriptionGroupIds, internalGroupIds } = await getDefaultGroupIds();
-        const agentInfo = createPlatformsByType(img_host, getPublicPath).find((item) => item.value === agentTypeFromUrl) || { label: '', icon: '' }
+        const agentInfo = createPlatformsByType(img_host).find((item) => item.value === agentTypeFromUrl) || { label: '', icon: '' }
 
         // 加载分组选项
         await useAgentFormStore.getState().loadGroupOptions()
@@ -510,13 +510,11 @@ function AgentCreatePageContent() {
         back: true,
         onBack: handleBack,
         titlePrefix: formData.logo ? (
-          <img
+          <SafeImage
             src={formData.logo}
             className="w-8 rounded"
             alt=""
-            onError={(e) => {
-              attachDefaultImg(e.currentTarget)
-            }}
+            fallback="/images/default_agent.png"
           />
         ) : (
           <div className="size-8 rounded" />

@@ -25,6 +25,9 @@
       ],
       "captcha": [
         "dist/captcha/index.d.ts"
+      ],
+      "api-guide": [
+        "dist/api-guide/index.d.ts"
       ]
     }
   },
@@ -56,6 +59,10 @@
     "./captcha": {
       "import": "./dist/captcha/index.js",
       "types": "./dist/captcha/index.d.ts"
+    },
+    "./api-guide": {
+      "import": "./dist/api-guide/index.js",
+      "types": "./dist/api-guide/index.d.ts"
     }
   },
   "scripts": {

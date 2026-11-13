@@ -16,17 +16,6 @@ import (
 	"gorm.io/gorm"
 )
 
-// GenerateInsightsFn 由 service 包注册，在切分完成后异步触发洞察生成。
-// 洞察生成会自行幂等编译会议记忆，因此不依赖并行的通用实体抽取完成。
-// 使用函数变量避免 package 循环依赖。
-var GenerateInsightsFn func(ctx context.Context, eid, fileID, userID int64)
-
-func shouldTriggerRecordingInsights(file *model.File) bool {
-	// 安心录来源（recording_audio/recording_folder/recording_imported）才生成洞察；
-	// 知识库音频（personal_upload 等来源）走音频管线但不出洞察。
-	return file != nil && file.IsRecordingOriginType()
-}
-
 // NormalizeRecordingContentForLLMFn 由 service 包注册：按内容类型将录音文件内容规范化为 Markdown。
 // 新布局 FileBody=转写 Markdown（直接用）；历史布局 FileBody=纪要 JSON → 渲染为 Markdown；最老布局 FileBody=转写 JSON → 渲染为转写 Markdown。
 // 用于文件摘要/实体抽取前对语音文件内容做转换，提升 LLM 理解质量。
@@ -44,6 +33,10 @@ func pipelineCtx() context.Context {
 		}
 	}
 	return context.Background()
+}
+
+func logNonFatalChunkEnrichmentFailure(ctx context.Context, fileID int64, task string, err error) {
+	logger.Error(ctx, fmt.Sprintf("【文档处理】文件%d的%s：失败但不影响文档解析状态（%v）", fileID, task, err))
 }
 
 // NewDocumentChunkingHandler 创建 document_chunking 步骤处理函数
@@ -68,11 +61,6 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 		if v, ok := params["file_id"]; ok {
 			fileID = int64(v.(float64))
 		}
-		userID := int64(0)
-		if v, ok := params["user_id"]; ok {
-			userID = int64(v.(float64))
-		}
-
 		logger.Info(ctx, fmt.Sprintf("DocumentChunkingStepHandler: processing job %d for file %d", job.JobID, fileID))
 
 		updateParsingStatus := func(status string) {
@@ -144,6 +132,9 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			updateParsingStatus(model.FileParsingStatusFail)
 			return fmt.Errorf("读取文件内容失败: %v", err)
 		}
+		// 分块前剥离私有人员隐藏注释（<!--contact:...-->）：注释只服务于转写展示与换绑，
+		// 不该进入 chunk 文本、向量与检索回答。FileBody 落库内容保持不动。
+		content = common.StripInternalContactComments(content)
 
 		// 对语音文件：按内容类型规范化为 Markdown（新布局转写 Markdown 直接用；历史纪要/转写 JSON 渲染）
 		// 只在文件摘要/实体抽取时使用，不影响分块等其他流程
@@ -334,8 +325,7 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 			summaryCtx, summaryCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
 			defer summaryCancel()
 			if _, _, err := GenerateFileSummaryAndFAQForced(summaryCtx, db, eid, fileID, contentForLLM, chunkConfig); err != nil {
-				logger.Error(summaryCtx, fmt.Sprintf("生成文件摘要和问法失败(非致命): file_id=%d, err=%v", fileID, err))
-				updateParsingStatus(model.FileParsingStatusFail)
+				logNonFatalChunkEnrichmentFailure(summaryCtx, fileID, "生成文件摘要和问法", err)
 			}
 		}()
 		if !isWikiPageGenerationActive(job) {
@@ -343,21 +333,11 @@ func NewDocumentChunkingHandler(db *gorm.DB) func(ctx context.Context, job *mode
 				entityCtx, entityCancel := context.WithTimeout(pipelineCtx(), 10*time.Minute)
 				defer entityCancel()
 				if err := ExtractFileEntities(entityCtx, db, eid, fileID, contentForLLM); err != nil {
-					logger.Error(entityCtx, fmt.Sprintf("实体抽取失败(非致命): file_id=%d, err=%v", fileID, err))
-					updateParsingStatus(model.FileParsingStatusFail)
+					logNonFatalChunkEnrichmentFailure(entityCtx, fileID, "实体抽取", err)
 				}
 			}()
 		} else {
 			logger.Info(ctx, fmt.Sprintf("DocumentChunking 跳过旧实体抽取: file_id=%d", fileID))
-		}
-
-		// 异步触发洞察生成。通用实体抽取可并行执行；洞察内会确保会议 Claim 和实体事实已就绪。
-		// 实体从纪要中抽取（而非转写原文），因纪要是处理过的价值高、格式稳定的内容。
-		// 洞察生成不阻塞管线，异步执行。
-		if shouldTriggerRecordingInsights(&file) && GenerateInsightsFn != nil {
-			GenerateInsightsFn(pipelineCtx(), eid, fileID, userID)
-		} else {
-			logger.Infof(ctx, "【洞察】非安心录来源或 GenerateInsightsFn 未注册，跳过: fileID=%d", fileID)
 		}
 
 		// 记录结果日志

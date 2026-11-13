@@ -8,6 +8,7 @@ import { usePromptFormDataStore } from "./store";
 import { eventBus } from "@km/shared-utils";
 import { PromptBasicInfo, PromptBasicInfoRef } from "./components/PromptBasicInfo";
 import { PromptConfigTab } from "./components/PromptConfigTab";
+import { SafeImage } from "@km/shared-components-react";
 import StoreDialog, {
   StoreDialogRef,
 } from "@/views/toolbox-refactored/components/StoreDialog";
@@ -253,7 +254,7 @@ export function PromptCreatePage() {
         back: true,
         fallbackPath: "/prompt",
         titlePrefix: (formData.logo || detailData.logo) ? (
-          <img
+          <SafeImage
             src={formData.logo || detailData.logo}
             className="w-8 rounded"
             alt=""

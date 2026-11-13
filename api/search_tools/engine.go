@@ -35,6 +35,10 @@ func NewEngine(searcher Searcher, options ...EngineOption) *Engine {
 
 // 并发搜索多个查询并合并结果
 func (e *Engine) SearchMulti(queries []string, count int) (*SearchResult, error) {
+	return e.SearchMultiContext(context.Background(), queries, count)
+}
+
+func (e *Engine) SearchMultiContext(parent context.Context, queries []string, count int) (*SearchResult, error) {
 	if len(queries) == 0 {
 		return &SearchResult{
 			Items:  []*SearchItem{},
@@ -47,9 +51,9 @@ func (e *Engine) SearchMulti(queries []string, count int) (*SearchResult, error)
 		cancel context.CancelFunc
 	)
 	if e.timeout > 0 {
-		ctx, cancel = context.WithTimeout(context.Background(), e.timeout)
+		ctx, cancel = context.WithTimeout(parent, e.timeout)
 	} else {
-		ctx, cancel = context.WithCancel(context.Background())
+		ctx, cancel = context.WithCancel(parent)
 	}
 	defer cancel()
 
@@ -60,7 +64,8 @@ func (e *Engine) SearchMulti(queries []string, count int) (*SearchResult, error)
 		}
 	}
 
-	if batchSearcher, ok := e.searcher.(BatchSearcher); ok && validQueries > 1 {
+	_, supportsContextSearch := e.searcher.(ContextSearcher)
+	if batchSearcher, ok := e.searcher.(BatchSearcher); ok && (validQueries > 1 || !supportsContextSearch) {
 		logger.SysLogf("【搜索引擎】使用批量搜索: query_count=%d, max_workers=%d", validQueries, e.maxWorkers)
 		batchDone := make(chan struct {
 			result *SearchResult
@@ -79,6 +84,14 @@ func (e *Engine) SearchMulti(queries []string, count int) (*SearchResult, error)
 			return res.result, res.err
 		case <-ctx.Done():
 			return nil, fmt.Errorf("overall search timeout: %v", ctx.Err())
+		}
+	}
+	if contextSearcher, ok := e.searcher.(ContextSearcher); ok && validQueries == 1 {
+		for _, query := range queries {
+			if strings.TrimSpace(query) == "" {
+				continue
+			}
+			return contextSearcher.SearchContext(ctx, query, count)
 		}
 	}
 

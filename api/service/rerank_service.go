@@ -31,6 +31,7 @@ type RerankRequest struct {
 	Documents       []string `json:"documents" example:"[\"人工智能起源于1950年代，图灵提出了著名的图灵测试\",\"深度学习是机器学习的一个分支，使用神经网络进行学习\",\"自然语言处理是人工智能的重要应用领域之一\"]" binding:"required"`
 	TopN            *int     `json:"top_n,omitempty" example:"3"`
 	ReturnDocuments *bool    `json:"return_documents,omitempty" example:"true"`
+	Instruct        string   `json:"instruct,omitempty" example:"Given a web search query, retrieve relevant passages that answer the query."`
 }
 
 // RerankResponse 与 controller 中的 RerankResponse 结构相同
@@ -447,6 +448,7 @@ func (s *BailianRerankService) CallBailianRerankAPI(ctx context.Context, req *Re
 		Parameters: bailian.BailianRerankParameters{
 			TopN:            req.TopN,
 			ReturnDocuments: req.ReturnDocuments,
+			Instruct:        req.Instruct,
 		},
 	}
 	bailianResp, err := bailian.CallRerankAPI(ctx, nil, meta.BaseURL, meta.APIKey, bailianReq)

@@ -4,8 +4,8 @@ import {
   useImperativeHandle,
   useMemo
 } from "react";
-import { Drawer, Button, Table, Switch, message, Modal } from "antd";
-import { SvgIcon, Search, IconAction } from "@km/shared-components-react";
+import { Drawer, Button, Table, Switch, Typography, message, Modal } from "antd";
+import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import { useNavigate } from "react-router-dom";
 import { agentApi, AGENT_TYPE } from "@/api/modules/agent";
@@ -252,20 +252,25 @@ export const AgentListDrawer = forwardRef<
       dataIndex: "name",
       key: "name",
       width: 180,
-      ellipsis: true,
+      ellipsis: { showTitle: false },
       render: (_: any, row: AgentData) => (
         <div className="flex items-center gap-2 w-full">
-          <img
+          <SafeImage
             className="flex-none w-8 h-8 rounded-full overflow-hidden"
             src={row.logo}
             alt=""
           />
           <div className="flex-1 w-0 text-sm flex flex-col">
-            <div className="text-brand truncate">{row.name || "--"}</div>
+            <Typography.Text ellipsis={{ tooltip: row.name }} className="!block text-brand">
+              {row.name || "--"}
+            </Typography.Text>
             {row.description && (
-              <div className="text-xs text-placeholder truncate">
+              <Typography.Text
+                ellipsis={{ tooltip: row.description }}
+                className="!block text-xs text-placeholder"
+              >
                 {row.description}
-              </div>
+              </Typography.Text>
             )}
           </div>
         </div>

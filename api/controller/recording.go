@@ -1,12 +1,15 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/utils/hashids"
@@ -782,6 +785,11 @@ func UserGetFileSummaryDetail(c *gin.Context) {
 		return
 	}
 
+	// 负数模板属于系统内部 ASR/缓存/快照，不能通过总结详情接口读取。
+	if summary.TemplateID < 0 {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
+		return
+	}
 	if _, err := model.GetFileByID(eid, summary.FileID); err != nil {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(nil))
 		return
@@ -1142,6 +1150,14 @@ func GetMyQueuedCount(c *gin.Context) {
 // @Produce json
 // @Security BearerAuth
 // @Param file_id path string true "文件ID（HashID）"
+// GetFileTranscription godoc
+// @Summary 获取转写详情 Markdown
+// @Description 获取转写 Markdown（不处理注释内容，完整保留隐藏注释供前端/页面富文本渲染）
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
 // @Success 200 {object} model.CommonResponse{data=object}
 // @Router /api/recordings/files/{file_id}/transcription [get]
 func GetFileTranscription(c *gin.Context) {
@@ -1152,43 +1168,40 @@ func GetFileTranscription(c *gin.Context) {
 	}
 	eid := config.GetEID(c)
 
-	file, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID)
-	if err != nil {
+	if _, err := service.GetViewableRecordingFile(c.Request.Context(), eid, config.GetUserId(c), fileID); err != nil {
 		if errors.Is(err, service.ErrRecordingFileForbidden) {
 			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权查看该录音文件"))
 			return
 		}
-		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
 		return
 	}
 
-	text, err := service.LoadTranscriptText(eid, fileID)
+	// 获取转写详情：stripComments = false 不处理注释，完整保留供前端富文本渲染
+	md, fileName, err := service.GetTranscriptMarkdown(c.Request.Context(), eid, fileID, false)
 	if err != nil {
-		c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		} else {
+			logger.SysErrorf("【录音】获取转写失败: eid=%d file_id=%d err=%v", eid, fileID, err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		}
 		return
 	}
-	// D3：GET /transcription 保留返回转写 Markdown（与导出接口一致，前端转写展示直接渲染）
-	md, err := service.RenderTranscriptMarkdown(text, file.GetAccurateFileName())
-	if err != nil {
-		logger.SysErrorf("【录音】渲染转写 Markdown 失败: eid=%d file_id=%d err=%v", eid, fileID, err)
-		c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
-			"file_id":   fileID,
-			"content":   text,
-			"file_name": file.GetAccurateFileName(),
-		}))
-		return
-	}
+
+	stats := service.CalculateTranscriptSpeakerStats(md)
 
 	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
-		"file_id":   fileID,
-		"content":   md,
-		"file_name": file.GetAccurateFileName(),
+		"file_id":       fileID,
+		"content":       md,
+		"file_name":     fileName,
+		"speaker_stats": stats,
 	}))
 }
 
 // ExportTranscript godoc
-// @Summary 获取转写 Markdown
-// @Description 将转写 JSON 转换为带说话人/时间/内容的 Markdown 返回（非文件下载）
+// @Summary 获取转写导出 Markdown
+// @Description 将转写转换为带说话人/时间/内容的纯净 Markdown 返回（处理注释内容，100% 剥离隐藏注释）
 // @Tags 录音
 // @Accept json
 // @Produce json
@@ -1212,7 +1225,8 @@ func ExportTranscript(c *gin.Context) {
 		return
 	}
 
-	md, fileName, err := service.ExportTranscriptMarkdown(c.Request.Context(), eid, fileID)
+	// 导出转写：stripComments = true 剥离全部隐藏注释，向用户交付纯净 Markdown
+	md, fileName, err := service.GetTranscriptMarkdown(c.Request.Context(), eid, fileID, true)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
@@ -1228,6 +1242,206 @@ func ExportTranscript(c *gin.Context) {
 		"markdown":  md,
 		"file_name": fileName,
 	}))
+}
+
+// BindTranscriptSpeakerRequest 说话人绑定人员请求
+type BindTranscriptSpeakerRequest struct {
+	// SelectedSpeaker 全文替换模式必填；片段模式可省略（取选中片段自身的说话人）
+	SelectedSpeaker string `json:"selected_speaker"`
+	ContactID       string `json:"contact_id" binding:"required"`
+	// Segments 为空表示全文替换该说话人（兼容旧前端）；非空表示只关联选中片段
+	Segments []service.SpeakerSegmentRef `json:"segments"`
+	// Baseline 出现即表示同时记录一段该人员的声音基准；起止时间必传，区间可落在录音任意位置（与选中片段无关）
+	Baseline *service.BindSpeakerBaselineInput `json:"baseline"`
+}
+
+// BindTranscriptSpeaker godoc
+// @Summary 音频转写说话人绑定人员
+// @Description 把选中片段（或整段转写）的说话人关联到指定人员，在转写中内嵌隐藏元数据注释并保持双源同步；可选同时记录一段该人员的声音基准（起止时间必传，区间可落在录音任意位置、与选中片段无关；先落一条待切片基准，由后台切片，响应不再返回基准，前端从人员基准列表获取成品）
+// @Tags 录音
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param file_id path string true "文件ID（HashID）"
+// @Param request body BindTranscriptSpeakerRequest true "绑定参数"
+// @Success 200 {object} model.CommonResponse{data=service.BindTranscriptSpeakerResult}
+// @Router /api/recordings/files/{file_id}/transcription/bind-speaker [post]
+func BindTranscriptSpeaker(c *gin.Context) {
+	fileID, err := hashids.TryParseID(c.Param("file_id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	var req BindTranscriptSpeakerRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(err))
+		return
+	}
+	eid := config.GetEID(c)
+	userID := config.GetUserId(c)
+
+	res, err := service.BindTranscriptSpeakerToContact(c.Request.Context(), service.BindTranscriptSpeakerInput{
+		Eid:             eid,
+		FileID:          fileID,
+		UserID:          userID,
+		SelectedSpeaker: req.SelectedSpeaker,
+		ContactHashID:   req.ContactID,
+		Segments:        req.Segments,
+		Baseline:        req.Baseline,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrRecordingFileForbidden):
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该录音文件"))
+		case errors.Is(err, service.ErrRecordingSpeakerRequired):
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("说话人不能为空"))
+		case errors.Is(err, service.ErrRecordingContactNotFound):
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("人员不存在或已删除"))
+		case errors.Is(err, service.ErrRecordingTranscriptEmpty):
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("转写内容为空"))
+		case errors.Is(err, service.ErrTranscriptChanged):
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("转写已变更，请刷新后重选片段"))
+		case errors.Is(err, service.ErrSpeakerBaselineRangeInvalid):
+			c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse(service.ErrSpeakerBaselineRangeInvalid.Error()))
+		case errors.Is(err, service.ErrSpeakerBaselineAudioMissing):
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("原音频不可用，无法生成基准片段"))
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("文件不存在"))
+		default:
+			logger.SysErrorf("【人员绑定】用户%d（企业%d）把录音%d的片段关联到人员%s：失败（%v）", userID, eid, fileID, req.ContactID, err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		}
+		return
+	}
+
+	baselineNote := "未记录"
+	if req.Baseline != nil {
+		baselineNote = "已排队（后台切片）"
+	}
+	logger.Infof(c.Request.Context(), "【人员绑定】用户%d（企业%d）把录音%d的片段%s关联到人员%s：完成（替换 %d 段，基准片段%s）",
+		userID, eid, fileID, speakerSegmentsOf(req.Segments), req.ContactID, res.ReplacedCount, baselineNote)
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(res))
+}
+
+// ListSpeakerBaselines godoc
+// @Summary 按人员列出语音基准片段
+// @Description 跨录音列出该人员的基准片段（含台词快照与来源文件），不可见录音自动过滤
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param contact_id query string true "人员ID（HashID）"
+// @Param limit query int false "每页条数，默认 20，最大 100"
+// @Param offset query int false "偏移量，默认 0"
+// @Success 200 {object} model.CommonResponse{data=object}
+// @Router /api/recordings/speaker-baselines [get]
+func ListSpeakerBaselines(c *gin.Context) {
+	contactID, err := hashids.TryParseID(strings.TrimSpace(c.Query("contact_id")))
+	if err != nil || contactID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("contact_id 不能为空"))
+		return
+	}
+	limit, offset := 20, 0
+	if v := strings.TrimSpace(c.Query("limit")); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n > 0 && n <= 100 {
+			limit = n
+		}
+	}
+	if v := strings.TrimSpace(c.Query("offset")); v != "" {
+		if n, perr := strconv.Atoi(v); perr == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	items, total, err := service.ListSpeakerBaselines(c.Request.Context(), config.GetEID(c), config.GetUserId(c), contactID, limit, offset)
+	if err != nil {
+		logger.SysErrorf("【基准片段】列出人员%s的基准失败: %v", c.Query("contact_id"), err)
+		c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		return
+	}
+
+	c.JSON(http.StatusOK, model.Success.ToResponse(map[string]interface{}{
+		"contact_id": c.Query("contact_id"),
+		"items":      items,
+		"total":      total,
+	}))
+}
+
+// DeleteSpeakerBaseline godoc
+// @Summary 删除语音基准片段
+// @Description 软删基准片段并清理切片音频
+// @Tags 录音
+// @Produce json
+// @Security BearerAuth
+// @Param baseline_id path string true "基准片段ID（HashID）"
+// @Success 200 {object} model.CommonResponse
+// @Router /api/recordings/speaker-baselines/{baseline_id} [delete]
+func DeleteSpeakerBaseline(c *gin.Context) {
+	baselineID, err := hashids.TryParseID(c.Param("baseline_id"))
+	if err != nil || baselineID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("基准片段ID不合法"))
+		return
+	}
+	if err := service.DeleteSpeakerBaseline(c.Request.Context(), config.GetEID(c), config.GetUserId(c), baselineID); err != nil {
+		switch {
+		case errors.Is(err, service.ErrSpeakerBaselineNotFound):
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("基准片段不存在"))
+		case errors.Is(err, service.ErrRecordingFileForbidden):
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权操作该基准片段"))
+		default:
+			logger.SysErrorf("【基准片段】用户%d（企业%d）删除基准%s：失败（%v）", config.GetUserId(c), config.GetEID(c), c.Param("baseline_id"), err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, model.Success.ToResponse(nil))
+}
+
+// PlaySpeakerBaselineAudio godoc
+// @Summary 播放语音基准片段
+// @Description 返回基准片段音频（支持 Range，可拖动进度）
+// @Tags 录音
+// @Produce audio/mpeg
+// @Security BearerAuth
+// @Param baseline_id path string true "基准片段ID（HashID）"
+// @Success 200 {file} binary
+// @Router /api/recordings/speaker-baselines/{baseline_id}/audio [get]
+func PlaySpeakerBaselineAudio(c *gin.Context) {
+	baselineID, err := hashids.TryParseID(c.Param("baseline_id"))
+	if err != nil || baselineID <= 0 {
+		c.JSON(http.StatusBadRequest, model.ParamError.ToNewErrorResponse("基准片段ID不合法"))
+		return
+	}
+	data, mime, err := service.OpenSpeakerBaselineAudio(c.Request.Context(), config.GetEID(c), config.GetUserId(c), baselineID)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrSpeakerBaselineNotFound), errors.Is(err, service.ErrSpeakerBaselineAudioMissing):
+			c.JSON(http.StatusNotFound, model.NotFound.ToNewErrorResponse("基准片段音频不存在"))
+		case errors.Is(err, service.ErrRecordingFileForbidden):
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToNewErrorResponse("无权播放该基准片段"))
+		default:
+			logger.SysErrorf("【基准片段】用户%d（企业%d）播放基准%s：失败（%v）", config.GetUserId(c), config.GetEID(c), c.Param("baseline_id"), err)
+			c.JSON(http.StatusInternalServerError, model.SystemError.ToErrorResponse(err))
+		}
+		return
+	}
+
+	c.Header("Content-Type", mime)
+	c.Header("Content-Disposition", "inline")
+	c.Header("Cache-Control", "private, max-age=3600")
+	http.ServeContent(c.Writer, c.Request, "", time.Time{}, bytes.NewReader(data))
+}
+
+// speakerSegmentsOf 拼接选中段号用于日志（全文替换记为 all）。
+func speakerSegmentsOf(refs []service.SpeakerSegmentRef) string {
+	if len(refs) == 0 {
+		return "all"
+	}
+	indexes := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		indexes = append(indexes, strconv.Itoa(ref.Index))
+	}
+	return strings.Join(indexes, ",")
 }
 
 // RunRecordingPipeline godoc
@@ -1272,13 +1486,13 @@ func RunRecordingPipeline(c *gin.Context) {
 
 // RegenerateInsights godoc
 // @Summary 重新生成洞察
-// @Description 清除现有洞察数据，重新调用 LLM 生成洞察。不重新转写和纪要，异步执行，前端轮询 parse-status 获取进度。
+// @Description 默认仅重新生成洞察；请求体显式设置 regenerate_from_minutes=true 时先重新生成纪要再生成洞察（不重新转写）。异步执行，前端轮询 parse-status。
 // @Tags 录音
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param file_id path string true "文件ID（HashID）"
-// @Param request body service.InsightRegenerationRequest true "洞察重生成请求（可含 scene/mode 一次修改并重新生成，也可为空）"
+// @Param request body service.InsightRegenerationRequest true "洞察重生成请求（regenerate_from_minutes 可选，默认 false；兼容 scene/mode）"
 // @Success 202 {object} model.CommonResponse "已触发洞察重新生成"
 // @Failure 400 {object} model.CommonResponse "参数错误或文件不存在"
 // @Router /api/recordings/files/{file_id}/insights/regenerate [post]

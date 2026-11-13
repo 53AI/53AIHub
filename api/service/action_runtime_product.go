@@ -60,6 +60,7 @@ type InsightActionContextSnapshot struct {
 	InsightGeneration int64                      `json:"insight_generation"`
 	InsightSummary    string                     `json:"insight_summary"`
 	ContextLabel      string                     `json:"context_label,omitempty"`
+	SupplementalInfo  string                     `json:"supplemental_info,omitempty"`
 	Background        InsightBackground          `json:"background"`
 	SourceRefs        []actionsystem.SourceRef   `json:"source_refs,omitempty"`
 	EvidenceRefs      []actionsystem.EvidenceRef `json:"evidence_refs,omitempty"`
@@ -688,6 +689,11 @@ func (s *ActionRuntimeService) startActionRun(ctx context.Context, eid, userID i
 				return result.Error
 			}
 			if result.RowsAffected != 1 {
+				return ErrActionPlanState
+			}
+			// 规划确认、Run 创建和业务事项从提议进入行动必须同事务完成。
+			if err := model.TransitionActionItemStage(tx, eid, userID, plan.OpportunityID,
+				model.ActionItemStageProposal, model.ActionItemStageAction); err != nil {
 				return ErrActionPlanState
 			}
 		}

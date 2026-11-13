@@ -1,5 +1,5 @@
 import { PlusOutlined, UserOutlined } from "@ant-design/icons";
-import { Dropdown, Search, SvgIcon, IconAction } from "@km/shared-components-react";
+import { Dropdown, Search, SvgIcon, IconAction, SafeImage } from "@km/shared-components-react";
 import { Button, Modal, message, Select, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
@@ -25,7 +25,6 @@ import {
 import { useListState } from "@/hooks";
 import { t } from "@/locales";
 import { useEnterpriseStore, useUserStore } from "@/stores";
-import { getPublicPath } from "@/utils/config";
 import UserAddDialog from "../components/UserInternalAddDialog";
 import UserEditDrawer from "../components/UserInternalEditDrawer";
 import UserStatus from "../components/UserInternalStatus";
@@ -327,7 +326,7 @@ export const UserMember = forwardRef<MemberRef, MemberProps>(
 					render: (value: string, record: Member) => (
 						<div className="flex items-center gap-1">
 							{record.avatar ? (
-								<img
+								<SafeImage
 									src={record.avatar}
 									className="w-6 h-6 rounded-full"
 									alt=""
@@ -348,10 +347,8 @@ export const UserMember = forwardRef<MemberRef, MemberProps>(
 									{record.user_id ? (
 										<span className="text-gray-400">({record.nickname})</span>
 									) : (
-										<img
-											src={getPublicPath(
-												`/images/sso/${isDingtalkSync ? "dingtalk" : "wecom"}.png`,
-											)}
+										<SafeImage
+											src={`/images/sso/${isDingtalkSync ? "dingtalk" : "wecom"}.png`}
 											className="w-4 h-4"
 											alt=""
 										/>

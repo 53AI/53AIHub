@@ -15,7 +15,7 @@ import { cacheManager as cache } from "@km/shared-utils";
 import { t } from "@/locales";
 import { getPublicPath } from "@/utils/config";
 import { Search } from "@km/shared-components-react/Search";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useResponsive } from "@/hooks/useResponsive";
 import { RecentAccess } from "./components/recent-access";
 import { KnowledgeDirectory } from "./components/knowledge-directory";
@@ -368,7 +368,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
         path: item.path,
         library_id: String(item.library_id),
         type: item.type,
-        icon: getPublicPath('/images/file-default.png'),
+        icon: '/images/file-default.png',
       } as FileItem
 
       const hasSelected = selectedFiles.some(f => f.id === fileItem.id)
@@ -445,7 +445,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               className="h-8 px-2 rounded flex items-center gap-2 text-secondary hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <img src={item.icon} className="size-4" alt="" />
+              <SafeImage src={item.icon} kind="space" className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
                 className="block md:hidden md:group-hover:block"
@@ -462,7 +462,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               className="h-8 px-2 rounded flex items-center gap-2 text-secondary hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <img src={item.icon} className="size-4" alt="" />
+              <SafeImage src={item.icon} kind="knowledge" className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
                 className="block md:hidden md:group-hover:block"
@@ -479,7 +479,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               className="h-8 px-2 rounded flex items-center gap-2 text-secondary hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <img src={item.icon} className="size-4" alt="" />
+              <SafeImage src={item.icon} className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
                 className="block md:hidden md:group-hover:block"

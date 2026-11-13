@@ -2,7 +2,7 @@ import { memo } from "react";
 import { CloseOutlined } from "@ant-design/icons";
 import { Dropdown, Tooltip } from "antd";
 import type { MenuProps } from "antd";
-import { SvgIcon } from "@km/shared-components-react";
+import { SvgIcon, SafeImage } from "@km/shared-components-react";
 import { useTranslation, type Lang } from "../../i18n";
 import type { IAgentInfo } from "../../adapters/types";
 
@@ -60,7 +60,7 @@ function ChatHeaderInner({
         <div className="absolute left-[120px] right-[120px] top-0 bottom-0 flex items-center justify-center overflow-hidden">
           <div className="flex gap-2 overflow-hidden">
             {agentInfo?.logo && (
-              <img
+              <SafeImage
                 src={agentInfo.logo}
                 alt={agentInfo?.name || "Agent"}
                 className="w-5 h-5 rounded-full object-cover"

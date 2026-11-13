@@ -25,7 +25,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import { useLibraryStore, type FileItem } from "@/stores/modules/library";
-import { SvgIcon, IconAction } from "@km/shared-components-react";
+import { SvgIcon, IconAction, SafeImage } from "@km/shared-components-react";
 import { FullscreenToggle } from "@/components/FullscreenToggle";
 import chunksApi, {
   KnowledgeChunk,
@@ -1233,7 +1233,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
           {isIndexing && !isPending && (
             <Tooltip title="索引中，不支持拆分、合并和编辑等操作">
               <div className="flex-none h-8 px-2.5 flex items-center gap-1 rounded bg-[#FFF2E6]">
-                <img
+                <SafeImage
                   className="size-3"
                   src="/images/file/indexing.webp"
                   alt="indexing"
@@ -1404,7 +1404,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
         open={saveModalVisible}
         title={t("common.tip")}
         closable={true}
-        maskClosable={false}
+        mask={{ closable: false }}
         onCancel={handleSaveModalCancel}
         footer={
           <div className="flex justify-end gap-2">

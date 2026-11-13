@@ -2,6 +2,7 @@ import { useState, useMemo, forwardRef, useImperativeHandle } from "react";
 import { Drawer, Button } from "antd";
 import { t } from "@/locales";
 import type { ModelOption } from "@/api/modules/channel";
+import { SafeImage } from "@km/shared-components-react";
 
 interface ModelSelectDialogProps {
   list?: any[];
@@ -59,7 +60,7 @@ export const ModelSelectDialog = forwardRef<
             key={opt.platform_id}
             className="h-[72px] flex items-center gap-4 py-5 px-6 rounded bg-[#F8F9FA]"
           >
-            <img
+            <SafeImage
               className="flex-none w-10 h-10 object-contain"
               src={opt.platform_icon}
               alt=""

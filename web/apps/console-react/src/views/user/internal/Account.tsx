@@ -31,6 +31,9 @@ import { useEnv } from "@/hooks/useEnv";
 import { t } from "@/locales";
 import { useEnterpriseStore, useUserStore } from "@/stores";
 import UserAddDialog from "../components/UserInternalAddDialog";
+import UserInternalImportDialog, {
+	type ImportedInternalUser,
+} from "../components/UserInternalImportDialog";
 import UserEditDrawer from "../components/UserInternalEditDrawer";
 import UserStatus from "../components/UserInternalStatus";
 
@@ -117,6 +120,10 @@ export const UserAccount = forwardRef<AccountRef, AccountProps>(
 
 		// Dialog/Drawer state
 		const [addDialogOpen, setAddDialogOpen] = useState(false);
+		const [importDialogOpen, setImportDialogOpen] = useState(false);
+		const [pendingImportUsers, setPendingImportUsers] = useState<
+			ImportedInternalUser[] | null
+		>(null);
 		const [editDrawerOpen, setEditDrawerOpen] = useState(false);
 		const [editingUser, setEditingUser] = useState<AccountUser | null>(null);
 		const dialogueRecordRef = useRef<DialogueRecordDrawerRef>(null);
@@ -197,6 +204,26 @@ export const UserAccount = forwardRef<AccountRef, AccountProps>(
 			if (guardInternalUserVersion()) {
 				setAddDialogOpen(true);
 			}
+		};
+
+		// Handle import
+		const handleImport = () => {
+			if (guardInternalUserVersion()) {
+				setImportDialogOpen(true);
+			}
+		};
+
+		// 导入解析成功后，关闭导入弹窗并填充到添加弹窗
+		const handleImported = (users: ImportedInternalUser[]) => {
+			setImportDialogOpen(false);
+			setPendingImportUsers(users);
+			setAddDialogOpen(true);
+		};
+
+		// 关闭添加弹窗时清空导入数据，避免下次打开残留
+		const handleAddDialogClose = () => {
+			setAddDialogOpen(false);
+			setPendingImportUsers(null);
 		};
 
 		// Handle edit
@@ -417,9 +444,14 @@ export const UserAccount = forwardRef<AccountRef, AccountProps>(
 							className="w-[268px]"
 						/>
 						{!isSsoSync && (
-							<Button type="primary" onClick={handleAdd}>
-								{t("action_add")}
-							</Button>
+							<>
+								<Button type="primary" onClick={handleAdd}>
+									{t("action_add")}
+								</Button>
+								<Button onClick={handleImport}>
+									{t("internal_user.account.import")}
+								</Button>
+							</>
 						)}
 					</div>
 				</div>
@@ -452,12 +484,20 @@ export const UserAccount = forwardRef<AccountRef, AccountProps>(
 				{/* Add Dialog */}
 				<UserAddDialog
 					open={addDialogOpen}
-					onClose={() => setAddDialogOpen(false)}
+					initialUsers={pendingImportUsers ?? undefined}
+					onClose={handleAddDialogClose}
 					onSuccess={() => {
-						setAddDialogOpen(false);
+						handleAddDialogClose();
 						refresh();
 						onDataChange?.();
 					}}
+				/>
+
+				{/* Import Dialog */}
+				<UserInternalImportDialog
+					open={importDialogOpen}
+					onClose={() => setImportDialogOpen(false)}
+					onImported={handleImported}
 				/>
 
 				{/* Edit Drawer */}

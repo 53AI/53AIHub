@@ -16,7 +16,13 @@ import { t } from "@/locales";
 
 export interface KnowledgeSenderExtrasProps {
   modelMenuItems: Array<{ key: string; label: React.ReactNode }>;
-  agentModels: Array<{ id: number; name: string; value: string; icon: string }>;
+  agentModels: Array<{
+    id: number;
+    name: string;
+    value: string;
+    icon: string;
+    supportsNativeWebSearch?: boolean;
+  }>;
   model: string;
   onChangeModel: (value: string) => void;
   knowledgeSource: KnowledgeSourceState;
@@ -39,7 +45,7 @@ export interface KnowledgeSenderExtrasProps {
     name: string;
     logo?: string;
     settings?: {
-      web_search_setting?: { enable: boolean };
+      web_search_setting?: { enable: boolean; source_type?: "api" | "model" };
       graph_search_setting?: { enable: boolean; default_enable: boolean };
       wiki_search_setting?: { enable: boolean; default_enable: boolean };
     };
@@ -81,6 +87,7 @@ export function KnowledgeSenderExtras(props: KnowledgeSenderExtrasProps) {
       }));
 
   const currentModel = agentModels.find((m) => m.value === model);
+  const currentModelSupportsNativeWebSearch = currentModel?.supportsNativeWebSearch === true;
 
 
   return (
@@ -120,6 +127,7 @@ export function KnowledgeSenderExtras(props: KnowledgeSenderExtrasProps) {
           allowSelectLibrary={true}
           allowSelectSpace={true}
           allowSelectDynamicKnowledge={agentInfo?.settings?.wiki_search_setting?.enable}
+          nativeWebSearchSupported={currentModelSupportsNativeWebSearch}
           agentInfo={
             agentInfo
               ? {

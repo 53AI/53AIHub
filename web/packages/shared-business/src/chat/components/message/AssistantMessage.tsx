@@ -8,6 +8,7 @@ import { FeedbackPanel } from "../feedback";
 import { ProcessFlowHeader, type TranslateFn } from "../process-flow";
 import { OutputFiles } from "../output";
 import OpenClawTimeline from "./OpenClawTimeline";
+import { bubbleAvatarSlot } from "./bubbleAvatarSlot";
 import { Quotation } from "../source";
 import { useTranslation, useKnowledgePanel } from "../../i18n";
 import { useRagStats } from "../../hooks/useRagStats";
@@ -631,6 +632,7 @@ function AssistantMessageInner({
           reasoningExpanded={message.reasoning_expanded}
           showReasoning={!showProcessFlow}
           avatar={agentInfo?.logo}
+          avatarSlot={bubbleAvatarSlot(agentInfo?.logo)}
           alwaysShowMenu={isLastMessage || actualFeedbackVisible}
           className={className}
           style={style}

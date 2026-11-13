@@ -4,6 +4,14 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 
+/**
+ * 编辑器高度的内置默认值（无 CSS 变量时兜底）。
+ * 实际生效值优先取 .x-sender 上的 CSS 变量：
+ * 移动端（< 640px）24 / PC 端（>= 640px）140，见 index.css。
+ */
+const DEFAULT_EDITOR_MIN_HEIGHT = 24;
+const DEFAULT_EDITOR_MAX_HEIGHT = 200;
+
 export interface CursorPosition {
   element: Node;
   cursorPos: number;
@@ -324,10 +332,38 @@ export interface UseEditorOptions {
   disabled?: boolean;
   showCaret?: boolean;
   maxLength?: number;  // 最大输入长度
+  /**
+   * 内容超出后编辑器最大高度（px）。
+   * 不传则读 CSS 变量 --x-sender-editor-max-height，最后回退到 200。
+   */
+  maxHeight?: number;
+  /**
+   * 编辑器最小高度（px）。
+   * 不传则读 CSS 变量 --x-sender-editor-min-height（移动端 24 / PC 端 140），
+   * 最后回退到 24。这样 CSS 断点与 JS 写入的内联高度不会脱节。
+   */
+  minHeight?: number;
 }
 
+/** 从 CSS 变量读数值，失败时返回 fallback */
+const readCssPx = (el: HTMLElement | null, name: string, fallback: number): number => {
+  if (!el || typeof getComputedStyle === 'undefined') return fallback;
+  const raw = getComputedStyle(el).getPropertyValue(name).trim();
+  if (!raw) return fallback;
+  const value = parseFloat(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
 export const useEditor = (options: UseEditorOptions) => {
-  const { editorRef, onInput, disabled, showCaret = true, maxLength } = options;
+  const {
+    editorRef,
+    onInput,
+    disabled,
+    showCaret = true,
+    maxLength,
+    maxHeight,
+    minHeight,
+  } = options;
 
   const [isComposing, setIsComposing] = useState(false);
   const [composingEndTime, setComposingEndTime] = useState(0);
@@ -370,6 +406,36 @@ export const useEditor = (options: UseEditorOptions) => {
   }, [editorRef]);
 
   /**
+   * 按内容自适应编辑器高度。
+   *
+   * 做法：先置 height:auto 让浏览器算出真实内容高度（scrollHeight），
+   * 再夹在 [minHeight, maxHeight] 之间写回内联 height；
+   * 超出 maxHeight 时由 CSS overflow-y:auto 接管滚动。
+   *
+   * min/max 来源优先级：props 显式传入 > CSS 变量（移动端 24 / PC 端 140）> 内置默认值。
+   * 读 CSS 变量是为了让 CSS 断点与 JS 写入的内联 height 保持一致。
+   *
+   * 为什么必须重置为 auto：contentEditable 删字后 scrollHeight 不会小于当前 height，
+   * 不重置会导致高度只增不减。
+   *
+   * 注意：必须声明在所有使用它的 useCallback（insertText / insertNode / clear）之前，
+   * 否则依赖数组求值时会触发 TDZ。
+   */
+  const syncEditorHeight = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+
+    const resolvedMin =
+      minHeight ?? readCssPx(el, '--x-sender-editor-min-height', DEFAULT_EDITOR_MIN_HEIGHT);
+    const resolvedMax =
+      maxHeight ?? readCssPx(el, '--x-sender-editor-max-height', DEFAULT_EDITOR_MAX_HEIGHT);
+
+    el.style.height = 'auto';
+    const next = Math.min(Math.max(el.scrollHeight, resolvedMin), resolvedMax);
+    el.style.height = `${next}px`;
+  }, [editorRef, minHeight, maxHeight]);
+
+  /**
    * 插入文本
    */
   const insertText = useCallback((text: string) => {
@@ -393,7 +459,8 @@ export const useEditor = (options: UseEditorOptions) => {
     }
 
     togglePlaceholder();
-  }, [editorRef, togglePlaceholder]);
+    syncEditorHeight();
+  }, [editorRef, togglePlaceholder, syncEditorHeight]);
 
   /**
    * 插入节点
@@ -480,7 +547,8 @@ export const useEditor = (options: UseEditorOptions) => {
 
     offsetBlock(editor);
     togglePlaceholder();
-  }, [editorRef, togglePlaceholder]);
+    syncEditorHeight();
+  }, [editorRef, togglePlaceholder, syncEditorHeight]);
 
   /**
    * 清空编辑器
@@ -490,7 +558,8 @@ export const useEditor = (options: UseEditorOptions) => {
       editorRef.current.innerHTML = '';
     }
     togglePlaceholder();
-  }, [editorRef, togglePlaceholder]);
+    syncEditorHeight();
+  }, [editorRef, togglePlaceholder, syncEditorHeight]);
 
   /**
    * 聚焦编辑器
@@ -544,6 +613,7 @@ export const useEditor = (options: UseEditorOptions) => {
     }
 
     togglePlaceholder();
+    syncEditorHeight();
     const data = getContentData();
     if (data) {
       onInput?.({
@@ -551,7 +621,7 @@ export const useEditor = (options: UseEditorOptions) => {
         pureTextContent: data.pureTextContent,
       });
     }
-  }, [togglePlaceholder, getContentData, onInput, maxLength, editorRef]);
+  }, [togglePlaceholder, syncEditorHeight, getContentData, onInput, maxLength, editorRef]);
 
   /**
    * 处理组合输入开始
@@ -630,6 +700,37 @@ export const useEditor = (options: UseEditorOptions) => {
     togglePlaceholder();
   }, [togglePlaceholder]);
 
+  // 首次挂载时同步一次高度（contentEditable 初始为空，需要拿到 minHeight）
+  useEffect(() => {
+    syncEditorHeight();
+  }, [syncEditorHeight]);
+
+  // 容器宽度变化时重算：换行位置变了，scrollHeight 也随之变化。
+  // 只盯宽度变化——高度变化是本 hook 自己写出来的，不拦会导致 ResizeObserver 死循环。
+  // 跨 sm 断点时 CSS 变量（min-height）会变，宽度变化正好能捕获到，一并重算。
+  useEffect(() => {
+    const el = editorRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    let lastWidth = el.clientWidth;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect?.width ?? el.clientWidth;
+      if (Math.abs(width - lastWidth) < 1) return;
+      lastWidth = width;
+      syncEditorHeight();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [editorRef, syncEditorHeight]);
+
+  // 跨 sm 断点时窗口尺寸变化但编辑器宽度未必变（例如只看高度变化），
+  // 这里再听一次 resize，确保 min-height 从 24 切到 140（或反向）时高度立即跟随。
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => syncEditorHeight();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [syncEditorHeight]);
+
   return {
     isComposing,
     isShowPlaceholder,
@@ -648,5 +749,6 @@ export const useEditor = (options: UseEditorOptions) => {
     getAliveLastCursor,
     isEmptyEditor,
     getContentData,
+    syncEditorHeight,
   };
 };

@@ -9,6 +9,7 @@ export default defineConfig({
     'knowledge-pipeline/index': 'src/knowledge-pipeline/index.ts',
     'recording-template/index': 'src/recording-template/index.ts',
     'captcha/index': 'src/captcha/index.ts',
+    'api-guide/index': 'src/api-guide/index.ts',
   },
   format: ['esm'],
   dts: true,

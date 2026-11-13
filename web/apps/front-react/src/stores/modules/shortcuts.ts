@@ -24,7 +24,7 @@ export async function navigateAgentShortcut(options: AgentShortcutNavigateOption
 
   // 网站模式：新开窗口跳转到 /chat?agent_id=xxx
   if (!isSoftStyle) {
-    window.open(`/chat?agent_id=${agentId}`, '_blank')
+    window.open(buildUrl('/chat', { agent_id: agentId }), '_blank')
     return
   }
 

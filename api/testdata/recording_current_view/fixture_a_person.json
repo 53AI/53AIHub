@@ -1,0 +1,17 @@
+{
+  "fixture": "A",
+  "entity": {"entity_type": "person", "canonical_name": "杨芳贤"},
+  "meetings": [
+    {"id": "a1", "position": "暂不做客户试点，直到预算确认", "role": "subject", "risk": "预算不明确", "risk_state": "uncertain", "loop": {"content": "预算确认", "status": "overdue"}},
+    {"id": "a2", "position": "可以先小范围试点", "role": "subject", "risk": "审批周期长", "risk_state": "uncertain", "loop": {"content": "提交试点方案", "status": "open", "loop_key": "trial-plan"}},
+    {"id": "a3", "loop": {"content": "提交试点方案", "status": "completed", "loop_key": "trial-plan", "previous_status": "open", "new_status": "completed"}},
+    {"id": "a4", "position": "继续小范围试点，预算未确认前不扩大投入", "role": "subject", "risk": "预算承诺未锁定", "risk_state": "active", "loop": {"content": "客户确认正式预算", "status": "open", "role": "subject"}}
+  ],
+  "expected": {
+    "current_position_state": "conflicted",
+    "active_risks": ["预算承诺未锁定"],
+    "open_loop_statuses": ["overdue", "open"],
+    "completed_excluded": ["提交试点方案"],
+    "recent_changes_support": "degraded"
+  }
+}

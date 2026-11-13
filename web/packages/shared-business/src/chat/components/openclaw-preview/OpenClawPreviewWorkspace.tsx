@@ -41,7 +41,6 @@ export interface OpenClawPreviewWorkspaceProps {
     }
   ) => Promise<any>;
   uploadFile?: (file: File) => Promise<UploadedFileLike>;
-  getPublicPath?: (path: string) => string;
   lang?: Lang;
   requestSource?: string;
   boxClassName?: string
@@ -120,7 +119,6 @@ export function OpenClawPreviewWorkspace({
   openclawApi,
   completions,
   uploadFile,
-  getPublicPath = (path: string) => path,
   lang,
   requestSource = "web",
   boxClassName = ""
@@ -150,9 +148,9 @@ export function OpenClawPreviewWorkspace({
   const currentAgentInfo = useMemo(
     () => ({
       ...agentInfo,
-      logo: agentInfo.logo || getPublicPath(DEFAULT_OPENCLAW_LOGO),
+      logo: agentInfo.logo || DEFAULT_OPENCLAW_LOGO,
     }),
-    [agentInfo, getPublicPath]
+    [agentInfo]
   );
 
   const conversationApi = useMemo(

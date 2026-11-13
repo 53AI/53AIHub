@@ -47,6 +47,8 @@ export interface UseFileParseResult {
   startInsightRegeneration: () => void
   /** 手动刷新总结列表 */
   loadFileSummaries: (id: string) => Promise<void>
+  /** 重拉转写 markdown 并重新解析（说话人 / 头像标记变更后调用，如 Flutter 面板关联发言人） */
+  loadTranscription: (id: string) => Promise<void>
   /** 更新单条总结（轮询场景下回填 processing → completed/failed） */
   updateSummary: (summary: RecordingFileSummary) => void
   /** 页面编排接口（getInsightPage）是否已结束（成功或失败都算结束） */
@@ -183,8 +185,8 @@ export function useFileParse({ fileId, shouldPoll = true, initialParseStatus, sk
   /** 拉取转写并写入 transcriptList
    * 改用 /transcription/export 导出接口：后端统一把 DashScope JSON 渲染为
    * `[hh:mm:ss] 说话人: 内容` 格式的 Markdown，前端用 parseTranscriptLines
-   * 还原为 TranscriptItem 列表。原 getTranscription 偶尔返回空 content
-   * （「状态 normal 但内容空」），导出接口是后端预渲染的稳定产物，能避免空内容。
+   * 还原为 TranscriptItem 列表。原始 /transcription 接口已弃用并删除
+   * （它偶尔「状态 normal 但内容空」），导出接口是后端预渲染的稳定产物，能避免空内容。
    * 复用同一份 Markdown，与「导出转写」按钮同源，解析口径完全一致。
    */
   const loadTranscription = useCallback(async (id: string) => {
@@ -511,6 +513,7 @@ export function useFileParse({ fileId, shouldPoll = true, initialParseStatus, sk
     resetFailed,
     startInsightRegeneration,
     loadFileSummaries,
+    loadTranscription,
     updateSummary,
     insightPageApiDone,
   }

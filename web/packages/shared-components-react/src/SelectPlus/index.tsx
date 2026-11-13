@@ -1,6 +1,7 @@
 import { Select } from "antd";
 import type { SelectProps } from "antd";
 import type { ReactNode } from "react";
+import { SafeImage } from "../SafeImage";
 import { useMemo, useCallback } from "react";
 
 export interface OptionItem {
@@ -77,7 +78,7 @@ export function SelectPlus({
     if (iconType === "image" && typeof icon === "string") {
       return (
         <div className={`${containerClass} inline-block`}>
-          <img
+          <SafeImage
             src={icon}
             className="h-full block object-cover rounded"
             alt=""

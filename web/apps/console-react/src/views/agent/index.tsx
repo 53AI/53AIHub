@@ -4,6 +4,7 @@ import {
   Select,
   Switch,
   Modal,
+  Typography,
   message,
 } from "antd";
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
@@ -37,7 +38,7 @@ import type { AgentPlatformOption, CreateAgentDialogResult } from "@km/shared-bu
 import { consoleAgentAdapter } from "@/adapters/agent-create-adapter";
 import ScopeDisplay from "@/components/ScopeDisplay";
 import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
-import { img_host, getPublicPath } from "@/utils/config";
+import { img_host } from "@/utils/config";
 import { buildOpenClawEnterpriseAgentPayload } from "./openclaw-create";
 import {
   buildAgentListParams,
@@ -176,7 +177,7 @@ export function AgentPage() {
     };
 
     // 获取公共配置的平台列表
-    const basePlatforms = createPlatformsByType(img_host, getPublicPath);
+    const basePlatforms = createPlatformsByType(img_host);
     return filterByAuth(basePlatforms);
   }, [authProviders]);
 
@@ -483,23 +484,35 @@ export function AgentPage() {
       dataIndex: "name",
       key: "name",
       width: 180,
-      render: (_: any, row: AgentState) => (
-        <div className="flex items-center gap-2 w-full">
-          <SafeImage
-            className="flex-none w-8 h-8 rounded-full overflow-hidden"
-            src={row.logo || ""}
-            alt=""
-          />
-          <div className="flex-1 w-0 text-sm flex flex-col">
-            <div className="text-primary truncate">{row.name || "--"}</div>
-            {row.description && (
-              <div className="text-xs text-placeholder truncate">
-                {row.description}
-              </div>
-            )}
+      ellipsis: { showTitle: false },
+      render: (_: any, row: AgentState) => {
+        const description = row.description;
+        return (
+          <div className="flex items-center gap-2 w-full">
+            <SafeImage
+              className="flex-none w-8 h-8 rounded-full overflow-hidden"
+              src={row.logo || ""}
+              alt=""
+            />
+            <div className="flex-1 w-0 text-sm flex flex-col">
+              <Typography.Text
+                ellipsis={{ tooltip: row.name }}
+                className="!block text-primary"
+              >
+                {row.name || "--"}
+              </Typography.Text>
+              {description && (
+                <Typography.Text
+                  ellipsis={{ tooltip: description }}
+                  className="!block text-xs text-placeholder"
+                >
+                  {description}
+                </Typography.Text>
+              )}
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     {
       title: t("type"),

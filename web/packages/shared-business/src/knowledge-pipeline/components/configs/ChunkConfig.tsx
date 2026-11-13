@@ -7,8 +7,8 @@ import {
   QuestionCircleOutlined,
 } from "@ant-design/icons";
 import { usePipelineTranslation } from "../../context";
-import { usePipelineAdapter } from "../../adapters";
 import { SvgIcon } from "@km/shared-components-react";
+import { SafeImage } from "@km/shared-components-react";
 
 // Constants
 export const CHUNK_TYPE = {
@@ -82,7 +82,6 @@ export interface ChunkConfigProps {
   /** Chunk type options */
   chunkTypes?: ChunkTypeOption[];
   /** Public path helper for loading icons */
-  getPublicPath?: (path: string) => string;
   /** i18n namespace prefix. Defaults to 'data_pipeline' */
   i18nPrefix?: string;
   /** 解析引擎 (document_parsing 节点的 config.engine)。
@@ -263,13 +262,11 @@ export function ChunkConfig({
   config,
   onChange,
   chunkTypes: providedChunkTypes,
-  getPublicPath: getPublicPathProp,
   i18nPrefix = "data_pipeline",
   engine,
 }: ChunkConfigProps) {
   const { t } = usePipelineTranslation();
   const tKey = (key: string) => `${i18nPrefix}.${key}`;
-  const adapter = usePipelineAdapter();
 
   // 「按页」分块仅 textin 解析引擎返回分页符，其余引擎禁用。
   // 未指定引擎(engine 为空)时同样禁用，保证不出现"选不了也用不了"的空态。
@@ -282,8 +279,6 @@ export function ChunkConfig({
     ),
   );
 
-  // 优先使用 props 中的 getPublicPath，否则使用 adapter 中的
-  const getPublicPath = getPublicPathProp ?? adapter?.getPublicPath;
   // CONFIG with i18n
   const CONFIG = useMemo(
     () => ({
@@ -316,30 +311,28 @@ export function ChunkConfig({
 
   // Generate default chunk types with translations
   const defaultChunkTypes = useMemo(() => {
-    const basePath = (path: string) =>
-      getPublicPath ? getPublicPath(path) : path;
     return [
       {
         key: "default",
         name: t(tKey("chunk_type_default")),
         desc: t(tKey("chunk_type_default_desc")),
-        icon: basePath("/images/split/default.png"),
+        icon: "/images/split/default.png"
       },
       {
         key: "data_table",
         name: t(tKey("chunk_type_data_table")),
         desc: t(tKey("chunk_type_data_table_desc")),
-        icon: basePath("/images/split/data_table.png"),
+        icon: "/images/split/data_table.png",
         disabled: true,
       },
       {
         key: "qa",
         name: t(tKey("chunk_type_qa")),
         desc: t(tKey("chunk_type_qa_desc")),
-        icon: basePath("/images/split/qa.png"),
+        icon: "/images/split/qa.png"
       },
     ];
-  }, [t, i18nPrefix, getPublicPath]);
+  }, [t, i18nPrefix]);
 
   const chunkTypes = providedChunkTypes || defaultChunkTypes;
 
@@ -975,7 +968,7 @@ export function ChunkConfig({
                 </div>
               )}
               <div className="w-10 h-10 mb-4 rounded overflow-hidden bg-gray-50 flex items-center justify-center">
-                <img
+                <SafeImage
                   src={type.icon}
                   className="size-8 object-contain"
                   alt={type.name}

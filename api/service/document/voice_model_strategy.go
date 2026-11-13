@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
@@ -30,9 +31,10 @@ var dashScopeSemaphore = make(chan struct{}, config.DashScopeConcurrency)
 //
 // 配置来源：
 //   - channel.Key：API Key
-//   - channel.BaseURL：默认 API 域名
 //   - channel.Models：可用模型列表（逗号分隔）
-//   - custom_config.voice_models[modelName]：模型专属配置（workspace_id、api_domain 等）
+//   - custom_config.voice_models[modelName].api_domain：百炼原生地址或 OpenAI 兼容地址（自动剥离兼容后缀）
+//   - custom_config.voice_models[modelName].workspace_id：未配 api_domain 时的回退网关
+//   - custom_config.voice_models[modelName].hotwords：渠道静态热词
 type VoiceModelDocumentStrategy struct {
 	libraryID int64
 }
@@ -225,25 +227,12 @@ func (s *VoiceModelDocumentStrategy) ProcessWithUploadFile(fileID int64, content
 	voiceModels, _ := cfg["voice_models"].(map[string]interface{})
 	vm, _ := voiceModels[modelName].(map[string]interface{})
 
-	apiDomain := ""
-	if channel.BaseURL != nil && *channel.BaseURL != "" {
-		apiDomain = *channel.BaseURL
-	}
-	if d, ok := vm["api_domain"].(string); ok && d != "" {
-		apiDomain = d
-	}
-
-	workspaceID, _ := vm["workspace_id"].(string)
-
-	// fun-asr/paraformer 模型：必填 workspace_id，未显式配置 api_domain 时自动拼接
-	if workspaceID == "" {
-		return nil, fmt.Errorf("fun-asr/paraformer 模型必须配置 workspace_id")
-	}
-	if _, hasExplicitDomain := vm["api_domain"]; !hasExplicitDomain || vm["api_domain"].(string) == "" {
-		apiDomain = fmt.Sprintf("https://%s.cn-beijing.maas.aliyuncs.com", workspaceID)
-	}
-	if apiDomain == "" {
-		return nil, fmt.Errorf("缺少 api_domain：请在 voice_models.%s.api_domain 或 channel.base_url 中配置", modelName)
+	// 百炼原生异步转写走网关根路径：api_domain 若配的是 OpenAI 兼容基址
+	// （常带 /compatible-mode 后缀，与 channel.base_url 同值）需先剥离，否则会 404；
+	// 未配置 api_domain 时回退 workspace 专属网关。
+	apiDomain, workspaceID, domainErr := model.DashScopeNativeBase(vm, modelName)
+	if domainErr != nil {
+		return nil, domainErr
 	}
 
 	var hotwords []string
@@ -360,7 +349,7 @@ func (s *VoiceModelDocumentStrategy) uploadToDashScope(ctx context.Context, cfg 
 // 当前支持阿里百炼 DashScope，配置来源：
 //   - ModelName：模型名（如 fun-asr），对应 voice_models 的 key
 //   - ApiKey：channel.Key
-//   - ApiDomain：voice_models[modelName].api_domain 或 channel.BaseURL
+//   - ApiDomain：voice_models[modelName].api_domain（剥离兼容后缀），未配置时由 workspace_id 推导
 //   - WorkspaceID：voice_models[modelName].workspace_id
 //
 // 新增其他供应商时，在此结构体中增加供应商专属字段（如 Azure 的 region、Google 的 project_id），
@@ -511,10 +500,8 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
-	logger.Infof(ctx, "【诊断-DashScope提交】fileID=%d status=%d body=%s", fileID, resp.StatusCode, string(respBody))
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("语音识别 API 返回错误 status=%d body=%s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("语音识别 API 返回错误 status=%d body=%s url=%s", resp.StatusCode, string(respBody), taskURL)
 	}
 
 	var taskResp dashScopeTaskResponse
@@ -547,7 +534,17 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 			}
 		}
 
+		if err := common.CheckRagTaskStop(s.libraryID, fileID); err != nil {
+			logger.Infof(ctx, "【语音模型】检测到文件/知识库停止信号，终止语音识别轮询: fileID=%d libraryID=%d err=%v", fileID, s.libraryID, err)
+			return nil, fmt.Errorf("语音识别任务已中止: %w", err)
+		}
+
 		time.Sleep(pollInterval)
+
+		if err := common.CheckRagTaskStop(s.libraryID, fileID); err != nil {
+			logger.Infof(ctx, "【语音模型】检测到文件/知识库停止信号，终止语音识别轮询: fileID=%d libraryID=%d err=%v", fileID, s.libraryID, err)
+			return nil, fmt.Errorf("语音识别任务已中止: %w", err)
+		}
 
 		pollReq, pollErr := http.NewRequest("GET", queryURL, nil)
 		if pollErr != nil {
@@ -654,10 +651,8 @@ func (s *VoiceModelDocumentStrategy) callDashScopeNative(ctx context.Context, fi
 
 			logger.Infof(ctx, "【语音模型】转录成功 - fileID=%d task_id=%s raw_len=%d duration_ms=%d", fileID, taskID, len(rawBytes), durationMs)
 
-			// 设置转写状态（独立于 parsing_status，避免被后续 RAG 管线失败覆盖）
-			if fileID > 0 {
-				model.SetFileTranscriptionStatus(fileID, "completed")
-			}
+			// 转写状态不在此处落库：ASR 成功≠入库成功。document_parsing 在 FileBody/Summary 事务提交后
+			// 统一写 completed，避免管线中途被停止/文件被删/事务失败时残留 completed 标记。
 
 			return &DocumentProcessResult{
 				ProcessedContent: string(rawBytes),

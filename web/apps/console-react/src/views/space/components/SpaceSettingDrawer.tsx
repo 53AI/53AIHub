@@ -204,7 +204,7 @@ function SpaceSettingDrawerInner(
 					'--ant-padding-lg':  '0px 24px',
 				},
 			}}
-			destroyOnClose={false}
+			destroyOnHidden={false}
 		>
 			{loading || !space ? (
 				<div className="h-full flex items-center justify-center">

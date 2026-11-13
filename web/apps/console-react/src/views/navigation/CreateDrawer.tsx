@@ -1,17 +1,17 @@
 import {
-    Drawer,
-    Form,
-    Input,
-    Radio,
-    Button,
-    Divider,
-    message,
+  Drawer,
+  Form,
+  Input,
+  Radio,
+  Button,
+  Divider,
+  message,
 } from "antd";
 import {
-    useState,
-    useMemo,
-    forwardRef,
-    useImperativeHandle
+  useState,
+  useMemo,
+  forwardRef,
+  useImperativeHandle
 } from "react";
 import { t } from "@/locales";
 import { useNavigate } from "react-router-dom";
@@ -22,16 +22,16 @@ import { img_host } from "@/utils/config";
 import IconPopover from "@/components/Icon/popover";
 import { SafeImage } from "@km/shared-components-react";
 import {
-    NAVIGATION_TYPE,
-    NAVIGATION_TARGET,
-    NAVIGATION_TYPE_LABEL_MAP,
-    NAVIGATION_TARGET_LABEL_MAP,
-    NAVIGATION_CUSTOM_PATH_BLACKLIST,
+  NAVIGATION_TYPE,
+  NAVIGATION_TARGET,
+  NAVIGATION_TYPE_LABEL_MAP,
+  NAVIGATION_TARGET_LABEL_MAP,
+  NAVIGATION_CUSTOM_PATH_BLACKLIST,
 } from "@/constants/navigation";
 import type {
-    NavigationItem,
-    CreateNavigationData,
-    UpdateNavigationData,
+  NavigationItem,
+  CreateNavigationData,
+  UpdateNavigationData,
 } from "@/api/modules/navigation/types";
 
 interface FormData {

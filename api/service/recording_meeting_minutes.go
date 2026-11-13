@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
 	"github.com/53AI/53AIHub/common/tokenlimit"
@@ -179,9 +180,10 @@ const prompt2SystemPrompt = `你是一个企业会议纪要与会议知识抽取
 
 除 key_entities 外，必须输出 memory_entities。它仅用于安心录后续决策洞察，不是通用知识图谱实体。
 
-只允许以下五类，且只提取逐字稿或纪要中有明确证据的内容：
+只允许以下六类，且只提取逐字稿或纪要中有明确证据的内容：
 
-- person：company、position、demand、relationship(potential_customer|customer|partner|competitor|irrelevant)；
+- person：position、demand、relationship(potential_customer|customer|partner|competitor|irrelevant)、company（该人物所属/代表的**具名企业全称**，用于系统建立人物与企业实体的关联；仅在原文明确时填，不要编造）；aliases（其他称呼/别名，仅人员填写；其他类型不得填写；仅当原文出现不同于主名但指向同一人的称呼时填写，严禁填写与 canonical_name 相同的名称；无不同称呼填 []）；
+- company：industry（行业）、region（地区）、logo（图片地址，仅当原文明确给出时填）；客户公司、供应商、母公司、合作方、竞品公司等**具名企业必须单独输出为 company 实体**，只把企业当作事项名的一部分（如"XX项目"）不算，必须在 memory_entities 中出现该公司；
 - matter：status(todo|in_progress|completed|shelved)、priority(high|medium|low)、deliverable、dependency；
 - risk：risk_type(compliance|delivery|financial|technical)、risk_level(high|medium|low)、probability、response；
 - commitment：fulfillment_status(not_started|in_progress|fulfilled|overdue)、priority(high|medium|low)、due_date；
@@ -191,6 +193,15 @@ memory_entities 不是名词、标签或类别清单，而是可以在未来会�
 当前 memory_entities 没有独立且可持久化的 subject_entity_id；因此 risk、matter、commitment、decision 的 canonical_name 必须保留足以定位主体或适用范围的最小完整称谓，不得把“CRM 升级项目的落地使用风险”缩短为“落地使用风险”。已有明确结构化适用范围时，可避免重复堆叠名称，但不能依赖未定义的 identity_subject 或 identity_binding 来掩盖空泛名称。
 person 只能是具体人物，或转写行首由 ASR 直接确认的具体 speaker 名称；“技术研发人员”等角色只能作为具体人物的 position，不能独立成为 person。matter 必须有具体项目、客户、产品、合同、功能或任务，并至少提供 status、priority、deliverable、dependency 之一；risk 必须绑定具体主体或范围，并至少提供 risk_type、risk_level、probability、response 之一；commitment 必须有具体承诺对象，并至少提供 fulfillment_status、priority、due_date 之一；decision 必须有具体决策主体或范围，并至少提供 decision_status、decision_maker、reason、impact_scope 之一。
 只有包含状态、责任、动作、时间、风险、约束、依赖、结果、判断、承诺或变化等信息增量的事实才进入 memory_entities。只有 summary 没有 facts，或 facts 缺少 source_segment_ids 时，不输出该长期实体/事实；不要用 summary 代替事实证据。
+
+【长期记忆价值门槛｜优先于数量和覆盖率】
+- memory_entities 不是会议摘要，也不是发言记录。每条事实必须回答：未来老板再次判断、跟进或分析这个主体时，记住此事能改善什么？无法回答的直接不输出，放在纪要或逐字稿中即可。
+- 重点保留：明确的经营数字与变化、客户需求/承诺/预算、项目关键状态和风险、重要决策及理由、可复用的经营约束、稳定的人物职责和关系。不要把介绍、寒暄、主持串场、常识描述、过程讨论、泛化态度或重复复述升级为长期记忆。
+- 同一主体的同一事实只输出一条合并后的独立完整表达；同一意思的不同措辞不算新增，尤其避免从连续发言拆出多条意义相同的事实。
+- 对每条要留存的 facts 输出 memory_value=high 或 medium（与 content、source_segment_ids 同级）。high 表示可能显著影响决策、风险、成交或履约；medium 表示可用于未来跟进、解释或校准经营背景。low 的事实不要输出。历史输出缺少 memory_value 字段时服务端保持兼容。
+- 可以输出 memory_entities=[]，也可以仅输出个别人物/项目的少量关键事实；**不得为了每个人、每个议题都有记忆而凑数**。并非每场会议都应该形成新的长期事实。
+- 时间、金额、百分比或身份变化要保留差异，不得把前后不同状态压为同一事实。已有记忆相同的稳定背景如无新变化，不要再次输出。
+
 
 转写中的"A说话人"、"B说话人"、"说话人 1"、"Speaker 1"、"发言人"、"无说话人"、"未知说话人"是默认说话人标签，只能用于发言归属，绝不能作为 person 的 canonical_name、mention 或 alias。转写行首由 ASR 直接提供的具体人物名称（如"王天一"、"珠江钢琴王总"）可作为 person 实体；正文中其他人名仍需有明确证据，无法确认时宁可不输出。
 
@@ -245,7 +256,7 @@ person 只能是具体人物，或转写行首由 ASR 直接确认的具体 spea
   "memory_entities": [
     {
       "temp_id": "entity_001",
-      "entity_type": "person|matter|risk|commitment|decision",
+      "entity_type": "person|company|matter|risk|commitment|decision",
       "mention": "",
       "canonical_name": "",
       "identity_status": "candidate|confirmed|manual_confirmed|unresolved",
@@ -258,6 +269,7 @@ person 只能是具体人物，或转写行首由 ASR 直接确认的具体 spea
       "facts": [
         {
           "content": "",
+          "memory_value": "high|medium",
           "attributes": {},
           "source_segment_ids": []
         }
@@ -468,12 +480,20 @@ func resolveMinutesLLMConfig(ctx context.Context, eid, fileID int64, anxinluCfg 
 // GenerateMeetingMinutes 转写完成后同步触发，生成会议纪要并写入 Summary(template_id=0)。
 //
 // 返回 nil 表示成功（或 skipped），返回 error 表示失败（管线应终止）。
-func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) (returnErr error) {
+func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) error {
+	return generateMeetingMinutes(ctx, eid, fileID, userID, false)
+}
+
+func generateMeetingMinutes(ctx context.Context, eid, fileID, userID int64, skipReuse bool) (returnErr error) {
 	traceFileName := ""
 	traceGeneration := int64(0)
 	if traceFile, traceErr := model.GetFileByID(eid, fileID); traceErr == nil && traceFile != nil {
 		traceFileName = traceFile.Path
 		traceGeneration = traceFile.InsightGeneration
+		// 共享库成员可以触发重新生成，但会议记忆归属始终属于录音创建者。
+		if traceFile.UserID > 0 {
+			userID = traceFile.UserID
+		}
 	}
 	traceCtx, trace, traceOwner := recordingdebug.EnsureTrace(ctx, eid, fileID, traceGeneration, traceFileName)
 	ctx = traceCtx
@@ -515,7 +535,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) (ret
 	// 源无/pending/failed → 走正常生成。template_id>0 自定义总结不拷贝。
 	// 与 SonicNote 预置转写互斥：目标 parse_type=sonicnote_transcript（预置官方转写）时跳过复用，
 	// 走 LLM 生成（反转保留预置转写），避免源转写覆盖预置转写（与 document_parsing 转写复用同一不变量）。
-	if file, ferr := model.GetFileByID(eid, fileID); ferr == nil && file.ParseType != model.PLATFORM_KEY_SONICNOTE &&
+	if file, ferr := model.GetFileByID(eid, fileID); !skipReuse && ferr == nil && file.ParseType != model.PLATFORM_KEY_SONICNOTE &&
 		file.IsRecordingOriginType() && file.UploadFileID > 0 {
 		if uf, uerr := model.GetUploadFileByID(file.UploadFileID); uerr == nil && uf != nil {
 			cands, cerr := findReuseSourceCandidates(ctx, eid, uf.Hash, uf.ID, fileID)
@@ -534,6 +554,7 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) (ret
 					if srcMinutes, merr := model.GetSummaryByTemplateID(cand.ID, 0); merr == nil && srcMinutes != nil {
 						renameFileByMeetingTitle(ctx, eid, fileID, file, string(srcMinutes.SummaryContent))
 					}
+					compileRecordingMemoryAfterMinutes(ctx, config, eid, fileID, userID, minutesStartedAt)
 					setMeetingMinutesStatus(fileID, "completed")
 					logger.Infof(ctx, "【纪要】复用完成 fileID=%d src_file_id=%d", fileID, cand.ID)
 					recordingdebug.RecordStage(ctx, "meeting_minutes", "会议纪要生成", "success", minutesStartedAt, map[string]interface{}{
@@ -738,31 +759,8 @@ func GenerateMeetingMinutes(ctx context.Context, eid, fileID, userID int64) (ret
 	elapsed := time.Since(startTime)
 	logger.Infof(ctx, "【纪要】生成成功 fileID=%d elapsed=%v", fileID, elapsed)
 
-	// 纪要已经以新版本落库后，编译结构化会议记忆。编译失败不阻断纪要和洞察主链路，
-	// GenerateInsights 仍会使用现有实体+历史纪要 fallback。
-	if recordingMemoryExtractionEnabled(config) {
-		memoryCount, memoryErr := CompileRecordingMemory(ctx, eid, fileID, userID)
-		if memoryErr != nil {
-			logger.Warnf(ctx, "【会议记忆】当前纪要编译失败，洞察将降级: fileID=%d err=%v", fileID, memoryErr)
-		}
-		entityMemoryCount, entityMemoryErr := CompileRecordingEntityMemory(ctx, eid, fileID, userID)
-		if entityMemoryErr != nil {
-			logger.Warnf(ctx, "【实体记忆】当前纪要编译失败，洞察将降级: fileID=%d err=%v", fileID, entityMemoryErr)
-		}
-		memoryStatus := "success"
-		if memoryErr != nil || entityMemoryErr != nil {
-			memoryStatus = "degraded"
-		}
-		recordingdebug.RecordStage(ctx, "memory_compile", "编译会议记忆", memoryStatus, minutesStartedAt, map[string]interface{}{
-			"memory_count":        memoryCount,
-			"entity_memory_count": entityMemoryCount,
-			"memory_error":        errorString(memoryErr),
-			"entity_memory_error": errorString(entityMemoryErr),
-		}, nil)
-	}
-	if _, cognitionErr := CompileRecordingCognitionCandidates(ctx, eid, fileID, userID); cognitionErr != nil {
-		logger.Warnf(ctx, "【老板认知】当前纪要候选编译失败，纪要和洞察不受阻断: fileID=%d err=%v", fileID, cognitionErr)
-	}
+	// 抽取与认知候选只在纪要事实源刷新时编译。洞察生成只读。
+	compileRecordingMemoryAfterMinutes(ctx, config, eid, fileID, userID, minutesStartedAt)
 
 	// 8. 按会议标题重命名文件（失败不阻塞管线）
 	renameFileByMeetingTitle(ctx, eid, fileID, file, result)
@@ -834,6 +832,21 @@ func loadTranscriptTextRaw(ctx context.Context, eid, fileID int64) (string, erro
 	return content, nil
 }
 
+// hasPersistedRecordingTranscript 判断转写内容是否已入库：Summary(-1)（转写原文）或 FileBody（转写 Markdown）。
+// 只做存在性判断、不加载内容——parse-status 被前端高频轮询，大转写全文读取成本不可接受。
+func hasPersistedRecordingTranscript(eid, fileID int64) bool {
+	var count int64
+	if err := model.DB.Model(&model.RecordingFileSummary{}).
+		Where("file_id = ? AND template_id = ? AND summary_content <> ''", fileID, -1).
+		Count(&count).Error; err == nil && count > 0 {
+		return true
+	}
+	err := model.DB.Model(&model.FileBody{}).
+		Where("eid = ? AND file_id = ? AND (content <> '' OR (content_path IS NOT NULL AND content_path <> ''))", eid, fileID).
+		Count(&count).Error
+	return err == nil && count > 0
+}
+
 // loadTranscriptText 读取转写原文并提取纯文本（DashScope JSON -> 纯文本）。
 // 非 JSON 格式时原样返回（降级兼容）。
 func loadTranscriptText(ctx context.Context, eid, fileID int64) (string, error) {
@@ -845,7 +858,7 @@ func loadTranscriptText(ctx context.Context, eid, fileID int64) (string, error) 
 	if plain != "" {
 		return plain, nil
 	}
-	return raw, nil
+	return common.StripInternalContactComments(raw), nil
 }
 
 // LoadTranscriptText 导出版本，供 controller 调用（返回原始 JSON，不提取）。
@@ -1288,6 +1301,21 @@ func extractTranscriptFromJSON(raw string) string {
 		return ""
 	}
 
+	// DashScope 有句级转写时直接复用展示层的逐句渲染，保留人物、时间与原话。
+	// 旧格式只有段级 text 的场景仍沿用下面的兼容提取逻辑。
+	for _, item := range transcripts {
+		block, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if sentences, ok := block["sentences"].([]interface{}); ok && len(sentences) > 0 {
+			if md, err := renderDashScopeTranscriptMarkdown(raw, ""); err == nil {
+				return StripTranscriptContactComments(md)
+			}
+			break
+		}
+	}
+
 	var texts []string
 	for _, t := range transcripts {
 		tMap, ok := t.(map[string]interface{})
@@ -1408,6 +1436,7 @@ func BuildMeetingMinutesSystemPrompt(ctx context.Context, eid, userID int64) str
 
 // callMeetingMinutesLLM 直接调用 Prompt 2 生成会议纪要。
 func callMeetingMinutesLLM(ctx context.Context, config *model.RecordingConfig, eid, userID, fileID int64, transcript string, startedAt, endedAt int64) (string, error) {
+	knownEntities := loadRecordingSpeakerProfiles(ctx, eid, fileID)
 	buildRequest := func() *relaymodel.GeneralOpenAIRequest {
 		startedAtStr := ""
 		endedAtStr := ""
@@ -1432,10 +1461,11 @@ func callMeetingMinutesLLM(ctx context.Context, config *model.RecordingConfig, e
 </normalized_transcript>
 
 <known_entities>
-{}
+%s
 </known_entities>
 
-严格按照系统要求输出 JSON。`, fileID, startedAtStr, endedAtStr, transcript)
+人物档案仅作身份和历史背景参考，不得当作本次会议的发言、决策或承诺。
+严格按照系统要求输出 JSON。`, fileID, startedAtStr, endedAtStr, transcript, knownEntities)
 
 		systemPrompt := BuildMeetingMinutesSystemPrompt(ctx, eid, userID)
 		return &relaymodel.GeneralOpenAIRequest{
@@ -1470,8 +1500,6 @@ func setStageStatus(fileID int64, stage, status string) {
 			info.InsightsStatus = status
 		case "insight_page":
 			info.InsightPageStatus = status
-		case "transcription":
-			info.TranscriptionStatus = status
 		}
 		data, _ := json.Marshal(info)
 		return tx.Model(&model.File{}).Where("id = ?", fileID).
@@ -1506,14 +1534,34 @@ func SetInsightPageStatus(fileID int64, status string) {
 	setInsightPageStatus(fileID, status)
 }
 
-// setTranscriptionStatus 更新 cleaning_rule_info 中的转写状态（独立于 parsing_status，避免被 RAG 管线失败覆盖）。
-func setTranscriptionStatus(fileID int64, status string) {
-	setStageStatus(fileID, "transcription", status)
+const (
+	meetingMinutesLongInputTokenThreshold = 6000
+	meetingMinutesDefaultLLMTimeout       = 120 * time.Second
+	meetingMinutesLongLLMTimeout          = 240 * time.Second
+)
+
+func meetingMinutesLLMTimeout(request *relaymodel.GeneralOpenAIRequest) time.Duration {
+	if request != nil && tokenlimit.EstimateTokens(request.Messages) >= meetingMinutesLongInputTokenThreshold {
+		return meetingMinutesLongLLMTimeout
+	}
+	return meetingMinutesDefaultLLMTimeout
 }
 
-// callLLMWithRetry 调用 LLM，失败时自动重试（指数退避，最多 2 次）。
-// 重试 2 次 + 单次超时 120s 是录音场景的合理折中：临时故障（如 429）可恢复，
-// 若仍失败用户可手动重试。避免 3 次重试累计 17s+ 的等待和 3×180s 的超时。
+func isMeetingMinutesDeadline(err error, openAIErr *relaymodel.Error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	if openAIErr != nil {
+		message += " " + openAIErr.Message
+	}
+	return strings.Contains(strings.ToLower(message), "context deadline exceeded")
+}
+
+// callLLMWithRetry 调用 LLM，失败时最多发起一次重试；超时请求不重复发送。
 // 定义为变量以便测试时替换为 mock。
 var callLLMWithRetry = func(ctx context.Context, config *model.RecordingConfig, buildRequest func() *relaymodel.GeneralOpenAIRequest) (string, error) {
 	channel, err := model.GetChannelByID(config.InferenceModelID)
@@ -1555,7 +1603,7 @@ var callLLMWithRetry = func(ctx context.Context, config *model.RecordingConfig, 
 			}
 			requestMessages = request.Messages
 		}
-		ctxTimeout, cancel := context.WithTimeout(ctx, 120*time.Second)
+		ctxTimeout, cancel := context.WithTimeout(ctx, meetingMinutesLLMTimeout(request))
 		llmStartedAt := time.Now()
 		result, err, openAIErr := generator.TestChannel(ctxTimeout, channel, request)
 		cancel()
@@ -1564,6 +1612,10 @@ var callLLMWithRetry = func(ctx context.Context, config *model.RecordingConfig, 
 
 		if err == nil {
 			return result, nil
+		}
+		if isMeetingMinutesDeadline(err, openAIErr) {
+			lastErr = fmt.Errorf("attempt %d: %w (openai_err=%v)", attempt+1, err, openAIErr)
+			return "", &model.LLMError{Err: lastErr, ErrorType: model.ErrorTypeTimeout}
 		}
 
 		// 非重试性错误直接返回，不浪费重试
@@ -1642,48 +1694,56 @@ func GetFileParseStatus(eid, fileID int64) map[string]interface{} {
 		Where("eid = ? AND related_id = ? AND type = ?", eid, fileID, "document_parsing").
 		Order("job_id DESC").Limit(1).Pluck("status", &parsingJobStatus)
 
-	// 转写状态：优先使用 cleaning_rule_info 中的独立字段，避免被 RAG 管线的 parsing_status 覆盖
+	// 转写状态以"转写内容是否真的入库"为准（Summary(-1) 或 FileBody），
+	// cleaning_rule_info.transcription 只在内容缺失时解释"处理中/失败/已中止"。
+	// 原因：ASR 成功不等于入库成功——解析策略拿到 ASR 结果就写 completed，管线随后若因
+	// 停止信号、文件被删除或事务失败放弃回写，标记会残留 completed 而内容并不存在，
+	// 前端 parse-status 显示"已转写"、转写接口却读不到内容。
 	transcription := result["transcription"].(map[string]interface{})
 	var ruleInfo model.FileCleaningRuleInfo
 	if file.CleaningRuleInfo != "" {
 		json.Unmarshal([]byte(file.CleaningRuleInfo), &ruleInfo)
 	}
-	if ruleInfo.TranscriptionStatus != "" {
-		transcription["status"] = ruleInfo.TranscriptionStatus
-		if ruleInfo.TranscriptionStatus == "failed" {
-			if ruleInfo.TranscriptionError != "" {
-				transcription["error"] = ruleInfo.TranscriptionError
-			}
-			if ruleInfo.TranscriptionErrorType != "" {
-				transcription["error_type"] = ruleInfo.TranscriptionErrorType
-			}
+	hasTranscript := hasPersistedRecordingTranscript(eid, fileID)
+	jobRunning := parsingJobStatus == model.RagJobStatusPending ||
+		parsingJobStatus == model.RagJobStatusProcessing || parsingJobStatus == model.RagJobStatusPaused
+	switch {
+	case jobRunning && !hasTranscript:
+		// 有转写任务在排队/执行/暂停且还没有内容 → 处理中（会被 worker 自动处理，且重转期间不该沿用上次失败结论）
+		transcription["status"] = "processing"
+	case ruleInfo.TranscriptionStatus == "failed":
+		// 失败标记优先：它代表"最近一次转写尝试"的结论。重转失败时旧转写内容仍会保留（事务内才清理），
+		// 不能因为旧内容还在就把失败掩盖成"已转写"，否则用户永远看不到重转失败。
+		// 重转进行中且尚无新内容时由上面的 processing 分支接管；有旧内容时仍显示失败（旧内容可导出，
+		// 且失败原因比"处理中"更能解释上一次为何没成功）。
+		transcription["status"] = "failed"
+		if ruleInfo.TranscriptionError != "" {
+			transcription["error"] = ruleInfo.TranscriptionError
 		}
-	} else {
-		// 无录音管线专用转写状态（如走了通用文档管线）：按实际判定，
-		// 避免盲目兜底 parsing_status（其 "normal" 会掩盖 document_parsing 失败、无转写的事实）。
-		if txt, terr := loadTranscriptTextRaw(context.Background(), eid, fileID); terr == nil && strings.TrimSpace(txt) != "" {
-			// 已有转写内容（Summary(-1) 或 FileBody）→ completed
-			// （即使最近一次 document_parsing 失败、旧转写残留，也以"有数据可导出"为准）
-			transcription["status"] = "completed"
-		} else if ruleInfo.StepKey == "document_parsing" && ruleInfo.Status == "failed" {
+		if ruleInfo.TranscriptionErrorType != "" {
+			transcription["error_type"] = ruleInfo.TranscriptionErrorType
+		}
+	case hasTranscript:
+		// 已有转写内容（即使最近一次 document_parsing 失败、旧转写残留）→ completed
+		transcription["status"] = "completed"
+	case ruleInfo.TranscriptionStatus == "completed":
+		// 标记 completed 但内容不存在（ASR 成功后入库中止残留的标记），且已无任务在跑 → 按实际入库判失败
+		transcription["status"] = "failed"
+		transcription["error"] = "转写内容未入库（状态标记已完成但读不到转写内容），需重新转写"
+	default:
+		// 走到这里必然：无转写内容、无任务在跑、无终态标记。避免盲目兜底 parsing_status
+		// （其 "normal" 会掩盖 document_parsing 失败、无转写的事实）。
+		if ruleInfo.StepKey == "document_parsing" && ruleInfo.Status == "failed" {
 			// 无转写内容且文档解析（对录音即转写）步骤失败 → failed
 			transcription["status"] = "failed"
 			transcription["error"] = "文档解析（转写）失败"
 		} else {
-			// 无转写内容且无录音管线专用转写状态：按 document_parsing job 状态区分，
-			// 避免 "pending" 混淆"正在处理"与"从未开始/不会自动处理"。
 			switch parsingJobStatus {
-			case model.RagJobStatusPending, model.RagJobStatusProcessing:
-				// 有转写 job 排队/执行中 → 处理中（会有任务自动完成）
-				transcription["status"] = "processing"
 			case model.RagJobStatusSuccess:
 				// job 已成功但无转写内容（如静音/ASR 返回空）→ 不能误报"未触发"，
 				// 明确提示"已完成但无内容"，避免与"从未触发"混淆
 				transcription["status"] = "failed"
 				transcription["error"] = "转写已完成但未识别到转写内容"
-			case model.RagJobStatusPaused:
-				// job 被暂停（系统级）→ 非终态，保持处理中语义，避免误报"未触发/失败"
-				transcription["status"] = "processing"
 			case model.RagJobStatusFailed, model.RagJobStatusCancelled:
 				// 转写 job 失败（且 cleaning_rule_info 未标记失败）→ failed
 				transcription["status"] = "failed"
@@ -1963,4 +2023,45 @@ func renameFileByMeetingTitle(ctx context.Context, eid, fileID int64, file *mode
 	file.Path = uniquePath
 	elasticsearch.SyncFileToES(file, "update")
 	logger.Infof(ctx, "【纪要】重命名成功 fileID=%d oldPath=%s newPath=%s", fileID, oldPath, uniquePath)
+}
+
+// compileRecordingMemoryAfterMinutes 的唯一自动调用方是纪要的首次生成/重生成/复用。
+func compileRecordingMemoryAfterMinutes(ctx context.Context, config *model.RecordingConfig, eid, fileID, ownerID int64, startedAt time.Time) {
+	if current, err := recordingMemoryCompilationCurrent(ctx, eid, fileID, ownerID); err == nil && current {
+		logger.Infof(ctx, "【会议记忆】纪要来源版本未变，跳过重复编译 fileID=%d", fileID)
+		return
+	} else if err != nil {
+		logger.Warnf(ctx, "【会议记忆】版本核验失败，本次仍尝试编译 fileID=%d err=%v", fileID, err)
+	}
+	var memoryErr, entityErr, cognitionErr error
+	var claimCount, entityCount int
+	enabled := recordingMemoryExtractionEnabled(config)
+	if enabled {
+		claimCount, memoryErr = CompileRecordingMemory(ctx, eid, fileID, ownerID)
+		entityCount, entityErr = CompileRecordingEntityMemory(ctx, eid, fileID, ownerID)
+		if memoryErr != nil {
+			logger.Warnf(ctx, "【会议记忆】编译失败 fileID=%d err=%v", fileID, memoryErr)
+		}
+		if entityErr != nil {
+			logger.Warnf(ctx, "【实体记忆】编译失败 fileID=%d err=%v", fileID, entityErr)
+		}
+	}
+	_, cognitionErr = CompileRecordingCognitionCandidates(ctx, eid, fileID, ownerID)
+	if cognitionErr != nil {
+		logger.Warnf(ctx, "【老板认知】编译失败 fileID=%d err=%v", fileID, cognitionErr)
+	}
+	status := "success"
+	if memoryErr != nil || entityErr != nil || cognitionErr != nil {
+		status = "degraded"
+	}
+	recordingdebug.RecordStage(ctx, "memory_compile", "编译会议记忆", status, startedAt, map[string]interface{}{
+		"memory_count": claimCount, "entity_memory_count": entityCount,
+		"memory_error": errorString(memoryErr), "entity_memory_error": errorString(entityErr),
+		"cognition_error": errorString(cognitionErr),
+	}, nil)
+	if enabled && status == "success" {
+		if err := markRecordingMemoryCompiled(ctx, eid, fileID, ownerID); err != nil {
+			logger.Warnf(ctx, "【会议记忆】保存来源版本失败 fileID=%d err=%v", fileID, err)
+		}
+	}
 }

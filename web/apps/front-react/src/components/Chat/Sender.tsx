@@ -15,7 +15,7 @@ import {
   PaperClipOutlined,
   FileOutlined
 } from "@ant-design/icons";
-import { SvgIcon, OverflowTooltip, Search } from "@km/shared-components-react";
+import { SvgIcon, OverflowTooltip, Search, SafeImage } from "@km/shared-components-react";
 import { useSkillsStore } from "@/stores/modules/skills";
 import { type LibraryItem } from "@/api/modules/libraries";
 import { type SpaceItem } from "@/api/modules/spaces";
@@ -359,7 +359,7 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
       // 检查是否为录音来源
       const originSource = file.origin_source;
       if (originSource === 'recording' || originSource === 'recording_import') {
-        formattedFile.icon = getPublicPath("/images/file/recrod.png");
+        formattedFile.icon = "/images/file/recrod.png";
       }
       return formattedFile;
     }, []);
@@ -2299,7 +2299,7 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
                   className="h-6 max-w-[200px] overflow-hidden px-1.5 rounded bg-[#F3F3F5] flex items-center text-sm text-[#6B6C70] group cursor-pointer relative"
                 >
                   <div className="flex-none size-4 rounded mr-1">
-                    <img src={link.icon} className="size-4" alt="" />
+                    <SafeImage src={link.icon} className="size-4" alt="" />
                   </div>
                   <OverflowTooltip>
                     <span className="truncate">{link.name}</span>
@@ -2379,7 +2379,7 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
                       >
                         <div className="flex items-center gap-3 cursor-pointer overflow-hidden">
                           <div className="size-4 rounded">
-                            <img src={doc.icon} className="size-4" alt="" />
+                            <SafeImage src={doc.icon} className="size-4" alt="" />
                           </div>
                           <p className="flex-1 text-sm text-[#1D1E1F] truncate">
                             {doc.name}
@@ -2443,7 +2443,7 @@ export const Sender = forwardRef<SenderRef, SenderProps>(
                             >
                               <div className="flex items-center gap-3 overflow-hidden flex-1">
                                 <div className="size-5 rounded flex items-center justify-center bg-[#F5F5F5]">
-                                  <img
+                                  <SafeImage
                                     src={doc.icon}
                                     className="size-4"
                                     alt=""

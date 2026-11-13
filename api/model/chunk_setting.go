@@ -55,16 +55,16 @@ type SearchWeights struct {
 
 // SearchConfigData 检索配置结构
 type SearchConfigData struct {
-	Vector                bool          `json:"vector"`
-	Fulltext              bool          `json:"fulltext"`
-	Hybrid                bool          `json:"hybrid"`
-	RerankModel           string        `json:"rerank_model"`
-	RerankChannelId       int           `json:"rerank_channel_id"`
-	RerankModelName       string        `json:"rerank_model_name"`
-	RerankingEnable       bool          `json:"reranking_enable"`
-	TopK                  int           `json:"top_k"`
-	ScoreThreshold        float64       `json:"score_threshold"`
-	ScoreThresholdEnabled bool          `json:"score_threshold_enabled"`
+	Vector                bool    `json:"vector"`
+	Fulltext              bool    `json:"fulltext"`
+	Hybrid                bool    `json:"hybrid"`
+	RerankModel           string  `json:"rerank_model"`
+	RerankChannelId       int     `json:"rerank_channel_id"`
+	RerankModelName       string  `json:"rerank_model_name"`
+	RerankingEnable       bool    `json:"reranking_enable"`
+	TopK                  int     `json:"top_k"`
+	ScoreThreshold        float64 `json:"score_threshold"`
+	ScoreThresholdEnabled bool    `json:"score_threshold_enabled"`
 	// RerankScoreThreshold 重排相关性分数下限（0 表示不启用）。
 	// 与 ScoreThreshold 不同：ScoreThreshold 作用于召回阶段向量/全文原始分，
 	// 该阈值作用于重排后的相关性分数，用于「按相关性自适应决定注入数量」，
@@ -76,11 +76,20 @@ type SearchConfigData struct {
 
 // ModelConfigData 模型设置JSON结构
 type ModelConfigData struct {
-	Version         string             `json:"version"`
-	LogicReasoning  ModelChannelConfig `json:"logic_reasoning"`
-	VectorEmbedding ModelChannelConfig `json:"vector_embedding"`
-	FastReasoning   ModelChannelConfig `json:"fast_reasoning"`
-	SearchConfig    SearchConfigData   `json:"search_config"`
+	Version         string                `json:"version"`
+	LogicReasoning  ModelChannelConfig    `json:"logic_reasoning"`
+	VectorEmbedding ModelChannelConfig    `json:"vector_embedding"`
+	FastReasoning   ModelChannelConfig    `json:"fast_reasoning"`
+	IntentDecision  *IntentDecisionConfig `json:"intent_decision_config,omitempty"`
+	SearchConfig    SearchConfigData      `json:"search_config"`
+}
+
+// IntentDecisionConfig is the enterprise-wide optional intent routing model.
+type IntentDecisionConfig struct {
+	Enable              bool    `json:"enable"`
+	ChannelID           int64   `json:"channel_id"`
+	ModelName           string  `json:"model_name"`
+	ConfidenceThreshold float64 `json:"confidence_threshold"`
 }
 
 // ModelChannelConfig 模型渠道配置

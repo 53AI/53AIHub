@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,12 @@ const (
 	ActionOpportunityStatusDismissed       = "dismissed"
 )
 
+var (
+	ErrActionOpportunityHasPlans = errors.New("action opportunity has associated plans")
+	ErrActionPlanHasDependents   = errors.New("action plan has dependent action or result")
+	ErrActionPlanHasActiveRun    = errors.New("action plan has an active run")
+)
+
 // ActionPlan lifecycle (V1): the plan is only a document the user edits and
 // confirms. Execution progress/history lives on ActionRun; "accepted" and
 // "archived_as_result" are not plan states.
@@ -25,7 +32,6 @@ const (
 	ActionPlanStatusConfirmed  = "confirmed"
 	ActionPlanStatusSuperseded = "superseded"
 )
-
 
 type ActionOpportunityRecord struct {
 	ID                 int64   `json:"-" gorm:"primaryKey;autoIncrement"`
@@ -48,6 +54,10 @@ type ActionOpportunityRecord struct {
 	RiskLevel          string  `json:"risk_level" gorm:"size:16;not null;default:low"`
 	Priority           int     `json:"priority" gorm:"not null;default:0;index"`
 	Status             string  `json:"status" gorm:"size:32;not null;index:idx_action_opportunities_scope,priority:3"`
+	Stage              string  `json:"stage" gorm:"size:16;not null;default:proposal;index:idx_action_items_stage"`
+	IsRead             bool    `json:"is_read" gorm:"not null;default:false;index"`
+	IsTrashed          bool    `json:"is_trashed" gorm:"not null;default:false;index"`
+	StatusBeforeTrash  string  `json:"-" gorm:"size:32;not null;default:''"`
 	DetectionVersion   string  `json:"detection_version" gorm:"size:32;not null;default:''"`
 	// V1：opportunity 的快照子结构只作为 JSON 列存在，不再建子表。
 	Deliverables []*ActionOpportunityDeliverableRecord `json:"deliverables,omitempty" gorm:"serializer:json;column:deliverables_json"`
@@ -77,6 +87,7 @@ type ActionPlanRecord struct {
 	OpportunityID   string `json:"opportunity_id" gorm:"size:64;not null;index:idx_action_plans_opportunity"`
 	ActionID        string `json:"action_id,omitempty" gorm:"size:64;not null;default:'';index"`
 	Status          string `json:"status" gorm:"size:32;not null;index:idx_action_plans_scope,priority:3"`
+	IsTrashed       bool   `json:"is_trashed" gorm:"not null;default:false;index"`
 	Objective       string `json:"objective" gorm:"not null"`
 	Background      string `json:"background" gorm:"not null"`
 	Scope           string `json:"scope" gorm:"not null"`
@@ -97,8 +108,8 @@ type ActionPlanRecord struct {
 func (ActionPlanRecord) TableName() string { return "action_plans" }
 
 type ActionPlanDeliverableRecord struct {
-	Type      string `json:"type"`
-	Title     string `json:"title"`
+	Type  string `json:"type"`
+	Title string `json:"title"`
 	// Format 是主交付物格式（docx/xlsx/pptx）；空值按旧契约回落到 docx。
 	Format string `json:"format,omitempty"`
 	// IsPrimary 标记唯一主交付物；旧方案没有该标记时按顺序回落到第一个。
@@ -228,6 +239,152 @@ func ListActionOpportunitiesForUser(ctx context.Context, eid, ownerID int64, sou
 	return result, nil
 }
 
+// ListActionOpportunitiesForUserPage applies lifecycle/read filters and database-level pagination.
+func ListActionOpportunitiesForUserPage(ctx context.Context, eid, ownerID int64, statusFilter, typeFilter string, page, pageSize int) ([]*ActionOpportunityAggregate, int64, error) {
+	query := DB.WithContext(ctx).Model(&ActionOpportunityRecord{}).Where("eid = ? AND owner_id = ?", eid, ownerID)
+	switch statusFilter {
+	case "all_with_trash":
+		// The combined workspace needs both normal and recycle-bin items.
+	case "", "all":
+		query = query.Where("is_trashed = ? AND status <> ?", false, ActionOpportunityStatusDismissed)
+	case "unread":
+		query = query.Where("is_trashed = ? AND status <> ? AND is_read = ?", false, ActionOpportunityStatusDismissed, false)
+	case "read":
+		query = query.Where("is_trashed = ? AND status <> ? AND is_read = ?", false, ActionOpportunityStatusDismissed, true)
+	case "trash", ActionOpportunityStatusDismissed:
+		query = query.Where("(is_trashed = ? OR status = ?)", true, ActionOpportunityStatusDismissed)
+	default:
+		query = query.Where("is_trashed = ? AND status = ?", false, statusFilter)
+	}
+	if typeFilter != "" {
+		query = query.Where("opportunity_type = ?", typeFilter)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var records []*ActionOpportunityRecord
+	if err := query.Order("priority ASC, created_time DESC, id DESC").
+		Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+	result := make([]*ActionOpportunityAggregate, 0, len(records))
+	for _, record := range records {
+		aggregate, err := GetActionOpportunityForUser(ctx, eid, ownerID, record.OpportunityID)
+		if err != nil {
+			return nil, 0, err
+		}
+		result = append(result, aggregate)
+	}
+	return result, total, nil
+}
+
+// SetActionOpportunityReadState changes read state without altering business lifecycle.
+func SetActionOpportunityReadState(ctx context.Context, eid, ownerID int64, opportunityID string, isRead bool) error {
+	result := DB.WithContext(ctx).Model(&ActionOpportunityRecord{}).
+		Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).
+		Update("is_read", isRead)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+// TrashActionOpportunity stores the prior lifecycle status before moving it to the recycle bin.
+func TrashActionOpportunity(ctx context.Context, eid, ownerID int64, opportunityID string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record ActionOpportunityRecord
+		if err := tx.Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).First(&record).Error; err != nil {
+			return err
+		}
+		if record.IsTrashed || record.Status == ActionOpportunityStatusDismissed {
+			return nil
+		}
+		linkedActions := tx.Model(&ActionPlanRecord{}).Select("action_id").
+			Where("eid = ? AND owner_id = ? AND opportunity_id = ? AND action_id <> ?", eid, ownerID, opportunityID, "")
+		var activeRuns int64
+		if err := tx.Model(&ActionRunRecord{}).Where("eid = ? AND status IN ? AND action_id IN (?)", eid,
+			[]string{ActionRunStatusQueued, ActionRunStatusRunning}, linkedActions).Count(&activeRuns).Error; err != nil {
+			return err
+		}
+		if activeRuns > 0 {
+			return ErrActionPlanHasActiveRun
+		}
+		result := tx.Model(&ActionOpportunityRecord{}).
+			Where("eid = ? AND owner_id = ? AND opportunity_id = ? AND status = ? AND is_trashed = ?", eid, ownerID, opportunityID, record.Status, false).
+			Updates(map[string]interface{}{"is_trashed": true, "status_before_trash": record.Status})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Model(&ActionPlanRecord{}).Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).
+			Update("is_trashed", true).Error
+	})
+}
+
+// RestoreActionOpportunity restores the business status that was saved on trash.
+func RestoreActionOpportunity(ctx context.Context, eid, ownerID int64, opportunityID string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record ActionOpportunityRecord
+		if err := tx.Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).First(&record).Error; err != nil {
+			return err
+		}
+		if !record.IsTrashed && record.Status != ActionOpportunityStatusDismissed {
+			return nil
+		}
+		status := record.Status
+		if status == ActionOpportunityStatusDismissed {
+			status = record.StatusBeforeTrash
+			if status == "" || status == ActionOpportunityStatusDismissed {
+				status = ActionOpportunityStatusCandidate
+			}
+		}
+		result := tx.Model(&ActionOpportunityRecord{}).
+			Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).
+			Updates(map[string]interface{}{"status": status, "is_trashed": false, "status_before_trash": ""})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Model(&ActionPlanRecord{}).Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).
+			Update("is_trashed", false).Error
+	})
+}
+
+// DeleteActionOpportunityForUser permanently deletes only opportunities without associated plans.
+// Dependent execution history and result assets are intentionally never cascade-deleted.
+func DeleteActionOpportunityForUser(ctx context.Context, eid, ownerID int64, opportunityID string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var planCount int64
+		if err := tx.Model(&ActionPlanRecord{}).
+			Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).
+			Count(&planCount).Error; err != nil {
+			return err
+		}
+		if planCount > 0 {
+			return ErrActionOpportunityHasPlans
+		}
+		result := tx.Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).Delete(&ActionOpportunityRecord{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Where("eid = ? AND owner_type = ? AND owner_id = ?", eid, ActionEvidenceOwnerOpportunity, opportunityID).Delete(&ActionEvidenceRefRecord{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("eid = ? AND parent_type = ? AND parent_id = ?", eid, ActionSourceParentOpportunity, opportunityID).Delete(&ActionSourceRefRecord{}).Error
+	})
+}
+
 func UpdateActionOpportunityStatus(ctx context.Context, eid, ownerID int64, opportunityID, status string) error {
 	result := DB.WithContext(ctx).Model(&ActionOpportunityRecord{}).
 		Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, opportunityID).
@@ -318,11 +475,162 @@ func GetActionPlanForUser(ctx context.Context, eid, ownerID int64, planID string
 
 func ListActionPlansForUser(ctx context.Context, eid, ownerID int64) ([]*ActionPlanRecord, error) {
 	var records []*ActionPlanRecord
-	if err := DB.WithContext(ctx).Where("eid = ? AND owner_id = ?", eid, ownerID).
+	acceptedActions := DB.Model(&ActionRecord{}).Select("action_id").
+		Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, ActionStatusAccepted)
+	if err := DB.WithContext(ctx).Where("eid = ? AND owner_id = ? AND is_trashed = ? AND (action_id = '' OR action_id NOT IN (?))", eid, ownerID, false, acceptedActions).
 		Order("updated_time DESC, id DESC").Find(&records).Error; err != nil {
 		return nil, err
 	}
 	return records, nil
+}
+func ListActionPlansForUserPage(ctx context.Context, eid, ownerID int64, statusFilter, typeFilter string, page, pageSize int) ([]*ActionPlanRecord, int64, error) {
+	query := DB.WithContext(ctx).Model(&ActionPlanRecord{}).Where("eid = ? AND owner_id = ?", eid, ownerID)
+	switch statusFilter {
+	case "trash":
+		query = query.Where("is_trashed = ?", true)
+	case "all_with_trash":
+		// Explicitly requested full view includes the recycle bin and accepted plans.
+	default:
+		query = query.Where("is_trashed = ?", false)
+		switch statusFilter {
+		case "", "all":
+			acceptedActions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, ActionStatusAccepted)
+			query = query.Where("(action_id = '' OR action_id NOT IN (?))", acceptedActions)
+		case "pending_approval":
+			pendingActions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status IN ?", eid, ownerID, []string{ActionStatusDraft, ActionStatusReadyToConfirm})
+			query = query.Where("(status = ? OR action_id IN (?))", ActionPlanStatusDraft, pendingActions)
+		case "running":
+			actions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, ActionStatusExecuting)
+			query = query.Where("action_id IN (?)", actions)
+		case "pending_review":
+			actions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, ActionStatusAwaitingReview)
+			query = query.Where("action_id IN (?)", actions)
+		case "needs_action":
+			actions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, ActionStatusNeedsAttention)
+			query = query.Where("action_id IN (?)", actions)
+		case "completed", ActionStatusAccepted:
+			actions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, ActionStatusAccepted)
+			query = query.Where("action_id IN (?)", actions)
+		case ActionStatusExecuting, ActionStatusAwaitingReview, ActionStatusNeedsAttention, ActionStatusReadyToConfirm:
+			actions := DB.Model(&ActionRecord{}).Select("action_id").
+				Where("eid = ? AND owner_id = ? AND status = ?", eid, ownerID, statusFilter)
+			query = query.Where("action_id IN (?)", actions)
+		default:
+			query = query.Where("status = ?", statusFilter)
+		}
+	}
+	if typeFilter != "" && typeFilter != "all" {
+		opportunityIDs := DB.Model(&ActionOpportunityRecord{}).
+			Select("opportunity_id").
+			Where("eid = ? AND owner_id = ? AND opportunity_type = ?", eid, ownerID, typeFilter)
+		query = query.Where("opportunity_id IN (?)", opportunityIDs)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var records []*ActionPlanRecord
+	if err := query.Order("updated_time DESC, id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&records).Error; err != nil {
+		return nil, 0, err
+	}
+	return records, total, nil
+}
+
+func TrashActionPlanForUser(ctx context.Context, eid, ownerID int64, planID string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record ActionPlanRecord
+		if err := tx.Where("eid = ? AND owner_id = ? AND plan_id = ?", eid, ownerID, planID).First(&record).Error; err != nil {
+			return err
+		}
+		if record.IsTrashed {
+			return nil
+		}
+		if record.ActionID != "" {
+			var activeRuns int64
+			if err := tx.Model(&ActionRunRecord{}).
+				Where("eid = ? AND action_id = ? AND status IN ?", eid, record.ActionID, []string{ActionRunStatusQueued, ActionRunStatusRunning}).
+				Count(&activeRuns).Error; err != nil {
+				return err
+			}
+			if activeRuns > 0 {
+				return ErrActionPlanHasActiveRun
+			}
+		}
+		result := tx.Model(&ActionPlanRecord{}).
+			Where("eid = ? AND owner_id = ? AND plan_id = ? AND is_trashed = ?", eid, ownerID, planID, false).
+			Update("is_trashed", true)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Model(&ActionOpportunityRecord{}).Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, record.OpportunityID).
+			Update("is_trashed", true).Error
+	})
+}
+
+func RestoreActionPlanForUser(ctx context.Context, eid, ownerID int64, planID string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record ActionPlanRecord
+		if err := tx.Where("eid = ? AND owner_id = ? AND plan_id = ?", eid, ownerID, planID).First(&record).Error; err != nil {
+			return err
+		}
+		if !record.IsTrashed {
+			// Old callers can trash the parent opportunity directly; restoring via Plan is still valid.
+			return tx.Model(&ActionOpportunityRecord{}).Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, record.OpportunityID).
+				Update("is_trashed", false).Error
+		}
+		result := tx.Model(&ActionPlanRecord{}).
+			Where("eid = ? AND owner_id = ? AND plan_id = ? AND is_trashed = ?", eid, ownerID, planID, true).
+			Update("is_trashed", false)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Model(&ActionOpportunityRecord{}).Where("eid = ? AND owner_id = ? AND opportunity_id = ?", eid, ownerID, record.OpportunityID).
+			Update("is_trashed", false).Error
+	})
+}
+
+func DeleteActionPlanForUser(ctx context.Context, eid, ownerID int64, planID string) error {
+	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record ActionPlanRecord
+		if err := tx.Where("eid = ? AND owner_id = ? AND plan_id = ?", eid, ownerID, planID).First(&record).Error; err != nil {
+			return err
+		}
+		if record.ActionID != "" {
+			return ErrActionPlanHasDependents
+		}
+		var resultCount int64
+		if err := tx.Model(&ActionResultAssetRecord{}).
+			Where("eid = ? AND owner_id = ? AND plan_id = ?", eid, ownerID, planID).
+			Count(&resultCount).Error; err != nil {
+			return err
+		}
+		if resultCount > 0 {
+			return ErrActionPlanHasDependents
+		}
+		if err := tx.Where("eid = ? AND parent_type = ? AND parent_id = ?", eid, ActionSourceParentPlan, planID).Delete(&ActionSourceRefRecord{}).Error; err != nil {
+			return err
+		}
+		result := tx.Where("eid = ? AND owner_id = ? AND plan_id = ?", eid, ownerID, planID).Delete(&ActionPlanRecord{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
 }
 
 func GetActionPlanByOpportunityForUser(ctx context.Context, eid, ownerID int64, opportunityID string) (*ActionPlanAggregate, error) {

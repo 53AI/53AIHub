@@ -4,9 +4,11 @@ import { LoadingOutlined } from "@ant-design/icons";
 import enterpriseApi, { type InitRequest } from "@/api/modules/enterprise";
 import { t } from "@/locales";
 import { getEmailRules } from "@/utils/form-rules";
+import { buildUrl } from "@/utils/router";
 import { usePasswordRules } from "@/hooks/usePasswordPolicy";
 import { noSpaceKeydownHandler } from "@km/shared-utils";
 import { getPublicPath } from "@/utils/config";
+import { SafeImage } from "@km/shared-components-react";
 
 const COUNTDOWN_DURATION = 3;
 const COUNTDOWN_INTERVAL = 1000;
@@ -14,28 +16,28 @@ const COUNTDOWN_INTERVAL = 1000;
 const PLATFORM_CONFIG = {
   17: {
     name: "阿里百炼",
-    icon: getPublicPath("/images/platform/alibaba_bailian.png"),
+    icon: "/images/platform/alibaba_bailian.png",
     fields: ["baseURL", "apiKey"] as const,
     defaults: { baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
     labels: { baseURL: "BaseURL", apiKey: "API Key" },
   },
   900: {
     name: "火山方舟",
-    icon: getPublicPath("/images/platform/volcengine.png"),
+    icon: "/images/platform/volcengine.png",
     fields: ["baseURL", "apiKey"] as const,
     defaults: { baseURL: "https://ark.cn-beijing.volces.com/api/v3" },
     labels: { baseURL: "API Base", apiKey: "API Key" },
   },
   44: {
     name: "硅基流动",
-    icon: getPublicPath("/images/platform/siliconflow.png"),
+    icon: "/images/platform/siliconflow.png",
     fields: ["apiKey"] as const,
     defaults: {},
     labels: { apiKey: "API Key" },
   },
   skip: {
     name: '暂不配置（先完成初始化安装，后续在"后台-能力中心配置"）',
-    icon: getPublicPath("/images/platform/other.png"),
+    icon: "/images/platform/other.png",
     fields: [] as const,
     defaults: {},
     labels: {},
@@ -130,7 +132,7 @@ function StepPlatform({ platform, onPlatformChange }: StepPlatformProps) {
             <Select.Option key={key} value={key}>
               <div className="flex items-center gap-2">
                 {cfg.icon && (
-                  <img
+                  <SafeImage
                     src={cfg.icon}
                     alt={cfg.name}
                     className="w-5 h-5 rounded"
@@ -176,9 +178,9 @@ function StepPlatform({ platform, onPlatformChange }: StepPlatformProps) {
           ),
         )}
       {platform == "skip" && (
-        <img
+        <SafeImage
           className="w-full max-w-[580px] block mx-auto"
-          src={getPublicPath("/images/guide/platform_empty.png")}
+          src={"/images/guide/platform_empty.png"}
         />
       )}
     </>
@@ -250,7 +252,7 @@ export function GuideView() {
       setCountdown((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current!);
-          window.location.href = "/";
+          window.location.href = buildUrl("/");
           return 0;
         }
         return prev - 1;
@@ -348,9 +350,9 @@ export function GuideView() {
   return (
     <div className="h-full overflow-y-auto bg-gradient-to-b from-[#F5F7FF] to-[#FFFFFF]">
       <div className="px-4 py-6 sm:px-12 sm:py-10">
-        <img
+        <SafeImage
           className="h-10 sm:h-[65px]"
-          src={getPublicPath("/images/logo2.png")}
+          src={"/images/logo2.png"}
         />
       </div>
       <div className="w-full sm:w-[90%] lg:w-[65%] mx-auto pt-6 sm:pt-10 px-4 sm:px-8">
@@ -402,7 +404,7 @@ export function GuideView() {
             <StepSuccess
               initializing={initializing}
               countdown={countdown}
-              onJump={() => (window.location.href = "/")}
+              onJump={() => (window.location.href = buildUrl("/"))}
             />
           )}
         </Form>

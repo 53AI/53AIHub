@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Button, Drawer, Modal, Form, Input, message, Tag, Tooltip } from "antd";
-import { SvgIcon, IconAction } from "@km/shared-components-react";
+import { SvgIcon, IconAction, SafeImage } from "@km/shared-components-react";
 import { t } from "@/locales";
 import platformSettingsApi from "@/api/modules/platform-settings";
 import channelApi from "@/api/modules/channel";
@@ -398,7 +398,7 @@ export function PlatformFileParser() {
               >
                 {/* 左侧：图标和名称 */}
                 <div className="flex-shrink-0 w-[300px] flex items-center gap-3">
-                  <img
+                  <SafeImage
                     src={config.icon}
                     alt={config.name}
                     className="w-8 h-8"
@@ -481,7 +481,7 @@ export function PlatformFileParser() {
           {/* 左侧：图标和名称 */}
           <div className="flex-shrink-0 w-[300px] flex items-center gap-3">
             {selectedRecordingModel?.icon ? (
-              <img
+              <SafeImage
                 src={selectedRecordingModel.icon}
                 alt={selectedRecordingModel.label}
                 className="w-8 h-8 object-contain"
@@ -542,7 +542,7 @@ export function PlatformFileParser() {
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10">
-                    <img
+                    <SafeImage
                       src={config.icon}
                       alt={config.name}
                       className="w-10 h-10"
@@ -577,7 +577,7 @@ export function PlatformFileParser() {
         title={
           <div className="flex items-center gap-2">
             {currentConfig && (
-              <img
+              <SafeImage
                 src={currentConfig.icon}
                 alt={currentConfig.name}
                 className="w-8 h-8"

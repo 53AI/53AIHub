@@ -8,7 +8,7 @@ import {
   useMemo,
 } from "react";
 import { Tooltip } from "antd";
-import { Dropdown, Search } from "@km/shared-components-react";
+import { Dropdown, Search, SafeImage } from "@km/shared-components-react";
 import type { MenuProps } from "antd";
 import { SvgIcon } from "@km/shared-components-react";
 import { getPublicPath } from "@/utils/config";
@@ -528,8 +528,8 @@ export const GraphViewerWidget = forwardRef<GraphViewerWidgetRef, GraphViewerWid
         {/* Empty state */}
         {empty && (
           <div className="absolute inset-0 z-10 bg-[#F5F6FA] flex flex-col items-center justify-center">
-            <img
-              src={getPublicPath("/images/library/graph_empty.png")}
+            <SafeImage
+              src={"/images/library/graph_empty.png"}
               alt=""
               className="w-[480px]"
             />

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" fill="none">
+  <!-- 空状态插画:麦克风 + 声波。颜色由 Flutter 侧 ColorFilter 统一着色,这里只画形状。 -->
+  <circle cx="72" cy="72" r="56" stroke="#9E9E9E" stroke-width="3" opacity="0.4"/>
+  <rect x="58" y="30" width="28" height="52" rx="14" stroke="#757575" stroke-width="5"/>
+  <path d="M44 70v6a28 28 0 0 0 56 0v-6" stroke="#757575" stroke-width="5" stroke-linecap="round"/>
+  <path d="M72 104v14M58 118h28" stroke="#757575" stroke-width="5" stroke-linecap="round"/>
+  <path d="M22 60c-4 6-4 18 0 24" stroke="#BDBDBD" stroke-width="4" stroke-linecap="round"/>
+  <path d="M122 60c4 6 4 18 0 24" stroke="#BDBDBD" stroke-width="4" stroke-linecap="round"/>
+</svg>

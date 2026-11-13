@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -14,7 +15,10 @@ import (
 	"github.com/53AI/53AIHub/model"
 	rag "github.com/53AI/53AIHub/service/rag"
 	relaymodel "github.com/songquanpeng/one-api/relay/model"
+	"gorm.io/gorm"
 )
+
+var ErrInvalidRecordingVoiceModel = errors.New("录音语音模型不存在或无效")
 
 type RecordingAdminService struct {
 	eid int64
@@ -37,7 +41,8 @@ type RecordingConfigResult struct {
 	// InsightRegenerateEnabled 企业级开关：是否允许重新生成洞察（未配置时视为允许）。
 	InsightRegenerateEnabled bool `json:"insight_regenerate_enabled"`
 	// ActionOpportunityAutoDetectEnabled 企业级开关：洞察完成后是否自动发现行动建议。
-	ActionOpportunityAutoDetectEnabled bool `json:"action_opportunity_auto_detect_enabled"`
+	ActionOpportunityAutoDetectEnabled bool                              `json:"action_opportunity_auto_detect_enabled"`
+	TranscriptCorrection               *model.TranscriptCorrectionConfig `json:"transcript_correction,omitempty"`
 }
 
 func (s *RecordingAdminService) GetRecordingConfig(ctx context.Context) (*RecordingConfigResult, error) {
@@ -57,12 +62,30 @@ func (s *RecordingAdminService) GetRecordingConfig(ctx context.Context) (*Record
 		MemoryExtraction:                   config.MemoryExtraction,
 		InsightRegenerateEnabled:           model.IsInsightRegenerateEnabled(s.eid),
 		ActionOpportunityAutoDetectEnabled: config.ActionOpportunityAutoDetectEnabled,
+		TranscriptCorrection:               config.TranscriptCorrection,
 	}, nil
 }
 
-func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *model.MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled *bool) error {
+func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabled *bool, parserPlatform *string, voiceModelID *int64, voiceModelName *string, inferenceModelID *int64, inferenceModelName *string, recordingAgentEnabled *bool, multiPerspectiveEnabled *bool, memoryExtraction *model.MemoryExtractionConfig, insightRegenerateEnabled *bool, actionOpportunityAutoDetectEnabled *bool, transcriptCorrection ...*model.TranscriptCorrectionConfig) error {
 	if parserPlatform != nil && *parserPlatform != "" && !IsValidParserPlatform(*parserPlatform) {
 		return fmt.Errorf("不支持的解析平台: %s", *parserPlatform)
+	}
+	var voiceChannel *model.Channel
+	if voiceModelID != nil && *voiceModelID < 0 {
+		return fmt.Errorf("%w：渠道 ID 不能为负数", ErrInvalidRecordingVoiceModel)
+	}
+	if voiceModelID != nil && *voiceModelID > 0 {
+		channel, err := model.GetChannelByID(*voiceModelID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w：渠道不存在", ErrInvalidRecordingVoiceModel)
+		}
+		if err != nil {
+			return fmt.Errorf("查询录音语音模型渠道失败: %w", err)
+		}
+		if channel.Eid != s.eid || !model.IsVoiceModelChannel(channel) {
+			return fmt.Errorf("%w：渠道不属于当前企业或不是语音模型渠道", ErrInvalidRecordingVoiceModel)
+		}
+		voiceChannel = channel
 	}
 
 	// 显式变更语音模型时，parser_platform 必须同步为该模型（{voice|openai}:{channel_type}:{model_name}）。
@@ -75,7 +98,11 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 			modelID = cfg.VoiceModelID
 		}
 		if modelID > 0 {
-			if ch, chErr := model.GetChannelByID(modelID); chErr == nil && model.IsVoiceModelChannel(ch) {
+			ch := voiceChannel
+			if ch == nil {
+				ch, _ = model.GetChannelByID(modelID)
+			}
+			if ch != nil {
 				prefix := "voice"
 				if model.IsOpenAIAudioChannel(ch) {
 					prefix = "openai"
@@ -88,7 +115,7 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 
 	if voiceModelID != nil && *voiceModelID > 0 && (parserPlatform == nil || *parserPlatform == "") {
 		parserPlatformValue := ""
-		if ch, chErr := model.GetChannelByID(*voiceModelID); chErr == nil && model.IsVoiceModelChannel(ch) {
+		if ch := voiceChannel; ch != nil {
 			if model.IsOpenAIAudioChannel(ch) {
 				parserPlatformValue = fmt.Sprintf("openai:%d", ch.Type)
 			} else {
@@ -115,7 +142,19 @@ func (s *RecordingAdminService) UpdateRecordingConfig(ctx context.Context, enabl
 		parserPlatform = &parserPlatformValue
 	}
 
-	if err := model.PatchRecordingConfig(s.eid, enabled, parserPlatform, voiceModelID, voiceModelName, inferenceModelID, inferenceModelName, recordingAgentEnabled, multiPerspectiveEnabled, memoryExtraction, insightRegenerateEnabled, actionOpportunityAutoDetectEnabled); err != nil {
+	if len(transcriptCorrection) > 0 && transcriptCorrection[0] != nil {
+		selection := transcriptCorrection[0]
+		if selection.ModelChannelID < 0 || (selection.ModelChannelID == 0 && selection.ModelName != "") || (selection.ModelChannelID > 0 && selection.ModelName == "") {
+			return fmt.Errorf("转写校正模型配置不完整")
+		}
+		if selection.ModelChannelID > 0 {
+			ch, err := model.GetChannelByID(selection.ModelChannelID)
+			if err != nil || ch.Eid != s.eid || !model.IsModelInChannelModels(selection.ModelName, ch.Models) {
+				return fmt.Errorf("转写校正模型不存在或未配置在指定渠道")
+			}
+		}
+	}
+	if err := model.PatchRecordingConfig(s.eid, enabled, parserPlatform, voiceModelID, voiceModelName, inferenceModelID, inferenceModelName, recordingAgentEnabled, multiPerspectiveEnabled, memoryExtraction, insightRegenerateEnabled, actionOpportunityAutoDetectEnabled, transcriptCorrection...); err != nil {
 		return fmt.Errorf("更新录音配置失败: %w", err)
 	}
 
@@ -517,7 +556,7 @@ func (s *RecordingAdminService) ListFileSummaries(ctx context.Context, fileID in
 	hasMinutes := false
 
 	for _, summary := range summaries {
-		if summary.TemplateID == -1 || summary.TemplateID == -2 {
+		if summary.TemplateID < 0 {
 			continue
 		}
 		if summary.TemplateID == 0 {
@@ -557,6 +596,9 @@ func (s *RecordingAdminService) DeleteFileSummary(ctx context.Context, summaryID
 	summary, err := model.GetRecordingFileSummaryByID(summaryID)
 	if err != nil {
 		return fmt.Errorf("总结记录不存在: %w", err)
+	}
+	if summary.TemplateID < 0 {
+		return fmt.Errorf("系统转写记录不能作为总结删除")
 	}
 
 	file, err := model.GetFileByID(s.eid, summary.FileID)

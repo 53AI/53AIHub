@@ -73,6 +73,11 @@ export interface BubbleAssistantProps {
   content?: string;
   suggestions?: Suggestion[];
   avatar?: string;
+  /**
+   * 自定义头像渲染（如业务侧的安全图片组件：失败重试 + 兜底图）。
+   * 传入时优先于 [avatar] 的默认 `<img>`，组件库本身不引入任何业务依赖。
+   */
+  avatarSlot?: React.ReactNode;
   showAvatar?: boolean;
   markdownOptions?: any;
   reasoning?: string;
@@ -107,6 +112,7 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
   content = "",
   suggestions = [],
   avatar = "",
+  avatarSlot,
   showAvatar = false,
   markdownOptions = {},
   reasoning = "",
@@ -172,10 +178,14 @@ const BubbleAssistant: React.FC<BubbleAssistantProps> = ({
 
   return (
     <div className={`x-assistant-bubble ${className || ""}`} style={style}>
-      {avatar && (
-        <div className="x-assistant-bubble__avatar">
-          <img src={avatar} alt="Assistant" />
-        </div>
+      {avatarSlot ? (
+        <div className="x-assistant-bubble__avatar">{avatarSlot}</div>
+      ) : (
+        avatar && (
+          <div className="x-assistant-bubble__avatar">
+            <img src={avatar} alt="Assistant" />
+          </div>
+        )
       )}
       <div className="x-assistant-bubble__content">
         {header}

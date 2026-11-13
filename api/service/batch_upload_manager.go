@@ -71,6 +71,8 @@ type FileUpload struct {
 	SpeedHistory []int64          `json:"speed_history,omitempty"`
 	DatabaseID   int64            `json:"database_id"` // 数据库中的文件ID
 	FileID       int64            `json:"file_id"`     // 数据库中的File表ID
+	// RecordingStartTime 开始录音时间（毫秒，批次初始化时逐文件携带；0 表示未记录）
+	RecordingStartTime int64 `json:"recording_start_time"`
 }
 
 // ChunkUploadInfo 分片上传信息
@@ -114,6 +116,8 @@ type UploadTask struct {
 	IP            string
 	DuplicateMode DuplicateMode
 	ParseType     string
+	// RecordingStartTime 开始录音时间（毫秒），来自批次逐文件元数据
+	RecordingStartTime int64
 }
 
 // DuplicateMode 同名文件处理模式
@@ -137,6 +141,9 @@ type FileStructureItem struct {
 	IsDirectory  bool   `json:"is_directory"`
 	ParentPath   string `json:"parent_path"`
 	Depth        int    `json:"depth"`
+	// RecordingStartTime 开始录音时间（毫秒，可选）。录音导入场景由前端逐文件上报，
+	// 同一批次各文件可不同；普通文档会被忽略（仅录音来源落库）。
+	RecordingStartTime int64 `json:"recording_start_time"`
 }
 
 // BatchInitRequest 批量上传初始化请求
@@ -212,14 +219,15 @@ func (m *BatchUploadManager) CreateBatch(eid, userID int64, req *BatchInitReques
 		if !item.IsDirectory {
 			fileID := m.generateFileID()
 			files[fileID] = &FileUpload{
-				ID:           fileID,
-				RelativePath: item.RelativePath,
-				Status:       "queued",
-				Progress:     0,
-				TotalSize:    item.Size,
-				StartTime:    time.Now(),
-				UpdateTime:   time.Now(),
-				SpeedHistory: make([]int64, 0),
+				ID:                 fileID,
+				RelativePath:       item.RelativePath,
+				Status:             "queued",
+				Progress:           0,
+				TotalSize:          item.Size,
+				StartTime:          time.Now(),
+				UpdateTime:         time.Now(),
+				SpeedHistory:       make([]int64, 0),
+				RecordingStartTime: item.RecordingStartTime,
 			}
 
 			filePath := dirManager.GetDirectoryPath(req.BasePath, item.RelativePath)
@@ -565,7 +573,7 @@ func (m *BatchUploadManager) HandleInstantUpload(task *UploadTask, existingUploa
 		return fmt.Errorf("获取知识库信息失败: %v", err)
 	}
 
-	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, existingUploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID, task.GroupID)
+	fileID, err := dirManager.CreateFileRecord(task.EID, task.LibraryID, task.RelativePath, existingUploadFile.ID, task.BasePath, task.UserID, task.DuplicateMode, library.IsPersonalLibrary(), task.OriginType, task.OriginSource, task.OriginRefID, task.GroupID, task.RecordingStartTime)
 	if err != nil {
 		return fmt.Errorf("创建文件记录失败: %v", err)
 	}

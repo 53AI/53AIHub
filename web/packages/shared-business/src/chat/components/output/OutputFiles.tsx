@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Tooltip } from "antd";
-import { SvgIcon, FileIcon } from "@km/shared-components-react";
+import { SvgIcon, FileIcon, SafeImage } from "@km/shared-components-react";
 import { formatFileInfo } from "@km/shared-utils";
 import { useTranslation } from "../../i18n";
 import type { OutputFile } from "../../types/message";
@@ -69,7 +69,7 @@ export function OutputFiles({ files, onPreview, onFavorite, onCheckFavorite, cla
               </span>
             </div>
             <div className="w-20 relative overflow-hidden rounded">
-              <img src="/images/output-file.png" alt="" className="w-full h-full object-cover" />
+              <SafeImage src="/images/output-file.png" alt="" className="w-full h-full object-cover" />
               {onFavorite && (
                 <Tooltip
                   title={file.is_favorite ? t("action.unfavorite") : t("action.favorite")}

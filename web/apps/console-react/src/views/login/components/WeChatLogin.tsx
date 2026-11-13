@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Spin, Button } from "antd";
 import { api_host, official_id, getRealPath, base_path } from "@/utils/config";
 import { useBasicLayout } from "@/hooks/useBasicLayout";
+import { SafeImage } from "@km/shared-components-react";
 
 interface WeChatLoginProps {
   width?: string;
@@ -79,8 +80,8 @@ export function WeChatLogin(props: WeChatLoginProps) {
         className="flex flex-col justify-center items-center"
       >
         <div className="w-[220px] h-[220px] border relative rounded-lg overflow-hidden">
-          <img
-            src={getRealPath("/images/login/wecom_login.png")}
+          <SafeImage
+            src={"/images/login/wecom_login.png"}
             alt=""
             className="w-full h-full object-cover"
           />
