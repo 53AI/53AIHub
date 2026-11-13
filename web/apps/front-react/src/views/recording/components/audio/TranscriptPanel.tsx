@@ -200,7 +200,7 @@ export function TranscriptPanel({
         onCancel={() => setRenameTarget(null)}
         okText="确定"
         cancelText="取消"
-        destroyOnClose
+        destroyOnHidden
       >
         <Input
           value={renameValue}

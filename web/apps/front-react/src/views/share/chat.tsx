@@ -321,6 +321,7 @@ export function ShareChatView() {
         <div className="flex-none h-[110px] flex items-center gap-2 max-md:h-20 border-b md:px-10 px-3">
           <SafeImage
             src={user?.avatar || "/images/default_avatar.png"}
+            kind="user"
             title={user?.nickname}
             className="w-14 h-14 rounded-full"
             alt=""
@@ -440,6 +441,7 @@ export function ShareChatView() {
               <>
                 <SafeImage
                   src={agent?.logo}
+                  kind="agent"
                   title={agent?.name}
                   className="h-6 rounded-full"
                   alt=""

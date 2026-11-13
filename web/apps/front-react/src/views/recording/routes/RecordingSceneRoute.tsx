@@ -44,7 +44,7 @@ export function RecordingSceneRoute() {
   if (status === 'loading') {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" description="加载中..." />
       </div>
     )
   }

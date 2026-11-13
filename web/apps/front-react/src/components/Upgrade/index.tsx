@@ -328,6 +328,7 @@ export const Upgrade = forwardRef<UpgradeRef, UpgradeProps>(({ onSuccess }, ref)
                               {item.agents.map((agent, idx) => (
                                 <li key={idx} className="flex items-center gap-2 w-full" title={agent.name}>
                                   <SafeImage
+                                    kind="agent"
                                     src={agent.logo || ''}
                                     alt={agent.name}
                                     className="flex-none w-4 h-4 rounded-full overflow-hidden"

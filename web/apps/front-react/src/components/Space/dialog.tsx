@@ -445,7 +445,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               className="h-8 px-2 rounded flex items-center gap-2 text-secondary hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <SafeImage src={item.icon} className="size-4" alt="" />
+              <SafeImage src={item.icon} kind="space" className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
                 className="block md:hidden md:group-hover:block"
@@ -462,7 +462,7 @@ export const SpaceDialog = forwardRef<SpaceDialogRef, SpaceDialogProps>(
               className="h-8 px-2 rounded flex items-center gap-2 text-secondary hover:bg-[#F2F3F5] cursor-pointer group overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <SafeImage src={item.icon} className="size-4" alt="" />
+              <SafeImage src={item.icon} kind="knowledge" className="size-4" alt="" />
               <span className="flex-1 text-sm text-[#1D1E1F] truncate">{item.name}</span>
               <CloseCircleFilled
                 className="block md:hidden md:group-hover:block"

@@ -267,6 +267,7 @@ export function SkillDetailView() {
 
           <div className="flex items-start gap-3 mb-5">
             <SafeImage
+              kind="skill"
               className="flex-none size-14 rounded-lg object-cover"
               src={skill.logo}
               alt={skill.display_name}

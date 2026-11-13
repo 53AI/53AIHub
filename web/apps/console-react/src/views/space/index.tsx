@@ -1,5 +1,5 @@
 import { Search, SvgIcon, SafeImage, IconAction } from "@km/shared-components-react";
-import { Table } from "antd";
+import { Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -75,17 +75,23 @@ export function SpacePage() {
 				title: t("common.name"),
 				dataIndex: "name",
 				key: "name",
-				minWidth: 160,
-				maxWidth: 200,
-				ellipsis: true,
+				// ellipsis 会把 tableLayout 强成 fixed，而 rc-table 仅在 auto 下才写 minWidth，
+				// 所以列宽必须用 width（fixed 布局下才会写进 colgroup）
+				width: 200,
+				ellipsis: { showTitle: false },
 				render: (_, record) => (
-					<div className="flex items-center gap-2">
+					<div className="flex items-center gap-2 min-w-0">
 						<SafeImage
 							src={record.icon}
-							className="size-7 rounded-full"
+							className="size-7 flex-none rounded-full"
 							alt={record.name}
 						/>
-						<span>{record.name}</span>
+						<Typography.Text
+							ellipsis={{ tooltip: record.name }}
+							className="!block min-w-0"
+						>
+							{record.name}
+						</Typography.Text>
 					</div>
 				),
 			},
@@ -93,29 +99,32 @@ export function SpacePage() {
 				title: t("common.creator"),
 				dataIndex: "owner_info",
 				key: "owner_info",
-				minWidth: 160,
-				maxWidth: 200,
-				ellipsis: true,
+				width: 200,
+				ellipsis: { showTitle: false },
 				render: (_, record) => {
-					if (record.is_default) {
-						return (
-							<div className="flex items-center gap-2">
-								<div className="size-7 bg-[#E0EEFF] flex items-center justify-center rounded-full">
+					const creatorName = record.is_default
+						? t("space.system")
+						: (record.owner_info as any)?.nickname || "--";
+					return (
+						<div className="flex items-center gap-2 min-w-0">
+							{record.is_default ? (
+								<div className="size-7 flex-none bg-[#E0EEFF] flex items-center justify-center rounded-full">
 									<div className="text-xs text-brand">{t("common.system_avatar")}</div>
 								</div>
-								{t("space.system")}
-							</div>
-						);
-					}
-					return (
-						<div className="flex items-center gap-2">
-							<SafeImage
-								src={(record.owner_info as any)?.avatar || ""}
-								className="size-7 rounded-full"
-								alt=""
-								kind="user"
-							/>
-							{(record.owner_info as any)?.nickname || "--"}
+							) : (
+								<SafeImage
+									src={(record.owner_info as any)?.avatar || ""}
+									className="size-7 flex-none rounded-full"
+									alt=""
+									kind="user"
+								/>
+							)}
+							<Typography.Text
+								ellipsis={{ tooltip: creatorName }}
+								className="!block min-w-0"
+							>
+								{creatorName}
+							</Typography.Text>
 						</div>
 					);
 				},
@@ -124,14 +133,14 @@ export function SpacePage() {
 				title: t("created_time"),
 				dataIndex: "created_time",
 				key: "created_time",
-				minWidth: 160,
+				width: 180,
 				render: (time: string) => time || "--",
 			},
 			{
 				title: t("knowledge.name"),
 				dataIndex: "library_count",
 				key: "library_count",
-				minWidth: 120,
+				width: 120,
 			},
 			{
 				title: t("operation"),

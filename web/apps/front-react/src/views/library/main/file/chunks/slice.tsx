@@ -1404,7 +1404,7 @@ export function SliceView({ onStatusChange }: SliceViewProps) {
         open={saveModalVisible}
         title={t("common.tip")}
         closable={true}
-        maskClosable={false}
+        mask={{ closable: false }}
         onCancel={handleSaveModalCancel}
         footer={
           <div className="flex justify-end gap-2">

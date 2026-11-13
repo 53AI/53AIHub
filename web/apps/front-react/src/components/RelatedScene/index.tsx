@@ -94,7 +94,7 @@ export function RelatedScene({ isWorkflow = false, output, onInitAgent }: Relate
             className="related-scene-card"
             onClick={() => handleNextAgent(item)}
           >
-            <SafeImage className="related-scene-logo" src={item.logo} alt={item.name} />
+            <SafeImage className="related-scene-logo" src={item.logo} kind="agent" alt={item.name} />
             <div className="related-scene-info">
               <h6 className="related-scene-name">{item.name}</h6>
               <p className="related-scene-desc">{item.description}</p>

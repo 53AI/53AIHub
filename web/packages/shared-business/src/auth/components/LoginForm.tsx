@@ -363,7 +363,7 @@ export function LoginForm({
       centered
       className="login-modal"
       width={400}
-      destroyOnClose
+      destroyOnHidden
     >
       {content}
     </Modal>

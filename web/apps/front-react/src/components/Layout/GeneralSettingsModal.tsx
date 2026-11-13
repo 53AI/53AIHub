@@ -242,6 +242,7 @@ export function GeneralSettingsModal({
                       className={`w-8 h-8 rounded-sm flex items-center justify-center`}
                     >
                       <SafeImage
+                        kind="tool"
                         src={tool.logo}
                         alt={tool.name}
                         className="w-full h-full object-contain"

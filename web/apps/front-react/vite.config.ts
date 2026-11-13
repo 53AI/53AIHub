@@ -136,6 +136,9 @@ export default defineConfig(({ mode, command }) => {
       allowedHosts: ['vevadob.kmtest.53ai.com','wescrm.kmtest.53ai.com', '352vtkg.kmtest.53ai.com', 'ct11fmn.kmtest.53ai.com', 'testkmdomain.kmtest.53ai.com']
     },
     build: {
+      // 关闭逐 chunk 的 gzip 体积统计：252 个 chunk 每个都跑一次 zlib 压缩，
+      // 只为在日志里打印 "gzip: xxx kB"，纯浪费构建时间。
+      reportCompressedSize: false,
       rollupOptions: {
        /* # 模板入口 history 路由回退：入口文件名后的任意路径回退到对应入口页
         location /website.html/ { try_files $uri /website.html; }

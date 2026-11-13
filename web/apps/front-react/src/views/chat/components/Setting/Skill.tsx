@@ -123,7 +123,7 @@ export default function SkillPanel({ agentId, onClose, onUseSkill }: SkillPanelP
         onCancel={() => setShowAddPicker(false)}
         footer={null}
         width={1260}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="h-[732px] flex flex-col">
           {/* 自定义 Header */}

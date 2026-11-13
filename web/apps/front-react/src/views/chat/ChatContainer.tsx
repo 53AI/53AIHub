@@ -2611,6 +2611,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 								{isOpenclaw ? (
 									<div className="flex min-w-0 items-center gap-2">
 										<SafeImage
+										  kind="agent"
 											className="size-5 shrink-0 rounded-full"
 											src={currentAgent?.logo}
 											alt={agentInfo?.name || "Agent"}
@@ -2907,6 +2908,7 @@ const ChatContainerInner = forwardRef<ChatContainerRef, ChatContainerProps>(
 					<div className="h-8 px-2 rounded-full flex items-center gap-1.5 bg-[#F1F2F3] cursor-pointer hover:bg-[#E1E2E3]">
 						{!isOpenclaw && (
 							<SafeImage
+							  kind="agent"
 								className="w-4 h-4 rounded-full"
 								src={agentInfo.logo}
 								alt={agentInfo.name}

@@ -166,6 +166,7 @@ export const SetIcon = forwardRef<SetIconRef, SetIconProps>(
         ) : (
           defaultIcon && (
             <SafeImage
+              kind="knowledge"
               className="size-7 object-cover -translate-y-[60px]"
               style={{ filter: defaultBg ? `drop-shadow(${defaultBg.dark} 0 60px)` : undefined }}
               src={defaultIcon}

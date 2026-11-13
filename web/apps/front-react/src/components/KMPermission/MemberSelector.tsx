@@ -115,7 +115,7 @@ export function MemberSelector({ trigger, onConfirm, resourceType = RESOURCE_TYP
         <div className="member-list">
           {memberList.map((item, index) => (
             <div key={item.value} className="member-item">
-              <SafeImage src={item.avatar} alt="avatar" className="member-avatar" />
+              <SafeImage src={item.avatar} kind="user" alt="avatar" className="member-avatar" />
               <p className="member-name">{item.label}</p>
               <RolePopover
                 value={item.permission}

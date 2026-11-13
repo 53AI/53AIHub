@@ -135,6 +135,7 @@ export function PromptList({
         >
           <div className="flex items-center">
             <SafeImage
+              kind="prompt"
               className="flex-none size-12 mr-3 rounded-lg object-cover"
               src={item.logo}
               alt={item.name}

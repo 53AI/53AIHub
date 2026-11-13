@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
-import { Empty, Tag } from "antd";
+import { Empty, Tag, Typography } from "antd";
 import { useLibraryStore } from "@/stores/modules/library";
 import { filesApi } from "@/api/modules/files";
 import { formatFile } from "@/api/modules/files/transform";
@@ -128,9 +128,12 @@ export function FileHomeView() {
               {/* Title Column */}
               <div className="flex-1 flex items-center gap-2 overflow-hidden">
                 <SafeImage className="flex-none size-6" src={item.icon} alt="" />
-                <p className="flex-1 text-sm text-[#1D1E1F] truncate">
+                <Typography.Text
+                  ellipsis={{ tooltip: item.name }}
+                  className="!block min-w-0 flex-1 text-sm text-[#1D1E1F]"
+                >
                   {item.name}
-                </p>
+                </Typography.Text>
               </div>
 
               {/* Owner Column */}

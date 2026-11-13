@@ -65,7 +65,7 @@ export function EntityFormDrawer({
   // 暂存区(stagedPickedEntities / stagedDeletedFactIds)在两种模式下都要清空:
   //   - edit:防止上次打开残留的暂存项污染下一次编辑;新 currentEntity 已就位,旧暂存项已无意义。
   //   - add:同上,且 add 模式不会产生 deleted 项,但保险起见也清。
-  // 【bug 修复】form 实例挂在常驻的 EntityFormDrawer 上,destroyOnClose 只销毁字段组件、
+  // 【bug 修复】form 实例挂在常驻的 EntityFormDrawer 上,destroyOnHidden 只销毁字段组件、
   // 不清 form store;而 setFieldsValue 内部是深合并(@rc-component/form useForm#setFieldsValue
   // 走 set.merge)而非整体替换。于是"先编辑属性有值的实体 A,再编辑属性为空(或缺字段)的
   // 实体 B"时,B 的属性框会残留 A 的旧值,保存时残留值还会被当成 B 的变更提交。
@@ -206,7 +206,7 @@ export function EntityFormDrawer({
       open={open}
       onClose={onClose}
       title={mode === 'edit' ? '编辑记忆' : '添加记忆'}
-      destroyOnClose
+      destroyOnHidden
       footer={
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>取消</Button>

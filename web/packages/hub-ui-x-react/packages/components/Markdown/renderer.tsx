@@ -22,11 +22,16 @@ import { fixTableColumns } from "./markdown-fix-table";
 import { normalizeBlockMathTrailing, splitPendingMath } from "./markdown-math";
 import { applySourceReferences } from "./source-markup";
 import Code from "./components/code";
-import Mermaid from "./components/mermaid";
-import Mindmap from "./components/mindmap";
-import Echarts from "./components/echarts";
-import Chart from "./components/chart";
 import { copyToClip } from "../../utils/copy";
+
+// 重型可视化渲染器改为懒加载：mermaid/mindmap/echarts/chart 各自携带
+// 大体积依赖（mermaid 549KB、echarts+zrender 3.8MB、chart.js 493KB、
+// markmap 199KB），但只有文档里出现对应代码块时才需要。
+// 静态引入会把它们全部打进 main chunk（实测 4MB，占 51%），拖慢构建与首屏。
+const Mermaid = React.lazy(() => import("./components/mermaid"));
+const Mindmap = React.lazy(() => import("./components/mindmap"));
+const Echarts = React.lazy(() => import("./components/echarts"));
+const Chart = React.lazy(() => import("./components/chart"));
 
 // 注册语言
 hljs.registerLanguage("javascript", javascript);
@@ -110,6 +115,13 @@ const PREVIEW_CLOSE_BTN_STYLE: React.CSSProperties = {
   cursor: "pointer",
   fontSize: 24,
   color: "#fff",
+};
+
+// 懒加载重型图表（mermaid/echarts/chart）时的占位：固定高度避免加载后页面跳动
+const HEAVY_PLACEHOLDER_STYLE: React.CSSProperties = {
+  height: 200,
+  borderRadius: 6,
+  backgroundColor: "var(--hubx-color-bg-secondary, rgba(0, 0, 0, 0.04))",
 };
 
 // tagMap 提取为常量（避免每次 renderTokens 都创建）
@@ -721,7 +733,13 @@ const MdRenderer: React.FC<MdRendererProps> = ({
         style={viewerStyle}
         key={renderKey}
       >
-        {renderedNodes}
+        {/* 懒加载的 mermaid/mindmap/echarts/chart 需要一个 Suspense 边界。
+            fallback 用固定高度占位，避免图表加载完成时页面跳动。 */}
+        <React.Suspense
+          fallback={React.createElement("div", { style: HEAVY_PLACEHOLDER_STYLE })}
+        >
+          {renderedNodes}
+        </React.Suspense>
       </div>
 
       {/* 图片预览弹窗 */}

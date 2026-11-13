@@ -1,6 +1,15 @@
 import { useState, useMemo, type Key } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Table, Tooltip, Modal, Pagination, Button, Checkbox, message } from "antd";
+import {
+  Table,
+  Tooltip,
+  Modal,
+  Pagination,
+  Button,
+  Checkbox,
+  Typography,
+  message,
+} from "antd";
 import { Dropdown, Tabs, SafeImage } from "@km/shared-components-react";
 import { MoreOutlined, DeleteOutlined } from "@ant-design/icons";
 import type { MenuProps, TableColumnsType } from "antd";
@@ -628,19 +637,23 @@ export function ChunkHomeView() {
       title: "文档名称",
       dataIndex: "name",
       key: "name",
-      minWidth: 250,
-      ellipsis: true,
+      // ellipsis 会把 tableLayout 强成 fixed，rc-table 仅在 auto 下才写 minWidth，故用 width
+      width: 280,
+      ellipsis: { showTitle: false },
       render: (name: string, record: FileItem) => (
         <div className="flex items-center gap-3">
           <SafeImage
-            className="size-6 rounded flex items-center justify-center text-white shadow-sm"
+            className="size-6 rounded flex-none items-center justify-center text-white shadow-sm"
             src={record.icon}
             alt=""
           />
-          <div>
-            <p className="text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors">
+          <div className="min-w-0 flex-1">
+            <Typography.Text
+              ellipsis={{ tooltip: name }}
+              className="!block text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors"
+            >
               {name}
-            </p>
+            </Typography.Text>
             <span className="text-xs text-[#999999] mt-1 block">
               <EntityDisplay type="user" mode="name" id={record.user_id} /> ·{" "}
               {record.updated_at}
@@ -884,7 +897,12 @@ export function ChunkHomeView() {
                   alt=""
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-[#1D1E1F] truncate">{record.name}</p>
+                  <Typography.Text
+                    ellipsis={{ tooltip: record.name }}
+                    className="!block text-sm text-[#1D1E1F]"
+                  >
+                    {record.name}
+                  </Typography.Text>
                   <span className="text-xs text-[#999999] mt-1 block truncate">
                     <EntityDisplay type="user" mode="name" id={record.user_id} /> ·{" "}
                     {record.updated_at}

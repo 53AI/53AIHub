@@ -221,7 +221,7 @@ export function CreateAgentDialog({
       onCancel={handleClose}
       footer={null}
       className="add-agent-dialog"
-      destroyOnClose
+      destroyOnHidden
     >
       <div >
         {/* Tab 切换：系统内容 / 三方接入 */}

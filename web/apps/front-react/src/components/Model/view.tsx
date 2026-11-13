@@ -110,6 +110,7 @@ export function ModelView({
         <div className="flex items-center gap-2">
           {modelInfo.icon && showIcon && (
             <SafeImage
+              kind="generic"
               src={modelInfo.icon}
               alt={modelInfo.label}
               className="w-5 h-5 object-contain"

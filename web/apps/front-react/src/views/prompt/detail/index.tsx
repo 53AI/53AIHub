@@ -302,6 +302,7 @@ export function PromptDetailView() {
             {/* 正常内容视图 */}
             <div className="flex items-center gap-3 mb-5">
               <SafeImage
+                kind="prompt"
                 className="flex-none size-14 rounded-lg object-cover"
                 src={detailData.logo}
                 alt={detailData.name}

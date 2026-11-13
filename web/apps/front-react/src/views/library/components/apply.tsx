@@ -153,7 +153,7 @@ export const ApplyDialog = forwardRef<
           <div className="w-full h-10 bg-[#FCFFFE] px-4 flex items-center gap-2 border rounded">
             {resource.icon && (
               <div className="size-6 flex items-center justify-center">
-                <SafeImage src={resource.icon} className="size-full" alt="" />
+                <SafeImage src={resource.icon} kind="generic" className="size-full" alt="" />
               </div>
             )}
             <span className="flex-1 text-sm text-[#4F5052] truncate">

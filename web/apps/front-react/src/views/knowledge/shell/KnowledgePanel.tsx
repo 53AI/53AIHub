@@ -424,8 +424,13 @@ export function KnowledgePanel({
                       : "hover:bg-[#F0F5FF] "
                   }`}
                 >
-                  <div className="size-9 rounded-full overflow-hidden bg-white">
-                    <SafeImage src={item.icon} alt={item.name} className="size-10" />
+                  <div className="size-9 rounded-full overflow-hidden bg-white flex items-center justify-center">
+                    <SafeImage
+                      src={item.icon}
+                      alt={item.name}
+                      kind="space"
+                      className="size-full"
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1">

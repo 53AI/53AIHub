@@ -70,14 +70,25 @@ export const getPublicPath = (path: string): string => {
 }
 
 /**
- * 端侧 ASR 模型基址（silero-vad / whisper-small_timestamped / wespeaker-cnceleb）。
- * 模型不入 git（~268MB），部署三选一：
- *   1. 同源（默认）：CI 构建前跑 scripts/download-asr-models.mjs，模型随 dist 部署
- *   2. CDN/对象存储：注入 window.asr_models_base_url 或 VITE_ASR_MODELS_BASE_URL
- *      （需 CORS 允许 GET；transformers.js 首次拉取后浏览器 Cache API 缓存）
+ * 端侧 ASR 模型基址（silero-vad / zipformer / paraformer / wespeaker）。
+ * 模型不入 git（~256MB），三种部署方式：
+ *   1. OSS/CDN（SaaS 默认）：DEFAULT_ASR_MODELS_BASE_URL 指向 OSS，
+ *      模型不随 dist 部署（省 256MB 传输与构建下载耗时）
+ *   2. 同源 public（私有化/无外网）：.env 里配 VITE_ASR_MODELS_BASE_URL=/models，
+ *      并在构建前跑 scripts/download-asr-models.mjs
  *   3. 线上关闭：localStorage km-live-transcript-disabled=1
- * 优先级：window 全局 > URL 参数 > 构建时 env > 同源 public 路径
+ * 优先级：window 全局 > URL 参数 > 构建时 env > 本处默认值
+ *
+ * 为什么默认值放这里而不是 boot.js：getConfigValue 里 window 优先级最高，
+ * 若在 boot.js 无条件写 window.asr_models_base_url，会盖掉私有化部署的
+ * VITE_ASR_MODELS_BASE_URL 配置。放这里当 defaultValue 才能被 env 覆盖。
  */
+const DEFAULT_ASR_MODELS_BASE_URL = 'https://oss.ibos.cn/common/agenthub/models'
+
 export const asr_models_base_url = formatUrl(
-  getConfigValue('asr_models_base_url', 'VITE_ASR_MODELS_BASE_URL', getPublicPath('models'))
+  getConfigValue(
+    'asr_models_base_url',
+    'VITE_ASR_MODELS_BASE_URL',
+    isPrivatePrem || isOpLocalEnv ? getPublicPath('models') : DEFAULT_ASR_MODELS_BASE_URL
+  )
 )

@@ -242,6 +242,7 @@ function AgentCreatePageContent() {
           <div className="flex items-center gap-2">
             {formData.logo && (
               <SafeImage
+                kind="agent"
                 src={formData.logo}
                 className="w-8 rounded"
                 alt=""

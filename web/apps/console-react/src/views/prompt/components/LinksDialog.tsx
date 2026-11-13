@@ -1,5 +1,5 @@
 import React, { useContext, useMemo } from "react";
-import { Modal, Button, message, Table } from "antd";
+import { Modal, Button, Typography, message, Table } from "antd";
 import {
   useRef,
   useState,
@@ -187,10 +187,20 @@ const LinksDialog = forwardRef<LinksDialogRef>((_, ref) => {
     {
       title: t("default_links.website"),
       dataIndex: "name",
+      ellipsis: { showTitle: false },
       render: (name: string, record: DefaultLinkItem) => (
-        <div className="flex items-center gap-2">
-          <SafeImage className="w-8 h-8 rounded-full" src={record.logo} alt="" />
-          <span className="text-sm text-primary">{name}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <SafeImage
+            className="w-8 h-8 flex-none rounded-full"
+            src={record.logo}
+            alt=""
+          />
+          <Typography.Text
+            ellipsis={{ tooltip: name }}
+            className="!block min-w-0 text-sm text-primary"
+          >
+            {name}
+          </Typography.Text>
         </div>
       ),
     },

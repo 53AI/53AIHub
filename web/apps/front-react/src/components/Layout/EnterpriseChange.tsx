@@ -84,6 +84,7 @@ export function EnterpriseChange({ onClose }: EnterpriseChangeProps) {
                 onClick={() => handleEnterpriseSelect(item)}
               >
                 <SafeImage
+                  kind="space"
                   className="flex-none mr-4 w-[32px] h-[32px] object-cover rounded"
                   src={item.enterprise.logo}
                   alt={item.enterprise.display_name}

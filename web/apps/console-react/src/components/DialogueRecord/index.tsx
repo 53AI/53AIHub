@@ -136,7 +136,8 @@ export function DialogueRecord({
         title: t("summary"),
         dataIndex: "summary_content",
         key: "summary_content",
-        minWidth: 180,
+        // ellipsis 会把 tableLayout 强成 fixed，rc-table 仅在 auto 下才写 minWidth，故用 width
+        width: 240,
         ellipsis: true,
         render: (text: string) => text || "- -",
       },

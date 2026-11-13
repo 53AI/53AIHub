@@ -97,7 +97,7 @@ export type SafeImageProps = Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | '
   borderColor?: string
 }
 
-export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function SafeImage(
+export const SafeImage = forwardRef<HTMLElement, SafeImageProps>(function SafeImage(
   {
     src,
     kind,
@@ -189,11 +189,16 @@ export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function S
     const boxUrl = fallbackUrl ? resolveUrl(fallbackUrl) : null
     return (
       <div
+        // ref 必须挂在每个分支的最外层节点上：antd Tooltip / Dropdown / Table 会把
+        // 子节点的 ref 当作触发器定位依据，只挂在 <img> 分支会导致兜底/加载态定位失效
+        ref={ref as React.Ref<HTMLDivElement>}
         aria-hidden={content ? 'true' : undefined}
         style={{
           display: content ? 'inline-flex' : 'inline-block',
           boxSizing: 'border-box',
-          verticalAlign: 'baseline',
+          // middle 而非 baseline：inline-block 用 baseline 对齐会在底部留出
+          // 字体 descender 的空隙（父容器非 flex 时图标会看起来偏上）。
+          verticalAlign: 'middle',
           userSelect: 'none',
           // 内层 <img> 撑满时不被圆角/裁剪类名裁切，必须由外层裁：className 里的
           // rounded-full / rounded-lg / overflow-hidden 才能生效
@@ -222,6 +227,7 @@ export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function S
             <img
               src={boxUrl}
               alt={alt}
+              onLoad={onLoad}
               style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             />
           ) : null)}
@@ -241,10 +247,14 @@ export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function S
   if (!readySrc && !failed) {
     return (
       <div
+        ref={ref as React.Ref<HTMLDivElement>}
         aria-hidden="true"
         style={{
           borderRadius: roundCss,
-          background: 'rgba(120,120,128,0.12)',
+          // 用 backgroundColor 而非 background 简写：本组件的加载占位分支与兜底分支
+          // 会渲染同构的 <div>，React 复用同一 DOM 节点时若一处用简写、一处用
+          // 长写，会报「Removing background backgroundColor」的混用警告。
+          backgroundColor: 'rgba(120,120,128,0.12)',
           ...customStyle,
         }}
         {...rest}
@@ -254,7 +264,16 @@ export const SafeImage = forwardRef<HTMLImageElement, SafeImageProps>(function S
 
   // 已就绪：渲染已被探针验证过的 URL（同源缓存，即时显示）
   if (readySrc) {
-    return <img ref={ref} src={readySrc} alt={alt} onLoad={onLoad} style={imgStyle} {...rest} />
+    return (
+      <img
+        ref={ref as React.Ref<HTMLImageElement>}
+        src={readySrc}
+        alt={alt}
+        onLoad={onLoad}
+        style={imgStyle}
+        {...rest}
+      />
+    )
   }
 
   // 重试耗尽：走兜底分支（kind / fallback / none）；disableFallback 时等同于 none

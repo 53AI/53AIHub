@@ -18,6 +18,7 @@ import {
   CheckOutlined,
 } from "@ant-design/icons";
 import { useUserStore } from "@/stores/modules/user";
+import { useNotificationStore } from "@/stores/modules/notification";
 import notificationsApi from "@/api/modules/notifications";
 import approvalsApi from "@/api/modules/approvals";
 import { getPublicPath } from "@/utils/config";
@@ -67,13 +68,12 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
   const [markAllReadLoading, setMarkAllReadLoading] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [offset, setOffset] = useState(0);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [messageStats, setMessageStats] = useState({
-    system: 0,
-    pending: 0,
-    mention_comment: 0,
-  });
-  const statsTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const unreadCount = useNotificationStore((s) => s.unreadTotal);
+  const messageStats = useNotificationStore((s) => s.counts);
+  const decreaseUnread = useNotificationStore((s) => s.decreaseUnread);
+  const clearUnread = useNotificationStore((s) => s.clearUnread);
+  const refreshStats = useNotificationStore((s) => s.refresh);
+  const refreshStatsDeferred = useNotificationStore((s) => s.refreshDeferred);
 
   const limit = 20;
 
@@ -147,16 +147,8 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
     }
   };
 
-  // 获取消息统计
-  const fetchMessageStats = async () => {
-    try {
-      const response = await notificationsApi.stats({ scope: "unread" });
-      setUnreadCount(response.total);
-      setMessageStats(response.counts);
-    } catch (error) {
-      console.error("获取消息统计失败:", error);
-    }
-  };
+  // 已读写操作后等 1s 再校正，避开服务端统计的写入延迟
+  const fetchMessageStatsDeferred = () => refreshStatsDeferred();
 
   // 获取消息列表
   const fetchMessages = useCallback(
@@ -211,7 +203,9 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
     try {
       await notificationsApi.read(notification.id);
       notification.is_read = true;
-      setUnreadCount((prev) => Math.max(0, prev - 1));
+      // 本地先递减保证红点即时消失，再由服务端结果校正
+      decreaseUnread(notification.type);
+      fetchMessageStatsDeferred();
     } catch (error) {
       console.error("标记消息已读失败:", error);
     }
@@ -258,7 +252,6 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
         avatar: userStore.info.avatar,
       });
 
-      await fetchMessageStats();
       message.success("申请已通过");
     } catch (error) {
       console.error("同意申请失败:", error);
@@ -280,7 +273,6 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
         avatar: userStore.info.avatar,
       });
 
-      await fetchMessageStats();
       message.success("申请已拒绝");
     } catch (error) {
       console.error("拒绝申请失败:", error);
@@ -320,8 +312,8 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
     try {
       await notificationsApi.read_all();
       setMessages((prev) => prev.map((m) => ({ ...m, is_read: true })));
-      setUnreadCount(0);
-      await fetchMessageStats();
+      clearUnread();
+      fetchMessageStatsDeferred();
       message.success("所有消息已标记为已读");
     } catch (error) {
       console.error("标记所有消息已读失败:", error);
@@ -336,7 +328,8 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
       try {
         await notificationsApi.read(notification.id);
         notification.is_read = true;
-        setUnreadCount((prev) => Math.max(0, prev - 1));
+        decreaseUnread(notification.type);
+        fetchMessageStatsDeferred();
       } catch (error) {
         console.error("标记消息已读失败:", error);
       }
@@ -527,18 +520,8 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
 
   useEffect(() => {
     fetchMessages(true);
-    fetchMessageStats();
-
-    // 设置定时器，每60秒获取一次未读消息统计
-    statsTimerRef.current = setInterval(() => {
-      fetchMessageStats();
-    }, 60000);
-
-    return () => {
-      if (statsTimerRef.current) {
-        clearInterval(statsTimerRef.current);
-      }
-    };
+    // 轮询由 notification store 统一负责（登录后常驻），这里只触发一次即时校正
+    void refreshStats();
   }, []);
 
   useEffect(() => {
@@ -547,6 +530,17 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
     fetchMessages(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlyUnread]); // 仅在 onlyUnread 变化时触发，不依赖 fetchMessages 避免循环
+
+  // 外部受控模式（紧凑模式头像弹层）：antd 不会因 open prop 变化回调 onOpenChange，
+  // 这里补齐"打开即刷新"，否则只能等到下一个 60s 轮询。
+  // fetchMessages(true) 内部已强制 offset=0，不重复重置（否则 loading 时提前返回会留下
+  // offset 与 messages 不一致，滚动加载会重复追加）。
+  useEffect(() => {
+    if (externalOpen !== true) return;
+    fetchMessages(true);
+    void refreshStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalOpen]);
 
   const content = (
     <div className="h-full bg-white rounded-lg shadow-lg flex flex-col">
@@ -689,6 +683,7 @@ export function MessageCenter({ externalOpen, onExternalClose, anchor, children 
           setIsOpen(visible);
           if (visible) {
             fetchMessages(true);
+            void refreshStats();
           }
         }
       }}

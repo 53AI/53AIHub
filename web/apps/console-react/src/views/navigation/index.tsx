@@ -6,6 +6,7 @@ import {
   message,
   Table,
   Tooltip,
+  Typography,
 } from "antd";
 import { HolderOutlined } from "@ant-design/icons";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
@@ -298,18 +299,20 @@ export function NavigationPage() {
       title: t("name"),
       dataIndex: "name",
       key: "name",
-      ellipsis: true,
+      ellipsis: { showTitle: false },
       render: (name: string, record) => (
-        <div className="flex items-center">
+        <div className="flex items-center min-w-0">
           {record.icon && (
             <SafeImage
-              className="w-[18px] h-[18px] mr-2 overflow-hidden"
+              className="w-[18px] h-[18px] mr-2 flex-none overflow-hidden"
               src={record.icon}
               alt=""
               style={{ objectFit: "contain" }}
             />
           )}
-          {name}
+          <Typography.Text ellipsis={{ tooltip: name }} className="!block min-w-0">
+            {name}
+          </Typography.Text>
         </div>
       ),
     },
@@ -329,9 +332,14 @@ export function NavigationPage() {
       title: t("jump_path"),
       dataIndex: "jump_path",
       key: "jump_path",
-      ellipsis: true,
+      ellipsis: { showTitle: false },
       render: (path: string) => (
-        <span className={path ? "" : "text-disabled"}>{path || "--"}</span>
+        <Typography.Text
+          ellipsis={{ tooltip: path }}
+          className={`!block ${path ? "" : "text-disabled"}`}
+        >
+          {path || "--"}
+        </Typography.Text>
       ),
     },
     {

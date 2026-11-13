@@ -237,7 +237,7 @@ export function KnowledgeDirectory({
                     }}
                   />
                 )}
-                <SafeImage src={item.icon} className="size-5" alt="" />
+                <SafeImage src={item.icon} kind="space" className="size-5" alt="" />
                 <Tooltip title={item.name}>
                   <span className="flex-1 text-sm truncate">{item.name}</span>
                 </Tooltip>
@@ -298,7 +298,7 @@ export function KnowledgeDirectory({
                   />
                 )}
                 <div className="size-5 flex items-center justify-center rounded">
-                  <SafeImage src={item.icon} className="size-5" alt="" />
+                  <SafeImage src={item.icon} kind="knowledge" className="size-5" alt="" />
                 </div>
                 <Tooltip title={item.name}>
                   <span className="flex-1 text-sm truncate">{item.name}</span>
@@ -397,7 +397,7 @@ export function KnowledgeDirectory({
                         className="pointer-events-none"
                       />
 
-                      <SafeImage src={record.icon} className="size-5" alt="" />
+                      <SafeImage src={record.icon} kind="knowledge" className="size-5" alt="" />
                       <Tooltip title={record.name}>
                         <span className="flex-1 text-sm text-[#1D1E1F] truncate">
                           {record.name}

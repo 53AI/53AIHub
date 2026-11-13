@@ -127,7 +127,7 @@ const DetailView: React.FC<DetailViewProps> = ({ selectedItemId }) => {
       {/* 已有数据但正在刷新（如保存后 1s 自动刷新）：遮罩式加载 */}
       {isRefreshing && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/60">
-          <Spin size="large" tip={t("common.loading")} />
+          <Spin size="large" description={t("common.loading")} />
         </div>
       )}
     </div>

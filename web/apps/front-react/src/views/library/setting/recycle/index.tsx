@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Button, Table, Tooltip, Modal, message, Spin } from "antd";
+import { Button, Table, Tooltip, Modal, Typography, message, Spin } from "antd";
 import {
   ReloadOutlined,
   DeleteOutlined,
@@ -169,11 +169,16 @@ export function LibraryRecycleSettingsView() {
       title: "名称",
       dataIndex: "name",
       key: "name",
-      ellipsis: true,
+      ellipsis: { showTitle: false },
       render: (name, record) => (
-        <div className="flex items-center gap-2">
-          <SafeImage src={record.icon} alt="" className="size-6" />
-          <span className="text-sm text-[#1D1E1F]">{name}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          <SafeImage src={record.icon} alt="" className="size-6 flex-none" />
+          <Typography.Text
+            ellipsis={{ tooltip: name }}
+            className="!block min-w-0 text-sm text-[#1D1E1F]"
+          >
+            {name}
+          </Typography.Text>
         </div>
       ),
     },

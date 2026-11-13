@@ -1285,7 +1285,7 @@ export function ChunksPipeline({
             cancelText="取消"
             width={800}
             centered
-            destroyOnClose
+            destroyOnHidden
           >
             <div className="py-4 h-[700px] overflow-y-auto overflow-x-hidden">
               {currentSettingStep?.type &&

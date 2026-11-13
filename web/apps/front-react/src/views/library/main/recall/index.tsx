@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type KeyboardEvent,
+} from "react";
 import { useParams } from "react-router-dom";
 import { Button, Input, Table, message } from "antd";
 import { EditOutlined, LoadingOutlined } from "@ant-design/icons";
@@ -204,6 +210,15 @@ export function LibraryRecallView() {
     }
   };
 
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    // 中文输入法选词时的回车不触发测试
+    if (event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (loading) return;
+    handleTest();
+  };
+
   const onTableSizeChange = (size: number) => {
     setConfigSetting((prev) => ({ ...prev, page_size: size }));
     loadHistoryList(1, size);
@@ -236,6 +251,7 @@ export function LibraryRecallView() {
               <Input.TextArea
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={handleInputKeyDown}
                 className="mt-2"
                 autoSize={{ minRows: 8, maxRows: 8 }}
                 style={{ border: "none", boxShadow: "none", padding: 0 }}

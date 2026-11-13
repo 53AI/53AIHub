@@ -1,4 +1,4 @@
-import { Modal, Button, Table, Tag } from "antd";
+import { Modal, Button, Table, Tag, Typography } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import { Search, SafeImage } from "@km/shared-components-react";
 import "./index.css";
@@ -117,20 +117,26 @@ function ResourcePickerInner(
           title: t("module.agent"),
           dataIndex: "name",
           key: "name",
+          ellipsis: { showTitle: false },
           render: (name: string, record) => (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <SafeImage
-                className="w-8 h-8 rounded-full"
+                className="flex-none w-8 h-8 rounded-full"
                 src={record.logo || ""}
                 alt=""
                 kind="user"
               />
               <div className="flex-1 min-w-0">
-                <div className="text-brand truncate">{name || "--"}</div>
+                <Typography.Text ellipsis={{ tooltip: name }} className="!block text-brand">
+                  {name || "--"}
+                </Typography.Text>
                 {record.description && (
-                  <div className="text-xs text-placeholder truncate">
+                  <Typography.Text
+                    ellipsis={{ tooltip: record.description }}
+                    className="!block text-xs text-placeholder"
+                  >
                     {record.description}
-                  </div>
+                  </Typography.Text>
                 )}
               </div>
             </div>
@@ -152,15 +158,23 @@ function ResourcePickerInner(
           dataIndex: "name",
           key: "name",
           width: 260,
+          ellipsis: { showTitle: false },
           render: (name: string) => (
-            <div className="truncate">{name || "--"}</div>
+            <Typography.Text ellipsis={{ tooltip: name }} className="!block">
+              {name || "--"}
+            </Typography.Text>
           ),
         },
         {
           title: t("description"),
           dataIndex: "description",
           key: "description",
-          render: (desc: string) => desc || "--",
+          ellipsis: { showTitle: false },
+          render: (desc: string) => (
+            <Typography.Text ellipsis={{ tooltip: desc }} className="!block">
+              {desc || "--"}
+            </Typography.Text>
+          ),
         },
       ];
     }
@@ -170,9 +184,11 @@ function ResourcePickerInner(
           title: t("module.skill"),
           dataIndex: "display_name",
           key: "display_name",
-          minWidth: 200,
+          // ellipsis 会把 tableLayout 强成 fixed，rc-table 仅在 auto 下才写 minWidth，故用 width
+          width: 260,
+          ellipsis: { showTitle: false },
           render: (displayName: string, record) => (
-            <div className="flex items-center gap-2 w-full">
+            <div className="flex items-center gap-2 w-full min-w-0">
               <SafeImage
                 className="flex-none w-8 h-8 rounded overflow-hidden"
                 src={record.logo}
@@ -180,13 +196,19 @@ function ResourcePickerInner(
                 kind="skill"
               />
               <div className="flex-1 w-0 text-sm flex flex-col">
-                <div className="text-brand truncate">
+                <Typography.Text
+                  ellipsis={{ tooltip: record.skill_name }}
+                  className="!block text-brand"
+                >
                   {record.skill_name || "--"}
-                </div>
+                </Typography.Text>
                 {record.description && (
-                  <div className="text-xs text-placeholder truncate">
+                  <Typography.Text
+                    ellipsis={{ tooltip: record.description }}
+                    className="!block text-xs text-placeholder"
+                  >
                     {record.description}
-                  </div>
+                  </Typography.Text>
                 )}
               </div>
             </div>
@@ -196,8 +218,13 @@ function ResourcePickerInner(
           title: t("skills.display_name"),
           dataIndex: "display_name",
           key: "display_name",
-          minWidth: 300,
-          render: (desc: string) => desc || "--",
+          width: 300,
+          ellipsis: { showTitle: false },
+          render: (desc: string) => (
+            <Typography.Text ellipsis={{ tooltip: desc }} className="!block">
+              {desc || "--"}
+            </Typography.Text>
+          ),
         },
       ];
     }
@@ -207,14 +234,17 @@ function ResourcePickerInner(
         title: t("module.ai_product"),
         dataIndex: "name",
         key: "name",
+        ellipsis: { showTitle: false },
         render: (name: string, record) => (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <SafeImage
-              className="w-8 h-8 rounded-full"
+              className="flex-none w-8 h-8 rounded-full"
               src={record.logo || ""}
               alt=""
             />
-            <div className="text-brand truncate">{name || "--"}</div>
+            <Typography.Text ellipsis={{ tooltip: name }} className="!block min-w-0 text-brand">
+              {name || "--"}
+            </Typography.Text>
           </div>
         ),
       },

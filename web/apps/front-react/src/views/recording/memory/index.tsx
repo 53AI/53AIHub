@@ -1,5 +1,5 @@
 import { EyeOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Empty, Modal, Space, Spin, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Dropdown, Empty, Modal, Space, Spin, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { DownOutlined } from '@ant-design/icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -294,11 +294,14 @@ export function RecordingMemoryHomeView({
           title: '企业',
           key: 'related_company',
           width: 150,
-          render: (_: unknown, record: RecordingMemoryEntityItem) => (
-            <span className="truncate text-sm text-[#1D1E1F]">
-              {record.related_company?.related_name || record.attributes?.company || '--'}
-            </span>
-          )
+          render: (_: unknown, record: RecordingMemoryEntityItem) => {
+            const company = record.related_company?.related_name || record.attributes?.company || '--'
+            return (
+              <Typography.Text ellipsis={{ tooltip: company }} className="!block text-sm text-[#1D1E1F]">
+                {company}
+              </Typography.Text>
+            )
+          }
         }
       : columnLabels.extra === 'industry'
         ? {
@@ -316,7 +319,8 @@ export function RecordingMemoryHomeView({
       title: columnLabels.entity,
       dataIndex: 'canonical_name',
       key: 'canonical_name',
-      minWidth: 220,
+      // ellipsis 会把 tableLayout 强成 fixed，rc-table 仅在 auto 下才写 minWidth，故用 width
+      width: 240,
       ellipsis: true,
       render: (name: string, record: RecordingMemoryEntityItem) => {
         // 通用类型：纯文本首列；人脉 / 企业：头像 + 名称 + 副标题（职位 / 地区）
@@ -331,11 +335,22 @@ export function RecordingMemoryHomeView({
             <SafeImage
               src={record.attributes?.[columnLabels.avatarAttr] || ''}
               fallback={columnLabels.avatarFallback}
-              className="size-9 rounded-full object-cover"
+              className="size-9 flex-none rounded-full object-cover"
             />
             <div className="min-w-0">
-              <div className="truncate text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors">{name}</div>
-              {subtitle && <Tag className="mt-0.5 max-w-full overflow-hidden">{subtitle}</Tag>}
+              <Typography.Text
+                ellipsis={{ tooltip: name }}
+                className="!block text-sm text-[#1D1E1F] group-hover:text-blue-600 transition-colors"
+              >
+                {name}
+              </Typography.Text>
+              {subtitle && (
+                <Tooltip title={subtitle}>
+                  <Tag className="mt-0.5 block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">
+                    {subtitle}
+                  </Tag>
+                </Tooltip>
+              )}
             </div>
           </div>
         )
@@ -359,7 +374,7 @@ export function RecordingMemoryHomeView({
       title: columnLabels.content,
       dataIndex: 'summary',
       key: 'summary',
-      minWidth: 240,
+      width: 260,
       ellipsis: true,
       render: (summary: string) => (
         <span className="truncate text-sm text-[#1D1E1F]">{summary || '尚未形成总结性描述'}</span>
@@ -446,7 +461,7 @@ export function RecordingMemoryHomeView({
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={schemaError} />
         </div>
       ) : !schema ? (
-        <div className="flex h-[60vh] items-center justify-center"><Spin size="large" tip="加载中..." /></div>
+        <div className="flex h-[60vh] items-center justify-center"><Spin size="large" description="加载中..." /></div>
       ) : (
       <div className="memory-content-container  max-w-[1200px] mx-auto">
 

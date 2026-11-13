@@ -385,8 +385,8 @@ export function IndexSidebar({
         footer={null}
         width={1260}
         align-center
-        destroyOnClose
-        maskClosable={false}
+        destroyOnHidden
+        mask={{ closable: false }}
       >
         <div className="h-[732px] max-md:h-[70vh] flex flex-col">
           <div

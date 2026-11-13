@@ -1,4 +1,4 @@
-import { Table, Button, Switch, message, Modal } from "antd";
+import { Table, Button, Switch, Typography, message, Modal } from "antd";
 import { SvgIcon, Search, IconAction, SafeImage } from "@km/shared-components-react";
 import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
@@ -191,12 +191,22 @@ export function PromptPage() {
       dataIndex: "name",
       key: "name",
       width: 180,
+      ellipsis: { showTitle: false },
       render: (_: any, row) => (
         <div className="flex items-center gap-2 w-full">
           <SafeImage className="flex-none w-8 h-8 rounded-full overflow-hidden" src={row.logo || ""} alt="" />
           <div className="flex-1 w-0 text-sm flex flex-col">
-            <div className="text-primary truncate">{row.name || "--"}</div>
-            {row.description && <div className="text-xs text-placeholder truncate">{row.description}</div>}
+            <Typography.Text ellipsis={{ tooltip: row.name }} className="!block text-primary">
+              {row.name || "--"}
+            </Typography.Text>
+            {row.description && (
+              <Typography.Text
+                ellipsis={{ tooltip: row.description }}
+                className="!block text-xs text-placeholder"
+              >
+                {row.description}
+              </Typography.Text>
+            )}
           </div>
         </div>
       ),

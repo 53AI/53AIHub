@@ -145,7 +145,7 @@ const SkillEnvVarsDrawer: React.FC<SkillEnvVarsDrawerProps> = ({
       width={isMobile ? '100%' : 720}
       title={`环境变量设置${skillDisplayName ? ` · ${skillDisplayName}` : ''}`}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
       className="skill-env-vars-drawer"
     >
       <div className="mb-4 rounded-xl border border-[#E7EEF8] bg-[#F8FBFF] px-4 py-3 text-sm text-[#5B657A]">

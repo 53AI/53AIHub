@@ -122,8 +122,14 @@ function QueueContent({ spaceId }: { spaceId: string }): React.ReactElement {
   const allCount = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const statuses: QueueFilter[] = ["all", "success", "pending", "processing", "failed", "waiting"];
   const title = (item: WikiDocumentQueueItem): React.ReactElement => (
-    <Button type="link" className="!block !h-auto !px-0 max-w-full font-medium" onClick={() => setSelectedDocument(item)}>
-      <Typography.Text ellipsis={{ tooltip: item.title }}>{item.title}</Typography.Text>
+    <Button
+      type="link"
+      className="!block !h-auto !w-full !px-0 max-w-full font-medium text-left"
+      onClick={() => setSelectedDocument(item)}
+    >
+      <Typography.Text ellipsis={{ tooltip: item.title }} className="!block">
+        {item.title}
+      </Typography.Text>
     </Button>
   );
   const retry = (item: WikiDocumentQueueItem): React.ReactElement => (
@@ -141,7 +147,7 @@ function QueueContent({ spaceId }: { spaceId: string }): React.ReactElement {
     </Button>
   );
   const columns: TableColumnsType<WikiDocumentQueueItem> = [
-    { title: t("wiki.queue.column_document"), key: "title", width: 220, render: (_, item) => title(item) },
+    { title: t("wiki.queue.column_document"), key: "title", width: 260, render: (_, item) => title(item) },
     { title: t("wiki.queue.column_library"), dataIndex: "library_name", key: "library", width: 150 },
     {
       title: t("wiki.queue.document_status"),

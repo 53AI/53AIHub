@@ -73,7 +73,7 @@ export function MergeEntityModal({
           </Button>
         </div>
       }
-      destroyOnClose
+      destroyOnHidden
       styles={{ body: { paddingTop: 8, paddingBottom: 24 } }}
     >
       {/* 源卡行：两张并排，选中态走蓝色边框 + 蓝色实心圆点 */}

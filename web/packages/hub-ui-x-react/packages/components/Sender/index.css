@@ -7,6 +7,18 @@
   position: relative;
   border: 1px solid #E3E8FF; /* 原版边框色 */
   box-shadow: 0 10px 15px rgba(0, 0, 0, 0.1); /* shadow-lg */
+
+  /* 编辑器最小/最大高度：CSS 与 JS（useEditor.syncEditorHeight）共用的单一数据源。
+     移动端（< 640px，Tailwind sm 断点）保持单行紧凑；
+     PC 端（>= 640px）给足 140px，避免默认空态太矮。 */
+  --x-sender-editor-min-height: 24px;
+  --x-sender-editor-max-height: 200px;
+}
+
+@media (min-width: 640px) {
+  .x-sender {
+    --x-sender-editor-min-height: 80px;
+  }
 }
 
 .x-sender--file-list-show {
@@ -222,9 +234,12 @@
 
 .x-sender__editor {
   width: 100%;
-  height: 80px; /* 固定高度 h-20 */
-  min-height: 80px;
-  max-height: 200px;
+  /* 自适应高度：由 useEditor 按内容 scrollHeight 写入内联 height。
+     min/max 由 .x-sender 上的 CSS 变量控制（移动端 24px / PC 端 140px）。
+     注意：必须保留 height:auto 作为无 JS / 首帧兜底。 */
+  height: auto;
+  min-height: var(--x-sender-editor-min-height, 24px);
+  max-height: var(--x-sender-editor-max-height, 200px);
   border: none;
   outline: none;
   font-size: 14px;

@@ -12,7 +12,6 @@ import {
   useState
 } from 'react'
 import { Link, Outlet, useLocation, useMatches, useNavigate } from 'react-router-dom'
-import notificationsApi from '@/api/modules/notifications'
 import { MoreDropdown } from '@/components/MoreDropdown'
 import { DEFAULT_USER_AVATAR } from '@/constants/user'
 import { VERSION_MODULE } from '@/constants/enterprise'
@@ -29,6 +28,7 @@ import { wakeLockService } from '@/services/wake-lock'
 import { useCognitionStore } from '@/stores/modules/cognition'
 import { useEnterpriseStore, useIsRecordOnly, useIsSoftStyle } from '@/stores/modules/enterprise'
 import { useNavigationStore } from '@/stores/modules/navigation'
+import { useNotificationStore } from '@/stores/modules/notification'
 import { useRecordingStore } from '@/stores/modules/recording'
 import { navigateAgentShortcut, useShortcutsStore } from '@/stores/modules/shortcuts'
 import { useUserStore } from '@/stores/modules/user'
@@ -66,7 +66,6 @@ export function Layout() {
   const [showProfile, setShowProfile] = useState(false)
   const [messageCenterReady, setMessageCenterReady] = useState(false)
   const [teleportReady, setTeleportReady] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
 
   const userStore = useUserStore()
   const enterpriseStore = useEnterpriseStore()
@@ -81,6 +80,8 @@ export function Layout() {
   // 认知模型待确认数：erhao.html 入口的侧边栏认知模型项需要展示红点
   // （轮询由 RecordingView 负责，record 模式下它常驻挂载）
   const cognitionPendingCount = useCognitionStore((s) => s.pendingCount)
+  // 未读消息数：单一来源在 notification store，轮询由 App 统一启停
+  const unreadCount = useNotificationStore((s) => s.unreadTotal)
 
   // 紧凑模式判断：软件模式 + 非移动端
   // 移动端一律不启用紧凑模式：视口宽度 < 768（isMobile）或 UA 判定为移动设备（isInMobile，覆盖横屏手机、平板等宽视口场景）
@@ -203,28 +204,7 @@ export function Layout() {
     }
   }, [handleLoginSuccess])
 
-  // Fetch unread message count for compact mode
-  useEffect(() => {
-    // 只在紧凑模式下获取未读消息统计（正常模式由 MessageCenter 自己处理）
-    if (!useCompactMode || !userStore.is_login || !hasKnowledge) {
-      setUnreadCount(0)
-      return
-    }
-
-    const fetchUnreadCount = async () => {
-      try {
-        const response = await notificationsApi.stats({ scope: 'unread' })
-        setUnreadCount(response.total)
-      } catch (error) {
-        console.error('获取未读消息统计失败:', error)
-      }
-    }
-
-    fetchUnreadCount()
-    const timer = setInterval(fetchUnreadCount, 60000)
-
-    return () => clearInterval(timer)
-  }, [useCompactMode, userStore.is_login, hasKnowledge])
+  // 未读统计轮询已收敛到 notification store（App 层登录后常驻），此处不再自建定时器
 
   // Initial load
   useEffect(() => {
@@ -495,6 +475,7 @@ export function Layout() {
             <div className="flex-1 flex items-center gap-2 overflow-hidden relative">
               <a href={buildUrl('/')} className="flex flex-none items-center gap-2 overflow-hidden">
                 <SafeImage
+                  kind="space"
                   src={enterpriseStore.logo}
                   title={enterpriseStore.display_name}
                   className="max-w-[180px] max-h-8 rounded"
@@ -610,7 +591,7 @@ export function Layout() {
             isRecordOnly ? '' : 'border-r bg-white'
           } ${
             isMobile
-              ? 'fixed top-0 bottom-0 z-[200]'
+              ? 'fixed top-0 bottom-0 z-[200] bg-white'
               : useCompactMode
                 ? 'relative z-[10]'
                 : 'absolute top-0 bottom-0 left-0 z-[200]'
@@ -629,6 +610,7 @@ export function Layout() {
             <div className="pt-4 pb-2 flex justify-center">
               <Tooltip title={enterpriseStore.display_name} placement="right">
                 <SafeImage
+                  kind="space"
                   className="w-8 h-8 rounded"
                   src={enterpriseStore.ico}
                   alt={enterpriseStore.display_name}
@@ -642,6 +624,7 @@ export function Layout() {
                 title={enterpriseStore.display_name}
               >
                 <SafeImage
+                  kind="space"
                   className="max-w-[180px] max-h-8 rounded"
                   src={enterpriseStore.logo}
                   alt={enterpriseStore.display_name}
@@ -917,7 +900,7 @@ export function Layout() {
         {/* Main content */}
         <main
           ref={mainRef}
-          className={`flex-1 relative overflow-y-auto flex flex-col transition-all duration-300 ${ isRecordOnly ? 'm-2 rounded-xl' : '' }`}
+          className={`flex-1 relative overflow-y-auto flex flex-col transition-all duration-300 ${ isRecordOnly ? `${isMobile ? '' : 'm-2'} rounded-xl` : '' }`}
           style={{
             marginLeft: useCompactMode ? '0' : showSider ? '240px' : '0'
           }}

@@ -153,6 +153,7 @@ const SkillCard: React.FC<SkillCardProps> = ({ skill, type, groupId, keyword = '
       >
         <div className="flex flex-1 items-start gap-3">
           <SafeImage
+            kind="skill"
             className="flex-none size-12 rounded-lg object-cover"
             src={skill.logo}
             alt={skill.display_name}

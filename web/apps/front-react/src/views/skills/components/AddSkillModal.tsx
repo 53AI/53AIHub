@@ -156,7 +156,7 @@ export function AddSkillModal({
       width={isMobile ? '90%' : 520}
       title={t('skill.add_skill')}
       onCancel={onClose}
-      destroyOnClose={false}
+      destroyOnHidden={false}
       forceRender
       footer={[
         <Button key="cancel" onClick={onClose}>
@@ -195,6 +195,7 @@ export function AddSkillModal({
               <div className="flex items-center gap-2">
                 {agent.agent_logo ? (
                   <SafeImage
+                    kind="agent"
                     src={agent.agent_logo}
                     alt=""
                     className="size-5 rounded object-cover"

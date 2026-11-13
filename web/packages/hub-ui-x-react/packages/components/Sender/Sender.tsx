@@ -49,7 +49,7 @@ const DEFAULTS = {
   fileUpload: { enabled: false, acceptTypes: '*/*', allowMultiple: false, maxFileSize: 10 * 1024 * 1024, enableDrag: false, enablePaste: false, allowSendWithFiles: false, request: undefined, fileList: undefined, onFileChange: undefined },
   mention: { enabled: false, disabled: false, triggerCode: '@', maxCount: 20, placeholder: '指定文档', tooltip: '指定任意文件问答', createLinkInEditor: false, enhanced: false, list: [], suggestions: [], recentList: [], searchKeyword: '', searchLoading: false, onSearch: undefined, onSelect: undefined, onRemove: undefined, onOpenLibrary: undefined, onSelectFiles: undefined, hasKnowledgeBase: true, allowSelectLibrary: true, allowSelectSpace: true },
   skill: { enabled: false, triggerCode: '/', tooltip: '选择技能', list: [], suggestions: [], searchKeyword: '', searchLoading: false, onSearch: undefined, onSelect: undefined, onRemove: undefined, onOpenLibrary: undefined },
-  ui: { isMobile: false, showCaret: true, canBlur: true, needFixPositionWhenFocus: true, actionPosition: 'actions' as const },
+  ui: { isMobile: false, showCaret: true, canBlur: true, needFixPositionWhenFocus: true, actionPosition: 'actions' as const, editorMinHeight: undefined as number | undefined, editorMaxHeight: undefined as number | undefined },
 };
 
 const createFileItem = (file: File, vid: string): InternalFileItem => ({
@@ -111,6 +111,8 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     canBlur = true,
     needFixPositionWhenFocus = true,
     actionPosition = 'actions',
+    editorMinHeight,
+    editorMaxHeight,
   } = ui || DEFAULTS.ui;
 
   // Refs
@@ -158,6 +160,8 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     disabled,
     showCaret,
     maxLength,
+    minHeight: editorMinHeight,
+    maxHeight: editorMaxHeight,
   });
 
   const mentionHook = useMention({
@@ -424,7 +428,7 @@ const Sender = forwardRef<SenderRef, SenderProps>((props, ref) => {
     if (editor.isEmptyEditor() && editorRef.current) {
       editorRef.current.innerHTML = '';
     }
-    // 3. 触发 onChange 同步 placeholder 状态
+    // 3. 触发 onChange 同步 placeholder 状态与高度
     editor.handleInput();
   }, [canBlur, onBlur, mentionHook, skillHook, editor]);
 

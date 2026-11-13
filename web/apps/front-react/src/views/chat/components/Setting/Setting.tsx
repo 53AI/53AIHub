@@ -108,6 +108,7 @@ function BasicInfoSection({ agent }: { agent: IAgentInfo }) {
     <Section title={t('setting.basic_info')}>
       <div className="flex items-center gap-3">
         <SafeImage
+          kind="agent"
           src={agent.logo}
           alt={agent.name}
           className="size-8 rounded-xl object-cover"

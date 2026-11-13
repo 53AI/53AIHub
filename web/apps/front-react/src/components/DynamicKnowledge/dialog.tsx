@@ -323,7 +323,7 @@ export const DynamicKnowledgeDialog = forwardRef<DynamicKnowledgeDialogRef, Dyna
                 <div className="flex-1 px-2 space-y-1 overflow-y-auto">
                   <div className="h-9 flex items-center gap-2 px-2 mb-1 rounded cursor-pointer text-[#1D1E1F] bg-[#EDF3FF] hover:bg-[#EDF3FF]">
                     {spaceIcon && (
-                      <SafeImage src={spaceIcon} className="size-5" alt="" />
+                      <SafeImage src={spaceIcon} kind="space" className="size-5" alt="" />
                     )}
                     <span className="flex-1 text-sm truncate">{spaceName}</span>
                     <RightOutlined className="text-xs text-[#999]" />

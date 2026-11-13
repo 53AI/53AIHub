@@ -179,6 +179,7 @@ export function AgentCard({
         onClick={handleCardClick}
       >
         <SafeImage
+          kind="agent"
           className="size-12 rounded-lg mr-3 flex-none object-cover"
           src={item.logo}
           alt={item.name}
@@ -222,6 +223,7 @@ export function AgentCard({
     >
       <div className="flex items-start flex-1">
         <SafeImage
+          kind="agent"
           className="flex-none size-12 mr-3 rounded-lg object-cover"
           src={item.logo}
           alt={item.name}
