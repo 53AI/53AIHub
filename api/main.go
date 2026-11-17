@@ -15,6 +15,7 @@ import (
 	"github.com/53AI/53AIHub/common"
 	"github.com/53AI/53AIHub/common/keystone"
 	"github.com/53AI/53AIHub/common/logger"
+	"github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/middleware"
 	"github.com/53AI/53AIHub/model"
@@ -44,6 +45,13 @@ import (
 
 func main() {
 	common.Init()
+
+	// 安全红线：JWT_SECRET 缺失或过短时拒绝启动（fail closed），
+	// 禁止退化成公开的默认密钥，否则任何人都能伪造登录 token。
+	if err := jwt.ValidateSecretKey(); err != nil {
+		fmt.Fprintf(os.Stderr, "启动失败：JWT_SECRET 未配置或强度不足（至少 %d 字节，可用 openssl rand -hex 32 生成）：%v\n", jwt.MinSecretLength, err)
+		os.Exit(1)
+	}
 
 	// 初始化 Keystone 上报客户端
 	keystoneCfg := keystone.LoadConfig()

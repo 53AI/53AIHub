@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/53AI/53AIHub/common/utils/env"
+	common_jwt "github.com/53AI/53AIHub/common/utils/jwt"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -15,7 +16,18 @@ const (
 	issuerSandboxFile = "sandbox-file-download"
 )
 
-var signingKey = []byte(env.String("SANDBOX_DOWNLOAD_TOKEN_SECRET", env.String("JWT_SECRET", "secret")))
+// downloadSigningKey 读取独立下载密钥，未配置时回退到 JWT_SECRET。
+// 两者都没有硬编码兜底：缺失或过短时签名/验签直接失败。
+func downloadSigningKey() ([]byte, error) {
+	secret := strings.TrimSpace(env.String("SANDBOX_DOWNLOAD_TOKEN_SECRET", ""))
+	if secret == "" {
+		return common_jwt.SecretKey()
+	}
+	if len(secret) < common_jwt.MinSecretLength {
+		return nil, common_jwt.ErrSecretTooWeak
+	}
+	return []byte(secret), nil
+}
 
 type DownloadTokenClaims struct {
 	FileID   int64  `json:"fid"`
@@ -24,6 +36,10 @@ type DownloadTokenClaims struct {
 }
 
 func GenerateDownloadToken(fileID int64, fileName string, ttl time.Duration) (string, error) {
+	key, err := downloadSigningKey()
+	if err != nil {
+		return "", err
+	}
 	cleanName := sanitizeFileName(fileName)
 	if fileID <= 0 || cleanName == "" {
 		return "", errors.New("invalid download token payload")
@@ -43,10 +59,14 @@ func GenerateDownloadToken(fileID int64, fileName string, ttl time.Duration) (st
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(signingKey)
+	return token.SignedString(key)
 }
 
 func ValidateDownloadToken(tokenStr string, fileID int64, fileName string) error {
+	key, err := downloadSigningKey()
+	if err != nil {
+		return err
+	}
 	cleanName := sanitizeFileName(fileName)
 	if fileID <= 0 || cleanName == "" || strings.TrimSpace(tokenStr) == "" {
 		return errors.New("invalid download token verify input")
@@ -56,7 +76,7 @@ func ValidateDownloadToken(tokenStr string, fileID int64, fileName string) error
 		if token == nil || token.Method == nil || token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, jwt.ErrTokenSignatureInvalid
 		}
-		return signingKey, nil
+		return key, nil
 	})
 	if err != nil {
 		return err

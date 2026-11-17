@@ -17,10 +17,27 @@ import (
 	"github.com/53AI/53AIHub/common/storage"
 	"github.com/53AI/53AIHub/config"
 	"github.com/53AI/53AIHub/model"
+	"github.com/53AI/53AIHub/service"
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// requirePreviewReadPermission 校验当前登录用户对目标文件的读权限。
+// 预览接口直接输出文件内容，必须按“租户 + 文件 ACL”判定，不能凭 file_id 命中。
+func requirePreviewReadPermission(c *gin.Context, eid, fileID int64) bool {
+	userID := config.GetUserId(c)
+	if userID <= 0 {
+		c.JSON(http.StatusUnauthorized, model.UnauthorizedError.ToResponse(nil))
+		return false
+	}
+	permission, err := service.GetUserPermission(eid, model.RESOURCE_TYPE_FILE, fileID, userID, c.Request.Context())
+	if err != nil || permission < model.PERMISSION_VIEW_ONLY {
+		c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(nil))
+		return false
+	}
+	return true
+}
 
 var openAIUploadFileOSSObject = func(storageImpl *storage.AliyunOSSStorage, key string) (io.ReadCloser, error) {
 	return storageImpl.GetBucket().GetObject(filepath.ToSlash(key))
@@ -41,7 +58,7 @@ var openAIUploadFileOSSRangeObject = func(storageImpl *storage.AliyunOSSStorage,
 // @Success 200 {object} string "文件内容"
 // @Router /api/files/{file_id}/preview_raw [get]
 func PreviewRawFileContent(c *gin.Context) {
-	// eid := config.GetEID(c)
+	eid := config.GetEID(c)
 
 	idStr := c.Param("file_id")
 	if idStr == "" {
@@ -55,10 +72,13 @@ func PreviewRawFileContent(c *gin.Context) {
 		return
 	}
 
-	// 获取文件信息
-	file, err := model.GetFileByIDOlny(fileID)
+	// 按租户 + 文件 ACL 校验：预览接口直接返回文件内容，不能只靠 file_id 猜中
+	file, err := model.GetFileByID(eid, fileID, c.Request.Context())
 	if err != nil {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+	if !requirePreviewReadPermission(c, eid, fileID) {
 		return
 	}
 
@@ -87,6 +107,10 @@ func PreviewRawFileContent(c *gin.Context) {
 				err = errors.New("未找到上传文件")
 			}
 			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+			return
+		}
+		if file.UploadFile.Eid != eid {
+			c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("未找到上传文件")))
 			return
 		}
 		if err := serveUploadFilePreview(c, fileID, file.UploadFile, ext); err != nil {
@@ -139,6 +163,10 @@ func PreviewRawFileContent(c *gin.Context) {
 	uploadFile, err := model.GetUploadFileByID(file.UploadFileID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+		return
+	}
+	if uploadFile.Eid != eid {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("未找到上传文件")))
 		return
 	}
 
@@ -448,6 +476,8 @@ func parseRangeHeaderForPreview(rangeHeader string, fileSize int64) (int64, int6
 // @Success 200 {object} string "文件内容"
 // @Router /api/file-version/{file_body_id} [get]
 func GetFileBodyContent(c *gin.Context) {
+	eid := config.GetEID(c)
+
 	idStr := c.Param("file_body_id")
 	if idStr == "" {
 		c.JSON(http.StatusBadRequest, model.ParamError.ToResponse(errors.New("文件内容ID不能为空")))
@@ -460,10 +490,13 @@ func GetFileBodyContent(c *gin.Context) {
 		return
 	}
 
-	// 获取文件内容记录
+	// 获取文件内容记录，并校验租户与文件读取权限
 	fileBody, err := model.GetFileBodyByID(fileBodyID)
-	if err != nil {
-		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(err))
+	if err != nil || fileBody.Eid != eid {
+		c.JSON(http.StatusNotFound, model.NotFound.ToResponse(errors.New("未找到文件内容")))
+		return
+	}
+	if !requirePreviewReadPermission(c, eid, fileBody.FileID) {
 		return
 	}
 

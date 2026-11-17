@@ -60,7 +60,7 @@ func SetApiRouter(router *gin.Engine) {
 		enterpriseRoute.PUT("/current", middleware.UserTokenAuth(model.RoleAdminUser), controller.UpdateCurrentEnterprise)
 
 		enterpriseRoute.GET("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.GetEnterprise)
-		enterpriseRoute.PUT("/:id", controller.UpdateEnterprise)
+		enterpriseRoute.PUT("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.UpdateEnterprise)
 		enterpriseRoute.PATCH("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.UpdateEnterpriseAttribute)
 		enterpriseRoute.DELETE("/:id", middleware.UserTokenAuth(model.RoleAdminUser), controller.DeleteEnterprise)
 		enterpriseRoute.POST("", middleware.UserTokenAuth(model.RoleAdminUser), controller.CreateEnterprise)
@@ -103,10 +103,10 @@ func SetApiRouter(router *gin.Engine) {
 		// 将新增的公共接口移动到 commonRoute 组内
 		commonRoute.GET("/system/redis-stats", controller.GetRedisPoolStatus)
 		commonRoute.GET("/health", controller.HealthCheck)
-		commonRoute.GET("/files/:file_id/preview", controller.PreviewRawFileContent)
-		commonRoute.GET("/files/:file_id/preview/*filename", controller.PreviewRawFileContent)
-		commonRoute.GET("/file-version/:file_body_id", controller.GetFileBodyContent)
-		commonRoute.GET("/file-version/:file_body_id/*filename", controller.GetFileBodyContent)
+		commonRoute.GET("/files/:file_id/preview", middleware.UserTokenAuth(model.RoleGuestUser), controller.PreviewRawFileContent)
+		commonRoute.GET("/files/:file_id/preview/*filename", middleware.UserTokenAuth(model.RoleGuestUser), controller.PreviewRawFileContent)
+		commonRoute.GET("/file-version/:file_body_id", middleware.UserTokenAuth(model.RoleGuestUser), controller.GetFileBodyContent)
+		commonRoute.GET("/file-version/:file_body_id/*filename", middleware.UserTokenAuth(model.RoleGuestUser), controller.GetFileBodyContent)
 	}
 
 	agentH5Route := apiRouter.Group("/agents/h5")

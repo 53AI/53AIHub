@@ -1,6 +1,7 @@
 package jwt
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -9,9 +10,44 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var secretKey = []byte(env.String("JWT_SECRET", "secret"))
+// MinSecretLength JWT_SECRET 的最小长度（字节）。HS256 密钥过短可被离线爆破。
+const MinSecretLength = 32
+
+var (
+	ErrSecretNotConfigured = errors.New("JWT_SECRET is not configured")
+	ErrSecretTooWeak       = errors.New("JWT_SECRET must be at least 32 bytes")
+)
+
+// loadSecret 读取并校验签名密钥。禁止任何硬编码兜底：
+// 缺失或过弱时签名/验签直接失败，而不是退化为公开已知密钥。
+func loadSecret() ([]byte, error) {
+	secret := strings.TrimSpace(env.String("JWT_SECRET", ""))
+	if secret == "" {
+		return nil, ErrSecretNotConfigured
+	}
+	if len(secret) < MinSecretLength {
+		return nil, ErrSecretTooWeak
+	}
+	return []byte(secret), nil
+}
+
+// SecretKey 返回 JWT 签名密钥；未配置或强度不足时返回错误。
+func SecretKey() ([]byte, error) {
+	return loadSecret()
+}
+
+// ValidateSecretKey 供进程启动时校验密钥配置，配置不合法应拒绝启动。
+func ValidateSecretKey() error {
+	_, err := loadSecret()
+	return err
+}
 
 func UserGenerateJWT(userID int64, eid int64) (string, error) {
+	key, err := loadSecret()
+	if err != nil {
+		return "", err
+	}
+
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"eid":     eid,
@@ -19,7 +55,7 @@ func UserGenerateJWT(userID int64, eid int64) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secretKey)
+	return token.SignedString(key)
 }
 
 func UserParseJWT(tokenString string) (int64, int64, error) {
@@ -28,11 +64,16 @@ func UserParseJWT(tokenString string) (int64, int64, error) {
 		return 0, 0, jwt.ErrTokenMalformed
 	}
 
+	key, err := loadSecret()
+	if err != nil {
+		return 0, 0, err
+	}
+
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		if token == nil || token.Method == nil || token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
 			return nil, jwt.ErrTokenSignatureInvalid
 		}
-		return secretKey, nil
+		return key, nil
 	})
 
 	if err != nil {
