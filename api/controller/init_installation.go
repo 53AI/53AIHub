@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/53AI/53AIHub/config"
@@ -75,6 +76,10 @@ func InitInstallation(c *gin.Context) {
 		}(),
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrInstallationAlreadyInitialized) {
+			c.JSON(http.StatusForbidden, model.ForbiddenError.ToResponse(nil))
+			return
+		}
 		c.JSON(http.StatusInternalServerError, model.SystemError.ToResponse(err))
 		return
 	}

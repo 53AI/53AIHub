@@ -39,6 +39,9 @@ type InitializeEnterpriseInstallationChannelParams struct {
 	Key     string
 }
 
+// ErrInstallationAlreadyInitialized 表示系统已完成初始化，拒绝重复执行安装流程
+var ErrInstallationAlreadyInitialized = errors.New("system already initialized")
+
 // InitializeEnterpriseInstallationResult 初始化安装结果
 type InitializeEnterpriseInstallationResult struct {
 	AccessToken  string
@@ -82,6 +85,16 @@ func InitializeEnterpriseInstallation(ctx context.Context, eid int64, req Initia
 			tx.Rollback()
 		}
 	}()
+
+	// 已初始化（该企业下已存在任意用户）即拒绝：/api/init 是匿名路由，
+	// 不能在安装完成后被再次调用去重置密码或创建顶级账号。
+	var initializedUserCount int64
+	if err := tx.Model(&model.User{}).Where("eid = ?", eid).Count(&initializedUserCount).Error; err != nil {
+		return nil, err
+	}
+	if initializedUserCount > 0 {
+		return nil, ErrInstallationAlreadyInitialized
+	}
 
 	enterprise, err := ensureInstallationEnterprise(tx, eid, req.Enterprise.EnterpriseName)
 	if err != nil {
@@ -142,51 +155,6 @@ func ensureInstallationUser(tx *gorm.DB, eid int64, accountName, password string
 	}
 
 	now := time.Now().UTC().UnixMilli()
-	var existingUser model.User
-	if err := tx.Where("eid = ? AND username = ?", eid, accountName).First(&existingUser).Error; err == nil {
-		salt := helper.RandomString(6)
-		hashedPassword, err := helper.PasswordHash(password, salt)
-		if err != nil {
-			return nil, err
-		}
-		accessToken, err := jwt.UserGenerateJWT(existingUser.UserID, eid)
-		if err != nil {
-			return nil, err
-		}
-
-		updates := map[string]interface{}{
-			"nickname":        accountName,
-			"email":           accountName,
-			"password":        hashedPassword,
-			"salt":            salt,
-			"group_id":        groupID,
-			"role":            model.RoleCreatorUser,
-			"type":            model.UserTypeInternal,
-			"status":          model.UserStatusJoined,
-			"expired_time":    int64(0),
-			"last_login_time": now,
-			"access_token":    accessToken,
-		}
-		if err := tx.Model(&existingUser).Updates(updates).Error; err != nil {
-			return nil, err
-		}
-		if err := ensureInstallationInternalUserGroupPermission(tx, eid, existingUser.UserID); err != nil {
-			return nil, err
-		}
-		existingUser.Nickname = accountName
-		existingUser.Password = hashedPassword
-		existingUser.Salt = salt
-		existingUser.GroupId = groupID
-		existingUser.Role = model.RoleCreatorUser
-		existingUser.Type = model.UserTypeInternal
-		existingUser.Status = model.UserStatusJoined
-		existingUser.ExpiredTime = 0
-		existingUser.LastLoginTime = now
-		existingUser.AccessToken = accessToken
-		return &existingUser, nil
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
 
 	salt := helper.RandomString(6)
 	hashedPassword, err := helper.PasswordHash(password, salt)
